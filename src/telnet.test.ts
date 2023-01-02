@@ -76,7 +76,7 @@ describe('Telnet', () => {
             gmcpData,
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]),
         ]);
-        await testEvent('gmcp', encoded, [gmcpPackage, { 1: [2, 3] }]);
+        await testEvent('gmcp', encoded, gmcpData);
     }, 1000);
 
     it('should handle multiple commands', async () => {
