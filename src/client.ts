@@ -122,7 +122,8 @@ class MudClient extends EventEmitter {
                 this.telnetNegotiation = true;
                 this.telnetBuffer = data;
             } else {
-                this.emit('message', data);
+                const sanitizedHtml = data.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                this.emit('message', sanitizedHtml);
             }
         }
     }

@@ -34,10 +34,13 @@ class Output extends React.Component<Props, State> {
     componentWillUnmount() {
         this.props.client.removeListener('message', this.handleMessage);
     }
-
     handleMessage = (message: string) => {
+        // Regular expression to match URLs
+        const urlRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)/g;
+        // Replace all URLs in the message with clickable links
+        const html = message.replace(urlRegex, '<a href="$&" target="_blank">$&</a>');
         this.setState((prevState) => ({
-            output: [...prevState.output, message],
+            output: [...prevState.output, html],
         }));
     };
 
