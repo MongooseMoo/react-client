@@ -68,7 +68,7 @@ export class TelnetParser extends EventEmitter {
         if (option === TelnetCommand.GMCP) {
           // GMCP message found
           const gmcp = this.parseGMCP(suboptions);
-
+          this.emit('gmcp', gmcp.module, gmcp.data);
         }
         this.emit('subnegotiation', option, suboptions);
         i = data.indexOf(255, i);
