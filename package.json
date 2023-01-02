@@ -13,6 +13,7 @@
     "ansi-to-html": "^0.7.2",
     "eventemitter3": "^5.0.0",
     "howler": "^2.2.3",
+    "libtelnet-ts": "^0.0.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
