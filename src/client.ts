@@ -1,12 +1,11 @@
-import { Telnet, CompatibilityTable, TelnetOption } from "libtelnet-ts";
+import { TelnetParser, WebSocketStream } from './telnet';
 import { EventEmitter } from 'eventemitter3';
 import { GMCPPackage } from './gmcp';
 
 class MudClient extends EventEmitter {
     private ws!: WebSocket;
     private decoder = new TextDecoder('utf8');
-    private compTable = new CompatibilityTable();
-    private telnet: Telnet = new Telnet(this.compTable, 0);
+    private telnet!: TelnetParser;
 
     private host: string;
     private port: number;
@@ -26,21 +25,18 @@ class MudClient extends EventEmitter {
     }
 
 
-
     public connect() {
         this.ws = new window.WebSocket(`ws://${this.host}:${this.port}`);
         this.ws.binaryType = 'arraybuffer';
+        this.telnet = new TelnetParser(new WebSocketStream(this.ws));
         this.ws.onopen = () => {
             this.emit('connect');
         };
 
-        this.ws.onmessage = (event: MessageEvent) => {
-            this.telnet.receive(new Uint8Array(event.data));
-        };
-
-        this.telnet.on('data', (event) => {
-            this.handleData(event.buffer);
+        this.telnet.on('data', (data) => {
+            this.handleData(data);
         });
+
         this.ws.onclose = () => {
             this.emit('disconnect');
         };
@@ -52,11 +48,6 @@ class MudClient extends EventEmitter {
 
     public send(data: string) {
         this.ws.send(data);
-    }
-
-    public sendGmcp(gmcpModule: string, message: any) {
-        const gmcpData = JSON.stringify({ [gmcpModule]: message });
-        this.send(`\xFF\xFA\xC9${gmcpData.length}\xFF\xF0${gmcpData}`);
     }
 
     public close() {
