@@ -105,6 +105,13 @@ export class ClientMedia extends GMCPPackage {
     if (!sound) {
       sound = new Howl({ src: [data.url || this.defaultUrl + data.name] });
     }
+    // type
+    if (data.type) {
+      // howler doesn't support types but we can just
+      // store it in the sound object
+      // and to make Typescript not complain we can
+      (sound as any).type = data.type;
+    }
     sound.volume(data.volume);
     if (data.fadein) {
       sound.fade(0, data.volume, data.fadein);
@@ -118,6 +125,12 @@ export class ClientMedia extends GMCPPackage {
     if (data.loops) {
       sound.loop(data.loops);
     }
+    if (data.tag) {
+      // howler doesn't support tags but we can just
+      // store it in the sound object
+      // and to make Typescript not complain we can
+      (sound as any).tag = data.tag;
+    }
   }
 
   handleStop(data: GMCPMessageClientMediaStop): void {
@@ -127,7 +140,22 @@ export class ClientMedia extends GMCPPackage {
         sound.stop();
       }
     }
+    if (data.type) {
+      this.soundsByType(data.type).forEach(sound => sound.stop());
+    }
+    if (data.tag) {
+      this.soundsByTag(data.tag).forEach(sound => sound.stop());
+    }
+  }
 
+
+  soundsByTag(tag: string) {
+    // Howl objects don't have tags, but we add a .tag to some. Search through these and return any matching the tag.
+    return Object.values(this.sounds).filter((sound: Howl) => (sound as any).tag === tag);
+  }
+
+  soundsByType(type: MediaType) {
+    return Object.values(this.sounds).filter((sound: Howl) => (sound as any).type === type);
   }
 
 }
