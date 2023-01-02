@@ -85,8 +85,8 @@ describe('Telnet', () => {
         telnet.on('command', (command) => {
             commands.push(command);
         });
-        telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, TelnetCommand.IAC, TelnetCommand.DO]));
-        expect(commands).toEqual([TelnetCommand.NOP, TelnetCommand.DO]);
+        telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, TelnetCommand.IAC, TelnetCommand.NOP]));
+        expect(commands).toEqual([TelnetCommand.NOP, TelnetCommand.NOP]);
     }, 1000);
 
 });
