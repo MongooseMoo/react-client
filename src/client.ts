@@ -116,17 +116,20 @@ class MudClient extends EventEmitter {
 
             switch (commandCode) {
                 case TELNET_COMMANDS.WILL:
+                    console.log("Received WILL", optionCode);
                     this.send(`\xFF\xFB${optionCode}`); // DO
                     break;
                 case TELNET_COMMANDS.WONT:
                     this.send(`\xFF\xFC${optionCode}`); // DON'T
                     break;
-                case 253: // DO
+                case TELNET_COMMANDS.DO: {
                     this.send(`\xFF\xFD${optionCode}`); // WILL
                     break;
-                case 254: // DON'T
+                }
+                case TELNET_COMMANDS.DONT: {
                     this.send(`\xFF\xFE${optionCode}`); // WON'T
                     break;
+                }
             }
         });
     }
