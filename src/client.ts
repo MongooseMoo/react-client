@@ -78,77 +78,86 @@ class MudClient extends EventEmitter {
         this.send(command + '\r\n');
     }
 
+    private handleData(data: ArrayBuffer) {
+        const decoder = new TextDecoder();
+        const dataString = decoder.decode(data);
 
-    private handleData(data: string | ArrayBuffer) {
-        if (data instanceof ArrayBuffer) {
-            const decoder = new TextDecoder();
-            const dataString = decoder.decode(data);
-
-            if (this.telnetNegotiation) {
-                this.telnetBuffer += dataString;
-                if (this.telnetBuffer.endsWith('\xFF\xF0')) {
-                    // Telnet negotiation complete
-                    this.telnetNegotiation = false;
-                    // handle Telnet negotiation
-                    const commands = this.telnetBuffer.split('\xFF');
-                    commands.forEach(command => {
-                        if (command.length === 0) {
-                            return;
-                        }
-
-                        const commandCode = command.charCodeAt(0);
-                        switch (commandCode) {
-                            case TELNET_COMMANDS.WILL: {
-                                const optionCode = command.charCodeAt(1);
-                                this.send(`\xFF\xFB${optionCode}`); // DO
-                                break;
-                            }
-                            case TELNET_COMMANDS.WONT: {
-                                const optionCode = command.charCodeAt(1);
-                                this.send(`\xFF\xFC${optionCode}`); // DON'T
-                                break;
-                            }
-                            case 253: { // DO
-                                const optionCode = command.charCodeAt(1);
-                                this.send(`\xFF\xFD${optionCode}`); // WILL
-                                break;
-                            }
-                            case 254: { // DON'T
-                                const optionCode = command.charCodeAt(1);
-                                this.send(`\xFF\xFE${optionCode}`); // WON'T
-                                break;
-                            }
-                        }
-                    });
-                    this.telnetBuffer = '';
-                }
-            } else if (dataString.startsWith('\xFF\xFA\xC9') && dataString.endsWith('\xFF\xF0')) {
-                // GMCP data
-                const gmcpData = dataString.substring(3, dataString.length - 2);
-                // packagename space data
-                const spaceIndex = gmcpData.indexOf(' ');
-                const gmcpPackage = gmcpData.substring(0, spaceIndex);
-                // the last period separates the package name from the message type
-                const lastPeriodIndex = gmcpPackage.lastIndexOf('.');
-                const [packageName, messageType] = [gmcpPackage.substring(0, lastPeriodIndex), gmcpPackage.substring(lastPeriodIndex + 1)];
-                const gmcpMessage = gmcpData.substring(spaceIndex + 1);
-
-                const handler = this.gmcpHandlers[packageName];
-
-                const messageHandler = handler && (handler as any)['handle' + messageType];
-                if (handler) {
-                    messageHandler && messageHandler.call(handler, JSON.parse(gmcpMessage));
-                }
-            }
-            else if (dataString.startsWith('\xFF')) {
-                // Telnet negotiation
-                this.telnetNegotiation = true;
-                this.telnetBuffer = dataString;
-            } else {
-                const sanitizedHtml = dataString.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                this.emit('message', sanitizedHtml);
-            }
+        if (this.telnetNegotiation) {
+            this.handleTelnetNegotiation(dataString);
+        } else if (this.isGmcpData(dataString)) {
+            this.handleGmcpData(dataString);
+        } else if (this.isTelnetNegotiation(dataString)) {
+            this.handleTelnetNegotiation(dataString);
+        } else {
+            this.emitMessage(dataString);
         }
     }
+
+    private handleTelnetNegotiation(dataString: string) {
+        this.telnetBuffer += dataString;
+
+        if (this.telnetBuffer.endsWith('\xFF\xF0')) {
+            this.telnetNegotiation = false;
+            this.processTelnetCommands();
+            this.telnetBuffer = '';
+        }
+    }
+
+    private processTelnetCommands() {
+        console.log("Telnet Commands:", this.telnetBuffer);
+        const commands = this.telnetBuffer.split('\xFF');
+        commands.forEach(command => {
+            if (command.length === 0) {
+                return;
+            }
+
+            const commandCode = command.charCodeAt(0);
+            const optionCode = command.charCodeAt(1);
+
+            switch (commandCode) {
+                case TELNET_COMMANDS.WILL:
+                    this.send(`\xFF\xFB${optionCode}`); // DO
+                    break;
+                case TELNET_COMMANDS.WONT:
+                    this.send(`\xFF\xFC${optionCode}`); // DON'T
+                    break;
+                case 253: // DO
+                    this.send(`\xFF\xFD${optionCode}`); // WILL
+                    break;
+                case 254: // DON'T
+                    this.send(`\xFF\xFE${optionCode}`); // WON'T
+                    break;
+            }
+        });
+    }
+
+    private handleGmcpData(dataString: string) {
+        const gmcpData = dataString.substring(3, dataString.length - 2);
+        const spaceIndex = gmcpData.indexOf(' ');
+        const gmcpPackage = gmcpData.substring(0, spaceIndex);
+        const lastPeriodIndex = gmcpPackage.lastIndexOf('.');
+        const [packageName, messageType] = [gmcpPackage.substring(0, lastPeriodIndex), gmcpPackage.substring(lastPeriodIndex + 1)];
+        const gmcpMessage = gmcpData.substring(spaceIndex + 1);
+        console.log("GMCP Message:", packageName, messageType, gmcpMessage);
+        const handler = this.gmcpHandlers[packageName];
+        const messageHandler = handler && (handler as any)['handle' + messageType];
+        if (handler) {
+            messageHandler && messageHandler.call(handler, JSON.parse(gmcpMessage));
+        }
+    }
+
+    private emitMessage(dataString: string) {
+        const sanitizedHtml = dataString.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br />');
+        this.emit('message', sanitizedHtml);
+    }
+
+    private isGmcpData(dataString: string) {
+        return dataString.startsWith('\xFF\xFA\xC9') && dataString.endsWith('\xFF\xF0');
+    }
+
+    private isTelnetNegotiation(dataString: string) {
+        return dataString.startsWith('\xFF');
+    }
+
 }
 export default MudClient;
