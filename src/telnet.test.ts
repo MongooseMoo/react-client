@@ -56,7 +56,7 @@ describe('Telnet', () => {
         await testEvent(
             'subnegotiation',
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2, 3, TelnetCommand.IAC, TelnetCommand.SE]),
-            [1, 2, 3]
+            [Buffer.from([1, 2, 3])]
         );
     }, 1000);
 
