@@ -111,7 +111,8 @@ class MudClient extends EventEmitter {
                 const gmcpMessage = gmcpData.substring(spaceIndex + 1);
 
                 const handler = this.gmcpHandlers[packageName];
-                const messageHandler = handler['handle' + messageType];
+
+                const messageHandler = handler && (handler as any)['handle' + messageType];
                 if (handler) {
                     messageHandler && messageHandler.call(handler, JSON.parse(gmcpMessage));
                 }

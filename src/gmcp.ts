@@ -18,16 +18,16 @@ export class GMCPMessageCoreClient extends GMCPMessage {
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage {
   public readonly url?: string;
-  public readonly name: string;
+  public readonly name!: string;
 }
 
 export type MediaType = "sound" | "music" | "video"
 
-export class GMCPMessageClientMediaPlay extends GMCPMessage {
-  public readonly name: string;
+export class GMCPMnessageClientMediaPlay extends GMCPMessage {
+  public readonly name!: string;
   public readonly url?: string;
   public readonly type?: MediaType = "sound";
-  public readonly tag?: ?string;
+  public readonly tag?: string;
   public readonly volume: number = 50; // Relative to the volume set on the player's client.
   public readonly fadein?: number = 0; // Volume increases, or fades in, ranged across a linear pattern from one to the volume set with the "volume" key.
   public readonly fadeout?: number = 0; // Volume decreases, or fades out, ranged across a linear pattern from the volume set with the "volume" key to one.
@@ -47,11 +47,10 @@ export class GMCPMessageClientMediaStop extends GMCPMessage {
 }
 
 export class GMCPPackage {
-  public readonly packageName: string;
+  public readonly packageName!: string;
   private readonly client: MudClient;
 
   constructor(client: MudClient) {
-
     this.client = client;
   }
 
@@ -75,7 +74,7 @@ export class CoreSupports extends GMCPPackage {
 
 export class CoreClient extends GMCPPackage {
   constructor(client: MudClient) {
-    super('Core.Client', client);
+    super(client);
   }
 
   setClient(name: string, version: string): void {
@@ -101,7 +100,7 @@ export class ClientMedia extends GMCPPackage {
     this.sounds[data.name] = new Howl({ src: [url] });
   }
 
-  handlePlay(data: GMCPMessageClientMediaPlay): void {
+  handlePlay(data: GMCPMnessageClientMediaPlay): void {
     let sound = this.sounds[data.name];
     if (!sound) {
       sound = new Howl({ src: [data.url || this.defaultUrl + data.name] });
