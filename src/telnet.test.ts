@@ -64,7 +64,7 @@ describe('Telnet', () => {
         await testEvent(
             'negotiation',
             Buffer.from([TelnetCommand.IAC, TelnetCommand.DO, 1]),
-            ['DO', 1]
+            [TelnetCommand.DO, 1]
         );
     });
     it('should pass GMCP', async () => {

@@ -62,6 +62,7 @@ export class TelnetParser extends EventEmitter {
   private subBuffer: Buffer;
   private gmcpBuffer: Buffer;
   private iacSEBuffer = Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]);
+  private negotiationByte = 0;
 
 
   constructor(stream?: Stream) {
@@ -141,6 +142,7 @@ export class TelnetParser extends EventEmitter {
       case TelnetCommand.DONT:
       case TelnetCommand.WILL:
       case TelnetCommand.WONT:
+        this.negotiationByte = command;
         this.state = TelnetState.NEGOTIATION;
         break;
       case TelnetCommand.GMCP:
@@ -155,13 +157,13 @@ export class TelnetParser extends EventEmitter {
   }
 
   private handleNegotiation(): boolean {
-    if (this.buffer.length < 2) {
+    if (this.buffer.length < 1) {
       return true;
     }
 
-    const command = this.buffer[0];
-    const option = this.buffer[1];
-    this.buffer = this.buffer.slice(2);
+    const command = this.negotiationByte;
+    const option = this.buffer[0];
+    this.buffer = this.buffer.slice(1);
 
     this.emit('negotiation', command, option);
     this.state = TelnetState.DATA;
