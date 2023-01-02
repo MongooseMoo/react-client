@@ -75,18 +75,25 @@ export class TelnetParser extends EventEmitter {
     this.buffer = Buffer.concat([this.buffer, data]);
 
     while (this.buffer.length > 0) {
+      let done;
       switch (this.state) {
         case TelnetState.DATA:
           this.handleData();
           break;
         case TelnetState.COMMAND:
-          this.handleCommand();
+          done = this.handleCommand();
+          if (done) {
+            return;
+          }
           break;
         case TelnetState.SUBNEGOTIATION:
           this.handleSubnegotiation();
           break;
         case TelnetState.NEGOTIATION:
-          this.handleNegotiation();
+          done = this.handleNegotiation();
+          if (done) {
+            return;
+          }
           break;
         case TelnetState.GMCP:
           this.handleGmcp();
@@ -94,6 +101,7 @@ export class TelnetParser extends EventEmitter {
       }
     }
   }
+
 
   private handleData() {
     const index = this.buffer.indexOf(TelnetCommand.IAC);
@@ -108,9 +116,9 @@ export class TelnetParser extends EventEmitter {
     this.state = TelnetState.COMMAND;
   }
 
-  private handleCommand() {
+  private handleCommand(): boolean {
     if (this.buffer.length < 2) {
-      return;
+      return true;
     }
     const command = this.buffer[1];
     this.buffer = this.buffer.slice(2);
@@ -138,11 +146,12 @@ export class TelnetParser extends EventEmitter {
         this.state = TelnetState.DATA;
         break;
     }
+    return false;
   }
 
-  private handleNegotiation() {
+  private handleNegotiation(): boolean {
     if (this.buffer.length < 2) {
-      return;
+      return true;
     }
 
     const command = this.buffer[0];
@@ -151,7 +160,9 @@ export class TelnetParser extends EventEmitter {
 
     this.emit('negotiation', command, option);
     this.state = TelnetState.DATA;
+    return false;
   }
+
   private handleSubnegotiation() {
     let index = this.buffer.indexOf(TelnetCommand.SE);
     while (index === -1 && this.buffer.length > 0) {

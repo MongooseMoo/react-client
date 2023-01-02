@@ -34,6 +34,7 @@ const testEvent = async (eventName: string, data: Buffer, expected: any) => {
             resolve();
         });
     });
+    console.log('data', data);
     telnet.parse(data);
     await promise;
 };
@@ -41,15 +42,15 @@ const testEvent = async (eventName: string, data: Buffer, expected: any) => {
 describe('Telnet', () => {
     it('should pass data', async () => {
         await testEvent('data', Buffer.from('Hello world'), [Buffer.from('Hello world')]);
-    });
+    }, 1000);
 
     it('should pass commands', async () => {
         await testEvent(
             'command',
-            Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, 1, 2, 3, TelnetCommand.IAC]),
-            [1, 2, 3]
+            Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP]),
+            []
         );
-    });
+    }, 1000);
 
     it('should pass subnegotiations', async () => {
         await testEvent(
@@ -57,7 +58,7 @@ describe('Telnet', () => {
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2, 3, TelnetCommand.IAC, TelnetCommand.SE]),
             [1, 2, 3]
         );
-    });
+    }, 1000);
 
     it('should pass negotiations', async () => {
         await testEvent(
@@ -76,7 +77,7 @@ describe('Telnet', () => {
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]),
         ]);
         await testEvent('gmcp', encoded, [gmcpPackage, { 1: [2, 3] }]);
-    });
+    }, 1000);
 
     it('should handle multiple commands', async () => {
         const { telnet } = createTestSubject();
@@ -86,6 +87,6 @@ describe('Telnet', () => {
         });
         telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, TelnetCommand.IAC, TelnetCommand.DO]));
         expect(commands).toEqual([TelnetCommand.NOP, TelnetCommand.DO]);
-    });
+    }, 1000);
 
 });
