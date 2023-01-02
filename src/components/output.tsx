@@ -25,6 +25,10 @@ class Output extends React.Component<Props, State> {
 
     componentDidMount() {
         this.props.client.on('message', this.handleMessage);
+        this.props.client.on('connect', () => this.setState({ output: [...this.state.output, "<h2> Connected</h2> "] }));
+        this.props.client.on('disconnect', () => this.setState({ output: [...this.state.output, "<h2> Disconnected</h2> "] }));
+        // error
+        this.props.client.on('error', (error: Error) => this.setState({ output: [...this.state.output, `<h2> Error: ${error.message}</h2> `] }));
     }
 
     componentDidUpdate() {
@@ -35,6 +39,7 @@ class Output extends React.Component<Props, State> {
         this.props.client.removeListener('message', this.handleMessage);
     }
     handleMessage = (message: string) => {
+        console.log("Processing message ", message);
         // Regular expression to match URLs
         const urlRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)/g;
         // Replace all URLs in the message with clickable links

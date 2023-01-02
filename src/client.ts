@@ -1,6 +1,25 @@
 import { EventEmitter } from 'eventemitter3';
 import { GMCPPackage } from './gmcp';
 
+export enum TELNET_OPTIONS {
+    ECHO = 1,
+    SUPPRESS_GO_AHEAD = 3,
+    STATUS = 5,
+    TIMING_MARK = 6,
+    TERMINAL_TYPE = 24,
+    NAWS = 31,
+    CHARSET = 42,
+    GMCP = 201
+}
+
+export enum TELNET_COMMANDS {
+    WILL = 251,
+    WONT = 252,
+    DO = 253,
+    DONT = 254,
+    SB = 250,
+    SE = 240
+}
 class MudClient extends EventEmitter {
     private ws!: WebSocket;
     private host: string;
@@ -23,8 +42,8 @@ class MudClient extends EventEmitter {
 
 
     public connect() {
-        this.ws = new window.WebSocket(`ws://${this.host}:${this.port}`, "binary");
-
+        this.ws = new window.WebSocket(`ws://${this.host}:${this.port}`);
+        this.ws.binaryType = 'arraybuffer';
         this.ws.onopen = () => {
             this.emit('connect');
         };
@@ -59,10 +78,14 @@ class MudClient extends EventEmitter {
         this.send(command + '\r\n');
     }
 
+
     private handleData(data: string | ArrayBuffer) {
-        if (typeof data === 'string') {
+        if (data instanceof ArrayBuffer) {
+            const decoder = new TextDecoder();
+            const dataString = decoder.decode(data);
+
             if (this.telnetNegotiation) {
-                this.telnetBuffer += data;
+                this.telnetBuffer += dataString;
                 if (this.telnetBuffer.endsWith('\xFF\xF0')) {
                     // Telnet negotiation complete
                     this.telnetNegotiation = false;
@@ -75,12 +98,12 @@ class MudClient extends EventEmitter {
 
                         const commandCode = command.charCodeAt(0);
                         switch (commandCode) {
-                            case 251: { // WILL
+                            case TELNET_COMMANDS.WILL: {
                                 const optionCode = command.charCodeAt(1);
                                 this.send(`\xFF\xFB${optionCode}`); // DO
                                 break;
                             }
-                            case 252: { // WON'T
+                            case TELNET_COMMANDS.WONT: {
                                 const optionCode = command.charCodeAt(1);
                                 this.send(`\xFF\xFC${optionCode}`); // DON'T
                                 break;
@@ -99,9 +122,9 @@ class MudClient extends EventEmitter {
                     });
                     this.telnetBuffer = '';
                 }
-            } else if (data.startsWith('\xFF\xFA\xC9') && data.endsWith('\xFF\xF0')) {
+            } else if (dataString.startsWith('\xFF\xFA\xC9') && dataString.endsWith('\xFF\xF0')) {
                 // GMCP data
-                const gmcpData = data.substring(3, data.length - 2);
+                const gmcpData = dataString.substring(3, dataString.length - 2);
                 // packagename space data
                 const spaceIndex = gmcpData.indexOf(' ');
                 const gmcpPackage = gmcpData.substring(0, spaceIndex);
@@ -117,12 +140,12 @@ class MudClient extends EventEmitter {
                     messageHandler && messageHandler.call(handler, JSON.parse(gmcpMessage));
                 }
             }
-            else if (data.startsWith('\xFF')) {
+            else if (dataString.startsWith('\xFF')) {
                 // Telnet negotiation
                 this.telnetNegotiation = true;
-                this.telnetBuffer = data;
+                this.telnetBuffer = dataString;
             } else {
-                const sanitizedHtml = data.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                const sanitizedHtml = dataString.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
                 this.emit('message', sanitizedHtml);
             }
         }

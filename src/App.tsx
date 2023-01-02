@@ -5,7 +5,7 @@ import OutputWindow from './components/output';
 import MudClient from './client';
 import CommandInput from './components/input';
 
-const client = new MudClient('localhost', 8080);
+const client = new MudClient('mongoose.moo.mud.org', 7654);
 client.connect()
 
 function App() {
