@@ -18,7 +18,8 @@ export enum TELNET_COMMANDS {
     DO = 253,
     DONT = 254,
     SB = 250,
-    SE = 240
+    SE = 240,
+    IAC = 255,
 }
 class MudClient extends EventEmitter {
     private ws!: WebSocket;
@@ -83,36 +84,42 @@ class MudClient extends EventEmitter {
         const dataString = this.decoder.decode(data);
 
         if (this.telnetNegotiation) {
-            this.handleTelnetNegotiation(dataString);
+            this.telnetBuffer += dataString;
+            this.handleTelnetNegotiation();
         } else if (this.isGmcpData(dataString)) {
             this.handleGmcpData(dataString);
         } else if (this.isTelnetNegotiation(dataString)) {
-            this.handleTelnetNegotiation(dataString);
+            this.telnetBuffer += dataString;
+            this.handleTelnetNegotiation();
         } else {
             this.emitMessage(dataString);
         }
     }
 
-    private handleTelnetNegotiation(dataString: string) {
-        this.telnetBuffer += dataString;
-
-        if (this.telnetBuffer.endsWith('\xFF\xF0')) {
+    private handleTelnetNegotiation() {
+        // Check if the telnet buffer contains a complete negotiation sequence
+        const index = this.telnetBuffer.indexOf('\xFF\xF0');
+        if (index >= 0) {
+            const dataString = this.telnetBuffer.substring(0, index);
+            this.telnetBuffer = this.telnetBuffer.substring(index + 2);
             this.telnetNegotiation = false;
-            this.processTelnetCommands();
-            this.telnetBuffer = '';
+            this.processTelnetCommands(dataString);
         }
     }
 
-    private processTelnetCommands() {
-        console.log("Telnet Commands:", this.telnetBuffer);
-        const commands = this.telnetBuffer.split('\xFF');
-        commands.forEach(command => {
-            if (command.length === 0) {
-                return;
+    private processTelnetCommands(dataString: string) {
+        console.log("Telnet Commands:", dataString);
+
+        let pos = 0;
+        while (pos < dataString.length) {
+            if (dataString[pos] !== '\xFF') {
+                console.log("Unexpected data in telnet buffer:", dataString.substring(pos));
+                break;
             }
 
-            const commandCode = command.charCodeAt(0);
-            const optionCode = command.charCodeAt(1);
+            // Parse the next telnet command
+            const commandCode = dataString.charCodeAt(pos + 1);
+            const optionCode = dataString.charCodeAt(pos + 2);
 
             switch (commandCode) {
                 case TELNET_COMMANDS.WILL:
@@ -130,8 +137,31 @@ class MudClient extends EventEmitter {
                     this.send(`\xFF\xFE${optionCode}`); // WON'T
                     break;
                 }
+                case TELNET_COMMANDS.IAC: {
+                    // IAC command escape
+                    console.log("Received IAC command escape");
+                    pos += 1;
+                    break;
+                }
+                case TELNET_COMMANDS.SB: {
+                    // Start of subnegotiation
+                    console.log("Received start of subnegotiation");
+                    this.telnetNegotiation = true;
+                    break;
+                }
+                case TELNET_COMMANDS.SE: {
+                    // End of subnegotiation
+                    console.log("Received end of subnegotiation");
+                    break;
+                }
+                default: {
+                    console.log("Unrecognized telnet command:", commandCode);
+                    break;
+                }
             }
-        });
+
+            pos += 3;
+        }
     }
 
     private handleGmcpData(dataString: string) {
