@@ -48,7 +48,7 @@ describe('Telnet', () => {
         await testEvent(
             'command',
             Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP]),
-            []
+            [TelnetCommand.NOP]
         );
     }, 1000);
 
