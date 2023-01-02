@@ -37,6 +37,12 @@ class MudClient extends EventEmitter {
             this.handleData(data);
         });
 
+        this.telnet.on('gmcp', (packageName, data) => {
+            this.handleGmcpData(packageName, data);
+
+
+        });
+
         this.ws.onclose = () => {
             this.emit('disconnect');
         };
@@ -64,13 +70,12 @@ class MudClient extends EventEmitter {
 
     }
 
-    private handleGmcpData(dataString: string) {
-        const gmcpData = dataString.substring(3, dataString.length - 2);
-        const spaceIndex = gmcpData.indexOf(' ');
-        const gmcpPackage = gmcpData.substring(0, spaceIndex);
-        const lastPeriodIndex = gmcpPackage.lastIndexOf('.');
-        const [packageName, messageType] = [gmcpPackage.substring(0, lastPeriodIndex), gmcpPackage.substring(lastPeriodIndex + 1)];
-        const gmcpMessage = gmcpData.substring(spaceIndex + 1);
+    private handleGmcpData(gmcpPackage: string, gmcpMessage: string) {
+        //split to packageName and message type. the message name is after the last period of the gmcp package. the package can hav emultiple dots.
+        const lastDot = gmcpPackage.lastIndexOf('.');
+        const packageName = gmcpPackage.substring(0, lastDot);
+        const messageType = gmcpPackage.substring(lastDot + 1);
+
         console.log("GMCP Message:", packageName, messageType, gmcpMessage);
         const handler = this.gmcpHandlers[packageName];
         const messageHandler = handler && (handler as any)['handle' + messageType];
@@ -82,14 +87,6 @@ class MudClient extends EventEmitter {
     private emitMessage(dataString: string) {
         const sanitizedHtml = dataString.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br />');
         this.emit('message', sanitizedHtml);
-    }
-
-    private isGmcpData(dataString: string) {
-        return dataString.startsWith('\xFF\xFA\xC9') && dataString.endsWith('\xFF\xF0');
-    }
-
-    private isTelnetNegotiation(dataString: string) {
-        return dataString.startsWith('\xFF');
     }
 
 }

@@ -198,9 +198,7 @@ export class TelnetParser extends EventEmitter {
 
     const gmcpString = this.gmcpBuffer.toString();
     const [gmcpPackage, dataString] = gmcpString.split(' ');
-    const data = JSON.parse(dataString);
-    this.emit('gmcp', gmcpPackage, data);
+    this.emit('gmcp', gmcpPackage, dataString);
     this.state = TelnetState.DATA;
   }
-
 }
