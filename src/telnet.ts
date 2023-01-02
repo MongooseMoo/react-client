@@ -26,98 +26,6 @@ export interface Stream {
   write(data: Buffer): void;
 }
 
-export class TelnetParser extends EventEmitter {
-  private stream: Stream;
-
-  constructor(stream: Stream) {
-    super();
-    this.stream = stream;
-    this.stream.on('data', (data: Buffer) => this.parse(data));
-    this.stream.on('close', () => this.emit('close'));
-  }
-
-  sendGMCP(data: string) {
-    const buffer = Buffer.alloc(6 + data.length);
-    buffer[0] = TelnetCommand.IAC;
-    buffer[1] = TelnetCommand.SB;
-    buffer[2] = TelnetCommand.GMCP;
-    buffer[3] = 1;
-    buffer.write(data, 4);
-    buffer[buffer.length - 2] = TelnetCommand.IAC;
-    buffer[buffer.length - 1] = TelnetCommand.SE;
-    this.stream.write(buffer);
-  }
-
-  parse(data: Buffer) {
-    let i = 0;
-    while (i < data.length) {
-      if (data[i] === 241) {
-        // Command found
-        const command = data[i + 1];
-        const options = [];
-        i += 2;
-        while (i < data.length && data[i] !== TelnetCommand.IAC && data[i + 1] !== 2) {
-          options.push(data[i]);
-          i++;
-        }
-        this.emit('command', command, options);
-      } else if (data[i] === 250) {
-        // Subnegotiation found
-        const option = data[i + 1];
-        const suboptions = data.slice(i + 2, data.indexOf(TelnetCommand.IAC, i));
-        if (option === TelnetCommand.GMCP) {
-          // GMCP message found
-          const gmcp = this.parseGMCP(suboptions);
-          this.emit('gmcp', gmcp.module, gmcp.data);
-        }
-        this.emit('subnegotiation', option, suboptions);
-        i = data.indexOf(255, i);
-      } else if (data[i] === 242 || data[i] === 243 || data[i] === 244) {
-        // Negotiation found
-        let type: 'DO' | 'DONT' | 'WILL' | 'WONT';
-        switch (data[i]) {
-          case 242:
-            type = 'DO';
-            break;
-          case 243:
-            type = 'DONT';
-            break;
-          case 244:
-            type = 'WILL';
-            break;
-          case 245:
-            type = 'WONT';
-            break;
-          default:
-            throw new Error('Invalid negotiation type');
-        }
-        const option = data[i + 1];
-        this.emit('negotiation', type, option);
-        i += 2;
-      } else {
-        i++;
-      }
-    }
-  }
-
-  parseGMCP(data: Buffer): any {
-    const message = data.toString();
-    const [module, json] = message.split(' ');
-    return { module, data: JSON.parse(json) };
-  }
-
-  sendCommand(command: number, options: number[]) {
-    // Construct and send a Telnet command
-  }
-
-  sendNegotiation(type: 'DO' | 'DONT' | 'WILL' | 'WONT', option: number) {
-    // Construct and send a Telnet negotiation
-  }
-
-  send(data: Buffer) {
-    this.stream.write(data);
-  }
-}
 
 export class WebSocketStream implements Stream {
   private ws: WebSocket;
@@ -137,4 +45,151 @@ export class WebSocketStream implements Stream {
   write(data: Buffer): void {
     this.ws.send(data);
   }
+}
+
+
+enum TelnetState {
+  DATA,
+  COMMAND,
+  SUBNEGOTIATION,
+  NEGOTIATION,
+  GMCP
+}
+
+export class TelnetParser extends EventEmitter {
+  private state: TelnetState;
+  private buffer: Buffer;
+  private subBuffer: Buffer;
+  private gmcpBuffer: Buffer;
+
+  constructor(stream?: Stream) {
+    super();
+    this.state = TelnetState.DATA;
+    this.buffer = Buffer.alloc(0);
+    this.subBuffer = Buffer.alloc(0);
+    this.gmcpBuffer = Buffer.alloc(0);
+    stream && stream.on('data', (data: Buffer) => this.parse(data));
+  }
+
+  public parse(data: Buffer) {
+    this.buffer = Buffer.concat([this.buffer, data]);
+
+    while (this.buffer.length > 0) {
+      switch (this.state) {
+        case TelnetState.DATA:
+          this.handleData();
+          break;
+        case TelnetState.COMMAND:
+          this.handleCommand();
+          break;
+        case TelnetState.SUBNEGOTIATION:
+          this.handleSubnegotiation();
+          break;
+        case TelnetState.NEGOTIATION:
+          this.handleNegotiation();
+          break;
+        case TelnetState.GMCP:
+          this.handleGmcp();
+          break;
+      }
+    }
+  }
+
+  private handleData() {
+    const index = this.buffer.indexOf(TelnetCommand.IAC);
+    if (index === -1) {
+      this.emit('data', this.buffer);
+      this.buffer = Buffer.alloc(0);
+      return;
+    }
+
+    this.emit('data', this.buffer.slice(0, index));
+    this.buffer = this.buffer.slice(index);
+    this.state = TelnetState.COMMAND;
+  }
+
+  private handleCommand() {
+    if (this.buffer.length < 2) {
+      return;
+    }
+    const command = this.buffer[1];
+    this.buffer = this.buffer.slice(2);
+
+    switch (command) {
+      case TelnetCommand.NOP:
+        this.emit('command', TelnetCommand.NOP);
+        this.state = TelnetState.DATA;
+        break;
+      case TelnetCommand.SB:
+        this.subBuffer = Buffer.alloc(0);
+        this.state = TelnetState.SUBNEGOTIATION;
+        break;
+      case TelnetCommand.DO:
+      case TelnetCommand.DONT:
+      case TelnetCommand.WILL:
+      case TelnetCommand.WONT:
+        this.state = TelnetState.NEGOTIATION;
+        break;
+      case TelnetCommand.GMCP:
+        this.gmcpBuffer = Buffer.alloc(0);
+        this.state = TelnetState.GMCP;
+        break;
+      default:
+        this.state = TelnetState.DATA;
+        break;
+    }
+  }
+
+  private handleNegotiation() {
+    if (this.buffer.length < 2) {
+      return;
+    }
+
+    const command = this.buffer[0];
+    const option = this.buffer[1];
+    this.buffer = this.buffer.slice(2);
+
+    this.emit('negotiation', command, option);
+    this.state = TelnetState.DATA;
+  }
+  private handleSubnegotiation() {
+    let index = this.buffer.indexOf(TelnetCommand.SE);
+    while (index === -1 && this.buffer.length > 0) {
+      this.subBuffer = Buffer.concat([this.subBuffer, this.buffer]);
+      this.buffer = Buffer.alloc(0);
+      index = this.buffer.indexOf(TelnetCommand.SE);
+    }
+
+    if (index === -1) {
+      return;
+    }
+
+    this.subBuffer = Buffer.concat([this.subBuffer, this.buffer.slice(0, index)]);
+    this.buffer = this.buffer.slice(index + 1);
+    this.emit('subnegotiation', this.subBuffer);
+    this.state = TelnetState.DATA;
+  }
+
+  private handleGmcp() {
+    let index = this.buffer.indexOf(TelnetCommand.SE);
+    while (index === -1 && this.buffer.length > 0) {
+      this.gmcpBuffer = Buffer.concat([this.gmcpBuffer, this.buffer]);
+      this.buffer = Buffer.alloc(0);
+      index = this.buffer.indexOf(TelnetCommand.SE);
+    }
+
+    if (index === -1) {
+      return;
+    }
+
+    this.gmcpBuffer = Buffer.concat([this.gmcpBuffer, this.buffer.slice(0, index)]);
+    this.buffer = this.buffer.slice(index + 1);
+
+    const gmcpString = this.gmcpBuffer.toString();
+    const [gmcpPackage, dataString] = gmcpString.split(' ');
+    const data = JSON.parse(dataString);
+    this.emit('gmcp', gmcpPackage, data);
+    this.state = TelnetState.DATA;
+  }
+
 }
