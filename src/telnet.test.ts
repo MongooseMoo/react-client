@@ -47,7 +47,7 @@ describe('Telnet', () => {
         await testEvent(
             'command',
             Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, 1, 2, 3, TelnetCommand.IAC]),
-            [1, [2, 3]]
+            [1, 2, 3]
         );
     });
 
@@ -55,7 +55,7 @@ describe('Telnet', () => {
         await testEvent(
             'subnegotiation',
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2, 3, TelnetCommand.IAC, TelnetCommand.SE]),
-            [1, [2, 3]]
+            [1, 2, 3]
         );
     });
 
