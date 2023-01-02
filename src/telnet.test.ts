@@ -1,110 +1,91 @@
 import { TelnetCommand, TelnetParser, Stream } from './telnet';
-// Tests for the Telnet    class
-// using react testrunner / testing infrastructure
-
 
 // Mock Stream
 
 class MockStream implements Stream {
     public data: Buffer[] = [];
+    public callback!: (data: Buffer) => void;
+
     public on(event: string, callback: (data: Buffer) => void) {
-        // Do nothing
+        this.callback = callback;
     }
+
+    public emit(event: string, data: Buffer) {
+        this.callback(data);
+    }
+
     public write(data: Buffer) {
         this.data.push(data);
+        this.emit('data', data);
     }
 }
 
+const createTestSubject = () => {
+    const stream = new MockStream();
+    const telnet = new TelnetParser(stream);
+    return { stream, telnet };
+};
+
+const testEvent = async (eventName: string, data: Buffer, expected: any) => {
+    const { telnet } = createTestSubject();
+    const promise = new Promise<void>((resolve) => {
+        telnet.on(eventName, (...args) => {
+            expect(args).toEqual(expected);
+            resolve();
+        });
+    });
+    telnet.parse(data);
+    await promise;
+};
+
 describe('Telnet', () => {
-
-    it('should be a class', () => {
-        expect(TelnetParser).toBeInstanceOf(Function);
+    it('should pass data', async () => {
+        await testEvent('data', Buffer.from('Hello world'), [Buffer.from('Hello world')]);
     });
 
-    it('should be constructable', () => {
-        expect(new TelnetParser(new MockStream())).toBeInstanceOf(TelnetParser);
+    it('should pass commands', async () => {
+        await testEvent(
+            'command',
+            Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, 1, 2, 3, TelnetCommand.IAC]),
+            [1, [2, 3]]
+        );
     });
 
-    // actual important tests:
-
-    // Does it pass data?
-
-    it('should pass data', (done) => {
-        const stream = new MockStream();
-        const telnet = new TelnetParser(stream);
-        const data = Buffer.from('Hello world');
-        telnet.on('data', (buffer) => {
-            expect(buffer).toEqual(data);
-            done();
-        });
-        stream.write(data);
+    it('should pass subnegotiations', async () => {
+        await testEvent(
+            'subnegotiation',
+            Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2, 3, TelnetCommand.IAC, TelnetCommand.SE]),
+            [1, [2, 3]]
+        );
     });
 
-    // Does it pass commands?
-
-    it('should pass commands', (done) => {
-        const stream = new MockStream();
-        const telnet = new TelnetParser(stream);
-        // const data = Buffer.from([255, 241, 1, 2, 3, 255]);
-        const data = Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, 1, 2, 3, TelnetCommand.IAC]);
-        telnet.on('command', (command, options) => {
-            expect(command).toEqual(1);
-            expect(options).toEqual([2, 3]);
-            done();
-        });
-        stream.write(data);
+    it('should pass negotiations', async () => {
+        await testEvent(
+            'negotiation',
+            Buffer.from([TelnetCommand.IAC, TelnetCommand.DO, 1]),
+            ['DO', 1]
+        );
     });
-
-
-    // Does it pass subnegotiations?
-
-    it('should pass subnegotiations', (done) => {
-        const stream = new MockStream();
-        const telnet = new TelnetParser(stream);
-        const data = Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2, 3, TelnetCommand.IAC, TelnetCommand.SE]);
-        telnet.on('subnegotiation', (option, suboptions) => {
-            expect(option).toEqual(1);
-            expect(suboptions).toEqual([2, 3]);
-            done();
-        });
-        stream.write(data);
-    });
-
-    // Does it pass negotiations?
-
-    it('should pass negotiations', (done) => {
-        const stream = new MockStream();
-        const telnet = new TelnetParser(stream);
-        const data = Buffer.from([TelnetCommand.IAC, TelnetCommand.DO, 1]);
-        telnet.on('negotiation', (type, option) => {
-            expect(type).toEqual('DO');
-            expect(option).toEqual(1);
-            done();
-        });
-        stream.write(data);
-    });
-
-
-    // Does it pass GMCP?
-
-    it('should pass GMCP', (done) => {
-        const stream = new MockStream();
-        const telnet = new TelnetParser(stream);
-        const gmcpPackage = "Test.Gmcp";
+    it('should pass GMCP', async () => {
+        const gmcpPackage = 'Test.Gmcp';
         const toSend = { 1: [2, 3] };
-        const gmcpData = Buffer.from(gmcpPackage + " " + JSON.stringify(toSend));
+        const gmcpData = Buffer.from(gmcpPackage + ' ' + JSON.stringify(toSend));
         const encoded = Buffer.concat([
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, TelnetCommand.GMCP]),
             gmcpData,
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]),
         ]);
-        telnet.on('gmcp', (pkg, data) => {
-            expect(data).toEqual({ 1: [2, 3] });
-            expect(pkg).toEqual(gmcpPackage);
-            done();
-        });
-        stream.write(encoded);
+        await testEvent('gmcp', encoded, [gmcpPackage, { 1: [2, 3] }]);
     });
 
+    it('should handle multiple commands', async () => {
+        const { telnet } = createTestSubject();
+        const commands: number[] = [];
+        telnet.on('command', (command) => {
+            commands.push(command);
+        });
+        telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, TelnetCommand.IAC, TelnetCommand.DO]));
+        expect(commands).toEqual([TelnetCommand.NOP, TelnetCommand.DO]);
+    });
 
-});  // Tests for the TelnetParser class     
+});
