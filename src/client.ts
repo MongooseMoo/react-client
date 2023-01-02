@@ -1,4 +1,5 @@
 import { EventEmitter } from 'eventemitter3';
+import { GMCPPackage } from './gmcp';
 
 class MudClient extends EventEmitter {
     private ws!: WebSocket;
@@ -6,13 +7,20 @@ class MudClient extends EventEmitter {
     private port: number;
     private telnetNegotiation: boolean = false;
     private telnetBuffer: string = '';
-    private gmcpHandlers: { [key: string]: (message: any) => void } = {};
+    private gmcpHandlers: { [key: string]: GMCPPackage } = {};
 
     constructor(host: string, port: number) {
         super();
         this.host = host;
         this.port = port;
     }
+
+    registerGMCPPackage(p: typeof GMCPPackage) {
+        const gmcpPackage = new p(this);
+        this.gmcpHandlers[gmcpPackage.packageName] = gmcpPackage;
+    }
+
+
 
     public connect() {
         this.ws = new window.WebSocket(`ws://${this.host}:${this.port}`, "binary");
@@ -45,10 +53,6 @@ class MudClient extends EventEmitter {
 
     public close() {
         this.ws.close();
-    }
-
-    public registerGmcpHandler(gmcpModule: string, handler: (message: any) => void) {
-        this.gmcpHandlers[gmcpModule] = handler;
     }
 
     public sendCommand(command: string) {
@@ -101,10 +105,15 @@ class MudClient extends EventEmitter {
                 // packagename space data
                 const spaceIndex = gmcpData.indexOf(' ');
                 const gmcpPackage = gmcpData.substring(0, spaceIndex);
+                // the last period separates the package name from the message type
+                const lastPeriodIndex = gmcpPackage.lastIndexOf('.');
+                const [packageName, messageType] = [gmcpPackage.substring(0, lastPeriodIndex), gmcpPackage.substring(lastPeriodIndex + 1)];
                 const gmcpMessage = gmcpData.substring(spaceIndex + 1);
-                const handler = this.gmcpHandlers[gmcpPackage];
+
+                const handler = this.gmcpHandlers[packageName];
+                const messageHandler = handler['handle' + messageType];
                 if (handler) {
-                    handler(JSON.parse(gmcpMessage));
+                    messageHandler && messageHandler.call(handler, JSON.parse(gmcpMessage));
                 }
             }
             else if (data.startsWith('\xFF')) {
