@@ -22,6 +22,7 @@ export enum TELNET_COMMANDS {
 }
 class MudClient extends EventEmitter {
     private ws!: WebSocket;
+    private decoder = new TextDecoder();
     private host: string;
     private port: number;
     private telnetNegotiation: boolean = false;
@@ -79,8 +80,7 @@ class MudClient extends EventEmitter {
     }
 
     private handleData(data: ArrayBuffer) {
-        const decoder = new TextDecoder();
-        const dataString = decoder.decode(data);
+        const dataString = this.decoder.decode(data);
 
         if (this.telnetNegotiation) {
             this.handleTelnetNegotiation(dataString);
