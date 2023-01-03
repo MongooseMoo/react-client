@@ -41,7 +41,7 @@ const testEvent = async (eventName: string, data: Buffer, expected: any) => {
 describe('Telnet', () => {
     it('should pass data', async () => {
         await testEvent('data', Buffer.from('Hello world'), [Buffer.from('Hello world')]);
-    }, 1000);
+    });
 
     it('should pass commands', async () => {
         await testEvent(
@@ -49,7 +49,7 @@ describe('Telnet', () => {
             Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP]),
             [TelnetCommand.NOP]
         );
-    }, 1000);
+    });
 
     it('should pass subnegotiations', async () => {
         await testEvent(
@@ -57,7 +57,7 @@ describe('Telnet', () => {
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2, 3, TelnetCommand.IAC, TelnetCommand.SE]),
             [Buffer.from([1, 2, 3])]
         );
-    }, 1000);
+    });
 
     it('should pass negotiations', async () => {
         await testEvent(
@@ -77,7 +77,7 @@ describe('Telnet', () => {
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]),
         ]);
         await testEvent('gmcp', encoded, [gmcpPackage, toSendJSON]);
-    }, 1000);
+    });
 
     it('should handle multiple commands', async () => {
         const { telnet } = createTestSubject();
@@ -87,6 +87,22 @@ describe('Telnet', () => {
         });
         telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, TelnetCommand.IAC, TelnetCommand.NOP]));
         expect(commands).toEqual([TelnetCommand.NOP, TelnetCommand.NOP]);
-    }, 1000);
+    });
+
+    it('should handle commands split across multiple buffers', async () => {
+        const { telnet } = createTestSubject();
+        const commands: number[] = [];
+        telnet.on('command', (command) => {
+            commands.push(command);
+        });
+
+        // Send the start of a Telnet NOP command in the first buffer
+        telnet.parse(Buffer.from([TelnetCommand.IAC]));
+        // Send the end of the Telnet NOP command in the second buffer
+        telnet.parse(Buffer.from([TelnetCommand.NOP]));
+
+        // The 'command' event should be emitted with TelnetCommand.NOP as the argument
+        expect(commands).toEqual([TelnetCommand.NOP]);
+    });
 
 });
