@@ -1,23 +1,15 @@
+/* Output component */
 .output {
-    height: calc(100% - 30px);
-    overflow-y: scroll;
-    padding: 10px;
-    font-family: monospace;
-    font-size: 14px;
-    color: #333;
-    background-color: #f5f5f5;
+    font-size: 1.2em;
+    width: 100%;
+    padding: 20px;
     border: 1px solid #ccc;
+    border-radius: 5px;
 }
 
-.output-message {
-    margin-bottom: 10px;
-}
-
-.output a {
-    color: #0066cc;
-    text-decoration: underline;
-}
-
-.output a:hover {
-    color: #004499;
+/* MediaQuery component */
+@media only screen and (max-width: 600px) {
+    #output {
+        padding: 10px;
+    }
 }

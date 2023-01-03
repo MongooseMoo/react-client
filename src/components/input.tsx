@@ -2,7 +2,7 @@
 // Supports command history with arrows
 
 import React, { useState, useEffect, useRef } from 'react';
-
+import "./input.css";
 
 type SendFunction = (text: string) => void;
 
@@ -30,7 +30,7 @@ const CommandInput = (props: Props) => {
         } else if (e.key === 'ArrowDown') {
             if (historyIndex < history.length) {
                 setHistoryIndex(historyIndex + 1);
-                setInput(history[historyIndex + 1]);
+                setInput(history[historyIndex]);
             }
         }
     };
