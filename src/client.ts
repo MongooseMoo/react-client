@@ -1,4 +1,4 @@
-import { TelnetParser, WebSocketStream } from './telnet';
+import { TelnetParser, TelnetCommand, TelnetOption, WebSocketStream } from './telnet';
 import { EventEmitter } from 'eventemitter3';
 import { GMCPPackage } from './gmcp';
 
@@ -33,8 +33,17 @@ class MudClient extends EventEmitter {
             this.emit('connect');
         };
 
-        this.telnet.on('data', (data) => {
+        this.telnet.on('data', (data: ArrayBuffer) => {
+
             this.handleData(data);
+        });
+
+        this.telnet.on('negotiation', (command, option) => {
+
+            // Negotiation that we support GMCP
+            if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
+                this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
+            }
         });
 
         this.telnet.on('gmcp', (packageName, data) => {
@@ -66,6 +75,7 @@ class MudClient extends EventEmitter {
 
     private handleData(data: ArrayBuffer) {
         // convert data to something telnet can handle
+        console.log("Data:", data);
         this.emitMessage(this.decoder.decode(data));
 
     }
