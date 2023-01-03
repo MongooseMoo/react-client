@@ -1,62 +1,23 @@
-.output-window {
-    background-color: #111;
-    color: #fff;
-    font-family: monospace;
-    max-height: 500px;
+.output {
+    height: calc(100% - 30px);
     overflow-y: scroll;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 14px;
+    color: #333;
+    background-color: #f5f5f5;
+    border: 1px solid #ccc;
 }
 
-.output-window__header {
-    display: flex;
-    align-items: center;
-    padding: 0.5em;
-    background-color: #333;
-    color: #fff;
+.output-message {
+    margin-bottom: 10px;
 }
 
-.output-window__title {
-    flex-grow: 1;
-    margin: 0;
-    font-size: 1.25em;
-    font-weight: bold;
-}
-
-.output-window__text {
-    padding: 0.5em;
-    white-space: pre-wrap;
-}
-
-.output-window__text a {
-    color: #3366ff;
-    text-decoration: none;
-}
-
-.output-window__text a:hover {
+.output a {
+    color: #0066cc;
     text-decoration: underline;
 }
 
-.output-window__footer {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    padding: 0.5em;
-    background-color: #333;
-    color: #fff;
-}
-
-.output-window__clear-button {
-    font-size: 0.875em;
-    padding: 0.25em 0.5em;
-    border: none;
-    background-color: #333;
-    color: #fff;
-    cursor: pointer;
-}
-
-.output-window__clear-button:hover {
-    background-color: #666;
-}
-
-.output-window__clear-button:active {
-    background-color: #999;
+.output a:hover {
+    color: #004499;
 }
