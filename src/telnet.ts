@@ -237,12 +237,11 @@ export class TelnetParser extends EventEmitter {
     let sb = this.buffer.slice(0, index);
     if (sb[0] === TelnetOption.GMCP) {
       this.handleGmcp(sb.slice(1));
-      return false;
     } else {
-      this.buffer = this.buffer.slice(index + 2);
       this.emit('subnegotiation', sb);
-      return false;
     }
+    this.buffer = this.buffer.slice(index + 2);
+    return false;
   }
 
   private handleGmcp(data: Buffer) {

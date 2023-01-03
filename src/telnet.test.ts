@@ -1,4 +1,4 @@
-import { TelnetCommand, TelnetParser, Stream } from './telnet';
+import { TelnetCommand, TelnetOption, TelnetParser, Stream } from './telnet';
 
 // Mock Stream
 
@@ -90,7 +90,7 @@ describe('Telnet', () => {
         const toSendJSON = JSON.stringify(toSend);
         const gmcpData = Buffer.from(gmcpPackage + ' ' + toSendJSON);
         const encoded = Buffer.concat([
-            Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, TelnetCommand.GMCP]),
+            Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, TelnetOption.GMCP]),
             gmcpData,
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]),
         ]);
