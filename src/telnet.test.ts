@@ -34,7 +34,6 @@ const testEvent = async (eventName: string, data: Buffer, expected: any) => {
             resolve();
         });
     });
-    console.log('data', data);
     telnet.parse(data);
     await promise;
 };
@@ -70,13 +69,14 @@ describe('Telnet', () => {
     it('should pass GMCP', async () => {
         const gmcpPackage = 'Test.Gmcp';
         const toSend = { 1: [2, 3] };
-        const gmcpData = Buffer.from(gmcpPackage + ' ' + JSON.stringify(toSend));
+        const toSendJSON = JSON.stringify(toSend);
+        const gmcpData = Buffer.from(gmcpPackage + ' ' + toSendJSON);
         const encoded = Buffer.concat([
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, TelnetCommand.GMCP]),
             gmcpData,
             Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]),
         ]);
-        await testEvent('gmcp', encoded, gmcpData);
+        await testEvent('gmcp', encoded, [gmcpPackage, toSendJSON]);
     }, 1000);
 
     it('should handle multiple commands', async () => {

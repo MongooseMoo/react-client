@@ -52,15 +52,13 @@ enum TelnetState {
   DATA,
   COMMAND,
   SUBNEGOTIATION,
-  NEGOTIATION,
-  GMCP
+  NEGOTIATION
 }
 
 export class TelnetParser extends EventEmitter {
   private state: TelnetState;
   private buffer: Buffer;
   private subBuffer: Buffer;
-  private gmcpBuffer: Buffer;
   private iacSEBuffer = Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]);
   private negotiationByte = 0;
 
@@ -70,7 +68,6 @@ export class TelnetParser extends EventEmitter {
     this.state = TelnetState.DATA;
     this.buffer = Buffer.alloc(0);
     this.subBuffer = Buffer.alloc(0);
-    this.gmcpBuffer = Buffer.alloc(0);
     stream && stream.on('data', (data: Buffer) => this.parse(data));
   }
 
@@ -100,9 +97,6 @@ export class TelnetParser extends EventEmitter {
           if (done) {
             return;
           }
-          break;
-        case TelnetState.GMCP:
-          this.handleGmcp();
           break;
       }
     }
@@ -145,10 +139,6 @@ export class TelnetParser extends EventEmitter {
         this.negotiationByte = command;
         this.state = TelnetState.NEGOTIATION;
         break;
-      case TelnetCommand.GMCP:
-        this.gmcpBuffer = Buffer.alloc(0);
-        this.state = TelnetState.GMCP;
-        break;
       default:
         this.state = TelnetState.DATA;
         break;
@@ -176,31 +166,21 @@ export class TelnetParser extends EventEmitter {
       return true;
     }
 
-    let sb = this.buffer.slice(0, index);
-    this.buffer = this.buffer.slice(index + 2);
-    this.emit('subnegotiation', sb);
     this.state = TelnetState.DATA;
-    return false;
+    let sb = this.buffer.slice(0, index);
+    if (sb[0] === TelnetCommand.GMCP) {
+      this.handleGmcp(sb.slice(1));
+      return false;
+    } else {
+      this.buffer = this.buffer.slice(index + 2);
+      this.emit('subnegotiation', sb);
+      return false;
+    }
   }
 
-  private handleGmcp() {
-    let index = this.buffer.indexOf(TelnetCommand.SE);
-    while (index === -1 && this.buffer.length > 0) {
-      this.gmcpBuffer = Buffer.concat([this.gmcpBuffer, this.buffer]);
-      this.buffer = Buffer.alloc(0);
-      index = this.buffer.indexOf(TelnetCommand.SE);
-    }
-
-    if (index === -1) {
-      return;
-    }
-
-    this.gmcpBuffer = Buffer.concat([this.gmcpBuffer, this.buffer.slice(0, index)]);
-    this.buffer = this.buffer.slice(index + 1);
-
-    const gmcpString = this.gmcpBuffer.toString();
-    const [gmcpPackage, dataString] = gmcpString.split(' ');
+  private handleGmcp(data: Buffer) {
+    const gmcpString = data.toString();
+    const [gmcpPackage, dataString] = gmcpString.split(/ +(.+?)$/, 2);
     this.emit('gmcp', gmcpPackage, dataString);
-    this.state = TelnetState.DATA;
   }
 }
