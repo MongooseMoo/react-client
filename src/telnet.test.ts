@@ -59,6 +59,24 @@ describe('Telnet', () => {
         );
     });
 
+    it('should handle incomplete subnegotiations', async () => {
+        const { telnet } = createTestSubject();
+        const subnegotiations: Buffer[] = [];
+        telnet.on('subnegotiation', (subnegotiation) => {
+            subnegotiations.push(subnegotiation);
+        });
+
+        // Send the start of a Telnet subnegotiation in the first buffer
+        telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2, 3]));
+        // Ensure that no 'subnegotiation' event has been emitted yet
+        expect(subnegotiations).toEqual([]);
+
+        // Send the end of the Telnet subnegotiation in the second buffer
+        telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]));
+        // The 'subnegotiation' event should be emitted with the complete subnegotiation data
+        expect(subnegotiations).toEqual([Buffer.from([1, 2, 3])]);
+    });
+
     it('should pass negotiations', async () => {
         await testEvent(
             'negotiation',
