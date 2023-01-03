@@ -1,6 +1,6 @@
 import { TelnetParser, TelnetCommand, TelnetOption, WebSocketStream } from './telnet';
 import { EventEmitter } from 'eventemitter3';
-import { GMCPPackage } from './gmcp';
+import { GMCPCore, GMCPCoreSupports, GMCPPackage } from './gmcp';
 
 class MudClient extends EventEmitter {
     private ws!: WebSocket;
@@ -11,7 +11,7 @@ class MudClient extends EventEmitter {
     private port: number;
     private telnetNegotiation: boolean = false;
     private telnetBuffer: string = '';
-    private gmcpHandlers: { [key: string]: GMCPPackage } = {};
+    public gmcpHandlers: { [key: string]: GMCPPackage } = {};
 
     constructor(host: string, port: number) {
         super();
@@ -39,14 +39,18 @@ class MudClient extends EventEmitter {
         });
 
         this.telnet.on('negotiation', (command, option) => {
-
             // Negotiation that we support GMCP
             if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
+                console.log("GMCP Negotiation");
                 this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
+                (this.gmcpHandlers["Core"] as GMCPCore).sendHello();
+                (this.gmcpHandlers['Core.Supports'] as GMCPCoreSupports).sendSet();
+
             }
         });
 
         this.telnet.on('gmcp', (packageName, data) => {
+            console.log("GMCP Package:", packageName, data);
             this.handleGmcpData(packageName, data);
 
 
@@ -74,8 +78,7 @@ class MudClient extends EventEmitter {
     }
 
     private handleData(data: ArrayBuffer) {
-        // convert data to something telnet can handle
-        console.log("Data:", data);
+
         this.emitMessage(this.decoder.decode(data));
 
     }
@@ -88,9 +91,16 @@ class MudClient extends EventEmitter {
 
         console.log("GMCP Message:", packageName, messageType, gmcpMessage);
         const handler = this.gmcpHandlers[packageName];
-        const messageHandler = handler && (handler as any)['handle' + messageType];
-        if (handler) {
-            messageHandler && messageHandler.call(handler, JSON.parse(gmcpMessage));
+        if (!handler) {
+            console.log("No handler for GMCP package:", packageName);
+            return;
+        }
+        const messageHandler = (handler as any)['handle' + messageType];
+        if (messageHandler) {
+            console.log("Calling handler:", messageHandler);
+            messageHandler.call(handler, JSON.parse(gmcpMessage));
+        } else {
+            console.log("No handler for GMCP package:", packageName);
         }
     }
 
@@ -98,6 +108,12 @@ class MudClient extends EventEmitter {
         const sanitizedHtml = dataString.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br />');
         this.emit('message', sanitizedHtml);
     }
+
+    sendGmcp(packageName: string, data?: any) {
+        console.log("Sending GMCP:", packageName, data);
+        this.telnet.sendGmcp(packageName, data);
+    }
+
 
 }
 export default MudClient;

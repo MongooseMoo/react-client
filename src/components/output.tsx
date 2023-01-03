@@ -39,7 +39,6 @@ class Output extends React.Component<Props, State> {
         this.props.client.removeListener('message', this.handleMessage);
     }
     handleMessage = (message: string) => {
-        console.log("Processing message ", message);
         // Regular expression to match URLs
         const urlRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)/g;
         // Replace all URLs in the message with clickable links

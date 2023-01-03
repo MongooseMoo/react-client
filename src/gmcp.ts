@@ -48,42 +48,36 @@ export class GMCPMessageClientMediaStop extends GMCPMessage {
 
 export class GMCPPackage {
   public readonly packageName!: string;
-  private readonly client: MudClient;
+  public readonly packageVersion?: number = 1;
+  protected readonly client: MudClient;
 
   constructor(client: MudClient) {
     this.client = client;
   }
 
-  sendData(data: any): void {
-    this.client.sendGmcp(this.packageName, JSON.stringify(data));
+  sendData(messageName: string, data?: any): void {
+    this.client.sendGmcp(this.packageName + '.' + messageName, JSON.stringify(data));
   }
 }
 
-export class CoreSupports extends GMCPPackage {
-  serverSupports: string[] = [];
+export class GMCPCore extends GMCPPackage {
+  public packageName: string = 'Core';
+  sendHello(): void {
+    this.sendData('Hello', { 'client': 'Mongoose Client', 'version': '0.1' });
+  }
+}
+
+export class GMCPCoreSupports extends GMCPPackage {
   packageName = 'Core.Supports';
-  constructor(client: MudClient) {
-    super(client);
-  }
 
-  handleSet(data: string[]) {
-    this.serverSupports = data;
+  sendSet() {
+    const packages = Object.values(this.client.gmcpHandlers).map(p => p.packageName + ' ' + p.packageVersion!.toString());
+    this.sendData('Set', packages);
   }
 }
 
-
-export class CoreClient extends GMCPPackage {
-  constructor(client: MudClient) {
-    super(client);
-  }
-
-  setClient(name: string, version: string): void {
-    this.sendData({ "name": name, "version": version });
-  }
-}
-
-export class ClientMedia extends GMCPPackage {
-  public packageName: string = 'Core.Media';
+export class GMCPClientMedia extends GMCPPackage {
+  public packageName: string = 'Client.Media';
   sounds: { [key: string]: Howl } = {};
   defaultUrl: string = '';
 
@@ -96,14 +90,14 @@ export class ClientMedia extends GMCPPackage {
   }
 
   handleLoad(data: GMCPMessageClientMediaLoad): void {
-    const url = data.url || this.defaultUrl + data.name;
+    const url = (data.url || this.defaultUrl) + data.name;
     this.sounds[data.name] = new Howl({ src: [url] });
   }
 
   handlePlay(data: GMCPMnessageClientMediaPlay): void {
     let sound = this.sounds[data.name];
     if (!sound) {
-      sound = new Howl({ src: [data.url || this.defaultUrl + data.name] });
+      sound = new Howl({ src: [(data.url || this.defaultUrl) + data.name] });
     }
     // type
     if (data.type) {
@@ -112,7 +106,7 @@ export class ClientMedia extends GMCPPackage {
       // and to make Typescript not complain we can
       (sound as any).type = data.type;
     }
-    sound.volume(data.volume);
+    sound.volume(data.volume / 100);
     if (data.fadein) {
       sound.fade(0, data.volume, data.fadein);
     }
@@ -122,8 +116,8 @@ export class ClientMedia extends GMCPPackage {
     if (data.start) {
       sound.seek(data.start);
     }
-    if (data.loops) {
-      sound.loop(data.loops);
+    if (data.loops === -1) {
+      sound.loop(true);
     }
     if (data.tag) {
       // howler doesn't support tags but we can just
@@ -131,6 +125,12 @@ export class ClientMedia extends GMCPPackage {
       // and to make Typescript not complain we can
       (sound as any).tag = data.tag;
     }
+    if (data.key) {
+      (sound as any).key = data.key;
+    }
+    sound.play();
+    this.sounds[data.name] = sound;
+    console.log('playing', data, sound);
   }
 
   handleStop(data: GMCPMessageClientMediaStop): void {
@@ -146,8 +146,15 @@ export class ClientMedia extends GMCPPackage {
     if (data.tag) {
       this.soundsByTag(data.tag).forEach(sound => sound.stop());
     }
+    if (data.key) {
+      this.soundsByKey(data.key).forEach(sound => sound.stop());
+    }
   }
 
+  soundsByKey(key: string) {
+    // Howl objects don't have keys, but we add a .key to some. Search through these and return any matching the key.
+    return Object.values(this.sounds).filter((sound: Howl) => (sound as any).key === key);
+  }
 
   soundsByTag(tag: string) {
     // Howl objects don't have tags, but we add a .tag to some. Search through these and return any matching the tag.

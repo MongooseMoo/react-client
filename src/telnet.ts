@@ -97,7 +97,6 @@ export class WebSocketStream implements Stream {
   on(event: string, cb: (...args: any[]) => void): void {
     if (event === 'data') {
       this.ws.onmessage = (e) => {
-        console.log('onmessage', e.data);
         cb(e.data);
       };
       return;
@@ -254,5 +253,17 @@ export class TelnetParser extends EventEmitter {
 
   sendNegotiation(command: TelnetCommand, option: TelnetOption) {
     this.stream!.write(Buffer.from([TelnetCommand.IAC, command, option]));
+  }
+
+  sendGmcp(gmcpPackage: string, data: string) {
+    const gmcpString = gmcpPackage + ' ' + data;
+    const gmcpBuffer = Buffer.from(gmcpString);
+    const buffer = Buffer.concat([
+      Buffer.from([TelnetCommand.IAC, TelnetCommand.SB]),
+      Buffer.from([TelnetOption.GMCP]),
+      gmcpBuffer,
+      this.iacSEBuffer
+    ]);
+    this.stream!.write(buffer);
   }
 }
