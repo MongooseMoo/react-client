@@ -1,10 +1,12 @@
 .output {
-    font-family: "Courier New", Courier, monospace;
+    font-family: Monaco, Consolas, "Liberation Mono", "Courier New", Courier, monospace;
+
     font-size: 1.2em;
     width: 100%;
     padding: 20px;
     border: 1px solid #ccc;
     border-radius: 5px;
+    margin-bottom: 10px;
 }
 
 /* MediaQuery component */
