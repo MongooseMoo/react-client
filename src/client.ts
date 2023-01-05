@@ -26,7 +26,7 @@ class MudClient extends EventEmitter {
 
 
     public connect() {
-        this.ws = new window.WebSocket(`ws://${this.host}:${this.port}`);
+        this.ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
         this.ws.binaryType = 'arraybuffer';
         this.telnet = new TelnetParser(new WebSocketStream(this.ws));
         this.ws.onopen = () => {

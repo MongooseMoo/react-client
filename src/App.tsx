@@ -6,7 +6,7 @@ import MudClient from './client';
 import CommandInput from './components/input';
 import { GMCPCore, GMCPCoreSupports, GMCPClientMedia } from './gmcp';
 
-const client = new MudClient('mongoose.moo.mud.org', 7654);
+const client = new MudClient('mongoose.moo.mud.org', 8765);
 client.registerGMCPPackage(GMCPCore);
 client.registerGMCPPackage(GMCPClientMedia);
 client.registerGMCPPackage(GMCPCoreSupports);
