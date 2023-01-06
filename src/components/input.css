@@ -3,6 +3,6 @@ input {
   border-radius: 5px;
   padding: 10px;
   width: 100%;
-  position: fixed;
-  top: 0;
+  /* position: fixed;
+  top: 0; */
 }
