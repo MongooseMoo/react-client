@@ -47,6 +47,11 @@ class MudClient extends EventEmitter {
                 (this.gmcpHandlers['Core.Supports'] as GMCPCoreSupports).sendSet();
 
             }
+            else if (command === TelnetCommand.DO && option === TelnetOption.TERMINAL_TYPE) {
+                console.log("TTYPE Negotiation");
+                this.telnet.sendNegotiation(TelnetCommand.WILL, TelnetOption.TERMINAL_TYPE);
+                this.telnet.sendTerminalType("Mongoose React Client");
+            }
         });
 
         this.telnet.on('gmcp', (packageName, data) => {

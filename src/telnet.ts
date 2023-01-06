@@ -265,4 +265,16 @@ export class TelnetParser extends EventEmitter {
     ]);
     this.stream!.write(buffer);
   }
+  
+  sendTerminalType(terminalType: string) {
+    const gmcpBuffer = Buffer.from(terminalType);
+    const buffer = Buffer.concat([
+      Buffer.from([TelnetCommand.IAC, TelnetCommand.SB]),
+      Buffer.from([TelnetOption.TERMINAL_TYPE, TelnetOption.BINARY]),
+      gmcpBuffer,
+      this.iacSEBuffer
+    ]);
+    this.stream!.write(buffer);
+  }
+
 }
