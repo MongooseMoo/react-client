@@ -52,12 +52,14 @@ class MudClient extends EventEmitter {
         this.telnet.on('gmcp', (packageName, data) => {
             console.log("GMCP Package:", packageName, data);
             this.handleGmcpData(packageName, data);
-
-
         });
 
         this.ws.onclose = () => {
             this.emit('disconnect');
+            // auto reconnect
+            setTimeout(() => {
+                this.connect();
+            }, 10000);
         };
 
         this.ws.onerror = (error: Event) => {
