@@ -38,11 +38,16 @@ class Output extends React.Component<Props, State> {
     componentWillUnmount() {
         this.props.client.removeListener('message', this.handleMessage);
     }
+
     handleMessage = (message: string) => {
         // Regular expression to match URLs
-        const urlRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)/g;
-        // Replace all URLs in the message with clickable links
-        const html = message.replace(urlRegex, '<a href="$&" target="_blank">$&</a>');
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        // Regular expression to match email addresses
+        const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+        // Replace all URLs and email addresses in the message with clickable links
+        const html = message
+            .replace(urlRegex, '<a href="$1" target="_blank">$1</a>')
+            .replace(emailRegex, '<a href="mailto:$1">$1</a>');
         this.setState((prevState) => ({
             output: [...prevState.output, html],
         }));
