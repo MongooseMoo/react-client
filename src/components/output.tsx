@@ -45,7 +45,9 @@ class Output extends React.Component<Props, State> {
         // Regular expression to match email addresses
         const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
         // Replace all URLs and email addresses in the message with clickable links
+        const vmooRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
         const html = message
+            .replace(vmooRegex, '<a href="#" exit="$1">$2</a>')  // TODO: onclick send 'Go <exit>'
             .replace(urlRegex, '<a href="$1" target="_blank">$1</a>')
             .replace(emailRegex, '<a href="mailto:$1">$1</a>');
         this.setState((prevState) => ({
