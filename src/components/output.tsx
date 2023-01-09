@@ -82,13 +82,18 @@ export default Output;
 export function parseToElements(text: string, onExitClick: (exit: string) => void): React.ReactNode[] {
     // handle multiline strings by splitting them and adding the appropriate <br/>
     const lines = text.split('\n');
-
+    console.log("Lines: " + lines.length);
     let elements: React.ReactNode[] = [];
-    for (const line of lines) {
+
+    for (let line of lines) {
+        line = line.replace(/\\n/g, '');
         const parsed = Anser.ansiToJson(line, { json: true });
         for (const bundle of parsed) {
             const newElements = convertBundleIntoReact(bundle, onExitClick);
-            elements = [...elements, ...newElements, <br />]
+            elements = [...elements, ...newElements]
+        }
+        if (line !== lines[lines.length - 1]) {
+            elements.push(<br />);
         }
     }
     return elements;
