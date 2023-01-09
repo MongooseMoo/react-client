@@ -88,7 +88,6 @@ export function parseToElements(text: string, onExitClick: (exit: string) => voi
             const newElements = convertBundleIntoReact(bundle, onExitClick);
             elements = [...elements, ...newElements]
         }
-        elements.push(<br />);
     }
     return elements;
 }
