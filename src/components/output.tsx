@@ -87,7 +87,7 @@ export function parseToElements(text: string, onExitClick: (exit: string) => voi
     for (const line of lines) {
         const parsed = Anser.ansiToJson(line, { json: true });
         for (const bundle of parsed) {
-            const newElements = convertBundleIntoReact(bundle);
+            const newElements = convertBundleIntoReact(bundle, onExitClick);
             elements = [...elements, ...newElements, <br />]
         }
     }
@@ -96,8 +96,8 @@ export function parseToElements(text: string, onExitClick: (exit: string) => voi
 
 const URL_REGEX = /(\s|^)(https?:\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
 const EMAIL_REGEX = /(\s|^)[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+(\s|$)/g;
-
-function convertBundleIntoReact(bundle: AnserJsonEntry): React.ReactNode[] {
+const exitRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
+function convertBundleIntoReact(bundle: AnserJsonEntry, onExitClick: (exit: string) => void): React.ReactNode[] {
     const style = createStyle(bundle);
     const content: React.ReactNode[] = [];
     let index = 0;
@@ -134,8 +134,18 @@ function convertBundleIntoReact(bundle: AnserJsonEntry): React.ReactNode[] {
         );
     }
 
+    function processExitMatch(match: RegExpExecArray): React.ReactNode {
+        const [, exitType, exitName] = match;
+        return (
+            <a onClick={() => onExitClick(exitType)}>
+                {exitName}
+            </a>
+        );
+    }
+
     processRegex(URL_REGEX, processUrlMatch);
     processRegex(EMAIL_REGEX, processEmailMatch);
+    processRegex(exitRegex, processExitMatch);
 
     if (index < bundle.content.length) {
         content.push(bundle.content.substring(index));
@@ -143,7 +153,6 @@ function convertBundleIntoReact(bundle: AnserJsonEntry): React.ReactNode[] {
 
     return content.map((c) => <span style={style}>{c}</span>);
 }
-
 
 /**
  * Create the style attribute.
