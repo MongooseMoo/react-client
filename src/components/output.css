@@ -11,6 +11,7 @@ margin: auto;
 /* height: auto; */
 max-height: 600px;
 overflow: auto;
+white-space:pre;
 }
 
 a.exit {
