@@ -13,6 +13,7 @@ interface Props {
 
 interface State {
     output: JSX.Element[];
+    lastKey: number;
 }
 
 class Output extends React.Component<Props, State> {
@@ -20,14 +21,17 @@ class Output extends React.Component<Props, State> {
 
     state = {
         output: [],
+        lastKey: 0
     };
 
     componentDidMount() {
         this.props.client.on('message', this.handleMessage);
-        this.props.client.on('connect', () => this.setState({ output: [...this.state.output, <div key={this.state.output.length}>  <h2> Connected</h2></div >] }));
-        this.props.client.on('disconnect', () => this.setState({ output: [...this.state.output, <div key={this.state.output.length}><h2> Disconnected</h2></div>] }));
+        // connect
+        this.props.client.on('connect', () => this.addToOutput([<h2> Connected</h2>]));
+        // disconnect
+        this.props.client.on('disconnect', () => this.addToOutput([<h2> Disconnected</h2>]));
         // error
-        this.props.client.on('error', (error: Error) => this.setState({ output: [...this.state.output, <h2> Error: {error.message}</h2>] }));
+        this.props.client.on('error', (error: Error) => this.addToOutput([<h2> Error: {error.message}</h2>]));
     }
 
     componentDidUpdate() {
@@ -38,6 +42,16 @@ class Output extends React.Component<Props, State> {
         this.props.client.removeListener('message', this.handleMessage);
     }
 
+    addToOutput(elements: any[]) {
+        console.log("Current output length: " + this.state.output.length)
+
+        const key = this.state.output.length;
+        const newOutput = elements.map((element, index) => <div key={key + index}>{element}</div>);
+        this.setState({ output: [...this.state.output, ...newOutput] });
+        console.log("New output length: " + this.state.output.length)
+
+    }
+
     scrollToBottom = () => {
         const output = this.outputRef.current;
         if (output) {
@@ -46,12 +60,8 @@ class Output extends React.Component<Props, State> {
     };
 
     handleMessage = (message: string) => {
-
         const elements = parseToElements(message, this.handleExitClick);
-        const key = this.state.output.length;
-        // we have a bunch of ReactElements and need to render them
-        const newOutput = elements.map((element, index) => <div key={key + index}>{element}</div>);
-        this.setState({ output: [...this.state.output, ...newOutput] });
+        this.addToOutput(elements);
     };
 
     handleExitClick = (exit: string) => {
