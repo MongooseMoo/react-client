@@ -81,10 +81,6 @@ export class GMCPClientMedia extends GMCPPackage {
   sounds: { [key: string]: Howl } = {};
   defaultUrl: string = '';
 
-  constructor(client: MudClient) {
-    super(client);
-  }
-
   handleDefault(url: string): void {
     this.defaultUrl = url;
   }

@@ -1,19 +1,18 @@
-import MUDClient from '../client';
-import './output.css'
-
+import './output.css';
 // Output View for MUD Client
+import Anser, { AnserJsonEntry } from "anser";
 import * as React from 'react';
-import Convert from 'ansi-to-html';
+
 import MudClient from '../client';
 
-const ansiConverter = new Convert();
+
 
 interface Props {
     client: MudClient;
 }
 
 interface State {
-    output: string[];
+    output: JSX.Element[];
 }
 
 class Output extends React.Component<Props, State> {
@@ -25,10 +24,10 @@ class Output extends React.Component<Props, State> {
 
     componentDidMount() {
         this.props.client.on('message', this.handleMessage);
-        this.props.client.on('connect', () => this.setState({ output: [...this.state.output, "<h2> Connected</h2> "] }));
-        this.props.client.on('disconnect', () => this.setState({ output: [...this.state.output, "<h2> Disconnected</h2> "] }));
+        this.props.client.on('connect', () => this.setState({ output: [...this.state.output, <div key={this.state.output.length}>  <h2> Connected</h2></div >] }));
+        this.props.client.on('disconnect', () => this.setState({ output: [...this.state.output, <div key={this.state.output.length}><h2> Disconnected</h2></div>] }));
         // error
-        this.props.client.on('error', (error: Error) => this.setState({ output: [...this.state.output, `<h2> Error: ${error.message}</h2> `] }));
+        this.props.client.on('error', (error: Error) => this.setState({ output: [...this.state.output, <h2> Error: {error.message}</h2>] }));
     }
 
     componentDidUpdate() {
@@ -39,22 +38,6 @@ class Output extends React.Component<Props, State> {
         this.props.client.removeListener('message', this.handleMessage);
     }
 
-    handleMessage = (message: string) => {
-        // Regular expression to match URLs
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        // Regular expression to match email addresses
-        const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
-        // Replace all URLs and email addresses in the message with clickable links
-        const vmooRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
-        const html = message
-            .replace(vmooRegex, '<a href="#" exit="$1">$2</a>')  // TODO: onclick send 'Go <exit>'
-            .replace(urlRegex, '<a href="$1" target="_blank">$1</a>')
-            .replace(emailRegex, '<a href="mailto:$1">$1</a>');
-        this.setState((prevState) => ({
-            output: [...prevState.output, html],
-        }));
-    };
-
     scrollToBottom = () => {
         const output = this.outputRef.current;
         if (output) {
@@ -62,15 +45,132 @@ class Output extends React.Component<Props, State> {
         }
     };
 
+    handleMessage = (message: string) => {
+
+        const elements = parseToElements(message, this.handleExitClick);
+        const key = this.state.output.length;
+        // we have a bunch of ReactElements and need to render them
+        const newOutput = elements.map((element, index) => <div key={key + index}>{element}</div>);
+        this.setState({ output: [...this.state.output, ...newOutput] });
+    };
+
+    handleExitClick = (exit: string) => {
+        this.props.client.sendCommand(exit);
+    }
+
     render() {
         return (
             <div ref={this.outputRef} className="output" aria-live="polite" role="log">
-                {this.state.output.map((message, index) => (
-                    <><div key={index} className="output-message" dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(message) }}></div></>
-                ))}
-            </div>
+                {this.state.output}
+            </      div>
         );
     }
 }
 
 export default Output;
+
+
+export function parseToElements(text: string, onExitClick: (exit: string) => void): React.ReactNode[] {
+    let elements: React.ReactNode[] = [];
+    const anser = Anser.ansiToJson(text, { json: true });
+    for (const bundle of anser) {
+        const newElements = convertBundleIntoReact(bundle);
+        elements = [...elements, ...newElements]
+    }
+    return elements;
+}
+
+const URL_REGEX = /(\s|^)(https?:\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
+const EMAIL_REGEX = /(\s|^)[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+(\s|$)/g;
+
+function convertBundleIntoReact(bundle: AnserJsonEntry): React.ReactNode[] {
+    const style = createStyle(bundle);
+    const content: React.ReactNode[] = [];
+    let index = 0;
+
+    function processRegex(regex: RegExp, process: (match: RegExpExecArray) => React.ReactNode): void {
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(bundle.content)) !== null) {
+            const startIndex = match.index;
+            if (startIndex > index) {
+                content.push(bundle.content.substring(index, startIndex));
+            }
+            content.push(process(match));
+            index = regex.lastIndex;
+        }
+    }
+
+    function processUrlMatch(match: RegExpExecArray): React.ReactNode {
+        const [, pre, url] = match;
+        const href = url;
+        return (
+            <a href={href} target="_blank">
+                {url}
+            </a>
+        );
+    }
+
+    function processEmailMatch(match: RegExpExecArray): React.ReactNode {
+        const email = match[0];
+        const href = `mailto:${email}`;
+        return (
+            <a href={href} target="_blank">
+                {email}
+            </a>
+        );
+    }
+
+    processRegex(URL_REGEX, processUrlMatch);
+    processRegex(EMAIL_REGEX, processEmailMatch);
+
+    if (index < bundle.content.length) {
+        content.push(bundle.content.substring(index));
+    }
+
+    return content.map((c) => <span style={style}>{c}</span>);
+}
+
+
+/**
+ * Create the style attribute.
+ * @name createStyle
+ * @function
+ * @param {AnserJsonEntry} bundle
+ * @return {Object} returns the style object
+ */
+function createStyle(bundle: AnserJsonEntry): React.CSSProperties {
+    const style: React.CSSProperties = {};
+    if (bundle.bg) {
+        style.backgroundColor = `rgb(${bundle.bg})`;
+    }
+    if (bundle.fg) {
+        style.color = `rgb(${bundle.fg})`;
+    }
+    switch (bundle.decoration) {
+        case 'bold':
+            style.fontWeight = 'bold';
+            break;
+        case 'dim':
+            style.opacity = '0.5';
+            break;
+        case 'italic':
+            style.fontStyle = 'italic';
+            break;
+        case 'hidden':
+            style.visibility = 'hidden';
+            break;
+        case 'strikethrough':
+            style.textDecoration = 'line-through';
+            break;
+        case 'underline':
+            style.textDecoration = 'underline';
+            break;
+        case 'blink':
+            style.textDecoration = 'blink';
+            break;
+        default:
+            break;
+    }
+    return style;
+}
+
