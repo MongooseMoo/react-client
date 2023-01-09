@@ -138,7 +138,7 @@ function convertBundleIntoReact(bundle: AnserJsonEntry, onExitClick: (exit: stri
     function processExitMatch(match: RegExpExecArray): React.ReactNode {
         const [, exitType, exitName] = match;
         return (
-            <a onClick={() => onExitClick(exitType)}>
+            <a onClick={() => onExitClick(exitType)} class="exit">
                 {exitName}
             </a>
         );
