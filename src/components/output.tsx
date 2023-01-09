@@ -80,14 +80,16 @@ export default Output;
 
 
 export function parseToElements(text: string, onExitClick: (exit: string) => void): React.ReactNode[] {
-    // handle multiline strings by splitting them and adding the appropriate <br/>
     let elements: React.ReactNode[] = [];
-    const parsed = Anser.ansiToJson(text, { json: true, remove_empty: false });
-    for (const bundle of parsed) {
-        const newElements = convertBundleIntoReact(bundle, onExitClick);
-        elements = [...elements, ...newElements]
+    // handle multiline strings by splitting them and adding the appropriate <br/>
+    for (const line of text.split('\r\n')) {
+        const parsed = Anser.ansiToJson(line, { json: true, remove_empty: false });
+        for (const bundle of parsed) {
+            const newElements = convertBundleIntoReact(bundle, onExitClick);
+            elements = [...elements, ...newElements]
+        }
+        elements.push(<br />);
     }
-
     return elements;
 }
 
@@ -147,9 +149,6 @@ function convertBundleIntoReact(bundle: AnserJsonEntry, onExitClick: (exit: stri
 
     if (index < bundle.content.length) {
         content.push(bundle.content.substring(index));
-    }
-    if (bundle.clearLine) {
-        content.push(<br />);
     }
     return content.map((c) => <span style={style}>{c}</span>);
 }
