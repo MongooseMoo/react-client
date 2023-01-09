@@ -84,10 +84,12 @@ export function parseToElements(text: string, onExitClick: (exit: string) => voi
     // handle multiline strings by splitting them and adding the appropriate <br/>
     for (const line of text.split('\r\n')) {
         const parsed = Anser.ansiToJson(line, { json: true, remove_empty: false });
+        let children: any[] = [];
         for (const bundle of parsed) {
             const newElements = convertBundleIntoReact(bundle, onExitClick);
-            elements = [...elements, ...newElements]
+            children = [...children, ...newElements]
         }
+        elements = [...elements, <span key={elements.length}>{children}</span>];
     }
     return elements;
 }
