@@ -81,27 +81,20 @@ export default Output;
 
 export function parseToElements(text: string, onExitClick: (exit: string) => void): React.ReactNode[] {
     // handle multiline strings by splitting them and adding the appropriate <br/>
-    const lines = text.split('\n');
-    console.log("Lines: " + lines.length);
     let elements: React.ReactNode[] = [];
-
-    for (let line of lines) {
-        line = line.replace(/\\n/g, '');
-        const parsed = Anser.ansiToJson(line, { json: true });
-        for (const bundle of parsed) {
-            const newElements = convertBundleIntoReact(bundle, onExitClick);
-            elements = [...elements, ...newElements]
-        }
-        if (line !== lines[lines.length - 1]) {
-            elements.push(<br />);
-        }
+    const parsed = Anser.ansiToJson(text, { json: true, remove_empty: false });
+    for (const bundle of parsed) {
+        const newElements = convertBundleIntoReact(bundle, onExitClick);
+        elements = [...elements, ...newElements]
     }
+
     return elements;
 }
 
 const URL_REGEX = /(\s|^)(https?:\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
 const EMAIL_REGEX = /(\s|^)[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+(\s|$)/g;
 const exitRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
+
 function convertBundleIntoReact(bundle: AnserJsonEntry, onExitClick: (exit: string) => void): React.ReactNode[] {
     const style = createStyle(bundle);
     const content: React.ReactNode[] = [];
@@ -155,7 +148,9 @@ function convertBundleIntoReact(bundle: AnserJsonEntry, onExitClick: (exit: stri
     if (index < bundle.content.length) {
         content.push(bundle.content.substring(index));
     }
-
+    if (bundle.clearLine) {
+        content.push(<br />);
+    }
     return content.map((c) => <span style={style}>{c}</span>);
 }
 
