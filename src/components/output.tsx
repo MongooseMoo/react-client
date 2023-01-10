@@ -13,7 +13,6 @@ interface Props {
 
 interface State {
     output: JSX.Element[];
-    lastKey: number;
 }
 
 class Output extends React.Component<Props, State> {
@@ -21,10 +20,10 @@ class Output extends React.Component<Props, State> {
 
     state = {
         output: [],
-        lastKey: 0
     };
 
-    componentDidMount() {
+    constructor(props: Props) {
+        super(props);
         this.props.client.on('message', this.handleMessage);
         // connect
         this.props.client.on('connect', () => this.addToOutput([<h2> Connected</h2>]));
@@ -138,7 +137,7 @@ function convertBundleIntoReact(bundle: AnserJsonEntry, onExitClick: (exit: stri
     function processExitMatch(match: RegExpExecArray): React.ReactNode {
         const [, exitType, exitName] = match;
         return (
-            <a onClick={() => onExitClick(exitType)} class="exit">
+            <a onClick={() => onExitClick(exitType)} className="exit">
                 {exitName}
             </a>
         );
