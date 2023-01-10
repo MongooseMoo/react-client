@@ -265,7 +265,7 @@ export class TelnetParser extends EventEmitter {
     ]);
     this.stream!.write(buffer);
   }
-  
+
   sendTerminalType(terminalType: string) {
     const gmcpBuffer = Buffer.from(terminalType);
     const buffer = Buffer.concat([

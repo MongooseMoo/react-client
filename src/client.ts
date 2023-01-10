@@ -51,8 +51,8 @@ class MudClient extends EventEmitter {
                 console.log("TTYPE Negotiation");
                 this.telnet.sendNegotiation(TelnetCommand.WILL, TelnetOption.TERMINAL_TYPE);
                 this.telnet.sendTerminalType("Mongoose React Client");
-                this.telnet.sendTerminalType("ANSI");                
-                this.telnet.sendTerminalType("PROXY");                
+                this.telnet.sendTerminalType("ANSI");
+                this.telnet.sendTerminalType("PROXY");
             }
         });
 
@@ -86,9 +86,25 @@ class MudClient extends EventEmitter {
         this.send(command + '\r\n');
     }
 
+    /*
+<message> ::= <message-start>
+           | <message-continue>
+           | <message-end>
+<message-start> ::= <message-name> <space> <auth-key> <keyvals>
+An MCP message consists of three parts: the name of the message, the authentication key, and a set of keywords and their associated values. The message name indicates what action is to be performed; if the given message name is unknown, the message should be ignored. The authentication key is generated at the beginning of the session; if it is incorrect, the message should be ignored. The keyword-value pairs specify the arguments to the message. These arguments may occur in any order, and the ordering of the arguments does not affect the semantics of the message. There is no limit on the number of keyword-value pairs which may appear in a message, or on the lengths of message names, keywords, or values.
+*/
     private handleData(data: ArrayBuffer) {
-
-        this.emitMessage(this.decoder.decode(data));
+        const decoded = this.decoder.decode(data);
+        console.log("Received:", decoded);
+        if (decoded.startsWith('#$#')) { // MCP 
+            const parts = decoded.split(' ');
+            const messageName = parts[0].substring(3);
+            const authKey = parts[1];
+            const keyvals = parts.slice(2);
+            console.log("MCP Message Name: ", messageName, "AuthKey: ", authKey, "Keyvals: ", keyvals);
+        } else {
+            this.emitMessage(decoded);
+        }
 
     }
 
@@ -114,7 +130,7 @@ class MudClient extends EventEmitter {
     }
 
     private emitMessage(dataString: string) {
-        const sanitizedHtml = dataString.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br />');
+        const sanitizedHtml = dataString.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         this.emit('message', sanitizedHtml);
     }
 

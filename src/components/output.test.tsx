@@ -1,0 +1,59 @@
+import { parseToElements } from './output'
+
+const testParseToElements = (input: string, expectedOutput: JSX.Element[]) => {
+    it(`should return ${expectedOutput} when passed ${input}`, () => {
+        expect(parseToElements(input, () => { })).toEqual(expectedOutput)
+    })
+}
+
+describe('Output', () => {
+    describe('parseToElements', () => {
+        describe('plain text', () => {
+            testParseToElements('test', [<span style={{}} >test</span>])
+        })
+
+        describe('links', () => {
+            testParseToElements('https://www.google.com', [
+                <span style={{}}><a href="https://www.google.com" target="_blank">https://www.google.com</a></span>
+            ])
+
+            testParseToElements('bob@gmail.com', [
+                <span style={{}}><a href="mailto:bob@gmail.com" target="_blank">bob@gmail.com</a></span>
+            ])
+        })
+
+        describe('formatting', () => {
+            testParseToElements('This is a sentence with a bold word: \x1b[1mbold\x1b[0m', [
+                <span style={{}}>This is a sentence with a bold word: </span>,
+                <span style={{ fontWeight: 'bold' }}>bold</span>
+            ])
+
+            testParseToElements('This is a sentence with an underlined word: \x1b[4munderlined\x1b[0m', [
+                <span style={{}}>This is a sentence with an underlined word: </span>,
+                <span style={{ textDecoration: 'underline' }}>underlined</span>
+            ])
+            testParseToElements('This is a sentence with a red word: \x1b[31mred\x1b[0m', [
+                <span style={{}}>This is a sentence with a red word: </span>,
+                <span style={{ "color": "rgb(187, 0, 0)" }}>red</span>
+            ])
+            testParseToElements('This is a sentence with a blue background: \x1b[44mblue background\x1b[0m', [
+                <span style={{}}>This is a sentence with a blue background: </span>,
+                <span style={{ "backgroundColor": "rgb(0, 0, 187)" }}>blue background</span>
+            ])
+            // testParseToElements('This is a sentence with a bold, underlined, and red word: \x1b[1;4;31mbold, underlined, and red\x1b[0m', [
+            //     <span style={{}}>This is a sentence with a bold, underlined, and red word: </span>,
+            //     <span style={{ fontWeight: 'bold', textDecoration: 'underline', "color": "rgb(187, 0, 0)", }}>bold, underlined, and red</span>
+            // ])
+        })
+
+        describe('complex messages', () => {
+            testParseToElements('This is a sentence with a bold word: \x1b[1mbold\x1b[0m and a link: https://www.google.com', [
+                <span style={{}}>This is a sentence with a bold word: </span>,
+                <span style={{ fontWeight: 'bold' }}>bold</span>,
+                <span style={{}}> and a link:</span>,
+                <span style={{}}><a href="https://www.google.com" target="_blank">https://www.google.com</a></span>
+            ])
+
+        })
+    })
+})
