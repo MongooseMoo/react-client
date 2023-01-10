@@ -115,10 +115,11 @@ function convertBundleIntoReact(bundle: AnserJsonEntry, onExitClick: (exit: stri
     }
 
     function processUrlMatch(match: RegExpExecArray): React.ReactNode {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const [, pre, url] = match;
         const href = url;
         return (
-            <a href={href} target="_blank">
+            <a href={href} target="_blank" rel="noreferrer">
                 {url}
             </a>
         );
@@ -128,7 +129,7 @@ function convertBundleIntoReact(bundle: AnserJsonEntry, onExitClick: (exit: stri
         const email = match[0];
         const href = `mailto:${email}`;
         return (
-            <a href={href} target="_blank">
+            <a href={href} target="_blank" rel="noreferrer">
                 {email}
             </a>
         );
@@ -137,6 +138,7 @@ function convertBundleIntoReact(bundle: AnserJsonEntry, onExitClick: (exit: stri
     function processExitMatch(match: RegExpExecArray): React.ReactNode {
         const [, exitType, exitName] = match;
         return (
+            // eslint-disable-next-line jsx-a11y/anchor-is-valid
             <a onClick={() => onExitClick(exitType)} className="exit">
                 {exitName}
             </a>

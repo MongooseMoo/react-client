@@ -1,7 +1,7 @@
 // Input Component for MUD client
 // Supports command history with arrows
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import "./input.css";
 
 type SendFunction = (text: string) => void;
