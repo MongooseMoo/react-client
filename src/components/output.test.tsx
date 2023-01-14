@@ -14,11 +14,11 @@ describe('Output', () => {
 
         describe('links', () => {
             testParseToElements('https://www.google.com', [
-                <span style={{}}><a href="https://www.google.com" target="_blank" rel="noreferrer">https://www.google.com</a></span>
+                <span style={{}}><a href="https://www.google.com" target="_blank">https://www.google.com</a></span>
             ])
 
             testParseToElements('bob@gmail.com', [
-                <span style={{}}><a href="mailto:bob@gmail.com" target="_blank" rel="noreferrer">bob@gmail.com</a></span>
+                <span style={{}}><a href="mailto:bob@gmail.com" target="_blank">bob@gmail.com</a></span>
             ])
         })
 
@@ -51,7 +51,7 @@ describe('Output', () => {
                 <span style={{}}>This is a sentence with a bold word: </span>,
                 <span style={{ fontWeight: 'bold' }}>bold</span>,
                 <span style={{}}> and a link:</span>,
-                <span style={{}}><a href="https://www.google.com" target="_blank" rel="noreferrer">https://www.google.com</a></span>
+                <span style={{}}><a href="https://www.google.com" target="_blank">https://www.google.com</a></span>
             ])
 
         })
