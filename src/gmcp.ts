@@ -93,9 +93,17 @@ export class GMCPClientMedia extends GMCPPackage {
   handlePlay(data: GMCPMnessageClientMediaPlay): void {
     let sound = this.sounds[data.name];
     if (!sound) {
-      sound = new Howl({
-      src: [(data.url || this.defaultUrl) + data.name]
-      });
+      if (data.type === 'music') {
+        sound = new Howl({
+        src: [(data.url || this.defaultUrl) + data.name],
+        html5: true,
+        preload: 'metadata',
+        format: ['aac', 'mp3', 'ogg']
+        });
+      } else {
+        sound = new Howl({
+        src: [(data.url || this.defaultUrl) + data.name]
+        });
     }
     // type
     // howler doesn't support types but we can just
