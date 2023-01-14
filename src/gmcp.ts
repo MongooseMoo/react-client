@@ -93,16 +93,16 @@ export class GMCPClientMedia extends GMCPPackage {
   handlePlay(data: GMCPMnessageClientMediaPlay): void {
     let sound = this.sounds[data.name];
     if (!sound) {
-      sound = new Howl({ src: [(data.url || this.defaultUrl) + data.name] });
+      sound = new Howl({
+      src: [(data.url || this.defaultUrl) + data.name]
+      });
     }
     // type
-    if (data.type) {
-      // howler doesn't support types but we can just
-      // store it in the sound object
-      // and to make Typescript not complain we can
-      (sound as any).type = data.type;
-    }
-    sound.volume(data.volume / 100);
+    // howler doesn't support types but we can just
+    // store it in the sound object
+    // and to make Typescript not complain we can
+    (sound as any).type = (data.type || 'sound');
+    sound.volume((data.volume || 50) / 100);
     if (data.fadein) {
       sound.fade(0, data.volume, data.fadein);
     }
