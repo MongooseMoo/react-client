@@ -23,7 +23,7 @@ export class GMCPMessageClientMediaLoad extends GMCPMessage {
 
 export type MediaType = "sound" | "music" | "video"
 
-export class GMCPMnessageClientMediaPlay extends GMCPMessage {
+export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public readonly name!: string;
   public readonly url?: string;
   public readonly type?: MediaType = "sound";
@@ -90,7 +90,7 @@ export class GMCPClientMedia extends GMCPPackage {
     this.sounds[data.name] = new Howl({ src: [url] });
   }
 
-  handlePlay(data: GMCPMnessageClientMediaPlay): void {
+  handlePlay(data: GMCPMessageClientMediaPlay): void {
     let sound = this.sounds[data.name];
     if (!sound) {
 		if (data.type === 'music') {
