@@ -6,6 +6,7 @@ import {
 } from "./telnet";
 import { EventEmitter } from "eventemitter3";
 import { GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
+import { parseMcpMessage } from "./mcp";
 
 class MudClient extends EventEmitter {
   private ws!: WebSocket;
@@ -102,7 +103,6 @@ An MCP message consists of three parts: the name of the message, the authenticat
 */
   private handleData(data: ArrayBuffer) {
     const decoded = this.decoder.decode(data);
-    console.log("Received:", decoded);
     if (decoded.startsWith("#$#")) {
       // MCP
       this.handleMcp(decoded);
@@ -112,26 +112,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private handleMcp(decoded: string) {
-    const parts = decoded.split(" ");
-    const messageName = parts[0].substring(3);
-    const authKey = parts[1];
-    const keyvals = parts.slice(2);
-    // parse keys and values from keyvals.
-    /*
-    Each argument to a message is named by a keyword. The keyword consists of an identifier (a string matching the <ident> nonterminal), optionally followed by an asterisk; if the asterisk is present, the value to follow is a multiline value. If no asterisk is present, the value is simple. Messages may contain a mixture of simple and multiline values.
-    */
-    let keyvalsObj: { [key: string]: string } = {};
-    for (let i = 0; i < keyvals.length; i++) {
-      const key = keyvals[i];
-      const isMultiline = key.endsWith("*");
-      const keyName = isMultiline ? key.substring(0, key.length - 1) : key;
-      const value = keyvals[i + 1];
-      keyvalsObj[keyName] = value;
-      if (isMultiline) {
-        i++;
-      }
-    }
-    console.log("MCP Message:", messageName, authKey, keyvalsObj);
+    const mcpMessage = parseMcpMessage(decoded);
+    console.log("MCP Message:", mcpMessage);
   }
 
   private handleGmcpData(gmcpPackage: string, gmcpMessage: string) {
