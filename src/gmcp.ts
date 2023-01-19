@@ -95,7 +95,7 @@ export class GMCPClientMedia extends GMCPPackage {
     let sound = this.sounds[data.name];
     if (!sound) {
         if (data.type === 'music') {
-			sound = new Howl({ src: [(data.url || this.defaultUrl) + data.name], html5: true, preload: 'metadata', format: ['aac', 'mp3', 'ogg'] });
+			sound = new Howl({ src: [(data.url || this.defaultUrl) + data.name], html5: true, format: ['aac', 'mp3', 'ogg'] });
 		} else {
       sound = new Howl({ src: [(data.url || this.defaultUrl) + data.name] });
 		}
