@@ -138,11 +138,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string) {
-    const sanitizedHtml = dataString
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-    this.emit("message", sanitizedHtml);
+    this.emit("message", dataString);
   }
 
   sendGmcp(packageName: string, data?: any) {
