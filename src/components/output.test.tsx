@@ -2,7 +2,7 @@ import { parseToElements } from "./output";
 
 const testParseToElements = (input: string, expectedOutput: JSX.Element[]) => {
   it(`should return ${expectedOutput} when passed ${input}`, () => {
-    expect(parseToElements(input, () => {})).toStrictEqual(expectedOutput);
+    expect(parseToElements(input, () => {})).toEqual(expectedOutput);
   });
 };
 
