@@ -1,9 +1,7 @@
-import { Howl } from 'howler';
-import type MudClient from './client';
+import { Howl } from "howler";
+import type MudClient from "./client";
 
-export class GMCPMessage { }
-
-
+export class GMCPMessage {}
 
 export class GMCPMessageCoreClient extends GMCPMessage {
   public readonly name: string;
@@ -21,7 +19,7 @@ export class GMCPMessageClientMediaLoad extends GMCPMessage {
   public readonly name!: string;
 }
 
-export type MediaType = "sound" | "music" | "video"
+export type MediaType = "sound" | "music" | "video";
 
 export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public readonly name!: string;
@@ -35,7 +33,7 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public readonly loops?: number = 0; // Number of iterations that the media plays.  A value of -1 allows the sound or music to loop indefinitely.
   public readonly priority?: number = 0; // Halts the play of current or future played media files with a lower priority while this media plays.
   public continue?: boolean = true;
-  public readonly key?: string; // Uniquely identifies media files with a "key" that is bound to their "name" or "url".  Halts the play of current media files with the same "key" that have a different "name" or "url" while this media plays.
+  public key?: string; // Uniquely identifies media files with a "key" that is bound to their "name" or "url".  Halts the play of current media files with the same "key" that have a different "name" or "url" while this media plays.
 }
 
 export class GMCPMessageClientMediaStop extends GMCPMessage {
@@ -56,30 +54,35 @@ export class GMCPPackage {
   }
 
   sendData(messageName: string, data?: any): void {
-    this.client.sendGmcp(this.packageName + '.' + messageName, JSON.stringify(data));
+    this.client.sendGmcp(
+      this.packageName + "." + messageName,
+      JSON.stringify(data)
+    );
   }
 }
 
 export class GMCPCore extends GMCPPackage {
-  public packageName: string = 'Core';
+  public packageName: string = "Core";
   sendHello(): void {
-    this.sendData('Hello', { 'client': 'Mongoose Client', 'version': '0.1' });
+    this.sendData("Hello", { client: "Mongoose Client", version: "0.1" });
   }
 }
 
 export class GMCPCoreSupports extends GMCPPackage {
-  packageName = 'Core.Supports';
+  packageName = "Core.Supports";
 
   sendSet() {
-    const packages = Object.values(this.client.gmcpHandlers).map(p => p.packageName + ' ' + p.packageVersion!.toString());
-    this.sendData('Set', packages);
+    const packages = Object.values(this.client.gmcpHandlers).map(
+      (p) => p.packageName + " " + p.packageVersion!.toString()
+    );
+    this.sendData("Set", packages);
   }
 }
 
 export class GMCPClientMedia extends GMCPPackage {
-  public packageName: string = 'Client.Media';
+  public packageName: string = "Client.Media";
   sounds: { [key: string]: Howl } = {};
-  defaultUrl: string = '';
+  defaultUrl: string = "";
   soundCount: number = 0;
 
   handleDefault(url: string): void {
@@ -88,17 +91,25 @@ export class GMCPClientMedia extends GMCPPackage {
 
   handleLoad(data: GMCPMessageClientMediaLoad): void {
     const url = (data.url || this.defaultUrl) + data.name;
-    this.sounds[data.name] = new Howl({ src: [url] });
+    const key = data.url + data.name;
+    this.sounds[key] = new Howl({ src: [url] });
   }
 
   handlePlay(data: GMCPMessageClientMediaPlay): void {
-    let sound = this.sounds[data.name];
+    data.key = data.key || data.url + data.name;
+    let sound = this.sounds[data.key];
     if (!sound) {
-        if (data.type === 'music') {
-			sound = new Howl({ src: [(data.url || this.defaultUrl) + data.name], html5: true, format: ['aac', 'mp3', 'ogg'] });
-		} else {
-      sound = new Howl({ src: [(data.url || this.defaultUrl) + data.name] });
-		}
+      if (data.type === "music") {
+        sound = new Howl({
+          src: [(data.url || this.defaultUrl) + data.name],
+          html5: true,
+          format: ["aac", "mp3", "ogg"],
+        });
+      } else {
+        sound = new Howl({ src: [(data.url || this.defaultUrl) + data.name] });
+      }
+    } else {
+      console.log("updating", data, sound);
     }
     // type
     if (data.type) {
@@ -129,45 +140,63 @@ export class GMCPClientMedia extends GMCPPackage {
     if (data.key) {
       (sound as any).key = data.key;
     } else {
-      (sound as any).key = 'sound' + this.soundCount.toString();
+      (sound as any).key = "sound" + this.soundCount.toString();
     }
     this.soundCount++;
-    sound.play();
-    this.sounds[data.name] = sound;
-    console.log('playing', data, sound);
+    console.log(
+      "Sound is currently   ",
+      sound.playing() ? "playing" : "stopped"
+    );
+    if (!sound.playing()) {
+      sound.play();
+
+      console.log("playing", data, sound);
+    }
+    this.sounds[data.key] = sound;
   }
 
   handleStop(data: GMCPMessageClientMediaStop): void {
     if (data.name) {
-      let sound = this.sounds[data.name];
-      if (sound) {
-        sound.stop();
-      }
+      this.soundsByName(data.name).forEach((sound) => sound.stop());
     }
     if (data.type) {
-      this.soundsByType(data.type).forEach(sound => sound.stop());
+      this.soundsByType(data.type).forEach((sound) => sound.stop());
     }
     if (data.tag) {
-      this.soundsByTag(data.tag).forEach(sound => sound.stop());
+      this.soundsByTag(data.tag).forEach((sound) => sound.stop());
     }
     if (data.key) {
-      this.soundsByKey(data.key).forEach(sound => sound.stop());
+      this.soundsByKey(data.key).forEach((sound) => sound.stop());
     }
+  }
+
+  soundsByName(name: string) {
+    // must check the end of the url because the url isn't in the sound object
+    // ts doesn't like this but it works
+
+    return Object.values(this.sounds).filter((sound: Howl) => {
+      // @ts-ignore
+      return sound._src[sound._src.length - 1].endsWith(name);
+    });
   }
 
   soundsByKey(key: string) {
     // Howl objects don't have keys, but we add a .key to some. Search through these and return any matching the key.
-    return Object.values(this.sounds).filter((sound: Howl) => (sound as any).key === key);
+    return Object.values(this.sounds).filter(
+      (sound: Howl) => (sound as any).key === key
+    );
   }
 
   soundsByTag(tag: string) {
     // Howl objects don't have tags, but we add a .tag to some. Search through these and return any matching the tag.
-    return Object.values(this.sounds).filter((sound: Howl) => (sound as any).tag === tag);
+    return Object.values(this.sounds).filter(
+      (sound: Howl) => (sound as any).tag === tag
+    );
   }
 
   soundsByType(type: MediaType) {
-    return Object.values(this.sounds).filter((sound: Howl) => (sound as any).type === type);
+    return Object.values(this.sounds).filter(
+      (sound: Howl) => (sound as any).type === type
+    );
   }
-
 }
-
