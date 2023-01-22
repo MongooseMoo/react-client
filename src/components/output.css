@@ -18,6 +18,7 @@ a.exit {
 color: orange;
 text-decoration:underline;
 cursor: pointer;
+width:100%;
 }
 
 /* MediaQuery component */
