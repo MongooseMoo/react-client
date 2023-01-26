@@ -79,12 +79,18 @@ export class GMCPCoreSupports extends GMCPPackage {
   }
 }
 
+export interface Sound extends Howl {
+  tag?: string;
+  key?: string;
+  // ssh
+  _src?: string;
+  type?: MediaType;
+}
+
 export class GMCPClientMedia extends GMCPPackage {
   public packageName: string = "Client.Media";
-  sounds: { [key: string]: Howl } = {};
+  sounds: { [key: string]: Sound } = {};
   defaultUrl: string = "";
-  soundCount: number = 0;
-
   handleDefault(url: string): void {
     this.defaultUrl = url;
   }
@@ -92,13 +98,20 @@ export class GMCPClientMedia extends GMCPPackage {
   handleLoad(data: GMCPMessageClientMediaLoad): void {
     const url = (data.url || this.defaultUrl) + data.name;
     const key = data.url + data.name;
-    this.sounds[key] = new Howl({ src: [url] });
+    let sound = this.sounds[key] as Howl;
+    if (!sound) {
+      let sound: Sound = new Howl({ src: [url] });
+      sound.key = key;
+      this.sounds[key] = sound;
+    }
   }
 
   handlePlay(data: GMCPMessageClientMediaPlay): void {
-    data.key = data.key || data.url + data.name;
+    const mediaUrl = (data.url || this.defaultUrl) + data.name;
+    data.key = data.key || mediaUrl;
     let sound = this.sounds[data.key];
-    if (!sound) {
+
+    if (!sound || sound._src !== mediaUrl) {
       if (data.type === "music") {
         sound = new Howl({
           src: [(data.url || this.defaultUrl) + data.name],
@@ -106,17 +119,14 @@ export class GMCPClientMedia extends GMCPPackage {
           format: ["aac", "mp3", "ogg"],
         });
       } else {
-        sound = new Howl({ src: [(data.url || this.defaultUrl) + data.name] });
+        sound = new Howl({ src: [mediaUrl] });
       }
     } else {
       console.log("updating", data, sound);
     }
     // type
     if (data.type) {
-      // howler doesn't support types but we can just
-      // store it in the sound object
-      // and to make Typescript not complain we can
-      (sound as any).type = data.type;
+      sound.type = data.type;
     }
     sound.volume(data.volume / 100);
     if (data.fadein) {
@@ -132,24 +142,19 @@ export class GMCPClientMedia extends GMCPPackage {
       sound.loop(true);
     }
     if (data.tag) {
-      // howler doesn't support tags but we can just
-      // store it in the sound object
-      // and to make Typescript not complain we can
-      (sound as any).tag = data.tag;
+      sound.tag = data.tag;
     }
     if (data.key) {
       (sound as any).key = data.key;
     } else {
-      (sound as any).key = "sound" + this.soundCount.toString();
+      sound.key = mediaUrl;
     }
-    this.soundCount++;
     console.log(
       "Sound is currently   ",
       sound.playing() ? "playing" : "stopped"
     );
     if (!sound.playing()) {
       sound.play();
-
       console.log("playing", data, sound);
     }
     this.sounds[data.key] = sound;
@@ -196,7 +201,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
   soundsByType(type: MediaType) {
     return Object.values(this.sounds).filter(
-      (sound: Howl) => (sound as any).type === type
+      (sound: Sound) => sound.type === type
     );
   }
 }
