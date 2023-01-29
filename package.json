@@ -1,7 +1,7 @@
 {
   "name": "mongoose-web-client",
   "version": "0.1.0",
-  "private": true,
+  "homepage": "https://mongoosemoo.github.io/react-client",
   "dependencies": {
     "anser": "^2.1.1",
     "eventemitter3": "^5.0.0",
