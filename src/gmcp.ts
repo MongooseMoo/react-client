@@ -145,7 +145,7 @@ export class GMCPClientMedia extends GMCPPackage {
       sound.tag = data.tag;
     }
     if (data.key) {
-      sound .key = data.key;
+      sound.key = data.key;
     }
     console.log(
       "Sound is currently   ",
@@ -175,10 +175,8 @@ export class GMCPClientMedia extends GMCPPackage {
 
   soundsByName(name: string) {
     // must check the end of the url because the url isn't in the sound object
-    // ts doesn't like this but it works
-
     return Object.values(this.sounds).filter((sound) => {
-      return sound._src[sound._src.length - 1].endsWith(name);
+      return sound._src && sound._src[sound._src.length - 1].endsWith(name);
     });
   }
 
