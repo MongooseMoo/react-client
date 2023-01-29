@@ -145,9 +145,7 @@ export class GMCPClientMedia extends GMCPPackage {
       sound.tag = data.tag;
     }
     if (data.key) {
-      (sound as any).key = data.key;
-    } else {
-      sound.key = mediaUrl;
+      sound .key = data.key;
     }
     console.log(
       "Sound is currently   ",
@@ -179,24 +177,18 @@ export class GMCPClientMedia extends GMCPPackage {
     // must check the end of the url because the url isn't in the sound object
     // ts doesn't like this but it works
 
-    return Object.values(this.sounds).filter((sound: Howl) => {
-      // @ts-ignore
+    return Object.values(this.sounds).filter((sound) => {
       return sound._src[sound._src.length - 1].endsWith(name);
     });
   }
 
   soundsByKey(key: string) {
     // Howl objects don't have keys, but we add a .key to some. Search through these and return any matching the key.
-    return Object.values(this.sounds).filter(
-      (sound: Howl) => (sound as any).key === key
-    );
+    return Object.values(this.sounds).filter((sound) => sound.key === key);
   }
 
   soundsByTag(tag: string) {
-    // Howl objects don't have tags, but we add a .tag to some. Search through these and return any matching the tag.
-    return Object.values(this.sounds).filter(
-      (sound: Howl) => (sound as any).tag === tag
-    );
+    return Object.values(this.sounds).filter((sound) => sound.tag === tag);
   }
 
   soundsByType(type: MediaType) {
