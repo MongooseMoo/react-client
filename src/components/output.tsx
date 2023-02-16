@@ -43,7 +43,7 @@ class Output extends React.Component<Props, State> {
 
     addToOutput(elements: any[]) {
         this.setState((state) => {
-            console.log("Current output length: " + state.output.length)
+            // console.log("Current output length: " + state.output.length)
             const key = state.output.length;
             const newOutput = elements.map((element, index) => <div key={key + index}>{element}</div>);
             return { output: [...state.output, ...newOutput] };
