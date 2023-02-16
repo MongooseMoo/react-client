@@ -1,3 +1,5 @@
+import MudClient from "./client";
+
 interface McpMessage {
   name: string;
   authKey?: string;
@@ -8,7 +10,7 @@ export function parseMcpMessage(message: string): McpMessage | null {
   const parts = message.match(/^#\$#(\S+)(?:\s+(\S{6})\s+)?(.*)$/);
   if (!parts) {
     console.log(
-      "Invalid message format: message must match the format '#$#name [authKey] keyval*'"
+      "Invalid message format: message must match the format '#$#name [authKey] keyval*'\nGot `"+ message + "`"
     );
     return null;
   }
@@ -32,6 +34,26 @@ export function parseMcpMessage(message: string): McpMessage | null {
   return { name, authKey, keyvals };
 }
 
-export class MCPPackage {
-  constructor(public name: string) {}
+export abstract class MCPPackage {
+  public readonly packageName!: string;
+  public readonly minVersion?: number = 1.0;
+  public readonly maxVersion?: number = 1.0;
+  public readonly packageVersion?: number = 1.0;
+  protected readonly client: MudClient;
+
+  constructor(client: MudClient) {
+    this.client = client;
+  }
+
+  abstract handle(message: McpMessage): void;
+}
+
+export class McpNegotiate extends MCPPackage {
+  handle(message: McpMessage): void {
+    throw new Error("Method not implemented.");
+  }
+  public packageName = "mcp-negotiate";
+  public minVersion = 2.0;
+  public maxVersion = 2.0;
+
 }
