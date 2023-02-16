@@ -5,7 +5,7 @@ interface McpMessage {
 }
 
 export function parseMcpMessage(message: string): McpMessage | null {
-  const parts = message.match(/^(#$#\S+)(?:\s+(\S+))?(.*)$/);
+  const parts = message.match(/^#\$#(\S+)(?:\s+(\S{6})\s+)?(.*)$/);
   if (!parts) {
     console.log(
       "Invalid message format: message must match the format '#$#name [authKey] keyval*'"
