@@ -34,26 +34,51 @@ export function parseMcpMessage(message: string): McpMessage | null {
   return { name, authKey, keyvals };
 }
 
-export abstract class MCPPackage {
+export class MCPPackage {
   public readonly packageName!: string;
   public readonly minVersion?: number = 1.0;
   public readonly maxVersion?: number = 1.0;
-  public readonly packageVersion?: number = 1.0;
+  public readonly packageVersion?: number = 0.0;
   protected readonly client: MudClient;
 
   constructor(client: MudClient) {
     this.client = client;
   }
 
-  abstract handle(message: McpMessage): void;
+  handle(message: McpMessage): void {
+
+  }
 }
 
 export class McpNegotiate extends MCPPackage {
   handle(message: McpMessage): void {
-    throw new Error("Method not implemented.");
+    switch (message.name) {
+      case "mcp-negotiate-can":
+
+        break;
+
+      default:
+        break;
+    }
   }
   public packageName = "mcp-negotiate";
   public minVersion = 2.0;
   public maxVersion = 2.0;
 
+  sendNegotiate(): void {
+    for (const p of Object.values(this.client.mcpHandlers)) {
+      let minVersion = p.minVersion?.toFixed(1);
+      let maxVersion = p.maxVersion?.toFixed(1);
+      this.client.sendMcp("mcp-negotiate-can", {"package": p.packageName, "min-version": minVersion, "max-version": maxVersion})
+    }
+    this.client.sendCommand("#$#$mcp-negotiate-end");
+  }
+}
+
+export class McpAwnsStatus extends MCPPackage {
+  public packageName = "dns-com-awns-status"
+
+  handle(message: McpMessage): void {
+      console.log(message);
+  }
 }
