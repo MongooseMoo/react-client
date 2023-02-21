@@ -6,7 +6,7 @@ import {
 } from "./telnet";
 import { EventEmitter } from "eventemitter3";
 import { GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
-import { MCPPackage, parseMcpMessage } from "./mcp";
+import { McpNegotiate, MCPPackage, parseMcpMessage } from "./mcp";
 
 class MudClient extends EventEmitter {
   private ws!: WebSocket;
@@ -20,11 +20,14 @@ class MudClient extends EventEmitter {
   public gmcpHandlers: { [key: string]: GMCPPackage } = {};
   public mcpHandlers: { [key: string]: MCPPackage } = {};
   public mcpAuthKey : string | null = null;
+  mcp_negotiate: McpNegotiate;
 
   constructor(host: string, port: number) {
     super();
     this.host = host;
     this.port = port;
+    this.mcp_negotiate = new McpNegotiate(this);
+    this.mcpHandlers[this.mcp_negotiate.packageName] = this.mcp_negotiate;
   }
 
   registerGMCPPackage(p: typeof GMCPPackage) {
@@ -35,6 +38,7 @@ class MudClient extends EventEmitter {
   registerMcpPackage(p: typeof MCPPackage) {
     const mcpPackage = new p(this);
     this.mcpHandlers[mcpPackage.packageName] = mcpPackage;
+    return mcpPackage;
   }
 
   public connect() {
@@ -99,6 +103,7 @@ class MudClient extends EventEmitter {
 
   public sendCommand(command: string) {
     this.send(command + "\r\n");
+    console.log('> ' + command)
   }
 
   /*
@@ -127,10 +132,24 @@ An MCP message consists of three parts: the name of the message, the authenticat
     if (mcpMessage?.name.toLowerCase() === 'mcp' && mcpMessage.authKey == null && this.mcpAuthKey == null) {
       // Authenticate
       this.mcpAuthKey = (Math.random() + 1).toString(36).substring(3,9);
-      this.sendCommand(`#$#mcp authentication-key: ${this.mcpAuthKey} version: 2.1 to: 2.1`)
+      this.sendCommand(`#$#mcp authentication-key: ${this.mcpAuthKey} version: 2.1 to: 2.1`);
+      this.mcp_negotiate.sendNegotiate();
+    }
+    else if (mcpMessage?.name === "mcp-negotiate-end"){
+      // spec says to refuse additional negotiations after this, but it's not really needed
     }
     else if (mcpMessage?.authKey === this.mcpAuthKey){
-      console.log(mcpMessage.name);
+      let name = mcpMessage.name;
+      do{
+        console.log(name);
+        if (name in this.mcpHandlers){
+
+          this.mcpHandlers[name].handle(mcpMessage);
+          return;
+        }
+        name = name.substring(0, name.lastIndexOf('-'));
+      } while (name);
+      console.log(`No handler for ${mcpMessage.name}`);
     }
     else{
       console.log(`Unexpected authkey "${mcpMessage?.authKey}", probably a spoofed message.`);
@@ -166,8 +185,15 @@ An MCP message consists of three parts: the name of the message, the authenticat
     console.log("Sending GMCP:", packageName, data);
     this.telnet.sendGmcp(packageName, data);
   }
-  sendMcp(packageName: string, data?: any) {
-    this.sendCommand(`#$#${packageName} ${this.mcpAuthKey} ${data}`)
+  sendMcp(command: string, data?: any) {
+    if (typeof(data) === "object") {
+      let str = ""
+      for (const [key, value] of Object.entries(data)) {
+        str += ` ${key}: ${value}`;
+      }
+      data = str;
+    }
+    this.sendCommand(`#$#${command} ${this.mcpAuthKey} ${data}`)
   }
 }
 export default MudClient;
