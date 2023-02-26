@@ -231,11 +231,11 @@ export class GMCPClientWebRTC extends GMCPPackage {
         });
     }
 
-    handleUserJoined(data: GMCPMessageClientWebRTCUserJoined): void {
+    handleUser_Joined(data: GMCPMessageClientWebRTCUserJoined): void {
         this.webrtcClient.createConnection(data.userId, true);
     }
 
-    handleUserLeft(data: GMCPMessageClientWebRTCUserLeft): void {
+    handleUser_Left(data: GMCPMessageClientWebRTCUserLeft): void {
         this.webrtcClient.closeConnection(data.userId);
     }
 
