@@ -168,12 +168,13 @@ An MCP message consists of three parts: the name of the message, the authenticat
       console.log("No handler for GMCP package:", packageName);
       return;
     }
-    const messageHandler = (handler as any)["handle" + messageType];
+    const handlerName = "handle" + messageType;
+    const messageHandler = (handler as any)[handlerName];
     if (messageHandler) {
       console.log("Calling handler:", messageHandler);
       messageHandler.call(handler, JSON.parse(gmcpMessage));
     } else {
-      console.log("No handler for GMCP package:", packageName);
+      console.log("No handler for GMCP package:", packageName, " handler ", handlerName);
     }
   }
 
