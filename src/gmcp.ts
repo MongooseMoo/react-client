@@ -58,6 +58,12 @@ export class GMCPMessageClientWebRTCUserJoined extends GMCPMessage {
     public readonly channel!: string;
 }
 
+export class GMCPMessageClientWebRTCOffer extends GMCPMessage {
+    public readonly userId!: string;
+    public readonly channel!: string;
+    public readonly offer!: string;
+}
+
 export class GMCPPackage {
     public readonly packageName!: string;
     public readonly packageVersion?: number = 1;
@@ -231,5 +237,9 @@ export class GMCPClientWebRTC extends GMCPPackage {
 
     handleUserLeft(data: GMCPMessageClientWebRTCUserLeft): void {
         this.webrtcClient.closeConnection(data.userId);
+    }
+
+    handleOffer(data: GMCPMessageClientWebRTCOffer): void {
+        this.webrtcClient.createConnection(data.userId, false, data.offer);
     }
 }
