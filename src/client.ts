@@ -8,6 +8,7 @@ import { EventEmitter } from "eventemitter3";
 import { GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
 import {
   EditorSession,
+  generateTag,
   McpNegotiate,
   MCPPackage,
   parseMcpMessage,
@@ -154,7 +155,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     console.log("MCP Message:", mcpMessage);
     if (mcpMessage?.name.toLowerCase() === "mcp" && mcpMessage.authKey == null && this.mcpAuthKey == null) {
       // Authenticate
-      this.mcpAuthKey = (Math.random() + 1).toString(36).substring(3, 9);
+      this.mcpAuthKey = generateTag();
       this.sendCommand(`#$#mcp authentication-key: ${this.mcpAuthKey} version: 2.1 to: 2.1`);
       this.mcp_negotiate.sendNegotiate();
     } else if (mcpMessage?.name === "mcp-negotiate-end") {
@@ -218,13 +219,29 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
     this.sendCommand(`#$#${command} ${this.mcpAuthKey} ${data}`);
   }
+  sendMcpML(MLTag: string, key: string, val: string) {
+    this.sendCommand(`#$#* ${MLTag} ${key}: ${val}`);
+  }
+  closeMcpML(MLTag: string) {
+    this.sendCommand(`#$#: ${MLTag}`);
+  }
   openEditorWindow(editorSession: EditorSession) {
     console.log(editorSession);
   }
 
   saveEditorWindow(editorSession: EditorSession) {
-    // TODO: Send dns-org-mud-moo-simpleedit-set
-    // Open Multiline, send contents, close ML
+    const MLTag = generateTag();
+    const keyvals: { [key: string]: string } = {};
+    keyvals["reference"] = editorSession.reference;
+    keyvals['type'] = editorSession.type;
+    keyvals['content*'] = "";
+    keyvals['_data-tag'] = MLTag;
+
+    this.sendMcp("dns-org-mud-moo-simpleedit-set", keyvals);
+    for (const line of editorSession.contents) {
+      this.sendMcpML(MLTag, "content", line);
+    }
+    this.closeMcpML(MLTag);
   }
 }
 export default MudClient;

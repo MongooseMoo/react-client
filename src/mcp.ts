@@ -52,6 +52,10 @@ export function parseMcpMultiline(message: string) : McpMessage | null {
   return { name, authKey, keyvals };
 }
 
+export function generateTag(): string {
+  return (Math.random() + 1).toString(36).substring(3, 9);
+}
+
 export class MCPPackage {
   public readonly packageName!: string;
   public readonly minVersion?: number = 1.0;
