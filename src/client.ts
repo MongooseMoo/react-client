@@ -233,8 +233,26 @@ An MCP message consists of three parts: the name of the message, the authenticat
   closeMcpML(MLTag: string) {
     this.sendCommand(`#$#: ${MLTag}`);
   }
+
   openEditorWindow(editorSession: EditorSession) {
     console.log(editorSession);
+    const channel = new BroadcastChannel("editor");
+    // listen for save events
+    channel.onmessage = (ev) => {
+      console.log("received message", ev.data);
+      if (ev.data.type === "save") {
+        this.saveEditorWindow(ev.data.session);
+      }
+    };
+    const newWindow = window.open("/editor", "_blank") as Window;
+    newWindow.addEventListener("load", () => {
+      setTimeout(() => {
+        channel.postMessage(editorSession);
+      }, 300);
+    });
+    newWindow.addEventListener("beforeunload", () => {
+      this.saveEditorWindow(editorSession);
+    });
   }
 
   saveEditorWindow(editorSession: EditorSession) {
