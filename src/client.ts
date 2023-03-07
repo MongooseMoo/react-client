@@ -112,7 +112,7 @@ class MudClient extends EventEmitter {
 
   public sendCommand(command: string) {
     this.send(command + "\r\n");
-    console.log('> ' + command)
+    console.log("> " + command);
   }
 
   /*
@@ -145,7 +145,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
     if (decoded.startsWith("#$#:")) {
       const closure = parseMcpMultiline(decoded.trimEnd());
-      if (closure){
+      if (closure) {
         this.mcpMultilines[closure.name].closeMultiline(closure);
         delete this.mcpMultilines[closure.name];
       }
@@ -153,10 +153,16 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
     const mcpMessage = parseMcpMessage(decoded.trimEnd());
     console.log("MCP Message:", mcpMessage);
-    if (mcpMessage?.name.toLowerCase() === "mcp" && mcpMessage.authKey == null && this.mcpAuthKey == null) {
+    if (
+      mcpMessage?.name.toLowerCase() === "mcp" &&
+      mcpMessage.authKey == null &&
+      this.mcpAuthKey == null
+    ) {
       // Authenticate
       this.mcpAuthKey = generateTag();
-      this.sendCommand(`#$#mcp authentication-key: ${this.mcpAuthKey} version: 2.1 to: 2.1`);
+      this.sendCommand(
+        `#$#mcp authentication-key: ${this.mcpAuthKey} version: 2.1 to: 2.1`
+      );
       this.mcp_negotiate.sendNegotiate();
     } else if (mcpMessage?.name === "mcp-negotiate-end") {
       // spec says to refuse additional negotiations after this, but it's not really needed
@@ -176,7 +182,9 @@ An MCP message consists of three parts: the name of the message, the authenticat
       } while (name);
       console.log(`No handler for ${mcpMessage.name}`);
     } else {
-      console.log(`Unexpected authkey "${mcpMessage?.authKey}", probably a spoofed message.`);
+      console.log(
+        `Unexpected authkey "${mcpMessage?.authKey}", probably a spoofed message.`
+      );
     }
   }
 
@@ -233,9 +241,9 @@ An MCP message consists of three parts: the name of the message, the authenticat
     const MLTag = generateTag();
     const keyvals: { [key: string]: string } = {};
     keyvals["reference"] = editorSession.reference;
-    keyvals['type'] = editorSession.type;
-    keyvals['content*'] = "";
-    keyvals['_data-tag'] = MLTag;
+    keyvals["type"] = editorSession.type;
+    keyvals["content*"] = "";
+    keyvals["_data-tag"] = MLTag;
 
     this.sendMcp("dns-org-mud-moo-simpleedit-set", keyvals);
     for (const line of editorSession.contents) {
@@ -244,4 +252,5 @@ An MCP message consists of three parts: the name of the message, the authenticat
     this.closeMcpML(MLTag);
   }
 }
+
 export default MudClient;

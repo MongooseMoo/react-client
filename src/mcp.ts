@@ -10,7 +10,9 @@ export function parseMcpMessage(message: string): McpMessage | null {
   const parts = message.match(/^#\$#(\S+)(?:\s+(\S{6})\s+)?(.*)$/);
   if (!parts) {
     console.log(
-      "Invalid message format: message must match the format '#$#name [authKey] keyval*'\nGot `"+ message + "`"
+      "Invalid message format: message must match the format '#$#name [authKey] keyval*'\nGot `" +
+        message +
+        "`"
     );
     return null;
   }
@@ -34,11 +36,15 @@ export function parseMcpMessage(message: string): McpMessage | null {
   return { name, authKey, keyvals };
 }
 
-export function parseMcpMultiline(message: string) : McpMessage | null {
-  const parts = message.match(/^#\$#\*\s(\S+)\s(\S+)\s*:\s*(.+)$|^#\$#:\s(\S+)$/);
+export function parseMcpMultiline(message: string): McpMessage | null {
+  const parts = message.match(
+    /^#\$#\*\s(\S+)\s(\S+)\s*:\s*(.+)$|^#\$#:\s(\S+)$/
+  );
   if (!parts) {
     console.log(
-      "Invalid message format: message must match the format '#$#* datatag keyval'\nGot `"+ message + "`"
+      "Invalid message format: message must match the format '#$#* datatag keyval'\nGot `" +
+        message +
+        "`"
     );
     return null;
   }
@@ -82,7 +88,6 @@ export class McpNegotiate extends MCPPackage {
   handle(message: McpMessage): void {
     switch (message.name) {
       case "mcp-negotiate-can":
-
         break;
 
       default:
@@ -97,19 +102,23 @@ export class McpNegotiate extends MCPPackage {
     for (const p of Object.values(this.client.mcpHandlers)) {
       let minVersion = p.minVersion?.toFixed(1);
       let maxVersion = p.maxVersion?.toFixed(1);
-      this.client.sendMcp("mcp-negotiate-can", {"package": p.packageName, "min-version": minVersion, "max-version": maxVersion})
+      this.client.sendMcp("mcp-negotiate-can", {
+        package: p.packageName,
+        "min-version": minVersion,
+        "max-version": maxVersion,
+      });
     }
     this.client.sendCommand("#$#$mcp-negotiate-end");
   }
 }
 
 export class McpAwnsStatus extends MCPPackage {
-  public packageName = "dns-com-awns-status"
+  public packageName = "dns-com-awns-status";
 
   handle(message: McpMessage): void {
-      // this package only defines one message, so don't bother checking the messagename
-      console.log(message);
-      this.client.statusText = message.keyvals["text"];
+    // this package only defines one message, so don't bother checking the messagename
+    console.log(message);
+    this.client.statusText = message.keyvals["text"];
   }
 }
 
@@ -121,28 +130,31 @@ export interface EditorSession {
 }
 
 export class McpSimpleEdit extends MCPPackage {
-    public packageName = "dns-org-mud-moo-simpleedit";
+  public packageName = "dns-org-mud-moo-simpleedit";
 
-    public sessions: { [key: string]: EditorSession } = {};
+  public sessions: { [key: string]: EditorSession } = {};
 
-    handle(message: McpMessage): void {
-      if (message.name === "dns-org-mud-moo-simpleedit-content")
-      {
-        let name = message.keyvals['name'];
-        let reference = message.keyvals['reference'];
-        let type = message.keyvals['type'];
-        let contents: string[] = [];
-        this.sessions[message.keyvals['_data-tag']] = {name, reference, type, contents};
-      }
+  handle(message: McpMessage): void {
+    if (message.name === "dns-org-mud-moo-simpleedit-content") {
+      let name = message.keyvals["name"];
+      let reference = message.keyvals["reference"];
+      let type = message.keyvals["type"];
+      let contents: string[] = [];
+      this.sessions[message.keyvals["_data-tag"]] = {
+        name,
+        reference,
+        type,
+        contents,
+      };
     }
+  }
 
-    handleMultiline(message: McpMessage): void {
-        if ('content' in message.keyvals)
-          this.sessions[message.name].contents.push(message.keyvals['content']);
-        else
-          console.log(`Unexpected simpleedit ML ${message}`);
-    }
-    closeMultiline(closure: McpMessage): void {
-        this.client.openEditorWindow(this.sessions[closure.name]);
-    }
+  handleMultiline(message: McpMessage): void {
+    if ("content" in message.keyvals)
+      this.sessions[message.name].contents.push(message.keyvals["content"]);
+    else console.log(`Unexpected simpleedit ML ${message}`);
+  }
+  closeMultiline(closure: McpMessage): void {
+    this.client.openEditorWindow(this.sessions[closure.name]);
+  }
 }
