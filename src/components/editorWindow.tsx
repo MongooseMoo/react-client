@@ -37,21 +37,23 @@ export default function EditorWindow() {
           borderBottom: "1px solid #e8e8e8",
         }}
       >
-        <div>
-          <button
-            onClick={() => {
-              const channel = new BroadcastChannel("editor");
-              channel.postMessage({
-                type: "save",
-                session: { ...session, contents: code.split("\n") },
-              });
-              channel.close();
-            }}
-            accessKey="s"
-          >
-            Save
-          </button>
-        </div>
+        <form>
+          <div>
+            <button
+              onClick={() => {
+                const channel = new BroadcastChannel("editor");
+                channel.postMessage({
+                  type: "save",
+                  session: { ...session, contents: code.split("\n") },
+                });
+                channel.close();
+              }}
+              accessKey="s"
+            >
+              Save
+            </button>
+          </div>
+        </form>
       </toolbar>
       <Editor
         height="90vh"
