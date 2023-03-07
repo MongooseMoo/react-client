@@ -247,7 +247,10 @@ An MCP message consists of three parts: the name of the message, the authenticat
     const newWindow = window.open("/editor", "_blank") as Window;
     newWindow.addEventListener("load", () => {
       setTimeout(() => {
-        channel.postMessage(editorSession);
+        channel.postMessage({
+          type: "load",
+          session: editorSession,
+        });
       }, 300);
     });
     newWindow.addEventListener("beforeunload", () => {

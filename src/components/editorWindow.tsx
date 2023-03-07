@@ -1,15 +1,25 @@
 import React, { useEffect } from "react";
 import Editor from "@monaco-editor/react";
+import { EditorSession } from "../mcp";
 // styles from monaco
 
 export default function EditorWindow() {
   const [code, setCode] = React.useState<string>("Hello, World!");
+  const [session, setSession] = React.useState<EditorSession>({
+    name: "none",
+    contents: [],
+    reference: "",
+    type: "",
+  });
   // subscribe to a broadcast channel
   useEffect(() => {
     const channel = new BroadcastChannel("editor");
     channel.onmessage = (event) => {
       console.log(event.data);
-      setCode(event.data.contents.join("\n"));
+      if (event.data.type === "load") {
+        setCode(event.data.session.contents.join("\n"));
+        setSession(event.data.session);
+      }
     };
     return () => channel.close();
   }, []);
@@ -33,7 +43,7 @@ export default function EditorWindow() {
               const channel = new BroadcastChannel("editor");
               channel.postMessage({
                 type: "save",
-                session: { contents: code.split("\n") },
+                session: { ...session, contents: code.split("\n") },
               });
               channel.close();
             }}
