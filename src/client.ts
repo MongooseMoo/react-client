@@ -217,19 +217,22 @@ An MCP message consists of three parts: the name of the message, the authenticat
     console.log("Sending GMCP:", packageName, data);
     this.telnet.sendGmcp(packageName, data);
   }
+
   sendMcp(command: string, data?: any) {
     if (typeof data === "object") {
       let str = "";
       for (const [key, value] of Object.entries(data)) {
-        str += ` ${key}: ${value}`;
+        str += ` ${key}: ${value || '""'}`;
       }
       data = str;
     }
     this.sendCommand(`#$#${command} ${this.mcpAuthKey} ${data}`);
   }
+
   sendMcpML(MLTag: string, key: string, val: string) {
     this.sendCommand(`#$#* ${MLTag} ${key}: ${val}`);
   }
+
   closeMcpML(MLTag: string) {
     this.sendCommand(`#$#: ${MLTag}`);
   }
@@ -241,9 +244,11 @@ An MCP message consists of three parts: the name of the message, the authenticat
     channel.onmessage = (ev) => {
       console.log("received message", ev.data);
       if (ev.data.type === "save") {
+        console.log("saving editor window with session", ev.data.session);
         this.saveEditorWindow(ev.data.session);
       }
     };
+
     const newWindow = window.open("/editor", "_blank") as Window;
     newWindow.addEventListener("load", () => {
       setTimeout(() => {
@@ -252,9 +257,6 @@ An MCP message consists of three parts: the name of the message, the authenticat
           session: editorSession,
         });
       }, 300);
-    });
-    newWindow.addEventListener("beforeunload", () => {
-      this.saveEditorWindow(editorSession);
     });
   }
 
