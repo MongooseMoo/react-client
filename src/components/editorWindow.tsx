@@ -56,6 +56,11 @@ function EditorWindow() {
     return () => channel.removeEventListener("message", handleMessage);
   }, [channel]);
 
+  const revert = () => {
+    setCode(originalCode);
+    setDocumentState(DocumentState.Unchanged);
+  };
+
   // Save the code
   const onSave = (event: React.FormEvent<HTMLButtonElement>) => {
     const contents = code.split(/\r\n|\r|\n/); // Split the code into lines
@@ -100,6 +105,9 @@ function EditorWindow() {
         <form onSubmit={(event) => event.preventDefault()}>
           <button onClick={onSave} accessKey="s">
             Save
+          </button>
+          <button onClick={revert} accessKey="r">
+            Revert
           </button>
         </form>
       </div>
