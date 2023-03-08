@@ -1,43 +1,47 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { EditorSession } from "../mcp";
-// to update the title
 import { useTitle } from "react-use";
 
-export default function EditorWindow() {
-  const [code, setCode] = React.useState<string>("Hello, World!");
-
-  const [session, setSession] = React.useState<EditorSession>({
+function EditorWindow() {
+  const [code, setCode] = useState<string>("");
+  const [session, setSession] = useState<EditorSession>({
     name: "none",
     contents: [],
     reference: "",
     type: "",
   });
+
+  // Update the title
   useTitle("Mongoose Editor - " + session.name);
-  // subscribe to a broadcast channel
+
+  // Subscribe to a broadcast channel
   const channel = useMemo(() => new BroadcastChannel("editor"), []);
   useEffect(() => {
-    channel.onmessage = (event) => {
+    function handleMessage(event: MessageEvent) {
       console.log(event.data);
       if (event.data.type === "load") {
-        setCode(event.data.session.contents.join("\n"));
+        const contents = event.data.session.contents.join("\n");
+        setCode(contents);
         setSession(event.data.session);
       }
-    };
+    }
+
+    channel.addEventListener("message", handleMessage);
+
+    return () => channel.removeEventListener("message", handleMessage);
   }, [channel]);
 
-  const onSave = (evt: React.FormEvent<HTMLButtonElement>) => {
-    // we must split the code into a list of lines. If on windows, we also need to get rid of the \r on each line
-    const contents = code.split("\r ").join("").split(" n");
-    channel.postMessage({
-      type: "save",
-      session: { ...session, contents },
-    });
-    evt.preventDefault();
+  // Save the code
+  const onSave = (event: React.FormEvent<HTMLButtonElement>) => {
+    const contents = code.split(/\r\n|\r|\n/); // Split the code into lines
+    const sessionData = { ...session, contents };
+    channel.postMessage({ type: "save", session: sessionData });
+    event.preventDefault();
   };
 
   return (
-    <div>
+    <>
       <div
         className="toolbar"
         style={{
@@ -50,24 +54,20 @@ export default function EditorWindow() {
           borderBottom: "1px solid #e8e8e8",
         }}
       >
-        <form>
-          <div>
-            <button onClick={onSave} accessKey="s">
-              Save
-            </button>
-          </div>
+        <form onSubmit={(event) => event.preventDefault()}>
+          <button onClick={onSave} accessKey="s">
+            Save
+          </button>
         </form>
       </div>
       <Editor
         height="90vh"
         defaultLanguage="lambdamoo"
         value={code}
-        onChange={(value) => {
-          if (value) {
-            setCode(value);
-          }
-        }}
+        onChange={(value) => setCode(value || "")}
       />
-    </div>
+    </>
   );
 }
+
+export default EditorWindow;
