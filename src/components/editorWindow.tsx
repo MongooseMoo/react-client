@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { EditorSession } from "../mcp";
 import { useTitle } from "react-use";
+// Hook for beforeonload
+import { useBeforeunload } from "react-beforeunload";
 
 enum DocumentState {
   Unchanged,
@@ -20,6 +22,12 @@ function EditorWindow() {
     contents: [],
     reference: "",
     type: "",
+  });
+
+  useBeforeunload((event) => {
+    if (documentState === DocumentState.Changed) {
+      event.preventDefault();
+    }
   });
 
   // Update the title
