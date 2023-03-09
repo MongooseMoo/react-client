@@ -139,8 +139,13 @@ export class McpSimpleEdit extends MCPPackage {
   public packageName = "dns-org-mud-moo-simpleedit";
 
   public sessions: { [key: string]: EditorSession } = {};
+  clientId: string;
 
-  public clientId = generateTag();
+  constructor(client: MudClient) {
+    super(client);
+    this.clientId = generateTag();
+  }
+
   handle(message: McpMessage): void {
     if (message.name === "dns-org-mud-moo-simpleedit-content") {
       let name = message.keyvals["name"];
