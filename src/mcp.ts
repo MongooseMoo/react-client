@@ -76,11 +76,17 @@ export class MCPPackage {
   handle(message: McpMessage): void {
     throw new Error("Method not implemented.");
   }
+
   handleMultiline(message: McpMessage): void {
     throw new Error("Method not implemented.");
   }
+
   closeMultiline(closure: McpMessage) {
     throw new Error("Method not implemented.");
+  }
+
+  shutdown() {
+    // Do nothing
   }
 }
 
@@ -154,7 +160,13 @@ export class McpSimpleEdit extends MCPPackage {
       this.sessions[message.name].contents.push(message.keyvals["content"]);
     else console.log(`Unexpected simpleedit ML ${message}`);
   }
+
   closeMultiline(closure: McpMessage): void {
     this.client.openEditorWindow(this.sessions[closure.name]);
+  }
+
+  shutdown() {
+    const channel = new BroadcastChannel("editor");
+    channel.postMessage({ type: "shutdown" });
   }
 }

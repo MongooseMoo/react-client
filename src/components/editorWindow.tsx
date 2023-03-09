@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { EditorSession } from "../mcp";
 import { useTitle } from "react-use";
-// Hook for beforeonload
 import { useBeforeunload } from "react-beforeunload";
 
 enum DocumentState {
@@ -57,6 +56,9 @@ function EditorWindow() {
         setOriginalCode(contents);
         setSession(event.data.session);
         setDocumentState(DocumentState.Unchanged);
+      } else if (event.data.type === "shutdown") {
+        channel.close();
+        window.close();
       }
     }
 

@@ -1,5 +1,5 @@
 import React from "react";
-
+import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import OutputWindow from "./components/output";
 import MudClient from "./client";
@@ -16,6 +16,9 @@ client.registerMcpPackage(McpSimpleEdit);
 client.connect();
 
 function App() {
+  useBeforeunload((event) => {
+    client.shutdown();
+  });
   return (
     <div className="App">
       <header className="App-header"></header>

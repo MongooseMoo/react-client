@@ -4,6 +4,7 @@ import {
   TelnetOption,
   WebSocketStream,
 } from "./telnet";
+
 import { EventEmitter } from "eventemitter3";
 import { GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
 import {
@@ -273,6 +274,15 @@ An MCP message consists of three parts: the name of the message, the authenticat
       this.sendMcpML(MLTag, "content", line);
     }
     this.closeMcpML(MLTag);
+  }
+
+  shutdown() {
+    Object.values(this.mcpHandlers).forEach((handler) => {
+      handler.shutdown();
+    });
+    Object.values(this.gmcpHandlers).forEach((handler) => {
+      handler.shutdown();
+    });
   }
 }
 
