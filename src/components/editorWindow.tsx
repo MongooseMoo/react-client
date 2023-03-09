@@ -11,6 +11,7 @@ enum DocumentState {
 }
 
 function EditorWindow() {
+  const [clientId, setClientId] = useState<string>("");
   const [code, setCode] = useState<string>("");
   const [originalCode, setOriginalCode] = useState<string>("");
   const [documentState, setDocumentState] = useState<DocumentState>(
@@ -56,7 +57,11 @@ function EditorWindow() {
         setOriginalCode(contents);
         setSession(event.data.session);
         setDocumentState(DocumentState.Unchanged);
+        setClientId(event.data.clientId);
       } else if (event.data.type === "shutdown") {
+        if (event.data.clientId !== clientId) {
+          return;
+        }
         channel.close();
         window.close();
       }
@@ -64,7 +69,7 @@ function EditorWindow() {
 
     channel.addEventListener("message", handleMessage);
     return () => channel.removeEventListener("message", handleMessage);
-  }, [channel]);
+  }, [channel, clientId]);
 
   const revert = () => {
     setCode(originalCode);
