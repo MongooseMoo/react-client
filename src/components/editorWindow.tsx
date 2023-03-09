@@ -52,6 +52,9 @@ function EditorWindow() {
     function handleMessage(event: MessageEvent) {
       console.log(event.data);
       if (event.data.type === "load") {
+        if (clientId !== "") {
+          return; // We already have a session
+        }
         const contents = event.data.session.contents.join("\n");
         setCode(contents);
         setOriginalCode(contents);
