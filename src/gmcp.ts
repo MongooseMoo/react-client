@@ -59,10 +59,15 @@ export class GMCPPackage {
       JSON.stringify(data)
     );
   }
+
+  shutdown() {
+    // Do nothing
+  }
 }
 
 export class GMCPCore extends GMCPPackage {
   public packageName: string = "Core";
+
   sendHello(): void {
     this.sendData("Hello", { client: "Mongoose Client", version: "0.1" });
   }
