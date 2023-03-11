@@ -4,9 +4,17 @@ import {
   TelnetOption,
   WebSocketStream,
 } from "./telnet";
+
 import { EventEmitter } from "eventemitter3";
 import { GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
-import { McpNegotiate, MCPPackage, parseMcpMessage } from "./mcp";
+import {
+  EditorSession,
+  generateTag,
+  McpNegotiate,
+  MCPPackage,
+  parseMcpMessage,
+  parseMcpMultiline,
+} from "./mcp";
 
 class MudClient extends EventEmitter {
   private ws!: WebSocket;
@@ -19,8 +27,10 @@ class MudClient extends EventEmitter {
   private telnetBuffer: string = "";
   public gmcpHandlers: { [key: string]: GMCPPackage } = {};
   public mcpHandlers: { [key: string]: MCPPackage } = {};
-  public mcpAuthKey : string | null = null;
+  public mcpMultilines: { [key: string]: MCPPackage } = {};
+  public mcpAuthKey: string | null = null;
   mcp_negotiate: McpNegotiate;
+  public statusText: string = "";
 
   constructor(host: string, port: number) {
     super();
@@ -103,7 +113,7 @@ class MudClient extends EventEmitter {
 
   public sendCommand(command: string) {
     this.send(command + "\r\n");
-    console.log('> ' + command)
+    console.log("> " + command);
   }
 
   /*
@@ -114,12 +124,12 @@ class MudClient extends EventEmitter {
 An MCP message consists of three parts: the name of the message, the authentication key, and a set of keywords and their associated values. The message name indicates what action is to be performed; if the given message name is unknown, the message should be ignored. The authentication key is generated at the beginning of the session; if it is incorrect, the message should be ignored. The keyword-value pairs specify the arguments to the message. These arguments may occur in any order, and the ordering of the arguments does not affect the semantics of the message. There is no limit on the number of keyword-value pairs which may appear in a message, or on the lengths of message names, keywords, or values.
 */
   private handleData(data: ArrayBuffer) {
-    const decoded = this.decoder.decode(data);
+    const decoded = this.decoder.decode(data).trimEnd();
     if (decoded.startsWith("#$#")) {
       // MCP
-      for (const line of decoded.split('\n')) {
-        if (line)
-          this.handleMcp(line);
+      for (const line of decoded.split("\n")) {
+        if (line && line.startsWith("#$#")) this.handleMcp(line);
+        else if (line) this.emitMessage(line);
       }
     } else {
       this.emitMessage(decoded);
@@ -127,32 +137,55 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private handleMcp(decoded: string) {
+    if (decoded.startsWith("#$#*")) {
+      // multiline
+      const continuation = parseMcpMultiline(decoded.trimEnd());
+      if (continuation)
+        this.mcpMultilines[continuation.name].handleMultiline(continuation);
+      return;
+    }
+    if (decoded.startsWith("#$#:")) {
+      const closure = parseMcpMultiline(decoded.trimEnd());
+      if (closure) {
+        this.mcpMultilines[closure.name].closeMultiline(closure);
+        delete this.mcpMultilines[closure.name];
+      }
+      return;
+    }
     const mcpMessage = parseMcpMessage(decoded.trimEnd());
     console.log("MCP Message:", mcpMessage);
-    if (mcpMessage?.name.toLowerCase() === 'mcp' && mcpMessage.authKey == null && this.mcpAuthKey == null) {
+    if (
+      mcpMessage?.name.toLowerCase() === "mcp" &&
+      mcpMessage.authKey == null &&
+      this.mcpAuthKey == null
+    ) {
       // Authenticate
-      this.mcpAuthKey = (Math.random() + 1).toString(36).substring(3,9);
-      this.sendCommand(`#$#mcp authentication-key: ${this.mcpAuthKey} version: 2.1 to: 2.1`);
+      this.mcpAuthKey = generateTag();
+      this.sendCommand(
+        `#$#mcp authentication-key: ${this.mcpAuthKey} version: 2.1 to: 2.1`
+      );
       this.mcp_negotiate.sendNegotiate();
-    }
-    else if (mcpMessage?.name === "mcp-negotiate-end"){
+    } else if (mcpMessage?.name === "mcp-negotiate-end") {
       // spec says to refuse additional negotiations after this, but it's not really needed
-    }
-    else if (mcpMessage?.authKey === this.mcpAuthKey){
+    } else if (mcpMessage?.authKey === this.mcpAuthKey) {
       let name = mcpMessage.name;
-      do{
-        console.log(name);
-        if (name in this.mcpHandlers){
-
+      do {
+        if (name in this.mcpHandlers) {
           this.mcpHandlers[name].handle(mcpMessage);
+          if ("_data-tag" in mcpMessage.keyvals) {
+            console.log("new multiline " + mcpMessage.keyvals["_data-tag"]);
+            this.mcpMultilines[mcpMessage.keyvals["_data-tag"]] =
+              this.mcpHandlers[name];
+          }
           return;
         }
-        name = name.substring(0, name.lastIndexOf('-'));
+        name = name.substring(0, name.lastIndexOf("-"));
       } while (name);
       console.log(`No handler for ${mcpMessage.name}`);
-    }
-    else{
-      console.log(`Unexpected authkey "${mcpMessage?.authKey}", probably a spoofed message.`);
+    } else {
+      console.log(
+        `Unexpected authkey "${mcpMessage?.authKey}", probably a spoofed message.`
+      );
     }
   }
 
@@ -185,15 +218,72 @@ An MCP message consists of three parts: the name of the message, the authenticat
     console.log("Sending GMCP:", packageName, data);
     this.telnet.sendGmcp(packageName, data);
   }
+
   sendMcp(command: string, data?: any) {
-    if (typeof(data) === "object") {
-      let str = ""
+    if (typeof data === "object") {
+      let str = "";
       for (const [key, value] of Object.entries(data)) {
-        str += ` ${key}: ${value}`;
+        str += ` ${key}: ${value || '""'}`;
       }
       data = str;
     }
-    this.sendCommand(`#$#${command} ${this.mcpAuthKey} ${data}`)
+    this.sendCommand(`#$#${command} ${this.mcpAuthKey} ${data}`);
+  }
+
+  sendMcpML(MLTag: string, key: string, val: string) {
+    this.sendCommand(`#$#* ${MLTag} ${key}: ${val}`);
+  }
+
+  closeMcpML(MLTag: string) {
+    this.sendCommand(`#$#: ${MLTag}`);
+  }
+
+  openEditorWindow(editorSession: EditorSession) {
+    console.log(editorSession);
+    const channel = new BroadcastChannel("editor");
+    // listen for save events
+    channel.onmessage = (ev) => {
+      console.log("received message", ev.data);
+      if (ev.data.type === "save") {
+        console.log("saving editor window with session", ev.data.session);
+        this.saveEditorWindow(ev.data.session);
+      }
+    };
+
+    const newWindow = window.open("/editor", "_blank") as Window;
+    newWindow.addEventListener("load", () => {
+      setTimeout(() => {
+        channel.postMessage({
+          type: "load",
+          session: editorSession,
+        });
+      }, 300);
+    });
+  }
+
+  saveEditorWindow(editorSession: EditorSession) {
+    const MLTag = generateTag();
+    const keyvals: { [key: string]: string } = {};
+    keyvals["reference"] = editorSession.reference;
+    keyvals["type"] = editorSession.type;
+    keyvals["content*"] = "";
+    keyvals["_data-tag"] = MLTag;
+
+    this.sendMcp("dns-org-mud-moo-simpleedit-set", keyvals);
+    for (const line of editorSession.contents) {
+      this.sendMcpML(MLTag, "content", line);
+    }
+    this.closeMcpML(MLTag);
+  }
+
+  shutdown() {
+    Object.values(this.mcpHandlers).forEach((handler) => {
+      handler.shutdown();
+    });
+    Object.values(this.gmcpHandlers).forEach((handler) => {
+      handler.shutdown();
+    });
   }
 }
+
 export default MudClient;

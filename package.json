@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "homepage": "https://client.rustytelephone.net",
   "dependencies": {
+    "@monaco-editor/react": "^4.4.6",
     "anser": "^2.1.1",
     "eventemitter3": "^5.0.0",
     "howler": "^2.2.3",
     "react": "^18.2.0",
+    "react-beforeunload": "^2.5.3",
     "react-dom": "^18.2.0",
+    "react-router-dom": "^6.8.2",
     "react-scripts": "^4.0.3",
+    "react-use": "^17.4.0",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
@@ -39,11 +43,12 @@
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
+    "@types/howler": "^2.2.7",
     "@types/jest": "^27.5.2",
     "@types/node": "^16.18.11",
     "@types/react": "^18.0.26",
+    "@types/react-beforeunload": "^2.1.1",
     "@types/react-dom": "^18.0.10",
-    "@types/howler": "^2.2.7",
     "typescript": "^4.9.4"
   }
 }
