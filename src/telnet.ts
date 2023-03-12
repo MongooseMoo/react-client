@@ -1,6 +1,5 @@
-import { EventEmitter } from 'eventemitter3';
-
-
+import { EventEmitter } from "eventemitter3";
+import { Buffer } from "buffer";
 
 export enum TelnetOption {
   BINARY = 0, // Binary Transmission
@@ -59,7 +58,6 @@ export enum TelnetOption {
 }
 
 export enum TelnetCommand {
-
   SE = 240, //  End of subnegotiation parameters.
   NOP = 241, //   No operation.
   DM = 242, //  Data mark. The data stream portion of a Synch.
@@ -70,7 +68,7 @@ export enum TelnetCommand {
   EC = 247, // Erase the current Character.
   EL = 248, //  Erase the current line
   GA = 249, //  Go ahead.
-  SB = 250,   //  Indicates that what follows is subnegotiation of the indicated option.
+  SB = 250, //  Indicates that what follows is subnegotiation of the indicated option.
   WILL = 251, // Indicates the desire to begin performing, or confirmation that you are now performing, the indicated option.
   WONT = 252, // Indicates the refusal to perform, or continue performing, the indicated option.
   DO = 253, //  Indicates the request that the other party perform, or confirmation that you are expecting the other party to perform, the indicated option.
@@ -79,11 +77,10 @@ export enum TelnetCommand {
 }
 
 export interface Stream {
-  on(event: 'data', cb: (data: Buffer) => void): void;
-  on(event: 'close', cb: () => void): void;
+  on(event: "data", cb: (data: Buffer) => void): void;
+  on(event: "close", cb: () => void): void;
   write(data: Buffer): void;
 }
-
 
 export class WebSocketStream implements Stream {
   private ws: WebSocket;
@@ -92,19 +89,18 @@ export class WebSocketStream implements Stream {
     this.ws = ws;
   }
 
-  on(event: 'data', cb: (data: Buffer) => void): void;
-  on(event: 'close', cb: () => void): void;
+  on(event: "data", cb: (data: Buffer) => void): void;
+  on(event: "close", cb: () => void): void;
   on(event: string, cb: (...args: any[]) => void): void {
-    if (event === 'data') {
+    if (event === "data") {
       this.ws.onmessage = (e) => {
         cb(e.data);
       };
       return;
     }
 
-    const funcname = 'on' + event as keyof WebSocketStream;
+    const funcname = ("on" + event) as keyof WebSocketStream;
     this[funcname] = cb;
-
   }
 
   write(data: Buffer): void {
@@ -112,12 +108,11 @@ export class WebSocketStream implements Stream {
   }
 }
 
-
 enum TelnetState {
   DATA,
   COMMAND,
   SUBNEGOTIATION,
-  NEGOTIATION
+  NEGOTIATION,
 }
 
 export class TelnetParser extends EventEmitter {
@@ -128,13 +123,12 @@ export class TelnetParser extends EventEmitter {
   private negotiationByte = 0;
   stream: Stream | undefined;
 
-
   constructor(stream?: Stream) {
     super();
     this.state = TelnetState.DATA;
     this.buffer = Buffer.alloc(0);
     this.subBuffer = Buffer.alloc(0);
-    stream && stream.on('data', (data: Buffer) => this.parse(data));
+    stream && stream.on("data", (data: Buffer) => this.parse(data));
     this.stream = stream;
   }
 
@@ -169,16 +163,15 @@ export class TelnetParser extends EventEmitter {
     }
   }
 
-
   private handleData() {
     const index = this.buffer.indexOf(TelnetCommand.IAC);
     if (index === -1) {
-      this.emit('data', this.buffer);
+      this.emit("data", this.buffer);
       this.buffer = Buffer.alloc(0);
       return;
     }
 
-    this.emit('data', this.buffer.slice(0, index));
+    this.emit("data", this.buffer.slice(0, index));
     this.buffer = this.buffer.slice(index);
     this.state = TelnetState.COMMAND;
   }
@@ -192,7 +185,7 @@ export class TelnetParser extends EventEmitter {
 
     switch (command) {
       case TelnetCommand.NOP:
-        this.emit('command', TelnetCommand.NOP);
+        this.emit("command", TelnetCommand.NOP);
         this.state = TelnetState.DATA;
         break;
       case TelnetCommand.SB:
@@ -222,7 +215,7 @@ export class TelnetParser extends EventEmitter {
     const option = this.buffer[0];
     this.buffer = this.buffer.slice(1);
 
-    this.emit('negotiation', command, option);
+    this.emit("negotiation", command, option);
     this.state = TelnetState.DATA;
     return false;
   }
@@ -238,7 +231,7 @@ export class TelnetParser extends EventEmitter {
     if (sb[0] === TelnetOption.GMCP) {
       this.handleGmcp(sb.slice(1));
     } else {
-      this.emit('subnegotiation', sb);
+      this.emit("subnegotiation", sb);
     }
     this.buffer = this.buffer.slice(index + 2);
     return false;
@@ -247,7 +240,7 @@ export class TelnetParser extends EventEmitter {
   private handleGmcp(data: Buffer) {
     const gmcpString = data.toString();
     const [gmcpPackage, dataString] = gmcpString.split(/ +(.+?)$/, 2);
-    this.emit('gmcp', gmcpPackage, dataString);
+    this.emit("gmcp", gmcpPackage, dataString);
   }
 
   sendNegotiation(command: TelnetCommand, option: TelnetOption) {
@@ -255,13 +248,13 @@ export class TelnetParser extends EventEmitter {
   }
 
   sendGmcp(gmcpPackage: string, data: string) {
-    const gmcpString = gmcpPackage + ' ' + data;
+    const gmcpString = gmcpPackage + " " + data;
     const gmcpBuffer = Buffer.from(gmcpString);
     const buffer = Buffer.concat([
       Buffer.from([TelnetCommand.IAC, TelnetCommand.SB]),
       Buffer.from([TelnetOption.GMCP]),
       gmcpBuffer,
-      this.iacSEBuffer
+      this.iacSEBuffer,
     ]);
     this.stream!.write(buffer);
   }
@@ -272,9 +265,8 @@ export class TelnetParser extends EventEmitter {
       Buffer.from([TelnetCommand.IAC, TelnetCommand.SB]),
       Buffer.from([TelnetOption.TERMINAL_TYPE, TelnetOption.BINARY]),
       gmcpBuffer,
-      this.iacSEBuffer
+      this.iacSEBuffer,
     ]);
     this.stream!.write(buffer);
   }
-
 }
