@@ -241,24 +241,19 @@ An MCP message consists of three parts: the name of the message, the authenticat
   openEditorWindow(editorSession: EditorSession) {
     console.log(editorSession);
     const channel = new BroadcastChannel("editor");
-    // listen for save events
+    // open editor in new tab
+    const editorWindow = window.open("/editor", "_blank");
     channel.onmessage = (ev) => {
-      console.log("received message", ev.data);
-      if (ev.data.type === "save") {
-        console.log("saving editor window with session", ev.data.session);
-        this.saveEditorWindow(ev.data.session);
-      }
-    };
-
-    const newWindow = window.open("/editor", "_blank") as Window;
-    newWindow.addEventListener("load", () => {
-      setTimeout(() => {
+      if (ev.data.type === "ready") {
         channel.postMessage({
           type: "load",
           session: editorSession,
         });
-      }, 300);
-    });
+      } else if (ev.data.type === "save") {
+        console.log("saving editor window with session", ev.data.session);
+        this.saveEditorWindow(ev.data.session);
+      }
+    };
   }
 
   saveEditorWindow(editorSession: EditorSession) {

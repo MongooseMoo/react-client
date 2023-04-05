@@ -47,10 +47,11 @@ function EditorWindow() {
         return "Saved";
     }
   }, [documentState]);
-
-  // Subscribe to a broadcast channel
   const channel = useMemo(() => new BroadcastChannel("editor"), []);
   useEffect(() => {
+    if (!clientId) {
+      channel.postMessage({ type: "ready" });
+    }
     function handleMessage(event: MessageEvent) {
       console.log(event.data);
       if (event.data.type === "load") {
