@@ -245,6 +245,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     const editorWindow = window.open("/editor", "_blank");
     channel.onmessage = (ev) => {
       if (ev.data.type === "ready") {
+        console.log("sending editor window session", editorSession);
         channel.postMessage({
           type: "load",
           session: editorSession,

@@ -50,6 +50,7 @@ function EditorWindow() {
   const channel = useMemo(() => new BroadcastChannel("editor"), []);
   useEffect(() => {
     if (!clientId) {
+      console.log("Sending ready message");
       channel.postMessage({ type: "ready" });
     }
     function handleMessage(event: MessageEvent) {
