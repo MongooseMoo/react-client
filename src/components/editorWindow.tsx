@@ -31,10 +31,12 @@ function EditorWindow() {
   });
 
   // Update the title
-  useTitle("Mongoose Editor - " + session.name);
 
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
-
+  const title = isLoaded
+    ? `${session.name} - Mongoose Editor`
+    : "Mongoose Editor";
+  useTitle(title);
   const docstate = useMemo(() => {
     switch (documentState) {
       case DocumentState.Unchanged:
