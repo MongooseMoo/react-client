@@ -8,7 +8,6 @@ import reportWebVitals from "./reportWebVitals";
 
 const router = createBrowserRouter([
   { path: "/", element: <App /> },
-  { path: "/index.html", element: <App /> },
   { path: "/editor", element: <EditorWindow /> },
 ]);
 

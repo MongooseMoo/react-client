@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
-import { EditorSession } from "../mcp";
-import { useTitle } from "react-use";
+import React, { useEffect, useMemo, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
+import { useLocation } from "react-router-dom";
+import { useTitle } from "react-use";
+import { EditorSession } from "../mcp";
 
 enum DocumentState {
   Unchanged,
@@ -11,6 +12,7 @@ enum DocumentState {
 }
 
 function EditorWindow() {
+  const location = useLocation();
   const [clientId, setClientId] = useState<string>("");
   const [code, setCode] = useState<string>("");
   const [originalCode, setOriginalCode] = useState<string>("");
@@ -49,6 +51,7 @@ function EditorWindow() {
   }, [documentState]);
   const channel = useMemo(() => new BroadcastChannel("editor"), []);
   useEffect(() => {
+    console.log("Location ", location.pathname);
     if (!clientId) {
       console.log("Sending ready message");
       channel.postMessage({ type: "ready" });
@@ -76,7 +79,7 @@ function EditorWindow() {
 
     channel.addEventListener("message", handleMessage);
     return () => channel.removeEventListener("message", handleMessage);
-  }, [channel, clientId]);
+  }, [channel, clientId, location]);
 
   const revert = () => {
     setCode(originalCode);
