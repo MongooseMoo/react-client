@@ -94,6 +94,10 @@ class Output extends React.Component<Props, State> {
     }
   }
 
+  clearLog() {
+    this.setState({ output: [] });
+  }
+
   render() {
     return (
       <div

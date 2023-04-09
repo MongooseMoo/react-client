@@ -24,13 +24,19 @@ function App() {
     }
   };
 
+  const clearLog = () => {
+    if (outRef.current) {
+      outRef.current.clearLog();
+    }
+  };
+
   useBeforeunload((event) => {
     client.shutdown();
   });
   return (
     <div className="App">
       <header className="App-header"></header>
-      <Toolbar onSaveLog={saveLog} />
+      <Toolbar onSaveLog={saveLog} onClearLog={clearLog} />
       <OutputWindow client={client} ref={outRef} />
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
     </div>
