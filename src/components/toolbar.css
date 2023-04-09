@@ -7,16 +7,11 @@
   border-radius: 5px;
   padding: 10px;
   margin-bottom: 20px;
-  position: fixed; /* Add this line */
-  top: 0; /* Add this line */
-  left: 0; /* Add this line */
-  width: 100%; /* Add this line */
-  z-index: 1000; /* Add this line */
-}
-
-/* Add this class to create space for the toolbar when using position fixed */
-body {
-  padding-top: 60px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1000;
 }
 
 .toolbar button {
