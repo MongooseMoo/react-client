@@ -125,14 +125,14 @@ An MCP message consists of three parts: the name of the message, the authenticat
 */
   private handleData(data: ArrayBuffer) {
     const decoded = this.decoder.decode(data).trimEnd();
-    if (decoded.startsWith("#$#")) {
-      // MCP
-      for (const line of decoded.split("\n")) {
-        if (line && line.startsWith("#$#")) this.handleMcp(line);
-        else if (line) this.emitMessage(line);
+    for (const line of decoded.split("\n")) {
+      if (line && line.startsWith("#$#")) {
+        // MCP
+        this.handleMcp(line);
       }
-    } else {
-      this.emitMessage(decoded);
+      else {
+        this.emitMessage(line);
+      }
     }
   }
 
