@@ -10,6 +10,7 @@ import { GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
 import {
   EditorSession,
   generateTag,
+  McpAwnsGetSet,
   McpNegotiate,
   MCPPackage,
   parseMcpMessage,
@@ -31,13 +32,14 @@ class MudClient extends EventEmitter {
   public mcpAuthKey: string | null = null;
   mcp_negotiate: McpNegotiate;
   public statusText: string = "";
+  public mcp_getset: McpAwnsGetSet;
 
   constructor(host: string, port: number) {
     super();
     this.host = host;
     this.port = port;
-    this.mcp_negotiate = new McpNegotiate(this);
-    this.mcpHandlers[this.mcp_negotiate.packageName] = this.mcp_negotiate;
+    this.mcp_negotiate = this.registerMcpPackage(McpNegotiate);
+    this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
   }
 
   registerGMCPPackage(p: typeof GMCPPackage) {
@@ -45,7 +47,7 @@ class MudClient extends EventEmitter {
     this.gmcpHandlers[gmcpPackage.packageName] = gmcpPackage;
   }
 
-  registerMcpPackage(p: typeof MCPPackage) {
+  registerMcpPackage<P extends MCPPackage>(p: new (_: MudClient) => P): P {
     const mcpPackage = new p(this);
     this.mcpHandlers[mcpPackage.packageName] = mcpPackage;
     return mcpPackage;
