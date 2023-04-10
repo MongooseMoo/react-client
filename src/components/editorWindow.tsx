@@ -141,6 +141,7 @@ function EditorWindow() {
         defaultLanguage="lambdamoo"
         value={code}
         onChange={onChanges}
+        options={{ wordWrap: "on" }}
       />
       <div
         aria-live="polite"
