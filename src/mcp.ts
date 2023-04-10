@@ -125,7 +125,7 @@ export class McpAwnsStatus extends MCPPackage {
   handle(message: McpMessage): void {
     // this package only defines one message, so don't bother checking the messagename
     console.log(message);
-    this.client.statusText = message.keyvals["text"];
+    this.client.emit("statustext", message.keyvals["text"]);
   }
 }
 
