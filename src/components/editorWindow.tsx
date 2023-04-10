@@ -113,7 +113,7 @@ function EditorWindow() {
     }
   };
 
-  // Adding download text to file button
+  // Download code to text file
   const downloadText = () => {
     const blob = new Blob([code], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -122,7 +122,8 @@ function EditorWindow() {
     const date = new Date();
     const dateString = date.toLocaleDateString().replace(/\//g, "-");
     const timeString = date.toLocaleTimeString().replace(/:/g, "-");
-    const filename = `editor-text-${dateString}-${timeString}.txt`;
+    // file name could use session.name for object.verb or session.reference for obj#.verb
+    const filename = `${session.name}-${dateString}-${timeString}.txt`;
 
     link.download = filename;
     link.href = url;
