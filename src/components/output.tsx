@@ -83,7 +83,8 @@ class Output extends React.Component<Props, State> {
       // include the date and time
       const date = new Date();
       const dateString = date.toLocaleDateString();
-      const timeString = date.toLocaleTimeString();
+      // 24 hour time
+      const timeString = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
       // Retrieve the MUD name from the document's title
       const mudName = document.title.replace(/\s+/g, "-");
       // Include the MUD name in the filename
