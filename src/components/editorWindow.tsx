@@ -113,6 +113,26 @@ function EditorWindow() {
     }
   };
 
+  // Adding download text to file button
+  const downloadText = () => {
+    const blob = new Blob([code], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    const date = new Date();
+    const dateString = date.toLocaleDateString().replace(/\//g, "-");
+    const timeString = date.toLocaleTimeString().replace(/:/g, "-");
+    const filename = `editor-text-${dateString}-${timeString}.txt`;
+
+    link.download = filename;
+    link.href = url;
+    link.click();
+
+    URL.revokeObjectURL(url);
+    link.remove();
+  };
+
+
   return (
     <>
       <div
@@ -133,6 +153,9 @@ function EditorWindow() {
           </button>
           <button onClick={revert} accessKey="r">
             Revert
+          </button>
+          <button onClick={downloadText} accessKey="d">
+            Download
           </button>
         </form>
       </div>
