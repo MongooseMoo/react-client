@@ -85,10 +85,10 @@ class Output extends React.Component<Props, State> {
       const dateString = date.toLocaleDateString();
       // 24 hour time
       const timeString = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      // Retrieve the MUD name from the document's title
+      // Set MUD name to window title and replace any spaces with dashes
       const mudName = document.title.replace(/\s+/g, "-");
       // Include the MUD name in the filename
-      const filename = `mud-log-${mudName}-${dateString}-${timeString}.html`;
+      const filename = `${mudName}-log-${dateString}-${timeString}.html`;
       link.download = filename;
       link.href = url;
       link.click();
