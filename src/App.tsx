@@ -7,6 +7,7 @@ import CommandInput from "./components/input";
 import { GMCPCore, GMCPCoreSupports, GMCPClientMedia } from "./gmcp";
 import { McpAwnsStatus, McpSimpleEdit } from "./mcp";
 import Toolbar from "./components/toolbar";
+import Statusbar from "./components/statusbar";
 
 const client = new MudClient("mongoose.moo.mud.org", 8765);
 client.registerGMCPPackage(GMCPCore);
@@ -39,6 +40,7 @@ function App() {
       <Toolbar onSaveLog={saveLog} onClearLog={clearLog} />
       <OutputWindow client={client} ref={outRef} />
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
+      <Statusbar client={client}/>
     </div>
   );
 }

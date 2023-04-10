@@ -31,7 +31,6 @@ class MudClient extends EventEmitter {
   public mcpMultilines: { [key: string]: MCPPackage } = {};
   public mcpAuthKey: string | null = null;
   mcp_negotiate: McpNegotiate;
-  public statusText: string = "";
   public mcp_getset: McpAwnsGetSet;
 
   constructor(host: string, port: number) {
