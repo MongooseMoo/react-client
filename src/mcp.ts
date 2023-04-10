@@ -1,4 +1,5 @@
 import MudClient from "./client";
+import { LRUCache } from 'lru-cache'
 
 interface McpMessage {
   name: string;
@@ -176,3 +177,57 @@ export class McpSimpleEdit extends MCPPackage {
     channel.postMessage({ type: "shutdown" });
   }
 }
+
+/**
+ * Gets and Sets per-player properties
+ * Emits a "getset" event when a property is received
+ */
+export class McpAwnsGetSet extends MCPPackage {
+  public packageName = "dns-com-awns-getset";
+  private id: number = 1;
+  private cache = new LRUCache<string, string>({max: 10});
+
+  public LocalCache: { [key: string]: string } = {};
+
+  handle(message: McpMessage): void {
+    switch (message.name) {
+      case "dns-com-awns-getset-ack":
+        const key = this.cache.get(message.keyvals["id"]);
+        if (key === undefined) {
+          console.log(`Got ack for unknown id ${message.keyvals["id"]}`);
+          break;
+        }
+        const value = message.keyvals["value"];
+        console.log(`Got ${key} = ${value}`);
+        this.LocalCache[key] = value;
+        this.client.emit("getset", key, value);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  sendGet(property: string) {
+    const id = (this.id++).toString();
+    this.cache.set(id, property);
+    this.client.sendMcp("dns-com-awns-getset-get", {
+      "id": id,
+      "property": property,
+    });
+  }
+  sendSet(property: string, value: string) {
+    this.client.sendMcp("dns-com-awns-getset-set", {
+      "id": this.id++,
+      "property": property,
+      "value": value,
+    });
+  }
+  sendDrop(property: string) {
+    this.client.sendMcp("dns-com-awns-getset-drop", {
+      "id": this.id++,
+      "property": property,
+    });
+  }
+}
+
