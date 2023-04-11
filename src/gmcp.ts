@@ -200,3 +200,20 @@ export class GMCPClientMedia extends GMCPPackage {
     );
   }
 }
+
+class GmcpMessageCharName {
+  public name: string | undefined;
+}
+
+export class GMCPChar extends GMCPPackage {
+  public packageName: string = "Char";
+  public name: string | undefined;
+
+  handleName(data: GmcpMessageCharName): void {
+    this.name = data.name;
+  }
+
+  sendLogin(name: string, password: string): void{
+    this.client.sendGmcp("Char.Login", JSON.stringify({"name": name, "password": password}));
+  }
+}

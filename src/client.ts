@@ -6,7 +6,7 @@ import {
 } from "./telnet";
 
 import { EventEmitter } from "eventemitter3";
-import { GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
+import { GMCPChar, GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
 import {
   EditorSession,
   generateTag,
@@ -32,6 +32,7 @@ class MudClient extends EventEmitter {
   public mcpAuthKey: string | null = null;
   mcp_negotiate: McpNegotiate;
   public mcp_getset: McpAwnsGetSet;
+  public gmcp_char: GMCPChar;
 
   constructor(host: string, port: number) {
     super();
@@ -39,11 +40,13 @@ class MudClient extends EventEmitter {
     this.port = port;
     this.mcp_negotiate = this.registerMcpPackage(McpNegotiate);
     this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
+    this.gmcp_char = this.registerGMCPPackage(GMCPChar);
   }
 
-  registerGMCPPackage(p: typeof GMCPPackage) {
+  registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
     const gmcpPackage = new p(this);
     this.gmcpHandlers[gmcpPackage.packageName] = gmcpPackage;
+    return gmcpPackage;
   }
 
   registerMcpPackage<P extends MCPPackage>(p: new (_: MudClient) => P): P {
