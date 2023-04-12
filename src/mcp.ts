@@ -385,20 +385,27 @@ function mooListToArray(mooList: string): any[] {
     } else if (c === "}") {
       depth--;
     } else if (c === "," && depth === 0) {
-      current = current.trim();
-      if (current.startsWith("{") && current.endsWith("}")) {
-        result.push(mooListToArray(current));
-      } else if (!Number.isNaN(Number(current))) {
-        result.push(Number(current));
-      } else if (current.startsWith('"') && current.endsWith('"')) {
-        result.push(current.slice(1, -1));
-      } else {
-        result.push(current);
-      }
+      commit();
       current = "";
       continue;
     }
     current += c;
   }
+  if (current.length > 0) {
+    commit();
+  }
   return result;
+
+  function commit() {
+    current = current.trim();
+    if (current.startsWith("{") && current.endsWith("}")) {
+      result.push(mooListToArray(current));
+    } else if (!Number.isNaN(Number(current))) {
+      result.push(Number(current));
+    } else if (current.startsWith('"') && current.endsWith('"')) {
+      result.push(current.slice(1, -1));
+    } else {
+      result.push(current);
+    }
+  }
 }
