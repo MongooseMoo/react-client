@@ -146,7 +146,7 @@ export function parseToElements(
 const URL_REGEX =
   /(\s|^)(https?:\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
 const EMAIL_REGEX =
-  /(\s|^)[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+(\s|$)/g;
+  /(?<slorp1>\s|^)(?<name>[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+[a-zA-Z])(?<slorp2>\s|$|\.)/g;
 const exitRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
 
 function convertBundleIntoReact(
@@ -184,12 +184,16 @@ function convertBundleIntoReact(
   }
 
   function processEmailMatch(match: RegExpExecArray): React.ReactNode {
-    const email = match[0];
+    const email = match.groups!["name"];
     const href = `mailto:${email}`;
     return (
-      <a href={href} target="_blank" rel="noreferrer">
-        {email}
-      </a>
+      <>
+        {match.groups!["slorp1"]}
+        <a href={href} target="_blank" rel="noreferrer">
+          {email}
+        </a>
+        {match.groups!["slorp2"]}
+      </>
     );
   }
 
