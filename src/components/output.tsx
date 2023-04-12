@@ -11,6 +11,7 @@ interface Props {
 
 interface State {
   output: JSX.Element[];
+  sidebar_visible: boolean;
 }
 
 class Output extends React.Component<Props, State> {
@@ -18,6 +19,7 @@ class Output extends React.Component<Props, State> {
 
   state = {
     output: [],
+    sidebar_visible: false,
   };
 
   constructor(props: Props) {
@@ -35,6 +37,7 @@ class Output extends React.Component<Props, State> {
     this.props.client.on("error", (error: Error) =>
       this.addToOutput([<h2> Error: {error.message}</h2>])
     );
+    this.props.client.on("userlist", (players: any) => this.setState({ sidebar_visible: !!players }));
   }
 
   componentDidUpdate() {
@@ -103,10 +106,14 @@ class Output extends React.Component<Props, State> {
   }
 
   render() {
+    var classname = "output";
+    if (this.state.sidebar_visible) {
+      classname += " sidebar-visible";
+    }
     return (
       <div
         ref={this.outputRef}
-        className="output"
+        className={classname}
         aria-live="polite"
         role="log"
       >

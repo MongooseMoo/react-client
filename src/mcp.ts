@@ -1,5 +1,5 @@
 import MudClient from "./client";
-import { LRUCache } from 'lru-cache'
+import { LRUCache } from "lru-cache";
 
 interface McpMessage {
   name: string;
@@ -185,7 +185,7 @@ export class McpSimpleEdit extends MCPPackage {
 export class McpAwnsGetSet extends MCPPackage {
   public packageName = "dns-com-awns-getset";
   private id: number = 1;
-  private cache = new LRUCache<string, string>({max: 10});
+  private cache = new LRUCache<string, string>({ max: 10 });
 
   public LocalCache: { [key: string]: string } = {};
 
@@ -212,22 +212,193 @@ export class McpAwnsGetSet extends MCPPackage {
     const id = (this.id++).toString();
     this.cache.set(id, property);
     this.client.sendMcp("dns-com-awns-getset-get", {
-      "id": id,
-      "property": property,
+      id: id,
+      property: property,
     });
   }
   sendSet(property: string, value: string) {
     this.client.sendMcp("dns-com-awns-getset-set", {
-      "id": this.id++,
-      "property": property,
-      "value": value,
+      id: this.id++,
+      property: property,
+      value: value,
     });
   }
   sendDrop(property: string) {
     this.client.sendMcp("dns-com-awns-getset-drop", {
-      "id": this.id++,
-      "property": property,
+      id: this.id++,
+      property: property,
     });
   }
 }
 
+export interface UserlistPlayer {
+  Object: string;
+  Name: string;
+  Icon: string;
+
+  away: boolean;
+  idle: boolean;
+}
+
+export class McpVmooUserlist extends MCPPackage {
+  public packageName = "dns-com-vmoo-userlist";
+  public maxVersion = 1.1;
+  public player: string | undefined;
+  public fields: any[] = ["Object", "Name", "Icon"];
+  public icons: any[] = [
+    "Idle",
+    "Away",
+    "Idle+Away",
+    "Friend",
+    "Newbie",
+    "Inhabitant",
+    "Inhabitant+",
+    "Schooled",
+    "Wizard",
+    "Key",
+    "Star",
+  ];
+  public players: UserlistPlayer[] = [];
+
+  handle(message: McpMessage): void {
+    switch (message.name) {
+      case "dns-com-vmoo-userlist-you":
+        this.player = message.keyvals["nr"];
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  handleMultiline(message: McpMessage): void {
+    if ("fields" in message.keyvals) {
+      this.fields = mooListToArray(message.keyvals["fields"].trim());
+    }
+    if ("icons" in message.keyvals) {
+      this.icons = mooListToArray(message.keyvals["icons"].trim());
+    }
+    if ("d" in message.keyvals) {
+      const mode = message.keyvals["d"][0];
+      switch (mode) {
+        case "=":
+          // Full list
+          var list = mooListToArray(message.keyvals["d"].slice(1));
+          this.players = list.map((p) => {
+            // generate an object using this.fields as keys
+            return this.playerFromArray(p);
+          });
+          break;
+        case "+":
+          // Add player to list
+          this.players.push(
+            this.playerFromArray(mooListToArray(message.keyvals["d"].slice(1)))
+          );
+          break;
+        case "-":
+          // Remove players from list
+          const ids = mooListToArray(message.keyvals["d"].slice(1));
+          this.players = this.players.filter((p) => !ids.includes(p.Object));
+          break;
+        case "*":
+          // Update a user
+          const user = this.playerFromArray(
+            mooListToArray(message.keyvals["d"].slice(1))
+          );
+          const userIndex = this.players.findIndex(
+            (p) => p.Object === user.Object
+          );
+          if (userIndex !== -1) {
+            this.players[userIndex] = user;
+          } else {
+            this.players.push(user);
+          }
+          break;
+
+        case "<":
+          // Mark player as idle
+          const idleIndex = this.players.findIndex(
+            (p) => p.Object === message.keyvals["d"].slice(1)
+          );
+          if (idleIndex !== -1) {
+            this.players[idleIndex].idle = true;
+          }
+          break;
+
+        case ">":
+          // Mark player as active
+          const activeIndex = this.players.findIndex(
+            (p) => p.Object === message.keyvals["d"].slice(1)
+          );
+          if (activeIndex !== -1) {
+            this.players[activeIndex].idle = false;
+          }
+          break;
+
+        case "[":
+          // Mark player as away
+          const awayIndex = this.players.findIndex(
+            (p) => p.Object === message.keyvals["d"].slice(1)
+          );
+          if (awayIndex !== -1) {
+            this.players[awayIndex].away = true;
+          }
+          break;
+        case "]":
+          // Mark player as back
+          const backIndex = this.players.findIndex(
+            (p) => p.Object === message.keyvals["d"].slice(1)
+          );
+          if (backIndex !== -1) {
+            this.players[backIndex].away = false;
+          }
+          break;
+        default:
+          console.log(
+            `Unknown userlist mode ${mode} in ${message.keyvals["d"]}`
+          );
+          break;
+      }
+      this.client.emit("userlist", this.players);
+    }
+  }
+
+  private playerFromArray(p: string[]): UserlistPlayer {
+    const player: any = {};
+    p.forEach((v: string, i: number) => {
+      player[this.fields[i]] = v;
+    });
+    return player;
+  }
+}
+
+function mooListToArray(mooList: string): any[] {
+  mooList = mooList.slice(1, -1);
+
+  let result: any[] = [];
+  let current: string = "";
+  let depth = 0;
+  for (let i = 0; i < mooList.length; i++) {
+    const c = mooList[i];
+    if (c === "{") {
+      depth++;
+    } else if (c === "}") {
+      depth--;
+    } else if (c === "," && depth === 0) {
+      current = current.trim();
+      if (current.startsWith("{") && current.endsWith("}")) {
+        result.push(mooListToArray(current));
+      } else if (!Number.isNaN(Number(current))) {
+        result.push(Number(current));
+      } else if (current.startsWith('"') && current.endsWith('"')) {
+        result.push(current.slice(1, -1));
+      } else {
+        result.push(current);
+      }
+      current = "";
+      continue;
+    }
+    current += c;
+  }
+  return result;
+}
