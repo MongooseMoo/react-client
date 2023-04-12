@@ -30,9 +30,11 @@ class Output extends React.Component<Props, State> {
       this.addToOutput([<h2> Connected</h2>])
     );
     // disconnect
-    this.props.client.on("disconnect", () =>
+    this.props.client.on("disconnect", () => {
+
       this.addToOutput([<h2> Disconnected</h2>])
-    );
+      this.state.sidebar_visible = false;
+    });
     // error
     this.props.client.on("error", (error: Error) =>
       this.addToOutput([<h2> Error: {error.message}</h2>])

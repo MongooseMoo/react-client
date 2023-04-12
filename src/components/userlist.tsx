@@ -24,7 +24,7 @@ class Userlist extends React.Component<Props, State> {
     props.client.on("userlist", (players: UserlistPlayer[]) => {
       return this.setState({ players: players, visible: !!players });
     });
-    props.client.on("disconnect", () => this.setState({players: []}));
+    props.client.on("disconnect", () => this.setState({players: [], visible: false}));
   }
 
   render() {
