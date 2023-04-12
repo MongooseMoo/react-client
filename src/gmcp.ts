@@ -211,9 +211,13 @@ export class GMCPChar extends GMCPPackage {
 
   handleName(data: GmcpMessageCharName): void {
     this.name = data.name;
+    this.client.emit("statustext", `Logged in as ${this.name}`);
   }
 
-  sendLogin(name: string, password: string): void{
-    this.client.sendGmcp("Char.Login", JSON.stringify({"name": name, "password": password}));
+  sendLogin(name: string, password: string): void {
+    this.client.sendGmcp(
+      "Char.Login",
+      JSON.stringify({ name: name, password: password })
+    );
   }
 }
