@@ -133,8 +133,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
       if (line && line.startsWith("#$#")) {
         // MCP
         this.handleMcp(line);
-      }
-      else {
+      } else {
         this.emitMessage(line);
       }
     }
@@ -145,7 +144,13 @@ An MCP message consists of three parts: the name of the message, the authenticat
       // multiline
       const continuation = parseMcpMultiline(decoded.trimEnd());
       if (continuation)
-        this.mcpMultilines[continuation.name].handleMultiline(continuation);
+        if (continuation.name in this.mcpMultilines)
+          this.mcpMultilines[continuation.name].handleMultiline(continuation);
+        else
+          console.warn(
+            "Received continuation for unknown multiline",
+            continuation
+          );
       return;
     }
     if (decoded.startsWith("#$#:")) {
