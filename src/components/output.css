@@ -9,10 +9,15 @@
     border-radius: 5px;
 margin: auto;
 /* height: auto;*/
-max-height: 600px;
+max-height: 900px;
 overflow: auto;
-white-space: pre-wrap; 
-word-wrap: normal; 
+white-space: pre-wrap;
+word-wrap: normal;
+}
+
+.output.sidebar-visible {
+    width: 90%;
+    float: left;
 }
 
 a.exit {

@@ -5,9 +5,10 @@ import OutputWindow from "./components/output";
 import MudClient from "./client";
 import CommandInput from "./components/input";
 import { GMCPCore, GMCPCoreSupports, GMCPClientMedia } from "./gmcp";
-import { McpAwnsStatus, McpSimpleEdit } from "./mcp";
+import { McpAwnsStatus, McpSimpleEdit, McpVmooUserlist } from "./mcp";
 import Toolbar from "./components/toolbar";
 import Statusbar from "./components/statusbar";
+import Userlist from "./components/userlist";
 
 const client = new MudClient("mongoose.moo.mud.org", 8765);
 client.registerGMCPPackage(GMCPCore);
@@ -15,6 +16,7 @@ client.registerGMCPPackage(GMCPClientMedia);
 client.registerGMCPPackage(GMCPCoreSupports);
 client.registerMcpPackage(McpAwnsStatus);
 client.registerMcpPackage(McpSimpleEdit);
+client.registerMcpPackage(McpVmooUserlist);
 client.connect();
 
 function App() {
@@ -38,7 +40,10 @@ function App() {
     <div className="App">
       <header className="App-header"></header>
       <Toolbar onSaveLog={saveLog} onClearLog={clearLog} />
-      <OutputWindow client={client} ref={outRef} />
+      <div>
+        <OutputWindow client={client} ref={outRef} />
+        <Userlist client={client} />
+      </div>
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
       <Statusbar client={client}/>
     </div>
