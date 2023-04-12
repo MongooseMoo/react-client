@@ -96,6 +96,7 @@ class MudClient extends EventEmitter {
 
     this.ws.onclose = () => {
       this.emit("disconnect");
+      this.mcpAuthKey = null;
       // auto reconnect
       setTimeout(() => {
         this.connect();
