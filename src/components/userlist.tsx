@@ -33,7 +33,7 @@ class Userlist extends React.Component<Props, State> {
     }
     return (
       <div className="sidebar">
-        <div className="sidebar-header">Connected Players</div>
+        <div className="sidebar-header" role="heading" aria-level="2">Connected Players</div>
         <div className="sidebar-content">
           <ul>
             {this.state.players.map((player) => <li key={player.Object}>{player.Name}</li>)}
