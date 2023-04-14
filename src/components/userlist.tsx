@@ -36,7 +36,14 @@ class Userlist extends React.Component<Props, State> {
         <div className="sidebar-header" role="heading" aria-level={2}>Connected Players</div>
         <div className="sidebar-content">
           <ul>
-            {this.state.players.map((player) => <li key={player.Object}>{player.Name}</li>)}
+            {this.state.players.map((player) => {
+              var classes = "";
+              if (player.away)
+                classes += " away";
+              if (player.idle)
+                classes += " idle"
+              return <li className={classes} key={player.Object}>{player.Name}</li>;
+            })}
           </ul>
         </div>
       </div>

@@ -234,7 +234,7 @@ export class McpAwnsGetSet extends MCPPackage {
 export interface UserlistPlayer {
   Object: string;
   Name: string;
-  Icon: string;
+  Icon: number;
 
   away: boolean;
   idle: boolean;
@@ -297,7 +297,7 @@ export class McpVmooUserlist extends MCPPackage {
           break;
         case "-":
           // Remove players from list
-          const ids = mooListToArray(message.keyvals["d"].slice(1));
+          var ids = mooListToArray(message.keyvals["d"].slice(1));
           this.players = this.players.filter((p) => !ids.includes(p.Object));
           break;
         case "*":
@@ -305,53 +305,51 @@ export class McpVmooUserlist extends MCPPackage {
           const user = this.playerFromArray(
             mooListToArray(message.keyvals["d"].slice(1))
           );
-          const userIndex = this.players.findIndex(
-            (p) => p.Object === user.Object
-          );
-          if (userIndex !== -1) {
-            this.players[userIndex] = user;
-          } else {
-            this.players.push(user);
-          }
+          this.updatePlayer(user);
           break;
 
         case "<":
-          // Mark player as idle
-          const idleIndex = this.players.findIndex(
-            (p) => p.Object === message.keyvals["d"].slice(1)
-          );
-          if (idleIndex !== -1) {
-            this.players[idleIndex].idle = true;
-          }
+          // Mark players as idle
+          ids = mooListToArray(message.keyvals["d"].slice(1));
+          this.players.forEach((p, i) => {
+            if (ids.includes(p.Object)) {
+              p.idle = true;
+              this.players[i] = p;
+            }
+          });
           break;
 
         case ">":
           // Mark player as active
-          const activeIndex = this.players.findIndex(
-            (p) => p.Object === message.keyvals["d"].slice(1)
-          );
-          if (activeIndex !== -1) {
-            this.players[activeIndex].idle = false;
-          }
+          ids = mooListToArray(message.keyvals["d"].slice(1));
+          this.players.forEach((p, i) => {
+            if (ids.includes(p.Object)) {
+              p.idle = false;
+              this.players[i] = p;
+            }
+          });
           break;
 
         case "[":
           // Mark player as away
-          const awayIndex = this.players.findIndex(
-            (p) => p.Object === message.keyvals["d"].slice(1)
-          );
-          if (awayIndex !== -1) {
-            this.players[awayIndex].away = true;
-          }
+          ids = mooListToArray(message.keyvals["d"].slice(1));
+          this.players.forEach((p, i) => {
+            if (ids.includes(p.Object)) {
+              p.away = true;
+              this.players[i] = p;
+            }
+          });
           break;
         case "]":
           // Mark player as back
-          const backIndex = this.players.findIndex(
-            (p) => p.Object === message.keyvals["d"].slice(1)
-          );
-          if (backIndex !== -1) {
-            this.players[backIndex].away = false;
-          }
+          ids = mooListToArray(message.keyvals["d"].slice(1));
+          this.players.forEach((p, i) => {
+            if (ids.includes(p.Object)) {
+              p.away = false;
+              this.players[i] = p;
+            }
+          });
+
           break;
         default:
           console.log(
@@ -359,7 +357,28 @@ export class McpVmooUserlist extends MCPPackage {
           );
           break;
       }
-      this.client.emit("userlist", this.players);
+      this.update();
+    }
+  }
+
+  private updatePlayer(user: UserlistPlayer) {
+    const userIndex = this.players.findIndex(
+      (p) => p.Object === user.Object
+    );
+    if (userIndex !== -1) {
+      this.players[userIndex] = user;
+    } else {
+      this.players.push(user);
+    }
+  }
+
+  private update() {
+
+    this.players.sort((a, b) => sortScore(b) - sortScore(a));
+    this.client.emit("userlist", this.players);
+
+    function sortScore(b: UserlistPlayer) {
+      return b.Icon - (b.idle ? 10 : 0) - (b.away ? 20 : 0);
     }
   }
 
@@ -368,6 +387,8 @@ export class McpVmooUserlist extends MCPPackage {
     p.forEach((v: string, i: number) => {
       player[this.fields[i]] = v;
     });
+    player['away'] = false;
+    player['idle'] = false;
     return player;
   }
 }
