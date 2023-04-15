@@ -1,8 +1,7 @@
-input {
+textarea {
   border: 1px solid #ccc;
   border-radius: 5px;
   padding: 10px;
   width: 100%;
-  /* position: fixed;
-  top: 0; */
+  height: 100px; /* Set the height to fit your requirements */
 }
