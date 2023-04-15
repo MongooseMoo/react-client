@@ -18,6 +18,7 @@ client.registerMcpPackage(McpAwnsStatus);
 client.registerMcpPackage(McpSimpleEdit);
 client.registerMcpPackage(McpVmooUserlist);
 client.connect();
+client.requestNotificationPermission();
 
 function App() {
   const outRef = React.useRef<OutputWindow | null>(null);
@@ -45,7 +46,7 @@ function App() {
         <Userlist client={client} />
       </div>
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
-      <Statusbar client={client}/>
+      <Statusbar client={client} />
     </div>
   );
 }
