@@ -14,14 +14,16 @@ const CommandInput = (props: Props) => {
   const [initialInput, setInitialInput] = useState("");
   const inputRef = useRef(null);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
       props.onSend(input);
       setInput("");
       setHistory([...history, input]);
       setHistoryIndex(history.length);
       setInitialInput("");
     } else if (e.key === "ArrowUp") {
+      e.preventDefault();
       if (historyIndex > 0) {
         if (historyIndex === history.length) {
           setInitialInput(input);
@@ -33,6 +35,7 @@ const CommandInput = (props: Props) => {
         });
       }
     } else if (e.key === "ArrowDown") {
+      e.preventDefault();
       if (historyIndex < history.length) {
         setHistoryIndex((prevHistoryIndex) => {
           setInput(
@@ -50,8 +53,7 @@ const CommandInput = (props: Props) => {
   };
 
   return (
-    <input
-      type="text"
+    <textarea
       value={input}
       onChange={(e) => setInput(e.target.value)}
       onKeyDown={(e) => handleKeyDown(e)}
