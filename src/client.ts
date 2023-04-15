@@ -290,6 +290,19 @@ An MCP message consists of three parts: the name of the message, the authenticat
       handler.shutdown();
     });
   }
+
+
+  requestNotificationPermission() {
+    if (Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }
+
+  sendNotification(title: string, body: string) {
+    if (Notification.permission === "granted") {
+      new Notification(title, { body });
+    }
+  }
 }
 
 export default MudClient;
