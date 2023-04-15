@@ -1,7 +1,7 @@
 import { Howl } from "howler";
 import type MudClient from "./client";
 
-export class GMCPMessage {}
+export class GMCPMessage { }
 
 export class GMCPMessageCoreClient extends GMCPMessage {
   public readonly name: string;
@@ -42,6 +42,12 @@ export class GMCPMessageClientMediaStop extends GMCPMessage {
   public readonly tag?: string; // Stops playing media by tag matching the value specified.
   public readonly priority?: number = 0;
   public readonly key?: string; // Stops playing media by key matching the value specified.
+}
+
+export class GMCPMessageCommChannelText extends GMCPMessage {
+  public readonly channel!: string;
+  public readonly talker!: string;
+  public readonly text!: string;
 }
 
 export class GMCPPackage {
@@ -220,4 +226,26 @@ export class GMCPChar extends GMCPPackage {
       JSON.stringify({ name: name, password: password })
     );
   }
+}
+
+export class GMCPCommChannel extends GMCPPackage {
+  public packageName: string = "Comm.Channel";
+  public channels: string[] = [];
+
+  handleList(data: string[]): void {
+    this.channels = data;
+  }
+
+  sendList(): void {
+    this.sendData("List");
+  }
+
+  handleText(data: GMCPMessageCommChannelText): void {
+    if (data.channel === "say_to_you") {
+      if (!document.hasFocus()) {
+        this.client.sendNotification(`Message from ${data.talker}`, `${data.text}`);
+      }
+    }
+  }
+
 }
