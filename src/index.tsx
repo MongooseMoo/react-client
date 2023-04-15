@@ -5,6 +5,7 @@ import App from "./App";
 import EditorWindow from "./components/editorWindow";
 import "./index.css";
 import reportWebVitals from "./reportWebVitals";
+import { register } from './serviceWorker'
 
 const router = createBrowserRouter([
   { path: "/", element: <App /> },
@@ -24,3 +25,6 @@ root.render(
 // to log results (for example: reportWebVitals(console.log))
 // or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
 reportWebVitals(console.log);
+// register serviceWorker we don't really need so we can be installable
+
+register();
