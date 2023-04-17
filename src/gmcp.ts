@@ -233,16 +233,16 @@ export class GMCPClientMedia extends GMCPPackage {
 
 class GmcpMessageCharName {
   public name!: string;
+  public fullname: string = "";
 }
 
 export class GMCPChar extends GMCPPackage {
   public packageName: string = "Char";
-  public name: string = "";
 
   handleName(data: GmcpMessageCharName): void {
-    this.name = data.name;
-    this.client.worldData.playerName = data.name;
-    this.client.emit("statustext", `Logged in as ${this.name}`);
+    this.client.worldData.playerId = data.name;
+    this.client.worldData.playerName = data.fullname;
+    this.client.emit("statustext", `Logged in as ${data.fullname}`);
   }
 
   sendLogin(name: string, password: string): void {
