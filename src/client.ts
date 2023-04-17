@@ -17,6 +17,12 @@ import {
   parseMcpMultiline,
 } from "./mcp";
 
+export interface WorldData {
+  playerId: string;
+  playerName: string;
+  roomId: string;
+}
+
 class MudClient extends EventEmitter {
   private ws!: WebSocket;
   private decoder = new TextDecoder("utf8");
@@ -29,10 +35,15 @@ class MudClient extends EventEmitter {
   public gmcpHandlers: { [key: string]: GMCPPackage } = {};
   public mcpHandlers: { [key: string]: MCPPackage } = {};
   public mcpMultilines: { [key: string]: MCPPackage } = {};
-  public mcpAuthKey: string | null = null;
+  private mcpAuthKey: string | null = null;
   mcp_negotiate: McpNegotiate;
   public mcp_getset: McpAwnsGetSet;
   public gmcp_char: GMCPChar;
+  public worldData: WorldData = {
+    playerId: "",
+    playerName: "",
+    roomId: "",
+  };
 
   constructor(host: string, port: number) {
     super();
@@ -304,5 +315,6 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
   }
 }
+
 
 export default MudClient;
