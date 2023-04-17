@@ -1,5 +1,7 @@
 import { Howl } from "howler";
 import type MudClient from "./client";
+import { WebRTCManager } from "./webrtc";
+
 
 export class GMCPMessage { }
 
@@ -48,6 +50,11 @@ export class GMCPMessageCommChannelText extends GMCPMessage {
   public readonly channel!: string;
   public readonly talker!: string;
   public readonly text!: string;
+}
+
+export class GMCPMessageCommWebRTCOffer extends GMCPMessage {
+  public readonly offer!: string;
+  public readonly userId!: string;
 }
 
 export class GMCPPackage {
@@ -208,15 +215,16 @@ export class GMCPClientMedia extends GMCPPackage {
 }
 
 class GmcpMessageCharName {
-  public name: string | undefined;
+  public name!: string;
 }
 
 export class GMCPChar extends GMCPPackage {
   public packageName: string = "Char";
-  public name: string | undefined;
+  public name: string = "";
 
   handleName(data: GmcpMessageCharName): void {
     this.name = data.name;
+    this.client.worldData.playerName = data.name;
     this.client.emit("statustext", `Logged in as ${this.name}`);
   }
 
@@ -247,5 +255,25 @@ export class GMCPCommChannel extends GMCPPackage {
       }
     }
   }
+}
 
+export class GMCPMessageRoomInfo extends GMCPMessage {
+  num: string = "";
+  name: string = "";
+  area: string = "";
+}
+
+export class GMCPRoom extends GMCPPackage {
+  public static readonly packageName: string = "Room";
+  public name: string = "";
+  public id: string = "";
+  public exits: string[] = [];
+  public people: string[] = [];
+
+  handleInfo(data: GMCPMessageRoomInfo): void {
+    this.name = data.name;
+    this.id = data.num;
+    this.client.worldData.roomId = this.id;
+    this.client.emit("room", this);
+  }
 }
