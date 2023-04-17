@@ -1,6 +1,5 @@
 import { Howl } from "howler";
 import type MudClient from "./client";
-import { WebRTCManager } from "./webrtc";
 
 
 export class GMCPMessage { }
