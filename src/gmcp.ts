@@ -2,7 +2,7 @@ import { Howl } from "howler";
 import type MudClient from "./client";
 
 
-export class GMCPMessage { }
+abstract class GMCPMessage { }
 
 export class GMCPMessageCoreClient extends GMCPMessage {
   public readonly name: string;
@@ -35,6 +35,11 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public readonly priority?: number = 0; // Halts the play of current or future played media files with a lower priority while this media plays.
   public continue?: boolean = true;
   public key?: string; // Uniquely identifies media files with a "key" that is bound to their "name" or "url".  Halts the play of current media files with the same "key" that have a different "name" or "url" while this media plays.
+  // Custom Mongoose extensions
+  public readonly end?: number = 0; // The end time of the media in seconds.
+  public is3d: boolean = false; // If true, the media is 3D and should be played in the 3D space.
+  public pan: number = 0; // -1 to 1
+  public position: number[] = [0, 0, 0]; // x, y, z
 }
 
 export class GMCPMessageClientMediaStop extends GMCPMessage {
@@ -146,6 +151,15 @@ export class GMCPClientMedia extends GMCPPackage {
       sound.type = data.type;
     }
     sound.volume(data.volume / 100);
+    if (!data.is3d) {
+      sound.stereo(data.pan);
+    } else {
+      sound.pannerAttr({
+        coneInnerAngle: 360,
+        coneOuterAngle: 0,
+      });
+      sound.pos(data.position[0], data.position[1], data.position[2]);
+    }
     if (data.fadein) {
       sound.fade(0, data.volume, data.fadein);
     }
@@ -154,6 +168,10 @@ export class GMCPClientMedia extends GMCPPackage {
     }
     if (data.start) {
       sound.seek(data.start);
+    }
+    if (data.end) {
+      sound.once("end", () => sound.stop());
+
     }
     if (data.loops === -1) {
       sound.loop(true);
