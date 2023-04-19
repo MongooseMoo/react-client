@@ -5,7 +5,7 @@ import OutputWindow from "./components/output";
 import MudClient from "./client";
 import CommandInput from "./components/input";
 import { GMCPCore, GMCPCoreSupports, GMCPClientMedia, GMCPCommChannel } from "./gmcp";
-import { McpAwnsStatus, McpSimpleEdit, McpVmooUserlist } from "./mcp";
+import { McpAwnsPing, McpAwnsStatus, McpSimpleEdit, McpVmooUserlist } from "./mcp";
 import Toolbar from "./components/toolbar";
 import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
@@ -18,6 +18,7 @@ client.registerGMCPPackage(GMCPCommChannel);
 client.registerMcpPackage(McpAwnsStatus);
 client.registerMcpPackage(McpSimpleEdit);
 client.registerMcpPackage(McpVmooUserlist);
+client.registerMcpPackage(McpAwnsPing);
 client.connect();
 client.requestNotificationPermission();
 
