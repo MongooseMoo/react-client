@@ -89,6 +89,12 @@ export class MCPPackage {
   shutdown() {
     // Do nothing
   }
+
+  send(command: string, data?: any) {
+    if (!command.startsWith(this.packageName))
+      command = this.packageName + '-' + command;
+    this.client.sendMcp(command, data);
+  }
 }
 
 export class McpNegotiate extends MCPPackage {
@@ -428,5 +434,26 @@ function mooListToArray(mooList: string): any[] {
     } else {
       result.push(current);
     }
+  }
+}
+
+export class McpAwnsPing extends MCPPackage{
+  public packageName = "dns-com-awns-ping";
+  private id: number = 1;
+  handle(message: McpMessage): void {
+      switch (message.name) {
+        case "dns-com-awns-ping":
+          this.send('reply', message.keyvals)
+
+          break;
+        case "dns-com-awns-ping-reply":
+          // Client-to-server not implemented yet.
+          break;
+        default:
+          break;
+      }
+  }
+  ping() {
+    this.send("dns-com-awns-ping", {id: this.id++})
   }
 }
