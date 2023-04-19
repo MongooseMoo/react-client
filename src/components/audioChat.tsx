@@ -11,14 +11,17 @@ interface AudioChatProps {
 }
 
 interface AudioChatState {
+    connected: boolean;
     token: string;
 }
 
 class AudioChat extends Component<AudioChatProps, AudioChatState> {
+
     constructor(props: AudioChatProps) {
         super(props);
         this.state = {
             token: '',
+            connected: false,
         };
     }
 
@@ -26,7 +29,9 @@ class AudioChat extends Component<AudioChatProps, AudioChatState> {
         const { client } = this.props;
 
         client.on('livekitToken', (token) => {
-            this.setState({ token });
+            this.setState({ connected: false, token: token }, () => {
+                this.setState({ connected: true });
+            });
         });
     }
 
@@ -40,6 +45,7 @@ class AudioChat extends Component<AudioChatProps, AudioChatState> {
                     audio={true}
                     token={token}
                     serverUrl={serverUrl}
+                    connect={this.state.connected}
                 >
                     <AudioConference />
                 </LiveKitRoom>
