@@ -30,13 +30,13 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public readonly volume: number = 50; // Relative to the volume set on the player's client.
   public readonly fadein?: number = 0; // Volume increases, or fades in, ranged across a linear pattern from one to the volume set with the "volume" key.
   public readonly fadeout?: number = 0; // Volume decreases, or fades out, ranged across a linear pattern from the volume set with the "volume" key to one.
-  public readonly start?: number = 0;
+  public readonly start: number = 0;
   public readonly loops?: number = 0; // Number of iterations that the media plays.  A value of -1 allows the sound or music to loop indefinitely.
   public readonly priority?: number = 0; // Halts the play of current or future played media files with a lower priority while this media plays.
   public continue?: boolean = true;
   public key?: string; // Uniquely identifies media files with a "key" that is bound to their "name" or "url".  Halts the play of current media files with the same "key" that have a different "name" or "url" while this media plays.
   // Custom Mongoose extensions
-  public readonly end?: number = 0; // The end time of the media in seconds.
+  public readonly end?: number = 0; // The end time of the media in ms.
   public is3d: boolean = false; // If true, the media is 3D and should be played in the 3D space.
   public pan: number = 0; // -1 to 1
   public position: number[] = [0, 0, 0]; // x, y, z
@@ -167,10 +167,12 @@ export class GMCPClientMedia extends GMCPPackage {
       sound.fade(data.volume, 0, data.fadeout);
     }
     if (data.start) {
-      sound.seek(data.start);
+      sound.seek(data.start / 1000);
     }
     if (data.end) {
-      sound.once("end", () => sound.stop());
+      setTimeout(() => {
+        sound.stop();
+      }, (data.end - data.start) / 1000);
 
     }
     if (data.loops === -1) {
