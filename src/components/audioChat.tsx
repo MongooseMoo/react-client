@@ -39,7 +39,7 @@ class AudioChat extends Component<AudioChatProps, AudioChatState> {
         const { token } = this.state;
 
         return (
-            <div>
+            <div data-lk-theme="default">
                 <LiveKitRoom
                     video={false}
                     audio={true}
