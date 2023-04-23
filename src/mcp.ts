@@ -12,8 +12,8 @@ export function parseMcpMessage(message: string): McpMessage | null {
   if (!parts) {
     console.log(
       "Invalid message format: message must match the format '#$#name [authKey] keyval*'\nGot `" +
-        message +
-        "`"
+      message +
+      "`"
     );
     return null;
   }
@@ -44,8 +44,8 @@ export function parseMcpMultiline(message: string): McpMessage | null {
   if (!parts) {
     console.log(
       "Invalid message format: message must match the format '#$#* datatag keyval'\nGot `" +
-        message +
-        "`"
+      message +
+      "`"
     );
     return null;
   }
@@ -437,23 +437,23 @@ function mooListToArray(mooList: string): any[] {
   }
 }
 
-export class McpAwnsPing extends MCPPackage{
+export class McpAwnsPing extends MCPPackage {
   public packageName = "dns-com-awns-ping";
   private id: number = 1;
   handle(message: McpMessage): void {
-      switch (message.name) {
-        case "dns-com-awns-ping":
-          this.send('reply', message.keyvals)
+    switch (message.name) {
+      case "dns-com-awns-ping":
+        this.send('reply', message.keyvals)
 
-          break;
-        case "dns-com-awns-ping-reply":
-          // Client-to-server not implemented yet.
-          break;
-        default:
-          break;
-      }
+        break;
+      case "dns-com-awns-ping-reply":
+        // Client-to-server not implemented yet.
+        break;
+      default:
+        break;
+    }
   }
   ping() {
-    this.send("dns-com-awns-ping", {id: this.id++})
+    this.send("dns-com-awns-ping", { id: this.id++ })
   }
 }
