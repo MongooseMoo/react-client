@@ -16,9 +16,9 @@ class Statusbar extends React.Component<StatusbarProps, State> {
       statusText: "Not connected"
     };
 
-    props.client.on("statustext", (text: string) => this.setState({statusText: text}));
-    props.client.on("connect", () => this.setState({statusText: "Connected"}));
-    props.client.on("disconnect", () => this.setState({statusText: "Disconnected"}));
+    props.client.on("statustext", (text: string) => this.setState({ statusText: text }));
+    props.client.on("connect", () => this.setState({ statusText: "Connected" }));
+    props.client.on("disconnect", () => this.setState({ statusText: "Disconnected" }));
   }
 
   render() {
