@@ -1,5 +1,5 @@
 import "./output.css";
-// Output View for MUD Client
+
 import Anser, { AnserJsonEntry, DecorationName } from "anser";
 import * as React from "react";
 
@@ -68,7 +68,8 @@ class Output extends React.Component<Props, State> {
   };
 
   handleMessage = (message: string) => {
-    const elements = parseToElements(message, this.handleExitClick);
+    const currentLine = this.state.output[this.state.output.length - 1];
+    const elements = parseToElements(message, this.handleExitClick, currentLine);
     this.addToOutput(elements);
   };
 
@@ -126,97 +127,6 @@ class Output extends React.Component<Props, State> {
 
 export default Output;
 
-export function parseToElements(
-  text: string,
-  onExitClick: (exit: string) => void
-): React.ReactNode[] {
-  let elements: React.ReactNode[] = [];
-  // handle multiline strings by splitting them and adding the appropriate <br/>
-  for (const line of text.split("\r\n")) {
-    const parsed = Anser.ansiToJson(line, { json: true, remove_empty: false });
-    let children: any[] = [];
-    for (const bundle of parsed) {
-      const newElements = convertBundleIntoReact(bundle, onExitClick);
-      children = [...children, ...newElements];
-    }
-    elements = [...elements, <span key={elements.length}>{children}</span>];
-  }
-  return elements;
-}
-
-const URL_REGEX =
-  /(\s|^)(https?:\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
-const EMAIL_REGEX =
-  /(?<slorp1>\s|^)(?<name>[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+[a-zA-Z])(?<slorp2>\s|$|\.)/g;
-const exitRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
-
-function convertBundleIntoReact(
-  bundle: AnserJsonEntry,
-  onExitClick: (exit: string) => void
-): React.ReactNode[] {
-  const style = createStyle(bundle);
-  const content: React.ReactNode[] = [];
-  let index = 0;
-
-  function processRegex(
-    regex: RegExp,
-    process: (match: RegExpExecArray) => React.ReactNode
-  ): void {
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(bundle.content)) !== null) {
-      const startIndex = match.index;
-      if (startIndex > index) {
-        content.push(bundle.content.substring(index, startIndex));
-      }
-      content.push(process(match));
-      index = regex.lastIndex;
-    }
-  }
-
-  function processUrlMatch(match: RegExpExecArray): React.ReactNode {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [, pre, url] = match;
-    const href = url;
-    return (
-      <a href={href} target="_blank" rel="noreferrer">
-        {url}
-      </a>
-    );
-  }
-
-  function processEmailMatch(match: RegExpExecArray): React.ReactNode {
-    const email = match.groups!["name"];
-    const href = `mailto:${email}`;
-    return (
-      <>
-        {match.groups!["slorp1"]}
-        <a href={href} target="_blank" rel="noreferrer">
-          {email}
-        </a>
-        {match.groups!["slorp2"]}
-      </>
-    );
-  }
-
-  function processExitMatch(match: RegExpExecArray): React.ReactNode {
-    const [, exitType, exitName] = match;
-    return (
-      // eslint-disable-next-line jsx-a11y/anchor-is-valid
-      <a onClick={() => onExitClick(exitType)} className="exit">
-        {exitName}
-      </a>
-    );
-  }
-
-  processRegex(URL_REGEX, processUrlMatch);
-  processRegex(EMAIL_REGEX, processEmailMatch);
-  processRegex(exitRegex, processExitMatch);
-
-  if (index < bundle.content.length) {
-    content.push(bundle.content.substring(index));
-  }
-  return content.map((c) => <span style={style}>{c}</span>);
-}
 
 /**
  * Create the style attribute.
@@ -246,4 +156,122 @@ function createStyle(bundle: AnserJsonEntry): React.CSSProperties {
   };
   const decorationStyles: React.CSSProperties[] = decorations.map(decoration => decorationMap[decoration]);
   return { ...style, ...Object.assign({}, ...decorationStyles) };
+}
+
+
+
+
+export function parseToElements(
+  text: string,
+  onExitClick: (exit: string) => void,
+  startingIndex: number = 0
+): React.ReactNode[] {
+  let elements: React.ReactNode[] = [];
+  let lineIndex = startingIndex;
+
+  // handle multiline strings by splitting them and adding the appropriate <br/>
+  for (const line of text.split("\r\n")) {
+    const parsed = Anser.ansiToJson(line, { json: true, remove_empty: false });
+    let children: React.ReactNode[] = [];
+    let bundleIndex = 0;
+    for (const bundle of parsed) {
+      const newElements = convertBundleIntoReact(
+        bundle,
+        onExitClick,
+        lineIndex,
+        bundleIndex
+      );
+      children = [...children, ...newElements];
+      bundleIndex++;
+    }
+    elements.push(<span key={lineIndex}>{children}</span>);
+    lineIndex++;
+  }
+  return elements;
+}
+
+const URL_REGEX =
+  /(\s|^)(https?:\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
+const EMAIL_REGEX =
+  /(?<slorp1>\s|^)(?<name>[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+[a-zA-Z])(?<slorp2>\s|$|\.)/g;
+const exitRegex = /@\[exit:(?<exitType>[a-zA-Z]+)\](?<exitName>[^\[]+)@\[\/\]/g;
+
+
+function convertBundleIntoReact(
+  bundle: AnserJsonEntry,
+  onExitClick: (exit: string) => void,
+  lineIndex: number,
+  bundleIndex: number
+): React.ReactNode[] {
+  const style = createStyle(bundle);
+  const content: React.ReactNode[] = [];
+  let index = 0;
+  let lastIndex = 0;
+
+  const combinedRegex = new RegExp(
+    `${URL_REGEX.source}|${EMAIL_REGEX.source}|${exitRegex.source}`,
+    "g"
+  );
+
+  let match: RegExpExecArray | null;
+  while ((match = combinedRegex.exec(bundle.content)) !== null) {
+    content.push(bundle.content.slice(lastIndex, match.index));
+
+    if (match[2]) {
+      // URL
+      const [, , url] = match;
+      const href = url;
+      content.push(
+        <a
+          key={`${lineIndex}-${bundleIndex}-${index}`}
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {url}
+        </a>
+      );
+    } else if (match.groups!["name"]) {
+      // Email
+      const email = match.groups!["name"];
+      const href = `mailto:${email}`;
+      content.push(
+        <>
+          {match.groups!["slorp1"]}
+          <a
+            key={`${lineIndex}-${bundleIndex}-${index}`}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {email}
+          </a>
+          {match.groups!["slorp2"]}
+        </>
+      );
+    } else {
+      // Exit
+      const exitType = match.groups!["exitType"];
+      const exitName = match.groups!["exitName"];
+      content.push(
+        <a
+          key={`${lineIndex}-${bundleIndex}-${index}`}
+          onClick={() => onExitClick(exitType)}
+          className="exit"
+        >
+          {exitName}
+        </a>
+      );
+    }
+    lastIndex = combinedRegex.lastIndex;
+    index++;
+  }
+
+  content.push(bundle.content.slice(lastIndex));
+
+  return content.map((c, i) => (
+    <span key={`${lineIndex}-${bundleIndex}-${i}`} style={style}>
+      {c}
+    </span>
+  ));
 }
