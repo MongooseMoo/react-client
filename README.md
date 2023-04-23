@@ -1,46 +1,55 @@
-# Getting Started with Create React App
+# Mongoose React Client
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+The Mongoose React Client is a user-friendly and feature-rich Multi-User Dungeon (MUD) client tailored exclusively for Project Mongoose.
+With support for a variety of MUD protocols, including GMCP, MCMP, and MCP, the Mongoose React Client delivers a seamless and immersive gaming experience for end users.
 
-## Available Scripts
+## Key Features
 
-In the project directory, you can run:
+* Exclusive connection to Project Mongoose
+* Support for multiple MUD protocols, such as GMCP, MCMP, and MCP
+* Enhanced protocol support and features:
+* Vivid ANSI color for a visually engaging experience
+* MCMP with 3D audio support for immersive gameplay
+* Desktop notifications for important messages
+* Intuitive and lightweight interface
+* Save session logs for later review or analysis
+* Designed for an unparalleled and enjoyable gaming experience
 
-### `npm start`
+## Official Build
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+The official build of the Mongoose React Client can be found at [https://client.rustytelephone.net.](https://client.rustytelephone.net)
+This instance of the client updates automatically any time code is committed to the master branch.
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+## Installation for Local Development
 
-### `npm test`
+To install and run the Mongoose React Client on your local machine for development purposes, follow these steps:
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+1. Clone the repository from GitHub:
+```bash
+git clone https://github.com/MongooseMOO/react-client.git
+```
+2. Change to the cloned directory:
+```bash
+cd react-client
+```
+3. Install dependencies using npm:
+```bash
+npm install
+```
+4. Start the development server:
+```bash
+npm start
+```
+5. Open your browser and navigate to `http://localhost:3000` to start using the Mongoose React Client.
 
-### `npm run build`
+## Usage
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+To use the Mongoose React Client, visit the official build at [https://client.rustytelephone.net](https://client.rustytelephone.net) or run the app on your local machine following the installation steps. Connect to the Project Mongoose server and enjoy an unparalleled gaming experience with advanced features like ANSI color, 3D audio, and desktop notifications. Additionally, you can save session logs for future reference or analysis.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Contributing
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+We welcome contributions from the community. If you're interested in contributing to the Mongoose React Client, please feel free to submit pull requests or open issues on the GitHub repository.
 
-### `npm run eject`
+## Acknowledgments
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
-
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+We would like to extend our gratitude to the developers and contributors of Project Mongoose for their unwavering support and dedication in creating an extraordinary MUD experience.
