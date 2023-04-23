@@ -1,6 +1,6 @@
 import "./output.css";
 // Output View for MUD Client
-import Anser, { AnserJsonEntry } from "anser";
+import Anser, { AnserJsonEntry, DecorationName } from "anser";
 import * as React from "react";
 
 import MudClient from "../client";
@@ -52,7 +52,6 @@ class Output extends React.Component<Props, State> {
 
   addToOutput(elements: any[]) {
     this.setState((state) => {
-      // console.log("Current output length: " + state.output.length)
       const key = state.output.length;
       const newOutput = elements.map((element, index) => (
         <div key={key + index}>{element}</div>
@@ -227,37 +226,24 @@ function convertBundleIntoReact(
  * @return {Object} returns the style object
  */
 function createStyle(bundle: AnserJsonEntry): React.CSSProperties {
+  const { bg, fg, decorations = [] } = bundle;
   const style: React.CSSProperties = {};
-  if (bundle.bg) {
-    style.backgroundColor = `rgb(${bundle.bg})`;
+  if (bg) {
+    style.backgroundColor = `rgb(${bg})`;
   }
-  if (bundle.fg) {
-    style.color = `rgb(${bundle.fg})`;
+  if (fg) {
+    style.color = `rgb(${fg})`;
   }
-  switch (bundle.decoration) {
-    case "bold":
-      style.fontWeight = "bold";
-      break;
-    case "dim":
-      style.opacity = "0.5";
-      break;
-    case "italic":
-      style.fontStyle = "italic";
-      break;
-    case "hidden":
-      style.visibility = "hidden";
-      break;
-    case "strikethrough":
-      style.textDecoration = "line-through";
-      break;
-    case "underline":
-      style.textDecoration = "underline";
-      break;
-    case "blink":
-      style.textDecoration = "blink";
-      break;
-    default:
-      break;
-  }
-  return style;
+  const decorationMap: Record<DecorationName, React.CSSProperties> = {
+    bold: { fontWeight: "bold" },
+    dim: { opacity: "0.5" },
+    italic: { fontStyle: "italic" },
+    hidden: { visibility: "hidden" },
+    strikethrough: { textDecoration: "line-through" },
+    underline: { textDecoration: "underline" },
+    blink: { textDecoration: "blink" },
+    reverse: { filter: "invert(1)" },
+  };
+  const decorationStyles: React.CSSProperties[] = decorations.map(decoration => decorationMap[decoration]);
+  return { ...style, ...Object.assign({}, ...decorationStyles) };
 }
