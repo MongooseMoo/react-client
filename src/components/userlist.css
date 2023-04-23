@@ -2,9 +2,11 @@
   border-radius: 2px;
   border-color: black;
 }
+
 .sidebar-header {
   border-bottom: 1px solid #000;
 }
+
 ul {
   list-style-type: none;
   margin: 0;
