@@ -1,3 +1,4 @@
+import { FaDownload, FaSave, FaUndo } from "react-icons/fa";
 import Editor from "@monaco-editor/react";
 import React, { useEffect, useMemo, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
@@ -98,6 +99,7 @@ function EditorWindow() {
   const onChanges = (value: string | undefined) => {
     if (!isLoaded) {
       setIsLoaded(true);
+      setDocumentState(DocumentState.Unchanged);
       return;
     }
     if (value === undefined) {
@@ -150,12 +152,15 @@ function EditorWindow() {
       >
         <form onSubmit={(event) => event.preventDefault()}>
           <button onClick={onSave} accessKey="s">
+            <FaSave />
             Save
           </button>
           <button onClick={revert} accessKey="r">
+            <FaUndo />
             Revert
           </button>
           <button onClick={downloadText} accessKey="d">
+            <FaDownload />
             Download
           </button>
         </form>
