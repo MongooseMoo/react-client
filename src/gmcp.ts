@@ -1,4 +1,4 @@
-import { Howl } from "howler";
+import { Howl, Howler } from "howler";
 import type MudClient from "./client";
 
 
@@ -113,6 +113,14 @@ export class GMCPClientMedia extends GMCPPackage {
   public packageName: string = "Client.Media";
   sounds: { [key: string]: Sound } = {};
   defaultUrl: string = "";
+
+  constructor(client: MudClient) {
+    super(client);
+
+    Howler.usingWebAudio = true; // Force to use Web Audio
+    Howler.ctx = this.client.audioContext;
+  }
+
   handleDefault(url: string): void {
     this.defaultUrl = url;
   }

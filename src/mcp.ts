@@ -453,6 +453,7 @@ export class McpAwnsPing extends MCPPackage {
         break;
     }
   }
+
   ping() {
     this.send("dns-com-awns-ping", { id: this.id++ })
   }
