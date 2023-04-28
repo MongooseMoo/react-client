@@ -36,19 +36,21 @@ function App() {
     }
   };
 
-  const showhideUsers = () => {
-    if (outRef.current) {
-      outRef.current.showhideUsers();
-    }
+  const [showUserlist, setShowUserlist] = React.useState<boolean>(false);
+  const toggleUsers = () => {
+    // setShowUserlist(!showUserlist);
+    setShowUserlist((prevShowUserlist) => !prevShowUserlist);
+
+    //this.setState((prevState) => ({ sidebar_visible: !prevState.sidebar_visible }));
   };
-  
+
   useBeforeunload((event) => {
     client.shutdown();
   });
   return (
     <div className="App">
       <header className="App-header"></header>
-      <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onShowHideUsers={showhideUsers} />
+      <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onToggleUsers={toggleUsers} />
       <div>
         <OutputWindow client={client} ref={outRef} />
         <Userlist client={client} />

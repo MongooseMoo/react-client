@@ -4,10 +4,10 @@ import { Howl, Howler } from "howler";
 export interface ToolbarProps {
   onClearLog: () => void;
   onSaveLog: () => void;
-  onShowHideUsers: () => void;
+  onToggleUsers: () => void;
 }
 
-const Toolbar = ({ onClearLog, onSaveLog, onShowHideUsers }: ToolbarProps) => {
+const Toolbar = ({ onClearLog, onSaveLog, onToggleUsers }: ToolbarProps) => {
   //@ts-ignore
   const [muted, setMuted] = React.useState(Howler._muted);
 
@@ -36,7 +36,7 @@ const Toolbar = ({ onClearLog, onSaveLog, onShowHideUsers }: ToolbarProps) => {
         {muted ? <FaVolumeUp /> : <FaVolumeMute />}
         {muted ? "Unmute" : "Mute"}
       </button>
-      <button onClick={onShowHideUsers} accessKey="u">
+      <button onClick={onToggleUsers} accessKey="u">
         Show/Hide Users
       </button>
     </div >
