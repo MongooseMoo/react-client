@@ -306,12 +306,23 @@ An MCP message consists of three parts: the name of the message, the authenticat
 
 
   requestNotificationPermission() {
+    // handle notifications
+    // may not be available in all browsers
+    if (!("Notification" in window)) {
+      console.log("This browser does not support desktop notification");
+      return;
+    }
     if (Notification.permission === "default") {
       Notification.requestPermission();
     }
   }
 
   sendNotification(title: string, body: string) {
+    if (!("Notification" in window)) {
+      console.log("This browser does not support desktop notification");
+      return;
+    }
+
     if (Notification.permission === "granted") {
       new Notification(title, { body });
     }
