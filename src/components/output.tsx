@@ -107,10 +107,6 @@ class Output extends React.Component<Props, State> {
     this.setState({ output: [] });
   }
 
-
-  showhideUsers = () => {
-    this.setState((prevState) => ({ sidebar_visible: !prevState.sidebar_visible }));
-  };
   
   render() {
     var classname = "output";
