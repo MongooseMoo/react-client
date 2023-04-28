@@ -36,13 +36,19 @@ function App() {
     }
   };
 
+  const showhideUsers = () => {
+    if (outRef.current) {
+      outRef.current.showhideUsers();
+    }
+  };
+  
   useBeforeunload((event) => {
     client.shutdown();
   });
   return (
     <div className="App">
       <header className="App-header"></header>
-      <Toolbar onSaveLog={saveLog} onClearLog={clearLog} />
+      <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onShowHideUsers={showhideUsers} />
       <div>
         <OutputWindow client={client} ref={outRef} />
         <Userlist client={client} />
