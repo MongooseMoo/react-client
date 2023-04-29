@@ -4,3 +4,11 @@ body {
   font-family: "Helvetica Neue", sans-serif;
   color: #333;
 }
+
+.lk-audio-visualizer {
+  display:none;
+}
+
+.lk-room-container {
+  display:inline-flex;
+}
