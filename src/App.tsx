@@ -36,9 +36,9 @@ function App() {
     }
   };
 
-  const [showUserlist, setShowUserlist] = React.useState<boolean>(true);
+  const userlistRef = React.useRef<Userlist | null>(null);
   const toggleUsers = () => {
-    setShowUserlist(!showUserlist);
+    userlistRef.current?.toggle();
   };
 
   useBeforeunload((event) => {
@@ -50,7 +50,7 @@ function App() {
       <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onToggleUsers={toggleUsers} />
       <div>
         <OutputWindow client={client} ref={outRef} />
-        {showUserlist && <Userlist client={client} />}
+        <Userlist client={client} />
       </div>
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
       <Statusbar client={client} />

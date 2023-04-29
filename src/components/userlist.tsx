@@ -50,6 +50,10 @@ class Userlist extends React.Component<Props, State> {
       </div>
     );
   }
+  toggle() {
+    console.log("toggling sidebar visibility to " + !this.state.visible);
+    this.setState({ visible: !this.state.visible });
+  }
 }
 
 export default Userlist;
