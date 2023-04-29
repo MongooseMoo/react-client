@@ -18,6 +18,7 @@ import {
 } from "./mcp";
 
 export interface WorldData {
+  liveKitToken: string;
   playerId: string;
   playerName: string;
   roomId: string;
@@ -43,6 +44,7 @@ class MudClient extends EventEmitter {
     playerId: "",
     playerName: "",
     roomId: "",
+    liveKitToken: "",
   };
   audioContext: AudioContext;
 
