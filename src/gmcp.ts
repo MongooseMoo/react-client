@@ -180,8 +180,8 @@ export class GMCPClientMedia extends GMCPPackage {
       setTimeout(() => {
         sound.stop();
       }, (data.end - data.start) / 1000);
-
     }
+
     if (data.loops === -1) {
       sound.loop(true);
     }
@@ -301,5 +301,18 @@ export class GMCPRoom extends GMCPPackage {
     this.id = data.num;
     this.client.worldData.roomId = this.id;
     this.client.emit("room", this);
+  }
+}
+
+export class GMCPMessageCommLiveKitToken {
+  token: string = "";
+}
+
+export class GMCPCommLiveKit extends GMCPPackage {
+  public packageName: string = "Comm.LiveKit";
+
+  handleroom_token(data: GMCPMessageCommLiveKitToken): void {
+    this.client.worldData.liveKitToken = data.token;
+    this.client.emit("livekitToken", data.token);
   }
 }
