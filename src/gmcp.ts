@@ -116,7 +116,6 @@ export class GMCPClientMedia extends GMCPPackage {
 
   constructor(client: MudClient) {
     super(client);
-
     Howler.usingWebAudio = true; // Force to use Web Audio
     Howler.ctx = this.client.audioContext;
   }

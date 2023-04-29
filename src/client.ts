@@ -265,9 +265,12 @@ An MCP message consists of three parts: the name of the message, the authenticat
     console.log(editorSession);
     const channel = new BroadcastChannel("editor");
     // open editor in new tab
-    const editorWindow = window.open("/editor", "_blank");
+    const id = editorSession.reference;
+    const encodedId = encodeURIComponent(id);
+    const editorWindow = window.open(`/editor?reference=${encodedId}`, "_blank",);
     channel.onmessage = (ev) => {
-      if (ev.data.type === "ready") {
+      console.log("editor window message", ev);
+      if (ev.data.type === "ready" && ev.data.id === id) {
         console.log("sending editor window session", editorSession);
         channel.postMessage({
           type: "load",
@@ -303,7 +306,6 @@ An MCP message consists of three parts: the name of the message, the authenticat
       handler.shutdown();
     });
   }
-
 
   requestNotificationPermission() {
     // handle notifications

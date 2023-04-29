@@ -155,26 +155,28 @@ export class McpSimpleEdit extends MCPPackage {
 
   handle(message: McpMessage): void {
     if (message.name === "dns-org-mud-moo-simpleedit-content") {
-      let name = message.keyvals["name"];
-      let reference = message.keyvals["reference"];
-      let type = message.keyvals["type"];
-      let contents: string[] = [];
-      this.sessions[message.keyvals["_data-tag"]] = {
-        name,
-        reference,
-        type,
-        contents,
+      const session: EditorSession = {
+        name: message.keyvals["name"],
+        reference: message.keyvals["reference"],
+        type: message.keyvals["type"],
+        contents: [],
       };
+      this.sessions[message.keyvals["_data-tag"]] = session;
+    } else {
+      console.log(`Unexpected simpleedit message ${message}`);
     }
   }
 
   handleMultiline(message: McpMessage): void {
-    if ("content" in message.keyvals)
+    if ("content" in message.keyvals) {
       this.sessions[message.name].contents.push(message.keyvals["content"]);
-    else console.log(`Unexpected simpleedit ML ${message}`);
+    } else {
+      console.log(`Unexpected simpleedit ML ${message}`);
+    }
   }
 
   closeMultiline(closure: McpMessage): void {
+    console.log(`Closing multiline ${closure.name}`);
     this.client.openEditorWindow(this.sessions[closure.name]);
   }
 
@@ -188,6 +190,7 @@ export class McpSimpleEdit extends MCPPackage {
  * Gets and Sets per-player properties
  * Emits a "getset" event when a property is received
  */
+
 export class McpAwnsGetSet extends MCPPackage {
   public packageName = "dns-com-awns-getset";
   private id: number = 1;
@@ -222,6 +225,7 @@ export class McpAwnsGetSet extends MCPPackage {
       property: property,
     });
   }
+
   sendSet(property: string, value: string) {
     this.client.sendMcp("dns-com-awns-getset-set", {
       id: this.id++,
@@ -229,6 +233,7 @@ export class McpAwnsGetSet extends MCPPackage {
       value: value,
     });
   }
+
   sendDrop(property: string) {
     this.client.sendMcp("dns-com-awns-getset-drop", {
       id: this.id++,
@@ -241,7 +246,6 @@ export interface UserlistPlayer {
   Object: string;
   Name: string;
   Icon: number;
-
   away: boolean;
   idle: boolean;
 }
