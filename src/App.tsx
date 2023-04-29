@@ -36,7 +36,7 @@ function App() {
     }
   };
 
-  const [showUserlist, setShowUserlist] = React.useState<boolean>(false);
+  const [showUserlist, setShowUserlist] = React.useState<boolean>(true);
   const toggleUsers = () => {
     setShowUserlist(!showUserlist);
   };
@@ -50,7 +50,7 @@ function App() {
       <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onToggleUsers={toggleUsers} />
       <div>
         <OutputWindow client={client} ref={outRef} />
-        <Userlist client={client} visible={showUserlist} />
+        {showUserlist && <Userlist client={client} />}
       </div>
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
       <Statusbar client={client} />
