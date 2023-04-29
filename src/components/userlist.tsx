@@ -6,6 +6,7 @@ import { UserlistPlayer } from "../mcp";
 
 export interface Props {
   client: MudClient;
+  visible: boolean;
 }
 
 interface State {
@@ -18,7 +19,7 @@ class Userlist extends React.Component<Props, State> {
     super(props);
     this.state = {
       players: [],
-      visible: false,
+      visible: props.visible,
     };
 
     props.client.on("userlist", (players: UserlistPlayer[]) => {
