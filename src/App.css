@@ -12,3 +12,20 @@ body {
 .lk-room-container {
   display:inline-flex;
 }
+
+.lk-participant-name, .lk-participant-metadata, .lk-participant-metadata-item {
+  display:inline-flex;
+  padding: 1px;
+}
+
+.lk-button-group, .lk-control-bar, .lk-button-group-menu, .lk-button-menu {
+  display:inline-block;
+}
+
+.lk-device-menu {
+  display: inline-flex;
+}
+
+.lk-chat-toggle {
+  display:none;
+}
