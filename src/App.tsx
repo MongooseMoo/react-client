@@ -38,10 +38,7 @@ function App() {
 
   const [showUserlist, setShowUserlist] = React.useState<boolean>(false);
   const toggleUsers = () => {
-    // setShowUserlist(!showUserlist);
-    setShowUserlist((prevShowUserlist) => !prevShowUserlist);
-
-    //this.setState((prevState) => ({ sidebar_visible: !prevState.sidebar_visible }));
+    setShowUserlist(!showUserlist);
   };
 
   useBeforeunload((event) => {
@@ -53,7 +50,7 @@ function App() {
       <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onToggleUsers={toggleUsers} />
       <div>
         <OutputWindow client={client} ref={outRef} />
-        <Userlist client={client} />
+        <Userlist client={client} visible={showUserlist} />
       </div>
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
       <Statusbar client={client} />
