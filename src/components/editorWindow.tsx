@@ -51,13 +51,18 @@ function EditorWindow() {
     }
   }, [documentState]);
   const channel = useMemo(() => new BroadcastChannel("editor"), []);
+  const params = new URLSearchParams(location.search);
+  const id = decodeURIComponent(params.get("reference") || "");
+
   useEffect(() => {
-    console.log("Location ", location.pathname);
-    if (!clientId) {
-      console.log("Sending ready message");
-      channel.postMessage({ type: "ready" });
+    if (!id) {
+      return;
     }
-    function handleMessage(event: MessageEvent) {
+    console.log("ID: " + id);
+    console.log("Sending ready message");
+    channel.postMessage({ type: "ready", id });
+
+    const handleMessage = (event: MessageEvent) => {
       console.log(event.data);
       if (event.data.type === "load") {
         if (clientId !== "") {
@@ -76,11 +81,11 @@ function EditorWindow() {
         channel.close();
         window.close();
       }
-    }
+    };
 
     channel.addEventListener("message", handleMessage);
     return () => channel.removeEventListener("message", handleMessage);
-  }, [channel, clientId, location]);
+  }, [channel, clientId, id]);
 
   const revert = () => {
     setCode(originalCode);
