@@ -7,45 +7,32 @@ type Props = {
   onSend: SendFunction;
 };
 
-const CommandInput = (props: Props) => {
+const CommandInput = ({ onSend }: Props) => {
   const [input, setInput] = useState("");
-  const [history, setHistory] = useState<string[]>([]);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
-  const [initialInput, setInitialInput] = useState("");
-  const inputRef = useRef(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      props.onSend(input);
+      onSend(input);
       setInput("");
-      setHistory([...history, input]);
-      setHistoryIndex(history.length);
-      setInitialInput("");
+      setCommandHistory([...commandHistory, input]);
+      setHistoryIndex(commandHistory.length + 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       if (historyIndex > 0) {
-        if (historyIndex === history.length) {
-          setInitialInput(input);
-          setHistory([...history, input]);
-        }
         setHistoryIndex((prevHistoryIndex) => {
-          setInput(history[prevHistoryIndex - 1]);
+          setInput(commandHistory[prevHistoryIndex - 1]);
           return prevHistoryIndex - 1;
         });
       }
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (historyIndex < history.length) {
+      if (historyIndex < commandHistory.length) {
         setHistoryIndex((prevHistoryIndex) => {
-          setInput(
-            prevHistoryIndex + 1 === history.length
-              ? initialInput
-              : history[prevHistoryIndex + 1]
-          );
-          if (prevHistoryIndex + 1 === history.length) {
-            setHistory(history.slice(0, history.length - 1));
-          }
+          setInput(commandHistory[prevHistoryIndex]);
           return prevHistoryIndex + 1;
         });
       }
@@ -56,7 +43,7 @@ const CommandInput = (props: Props) => {
     <textarea
       value={input}
       onChange={(e) => setInput(e.target.value)}
-      onKeyDown={(e) => handleKeyDown(e)}
+      onKeyDown={handleKeyDown}
       ref={inputRef}
       autoFocus
     />
