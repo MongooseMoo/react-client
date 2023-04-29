@@ -45,7 +45,7 @@ class AudioChat extends Component<AudioChatProps, AudioChatState> {
                     audio={true}
                     token={token}
                     serverUrl={serverUrl}
-                    connect={this.state.connected}
+                    connect={true}
                 >
                     <AudioConference />
                 </LiveKitRoom>

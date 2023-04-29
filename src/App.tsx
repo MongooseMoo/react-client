@@ -53,7 +53,7 @@ function App() {
       <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onToggleUsers={toggleUsers} />
       <div>
         <OutputWindow client={client} ref={outRef} />
-        <Userlist client={client} />
+        <Userlist client={client} ref={userlistRef} />
         <AudioChat client={client} />
       </div>
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
