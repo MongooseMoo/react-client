@@ -4,5 +4,6 @@ textarea {
   padding: 10px;
   width: 100%;
   height: 75px;
-  font-size: 1.1em;
+  font-size: 1em;
+  font-family: Monaco, Consolas, "Liberation Mono", "Courier New", Courier, monospace;
 }
