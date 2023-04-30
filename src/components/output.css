@@ -9,7 +9,8 @@
     border-radius: 5px;
 margin: auto;
 /* height: auto;*/
-max-height: 700px;
+/* max-height: 700px; */
+max-height: 500px;
 overflow: auto;
 white-space: pre-wrap;
 word-wrap: normal;
