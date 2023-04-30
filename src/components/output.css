@@ -7,12 +7,12 @@
     padding: 20px;
     border: 1px solid #ccc;
     border-radius: 5px;
-margin: auto;
+    margin: auto;
 /* height: auto;*/
-max-height: 600px;
-overflow: auto;
-white-space: pre-wrap;
-word-wrap: normal;
+    max-height: 500px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-wrap: normal;
 }
 
 .output.sidebar-visible {
