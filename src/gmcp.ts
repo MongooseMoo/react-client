@@ -141,6 +141,7 @@ export class GMCPClientMedia extends GMCPPackage {
     let sound = this.sounds[data.key];
 
     if (!sound || sound._src !== mediaUrl) {
+      console.log("creating", data, sound);
       if (data.type === "music") {
         sound = new Howl({
           src: [(data.url || this.defaultUrl) + data.name],
@@ -148,7 +149,12 @@ export class GMCPClientMedia extends GMCPPackage {
           format: ["aac", "mp3", "ogg"],
         });
       } else {
-        sound = new Howl({ src: [mediaUrl] });
+        sound = new Howl({
+          src: [mediaUrl],
+          html5: true,
+          preload: true,
+          format: ["aac", "mp3", "ogg"],
+        });
       }
     } else {
       console.log("updating", data, sound);
