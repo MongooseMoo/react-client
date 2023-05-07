@@ -48,14 +48,15 @@ class AudioChat extends Component<AudioChatProps, AudioChatState> {
                     audio={true}
                     token={token}
                     serverUrl={serverUrl}
-                    connect={true}
+                    connect={this.state.connected}
                 >
                     <AudioConference />
                 </LiveKitRoom>
                 <div className="audio-status" aria-live='polite'   >
                     <div className="audio-status-text">
                         {this.state.connected ? 'Connected' : 'Connecting...'}
-                    </div></div>
+                    </div>
+                </div>
             </div>
         );
     }
