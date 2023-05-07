@@ -30,7 +30,10 @@ class AudioChat extends Component<AudioChatProps, AudioChatState> {
 
         client.on('livekitToken', (token) => {
             this.setState({ connected: false, token: token }, () => {
-                this.setState({ connected: true });
+                setTimeout(() => {
+                    this.setState({ connected: true });
+                }, 1000);
+
             });
         });
     }
@@ -49,6 +52,10 @@ class AudioChat extends Component<AudioChatProps, AudioChatState> {
                 >
                     <AudioConference />
                 </LiveKitRoom>
+                <div className="audio-status" aria-live='polite'   >
+                    <div className="audio-status-text">
+                        {this.state.connected ? 'Connected' : 'Connecting...'}
+                    </div></div>
             </div>
         );
     }
