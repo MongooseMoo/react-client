@@ -272,7 +272,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
     const editorWindow = window.open(`/editor?reference=${encodedId}`, "_blank",);
     channel.onmessage = (ev) => {
       console.log("editor window message", ev);
-      if (ev.data.type === "ready" && ev.data.id === id) {
+      if (ev.data.id !== id) return;
+      if (ev.data.type === "ready") {
         console.log("sending editor window session", editorSession);
         channel.postMessage({
           type: "load",
@@ -281,6 +282,10 @@ An MCP message consists of three parts: the name of the message, the authenticat
       } else if (ev.data.type === "save") {
         console.log("saving editor window with session", ev.data.session);
         this.saveEditorWindow(ev.data.session);
+      } else if (ev.data.type === "close") {
+        console.log("closing editor window");
+        channel.close();
+        channel.onmessage = null;
       }
     };
   }

@@ -28,6 +28,7 @@ function EditorWindow() {
   });
 
   useBeforeunload((event) => {
+    channel.postMessage({ type: "close", id });
     if (documentState === DocumentState.Changed) {
       event.preventDefault();
     }
@@ -96,7 +97,7 @@ function EditorWindow() {
   const onSave = (event: React.FormEvent<HTMLButtonElement>) => {
     const contents = code.split(/\r\n|\r|\n/); // Split the code into lines
     const sessionData = { ...session, contents };
-    channel.postMessage({ type: "save", session: sessionData });
+    channel.postMessage({ type: "save", session: sessionData, id, });
     setDocumentState(DocumentState.Saved);
     event.preventDefault();
   };
