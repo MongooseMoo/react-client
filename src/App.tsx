@@ -1,11 +1,11 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import OutputWindow from "./components/output";
 import MudClient from "./client";
 import CommandInput from "./components/input";
 import { GMCPCore, GMCPCoreSupports, GMCPClientMedia, GMCPCommLiveKit, GMCPCommChannel } from "./gmcp";
-import { McpAwnsPing, McpAwnsStatus, McpSimpleEdit, McpVmooUserlist } from "./mcp";
+import { McpAwnsPing, McpAwnsStatus, McpSimpleEdit, McpVmooUserlist, UserlistPlayer } from "./mcp";
 import Toolbar from "./components/toolbar";
 import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
@@ -38,10 +38,29 @@ function App() {
     }
   };
 
-  const userlistRef = React.useRef<Userlist | null>(null);
-  const toggleUsers = () => {
-    userlistRef.current?.toggle();
-  };
+  // are we on mobile?
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const [showUsers, setShowUsers] = React.useState(!isMobile);
+
+  const [players, setPlayers] = useState<UserlistPlayer[]>([]);
+
+  useEffect(() => {
+    const handleUserlist = (players: UserlistPlayer[]) => {
+      setPlayers(players);
+    };
+
+    const handleDisconnect = () => {
+      setPlayers([]);
+    };
+
+    client.on("userlist", handleUserlist);
+    client.on("disconnect", handleDisconnect);
+
+    return () => {
+      client.off("userlist", handleUserlist);
+      client.off("disconnect", handleDisconnect);
+    };
+  }, [client]);
 
   useBeforeunload((event) => {
     client.shutdown();
@@ -50,10 +69,10 @@ function App() {
   return (
     <div className="App">
       <header className="App-header"></header>
-      <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onToggleUsers={toggleUsers} />
+      <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onToggleUsers={() => setShowUsers(!showUsers)} />
       <div>
         <OutputWindow client={client} ref={outRef} />
-        <Userlist client={client} ref={userlistRef} />
+        {showUsers && <Userlist users={players} />}
         <AudioChat client={client} />
       </div>
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
