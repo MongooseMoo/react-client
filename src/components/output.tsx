@@ -31,15 +31,16 @@ class Output extends React.Component<Props, State> {
     );
     // disconnect
     this.props.client.on("disconnect", () => {
-
-      this.addToOutput([<h2> Disconnected</h2>])
+      this.addToOutput([<h2> Disconnected</h2>]);
       this.state.sidebar_visible = false;
     });
     // error
     this.props.client.on("error", (error: Error) =>
       this.addToOutput([<h2> Error: {error.message}</h2>])
     );
-    this.props.client.on("userlist", (players: any) => this.setState({ sidebar_visible: !!players }));
+    this.props.client.on("userlist", (players: any) =>
+      this.setState({ sidebar_visible: !!players })
+    );
   }
 
   componentDidUpdate() {
@@ -89,7 +90,12 @@ class Output extends React.Component<Props, State> {
       const date = new Date();
       const dateString = date.toLocaleDateString();
       // 24 hour time
-      const timeString = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const timeString = date.toLocaleTimeString("en-US", {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
       // Set MUD name to window title and replace any spaces with dashes
       const mudName = document.title.replace(/\s+/g, "-");
       // Include the MUD name in the filename
@@ -146,7 +152,7 @@ export function parseToElements(
 }
 
 const URL_REGEX =
-  /(\s|^)(https?:\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
+  /(\s|^)((\w+):\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
 const EMAIL_REGEX =
   /(?<slorp1>\s|^)(?<name>[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+[a-zA-Z])(?<slorp2>\s|$|\.)/g;
 const exitRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
