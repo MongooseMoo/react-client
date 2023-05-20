@@ -1,65 +1,56 @@
-import React, { Component } from 'react';
-import { AudioConference, LiveKitRoom } from '@livekit/components-react';
-import MudClient from '../client';
+import React, { useState, useEffect } from "react";
+import { AudioConference, LiveKitRoom } from "@livekit/components-react";
+import MudClient from "../client";
 
-
-const serverUrl = 'wss://mongoose-67t79p35.livekit.cloud';
+const serverUrl = "wss://mongoose-67t79p35.livekit.cloud";
 
 interface AudioChatProps {
-
-    client: MudClient;
+  client: MudClient;
 }
 
-interface AudioChatState {
-    connected: boolean;
-    token: string;
-}
+const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
+  const [token, setToken] = useState("");
+  const [connected, setConnected] = useState(false);
 
-class AudioChat extends Component<AudioChatProps, AudioChatState> {
+  useEffect(() => {
+    const handleLiveKitToken = (token: string) => {
+      setConnected(false);
+      setToken(token);
+      setTimeout(() => {
+        setConnected(true);
+      }, 1000);
+    };
 
-    constructor(props: AudioChatProps) {
-        super(props);
-        this.state = {
-            token: '',
-            connected: false,
-        };
-    }
+    client.on("livekitToken", handleLiveKitToken);
 
-    componentDidMount() {
-        const { client } = this.props;
+    return () => {
+      client.off("livekitToken", handleLiveKitToken);
+    };
+  }, [client]);
 
-        client.on('livekitToken', (token) => {
-            this.setState({ connected: false, token: token }, () => {
-                setTimeout(() => {
-                    this.setState({ connected: true });
-                }, 1000);
+  const handleDisconnected = () => {
+    setToken("");
+  };
 
-            });
-        });
-    }
+  if (!token) {
+    return null; // Returning null here instead of empty string
+  }
 
-    render() {
-        const { token } = this.state;
-
-        return (
-            <div data-lk-theme="default">
-                <LiveKitRoom
-                    video={false}
-                    audio={true}
-                    token={token}
-                    serverUrl={serverUrl}
-                    connect={this.state.connected}
-                >
-                    <AudioConference />
-                </LiveKitRoom>
-                <div className="audio-status" aria-live='polite'   >
-                    <div className="audio-status-text">
-                        {this.state.connected ? 'Connected' : 'Connecting...'}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-}
+  return (
+    <div data-lk-theme="default">
+      <LiveKitRoom
+        video={false}
+        audio={true}
+        token={token}
+        serverUrl={serverUrl}
+        connect={connected}
+        onDisconnected={handleDisconnected}
+      >
+        <AudioConference />
+      </LiveKitRoom>
+      <div className="audio-status" aria-live="polite"></div>
+    </div>
+  );
+};
 
 export default AudioChat;
