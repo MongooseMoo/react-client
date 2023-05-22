@@ -36,6 +36,10 @@ const Toolbar = ({ onClearLog, onSaveLog, onToggleUsers }: ToolbarProps) => {
         {muted ? <FaVolumeUp /> : <FaVolumeMute />}
         {muted ? "Unmute" : "Mute"}
       </button>
+      <label>
+        Volume
+        <input type="range" min="0" max="100" onChange={(e) => Howler.volume(Number(e.target.value) / 100)} />
+      </label>
       <button onClick={onToggleUsers} accessKey="u">
         Show/Hide Users
       </button>
