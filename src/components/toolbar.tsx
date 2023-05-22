@@ -1,6 +1,7 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { FaEraser, FaSave, FaVolumeMute, FaVolumeUp } from "react-icons/fa";
 import { Howl, Howler } from "howler";
+
 export interface ToolbarProps {
   onClearLog: () => void;
   onSaveLog: () => void;
@@ -8,8 +9,20 @@ export interface ToolbarProps {
 }
 
 const Toolbar = ({ onClearLog, onSaveLog, onToggleUsers }: ToolbarProps) => {
-  //@ts-ignore
-  const [muted, setMuted] = React.useState(Howler._muted);
+  const [muted, setMuted] = useState(Howler.mute());
+
+  const toggleMute = () => {
+    const currentMuteStatus = Howler.mute();
+    Howler.mute(!currentMuteStatus);
+  }
+
+  useEffect(() => {
+    setMuted(Howler.mute());
+  }, []);
+
+  useEffect(() => {
+    setMuted(Howler.mute());
+  }, [muted]);
 
   return (
     <div className="toolbar">
@@ -22,15 +35,7 @@ const Toolbar = ({ onClearLog, onSaveLog, onToggleUsers }: ToolbarProps) => {
         Clear Log
       </button>
       <button
-        onClick={() => {
-          if (muted) {
-            Howler.mute(false);
-            setMuted(false);
-          } else {
-            Howler.mute(true);
-            setMuted(true);
-          }
-        }}
+        onClick={toggleMute}
         accessKey="m"
       >
         {muted ? <FaVolumeUp /> : <FaVolumeMute />}
