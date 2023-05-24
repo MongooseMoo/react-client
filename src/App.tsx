@@ -4,28 +4,31 @@ import "./App.css";
 import OutputWindow from "./components/output";
 import MudClient from "./client";
 import CommandInput from "./components/input";
-import { GMCPCore, GMCPCoreSupports, GMCPClientMedia, GMCPCommLiveKit, GMCPCommChannel } from "./gmcp";
-import { McpAwnsPing, McpAwnsStatus, McpSimpleEdit, McpVmooUserlist, UserlistPlayer } from "./mcp";
+import {
+  GMCPCore,
+  GMCPCoreSupports,
+  GMCPClientMedia,
+  GMCPCommLiveKit,
+  GMCPCommChannel,
+} from "./gmcp";
+import {
+  McpAwnsPing,
+  McpAwnsStatus,
+  McpSimpleEdit,
+  McpVmooUserlist,
+  UserlistPlayer,
+} from "./mcp";
 import Toolbar from "./components/toolbar";
 import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
 import AudioChat from "./components/audioChat";
 
-const client = new MudClient("mongoose.moo.mud.org", 8765);
-client.registerGMCPPackage(GMCPCore);
-client.registerGMCPPackage(GMCPClientMedia);
-client.registerGMCPPackage(GMCPCoreSupports);
-client.registerGMCPPackage(GMCPCommChannel);
-client.registerGMCPPackage(GMCPCommLiveKit);
-client.registerMcpPackage(McpAwnsStatus);
-client.registerMcpPackage(McpSimpleEdit);
-client.registerMcpPackage(McpVmooUserlist);
-client.registerMcpPackage(McpAwnsPing);
-client.connect();
-client.requestNotificationPermission();
-
 function App() {
+  const [client, setClient] = useState<MudClient | null>(null);
+  const [showUsers, setShowUsers] = useState<boolean>(false);
+  const [players, setPlayers] = useState<UserlistPlayer[]>([]);
   const outRef = React.useRef<OutputWindow | null>(null);
+
   const saveLog = () => {
     if (outRef.current) {
       outRef.current.saveLog();
@@ -40,36 +43,60 @@ function App() {
 
   // are we on mobile?
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  const [showUsers, setShowUsers] = React.useState(!isMobile);
-
-  const [players, setPlayers] = useState<UserlistPlayer[]>([]);
 
   useEffect(() => {
-    const handleUserlist = (players: UserlistPlayer[]) => {
-      setPlayers(players);
-    };
+    const newClient = new MudClient("mongoose.moo.mud.org", 8765);
+    newClient.registerGMCPPackage(GMCPCore);
+    newClient.registerGMCPPackage(GMCPClientMedia);
+    newClient.registerGMCPPackage(GMCPCoreSupports);
+    newClient.registerGMCPPackage(GMCPCommChannel);
+    newClient.registerGMCPPackage(GMCPCommLiveKit);
+    newClient.registerMcpPackage(McpAwnsStatus);
+    newClient.registerMcpPackage(McpSimpleEdit);
+    newClient.registerMcpPackage(McpVmooUserlist);
+    newClient.registerMcpPackage(McpAwnsPing);
+    newClient.connect();
+    newClient.requestNotificationPermission();
+    setClient(newClient);
+    setShowUsers(!isMobile);
+  }, [isMobile]);
 
-    const handleDisconnect = () => {
-      setPlayers([]);
-    };
+  useEffect(() => {
+    if (client) {
+      const handleUserlist = (players: UserlistPlayer[]) => {
+        setPlayers(players);
+      };
 
-    client.on("userlist", handleUserlist);
-    client.on("disconnect", handleDisconnect);
+      const handleDisconnect = () => {
+        setPlayers([]);
+      };
 
-    return () => {
-      client.off("userlist", handleUserlist);
-      client.off("disconnect", handleDisconnect);
-    };
+      client.on("userlist", handleUserlist);
+      client.on("disconnect", handleDisconnect);
+
+      return () => {
+        client.off("userlist", handleUserlist);
+        client.off("disconnect", handleDisconnect);
+      };
+    }
   }, [client]);
 
   useBeforeunload((event) => {
-    client.shutdown();
+    if (client) {
+      client.shutdown();
+    }
   });
+
+  if (!client) return null; // or some loading component
 
   return (
     <div className="App">
       <header className="App-header"></header>
-      <Toolbar onSaveLog={saveLog} onClearLog={clearLog} onToggleUsers={() => setShowUsers(!showUsers)} />
+      <Toolbar
+        onSaveLog={saveLog}
+        onClearLog={clearLog}
+        onToggleUsers={() => setShowUsers(!showUsers)}
+      />
       <div>
         <OutputWindow client={client} ref={outRef} />
         {showUsers && <Userlist users={players} />}
