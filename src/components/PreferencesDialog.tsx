@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Preferences from "./preferences";
 import "./PreferencesDialog.css";
+import FocusLock from "react-focus-lock";
 
 export type PreferencesDialogRef = {
   open: () => void;
@@ -26,15 +27,17 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
   }, [isOpen]);
 
   return (
-    <dialog
-      className="preferences-dialog"
-      open={isOpen}
-      ref={dialogRef}
-      tabIndex={-1}
-    >
-      {isOpen && <Preferences />}
-      <button onClick={() => setIsOpen(false)}>Close</button>
-    </dialog>
+    <FocusLock disabled={!isOpen}>
+      <dialog
+        className="preferences-dialog"
+        open={isOpen}
+        ref={dialogRef}
+        tabIndex={-1}
+      >
+        {isOpen && <Preferences />}
+        <button onClick={() => setIsOpen(false)}>Close</button>
+      </dialog>
+    </FocusLock>
   );
 });
 
