@@ -336,6 +336,17 @@ An MCP message consists of three parts: the name of the message, the authenticat
       new Notification(title, { body });
     }
   }
+
+  speak(text: string) {
+    if (!("speechSynthesis" in window)) {
+      console.log("This browser does not support speech synthesis");
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.rate = 1.3;
+    speechSynthesis.speak(utterance);
+  }
 }
 
 
