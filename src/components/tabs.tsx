@@ -59,7 +59,7 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
             id={`${tab.label}-tab`}
             aria-controls={`${tab.label}-panel`}
             onClick={() => setSelectedTab(index)}
-            tabIndex={selectedTab === index ? 0 : -1}
+            tabIndex={selectedTab === index ? undefined : -1}
           >
             {tab.label}
           </button>
