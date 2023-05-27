@@ -48,6 +48,7 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
         open={isOpen}
         ref={dialogRef}
         tabIndex={-1}
+        aria-label="Preferences"
       >
         {isOpen && <Preferences />}
         <button onClick={() => setIsOpen(false)}>Close</button>
