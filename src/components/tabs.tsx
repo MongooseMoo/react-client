@@ -48,10 +48,11 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
   }, [selectedTab]);
 
   return (
-    <div role="tablist" aria-label="Tabs">
-      {tabs.map((tab, index) => (
-        <React.Fragment key={index}>
+    <div>
+      <div role="tablist" aria-label="Tabs">
+        {tabs.map((tab, index) => (
           <button
+            key={index}
             ref={(el) => (tabsRef.current[index] = el)}
             role="tab"
             aria-selected={selectedTab === index}
@@ -62,17 +63,19 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
           >
             {tab.label}
           </button>
-
-          <div
-            role="tabpanel"
-            id={`${tab.label}-panel`}
-            aria-labelledby={`${tab.label}-tab`}
-            hidden={selectedTab !== index}
-            tabIndex={selectedTab === index ? 0 : -1}
-          >
-            {tab.content}
-          </div>
-        </React.Fragment>
+        ))}
+      </div>
+      {tabs.map((tab, index) => (
+        <div
+          key={index}
+          role="tabpanel"
+          id={`${tab.label}-panel`}
+          aria-labelledby={`${tab.label}-tab`}
+          hidden={selectedTab !== index}
+          tabIndex={selectedTab === index ? 0 : -1}
+        >
+          {tab.content}
+        </div>
       ))}
     </div>
   );
