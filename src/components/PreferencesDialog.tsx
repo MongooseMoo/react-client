@@ -20,11 +20,26 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
       setIsOpen(false);
     },
   }));
+
   useEffect(() => {
     if (isOpen) {
       dialogRef.current?.focus();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   return (
     <FocusLock disabled={!isOpen}>
