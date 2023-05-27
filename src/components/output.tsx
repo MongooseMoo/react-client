@@ -42,7 +42,6 @@ class Output extends React.Component<Props, State> {
     this.props.client.on("command", (command: string) => {
       this.addToOutput([
         <span className="command" aria-live="off">
-          {" "}
           {command}
         </span>,
       ]);
