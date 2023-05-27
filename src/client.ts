@@ -1,7 +1,7 @@
 import {
-  TelnetParser,
   TelnetCommand,
   TelnetOption,
+  TelnetParser,
   WebSocketStream,
 } from "./telnet";
 
@@ -9,13 +9,15 @@ import { EventEmitter } from "eventemitter3";
 import { GMCPChar, GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
 import {
   EditorSession,
-  generateTag,
+  MCPPackage,
   McpAwnsGetSet,
   McpNegotiate,
-  MCPPackage,
+  generateTag,
   parseMcpMessage,
   parseMcpMultiline,
 } from "./mcp";
+
+import { preferencesStore } from "./PreferencesStore";
 
 export interface WorldData {
   liveKitToken: string;
@@ -124,6 +126,10 @@ class MudClient extends EventEmitter {
   }
 
   public send(data: string) {
+    const localEchoEnabled = preferencesStore.getState().general.localEcho;
+    if (localEchoEnabled) {
+      this.emit("command", data);
+    }
     this.ws.send(data);
   }
 

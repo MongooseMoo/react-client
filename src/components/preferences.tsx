@@ -1,6 +1,6 @@
 import React from "react";
 import { PrefActionType } from "../PreferencesStore";
-import { usePreferences } from "../hooks/UsePreferences";
+import { usePreferences } from "../hooks/usePreferences";
 import { useVoices } from "../hooks/useVoices";
 import Tabs from "./tabs"; // Import the new Tab component
 
