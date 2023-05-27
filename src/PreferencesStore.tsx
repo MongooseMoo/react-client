@@ -3,11 +3,18 @@ export type PrefState = {
     localEcho: boolean;
   };
   speech: {
+    autoreadMode: AutoreadMode;
     voice: string;
     rate: number;
     pitch: number;
   };
 };
+
+export enum AutoreadMode {
+  Off = "off",
+  Unfocused = "unfocused",
+  All = "all",
+}
 
 export enum PrefActionType {
   SetGeneral = "SET_GENERAL",
@@ -23,6 +30,7 @@ const initialState: PrefState = {
     localEcho: false,
   },
   speech: {
+    autoreadMode: AutoreadMode.Off,
     voice: "",
     rate: 1.0,
     pitch: 1.0,

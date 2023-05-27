@@ -17,7 +17,7 @@ import {
   parseMcpMultiline,
 } from "./mcp";
 
-import { preferencesStore } from "./PreferencesStore";
+import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 
 export interface WorldData {
   liveKitToken: string;
@@ -242,6 +242,13 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string) {
+    const autoreadMode = preferencesStore.getState().speech.autoreadMode;
+    if (autoreadMode === AutoreadMode.All) {
+      this.speak(dataString);
+    }
+    if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
+      this.speak(dataString);
+    } 
     this.emit("message", dataString);
   }
 

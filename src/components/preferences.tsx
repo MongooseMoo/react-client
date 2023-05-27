@@ -27,6 +27,26 @@ const Preferences: React.FC = () => {
   const speechTabContent = (
     <div>
       <label>
+        Auto Read:
+        <select
+          value={state.speech.autoreadMode}
+          onChange={(e) =>
+            dispatch({
+              type: PrefActionType.SetSpeech,
+              data: {
+                ...state.speech,
+                autoreadMode: e.target.value as any,
+              },
+            })
+          }
+        >
+          <option value="off">Off</option>
+          <option value="unfocused">Unfocused</option>
+          <option value="all">Always</option>
+        </select>
+      </label>
+      <br />
+      <label>
         Voice:
         <select
           value={state.speech.voice}
@@ -44,6 +64,7 @@ const Preferences: React.FC = () => {
           ))}
         </select>
       </label>
+      <br />
       <label>
         Rate (0.1 - 2.0):
         <input
@@ -60,6 +81,7 @@ const Preferences: React.FC = () => {
           }
         />
       </label>
+      <br />
       <label>
         Pitch (0 - 2):
         <input
@@ -76,6 +98,7 @@ const Preferences: React.FC = () => {
           }
         />
       </label>
+      <br />
     </div>
   );
 
