@@ -7,7 +7,7 @@
   max-width: 500px;
   padding: 20px;
   background-color: #ffffff;
-  box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.15);
+  /* box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.15); */
   border-radius: 10px;
   z-index: 1000;
   display: none;
@@ -17,7 +17,7 @@
   display: block;
 }
 
-button {
+.preferences-dialog button {
   display: inline-block;
   margin-top: 20px;
   padding: 10px 20px;
@@ -30,6 +30,6 @@ button {
   font-size: 1em;
 }
 
-button:hover {
+.preferences-dialog button:hover {
   background-color: #0056b3;
 }
