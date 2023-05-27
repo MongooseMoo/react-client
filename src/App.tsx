@@ -63,8 +63,20 @@ function App() {
     newClient.requestNotificationPermission();
     setClient(newClient);
     setShowUsers(!isMobile);
-  }, [isMobile]);
 
+    // Listen to 'keydown' event
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Control" && newClient) {
+        newClient.cancelSpeech(); // Cancel the speech when control key is pressed
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMobile]);
   useEffect(() => {
     if (client) {
       const handleUserlist = (players: UserlistPlayer[]) => {
