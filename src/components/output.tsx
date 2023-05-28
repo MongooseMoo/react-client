@@ -38,6 +38,14 @@ class Output extends React.Component<Props, State> {
     this.props.client.on("error", (error: Error) =>
       this.addToOutput([<h2> Error: {error.message}</h2>])
     );
+    // local commands
+    this.props.client.on("command", (command: string) => {
+      this.addToOutput([
+        <span className="command" aria-live="off">
+          {command}
+        </span>,
+      ]);
+    });
     this.props.client.on("userlist", (players: any) =>
       this.setState({ sidebar_visible: !!players })
     );

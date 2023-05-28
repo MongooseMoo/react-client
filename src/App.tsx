@@ -18,6 +18,9 @@ import {
   McpVmooUserlist,
   UserlistPlayer,
 } from "./mcp";
+import PreferencesDialog, {
+  PreferencesDialogRef,
+} from "./components/PreferencesDialog";
 import Toolbar from "./components/toolbar";
 import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
@@ -28,6 +31,7 @@ function App() {
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [players, setPlayers] = useState<UserlistPlayer[]>([]);
   const outRef = React.useRef<OutputWindow | null>(null);
+  const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
 
   const saveLog = () => {
     if (outRef.current) {
@@ -59,8 +63,20 @@ function App() {
     newClient.requestNotificationPermission();
     setClient(newClient);
     setShowUsers(!isMobile);
-  }, [isMobile]);
 
+    // Listen to 'keydown' event
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Control" && newClient) {
+        newClient.cancelSpeech(); // Cancel the speech when control key is pressed
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMobile]);
   useEffect(() => {
     if (client) {
       const handleUserlist = (players: UserlistPlayer[]) => {
@@ -96,6 +112,7 @@ function App() {
         onSaveLog={saveLog}
         onClearLog={clearLog}
         onToggleUsers={() => setShowUsers(!showUsers)}
+        onOpenPrefs={() => prefsDialogRef.current?.open()}
       />
       <div>
         <OutputWindow client={client} ref={outRef} />
@@ -104,6 +121,7 @@ function App() {
       </div>
       <CommandInput onSend={(text: string) => client.sendCommand(text)} />
       <Statusbar client={client} />
+      <PreferencesDialog ref={prefsDialogRef} />
     </div>
   );
 }
