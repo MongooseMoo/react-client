@@ -1,7 +1,7 @@
 import {
-  TelnetParser,
   TelnetCommand,
   TelnetOption,
+  TelnetParser,
   WebSocketStream,
 } from "./telnet";
 
@@ -9,13 +9,15 @@ import { EventEmitter } from "eventemitter3";
 import { GMCPChar, GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
 import {
   EditorSession,
-  generateTag,
+  MCPPackage,
   McpAwnsGetSet,
   McpNegotiate,
-  MCPPackage,
+  generateTag,
   parseMcpMessage,
   parseMcpMultiline,
 } from "./mcp";
+
+import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 
 export interface WorldData {
   liveKitToken: string;
@@ -124,6 +126,10 @@ class MudClient extends EventEmitter {
   }
 
   public send(data: string) {
+    const localEchoEnabled = preferencesStore.getState().general.localEcho;
+    if (localEchoEnabled) {
+      this.emit("command", data);
+    }
     this.ws.send(data);
   }
 
@@ -236,6 +242,13 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string) {
+    const autoreadMode = preferencesStore.getState().speech.autoreadMode;
+    if (autoreadMode === AutoreadMode.All) {
+      this.speak(dataString);
+    }
+    if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
+      this.speak(dataString);
+    } 
     this.emit("message", dataString);
   }
 
@@ -335,6 +348,29 @@ An MCP message consists of three parts: the name of the message, the authenticat
     if (Notification.permission === "granted") {
       new Notification(title, { body });
     }
+  }
+
+  speak(text: string) {
+    if (!("speechSynthesis" in window)) {
+      console.log("This browser does not support speech synthesis");
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    const {rate, pitch, voice, volume } = preferencesStore.getState().speech;
+    utterance.rate = rate;
+    utterance.pitch = pitch;
+    utterance.volume = volume;
+    const voices = speechSynthesis.getVoices();
+    const selectedVoice = voices.find(v => v.name === voice);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+    speechSynthesis.speak(utterance);
+  }
+
+  cancelSpeech() {
+    speechSynthesis.cancel();
   }
 }
 
