@@ -7,6 +7,7 @@ export type PrefState = {
     voice: string;
     rate: number;
     pitch: number;
+    volume: number;
   };
 };
 
@@ -34,6 +35,7 @@ const initialState: PrefState = {
     voice: "",
     rate: 1.0,
     pitch: 1.0,
+    volume: 1.0,
   },
 };
 
