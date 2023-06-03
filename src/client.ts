@@ -16,6 +16,7 @@ import {
   parseMcpMessage,
   parseMcpMultiline,
 } from "./mcp";
+import stripAnsi from 'strip-ansi';
 
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 
@@ -355,7 +356,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
       console.log("This browser does not support speech synthesis");
       return;
     }
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(stripAnsi(text));
     utterance.lang = "en-US";
     const {rate, pitch, voice, volume } = preferencesStore.getState().speech;
     utterance.rate = rate;
