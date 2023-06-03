@@ -221,6 +221,9 @@ export class GMCPClientMedia extends GMCPPackage {
     if (data.key) {
       this.soundsByKey(data.key).forEach((sound) => sound.stop());
     }
+    if (!data.name && !data.type && !data.tag && !data.key) {
+      this.allSounds.forEach((sound) => sound.stop());
+    }
   }
 
   soundsByName(name: string) {
