@@ -244,6 +244,10 @@ export class GMCPClientMedia extends GMCPPackage {
       (sound: Sound) => sound.type === type
     );
   }
+
+  get allSounds() {
+    return Object.values(this.sounds);
+  }
 }
 
 class GmcpMessageCharName {
