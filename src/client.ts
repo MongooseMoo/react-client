@@ -6,7 +6,7 @@ import {
 } from "./telnet";
 
 import { EventEmitter } from "eventemitter3";
-import { GMCPChar, GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
+import { GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
 import {
   EditorSession,
   MCPPackage,
@@ -372,6 +372,14 @@ An MCP message consists of three parts: the name of the message, the authenticat
 
   cancelSpeech() {
     speechSynthesis.cancel();
+  }
+
+  stopAllSounds() {
+    const clientMedia = this.gmcpHandlers["Client.Media"] as GMCPClientMedia;
+    if (!clientMedia) return;
+    clientMedia.allSounds.forEach((sound) => {
+      sound.stop();
+    });
   }
 }
 

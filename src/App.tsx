@@ -66,8 +66,13 @@ function App() {
 
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Control" && newClient) {
+      if (!newClient) return;
+
+      if (event.key === "Control") {
         newClient.cancelSpeech(); // Cancel the speech when control key is pressed
+      }
+      if (event.key === "Escape") {
+        newClient.stopAllSounds();
       }
     };
 
