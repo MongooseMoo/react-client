@@ -127,10 +127,6 @@ class MudClient extends EventEmitter {
   }
 
   public send(data: string) {
-    const localEchoEnabled = preferencesStore.getState().general.localEcho;
-    if (localEchoEnabled) {
-      this.emit("command", data);
-    }
     this.ws.send(data);
   }
 
@@ -139,6 +135,10 @@ class MudClient extends EventEmitter {
   }
 
   public sendCommand(command: string) {
+    const localEchoEnabled = preferencesStore.getState().general.localEcho;
+    if (localEchoEnabled) {
+      this.emit("command", command);
+    }
     this.send(command + "\r\n");
     console.log("> " + command);
   }
@@ -266,7 +266,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
       }
       data = str;
     }
-    this.sendCommand(`#$#${command} ${this.mcpAuthKey} ${data}`);
+    const toSend = `#$#${command} ${this.mcpAuthKey} ${data}\r\n`;
+    this.send(toSend);
   }
 
   sendMcpML(MLTag: string, key: string, val: string) {
