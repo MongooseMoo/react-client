@@ -329,3 +329,22 @@ export class GMCPCommLiveKit extends GMCPPackage {
     this.client.emit("livekitToken", data.token);
   }
 }
+
+export class GMCPMessageClientMediaSpeechSpeak {
+  text: string = "";
+  rate: number = 1;
+  pitch = 1;
+  volume = 0.5;
+}
+
+export class GMCPClientSpeech extends GMCPPackage {
+  public packageName: string = "Client.Speech";
+
+  handleSpeak(data: GMCPMessageClientMediaSpeechSpeak): void {
+    const utterance = new SpeechSynthesisUtterance(data.text);
+    utterance.rate = data.rate;
+    utterance.pitch = data.pitch;
+    utterance.volume = data.volume;
+    speechSynthesis.speak(utterance);
+  }
+}

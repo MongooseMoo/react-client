@@ -8,6 +8,7 @@ import {
   GMCPCore,
   GMCPCoreSupports,
   GMCPClientMedia,
+  GMCPClientSpeech,
   GMCPCommLiveKit,
   GMCPCommChannel,
 } from "./gmcp";
@@ -52,6 +53,7 @@ function App() {
     const newClient = new MudClient("mongoose.moo.mud.org", 8765);
     newClient.registerGMCPPackage(GMCPCore);
     newClient.registerGMCPPackage(GMCPClientMedia);
+    newClient.registerGMCPPackage(GMCPClientSpeech);
     newClient.registerGMCPPackage(GMCPCoreSupports);
     newClient.registerGMCPPackage(GMCPCommChannel);
     newClient.registerGMCPPackage(GMCPCommLiveKit);
