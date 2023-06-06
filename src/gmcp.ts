@@ -145,13 +145,13 @@ export class GMCPClientMedia extends GMCPPackage {
       if (data.type === "music") {
         sound = new Howl({
           src: [(data.url || this.defaultUrl) + data.name],
-          html5: true,
+          html5: false,
           format: ["aac", "mp3", "ogg"],
         });
       } else {
         sound = new Howl({
           src: [mediaUrl],
-          html5: true,
+          html5: false,
           preload: true,
           format: ["aac", "mp3", "ogg"],
         });
