@@ -103,12 +103,8 @@ function EditorWindow() {
     event.preventDefault();
   };
 
+
   const onChanges = (value: string | undefined) => {
-    if (!isLoaded) {
-      setIsLoaded(true);
-      setDocumentState(DocumentState.Unchanged);
-      return;
-    }
     if (value === undefined) {
       return;
     }
@@ -119,6 +115,10 @@ function EditorWindow() {
       setDocumentState(DocumentState.Changed);
     } else {
       setDocumentState(DocumentState.Unchanged);
+    }
+    
+    if (!isLoaded) {
+      setIsLoaded(true);
     }
   };
 
