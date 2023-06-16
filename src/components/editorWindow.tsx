@@ -26,6 +26,7 @@ function EditorWindow() {
     reference: "",
     type: "",
   });
+  const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(true); // New state variable for autocomplete preference
 
   useBeforeunload((event) => {
     channel.postMessage({ type: "close", id });
@@ -97,7 +98,7 @@ function EditorWindow() {
   const onSave = (event: React.FormEvent<HTMLButtonElement>) => {
     const contents = code.split(/\r\n|\r|\n/); // Split the code into lines
     const sessionData = { ...session, contents };
-    channel.postMessage({ type: "save", session: sessionData, id, });
+    channel.postMessage({ type: "save", session: sessionData, id });
     setDocumentState(DocumentState.Saved);
     event.preventDefault();
   };
@@ -141,6 +142,10 @@ function EditorWindow() {
     link.remove();
   };
 
+  // Toggle the autocomplete preference
+  const toggleAutocomplete = () => {
+    setAutocompleteEnabled((prevState) => !prevState);
+  };
 
   return (
     <>
@@ -169,6 +174,9 @@ function EditorWindow() {
             <FaDownload />
             Download
           </button>
+          <button onClick={toggleAutocomplete}>
+            {autocompleteEnabled ? "Disable Autocomplete" : "Enable Autocomplete"}
+          </button>
         </form>
       </div>
       <Editor
@@ -176,7 +184,7 @@ function EditorWindow() {
         defaultLanguage="lambdamoo"
         value={code}
         onChange={onChanges}
-        options={{ wordWrap: "on" }}
+        options={{ wordWrap: "on", quickSuggestions: autocompleteEnabled }} // Pass the autocomplete preference to the options
       />
       <div
         aria-live="polite"
@@ -202,3 +210,4 @@ function EditorWindow() {
 }
 
 export default EditorWindow;
+
