@@ -1,18 +1,30 @@
 import { SoundSource, createAudioContext, createSoundListener, SoundSourceOptions } from "sounts";
 
+export enum FadeType {
+    EXPONENTIAL,
+    LINEAR,
+}
+
 class CacheManager {
+    static pendingRequests = new Map<string, Promise<AudioBuffer>>();
+
     static async getAudioBuffer(url: string, context: AudioContext): Promise<AudioBuffer> {
         let cache = await caches.open('audio-cache');
         let response = await cache.match(url);
 
         if (!response) {
-            try {
-                response = await fetch(url);
-                cache.put(url, response.clone());
-            } catch (err) {
-                console.error(`Failed to fetch the audio from URL: ${url}`, err);
-                throw err;
+            let pendingRequest = this.pendingRequests.get(url);
+            if (!pendingRequest) {
+                pendingRequest = fetch(url)
+                    .then(response => {
+                        cache.put(url, response.clone());
+                        return response.arrayBuffer();
+                    })
+                    .then(buffer => context.decodeAudioData(buffer));
+                this.pendingRequests.set(url, pendingRequest);
             }
+
+            return pendingRequest;
         }
 
         const arrayBuffer = await response.arrayBuffer();
@@ -22,63 +34,8 @@ class CacheManager {
     }
 }
 
-export class Sound {
-    constructor(
-        public source: AudioSource,
-        private node: AudioBufferSourceNode,
-    ) { }
-
-    stop() {
-        this.node.stop();
-    }
-
-    get looping() {
-        return this.node.loop;
-    }
-
-    set looping(loop: boolean) {
-        this.node.loop = loop;
-    }
-}
-
-export class AudioSource {
-    public soundSource: SoundSource;
-    private url: string;
-    private group: string;
-    context: AudioContext;
-
-    constructor(url: string, group: string, context: AudioContext, soundSourceOptions: SoundSourceOptions, public loop: boolean = false, public channel: string = "default") {
-        this.url = url;
-        this.group = group;
-        this.soundSource = new SoundSource(context.destination, soundSourceOptions);
-        this.context = context;
-    }
-
-    async play(): Promise<Sound> {
-        const buffer = await CacheManager.getAudioBuffer(this.url, this.context);
-        const playing = this.soundSource.playOnChannel(this.channel, buffer);
-        return new Sound(this, playing);
-    }
-
-    async playStream() {
-        const audioElement = new Audio(this.url);
-        const mediaElementSource = this.context.createMediaElementSource(audioElement);
-        mediaElementSource.connect(this.soundSource.node);
-        audioElement.play();
-        return audioElement;
-    }
-
-    fadeIn(duration: number) {
-        this.soundSource.gainNode!.gain.exponentialRampToValueAtTime(1, this.context.currentTime + duration);
-    }
-
-    fadeOut(duration: number) {
-        this.soundSource.gainNode!.gain.exponentialRampToValueAtTime(0.00001, this.context.currentTime + duration);
-    }
-
-    stop() {
-        this.soundSource.stopAll();
-    }
+abstract class AudioNodeWrapper {
+    constructor(public soundSource: SoundSource, public context: AudioContext) { }
 
     get volume() {
         return this.soundSource.gainNode!.gain.value;
@@ -95,6 +52,84 @@ export class AudioSource {
     set position(pos: { x?: number, y?: number, z?: number }) {
         const position = { ...this.position, ...pos };
         this.soundSource.setPosition(position.x!, position.y!, position.z!);
+    }
+
+    fadeIn(duration: number, fadeType: FadeType = FadeType.EXPONENTIAL) {
+        const target = this.context.currentTime + duration;
+        switch (fadeType) {
+            case FadeType.EXPONENTIAL:
+                this.soundSource.gainNode!.gain.exponentialRampToValueAtTime(1, target);
+                break;
+            case FadeType.LINEAR:
+                this.soundSource.gainNode!.gain.linearRampToValueAtTime(1, target);
+                break;
+        }
+    }
+
+    fadeOut(duration: number, fadeType: FadeType = FadeType.EXPONENTIAL) {
+        const target = this.context.currentTime + duration;
+        switch (fadeType) {
+            case FadeType.EXPONENTIAL:
+                this.soundSource.gainNode!.gain.exponentialRampToValueAtTime(0.00001, target);
+                break;
+            case FadeType.LINEAR:
+                this.soundSource.gainNode!.gain.linearRampToValueAtTime(0, target);
+                break;
+        }
+    }
+
+    destructor() {
+        this.soundSource.gainNode!.disconnect();
+    }
+}
+
+export class Sound {
+    constructor(
+        public source: AudioSource,
+        private node: AudioBufferSourceNode,
+    ) { }
+
+    stop() {
+        this.node.stop();
+        this.source.destructor();
+    }
+
+    get looping() {
+        return this.node.loop;
+    }
+
+    set looping(loop: boolean) {
+        this.node.loop = loop;
+    }
+}
+
+export class AudioSource extends AudioNodeWrapper {
+    private url: string;
+    private group: string;
+
+    constructor(url: string, group: string, context: AudioContext, soundSourceOptions: SoundSourceOptions, public loop: boolean = false, public channel: string = "default") {
+        super(new SoundSource(context.destination, soundSourceOptions), context);
+        this.url = url;
+        this.group = group;
+    }
+
+    async play(): Promise<Sound> {
+        const buffer = await CacheManager.getAudioBuffer(this.url, this.context);
+        const playing = this.soundSource.playOnChannel(this.channel, buffer);
+        return new Sound(this, playing);
+    }
+
+    async playStream() {
+        const audioElement = new Audio(this.url);
+        const mediaElementSource = this.context.createMediaElementSource(audioElement);
+        mediaElementSource.connect(this.soundSource.node);
+        audioElement.play();
+        return audioElement;
+    }
+
+    stop() {
+        this.soundSource.stopAll();
+        this.destructor();
     }
 }
 
@@ -160,15 +195,12 @@ export class SoundManager {
     }
 }
 
-export class MicrophoneStream {
-    private context: AudioContext;
+export class MicrophoneStream extends AudioNodeWrapper {
     private stream: MediaStream;
-    private soundSource: SoundSource;
     private mediaStreamSource: MediaStreamAudioSourceNode;
 
     constructor(context: AudioContext, soundSourceOptions: SoundSourceOptions) {
-        this.context = context;
-        this.soundSource = new SoundSource(context.destination, soundSourceOptions);
+        super(new SoundSource(context.destination, soundSourceOptions), context);
     }
 
     async play() {
@@ -184,22 +216,6 @@ export class MicrophoneStream {
 
     stop() {
         this.stream.getTracks().forEach(track => track.stop());
-    }
-
-    get volume() {
-        return this.soundSource.gainNode!.gain.value;
-    }
-
-    set volume(volume: number) {
-        this.soundSource.setGain(volume);
-    }
-
-    get position() {
-        return { x: this.soundSource.node.positionX.value, y: this.soundSource.node.positionY.value, z: this.soundSource.node.positionZ.value }
-    }
-
-    set position(pos: { x?: number, y?: number, z?: number }) {
-        const position = { ...this.position, ...pos };
-        this.soundSource.setPosition(position.x!, position.y!, position.z!);
+        this.destructor();
     }
 }
