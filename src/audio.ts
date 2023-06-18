@@ -1,11 +1,32 @@
 import { SoundSource, createAudioContext, createSoundListener, SoundSourceOptions } from "sounts";
 
+class CacheManager {
+    static async getAudioBuffer(url: string, context: AudioContext): Promise<AudioBuffer> {
+        let cache = await caches.open('audio-cache');
+        let response = await cache.match(url);
+
+        if (!response) {
+            try {
+                response = await fetch(url);
+                cache.put(url, response.clone());
+            } catch (err) {
+                console.error(`Failed to fetch the audio from URL: ${url}`, err);
+                throw err;
+            }
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await context.decodeAudioData(arrayBuffer);
+
+        return audioBuffer;
+    }
+}
+
 export class Sound {
     constructor(
         public source: AudioSource,
         private node: AudioBufferSourceNode,
-    ) {
-    }
+    ) { }
 
     stop() {
         this.node.stop();
@@ -18,8 +39,6 @@ export class Sound {
     set looping(loop: boolean) {
         this.node.loop = loop;
     }
-
-
 }
 
 export class AudioSource {
@@ -36,8 +55,8 @@ export class AudioSource {
     }
 
     async play(): Promise<Sound> {
-        const buffer = await this.fetchSound();
-        const playing = this.soundSource.playOnChannel(this.channel, buffer,);
+        const buffer = await CacheManager.getAudioBuffer(this.url, this.context);
+        const playing = this.soundSource.playOnChannel(this.channel, buffer);
         return new Sound(this, playing);
     }
 
@@ -74,27 +93,9 @@ export class AudioSource {
     }
 
     set position(pos: { x?: number, y?: number, z?: number }) {
-        // revisit this if it ends up being slow
         const position = { ...this.position, ...pos };
         this.soundSource.setPosition(position.x!, position.y!, position.z!);
     }
-
-    private async fetchSound() {
-        let cache = await caches.open('audio-cache');
-        let response = await cache.match(this.url);
-
-        if (!response) {
-            response = await fetch(this.url);
-            cache.put(this.url, response.clone());
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await this.context.decodeAudioData(arrayBuffer);
-
-        return audioBuffer;
-    }
-
-
 }
 
 export class SoundManager {
@@ -121,6 +122,7 @@ export class SoundManager {
             if (!this.soundGroups.has(group)) {
                 this.soundGroups.set(group, new Set());
             }
+
             if (!this.soundGroups.get(group)?.has(url)) {
                 this.soundGroups.get(group)?.add(url);
             }
@@ -156,14 +158,9 @@ export class SoundManager {
             }
         }
     }
-
-
 }
 
-
 export class MicrophoneStream {
-
-
     private context: AudioContext;
     private stream: MediaStream;
     private soundSource: SoundSource;
@@ -175,14 +172,34 @@ export class MicrophoneStream {
     }
 
     async play() {
-        this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        this.mediaStreamSource = this.context.createMediaStreamSource(this.stream);
-        this.mediaStreamSource.connect(this.soundSource.node);
+        try {
+            this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.mediaStreamSource = this.context.createMediaStreamSource(this.stream);
+            this.mediaStreamSource.connect(this.soundSource.node);
+        } catch (err) {
+            console.error('Failed to access microphone', err);
+            throw err;
+        }
     }
 
     stop() {
         this.stream.getTracks().forEach(track => track.stop());
     }
 
+    get volume() {
+        return this.soundSource.gainNode!.gain.value;
+    }
 
+    set volume(volume: number) {
+        this.soundSource.setGain(volume);
+    }
+
+    get position() {
+        return { x: this.soundSource.node.positionX.value, y: this.soundSource.node.positionY.value, z: this.soundSource.node.positionZ.value }
+    }
+
+    set position(pos: { x?: number, y?: number, z?: number }) {
+        const position = { ...this.position, ...pos };
+        this.soundSource.setPosition(position.x!, position.y!, position.z!);
+    }
 }
