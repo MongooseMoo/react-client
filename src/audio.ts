@@ -9,30 +9,40 @@ class CacheManager {
     static pendingRequests = new Map<string, Promise<AudioBuffer>>();
 
     static async getAudioBuffer(url: string, context: AudioContext): Promise<AudioBuffer> {
-        let cache = await caches.open('audio-cache');
-        let response = await cache.match(url);
+        const cache = await this.safeOperation(() => caches.open('audio-cache'), 'Failed to open cache');
 
-        if (!response) {
-            let pendingRequest = this.pendingRequests.get(url);
-            if (!pendingRequest) {
-                pendingRequest = fetch(url)
-                    .then(response => {
-                        cache.put(url, response.clone());
-                        return response.arrayBuffer();
-                    })
-                    .then(buffer => context.decodeAudioData(buffer));
-                this.pendingRequests.set(url, pendingRequest);
-            }
+        const response = await this.safeOperation(() => cache.match(url), 'Failed to match cache');
 
-            return pendingRequest;
+        if (response) {
+            const arrayBuffer = await this.safeOperation(() => response.arrayBuffer(), 'Failed to convert response to ArrayBuffer');
+            const audioBuffer = await this.safeOperation(() => context.decodeAudioData(arrayBuffer), 'Failed to decode audio data');
+            return audioBuffer;
         }
 
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await context.decodeAudioData(arrayBuffer);
+        let pendingRequest = this.pendingRequests.get(url);
+        if (!pendingRequest) {
+            const fetchResponse = await this.safeOperation(() => fetch(url), 'Failed to fetch request');
+            cache.put(url, fetchResponse.clone());
+            const arrayBuffer = await this.safeOperation(() => fetchResponse.arrayBuffer(), 'Failed to convert response to ArrayBuffer');
+            pendingRequest = context.decodeAudioData(arrayBuffer);
+            this.pendingRequests.set(url, pendingRequest);
+        }
 
-        return audioBuffer;
+        return pendingRequest;
+    }
+
+    static async safeOperation<T>(operation: () => Promise<T>, errorMessage: string): Promise<T> {
+        try {
+            return await operation();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw new Error(`${errorMessage}: ${error.message}`);
+            }
+            throw error; // Re-throw if it's not an Error, we don't know how to handle it.
+        }
     }
 }
+
 
 type AudioPosition = {
     x: number;
@@ -42,6 +52,7 @@ type AudioPosition = {
 
 abstract class AudioNodeWrapper {
     protected filters: BiquadFilterNode[] = [];
+    protected effectsChain: AudioNode[] = [];
 
     constructor(public soundSource: SoundSource, public context: AudioContext) { }
 
@@ -86,6 +97,20 @@ abstract class AudioNodeWrapper {
         }
     }
 
+    addEffect(node: AudioNode) {
+        this.effectsChain.push(node);
+    }
+
+    removeEffect(node: AudioNode) {
+        const index = this.effectsChain.indexOf(node);
+        if (index !== -1) {
+            this.effectsChain.splice(index, 1);
+        }
+    }
+
+    getEffectsChain(): AudioNode[] {
+        return this.effectsChain;
+    }
 
     addFilter(filter: BiquadFilterNode) {
         this.filters.push(filter);
@@ -117,8 +142,8 @@ abstract class AudioNodeWrapper {
         }
     }
 
-
     destructor() {
+        this.soundSource.node.disconnect();
         this.soundSource.gainNode!.disconnect();
     }
 }
@@ -126,6 +151,8 @@ abstract class AudioNodeWrapper {
 
 export class Sound {
     private pannerNode?: PannerNode;
+    private soundEffectsChain: AudioNode[] = [];
+
 
     constructor(
         public source: AudioSource,
@@ -133,6 +160,7 @@ export class Sound {
         context: AudioContext,
         position?: AudioPosition,
     ) {
+
         if (position) {
             this.pannerNode = context.createPanner();
             this.pannerNode.positionX.value = position.x;
@@ -145,10 +173,37 @@ export class Sound {
         }
     }
 
+
+    addEffect(node: AudioNode) {
+        this.soundEffectsChain.push(node);
+    }
+
+    removeEffect(node: AudioNode) {
+        const index = this.soundEffectsChain.indexOf(node);
+        if (index !== -1) {
+            this.soundEffectsChain.splice(index, 1);
+        }
+    }
+
+    play() {
+        const sourceEffectsChain = this.source.getEffectsChain();
+        this.connectNodes(this.node, [...sourceEffectsChain, ...this.soundEffectsChain], this.source.context.destination);
+    }
+
+    protected connectNodes(startNode: AudioNode, chain: AudioNode[], endNode: AudioNode) {
+        chain.unshift(startNode);
+        chain.push(endNode);
+
+        for (let i = 0; i < chain.length - 1; i++) {
+            chain[i].connect(chain[i + 1]);
+        }
+    }
+
     stop() {
         this.node.stop();
         this.source.destructor();
     }
+
 
     get looping() {
         return this.node.loop;
@@ -197,13 +252,7 @@ export class AudioSource extends AudioNodeWrapper {
         this.group = group;
     }
 
-    async play(): Promise<Sound> {
-        const buffer = await CacheManager.getAudioBuffer(this.url, this.context);
-        const playing = this.soundSource.playOnChannel(this.channel, buffer);
-        return new Sound(this, playing, this.context);
-    }
-
-    async playAtPosition(position: AudioPosition): Promise<Sound> {
+    async play(position?: AudioPosition): Promise<Sound> {
         const buffer = await CacheManager.getAudioBuffer(this.url, this.context);
         const playing = this.soundSource.playOnChannel(this.channel, buffer);
         return new Sound(this, playing, this.context, position);
@@ -309,5 +358,86 @@ export class MicrophoneStream extends AudioNodeWrapper {
     stop() {
         this.stream && this.stream.getTracks().forEach(track => track.stop());
         this.destructor();
+    }
+}
+
+export class ConvolverSource extends AudioNodeWrapper {
+    // The convolver node is used to apply reverb to the sound
+    // The impulse response (IR) is the sound sample that the reverb effect is based on
+
+    // The impulse response is stored in a buffer
+    // The buffer is loaded from a URL
+
+
+    private convolver: ConvolverNode;
+    private _url: string;
+    private _buffer!: AudioBuffer;
+
+    constructor(context: AudioContext, soundSourceOptions: SoundSourceOptions, private url: string) {
+        super(new SoundSource(context.destination, soundSourceOptions), context);
+        this.convolver = this.context.createConvolver();
+        this._url = url;
+    }
+
+    async load() {
+        this._buffer = await CacheManager.getAudioBuffer(this._url, this.context);
+        this.convolver.buffer = this._buffer;
+    }
+
+    play() {
+        this.soundSource.node.connect(this.convolver);
+        this.convolver.connect(this.context.destination);
+    }
+}
+
+
+export class OscillatorSource extends AudioNodeWrapper {
+    private oscillator: OscillatorNode;
+    private _frequency: number;
+    private _type: OscillatorType;
+
+    constructor(context: AudioContext, soundSourceOptions: SoundSourceOptions, frequency: number = 440, type: OscillatorType = "sine") {
+        super(new SoundSource(context.destination, soundSourceOptions), context);
+        this._frequency = frequency;
+        this._type = type;
+        this.oscillator = this.context.createOscillator();
+    }
+
+    get frequency(): number {
+        return this._frequency;
+    }
+
+    set frequency(value: number) {
+        this._frequency = value;
+        this.oscillator.frequency.value = this._frequency;
+    }
+
+    get type(): OscillatorType {
+        return this._type;
+    }
+
+    set type(value: OscillatorType) {
+        this._type = value;
+        this.oscillator.type = this._type;
+    }
+
+    play() {
+        this.oscillator.type = this._type;
+        this.oscillator.frequency.value = this._frequency;
+
+        // Apply filters
+        if (this.filters.length > 0) {
+            this.oscillator.connect(this.filters[0]);
+            this.rebuildFilterChain();
+        } else {
+            this.oscillator.connect(this.soundSource.node);
+        }
+
+        this.oscillator.start();
+    }
+
+    stop() {
+        this.destructor();
+        this.oscillator.stop();
     }
 }
