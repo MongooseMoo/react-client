@@ -34,7 +34,15 @@ class CacheManager {
     }
 }
 
+type AudioPosition = {
+    x: number;
+    y: number;
+    z: number;
+};
+
 abstract class AudioNodeWrapper {
+    protected filters: BiquadFilterNode[] = [];
+
     constructor(public soundSource: SoundSource, public context: AudioContext) { }
 
     get volume() {
@@ -45,8 +53,8 @@ abstract class AudioNodeWrapper {
         this.soundSource.setGain(volume);
     }
 
-    get position() {
-        return { x: this.soundSource.node.positionX.value, y: this.soundSource.node.positionY.value, z: this.soundSource.node.positionZ.value }
+    get position(): AudioPosition {
+        return { x: this.soundSource.node.positionX.value as number, y: this.soundSource.node.positionY.value as number, z: this.soundSource.node.positionZ.value as number }
     }
 
     set position(pos: { x?: number, y?: number, z?: number }) {
@@ -78,16 +86,64 @@ abstract class AudioNodeWrapper {
         }
     }
 
+
+    addFilter(filter: BiquadFilterNode) {
+        this.filters.push(filter);
+        this.rebuildFilterChain();
+    }
+
+    removeFilter(filter: BiquadFilterNode) {
+        const index = this.filters.indexOf(filter);
+        if (index > -1) {
+            this.filters.splice(index, 1);
+            this.rebuildFilterChain();
+        }
+    }
+
+    protected rebuildFilterChain() {
+        this.soundSource.node.disconnect();
+        if (this.filters.length > 0) {
+            this.soundSource.node.connect(this.filters[0]);
+            for (let i = 0; i < this.filters.length; i++) {
+                this.filters[i].disconnect();
+                if (i < this.filters.length - 1) {
+                    this.filters[i].connect(this.filters[i + 1]);
+                } else {
+                    this.filters[i].connect(this.context.destination);
+                }
+            }
+        } else {
+            this.soundSource.node.connect(this.context.destination);
+        }
+    }
+
+
     destructor() {
         this.soundSource.gainNode!.disconnect();
     }
 }
 
+
 export class Sound {
+    private pannerNode?: PannerNode;
+
     constructor(
         public source: AudioSource,
         private node: AudioBufferSourceNode,
-    ) { }
+        context: AudioContext,
+        position?: AudioPosition,
+    ) {
+        if (position) {
+            this.pannerNode = context.createPanner();
+            this.pannerNode.positionX.value = position.x;
+            this.pannerNode.positionY.value = position.y;
+            this.pannerNode.positionZ.value = position.z;
+            this.node.connect(this.pannerNode);
+            this.pannerNode.connect(context.destination);
+        } else {
+            this.node.connect(context.destination);
+        }
+    }
 
     stop() {
         this.node.stop();
@@ -101,6 +157,34 @@ export class Sound {
     set looping(loop: boolean) {
         this.node.loop = loop;
     }
+
+    get position() {
+        if (this.pannerNode) {
+            return { x: this.pannerNode.positionX.value as number, y: this.pannerNode.positionY.value as number, z: this.pannerNode.positionZ.value as number }
+        } else {
+            return this.source.position;
+        }
+    }
+
+    set position(pos: AudioPosition) {
+        if (this.pannerNode) {
+            this.pannerNode.positionX.value = pos.x;
+            this.pannerNode.positionY.value = pos.y;
+            this.pannerNode.positionZ.value = pos.z;
+        } else {
+            this.source.position = pos;
+        }
+    }
+
+
+    get playbackRate() {
+        return this.node.playbackRate.value;
+    }
+
+    set playbackRate(rate: number) {
+        this.node.playbackRate.value = rate;
+    }
+
 }
 
 export class AudioSource extends AudioNodeWrapper {
@@ -116,7 +200,13 @@ export class AudioSource extends AudioNodeWrapper {
     async play(): Promise<Sound> {
         const buffer = await CacheManager.getAudioBuffer(this.url, this.context);
         const playing = this.soundSource.playOnChannel(this.channel, buffer);
-        return new Sound(this, playing);
+        return new Sound(this, playing, this.context);
+    }
+
+    async playAtPosition(position: AudioPosition): Promise<Sound> {
+        const buffer = await CacheManager.getAudioBuffer(this.url, this.context);
+        const playing = this.soundSource.playOnChannel(this.channel, buffer);
+        return new Sound(this, playing, this.context, position);
     }
 
     async playStream() {
@@ -134,16 +224,18 @@ export class AudioSource extends AudioNodeWrapper {
 }
 
 export class SoundManager {
-    private context: AudioContext = createAudioContext();
+
     private listener = createSoundListener(this.context);
     private sources: Map<string, AudioSource> = new Map();
     private soundGroups: Map<string, Set<string>> = new Map();
+
+    constructor(private context: AudioContext = createAudioContext()) { }
 
     get listenerPosition() {
         return { x: this.listener.node.positionX.value, y: this.listener.node.positionY.value, z: this.listener.node.positionZ.value }
     }
 
-    set listenerPosition({ x, y, z }: { x: number, y: number, z: number }) {
+    set listenerPosition({ x, y, z }: AudioPosition) {
         this.listener.setPosition(x, y, z);
     }
 
@@ -196,8 +288,8 @@ export class SoundManager {
 }
 
 export class MicrophoneStream extends AudioNodeWrapper {
-    private stream: MediaStream;
-    private mediaStreamSource: MediaStreamAudioSourceNode;
+    private stream?: MediaStream;
+    private mediaStreamSource?: MediaStreamAudioSourceNode;
 
     constructor(context: AudioContext, soundSourceOptions: SoundSourceOptions) {
         super(new SoundSource(context.destination, soundSourceOptions), context);
@@ -215,7 +307,7 @@ export class MicrophoneStream extends AudioNodeWrapper {
     }
 
     stop() {
-        this.stream.getTracks().forEach(track => track.stop());
+        this.stream && this.stream.getTracks().forEach(track => track.stop());
         this.destructor();
     }
 }
