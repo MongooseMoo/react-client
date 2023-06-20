@@ -20,6 +20,7 @@
     "react-router-dom": "^6.8.2",
     "react-scripts": "^5.0.1",
     "react-use": "^17.4.0",
+    "sounts": "^0.8.1",
     "strip-ansi": "^7.1.0",
     "web-vitals": "^2.1.4"
   },
