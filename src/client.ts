@@ -6,7 +6,7 @@ import {
 } from "./telnet";
 
 import { EventEmitter } from "eventemitter3";
-import { GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
+import { GMCPAutoLogin, GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
 import {
   EditorSession,
   MCPPackage,
@@ -92,6 +92,7 @@ class MudClient extends EventEmitter {
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
         (this.gmcpHandlers["Core"] as GMCPCore).sendHello();
         (this.gmcpHandlers["Core.Supports"] as GMCPCoreSupports).sendSet();
+        (this.gmcpHandlers["Auth.Autologin"] as GMCPAutoLogin).sendLogin();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -249,7 +250,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
     if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
       this.speak(dataString);
-    } 
+    }
     this.emit("message", dataString);
   }
 
