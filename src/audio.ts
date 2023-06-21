@@ -44,6 +44,11 @@ class CacheManager {
 }
 
 
+interface NodeWrapper {
+    node: AudioNode;
+    next?: NodeWrapper;
+}
+
 type AudioPosition = {
     x: number;
     y: number;
@@ -51,8 +56,8 @@ type AudioPosition = {
 };
 
 abstract class AudioNodeWrapper {
-    protected filters: BiquadFilterNode[] = [];
-    protected effectsChain: AudioNode[] = [];
+    protected filters: NodeWrapper[] = [];
+    protected effectsChain: NodeWrapper[] = [];
 
     constructor(public soundSource: SoundSource, public context: AudioContext) { }
 
@@ -73,52 +78,52 @@ abstract class AudioNodeWrapper {
         this.soundSource.setPosition(position.x!, position.y!, position.z!);
     }
 
-    fadeIn(duration: number, fadeType: FadeType = FadeType.EXPONENTIAL) {
+
+    fade(duration: number, fadeType: FadeType = FadeType.EXPONENTIAL, fadeDirection: 'in' | 'out') {
         const target = this.context.currentTime + duration;
+        const value = fadeDirection === 'in' ? 1 : 0.00001;
+
         switch (fadeType) {
             case FadeType.EXPONENTIAL:
-                this.soundSource.gainNode!.gain.exponentialRampToValueAtTime(1, target);
+                this.soundSource.gainNode!.gain.exponentialRampToValueAtTime(value, target);
                 break;
             case FadeType.LINEAR:
-                this.soundSource.gainNode!.gain.linearRampToValueAtTime(1, target);
+                this.soundSource.gainNode!.gain.linearRampToValueAtTime(value, target);
                 break;
         }
+    }
+
+    fadeIn(duration: number, fadeType: FadeType = FadeType.EXPONENTIAL) {
+        this.fade(duration, fadeType, 'in');
     }
 
     fadeOut(duration: number, fadeType: FadeType = FadeType.EXPONENTIAL) {
-        const target = this.context.currentTime + duration;
-        switch (fadeType) {
-            case FadeType.EXPONENTIAL:
-                this.soundSource.gainNode!.gain.exponentialRampToValueAtTime(0.00001, target);
-                break;
-            case FadeType.LINEAR:
-                this.soundSource.gainNode!.gain.linearRampToValueAtTime(0, target);
-                break;
-        }
-    }
-
-    addEffect(node: AudioNode) {
-        this.effectsChain.push(node);
-    }
-
-    removeEffect(node: AudioNode) {
-        const index = this.effectsChain.indexOf(node);
-        if (index !== -1) {
-            this.effectsChain.splice(index, 1);
-        }
+        this.fade(duration, fadeType, 'out');
     }
 
     getEffectsChain(): AudioNode[] {
-        return this.effectsChain;
+        return this.effectsChain.map(wrapper => wrapper.node);
+    }
+
+    addEffect(node: AudioNode) {
+        this.effectsChain.push({ node });
+    }
+
+    removeEffect(node: AudioNode) {
+        const index = this.filters.findIndex(wrapper => wrapper.node === node);
+        if (index > -1) {
+            this.filters.splice(index, 1);
+            this.rebuildEffectsChain();
+        }
     }
 
     addFilter(filter: BiquadFilterNode) {
-        this.filters.push(filter);
+        this.filters.push({ node: filter });
         this.rebuildFilterChain();
     }
 
     removeFilter(filter: BiquadFilterNode) {
-        const index = this.filters.indexOf(filter);
+        const index = this.filters.findIndex(wrapper => wrapper.node === filter);
         if (index > -1) {
             this.filters.splice(index, 1);
             this.rebuildFilterChain();
@@ -126,20 +131,23 @@ abstract class AudioNodeWrapper {
     }
 
     protected rebuildFilterChain() {
-        this.soundSource.node.disconnect();
-        if (this.filters.length > 0) {
-            this.soundSource.node.connect(this.filters[0]);
-            for (let i = 0; i < this.filters.length; i++) {
-                this.filters[i].disconnect();
-                if (i < this.filters.length - 1) {
-                    this.filters[i].connect(this.filters[i + 1]);
-                } else {
-                    this.filters[i].connect(this.context.destination);
-                }
+        this.connectNodesInChain(this.filters);
+    }
+
+    protected rebuildEffectsChain() {
+        this.connectNodesInChain(this.effectsChain);
+    }
+
+    protected connectNodesInChain(chain: NodeWrapper[]) {
+        chain.forEach((wrapper, index) => {
+            wrapper.node.disconnect();
+            wrapper.next = chain[index + 1];
+            if (wrapper.next) {
+                wrapper.node.connect(wrapper.next.node);
+            } else {
+                wrapper.node.connect(this.context.destination);
             }
-        } else {
-            this.soundSource.node.connect(this.context.destination);
-        }
+        });
     }
 
     destructor() {
@@ -171,6 +179,11 @@ export class Sound {
         } else {
             this.node.connect(context.destination);
         }
+    }
+
+    seek(time: number) {
+        this.node.stop();
+        this.node.start(0, time);
     }
 
 
@@ -427,7 +440,7 @@ export class OscillatorSource extends AudioNodeWrapper {
 
         // Apply filters
         if (this.filters.length > 0) {
-            this.oscillator.connect(this.filters[0]);
+            this.oscillator.connect(this.filters[0].node);
             this.rebuildFilterChain();
         } else {
             this.oscillator.connect(this.soundSource.node);
