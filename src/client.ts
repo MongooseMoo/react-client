@@ -272,11 +272,11 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   sendMcpML(MLTag: string, key: string, val: string) {
-    this.sendCommand(`#$#* ${MLTag} ${key}: ${val}`);
+    this.send(`#$#* ${MLTag} ${key}: ${val}\r\n`);
   }
 
   closeMcpML(MLTag: string) {
-    this.sendCommand(`#$#: ${MLTag}`);
+    this.send(`#$#: ${MLTag}\r\n`);
   }
 
   openEditorWindow(editorSession: EditorSession) {
