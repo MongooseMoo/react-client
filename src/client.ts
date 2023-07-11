@@ -21,7 +21,7 @@ import stripAnsi from 'strip-ansi';
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 
 export interface WorldData {
-  liveKitToken: string;
+  liveKitTokens: string[];
   playerId: string;
   playerName: string;
   roomId: string;
@@ -47,7 +47,7 @@ class MudClient extends EventEmitter {
     playerId: "",
     playerName: "",
     roomId: "",
-    liveKitToken: "",
+    liveKitTokens: [],
   };
   audioContext: AudioContext;
 
@@ -360,7 +360,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
     const utterance = new SpeechSynthesisUtterance(stripAnsi(text));
     utterance.lang = "en-US";
-    const {rate, pitch, voice, volume } = preferencesStore.getState().speech;
+    const { rate, pitch, voice, volume } = preferencesStore.getState().speech;
     utterance.rate = rate;
     utterance.pitch = pitch;
     utterance.volume = volume;
