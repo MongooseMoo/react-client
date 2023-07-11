@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import OutputWindow from "./components/output";
@@ -35,6 +35,8 @@ function App() {
   const outRef = React.useRef<OutputWindow | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
 
+  const clientInitialized = useRef(false); // <-- new line
+
   const saveLog = () => {
     if (outRef.current) {
       outRef.current.saveLog();
@@ -51,6 +53,7 @@ function App() {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   useEffect(() => {
+    if (clientInitialized.current) return; // <-- new line
     const newClient = new MudClient("mongoose.moo.mud.org", 8765);
     newClient.registerGMCPPackage(GMCPCore);
     newClient.registerGMCPPackage(GMCPClientMedia);
@@ -67,6 +70,8 @@ function App() {
     newClient.requestNotificationPermission();
     setClient(newClient);
     setShowUsers(!isMobile);
+
+    clientInitialized.current = true; // <-- new line
 
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
