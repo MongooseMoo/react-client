@@ -9,6 +9,12 @@ export type PrefState = {
     pitch: number;
     volume: number;
   };
+  channels?: {
+    [channelId: string]: {
+      autoreadMode: AutoreadMode;
+      notify: boolean;
+    };
+  };
 };
 
 export enum AutoreadMode {
@@ -18,13 +24,15 @@ export enum AutoreadMode {
 }
 
 export enum PrefActionType {
+  SetChannels = "SET_CHANNELS",
   SetGeneral = "SET_GENERAL",
   SetSpeech = "SET_SPEECH",
 }
 
 export type PrefAction =
   | { type: PrefActionType.SetGeneral; data: PrefState["general"] }
-  | { type: PrefActionType.SetSpeech; data: PrefState["speech"] };
+  | { type: PrefActionType.SetSpeech; data: PrefState["speech"] }
+  | { type: PrefActionType.SetChannels; data: PrefState["channels"] };
 
 const initialState: PrefState = {
   general: {
@@ -37,6 +45,12 @@ const initialState: PrefState = {
     pitch: 1.0,
     volume: 1.0,
   },
+  channels: {
+    "sayto": {
+      autoreadMode: AutoreadMode.Off,
+      notify: true,
+    },
+  }
 };
 
 class PreferencesStore {
