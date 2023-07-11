@@ -1,4 +1,5 @@
 import { Howl, Howler } from "howler";
+import { preferencesStore } from "./PreferencesStore";
 import type MudClient from "./client";
 
 
@@ -102,6 +103,7 @@ export class GMCPCoreSupports extends GMCPPackage {
 }
 
 export interface Sound extends Howl {
+  priority?: number;
   tag?: string;
   key?: string;
   // ssh
@@ -140,72 +142,76 @@ export class GMCPClientMedia extends GMCPPackage {
     data.key = data.key || mediaUrl;
     let sound = this.sounds[data.key];
 
+    // Sound creation or updating
     if (!sound || sound._src !== mediaUrl) {
-      console.log("creating", data, sound);
-      if (data.type === "music") {
-        sound = new Howl({
-          src: [(data.url || this.defaultUrl) + data.name],
-          html5: true,
-          format: ["aac", "mp3", "ogg"],
-        });
-      } else {
-        sound = new Howl({
-          src: [mediaUrl],
-          html5: true,
-          preload: true,
-          format: ["aac", "mp3", "ogg"],
-        });
+      // Create a new sound object
+      sound = new Howl({
+        src: [mediaUrl],
+        html5: true,
+        preload: true,
+        format: ["aac", "mp3", "ogg"],
+        loop: (data.loops === -1) ? true : false, // Looping
+        volume: data.volume / 100, // Initial volume
+        onfade: () => { if (data.fadeout) sound.stop(); } // Stop the sound after fadeout
+      });
+
+      // Fade in
+      if (data.fadein) {
+        sound.fade(0, data.volume, data.fadein);
+      }
+
+      // Start at a specific position
+      if (data.start) {
+        sound.seek(data.start / 1000);
       }
     } else {
-      console.log("updating", data, sound);
+      // Update volume if provided
+      if (data.volume !== undefined) {
+        sound.volume(data.volume / 100);
+      }
+
+      // Update looping if provided
+      if (data.loops !== undefined) {
+        sound.loop(data.loops === -1);
+      }
     }
-    // type
-    if (data.type) {
-      sound.type = data.type;
-    }
-    sound.volume(data.volume / 100);
-    if (!data.is3d) {
-      sound.stereo(data.pan);
-    } else {
+
+    // 3D functionality
+    if (data.is3d) {
+      // @ts-ignore
       sound.pannerAttr({
         coneInnerAngle: 360,
         coneOuterAngle: 0,
+        panningModel: 'HRTF',
+        distanceModel: 'inverse',
+        position: [data.position[0], data.position[1], data.position[2]],
+        orientation: [1, 0, 0]
       });
-      sound.pos(data.position[0], data.position[1], data.position[2]);
     }
-    if (data.fadein) {
-      sound.fade(0, data.volume, data.fadein);
-    }
+
+    // Fade out
     if (data.fadeout) {
       sound.fade(data.volume, 0, data.fadeout);
     }
-    if (data.start) {
-      sound.seek(data.start / 1000);
-    }
-    if (data.end) {
-      setTimeout(() => {
-        sound.stop();
-      }, (data.end - data.start) / 1000);
+
+    // Priority handling
+    if (data.priority) {
+      for (let key in this.sounds) {
+        const activeSound = this.sounds[key];
+        if (activeSound.priority && activeSound.priority < data.priority) {
+          activeSound.stop();
+        }
+      }
+      sound.priority = data.priority;
     }
 
-    if (data.loops === -1) {
-      sound.loop(true);
-    }
-    if (data.tag) {
-      sound.tag = data.tag;
-    }
-    if (data.key) {
-      sound.key = data.key;
-    }
-    console.log(
-      "Sound is currently   ",
-      sound.playing() ? "playing" : "stopped"
-    );
+    // Playback control
     if (!sound.playing()) {
       sound.play();
-      console.log("playing", data, sound);
     }
+
     this.sounds[data.key] = sound;
+    sound.key = data.key;
   }
 
   handleStop(data: GMCPMessageClientMediaStop): void {
@@ -281,6 +287,7 @@ export class GMCPCommChannel extends GMCPPackage {
 
   handleList(data: string[]): void {
     this.channels = data;
+
   }
 
   sendList(): void {
