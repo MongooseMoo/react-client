@@ -14,11 +14,9 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
 
   useEffect(() => {
     const handleLiveKitToken = (token: string) => {
-      setConnected(false);
+
       setTokens(prevTokens => [...prevTokens, token]);
-      setTimeout(() => {
-        setConnected(true);
-      }, 1000);
+      setConnected(true);
     };
 
     const handleLiveKitLeave = (token: string) => {
@@ -53,7 +51,7 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
           audio={true}
           token={token}
           serverUrl={serverUrl}
-          connect={connected}
+          connect={true}
           onDisconnected={() => client.emit("livekitLeave", token)}
         >
           <AudioConference />
