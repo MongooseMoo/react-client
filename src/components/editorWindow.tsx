@@ -5,6 +5,8 @@ import { useBeforeunload } from "react-beforeunload";
 import { useLocation } from "react-router-dom";
 import { useTitle } from "react-use";
 import { EditorSession } from "../mcp";
+import { usePreferences } from "../hooks/usePreferences";
+import { PrefState } from "../PreferencesStore";
 
 enum DocumentState {
   Unchanged,
@@ -26,7 +28,12 @@ function EditorWindow() {
     reference: "",
     type: "",
   });
-  const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean>(true); // New state variable for autocomplete preference
+
+  const [prefState, dispatch] = usePreferences();
+  console.log(prefState);
+  const accessibilityMode = prefState.editor.accessibilityMode;
+  const autocompleteEnabled = prefState.editor.autocompleteEnabled
+
 
   useBeforeunload((event) => {
     channel.postMessage({ type: "close", id });
@@ -116,7 +123,7 @@ function EditorWindow() {
     } else {
       setDocumentState(DocumentState.Unchanged);
     }
-    
+
     if (!isLoaded) {
       setIsLoaded(true);
     }
@@ -140,11 +147,6 @@ function EditorWindow() {
 
     URL.revokeObjectURL(url);
     link.remove();
-  };
-
-  // Toggle the autocomplete preference
-  const toggleAutocomplete = () => {
-    setAutocompleteEnabled((prevState) => !prevState);
   };
 
   return (
@@ -174,9 +176,6 @@ function EditorWindow() {
             <FaDownload />
             Download
           </button>
-          <button onClick={toggleAutocomplete}>
-            {autocompleteEnabled ? "Disable Autocomplete" : "Enable Autocomplete"}
-          </button>
         </form>
       </div>
       <Editor
@@ -184,7 +183,7 @@ function EditorWindow() {
         defaultLanguage="lambdamoo"
         value={code}
         onChange={onChanges}
-        options={{ wordWrap: "on", quickSuggestions: autocompleteEnabled }} // Pass the autocomplete preference to the options
+        options={{ wordWrap: "on", accessibilitySupport: accessibilityMode ? "on" : "off", quickSuggestions: autocompleteEnabled }}
       />
       <div
         aria-live="polite"
