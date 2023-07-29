@@ -1,6 +1,7 @@
 import { Howl, Howler } from "howler";
 import { preferencesStore } from "./PreferencesStore";
 import type MudClient from "./client";
+import { set } from "js-cookie";
 
 
 abstract class GMCPMessage { }
@@ -174,6 +175,12 @@ export class GMCPClientMedia extends GMCPPackage {
       if (data.loops !== undefined) {
         sound.loop(data.loops === -1);
       }
+    }
+    if (data.end) {
+      setTimeout(() => {
+        sound.stop();
+      }
+        , data.end);
     }
 
     // 3D functionality
