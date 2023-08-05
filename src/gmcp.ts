@@ -160,11 +160,6 @@ export class GMCPClientMedia extends GMCPPackage {
       if (data.fadein) {
         sound.fade(0, data.volume, data.fadein);
       }
-
-      // Start at a specific position
-      if (data.start) {
-        sound.seek(data.start / 1000);
-      }
     } else {
       // Update volume if provided
       if (data.volume !== undefined) {
@@ -176,6 +171,12 @@ export class GMCPClientMedia extends GMCPPackage {
         sound.loop(data.loops === -1);
       }
     }
+
+    // Start at a specific position
+    if (data.start) {
+      sound.seek(data.start / 1000);
+    }
+
     if (data.end) {
       setTimeout(() => {
         sound.stop();
@@ -219,6 +220,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
     this.sounds[data.key] = sound;
     sound.key = data.key;
+
   }
 
   handleStop(data: GMCPMessageClientMediaStop): void {
