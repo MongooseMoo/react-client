@@ -62,4 +62,30 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
   );
 };
 
+useEffect(() => {
+  let wakeLock = null;
+
+  // Function to request wake lock
+  const requestWakeLock = async () => {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+    } catch (err) {
+      console.error(`${err.name}, ${err.message}`);
+    }
+  };
+
+  if (connected) {
+    requestWakeLock();
+  }
+
+  return () => {
+    // Release the wake lock when component unmounts or disconnected
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
+  };
+}, [connected]);
+
+
 export default AudioChat;
