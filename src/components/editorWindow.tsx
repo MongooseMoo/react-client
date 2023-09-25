@@ -16,6 +16,7 @@ enum DocumentState {
 
 function EditorWindow() {
   const location = useLocation();
+  const editorInstance = React.useRef<any>(null);
   const [clientId, setClientId] = useState<string>("");
   const [code, setCode] = useState<string>("");
   const [originalCode, setOriginalCode] = useState<string>("");
@@ -29,6 +30,10 @@ function EditorWindow() {
     type: "",
   });
 
+  const handleEditorMount = (editor: any, monaco: any) => {
+    editorInstance.current = editor;
+    editorInstance.current = editor;
+  };
   const [prefState, dispatch] = usePreferences();
   console.log(prefState);
   const accessibilityMode = prefState.editor.accessibilityMode;
@@ -102,12 +107,17 @@ function EditorWindow() {
   };
 
   // Save the code
-  const onSave = (event: React.FormEvent<HTMLButtonElement>) => {
+  const onSave = (event: any
+  ) => {
     const contents = code.split(/\r\n|\r|\n/); // Split the code into lines
     const sessionData = { ...session, contents };
     channel.postMessage({ type: "save", session: sessionData, id });
     setDocumentState(DocumentState.Saved);
+    if (editorInstance.current !== null) {
+      editorInstance.current.focus();
+    }
     event.preventDefault();
+
   };
 
 
@@ -184,6 +194,7 @@ function EditorWindow() {
         value={code}
         onChange={onChanges}
         options={{ wordWrap: "on", accessibilitySupport: accessibilityMode ? "on" : "off", quickSuggestions: autocompleteEnabled }}
+        onMount={handleEditorMount}
       />
       <div
         aria-live="polite"
