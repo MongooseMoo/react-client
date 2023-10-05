@@ -18,7 +18,10 @@ const CommandInput = ({ onSend }: Props) => {
       e.preventDefault();
       onSend(input);
       setInput("");
-      setCommandHistory([...commandHistory, input]);
+      // Check if the input is not empty and is different from the last item in the command history
+      if (input && (commandHistory.length === 0 || commandHistory[commandHistory.length - 1] !== input)) {
+        setCommandHistory([...commandHistory, input]);
+      }
       setHistoryIndex(commandHistory.length + 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
