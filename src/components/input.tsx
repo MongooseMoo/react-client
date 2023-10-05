@@ -38,6 +38,8 @@ const CommandInput = ({ onSend }: Props) => {
           setInput(commandHistory[prevHistoryIndex]);
           return prevHistoryIndex + 1;
         });
+      } else {
+        setInput("");
       }
     }
   };
