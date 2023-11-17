@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { CommandHistory } from "../CommandHistory"; // Assuming CommandHistory is in CommandHistory.js
 import "./input.css";
 
 type SendFunction = (text: string) => void;
@@ -9,38 +10,24 @@ type Props = {
 
 const CommandInput = ({ onSend }: Props) => {
   const [input, setInput] = useState("");
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const commandHistoryRef = useRef(new CommandHistory());
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const commandHistory = commandHistoryRef.current;
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       onSend(input);
+      commandHistory.addCommand(input);
       setInput("");
-      // Check if the input is not empty and is different from the last item in the command history
-      if (input && (commandHistory.length === 0 || commandHistory[commandHistory.length - 1] !== input)) {
-        setCommandHistory([...commandHistory, input]);
-      }
-      setHistoryIndex(commandHistory.length + 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      if (historyIndex > 0) {
-        setHistoryIndex((prevHistoryIndex) => {
-          setInput(commandHistory[prevHistoryIndex - 1]);
-          return prevHistoryIndex - 1;
-        });
-      }
+      const prevCommand = commandHistory.navigateUp(input);
+      setInput(prevCommand);
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (historyIndex < commandHistory.length) {
-        setHistoryIndex((prevHistoryIndex) => {
-          setInput(commandHistory[prevHistoryIndex]);
-          return prevHistoryIndex + 1;
-        });
-      } else {
-        setInput("");
-      }
+      const nextCommand = commandHistory.navigateDown(input);
+      setInput(nextCommand);
     }
   };
 
@@ -49,7 +36,6 @@ const CommandInput = ({ onSend }: Props) => {
       value={input}
       onChange={(e) => setInput(e.target.value)}
       onKeyDown={handleKeyDown}
-      ref={inputRef}
       autoFocus
     />
   );
