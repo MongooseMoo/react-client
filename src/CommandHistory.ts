@@ -1,42 +1,44 @@
 export class CommandHistory {
-  private history: string[];
-  private currentIndex: number;
-  private unsentInput: string;
-
-  constructor() {
-    this.history = [];
-    this.currentIndex = -1;
-    this.unsentInput = "";
-  }
+  private history: string[] = [];
+  private currentIndex: number | null = null;
+  private unsentInput: string = "";
 
   addCommand(command: string): void {
-    if (command.trim() !== "") {
+    if (command.trim() !== "" && (this.history.length === 0 || this.history[this.history.length - 1] !== command)) {
       this.history.push(command);
-      this.currentIndex = -1;
+      this.currentIndex = null;
+      this.unsentInput = "";
     }
   }
 
   navigateUp(currentInput: string): string {
-    if (this.currentIndex === -1) {
+    if (this.currentIndex === null) {
       this.unsentInput = currentInput;
-      this.currentIndex = this.history.length - 1;
-    } else if (this.currentIndex > 0) {
-      this.currentIndex--;
     }
-    return this.history[this.currentIndex] || "";
-  }
 
-  navigateDown(): string {
-    if (this.currentIndex < this.history.length - 1) {
-      this.currentIndex++;
+    if (this.history.length > 0 && (this.currentIndex == null || this.currentIndex > 0)) {
+      this.currentIndex = this.currentIndex == null ? this.history.length - 1 : this.currentIndex - 1;
       return this.history[this.currentIndex];
-    } else {
-      this.currentIndex = -1;
-      return this.unsentInput;
     }
+
+    return currentInput;
+  }
+  navigateDown(currentInput: string): string {
+    if (this.currentIndex !== null) {
+      if (this.currentIndex < this.history.length - 1) {
+        this.currentIndex++;
+        return this.history[this.currentIndex];
+      } else {
+        this.currentIndex = null;
+        // When at the end of history, reset to blank
+        return "";
+      }
+    }
+    // Preserve unsent input if not navigating history
+    return this.unsentInput;
   }
 
   getCurrentInput(): string {
-    return this.currentIndex === -1 ? this.unsentInput : this.history[this.currentIndex];
+    return this.currentIndex === null ? this.unsentInput : this.history[this.currentIndex];
   }
 }

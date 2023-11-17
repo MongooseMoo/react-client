@@ -7,43 +7,71 @@ describe('CommandHistory', () => {
     commandHistory = new CommandHistory();
   });
 
-  test('adds and retrieves a command', () => {
+  test('should add a command and retrieve it when navigating up', () => {
     commandHistory.addCommand('test');
     expect(commandHistory.navigateUp('')).toBe('test');
   });
 
-  test('handles empty command gracefully', () => {
+  test('should not add an empty command to the history', () => {
     commandHistory.addCommand('');
     expect(commandHistory.navigateUp('')).toBe('');
   });
 
-  test('navigates up and down through multiple commands', () => {
+  test('should navigate through multiple commands in history', () => {
     commandHistory.addCommand('first');
     commandHistory.addCommand('second');
     commandHistory.addCommand('third');
 
     expect(commandHistory.navigateUp('')).toBe('third');
-    expect(commandHistory.navigateUp('')).toBe('second');
-    expect(commandHistory.navigateDown()).toBe('third');
-    expect(commandHistory.navigateDown()).toBe('');
+    expect(commandHistory.navigateUp('third')).toBe('second');
+    expect(commandHistory.navigateDown('second')).toBe('third');
   });
 
-  test('preserves unsent input', () => {
-    commandHistory.addCommand('existing');
-    expect(commandHistory.navigateUp('unsent')).toBe('existing');
-    expect(commandHistory.navigateDown()).toBe('unsent');
+  test('should return to unsent input after navigating down from the most recent command', () => {
+    commandHistory.addCommand('command');
+    expect(commandHistory.navigateUp('unsent')).toBe('command');
+    expect(commandHistory.navigateDown('command')).toBe('unsent');
   });
 
-  test('prevents navigating beyond history bounds', () => {
+  test('should remain at the oldest command when navigating up at history boundary', () => {
     commandHistory.addCommand('only');
     expect(commandHistory.navigateUp('')).toBe('only');
-    expect(commandHistory.navigateUp('')).toBe('only'); // Should remain at the oldest command
-    expect(commandHistory.navigateDown()).toBe(''); // Should go to unsent input
+    expect(commandHistory.navigateUp('only')).toBe('only');
   });
 
-  test('handles navigating with empty history', () => {
+  test('should return to unsent input when navigating down at history boundary', () => {
+    commandHistory.addCommand('only');
+    expect(commandHistory.navigateDown('only')).toBe('');
+  });
+
+  test('should handle navigation in empty history', () => {
     expect(commandHistory.navigateUp('unsent')).toBe('');
-    expect(commandHistory.navigateDown()).toBe('unsent');
+    expect(commandHistory.navigateDown('unsent')).toBe('unsent');
+  });
+
+  test('should return current input when history is empty', () => {
+    expect(commandHistory.getCurrentInput()).toBe('');
+  });
+
+  test('should clear unsent input when a new command is added', () => {
+    commandHistory.navigateUp('unsent');
+    commandHistory.addCommand('test');
+    expect(commandHistory.getCurrentInput()).toBe('');
+  });
+
+  test('should preserve unsent input when alternating navigation up and down', () => {
+    commandHistory.addCommand('first');
+    commandHistory.addCommand('second');
+
+    // Navigating down from top shows unsent input
+    expect(commandHistory.navigateDown('')).toBe('');
+
+    // Navigating up through history
+    expect(commandHistory.navigateUp('')).toBe('second');
+    expect(commandHistory.navigateUp('second')).toBe('first');
+
+    // Navigating back down returns to more recent command and then to unsent input
+    expect(commandHistory.navigateDown('first')).toBe('second');
+    expect(commandHistory.navigateDown('second')).toBe('');
   });
 });
-
