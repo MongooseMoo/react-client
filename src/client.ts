@@ -6,7 +6,8 @@ import {
 } from "./telnet";
 
 import { EventEmitter } from "eventemitter3";
-import { GMCPAutoLogin, GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
+import { GMCPAutoLogin, GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports } from "./gmcp";
+import type { GMCPPackage } from "./gmcp/package";
 import {
   EditorSession,
   MCPPackage,
