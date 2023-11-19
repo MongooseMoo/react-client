@@ -28,6 +28,7 @@ import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
 import AudioChat from "./components/audioChat";
 
+
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showUsers, setShowUsers] = useState<boolean>(false);
@@ -70,7 +71,7 @@ function App() {
     newClient.requestNotificationPermission();
     setClient(newClient);
     setShowUsers(!isMobile);
-
+    window.mudClient = newClient;
     clientInitialized.current = true; // <-- new line
 
     // Listen to 'keydown' event
