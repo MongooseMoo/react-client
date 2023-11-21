@@ -20,6 +20,7 @@ import {
 import stripAnsi from 'strip-ansi';
 
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
+import { Cacophony } from "cacophony";
 
 export interface WorldData {
   liveKitTokens: string[];
@@ -50,8 +51,7 @@ class MudClient extends EventEmitter {
     roomId: "",
     liveKitTokens: [],
   };
-  audioContext: AudioContext;
-
+  public cacophony: Cacophony;
   constructor(host: string, port: number) {
     super();
     this.host = host;
@@ -59,7 +59,7 @@ class MudClient extends EventEmitter {
     this.mcp_negotiate = this.registerMcpPackage(McpNegotiate);
     this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
-    this.audioContext = new AudioContext();
+    this.cacophony = new Cacophony();
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
