@@ -41,12 +41,8 @@ const Toolbar = ({
       </button>
       <button
         onClick={() => {
-          if (muted) {
-            setMuted(false);
-          } else {
-            setMuted(true);
-          }
-          client.cacophony.muted = muted;
+          setMuted(!muted);
+          client.cacophony.muted = !muted;
         }}
         accessKey="m"
       >
