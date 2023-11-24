@@ -37,6 +37,7 @@ const CommandInput = ({ onSend }: Props) => {
       onChange={(e) => setInput(e.target.value)}
       onKeyDown={handleKeyDown}
       autoFocus
+      id="command-input"
     />
   );
 };
