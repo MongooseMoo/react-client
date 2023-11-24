@@ -7,6 +7,7 @@ import CommandInput from "./components/input";
 import {
   GMCPCore,
   GMCPCoreSupports,
+  GMCPClientKeystroke,
   GMCPClientMedia,
   GMCPClientSpeech,
   GMCPCommLiveKit,
@@ -63,6 +64,7 @@ function App() {
     newClient.registerGMCPPackage(GMCPCommChannel);
     newClient.registerGMCPPackage(GMCPCommLiveKit);
     newClient.registerGMCPPackage(GMCPAutoLogin);
+    newClient.registerGMCPPackage(GMCPClientKeystroke);
     newClient.registerMcpPackage(McpAwnsStatus);
     newClient.registerMcpPackage(McpSimpleEdit);
     newClient.registerMcpPackage(McpVmooUserlist);
