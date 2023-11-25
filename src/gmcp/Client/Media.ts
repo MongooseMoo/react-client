@@ -1,4 +1,4 @@
-import { Sound, Cacophony, Playback } from 'cacophony';
+import { Sound, Cacophony, Playback, SoundType } from 'cacophony';
 
 import type MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
@@ -42,7 +42,7 @@ export interface ExtendedSound extends Sound {
     priority?: number;
     tag?: string;
     key?: string;
-    type?: MediaType;
+    mediaType?: MediaType;
 }
 
 export class GMCPClientMedia extends GMCPPackage {
@@ -60,6 +60,7 @@ export class GMCPClientMedia extends GMCPPackage {
         let sound = this.sounds[key] as ExtendedSound;
         if (!sound) {
             let sound: ExtendedSound = await this.client.cacophony.createSound(url);
+
             sound.key = key;
             this.sounds[key] = sound;
         }
@@ -74,7 +75,7 @@ export class GMCPClientMedia extends GMCPPackage {
         if (!sound || sound.url !== mediaUrl) {
             // Create a new sound object
             if (data.type === "music") {
-                sound = await this.client.cacophony.createStream(mediaUrl);
+                sound = await this.client.cacophony.createSound(mediaUrl, SoundType.HTML);
             } else {
                 sound = await this.client.cacophony.createSound(mediaUrl);
             }
@@ -178,7 +179,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
     soundsByType(type: MediaType) {
         return Object.values(this.sounds).filter(
-            (sound: ExtendedSound) => sound.type === type
+            (sound: ExtendedSound) => sound.mediaType === type
         );
     }
 
