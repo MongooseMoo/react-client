@@ -1,7 +1,7 @@
 ### GMCP Package: `Client.Keystrokes` Specification
 
 **Overview:**
-`Client.Keystrokes` empowers MUD worlds to enhance user interaction through customizable keystroke bindings. This package allows for dynamic command execution, providing an efficient and responsive gaming experience.
+`Client.Keystroke` empowers MUD worlds to enhance user interaction through customizable keystroke bindings. This package allows for dynamic command execution, providing an efficient and responsive gaming experience.
 
 #### Commands:
 
