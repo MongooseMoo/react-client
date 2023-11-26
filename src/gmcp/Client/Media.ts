@@ -3,7 +3,7 @@ import { Sound, Cacophony, Playback, SoundType } from 'cacophony';
 import type MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
 
-const CORS_PROXY = "http://mongoose.world:9080/";
+const CORS_PROXY = "http://localhost:8080/?url=";
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage {
     public readonly url?: string;
@@ -77,7 +77,7 @@ export class GMCPClientMedia extends GMCPPackage {
         if (!sound || sound.url !== mediaUrl) {
             // Create a new sound object
             if (data.type === "music") {
-                mediaUrl = CORS_PROXY + mediaUrl;
+                mediaUrl = CORS_PROXY + encodeURIComponent(mediaUrl);
                 sound = await this.client.cacophony.createSound(mediaUrl, SoundType.HTML);
             } else {
                 sound = await this.client.cacophony.createSound(mediaUrl);
