@@ -3,6 +3,8 @@ import { Sound, Cacophony, Playback, SoundType } from 'cacophony';
 import type MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
 
+const CORS_PROXY = "http://mongoose.world:9080/";
+
 export class GMCPMessageClientMediaLoad extends GMCPMessage {
     public readonly url?: string;
     public readonly name!: string;
@@ -67,7 +69,7 @@ export class GMCPClientMedia extends GMCPPackage {
     }
 
     async handlePlay(data: GMCPMessageClientMediaPlay) {
-        const mediaUrl = (data.url || this.defaultUrl) + data.name;
+        let mediaUrl = (data.url || this.defaultUrl) + data.name;
         data.key = data.key || mediaUrl;
         let sound = this.sounds[data.key] as ExtendedSound;
 
@@ -75,6 +77,7 @@ export class GMCPClientMedia extends GMCPPackage {
         if (!sound || sound.url !== mediaUrl) {
             // Create a new sound object
             if (data.type === "music") {
+                mediaUrl = CORS_PROXY + mediaUrl;
                 sound = await this.client.cacophony.createSound(mediaUrl, SoundType.HTML);
             } else {
                 sound = await this.client.cacophony.createSound(mediaUrl);
