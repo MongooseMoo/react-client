@@ -3,7 +3,7 @@ import { Sound, Cacophony, Playback, SoundType } from 'cacophony';
 import type MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
 
-const CORS_PROXY = "http://localhost:8080/?url=";
+const CORS_PROXY = "https://mongoose.world:9080/?url=";
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage {
     public readonly url?: string;
