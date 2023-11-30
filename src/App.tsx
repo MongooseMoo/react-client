@@ -126,6 +126,7 @@ function App() {
     <div className="App">
       <header className="App-header"></header>
       <Toolbar
+        client={client}
         onSaveLog={saveLog}
         onClearLog={clearLog}
         onToggleUsers={() => setShowUsers(!showUsers)}

@@ -1,6 +1,9 @@
-import { Howl } from "howler";
+import { Sound, Cacophony, Playback, SoundType } from 'cacophony';
+
 import type MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
+
+const CORS_PROXY = "https://mongoose.world:9080/?url=";
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage {
     public readonly url?: string;
@@ -37,78 +40,63 @@ export class GMCPMessageClientMediaStop extends GMCPMessage {
     public readonly key?: string; // Stops playing media by key matching the value specified.
 }
 
-export interface Sound extends Howl {
+export interface ExtendedSound extends Sound {
     priority?: number;
     tag?: string;
     key?: string;
-    // ssh
-    _src?: string;
-    type?: MediaType;
+    mediaType?: MediaType;
 }
 
 export class GMCPClientMedia extends GMCPPackage {
     public packageName: string = "Client.Media";
-    sounds: { [key: string]: Sound } = {};
+    sounds: { [key: string]: ExtendedSound } = {};
     defaultUrl: string = "";
 
-    constructor(client: MudClient) {
-        super(client);
-        Howler.usingWebAudio = true; // Force to use Web Audio
-        Howler.ctx = this.client.audioContext;
-    }
-
-    handleDefault(url: string): void {
+    handleDefault(url: string) {
         this.defaultUrl = url;
     }
 
-    handleLoad(data: GMCPMessageClientMediaLoad): void {
+    async handleLoad(data: GMCPMessageClientMediaLoad) {
         const url = (data.url || this.defaultUrl) + data.name;
         const key = data.url + data.name;
-        let sound = this.sounds[key] as Howl;
+        let sound = this.sounds[key] as ExtendedSound;
         if (!sound) {
-            let sound: Sound = new Howl({ src: [url] });
+            let sound: ExtendedSound = await this.client.cacophony.createSound(url);
+
             sound.key = key;
             this.sounds[key] = sound;
         }
     }
 
-    handlePlay(data: GMCPMessageClientMediaPlay): void {
-        const mediaUrl = (data.url || this.defaultUrl) + data.name;
+    async handlePlay(data: GMCPMessageClientMediaPlay) {
+        let mediaUrl = (data.url || this.defaultUrl) + data.name;
         data.key = data.key || mediaUrl;
-        let sound = this.sounds[data.key];
+        let sound = this.sounds[data.key] as ExtendedSound;
 
         // Sound creation or updating
-        if (!sound || sound._src !== mediaUrl) {
+        if (!sound || sound.url !== mediaUrl) {
             // Create a new sound object
-            sound = new Howl({
-                src: [mediaUrl],
-                html5: true,
-                preload: true,
-                format: ["aac", "mp3", "ogg"],
-                loop: (data.loops === -1) ? true : false, // Looping
-                volume: data.volume / 100, // Initial volume
-                onfade: () => { if (data.fadeout) sound.stop(); } // Stop the sound after fadeout
-            });
-
-            // Fade in
-            if (data.fadein) {
-                sound.fade(0, data.volume, data.fadein);
+            if (data.type === "music") {
+                mediaUrl = CORS_PROXY + encodeURIComponent(mediaUrl);
+                sound = await this.client.cacophony.createSound(mediaUrl, SoundType.HTML);
+            } else {
+                sound = await this.client.cacophony.createSound(mediaUrl);
             }
         } else {
-            // Update volume if provided
-            if (data.volume !== undefined) {
-                sound.volume(data.volume / 100);
-            }
+        }
+        // Update volume if provided
+        if (data.volume !== undefined) {
+            sound.volume = data.volume / 100;
+        }
 
-            // Update looping if provided
-            if (data.loops !== undefined) {
-                sound.loop(data.loops === -1);
-            }
+        // Update looping if provided
+        if (data.loops !== undefined) {
+            sound.loop && sound.loop(data.loops === -1 ? "infinite" : data.loops);
         }
 
         // Start at a specific position
         if (data.start) {
-            sound.seek(data.start / 1000);
+            sound.seek && sound.seek(data.start);
         }
 
         if (data.end) {
@@ -121,7 +109,7 @@ export class GMCPClientMedia extends GMCPPackage {
         // 3D functionality
         if (data.is3d) {
             // @ts-ignore
-            sound.pannerAttr({
+            sound.threeDOptions({
                 coneInnerAngle: 360,
                 coneOuterAngle: 0,
                 panningModel: 'HRTF',
@@ -129,11 +117,6 @@ export class GMCPClientMedia extends GMCPPackage {
                 position: [data.position[0], data.position[1], data.position[2]],
                 orientation: [1, 0, 0]
             });
-        }
-
-        // Fade out
-        if (data.fadeout) {
-            sound.fade(data.volume, 0, data.fadeout);
         }
 
         // Priority handling
@@ -148,8 +131,14 @@ export class GMCPClientMedia extends GMCPPackage {
         }
 
         // Playback control
-        if (!sound.playing()) {
-            sound.play();
+        if (!sound.isPlaying()) {
+            const playback = sound.play()[0] as Playback;
+            if (data.fadein) {
+                playback.fadeIn(data.fadein);
+            }
+            if (data.fadeout) {
+                playback.fadeOut(data.fadeout);
+            }
         }
 
         this.sounds[data.key] = sound;
@@ -178,7 +167,7 @@ export class GMCPClientMedia extends GMCPPackage {
     soundsByName(name: string) {
         // must check the end of the url because the url isn't in the sound object
         return Object.values(this.sounds).filter((sound) => {
-            return sound._src && sound._src[sound._src.length - 1].endsWith(name);
+            return sound.url && sound.url[sound.url.length - 1].endsWith(name);
         });
     }
 
@@ -193,7 +182,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
     soundsByType(type: MediaType) {
         return Object.values(this.sounds).filter(
-            (sound: Sound) => sound.type === type
+            (sound: ExtendedSound) => sound.mediaType === type
         );
     }
 
