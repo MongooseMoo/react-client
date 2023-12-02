@@ -9,7 +9,7 @@ import { register } from './serviceWorker'
 import * as Sentry from "@sentry/react";
 
 Sentry.init({
-  dsn: "http://16352468a3bf673b8e859b7aa87f6488@new.q-continuum.net:9000/2",
+  dsn: "https://2356c3ef12dad1afcb30defd749d96f1@new.q-continuum.net/2",
   integrations: [
     new Sentry.BrowserTracing({
       // Set 'tracePropagationTargets' to control for which URLs distributed tracing should be enabled
