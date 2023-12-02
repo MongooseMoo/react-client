@@ -5,6 +5,7 @@
   "dependencies": {
     "@livekit/components-react": "^0.7.3",
     "@monaco-editor/react": "^4.6.0",
+    "@sentry/cli": "^2.22.3",
     "@sentry/react": "^7.84.0",
     "@sentry/tracing": "^7.84.0",
     "anser": "^2.1.1",
@@ -27,9 +28,10 @@
   },
   "scripts": {
     "start": "cross-env-shell NODE_OPTIONS=--openssl-legacy-provider react-scripts start",
-    "build": "cross-env NODE_OPTIONS=--openssl-legacy-provider CI=false react-scripts build",
+    "build": "cross-env NODE_OPTIONS=--openssl-legacy-provider CI=false react-scripts build && npm run sentry:sourcemaps",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org sentry --project mongoose-client build && sentry-cli --url http://new.q-continuum.net:9000 sourcemaps upload --org sentry --project mongoose-client build"
   },
   "eslintConfig": {
     "extends": [

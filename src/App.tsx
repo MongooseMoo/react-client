@@ -28,6 +28,7 @@ import Toolbar from "./components/toolbar";
 import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
 import AudioChat from "./components/audioChat";
+import { ErrorBoundary } from "@sentry/react";
 
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
