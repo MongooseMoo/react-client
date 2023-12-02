@@ -31,7 +31,7 @@
     "build": "cross-env NODE_OPTIONS=--openssl-legacy-provider CI=false react-scripts build && npm run sentry:sourcemaps",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org sentry --project mongoose-client build && sentry-cli --url http://new.q-continuum.net:9000 sourcemaps upload --org sentry --project mongoose-client build"
+    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org mongoose --project mongoose-client build && sentry-cli --url https://new.q-continuum.net sourcemaps upload --org mongoose --project mongoose-client build"
   },
   "eslintConfig": {
     "extends": [
