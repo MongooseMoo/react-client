@@ -5,6 +5,8 @@
   "dependencies": {
     "@livekit/components-react": "^0.7.3",
     "@monaco-editor/react": "^4.6.0",
+    "@sentry/react": "^7.84.0",
+    "@sentry/tracing": "^7.84.0",
     "anser": "^2.1.1",
     "buffer": "^6.0.3",
     "cacophony": "^0.1.31",

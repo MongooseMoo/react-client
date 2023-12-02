@@ -29,7 +29,6 @@ import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
 import AudioChat from "./components/audioChat";
 
-
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showUsers, setShowUsers] = useState<boolean>(false);
@@ -123,24 +122,26 @@ function App() {
   if (!client) return null; // or some loading component
 
   return (
-    <div className="App">
-      <header className="App-header"></header>
-      <Toolbar
-        client={client}
-        onSaveLog={saveLog}
-        onClearLog={clearLog}
-        onToggleUsers={() => setShowUsers(!showUsers)}
-        onOpenPrefs={() => prefsDialogRef.current?.open()}
-      />
-      <div>
-        <OutputWindow client={client} ref={outRef} />
-        {showUsers && <Userlist users={players} />}
-        <AudioChat client={client} />
+    <ErrorBoundary fallback={<p>An error has occurred</p>}>
+      <div className="App">
+        <header className="App-header"></header>
+        <Toolbar
+          client={client}
+          onSaveLog={saveLog}
+          onClearLog={clearLog}
+          onToggleUsers={() => setShowUsers(!showUsers)}
+          onOpenPrefs={() => prefsDialogRef.current?.open()}
+        />
+        <div>
+          <OutputWindow client={client} ref={outRef} />
+          {showUsers && <Userlist users={players} />}
+          <AudioChat client={client} />
+        </div>
+        <CommandInput onSend={(text: string) => client.sendCommand(text)} />
+        <Statusbar client={client} />
+        <PreferencesDialog ref={prefsDialogRef} />
       </div>
-      <CommandInput onSend={(text: string) => client.sendCommand(text)} />
-      <Statusbar client={client} />
-      <PreferencesDialog ref={prefsDialogRef} />
-    </div>
+    </ErrorBoundary>
   );
 }
 
