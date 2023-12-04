@@ -109,14 +109,13 @@ export class GMCPClientMedia extends GMCPPackage {
         // 3D functionality
         if (data.is3d) {
             // @ts-ignore
-            sound.threeDOptions({
+            sound.threeDOptions = {
                 coneInnerAngle: 360,
                 coneOuterAngle: 0,
                 panningModel: 'HRTF',
                 distanceModel: 'inverse',
-                position: [data.position[0], data.position[1], data.position[2]],
-                orientation: [1, 0, 0]
-            });
+            };
+            sound.position = [data.position[0], data.position[1], data.position[2]];
         }
 
         // Priority handling
