@@ -1,4 +1,4 @@
-import { Sound, Cacophony, Playback, SoundType } from 'cacophony';
+import { Sound, Cacophony, Playback, SoundType, Position } from 'cacophony';
 
 import type MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
@@ -38,6 +38,13 @@ export class GMCPMessageClientMediaStop extends GMCPMessage {
     public readonly tag?: string; // Stops playing media by tag matching the value specified.
     public readonly priority?: number = 0;
     public readonly key?: string; // Stops playing media by key matching the value specified.
+}
+
+export class GMCPMessageClientMediaListener extends GMCPMessage {
+    // orientation
+    public readonly orientation?: Position
+    // position
+    public readonly position?: Position
 }
 
 export interface ExtendedSound extends Sound {
@@ -160,6 +167,15 @@ export class GMCPClientMedia extends GMCPPackage {
         }
         if (!data.name && !data.type && !data.tag && !data.key) {
             this.allSounds.forEach((sound) => sound.stop());
+        }
+    }
+
+    handleListener(data: GMCPMessageClientMediaListener) {
+        if (data.position?.length) {
+            this.client.cacophony.listenerPosition = data.position;
+        }
+        if (data.orientation?.length) {
+            this.client.cacophony.listenerOrientation = data.orientation;
         }
     }
 
