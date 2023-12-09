@@ -40,12 +40,15 @@ export class GMCPMessageClientMediaStop extends GMCPMessage {
     public readonly key?: string; // Stops playing media by key matching the value specified.
 }
 
-export class GMCPMessageClientMediaListener extends GMCPMessage {
-    // orientation
-    public readonly orientation?: Position
-    // position
-    public readonly position?: Position
+export class GMCPMessageClientMediaListenerOrientation extends GMCPMessage {
+    public readonly up?: Position;
+    public readonly forward?: Position;
 }
+
+export class GMCPMessageClientMediaListenerPosition {
+    public readonly position: Position = [0, 0, 0];
+}
+
 
 export interface ExtendedSound extends Sound {
     priority?: number;
@@ -170,14 +173,22 @@ export class GMCPClientMedia extends GMCPPackage {
         }
     }
 
-    handleListener(data: GMCPMessageClientMediaListener) {
+    handleListenerPosition(data: GMCPMessageClientMediaListenerPosition) {
         if (data.position?.length) {
             this.client.cacophony.listenerPosition = data.position;
         }
-        if (data.orientation?.length) {
-            this.client.cacophony.listenerOrientation = data.orientation;
-        }
     }
+
+    handleListenerOrientation(data: GMCPMessageClientMediaListenerOrientation) {
+        if (data.up && data.up.length) {
+            this.client.cacophony.listenerUpOrientation = data.up;
+        }
+        if (data.forward && data.forward.length) {
+            this.client.cacophony.listenerForwardOrientation = data.forward;
+        }
+
+    }
+
 
     soundsByName(name: string) {
         // must check the end of the url because the url isn't in the sound object
