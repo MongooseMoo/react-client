@@ -1,6 +1,5 @@
-import { Sound, Cacophony, Playback, SoundType, Position } from 'cacophony';
+import { Playback, Position, Sound, SoundType } from 'cacophony';
 
-import type MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 const CORS_PROXY = "https://mongoose.world:9080/?url=";
@@ -215,5 +214,12 @@ export class GMCPClientMedia extends GMCPPackage {
     get allSounds() {
         return Object.values(this.sounds);
     }
+
+    stopAllSounds() {
+        this.allSounds.forEach((sound) => sound.stop());
+        this.sounds = {};
+    }
+
+
 }
 
