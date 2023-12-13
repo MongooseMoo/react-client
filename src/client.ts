@@ -378,7 +378,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   stopAllSounds() {
-    this.cacophony.stopAll();
+    const gmcpClientMedia = this.gmcpHandlers["Client.Media"] as GMCPClientMedia;
+    gmcpClientMedia.stopAllSounds();
   }
 
   getInput(): string {
