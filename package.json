@@ -28,7 +28,7 @@
   "scripts": {
     "sentry:sourcemaps": "sentry-cli sourcemaps inject --org mongoose --project mongoose-client build && sentry-cli --url https://new.q-continuum.net sourcemaps upload --org mongoose --project mongoose-client build",
     "start": "vite --open",
-    "build": "vite build && npm run sentry:sourcemaps",
+    "build": "vite build",
     "serve": "vite preview",
     "test": "react-scripts test"
   },
