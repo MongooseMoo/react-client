@@ -193,9 +193,9 @@ function convertBundleIntoReact(
     const [, pre, url] = match;
     const href = url;
     return (
-      <a href={href} target="_blank" rel="noreferrer">
+      <>{pre}<a href={href} target="_blank" rel="noreferrer">
         {url}
-      </a>
+      </a></>
     );
   }
 
