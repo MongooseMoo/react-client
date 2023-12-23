@@ -1,6 +1,6 @@
 {
   "name": "mongoose-web-client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "homepage": "https://client.rustytelephone.net/",
   "dependencies": {
     "@livekit/components-react": "^1.5.1",
