@@ -1,4 +1,5 @@
-import { parseToElements } from "./output";
+import { it, describe, expect } from 'vitest';
+import { parseToElements } from "./ansiParser";
 
 const testParseToElements = (input: string, expectedOutput: JSX.Element[]) => {
   it(`should return ${expectedOutput} when passed ${input}`, () => {
