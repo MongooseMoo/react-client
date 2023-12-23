@@ -10,18 +10,15 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
 
-    
     env:
      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
   
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
+      - uses: actions/checkout@v3
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '20.x''
+          node-version: 20
           cache: 'npm'
 
       - run: npm ci
