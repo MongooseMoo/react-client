@@ -1,3 +1,4 @@
+import { it, describe, expect } from 'vitest';
 import { TelnetCommand, TelnetOption, TelnetParser, Stream } from './telnet';
 
 // Mock Stream

@@ -1,3 +1,4 @@
+import { it, describe, expect } from 'vitest';
 import { parseMcpMessage, parseMcpMultiline } from "./mcp";
 
 describe("parseMcpMessage", () => {

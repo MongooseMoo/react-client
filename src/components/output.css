@@ -8,7 +8,7 @@
     border: 1px solid #ccc;
     border-radius: 5px;
     margin: auto;
-/* height: auto;*/
+    /* height: auto;*/
     max-height: 500px;
     overflow: auto;
     white-space: pre-wrap;
@@ -21,10 +21,10 @@
 }
 
 a.exit {
-color: orange;
-text-decoration:underline;
-cursor: pointer;
-width:100%;
+    color: orange;
+    text-decoration: underline;
+    cursor: pointer;
+    width: 100%;
 }
 
 /* MediaQuery component */
