@@ -15,9 +15,8 @@
     "livekit-client": "^1.15.5",
     "lru-cache": "^10.1.0",
     "monaco-editor": "^0.45.0",
-    "react": "^18.2.0",
+    "preact": "^10.19.3",
     "react-beforeunload": "^2.6.0",
-    "react-dom": "^18.2.0",
     "react-focus-lock": "^2.9.6",
     "react-icons": "^4.12.0",
     "react-router-dom": "^6.21.1",
@@ -45,11 +44,9 @@
     "last 2 Safari versions"
   ],
   "devDependencies": {
+    "@preact/preset-vite": "^2.7.0",
     "@types/node": "^20.10.5",
-    "@types/react": "^18.2.45",
     "@types/react-beforeunload": "^2.1.4",
-    "@types/react-dom": "^18.2.18",
-    "@vitejs/plugin-react": "^4.2.1",
     "cross-env": "^7.0.3",
     "typescript": "^5.3.3",
     "vite": "^5.0.10",

@@ -1,9 +1,15 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+
+import { defineConfig } from 'vite';
+import preact from '@preact/preset-vite';
 import { CommitHashPlugin } from 'vite-plugin-commit-hash';
 
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), CommitHashPlugin()]
-})
+    plugins: [preact(), CommitHashPlugin()],
+    resolve: {
+        alias: {
+            'react': 'preact/compat',
+            'react-dom': 'preact/compat'
+        }
+    }
+});
