@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "homepage": "https://client.rustytelephone.net/",
   "dependencies": {
-    "@livekit/components-react": "^1.5.1",
+    "@livekit/components-react": "<1.5.0",
     "@monaco-editor/react": "^4.6.0",
     "@sentry/cli": "^2.23.1",
     "@sentry/react": "^7.91.0",
