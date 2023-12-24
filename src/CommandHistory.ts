@@ -5,7 +5,7 @@ export class CommandHistory {
 
   addCommand(command: string): void {
     if (command.trim() !== "" && (this.history.length === 0 || this.history[this.history.length - 1] !== command)) {
-      this.history.push(command);
+      this.history.push(command.trim());
       this.currentIndex = null;
       this.unsentInput = "";
     }
