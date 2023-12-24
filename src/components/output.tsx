@@ -17,7 +17,7 @@ class Output extends React.Component<Props, State> {
 
   state = {
     output: [],
-    sidebar_visible: false,
+    sidebarVisible: false,
   };
 
   constructor(props: Props) {
@@ -30,9 +30,7 @@ class Output extends React.Component<Props, State> {
     // error
     this.props.client.on("error", this.addError);
     this.props.client.on("command", this.addCommand);
-    this.props.client.on("userlist", (players: any) =>
-      this.setState({ sidebar_visible: !!players })
-    );
+    this.props.client.on("userlist", this.handleUserList);
   }
 
   addCommand = (command: string) => {
@@ -51,8 +49,12 @@ class Output extends React.Component<Props, State> {
 
   handleDisconnected = () => {
     this.addToOutput([<h2> Disconnected</h2>]);
-    this.state.sidebar_visible = false;
+    this.state.sidebarVisible = false;
   }
+
+  handleUserList = (players: any) =>
+    this.setState({ sidebar_visible: !!players })
+
 
   componentDidUpdate() {
     this.scrollToBottom();
@@ -126,7 +128,7 @@ class Output extends React.Component<Props, State> {
 
   render() {
     var classname = "output";
-    if (this.state.sidebar_visible) {
+    if (this.state.sidebarVisible) {
       classname += " sidebar-visible";
     }
     return (
