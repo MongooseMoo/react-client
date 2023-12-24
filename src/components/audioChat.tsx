@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from "react";
-import { AudioConference, LiveKitRoom } from "@livekit/components-react";
-import MudClient from "../client";
+import React, { useState, useEffect, Suspense, lazy } from "react";
+import type MudClient from "../client";
 
 const serverUrl = "wss://mongoose-67t79p35.livekit.cloud";
+
+// Dynamically import LiveKitRoom and AudioConference components
+const LiveKitRoom = lazy(() => import("@livekit/components-react").then(module => ({ default: module.LiveKitRoom })));
+const AudioConference = lazy(() => import("@livekit/components-react").then(module => ({ default: module.AudioConference })));
 
 interface AudioChatProps {
   client: MudClient;
@@ -14,7 +17,6 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
 
   useEffect(() => {
     const handleLiveKitToken = (token: string) => {
-
       setTokens(prevTokens => [...prevTokens, token]);
       setConnected(true);
     };
@@ -43,22 +45,24 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
   }
 
   return (
-    <div data-lk-theme="default">
-      {tokens.map((token, index) => (
-        <LiveKitRoom
-          key={index}
-          video={false}
-          audio={true}
-          token={token}
-          serverUrl={serverUrl}
-          connect={true}
-          onDisconnected={() => client.emit("livekitLeave", token)}
-        >
-          <AudioConference />
-        </LiveKitRoom>
-      ))}
-      <div className="audio-status" aria-live="polite"></div>
-    </div>
+    <Suspense fallback={<div>Loading Audio Components...</div>}>
+      <div data-lk-theme="default">
+        {tokens.map((token, index) => (
+          <LiveKitRoom
+            key={index}
+            video={false}
+            audio={true}
+            token={token}
+            serverUrl={serverUrl}
+            connect={true}
+            onDisconnected={() => client.emit("livekitLeave", token)}
+          >
+            <AudioConference />
+          </LiveKitRoom>
+        ))}
+        <div className="audio-status" aria-live="polite"></div>
+      </div>
+    </Suspense>
   );
 };
 
