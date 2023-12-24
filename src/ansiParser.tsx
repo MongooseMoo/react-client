@@ -3,8 +3,8 @@ import Anser, { AnserJsonEntry } from "anser";
 export function parseToElements(
     text: string,
     onExitClick: (exit: string) => void
-): React.ReactNode[] {
-    let elements: React.ReactNode[] = [];
+): React.ReactElement[] {
+    let elements: React.ReactElement[] = [];
     // handle multiline strings by splitting them and adding the appropriate <br/>
     for (const line of text.split("\r\n")) {
         const parsed = Anser.ansiToJson(line, { json: true, remove_empty: false });
@@ -27,7 +27,7 @@ const exitRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
 function convertBundleIntoReact(
     bundle: AnserJsonEntry,
     onExitClick: (exit: string) => void
-): React.ReactNode[] {
+): React.ReactElement[] {
     const style = createStyle(bundle);
     const content: React.ReactNode[] = [];
     let index = 0;

@@ -9,7 +9,7 @@ interface Props {
 
 interface State {
   output: JSX.Element[];
-  sidebar_visible: boolean;
+  sidebarVisible: boolean;
 }
 
 class Output extends React.Component<Props, State> {
@@ -53,7 +53,7 @@ class Output extends React.Component<Props, State> {
   }
 
   handleUserList = (players: any) =>
-    this.setState({ sidebar_visible: !!players })
+    this.setState({ sidebarVisible: !!players })
 
 
   componentDidUpdate() {
