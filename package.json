@@ -48,6 +48,7 @@
     "@types/node": "^20.10.5",
     "@types/react-beforeunload": "^2.1.4",
     "cross-env": "^7.0.3",
+    "rollup-plugin-visualizer": "^5.11.0",
     "typescript": "^5.3.3",
     "vite": "^5.0.10",
     "vitest": "^1.1.0"
