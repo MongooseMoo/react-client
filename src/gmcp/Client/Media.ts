@@ -91,8 +91,8 @@ export class GMCPClientMedia extends GMCPPackage {
             } else {
                 sound = await this.client.cacophony.createSound(mediaUrl);
             }
-        } else {
         }
+
         // Update volume if provided
         if (data.volume !== undefined) {
             sound.volume = data.volume / 100;
@@ -105,7 +105,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
         // Start at a specific position
         if (data.start) {
-            sound.seek && sound.seek(data.start);
+            sound.seek(data.start);
         }
 
         if (data.end) {
