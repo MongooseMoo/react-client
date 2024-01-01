@@ -3,7 +3,7 @@ import { parseToElements } from "./ansiParser";
 
 const testParseToElements = (input: string, expectedOutput: JSX.Element[]) => {
   it(`should return ${expectedOutput} when passed ${input}`, () => {
-    expect(JSON.stringify(parseToElements(input, () => { }))).toEqual(JSON.stringify(expectedOutput));
+    expect(parseToElements(input, () => {})).toEqual(expectedOutput);
     // expect(parseToElements(input, () => {})).toEqual(expectedOutput);
   });
 };
