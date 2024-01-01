@@ -31,7 +31,7 @@ function convertBundleIntoReact(
     const style = createStyle(bundle);
     const content: React.ReactNode[] = [];
     let index = 0;
-    let keyCounter = 0;
+    let keyCounter = Math.random().toString(36).substr(2, 9); // Generate a unique key prefix for this bundle
 
     function processRegex(
         regex: RegExp,
