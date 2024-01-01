@@ -1,14 +1,14 @@
-import { FaDownload, FaSave, FaUndo } from "react-icons/fa";
 import Editor from "@monaco-editor/react";
 import React, { useEffect, useMemo, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import { useLocation } from "react-router-dom";
 import { useTitle } from "react-use";
-import { EditorSession } from "../mcp";
-import { usePreferences } from "../hooks/usePreferences";
-import { PrefState } from "../PreferencesStore";
+import { usePreferences } from "../../hooks/usePreferences";
+import { EditorSession } from "../../mcp";
+import EditorToolbar from './toolbar';
+import { EditorStatusBar } from "./statusbar";
 
-enum DocumentState {
+export enum DocumentState {
   Unchanged,
   Changed,
   Saved,
@@ -31,7 +31,6 @@ function EditorWindow() {
   });
 
   const handleEditorMount = (editor: any, monaco: any) => {
-    editorInstance.current = editor;
     editorInstance.current = editor;
   };
   const [prefState, dispatch] = usePreferences();
@@ -88,6 +87,7 @@ function EditorWindow() {
         setSession(event.data.session);
         setDocumentState(DocumentState.Unchanged);
         setClientId(event.data.clientId);
+        focusEditor();
       } else if (event.data.type === "shutdown") {
         if (event.data.clientId !== clientId) {
           return;
@@ -113,9 +113,7 @@ function EditorWindow() {
     const sessionData = { ...session, contents };
     channel.postMessage({ type: "save", session: sessionData, id });
     setDocumentState(DocumentState.Saved);
-    if (editorInstance.current !== null) {
-      editorInstance.current.focus();
-    }
+    focusEditor();
     event.preventDefault();
 
   };
@@ -161,33 +159,11 @@ function EditorWindow() {
 
   return (
     <>
-      <div
-        className="toolbar"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0 1rem",
-          height: "10vh",
-          backgroundColor: "#f5f5f5",
-          borderBottom: "1px solid #e8e8e8",
-        }}
-      >
-        <form onSubmit={(event) => event.preventDefault()}>
-          <button onClick={onSave} accessKey="s">
-            <FaSave />
-            Save
-          </button>
-          <button onClick={revert} accessKey="r">
-            <FaUndo />
-            Revert
-          </button>
-          <button onClick={downloadText} accessKey="d">
-            <FaDownload />
-            Download
-          </button>
-        </form>
-      </div>
+      <EditorToolbar
+        onSave={onSave}
+        onRevert={revert}
+        onDownload={downloadText}
+      />
       <Editor
         height="80vh"
         defaultLanguage="lambdamoo"
@@ -195,28 +171,17 @@ function EditorWindow() {
         onChange={onChanges}
         options={{ wordWrap: "on", accessibilitySupport: accessibilityMode ? "on" : "off", quickSuggestions: autocompleteEnabled }}
         onMount={handleEditorMount}
+
       />
-      <div
-        aria-live="polite"
-        className="statusbar"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0 1rem",
-          height: "10vh",
-          backgroundColor: "#f5f5f5",
-          borderTop: "1px solid #e8e8e8",
-        }}
-      >
-        <span>{docstate}</span>
-        <span>|</span>
-        <span>{session.reference}</span>
-        <span>|</span>
-        <span>{session.type}</span>
-      </div>
+      <EditorStatusBar docstate={docstate} session={session} />
     </>
   );
+
+  function focusEditor() {
+    if (editorInstance.current !== null) {
+      editorInstance.current.focus();
+    }
+  }
 }
 
 export default EditorWindow;

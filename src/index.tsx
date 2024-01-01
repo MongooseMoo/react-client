@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
-import EditorWindow from "./components/editorWindow";
+import EditorWindow from "./components/editor/editorWindow";
 import "./index.css";
 import reportWebVitals from "./reportWebVitals";
 import { register } from './serviceWorker'
