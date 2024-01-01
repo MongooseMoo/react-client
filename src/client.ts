@@ -306,6 +306,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
         channel.onmessage = null;
       }
     };
+    editorWindow && editorWindow.focus();
   }
 
   saveEditorWindow(editorSession: EditorSession) {
