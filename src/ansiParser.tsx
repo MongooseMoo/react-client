@@ -31,6 +31,7 @@ function convertBundleIntoReact(
     const style = createStyle(bundle);
     const content: React.ReactNode[] = [];
     let index = 0;
+    let keyCounter = 0;
 
     function processRegex(
         regex: RegExp,
