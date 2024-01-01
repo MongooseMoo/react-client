@@ -87,7 +87,7 @@ function EditorWindow() {
         setSession(event.data.session);
         setDocumentState(DocumentState.Unchanged);
         setClientId(event.data.clientId);
-        focusEditor();
+        setTimeout(focusEditor, 100);
       } else if (event.data.type === "shutdown") {
         if (event.data.clientId !== clientId) {
           return;
@@ -158,7 +158,7 @@ function EditorWindow() {
   };
 
   return (
-    <>
+    <div id="editor">
       <EditorToolbar
         onSave={onSave}
         onRevert={revert}
@@ -171,10 +171,10 @@ function EditorWindow() {
         onChange={onChanges}
         options={{ wordWrap: "on", accessibilitySupport: accessibilityMode ? "on" : "off", quickSuggestions: autocompleteEnabled }}
         onMount={handleEditorMount}
-
+        path={session.reference}
       />
       <EditorStatusBar docstate={docstate} session={session} />
-    </>
+    </div>
   );
 
   function focusEditor() {
