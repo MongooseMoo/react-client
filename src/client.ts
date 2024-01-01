@@ -10,6 +10,7 @@ import { GMCPAutoLogin, GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports } 
 import type { GMCPPackage } from "./gmcp/package";
 import {
   EditorSession,
+  MCPKeyvals,
   MCPPackage,
   McpAwnsGetSet,
   McpNegotiate,
@@ -272,7 +273,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     this.send(toSend);
   }
 
-  sendMcpML(MLTag: string, key: string, val: string) {
+  sendMcpMLLine(MLTag: string, key: string, val: string) {
     this.send(`#$#* ${MLTag} ${key}: ${val}\r\n`);
   }
 
@@ -308,16 +309,21 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   saveEditorWindow(editorSession: EditorSession) {
-    const MLTag = generateTag();
-    const keyvals: { [key: string]: string } = {};
-    keyvals["reference"] = editorSession.reference;
-    keyvals["type"] = editorSession.type;
+    const keyvals: MCPKeyvals = {
+      reference: editorSession.reference,
+      type: editorSession.type,
+    }
     keyvals["content*"] = "";
+    this.sendMCPMultiline(keyvals, editorSession.contents);
+  }
+
+  sendMCPMultiline(keyvals: MCPKeyvals, lines: string[]) {
+    const MLTag = generateTag();
     keyvals["_data-tag"] = MLTag;
 
     this.sendMcp("dns-org-mud-moo-simpleedit-set", keyvals);
-    for (const line of editorSession.contents) {
-      this.sendMcpML(MLTag, "content", line);
+    for (const line of lines) {
+      this.sendMcpMLLine(MLTag, "content", line);
     }
     this.closeMcpML(MLTag);
   }
