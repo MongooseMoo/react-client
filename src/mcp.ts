@@ -1,10 +1,15 @@
 import MudClient from "./client";
 import { LRUCache } from "lru-cache";
 
+
+export type MCPKeyvals = {
+  [key: string]: string;
+};
+
 interface McpMessage {
   name: string;
   authKey?: string;
-  keyvals: { [key: string]: string };
+  keyvals: MCPKeyvals;
 }
 
 export function parseMcpMessage(message: string): McpMessage | null {
