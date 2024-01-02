@@ -23,6 +23,7 @@
     "react-router-dom": "^6.21.1",
     "react-use": "^17.4.2",
     "strip-ansi": "^7.1.0",
+    "vite-plugin-commit-hash": "^1.0.8",
     "web-vitals": "^3.5.0"
   },
   "scripts": {
