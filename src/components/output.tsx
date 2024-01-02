@@ -49,7 +49,7 @@ class Output extends React.Component<Props, State> {
 
   handleDisconnected = () => {
     this.addToOutput([<h2> Disconnected</h2>]);
-    this.state.sidebarVisible = false;
+    this.setState({ sidebarVisible: false });
   }
 
   handleUserList = (players: any) =>
