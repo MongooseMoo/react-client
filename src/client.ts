@@ -315,14 +315,14 @@ An MCP message consists of three parts: the name of the message, the authenticat
       type: editorSession.type,
     }
     keyvals["content*"] = "";
-    this.sendMCPMultiline(keyvals, editorSession.contents);
+    this.sendMCPMultiline("dns-org-mud-moo-simpleedit-set", keyvals, editorSession.contents);
   }
 
-  sendMCPMultiline(keyvals: MCPKeyvals, lines: string[]) {
+  sendMCPMultiline(mcpMessage: string, keyvals: MCPKeyvals, lines: string[]) {
     const MLTag = generateTag();
     keyvals["_data-tag"] = MLTag;
 
-    this.sendMcp("dns-org-mud-moo-simpleedit-set", keyvals);
+    this.sendMcp(mcpMessage, keyvals);
     for (const line of lines) {
       this.sendMcpMLLine(MLTag, "content", line);
     }
