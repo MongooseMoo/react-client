@@ -104,10 +104,12 @@ describe("Output", () => {
         <span key="0">
           <span style={{}}>This is a sentence with a bold word: </span>
           <span style={{ fontWeight: "bold" }}>bold</span>
-          <span style={{}}> and a link: </span>
-          <a href="https://www.google.com" target="_blank" rel="noreferrer">
-            https://www.google.com
-          </a>
+          <span style={{}}> and a link:</span>
+          <span>
+            <a href="https://www.google.com" target="_blank" rel="noreferrer">
+              https://www.google.com
+            </a>
+          </span>
         </span>,
 
       );
