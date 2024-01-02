@@ -90,7 +90,7 @@ function convertBundleIntoReact(
     if (index < bundle.content.length) {
         content.push(bundle.content.substring(index));
     }
-    return content.map((c) => <span style={style}>{c}</span>);
+    return content.map((c) => <span style={style} key={keyCounter++}>{c}</span>);
 }
 
 /**

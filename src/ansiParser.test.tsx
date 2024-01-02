@@ -88,9 +88,12 @@ describe("Output", () => {
 
       );
 
-      testRenderedMarkup('This is a sentence with a bold, underlined, and red word: \x1b[1;4;31mbold, underlined, and red\x1b[0m',
-        <span><span style={{}}>This is a sentence with a bold, underlined, and red word: </span>
-          <span style={{ "color": "rgb(187, 0, 0)", textDecoration: 'underline', fontWeight: 'bold' }}>bold, underlined, and red</span></span>
+      testRenderedMarkup(
+        'This is a sentence with a bold, underlined, and red word: \x1b[1;4;31mbold, underlined, and red\x1b[0m',
+        <span key="0">
+          <span style={{}}>This is a sentence with a bold, underlined, and red word: </span>
+          <span style={{ color: "rgb(187, 0, 0)", textDecoration: 'underline', fontWeight: 'bold' }}>bold, underlined, and red</span>
+        </span>
       )
     });
 
