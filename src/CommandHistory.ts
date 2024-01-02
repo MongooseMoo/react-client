@@ -21,7 +21,7 @@ export class CommandHistory {
       return this.history[this.currentIndex];
     }
 
-    return currentInput;
+    return this.currentIndex === null ? "" : this.history[this.currentIndex];
   }
   navigateDown(currentInput: string): string {
     if (this.currentIndex !== null) {
@@ -30,8 +30,7 @@ export class CommandHistory {
         return this.history[this.currentIndex];
       } else {
         this.currentIndex = null;
-        // When at the end of history, reset to blank
-        return "";
+        return this.unsentInput;
       }
     }
     // Preserve unsent input if not navigating history
