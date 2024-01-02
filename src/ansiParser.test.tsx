@@ -92,7 +92,7 @@ describe("Output", () => {
         'This is a sentence with a bold, underlined, and red word: \x1b[1;4;31mbold, underlined, and red\x1b[0m',
         <span key="0">
           <span style={{}}>This is a sentence with a bold, underlined, and red word: </span>
-          <span style={{ color: "rgb(187, 0, 0)", textDecoration: 'underline', fontWeight: 'bold' }}>bold, underlined, and red</span>
+          <span style={{ fontWeight: "bold", textDecoration: "underline", color: "rgb(187, 0, 0)" }}>bold, underlined, and red</span>
         </span>
       )
     });
@@ -104,12 +104,10 @@ describe("Output", () => {
         <span key="0">
           <span style={{}}>This is a sentence with a bold word: </span>
           <span style={{ fontWeight: "bold" }}>bold</span>
-          <span style={{}}> and a link:</span>
-          <span style={{}}>
-            <a href="https://www.google.com" target="_blank" rel="noreferrer">
-              https://www.google.com
-            </a>
-          </span>
+          <span style={{}}> and a link: </span>
+          <a href="https://www.google.com" target="_blank" rel="noreferrer">
+            https://www.google.com
+          </a>
         </span>,
 
       );
