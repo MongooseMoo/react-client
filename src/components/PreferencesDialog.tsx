@@ -51,6 +51,17 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
         tabIndex={-1}
         aria-label="Preferences"
       >
+        <h1 style={{
+          color: "white",
+          textAlign: "center",
+          fontSize: "1.5em",
+          padding: "0.5em",
+          margin: "0.5em",
+          border: "1px solid black",
+          borderRadius: "0.5em",
+          backgroundColor: "black"
+        }
+        }  >Preferences</h1>
         {isOpen && <Preferences />}
         <button onClick={() => setIsOpen(false)}>Close</button>
         <br />
@@ -59,7 +70,7 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
         </span>
 
       </dialog>
-    </FocusLock>
+    </FocusLock >
   );
 });
 
