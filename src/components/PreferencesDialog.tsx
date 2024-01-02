@@ -1,3 +1,4 @@
+import CommitHash from 'virtual:commit-hash';
 import React, { useEffect, useRef, useState } from "react";
 import Preferences from "./preferences";
 import "./PreferencesDialog.css";
@@ -52,6 +53,11 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
       >
         {isOpen && <Preferences />}
         <button onClick={() => setIsOpen(false)}>Close</button>
+        <br />
+        <span id="commit-hash">
+          Version: {CommitHash}
+        </span>
+
       </dialog>
     </FocusLock>
   );
