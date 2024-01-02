@@ -2,9 +2,8 @@ import { it, describe, expect } from 'vitest';
 import { parseToElements } from "./ansiParser";
 
 const testParseToElements = (input: string, expectedOutput: JSX.Element[]) => {
-  it(`should return ${expectedOutput} when passed ${input}`, () => {
-    expect(parseToElements(input, () => {})).toEqual(expectedOutput);
-    // expect(parseToElements(input, () => {})).toEqual(expectedOutput);
+  it(`should return ${JSON.stringify(expectedOutput)} when passed ${JSON.stringify(input)}`, () => {
+    expect(JSON.stringify(parseToElements(input, () => { }))).toEqual(JSON.stringify(expectedOutput));
   });
 };
 
