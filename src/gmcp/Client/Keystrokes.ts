@@ -8,23 +8,23 @@ interface KeyBinding {
     autosend: boolean;
 }
 
-class GMCPMessageClientKeystrokeBind extends GMCPMessage {
+class GMCPMessageClientKeystrokesBind extends GMCPMessage {
     public readonly key!: string;
     public readonly modifiers!: string[];
     public readonly command!: string;
     public readonly autosend!: boolean;
 }
 
-class GMCPMessageClientKeystrokeUnbind extends GMCPMessage {
+class GMCPMessageClientKeystrokesUnbind extends GMCPMessage {
     public readonly key!: string;
     public readonly modifiers!: string[];
 }
 
-class GMCPMessageClientKeystrokeBindAll extends GMCPMessage {
+class GMCPMessageClientKeystrokesBindAll extends GMCPMessage {
     public readonly bindings!: KeyBinding[];
 }
 
-export class GMCPClientKeystroke extends GMCPPackage {
+export class GMCPClientKeystrokes extends GMCPPackage {
     public packageName: string = "Client.Keystrokes";
     private bindings: KeyBinding[] = [];
 
@@ -45,6 +45,11 @@ export class GMCPClientKeystroke extends GMCPPackage {
             }
         }
     }
+
+    shutdown() {
+        document.removeEventListener('keyup', this.handleKeyup.bind(this));
+    }
+
 
     private findBinding(event: KeyboardEvent): KeyBinding | undefined {
         return this.bindings.find(binding =>
@@ -72,7 +77,7 @@ export class GMCPClientKeystroke extends GMCPPackage {
         this.client.setInput(command);
     }
 
-    public bindKey(data: GMCPMessageClientKeystrokeBind): void {
+    public bindKey(data: GMCPMessageClientKeystrokesBind): void {
         const binding: KeyBinding = {
             key: data.key,
             modifiers: data.modifiers,
@@ -82,7 +87,7 @@ export class GMCPClientKeystroke extends GMCPPackage {
         this.bindings.push(binding);
     }
 
-    public unbindKey(data: GMCPMessageClientKeystrokeUnbind): void {
+    public unbindKey(data: GMCPMessageClientKeystrokesUnbind): void {
         this.bindings = this.bindings.filter(binding =>
             binding.key !== data.key ||
             !binding.modifiers.every(modifier => data.modifiers.includes(modifier))
@@ -93,7 +98,15 @@ export class GMCPClientKeystroke extends GMCPPackage {
         this.bindings = [];
     }
 
-    public bindAll(data: GMCPMessageClientKeystrokeBindAll): void {
+    public handleBind(data: GMCPMessageClientKeystrokesBind): void {
+        this.bindKey(data);
+    }
+
+    public handleUnbind(data: GMCPMessageClientKeystrokesUnbind): void {
+        this.unbindKey(data);
+    }
+
+    public handleBind_all(data: GMCPMessageClientKeystrokesBindAll): void {
         this.bindings = data.bindings;
     }
 
