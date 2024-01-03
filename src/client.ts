@@ -66,6 +66,7 @@ class MudClient extends EventEmitter {
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
     const gmcpPackage = new p(this);
     this.gmcpHandlers[gmcpPackage.packageName] = gmcpPackage;
+    console.log("Registered GMCP Package:", gmcpPackage.packageName);
     return gmcpPackage;
   }
 
@@ -241,7 +242,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
       console.log("Calling handler:", messageHandler);
       messageHandler.call(handler, JSON.parse(gmcpMessage));
     } else {
-      console.log("No handler for GMCP package:", packageName);
+      console.log("No handler on package:", packageName, messageType);
     }
   }
 

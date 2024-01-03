@@ -37,7 +37,7 @@ function App() {
   const outRef = React.useRef<OutputWindow | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
 
-  const clientInitialized = useRef(false); // <-- new line
+  const clientInitialized = useRef(false);
 
   const saveLog = () => {
     if (outRef.current) {
@@ -60,11 +60,11 @@ function App() {
     newClient.registerGMCPPackage(GMCPCore);
     newClient.registerGMCPPackage(GMCPClientMedia);
     newClient.registerGMCPPackage(GMCPClientSpeech);
+    newClient.registerGMCPPackage(GMCPClientKeystrokes);
     newClient.registerGMCPPackage(GMCPCoreSupports);
     newClient.registerGMCPPackage(GMCPCommChannel);
     newClient.registerGMCPPackage(GMCPCommLiveKit);
     newClient.registerGMCPPackage(GMCPAutoLogin);
-    newClient.registerGMCPPackage(GMCPClientKeystrokes);
     newClient.registerMcpPackage(McpAwnsStatus);
     newClient.registerMcpPackage(McpSimpleEdit);
     newClient.registerMcpPackage(McpVmooUserlist);
