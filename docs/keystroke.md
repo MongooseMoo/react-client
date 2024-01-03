@@ -1,24 +1,24 @@
 ### GMCP Package: `Client.Keystrokes` Specification
 
 **Overview:**
-`Client.Keystroke` empowers MUD worlds to enhance user interaction through customizable keystroke bindings. This package allows for dynamic command execution, providing an efficient and responsive gaming experience.
+`Client.Keystrokes` provides an advanced mechanism for MUD worlds to facilitate user interaction via customizable keystroke bindings. This package enables dynamic execution of commands, enhancing efficiency and responsiveness in gameplay.
 
 #### Commands:
 
-1. **`Client.Keystroke.Bind`**
+1. **`Client.Keystrokes.Bind`**
    - **Format**: `{"key": "<key>", "modifiers": ["<modifier1>", "<modifier2>", ...], "command": "<command>", "autosend": <boolean>}`
-   - `autosend`: If `true`, the command is sent immediately on keyup; if `false`, the command is placed in the input field for user review or modification.
+   - `autosend`: Determines if the command is sent immediately on keyup (`true`) or placed in the input field for user review/modification (`false`).
 
-2. **`Client.Keystroke.Unbind`**
+2. **`Client.Keystrokes.Unbind`**
    - **Format**: `{"key": "<key>", "modifiers": ["<modifier1>", "<modifier2>", ...]}`
 
-3. **`Client.Keystroke.UnbindAll`**
+3. **`Client.Keystrokes.UnbindAll`**
 
-4. **`Client.Keystroke.BindAll`**
+4. **`Client.Keystrokes.BindAll`**
    - **Format**: `{"bindings": [{"key": "<key>", "modifiers": ["<modifier1>", ...], "command": "<command>", "autosend": <boolean>}, ...]}`
 
-5. **`Client.Keystroke.ListBindings`**
-   - **Response Format**: JSON array of current bindings.
+5. **`Client.Keystrokes.ListBindings`**
+   - When invoked, the client should respond by sending `Client.Keystrokes.bindings_list` containing a JSON array of the current bindings.
 
 #### Modifiers:
 1. `shift`
@@ -27,12 +27,12 @@
 4. `meta`
 
 #### Placeholders in Commands:
-- `%1`, `%2`, ... `%n`: Correspond to the first, second, ... nth word in the command input.
-- `%*`: Represents the entire command input.
+- `%1`, `%2`, ... `%n`: Substitute for the first, second, ... nth word in the command input.
+- `%*`: Substitutes for the entire command input.
 
-#### Key Event:
-- The package uses the `Keyup` event for triggering commands to ensure a single execution per key press.
+#### Key Event Handling:
+- Commands are triggered using the `Keyup` event to ensure a single execution per keystroke.
 
-#### Command Execution:
-- Direct Execution (`autosend: true`): The command is sent immediately upon keyup.
-- Input Field Placement (`autosend: false`): The command is placed into the input field, allowing user review or modification.
+#### Command Execution Modes:
+- Direct Execution (`autosend: true`): Commands are sent immediately upon keyup.
+- Input Field Placement (`autosend: false`): Commands are placed into the input field, allowing the user to review or modify them before sending.
