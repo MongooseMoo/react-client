@@ -27,10 +27,12 @@ class GMCPMessageClientKeystrokesBindAll extends GMCPMessage {
 export class GMCPClientKeystrokes extends GMCPPackage {
     public packageName: string = "Client.Keystrokes";
     private bindings: KeyBinding[] = [];
+    private boundKeyUpHandler: (event: KeyboardEvent) => void;
 
     constructor(client: MudClient) {
         super(client);
-        document.addEventListener('keyup', this.handleKeyup.bind(this));
+        this.boundKeyUpHandler = this.handleKeyup.bind(this);
+        document.addEventListener('keyup', this.boundKeyUpHandler);
     }
 
     private handleKeyup(event: KeyboardEvent): void {
@@ -39,7 +41,7 @@ export class GMCPClientKeystrokes extends GMCPPackage {
             const commandInput = this.client.getInput();
             const command = this.parseCommand(binding.command, commandInput);
             if (binding.autosend) {
-                this.sendCommand(command);
+                this.client.sendCommand(command);
             } else {
                 this.placeInInputField(command);
             }
@@ -47,14 +49,13 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     }
 
     shutdown() {
-        document.removeEventListener('keyup', this.handleKeyup.bind(this));
+        document.removeEventListener('keyup', this.boundKeyUpHandler);
     }
-
 
     private findBinding(event: KeyboardEvent): KeyBinding | undefined {
         return this.bindings.find(binding =>
             binding.key === event.key &&
-            binding.modifiers.every(modifier => (event as any)[`${modifier}Key`])
+            binding.modifiers.every(modifier => event.getModifierState(modifier))
         );
     }
 
@@ -67,10 +68,6 @@ export class GMCPClientKeystrokes extends GMCPPackage {
             const index = parseInt(number, 10) - 1;
             return index >= 0 && index < inputWords.length ? inputWords[index] : match;
         });
-    }
-
-    private sendCommand(command: string): void {
-        this.sendData("ExecuteCommand", { command });
     }
 
     private placeInInputField(command: string): void {
@@ -89,8 +86,9 @@ export class GMCPClientKeystrokes extends GMCPPackage {
 
     public unbindKey(data: GMCPMessageClientKeystrokesUnbind): void {
         this.bindings = this.bindings.filter(binding =>
-            binding.key !== data.key ||
-            !binding.modifiers.every(modifier => data.modifiers.includes(modifier))
+            !(binding.key === data.key &&
+                binding.modifiers.length === data.modifiers.length &&
+                binding.modifiers.every(modifier => data.modifiers.includes(modifier)))
         );
     }
 
@@ -107,10 +105,10 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     }
 
     public handleBind_all(data: GMCPMessageClientKeystrokesBindAll): void {
-        this.bindings = data.bindings;
+        this.bindings = data.bindings.map(binding => ({ ...binding }));
     }
 
     public listBindings(): KeyBinding[] {
-        return this.bindings;
+        return [...this.bindings];
     }
 }
