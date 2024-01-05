@@ -11,6 +11,8 @@ With support for a variety of MUD protocols, including GMCP, MCMP, and MCP, the 
 * Vivid ANSI color for a visually engaging experience
 * MCMP with 3D audio support for immersive gameplay
 * Desktop notifications for important messages
+* Optional TTS support with configurable voice
+* Automatic login support
 * Intuitive and lightweight interface
 * Save session logs for later review or analysis
 * Designed for an unparalleled and enjoyable gaming experience
