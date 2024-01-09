@@ -90,8 +90,18 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
 
+    // on focus, focus the input
+    const handleFocus = () => {
+      const input = document.getElementById("command-input");
+      if (input) {
+        input.focus();
+      }
+    };
+
+    document.addEventListener("focus", handleFocus);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("focus", handleFocus);
     };
   }, [isMobile]);
   useEffect(() => {
