@@ -51,12 +51,30 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     shutdown() {
         document.removeEventListener('keyup', this.boundKeyUpHandler);
     }
-
     private findBinding(event: KeyboardEvent): KeyBinding | undefined {
-        return this.bindings.find(binding =>
-            binding.key === event.key &&
-            binding.modifiers.every(modifier => event.getModifierState(modifier))
-        );
+        try {
+            return this.bindings.find(binding => {
+                // Case-insensitive comparison for the key
+                if (binding.key.toLowerCase() !== event.key.toLowerCase()) {
+                    return false;
+                }
+
+                // Flexible modifier checking
+                const eventModifiers = new Set([
+                    event.altKey && "Alt",
+                    event.ctrlKey && "Control",
+                    event.shiftKey && "Shift",
+                    event.metaKey && "Meta"
+                ].filter(Boolean));
+
+                return binding.modifiers.every(modifier =>
+                    eventModifiers.has(modifier)
+                );
+            });
+        } catch (error) {
+            console.error("Error in finding key binding: ", error);
+            return undefined;
+        }
     }
 
     private parseCommand(commandTemplate: string, commandInput: string): string {
