@@ -51,6 +51,7 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     shutdown() {
         document.removeEventListener('keyup', this.boundKeyUpHandler);
     }
+
     private findBinding(event: KeyboardEvent): KeyBinding | undefined {
         try {
             return this.bindings.find(binding => {
@@ -67,7 +68,7 @@ export class GMCPClientKeystrokes extends GMCPPackage {
                     event.metaKey && "Meta"
                 ].filter(Boolean));
 
-                return binding.modifiers.every(modifier =>
+                return binding.modifiers && binding.modifiers.every(modifier =>
                     eventModifiers.has(modifier)
                 );
             });
