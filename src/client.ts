@@ -138,7 +138,7 @@ class MudClient extends EventEmitter {
     this.ws.close();
   }
 
-  public sendCommand(command: string) {
+  sendCommand = (command: string) => {
     const localEchoEnabled = preferencesStore.getState().general.localEcho;
     if (localEchoEnabled) {
       this.emit("command", command);
