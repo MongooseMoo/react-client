@@ -6,9 +6,10 @@ type SendFunction = (text: string) => void;
 
 type Props = {
   onSend: SendFunction;
+  inputRef: React.RefObject<HTMLTextAreaElement>;
 };
 
-const CommandInput = ({ onSend }: Props) => {
+const CommandInput = ({ onSend, inputRef }: Props) => {
   const [input, setInput] = useState("");
   const commandHistoryRef = useRef(new CommandHistory());
 

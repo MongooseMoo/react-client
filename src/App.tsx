@@ -35,6 +35,7 @@ function App() {
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [players, setPlayers] = useState<UserlistPlayer[]>([]);
   const outRef = React.useRef<OutputWindow | null>(null);
+  const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
 
   const clientInitialized = useRef(false);
@@ -92,10 +93,7 @@ function App() {
 
     // on focus, focus the input
     const handleFocus = () => {
-      const input = document.getElementById("command-input");
-      if (input) {
-        input.focus();
-      }
+      inRef.current?.focus();
     };
 
     document.addEventListener("focus", handleFocus);
@@ -148,7 +146,7 @@ function App() {
           {showUsers && <Userlist users={players} />}
           <AudioChat client={client} />
         </div>
-        <CommandInput onSend={(text: string) => client.sendCommand(text)} />
+        <CommandInput onSend={client.sendCommand} inputRef={inRef} />
         <Statusbar client={client} />
         <PreferencesDialog ref={prefsDialogRef} />
       </div>
