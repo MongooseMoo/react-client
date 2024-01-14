@@ -15,6 +15,7 @@ interface State {
 class Output extends React.Component<Props, State> {
   outputRef: React.RefObject<HTMLDivElement> = React.createRef();
   static MAX_OUTPUT_LENGTH = 5000; // Maximum number of messages to display in the output
+  static LOCAL_STORAGE_KEY = 'outputLog'; // Key for saving output in LocalStorage
 
   state = {
     output: [],
@@ -23,6 +24,7 @@ class Output extends React.Component<Props, State> {
 
   constructor(props: Props) {
     super(props);
+    this.loadOutput(); // Load saved output from LocalStorage
     this.props.client.on("message", this.handleMessage);
     // connect
     this.props.client.on("connect", this.handleConnected);
@@ -34,6 +36,30 @@ class Output extends React.Component<Props, State> {
     this.props.client.on("userlist", this.handleUserList);
   }
 
+  componentDidUpdate() {
+    this.scrollToBottom();
+    this.saveOutput(); // Save output to LocalStorage whenever it updates
+  }
+
+  componentWillUnmount() {
+    this.props.client.removeListener("message", this.handleMessage);
+  }
+
+  saveOutput = () => {
+    const outputHtml = this.state.output.map(element => ReactDOMServer.renderToStaticMarkup(element));
+    localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify(outputHtml));
+  };
+
+  loadOutput = () => {
+    const savedOutput = localStorage.getItem(Output.LOCAL_STORAGE_KEY);
+    if (savedOutput) {
+      const outputElements = JSON.parse(savedOutput).map((htmlString: string) => React.createElement('div', { dangerouslySetInnerHTML: { __html: htmlString } }));
+      this.setState({ output: outputElements });
+    }
+  };
+
+  // ... rest of the existing methods ...
+}
   addCommand = (command: string) => {
     this.addToOutput([
       <span className="command" aria-live="off">
