@@ -14,6 +14,7 @@ interface State {
 
 class Output extends React.Component<Props, State> {
   outputRef: React.RefObject<HTMLDivElement> = React.createRef();
+  static MAX_OUTPUT_LENGTH = 5000; // Maximum number of messages to display in the output
 
   state = {
     output: [],
@@ -71,7 +72,10 @@ class Output extends React.Component<Props, State> {
       const newOutput = elements.map((element, index) => (
         <div key={key + index}>{element}</div>
       ));
-      return { output: [...state.output, ...newOutput] };
+      // Enforce the maximum output length
+      const combinedOutput = [...state.output, ...newOutput];
+      const trimmedOutput = combinedOutput.slice(-Output.MAX_OUTPUT_LENGTH);
+      return { output: trimmedOutput };
     });
   }
 
