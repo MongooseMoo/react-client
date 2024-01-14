@@ -27,6 +27,7 @@ import PreferencesDialog, {
 import Toolbar from "./components/toolbar";
 import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
+import RoomEventTable from "./components/room";
 import AudioChat from "./components/audioChat";
 import { ErrorBoundary } from "@sentry/react";
 
@@ -147,7 +148,8 @@ function App() {
           <AudioChat client={client} />
         </div>
         <CommandInput onSend={client.sendCommand} inputRef={inRef} />
-        <Statusbar client={client} />
+         <RoomEventTable client={client} />
+	<Statusbar client={client} />
         <PreferencesDialog ref={prefsDialogRef} />
       </div>
     </ErrorBoundary>
