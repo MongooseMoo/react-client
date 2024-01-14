@@ -2,6 +2,7 @@ import "./output.css";
 import React from 'react';
 import { parseToElements } from "../ansiParser";
 import MudClient from "../client";
+import ReactDOMServer from "react-dom/server";
 
 interface Props {
   client: MudClient;
@@ -36,15 +37,6 @@ class Output extends React.Component<Props, State> {
     this.props.client.on("userlist", this.handleUserList);
   }
 
-  componentDidUpdate() {
-    this.scrollToBottom();
-    this.saveOutput(); // Save output to LocalStorage whenever it updates
-  }
-
-  componentWillUnmount() {
-    this.props.client.removeListener("message", this.handleMessage);
-  }
-
   saveOutput = () => {
     const outputHtml = this.state.output.map(element => ReactDOMServer.renderToStaticMarkup(element));
     localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify(outputHtml));
@@ -58,8 +50,6 @@ class Output extends React.Component<Props, State> {
     }
   };
 
-  // ... rest of the existing methods ...
-}
   addCommand = (command: string) => {
     this.addToOutput([
       <span className="command" aria-live="off">
@@ -85,6 +75,7 @@ class Output extends React.Component<Props, State> {
 
   componentDidUpdate() {
     this.scrollToBottom();
+    this.saveOutput(); // Save output to LocalStorage whenever it updates
   }
 
   componentWillUnmount() {
