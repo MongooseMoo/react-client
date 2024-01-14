@@ -10,6 +10,7 @@ interface Props {
 interface State {
   output: JSX.Element[];
   sidebarVisible: boolean;
+roomCardVisible: boolean;
 }
 
 class Output extends React.Component<Props, State> {
@@ -18,6 +19,7 @@ class Output extends React.Component<Props, State> {
   state = {
     output: [],
     sidebarVisible: false,
+  roomCardVisible: false,
   };
 
   constructor(props: Props) {
@@ -31,6 +33,7 @@ class Output extends React.Component<Props, State> {
     this.props.client.on("error", this.addError);
     this.props.client.on("command", this.addCommand);
     this.props.client.on("userlist", this.handleUserList);
+this.props.client.on("roomCard",this.handleRoomCard);
   }
 
   addCommand = (command: string) => {
@@ -55,6 +58,8 @@ class Output extends React.Component<Props, State> {
   handleUserList = (players: any) =>
     this.setState({ sidebarVisible: !!players })
 
+handleRoomCard = (room: any) =>
+this.setState({ roomCardVisible: !!room })
 
   componentDidUpdate() {
     this.scrollToBottom();
