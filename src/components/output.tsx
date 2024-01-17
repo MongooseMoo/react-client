@@ -83,6 +83,9 @@ class Output extends React.Component<Props, State> {
   };
 
   handleMessage = (message: string) => {
+    if (!message) {
+      return;
+    }
     const elements = parseToElements(message, this.handleExitClick);
     this.addToOutput(elements);
   };
