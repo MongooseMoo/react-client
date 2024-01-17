@@ -38,6 +38,7 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     private handleKeyup(event: KeyboardEvent): void {
         const binding = this.findBinding(event);
         if (binding) {
+            event.preventDefault();
             const commandInput = this.client.getInput();
             const command = this.parseCommand(binding.command, commandInput);
             if (binding.autosend) {
