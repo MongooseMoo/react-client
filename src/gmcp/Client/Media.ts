@@ -71,14 +71,21 @@ export class GMCPClientMedia extends GMCPPackage {
         let sound = this.sounds[key] as ExtendedSound;
         if (!sound) {
             let sound: ExtendedSound = await this.client.cacophony.createSound(url);
-
             sound.key = key;
             this.sounds[key] = sound;
         }
     }
 
-    async handlePlay(data: GMCPMessageClientMediaPlay) {
+    mediaUrl(data: GMCPMessageClientMediaPlay): string {
         let mediaUrl = (data.url || this.defaultUrl) + data.name;
+        if (data.type?.toLowerCase() === "music") {
+            mediaUrl = CORS_PROXY + encodeURIComponent(mediaUrl);
+        }
+        return mediaUrl;
+    }
+
+    async handlePlay(data: GMCPMessageClientMediaPlay) {
+        let mediaUrl = this.mediaUrl(data);
         data.key = data.key || mediaUrl;
         let sound = this.sounds[data.key] as ExtendedSound;
 
@@ -86,7 +93,6 @@ export class GMCPClientMedia extends GMCPPackage {
         if (!sound || sound.url !== mediaUrl) {
             // Create a new sound object
             if (data.type === "music") {
-                mediaUrl = CORS_PROXY + encodeURIComponent(mediaUrl);
                 sound = await this.client.cacophony.createSound(mediaUrl, SoundType.HTML);
             } else {
                 sound = await this.client.cacophony.createSound(mediaUrl);
@@ -223,3 +229,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
 }
 
+
+function soundKey(data: GMCPMessageClientMediaPlay | GMCPMessageClientMediaLoad): string {
+
+}
