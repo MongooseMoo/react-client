@@ -33,3 +33,22 @@ a.exit {
         padding: 10px;
     }
 }
+
+.new-lines-notification {
+    position: absolute;
+    top: 40px;
+    right: 20px;
+    background-color: #ffa500;
+    color: #000000;
+    text-align: center;
+    padding: 5px 10px;
+    font-family: Monaco, Consolas, "Liberation Mono", "Courier New", Courier, monospace;
+    font-size: 0.75em;
+    border-top: 1px solid #ee7600;
+    box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    z-index: 10;
+    transition: transform 0.3s ease-in-out;
+    transform: translateY(100%); /* Start off-screen */
+    will-change: transform; /* Optimize for animations */
+}
