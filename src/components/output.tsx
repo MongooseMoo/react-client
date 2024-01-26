@@ -75,7 +75,7 @@ class Output extends React.Component<Props, State> {
   handleUserList = (players: any) =>
     this.setState({ sidebarVisible: !!players })
 
-   getSnapshotBeforeUpdate(prevProps: Props, prevState: State) {
+  getSnapshotBeforeUpdate(prevProps: Props, prevState: State) {
     // Check if the user is scrolled to the bottom before the update
     if (this.outputRef.current) {
       const output = this.outputRef.current;
@@ -84,7 +84,7 @@ class Output extends React.Component<Props, State> {
     return null;
   }
 
-componentDidUpdate(prevProps: Props, prevState: State, wasScrolledToBottom: boolean | null) {
+  componentDidUpdate(prevProps: Props, prevState: State, wasScrolledToBottom: boolean | null) {
     // If the snapshot indicates the user was at the bottom, scroll to the bottom
     if (wasScrolledToBottom) {
       this.scrollToBottom();
@@ -122,7 +122,7 @@ componentDidUpdate(prevProps: Props, prevState: State, wasScrolledToBottom: bool
   }
 
 
-    handleScrollToBottom = () => {
+  handleScrollToBottom = () => {
     this.scrollToBottom();
     this.setState({ newLinesCount: 0 }); // Reset the counter after scrolling
   }
@@ -151,7 +151,7 @@ componentDidUpdate(prevProps: Props, prevState: State, wasScrolledToBottom: bool
       output.scrollTop = output.scrollHeight;
     }
   };
-  
+
 
   handleMessage = (message: string) => {
     if (!message) {
@@ -205,20 +205,20 @@ componentDidUpdate(prevProps: Props, prevState: State, wasScrolledToBottom: bool
     if (this.state.sidebarVisible) {
       classname += " sidebar-visible";
     }
-    
-  const newLinesText = `${this.state.newLinesCount} new ${this.state.newLinesCount === 1 ? 'message' : 'messages'}`;
+
+    const newLinesText = `${this.state.newLinesCount} new ${this.state.newLinesCount === 1 ? 'message' : 'messages'}`;
 
     return (
       <div
         ref={this.outputRef}
         className={classname}
-                onScroll={this.handleScroll}
+        onScroll={this.handleScroll}
         aria-live="polite"
         role="log"
       >
         {this.state.output}
         {this.state.newLinesCount > 0 && (
-          <div className="new-lines-notification" onClick={this.handleScrollToBottom}>
+          <div className="new-lines-notification" onClick={this.handleScrollToBottom} role="button" aria-live="off">
             {newLinesText}
           </div>
         )}
