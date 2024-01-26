@@ -13,6 +13,8 @@
     overflow: auto;
     white-space: pre-wrap;
     word-wrap: normal;
+    position:relative;
+    z-index: 1;
 }
 
 .output.sidebar-visible {
@@ -32,4 +34,23 @@ a.exit {
     #output {
         padding: 10px;
     }
+}
+
+.new-lines-notification {
+    position: sticky;
+    bottom: 0;
+    background-color: orange;
+    border: .5px solid white;
+    font-size: .75em;
+    width: 13%;
+    text-align:center;
+    color: #000000;
+    padding: 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    z-index: 3; /* Higher than .output to ensure it's on top */
+}
+
+.new-lines-notification:hover {
+background-color: pink;
 }
