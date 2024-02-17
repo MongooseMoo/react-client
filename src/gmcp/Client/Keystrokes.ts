@@ -31,8 +31,7 @@ export class GMCPClientKeystrokes extends GMCPPackage {
 
     constructor(client: MudClient) {
         super(client);
-        this.boundKeyUpHandler = this.handleKeydown.bind(this);
-        document.addEventListener('keydown', this.boundKeyUpHandler);
+        document.addEventListener('keydown', (event) => this.handleKeydown(event));
     }
 
     private handleKeydown(event: KeyboardEvent): void {
@@ -50,7 +49,7 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     }
 
     shutdown() {
-        document.removeEventListener('keydown', this.boundKeyUpHandler);
+        document.removeEventListener('keydown', (event) => this.handleKeydown(event));
     }
 
     private findBinding(event: KeyboardEvent): KeyBinding | undefined {
