@@ -117,10 +117,6 @@ export class GMCPClientMedia extends GMCPPackage {
         if (data.end) {
             setTimeout(() => {
                 delete this.sounds[sound.key!];
-                delete this.sounds[sound.key!];
-                delete this.sounds[sound.key!];
-                delete this.sounds[sound.key!];
-                delete this.sounds[sound.key!];
                 sound.stop();
             }
                 , data.end);
@@ -128,7 +124,6 @@ export class GMCPClientMedia extends GMCPPackage {
 
         // 3D functionality
         if (data.is3d) {
-            // @ts-ignore
             sound.threeDOptions = {
                 coneInnerAngle: 360,
                 coneOuterAngle: 0,
@@ -159,28 +154,34 @@ export class GMCPClientMedia extends GMCPPackage {
                 playback.fadeOut(data.fadeout);
             }
         }
-
-        this.sounds[data.key] = sound;
         sound.key = data.key;
-
+        this.sounds[sound.key] = sound;
     }
 
     handleStop(data: GMCPMessageClientMediaStop): void {
         if (data.name) {
-            this.soundsByName(data.name).forEach((sound) => sound.stop());
+            this.soundsByName(data.name).forEach((sound) => this.stopSound(sound));
         }
         if (data.type) {
-            this.soundsByType(data.type).forEach((sound) => sound.stop());
+            this.soundsByType(data.type).forEach((sound) => this.stopSound(sound));
         }
         if (data.tag) {
-            this.soundsByTag(data.tag).forEach((sound) => sound.stop());
+            this.soundsByTag(data.tag).forEach((sound) => this.stopSound(sound));
         }
         if (data.key) {
-            this.soundsByKey(data.key).forEach((sound) => sound.stop());
+            this.soundsByKey(data.key).forEach((sound) =>
+                this.stopSound(sound)
+            );
         }
         if (!data.name && !data.type && !data.tag && !data.key) {
             this.allSounds.forEach((sound) => sound.stop());
+            this.sounds = {};
         }
+    }
+
+    private stopSound(sound: ExtendedSound) {
+        delete this.sounds[sound.key!];
+        sound.stop();
     }
 
     handleListenerPosition(data: GMCPMessageClientMediaListenerPosition) {
