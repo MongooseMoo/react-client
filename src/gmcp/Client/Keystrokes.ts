@@ -31,11 +31,11 @@ export class GMCPClientKeystrokes extends GMCPPackage {
 
     constructor(client: MudClient) {
         super(client);
-        this.boundKeyUpHandler = this.handleKeyup.bind(this);
-        document.addEventListener('keyup', this.boundKeyUpHandler);
+        this.boundKeyUpHandler = this.handleKeydown.bind(this);
+        document.addEventListener('keydown', this.boundKeyUpHandler);
     }
 
-    private handleKeyup(event: KeyboardEvent): void {
+    private handleKeydown(event: KeyboardEvent): void {
         const binding = this.findBinding(event);
         if (binding) {
             event.preventDefault();
@@ -50,7 +50,7 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     }
 
     shutdown() {
-        document.removeEventListener('keyup', this.boundKeyUpHandler);
+        document.removeEventListener('keydown', this.boundKeyUpHandler);
     }
 
     private findBinding(event: KeyboardEvent): KeyBinding | undefined {
