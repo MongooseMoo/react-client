@@ -116,6 +116,11 @@ export class GMCPClientMedia extends GMCPPackage {
 
         if (data.end) {
             setTimeout(() => {
+                delete this.sounds[sound.key];
+                delete this.sounds[sound.key];
+                delete this.sounds[sound.key];
+                delete this.sounds[sound.key];
+                delete this.sounds[sound.key];
                 sound.stop();
             }
                 , data.end);
