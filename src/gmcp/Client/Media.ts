@@ -106,7 +106,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
         // Update looping if provided
         if (data.loops !== undefined) {
-            sound.loop && sound.loop(data.loops === -1 ? "infinite" : data.loops);
+            sound.loop(data.loops)
         }
 
         // Start at a specific position
@@ -116,11 +116,11 @@ export class GMCPClientMedia extends GMCPPackage {
 
         if (data.end) {
             setTimeout(() => {
-                delete this.sounds[sound.key];
-                delete this.sounds[sound.key];
-                delete this.sounds[sound.key];
-                delete this.sounds[sound.key];
-                delete this.sounds[sound.key];
+                delete this.sounds[sound.key!];
+                delete this.sounds[sound.key!];
+                delete this.sounds[sound.key!];
+                delete this.sounds[sound.key!];
+                delete this.sounds[sound.key!];
                 sound.stop();
             }
                 , data.end);
@@ -235,6 +235,3 @@ export class GMCPClientMedia extends GMCPPackage {
 }
 
 
-function soundKey(data: GMCPMessageClientMediaPlay | GMCPMessageClientMediaLoad): string {
-
-}
