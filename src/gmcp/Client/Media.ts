@@ -145,7 +145,7 @@ export class GMCPClientMedia extends GMCPPackage {
         }
 
         // Playback control
-        if (!sound.isPlaying()) {
+        if (!sound.isPlaying) {
             const playback = sound.play()[0] as Playback;
             if (data.fadein) {
                 playback.fadeIn(data.fadein);
