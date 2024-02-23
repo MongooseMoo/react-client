@@ -10,7 +10,7 @@
     "@sentry/tracing": "^7.101.1",
     "anser": "^2.1.1",
     "buffer": "^6.0.3",
-    "cacophony": "^0.6.1",
+    "cacophony": "^0.6.2",
     "eventemitter3": "^5.0.1",
     "livekit-client": "^1.15.12",
     "lru-cache": "^10.2.0",
