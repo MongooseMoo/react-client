@@ -88,14 +88,14 @@ export class GMCPClientMedia extends GMCPPackage {
         let mediaUrl = this.mediaUrl(data);
         data.key = data.key || mediaUrl;
         let sound = this.sounds[data.key] as ExtendedSound;
-
+        const panType = data.is3d ? 'HRTF' : 'stereo';
         // Sound creation or updating
         if (!sound || sound.url !== mediaUrl) {
             // Create a new sound object
             if (data.type === "music") {
-                sound = await this.client.cacophony.createSound(mediaUrl, SoundType.HTML);
+                sound = await this.client.cacophony.createSound(mediaUrl, SoundType.HTML, panType);
             } else {
-                sound = await this.client.cacophony.createSound(mediaUrl);
+                sound = await this.client.cacophony.createSound(mediaUrl, SoundType.Buffer, panType);
             }
         }
 
