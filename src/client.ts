@@ -105,7 +105,7 @@ class MudClient extends EventEmitter {
           TelnetCommand.WILL,
           TelnetOption.TERMINAL_TYPE
         );
-        this.telnet.sendTerminalType("Mongoose React Client");
+        this.telnet.sendTerminalType("Mongoose Client");
         this.telnet.sendTerminalType("ANSI");
         this.telnet.sendTerminalType("PROXY");
       }
