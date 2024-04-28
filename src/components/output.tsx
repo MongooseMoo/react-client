@@ -49,7 +49,7 @@ class Output extends React.Component<Props, State> {
     const savedOutput = localStorage.getItem(Output.LOCAL_STORAGE_KEY);
     if (savedOutput) {
       const outputElements = JSON.parse(savedOutput).map((htmlString: string) => React.createElement('div', { dangerouslySetInnerHTML: { __html: htmlString } }));
-      this.setState({ output: outputElements });
+      this.state.output = outputElements;
     }
   };
 
