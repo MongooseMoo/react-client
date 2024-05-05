@@ -18,26 +18,15 @@ class Output extends React.Component<Props, State> {
   outputRef: React.RefObject<HTMLDivElement> = React.createRef();
   static MAX_OUTPUT_LENGTH = 5000; // Maximum number of messages to display in the output
   static LOCAL_STORAGE_KEY = 'outputLog'; // Key for saving output in LocalStorage
-
-  state = {
-    output: [],
-    sidebarVisible: false,
-    newLinesCount: 0,  // Initialize newLinesCount in the state
-
-  };
+  messageKey: number = 0;
 
   constructor(props: Props) {
     super(props);
-    this.loadOutput(); // Load saved output from LocalStorage
-    this.props.client.on("message", this.handleMessage);
-    // connect
-    this.props.client.on("connect", this.handleConnected);
-    // disconnect
-    this.props.client.on("disconnect", this.handleDisconnected);
-    // error
-    this.props.client.on("error", this.addError);
-    this.props.client.on("command", this.addCommand);
-    this.props.client.on("userlist", this.handleUserList);
+    this.state = {
+      output: this.loadOutput(),
+      sidebarVisible: false,
+      newLinesCount: 0,
+    };
   }
 
   saveOutput = () => {
@@ -49,8 +38,9 @@ class Output extends React.Component<Props, State> {
     const savedOutput = localStorage.getItem(Output.LOCAL_STORAGE_KEY);
     if (savedOutput) {
       const outputElements = JSON.parse(savedOutput).map((htmlString: string) => React.createElement('div', { dangerouslySetInnerHTML: { __html: htmlString } }));
-      this.state.output = outputElements;
+      return outputElements;
     }
+    return [];
   };
 
   addCommand = (command: string) => {
@@ -121,23 +111,39 @@ class Output extends React.Component<Props, State> {
     return output.scrollHeight - output.scrollTop <= output.clientHeight + 1; // +1 for potential rounding issues
   }
 
-
   handleScrollToBottom = () => {
     this.scrollToBottom();
     this.setState({ newLinesCount: 0 }); // Reset the counter after scrolling
   }
 
+
+  componentDidMount() {
+    const { client } = this.props;
+    client.on("message", this.handleMessage);
+    client.on("connect", this.handleConnected);
+    client.on("disconnect", this.handleDisconnected);
+    client.on("error", this.addError);
+    client.on("command", this.addCommand);
+    client.on("userlist", this.handleUserList);
+  }
+
   componentWillUnmount() {
-    this.props.client.removeListener("message", this.handleMessage);
+    const { client } = this.props;
+    client.removeListener("message", this.handleMessage);
+    client.removeListener("connect", this.handleConnected);
+    client.removeListener("disconnect", this.handleDisconnected);
+    client.removeListener("error", this.addError);
+    client.removeListener("command", this.addCommand);
+    client.removeListener("userlist", this.handleUserList);
   }
 
   addToOutput(elements: React.ReactNode[]) {
     this.setState((state) => {
       // console.log("Current output length: " + state.output.length)
-      const key = state.output.length;
       const newOutput = elements.map((element, index) => (
-        <div key={key + index}>{element}</div>
+        <div key={this.messageKey + index}>{element}</div>
       ));
+      this.messageKey += elements.length;
       // Enforce the maximum output length
       const combinedOutput = [...state.output, ...newOutput];
       const trimmedOutput = combinedOutput.slice(-Output.MAX_OUTPUT_LENGTH);
