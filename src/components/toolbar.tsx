@@ -1,4 +1,3 @@
-import { Howler } from "howler";
 import React from "react";
 import {
   FaCog,
@@ -7,7 +6,10 @@ import {
   FaVolumeMute,
   FaVolumeUp,
 } from "react-icons/fa";
+import type MudClient from "../client";
+
 export interface ToolbarProps {
+  client: MudClient;
   onClearLog: () => void;
   onSaveLog: () => void;
   onToggleUsers: () => void;
@@ -15,13 +17,13 @@ export interface ToolbarProps {
 }
 
 const Toolbar = ({
+  client,
   onClearLog,
   onSaveLog,
   onToggleUsers,
   onOpenPrefs,
 }: ToolbarProps) => {
-  //@ts-ignore
-  const [muted, setMuted] = React.useState(Howler._muted);
+  const [muted, setMuted] = React.useState(client.cacophony.muted);
 
   return (
     <div className="toolbar">
@@ -39,13 +41,8 @@ const Toolbar = ({
       </button>
       <button
         onClick={() => {
-          if (muted) {
-            Howler.mute(false);
-            setMuted(false);
-          } else {
-            Howler.mute(true);
-            setMuted(true);
-          }
+          setMuted(!muted);
+          client.cacophony.muted = !muted;
         }}
         accessKey="m"
       >
@@ -65,7 +62,7 @@ const Toolbar = ({
           type="range"
           min="0"
           max="100"
-          onChange={(e) => Howler.volume(Number(e.target.value) / 100)}
+          onChange={(e) => client.cacophony.setGlobalVolume(Number(e.target.value) / 100)}
         />
       </label>
     </div>

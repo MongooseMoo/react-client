@@ -6,9 +6,11 @@ import {
 } from "./telnet";
 
 import { EventEmitter } from "eventemitter3";
-import { GMCPChar, GMCPCore, GMCPCoreSupports, GMCPPackage } from "./gmcp";
+import { GMCPAutoLogin, GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports } from "./gmcp";
+import type { GMCPPackage } from "./gmcp/package";
 import {
   EditorSession,
+  MCPKeyvals,
   MCPPackage,
   McpAwnsGetSet,
   McpNegotiate,
@@ -16,11 +18,13 @@ import {
   parseMcpMessage,
   parseMcpMultiline,
 } from "./mcp";
+import stripAnsi from 'strip-ansi';
 
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
+import { Cacophony } from "cacophony";
 
 export interface WorldData {
-  liveKitToken: string;
+  liveKitTokens: string[];
   playerId: string;
   playerName: string;
   roomId: string;
@@ -46,10 +50,9 @@ class MudClient extends EventEmitter {
     playerId: "",
     playerName: "",
     roomId: "",
-    liveKitToken: "",
+    liveKitTokens: [],
   };
-  audioContext: AudioContext;
-
+  public cacophony: Cacophony;
   constructor(host: string, port: number) {
     super();
     this.host = host;
@@ -57,12 +60,13 @@ class MudClient extends EventEmitter {
     this.mcp_negotiate = this.registerMcpPackage(McpNegotiate);
     this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
-    this.audioContext = new AudioContext();
+    this.cacophony = new Cacophony();
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
     const gmcpPackage = new p(this);
     this.gmcpHandlers[gmcpPackage.packageName] = gmcpPackage;
+    console.log("Registered GMCP Package:", gmcpPackage.packageName);
     return gmcpPackage;
   }
 
@@ -91,6 +95,7 @@ class MudClient extends EventEmitter {
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
         (this.gmcpHandlers["Core"] as GMCPCore).sendHello();
         (this.gmcpHandlers["Core.Supports"] as GMCPCoreSupports).sendSet();
+        (this.gmcpHandlers["Auth.Autologin"] as GMCPAutoLogin).sendLogin();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -100,7 +105,7 @@ class MudClient extends EventEmitter {
           TelnetCommand.WILL,
           TelnetOption.TERMINAL_TYPE
         );
-        this.telnet.sendTerminalType("Mongoose React Client");
+        this.telnet.sendTerminalType("Mongoose Client");
         this.telnet.sendTerminalType("ANSI");
         this.telnet.sendTerminalType("PROXY");
       }
@@ -108,7 +113,11 @@ class MudClient extends EventEmitter {
 
     this.telnet.on("gmcp", (packageName, data) => {
       console.log("GMCP Package:", packageName, data);
-      this.handleGmcpData(packageName, data);
+      try {
+        this.handleGmcpData(packageName, data);
+      } catch (e) {
+        console.error("Calling GMCP:", e);
+      }
     });
 
     this.ws.onclose = () => {
@@ -126,10 +135,6 @@ class MudClient extends EventEmitter {
   }
 
   public send(data: string) {
-    const localEchoEnabled = preferencesStore.getState().general.localEcho;
-    if (localEchoEnabled) {
-      this.emit("command", data);
-    }
     this.ws.send(data);
   }
 
@@ -137,7 +142,11 @@ class MudClient extends EventEmitter {
     this.ws.close();
   }
 
-  public sendCommand(command: string) {
+  sendCommand = (command: string) => {
+    const localEchoEnabled = preferencesStore.getState().general.localEcho;
+    if (localEchoEnabled) {
+      this.emit("command", command);
+    }
     this.send(command + "\r\n");
     console.log("> " + command);
   }
@@ -237,7 +246,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
       console.log("Calling handler:", messageHandler);
       messageHandler.call(handler, JSON.parse(gmcpMessage));
     } else {
-      console.log("No handler for GMCP package:", packageName);
+      console.log("No handler on package:", packageName, messageType);
     }
   }
 
@@ -248,7 +257,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
     if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
       this.speak(dataString);
-    } 
+    }
     this.emit("message", dataString);
   }
 
@@ -265,15 +274,16 @@ An MCP message consists of three parts: the name of the message, the authenticat
       }
       data = str;
     }
-    this.sendCommand(`#$#${command} ${this.mcpAuthKey} ${data}`);
+    const toSend = `#$#${command} ${this.mcpAuthKey} ${data}\r\n`;
+    this.send(toSend);
   }
 
-  sendMcpML(MLTag: string, key: string, val: string) {
-    this.sendCommand(`#$#* ${MLTag} ${key}: ${val}`);
+  sendMcpMLLine(MLTag: string, key: string, val: string) {
+    this.send(`#$#* ${MLTag} ${key}: ${val}\r\n`);
   }
 
   closeMcpML(MLTag: string) {
-    this.sendCommand(`#$#: ${MLTag}`);
+    this.send(`#$#: ${MLTag}\r\n`);
   }
 
   openEditorWindow(editorSession: EditorSession) {
@@ -301,19 +311,25 @@ An MCP message consists of three parts: the name of the message, the authenticat
         channel.onmessage = null;
       }
     };
+    editorWindow && editorWindow.focus();
   }
 
   saveEditorWindow(editorSession: EditorSession) {
-    const MLTag = generateTag();
-    const keyvals: { [key: string]: string } = {};
-    keyvals["reference"] = editorSession.reference;
-    keyvals["type"] = editorSession.type;
+    const keyvals: MCPKeyvals = {
+      reference: editorSession.reference,
+      type: editorSession.type,
+    }
     keyvals["content*"] = "";
+    this.sendMCPMultiline("dns-org-mud-moo-simpleedit-set", keyvals, editorSession.contents);
+  }
+
+  sendMCPMultiline(mcpMessage: string, keyvals: MCPKeyvals, lines: string[]) {
+    const MLTag = generateTag();
     keyvals["_data-tag"] = MLTag;
 
-    this.sendMcp("dns-org-mud-moo-simpleedit-set", keyvals);
-    for (const line of editorSession.contents) {
-      this.sendMcpML(MLTag, "content", line);
+    this.sendMcp(mcpMessage, keyvals);
+    for (const line of lines) {
+      this.sendMcpMLLine(MLTag, "content", line);
     }
     this.closeMcpML(MLTag);
   }
@@ -355,9 +371,9 @@ An MCP message consists of three parts: the name of the message, the authenticat
       console.log("This browser does not support speech synthesis");
       return;
     }
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(stripAnsi(text));
     utterance.lang = "en-US";
-    const {rate, pitch, voice, volume } = preferencesStore.getState().speech;
+    const { rate, pitch, voice, volume } = preferencesStore.getState().speech;
     utterance.rate = rate;
     utterance.pitch = pitch;
     utterance.volume = volume;
@@ -372,7 +388,23 @@ An MCP message consists of three parts: the name of the message, the authenticat
   cancelSpeech() {
     speechSynthesis.cancel();
   }
-}
 
+  stopAllSounds() {
+    const gmcpClientMedia = this.gmcpHandlers["Client.Media"] as GMCPClientMedia;
+    gmcpClientMedia.stopAllSounds();
+  }
+
+  getInput(): string {
+    // get what the user has typed so far
+    return document.getElementById("command-input")?.textContent || "";
+  }
+
+  setInput(text: string) {
+    // place text in the input field
+    const input = document.getElementById("command-input");
+    if (!input) return;
+    input.textContent = text;
+  }
+}
 
 export default MudClient;
