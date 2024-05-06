@@ -28,6 +28,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       const nextCommand = commandHistory.navigateDown(input);
+      if (nextCommand === '' && input !== '') return;
       setInput(nextCommand);
     }
   };
