@@ -1,9 +1,8 @@
 import "./output.css";
-// Output View for MUD Client
-import Anser, { AnserJsonEntry } from "anser";
-import * as React from "react";
-
+import React from 'react';
+import { parseToElements } from "../ansiParser";
 import MudClient from "../client";
+import ReactDOMServer from "react-dom/server";
 
 interface Props {
   client: MudClient;
@@ -11,62 +10,138 @@ interface Props {
 
 interface State {
   output: JSX.Element[];
-  sidebar_visible: boolean;
+  sidebarVisible: boolean;
+  newLinesCount: number;  // Added to track the count of new lines
 }
 
 class Output extends React.Component<Props, State> {
   outputRef: React.RefObject<HTMLDivElement> = React.createRef();
+  static MAX_OUTPUT_LENGTH = 5000; // Maximum number of messages to display in the output
+  static LOCAL_STORAGE_KEY = 'outputLog'; // Key for saving output in LocalStorage
 
   state = {
     output: [],
-    sidebar_visible: false,
+    sidebarVisible: false,
+    newLinesCount: 0,  // Initialize newLinesCount in the state
+
   };
 
   constructor(props: Props) {
     super(props);
+    this.loadOutput(); // Load saved output from LocalStorage
     this.props.client.on("message", this.handleMessage);
     // connect
-    this.props.client.on("connect", () =>
-      this.addToOutput([<h2> Connected</h2>])
-    );
+    this.props.client.on("connect", this.handleConnected);
     // disconnect
-    this.props.client.on("disconnect", () => {
-      this.addToOutput([<h2> Disconnected</h2>]);
-      this.state.sidebar_visible = false;
-    });
+    this.props.client.on("disconnect", this.handleDisconnected);
     // error
-    this.props.client.on("error", (error: Error) =>
-      this.addToOutput([<h2> Error: {error.message}</h2>])
-    );
-    // local commands
-    this.props.client.on("command", (command: string) => {
-      this.addToOutput([
-        <span className="command" aria-live="off">
-          {command}
-        </span>,
-      ]);
-    });
-    this.props.client.on("userlist", (players: any) =>
-      this.setState({ sidebar_visible: !!players })
-    );
+    this.props.client.on("error", this.addError);
+    this.props.client.on("command", this.addCommand);
+    this.props.client.on("userlist", this.handleUserList);
   }
 
-  componentDidUpdate() {
+  saveOutput = () => {
+    const outputHtml = this.state.output.map(element => ReactDOMServer.renderToStaticMarkup(element));
+    localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify(outputHtml));
+  };
+
+  loadOutput = () => {
+    const savedOutput = localStorage.getItem(Output.LOCAL_STORAGE_KEY);
+    if (savedOutput) {
+      const outputElements = JSON.parse(savedOutput).map((htmlString: string) => React.createElement('div', { dangerouslySetInnerHTML: { __html: htmlString } }));
+      this.state.output = outputElements;
+    }
+  };
+
+  addCommand = (command: string) => {
+    this.addToOutput([
+      <span className="command" aria-live="off">
+        {command}
+      </span>,
+    ]);
+  }
+
+  addError = (error: Error) =>
+    this.addToOutput([<h2> Error: {error.message}</h2>])
+
+  handleConnected = () =>
+    this.addToOutput([<h2> Connected</h2>])
+
+  handleDisconnected = () => {
+    this.addToOutput([<h2> Disconnected</h2>]);
+    this.setState({ sidebarVisible: false });
+  }
+
+  handleUserList = (players: any) =>
+    this.setState({ sidebarVisible: !!players })
+
+  getSnapshotBeforeUpdate(prevProps: Props, prevState: State) {
+    // Check if the user is scrolled to the bottom before the update
+    if (this.outputRef.current) {
+      const output = this.outputRef.current;
+      return output.scrollHeight - output.scrollTop <= output.clientHeight;
+    }
+    return null;
+  }
+
+  componentDidUpdate(prevProps: Props, prevState: State, wasScrolledToBottom: boolean | null) {
+    // If the snapshot indicates the user was at the bottom, scroll to the bottom
+    if (wasScrolledToBottom) {
+      this.scrollToBottom();
+    }
+    // Check if the output length has increased
+    if (this.state.output.length > prevState.output.length) {
+      // If the user hasn't scrolled to the bottom, increase the newLinesCount
+      if (!this.isScrolledToBottom()) {
+        this.setState({
+          newLinesCount: this.state.newLinesCount + (this.state.output.length - prevState.output.length),
+        });
+      } else {
+        // Reset newLinesCount if already at the bottom
+        this.setState({ newLinesCount: 0 });
+      }
+    }
+
+    this.saveOutput();  // Save output to LocalStorage whenever it updates
+  }
+
+
+  handleScroll = () => {
+    if (this.isScrolledToBottom()) {
+      this.setState({ newLinesCount: 0 });
+    }
+  };
+
+
+  isScrolledToBottom = () => {
+    const output = this.outputRef.current;
+    if (!output) return false;
+
+    // Check if the scroll is at the bottom
+    return output.scrollHeight - output.scrollTop <= output.clientHeight + 1; // +1 for potential rounding issues
+  }
+
+
+  handleScrollToBottom = () => {
     this.scrollToBottom();
+    this.setState({ newLinesCount: 0 }); // Reset the counter after scrolling
   }
 
   componentWillUnmount() {
     this.props.client.removeListener("message", this.handleMessage);
   }
 
-  addToOutput(elements: any[]) {
+  addToOutput(elements: React.ReactNode[]) {
     this.setState((state) => {
       // console.log("Current output length: " + state.output.length)
       const key = state.output.length;
       const newOutput = elements.map((element, index) => (
         <div key={key + index}>{element}</div>
       ));
-      return { output: [...state.output, ...newOutput] };
+      // Enforce the maximum output length
+      const combinedOutput = [...state.output, ...newOutput];
+      const trimmedOutput = combinedOutput.slice(-Output.MAX_OUTPUT_LENGTH);
+      return { output: trimmedOutput };
     });
   }
 
@@ -77,7 +152,11 @@ class Output extends React.Component<Props, State> {
     }
   };
 
+
   handleMessage = (message: string) => {
+    if (!message) {
+      return;
+    }
     const elements = parseToElements(message, this.handleExitClick);
     this.addToOutput(elements);
   };
@@ -123,155 +202,29 @@ class Output extends React.Component<Props, State> {
 
   render() {
     var classname = "output";
-    if (this.state.sidebar_visible) {
+    if (this.state.sidebarVisible) {
       classname += " sidebar-visible";
     }
+
+    const newLinesText = `${this.state.newLinesCount} new ${this.state.newLinesCount === 1 ? 'message' : 'messages'}`;
+
     return (
       <div
         ref={this.outputRef}
         className={classname}
+        onScroll={this.handleScroll}
         aria-live="polite"
         role="log"
       >
         {this.state.output}
+        {this.state.newLinesCount > 0 && (
+          <div className="new-lines-notification" onClick={this.handleScrollToBottom} role="button" aria-live="off">
+            {newLinesText}
+          </div>
+        )}
       </div>
     );
   }
 }
 
 export default Output;
-
-export function parseToElements(
-  text: string,
-  onExitClick: (exit: string) => void
-): React.ReactNode[] {
-  let elements: React.ReactNode[] = [];
-  // handle multiline strings by splitting them and adding the appropriate <br/>
-  for (const line of text.split("\r\n")) {
-    const parsed = Anser.ansiToJson(line, { json: true, remove_empty: false });
-    let children: any[] = [];
-    for (const bundle of parsed) {
-      const newElements = convertBundleIntoReact(bundle, onExitClick);
-      children = [...children, ...newElements];
-    }
-    elements = [...elements, <span key={elements.length}>{children}</span>];
-  }
-  return elements;
-}
-
-const URL_REGEX =
-  /(\s|^)((\w+):\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
-const EMAIL_REGEX =
-  /(?<slorp1>\s|^)(?<name>[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+[a-zA-Z])(?<slorp2>\s|$|\.)/g;
-const exitRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
-
-function convertBundleIntoReact(
-  bundle: AnserJsonEntry,
-  onExitClick: (exit: string) => void
-): React.ReactNode[] {
-  const style = createStyle(bundle);
-  const content: React.ReactNode[] = [];
-  let index = 0;
-
-  function processRegex(
-    regex: RegExp,
-    process: (match: RegExpExecArray) => React.ReactNode
-  ): void {
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(bundle.content)) !== null) {
-      const startIndex = match.index;
-      if (startIndex > index) {
-        content.push(bundle.content.substring(index, startIndex));
-      }
-      content.push(process(match));
-      index = regex.lastIndex;
-    }
-  }
-
-  function processUrlMatch(match: RegExpExecArray): React.ReactNode {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [, pre, url] = match;
-    const href = url;
-    return (
-      <a href={href} target="_blank" rel="noreferrer">
-        {url}
-      </a>
-    );
-  }
-
-  function processEmailMatch(match: RegExpExecArray): React.ReactNode {
-    const email = match.groups!["name"];
-    const href = `mailto:${email}`;
-    return (
-      <>
-        {match.groups!["slorp1"]}
-        <a href={href} target="_blank" rel="noreferrer">
-          {email}
-        </a>
-        {match.groups!["slorp2"]}
-      </>
-    );
-  }
-
-  function processExitMatch(match: RegExpExecArray): React.ReactNode {
-    const [, exitType, exitName] = match;
-    return (
-      // eslint-disable-next-line jsx-a11y/anchor-is-valid
-      <a onClick={() => onExitClick(exitType)} className="exit">
-        {exitName}
-      </a>
-    );
-  }
-
-  processRegex(URL_REGEX, processUrlMatch);
-  processRegex(EMAIL_REGEX, processEmailMatch);
-  processRegex(exitRegex, processExitMatch);
-
-  if (index < bundle.content.length) {
-    content.push(bundle.content.substring(index));
-  }
-  return content.map((c) => <span style={style}>{c}</span>);
-}
-
-/**
- * Create the style attribute.
- * @name createStyle
- * @function
- * @param {AnserJsonEntry} bundle
- * @return {Object} returns the style object
- */
-function createStyle(bundle: AnserJsonEntry): React.CSSProperties {
-  const style: React.CSSProperties = {};
-  if (bundle.bg) {
-    style.backgroundColor = `rgb(${bundle.bg})`;
-  }
-  if (bundle.fg) {
-    style.color = `rgb(${bundle.fg})`;
-  }
-  switch (bundle.decoration) {
-    case "bold":
-      style.fontWeight = "bold";
-      break;
-    case "dim":
-      style.opacity = "0.5";
-      break;
-    case "italic":
-      style.fontStyle = "italic";
-      break;
-    case "hidden":
-      style.visibility = "hidden";
-      break;
-    case "strikethrough":
-      style.textDecoration = "line-through";
-      break;
-    case "underline":
-      style.textDecoration = "underline";
-      break;
-    case "blink":
-      style.textDecoration = "blink";
-      break;
-    default:
-      break;
-  }
-  return style;
-}

@@ -162,10 +162,46 @@ const SpeechTab: React.FC = () => {
   );
 };
 
+
+const EditorTab: React.FC = () => {
+  const [state, dispatch] = usePreferences();
+  const editor = state.editor;
+
+  const handleAutocompleteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    dispatch({
+      type: PrefActionType.SetEditorAutocompleteEnabled,
+      data: e.target.checked,
+    });
+  };
+
+  const handleAccessibilityModeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    dispatch({
+      type: PrefActionType.SetEditorAccessibilityMode,
+      data: e.target.checked,
+    });
+  };
+
+  return (
+    <div>
+      <label>
+        <input type="checkbox" checked={editor.autocompleteEnabled} onChange={handleAutocompleteChange} />
+        Enable Autocomplete
+      </label>
+      <br />
+      <label>
+        <input type="checkbox" checked={editor.accessibilityMode} onChange={handleAccessibilityModeChange} />
+        Enable Accessibility Mode
+      </label>
+      <br />
+    </div>
+  );
+};
+
 const Preferences: React.FC = () => {
   const tabs = [
     { label: "General", content: <GeneralTab /> },
     { label: "Speech", content: <SpeechTab /> },
+    { label: "Editor", content: <EditorTab /> }, // New Editor Tab
   ];
 
   return <Tabs tabs={tabs} />;

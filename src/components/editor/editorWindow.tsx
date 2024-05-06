@@ -1,12 +1,14 @@
-import { FaDownload, FaSave, FaUndo } from "react-icons/fa";
 import Editor from "@monaco-editor/react";
 import React, { useEffect, useMemo, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import { useLocation } from "react-router-dom";
 import { useTitle } from "react-use";
-import { EditorSession } from "../mcp";
+import { usePreferences } from "../../hooks/usePreferences";
+import { EditorSession } from "../../mcp";
+import EditorToolbar from './toolbar';
+import { EditorStatusBar } from "./statusbar";
 
-enum DocumentState {
+export enum DocumentState {
   Unchanged,
   Changed,
   Saved,
@@ -14,6 +16,7 @@ enum DocumentState {
 
 function EditorWindow() {
   const location = useLocation();
+  const editorInstance = React.useRef<any>(null);
   const [clientId, setClientId] = useState<string>("");
   const [code, setCode] = useState<string>("");
   const [originalCode, setOriginalCode] = useState<string>("");
@@ -26,6 +29,15 @@ function EditorWindow() {
     reference: "",
     type: "",
   });
+
+  const handleEditorMount = (editor: any, monaco: any) => {
+    editorInstance.current = editor;
+  };
+  const [prefState, dispatch] = usePreferences();
+  console.log(prefState);
+  const accessibilityMode = prefState.editor.accessibilityMode;
+  const autocompleteEnabled = prefState.editor.autocompleteEnabled
+
 
   useBeforeunload((event) => {
     channel.postMessage({ type: "close", id });
@@ -75,6 +87,7 @@ function EditorWindow() {
         setSession(event.data.session);
         setDocumentState(DocumentState.Unchanged);
         setClientId(event.data.clientId);
+        setTimeout(focusEditor, 100);
       } else if (event.data.type === "shutdown") {
         if (event.data.clientId !== clientId) {
           return;
@@ -94,20 +107,19 @@ function EditorWindow() {
   };
 
   // Save the code
-  const onSave = (event: React.FormEvent<HTMLButtonElement>) => {
+  const onSave = (event: any
+  ) => {
     const contents = code.split(/\r\n|\r|\n/); // Split the code into lines
     const sessionData = { ...session, contents };
-    channel.postMessage({ type: "save", session: sessionData, id, });
+    channel.postMessage({ type: "save", session: sessionData, id });
     setDocumentState(DocumentState.Saved);
+    focusEditor();
     event.preventDefault();
+
   };
 
+
   const onChanges = (value: string | undefined) => {
-    if (!isLoaded) {
-      setIsLoaded(true);
-      setDocumentState(DocumentState.Unchanged);
-      return;
-    }
     if (value === undefined) {
       return;
     }
@@ -118,6 +130,10 @@ function EditorWindow() {
       setDocumentState(DocumentState.Changed);
     } else {
       setDocumentState(DocumentState.Unchanged);
+    }
+
+    if (!isLoaded) {
+      setIsLoaded(true);
     }
   };
 
@@ -141,64 +157,32 @@ function EditorWindow() {
     link.remove();
   };
 
-
   return (
-    <>
-      <div
-        className="toolbar"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0 1rem",
-          height: "10vh",
-          backgroundColor: "#f5f5f5",
-          borderBottom: "1px solid #e8e8e8",
-        }}
-      >
-        <form onSubmit={(event) => event.preventDefault()}>
-          <button onClick={onSave} accessKey="s">
-            <FaSave />
-            Save
-          </button>
-          <button onClick={revert} accessKey="r">
-            <FaUndo />
-            Revert
-          </button>
-          <button onClick={downloadText} accessKey="d">
-            <FaDownload />
-            Download
-          </button>
-        </form>
-      </div>
+    <div id="editor">
+      <EditorToolbar
+        onSave={onSave}
+        onRevert={revert}
+        onDownload={downloadText}
+      />
       <Editor
         height="80vh"
         defaultLanguage="lambdamoo"
         value={code}
         onChange={onChanges}
-        options={{ wordWrap: "on" }}
+        options={{ wordWrap: "on", accessibilitySupport: accessibilityMode ? "on" : "off", quickSuggestions: autocompleteEnabled }}
+        onMount={handleEditorMount}
+        path={session.reference}
       />
-      <div
-        aria-live="polite"
-        className="statusbar"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "0 1rem",
-          height: "10vh",
-          backgroundColor: "#f5f5f5",
-          borderTop: "1px solid #e8e8e8",
-        }}
-      >
-        <span>{docstate}</span>
-        <span>|</span>
-        <span>{session.reference}</span>
-        <span>|</span>
-        <span>{session.type}</span>
-      </div>
-    </>
+      <EditorStatusBar docstate={docstate} session={session} />
+    </div>
   );
+
+  function focusEditor() {
+    if (editorInstance.current !== null) {
+      editorInstance.current.focus();
+    }
+  }
 }
 
 export default EditorWindow;
+
