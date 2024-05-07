@@ -7,12 +7,12 @@ export class CommandHistory {
     if (command.trim() !== "" && (this.history.length === 0 || this.history[this.history.length - 1] !== command)) {
       this.history.push(command.trim());
       this.unsentInput = "";
+      this.currentIndex = this.history.length;
     }
-    this.currentIndex = null;
   }
 
   navigateUp(currentInput: string): string {
-    if (this.currentIndex === null) {
+    if (this.currentIndex === this.history.length) {
       this.unsentInput = currentInput;
     }
 
@@ -24,12 +24,14 @@ export class CommandHistory {
     return this.currentIndex === null ? "" : this.history[this.currentIndex];
   }
   navigateDown(currentInput: string): string {
+    if (this.currentIndex === this.history.length) {
+      this.unsentInput = currentInput;
+    }
     if (this.currentIndex !== null) {
       if (this.currentIndex < this.history.length - 1) {
         this.currentIndex++;
         return this.history[this.currentIndex];
       } else {
-        this.currentIndex = null;
         return this.unsentInput;
       }
     }
