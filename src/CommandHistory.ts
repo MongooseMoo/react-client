@@ -1,45 +1,46 @@
 export class CommandHistory {
   private history: string[] = [];
-  private currentIndex: number | null = null;
+  private currentIndex: number = 0;
   private unsentInput: string = "";
 
   addCommand(command: string): void {
     if (command.trim() !== "" && (this.history.length === 0 || this.history[this.history.length - 1] !== command)) {
       this.history.push(command.trim());
-      this.unsentInput = "";
-      this.currentIndex = this.history.length;
+      this.currentIndex = this.history.length;  // Point currentIndex to just after the last command
     }
+    this.unsentInput = "";  // Clear the unsentInput whenever a command is added
   }
 
   navigateUp(currentInput: string): string {
     if (this.currentIndex === this.history.length) {
-      this.unsentInput = currentInput;
+      this.unsentInput = currentInput;  // Store current input if at the end of the history
     }
 
-    if (this.history.length > 0 && (this.currentIndex == null || this.currentIndex > 0)) {
-      this.currentIndex = this.currentIndex == null ? this.history.length - 1 : this.currentIndex - 1;
-      return this.history[this.currentIndex];
+    if (this.history.length > 0 && this.currentIndex > 0) {
+      this.currentIndex--;
     }
 
-    return this.currentIndex === null ? "" : this.history[this.currentIndex];
+    return this.history.length > 0 ? this.history[Math.max(0, this.currentIndex)] : "";
   }
+
   navigateDown(currentInput: string): string {
     if (this.currentIndex === this.history.length) {
-      this.unsentInput = currentInput;
+      this.unsentInput = currentInput;  // Save current input if at end
     }
-    if (this.currentIndex !== null) {
-      if (this.currentIndex < this.history.length - 1) {
-        this.currentIndex++;
-        return this.history[this.currentIndex];
-      } else {
-        return this.unsentInput;
-      }
+
+    if (this.currentIndex < this.history.length - 1) {
+      this.currentIndex++;
+      return this.history[this.currentIndex];
+    } else {
+      this.currentIndex = this.history.length;  // Reset to after the last item
+      return this.unsentInput;  // Return unsent input when navigating down past the end
     }
-    // Preserve unsent input if not navigating history
-    return this.unsentInput;
   }
 
   getCurrentInput(): string {
-    return this.currentIndex === null ? this.unsentInput : this.history[this.currentIndex];
+    if (this.currentIndex >= this.history.length) {
+      return this.unsentInput;  // Return unsent input if currentIndex is beyond the last history item
+    }
+    return this.history[this.currentIndex];  // Otherwise, return the current history item
   }
 }
