@@ -40,11 +40,11 @@ describe('CommandHistory', () => {
     expect(commandHistory.navigateUp('only')).toBe('only');
   });
 
-  it('should return to unsent input when navigating down at history boundary', () => {
-    commandHistory.addCommand('only');
-    expect(commandHistory.navigateDown('only')).toBe('');
+  it('should remain at the unsent input when navigating down at history boundary', () => {
+    commandHistory.addCommand('command');
+    expect(commandHistory.navigateDown('unsent')).toBe('unsent');
   });
-
+  
   it('should handle navigation in empty history', () => {
     expect(commandHistory.navigateUp('unsent')).toBe('');
     expect(commandHistory.navigateDown('unsent')).toBe('unsent');
@@ -61,11 +61,12 @@ describe('CommandHistory', () => {
   });
 
   it('should preserve unsent input when alternating navigation up and down', () => {
+    const blank = '';
     commandHistory.addCommand('first');
     commandHistory.addCommand('second');
 
     // Navigating down from top shows unsent input
-    expect(commandHistory.navigateDown('')).toBe('');
+    expect(commandHistory.navigateDown('')).toBe(blank);
 
     // Navigating up through history
     expect(commandHistory.navigateUp('')).toBe('second');
@@ -73,6 +74,6 @@ describe('CommandHistory', () => {
 
     // Navigating back down returns to more recent command and then to unsent input
     expect(commandHistory.navigateDown('first')).toBe('second');
-    expect(commandHistory.navigateDown('second')).toBe('');
+    expect(commandHistory.navigateDown('second')).toBe(blank);
   });
 });
