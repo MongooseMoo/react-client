@@ -1,3 +1,4 @@
+// @ts-expect-error This import is virtually resolved
 import CommitHash from 'virtual:commit-hash';
 import React, { useEffect, useRef, useState } from "react";
 import Preferences from "./preferences";
