@@ -6,6 +6,7 @@ import {
 } from "./telnet";
 
 import { EventEmitter } from "eventemitter3";
+import stripAnsi from 'strip-ansi';
 import { GMCPAutoLogin, GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports } from "./gmcp";
 import type { GMCPPackage } from "./gmcp/package";
 import {
@@ -18,10 +19,9 @@ import {
   parseMcpMessage,
   parseMcpMultiline,
 } from "./mcp";
-import stripAnsi from 'strip-ansi';
 
-import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 import { Cacophony } from "cacophony";
+import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 
 export interface WorldData {
   liveKitTokens: string[];
