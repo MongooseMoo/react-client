@@ -1,5 +1,6 @@
+import { announce } from "@react-aria/live-announcer";
 import "./output.css";
-import React from 'react';
+import React from "react";
 import { parseToElements } from "../ansiParser";
 import MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
@@ -11,13 +12,13 @@ interface Props {
 interface State {
   output: JSX.Element[];
   sidebarVisible: boolean;
-  newLinesCount: number;  // Added to track the count of new lines
+  newLinesCount: number; // Added to track the count of new lines
 }
 
 class Output extends React.Component<Props, State> {
   outputRef: React.RefObject<HTMLDivElement> = React.createRef();
   static MAX_OUTPUT_LENGTH = 5000; // Maximum number of messages to display in the output
-  static LOCAL_STORAGE_KEY = 'outputLog'; // Key for saving output in LocalStorage
+  static LOCAL_STORAGE_KEY = "outputLog"; // Key for saving output in LocalStorage
   messageKey: number = 0;
 
   constructor(props: Props) {
@@ -30,14 +31,20 @@ class Output extends React.Component<Props, State> {
   }
 
   saveOutput = () => {
-    const outputHtml = this.state.output.map(element => ReactDOMServer.renderToStaticMarkup(element));
+    const outputHtml = this.state.output.map((element) =>
+      ReactDOMServer.renderToStaticMarkup(element)
+    );
     localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify(outputHtml));
   };
 
   loadOutput = () => {
     const savedOutput = localStorage.getItem(Output.LOCAL_STORAGE_KEY);
     if (savedOutput) {
-      const outputElements = JSON.parse(savedOutput).map((htmlString: string) => React.createElement('div', { dangerouslySetInnerHTML: { __html: htmlString } }));
+      const outputElements = JSON.parse(savedOutput).map((htmlString: string) =>
+        React.createElement("div", {
+          dangerouslySetInnerHTML: { __html: htmlString },
+        })
+      );
       return outputElements;
     }
     return [];
@@ -49,21 +56,20 @@ class Output extends React.Component<Props, State> {
         {command}
       </span>,
     ]);
-  }
+  };
 
   addError = (error: Error) =>
-    this.addToOutput([<h2> Error: {error.message}</h2>])
+    this.addToOutput([<h2> Error: {error.message}</h2>]);
 
-  handleConnected = () =>
-    this.addToOutput([<h2> Connected</h2>])
+  handleConnected = () => this.addToOutput([<h2> Connected</h2>]);
 
   handleDisconnected = () => {
     this.addToOutput([<h2> Disconnected</h2>]);
     this.setState({ sidebarVisible: false });
-  }
+  };
 
   handleUserList = (players: any) =>
-    this.setState({ sidebarVisible: !!players })
+    this.setState({ sidebarVisible: !!players });
 
   getSnapshotBeforeUpdate(prevProps: Props, prevState: State) {
     // Check if the user is scrolled to the bottom before the update
@@ -74,7 +80,11 @@ class Output extends React.Component<Props, State> {
     return null;
   }
 
-  componentDidUpdate(prevProps: Props, prevState: State, wasScrolledToBottom: boolean | null) {
+  componentDidUpdate(
+    prevProps: Props,
+    prevState: State,
+    wasScrolledToBottom: boolean | null
+  ) {
     // If the snapshot indicates the user was at the bottom, scroll to the bottom
     if (wasScrolledToBottom) {
       this.scrollToBottom();
@@ -84,7 +94,9 @@ class Output extends React.Component<Props, State> {
       // If the user hasn't scrolled to the bottom, increase the newLinesCount
       if (!this.isScrolledToBottom()) {
         this.setState({
-          newLinesCount: this.state.newLinesCount + (this.state.output.length - prevState.output.length),
+          newLinesCount:
+            this.state.newLinesCount +
+            (this.state.output.length - prevState.output.length),
         });
       } else {
         // Reset newLinesCount if already at the bottom
@@ -92,9 +104,8 @@ class Output extends React.Component<Props, State> {
       }
     }
 
-    this.saveOutput();  // Save output to LocalStorage whenever it updates
+    this.saveOutput(); // Save output to LocalStorage whenever it updates
   }
-
 
   handleScroll = () => {
     if (this.isScrolledToBottom()) {
@@ -102,20 +113,18 @@ class Output extends React.Component<Props, State> {
     }
   };
 
-
   isScrolledToBottom = () => {
     const output = this.outputRef.current;
     if (!output) return false;
 
     // Check if the scroll is at the bottom
     return output.scrollHeight - output.scrollTop <= output.clientHeight + 1; // +1 for potential rounding issues
-  }
+  };
 
   handleScrollToBottom = () => {
     this.scrollToBottom();
     this.setState({ newLinesCount: 0 }); // Reset the counter after scrolling
-  }
-
+  };
 
   componentDidMount() {
     const { client } = this.props;
@@ -137,14 +146,27 @@ class Output extends React.Component<Props, State> {
     client.removeListener("userlist", this.handleUserList);
   }
 
+  sanitizeHtml(html: string): string {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return doc.body.textContent || "";
+  }
+
   addToOutput(elements: React.ReactNode[]) {
+    elements.forEach((element) => {
+      if (React.isValidElement(element)) {
+        const htmlString = ReactDOMServer.renderToString(element);
+        const plainText = this.sanitizeHtml(htmlString);
+        announce(plainText);
+      } else if (typeof element === "string") {
+        announce(element);
+      }
+    });
+
     this.setState((state) => {
-      // console.log("Current output length: " + state.output.length)
       const newOutput = elements.map((element, index) => (
         <div key={this.messageKey + index}>{element}</div>
       ));
       this.messageKey += elements.length;
-      // Enforce the maximum output length
       const combinedOutput = [...state.output, ...newOutput];
       const trimmedOutput = combinedOutput.slice(-Output.MAX_OUTPUT_LENGTH);
       return { output: trimmedOutput };
@@ -157,7 +179,6 @@ class Output extends React.Component<Props, State> {
       output.scrollTop = output.scrollHeight;
     }
   };
-
 
   handleMessage = (message: string) => {
     if (!message) {
@@ -212,19 +233,24 @@ class Output extends React.Component<Props, State> {
       classname += " sidebar-visible";
     }
 
-    const newLinesText = `${this.state.newLinesCount} new ${this.state.newLinesCount === 1 ? 'message' : 'messages'}`;
+    const newLinesText = `${this.state.newLinesCount} new ${
+      this.state.newLinesCount === 1 ? "message" : "messages"
+    }`;
 
     return (
       <div
         ref={this.outputRef}
         className={classname}
         onScroll={this.handleScroll}
-        aria-live="polite"
-        role="log"
       >
         {this.state.output}
         {this.state.newLinesCount > 0 && (
-          <div className="new-lines-notification" onClick={this.handleScrollToBottom} role="button" aria-live="off">
+          <div
+            className="new-lines-notification"
+            onClick={this.handleScrollToBottom}
+            role="button"
+            aria-live="off"
+          >
             {newLinesText}
           </div>
         )}
