@@ -55,7 +55,7 @@ class Output extends React.Component<Props, State> {
       <span className="command" aria-live="off">
         {command}
       </span>,
-    ]);
+    ], false);
   };
 
   addError = (error: Error) =>
@@ -151,16 +151,18 @@ class Output extends React.Component<Props, State> {
     return doc.body.textContent || "";
   }
 
-  addToOutput(elements: React.ReactNode[]) {
-    elements.forEach((element) => {
-      if (React.isValidElement(element)) {
-        const htmlString = ReactDOMServer.renderToString(element);
-        const plainText = this.sanitizeHtml(htmlString);
-        announce(plainText);
-      } else if (typeof element === "string") {
-        announce(element);
-      }
-    });
+  addToOutput(elements: React.ReactNode[], shouldAnnounce: boolean = true) {
+    if (shouldAnnounce) {
+      elements.forEach((element) => {
+        if (React.isValidElement(element)) {
+          const htmlString = ReactDOMServer.renderToString(element);
+          const plainText = this.sanitizeHtml(htmlString);
+          announce(plainText);
+        } else if (typeof element === "string") {
+          announce(element);
+        }
+      });
+    }
 
     this.setState((state) => {
       const newOutput = elements.map((element, index) => (
@@ -233,9 +235,8 @@ class Output extends React.Component<Props, State> {
       classname += " sidebar-visible";
     }
 
-    const newLinesText = `${this.state.newLinesCount} new ${
-      this.state.newLinesCount === 1 ? "message" : "messages"
-    }`;
+    const newLinesText = `${this.state.newLinesCount} new ${this.state.newLinesCount === 1 ? "message" : "messages"
+      }`;
 
     return (
       <div
