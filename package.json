@@ -8,7 +8,7 @@
     "@react-aria/live-announcer": "^3.3.4",
     "anser": "^2.1.1",
     "buffer": "^6.0.3",
-    "cacophony": "^0.8.7",
+    "cacophony": "^0.10.2",
     "eventemitter3": "^5.0.1",
     "livekit-client": "^1.15.13",
     "lru-cache": "^10.2.2",
