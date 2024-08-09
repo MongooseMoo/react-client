@@ -8,3 +8,4 @@ export { GMCPCommLiveKit } from './Comm/LiveKit';
 export { GMCPCore } from './Core';
 export { GMCPCoreSupports } from './Core';
 export { GMCPRoom } from './Room';
+export { GMCPClientHtml } from './Client/Html'
