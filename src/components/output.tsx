@@ -195,7 +195,7 @@ class Output extends React.Component<Props, State> {
 
   handleHtml = (html: string) => {
     const clean = DOMPurify.sanitize(html);
-    const e = <div dangerouslySetInnerHTML={{__html: clean}}></div>;
+    const e = <div style={{ whiteSpace: "normal" }} dangerouslySetInnerHTML={{ __html: clean }}></div>;
     this.addToOutput([e]);
   }
 
