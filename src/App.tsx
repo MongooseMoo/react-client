@@ -13,6 +13,7 @@ import {
   GMCPCommLiveKit,
   GMCPCommChannel,
   GMCPAutoLogin,
+  GMCPClientHtml,
 } from "./gmcp";
 import {
   McpAwnsPing,
@@ -66,6 +67,7 @@ function App() {
     newClient.registerGMCPPackage(GMCPCommChannel);
     newClient.registerGMCPPackage(GMCPCommLiveKit);
     newClient.registerGMCPPackage(GMCPAutoLogin);
+    newClient.registerGMCPPackage(GMCPClientHtml);
     newClient.registerMcpPackage(McpAwnsStatus);
     newClient.registerMcpPackage(McpSimpleEdit);
     newClient.registerMcpPackage(McpVmooUserlist);
