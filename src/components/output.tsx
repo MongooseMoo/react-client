@@ -4,6 +4,7 @@ import React from "react";
 import { parseToElements } from "../ansiParser";
 import MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
+import DOMPurify from 'dompurify';
 
 interface Props {
   client: MudClient;
@@ -129,6 +130,7 @@ class Output extends React.Component<Props, State> {
   componentDidMount() {
     const { client } = this.props;
     client.on("message", this.handleMessage);
+    client.on("html", this.handleHtml);
     client.on("connect", this.handleConnected);
     client.on("disconnect", this.handleDisconnected);
     client.on("error", this.addError);
@@ -139,6 +141,7 @@ class Output extends React.Component<Props, State> {
   componentWillUnmount() {
     const { client } = this.props;
     client.removeListener("message", this.handleMessage);
+    client.removeListener("html", this.handleHtml);
     client.removeListener("connect", this.handleConnected);
     client.removeListener("disconnect", this.handleDisconnected);
     client.removeListener("error", this.addError);
@@ -189,6 +192,12 @@ class Output extends React.Component<Props, State> {
     const elements = parseToElements(message, this.handleExitClick);
     this.addToOutput(elements);
   };
+
+  handleHtml = (html: string) => {
+    const clean = DOMPurify.sanitize(html);
+    const e = <div style={{ whiteSpace: "normal" }} dangerouslySetInnerHTML={{ __html: clean }}></div>;
+    this.addToOutput([e]);
+  }
 
   handleExitClick = (exit: string) => {
     this.props.client.sendCommand(exit);
