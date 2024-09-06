@@ -7,20 +7,16 @@
  * Protocol Specification:
  * 1. Server-to-Client Messages:
  *    - Client.Update.Available: Notifies the client of an available update
- *      Format: { version: string, description?: string, urgency?: 'low' | 'medium' | 'high' | 'critical' }
+ *      Format: { version: string, description?: string, urgency?: 'low' | 'medium' | 'high' | 'critical', url?: string }
  *
  * 2. Client-to-Server Messages:
  *    - Client.Update.Ready: Sent by the client to indicate it's ready to receive updates
  *      Format: { version: string }
  *
  * 3. Version Format:
- *    - Versions are specified in semantic versioning format: major.minor.patch
+ *    - Versions can be in any format, including Git hashes or semantic versioning
  *
- * 4. Version Comparison:
- *    - The client compares the available version with its current version
- *    - Updates are only processed if the available version is newer
- *
- * 5. Update Urgency:
+ * 4. Update Urgency:
  *    - The server can specify an urgency level for the update
  *    - Clients may use this information to adjust the visibility or priority of update notifications
  */
@@ -33,43 +29,21 @@ export class GMCPMessageClientUpdateAvailable extends GMCPMessage {
   public readonly version!: string;
   public readonly description?: string;
   public readonly urgency?: UpdatePriority;
+  public readonly url?: string;
 }
 
 export class GMCPClientUpdate extends GMCPPackage {
   public packageName: string = "Client.Update";
-  private currentVersion: string = "1.0.0"; // This should be updated with each release
+  private currentVersion: string = "unknown"; // This should be updated with each release or build
 
   /**
    * Handles the Client.Update.Available message from the server.
-   * Checks if the available version is newer and notifies the client.
+   * Notifies the client about the available update.
    */
   handleAvailable(data: GMCPMessageClientUpdateAvailable): void {
-    if (this.isNewerVersion(data.version)) {
+    if (this.currentVersion !== data.version) {
       this.notifyUpdateAvailable(data);
     }
-  }
-
-  /**
-   * Compares the available version with the current version.
-   * Returns true if the available version is newer.
-   */
-  private isNewerVersion(availableVersion: string): boolean {
-    const current = this.parseVersion(this.currentVersion);
-    const available = this.parseVersion(availableVersion);
-
-    for (let i = 0; i < 3; i++) {
-      if (available[i] > current[i]) return true;
-      if (available[i] < current[i]) return false;
-    }
-
-    return false;
-  }
-
-  /**
-   * Parses a version string into an array of numbers.
-   */
-  private parseVersion(version: string): number[] {
-    return version.split('.').map(Number);
   }
 
   /**
@@ -81,6 +55,7 @@ export class GMCPClientUpdate extends GMCPPackage {
       version: data.version,
       description: data.description,
       urgency: data.urgency,
+      url: data.url,
     });
   }
 
@@ -90,5 +65,13 @@ export class GMCPClientUpdate extends GMCPPackage {
    */
   sendReady(): void {
     this.sendData("Ready", { version: this.currentVersion });
+  }
+
+  /**
+   * Sets the current version of the client.
+   * This should be called during client initialization with the current version or Git hash.
+   */
+  setCurrentVersion(version: string): void {
+    this.currentVersion = version;
   }
 }

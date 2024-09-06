@@ -10,6 +10,7 @@ interface UpdateInfo {
   version: string;
   description?: string;
   urgency?: 'low' | 'medium' | 'high' | 'critical';
+  url?: string;
 }
 
 const Statusbar: React.FC<StatusbarProps> = ({ client }) => {
@@ -37,7 +38,16 @@ const Statusbar: React.FC<StatusbarProps> = ({ client }) => {
 
   const handleUpdateClick = () => {
     if (updateAvailable) {
-      client.installUpdate();
+      if (updateAvailable.url) {
+        const currentUrl = window.location.href;
+        if (currentUrl !== updateAvailable.url) {
+          window.open(updateAvailable.url, '_blank');
+        } else {
+          window.location.reload();
+        }
+      } else {
+        client.installUpdate();
+      }
     }
   };
 

@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useBeforeunload } from "react-beforeunload";
+// @ts-expect-error This import is virtually resolved
+import CommitHash from 'virtual:commit-hash';
 import "./App.css";
 import OutputWindow from "./components/output";
 import MudClient from "./client";
@@ -78,7 +80,8 @@ function App() {
     newClient.registerGMCPPackage(GMCPCommLiveKit);
     newClient.registerGMCPPackage(GMCPAutoLogin);
     newClient.registerGMCPPackage(GMCPClientHtml);
-    newClient.registerGMCPPackage(GMCPClientUpdate);
+    const clientUpdate = newClient.registerGMCPPackage(GMCPClientUpdate);
+    clientUpdate.setCurrentVersion(CommitHash);
     newClient.registerMcpPackage(McpAwnsStatus);
     newClient.registerMcpPackage(McpSimpleEdit);
     newClient.registerMcpPackage(McpVmooUserlist);
