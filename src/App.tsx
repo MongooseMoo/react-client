@@ -58,7 +58,16 @@ function App() {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   useEffect(() => {
-    if (clientInitialized.current) return; // <-- new line
+    const pendingUpdate = localStorage.getItem("pendingUpdate");
+    if (pendingUpdate === "true") {
+      // Clear the pending update flag
+      localStorage.removeItem("pendingUpdate");
+      // Perform any necessary update tasks here
+      // For example, you might want to show a message to the user
+      alert("The client has been updated to the latest version.");
+    }
+
+    if (clientInitialized.current) return;
     const newClient = new MudClient("mongoose.moo.mud.org", 8765);
     newClient.registerGMCPPackage(GMCPCore);
     newClient.registerGMCPPackage(GMCPClientMedia);
