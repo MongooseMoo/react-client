@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { PrefActionType } from "../PreferencesStore";
 import { usePreferences } from "../hooks/usePreferences";
 import { useVoices } from "../hooks/useVoices";
@@ -145,6 +145,29 @@ const VolumeSelection: React.FC = () => {
   );
 };
 
+const PreviewButton: React.FC = () => {
+  const [state] = usePreferences();
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const handlePreview = () => {
+    setIsPlaying(true);
+    const utterance = new SpeechSynthesisUtterance("This is a preview of the selected voice settings.");
+    utterance.voice = speechSynthesis.getVoices().find(voice => voice.name === state.speech.voice) || null;
+    utterance.rate = state.speech.rate;
+    utterance.pitch = state.speech.pitch;
+    utterance.volume = state.speech.volume;
+
+    utterance.onend = () => setIsPlaying(false);
+    speechSynthesis.speak(utterance);
+  };
+
+  return (
+    <button onClick={handlePreview} disabled={isPlaying}>
+      {isPlaying ? "Playing..." : "Preview Voice"}
+    </button>
+  );
+};
+
 const SpeechTab: React.FC = () => {
   return (
     <div>
@@ -158,6 +181,7 @@ const SpeechTab: React.FC = () => {
       <br />
       <VolumeSelection />
       <br />
+      <PreviewButton />
     </div>
   );
 };
