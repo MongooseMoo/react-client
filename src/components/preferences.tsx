@@ -152,14 +152,35 @@ const PreviewButton: React.FC = () => {
   const handlePreview = () => {
     setIsPlaying(true);
     const utterance = new SpeechSynthesisUtterance("This is a preview of the selected voice settings.");
-    utterance.voice = speechSynthesis.getVoices().find(voice => voice.name === state.speech.voice) || null;
+    
+    // Find the selected voice
+    const voices = speechSynthesis.getVoices();
+    const selectedVoice = voices.find(voice => voice.name === state.speech.voice);
+    utterance.voice = selectedVoice || null;
+
     utterance.rate = state.speech.rate;
     utterance.pitch = state.speech.pitch;
     utterance.volume = state.speech.volume;
 
     utterance.onend = () => setIsPlaying(false);
+    utterance.onerror = (event) => {
+      console.error('Speech synthesis error:', event);
+      setIsPlaying(false);
+    };
+
+    // Cancel any ongoing speech
+    speechSynthesis.cancel();
+
+    // Speak the new utterance
     speechSynthesis.speak(utterance);
   };
+
+  // Clean up on component unmount
+  React.useEffect(() => {
+    return () => {
+      speechSynthesis.cancel();
+    };
+  }, []);
 
   return (
     <button onClick={handlePreview} disabled={isPlaying}>
