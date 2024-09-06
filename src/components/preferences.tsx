@@ -8,19 +8,35 @@ const GeneralTab: React.FC = () => {
   const [state, dispatch] = usePreferences();
 
   return (
-    <label>
-      <input
-        type="checkbox"
-        checked={state.general.localEcho}
-        onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetGeneral,
-            data: { ...state.general, localEcho: e.target.checked },
-          })
-        }
-      />
-      Local Echo
-    </label>
+    <>
+      <label>
+        <input
+          type="checkbox"
+          checked={state.general.localEcho}
+          onChange={(e) =>
+            dispatch({
+              type: PrefActionType.SetGeneral,
+              data: { ...state.general, localEcho: e.target.checked },
+            })
+          }
+        />
+        Local Echo
+      </label>
+      <br />
+      <label>
+        <input
+          type="checkbox"
+          checked={state.general.autoUpdate}
+          onChange={(e) =>
+            dispatch({
+              type: PrefActionType.SetAutoUpdate,
+              data: e.target.checked,
+            })
+          }
+        />
+        Auto-update client
+      </label>
+    </>
   );
 };
 

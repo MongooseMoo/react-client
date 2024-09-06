@@ -1,0 +1,47 @@
+.statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 10px;
+  background-color: #f0f0f0;
+  border-top: 1px solid #ccc;
+}
+
+.update-button {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+}
+
+.update-button.low {
+  background-color: #4CAF50;
+}
+
+.update-button.medium {
+  background-color: #FFA500;
+}
+
+.update-button.high {
+  background-color: #f44336;
+}
+
+.update-button.critical {
+  background-color: #9C27B0;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}

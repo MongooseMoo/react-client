@@ -6,6 +6,7 @@ export enum AutoreadMode {
 
 export type GeneralPreferences = {
   localEcho: boolean;
+  autoUpdate: boolean;
 };
 
 export type SpeechPreferences = {
@@ -39,6 +40,7 @@ export enum PrefActionType {
   SetChannels = "SET_CHANNELS",
   SetEditorAutocompleteEnabled = "SET_EDITOR_AUTOCOMPLETE_ENABLED",
   SetEditorAccessibilityMode = "SET_EDITOR_ACCESSIBILITY_MODE",
+  SetAutoUpdate = "SET_AUTO_UPDATE",
 }
 
 export type PrefAction =
@@ -46,7 +48,8 @@ export type PrefAction =
   | { type: PrefActionType.SetSpeech; data: SpeechPreferences }
   | { type: PrefActionType.SetChannels; data: { [channelId: string]: ChannelPreferences } }
   | { type: PrefActionType.SetEditorAutocompleteEnabled; data: boolean }
-  | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean };
+  | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean }
+  | { type: PrefActionType.SetAutoUpdate; data: boolean };
 
 class PreferencesStore {
   private state: PrefState;
@@ -63,6 +66,7 @@ class PreferencesStore {
     return {
       general: {
         localEcho: false,
+        autoUpdate: true, // Default to true
       },
       speech: {
         autoreadMode: AutoreadMode.Off,
@@ -107,6 +111,8 @@ class PreferencesStore {
         return { ...state, editor: { ...state.editor, autocompleteEnabled: action.data } };
       case PrefActionType.SetEditorAccessibilityMode:
         return { ...state, editor: { ...state.editor, accessibilityMode: action.data } };
+      case PrefActionType.SetAutoUpdate:
+        return { ...state, general: { ...state.general, autoUpdate: action.data } };
       default:
         return state;
     }

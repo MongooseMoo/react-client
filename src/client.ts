@@ -343,6 +343,13 @@ An MCP message consists of three parts: the name of the message, the authenticat
     });
   }
 
+  installUpdate(): void {
+    const gmcpClientUpdate = this.gmcpHandlers["Client.Update"] as GMCPClientUpdate;
+    if (gmcpClientUpdate) {
+      gmcpClientUpdate.installUpdate();
+    }
+  }
+
   requestNotificationPermission() {
     // handle notifications
     // may not be available in all browsers
