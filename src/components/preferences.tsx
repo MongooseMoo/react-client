@@ -151,28 +151,56 @@ const PreviewButton: React.FC = () => {
 
   const handlePreview = () => {
     setIsPlaying(true);
-    const utterance = new SpeechSynthesisUtterance("This is a preview of the selected voice settings.");
-    
-    // Find the selected voice
-    const voices = speechSynthesis.getVoices();
-    const selectedVoice = voices.find(voice => voice.name === state.speech.voice);
-    utterance.voice = selectedVoice || null;
+    console.log("Preview button clicked");
 
-    utterance.rate = state.speech.rate;
-    utterance.pitch = state.speech.pitch;
-    utterance.volume = state.speech.volume;
+    const speakText = () => {
+      const utterance = new SpeechSynthesisUtterance("This is a preview of the selected voice settings.");
+      
+      // Find the selected voice
+      const voices = speechSynthesis.getVoices();
+      console.log("Available voices:", voices.map(v => v.name));
+      const selectedVoice = voices.find(voice => voice.name === state.speech.voice);
+      console.log("Selected voice:", selectedVoice ? selectedVoice.name : "Not found");
+      utterance.voice = selectedVoice || null;
 
-    utterance.onend = () => setIsPlaying(false);
-    utterance.onerror = (event) => {
-      console.error('Speech synthesis error:', event);
-      setIsPlaying(false);
+      utterance.rate = state.speech.rate;
+      utterance.pitch = state.speech.pitch;
+      utterance.volume = state.speech.volume;
+
+      console.log("Utterance settings:", {
+        voice: utterance.voice ? utterance.voice.name : "Default",
+        rate: utterance.rate,
+        pitch: utterance.pitch,
+        volume: utterance.volume
+      });
+
+      utterance.onend = () => {
+        console.log("Speech ended");
+        setIsPlaying(false);
+      };
+      utterance.onerror = (event) => {
+        console.error('Speech synthesis error:', event);
+        setIsPlaying(false);
+      };
+
+      // Cancel any ongoing speech
+      speechSynthesis.cancel();
+
+      // Speak the new utterance
+      speechSynthesis.speak(utterance);
+      console.log("Speech started");
     };
 
-    // Cancel any ongoing speech
-    speechSynthesis.cancel();
-
-    // Speak the new utterance
-    speechSynthesis.speak(utterance);
+    // Check if voices are loaded
+    if (speechSynthesis.getVoices().length > 0) {
+      speakText();
+    } else {
+      // If voices are not loaded yet, wait for them
+      speechSynthesis.onvoiceschanged = () => {
+        speechSynthesis.onvoiceschanged = null; // Remove the event listener
+        speakText();
+      };
+    }
   };
 
   // Clean up on component unmount
