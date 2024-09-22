@@ -68,6 +68,7 @@ function registerServiceWorker() {
         .catch((error) => {
           console.error("ServiceWorker registration failed:", error);
           console.error("Error details:", error.message);
+          console.error("Error stack:", error.stack);
         });
     });
   } else {
@@ -75,4 +76,12 @@ function registerServiceWorker() {
   }
 }
 
-registerServiceWorker();
+// Wrap the registerServiceWorker call in a try-catch block
+try {
+  console.log("About to call registerServiceWorker...");
+  registerServiceWorker();
+  console.log("registerServiceWorker called successfully");
+} catch (error) {
+  console.error("Error calling registerServiceWorker:", error);
+  console.error("Error stack:", error.stack);
+}
