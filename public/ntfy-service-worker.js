@@ -1,7 +1,7 @@
 
-const NTFY_SSE_URL = 'https://ntfy.sh/example/sse';
-
+let NTFY_SSE_URL = '';
 let eventSource = null;
+let topic = 'example'; // Default topic
 
 console.log('Service worker script loaded');
 
@@ -21,6 +21,8 @@ function startSSEConnection() {
     eventSource.close();
   }
 
+  NTFY_SSE_URL = `https://ntfy.sh/${topic}/sse`;
+  console.log(`Connecting to ${NTFY_SSE_URL}`);
   eventSource = new EventSource(NTFY_SSE_URL);
 
   eventSource.onopen = () => {
@@ -58,11 +60,20 @@ async function notifyClients(message) {
 self.addEventListener('message', (event) => {
   console.log('Service worker received message:', event.data);
   if (event.data && event.data.type === 'START_SSE') {
+    if (event.data.topic) {
+      topic = event.data.topic;
+    }
     startSSEConnection();
   } else if (event.data && event.data.type === 'STOP_SSE') {
     if (eventSource) {
       eventSource.close();
       notifyClients({ type: 'SSE_STATUS', status: 'disconnected' });
+    }
+  } else if (event.data && event.data.type === 'SET_TOPIC') {
+    if (event.data.topic) {
+      topic = event.data.topic;
+      console.log(`Topic set to: ${topic}`);
+      notifyClients({ type: 'TOPIC_UPDATED', topic: topic });
     }
   }
 });
