@@ -26,19 +26,26 @@ root.render(
 reportWebVitals(console.log);
 
 function registerServiceWorker() {
+  console.log("Attempting to register service worker...");
   if ("serviceWorker" in navigator) {
+    console.log("Service Worker is supported in this browser");
     window.addEventListener("load", () => {
+      console.log("Window loaded, registering service worker...");
       navigator.serviceWorker
         .register("/ntfy-service-worker.js")
         .then((registration) => {
-          console.log("ServiceWorker registered:", registration);
+          console.log("ServiceWorker registered successfully:", registration);
+          console.log("ServiceWorker scope:", registration.scope);
 
           // Start the SSE connection once the ServiceWorker is active
           if (registration && registration.active) {
+            console.log("ServiceWorker is already active, starting SSE connection...");
             registration.active.postMessage({ type: "START_SSE" });
           } else {
+            console.log("ServiceWorker is not yet active, waiting for activation...");
             registration?.addEventListener("activate", () => {
               if (registration && registration.active) {
+                console.log("ServiceWorker activated, starting SSE connection...");
                 registration.active.postMessage({ type: "START_SSE" });
               }
             });
@@ -53,13 +60,18 @@ function registerServiceWorker() {
               console.log("Received NTFY message:", event.data.payload);
             } else if (event.data.type === "SSE_STATUS") {
               console.log("SSE Status:", event.data.status);
+            } else {
+              console.log("Received unknown message type:", event.data.type);
             }
           });
         })
         .catch((error) => {
           console.error("ServiceWorker registration failed:", error);
+          console.error("Error details:", error.message);
         });
     });
+  } else {
+    console.warn("Service Worker is not supported in this browser");
   }
 }
 
