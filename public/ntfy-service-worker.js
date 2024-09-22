@@ -1,81 +1,99 @@
 
-let NTFY_SSE_URL = '';
 let eventSource = null;
 let topic = 'example'; // Default topic
 
-console.log('Service worker script loaded');
+self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 
-self.addEventListener('install', (event) => {
-  console.log('Service worker installing...');
-  event.waitUntil(self.skipWaiting());
-});
+function log(message, ...args) {
+  console.log(`[Service Worker] ${message}`, ...args);
+}
 
-self.addEventListener('activate', (event) => {
-  console.log('Service worker activating...');
-  event.waitUntil(self.clients.claim());
-});
+async function broadcast(message) {
+  const clients = await self.clients.matchAll({ type: 'window' });
+  clients.forEach(client => client.postMessage(message));
+}
 
 function startSSEConnection() {
-  console.log('Starting SSE connection...');
-  if (eventSource) {
+  if (eventSource) eventSource.close();
+  
+  const url = `https://ntfy.sh/${topic}/sse`;
+  log(`Connecting to ${url}`);
+  eventSource = new EventSource(url);
+
+  eventSource.onopen = () => broadcast({ type: 'SSE_STATUS', status: 'connected' });
+  eventSource.onerror = error => {
+    log('SSE connection error:', error);
+    broadcast({ type: 'SSE_STATUS', status: 'error', error: error.message });
     eventSource.close();
-  }
-
-  NTFY_SSE_URL = `https://ntfy.sh/${topic}/sse`;
-  console.log(`Connecting to ${NTFY_SSE_URL}`);
-  eventSource = new EventSource(NTFY_SSE_URL);
-
-  eventSource.onopen = () => {
-    console.log('SSE connection opened');
-    notifyClients({ type: 'SSE_STATUS', status: 'connected' });
-  };
-
-  eventSource.onerror = (error) => {
-    console.error('SSE connection error:', error);
-    notifyClients({ type: 'SSE_STATUS', status: 'error', error: error.message });
-    eventSource.close();
-    // Attempt to reconnect after a delay
     setTimeout(startSSEConnection, 5000);
   };
-
-  eventSource.onmessage = (event) => {
-    console.log('SSE message received:', event.data);
+  eventSource.onmessage = event => {
     try {
       const data = JSON.parse(event.data);
-      notifyClients({ type: 'NTFY_MESSAGE', payload: data });
+      handleMessage(data);
     } catch (error) {
-      console.error('Error parsing SSE message:', error);
+      log('Error parsing SSE message:', error);
     }
   };
 }
 
-async function notifyClients(message) {
-  console.log('Notifying clients:', message);
+async function handleMessage(data) {
   const clients = await self.clients.matchAll({ type: 'window' });
-  for (const client of clients) {
-    client.postMessage(message);
+  if (clients.length > 0) {
+    broadcast({ type: 'NTFY_MESSAGE', payload: data });
+  } else {
+    showNotification(data);
   }
 }
 
-self.addEventListener('message', (event) => {
-  console.log('Service worker received message:', event.data);
-  if (event.data && event.data.type === 'START_SSE') {
-    if (event.data.topic) {
-      topic = event.data.topic;
+async function showNotification(data) {
+  try {
+    if (Notification.permission === 'granted') {
+      await self.registration.showNotification(data.title, {
+        body: data.message,
+        icon: data.icon || '/path/to/default/icon.png',
+        data: { url: data.click || '' }
+      });
+    } else {
+      log('Notification permission not granted');
     }
-    startSSEConnection();
-  } else if (event.data && event.data.type === 'STOP_SSE') {
-    if (eventSource) {
-      eventSource.close();
-      notifyClients({ type: 'SSE_STATUS', status: 'disconnected' });
-    }
-  } else if (event.data && event.data.type === 'SET_TOPIC') {
-    if (event.data.topic) {
-      topic = event.data.topic;
-      console.log(`Topic set to: ${topic}`);
-      notifyClients({ type: 'TOPIC_UPDATED', topic: topic });
-    }
+  } catch (error) {
+    log('Error showing notification:', error);
+  }
+}
+
+self.addEventListener('message', event => {
+  const { type, topic: newTopic } = event.data || {};
+  log('Received message:', type, newTopic);
+
+  switch (type) {
+    case 'START_SSE':
+      if (newTopic) topic = newTopic;
+      startSSEConnection();
+      break;
+    case 'STOP_SSE':
+      if (eventSource) {
+        eventSource.close();
+        broadcast({ type: 'SSE_STATUS', status: 'disconnected' });
+      }
+      break;
+    case 'SET_TOPIC':
+      if (newTopic) {
+        topic = newTopic;
+        log(`Topic set to: ${topic}`);
+        broadcast({ type: 'TOPIC_UPDATED', topic });
+      }
+      break;
   }
 });
 
-console.log('Service worker script fully loaded');
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = event.notification.data.url;
+  if (url) {
+    event.waitUntil(clients.openWindow(url));
+  }
+});
+
+log('Service worker loaded and ready');
