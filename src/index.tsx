@@ -5,7 +5,6 @@ import App from "./App";
 import EditorWindow from "./components/editor/editorWindow";
 import "./index.css";
 import reportWebVitals from "./reportWebVitals";
-import { register } from './serviceWorker'
 
 const router = createBrowserRouter([
   { path: "/", element: <App /> },
@@ -25,6 +24,43 @@ root.render(
 // to log results (for example: reportWebVitals(console.log))
 // or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
 reportWebVitals(console.log);
-// register serviceWorker we don't really need so we can be installable
 
-register();
+function registerServiceWorker() {
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker
+        .register("/ntfy-service-worker.js")
+        .then((registration) => {
+          console.log("ServiceWorker registered:", registration);
+
+          // Start the SSE connection once the ServiceWorker is active
+          if (registration && registration.active) {
+            registration.active.postMessage({ type: "START_SSE" });
+          } else {
+            registration?.addEventListener("activate", () => {
+              if (registration && registration.active) {
+                registration.active.postMessage({ type: "START_SSE" });
+              }
+            });
+          }
+
+          // Set up message listener
+          navigator.serviceWorker.addEventListener("message", (event) => {
+            if (event.data.type === "NTFY_MESSAGE") {
+              // Call your client.ts function to handle the notification
+              // For example:
+              // client.showNotification(event.data.payload);
+              console.log("Received NTFY message:", event.data.payload);
+            } else if (event.data.type === "SSE_STATUS") {
+              console.log("SSE Status:", event.data.status);
+            }
+          });
+        })
+        .catch((error) => {
+          console.error("ServiceWorker registration failed:", error);
+        });
+    });
+  }
+}
+
+registerServiceWorker();
