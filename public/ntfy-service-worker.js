@@ -83,6 +83,7 @@ self.addEventListener('message', event => {
         topic = newTopic;
         log(`Topic set to: ${topic}`);
         broadcast({ type: 'TOPIC_UPDATED', topic });
+        startSSEConnection(); // Restart the SSE connection with the new topic
       }
       break;
   }
