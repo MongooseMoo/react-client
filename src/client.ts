@@ -32,6 +32,7 @@ import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 export interface WorldData {
   liveKitTokens: string[];
   playerId: string;
+  uuid: string;
   playerName: string;
   roomId: string;
 }
@@ -56,6 +57,7 @@ class MudClient extends EventEmitter {
     playerId: "",
     playerName: "",
     roomId: "",
+    uuid: "",
     liveKitTokens: [],
   };
   public cacophony: Cacophony;
@@ -295,7 +297,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   closeMcpML(MLTag: string) {
     this.send(`#$#: ${MLTag}\r\n`);
   }
-
+  
   sendMCPMultiline(mcpMessage: string, keyvals: MCPKeyvals, lines: string[]) {
     const MLTag = generateTag();
     keyvals["_data-tag"] = MLTag;
@@ -380,6 +382,12 @@ An MCP message consists of three parts: the name of the message, the authenticat
     const input = document.getElementById("command-input");
     if (!input) return;
     input.textContent = text;
+  }
+
+  setUuid(uuid: string): void {
+    this.worldData.uuid = uuid;
+    const ntfyTopic = "mongoose-player-" + this.worldData.uuid;
+    postMessage({ type: "SET_TOPIC", topic: ntfyTopic });
   }
 }
 
