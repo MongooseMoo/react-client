@@ -90,7 +90,19 @@ export class EditorManager {
   }
 
   shutdown() {
-    this.openEditors.forEach((window) => window.close());
+    console.log("Shutting down EditorManager");
+    this.openEditors.forEach((session, id) => {
+      try {
+        console.log(`Closing editor window for ${id}`);
+        session.window.close();
+        this.channel.postMessage({ type: "shutdown", id });
+      } catch (error) {
+        console.error(`Error closing editor window ${id}:`, error);
+      }
+    });
+    this.openEditors.clear();
+    console.log("Closing broadcast channel");
     this.channel.close();
+    console.log("EditorManager shutdown complete");
   }
 }
