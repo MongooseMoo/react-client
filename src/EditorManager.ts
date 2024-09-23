@@ -1,6 +1,5 @@
 import MudClient from "./client";
 import { EditorSession } from "./mcp";
-import { EditorManager } from "./EditorManager";
 
 export class EditorManager {
   private openEditors: Map<string, Window>;
