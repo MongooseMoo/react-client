@@ -1,8 +1,12 @@
 import MudClient from "./client";
 import { EditorSession } from "./mcp";
 
+interface WindowedSession extends EditorSession {
+  window: Window;
+}
+
 export class EditorManager {
-  private openEditors: Map<string, Window>;
+  private openEditors: Map<string, WindowedSession>;
   private channel: BroadcastChannel;
 
   constructor(private client: MudClient) {
@@ -22,16 +26,20 @@ export class EditorManager {
         "_blank"
       );
       if (editorWindow) {
-        this.openEditors.set(id, editorWindow);
+        const windowedSession: WindowedSession = {
+          ...editorSession,
+          window: editorWindow
+        };
+        this.openEditors.set(id, windowedSession);
         editorWindow.focus();
       }
     }
   }
 
   private focusEditor(id: string) {
-    const editorWindow = this.openEditors.get(id);
-    if (editorWindow && !editorWindow.closed) {
-      editorWindow.focus();
+    const windowedSession = this.openEditors.get(id);
+    if (windowedSession && !windowedSession.window.closed) {
+      windowedSession.window.focus();
     } else {
       this.openEditors.delete(id);
     }
