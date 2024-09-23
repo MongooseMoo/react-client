@@ -88,6 +88,7 @@ function EditorWindow() {
           setSession(event.data.session);
           setDocumentState(DocumentState.Unchanged);
           setClientId(event.data.clientId);
+          setIsLoaded(true); // Add this line to set isLoaded to true when content is loaded
           setTimeout(focusEditor, 100);
           break;
         case "shutdown":
