@@ -7,6 +7,7 @@ import {
 
 import { EventEmitter } from "eventemitter3";
 import stripAnsi from "strip-ansi";
+import { EditorManager } from "./EditorManager";
 import {
   GMCPAutoLogin,
   GMCPChar,
@@ -16,7 +17,6 @@ import {
 } from "./gmcp";
 import type { GMCPPackage } from "./gmcp/package";
 import {
-  EditorSession,
   MCPKeyvals,
   MCPPackage,
   McpAwnsGetSet,
@@ -25,7 +25,6 @@ import {
   parseMcpMessage,
   parseMcpMultiline,
 } from "./mcp";
-import { EditorManager } from "./EditorManager";
 
 import { Cacophony } from "cacophony";
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
@@ -70,7 +69,6 @@ class MudClient extends EventEmitter {
     this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
     this.cacophony = new Cacophony();
-    this.editors = new EditorManager(this);
     this.editors = new EditorManager(this);
   }
 
@@ -169,6 +167,7 @@ class MudClient extends EventEmitter {
 <message-start> ::= <message-name> <space> <auth-key> <keyvals>
 An MCP message consists of three parts: the name of the message, the authentication key, and a set of keywords and their associated values. The message name indicates what action is to be performed; if the given message name is unknown, the message should be ignored. The authentication key is generated at the beginning of the session; if it is incorrect, the message should be ignored. The keyword-value pairs specify the arguments to the message. These arguments may occur in any order, and the ordering of the arguments does not affect the semantics of the message. There is no limit on the number of keyword-value pairs which may appear in a message, or on the lengths of message names, keywords, or values.
 */
+
   private handleData(data: ArrayBuffer) {
     const decoded = this.decoder.decode(data).trimEnd();
     for (const line of decoded.split("\n")) {
