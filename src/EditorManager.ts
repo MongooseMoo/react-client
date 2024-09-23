@@ -33,12 +33,6 @@ export class EditorManager {
         };
         this.openEditors.set(id, windowedSession);
         editorWindow.focus();
-        
-        // Notify the channel that a new editor window is ready
-        this.channel.postMessage({
-          type: "ready",
-          id: id
-        });
       }
     }
   }
