@@ -48,11 +48,15 @@ export class EditorManager {
       console.log("editor window message", ev);
       if (ev.data.type === "ready") {
         console.log("sending editor window session", ev.data.id);
-        const session = this.getEditorSession(ev.data.id);
-        this.channel.postMessage({
-          type: "load",
-          session: session,
-        });
+        const session = this.client.mcp_getset.LocalCache[ev.data.id];
+        if (session) {
+          this.channel.postMessage({
+            type: "load",
+            session: session,
+          });
+        } else {
+          console.error(`No session found for id: ${ev.data.id}`);
+        }
       } else if (ev.data.type === "save") {
         console.log("saving editor window with session", ev.data.session);
         this.saveEditorWindow(ev.data.session);
@@ -60,16 +64,6 @@ export class EditorManager {
         console.log("closing editor window");
         this.openEditors.delete(ev.data.id);
       }
-    };
-  }
-
-  private getEditorSession(id: string): EditorSession {
-    // This is a placeholder. In a real implementation, you'd fetch the session data from somewhere.
-    return {
-      name: "Placeholder",
-      reference: id,
-      type: "string",
-      contents: []
     };
   }
 
