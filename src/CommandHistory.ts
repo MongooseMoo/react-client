@@ -1,46 +1,46 @@
 export class CommandHistory {
   private history: string[] = [];
-  private currentIndex: number = 0;
+  private currentIndex: number = -1;  // Change this to -1
   private unsentInput: string = "";
 
   addCommand(command: string): void {
     if (command.trim() !== "" && (this.history.length === 0 || this.history[this.history.length - 1] !== command)) {
       this.history.push(command.trim());
-      this.currentIndex = this.history.length;  // Point currentIndex to just after the last command
     }
-    this.unsentInput = "";  // Clear the unsentInput whenever a command is added
+    this.currentIndex = -1;  // Reset to -1 instead of this.history.length
+    this.unsentInput = "";
   }
 
   navigateUp(currentInput: string): string {
-    if (this.currentIndex === this.history.length) {
-      this.unsentInput = currentInput;  // Store current input if at the end of the history
+    if (this.currentIndex === -1) {  // Change this condition
+      this.unsentInput = currentInput;
     }
 
-    if (this.history.length > 0 && this.currentIndex > 0) {
-      this.currentIndex--;
+    if (this.history.length > 0 && this.currentIndex < this.history.length - 1) {  // Change this condition
+      this.currentIndex++;
     }
 
-    return this.history.length > 0 ? this.history[Math.max(0, this.currentIndex)] : "";
+    return this.history.length > 0 ? this.history[this.history.length - 1 - this.currentIndex] : "";  // Reverse the index
   }
 
   navigateDown(currentInput: string): string {
-    if (this.currentIndex === this.history.length) {
-      this.unsentInput = currentInput;  // Save current input if at end
+    if (this.currentIndex === -1) {  // Change this condition
+      this.unsentInput = currentInput;
     }
 
-    if (this.currentIndex < this.history.length - 1) {
-      this.currentIndex++;
-      return this.history[this.currentIndex];
+    if (this.currentIndex > 0) {
+      this.currentIndex--;
+      return this.history[this.history.length - 1 - this.currentIndex];  // Reverse the index
     } else {
-      this.currentIndex = this.history.length;  // Reset to after the last item
-      return this.unsentInput;  // Return unsent input when navigating down past the end
+      this.currentIndex = -1;  // Reset to -1
+      return this.unsentInput;
     }
   }
 
   getCurrentInput(): string {
-    if (this.currentIndex >= this.history.length) {
-      return this.unsentInput;  // Return unsent input if currentIndex is beyond the last history item
+    if (this.currentIndex === -1) {  // Change this condition
+      return this.unsentInput;
     }
-    return this.history[this.currentIndex];  // Otherwise, return the current history item
+    return this.history[this.history.length - 1 - this.currentIndex];  // Reverse the index
   }
 }
