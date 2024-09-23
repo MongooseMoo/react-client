@@ -48,7 +48,7 @@ export class EditorManager {
       console.log("editor window message", ev);
       if (ev.data.type === "ready") {
         console.log("sending editor window session", ev.data.id);
-        const session = this.client.mcp_getset.LocalCache[ev.data.id];
+        const session = this.getEditorSession(ev.data.id);
         if (session) {
           this.channel.postMessage({
             type: "load",
@@ -65,6 +65,10 @@ export class EditorManager {
         this.openEditors.delete(ev.data.id);
       }
     };
+  }
+
+  private getEditorSession(id: string): EditorSession | undefined {
+    return this.client.mcp_getset.LocalCache[id];
   }
 
   shutdown() {
