@@ -6,11 +6,17 @@ import {
 } from "./telnet";
 
 import { EventEmitter } from "eventemitter3";
-import stripAnsi from 'strip-ansi';
-import { GMCPAutoLogin, GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports } from "./gmcp";
+import stripAnsi from "strip-ansi";
+import { EditorManager } from "./EditorManager";
+import {
+  GMCPAutoLogin,
+  GMCPChar,
+  GMCPClientMedia,
+  GMCPCore,
+  GMCPCoreSupports,
+} from "./gmcp";
 import type { GMCPPackage } from "./gmcp/package";
 import {
-  EditorSession,
   MCPKeyvals,
   MCPPackage,
   McpAwnsGetSet,
@@ -53,6 +59,8 @@ class MudClient extends EventEmitter {
     liveKitTokens: [],
   };
   public cacophony: Cacophony;
+  public editors: EditorManager;
+
   constructor(host: string, port: number) {
     super();
     this.host = host;
@@ -61,6 +69,7 @@ class MudClient extends EventEmitter {
     this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
     this.cacophony = new Cacophony();
+    this.editors = new EditorManager(this);
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
@@ -149,7 +158,7 @@ class MudClient extends EventEmitter {
     }
     this.send(command + "\r\n");
     console.log("> " + command);
-  }
+  };
 
   /*
 <message> ::= <message-start>
@@ -158,6 +167,7 @@ class MudClient extends EventEmitter {
 <message-start> ::= <message-name> <space> <auth-key> <keyvals>
 An MCP message consists of three parts: the name of the message, the authentication key, and a set of keywords and their associated values. The message name indicates what action is to be performed; if the given message name is unknown, the message should be ignored. The authentication key is generated at the beginning of the session; if it is incorrect, the message should be ignored. The keyword-value pairs specify the arguments to the message. These arguments may occur in any order, and the ordering of the arguments does not affect the semantics of the message. There is no limit on the number of keyword-value pairs which may appear in a message, or on the lengths of message names, keywords, or values.
 */
+
   private handleData(data: ArrayBuffer) {
     const decoded = this.decoder.decode(data).trimEnd();
     for (const line of decoded.split("\n")) {
@@ -286,43 +296,6 @@ An MCP message consists of three parts: the name of the message, the authenticat
     this.send(`#$#: ${MLTag}\r\n`);
   }
 
-  openEditorWindow(editorSession: EditorSession) {
-    console.log(editorSession);
-    const channel = new BroadcastChannel("editor");
-    // open editor in new tab
-    const id = editorSession.reference;
-    const encodedId = encodeURIComponent(id);
-    const editorWindow = window.open(`/editor?reference=${encodedId}`, "_blank",);
-    channel.onmessage = (ev) => {
-      console.log("editor window message", ev);
-      if (ev.data.id !== id) return;
-      if (ev.data.type === "ready") {
-        console.log("sending editor window session", editorSession);
-        channel.postMessage({
-          type: "load",
-          session: editorSession,
-        });
-      } else if (ev.data.type === "save") {
-        console.log("saving editor window with session", ev.data.session);
-        this.saveEditorWindow(ev.data.session);
-      } else if (ev.data.type === "close") {
-        console.log("closing editor window");
-        channel.close();
-        channel.onmessage = null;
-      }
-    };
-    editorWindow && editorWindow.focus();
-  }
-
-  saveEditorWindow(editorSession: EditorSession) {
-    const keyvals: MCPKeyvals = {
-      reference: editorSession.reference,
-      type: editorSession.type,
-    }
-    keyvals["content*"] = "";
-    this.sendMCPMultiline("dns-org-mud-moo-simpleedit-set", keyvals, editorSession.contents);
-  }
-
   sendMCPMultiline(mcpMessage: string, keyvals: MCPKeyvals, lines: string[]) {
     const MLTag = generateTag();
     keyvals["_data-tag"] = MLTag;
@@ -341,6 +314,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     Object.values(this.gmcpHandlers).forEach((handler) => {
       handler.shutdown();
     });
+    this.editors.shutdown();
   }
 
   requestNotificationPermission() {
@@ -378,7 +352,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     utterance.pitch = pitch;
     utterance.volume = volume;
     const voices = speechSynthesis.getVoices();
-    const selectedVoice = voices.find(v => v.name === voice);
+    const selectedVoice = voices.find((v) => v.name === voice);
     if (selectedVoice) {
       utterance.voice = selectedVoice;
     }
@@ -390,7 +364,9 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   stopAllSounds() {
-    const gmcpClientMedia = this.gmcpHandlers["Client.Media"] as GMCPClientMedia;
+    const gmcpClientMedia = this.gmcpHandlers[
+      "Client.Media"
+    ] as GMCPClientMedia;
     gmcpClientMedia.stopAllSounds();
   }
 
