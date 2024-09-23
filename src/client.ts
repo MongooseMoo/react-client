@@ -19,6 +19,7 @@ import {
   parseMcpMessage,
   parseMcpMultiline,
 } from "./mcp";
+import { EditorManager } from "./EditorManager";
 
 import { Cacophony } from "cacophony";
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
@@ -53,6 +54,8 @@ class MudClient extends EventEmitter {
     liveKitTokens: [],
   };
   public cacophony: Cacophony;
+  public editors: EditorManager;
+
   constructor(host: string, port: number) {
     super();
     this.host = host;
@@ -61,6 +64,7 @@ class MudClient extends EventEmitter {
     this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
     this.cacophony = new Cacophony();
+    this.editors = new EditorManager(this);
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
@@ -286,42 +290,6 @@ An MCP message consists of three parts: the name of the message, the authenticat
     this.send(`#$#: ${MLTag}\r\n`);
   }
 
-  openEditorWindow(editorSession: EditorSession) {
-    console.log(editorSession);
-    const channel = new BroadcastChannel("editor");
-    // open editor in new tab
-    const id = editorSession.reference;
-    const encodedId = encodeURIComponent(id);
-    const editorWindow = window.open(`/editor?reference=${encodedId}`, "_blank",);
-    channel.onmessage = (ev) => {
-      console.log("editor window message", ev);
-      if (ev.data.id !== id) return;
-      if (ev.data.type === "ready") {
-        console.log("sending editor window session", editorSession);
-        channel.postMessage({
-          type: "load",
-          session: editorSession,
-        });
-      } else if (ev.data.type === "save") {
-        console.log("saving editor window with session", ev.data.session);
-        this.saveEditorWindow(ev.data.session);
-      } else if (ev.data.type === "close") {
-        console.log("closing editor window");
-        channel.close();
-        channel.onmessage = null;
-      }
-    };
-    editorWindow && editorWindow.focus();
-  }
-
-  saveEditorWindow(editorSession: EditorSession) {
-    const keyvals: MCPKeyvals = {
-      reference: editorSession.reference,
-      type: editorSession.type,
-    }
-    keyvals["content*"] = "";
-    this.sendMCPMultiline("dns-org-mud-moo-simpleedit-set", keyvals, editorSession.contents);
-  }
 
   sendMCPMultiline(mcpMessage: string, keyvals: MCPKeyvals, lines: string[]) {
     const MLTag = generateTag();
