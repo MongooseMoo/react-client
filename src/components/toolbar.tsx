@@ -51,20 +51,18 @@ const Toolbar = ({
       </button>
       <label>
         Volume
-        <input type="range" min="0" max="100" onChange={(e) => client.cacophony.setGlobalVolume(Number(e.target.value) / 100)} />
-      </label>
-      <button onClick={onToggleUsers} accessKey="u">
-        Show/Hide Users
-      </button>
-      <label>
-        Volume
         <input
           type="range"
           min="0"
           max="100"
-          onChange={(e) => client.cacophony.setGlobalVolume(Number(e.target.value) / 100)}
+          onChange={(e) =>
+            client.cacophony.setGlobalVolume(Number(e.target.value) / 100)
+          }
         />
       </label>
+      <button onClick={onToggleUsers} accessKey="u">
+        Show/Hide Users
+      </button>
     </div>
   );
 };
