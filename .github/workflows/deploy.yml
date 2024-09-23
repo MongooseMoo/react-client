@@ -11,12 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-     SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-  
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
     steps:
       - uses: actions/checkout@v3
 
-      
       - name: Cache Node.js modules
         uses: actions/cache@v3
         with:
@@ -29,8 +28,7 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20
-          cache: 'npm'
-          
+          cache: "npm"
 
       - run: npm install
       - run: npm run build
@@ -59,3 +57,4 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
+          commit_message: ${{ github.event.head_commit.message }}
