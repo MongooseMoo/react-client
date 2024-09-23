@@ -16,6 +16,7 @@ export class EditorManager {
   }
 
   openEditorWindow(editorSession: EditorSession) {
+    console.log(editorSession);
     const id = editorSession.reference;
     if (this.openEditors.has(id)) {
       this.focusEditor(id);
@@ -32,6 +33,12 @@ export class EditorManager {
         };
         this.openEditors.set(id, windowedSession);
         editorWindow.focus();
+        
+        // Notify the channel that a new editor window is ready
+        this.channel.postMessage({
+          type: "ready",
+          id: id
+        });
       }
     }
   }
@@ -61,23 +68,25 @@ export class EditorManager {
   private setupChannelListeners() {
     this.channel.onmessage = (ev) => {
       console.log("editor window message", ev);
-      if (ev.data.type === "ready") {
-        console.log("sending editor window session", ev.data.id);
-        const session = this.getEditorSession(ev.data.id);
-        if (session) {
+      const { type, id, session } = ev.data;
+
+      if (type === "ready") {
+        console.log("sending editor window session", id);
+        const editorSession = this.getEditorSession(id);
+        if (editorSession) {
           this.channel.postMessage({
             type: "load",
-            session: session,
+            session: editorSession,
           });
         } else {
-          console.error(`No session found for id: ${ev.data.id}`);
+          console.error(`No session found for id: ${id}`);
         }
-      } else if (ev.data.type === "save") {
-        console.log("saving editor window with session", ev.data.session);
-        this.saveEditorWindow(ev.data.session);
-      } else if (ev.data.type === "close") {
+      } else if (type === "save") {
+        console.log("saving editor window with session", session);
+        this.saveEditorWindow(session);
+      } else if (type === "close") {
         console.log("closing editor window");
-        this.openEditors.delete(ev.data.id);
+        this.openEditors.delete(id);
       }
     };
   }
