@@ -184,10 +184,6 @@ export class McpSimpleEdit extends MCPPackage {
       this.currentSession = null;
     }
   }
-
-  shutdown() {
-    // The EditorManager now handles its own shutdown
-  }
 }
 
 /**
