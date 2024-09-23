@@ -6,8 +6,14 @@ import {
 } from "./telnet";
 
 import { EventEmitter } from "eventemitter3";
-import stripAnsi from 'strip-ansi';
-import { GMCPAutoLogin, GMCPChar, GMCPClientMedia, GMCPCore, GMCPCoreSupports } from "./gmcp";
+import stripAnsi from "strip-ansi";
+import {
+  GMCPAutoLogin,
+  GMCPChar,
+  GMCPClientMedia,
+  GMCPCore,
+  GMCPCoreSupports,
+} from "./gmcp";
 import type { GMCPPackage } from "./gmcp/package";
 import {
   EditorSession,
@@ -54,7 +60,6 @@ class MudClient extends EventEmitter {
     liveKitTokens: [],
   };
   public cacophony: Cacophony;
-  public editors: EditorManager;
   public editors: EditorManager;
 
   constructor(host: string, port: number) {
@@ -155,7 +160,7 @@ class MudClient extends EventEmitter {
     }
     this.send(command + "\r\n");
     console.log("> " + command);
-  }
+  };
 
   /*
 <message> ::= <message-start>
@@ -292,7 +297,6 @@ An MCP message consists of three parts: the name of the message, the authenticat
     this.send(`#$#: ${MLTag}\r\n`);
   }
 
-
   sendMCPMultiline(mcpMessage: string, keyvals: MCPKeyvals, lines: string[]) {
     const MLTag = generateTag();
     keyvals["_data-tag"] = MLTag;
@@ -348,7 +352,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     utterance.pitch = pitch;
     utterance.volume = volume;
     const voices = speechSynthesis.getVoices();
-    const selectedVoice = voices.find(v => v.name === voice);
+    const selectedVoice = voices.find((v) => v.name === voice);
     if (selectedVoice) {
       utterance.voice = selectedVoice;
     }
@@ -360,7 +364,9 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   stopAllSounds() {
-    const gmcpClientMedia = this.gmcpHandlers["Client.Media"] as GMCPClientMedia;
+    const gmcpClientMedia = this.gmcpHandlers[
+      "Client.Media"
+    ] as GMCPClientMedia;
     gmcpClientMedia.stopAllSounds();
   }
 
