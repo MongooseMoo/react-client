@@ -77,29 +77,42 @@ function EditorWindow() {
 
     const handleMessage = (event: MessageEvent) => {
       console.log(event.data);
-      if (event.data.type === "load") {
-        if (clientId !== "") {
-          return; // We already have a session
-        }
-        const contents = event.data.session.contents.join("\n");
-        setCode(contents);
-        setOriginalCode(contents);
-        setSession(event.data.session);
-        setDocumentState(DocumentState.Unchanged);
-        setClientId(event.data.clientId);
-        setTimeout(focusEditor, 100);
-      } else if (event.data.type === "shutdown") {
-        if (event.data.clientId !== clientId) {
-          return;
-        }
-        channel.close();
-        window.close();
+      switch (event.data.type) {
+        case "load":
+          if (clientId !== "") {
+            return; // We already have a session
+          }
+          const contents = event.data.session.contents.join("\n");
+          setCode(contents);
+          setOriginalCode(contents);
+          setSession(event.data.session);
+          setDocumentState(DocumentState.Unchanged);
+          setClientId(event.data.clientId);
+          setIsLoaded(true); // Add this line to set isLoaded to true when content is loaded
+          setTimeout(focusEditor, 100);
+          break;
+        case "shutdown":
+          console.log("Received shutdown message");
+          if (documentState === DocumentState.Changed) {
+            const shouldClose = window.confirm("You have unsaved changes. Are you sure you want to close this editor?");
+            if (!shouldClose) {
+              return;
+            }
+          }
+          channel.close();
+          window.close();
+          break;
+        default:
+          console.warn("Unknown message type received", event.data.type);
       }
     };
 
     channel.addEventListener("message", handleMessage);
-    return () => channel.removeEventListener("message", handleMessage);
-  }, [channel, clientId, id]);
+    return () => {
+      channel.removeEventListener("message", handleMessage);
+      channel.postMessage({ type: "close", id });
+    };
+  }, [channel, clientId, id, documentState]);
 
   const revert = () => {
     setCode(originalCode);

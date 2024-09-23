@@ -150,31 +150,28 @@ export interface EditorSession {
 export class McpSimpleEdit extends MCPPackage {
   public packageName = "dns-org-mud-moo-simpleedit";
 
-  public sessions: { [key: string]: EditorSession } = {};
-  clientId: string;
+  private currentSession: EditorSession | null = null;
 
   constructor(client: MudClient) {
     super(client);
-    this.clientId = generateTag();
   }
 
   handle(message: McpMessage): void {
     if (message.name === "dns-org-mud-moo-simpleedit-content") {
-      const session: EditorSession = {
+      this.currentSession = {
         name: message.keyvals["name"],
         reference: message.keyvals["reference"],
         type: message.keyvals["type"],
         contents: [],
       };
-      this.sessions[message.keyvals["_data-tag"]] = session;
     } else {
       console.log(`Unexpected simpleedit message ${message}`);
     }
   }
 
   handleMultiline(message: McpMessage): void {
-    if ("content" in message.keyvals) {
-      this.sessions[message.name].contents.push(message.keyvals["content"]);
+    if (this.currentSession && "content" in message.keyvals) {
+      this.currentSession.contents.push(message.keyvals["content"]);
     } else {
       console.log(`Unexpected simpleedit ML ${message}`);
     }
@@ -182,12 +179,10 @@ export class McpSimpleEdit extends MCPPackage {
 
   closeMultiline(closure: McpMessage): void {
     console.log(`Closing multiline ${closure.name}`);
-    this.client.openEditorWindow(this.sessions[closure.name]);
-  }
-
-  shutdown() {
-    const channel = new BroadcastChannel("editor");
-    channel.postMessage({ type: "shutdown" });
+    if (this.currentSession) {
+      this.client.editors.openEditorWindow(this.currentSession);
+      this.currentSession = null;
+    }
   }
 }
 
