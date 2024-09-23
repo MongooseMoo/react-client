@@ -55,6 +55,7 @@ class MudClient extends EventEmitter {
   };
   public cacophony: Cacophony;
   public editors: EditorManager;
+  public editors: EditorManager;
 
   constructor(host: string, port: number) {
     super();
@@ -64,6 +65,7 @@ class MudClient extends EventEmitter {
     this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
     this.cacophony = new Cacophony();
+    this.editors = new EditorManager(this);
     this.editors = new EditorManager(this);
   }
 
