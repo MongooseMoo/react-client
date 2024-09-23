@@ -17,7 +17,10 @@ export class EditorManager {
       this.focusEditor(id);
     } else {
       const encodedId = encodeURIComponent(id);
-      const editorWindow = window.open(`/editor?reference=${encodedId}`, "_blank");
+      const editorWindow = window.open(
+        `/editor?reference=${encodedId}`,
+        "_blank"
+      );
       if (editorWindow) {
         this.openEditors.set(id, editorWindow);
         editorWindow.focus();
@@ -38,9 +41,13 @@ export class EditorManager {
     const keyvals = {
       reference: editorSession.reference,
       type: editorSession.type,
-      "content*": ""
+      "content*": "",
     };
-    this.client.sendMCPMultiline("dns-org-mud-moo-simpleedit-set", keyvals, editorSession.contents);
+    this.client.sendMCPMultiline(
+      "dns-org-mud-moo-simpleedit-set",
+      keyvals,
+      editorSession.contents
+    );
   }
 
   private setupChannelListeners() {
@@ -68,7 +75,10 @@ export class EditorManager {
   }
 
   private getEditorSession(id: string): EditorSession | undefined {
-    return this.client.mcp_getset.LocalCache[id];
+    const session = this.openEditors.get(id);
+    if (session) {
+      return session;
+    }
   }
 
   shutdown() {
