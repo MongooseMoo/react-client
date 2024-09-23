@@ -71,9 +71,10 @@ export class EditorManager {
           const editorSession = this.editors.get(id);
           if (editorSession) {
             editorSession.state = EditorState.Open;
+            const { window, ...sessionWithoutWindow } = editorSession;
             this.channel.postMessage({
               type: "load",
-              session: editorSession,
+              session: sessionWithoutWindow,
             });
           } else {
             console.error(`No session found for id: ${id}`);
