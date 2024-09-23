@@ -315,6 +315,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     Object.values(this.gmcpHandlers).forEach((handler) => {
       handler.shutdown();
     });
+    this.editors.shutdown();
   }
 
   requestNotificationPermission() {
