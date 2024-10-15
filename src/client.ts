@@ -62,6 +62,7 @@ class MudClient extends EventEmitter {
   };
   public cacophony: Cacophony;
   public editors: EditorManager;
+  public serviceWorkerRegistration: ServiceWorkerRegistration | null = null;
 
   constructor(host: string, port: number) {
     super();
@@ -297,7 +298,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   closeMcpML(MLTag: string) {
     this.send(`#$#: ${MLTag}\r\n`);
   }
-  
+
   sendMCPMultiline(mcpMessage: string, keyvals: MCPKeyvals, lines: string[]) {
     const MLTag = generateTag();
     keyvals["_data-tag"] = MLTag;
@@ -386,8 +387,12 @@ An MCP message consists of three parts: the name of the message, the authenticat
 
   setUuid(uuid: string): void {
     this.worldData.uuid = uuid;
-    const ntfyTopic = "mongoose-player-" + this.worldData.uuid;
-    postMessage({ type: "SET_TOPIC", topic: ntfyTopic });
+    const ntfyTopic = "Mongoose-player-" + this.worldData.uuid;
+    console.log("Set UUID:", this.worldData.uuid);
+    this.serviceWorkerRegistration?.active?.postMessage({
+      type: "SET_TOPIC",
+      topic: ntfyTopic,
+    });
   }
 }
 

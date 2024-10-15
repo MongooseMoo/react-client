@@ -30,7 +30,6 @@ import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
 import AudioChat from "./components/audioChat";
 
-
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showUsers, setShowUsers] = useState<boolean>(false);
@@ -58,6 +57,7 @@ function App() {
 
   useEffect(() => {
     if (clientInitialized.current) return; // <-- new line
+
     const newClient = new MudClient("mongoose.moo.mud.org", 8765);
     newClient.registerGMCPPackage(GMCPCore);
     newClient.registerGMCPPackage(GMCPClientMedia);
@@ -77,6 +77,7 @@ function App() {
     setClient(newClient);
     setShowUsers(!isMobile);
     window.mudClient = newClient;
+    registerServiceWorker(newClient);
     clientInitialized.current = true; // <-- new line
 
     // Listen to 'keydown' event
@@ -133,7 +134,6 @@ function App() {
   if (!client) return null; // or some loading component
 
   return (
-
     <div className="App">
       <header className="App-header"></header>
       <Toolbar
@@ -153,6 +153,61 @@ function App() {
       <PreferencesDialog ref={prefsDialogRef} />
     </div>
   );
+}
+
+function registerServiceWorker(client: MudClient) {
+  console.log("Attempting to register service worker...");
+  if ("serviceWorker" in navigator) {
+    console.log("Service Worker is supported in this browser");
+    window.addEventListener("load", () => {
+      console.log("Window loaded, registering service worker...");
+      navigator.serviceWorker
+        .register("/ntfy-service-worker.js")
+        .then((registration) => {
+          client.serviceWorkerRegistration = registration;
+          console.log("ServiceWorker registered successfully:", registration);
+          console.log("ServiceWorker scope:", registration.scope);
+
+          if (registration && registration.active) {
+            console.log(
+              "ServiceWorker is already active, starting SSE connection..."
+            );
+          } else {
+            console.log(
+              "ServiceWorker is not yet active, waiting for activation..."
+            );
+            registration?.addEventListener("activate", () => {
+              if (registration && registration.active) {
+                console.log(
+                  "ServiceWorker activated, starting SSE connection..."
+                );
+              }
+            });
+          }
+
+          // Set up message listener
+          navigator.serviceWorker.addEventListener("message", (event) => {
+            if (event.data.type === "NTFY_MESSAGE") {
+              // Call your client.ts function to handle the notification
+              // For example:
+              // client.showNotification(event.data.payload);
+              console.log("Received NTFY message:", event.data.payload);
+            } else if (event.data.type === "SSE_STATUS") {
+              console.log("SSE Status:", event.data.status);
+            } else {
+              console.log("Received unknown message type:", event.data.type);
+            }
+          });
+        })
+        .catch((error) => {
+          console.error("ServiceWorker registration failed:", error);
+          console.error("Error details:", error.message);
+          console.error("Error stack:", error.stack);
+        });
+    });
+  } else {
+    console.warn("Service Worker is not supported in this browser");
+  }
 }
 
 export default App;
