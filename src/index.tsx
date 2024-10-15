@@ -37,16 +37,19 @@ function registerServiceWorker() {
           console.log("ServiceWorker registered successfully:", registration);
           console.log("ServiceWorker scope:", registration.scope);
 
-          // Start the SSE connection once the ServiceWorker is active
           if (registration && registration.active) {
-            console.log("ServiceWorker is already active, starting SSE connection...");
-            registration.active.postMessage({ type: "START_SSE" });
+            console.log(
+              "ServiceWorker is already active, starting SSE connection..."
+            );
           } else {
-            console.log("ServiceWorker is not yet active, waiting for activation...");
+            console.log(
+              "ServiceWorker is not yet active, waiting for activation..."
+            );
             registration?.addEventListener("activate", () => {
               if (registration && registration.active) {
-                console.log("ServiceWorker activated, starting SSE connection...");
-                registration.active.postMessage({ type: "START_SSE" });
+                console.log(
+                  "ServiceWorker activated, starting SSE connection..."
+                );
               }
             });
           }
@@ -78,7 +81,6 @@ function registerServiceWorker() {
 
 // Wrap the registerServiceWorker call in a try-catch block
 try {
-  console.log("About to call registerServiceWorker...");
   registerServiceWorker();
   console.log("registerServiceWorker called successfully");
 } catch (error) {
