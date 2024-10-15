@@ -119,7 +119,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
     // Start at a specific position
     if (data.start) {
-      sound.seek(data.start);
+      sound.seek(data.start / 1000);
     }
 
     if (data.end) {
