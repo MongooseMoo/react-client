@@ -401,7 +401,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     console.log("Set UUID:", this.worldData.uuid);
     this.serviceWorkerRegistration?.active?.postMessage({
       type: "SET_TOPIC",
-      topic: ntfyTopic,
+      payload: { topic: ntfyTopic }
     });
   }
 

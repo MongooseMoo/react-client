@@ -17,18 +17,25 @@ async function broadcast(message) {
   clients.forEach((client) => client.postMessage(message));
 }
 
+function broadcastState(status, topic, error) {
+  broadcast({
+    type: 'NTFY_STATE',
+    payload: { status, topic, error }
+  });
+}
+
 function startSSEConnection() {
   if (eventSource) eventSource.close();
 
   const url = `https://ntfy.sh/${topic}/sse`;
   log(`Connecting to ${url}`);
+  broadcastState('connecting', topic);
   eventSource = new EventSource(url);
 
-  eventSource.onopen = () =>
-    broadcast({ type: "SSE_STATUS", status: "connected" });
+  eventSource.onopen = () => broadcastState('connected', topic);
   eventSource.onerror = (error) => {
     log("SSE connection error:", error);
-    broadcast({ type: "SSE_STATUS", status: "error", error: error.message });
+    broadcastState('error', topic, error.message);
     eventSource.close();
     setTimeout(startSSEConnection, 5000);
   };
@@ -71,25 +78,25 @@ async function showNotification(data) {
 }
 
 self.addEventListener("message", (event) => {
-  const { type, topic: newTopic } = event.data || {};
-  log("Received message:", type, newTopic);
+  const { type, payload } = event.data || {};
+  log("Received message:", type, payload);
 
   switch (type) {
     case "START_SSE":
-      if (newTopic) topic = newTopic;
+      if (payload?.topic) topic = payload.topic;
       startSSEConnection();
       break;
     case "STOP_SSE":
       if (eventSource) {
         eventSource.close();
-        broadcast({ type: "SSE_STATUS", status: "disconnected" });
+        broadcastState('disconnected', topic);
       }
       break;
     case "SET_TOPIC":
-      if (newTopic) {
-        topic = newTopic;
+      if (payload?.topic) {
+        topic = payload.topic;
         log(`Topic set to: ${topic}`);
-        broadcast({ type: "TOPIC_UPDATED", topic });
+        broadcastState('connecting', topic);
         startSSEConnection(); // Restart the SSE connection with the new topic
       }
       break;

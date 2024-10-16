@@ -187,17 +187,18 @@ function registerServiceWorker(client: MudClient) {
 
           // Set up message listener
           navigator.serviceWorker.addEventListener("message", (event) => {
-            if (event.data.type === "NTFY_MESSAGE") {
-              // Call your client.ts function to handle the notification
-              // For example:
-              // client.showNotification(event.data.payload);
-              console.log("Received NTFY message:", event.data.payload);
-              const message = event.data.payload;
-              client.handleNtfyMessage(message);
-            } else if (event.data.type === "SSE_STATUS") {
-              console.log("SSE Status:", event.data.status);
-            } else {
-              console.log("Received unknown message", event.data);
+            const { type, payload } = event.data;
+            switch (type) {
+              case 'NTFY_STATE':
+                console.log(`Ntfy state: ${payload.status}, Topic: ${payload.topic}`);
+                // Update UI or app state based on the new status
+                break;
+              case 'NTFY_MESSAGE':
+                console.log("Received NTFY message:", payload);
+                client.handleNtfyMessage(payload);
+                break;
+              default:
+                console.log("Received unknown message", event.data);
             }
           });
         })
