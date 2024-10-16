@@ -19,8 +19,8 @@ async function broadcast(message) {
 
 function broadcastState(status, topic, error) {
   broadcast({
-    type: 'NTFY_STATE',
-    payload: { status, topic, error }
+    type: "NTFY_STATE",
+    payload: { status, topic, error },
   });
 }
 
@@ -29,17 +29,19 @@ function startSSEConnection() {
 
   const url = `https://ntfy.sh/${topic}/sse`;
   log(`Connecting to ${url}`);
-  broadcastState('connecting', topic);
+  broadcastState("connecting", topic);
   eventSource = new EventSource(url);
 
-  eventSource.onopen = () => broadcastState('connected', topic);
+  eventSource.onopen = () => broadcastState("connected", topic);
   eventSource.onerror = (error) => {
     log("SSE connection error:", error);
-    broadcastState('error', topic, error.message);
+    broadcastState("error", topic, error.message);
     eventSource.close();
-    setTimeout(startSSEConnection, 5000);
+    setTimeout(startSSEConnection, 3000);
   };
+
   eventSource.onmessage = (event) => {
+    log("Received SSE message:", event.data);
     try {
       const data = JSON.parse(event.data);
       handleMessage(data);
@@ -89,26 +91,29 @@ self.addEventListener("message", (event) => {
     case "STOP_SSE":
       if (eventSource) {
         eventSource.close();
-        broadcastState('disconnected', topic);
+        broadcastState("disconnected", topic);
       }
       break;
     case "SET_TOPIC":
       if (payload?.topic) {
         topic = payload.topic;
         log(`Topic set to: ${topic}`);
-        broadcastState('connecting', topic);
+        broadcastState("connecting", topic);
         startSSEConnection(); // Restart the SSE connection with the new topic
       }
       break;
   }
 });
 
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const url = event.notification.data.url;
-  if (url) {
-    event.waitUntil(clients.openWindow(url));
-  }
-});
-
+try {
+  self.addEventListener("notificationclick", (event) => {
+    event.notification.close();
+    const url = event.notification.data.url;
+    if (url) {
+      event.waitUntil(clients.openWindow(url));
+    }
+  });
+} catch (error) {
+  log("Error handling notification click:", error);
+}
 log("Service worker loaded and ready");
