@@ -192,10 +192,12 @@ function registerServiceWorker(client: MudClient) {
               // For example:
               // client.showNotification(event.data.payload);
               console.log("Received NTFY message:", event.data.payload);
+              const message = event.data.payload;
+              client.handleNtfyMessage(message);
             } else if (event.data.type === "SSE_STATUS") {
               console.log("SSE Status:", event.data.status);
             } else {
-              console.log("Received unknown message type:", event.data.type);
+              console.log("Received unknown message", event.data);
             }
           });
         })

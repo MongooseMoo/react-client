@@ -29,6 +29,15 @@ import {
 import { Cacophony } from "cacophony";
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 
+interface NtfyMessage {
+  event: string;
+  expires: number;
+  id: string;
+  message: string;
+  title: string;
+  time: number;
+  topic?: string;
+}
 export interface WorldData {
   liveKitTokens: string[];
   playerId: string;
@@ -73,6 +82,7 @@ class MudClient extends EventEmitter {
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
     this.cacophony = new Cacophony();
     this.editors = new EditorManager(this);
+    this.handleNtfyMessage = this.handleNtfyMessage.bind(this);
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
@@ -393,6 +403,10 @@ An MCP message consists of three parts: the name of the message, the authenticat
       type: "SET_TOPIC",
       topic: ntfyTopic,
     });
+  }
+
+  handleNtfyMessage(payload: NtfyMessage) {
+    this.sendNotification(payload.title, payload.message);
   }
 }
 
