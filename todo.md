@@ -7,7 +7,7 @@
    - Add a cleanup method for old offers
    - Ensure proper WebRTC signaling flow
 
-2. Update src/gmcp/Client/FileTransfer.ts:
+2. ✅ Update src/gmcp/Client/FileTransfer.ts:
    - Modify handleOffer to include offerSdp in the emitted event
 
 3. Update FileTransferUI.tsx:
