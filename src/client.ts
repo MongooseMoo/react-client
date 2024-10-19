@@ -28,6 +28,9 @@ import {
 
 import { Cacophony } from "cacophony";
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
+import { WebRTCService } from "./WebRTCService";
+import { FileTransferManager } from "./FileTransferManager";
+import { SignalingService } from "./SignalingService";
 
 export interface WorldData {
   liveKitTokens: string[];
@@ -60,6 +63,9 @@ class MudClient extends EventEmitter {
   };
   public cacophony: Cacophony;
   public editors: EditorManager;
+  public webRTCService: WebRTCService;
+  public fileTransferManager: FileTransferManager;
+  public signalingService: SignalingService;
 
   constructor(host: string, port: number) {
     super();
@@ -70,6 +76,9 @@ class MudClient extends EventEmitter {
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
     this.cacophony = new Cacophony();
     this.editors = new EditorManager(this);
+    this.webRTCService = new WebRTCService(this);
+    this.fileTransferManager = new FileTransferManager(this, this.webRTCService);
+    this.signalingService = new SignalingService(this, `wss://${host}:${port}/signaling`);
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
