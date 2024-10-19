@@ -172,11 +172,13 @@ export class FileTransferManager {
       clearTimeout(outgoingTimeout);
       this.outgoingTransfers.delete(filename);
       this.client.emit('fileTransferCancelled', { filename, direction: 'send' });
+      this.client.gmcp_fileTransfer.sendCancel(this.client.worldData.playerId, filename);
     }
 
     if (this.incomingTransfers.has(filename)) {
       this.incomingTransfers.delete(filename);
       this.client.emit('fileTransferCancelled', { filename, direction: 'receive' });
+      this.client.gmcp_fileTransfer.sendCancel(this.client.worldData.playerId, filename);
     }
   }
 }

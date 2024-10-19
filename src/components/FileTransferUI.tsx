@@ -91,6 +91,15 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
 
   const handleFileTransferCancelled = (data: { filename: string; direction: 'send' | 'receive' }) => {
     addToTransferHistory(`File transfer cancelled: ${data.filename} (${data.direction})`);
+    setSendProgress(0);
+    setReceiveProgress(0);
+  };
+
+  const handleCancelTransfer = () => {
+    if (incomingTransfer) {
+      client.fileTransferManager.cancelTransfer(incomingTransfer.filename);
+      setIncomingTransfer(null);
+    }
   };
 
   const addToTransferHistory = (message: string) => {
@@ -122,6 +131,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
           <p>Incoming file: {incomingTransfer.filename} from {incomingTransfer.sender}</p>
           <button onClick={handleAcceptTransfer}>Accept</button>
           <button onClick={handleRejectTransfer}>Reject</button>
+          <button onClick={handleCancelTransfer}>Cancel</button>
         </div>
       )}
       <div className="transfer-history">
