@@ -40,8 +40,8 @@ export class FileTransferManager {
       throw new Error(`File size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
     }
 
-    // Notify the server about the file transfer
-    this.client.gmcp_fileTransfer.sendOffer(this.client.worldData.playerId, file.name, file.size);
+    // Create offer and send it along with the file transfer offer
+    await this.client.gmcp_fileTransfer.sendOffer(this.client.worldData.playerId, file.name, file.size);
 
     const transferTimeout = setTimeout(() => {
       this.handleTransferError(file.name, 'send', new Error('Transfer timeout'));
@@ -232,11 +232,13 @@ export class FileTransferManager {
     }
   }
 
-  handleGMCPOffer(sender: string, filename: string, filesize: number): void {
+  handleGMCPOffer(sender: string, filename: string, filesize: number, offerSdp: string): void {
+    this.client.webRTCService.handleOffer(JSON.parse(offerSdp));
     this.client.emit('fileTransferOffer', { sender, filename, filesize });
   }
 
-  handleGMCPAccept(sender: string, filename: string): void {
+  async handleGMCPAccept(sender: string, filename: string, answerSdp: string): Promise<void> {
+    await this.client.webRTCService.handleAnswer(JSON.parse(answerSdp));
     const transfer = this.outgoingTransfers.get(filename);
     if (transfer) {
       this.startTransfer(filename);

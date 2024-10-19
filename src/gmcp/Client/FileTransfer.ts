@@ -6,11 +6,13 @@ export class GMCPMessageClientFileTransferOffer extends GMCPMessage {
   sender: string = "";
   filename: string = "";
   filesize: number = 0;
+  offerSdp: string = "";
 }
 
 export class GMCPMessageClientFileTransferAccept extends GMCPMessage {
   sender: string = "";
   filename: string = "";
+  answerSdp: string = "";
 }
 
 export class GMCPMessageClientFileTransferReject extends GMCPMessage {
@@ -33,10 +35,12 @@ export class GMCPClientFileTransfer extends GMCPPackage {
   }
 
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
+    this.client.webRTCService.handleOffer(JSON.parse(data.offerSdp));
     this.emitter.emit("offer", data);
   }
 
-  handleAccept(data: GMCPMessageClientFileTransferAccept): void {
+  async handleAccept(data: GMCPMessageClientFileTransferAccept): Promise<void> {
+    await this.client.webRTCService.handleAnswer(JSON.parse(data.answerSdp));
     this.emitter.emit("accept", data);
   }
 
@@ -52,12 +56,14 @@ export class GMCPClientFileTransfer extends GMCPPackage {
     this.client.handleWebRTCSignal(data.sender, data.signal);
   }
 
-  sendOffer(recipient: string, filename: string, filesize: number): void {
-    this.sendData("Offer", { recipient, filename, filesize });
+  async sendOffer(recipient: string, filename: string, filesize: number): Promise<void> {
+    const offer = await this.client.webRTCService.createOffer();
+    this.sendData("Offer", { recipient, filename, filesize, offerSdp: JSON.stringify(offer) });
   }
 
-  sendAccept(sender: string, filename: string): void {
-    this.sendData("Accept", { sender, filename });
+  async sendAccept(sender: string, filename: string): Promise<void> {
+    const answer = await this.client.webRTCService.createAnswer();
+    this.sendData("Accept", { sender, filename, answerSdp: JSON.stringify(answer) });
   }
 
   sendReject(sender: string, filename: string): void {
