@@ -36,7 +36,11 @@ export class WebRTCService {
     };
 
     this.dataChannel.onmessage = (event) => {
-      this.client.emit('dataChannelMessage', event.data);
+      if (event.data instanceof ArrayBuffer) {
+        this.client.emit('dataChannelMessage', event.data);
+      } else {
+        console.warn('Received non-ArrayBuffer data:', event.data);
+      }
     };
   }
 
