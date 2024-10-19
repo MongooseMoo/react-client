@@ -4,14 +4,22 @@ import './FileTransferUI.css';
 
 interface FileTransferUIProps {
   client: MudClient;
+  expanded: boolean;
 }
 
-const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
+interface PendingOffer {
+  sender: string;
+  filename: string;
+  filesize: number;
+  offerKey: string;
+}
+
+const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [recipient, setRecipient] = useState<string>('');
   const [sendProgress, setSendProgress] = useState<number>(0);
   const [receiveProgress, setReceiveProgress] = useState<number>(0);
-  const [incomingTransfer, setIncomingTransfer] = useState<{ sender: string; filename: string; filesize: number } | null>(null);
+  const [pendingOffers, setPendingOffers] = useState<PendingOffer[]>([]);
   const [transferHistory, setTransferHistory] = useState<string[]>([]);
 
   useEffect(() => {
@@ -33,10 +41,6 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
       client.off('fileTransferRejected', handleFileTransferRejected);
     };
   }, [client]);
-
-  useEffect(() => {
-    console.log('[FileTransferUI] incomingTransfer state updated:', incomingTransfer);
-  }, [incomingTransfer]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -60,30 +64,32 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
     }
   };
 
-  const handleFileTransferOffer = (data: { sender: string; filename: string; filesize: number }) => {
+  const handleFileTransferOffer = (data: PendingOffer) => {
     console.log('[FileTransferUI] Received fileTransferOffer event:', data);
-    setIncomingTransfer(data);
+    setPendingOffers(prevOffers => [...prevOffers, data]);
     addToTransferHistory(`Incoming file offer: ${data.filename} from ${data.sender}`);
-    console.log('[FileTransferUI] Updated incomingTransfer state and transfer history');
+    console.log('[FileTransferUI] Updated pendingOffers state and transfer history');
   };
 
-  const handleAcceptTransfer = async () => {
-    if (incomingTransfer) {
-      try {
-        await client.fileTransferManager.acceptTransfer(incomingTransfer.sender, incomingTransfer.filename);
-        addToTransferHistory(`Accepted file transfer: ${incomingTransfer.filename} from ${incomingTransfer.sender}`);
-      } catch (error) {
-        addToTransferHistory(`Error accepting file transfer: ${error.message}`);
+  const handleAcceptTransfer = async (offerKey: string) => {
+    try {
+      await client.fileTransferManager.acceptTransfer(offerKey);
+      const offer = pendingOffers.find(o => o.offerKey === offerKey);
+      if (offer) {
+        addToTransferHistory(`Accepted file transfer: ${offer.filename} from ${offer.sender}`);
+        setPendingOffers(prevOffers => prevOffers.filter(o => o.offerKey !== offerKey));
       }
-      setIncomingTransfer(null);
+    } catch (error) {
+      addToTransferHistory(`Error accepting file transfer: ${error.message}`);
     }
   };
 
-  const handleRejectTransfer = () => {
-    if (incomingTransfer) {
-      client.fileTransferManager.rejectTransfer(incomingTransfer.sender, incomingTransfer.filename);
-      addToTransferHistory(`Rejected file transfer: ${incomingTransfer.filename} from ${incomingTransfer.sender}`);
-      setIncomingTransfer(null);
+  const handleRejectTransfer = (offerKey: string) => {
+    const offer = pendingOffers.find(o => o.offerKey === offerKey);
+    if (offer) {
+      client.fileTransferManager.rejectTransfer(offer.sender, offer.filename);
+      addToTransferHistory(`Rejected file transfer: ${offer.filename} from ${offer.sender}`);
+      setPendingOffers(prevOffers => prevOffers.filter(o => o.offerKey !== offerKey));
     }
   };
 
@@ -117,10 +123,11 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
     addToTransferHistory(`File transfer rejected: ${data.filename}`);
   };
 
-  const handleCancelTransfer = () => {
-    if (incomingTransfer) {
-      client.fileTransferManager.cancelTransfer(incomingTransfer.filename);
-      setIncomingTransfer(null);
+  const handleCancelTransfer = (offerKey: string) => {
+    const offer = pendingOffers.find(o => o.offerKey === offerKey);
+    if (offer) {
+      client.fileTransferManager.cancelTransfer(offer.filename);
+      setPendingOffers(prevOffers => prevOffers.filter(o => o.offerKey !== offerKey));
     }
   };
 
@@ -129,7 +136,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
   };
 
   return (
-    <div className="file-transfer-ui">
+    <div className={`file-transfer-ui ${expanded ? 'expanded' : 'collapsed'}`}>
       <h3>File Transfer</h3>
       <div className="file-transfer-controls">
         <input type="file" onChange={handleFileChange} />
@@ -148,14 +155,14 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
           <progress value={sendProgress > 0 ? sendProgress : receiveProgress} max="100" />
         </div>
       )}
-      {incomingTransfer && (
-        <div className="incoming-transfer">
-          <p>Incoming file: {incomingTransfer.filename} from {incomingTransfer.sender}</p>
-          <button onClick={handleAcceptTransfer}>Accept</button>
-          <button onClick={handleRejectTransfer}>Reject</button>
-          <button onClick={handleCancelTransfer}>Cancel</button>
+      {pendingOffers.map((offer) => (
+        <div key={offer.offerKey} className="incoming-transfer">
+          <p>Incoming file: {offer.filename} from {offer.sender}</p>
+          <button onClick={() => handleAcceptTransfer(offer.offerKey)}>Accept</button>
+          <button onClick={() => handleRejectTransfer(offer.offerKey)}>Reject</button>
+          <button onClick={() => handleCancelTransfer(offer.offerKey)}>Cancel</button>
         </div>
-      )}
+      ))}
       <div className="transfer-history">
         <h4>Transfer History</h4>
         <ul>

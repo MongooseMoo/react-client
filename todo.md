@@ -10,7 +10,7 @@
 2. ✅ Update src/gmcp/Client/FileTransfer.ts:
    - Modify handleOffer to include offerSdp in the emitted event
 
-3. Update FileTransferUI.tsx:
+3. ✅ Update FileTransferUI.tsx:
    - Modify the component to handle expanded state
    - Update handleAcceptTransfer to use the new acceptTransfer method
    - Add logic to display multiple pending offers
