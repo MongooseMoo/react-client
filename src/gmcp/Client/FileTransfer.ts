@@ -35,14 +35,14 @@ export class GMCPClientFileTransfer extends GMCPPackage {
   }
 
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
-    console.log('[GMCPClientFileTransfer] Received offer:', data);
+    console.log("[GMCPClientFileTransfer] Received offer:", data);
     this.emitter.emit("offer", {
       sender: data.sender,
       filename: data.filename,
       filesize: data.filesize,
-      offerSdp: data.offerSdp
+      offerSdp: data.offerSdp,
     });
-    console.log('[GMCPClientFileTransfer] Emitted offer event with offerSdp');
+    console.log("[GMCPClientFileTransfer] Emitted offer event with offerSdp");
   }
 
   async handleAccept(data: GMCPMessageClientFileTransferAccept): Promise<void> {
@@ -64,7 +64,12 @@ export class GMCPClientFileTransfer extends GMCPPackage {
     this.client.handleWebRTCSignal(data.sender, data.signal);
   }
 
-  sendOffer(recipient: string, filename: string, filesize: number, offerSdp: string): void {
+  sendOffer(
+    recipient: string,
+    filename: string,
+    filesize: number,
+    offerSdp: string
+  ): void {
     this.sendData("Offer", { recipient, filename, filesize, offerSdp });
   }
 
@@ -78,17 +83,5 @@ export class GMCPClientFileTransfer extends GMCPPackage {
 
   sendCancel(recipient: string, filename: string): void {
     this.sendData("Cancel", { recipient, filename });
-  }
-
-  sendSignal(recipient: string, signal: string): void {
-    this.sendData("Signal", { recipient, signal });
-  }
-
-  on(event: string, listener: (...args: any[]) => void): void {
-    this.emitter.on(event, listener);
-  }
-
-  off(event: string, listener: (...args: any[]) => void): void {
-    this.emitter.off(event, listener);
   }
 }
