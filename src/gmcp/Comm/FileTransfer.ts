@@ -54,5 +54,6 @@ export class GMCPCommFileTransfer extends GMCPPackage {
 
     sendCancel(recipient: string, filename: string): void {
         this.client.sendGmcp("Comm.FileTransfer.Cancel", { recipient, filename });
+        this.client.fileTransferManager.cancelTransfer(filename);
     }
 }
