@@ -31,7 +31,6 @@ import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
 import AudioChat from "./components/audioChat";
 import FileTransferUI from "./components/FileTransferUI";
-import { GMCPMessageClientFileTransferAccept, GMCPMessageClientFileTransferCancel, GMCPMessageClientFileTransferOffer, GMCPMessageClientFileTransferReject } from "./gmcp/Client/FileTransfer";
 
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
@@ -104,27 +103,6 @@ function App() {
 
     document.addEventListener("focus", handleFocus);
 
-    // Set up file transfer event listeners
-    newClient.on('fileTransferOffer', (data: GMCPMessageClientFileTransferOffer) => {
-      console.log('File transfer offer received:', data);
-      // Handle the file transfer offer (e.g., show a confirmation dialog)
-    });
-
-    newClient.on('fileTransferAccepted', (data: GMCPMessageClientFileTransferAccept) => {
-      console.log('File transfer accepted:', data);
-      // Start the file transfer process
-    });
-
-    newClient.on('fileTransferRejected', (data: GMCPMessageClientFileTransferReject) => {
-      console.log('File transfer rejected:', data);
-      // Handle the rejection (e.g., show a message to the user)
-    });
-
-    newClient.on('fileTransferCancelled', (data: GMCPMessageClientFileTransferCancel) => {
-      console.log('File transfer cancelled:', data);
-      // Handle the cancellation (e.g., stop the transfer and update UI)
-    });
-
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
@@ -184,7 +162,7 @@ function App() {
         >
           {showFileTransfer ? 'Hide' : 'Show'} File Transfer
         </button>
-        {showFileTransfer && (
+        {showFileTransfer && client && (
           <div id="file-transfer-ui">
             <FileTransferUI client={client} />
           </div>
