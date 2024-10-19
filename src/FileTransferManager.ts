@@ -1,5 +1,6 @@
 import { WebRTCService } from './WebRTCService';
 import MudClient from './client';
+import { GMCPFileTransfer } from './gmcp/FileTransfer';
 
 interface FileTransferProgress {
   filename: string;
@@ -24,6 +25,10 @@ export class FileTransferManager {
     this.setupListeners();
   }
 
+  private isDataChannelReady(): boolean {
+    return this.webRTCService.isDataChannelOpen();
+  }
+
   private setupListeners(): void {
     this.client.on('dataChannelMessage', (data: ArrayBuffer) => {
       this.handleIncomingChunk(data);
@@ -33,9 +38,16 @@ export class FileTransferManager {
   }
 
   async sendFile(file: File): Promise<void> {
+    if (!this.isDataChannelReady()) {
+      throw new Error("WebRTC data channel is not ready. Please ensure you're connected before sending a file.");
+    }
+
     if (file.size > this.maxFileSize) {
       throw new Error(`File size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
     }
+
+    // Notify the server about the file transfer
+    this.client.gmcp_fileTransfer.sendOffer(this.client.worldData.playerId, file.name, file.size);
 
     const fileReader = new FileReader();
     let offset = 0;
@@ -62,10 +74,15 @@ export class FileTransferManager {
         data.set(header, 4);
         data.set(new Uint8Array(chunk), 4 + header.byteLength);
 
-        try {
-          this.webRTCService.sendData(data.buffer);
-        } catch (error) {
-          this.handleTransferError(file.name, 'send', error);
+        if (this.isDataChannelReady()) {
+          try {
+            this.webRTCService.sendData(data.buffer);
+          } catch (error) {
+            this.handleTransferError(file.name, 'send', error);
+            return;
+          }
+        } else {
+          this.handleTransferError(file.name, 'send', new Error("WebRTC data channel is not ready"));
           return;
         }
 

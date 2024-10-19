@@ -9,6 +9,10 @@ export class WebRTCService {
     this.client = client;
   }
 
+  isDataChannelOpen(): boolean {
+    return this.dataChannel !== null && this.dataChannel.readyState === 'open';
+  }
+
   async createPeerConnection(): Promise<void> {
     this.peerConnection = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
