@@ -21,14 +21,15 @@ We'll implement a peer-to-peer file transfer system using WebRTC, integrated int
 #### WebRTCService.ts
 
 ```typescript
-import { EventEmitter } from 'events';
+import MudClient from './client';
 
-export class WebRTCService extends EventEmitter {
+export class WebRTCService {
   private peerConnection: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
+  private client: MudClient;
 
-  constructor() {
-    super();
+  constructor(client: MudClient) {
+    this.client = client;
   }
 
   async createPeerConnection(): Promise<void> {
@@ -38,7 +39,7 @@ export class WebRTCService extends EventEmitter {
 
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        this.emit('iceCandidate', event.candidate);
+        this.client.emit('iceCandidate', event.candidate);
       }
     };
 
@@ -50,11 +51,11 @@ export class WebRTCService extends EventEmitter {
     if (!this.dataChannel) return;
 
     this.dataChannel.onopen = () => {
-      this.emit('dataChannelOpen');
+      this.client.emit('dataChannelOpen');
     };
 
     this.dataChannel.onmessage = (event) => {
-      this.emit('dataChannelMessage', event.data);
+      this.client.emit('dataChannelMessage', event.data);
     };
   }
 
@@ -86,18 +87,21 @@ export class WebRTCService extends EventEmitter {
 
 ```typescript
 import { WebRTCService } from './WebRTCService';
+import MudClient from './client';
 
 export class FileTransferManager {
   private webRTCService: WebRTCService;
+  private client: MudClient;
   private chunkSize: number = 16384; // 16 KB chunks
 
-  constructor(webRTCService: WebRTCService) {
+  constructor(client: MudClient, webRTCService: WebRTCService) {
+    this.client = client;
     this.webRTCService = webRTCService;
     this.setupListeners();
   }
 
   private setupListeners(): void {
-    this.webRTCService.on('dataChannelMessage', (data: ArrayBuffer) => {
+    this.client.on('dataChannelMessage', (data: ArrayBuffer) => {
       // Handle incoming file chunks
       this.handleIncomingChunk(data);
     });
@@ -129,6 +133,7 @@ export class FileTransferManager {
   private handleIncomingChunk(chunk: ArrayBuffer): void {
     // Implement logic to reassemble incoming file chunks
     console.log('Received chunk:', chunk.byteLength);
+    this.client.emit('fileChunkReceived', chunk);
   }
 }
 ```
@@ -186,33 +191,34 @@ export const FileTransferUI: React.FC<FileTransferUIProps> = ({ fileTransferMana
 #### SignalingService.ts
 
 ```typescript
-import { EventEmitter } from 'events';
+import MudClient from './client';
 
-export class SignalingService extends EventEmitter {
+export class SignalingService {
   private socket: WebSocket;
+  private client: MudClient;
 
-  constructor(url: string) {
-    super();
+  constructor(client: MudClient, url: string) {
+    this.client = client;
     this.socket = new WebSocket(url);
     this.setupSocketListeners();
   }
 
   private setupSocketListeners(): void {
     this.socket.onopen = () => {
-      this.emit('connected');
+      this.client.emit('signalingConnected');
     };
 
     this.socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      this.emit('message', message);
+      this.client.emit('signalingMessage', message);
     };
 
     this.socket.onerror = (error) => {
-      this.emit('error', error);
+      this.client.emit('signalingError', error);
     };
 
     this.socket.onclose = () => {
-      this.emit('disconnected');
+      this.client.emit('signalingDisconnected');
     };
   }
 
@@ -376,3 +382,64 @@ export default App;
 5. Start integration of new components with MudClient.ts and App.tsx
 
 Once these initial steps are completed, we can proceed with implementing the detailed file transfer logic, error handling, and optimizations.
+import React, { useState } from 'react';
+import MudClient from '../client';
+
+interface FileTransferUIProps {
+  client: MudClient;
+}
+
+const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [transferProgress, setTransferProgress] = useState<number>(0);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+      setSelectedFile(event.target.files[0]);
+    }
+  };
+
+  const handleSendFile = async () => {
+    if (selectedFile) {
+      try {
+        await client.fileTransferManager.sendFile(selectedFile);
+        // Update UI to show transfer complete
+        setTransferProgress(100);
+      } catch (error) {
+        console.error('File transfer failed:', error);
+        // Update UI to show transfer failed
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    const handleFileChunkReceived = (chunk: ArrayBuffer) => {
+      // Update progress based on received chunks
+      // This is a simplified example; you'll need to implement proper progress tracking
+      setTransferProgress((prev) => Math.min(prev + 10, 100));
+    };
+
+    client.on('fileChunkReceived', handleFileChunkReceived);
+
+    return () => {
+      client.off('fileChunkReceived', handleFileChunkReceived);
+    };
+  }, [client]);
+
+  return (
+    <div>
+      <input type="file" onChange={handleFileChange} />
+      <button onClick={handleSendFile} disabled={!selectedFile}>
+        Send File
+      </button>
+      {transferProgress > 0 && (
+        <div>
+          <progress value={transferProgress} max="100" />
+          <span>{transferProgress}%</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default FileTransferUI;

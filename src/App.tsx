@@ -29,7 +29,7 @@ import Toolbar from "./components/toolbar";
 import Statusbar from "./components/statusbar";
 import Userlist from "./components/userlist";
 import AudioChat from "./components/audioChat";
-
+import FileTransferUI from "./components/FileTransferUI";
 
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
@@ -57,7 +57,7 @@ function App() {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   useEffect(() => {
-    if (clientInitialized.current) return; // <-- new line
+    if (clientInitialized.current) return;
     const newClient = new MudClient("mongoose.moo.mud.org", 8765);
     newClient.registerGMCPPackage(GMCPCore);
     newClient.registerGMCPPackage(GMCPClientMedia);
@@ -77,7 +77,7 @@ function App() {
     setClient(newClient);
     setShowUsers(!isMobile);
     window.mudClient = newClient;
-    clientInitialized.current = true; // <-- new line
+    clientInitialized.current = true;
 
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -99,11 +99,35 @@ function App() {
     };
 
     document.addEventListener("focus", handleFocus);
+
+    // Set up file transfer event listeners
+    newClient.on('fileChunkReceived', (chunk: ArrayBuffer) => {
+      console.log('File chunk received:', chunk.byteLength);
+      // Handle the received file chunk (e.g., update progress bar)
+    });
+
+    newClient.on('dataChannelOpen', () => {
+      console.log('WebRTC data channel opened');
+      // Enable file transfer UI or update status
+    });
+
+    newClient.on('signalingConnected', () => {
+      console.log('Connected to signaling server');
+      // Update UI to show connected status
+    });
+
+    newClient.on('signalingError', (error: Error) => {
+      console.error('Signaling error:', error);
+      // Show error message to user
+    });
+
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
+      newClient.removeAllListeners();
     };
   }, [isMobile]);
+
   useEffect(() => {
     if (client) {
       const handleUserlist = (players: UserlistPlayer[]) => {
@@ -133,7 +157,6 @@ function App() {
   if (!client) return null; // or some loading component
 
   return (
-
     <div className="App">
       <header className="App-header"></header>
       <Toolbar
@@ -147,6 +170,7 @@ function App() {
         <OutputWindow client={client} ref={outRef} />
         {showUsers && <Userlist users={players} />}
         <AudioChat client={client} />
+        <FileTransferUI client={client} />
       </div>
       <CommandInput onSend={client.sendCommand} inputRef={inRef} />
       <Statusbar client={client} />
