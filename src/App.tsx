@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import OutputWindow from "./components/output";
@@ -36,6 +36,7 @@ import { GMCPMessageClientFileTransferAccept, GMCPMessageClientFileTransferCance
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showUsers, setShowUsers] = useState<boolean>(false);
+  const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [players, setPlayers] = useState<UserlistPlayer[]>([]);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -173,9 +174,22 @@ function App() {
         <OutputWindow client={client} ref={outRef} />
         {showUsers && <Userlist users={players} />}
         <AudioChat client={client} />
-        <FileTransferUI client={client} />
       </div>
       <CommandInput onSend={client.sendCommand} inputRef={inRef} />
+      <div>
+        <button
+          onClick={() => setShowFileTransfer(!showFileTransfer)}
+          aria-expanded={showFileTransfer}
+          aria-controls="file-transfer-ui"
+        >
+          {showFileTransfer ? 'Hide' : 'Show'} File Transfer
+        </button>
+        {showFileTransfer && (
+          <div id="file-transfer-ui">
+            <FileTransferUI client={client} />
+          </div>
+        )}
+      </div>
       <Statusbar client={client} />
       <PreferencesDialog ref={prefsDialogRef} />
     </div>
