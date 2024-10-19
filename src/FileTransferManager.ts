@@ -1,7 +1,6 @@
 import { WebRTCService } from './WebRTCService';
 import MudClient from './client';
 import * as CryptoJS from 'crypto-js';
-import { GMCPFileTransfer } from './gmcp/FileTransfer';
 
 interface FileTransferProgress {
   filename: string;
@@ -19,13 +18,11 @@ export default class FileTransferManager {
   private outgoingTransfers: Map<string, { file: File, timeout: NodeJS.Timeout }> = new Map();
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
-  private pendingOffers: Map<string, { sender: string, offerSdp: string, timestamp: number }> = new Map();
 
-  constructor(client: MudClient, webRTCService: WebRTCService) {
+  constructor(client: MudClient) {
     this.client = client;
-    this.webRTCService = webRTCService;
+    this.webRTCService = client.webRTCService;
     this.setupListeners();
-    setInterval(() => this.cleanupOldOffers(), 60 * 1000); // Clean up old offers every minute
   }
 
   private isDataChannelReady(): boolean {
@@ -39,13 +36,14 @@ export default class FileTransferManager {
 
   async sendFile(file: File, recipient: string): Promise<void> {
     if (file.size > this.maxFileSize) {
-      throw new Error(`File size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
+      this.client.onFileTransferError(file.name, 'send', `File size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
+      return;
     }
 
     await this.client.initializeWebRTC();
     const offer = await this.client.webRTCService.createOffer();
     
-    await this.client.gmcp_fileTransfer.sendOffer(recipient, file.name, file.size, JSON.stringify(offer));
+    await this.client.sendFileTransferOffer(recipient, file.name, file.size, JSON.stringify(offer));
 
     const transferTimeout = setTimeout(() => {
       this.handleTransferError(file.name, 'send', new Error('Transfer timeout'));
@@ -57,7 +55,8 @@ export default class FileTransferManager {
   private async startTransfer(filename: string): Promise<void> {
     const transfer = this.outgoingTransfers.get(filename);
     if (!transfer) {
-      throw new Error(`No outgoing transfer found for file: ${filename}`);
+      this.client.onFileTransferError(filename, 'send', 'No outgoing transfer found for file');
+      return;
     }
 
     if (!this.isDataChannelReady()) {
@@ -109,7 +108,7 @@ export default class FileTransferManager {
         }
 
         offset += chunk.byteLength;
-        this.client.emit('fileSendProgress', {
+        this.client.onFileSendProgress({
           filename: file.name,
           sentBytes: offset,
           totalBytes: file.size
@@ -118,7 +117,7 @@ export default class FileTransferManager {
         if (offset < file.size) {
           readNextChunk();
         } else {
-          this.client.emit('fileSendComplete', file.name);
+          this.client.onFileSendComplete(file.name);
           this.outgoingTransfers.delete(file.name);
         }
       }
@@ -141,7 +140,8 @@ export default class FileTransferManager {
       let transfer = this.incomingTransfers.get(header.filename);
       if (!transfer) {
         if (header.totalSize > this.maxFileSize) {
-          throw new Error(`Incoming file size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
+          this.client.onFileTransferError(header.filename, 'receive', `Incoming file size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
+          return;
         }
         transfer = {
           filename: header.filename,
@@ -157,7 +157,7 @@ export default class FileTransferManager {
       transfer.receivedSize += chunk.byteLength;
       transfer.lastActivityTimestamp = Date.now();
 
-      this.client.emit('fileReceiveProgress', {
+      this.client.onFileReceiveProgress({
         filename: header.filename,
         receivedBytes: transfer.receivedSize,
         totalBytes: transfer.totalSize
@@ -165,7 +165,7 @@ export default class FileTransferManager {
 
       if (transfer.receivedSize === transfer.totalSize) {
         const completeFile = new Blob(transfer.chunks);
-        this.client.emit('fileReceiveComplete', {
+        this.client.onFileReceiveComplete({
           filename: header.filename,
           file: completeFile
         });
@@ -178,7 +178,7 @@ export default class FileTransferManager {
 
   private handleTransferError(filename: string, direction: 'send' | 'receive', error: any): void {
     console.error(`Error ${direction}ing file ${filename}:`, error);
-    this.client.emit('fileTransferError', { filename, direction, error: error.message });
+    this.client.onFileTransferError(filename, direction, error.message);
 
     if (direction === 'send') {
       const transfer = this.outgoingTransfers.get(filename);
@@ -197,7 +197,7 @@ export default class FileTransferManager {
   private async attemptRecovery(filename: string, direction: 'send' | 'receive'): Promise<void> {
     try {
       await this.webRTCService.createPeerConnection();
-      this.client.emit('connectionRecovered', { filename, direction });
+      this.client.onConnectionRecovered({ filename, direction });
       
       if (direction === 'send') {
         const transfer = this.outgoingTransfers.get(filename);
@@ -207,7 +207,7 @@ export default class FileTransferManager {
       }
     } catch (error) {
       console.error('Failed to recover connection:', error);
-      this.client.emit('recoveryFailed', { filename, direction, error: error.message });
+      this.client.onRecoveryFailed({ filename, direction, error: error.message });
     }
   }
 
@@ -225,54 +225,20 @@ export default class FileTransferManager {
     if (outgoingTransfer) {
       clearTimeout(outgoingTransfer.timeout);
       this.outgoingTransfers.delete(filename);
-      this.client.emit('fileTransferCancelled', { filename, direction: 'send' });
-      this.client.gmcp_fileTransfer.sendCancel(this.client.worldData.playerId, filename);
+      this.client.onFileTransferCancelled({ filename, direction: 'send' });
+      this.client.sendFileTransferCancel(this.client.worldData.playerId, filename);
     }
 
     if (this.incomingTransfers.has(filename)) {
       this.incomingTransfers.delete(filename);
-      this.client.emit('fileTransferCancelled', { filename, direction: 'receive' });
-      this.client.gmcp_fileTransfer.sendCancel(this.client.worldData.playerId, filename);
+      this.client.onFileTransferCancelled({ filename, direction: 'receive' });
+      this.client.sendFileTransferCancel(this.client.worldData.playerId, filename);
     }
-  }
-
-  async handleGMCPOffer(sender: string, filename: string, filesize: number, offerSdp: string): Promise<void> {
-    console.log(`[FileTransferManager] Received GMCP offer: sender=${sender}, filename=${filename}, filesize=${filesize}`);
-    await this.client.initializeWebRTC();
-    await this.client.webRTCService.handleOffer(JSON.parse(offerSdp));
-    const answer = await this.client.webRTCService.createAnswer();
-    await this.client.gmcp_fileTransfer.sendAccept(sender, filename, JSON.stringify(answer));
-    this.client.emit('fileTransferOffer', { sender, filename, filesize });
-    console.log('[FileTransferManager] Emitted fileTransferOffer event');
   }
 
   async acceptTransfer(sender: string, filename: string): Promise<void> {
-    // The transfer is already accepted in handleGMCPOffer, so we just need to set up the data channel
     await this.waitForDataChannel();
-    this.client.emit('fileTransferAccepted', { sender, filename });
-  }
-
-  private cleanupOldOffers(): void {
-    const now = Date.now();
-    for (const [key, offer] of this.pendingOffers.entries()) {
-      if (now - offer.timestamp > 5 * 60 * 1000) { // 5 minutes
-        this.pendingOffers.delete(key);
-      }
-    }
-  }
-
-  rejectTransfer(sender: string, filename: string): void {
-    this.client.gmcp_fileTransfer.sendReject(sender, filename);
-  }
-
-  async handleGMCPAccept(sender: string, filename: string, answerSdp: string): Promise<void> {
-    await this.client.webRTCService.handleAnswer(JSON.parse(answerSdp));
-    await this.waitForDataChannel();
-    const transfer = this.outgoingTransfers.get(filename);
-    if (transfer) {
-      this.startTransfer(filename);
-    }
-    this.client.emit('fileTransferAccepted', { sender, filename });
+    this.client.onFileTransferAccepted({ sender, filename });
   }
 
   private async waitForDataChannel(): Promise<void> {
@@ -288,14 +254,5 @@ export default class FileTransferManager {
         }, 100);
       }
     });
-  }
-
-  handleGMCPReject(sender: string, filename: string): void {
-    this.cancelTransfer(filename);
-    this.client.emit('fileTransferRejected', { sender, filename });
-  }
-
-  handleGMCPCancel(sender: string, filename: string): void {
-    this.cancelTransfer(filename);
   }
 }

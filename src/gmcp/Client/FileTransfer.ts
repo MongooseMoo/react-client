@@ -1,6 +1,5 @@
 import MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
-import { EventEmitter } from "eventemitter3";
 
 export class GMCPMessageClientFileTransferOffer extends GMCPMessage {
   sender: string = "";
@@ -34,19 +33,19 @@ export class GMCPClientFileTransfer extends GMCPPackage {
 
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
     console.log("[GMCPClientFileTransfer] Received offer:", data);
-    this.client.fileTransferManager.handleGMCPOffer(data.sender, data.filename, data.filesize, data.offerSdp);
+    this.client.onFileTransferOffer(data.sender, data.filename, data.filesize, data.offerSdp);
   }
 
   handleAccept(data: GMCPMessageClientFileTransferAccept): void {
-    this.client.fileTransferManager.handleGMCPAccept(data.sender, data.filename, data.answerSdp);
+    this.client.onFileTransferAccept(data.sender, data.filename, data.answerSdp);
   }
 
   handleReject(data: GMCPMessageClientFileTransferReject): void {
-    this.client.fileTransferManager.handleGMCPReject(data.sender, data.filename);
+    this.client.onFileTransferReject(data.sender, data.filename);
   }
 
   handleCancel(data: GMCPMessageClientFileTransferCancel): void {
-    this.client.fileTransferManager.handleGMCPCancel(data.sender, data.filename);
+    this.client.onFileTransferCancel(data.sender, data.filename);
   }
 
   sendOffer(
