@@ -1,4 +1,6 @@
+import MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
+import { EventEmitter } from "eventemitter3";
 
 export class GMCPMessageClientFileTransferOffer extends GMCPMessage {
   sender: string = "";
@@ -21,8 +23,6 @@ export class GMCPMessageClientFileTransferCancel extends GMCPMessage {
   filename: string = "";
 }
 
-import { EventEmitter } from 'eventemitter3';
-
 export class GMCPClientFileTransfer extends GMCPPackage {
   public packageName: string = "Client.FileTransfer";
   private emitter: EventEmitter;
@@ -33,22 +33,22 @@ export class GMCPClientFileTransfer extends GMCPPackage {
   }
 
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
-    this.emitter.emit('offer', data);
+    this.emitter.emit("offer", data);
   }
 
   handleAccept(data: GMCPMessageClientFileTransferAccept): void {
-    this.emitter.emit('accept', data);
+    this.emitter.emit("accept", data);
   }
 
   handleReject(data: GMCPMessageClientFileTransferReject): void {
-    this.emitter.emit('reject', data);
+    this.emitter.emit("reject", data);
   }
 
   handleCancel(data: GMCPMessageClientFileTransferCancel): void {
-    this.emitter.emit('cancel', data);
+    this.emitter.emit("cancel", data);
   }
 
-  handleSignal(data: { sender: string, signal: string }): void {
+  handleSignal(data: { sender: string; signal: string }): void {
     this.client.handleWebRTCSignal(data.sender, data.signal);
   }
 
