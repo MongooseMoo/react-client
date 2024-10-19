@@ -42,9 +42,13 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
 
   const handleSendFile = () => {
     if (selectedFile && recipient) {
-      client.fileTransferManager.sendFile(selectedFile);
-      client.gmcp_fileTransfer.sendOffer(recipient, selectedFile.name, selectedFile.size);
-      addToTransferHistory(`Sending ${selectedFile.name} to ${recipient}`);
+      client.fileTransferManager.sendFile(selectedFile)
+        .then(() => {
+          addToTransferHistory(`Sending ${selectedFile.name} to ${recipient}`);
+        })
+        .catch(error => {
+          addToTransferHistory(`Error sending file: ${error.message}`);
+        });
     }
   };
 
@@ -80,6 +84,30 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
   const handleFileReceiveProgress = (data: { filename: string; receivedBytes: number; totalBytes: number }) => {
     const progress = (data.receivedBytes / data.totalBytes) * 100;
     setReceiveProgress(progress);
+    if (progress === 100) {
+      addToTransferHistory(`File received successfully: ${data.filename}`);
+    }
+  };
+
+  useEffect(() => {
+    client.on('fileTransferOffer', handleFileTransferOffer);
+    client.on('fileTransferRejected', (data) => {
+      addToTransferHistory(`File transfer rejected: ${data.filename}`);
+    });
+    client.on('fileTransferCancelled', (data) => {
+      addToTransferHistory(`File transfer cancelled: ${data.filename} (${data.direction})`);
+    });
+    client.on('fileTransferError', (data) => {
+      addToTransferHistory(`Error transferring file ${data.filename}: ${data.error}`);
+    });
+
+    return () => {
+      client.off('fileTransferOffer', handleFileTransferOffer);
+      client.off('fileTransferRejected');
+      client.off('fileTransferCancelled');
+      client.off('fileTransferError');
+    };
+  }, [client]);
     if (progress === 100) {
       addToTransferHistory(`File received successfully: ${data.filename}`);
     }

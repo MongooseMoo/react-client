@@ -82,6 +82,45 @@ class MudClient extends EventEmitter {
       this,
       this.webRTCService
     );
+    this.setupFileTransferListeners();
+  }
+
+  private setupFileTransferListeners(): void {
+    this.gmcp_fileTransfer.on('offer', (data) => {
+      this.fileTransferManager.handleGMCPOffer(data.sender, data.filename, data.filesize);
+    });
+    this.gmcp_fileTransfer.on('accept', (data) => {
+      this.fileTransferManager.handleGMCPAccept(data.sender, data.filename);
+    });
+    this.gmcp_fileTransfer.on('reject', (data) => {
+      this.fileTransferManager.handleGMCPReject(data.sender, data.filename);
+    });
+    this.gmcp_fileTransfer.on('cancel', (data) => {
+      this.fileTransferManager.handleGMCPCancel(data.sender, data.filename);
+    });
+  }
+
+  async initializeWebRTC(): Promise<void> {
+    if (!this.webRTCService.isDataChannelOpen()) {
+      await this.webRTCService.createPeerConnection();
+      const offer = await this.webRTCService.createOffer();
+      this.gmcp_fileTransfer.sendSignal(this.worldData.playerId, JSON.stringify(offer));
+    }
+  }
+
+  handleWebRTCSignal(sender: string, signal: string): void {
+    const parsedSignal = JSON.parse(signal);
+    if (parsedSignal.type === 'offer') {
+      this.webRTCService.handleOffer(parsedSignal)
+        .then(() => this.webRTCService.createAnswer())
+        .then(answer => {
+          this.gmcp_fileTransfer.sendSignal(sender, JSON.stringify(answer));
+        });
+    } else if (parsedSignal.type === 'answer') {
+      this.webRTCService.handleAnswer(parsedSignal);
+    } else if (parsedSignal.candidate) {
+      this.webRTCService.handleIceCandidate(parsedSignal);
+    }
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {

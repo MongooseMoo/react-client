@@ -21,43 +21,62 @@ export class GMCPMessageClientFileTransferCancel extends GMCPMessage {
   filename: string = "";
 }
 
+import { EventEmitter } from 'eventemitter3';
+
 export class GMCPClientFileTransfer extends GMCPPackage {
   public packageName: string = "Client.FileTransfer";
+  private emitter: EventEmitter;
+
+  constructor(client: MudClient) {
+    super(client);
+    this.emitter = new EventEmitter();
+  }
 
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
-    this.client.emit("fileTransferOffer", data);
+    this.emitter.emit('offer', data);
   }
 
   handleAccept(data: GMCPMessageClientFileTransferAccept): void {
-    this.client.emit("fileTransferAccepted", data);
+    this.emitter.emit('accept', data);
   }
 
   handleReject(data: GMCPMessageClientFileTransferReject): void {
-    this.client.emit("fileTransferRejected", data);
+    this.emitter.emit('reject', data);
   }
 
   handleCancel(data: GMCPMessageClientFileTransferCancel): void {
-    this.client.emit("fileTransferCancelled", data);
+    this.emitter.emit('cancel', data);
+  }
+
+  handleSignal(data: { sender: string, signal: string }): void {
+    this.client.handleWebRTCSignal(data.sender, data.signal);
   }
 
   sendOffer(recipient: string, filename: string, filesize: number): void {
-    this.client.sendGmcp("Comm.FileTransfer.Offer", {
-      recipient,
-      filename,
-      filesize,
-    });
+    this.sendData("Offer", { recipient, filename, filesize });
   }
 
   sendAccept(sender: string, filename: string): void {
-    this.client.sendGmcp("Comm.FileTransfer.Accept", { sender, filename });
+    this.sendData("Accept", { sender, filename });
   }
 
   sendReject(sender: string, filename: string): void {
-    this.client.sendGmcp("Comm.FileTransfer.Reject", { sender, filename });
+    this.sendData("Reject", { sender, filename });
   }
 
   sendCancel(recipient: string, filename: string): void {
-    this.client.sendGmcp("Comm.FileTransfer.Cancel", { recipient, filename });
-    this.client.fileTransferManager.cancelTransfer(filename);
+    this.sendData("Cancel", { recipient, filename });
+  }
+
+  sendSignal(recipient: string, signal: string): void {
+    this.sendData("Signal", { recipient, signal });
+  }
+
+  on(event: string, listener: (...args: any[]) => void): void {
+    this.emitter.on(event, listener);
+  }
+
+  off(event: string, listener: (...args: any[]) => void): void {
+    this.emitter.off(event, listener);
   }
 }
