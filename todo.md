@@ -1,6 +1,6 @@
 # File Transfer System Improvement Todo List
 
-1. Update FileTransferManager.ts:
+1. ✅ Update FileTransferManager.ts:
    - Add a Map to store pending offers with unique keys
    - Modify handleGMCPOffer to store offers with unique keys
    - Update acceptTransfer to use the unique offer key

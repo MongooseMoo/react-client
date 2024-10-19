@@ -19,11 +19,13 @@ export default class FileTransferManager {
   private outgoingTransfers: Map<string, { file: File, timeout: NodeJS.Timeout }> = new Map();
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
+  private pendingOffers: Map<string, { sender: string, offerSdp: string, timestamp: number }> = new Map();
 
   constructor(client: MudClient, webRTCService: WebRTCService) {
     this.client = client;
     this.webRTCService = webRTCService;
     this.setupListeners();
+    setInterval(() => this.cleanupOldOffers(), 60 * 1000); // Clean up old offers every minute
   }
 
   private isDataChannelReady(): boolean {
@@ -234,18 +236,36 @@ export default class FileTransferManager {
     }
   }
 
-  async handleGMCPOffer(sender: string, filename: string, filesize: number): Promise<void> {
+  async handleGMCPOffer(sender: string, filename: string, filesize: number, offerSdp: string): Promise<void> {
     console.log(`[FileTransferManager] Received GMCP offer: sender=${sender}, filename=${filename}, filesize=${filesize}`);
-    // Just notify the user interface about the offer
-    this.client.emit('fileTransferOffer', { sender, filename, filesize });
+    const offerKey = `${sender}-${filename}-${Date.now()}`;
+    this.pendingOffers.set(offerKey, { sender, offerSdp, timestamp: Date.now() });
+    this.client.emit('fileTransferOffer', { sender, filename, filesize, offerKey });
     console.log('[FileTransferManager] Emitted fileTransferOffer event');
   }
 
-  async acceptTransfer(sender: string, filename: string): Promise<void> {
-    // This method should be called when the user accepts the transfer
+  async acceptTransfer(offerKey: string): Promise<void> {
+    const pendingOffer = this.pendingOffers.get(offerKey);
+    if (!pendingOffer) {
+      throw new Error('No pending offer found for this file');
+    }
+
+    const { sender, offerSdp } = pendingOffer;
     await this.client.initializeWebRTC();
-    const offer = await this.client.webRTCService.createOffer();
-    await this.client.gmcp_fileTransfer.sendAccept(sender, filename, JSON.stringify(offer));
+    await this.client.webRTCService.handleOffer(JSON.parse(offerSdp));
+    const answer = await this.client.webRTCService.createAnswer();
+    await this.client.gmcp_fileTransfer.sendAccept(sender, offerKey.split('-')[1], JSON.stringify(answer));
+    
+    this.pendingOffers.delete(offerKey);
+  }
+
+  private cleanupOldOffers(): void {
+    const now = Date.now();
+    for (const [key, offer] of this.pendingOffers.entries()) {
+      if (now - offer.timestamp > 5 * 60 * 1000) { // 5 minutes
+        this.pendingOffers.delete(key);
+      }
+    }
   }
 
   rejectTransfer(sender: string, filename: string): void {
