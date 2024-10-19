@@ -11,7 +11,7 @@ interface FileTransferProgress {
   lastActivityTimestamp: number;
 }
 
-export class FileTransferManager {
+export default class FileTransferManager {
   private webRTCService: WebRTCService;
   private client: MudClient;
   private chunkSize: number = 16384; // 16 KB chunks
