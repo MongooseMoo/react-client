@@ -20,7 +20,7 @@ export class WebRTCService {
 
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        this.client.emit('iceCandidate', event.candidate);
+        this.client.gmcp_fileTransfer.sendSignal(this.client.worldData.playerId, JSON.stringify(event.candidate));
       }
     };
 
@@ -45,5 +45,32 @@ export class WebRTCService {
     this.dataChannel.send(data);
   }
 
-  // Additional methods will be implemented in future steps
+  async createOffer(): Promise<RTCSessionDescriptionInit> {
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    const offer = await this.peerConnection.createOffer();
+    await this.peerConnection.setLocalDescription(offer);
+    return offer;
+  }
+
+  async handleOffer(offer: RTCSessionDescriptionInit): Promise<void> {
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+  }
+
+  async createAnswer(): Promise<RTCSessionDescriptionInit> {
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    const answer = await this.peerConnection.createAnswer();
+    await this.peerConnection.setLocalDescription(answer);
+    return answer;
+  }
+
+  async handleAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+  }
+
+  async handleIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+  }
 }

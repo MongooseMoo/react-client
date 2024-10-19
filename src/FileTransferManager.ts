@@ -15,7 +15,7 @@ export class FileTransferManager {
   private client: MudClient;
   private chunkSize: number = 16384; // 16 KB chunks
   private incomingTransfers: Map<string, FileTransferProgress> = new Map();
-  private outgoingTransfers: Map<string, NodeJS.Timeout> = new Map();
+  private outgoingTransfers: Map<string, { file: File, timeout: NodeJS.Timeout }> = new Map();
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
 
@@ -38,10 +38,6 @@ export class FileTransferManager {
   }
 
   async sendFile(file: File): Promise<void> {
-    if (!this.isDataChannelReady()) {
-      throw new Error("WebRTC data channel is not ready. Please ensure you're connected before sending a file.");
-    }
-
     if (file.size > this.maxFileSize) {
       throw new Error(`File size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
     }
@@ -49,6 +45,24 @@ export class FileTransferManager {
     // Notify the server about the file transfer
     this.client.gmcp_fileTransfer.sendOffer(this.client.worldData.playerId, file.name, file.size);
 
+    const transferTimeout = setTimeout(() => {
+      this.handleTransferError(file.name, 'send', new Error('Transfer timeout'));
+    }, this.transferTimeout);
+
+    this.outgoingTransfers.set(file.name, { file, timeout: transferTimeout });
+  }
+
+  private async startTransfer(filename: string): Promise<void> {
+    const transfer = this.outgoingTransfers.get(filename);
+    if (!transfer) {
+      throw new Error(`No outgoing transfer found for file: ${filename}`);
+    }
+
+    if (!this.isDataChannelReady()) {
+      await this.webRTCService.createPeerConnection();
+    }
+
+    const { file } = transfer;
     const fileReader = new FileReader();
     let offset = 0;
 
@@ -74,15 +88,10 @@ export class FileTransferManager {
         data.set(header, 4);
         data.set(new Uint8Array(chunk), 4 + header.byteLength);
 
-        if (this.isDataChannelReady()) {
-          try {
-            this.webRTCService.sendData(data.buffer);
-          } catch (error) {
-            this.handleTransferError(file.name, 'send', error);
-            return;
-          }
-        } else {
-          this.handleTransferError(file.name, 'send', new Error("WebRTC data channel is not ready"));
+        try {
+          this.webRTCService.sendData(data.buffer);
+        } catch (error) {
+          this.handleTransferError(file.name, 'send', error);
           return;
         }
 
@@ -106,11 +115,6 @@ export class FileTransferManager {
       this.handleTransferError(file.name, 'send', error);
     };
 
-    const transferTimeout = setTimeout(() => {
-      this.handleTransferError(file.name, 'send', new Error('Transfer timeout'));
-    }, this.transferTimeout);
-
-    this.outgoingTransfers.set(file.name, transferTimeout);
     readNextChunk();
   }
 
@@ -164,9 +168,9 @@ export class FileTransferManager {
     this.client.emit('fileTransferError', { filename, direction, error: error.message });
 
     if (direction === 'send') {
-      const timeout = this.outgoingTransfers.get(filename);
-      if (timeout) {
-        clearTimeout(timeout);
+      const transfer = this.outgoingTransfers.get(filename);
+      if (transfer) {
+        clearTimeout(transfer.timeout);
         this.outgoingTransfers.delete(filename);
       }
     } else {
@@ -184,9 +188,9 @@ export class FileTransferManager {
   }
 
   cancelTransfer(filename: string): void {
-    const outgoingTimeout = this.outgoingTransfers.get(filename);
-    if (outgoingTimeout) {
-      clearTimeout(outgoingTimeout);
+    const outgoingTransfer = this.outgoingTransfers.get(filename);
+    if (outgoingTransfer) {
+      clearTimeout(outgoingTransfer.timeout);
       this.outgoingTransfers.delete(filename);
       this.client.emit('fileTransferCancelled', { filename, direction: 'send' });
       this.client.gmcp_fileTransfer.sendCancel(this.client.worldData.playerId, filename);
@@ -197,5 +201,25 @@ export class FileTransferManager {
       this.client.emit('fileTransferCancelled', { filename, direction: 'receive' });
       this.client.gmcp_fileTransfer.sendCancel(this.client.worldData.playerId, filename);
     }
+  }
+
+  handleGMCPOffer(sender: string, filename: string, filesize: number): void {
+    this.client.emit('fileTransferOffer', { sender, filename, filesize });
+  }
+
+  handleGMCPAccept(sender: string, filename: string): void {
+    const transfer = this.outgoingTransfers.get(filename);
+    if (transfer) {
+      this.startTransfer(filename);
+    }
+  }
+
+  handleGMCPReject(sender: string, filename: string): void {
+    this.cancelTransfer(filename);
+    this.client.emit('fileTransferRejected', { sender, filename });
+  }
+
+  handleGMCPCancel(sender: string, filename: string): void {
+    this.cancelTransfer(filename);
   }
 }
