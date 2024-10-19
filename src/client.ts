@@ -103,8 +103,6 @@ class MudClient extends EventEmitter {
   async initializeWebRTC(): Promise<void> {
     if (!this.webRTCService.isDataChannelOpen()) {
       await this.webRTCService.createPeerConnection();
-      const offer = await this.webRTCService.createOffer();
-      this.gmcp_fileTransfer.sendSignal(this.worldData.playerId, JSON.stringify(offer));
     }
   }
 
