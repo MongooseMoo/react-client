@@ -15,18 +15,22 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
   const [transferHistory, setTransferHistory] = useState<string[]>([]);
 
   useEffect(() => {
-    client.on('fileTransferOffer', handleFileTransferOffer);
-    client.on('fileSendProgress', handleFileSendProgress);
-    client.on('fileReceiveProgress', handleFileReceiveProgress);
-    client.on('fileTransferError', handleFileTransferError);
-    client.on('fileTransferCancelled', handleFileTransferCancelled);
+    const fileTransferManager = client.fileTransferManager;
+
+    fileTransferManager.on('fileTransferOffer', handleFileTransferOffer);
+    fileTransferManager.on('fileSendProgress', handleFileSendProgress);
+    fileTransferManager.on('fileReceiveProgress', handleFileReceiveProgress);
+    fileTransferManager.on('fileTransferError', handleFileTransferError);
+    fileTransferManager.on('fileTransferCancelled', handleFileTransferCancelled);
+    fileTransferManager.on('fileTransferRejected', handleFileTransferRejected);
 
     return () => {
-      client.off('fileTransferOffer', handleFileTransferOffer);
-      client.off('fileSendProgress', handleFileSendProgress);
-      client.off('fileReceiveProgress', handleFileReceiveProgress);
-      client.off('fileTransferError', handleFileTransferError);
-      client.off('fileTransferCancelled', handleFileTransferCancelled);
+      fileTransferManager.off('fileTransferOffer', handleFileTransferOffer);
+      fileTransferManager.off('fileSendProgress', handleFileSendProgress);
+      fileTransferManager.off('fileReceiveProgress', handleFileReceiveProgress);
+      fileTransferManager.off('fileTransferError', handleFileTransferError);
+      fileTransferManager.off('fileTransferCancelled', handleFileTransferCancelled);
+      fileTransferManager.off('fileTransferRejected', handleFileTransferRejected);
     };
   }, [client]);
 
@@ -42,7 +46,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
 
   const handleSendFile = () => {
     if (selectedFile && recipient) {
-      client.fileTransferManager.sendFile(selectedFile)
+      client.fileTransferManager.sendFile(selectedFile, recipient)
         .then(() => {
           addToTransferHistory(`Sending ${selectedFile.name} to ${recipient}`);
         })
@@ -59,7 +63,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
 
   const handleAcceptTransfer = () => {
     if (incomingTransfer) {
-      client.gmcp_fileTransfer.sendAccept(incomingTransfer.sender, incomingTransfer.filename);
+      client.fileTransferManager.acceptTransfer(incomingTransfer.sender, incomingTransfer.filename);
       addToTransferHistory(`Accepted file transfer: ${incomingTransfer.filename} from ${incomingTransfer.sender}`);
       setIncomingTransfer(null);
     }
@@ -67,7 +71,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
 
   const handleRejectTransfer = () => {
     if (incomingTransfer) {
-      client.gmcp_fileTransfer.sendReject(incomingTransfer.sender, incomingTransfer.filename);
+      client.fileTransferManager.rejectTransfer(incomingTransfer.sender, incomingTransfer.filename);
       addToTransferHistory(`Rejected file transfer: ${incomingTransfer.filename} from ${incomingTransfer.sender}`);
       setIncomingTransfer(null);
     }
@@ -89,30 +93,6 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
     }
   };
 
-  useEffect(() => {
-    client.on('fileTransferOffer', handleFileTransferOffer);
-    client.on('fileTransferRejected', (data) => {
-      addToTransferHistory(`File transfer rejected: ${data.filename}`);
-    });
-    client.on('fileTransferCancelled', (data) => {
-      addToTransferHistory(`File transfer cancelled: ${data.filename} (${data.direction})`);
-    });
-    client.on('fileTransferError', (data) => {
-      addToTransferHistory(`Error transferring file ${data.filename}: ${data.error}`);
-    });
-
-    return () => {
-      client.off('fileTransferOffer', handleFileTransferOffer);
-      client.off('fileTransferRejected');
-      client.off('fileTransferCancelled');
-      client.off('fileTransferError');
-    };
-  }, [client]);
-    if (progress === 100) {
-      addToTransferHistory(`File received successfully: ${data.filename}`);
-    }
-  };
-
   const handleFileTransferError = (data: { filename: string; error: string }) => {
     addToTransferHistory(`Error transferring file ${data.filename}: ${data.error}`);
   };
@@ -121,6 +101,10 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
     addToTransferHistory(`File transfer cancelled: ${data.filename} (${data.direction})`);
     setSendProgress(0);
     setReceiveProgress(0);
+  };
+
+  const handleFileTransferRejected = (data: { filename: string }) => {
+    addToTransferHistory(`File transfer rejected: ${data.filename}`);
   };
 
   const handleCancelTransfer = () => {
