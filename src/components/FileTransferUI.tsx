@@ -59,10 +59,14 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
     addToTransferHistory(`Incoming file offer: ${data.filename} from ${data.sender}`);
   };
 
-  const handleAcceptTransfer = () => {
+  const handleAcceptTransfer = async () => {
     if (incomingTransfer) {
-      client.fileTransferManager.acceptTransfer(incomingTransfer.sender, incomingTransfer.filename);
-      addToTransferHistory(`Accepted file transfer: ${incomingTransfer.filename} from ${incomingTransfer.sender}`);
+      try {
+        await client.fileTransferManager.acceptTransfer(incomingTransfer.sender, incomingTransfer.filename);
+        addToTransferHistory(`Accepted file transfer: ${incomingTransfer.filename} from ${incomingTransfer.sender}`);
+      } catch (error) {
+        addToTransferHistory(`Error accepting file transfer: ${error.message}`);
+      }
       setIncomingTransfer(null);
     }
   };

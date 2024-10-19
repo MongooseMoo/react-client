@@ -35,12 +35,13 @@ export class GMCPClientFileTransfer extends GMCPPackage {
   }
 
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
-    this.client.webRTCService.handleOffer(JSON.parse(data.offerSdp));
     this.emitter.emit("offer", data);
   }
 
   async handleAccept(data: GMCPMessageClientFileTransferAccept): Promise<void> {
-    await this.client.webRTCService.handleAnswer(JSON.parse(data.answerSdp));
+    await this.client.webRTCService.handleOffer(JSON.parse(data.answerSdp));
+    const answer = await this.client.webRTCService.createAnswer();
+    await this.sendSignal(data.sender, JSON.stringify(answer));
     this.emitter.emit("accept", data);
   }
 
