@@ -6,6 +6,7 @@ interface FileTransferProgress {
   totalSize: number;
   receivedSize: number;
   chunks: ArrayBuffer[];
+  lastActivityTimestamp: number;
 }
 
 export class FileTransferManager {
@@ -13,6 +14,9 @@ export class FileTransferManager {
   private client: MudClient;
   private chunkSize: number = 16384; // 16 KB chunks
   private incomingTransfers: Map<string, FileTransferProgress> = new Map();
+  private outgoingTransfers: Map<string, NodeJS.Timeout> = new Map();
+  private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
+  private transferTimeout: number = 30000; // 30 seconds
 
   constructor(client: MudClient, webRTCService: WebRTCService) {
     this.client = client;
@@ -24,9 +28,15 @@ export class FileTransferManager {
     this.client.on('dataChannelMessage', (data: ArrayBuffer) => {
       this.handleIncomingChunk(data);
     });
+
+    setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
   async sendFile(file: File): Promise<void> {
+    if (file.size > this.maxFileSize) {
+      throw new Error(`File size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
+    }
+
     const fileReader = new FileReader();
     let offset = 0;
 
@@ -52,7 +62,12 @@ export class FileTransferManager {
         data.set(header, 4);
         data.set(new Uint8Array(chunk), 4 + header.byteLength);
 
-        this.webRTCService.sendData(data.buffer);
+        try {
+          this.webRTCService.sendData(data.buffer);
+        } catch (error) {
+          this.handleTransferError(file.name, 'send', error);
+          return;
+        }
 
         offset += chunk.byteLength;
         this.client.emit('fileSendProgress', {
@@ -65,46 +80,103 @@ export class FileTransferManager {
           readNextChunk();
         } else {
           this.client.emit('fileSendComplete', file.name);
+          this.outgoingTransfers.delete(file.name);
         }
       }
     };
 
+    fileReader.onerror = (error) => {
+      this.handleTransferError(file.name, 'send', error);
+    };
+
+    const transferTimeout = setTimeout(() => {
+      this.handleTransferError(file.name, 'send', new Error('Transfer timeout'));
+    }, this.transferTimeout);
+
+    this.outgoingTransfers.set(file.name, transferTimeout);
     readNextChunk();
   }
 
   private handleIncomingChunk(data: ArrayBuffer): void {
-    const headerSize = new Uint32Array(data.slice(0, 4))[0];
-    const headerData = new TextDecoder().decode(data.slice(4, 4 + headerSize));
-    const header = JSON.parse(headerData);
-    const chunk = data.slice(4 + headerSize);
+    try {
+      const headerSize = new Uint32Array(data.slice(0, 4))[0];
+      const headerData = new TextDecoder().decode(data.slice(4, 4 + headerSize));
+      const header = JSON.parse(headerData);
+      const chunk = data.slice(4 + headerSize);
 
-    let transfer = this.incomingTransfers.get(header.filename);
-    if (!transfer) {
-      transfer = {
+      let transfer = this.incomingTransfers.get(header.filename);
+      if (!transfer) {
+        if (header.totalSize > this.maxFileSize) {
+          throw new Error(`Incoming file size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
+        }
+        transfer = {
+          filename: header.filename,
+          totalSize: header.totalSize,
+          receivedSize: 0,
+          chunks: new Array(header.totalChunks),
+          lastActivityTimestamp: Date.now()
+        };
+        this.incomingTransfers.set(header.filename, transfer);
+      }
+
+      transfer.chunks[header.chunkIndex] = chunk;
+      transfer.receivedSize += chunk.byteLength;
+      transfer.lastActivityTimestamp = Date.now();
+
+      this.client.emit('fileReceiveProgress', {
         filename: header.filename,
-        totalSize: header.totalSize,
-        receivedSize: 0,
-        chunks: new Array(header.totalChunks)
-      };
-      this.incomingTransfers.set(header.filename, transfer);
+        receivedBytes: transfer.receivedSize,
+        totalBytes: transfer.totalSize
+      });
+
+      if (transfer.receivedSize === transfer.totalSize) {
+        const completeFile = new Blob(transfer.chunks);
+        this.client.emit('fileReceiveComplete', {
+          filename: header.filename,
+          file: completeFile
+        });
+        this.incomingTransfers.delete(header.filename);
+      }
+    } catch (error) {
+      this.handleTransferError(error.message, 'receive', error);
+    }
+  }
+
+  private handleTransferError(filename: string, direction: 'send' | 'receive', error: any): void {
+    console.error(`Error ${direction}ing file ${filename}:`, error);
+    this.client.emit('fileTransferError', { filename, direction, error: error.message });
+
+    if (direction === 'send') {
+      const timeout = this.outgoingTransfers.get(filename);
+      if (timeout) {
+        clearTimeout(timeout);
+        this.outgoingTransfers.delete(filename);
+      }
+    } else {
+      this.incomingTransfers.delete(filename);
+    }
+  }
+
+  private checkTransferTimeouts(): void {
+    const now = Date.now();
+    this.incomingTransfers.forEach((transfer, filename) => {
+      if (now - transfer.lastActivityTimestamp > this.transferTimeout) {
+        this.handleTransferError(filename, 'receive', new Error('Transfer timeout'));
+      }
+    });
+  }
+
+  cancelTransfer(filename: string): void {
+    const outgoingTimeout = this.outgoingTransfers.get(filename);
+    if (outgoingTimeout) {
+      clearTimeout(outgoingTimeout);
+      this.outgoingTransfers.delete(filename);
+      this.client.emit('fileTransferCancelled', { filename, direction: 'send' });
     }
 
-    transfer.chunks[header.chunkIndex] = chunk;
-    transfer.receivedSize += chunk.byteLength;
-
-    this.client.emit('fileReceiveProgress', {
-      filename: header.filename,
-      receivedBytes: transfer.receivedSize,
-      totalBytes: transfer.totalSize
-    });
-
-    if (transfer.receivedSize === transfer.totalSize) {
-      const completeFile = new Blob(transfer.chunks);
-      this.client.emit('fileReceiveComplete', {
-        filename: header.filename,
-        file: completeFile
-      });
-      this.incomingTransfers.delete(header.filename);
+    if (this.incomingTransfers.has(filename)) {
+      this.incomingTransfers.delete(filename);
+      this.client.emit('fileTransferCancelled', { filename, direction: 'receive' });
     }
   }
 }
