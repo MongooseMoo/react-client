@@ -36,6 +36,7 @@ function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
+  const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
   const [players, setPlayers] = useState<UserlistPlayer[]>([]);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -120,12 +121,19 @@ function App() {
         setPlayers([]);
       };
 
+      const handleFileTransferOffer = () => {
+        setFileTransferExpanded(true);
+        setShowFileTransfer(true);
+      };
+
       client.on("userlist", handleUserlist);
       client.on("disconnect", handleDisconnect);
+      client.on('fileTransferOffer', handleFileTransferOffer);
 
       return () => {
         client.off("userlist", handleUserlist);
         client.off("disconnect", handleDisconnect);
+        client.off('fileTransferOffer', handleFileTransferOffer);
       };
     }
   }, [client]);
@@ -164,7 +172,7 @@ function App() {
         </button>
         {showFileTransfer && client && (
           <div id="file-transfer-ui">
-            <FileTransferUI client={client} />
+            <FileTransferUI client={client} expanded={fileTransferExpanded} />
           </div>
         )}
       </div>

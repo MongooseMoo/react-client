@@ -15,7 +15,7 @@
    - Update handleAcceptTransfer to use the new acceptTransfer method
    - Add logic to display multiple pending offers
 
-4. Update App.tsx:
+4. ✅ Update App.tsx:
    - Add state for file transfer UI expansion
    - Add event listener for file transfer offers to auto-expand the UI
    - Pass expanded state to FileTransferUI component
