@@ -1,5 +1,6 @@
 import { WebRTCService } from './WebRTCService';
 import MudClient from './client';
+import * as CryptoJS from 'crypto-js';
 import { GMCPFileTransfer } from './gmcp/FileTransfer';
 
 interface FileTransferProgress {
@@ -66,6 +67,9 @@ export class FileTransferManager {
     const fileReader = new FileReader();
     let offset = 0;
 
+    // Generate a random encryption key
+    const encryptionKey = CryptoJS.lib.WordArray.random(256 / 8);
+
     const readNextChunk = () => {
       const slice = file.slice(offset, offset + this.chunkSize);
       fileReader.readAsArrayBuffer(slice);
@@ -74,19 +78,27 @@ export class FileTransferManager {
     fileReader.onload = (e) => {
       if (e.target?.result instanceof ArrayBuffer) {
         const chunk = e.target.result;
+        
+        // Encrypt the chunk
+        const encryptedChunk = CryptoJS.AES.encrypt(
+          CryptoJS.lib.WordArray.create(chunk),
+          encryptionKey
+        ).toString();
+
         const header = new TextEncoder().encode(JSON.stringify({
           filename: file.name,
           chunkIndex: offset / this.chunkSize,
           totalChunks: Math.ceil(file.size / this.chunkSize),
-          chunkSize: chunk.byteLength,
-          totalSize: file.size
+          chunkSize: encryptedChunk.length,
+          totalSize: file.size,
+          encryptionKey: encryptionKey.toString()
         }));
 
         const headerSize = new Uint32Array([header.byteLength]);
-        const data = new Uint8Array(4 + header.byteLength + chunk.byteLength);
+        const data = new Uint8Array(4 + header.byteLength + encryptedChunk.length);
         data.set(new Uint8Array(headerSize.buffer), 0);
         data.set(header, 4);
-        data.set(new Uint8Array(chunk), 4 + header.byteLength);
+        data.set(new TextEncoder().encode(encryptedChunk), 4 + header.byteLength);
 
         try {
           this.webRTCService.sendData(data.buffer);
@@ -175,6 +187,26 @@ export class FileTransferManager {
       }
     } else {
       this.incomingTransfers.delete(filename);
+    }
+
+    // Attempt to recover the connection
+    this.attemptRecovery(filename, direction);
+  }
+
+  private async attemptRecovery(filename: string, direction: 'send' | 'receive'): Promise<void> {
+    try {
+      await this.webRTCService.createPeerConnection();
+      this.client.emit('connectionRecovered', { filename, direction });
+      
+      if (direction === 'send') {
+        const transfer = this.outgoingTransfers.get(filename);
+        if (transfer) {
+          this.startTransfer(filename);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to recover connection:', error);
+      this.client.emit('recoveryFailed', { filename, direction, error: error.message });
     }
   }
 
