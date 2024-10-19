@@ -35,13 +35,15 @@ export default class FileTransferManager {
     setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
-  async sendFile(file: File): Promise<void> {
+  async sendFile(file: File, recipient: string): Promise<void> {
     if (file.size > this.maxFileSize) {
       throw new Error(`File size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
     }
 
-    // Create offer and send it along with the file transfer offer
-    await this.client.gmcp_fileTransfer.sendOffer(this.client.worldData.playerId, file.name, file.size);
+    await this.client.initializeWebRTC();
+    const offer = await this.client.webRTCService.createOffer();
+    
+    await this.client.gmcp_fileTransfer.sendOffer(recipient, file.name, file.size, JSON.stringify(offer));
 
     const transferTimeout = setTimeout(() => {
       this.handleTransferError(file.name, 'send', new Error('Transfer timeout'));
@@ -232,17 +234,35 @@ export default class FileTransferManager {
     }
   }
 
-  handleGMCPOffer(sender: string, filename: string, filesize: number, offerSdp: string): void {
-    this.client.webRTCService.handleOffer(JSON.parse(offerSdp));
+  async handleGMCPOffer(sender: string, filename: string, filesize: number, offerSdp: string): Promise<void> {
+    await this.client.webRTCService.handleOffer(JSON.parse(offerSdp));
+    const answer = await this.client.webRTCService.createAnswer();
+    await this.client.gmcp_fileTransfer.sendAccept(sender, filename, JSON.stringify(answer));
     this.client.emit('fileTransferOffer', { sender, filename, filesize });
   }
 
   async handleGMCPAccept(sender: string, filename: string, answerSdp: string): Promise<void> {
     await this.client.webRTCService.handleAnswer(JSON.parse(answerSdp));
+    await this.waitForDataChannel();
     const transfer = this.outgoingTransfers.get(filename);
     if (transfer) {
       this.startTransfer(filename);
     }
+  }
+
+  private async waitForDataChannel(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (this.client.webRTCService.isDataChannelOpen()) {
+        resolve();
+      } else {
+        const checkInterval = setInterval(() => {
+          if (this.client.webRTCService.isDataChannelOpen()) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 100);
+      }
+    });
   }
 
   handleGMCPReject(sender: string, filename: string): void {
