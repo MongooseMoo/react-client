@@ -41,12 +41,10 @@ The following GMCP messages are used for file transfer signaling:
    - sender: string
    - filename: string
    - filesize: number
-   - offerSdp: string (WebRTC offer SDP)
 
 2. FileTransfer.Accept
    - sender: string
    - filename: string
-   - answerSdp: string (WebRTC answer SDP)
 
 3. FileTransfer.Reject
    - sender: string
@@ -56,11 +54,9 @@ The following GMCP messages are used for file transfer signaling:
    - sender: string
    - filename: string
 
-5. FileTransfer.Signal
-   - sender: string
-   - signal: string (WebRTC ICE candidate)
+## 5. WebRTC Data Channel and Signaling
 
-## 5. WebRTC Data Channel
+WebRTC signaling (offer, answer, and ICE candidates) is handled directly through the WebRTCService, separate from GMCP messages.
 
 The WebRTC data channel is used for the actual file data transfer:
 
