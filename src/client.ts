@@ -30,7 +30,7 @@ import {
 import { Cacophony } from "cacophony";
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 import { WebRTCService } from "./WebRTCService";
-import { FileTransferManager } from "./FileTransferManager";
+import { FileTransferManager } from "./FileTransferManager.js";
 
 export interface WorldData {
   liveKitTokens: string[];
