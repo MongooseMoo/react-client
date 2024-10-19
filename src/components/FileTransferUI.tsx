@@ -15,6 +15,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
   const [transferHistory, setTransferHistory] = useState<string[]>([]);
 
   useEffect(() => {
+    console.log('[FileTransferUI] Setting up event listeners');
     client.on('fileTransferOffer', handleFileTransferOffer);
     client.on('fileSendProgress', handleFileSendProgress);
     client.on('fileReceiveProgress', handleFileReceiveProgress);
@@ -23,6 +24,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
     client.on('fileTransferRejected', handleFileTransferRejected);
 
     return () => {
+      console.log('[FileTransferUI] Removing event listeners');
       client.off('fileTransferOffer', handleFileTransferOffer);
       client.off('fileSendProgress', handleFileSendProgress);
       client.off('fileReceiveProgress', handleFileReceiveProgress);
@@ -31,6 +33,10 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
       client.off('fileTransferRejected', handleFileTransferRejected);
     };
   }, [client]);
+
+  useEffect(() => {
+    console.log('[FileTransferUI] incomingTransfer state updated:', incomingTransfer);
+  }, [incomingTransfer]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -55,8 +61,10 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
   };
 
   const handleFileTransferOffer = (data: { sender: string; filename: string; filesize: number }) => {
+    console.log('[FileTransferUI] Received fileTransferOffer event:', data);
     setIncomingTransfer(data);
     addToTransferHistory(`Incoming file offer: ${data.filename} from ${data.sender}`);
+    console.log('[FileTransferUI] Updated incomingTransfer state and transfer history');
   };
 
   const handleAcceptTransfer = async () => {
