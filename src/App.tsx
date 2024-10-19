@@ -14,6 +14,7 @@ import {
   GMCPCommChannel,
   GMCPAutoLogin,
   GMCPClientHtml,
+  GMCPCommFileTransfer,
 } from "./gmcp";
 import {
   McpAwnsPing,
@@ -68,6 +69,7 @@ function App() {
     newClient.registerGMCPPackage(GMCPCommLiveKit);
     newClient.registerGMCPPackage(GMCPAutoLogin);
     newClient.registerGMCPPackage(GMCPClientHtml);
+    newClient.registerGMCPPackage(GMCPCommFileTransfer);
     newClient.registerMcpPackage(McpAwnsStatus);
     newClient.registerMcpPackage(McpSimpleEdit);
     newClient.registerMcpPackage(McpVmooUserlist);
@@ -101,24 +103,24 @@ function App() {
     document.addEventListener("focus", handleFocus);
 
     // Set up file transfer event listeners
-    newClient.on('fileChunkReceived', (chunk: ArrayBuffer) => {
-      console.log('File chunk received:', chunk.byteLength);
-      // Handle the received file chunk (e.g., update progress bar)
+    newClient.on('fileTransferOffer', (data: GMCPMessageCommFileTransferOffer) => {
+      console.log('File transfer offer received:', data);
+      // Handle the file transfer offer (e.g., show a confirmation dialog)
     });
 
-    newClient.on('dataChannelOpen', () => {
-      console.log('WebRTC data channel opened');
-      // Enable file transfer UI or update status
+    newClient.on('fileTransferAccepted', (data: GMCPMessageCommFileTransferAccept) => {
+      console.log('File transfer accepted:', data);
+      // Start the file transfer process
     });
 
-    newClient.on('signalingConnected', () => {
-      console.log('Connected to signaling server');
-      // Update UI to show connected status
+    newClient.on('fileTransferRejected', (data: GMCPMessageCommFileTransferReject) => {
+      console.log('File transfer rejected:', data);
+      // Handle the rejection (e.g., show a message to the user)
     });
 
-    newClient.on('signalingError', (error: Error) => {
-      console.error('Signaling error:', error);
-      // Show error message to user
+    newClient.on('fileTransferCancelled', (data: GMCPMessageCommFileTransferCancel) => {
+      console.log('File transfer cancelled:', data);
+      // Handle the cancellation (e.g., stop the transfer and update UI)
     });
 
     return () => {

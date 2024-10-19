@@ -14,6 +14,7 @@ import {
   GMCPClientMedia,
   GMCPCore,
   GMCPCoreSupports,
+  GMCPCommFileTransfer,
 } from "./gmcp";
 import type { GMCPPackage } from "./gmcp/package";
 import {
@@ -55,6 +56,7 @@ class MudClient extends EventEmitter {
   mcp_negotiate: McpNegotiate;
   public mcp_getset: McpAwnsGetSet;
   public gmcp_char: GMCPChar;
+  public gmcp_fileTransfer: GMCPCommFileTransfer;
   public worldData: WorldData = {
     playerId: "",
     playerName: "",
@@ -65,7 +67,6 @@ class MudClient extends EventEmitter {
   public editors: EditorManager;
   public webRTCService: WebRTCService;
   public fileTransferManager: FileTransferManager;
-  public signalingService: SignalingService;
 
   constructor(host: string, port: number) {
     super();
@@ -74,11 +75,11 @@ class MudClient extends EventEmitter {
     this.mcp_negotiate = this.registerMcpPackage(McpNegotiate);
     this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
+    this.gmcp_fileTransfer = this.registerGMCPPackage(GMCPCommFileTransfer);
     this.cacophony = new Cacophony();
     this.editors = new EditorManager(this);
     this.webRTCService = new WebRTCService(this);
     this.fileTransferManager = new FileTransferManager(this, this.webRTCService);
-    this.signalingService = new SignalingService(this, `wss://${host}:${port}/signaling`);
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
