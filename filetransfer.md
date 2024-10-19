@@ -106,6 +106,37 @@ The WebRTC data channel is used for the actual file data transfer:
 3. Implement transfer resume functionality for interrupted transfers
 4. Add support for multiple simultaneous file transfers
 5. Enhance error recovery mechanisms
+
+## Future Enhancements
+
+### 1. Encryption
+
+To improve security, we plan to implement end-to-end encryption for file transfers:
+
+- Generate a unique encryption key for each file transfer
+- Use a strong encryption algorithm (e.g., AES-256) to encrypt file chunks before sending
+- Send the encryption key securely along with the file transfer offer
+- Implement decryption on the receiving end
+
+### 2. Transfer Resume Functionality
+
+To handle interrupted transfers, we'll implement a resume feature:
+
+- Add a unique transfer ID for each file transfer
+- Store transfer progress and metadata persistently
+- Implement a protocol to negotiate resuming from the last successfully transferred chunk
+- Update the UI to show resume options for interrupted transfers
+
+### 3. Multiple Simultaneous Transfers
+
+To support multiple file transfers at once:
+
+- Refactor FileTransferManager to handle multiple transfer sessions
+- Implement a queue system for managing multiple transfers
+- Update the UI to display and manage multiple ongoing transfers
+- Ensure proper resource allocation and throttling to maintain performance
+
+These enhancements will significantly improve the robustness, security, and usability of our file transfer feature.
 import React, { useState, useEffect } from 'react';
 import MudClient from '../client';
 import { GMCPMessageClientFileTransferOffer, GMCPMessageClientFileTransferAccept, GMCPMessageClientFileTransferReject, GMCPMessageClientFileTransferCancel } from '../gmcp/Client/FileTransfer';
