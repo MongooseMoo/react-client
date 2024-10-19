@@ -26,8 +26,12 @@
 6. Update MudClient.ts:
    - Ensure proper initialization of WebRTCService and FileTransferManager
 
-7. Review and update WebRTCService.ts:
+7. ✅ Review and update WebRTCService.ts:
    - Ensure it properly handles offer/answer exchange
+   - Add error handling and logging
+   - Implement connection state monitoring
+   - Add reconnection logic
+   - Add cleanup method
 
 8. Testing:
    - Test receiving multiple file transfer offers
