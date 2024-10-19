@@ -18,19 +18,19 @@ We have implemented a peer-to-peer file transfer system using WebRTC, integrated
 
 ## 3. Protocol Overview
 
-The file transfer protocol uses a combination of GMCP messages and WebRTC data channels:
+The file transfer protocol uses a combination of GMCP messages for signaling and WebRTC data channels for actual file transfer:
 
 1. Offer/Accept Phase:
-   - Sender initiates transfer with a GMCP FileTransfer.Offer message
-   - Receiver responds with a GMCP FileTransfer.Accept message
-   - WebRTC connection is established using the SDP information in these messages
+   - Sender initiates transfer with a GMCP FileTransfer.Offer message, including WebRTC offer SDP
+   - Receiver responds with a GMCP FileTransfer.Accept message, including WebRTC answer SDP
+   - ICE candidates are exchanged using GMCP FileTransfer.Signal messages
 
 2. Data Transfer Phase:
-   - File data is sent over the WebRTC data channel in chunks
+   - File data is sent over the WebRTC data channel in encrypted chunks
    - Progress is tracked and reported to the UI
 
 3. Completion/Error Handling:
-   - Transfer completion is signaled when all chunks are received
+   - Transfer completion is signaled when all chunks are received and reassembled
    - Errors or cancellations are handled with appropriate GMCP messages
 
 ## 4. GMCP Messages
@@ -41,10 +41,12 @@ The following GMCP messages are used for file transfer signaling:
    - sender: string
    - filename: string
    - filesize: number
+   - offerSdp: string (WebRTC offer SDP)
 
 2. FileTransfer.Accept
    - sender: string
    - filename: string
+   - answerSdp: string (WebRTC answer SDP)
 
 3. FileTransfer.Reject
    - sender: string
@@ -54,51 +56,56 @@ The following GMCP messages are used for file transfer signaling:
    - sender: string
    - filename: string
 
-## 5. WebRTC Data Channel and Signaling
+5. FileTransfer.Signal
+   - sender: string
+   - signal: string (WebRTC ICE candidate)
 
-WebRTC signaling (offer, answer, and ICE candidates) is handled directly through the WebRTCService, separate from GMCP messages.
+## 5. WebRTC Data Channel
 
 The WebRTC data channel is used for the actual file data transfer:
 
 - Channel name: 'fileTransfer'
-- Data format: ArrayBuffer containing file chunks
+- Data format: ArrayBuffer containing encrypted file chunks and metadata
 
 ## 6. File Transfer Process
 
 1. Sender selects a file and recipient in the UI
-2. Sender's client sends a FileTransfer.Offer GMCP message
+2. Sender's client creates a WebRTC offer and sends a FileTransfer.Offer GMCP message
 3. Receiver's client displays the offer in the UI
-4. If accepted, receiver's client sends a FileTransfer.Accept GMCP message
-5. WebRTC connection is established using the exchanged SDP information
-6. File is chunked and sent over the WebRTC data channel
-7. Receiver reassembles the file chunks
-8. Both sides update their UIs with progress information
-9. On completion, the file is saved on the receiver's side
+4. If accepted, receiver's client creates a WebRTC answer and sends a FileTransfer.Accept GMCP message
+5. Both clients exchange ICE candidates using FileTransfer.Signal GMCP messages
+6. WebRTC connection is established
+7. File is chunked, encrypted, and sent over the WebRTC data channel
+8. Receiver decrypts and reassembles the file chunks
+9. Both sides update their UIs with progress information
+10. On completion, the file is saved on the receiver's side
 
 ## 7. Error Handling and Recovery
 
 - Network interruptions: The WebRTC connection will attempt to reconnect automatically
 - Transfer cancellation: Either side can send a FileTransfer.Cancel GMCP message
 - Rejection: Receiver can send a FileTransfer.Reject GMCP message to decline the transfer
+- Transfer timeout: Implemented to handle stalled transfers
 
 ## 8. Security Considerations
 
 - WebRTC provides built-in encryption for data channels
-- File integrity should be verified after transfer (e.g., using checksums)
+- Additional encryption is applied to file chunks before sending
 - User authentication is handled by the existing MUD client authentication system
 
 ## 9. Performance Optimizations
 
 - File chunking allows for efficient memory usage and progress tracking
 - WebRTC's built-in congestion control helps manage network performance
+- Encryption key is sent with each chunk for improved security
 
 ## Next Steps
 
-1. Implement robust error handling and recovery mechanisms
-2. Add file integrity verification
-3. Optimize chunk size for different network conditions
-4. Implement transfer resume functionality for interrupted transfers
-5. Add support for multiple simultaneous file transfers
+1. Implement file integrity verification using checksums
+2. Optimize chunk size for different network conditions
+3. Implement transfer resume functionality for interrupted transfers
+4. Add support for multiple simultaneous file transfers
+5. Enhance error recovery mechanisms
 import React, { useState, useEffect } from 'react';
 import MudClient from '../client';
 import { GMCPMessageClientFileTransferOffer, GMCPMessageClientFileTransferAccept, GMCPMessageClientFileTransferReject, GMCPMessageClientFileTransferCancel } from '../gmcp/Client/FileTransfer';
