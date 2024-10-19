@@ -50,6 +50,34 @@ export default class FileTransferManager {
     }, this.transferTimeout);
 
     this.outgoingTransfers.set(file.name, { file, timeout: transferTimeout });
+    // Don't start transfer here, wait for answer
+  }
+
+  async handleAcceptedTransfer(filename: string, answerSdp: string): Promise<void> {
+    const transfer = this.outgoingTransfers.get(filename);
+    if (!transfer) {
+      this.client.onFileTransferError(filename, 'send', 'No outgoing transfer found for file');
+      return;
+    }
+
+    await this.client.webRTCService.handleAnswer(JSON.parse(answerSdp));
+    await this.waitForDataChannel();
+    this.startTransfer(filename);
+  }
+
+  private async waitForDataChannel(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (this.isDataChannelReady()) {
+        resolve();
+      } else {
+        const checkInterval = setInterval(() => {
+          if (this.isDataChannelReady()) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 100);
+      }
+    });
   }
 
   private async startTransfer(filename: string): Promise<void> {
