@@ -14,14 +14,16 @@ interface FileTransferProgress {
 export default class FileTransferManager {
   private webRTCService: WebRTCService;
   private client: MudClient;
+  private gmcpFileTransfer: GMCPClientFileTransfer;
   private chunkSize: number = 16384; // 16 KB chunks
   private incomingTransfers: Map<string, FileTransferProgress> = new Map();
   private outgoingTransfers: Map<string, { file: File, timeout: NodeJS.Timeout }> = new Map();
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
 
-  constructor(client: MudClient) {
+  constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
     this.client = client;
+    this.gmcpFileTransfer = gmcpFileTransfer;
     this.webRTCService = client.webRTCService;
     this.setupListeners();
   }
@@ -42,9 +44,9 @@ export default class FileTransferManager {
     }
 
     await this.client.initializeWebRTC();
-    const offer = await this.client.webRTCService.createOffer();
+    const offer = await this.webRTCService.createOffer();
     
-    await this.client.sendFileTransferOffer(recipient, file.name, file.size, JSON.stringify(offer));
+    await this.gmcpFileTransfer.sendOffer(recipient, file.name, file.size, JSON.stringify(offer));
 
     const transferTimeout = setTimeout(() => {
       this.handleTransferError(file.name, 'send', new Error('Transfer timeout'));
@@ -324,18 +326,20 @@ export default class FileTransferManager {
       clearTimeout(outgoingTransfer.timeout);
       this.outgoingTransfers.delete(filename);
       this.client.onFileTransferCancelled({ filename, direction: 'send' });
-      this.client.sendFileTransferCancel(this.client.worldData.playerId, filename);
+      this.gmcpFileTransfer.sendCancel(this.client.worldData.playerId, filename);
     }
 
     if (this.incomingTransfers.has(filename)) {
       this.incomingTransfers.delete(filename);
       this.client.onFileTransferCancelled({ filename, direction: 'receive' });
-      this.client.sendFileTransferCancel(this.client.worldData.playerId, filename);
+      this.gmcpFileTransfer.sendCancel(this.client.worldData.playerId, filename);
     }
   }
 
   async acceptTransfer(sender: string, filename: string): Promise<void> {
     await this.waitForDataChannel();
+    const answer = await this.webRTCService.createAnswer();
+    this.gmcpFileTransfer.sendAccept(sender, filename, JSON.stringify(answer));
     this.client.onFileTransferAccepted({ sender, filename });
   }
 
