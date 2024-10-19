@@ -235,8 +235,10 @@ export default class FileTransferManager {
   }
 
   async handleGMCPOffer(sender: string, filename: string, filesize: number): Promise<void> {
+    console.log(`[FileTransferManager] Received GMCP offer: sender=${sender}, filename=${filename}, filesize=${filesize}`);
     // Just notify the user interface about the offer
     this.client.emit('fileTransferOffer', { sender, filename, filesize });
+    console.log('[FileTransferManager] Emitted fileTransferOffer event');
   }
 
   async acceptTransfer(sender: string, filename: string): Promise<void> {
