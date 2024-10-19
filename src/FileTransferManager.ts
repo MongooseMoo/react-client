@@ -234,11 +234,20 @@ export default class FileTransferManager {
     }
   }
 
-  async handleGMCPOffer(sender: string, filename: string, filesize: number, offerSdp: string): Promise<void> {
-    await this.client.webRTCService.handleOffer(JSON.parse(offerSdp));
-    const answer = await this.client.webRTCService.createAnswer();
-    await this.client.gmcp_fileTransfer.sendAccept(sender, filename, JSON.stringify(answer));
+  async handleGMCPOffer(sender: string, filename: string, filesize: number): Promise<void> {
+    // Just notify the user interface about the offer
     this.client.emit('fileTransferOffer', { sender, filename, filesize });
+  }
+
+  async acceptTransfer(sender: string, filename: string): Promise<void> {
+    // This method should be called when the user accepts the transfer
+    await this.client.initializeWebRTC();
+    const offer = await this.client.webRTCService.createOffer();
+    await this.client.gmcp_fileTransfer.sendAccept(sender, filename, JSON.stringify(offer));
+  }
+
+  rejectTransfer(sender: string, filename: string): void {
+    this.client.gmcp_fileTransfer.sendReject(sender, filename);
   }
 
   async handleGMCPAccept(sender: string, filename: string, answerSdp: string): Promise<void> {
