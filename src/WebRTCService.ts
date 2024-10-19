@@ -36,5 +36,10 @@ export class WebRTCService {
     };
   }
 
+  sendData(data: ArrayBuffer): void {
+    if (!this.dataChannel) throw new Error('Data channel not initialized');
+    this.dataChannel.send(data);
+  }
+
   // Additional methods will be implemented in future steps
 }
