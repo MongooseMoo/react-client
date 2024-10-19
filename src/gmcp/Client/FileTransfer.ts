@@ -36,8 +36,13 @@ export class GMCPClientFileTransfer extends GMCPPackage {
 
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
     console.log('[GMCPClientFileTransfer] Received offer:', data);
-    this.emitter.emit("offer", data);
-    console.log('[GMCPClientFileTransfer] Emitted offer event');
+    this.emitter.emit("offer", {
+      sender: data.sender,
+      filename: data.filename,
+      filesize: data.filesize,
+      offerSdp: data.offerSdp
+    });
+    console.log('[GMCPClientFileTransfer] Emitted offer event with offerSdp');
   }
 
   async handleAccept(data: GMCPMessageClientFileTransferAccept): Promise<void> {
