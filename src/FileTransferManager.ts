@@ -31,10 +31,7 @@ export class FileTransferManager {
   }
 
   private setupListeners(): void {
-    this.client.on('dataChannelMessage', (data: ArrayBuffer) => {
-      this.handleIncomingChunk(data);
-    });
-
+    this.client.on('dataChannelMessage', this.handleIncomingChunk.bind(this));
     setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
