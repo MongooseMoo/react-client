@@ -78,7 +78,7 @@ class MudClient extends EventEmitter {
     this.cacophony = new Cacophony();
     this.editors = new EditorManager(this);
     this.webRTCService = new WebRTCService(this);
-    this.fileTransferManager = new FileTransferManager(this);
+    this.fileTransferManager = new FileTransferManager(this, this.gmcp_fileTransfer);
   }
 
   async initializeWebRTC(): Promise<void> {
