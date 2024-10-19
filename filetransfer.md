@@ -16,10 +16,294 @@ We'll implement a peer-to-peer file transfer system using WebRTC, integrated int
 3. FileTransferUI.tsx: React component for file transfer UI
 4. SignalingService.ts: Manages communication with the signaling server
 
+### Code Snippets for New Components
+
+#### WebRTCService.ts
+
+```typescript
+import { EventEmitter } from 'events';
+
+export class WebRTCService extends EventEmitter {
+  private peerConnection: RTCPeerConnection | null = null;
+  private dataChannel: RTCDataChannel | null = null;
+
+  constructor() {
+    super();
+  }
+
+  async createPeerConnection(): Promise<void> {
+    this.peerConnection = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    this.peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.emit('iceCandidate', event.candidate);
+      }
+    };
+
+    this.dataChannel = this.peerConnection.createDataChannel('fileTransfer');
+    this.setupDataChannel();
+  }
+
+  private setupDataChannel(): void {
+    if (!this.dataChannel) return;
+
+    this.dataChannel.onopen = () => {
+      this.emit('dataChannelOpen');
+    };
+
+    this.dataChannel.onmessage = (event) => {
+      this.emit('dataChannelMessage', event.data);
+    };
+  }
+
+  async createOffer(): Promise<RTCSessionDescriptionInit> {
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    const offer = await this.peerConnection.createOffer();
+    await this.peerConnection.setLocalDescription(offer);
+    return offer;
+  }
+
+  async handleAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    await this.peerConnection.setRemoteDescription(answer);
+  }
+
+  async handleIceCandidate(candidate: RTCIceCandidate): Promise<void> {
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    await this.peerConnection.addIceCandidate(candidate);
+  }
+
+  sendData(data: ArrayBuffer): void {
+    if (!this.dataChannel) throw new Error('Data channel not initialized');
+    this.dataChannel.send(data);
+  }
+}
+```
+
+#### FileTransferManager.ts
+
+```typescript
+import { WebRTCService } from './WebRTCService';
+
+export class FileTransferManager {
+  private webRTCService: WebRTCService;
+  private chunkSize: number = 16384; // 16 KB chunks
+
+  constructor(webRTCService: WebRTCService) {
+    this.webRTCService = webRTCService;
+    this.setupListeners();
+  }
+
+  private setupListeners(): void {
+    this.webRTCService.on('dataChannelMessage', (data: ArrayBuffer) => {
+      // Handle incoming file chunks
+      this.handleIncomingChunk(data);
+    });
+  }
+
+  async sendFile(file: File): Promise<void> {
+    const fileReader = new FileReader();
+    let offset = 0;
+
+    fileReader.onload = (e) => {
+      if (e.target?.result instanceof ArrayBuffer) {
+        this.webRTCService.sendData(e.target.result);
+        offset += e.target.result.byteLength;
+        if (offset < file.size) {
+          this.readSlice(file, offset);
+        }
+      }
+    };
+
+    this.readSlice(file, 0);
+  }
+
+  private readSlice(file: File, offset: number): void {
+    const slice = file.slice(offset, offset + this.chunkSize);
+    const fileReader = new FileReader();
+    fileReader.readAsArrayBuffer(slice);
+  }
+
+  private handleIncomingChunk(chunk: ArrayBuffer): void {
+    // Implement logic to reassemble incoming file chunks
+    console.log('Received chunk:', chunk.byteLength);
+  }
+}
+```
+
+#### FileTransferUI.tsx
+
+```tsx
+import React, { useState } from 'react';
+import { FileTransferManager } from './FileTransferManager';
+
+interface FileTransferUIProps {
+  fileTransferManager: FileTransferManager;
+}
+
+export const FileTransferUI: React.FC<FileTransferUIProps> = ({ fileTransferManager }) => {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [transferProgress, setTransferProgress] = useState<number>(0);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+      setSelectedFile(event.target.files[0]);
+    }
+  };
+
+  const handleSendFile = async () => {
+    if (selectedFile) {
+      try {
+        await fileTransferManager.sendFile(selectedFile);
+        // Update UI to show transfer complete
+        setTransferProgress(100);
+      } catch (error) {
+        console.error('File transfer failed:', error);
+        // Update UI to show transfer failed
+      }
+    }
+  };
+
+  return (
+    <div>
+      <input type="file" onChange={handleFileChange} />
+      <button onClick={handleSendFile} disabled={!selectedFile}>
+        Send File
+      </button>
+      {transferProgress > 0 && (
+        <div>
+          <progress value={transferProgress} max="100" />
+          <span>{transferProgress}%</span>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+#### SignalingService.ts
+
+```typescript
+import { EventEmitter } from 'events';
+
+export class SignalingService extends EventEmitter {
+  private socket: WebSocket;
+
+  constructor(url: string) {
+    super();
+    this.socket = new WebSocket(url);
+    this.setupSocketListeners();
+  }
+
+  private setupSocketListeners(): void {
+    this.socket.onopen = () => {
+      this.emit('connected');
+    };
+
+    this.socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      this.emit('message', message);
+    };
+
+    this.socket.onerror = (error) => {
+      this.emit('error', error);
+    };
+
+    this.socket.onclose = () => {
+      this.emit('disconnected');
+    };
+  }
+
+  sendMessage(type: string, payload: any): void {
+    const message = JSON.stringify({ type, payload });
+    this.socket.send(message);
+  }
+
+  close(): void {
+    this.socket.close();
+  }
+}
+```
+
 ## 3. Changes to Existing Components
 
 1. MudClient.ts: Add integration with WebRTCService and FileTransferManager
 2. App.tsx: Include FileTransferUI component
+
+### Code Snippets for Existing Component Changes
+
+#### MudClient.ts
+
+Add the following properties and methods to the MudClient class:
+
+```typescript
+import { WebRTCService } from './WebRTCService';
+import { FileTransferManager } from './FileTransferManager';
+import { SignalingService } from './SignalingService';
+
+export class MudClient extends EventEmitter {
+  // ... existing properties
+
+  private webRTCService: WebRTCService;
+  private fileTransferManager: FileTransferManager;
+  private signalingService: SignalingService;
+
+  constructor(host: string, port: number) {
+    // ... existing constructor code
+
+    this.webRTCService = new WebRTCService();
+    this.fileTransferManager = new FileTransferManager(this.webRTCService);
+    this.signalingService = new SignalingService(`wss://${host}:${port}/signaling`);
+
+    this.setupSignalingListeners();
+  }
+
+  private setupSignalingListeners(): void {
+    this.signalingService.on('message', async (message: any) => {
+      switch (message.type) {
+        case 'offer':
+          await this.webRTCService.handleOffer(message.payload);
+          const answer = await this.webRTCService.createAnswer();
+          this.signalingService.sendMessage('answer', answer);
+          break;
+        case 'answer':
+          await this.webRTCService.handleAnswer(message.payload);
+          break;
+        case 'ice-candidate':
+          await this.webRTCService.handleIceCandidate(message.payload);
+          break;
+      }
+    });
+  }
+
+  // ... existing methods
+}
+```
+
+#### App.tsx
+
+Update the App component to include the FileTransferUI:
+
+```tsx
+import React from 'react';
+import { FileTransferUI } from './components/FileTransferUI';
+import MudClient from './client';
+
+function App() {
+  // ... existing code
+
+  return (
+    <div className="App">
+      {/* ... existing components */}
+      <FileTransferUI fileTransferManager={client.fileTransferManager} />
+    </div>
+  );
+}
+
+export default App;
+```
 
 ## 4. Implementation Roadmap
 
