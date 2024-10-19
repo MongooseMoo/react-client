@@ -246,24 +246,16 @@ Add the following properties and methods to the MudClient class:
 
 ```typescript
 import { WebRTCService } from './WebRTCService';
-import { FileTransferManager } from './FileTransferManager';
-import { SignalingService } from './SignalingService';
 
 export class MudClient extends EventEmitter {
   // ... existing properties
 
-  private webRTCService: WebRTCService;
-  private fileTransferManager: FileTransferManager;
-  private signalingService: SignalingService;
+  public webRTCService: WebRTCService;
 
   constructor(host: string, port: number) {
     // ... existing constructor code
 
-    this.webRTCService = new WebRTCService();
-    this.fileTransferManager = new FileTransferManager(this.webRTCService);
-    this.signalingService = new SignalingService(`wss://${host}:${port}/signaling`);
-
-    this.setupSignalingListeners();
+    this.webRTCService = new WebRTCService(this);
   }
 
   private setupSignalingListeners(): void {
@@ -382,16 +374,30 @@ export default App;
 5. Start integration of new components with MudClient.ts and App.tsx
 
 Once these initial steps are completed, we can proceed with implementing the detailed file transfer logic, error handling, and optimizations.
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MudClient from '../client';
+import { GMCPMessageCommFileTransferOffer, GMCPMessageCommFileTransferAccept, GMCPMessageCommFileTransferReject, GMCPMessageCommFileTransferCancel } from '../gmcp/Comm/FileTransfer';
+import './FileTransferUI.css';
 
 interface FileTransferUIProps {
   client: MudClient;
 }
 
+interface TransferHistoryItem {
+  filename: string;
+  sender: string;
+  recipient: string;
+  status: 'completed' | 'cancelled' | 'rejected';
+  timestamp: Date;
+}
+
 const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [transferProgress, setTransferProgress] = useState<number>(0);
+  const [sendProgress, setSendProgress] = useState<number>(0);
+  const [receiveProgress, setReceiveProgress] = useState<number>(0);
+  const [incomingTransfer, setIncomingTransfer] = useState<GMCPMessageCommFileTransferOffer | null>(null);
+  const [transferHistory, setTransferHistory] = useState<TransferHistoryItem[]>([]);
+  const [recipient, setRecipient] = useState<string>('');
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -400,44 +406,166 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
   };
 
   const handleSendFile = async () => {
-    if (selectedFile) {
+    if (selectedFile && recipient) {
       try {
-        await client.fileTransferManager.sendFile(selectedFile);
-        // Update UI to show transfer complete
-        setTransferProgress(100);
+        client.gmcp_fileTransfer.sendOffer(recipient, selectedFile.name, selectedFile.size);
       } catch (error) {
         console.error('File transfer failed:', error);
-        // Update UI to show transfer failed
       }
     }
   };
 
-  React.useEffect(() => {
-    const handleFileChunkReceived = (chunk: ArrayBuffer) => {
-      // Update progress based on received chunks
-      // This is a simplified example; you'll need to implement proper progress tracking
-      setTransferProgress((prev) => Math.min(prev + 10, 100));
+  const handleAcceptTransfer = () => {
+    if (incomingTransfer) {
+      client.gmcp_fileTransfer.sendAccept(incomingTransfer.sender, incomingTransfer.filename);
+      setIncomingTransfer(null);
+    }
+  };
+
+  const handleRejectTransfer = () => {
+    if (incomingTransfer) {
+      client.gmcp_fileTransfer.sendReject(incomingTransfer.sender, incomingTransfer.filename);
+      setIncomingTransfer(null);
+    }
+  };
+
+  const handleCancelTransfer = () => {
+    if (selectedFile) {
+      client.gmcp_fileTransfer.sendCancel(recipient, selectedFile.name);
+      setSendProgress(0);
+      setSelectedFile(null);
+    }
+  };
+
+  useEffect(() => {
+    const handleFileTransferOffer = (data: GMCPMessageCommFileTransferOffer) => {
+      setIncomingTransfer(data);
     };
 
-    client.on('fileChunkReceived', handleFileChunkReceived);
+    const handleFileTransferAccepted = (data: GMCPMessageCommFileTransferAccept) => {
+      if (selectedFile) {
+        client.fileTransferManager.sendFile(selectedFile);
+      }
+    };
+
+    const handleFileTransferRejected = (data: GMCPMessageCommFileTransferReject) => {
+      setTransferHistory(prev => [...prev, {
+        filename: data.filename,
+        sender: client.worldData.playerName,
+        recipient: data.sender,
+        status: 'rejected',
+        timestamp: new Date()
+      }]);
+      setSendProgress(0);
+      setSelectedFile(null);
+    };
+
+    const handleFileTransferCancelled = (data: GMCPMessageCommFileTransferCancel) => {
+      setTransferHistory(prev => [...prev, {
+        filename: data.filename,
+        sender: data.sender,
+        recipient: client.worldData.playerName,
+        status: 'cancelled',
+        timestamp: new Date()
+      }]);
+      setSendProgress(0);
+      setReceiveProgress(0);
+    };
+
+    const handleFileSendProgress = (data: { filename: string, sentBytes: number, totalBytes: number }) => {
+      setSendProgress((data.sentBytes / data.totalBytes) * 100);
+    };
+
+    const handleFileReceiveProgress = (data: { filename: string, receivedBytes: number, totalBytes: number }) => {
+      setReceiveProgress((data.receivedBytes / data.totalBytes) * 100);
+    };
+
+    const handleFileReceiveComplete = (data: { filename: string, file: Blob }) => {
+      const url = URL.createObjectURL(data.file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setTransferHistory(prev => [...prev, {
+        filename: data.filename,
+        sender: incomingTransfer?.sender || 'Unknown',
+        recipient: client.worldData.playerName,
+        status: 'completed',
+        timestamp: new Date()
+      }]);
+      setReceiveProgress(0);
+    };
+
+    client.on('fileTransferOffer', handleFileTransferOffer);
+    client.on('fileTransferAccepted', handleFileTransferAccepted);
+    client.on('fileTransferRejected', handleFileTransferRejected);
+    client.on('fileTransferCancelled', handleFileTransferCancelled);
+    client.on('fileSendProgress', handleFileSendProgress);
+    client.on('fileReceiveProgress', handleFileReceiveProgress);
+    client.on('fileReceiveComplete', handleFileReceiveComplete);
 
     return () => {
-      client.off('fileChunkReceived', handleFileChunkReceived);
+      client.off('fileTransferOffer', handleFileTransferOffer);
+      client.off('fileTransferAccepted', handleFileTransferAccepted);
+      client.off('fileTransferRejected', handleFileTransferRejected);
+      client.off('fileTransferCancelled', handleFileTransferCancelled);
+      client.off('fileSendProgress', handleFileSendProgress);
+      client.off('fileReceiveProgress', handleFileReceiveProgress);
+      client.off('fileReceiveComplete', handleFileReceiveComplete);
     };
-  }, [client]);
+  }, [client, selectedFile, incomingTransfer]);
 
   return (
-    <div>
-      <input type="file" onChange={handleFileChange} />
-      <button onClick={handleSendFile} disabled={!selectedFile}>
-        Send File
-      </button>
-      {transferProgress > 0 && (
-        <div>
-          <progress value={transferProgress} max="100" />
-          <span>{transferProgress}%</span>
+    <div className="file-transfer-ui">
+      <h3>File Transfer</h3>
+      <div className="file-transfer-controls">
+        <input type="file" onChange={handleFileChange} />
+        <input
+          type="text"
+          placeholder="Recipient's name"
+          value={recipient}
+          onChange={(e) => setRecipient(e.target.value)}
+        />
+        <button onClick={handleSendFile} disabled={!selectedFile || !recipient}>
+          Send File
+        </button>
+      </div>
+      {sendProgress > 0 && (
+        <div className="progress-bar">
+          <p>Sending file: {selectedFile?.name}</p>
+          <progress value={sendProgress} max="100" />
+          <span>{sendProgress.toFixed(2)}%</span>
+          <button onClick={handleCancelTransfer}>Cancel</button>
         </div>
       )}
+      {receiveProgress > 0 && (
+        <div className="progress-bar">
+          <p>Receiving file: {incomingTransfer?.filename}</p>
+          <progress value={receiveProgress} max="100" />
+          <span>{receiveProgress.toFixed(2)}%</span>
+        </div>
+      )}
+      {incomingTransfer && (
+        <div className="incoming-transfer">
+          <p>Incoming file transfer from {incomingTransfer.sender}: {incomingTransfer.filename} ({incomingTransfer.filesize} bytes)</p>
+          <button onClick={handleAcceptTransfer}>Accept</button>
+          <button onClick={handleRejectTransfer}>Reject</button>
+        </div>
+      )}
+      <div className="transfer-history">
+        <h4>Transfer History</h4>
+        <ul>
+          {transferHistory.map((item, index) => (
+            <li key={index}>
+              {item.filename} - {item.sender} to {item.recipient} - {item.status} - {item.timestamp.toLocaleString()}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 };
