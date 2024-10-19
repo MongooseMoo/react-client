@@ -1,6 +1,7 @@
 import { WebRTCService } from './WebRTCService';
 import MudClient from './client';
 import * as CryptoJS from 'crypto-js';
+import * as CryptoJS from 'crypto-js';
 
 interface FileTransferProgress {
   filename: string;
@@ -50,7 +51,71 @@ export default class FileTransferManager {
     }, this.transferTimeout);
 
     this.outgoingTransfers.set(file.name, { file, timeout: transferTimeout });
-    // Don't start transfer here, wait for answer
+
+    // Generate a random encryption key
+    const encryptionKey = CryptoJS.lib.WordArray.random(256 / 8);
+
+    const fileReader = new FileReader();
+    let offset = 0;
+
+    const readNextChunk = () => {
+      const slice = file.slice(offset, offset + this.chunkSize);
+      fileReader.readAsArrayBuffer(slice);
+    };
+
+    fileReader.onload = (e) => {
+      if (e.target?.result instanceof ArrayBuffer) {
+        const chunk = e.target.result;
+        
+        // Encrypt the chunk
+        const encryptedChunk = CryptoJS.AES.encrypt(
+          CryptoJS.lib.WordArray.create(chunk),
+          encryptionKey
+        ).toString();
+
+        const header = new TextEncoder().encode(JSON.stringify({
+          filename: file.name,
+          chunkIndex: offset / this.chunkSize,
+          totalChunks: Math.ceil(file.size / this.chunkSize),
+          chunkSize: encryptedChunk.length,
+          totalSize: file.size,
+          encryptionKey: encryptionKey.toString()
+        }));
+
+        const headerSize = new Uint32Array([header.byteLength]);
+        const data = new Uint8Array(4 + header.byteLength + encryptedChunk.length);
+        data.set(new Uint8Array(headerSize.buffer), 0);
+        data.set(header, 4);
+        data.set(new TextEncoder().encode(encryptedChunk), 4 + header.byteLength);
+
+        try {
+          this.client.webRTCService.sendData(data.buffer);
+        } catch (error) {
+          this.handleTransferError(file.name, 'send', error);
+          return;
+        }
+
+        offset += chunk.byteLength;
+        this.client.onFileSendProgress({
+          filename: file.name,
+          sentBytes: offset,
+          totalBytes: file.size
+        });
+
+        if (offset < file.size) {
+          readNextChunk();
+        } else {
+          this.client.onFileSendComplete(file.name);
+          this.outgoingTransfers.delete(file.name);
+        }
+      }
+    };
+
+    fileReader.onerror = (error) => {
+      this.handleTransferError(file.name, 'send', error);
+    };
+
+    readNextChunk();
   }
 
   async handleAcceptedTransfer(filename: string, answerSdp: string): Promise<void> {
@@ -163,7 +228,7 @@ export default class FileTransferManager {
       const headerSize = new Uint32Array(data.slice(0, 4))[0];
       const headerData = new TextDecoder().decode(data.slice(4, 4 + headerSize));
       const header = JSON.parse(headerData);
-      const chunk = data.slice(4 + headerSize);
+      const encryptedChunk = new TextDecoder().decode(data.slice(4 + headerSize));
 
       let transfer = this.incomingTransfers.get(header.filename);
       if (!transfer) {
@@ -176,13 +241,18 @@ export default class FileTransferManager {
           totalSize: header.totalSize,
           receivedSize: 0,
           chunks: new Array(header.totalChunks),
-          lastActivityTimestamp: Date.now()
+          lastActivityTimestamp: Date.now(),
+          encryptionKey: CryptoJS.enc.Hex.parse(header.encryptionKey)
         };
         this.incomingTransfers.set(header.filename, transfer);
       }
 
-      transfer.chunks[header.chunkIndex] = chunk;
-      transfer.receivedSize += chunk.byteLength;
+      // Decrypt the chunk
+      const decryptedChunk = CryptoJS.AES.decrypt(encryptedChunk, transfer.encryptionKey).toString(CryptoJS.enc.Utf8);
+      const chunkArrayBuffer = new TextEncoder().encode(decryptedChunk).buffer;
+
+      transfer.chunks[header.chunkIndex] = chunkArrayBuffer;
+      transfer.receivedSize += chunkArrayBuffer.byteLength;
       transfer.lastActivityTimestamp = Date.now();
 
       this.client.onFileReceiveProgress({
