@@ -238,25 +238,18 @@ export default class FileTransferManager {
 
   async handleGMCPOffer(sender: string, filename: string, filesize: number, offerSdp: string): Promise<void> {
     console.log(`[FileTransferManager] Received GMCP offer: sender=${sender}, filename=${filename}, filesize=${filesize}`);
-    const offerKey = `${sender}-${filename}-${Date.now()}`;
-    this.pendingOffers.set(offerKey, { sender, offerSdp, timestamp: Date.now() });
-    this.client.emit('fileTransferOffer', { sender, filename, filesize, offerKey });
-    console.log('[FileTransferManager] Emitted fileTransferOffer event');
-  }
-
-  async acceptTransfer(offerKey: string): Promise<void> {
-    const pendingOffer = this.pendingOffers.get(offerKey);
-    if (!pendingOffer) {
-      throw new Error('No pending offer found for this file');
-    }
-
-    const { sender, offerSdp } = pendingOffer;
     await this.client.initializeWebRTC();
     await this.client.webRTCService.handleOffer(JSON.parse(offerSdp));
     const answer = await this.client.webRTCService.createAnswer();
-    await this.client.gmcp_fileTransfer.sendAccept(sender, offerKey.split('-')[1], JSON.stringify(answer));
-    
-    this.pendingOffers.delete(offerKey);
+    await this.client.gmcp_fileTransfer.sendAccept(sender, filename, JSON.stringify(answer));
+    this.client.emit('fileTransferOffer', { sender, filename, filesize });
+    console.log('[FileTransferManager] Emitted fileTransferOffer event');
+  }
+
+  async acceptTransfer(sender: string, filename: string): Promise<void> {
+    // The transfer is already accepted in handleGMCPOffer, so we just need to set up the data channel
+    await this.waitForDataChannel();
+    this.client.emit('fileTransferAccepted', { sender, filename });
   }
 
   private cleanupOldOffers(): void {
@@ -279,6 +272,7 @@ export default class FileTransferManager {
     if (transfer) {
       this.startTransfer(filename);
     }
+    this.client.emit('fileTransferAccepted', { sender, filename });
   }
 
   private async waitForDataChannel(): Promise<void> {
