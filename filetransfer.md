@@ -140,6 +140,7 @@ These enhancements will significantly improve the robustness, security, and usab
 import React, { useState, useEffect } from 'react';
 import MudClient from '../client';
 import { GMCPMessageClientFileTransferOffer, GMCPMessageClientFileTransferAccept, GMCPMessageClientFileTransferReject, GMCPMessageClientFileTransferCancel } from '../gmcp/Client/FileTransfer';
+import { FileTransferError, FileTransferErrorCodes } from '../FileTransferManager';
 import './FileTransferUI.css';
 
 interface FileTransferUIProps {
@@ -163,6 +164,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
   const [recipient, setRecipient] = useState<string>('');
   const [transferStatus, setTransferStatus] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [webRTCState, setWebRTCState] = useState<string>('');
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -175,7 +177,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
     if (selectedFile && recipient) {
       try {
         setTransferStatus('Connecting');
-        await client.gmcp_fileTransfer.sendOffer(recipient, selectedFile.name, selectedFile.size);
+        await client.fileTransferManager.sendFile(selectedFile, recipient);
       } catch (error) {
         console.error('File transfer failed:', error);
         setErrorMessage(`File transfer failed: ${error.message}`);
@@ -186,7 +188,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
 
   const handleAcceptTransfer = () => {
     if (incomingTransfer) {
-      client.gmcp_fileTransfer.sendAccept(incomingTransfer.sender, incomingTransfer.filename);
+      client.fileTransferManager.acceptTransfer(incomingTransfer.sender, incomingTransfer.filename);
       setIncomingTransfer(null);
       setTransferStatus('Receiving');
     }
@@ -194,7 +196,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
 
   const handleRejectTransfer = () => {
     if (incomingTransfer) {
-      client.gmcp_fileTransfer.sendReject(incomingTransfer.sender, incomingTransfer.filename);
+      client.fileTransferManager.cancelTransfer(incomingTransfer.filename);
       setIncomingTransfer(null);
       setTransferStatus('');
     }
@@ -202,7 +204,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
 
   const handleCancelTransfer = () => {
     if (selectedFile) {
-      client.gmcp_fileTransfer.sendCancel(recipient, selectedFile.name);
+      client.fileTransferManager.cancelTransfer(selectedFile.name);
       setSendProgress(0);
       setSelectedFile(null);
       setTransferStatus('');
@@ -216,7 +218,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
 
     const handleFileTransferAccepted = (data: GMCPMessageClientFileTransferAccept) => {
       if (selectedFile) {
-        client.fileTransferManager.sendFile(selectedFile);
+        client.fileTransferManager.sendFile(selectedFile, data.sender);
         setTransferStatus('Sending');
       }
     };
@@ -276,9 +278,13 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
       setTransferStatus('Completed');
     };
 
-    const handleFileTransferError = (error: Error) => {
-      setErrorMessage(`Transfer failed: ${error.message}`);
+    const handleFileTransferError = (error: FileTransferError) => {
+      setErrorMessage(`Transfer failed: ${error.message} (Code: ${error.code})`);
       setTransferStatus('Failed');
+    };
+
+    const handleWebRTCStateChange = (state: string) => {
+      setWebRTCState(state);
     };
 
     client.on('fileTransferOffer', handleFileTransferOffer);
@@ -289,6 +295,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
     client.on('fileReceiveProgress', handleFileReceiveProgress);
     client.on('fileReceiveComplete', handleFileReceiveComplete);
     client.on('fileTransferError', handleFileTransferError);
+    client.on('webRTCStateChange', handleWebRTCStateChange);
 
     return () => {
       client.off('fileTransferOffer', handleFileTransferOffer);
@@ -299,6 +306,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
       client.off('fileReceiveProgress', handleFileReceiveProgress);
       client.off('fileReceiveComplete', handleFileReceiveComplete);
       client.off('fileTransferError', handleFileTransferError);
+      client.off('webRTCStateChange', handleWebRTCStateChange);
     };
   }, [client, selectedFile, incomingTransfer]);
 
@@ -318,6 +326,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client }) => {
         </button>
       </div>
       {transferStatus && <p>Status: {transferStatus}</p>}
+      {webRTCState && <p>WebRTC State: {webRTCState}</p>}
       {errorMessage && <p className="error-message">{errorMessage}</p>}
       {(sendProgress > 0 || receiveProgress > 0) && (
         <div className="progress-bar">
