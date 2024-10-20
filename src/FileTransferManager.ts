@@ -7,26 +7,6 @@ export class FileTransferError extends Error {
     super(message);
     this.name = "FileTransferError";
   }
-
-  public cleanup(): void {
-    // Clear any intervals
-    if (this.transferTimeoutCheckInterval) {
-      clearInterval(this.transferTimeoutCheckInterval);
-    }
-
-    // Clear all timeouts
-    this.outgoingTransfers.forEach((transfer) => {
-      clearTimeout(transfer.timeout);
-    });
-
-    // Clear all transfers
-    this.incomingTransfers.clear();
-    this.outgoingTransfers.clear();
-    this.pendingOffers.clear();
-
-    // Remove all listeners
-    this.client.off("dataChannelMessage", this.handleIncomingChunk);
-  }
 }
 
 export const FileTransferErrorCodes = {
@@ -56,7 +36,7 @@ export default class FileTransferManager {
   > = new Map();
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
-  private pendingOffers: Map<
+  public pendingOffers: Map<
     string,
     { sender: string; filename: string; offerSdp: string }
   > = new Map();
@@ -190,7 +170,11 @@ export default class FileTransferManager {
       const headerStr = JSON.stringify(header);
       const headerBuffer = new TextEncoder().encode(headerStr);
       const headerSizeBuffer = new ArrayBuffer(4);
-      new DataView(headerSizeBuffer).setUint32(0, headerBuffer.byteLength, true); // Little-endian
+      new DataView(headerSizeBuffer).setUint32(
+        0,
+        headerBuffer.byteLength,
+        true
+      ); // Little-endian
 
       const dataBuffer = new Uint8Array(
         4 + headerBuffer.byteLength + chunk.byteLength
@@ -261,7 +245,10 @@ export default class FileTransferManager {
       }
 
       const headerSizeArray = new Uint8Array(data.slice(0, 4));
-      const headerSize = new DataView(headerSizeArray.buffer).getUint32(0, true);
+      const headerSize = new DataView(headerSizeArray.buffer).getUint32(
+        0,
+        true
+      );
 
       if (data.byteLength < 4 + headerSize) {
         throw new Error("Received data is too short to contain header");
@@ -285,14 +272,14 @@ export default class FileTransferManager {
         throw new Error("Invalid chunk index in header");
       }
 
-      if (
-        typeof header.totalChunks !== "number" ||
-        header.totalChunks <= 0
-      ) {
+      if (typeof header.totalChunks !== "number" || header.totalChunks <= 0) {
         throw new Error("Invalid total chunks in header");
       }
 
-      const chunkData = data.slice(4 + headerSize, 4 + headerSize + header.chunkSize);
+      const chunkData = data.slice(
+        4 + headerSize,
+        4 + headerSize + header.chunkSize
+      );
 
       let transfer = this.incomingTransfers.get(header.filename);
       if (!transfer) {
@@ -391,7 +378,10 @@ export default class FileTransferManager {
         const transfer = this.incomingTransfers.get(filename);
         if (transfer) {
           // Notify the sender to resend the offer
-          this.client.gmcp_fileTransfer.sendRequestResend(transfer.sender, filename);
+          this.client.gmcp_fileTransfer.sendRequestResend(
+            transfer.sender,
+            filename
+          );
         }
       }
     } catch (error) {
@@ -450,12 +440,6 @@ export default class FileTransferManager {
   async acceptTransfer(sender: string, filename: string): Promise<void> {
     console.log("Accepting transfer", sender, filename);
     try {
-      // Ensure we have a peer connection
-      if (!this.webRTCService.isPeerConnectionInitialized()) {
-        console.log("[FileTransferManager] Creating new peer connection");
-        await this.webRTCService.createPeerConnection();
-      }
-
       // Get the offer from the pending offers
       const offer = this.pendingOffers.get(`${sender}-${filename}`);
       if (!offer) {
@@ -469,9 +453,7 @@ export default class FileTransferManager {
 
       console.log("[FileTransferManager] Creating WebRTC answer");
       const answer = await this.webRTCService.createAnswer();
-      console.log(
-        "[FileTransferManager] WebRTC answer created successfully"
-      );
+      console.log("[FileTransferManager] WebRTC answer created successfully");
 
       // Send the accept message with the answer
       await this.gmcpFileTransfer.sendAccept(
@@ -500,21 +482,5 @@ export default class FileTransferManager {
         )
       );
     }
-  }
-
-  async handleIncomingOffer(
-    sender: string,
-    filename: string,
-    offerSdp: string
-  ): Promise<void> {
-    console.log("Received offer for file transfer", sender, filename);
-    this.pendingOffers.set(`${sender}-${filename}`, {
-      sender,
-      filename,
-      offerSdp,
-    });
-
-    // Notify the client application that an offer has been received
-    this.client.onFileTransferOfferReceived(sender, filename);
   }
 }
