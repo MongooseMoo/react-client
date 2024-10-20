@@ -1,21 +1,21 @@
-import { WebRTCService } from './WebRTCService';
-import MudClient from './client';
-import * as CryptoJS from 'crypto-js';
-import { GMCPClientFileTransfer } from './gmcp/Client/FileTransfer';
+import { WebRTCService } from "./WebRTCService";
+import MudClient from "./client";
+import * as CryptoJS from "crypto-js";
+import { GMCPClientFileTransfer } from "./gmcp/Client/FileTransfer";
 
 export class FileTransferError extends Error {
   constructor(public code: string, message: string) {
     super(message);
-    this.name = 'FileTransferError';
+    this.name = "FileTransferError";
   }
 }
 
 export const FileTransferErrorCodes = {
-  CONNECTION_FAILED: 'CONNECTION_FAILED',
-  TRANSFER_TIMEOUT: 'TRANSFER_TIMEOUT',
-  ENCRYPTION_FAILED: 'ENCRYPTION_FAILED',
-  INVALID_FILE: 'INVALID_FILE',
-  DATA_CHANNEL_ERROR: 'DATA_CHANNEL_ERROR',
+  CONNECTION_FAILED: "CONNECTION_FAILED",
+  TRANSFER_TIMEOUT: "TRANSFER_TIMEOUT",
+  ENCRYPTION_FAILED: "ENCRYPTION_FAILED",
+  INVALID_FILE: "INVALID_FILE",
+  DATA_CHANNEL_ERROR: "DATA_CHANNEL_ERROR",
 };
 
 interface FileTransferProgress {
@@ -33,7 +33,10 @@ export default class FileTransferManager {
   private gmcpFileTransfer: GMCPClientFileTransfer;
   private chunkSize: number = 16384; // 16 KB chunks
   private incomingTransfers: Map<string, FileTransferProgress> = new Map();
-  private outgoingTransfers: Map<string, { file: File, timeout: NodeJS.Timeout }> = new Map();
+  private outgoingTransfers: Map<
+    string,
+    { file: File; timeout: NodeJS.Timeout }
+  > = new Map();
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
 
@@ -49,7 +52,7 @@ export default class FileTransferManager {
   }
 
   private setupListeners(): void {
-    this.client.on('dataChannelMessage', this.handleIncomingChunk.bind(this));
+    this.client.on("dataChannelMessage", this.handleIncomingChunk.bind(this));
     setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
@@ -57,18 +60,32 @@ export default class FileTransferManager {
     if (file.size > this.maxFileSize) {
       throw new FileTransferError(
         FileTransferErrorCodes.INVALID_FILE,
-        `File size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`
+        `File size exceeds the maximum allowed size of ${
+          this.maxFileSize / (1024 * 1024)
+        } MB`
       );
     }
 
     try {
       await this.client.initializeWebRTC();
       const offer = await this.webRTCService.createOffer();
-      
-      await this.gmcpFileTransfer.sendOffer(recipient, file.name, file.size, JSON.stringify(offer));
+
+      await this.gmcpFileTransfer.sendOffer(
+        recipient,
+        file.name,
+        file.size,
+        JSON.stringify(offer)
+      );
 
       const transferTimeout = setTimeout(() => {
-        this.handleTransferError(file.name, 'send', new FileTransferError(FileTransferErrorCodes.TRANSFER_TIMEOUT, 'Transfer timeout'));
+        this.handleTransferError(
+          file.name,
+          "send",
+          new FileTransferError(
+            FileTransferErrorCodes.TRANSFER_TIMEOUT,
+            "Transfer timeout"
+          )
+        );
       }, this.transferTimeout);
 
       this.outgoingTransfers.set(file.name, { file, timeout: transferTimeout });
@@ -83,15 +100,25 @@ export default class FileTransferManager {
       this.client.onFileSendComplete(file.name);
     } catch (error) {
       if (error instanceof FileTransferError) {
-        this.handleTransferError(file.name, 'send', error);
+        this.handleTransferError(file.name, "send", error);
       } else {
-        this.handleTransferError(file.name, 'send', new FileTransferError(FileTransferErrorCodes.CONNECTION_FAILED, 'Failed to establish connection'));
+        this.handleTransferError(
+          file.name,
+          "send",
+          new FileTransferError(
+            FileTransferErrorCodes.CONNECTION_FAILED,
+            "Failed to establish connection"
+          )
+        );
       }
       this.cleanupTransfer(file.name);
     }
   }
 
-  private async startFileTransfer(file: File, encryptionKey: CryptoJS.lib.WordArray): Promise<void> {
+  private async startFileTransfer(
+    file: File,
+    encryptionKey: CryptoJS.lib.WordArray
+  ): Promise<void> {
     const fileReader = new FileReader();
     let offset = 0;
 
@@ -101,13 +128,19 @@ export default class FileTransferManager {
         fileReader.onload = (e) => {
           if (e.target?.result instanceof ArrayBuffer) {
             const chunkSize = e.target.result.byteLength;
-            this.sendChunk(file.name, e.target.result, offset, file.size, encryptionKey)
+            this.sendChunk(
+              file.name,
+              e.target.result,
+              offset,
+              file.size,
+              encryptionKey
+            )
               .then(() => {
                 offset += chunkSize;
                 this.client.onFileSendProgress({
                   filename: file.name,
                   sentBytes: offset,
-                  totalBytes: file.size
+                  totalBytes: file.size,
                 });
 
                 if (offset < file.size) {
@@ -118,10 +151,21 @@ export default class FileTransferManager {
               })
               .catch(reject);
           } else {
-            reject(new FileTransferError(FileTransferErrorCodes.INVALID_FILE, 'Failed to read file chunk'));
+            reject(
+              new FileTransferError(
+                FileTransferErrorCodes.INVALID_FILE,
+                "Failed to read file chunk"
+              )
+            );
           }
         };
-        fileReader.onerror = () => reject(new FileTransferError(FileTransferErrorCodes.INVALID_FILE, 'Error reading file'));
+        fileReader.onerror = () =>
+          reject(
+            new FileTransferError(
+              FileTransferErrorCodes.INVALID_FILE,
+              "Error reading file"
+            )
+          );
         fileReader.readAsArrayBuffer(slice);
       });
     };
@@ -129,10 +173,19 @@ export default class FileTransferManager {
     await readNextChunk();
   }
 
-  private async sendChunk(filename: string, chunk: ArrayBuffer, offset: number, totalSize: number, encryptionKey: CryptoJS.lib.WordArray | undefined): Promise<void> {
+  private async sendChunk(
+    filename: string,
+    chunk: ArrayBuffer,
+    offset: number,
+    totalSize: number,
+    encryptionKey: CryptoJS.lib.WordArray | undefined
+  ): Promise<void> {
     try {
       if (!encryptionKey) {
-        throw new FileTransferError(FileTransferErrorCodes.ENCRYPTION_FAILED, 'Encryption key is undefined');
+        throw new FileTransferError(
+          FileTransferErrorCodes.ENCRYPTION_FAILED,
+          "Encryption key is undefined"
+        );
       }
 
       const encryptedChunk = CryptoJS.AES.encrypt(
@@ -140,39 +193,56 @@ export default class FileTransferManager {
         encryptionKey
       ).toString();
 
-      const header = new TextEncoder().encode(JSON.stringify({
-        filename,
-        chunkIndex: offset / this.chunkSize,
-        totalChunks: Math.ceil(totalSize / this.chunkSize),
-        chunkSize: encryptedChunk.length,
-        totalSize,
-        encryptionKey: encryptionKey.toString()
-      }));
+      const header = new TextEncoder().encode(
+        JSON.stringify({
+          filename,
+          chunkIndex: offset / this.chunkSize,
+          totalChunks: Math.ceil(totalSize / this.chunkSize),
+          chunkSize: encryptedChunk.length,
+          totalSize,
+          encryptionKey: encryptionKey.toString(),
+        })
+      );
 
       const headerSize = new Uint32Array([header.byteLength]);
-      const data = new Uint8Array(4 + header.byteLength + encryptedChunk.length);
+      const data = new Uint8Array(
+        4 + header.byteLength + encryptedChunk.length
+      );
       data.set(new Uint8Array(headerSize.buffer), 0);
       data.set(header, 4);
       data.set(new TextEncoder().encode(encryptedChunk), 4 + header.byteLength);
 
       await this.webRTCService.sendData(data.buffer);
     } catch (error) {
-      throw new FileTransferError(FileTransferErrorCodes.DATA_CHANNEL_ERROR, 'Failed to send chunk');
+      throw new FileTransferError(
+        FileTransferErrorCodes.DATA_CHANNEL_ERROR,
+        "Failed to send chunk"
+      );
     }
   }
 
-  async handleAcceptedTransfer(filename: string, answerSdp: string): Promise<void> {
+  async handleAcceptedTransfer(
+    filename: string,
+    answerSdp: string
+  ): Promise<void> {
     const outgoingTransfer = this.outgoingTransfers.get(filename);
     if (!outgoingTransfer) {
-      this.client.onFileTransferError(filename, 'send', 'No outgoing transfer found for file');
+      this.client.onFileTransferError(
+        filename,
+        "send",
+        "No outgoing transfer found for file"
+      );
       return;
     }
 
     await this.client.webRTCService.handleAnswer(JSON.parse(answerSdp));
     await this.waitForDataChannel();
-    
+
     if (outgoingTransfer) {
-      await this.startFileTransfer(outgoingTransfer.file, CryptoJS.lib.WordArray.random(256 / 8));
+      await this.startFileTransfer(
+        outgoingTransfer.file,
+        CryptoJS.lib.WordArray.random(256 / 8)
+      );
     }
   }
 
@@ -196,14 +266,24 @@ export default class FileTransferManager {
   private handleIncomingChunk(data: ArrayBuffer): void {
     try {
       const headerSize = new Uint32Array(data.slice(0, 4))[0];
-      const headerData = new TextDecoder().decode(data.slice(4, 4 + headerSize));
+      const headerData = new TextDecoder().decode(
+        data.slice(4, 4 + headerSize)
+      );
       const header = JSON.parse(headerData);
-      const encryptedChunk = new TextDecoder().decode(data.slice(4 + headerSize));
+      const encryptedChunk = new TextDecoder().decode(
+        data.slice(4 + headerSize)
+      );
 
       let transfer = this.incomingTransfers.get(header.filename);
       if (!transfer) {
         if (header.totalSize > this.maxFileSize) {
-          this.client.onFileTransferError(header.filename, 'receive', `Incoming file size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`);
+          this.client.onFileTransferError(
+            header.filename,
+            "receive",
+            `Incoming file size exceeds the maximum allowed size of ${
+              this.maxFileSize / (1024 * 1024)
+            } MB`
+          );
           return;
         }
         transfer = {
@@ -212,13 +292,16 @@ export default class FileTransferManager {
           receivedSize: 0,
           chunks: new Array(header.totalChunks),
           lastActivityTimestamp: Date.now(),
-          encryptionKey: CryptoJS.enc.Hex.parse(header.encryptionKey)
+          encryptionKey: CryptoJS.enc.Hex.parse(header.encryptionKey),
         };
         this.incomingTransfers.set(header.filename, transfer);
       }
 
       // Decrypt the chunk
-      const decryptedChunk = CryptoJS.AES.decrypt(encryptedChunk, transfer.encryptionKey).toString(CryptoJS.enc.Utf8);
+      const decryptedChunk = CryptoJS.AES.decrypt(
+        encryptedChunk,
+        transfer.encryptionKey as string
+      ).toString(CryptoJS.enc.Utf8);
       const chunkArrayBuffer = new TextEncoder().encode(decryptedChunk).buffer;
 
       transfer.chunks[header.chunkIndex] = chunkArrayBuffer;
@@ -228,29 +311,34 @@ export default class FileTransferManager {
       this.client.onFileReceiveProgress({
         filename: header.filename,
         receivedBytes: transfer.receivedSize,
-        totalBytes: transfer.totalSize
+        totalBytes: transfer.totalSize,
       });
 
       if (transfer.receivedSize === transfer.totalSize) {
         const completeFile = new Blob(transfer.chunks);
         this.client.onFileReceiveComplete({
           filename: header.filename,
-          file: completeFile
+          file: completeFile,
         });
         this.incomingTransfers.delete(header.filename);
       }
     } catch (error) {
       this.handleTransferError(
-        error instanceof Error ? error.message : 'Unknown error',
-        'receive',
-        new FileTransferError('UNKNOWN_ERROR', 'An unknown error occurred')
+        error instanceof Error ? error.message : "Unknown error",
+        "receive",
+        new FileTransferError("UNKNOWN_ERROR", "An unknown error occurred")
       );
     }
   }
 
-  private handleTransferError(filename: string, direction: 'send' | 'receive', error: FileTransferError | Error | unknown): void {
+  private handleTransferError(
+    filename: string,
+    direction: "send" | "receive",
+    error: FileTransferError | Error | unknown
+  ): void {
     console.error(`Error ${direction}ing file ${filename}:`, error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     this.client.onFileTransferError(filename, direction, errorMessage);
     this.cleanupTransfer(filename);
     this.attemptRecovery(filename, direction);
@@ -265,20 +353,30 @@ export default class FileTransferManager {
     this.incomingTransfers.delete(filename);
   }
 
-  private async attemptRecovery(filename: string, direction: 'send' | 'receive'): Promise<void> {
+  private async attemptRecovery(
+    filename: string,
+    direction: "send" | "receive"
+  ): Promise<void> {
     try {
       await this.webRTCService.createPeerConnection();
       this.client.onConnectionRecovered({ filename, direction });
-      
-      if (direction === 'send') {
+
+      if (direction === "send") {
         const transfer = this.outgoingTransfers.get(filename);
         if (transfer) {
-          await this.startFileTransfer(transfer.file, CryptoJS.lib.WordArray.random(256 / 8));
+          await this.startFileTransfer(
+            transfer.file,
+            CryptoJS.lib.WordArray.random(256 / 8)
+          );
         }
       }
     } catch (error) {
-      console.error('Failed to recover connection:', error);
-      this.client.onRecoveryFailed({ filename, direction, error: error instanceof Error ? error.message : 'Unknown error' });
+      console.error("Failed to recover connection:", error);
+      this.client.onRecoveryFailed({
+        filename,
+        direction,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
     }
   }
 
@@ -286,7 +384,14 @@ export default class FileTransferManager {
     const now = Date.now();
     this.incomingTransfers.forEach((transfer, filename) => {
       if (now - transfer.lastActivityTimestamp > this.transferTimeout) {
-        this.handleTransferError(filename, 'receive', new FileTransferError(FileTransferErrorCodes.TRANSFER_TIMEOUT, 'Transfer timeout'));
+        this.handleTransferError(
+          filename,
+          "receive",
+          new FileTransferError(
+            FileTransferErrorCodes.TRANSFER_TIMEOUT,
+            "Transfer timeout"
+          )
+        );
       }
     });
   }
@@ -295,14 +400,26 @@ export default class FileTransferManager {
     const outgoingTransfer = this.outgoingTransfers.get(filename);
     if (outgoingTransfer) {
       this.cleanupTransfer(filename);
-      this.client.onFileTransferCancel(this.client.worldData.playerId, filename);
-      this.gmcpFileTransfer.sendCancel(this.client.worldData.playerId, filename);
+      this.client.onFileTransferCancel(
+        this.client.worldData.playerId,
+        filename
+      );
+      this.gmcpFileTransfer.sendCancel(
+        this.client.worldData.playerId,
+        filename
+      );
     }
 
     if (this.incomingTransfers.has(filename)) {
       this.cleanupTransfer(filename);
-      this.client.onFileTransferCancel(this.client.worldData.playerId, filename);
-      this.gmcpFileTransfer.sendCancel(this.client.worldData.playerId, filename);
+      this.client.onFileTransferCancel(
+        this.client.worldData.playerId,
+        filename
+      );
+      this.gmcpFileTransfer.sendCancel(
+        this.client.worldData.playerId,
+        filename
+      );
     }
   }
 
@@ -310,10 +427,25 @@ export default class FileTransferManager {
     try {
       await this.waitForDataChannel();
       const answer = await this.webRTCService.createAnswer();
-      await this.gmcpFileTransfer.sendAccept(sender, filename, JSON.stringify(answer));
-      this.client.onFileTransferAccept(sender, filename, JSON.stringify(answer));
+      await this.gmcpFileTransfer.sendAccept(
+        sender,
+        filename,
+        JSON.stringify(answer)
+      );
+      this.client.onFileTransferAccept(
+        sender,
+        filename,
+        JSON.stringify(answer)
+      );
     } catch (error) {
-      this.handleTransferError(filename, 'receive', new FileTransferError(FileTransferErrorCodes.CONNECTION_FAILED, 'Failed to accept transfer'));
+      this.handleTransferError(
+        filename,
+        "receive",
+        new FileTransferError(
+          FileTransferErrorCodes.CONNECTION_FAILED,
+          "Failed to accept transfer"
+        )
+      );
     }
   }
 
