@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import MudClient from '../client';
 import './FileTransferUI.css';
 
@@ -20,6 +20,56 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
   const [receiveProgress, setReceiveProgress] = useState<number>(0);
   const [pendingOffers, setPendingOffers] = useState<PendingOffer[]>([]);
   const [transferHistory, setTransferHistory] = useState<string[]>([]);
+
+  const handleFileTransferOffer = useCallback((data: PendingOffer) => {
+    console.log('[FileTransferUI] Received fileTransferOffer event:', data);
+    setPendingOffers(prevOffers => [...prevOffers, data]);
+    addToTransferHistory(`Incoming file offer: ${data.filename} from ${data.sender}`);
+    console.log('[FileTransferUI] Updated pendingOffers state and transfer history');
+  }, []);
+
+  const handleFileSendProgress = useCallback((data: { filename: string; sentBytes: number; totalBytes: number }) => {
+    const progress = (data.sentBytes / data.totalBytes) * 100;
+    setSendProgress(progress);
+  }, []);
+
+  const handleFileReceiveProgress = useCallback((data: { filename: string; receivedBytes: number; totalBytes: number }) => {
+    const progress = (data.receivedBytes / data.totalBytes) * 100;
+    setReceiveProgress(progress);
+  }, []);
+
+  const handleFileSendComplete = useCallback((filename: string) => {
+    addToTransferHistory(`File sent successfully: ${filename}`);
+    setSendProgress(0);
+  }, []);
+
+  const handleFileReceiveComplete = useCallback((data: { filename: string, file: Blob }) => {
+    addToTransferHistory(`File received successfully: ${data.filename}`);
+    setReceiveProgress(0);
+    // You can add code here to save or display the received file
+  }, []);
+
+  const handleFileTransferError = useCallback((data: { filename: string; direction: 'send' | 'receive'; error: string }) => {
+    addToTransferHistory(`Error ${data.direction}ing file ${data.filename}: ${data.error}`);
+    if (data.direction === 'send') {
+      setSendProgress(0);
+    } else {
+      setReceiveProgress(0);
+    }
+  }, []);
+
+  const handleFileTransferCancelled = useCallback((data: { filename: string; direction: 'send' | 'receive' }) => {
+    addToTransferHistory(`File transfer cancelled: ${data.filename} (${data.direction})`);
+    if (data.direction === 'send') {
+      setSendProgress(0);
+    } else {
+      setReceiveProgress(0);
+    }
+  }, []);
+
+  const handleFileTransferRejected = useCallback((data: { sender: string, filename: string }) => {
+    addToTransferHistory(`File transfer rejected: ${data.filename} from ${data.sender}`);
+  }, []);
 
   useEffect(() => {
     console.log('[FileTransferUI] Setting up event listeners');
@@ -43,7 +93,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
       client.off('fileSendComplete', handleFileSendComplete);
       client.off('fileReceiveComplete', handleFileReceiveComplete);
     };
-  }, [client]);
+  }, [client, handleFileTransferOffer, handleFileSendProgress, handleFileReceiveProgress, handleFileTransferError, handleFileTransferCancelled, handleFileTransferRejected, handleFileSendComplete, handleFileReceiveComplete]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
