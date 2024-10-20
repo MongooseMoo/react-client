@@ -40,6 +40,7 @@ export default class FileTransferManager {
   > = new Map();
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
+  private pendingOffers: Map<string, GMCPMessageClientFileTransferOffer> = new Map();
 
   constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
     this.client = client;
@@ -448,11 +449,14 @@ export default class FileTransferManager {
         await this.webRTCService.createPeerConnection();
       }
 
-      // Check if we already have the remote offer
-      if (!this.webRTCService.hasRemoteOffer()) {
-        console.log('[FileTransferManager] Waiting for remote offer');
-        await this.webRTCService.waitForRemoteOffer(30000); // 30 seconds timeout
+      // Get the offer from the GMCP message
+      const offer = this.pendingOffers.get(`${sender}-${filename}`);
+      if (!offer) {
+        throw new Error('No pending offer found for this transfer');
       }
+
+      console.log('[FileTransferManager] Setting remote description with offer');
+      await this.webRTCService.handleOffer(JSON.parse(offer.offerSdp));
 
       console.log('[FileTransferManager] Creating WebRTC answer');
       const answer = await this.webRTCService.createAnswer();
@@ -469,6 +473,9 @@ export default class FileTransferManager {
       // Wait for the data channel to open
       await this.waitForDataChannel();
       console.log("Data channel ready for incoming transfer");
+
+      // Remove the pending offer
+      this.pendingOffers.delete(`${sender}-${filename}`);
     } catch (error) {
       console.error("Failed to accept transfer:", error);
       this.handleTransferError(
