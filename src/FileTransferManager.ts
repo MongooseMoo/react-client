@@ -133,7 +133,7 @@ export default class FileTransferManager {
     try {
       const encryptedChunk = CryptoJS.AES.encrypt(
         CryptoJS.lib.WordArray.create(chunk),
-        encryptionKey || CryptoJS.lib.WordArray.random(256 / 8)
+        encryptionKey
       ).toString();
 
       const header = new TextEncoder().encode(JSON.stringify({
@@ -166,7 +166,10 @@ export default class FileTransferManager {
 
     await this.client.webRTCService.handleAnswer(JSON.parse(answerSdp));
     await this.waitForDataChannel();
-    this.startTransfer(filename);
+    const transfer = this.outgoingTransfers.get(filename);
+    if (transfer) {
+      await this.startFileTransfer(transfer.file, CryptoJS.lib.WordArray.random(256 / 8));
+    }
   }
 
   private async waitForDataChannel(): Promise<void> {
