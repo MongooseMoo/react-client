@@ -442,19 +442,18 @@ export default class FileTransferManager {
   async acceptTransfer(sender: string, filename: string): Promise<void> {
     console.log("Accepting transfer", sender, filename);
     try {
-      // First, ensure we have a peer connection
+      // Ensure we have a peer connection
       if (!this.webRTCService.isPeerConnectionInitialized()) {
         console.log('[FileTransferManager] Creating new peer connection');
         await this.webRTCService.createPeerConnection();
       }
 
-      // Check if we have a remote offer
+      // Check if we already have the remote offer
       if (!this.webRTCService.hasRemoteOffer()) {
         console.log('[FileTransferManager] Waiting for remote offer');
-        await this.webRTCService.waitForRemoteOffer();
+        await this.webRTCService.waitForRemoteOffer(30000); // 30 seconds timeout
       }
 
-      // Now create the answer
       console.log('[FileTransferManager] Creating WebRTC answer');
       const answer = await this.webRTCService.createAnswer();
       console.log('[FileTransferManager] WebRTC answer created successfully');
@@ -465,12 +464,8 @@ export default class FileTransferManager {
         filename,
         JSON.stringify(answer)
       );
-      this.client.onFileTransferAccept(
-        sender,
-        filename,
-        JSON.stringify(answer)
-      );
-      
+      console.log('[FileTransferManager] Sent accept message with answer');
+
       // Wait for the data channel to open
       await this.waitForDataChannel();
       console.log("Data channel ready for incoming transfer");
