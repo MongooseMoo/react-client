@@ -7,6 +7,26 @@ export class FileTransferError extends Error {
     super(message);
     this.name = "FileTransferError";
   }
+
+  public cleanup(): void {
+    // Clear any intervals
+    if (this.transferTimeoutCheckInterval) {
+      clearInterval(this.transferTimeoutCheckInterval);
+    }
+
+    // Clear all timeouts
+    this.outgoingTransfers.forEach((transfer) => {
+      clearTimeout(transfer.timeout);
+    });
+
+    // Clear all transfers
+    this.incomingTransfers.clear();
+    this.outgoingTransfers.clear();
+    this.pendingOffers.clear();
+
+    // Remove all listeners
+    this.client.off("dataChannelMessage", this.handleIncomingChunk);
+  }
 }
 
 export const FileTransferErrorCodes = {
@@ -169,12 +189,13 @@ export default class FileTransferManager {
 
       const headerStr = JSON.stringify(header);
       const headerBuffer = new TextEncoder().encode(headerStr);
-      const headerSizeBuffer = new Uint32Array([headerBuffer.byteLength]);
+      const headerSizeBuffer = new ArrayBuffer(4);
+      new DataView(headerSizeBuffer).setUint32(0, headerBuffer.byteLength, true); // Little-endian
 
       const dataBuffer = new Uint8Array(
         4 + headerBuffer.byteLength + chunk.byteLength
       );
-      dataBuffer.set(new Uint8Array(headerSizeBuffer.buffer), 0);
+      dataBuffer.set(new Uint8Array(headerSizeBuffer), 0);
       dataBuffer.set(headerBuffer, 4);
       dataBuffer.set(new Uint8Array(chunk), 4 + headerBuffer.byteLength);
 
@@ -235,15 +256,43 @@ export default class FileTransferManager {
 
   private handleIncomingChunk(data: ArrayBuffer): void {
     try {
+      if (data.byteLength < 4) {
+        throw new Error("Received data is too short to contain header size");
+      }
+
       const headerSizeArray = new Uint8Array(data.slice(0, 4));
       const headerSize = new DataView(headerSizeArray.buffer).getUint32(0, true);
+
+      if (data.byteLength < 4 + headerSize) {
+        throw new Error("Received data is too short to contain header");
+      }
 
       const headerData = new TextDecoder().decode(
         data.slice(4, 4 + headerSize)
       );
       const header = JSON.parse(headerData);
 
-      const chunkData = data.slice(4 + headerSize);
+      if (data.byteLength < 4 + headerSize + header.chunkSize) {
+        throw new Error("Received data is too short to contain chunk data");
+      }
+
+      // Validate header fields
+      if (
+        typeof header.chunkIndex !== "number" ||
+        header.chunkIndex < 0 ||
+        header.chunkIndex >= header.totalChunks
+      ) {
+        throw new Error("Invalid chunk index in header");
+      }
+
+      if (
+        typeof header.totalChunks !== "number" ||
+        header.totalChunks <= 0
+      ) {
+        throw new Error("Invalid total chunks in header");
+      }
+
+      const chunkData = data.slice(4 + headerSize, 4 + headerSize + header.chunkSize);
 
       let transfer = this.incomingTransfers.get(header.filename);
       if (!transfer) {
@@ -336,6 +385,13 @@ export default class FileTransferManager {
         const transfer = this.outgoingTransfers.get(filename);
         if (transfer) {
           await this.startFileTransfer(transfer.file);
+        }
+      } else if (direction === "receive") {
+        // Logic to attempt recovery for incoming transfers
+        const transfer = this.incomingTransfers.get(filename);
+        if (transfer) {
+          // Notify the sender to resend the offer
+          this.client.gmcp_fileTransfer.sendRequestResend(transfer.sender, filename);
         }
       }
     } catch (error) {
