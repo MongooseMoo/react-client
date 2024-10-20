@@ -137,7 +137,7 @@ export default class FileTransferManager {
 
       const encryptedChunk = CryptoJS.AES.encrypt(
         CryptoJS.lib.WordArray.create(chunk),
-        encryptionKey
+        encryptionKey as CryptoJS.lib.WordArray
       ).toString();
 
       const header = new TextEncoder().encode(JSON.stringify({
