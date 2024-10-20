@@ -78,4 +78,8 @@ export class GMCPClientFileTransfer extends GMCPPackage {
   sendCancel(recipient: string, filename: string): void {
     this.sendData("Cancel", { recipient, filename });
   }
+
+  sendRequestResend(sender: string, filename: string): void {
+    this.sendData("RequestResend", { sender, filename });
+  }
 }
