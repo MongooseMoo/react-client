@@ -145,7 +145,40 @@ export class WebRTCService {
     this.client.emit('webRTCClosed');
   }
 
+  private remoteOfferReceived: boolean = false;
+
   isPeerConnectionInitialized(): boolean {
     return this.peerConnection !== null && this.peerConnection.connectionState !== 'closed';
+  }
+
+  hasRemoteOffer(): boolean {
+    return this.remoteOfferReceived;
+  }
+
+  async waitForRemoteOffer(timeout: number = 10000): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error('Timeout waiting for remote offer'));
+      }, timeout);
+
+      const checkInterval = setInterval(() => {
+        if (this.remoteOfferReceived) {
+          clearInterval(checkInterval);
+          clearTimeout(timeoutId);
+          resolve();
+        }
+      }, 100);
+    });
+  }
+
+  async handleOffer(offer: RTCSessionDescriptionInit): Promise<void> {
+    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    try {
+      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      this.remoteOfferReceived = true;
+    } catch (error) {
+      console.error('Error handling offer:', error);
+      throw error;
+    }
   }
 }
