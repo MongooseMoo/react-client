@@ -134,48 +134,6 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
     setPendingOffers(prevOffers => prevOffers.filter(o => o.filename !== filename || o.sender !== sender));
   };
 
-  const handleFileSendProgress = (data: { filename: string; sentBytes: number; totalBytes: number }) => {
-    const progress = (data.sentBytes / data.totalBytes) * 100;
-    setSendProgress(progress);
-  };
-
-  const handleFileReceiveProgress = (data: { filename: string; receivedBytes: number; totalBytes: number }) => {
-    const progress = (data.receivedBytes / data.totalBytes) * 100;
-    setReceiveProgress(progress);
-  };
-
-  const handleFileSendComplete = (filename: string) => {
-    addToTransferHistory(`File sent successfully: ${filename}`);
-    setSendProgress(0);
-  };
-
-  const handleFileReceiveComplete = (data: { filename: string, file: Blob }) => {
-    addToTransferHistory(`File received successfully: ${data.filename}`);
-    setReceiveProgress(0);
-    // You can add code here to save or display the received file
-  };
-
-  const handleFileTransferError = (data: { filename: string; direction: 'send' | 'receive'; error: string }) => {
-    addToTransferHistory(`Error ${data.direction}ing file ${data.filename}: ${data.error}`);
-    if (data.direction === 'send') {
-      setSendProgress(0);
-    } else {
-      setReceiveProgress(0);
-    }
-  };
-
-  const handleFileTransferCancelled = (data: { filename: string; direction: 'send' | 'receive' }) => {
-    addToTransferHistory(`File transfer cancelled: ${data.filename} (${data.direction})`);
-    if (data.direction === 'send') {
-      setSendProgress(0);
-    } else {
-      setReceiveProgress(0);
-    }
-  };
-
-  const handleFileTransferRejected = (data: { sender: string, filename: string }) => {
-    addToTransferHistory(`File transfer rejected: ${data.filename} from ${data.sender}`);
-  };
 
   const handleCancelTransfer = (filename: string) => {
     client.cancelTransfer(filename);
