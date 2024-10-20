@@ -57,7 +57,11 @@ export default class FileTransferManager {
     setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
-  async sendFile(file: File, recipient: string, encryptionKey?: CryptoJS.lib.WordArray): Promise<void> {
+  async sendFile(
+    file: File,
+    recipient: string,
+    encryptionKey?: CryptoJS.lib.WordArray
+  ): Promise<void> {
     if (file.size > this.maxFileSize) {
       throw new FileTransferError(
         FileTransferErrorCodes.INVALID_FILE,
@@ -294,7 +298,9 @@ export default class FileTransferManager {
           receivedSize: 0,
           chunks: new Array(header.totalChunks),
           lastActivityTimestamp: Date.now(),
-          encryptionKey: header.encryptionKey ? CryptoJS.enc.Hex.parse(header.encryptionKey) : undefined,
+          encryptionKey: header.encryptionKey
+            ? CryptoJS.enc.Hex.parse(header.encryptionKey)
+            : undefined,
           isEncrypted: header.isEncrypted,
         };
         this.incomingTransfers.set(header.filename, transfer);
@@ -431,6 +437,7 @@ export default class FileTransferManager {
   }
 
   async acceptTransfer(sender: string, filename: string): Promise<void> {
+    console.log("Accepting transfer", sender, filename);
     try {
       await this.waitForDataChannel();
       const answer = await this.webRTCService.createAnswer();
@@ -445,6 +452,7 @@ export default class FileTransferManager {
         JSON.stringify(answer)
       );
     } catch (error) {
+      console.error("Failed to accept transfer:", error);
       this.handleTransferError(
         filename,
         "receive",
@@ -455,6 +463,4 @@ export default class FileTransferManager {
       );
     }
   }
-
-  // This function has been removed as it was a duplicate
 }
