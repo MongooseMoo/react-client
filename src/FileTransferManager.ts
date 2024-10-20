@@ -183,83 +183,7 @@ export default class FileTransferManager {
     });
   }
 
-  private async startTransfer(filename: string): Promise<void> {
-    const transfer = this.outgoingTransfers.get(filename);
-    if (!transfer) {
-      this.client.onFileTransferError(filename, 'send', 'No outgoing transfer found for file');
-      return;
-    }
-
-    if (!this.isDataChannelReady()) {
-      await this.webRTCService.createPeerConnection();
-    }
-
-    const { file } = transfer;
-    const fileReader = new FileReader();
-    let offset = 0;
-
-    // Generate a random encryption key
-    const encryptionKey = CryptoJS.lib.WordArray.random(256 / 8);
-
-    const readNextChunk = () => {
-      const slice = file.slice(offset, offset + this.chunkSize);
-      fileReader.readAsArrayBuffer(slice);
-    };
-
-    fileReader.onload = (e) => {
-      if (e.target?.result instanceof ArrayBuffer) {
-        const chunk = e.target.result;
-        
-        // Encrypt the chunk
-        const encryptedChunk = CryptoJS.AES.encrypt(
-          CryptoJS.lib.WordArray.create(chunk),
-          encryptionKey
-        ).toString();
-
-        const header = new TextEncoder().encode(JSON.stringify({
-          filename: file.name,
-          chunkIndex: offset / this.chunkSize,
-          totalChunks: Math.ceil(file.size / this.chunkSize),
-          chunkSize: encryptedChunk.length,
-          totalSize: file.size,
-          encryptionKey: encryptionKey.toString()
-        }));
-
-        const headerSize = new Uint32Array([header.byteLength]);
-        const data = new Uint8Array(4 + header.byteLength + encryptedChunk.length);
-        data.set(new Uint8Array(headerSize.buffer), 0);
-        data.set(header, 4);
-        data.set(new TextEncoder().encode(encryptedChunk), 4 + header.byteLength);
-
-        try {
-          this.webRTCService.sendData(data.buffer);
-        } catch (error) {
-          this.handleTransferError(file.name, 'send', new FileTransferError(FileTransferErrorCodes.DATA_CHANNEL_ERROR, 'Failed to send chunk'));
-          return;
-        }
-
-        offset += chunk.byteLength;
-        this.client.onFileSendProgress({
-          filename: file.name,
-          sentBytes: offset,
-          totalBytes: file.size
-        });
-
-        if (offset < file.size) {
-          readNextChunk();
-        } else {
-          this.client.onFileSendComplete(file.name);
-          this.outgoingTransfers.delete(file.name);
-        }
-      }
-    };
-
-    fileReader.onerror = (error) => {
-      this.handleTransferError(file.name, 'send', new FileTransferError('READ_ERROR', 'Error reading file'));
-    };
-
-    readNextChunk();
-  }
+  // This function has been removed as it was a duplicate
 
   private handleIncomingChunk(data: ArrayBuffer): void {
     try {
@@ -308,13 +232,18 @@ export default class FileTransferManager {
         this.incomingTransfers.delete(header.filename);
       }
     } catch (error) {
-      this.handleTransferError(error.message, 'receive', new FileTransferError(FileTransferErrorCodes.UNKNOWN_ERROR, 'An unknown error occurred'));
+      this.handleTransferError(
+        error instanceof Error ? error.message : 'Unknown error',
+        'receive',
+        new FileTransferError('UNKNOWN_ERROR', 'An unknown error occurred')
+      );
     }
   }
 
-  private handleTransferError(filename: string, direction: 'send' | 'receive', error: FileTransferError | unknown): void {
+  private handleTransferError(filename: string, direction: 'send' | 'receive', error: FileTransferError | Error | unknown): void {
     console.error(`Error ${direction}ing file ${filename}:`, error);
-    this.client.onFileTransferError(filename, direction, error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    this.client.onFileTransferError(filename, direction, errorMessage);
     this.cleanupTransfer(filename);
     this.attemptRecovery(filename, direction);
   }
@@ -380,22 +309,5 @@ export default class FileTransferManager {
     }
   }
 
-  private async waitForDataChannel(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      if (this.client.webRTCService.isDataChannelOpen()) {
-        resolve();
-      } else {
-        const checkInterval = setInterval(() => {
-          if (this.client.webRTCService.isDataChannelOpen()) {
-            clearInterval(checkInterval);
-            resolve();
-          }
-        }, 100);
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          reject(new FileTransferError(FileTransferErrorCodes.CONNECTION_FAILED, 'Data channel not opened in time'));
-        }, this.transferTimeout);
-      }
-    });
-  }
+  // This function has been removed as it was a duplicate
 }
