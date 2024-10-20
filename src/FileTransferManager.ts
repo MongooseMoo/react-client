@@ -234,7 +234,7 @@ export default class FileTransferManager {
         try {
           this.webRTCService.sendData(data.buffer);
         } catch (error) {
-          this.handleTransferError(file.name, 'send', error);
+          this.handleTransferError(file.name, 'send', new FileTransferError(FileTransferErrorCodes.DATA_CHANNEL_ERROR, 'Failed to send chunk'));
           return;
         }
 
@@ -308,7 +308,7 @@ export default class FileTransferManager {
         this.incomingTransfers.delete(header.filename);
       }
     } catch (error) {
-      this.handleTransferError(error.message, 'receive', error);
+      this.handleTransferError(error.message, 'receive', new FileTransferError(FileTransferErrorCodes.UNKNOWN_ERROR, 'An unknown error occurred'));
     }
   }
 
