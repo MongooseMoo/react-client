@@ -93,7 +93,7 @@ class MudClient extends EventEmitter {
       this.webRTCService.handleOffer(parsedSignal)
         .then(() => this.webRTCService.createAnswer())
         .then(answer => {
-          this.gmcp_fileTransfer.sendSignal(sender, JSON.stringify(answer));
+          this.gmcp_fileTransfer.sendAccept(sender, "", JSON.stringify(answer));
         });
     } else if (parsedSignal.type === 'answer') {
       this.webRTCService.handleAnswer(parsedSignal);

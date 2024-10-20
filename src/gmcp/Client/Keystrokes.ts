@@ -27,7 +27,7 @@ class GMCPMessageClientKeystrokesBindAll extends GMCPMessage {
 export class GMCPClientKeystrokes extends GMCPPackage {
     public packageName: string = "Client.Keystrokes";
     private bindings: KeyBinding[] = [];
-    private boundKeyUpHandler: (event: KeyboardEvent) => void;
+    private boundKeyUpHandler: (event: KeyboardEvent) => void = () => {};
 
     constructor(client: MudClient) {
         super(client);
