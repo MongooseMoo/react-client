@@ -136,6 +136,10 @@ export default class FileTransferManager {
         encryptionKey
       ).toString();
 
+      if (!encryptionKey) {
+        throw new FileTransferError(FileTransferErrorCodes.ENCRYPTION_FAILED, 'Encryption key is undefined');
+      }
+
       const header = new TextEncoder().encode(JSON.stringify({
         filename,
         chunkIndex: offset / this.chunkSize,
@@ -158,17 +162,17 @@ export default class FileTransferManager {
   }
 
   async handleAcceptedTransfer(filename: string, answerSdp: string): Promise<void> {
-    const transfer = this.outgoingTransfers.get(filename);
-    if (!transfer) {
+    const outgoingTransfer = this.outgoingTransfers.get(filename);
+    if (!outgoingTransfer) {
       this.client.onFileTransferError(filename, 'send', 'No outgoing transfer found for file');
       return;
     }
 
     await this.client.webRTCService.handleAnswer(JSON.parse(answerSdp));
     await this.waitForDataChannel();
-    const transfer = this.outgoingTransfers.get(filename);
-    if (transfer) {
-      await this.startFileTransfer(transfer.file, CryptoJS.lib.WordArray.random(256 / 8));
+    
+    if (outgoingTransfer) {
+      await this.startFileTransfer(outgoingTransfer.file, CryptoJS.lib.WordArray.random(256 / 8));
     }
   }
 
