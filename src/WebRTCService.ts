@@ -21,7 +21,7 @@ export class WebRTCService {
 
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          this.client.gmcp_fileTransfer.sendSignal(this.client.worldData.playerId, JSON.stringify(event.candidate));
+          this.client.gmcp_fileTransfer.sendAccept(this.client.worldData.playerId, "", JSON.stringify(event.candidate));
         }
       };
 
