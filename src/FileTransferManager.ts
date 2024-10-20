@@ -25,6 +25,7 @@ interface FileTransferProgress {
   chunks: ArrayBuffer[];
   lastActivityTimestamp: number;
   encryptionKey?: CryptoJS.lib.WordArray;
+  isEncrypted: boolean;
 }
 
 export default class FileTransferManager {
@@ -56,7 +57,7 @@ export default class FileTransferManager {
     setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
-  async sendFile(file: File, recipient: string): Promise<void> {
+  async sendFile(file: File, recipient: string, encryptionKey?: CryptoJS.lib.WordArray): Promise<void> {
     if (file.size > this.maxFileSize) {
       throw new FileTransferError(
         FileTransferErrorCodes.INVALID_FILE,
@@ -117,7 +118,7 @@ export default class FileTransferManager {
 
   private async startFileTransfer(
     file: File,
-    encryptionKey: CryptoJS.lib.WordArray
+    encryptionKey?: CryptoJS.lib.WordArray
   ): Promise<void> {
     const fileReader = new FileReader();
     let offset = 0;
@@ -178,39 +179,40 @@ export default class FileTransferManager {
     chunk: ArrayBuffer,
     offset: number,
     totalSize: number,
-    encryptionKey: CryptoJS.lib.WordArray | undefined
+    encryptionKey?: CryptoJS.lib.WordArray
   ): Promise<void> {
     try {
-      if (!encryptionKey) {
-        throw new FileTransferError(
-          FileTransferErrorCodes.ENCRYPTION_FAILED,
-          "Encryption key is undefined"
-        );
-      }
+      let processedChunk: string;
+      const isEncrypted = !!encryptionKey;
 
-      const encryptedChunk = CryptoJS.AES.encrypt(
-        CryptoJS.lib.WordArray.create(chunk),
-        encryptionKey
-      ).toString();
+      if (isEncrypted) {
+        processedChunk = CryptoJS.AES.encrypt(
+          CryptoJS.lib.WordArray.create(chunk),
+          encryptionKey
+        ).toString();
+      } else {
+        processedChunk = new TextDecoder().decode(chunk);
+      }
 
       const header = new TextEncoder().encode(
         JSON.stringify({
           filename,
           chunkIndex: offset / this.chunkSize,
           totalChunks: Math.ceil(totalSize / this.chunkSize),
-          chunkSize: encryptedChunk.length,
+          chunkSize: processedChunk.length,
           totalSize,
-          encryptionKey: encryptionKey.toString(),
+          encryptionKey: encryptionKey?.toString(),
+          isEncrypted,
         })
       );
 
       const headerSize = new Uint32Array([header.byteLength]);
       const data = new Uint8Array(
-        4 + header.byteLength + encryptedChunk.length
+        4 + header.byteLength + processedChunk.length
       );
       data.set(new Uint8Array(headerSize.buffer), 0);
       data.set(header, 4);
-      data.set(new TextEncoder().encode(encryptedChunk), 4 + header.byteLength);
+      data.set(new TextEncoder().encode(processedChunk), 4 + header.byteLength);
 
       await this.webRTCService.sendData(data.buffer);
     } catch (error) {
@@ -292,17 +294,22 @@ export default class FileTransferManager {
           receivedSize: 0,
           chunks: new Array(header.totalChunks),
           lastActivityTimestamp: Date.now(),
-          encryptionKey: CryptoJS.enc.Hex.parse(header.encryptionKey),
+          encryptionKey: header.encryptionKey ? CryptoJS.enc.Hex.parse(header.encryptionKey) : undefined,
+          isEncrypted: header.isEncrypted,
         };
         this.incomingTransfers.set(header.filename, transfer);
       }
 
-      // Decrypt the chunk
-      const decryptedChunk = CryptoJS.AES.decrypt(
-        encryptedChunk,
-        transfer.encryptionKey as string
-      ).toString(CryptoJS.enc.Utf8);
-      const chunkArrayBuffer = new TextEncoder().encode(decryptedChunk).buffer;
+      let chunkArrayBuffer: ArrayBuffer;
+      if (header.isEncrypted) {
+        const decryptedChunk = CryptoJS.AES.decrypt(
+          encryptedChunk,
+          transfer.encryptionKey as CryptoJS.lib.WordArray
+        ).toString(CryptoJS.enc.Utf8);
+        chunkArrayBuffer = new TextEncoder().encode(decryptedChunk).buffer;
+      } else {
+        chunkArrayBuffer = new TextEncoder().encode(encryptedChunk).buffer;
+      }
 
       transfer.chunks[header.chunkIndex] = chunkArrayBuffer;
       transfer.receivedSize += chunkArrayBuffer.byteLength;
