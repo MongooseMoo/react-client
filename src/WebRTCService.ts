@@ -144,4 +144,8 @@ export class WebRTCService {
     }
     this.client.emit('webRTCClosed');
   }
+
+  isPeerConnectionInitialized(): boolean {
+    return this.peerConnection !== null && this.peerConnection.connectionState !== 'closed';
+  }
 }
