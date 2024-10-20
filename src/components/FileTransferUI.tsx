@@ -117,16 +117,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
       client.off("fileSendComplete", handleFileSendComplete);
       client.off("fileReceiveComplete", handleFileReceiveComplete);
     };
-  }, [
-    client,
-    handleFileSendProgress,
-    handleFileReceiveProgress,
-    handleFileTransferError,
-    handleFileTransferCancelled,
-    handleFileTransferRejected,
-    handleFileSendComplete,
-    handleFileReceiveComplete,
-  ]);
+  }, [client]); // Only re-run if client changes
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -153,16 +144,12 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     }
   };
 
-  const handleFileTransferOffer = (data: PendingOffer) => {
+  const handleFileTransferOffer = useCallback((data: PendingOffer) => {
     console.log("[FileTransferUI] Received fileTransferOffer event:", data);
-    setPendingOffers((prevOffers) => [...prevOffers, data]);
-    addToTransferHistory(
-      `Incoming file offer: ${data.filename} from ${data.sender}`
-    );
-    console.log(
-      "[FileTransferUI] Updated pendingOffers state and transfer history"
-    );
-  };
+    setPendingOffers(prevOffers => [...prevOffers, data]);
+    addToTransferHistory(`Incoming file offer: ${data.filename} from ${data.sender}`);
+    console.log("[FileTransferUI] Updated pendingOffers state and transfer history");
+  }, []);
 
   const handleAcceptTransfer = (sender: string, filename: string) => {
     client.acceptTransfer(sender, filename);
@@ -253,3 +240,10 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 };
 
 export default FileTransferUI;
+  useEffect(() => {
+    console.log("[FileTransferUI] pendingOffers updated:", pendingOffers);
+  }, [pendingOffers]);
+
+  useEffect(() => {
+    console.log("[FileTransferUI] transferHistory updated:", transferHistory);
+  }, [transferHistory]);

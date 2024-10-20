@@ -121,6 +121,7 @@ class MudClient extends EventEmitter {
 
   // File Transfer event handlers
   onFileTransferOffer(sender: string, filename: string, filesize: number, offerSdp: string): void {
+    console.log("[MudClient] Emitting fileTransferOffer event:", { sender, filename, filesize, offerSdp });
     this.emit('fileTransferOffer', { sender, filename, filesize, offerSdp });
   }
 
