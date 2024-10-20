@@ -242,7 +242,10 @@ export default class FileTransferManager {
     }
 
     await this.client.webRTCService.handleAnswer(JSON.parse(answerSdp));
+    
+    // Wait for the data channel to open
     await this.waitForDataChannel();
+    console.log("Data channel ready for outgoing transfer");
 
     if (outgoingTransfer) {
       await this.startFileTransfer(
@@ -439,7 +442,6 @@ export default class FileTransferManager {
   async acceptTransfer(sender: string, filename: string): Promise<void> {
     console.log("Accepting transfer", sender, filename);
     try {
-      await this.waitForDataChannel();
       const answer = await this.webRTCService.createAnswer();
       await this.gmcpFileTransfer.sendAccept(
         sender,
@@ -451,6 +453,10 @@ export default class FileTransferManager {
         filename,
         JSON.stringify(answer)
       );
+      
+      // Wait for the data channel to open
+      await this.waitForDataChannel();
+      console.log("Data channel ready for incoming transfer");
     } catch (error) {
       console.error("Failed to accept transfer:", error);
       this.handleTransferError(
