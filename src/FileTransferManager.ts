@@ -448,6 +448,12 @@ export default class FileTransferManager {
         await this.webRTCService.createPeerConnection();
       }
 
+      // Check if we have a remote offer
+      if (!this.webRTCService.hasRemoteOffer()) {
+        console.log('[FileTransferManager] Waiting for remote offer');
+        await this.webRTCService.waitForRemoteOffer();
+      }
+
       // Now create the answer
       console.log('[FileTransferManager] Creating WebRTC answer');
       const answer = await this.webRTCService.createAnswer();
