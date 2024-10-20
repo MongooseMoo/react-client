@@ -170,11 +170,9 @@ function App() {
         >
           {showFileTransfer ? 'Hide' : 'Show'} File Transfer
         </button>
-        {showFileTransfer && client && (
-          <div id="file-transfer-ui">
-            <FileTransferUI client={client} expanded={fileTransferExpanded} />
-          </div>
-        )}
+        <div style={{ display: showFileTransfer ? 'block' : 'none' }}>
+          <FileTransferUI client={client} expanded={fileTransferExpanded} />
+        </div>
       </div>
       <Statusbar client={client} />
       <PreferencesDialog ref={prefsDialogRef} />
