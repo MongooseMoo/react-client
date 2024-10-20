@@ -148,6 +148,7 @@ export class WebRTCService {
   private remoteOfferReceived: boolean = false;
 
   isPeerConnectionInitialized(): boolean {
+    console.log('[WebRTCService] Peer connection state:', this.peerConnection?.connectionState);
     return this.peerConnection !== null && this.peerConnection.connectionState !== 'closed';
   }
 
@@ -155,29 +156,38 @@ export class WebRTCService {
     return this.remoteOfferReceived;
   }
 
-  async waitForRemoteOffer(timeout: number = 10000): Promise<void> {
+  async waitForRemoteOffer(timeout: number = 30000): Promise<void> {
+    console.log('[WebRTCService] Waiting for remote offer...');
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
+        console.log('[WebRTCService] Timeout waiting for remote offer');
         reject(new Error('Timeout waiting for remote offer'));
       }, timeout);
 
       const checkInterval = setInterval(() => {
+        console.log('[WebRTCService] Checking for remote offer...');
         if (this.remoteOfferReceived) {
+          console.log('[WebRTCService] Remote offer received');
           clearInterval(checkInterval);
           clearTimeout(timeoutId);
           resolve();
         }
-      }, 100);
+      }, 1000);
     });
   }
 
   async handleOffer(offer: RTCSessionDescriptionInit): Promise<void> {
-    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    console.log('[WebRTCService] Handling WebRTC offer:', offer);
+    if (!this.peerConnection) {
+      console.log('[WebRTCService] Creating new peer connection for offer');
+      await this.createPeerConnection();
+    }
     try {
-      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      await this.peerConnection!.setRemoteDescription(new RTCSessionDescription(offer));
       this.remoteOfferReceived = true;
+      console.log('[WebRTCService] Remote offer set successfully');
     } catch (error) {
-      console.error('Error handling offer:', error);
+      console.error('[WebRTCService] Error handling offer:', error);
       throw error;
     }
   }
