@@ -22,10 +22,8 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
   const [transferHistory, setTransferHistory] = useState<string[]>([]);
 
   const handleFileTransferOffer = useCallback((data: PendingOffer) => {
-    console.log('[FileTransferUI] Received fileTransferOffer event:', data);
     setPendingOffers(prevOffers => [...prevOffers, data]);
     addToTransferHistory(`Incoming file offer: ${data.filename} from ${data.sender}`);
-    console.log('[FileTransferUI] Updated pendingOffers state and transfer history');
   }, []);
 
   const handleFileSendProgress = useCallback((data: { filename: string; sentBytes: number; totalBytes: number }) => {
