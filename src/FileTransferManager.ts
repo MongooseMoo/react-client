@@ -129,7 +129,7 @@ export default class FileTransferManager {
     await readNextChunk();
   }
 
-  private async sendChunk(filename: string, chunk: ArrayBuffer, offset: number, totalSize: number, encryptionKey: CryptoJS.lib.WordArray): Promise<void> {
+  private async sendChunk(filename: string, chunk: ArrayBuffer, offset: number, totalSize: number, encryptionKey: CryptoJS.lib.WordArray | undefined): Promise<void> {
     try {
       if (!encryptionKey) {
         throw new FileTransferError(FileTransferErrorCodes.ENCRYPTION_FAILED, 'Encryption key is undefined');
@@ -137,7 +137,7 @@ export default class FileTransferManager {
 
       const encryptedChunk = CryptoJS.AES.encrypt(
         CryptoJS.lib.WordArray.create(chunk),
-        encryptionKey as CryptoJS.lib.WordArray
+        encryptionKey
       ).toString();
 
       const header = new TextEncoder().encode(JSON.stringify({
