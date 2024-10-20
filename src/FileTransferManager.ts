@@ -100,9 +100,10 @@ export default class FileTransferManager {
         const slice = file.slice(offset, offset + this.chunkSize);
         fileReader.onload = (e) => {
           if (e.target?.result instanceof ArrayBuffer) {
+            const chunkSize = e.target.result.byteLength;
             this.sendChunk(file.name, e.target.result, offset, file.size, encryptionKey)
               .then(() => {
-                offset += e.target.result.byteLength;
+                offset += chunkSize;
                 this.client.onFileSendProgress({
                   filename: file.name,
                   sentBytes: offset,
