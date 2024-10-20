@@ -132,7 +132,7 @@ export default class FileTransferManager {
     try {
       const encryptedChunk = CryptoJS.AES.encrypt(
         CryptoJS.lib.WordArray.create(chunk),
-        encryptionKey
+        encryptionKey || CryptoJS.lib.WordArray.random(256 / 8)
       ).toString();
 
       const header = new TextEncoder().encode(JSON.stringify({
@@ -255,7 +255,7 @@ export default class FileTransferManager {
     };
 
     fileReader.onerror = (error) => {
-      this.handleTransferError(file.name, 'send', error);
+      this.handleTransferError(file.name, 'send', new FileTransferError('READ_ERROR', 'Error reading file'));
     };
 
     readNextChunk();
@@ -312,7 +312,7 @@ export default class FileTransferManager {
     }
   }
 
-  private handleTransferError(filename: string, direction: 'send' | 'receive', error: FileTransferError): void {
+  private handleTransferError(filename: string, direction: 'send' | 'receive', error: FileTransferError | unknown): void {
     console.error(`Error ${direction}ing file ${filename}:`, error);
     this.client.onFileTransferError(filename, direction, error.message);
     this.cleanupTransfer(filename);
@@ -358,13 +358,13 @@ export default class FileTransferManager {
     const outgoingTransfer = this.outgoingTransfers.get(filename);
     if (outgoingTransfer) {
       this.cleanupTransfer(filename);
-      this.client.onFileTransferCancelled({ filename, direction: 'send' });
+      this.client.onFileTransferCancel(this.client.worldData.playerId, filename);
       this.gmcpFileTransfer.sendCancel(this.client.worldData.playerId, filename);
     }
 
     if (this.incomingTransfers.has(filename)) {
       this.cleanupTransfer(filename);
-      this.client.onFileTransferCancelled({ filename, direction: 'receive' });
+      this.client.onFileTransferCancel(this.client.worldData.playerId, filename);
       this.gmcpFileTransfer.sendCancel(this.client.worldData.playerId, filename);
     }
   }
@@ -374,7 +374,7 @@ export default class FileTransferManager {
       await this.waitForDataChannel();
       const answer = await this.webRTCService.createAnswer();
       await this.gmcpFileTransfer.sendAccept(sender, filename, JSON.stringify(answer));
-      this.client.onFileTransferAccepted({ sender, filename });
+      this.client.onFileTransferAccept(sender, filename, JSON.stringify(answer));
     } catch (error) {
       this.handleTransferError(filename, 'receive', new FileTransferError(FileTransferErrorCodes.CONNECTION_FAILED, 'Failed to accept transfer'));
     }
