@@ -33,6 +33,7 @@ export class GMCPClientFileTransfer extends GMCPPackage {
 
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
     console.log("[GMCPClientFileTransfer] Received offer:", data);
+    this.client.fileTransferManager.pendingOffers.set(`${data.sender}-${data.filename}`, data);
     this.client.onFileTransferOffer(
       data.sender,
       data.filename,
