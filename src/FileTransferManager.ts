@@ -442,7 +442,18 @@ export default class FileTransferManager {
   async acceptTransfer(sender: string, filename: string): Promise<void> {
     console.log("Accepting transfer", sender, filename);
     try {
+      // First, ensure we have a peer connection
+      if (!this.webRTCService.isPeerConnectionInitialized()) {
+        console.log('[FileTransferManager] Creating new peer connection');
+        await this.webRTCService.createPeerConnection();
+      }
+
+      // Now create the answer
+      console.log('[FileTransferManager] Creating WebRTC answer');
       const answer = await this.webRTCService.createAnswer();
+      console.log('[FileTransferManager] WebRTC answer created successfully');
+
+      // Send the accept message with the answer
       await this.gmcpFileTransfer.sendAccept(
         sender,
         filename,
@@ -464,7 +475,7 @@ export default class FileTransferManager {
         "receive",
         new FileTransferError(
           FileTransferErrorCodes.CONNECTION_FAILED,
-          "Failed to accept transfer"
+          `Failed to accept transfer: ${error instanceof Error ? error.message : 'Unknown error'}`
         )
       );
     }
