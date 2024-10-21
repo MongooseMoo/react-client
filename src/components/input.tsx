@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { CommandHistory } from "../CommandHistory"; // Assuming CommandHistory is in CommandHistory.js
+import { CommandHistory } from "../CommandHistory";
 import "./input.css";
 
 type SendFunction = (text: string) => void;
@@ -18,9 +18,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      onSend(input);
-      commandHistory.addCommand(input);
-      setInput("");
+      handleSend();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       const prevCommand = commandHistory.navigateUp(input);
@@ -32,15 +30,28 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     }
   };
 
+  const handleSend = () => {
+    if (input.trim()) {
+      onSend(input);
+      commandHistoryRef.current.addCommand(input);
+      setInput("");
+    }
+  };
+
   return (
-    <textarea
-      value={input}
-      onChange={(e) => setInput(e.target.value)}
-      onKeyDown={handleKeyDown}
-      id="command-input"
-      ref={inputRef}
-      autoFocus
-    />
+    <div className="command-input-container">
+      <textarea
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={handleKeyDown}
+        id="command-input"
+        ref={inputRef}
+        autoFocus
+      />
+      <button onClick={handleSend} className="send-button">
+        Send
+      </button>
+    </div>
   );
 };
 
