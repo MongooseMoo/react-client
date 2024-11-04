@@ -352,12 +352,22 @@ export default class FileTransferManager {
   }
 
   private cleanupTransfer(filename: string): void {
+    // Cleanup outgoing transfers
     const transfer = this.outgoingTransfers.get(filename);
     if (transfer) {
       clearTimeout(transfer.timeout);
       this.outgoingTransfers.delete(filename);
     }
+    
+    // Cleanup incoming transfers
     this.incomingTransfers.delete(filename);
+    
+    // Cleanup pending offers
+    for (const [key, offer] of this.pendingOffers.entries()) {
+      if (offer.filename === filename) {
+        this.pendingOffers.delete(key);
+      }
+    }
   }
 
   private async attemptRecovery(
@@ -439,47 +449,50 @@ export default class FileTransferManager {
 
   async acceptTransfer(sender: string, filename: string): Promise<void> {
     console.log("Accepting transfer", sender, filename);
-    try {
-      // Get the offer from the pending offers
-      const offer = this.pendingOffers.get(`${sender}-${filename}`);
-      if (!offer) {
-        throw new Error("No pending offer found for this transfer");
-      }
+    
+    // Check if we're already handling this transfer
+    if (this.incomingTransfers.has(filename)) {
+      throw new Error("Already receiving this file");
+    }
+    
+    // Check if we have a valid offer
+    const offer = this.pendingOffers.get(`${sender}-${filename}`);
+    if (!offer) {
+      throw new Error("No pending offer found for this transfer");
+    }
 
-      console.log(
-        "[FileTransferManager] Setting remote description with offer"
-      );
+    try {
+      console.log("[FileTransferManager] Setting remote description with offer");
       await this.webRTCService.handleOffer(JSON.parse(offer.offerSdp));
 
       console.log("[FileTransferManager] Creating WebRTC answer");
       const answer = await this.webRTCService.createAnswer();
       console.log("[FileTransferManager] WebRTC answer created successfully");
 
-      // Send the accept message with the answer
-      await this.gmcpFileTransfer.sendAccept(
-        sender,
-        filename,
-        JSON.stringify(answer)
-      );
-      console.log("[FileTransferManager] Sent accept message with answer");
+      // Send accept only if we're still in a valid state
+      if (this.pendingOffers.has(`${sender}-${filename}`)) {
+        await this.gmcpFileTransfer.sendAccept(
+          sender,
+          filename,
+          JSON.stringify(answer)
+        );
+        
+        // Wait for the data channel to open
+        await this.waitForDataChannel();
+        console.log("Data channel ready for incoming transfer");
 
-      // Wait for the data channel to open
-      await this.waitForDataChannel();
-      console.log("Data channel ready for incoming transfer");
-
-      // Remove the pending offer
-      this.pendingOffers.delete(`${sender}-${filename}`);
+        this.pendingOffers.delete(`${sender}-${filename}`);
+      } else {
+        throw new Error("Transfer was cancelled during setup");
+      }
     } catch (error) {
       console.error("Failed to accept transfer:", error);
-      this.handleTransferError(
-        filename,
-        "receive",
-        new FileTransferError(
-          FileTransferErrorCodes.CONNECTION_FAILED,
-          `Failed to accept transfer: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`
-        )
+      this.cleanupTransfer(filename);
+      throw new FileTransferError(
+        FileTransferErrorCodes.CONNECTION_FAILED,
+        `Failed to accept transfer: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
       );
     }
   }

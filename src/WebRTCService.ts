@@ -45,7 +45,9 @@ export class WebRTCService {
     if (!this.dataChannel) return;
 
     this.dataChannel.onopen = () => {
-      this.client.emit('dataChannelOpen');
+      if (this.dataChannel?.readyState === 'open') {
+        this.client.emit('dataChannelOpen');
+      }
     };
 
     this.dataChannel.onmessage = (event) => {
@@ -59,11 +61,25 @@ export class WebRTCService {
     this.dataChannel.onerror = (error) => {
       console.error('Data channel error:', error);
       this.client.emit('dataChannelError', error);
+      this.attemptChannelRecovery();
     };
 
     this.dataChannel.onclose = () => {
       this.client.emit('dataChannelClose');
+      if (this.peerConnection?.connectionState === 'connected') {
+        this.attemptChannelRecovery();
+      }
     };
+  }
+
+  private async attemptChannelRecovery(): Promise<void> {
+    try {
+      this.dataChannel = this.peerConnection?.createDataChannel('fileTransfer');
+      this.setupDataChannel();
+    } catch (error) {
+      console.error('Failed to recover data channel:', error);
+      this.client.emit('dataChannelRecoveryFailed', error);
+    }
   }
 
   sendData(data: ArrayBuffer): void {
@@ -85,11 +101,17 @@ export class WebRTCService {
   }
 
   async handleOffer(offer: RTCSessionDescriptionInit): Promise<void> {
-    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    console.log('[WebRTCService] Handling WebRTC offer:', offer);
+    if (!this.peerConnection || this.peerConnection.connectionState === 'closed') {
+      console.log('[WebRTCService] Creating new peer connection for offer');
+      await this.createPeerConnection();
+    }
     try {
-      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      await this.peerConnection!.setRemoteDescription(new RTCSessionDescription(offer));
+      this.remoteOfferReceived = true;
+      console.log('[WebRTCService] Remote offer set successfully');
     } catch (error) {
-      console.error('Error handling offer:', error);
+      console.error('[WebRTCService] Error handling offer:', error);
       throw error;
     }
   }
