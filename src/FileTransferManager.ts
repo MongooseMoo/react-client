@@ -22,6 +22,7 @@ interface FileTransferProgress {
   receivedSize: number;
   chunks: ArrayBuffer[];
   lastActivityTimestamp: number;
+  sender: string;
 }
 
 export default class FileTransferManager {
@@ -263,6 +264,11 @@ export default class FileTransferManager {
         throw new Error("Received data is too short to contain chunk data");
       }
 
+      // Extract sender from the transfer key in pendingOffers
+      const sender = Array.from(this.pendingOffers.entries()).find(
+        ([_, offer]) => offer.filename === header.filename
+      )?.[1]?.sender || "unknown";
+
       // Validate header fields
       if (
         typeof header.chunkIndex !== "number" ||
@@ -299,6 +305,7 @@ export default class FileTransferManager {
           receivedSize: 0,
           chunks: new Array(header.totalChunks),
           lastActivityTimestamp: Date.now(),
+          sender: sender
         };
         this.incomingTransfers.set(header.filename, transfer);
       }
