@@ -74,7 +74,7 @@ export class WebRTCService {
 
   private async attemptChannelRecovery(): Promise<void> {
     try {
-      this.dataChannel = this.peerConnection?.createDataChannel('fileTransfer');
+      this.dataChannel = this.peerConnection?.createDataChannel('fileTransfer') ?? null;
       this.setupDataChannel();
     } catch (error) {
       console.error('Failed to recover data channel:', error);
@@ -96,22 +96,6 @@ export class WebRTCService {
       return offer;
     } catch (error) {
       console.error('Error creating offer:', error);
-      throw error;
-    }
-  }
-
-  async handleOffer(offer: RTCSessionDescriptionInit): Promise<void> {
-    console.log('[WebRTCService] Handling WebRTC offer:', offer);
-    if (!this.peerConnection || this.peerConnection.connectionState === 'closed') {
-      console.log('[WebRTCService] Creating new peer connection for offer');
-      await this.createPeerConnection();
-    }
-    try {
-      await this.peerConnection!.setRemoteDescription(new RTCSessionDescription(offer));
-      this.remoteOfferReceived = true;
-      console.log('[WebRTCService] Remote offer set successfully');
-    } catch (error) {
-      console.error('[WebRTCService] Error handling offer:', error);
       throw error;
     }
   }
