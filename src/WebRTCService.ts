@@ -4,6 +4,7 @@ export class WebRTCService {
   private peerConnection: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
   private client: MudClient;
+  private connectionTimeout: number = 60000; // Increased timeout
 
   constructor(client: MudClient) {
     this.client = client;
@@ -16,25 +17,43 @@ export class WebRTCService {
   async createPeerConnection(): Promise<void> {
     try {
       this.peerConnection = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+        ]
       });
 
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          this.client.gmcp_fileTransfer.sendAccept(this.client.worldData.playerId, "", JSON.stringify(event.candidate));
+          this.client.gmcp_fileTransfer.sendAccept(
+            this.client.worldData.playerId,
+            "",
+            JSON.stringify(event.candidate)
+          );
         }
       };
 
-      this.peerConnection.oniceconnectionstatechange = () => {
-        this.client.emit('iceConnectionStateChange', this.peerConnection?.iceConnectionState);
-      };
-
+      // Add connection state logging
       this.peerConnection.onconnectionstatechange = () => {
-        this.client.emit('connectionStateChange', this.peerConnection?.connectionState);
+        console.log("[WebRTCService] Connection state:", this.peerConnection?.connectionState);
+        this.client.emit('webRTCStateChange', this.peerConnection?.connectionState);
       };
 
-      this.dataChannel = this.peerConnection.createDataChannel('fileTransfer');
-      this.setupDataChannel();
+      this.peerConnection.ondatachannel = (event) => {
+        console.log("[WebRTCService] Received data channel");
+        this.dataChannel = event.channel;
+        this.setupDataChannel();
+      };
+
+      // Create data channel if we're the offering peer
+      if (!this.dataChannel) {
+        console.log("[WebRTCService] Creating data channel");
+        this.dataChannel = this.peerConnection.createDataChannel('fileTransfer', {
+          ordered: true
+        });
+        this.setupDataChannel();
+      }
     } catch (error) {
       console.error('Error creating peer connection:', error);
       throw error;
@@ -45,29 +64,23 @@ export class WebRTCService {
     if (!this.dataChannel) return;
 
     this.dataChannel.onopen = () => {
-      if (this.dataChannel?.readyState === 'open') {
-        this.client.emit('dataChannelOpen');
-      }
+      console.log("[WebRTCService] Data channel opened");
+      this.client.emit('dataChannelOpen');
+    };
+
+    this.dataChannel.onclose = () => {
+      console.log("[WebRTCService] Data channel closed");
+      this.client.emit('dataChannelClose');
+    };
+
+    this.dataChannel.onerror = (error) => {
+      console.error("[WebRTCService] Data channel error:", error);
+      this.client.emit('dataChannelError', error);
     };
 
     this.dataChannel.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
         this.client.emit('dataChannelMessage', event.data);
-      } else {
-        console.warn('Received non-ArrayBuffer data:', event.data);
-      }
-    };
-
-    this.dataChannel.onerror = (error) => {
-      console.error('Data channel error:', error);
-      this.client.emit('dataChannelError', error);
-      this.attemptChannelRecovery();
-    };
-
-    this.dataChannel.onclose = () => {
-      this.client.emit('dataChannelClose');
-      if (this.peerConnection?.connectionState === 'connected') {
-        this.attemptChannelRecovery();
       }
     };
   }
@@ -149,6 +162,28 @@ export class WebRTCService {
       this.peerConnection = null;
     }
     this.client.emit('webRTCClosed');
+  }
+
+  async waitForConnection(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Connection timeout'));
+      }, this.connectionTimeout);
+
+      const checkConnection = () => {
+        if (this.isDataChannelOpen()) {
+          clearTimeout(timeout);
+          resolve();
+        } else if (this.peerConnection?.connectionState === 'failed') {
+          clearTimeout(timeout);
+          reject(new Error('Connection failed'));
+        } else {
+          setTimeout(checkConnection, 100);
+        }
+      };
+
+      checkConnection();
+    });
   }
 
   private remoteOfferReceived: boolean = false;

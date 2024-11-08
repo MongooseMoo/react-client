@@ -71,7 +71,7 @@ export default class FileTransferManager {
     try {
       await this.client.initializeWebRTC();
       const offer = await this.webRTCService.createOffer();
-
+      
       await this.gmcpFileTransfer.sendOffer(
         recipient,
         file.name,
@@ -79,18 +79,11 @@ export default class FileTransferManager {
         JSON.stringify(offer)
       );
 
-      const transferTimeout = setTimeout(() => {
-        this.handleTransferError(
-          file.name,
-          "send",
-          new FileTransferError(
-            FileTransferErrorCodes.TRANSFER_TIMEOUT,
-            "Transfer timeout"
-          )
-        );
-      }, this.transferTimeout);
-
-      this.outgoingTransfers.set(file.name, { file, timeout: transferTimeout });
+      // Wait for connection to be established
+      await this.webRTCService.waitForConnection();
+      
+      // Start transfer
+      await this.startFileTransfer(file);
 
       // Wait for the recipient to accept the transfer
       // `handleAcceptedTransfer` will be called upon acceptance
