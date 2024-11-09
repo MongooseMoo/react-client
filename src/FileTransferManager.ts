@@ -471,6 +471,7 @@ export default class FileTransferManager {
       console.log(
         "[FileTransferManager] Setting remote description with offer"
       );
+      this.webRTCService.recipient = sender;
       await this.webRTCService.handleOffer(JSON.parse(offer.offerSdp));
 
       console.log("[FileTransferManager] Creating WebRTC answer");
