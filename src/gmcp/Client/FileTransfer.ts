@@ -31,6 +31,18 @@ export class GMCPClientFileTransfer extends GMCPPackage {
     super(client);
   }
 
+  sendCandidate(recipient: string, candidate: RTCIceCandidate): void {
+    this.sendData("Candidate", {
+      recipient,
+      candidate: JSON.stringify(candidate)
+    });
+  }
+
+  handleCandidate(data: { sender: string, candidate: string }): void {
+    const candidate = JSON.parse(data.candidate);
+    this.client.webRTCService.handleIceCandidate(candidate);
+  }
+
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
     console.log("[GMCPClientFileTransfer] Received offer:", data);
     this.client.fileTransferManager.pendingOffers.set(`${data.sender}-${data.filename}`, data);

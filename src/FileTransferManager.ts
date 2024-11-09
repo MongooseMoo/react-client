@@ -74,6 +74,7 @@ export default class FileTransferManager {
 
     try {
       await this.client.initializeWebRTC();
+      this.webRTCService.recipient = recipient;
       const offer = await this.webRTCService.createOffer();
 
       await this.gmcpFileTransfer.sendOffer(

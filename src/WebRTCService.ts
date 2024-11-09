@@ -5,6 +5,7 @@ export class WebRTCService {
   private dataChannel: RTCDataChannel | null = null;
   private client: MudClient;
   private connectionTimeout: number = 60000; // Increased timeout
+  private recipient: string = "";
 
   constructor(client: MudClient) {
     this.client = client;
@@ -25,11 +26,10 @@ export class WebRTCService {
       });
 
       this.peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          this.client.gmcp_fileTransfer.sendAccept(
-            this.client.worldData.playerId,
-            "",
-            JSON.stringify(event.candidate)
+        if (event.candidate && this.recipient) {
+          this.client.gmcp_fileTransfer.sendCandidate(
+            this.recipient,
+            event.candidate
           );
         }
       };
