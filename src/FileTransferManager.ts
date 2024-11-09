@@ -55,6 +55,10 @@ export default class FileTransferManager {
 
   private setupListeners(): void {
     this.client.on("dataChannelMessage", this.handleIncomingChunk.bind(this));
+    this.client.on(
+      "fileTransferAccepted",
+      this.handleAcceptedTransfer.bind(this)
+    );
     setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
@@ -71,7 +75,7 @@ export default class FileTransferManager {
     try {
       await this.client.initializeWebRTC();
       const offer = await this.webRTCService.createOffer();
-      
+
       await this.gmcpFileTransfer.sendOffer(
         recipient,
         file.name,
@@ -81,7 +85,7 @@ export default class FileTransferManager {
 
       // Wait for connection to be established
       await this.webRTCService.waitForConnection();
-      
+
       // Start transfer
       await this.startFileTransfer(file);
 
@@ -258,9 +262,10 @@ export default class FileTransferManager {
       }
 
       // Extract sender from the transfer key in pendingOffers
-      const sender = Array.from(this.pendingOffers.entries()).find(
-        ([_, offer]) => offer.filename === header.filename
-      )?.[1]?.sender || "unknown";
+      const sender =
+        Array.from(this.pendingOffers.entries()).find(
+          ([_, offer]) => offer.filename === header.filename
+        )?.[1]?.sender || "unknown";
 
       // Validate header fields
       if (
@@ -298,7 +303,7 @@ export default class FileTransferManager {
           receivedSize: 0,
           chunks: new Array(header.totalChunks),
           lastActivityTimestamp: Date.now(),
-          sender: sender
+          sender: sender,
         };
         this.incomingTransfers.set(header.filename, transfer);
       }
@@ -358,10 +363,10 @@ export default class FileTransferManager {
       clearTimeout(transfer.timeout);
       this.outgoingTransfers.delete(filename);
     }
-    
+
     // Cleanup incoming transfers
     this.incomingTransfers.delete(filename);
-    
+
     // Cleanup pending offers
     for (const [key, offer] of this.pendingOffers.entries()) {
       if (offer.filename === filename) {
@@ -449,12 +454,12 @@ export default class FileTransferManager {
 
   async acceptTransfer(sender: string, filename: string): Promise<void> {
     console.log("Accepting transfer", sender, filename);
-    
+
     // Check if we're already handling this transfer
     if (this.incomingTransfers.has(filename)) {
       throw new Error("Already receiving this file");
     }
-    
+
     // Check if we have a valid offer
     const offer = this.pendingOffers.get(`${sender}-${filename}`);
     if (!offer) {
@@ -462,7 +467,9 @@ export default class FileTransferManager {
     }
 
     try {
-      console.log("[FileTransferManager] Setting remote description with offer");
+      console.log(
+        "[FileTransferManager] Setting remote description with offer"
+      );
       await this.webRTCService.handleOffer(JSON.parse(offer.offerSdp));
 
       console.log("[FileTransferManager] Creating WebRTC answer");
@@ -476,7 +483,7 @@ export default class FileTransferManager {
           filename,
           JSON.stringify(answer)
         );
-        
+
         // Wait for the data channel to open
         await this.waitForDataChannel();
         console.log("Data channel ready for incoming transfer");
