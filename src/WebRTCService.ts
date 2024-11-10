@@ -6,6 +6,7 @@ export class WebRTCService {
   private client: MudClient;
   private connectionTimeout: number = 60000; // Increased timeout
   private recipient: string = "";
+  private pendingCandidates: RTCIceCandidateInit[] = [];
 
   constructor(client: MudClient) {
     this.client = client;
@@ -129,6 +130,17 @@ export class WebRTCService {
     if (!this.peerConnection) throw new Error('Peer connection not initialized');
     try {
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      
+      // Add any pending candidates now that we have the remote description
+      if (this.pendingCandidates.length > 0) {
+        console.log(`[WebRTCService] Adding ${this.pendingCandidates.length} pending ICE candidates`);
+        await Promise.all(
+          this.pendingCandidates.map(candidate =>
+            this.peerConnection!.addIceCandidate(new RTCIceCandidate(candidate))
+          )
+        );
+        this.pendingCandidates = []; // Clear pending candidates
+      }
     } catch (error) {
       console.error('Error handling answer:', error);
       throw error;
@@ -137,7 +149,16 @@ export class WebRTCService {
 
   async handleIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    
     try {
+      // If we don't have a remote description yet, store the candidate
+      if (!this.peerConnection.remoteDescription) {
+        console.log('[WebRTCService] Storing ICE candidate until remote description is set');
+        this.pendingCandidates.push(candidate);
+        return;
+      }
+      
+      // Otherwise add it immediately
       await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (error) {
       console.error('Error handling ICE candidate:', error);
@@ -153,6 +174,7 @@ export class WebRTCService {
   }
 
   close(): void {
+    this.pendingCandidates = []; // Clear pending candidates
     if (this.dataChannel) {
       this.dataChannel.close();
       this.dataChannel = null;
@@ -227,6 +249,17 @@ export class WebRTCService {
       await this.peerConnection!.setRemoteDescription(new RTCSessionDescription(offer));
       this.remoteOfferReceived = true;
       console.log('[WebRTCService] Remote offer set successfully');
+      
+      // Add any pending candidates now that we have the remote description
+      if (this.pendingCandidates.length > 0) {
+        console.log(`[WebRTCService] Adding ${this.pendingCandidates.length} pending ICE candidates`);
+        await Promise.all(
+          this.pendingCandidates.map(candidate =>
+            this.peerConnection!.addIceCandidate(new RTCIceCandidate(candidate))
+          )
+        );
+        this.pendingCandidates = []; // Clear pending candidates
+      }
     } catch (error) {
       console.error('[WebRTCService] Error handling offer:', error);
       throw error;
