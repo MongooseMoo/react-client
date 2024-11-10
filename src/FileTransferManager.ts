@@ -93,6 +93,7 @@ export default class FileTransferManager {
       // Wait for the recipient to accept the transfer
       // `handleAcceptedTransfer` will be called upon acceptance
     } catch (error) {
+      console.error("Failed to send file:", error);
       if (error instanceof FileTransferError) {
         this.handleTransferError(file.name, "send", error);
       } else {
