@@ -23,7 +23,7 @@ The file transfer protocol uses a combination of GMCP messages for signaling and
 1. Offer/Accept Phase:
    - Sender initiates transfer with a GMCP FileTransfer.Offer message, including WebRTC offer SDP
    - Receiver responds with a GMCP FileTransfer.Accept message, including WebRTC answer SDP
-   - ICE candidates are exchanged using GMCP FileTransfer.Signal messages
+   - ICE candidates are exchanged using GMCP FileTransfer.Candidate messages
 
 2. Data Transfer Phase:
    - File data is sent over the WebRTC data channel in chunks
@@ -56,9 +56,9 @@ The following GMCP messages are used for file transfer signaling:
    - sender: string
    - filename: string
 
-5. FileTransfer.Signal
+5. FileTransfer.Candidate
    - sender: string
-   - signal: string (WebRTC ICE candidate)
+   - candidate: string (WebRTC ICE candidate)
 
 ## 5. WebRTC Data Channel
 
@@ -76,7 +76,7 @@ The WebRTC data channel is used for the actual file data transfer:
 5. Both clients exchange ICE candidates using FileTransfer.Signal GMCP messages
 6. WebRTC connection is established
 7. File is chunked and sent over the WebRTC data channel
-8. Receiver decrypts and reassembles the file chunks
+8. Receiver reassembles the file chunks
 9. Both sides update their UIs with progress information
 10. On completion, the file is saved on the receiver's side
 
