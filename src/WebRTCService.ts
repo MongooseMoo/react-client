@@ -129,17 +129,28 @@ export class WebRTCService {
   async handleAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
     if (!this.peerConnection) throw new Error('Peer connection not initialized');
     try {
+      console.log('[WebRTCService] Received WebRTC answer:', JSON.stringify(answer));
+      console.log('[WebRTCService] Current connection state:', this.peerConnection.connectionState);
+      console.log('[WebRTCService] Current signaling state:', this.peerConnection.signalingState);
+      
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      console.log('[WebRTCService] Remote description set successfully');
+      console.log('[WebRTCService] Updated connection state:', this.peerConnection.connectionState);
+      console.log('[WebRTCService] Updated signaling state:', this.peerConnection.signalingState);
       
       // Add any pending candidates now that we have the remote description
       if (this.pendingCandidates.length > 0) {
         console.log(`[WebRTCService] Adding ${this.pendingCandidates.length} pending ICE candidates`);
         await Promise.all(
-          this.pendingCandidates.map(candidate =>
-            this.peerConnection!.addIceCandidate(new RTCIceCandidate(candidate))
-          )
+          this.pendingCandidates.map(async (candidate, index) => {
+            console.log(`[WebRTCService] Adding ICE candidate ${index + 1}/${this.pendingCandidates.length}`);
+            await this.peerConnection!.addIceCandidate(new RTCIceCandidate(candidate));
+          })
         );
+        console.log('[WebRTCService] All pending ICE candidates added successfully');
         this.pendingCandidates = []; // Clear pending candidates
+      } else {
+        console.log('[WebRTCService] No pending ICE candidates to add');
       }
     } catch (error) {
       console.error('Error handling answer:', error);

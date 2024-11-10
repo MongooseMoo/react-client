@@ -196,8 +196,11 @@ export default class FileTransferManager {
     filename: string,
     answerSdp: string
   ): Promise<void> {
+    console.log(`[FileTransferManager] Handling accepted transfer for file: ${filename}`);
+    
     const outgoingTransfer = this.outgoingTransfers.get(filename);
     if (!outgoingTransfer) {
+      console.error(`[FileTransferManager] No outgoing transfer found for file: ${filename}`);
       this.client.onFileTransferError(
         filename,
         "send",
@@ -207,11 +210,12 @@ export default class FileTransferManager {
     }
 
     try {
+      console.log(`[FileTransferManager] Processing WebRTC answer for file: ${filename}`);
       await this.client.webRTCService.handleAnswer(JSON.parse(answerSdp));
 
-      // Wait for the data channel to open
+      console.log(`[FileTransferManager] Waiting for data channel to open for file: ${filename}`);
       await this.waitForDataChannel();
-      console.log("Data channel ready for outgoing transfer");
+      console.log(`[FileTransferManager] Data channel ready for outgoing transfer of: ${filename}`);
 
       await this.startFileTransfer(outgoingTransfer.file);
       this.client.onFileSendComplete(filename);
