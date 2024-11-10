@@ -26,7 +26,7 @@ The file transfer protocol uses a combination of GMCP messages for signaling and
    - ICE candidates are exchanged using GMCP FileTransfer.Signal messages
 
 2. Data Transfer Phase:
-   - File data is sent over the WebRTC data channel in encrypted chunks
+   - File data is sent over the WebRTC data channel in chunks
    - Progress is tracked and reported to the UI
 
 3. Completion/Error Handling:
@@ -65,7 +65,7 @@ The following GMCP messages are used for file transfer signaling:
 The WebRTC data channel is used for the actual file data transfer:
 
 - Channel name: 'fileTransfer'
-- Data format: ArrayBuffer containing encrypted file chunks and metadata
+- Data format: ArrayBuffer containing file chunks and metadata
 
 ## 6. File Transfer Process
 
@@ -75,7 +75,7 @@ The WebRTC data channel is used for the actual file data transfer:
 4. If accepted, receiver's client creates a WebRTC answer and sends a FileTransfer.Accept GMCP message
 5. Both clients exchange ICE candidates using FileTransfer.Signal GMCP messages
 6. WebRTC connection is established
-7. File is chunked, encrypted, and sent over the WebRTC data channel
+7. File is chunked and sent over the WebRTC data channel
 8. Receiver decrypts and reassembles the file chunks
 9. Both sides update their UIs with progress information
 10. On completion, the file is saved on the receiver's side
@@ -90,14 +90,12 @@ The WebRTC data channel is used for the actual file data transfer:
 ## 8. Security Considerations
 
 - WebRTC provides built-in encryption for data channels
-- Additional encryption is applied to file chunks before sending
 - User authentication is handled by the existing MUD client authentication system
 
 ## 9. Performance Optimizations
 
 - File chunking allows for efficient memory usage and progress tracking
 - WebRTC's built-in congestion control helps manage network performance
-- Encryption key is sent with each chunk for improved security
 
 ## Next Steps
 
@@ -109,16 +107,7 @@ The WebRTC data channel is used for the actual file data transfer:
 
 ## Future Enhancements
 
-### 1. Encryption
-
-To improve security, we plan to implement end-to-end encryption for file transfers:
-
-- Generate a unique encryption key for each file transfer
-- Use a strong encryption algorithm (e.g., AES-256) to encrypt file chunks before sending
-- Send the encryption key securely along with the file transfer offer
-- Implement decryption on the receiving end
-
-### 2. Transfer Resume Functionality
+### 1. Transfer Resume Functionality
 
 To handle interrupted transfers, we'll implement a resume feature:
 
@@ -127,7 +116,7 @@ To handle interrupted transfers, we'll implement a resume feature:
 - Implement a protocol to negotiate resuming from the last successfully transferred chunk
 - Update the UI to show resume options for interrupted transfers
 
-### 3. Multiple Simultaneous Transfers
+### 2. Multiple Simultaneous Transfers
 
 To support multiple file transfers at once:
 
