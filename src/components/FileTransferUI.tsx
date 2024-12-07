@@ -156,8 +156,10 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
   }, []);
 
   const handleAcceptTransfer = (sender: string, filename: string) => {
+    // Just accept the transfer and update UI state - let FileTransferManager handle the actual transfer
     client.acceptTransfer(sender, filename);
-    addToTransferHistory(`Accepted file transfer: ${filename} from ${sender}`);
+    addToTransferHistory(`Accepting file transfer: ${filename} from ${sender}`);
+    // Remove from pending offers since it's now being handled
     setPendingOffers((prevOffers) =>
       prevOffers.filter((o) => o.filename !== filename || o.sender !== sender)
     );
