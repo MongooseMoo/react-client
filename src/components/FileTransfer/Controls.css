@@ -1,0 +1,29 @@
+.file-transfer-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.file-transfer-controls input[type="file"],
+.file-transfer-controls input[type="text"] {
+  flex-grow: 1;
+}
+
+.file-transfer-controls button {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 14px;
+  margin: 4px 2px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.file-transfer-controls button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}

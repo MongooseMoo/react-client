@@ -1,0 +1,21 @@
+.incoming-transfer {
+  background-color: #e6f3ff;
+  border: 1px solid #b8daff;
+  border-radius: 5px;
+  padding: 10px;
+  margin-bottom: 15px;
+}
+
+.incoming-transfer button {
+  margin-right: 10px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 4px;
+}
