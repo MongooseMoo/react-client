@@ -1,6 +1,6 @@
 import { WebRTCService } from "./WebRTCService";
 import MudClient from "./client";
-import { GMCPClientFileTransfer } from "./gmcp/Client/FileTransfer";
+import { GMCPClientFileTransfer, GMCPMessageClientFileTransferOffer } from "./gmcp/Client/FileTransfer";
 
 export class FileTransferError extends Error {
   constructor(public code: string, message: string) {
@@ -45,7 +45,7 @@ export default class FileTransferManager {
   private transferTimeout: number = 30000; // 30 seconds
   public pendingOffers: Map<
     string,
-    FileTransferRequest
+    GMCPMessageClientFileTransferOffer
   > = new Map();
 
   constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
@@ -498,14 +498,14 @@ export default class FileTransferManager {
     if (!offer) {
       throw new Error("No pending offer found for this transfer");
     }
-
+    console.log("[FileTransferManager] Found pending offer for transfer", offer);
     try {
       // Initialize WebRTC first
       await this.client.initializeWebRTC();
       this.webRTCService.recipient = sender;
 
       console.log("[FileTransferManager] Setting remote description with offer");
-      await this.webRTCService.handleOffer(JSON.parse(offer.answerSdp));
+      await this.webRTCService.handleOffer(JSON.parse(offer.offerSdp));
 
       console.log("[FileTransferManager] Creating WebRTC answer");
       const answer = await this.webRTCService.createAnswer();
