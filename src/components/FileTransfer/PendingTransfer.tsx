@@ -11,7 +11,6 @@ interface PendingTransferProps {
   offer: PendingOffer;
   onAccept: (sender: string, filename: string) => void;
   onReject: (sender: string, filename: string) => void;
-  onCancel: (filename: string) => void;
 }
 
 const PendingTransfer: React.FC<PendingTransferProps> = ({
@@ -31,7 +30,6 @@ const PendingTransfer: React.FC<PendingTransferProps> = ({
       <button onClick={() => onReject(offer.sender, offer.filename)}>
         Reject
       </button>
-      <button onClick={() => onCancel(offer.filename)}>Cancel</button>
     </div>
   );
 };

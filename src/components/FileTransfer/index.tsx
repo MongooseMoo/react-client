@@ -200,7 +200,6 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
           offer={offer}
           onAccept={handleAcceptTransfer}
           onReject={handleRejectTransfer}
-          onCancel={handleCancelTransfer}
         />
       ))}
 
