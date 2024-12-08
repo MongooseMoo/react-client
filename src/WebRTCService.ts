@@ -241,23 +241,49 @@ export class WebRTCService {
 
   async waitForConnection(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      const timeoutId = setTimeout(() => {
+        cleanup();
         reject(new Error('Connection timeout'));
       }, this.connectionTimeout);
 
-      const checkConnection = () => {
-        if (this.isDataChannelOpen()) {
-          clearTimeout(timeout);
-          resolve();
-        } else if (this.peerConnection?.connectionState === 'failed') {
-          clearTimeout(timeout);
+      // If the channel is already open, resolve immediately
+      if (this.isDataChannelOpen()) {
+        clearTimeout(timeoutId);
+        return resolve();
+      }
+
+      // Listen for the data channel opening
+      const handleOpen = () => {
+        clearTimeout(timeoutId);
+        cleanup();
+        resolve();
+      };
+
+      // Listen for connection failure
+      const handleFailure = () => {
+        if (this.peerConnection?.connectionState === 'failed') {
+          clearTimeout(timeoutId);
+          cleanup();
           reject(new Error('Connection failed'));
-        } else {
-          setTimeout(checkConnection, 100);
         }
       };
 
-      checkConnection();
+      const cleanup = () => {
+        if (this.dataChannel) {
+          this.dataChannel.removeEventListener('open', handleOpen);
+        }
+        if (this.peerConnection) {
+          this.peerConnection.removeEventListener('connectionstatechange', handleFailure);
+        }
+      };
+
+      // Add event listeners
+      if (this.dataChannel) {
+        this.dataChannel.addEventListener('open', handleOpen);
+      }
+      if (this.peerConnection) {
+        this.peerConnection.addEventListener('connectionstatechange', handleFailure);
+      }
     });
   }
 
@@ -276,19 +302,32 @@ export class WebRTCService {
     console.log('[WebRTCService] Waiting for remote offer...');
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
+        cleanup();
         console.log('[WebRTCService] Timeout waiting for remote offer');
         reject(new Error('Timeout waiting for remote offer'));
       }, timeout);
 
-      const checkInterval = setInterval(() => {
-        console.log('[WebRTCService] Checking for remote offer...');
-        if (this.remoteOfferReceived) {
-          console.log('[WebRTCService] Remote offer received');
-          clearInterval(checkInterval);
-          clearTimeout(timeoutId);
-          resolve();
-        }
-      }, 1000);
+      const handleRemoteOffer = () => {
+        console.log('[WebRTCService] Remote offer received');
+        clearTimeout(timeoutId);
+        cleanup();
+        resolve();
+      };
+
+      const cleanup = () => {
+        this.client.off('remoteOfferReceived', handleRemoteOffer);
+      };
+
+      // If we already have a remote offer, resolve immediately
+      if (this.remoteOfferReceived) {
+        console.log('[WebRTCService] Remote offer already received');
+        clearTimeout(timeoutId);
+        resolve();
+        return;
+      }
+
+      // Wait for the event to fire
+      this.client.on('remoteOfferReceived', handleRemoteOffer);
     });
   }
 
@@ -301,6 +340,7 @@ export class WebRTCService {
     try {
       await this.peerConnection!.setRemoteDescription(new RTCSessionDescription(offer));
       this.remoteOfferReceived = true;
+      this.client.emit('remoteOfferReceived');
       console.log('[WebRTCService] Remote offer set successfully');
       
       // Process any pending candidates
