@@ -5,7 +5,7 @@ export class WebRTCService {
   private dataChannel: RTCDataChannel | null = null;
   private client: MudClient;
   private connectionTimeout: number = 60000; // Increased timeout
-  private recipient: string = "";
+  public recipient: string = "";
   public pendingCandidates: RTCIceCandidateInit[] = [];
 
   constructor(client: MudClient) {
@@ -18,7 +18,7 @@ export class WebRTCService {
 
   async createPeerConnection(): Promise<void> {
     try {
-      const configuration = {
+      const configuration: RTCConfiguration = {
         iceServers: [{
           urls: [
             'turn:mongoose.world:3478',
