@@ -17,7 +17,6 @@ const PendingTransfer: React.FC<PendingTransferProps> = ({
   offer,
   onAccept,
   onReject,
-  onCancel,
 }) => {
   return (
     <div className="incoming-transfer">
