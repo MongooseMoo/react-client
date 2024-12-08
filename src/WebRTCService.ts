@@ -22,7 +22,11 @@ export class WebRTCService {
         iceServers: [{
           urls: [
             'turn:mongoose.world:3478',
-            'stun:mongoose.world:3478'
+            'stun:mongoose.world:3478',
+            // google's public stun server
+            'stun:stun.l.google.com:19302',
+            // google's public turn server
+            'turn:turn.l.google.com:19302?transport=udp',
           ],
           username: 'p2p',
           credential: 'p2p'
