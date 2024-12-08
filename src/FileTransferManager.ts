@@ -31,6 +31,11 @@ interface FileTransferRequest {
   answerSdp: string;
 }
 
+interface FileTransferTask {
+  file: File;
+  timeout: NodeJS.Timeout;
+}
+
 export default class FileTransferManager {
   private webRTCService: WebRTCService;
   private client: MudClient;
@@ -39,7 +44,7 @@ export default class FileTransferManager {
   private incomingTransfers: Map<string, FileTransferProgress> = new Map();
   private outgoingTransfers: Map<
     string,
-    { file: File; timeout: NodeJS.Timeout }
+    FileTransferTask
   > = new Map();
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
@@ -60,7 +65,7 @@ export default class FileTransferManager {
   }
 
   private setupListeners(): void {
-    this.client.on("dataChannelMessage", this.handleIncomingChunk.bind(this));
+    this.webRTCService.on("dataChannelMessage", this.handleIncomingChunk.bind(this));
     this.client.on(
       "fileTransferAccepted",
       this.handleAcceptedTransfer.bind(this)
@@ -224,7 +229,7 @@ export default class FileTransferManager {
       console.log(`[FileTransferManager] Processing WebRTC answer for file: ${filename}`);
       const answerObj = JSON.parse(answerSdp);
       console.log(`[FileTransferManager] Answer object for file: ${filename}`, answerObj);
-      await this.client.webRTCService.handleAnswer(answerObj);
+      await this.webRTCService.handleAnswer(answerObj);
 
       console.log(`[FileTransferManager] Waiting for data channel to open for file: ${filename}`);
       await this.waitForDataChannel();

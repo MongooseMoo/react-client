@@ -1,6 +1,7 @@
 import MudClient from "./client";
+import EventEmitter from "eventemitter3";
 
-export class WebRTCService {
+export class WebRTCService  extends EventEmitter {
   private peerConnection: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
   private client: MudClient;
@@ -9,6 +10,7 @@ export class WebRTCService {
   public pendingCandidates: RTCIceCandidateInit[] = [];
 
   constructor(client: MudClient) {
+    super()
     this.client = client;
   }
 
@@ -41,18 +43,18 @@ export class WebRTCService {
       this.peerConnection.onconnectionstatechange = () => {
         const state = this.peerConnection?.connectionState;
         console.log("[WebRTCService] Connection state changed to:", state);
-        this.client.emit("webRTCStateChange", `Connection: ${state}`);
+        this.emit("webRTCStateChange", `Connection: ${state}`);
 
         switch (state) {
           case "connected":
             console.log(
               "[WebRTCService] Peer connection established successfully"
             );
-            this.client.emit("webRTCConnected");
+            this.emit("webRTCConnected");
             break;
           case "disconnected":
             console.log("[WebRTCService] Connection temporarily disconnected");
-            this.client.emit("webRTCDisconnected");
+            this.emit("webRTCDisconnected");
             // Give it a moment to auto-recover before attempting full recovery
             setTimeout(() => {
               if (this.peerConnection?.connectionState === "disconnected") {
@@ -73,7 +75,7 @@ export class WebRTCService {
       this.peerConnection.oniceconnectionstatechange = () => {
         const state = this.peerConnection?.iceConnectionState;
         console.log("[WebRTCService] ICE connection state changed to:", state);
-        this.client.emit("webRTCStateChange", `ICE: ${state}`);
+        this.emit("webRTCStateChange", `ICE: ${state}`);
 
         if (state === "failed") {
           console.log("[WebRTCService] ICE connection failed");
@@ -85,7 +87,7 @@ export class WebRTCService {
       this.peerConnection.onsignalingstatechange = () => {
         const state = this.peerConnection?.signalingState;
         console.log("[WebRTCService] Signaling state changed to:", state);
-        this.client.emit("webRTCStateChange", `Signaling: ${state}`);
+        this.emit("webRTCStateChange", `Signaling: ${state}`);
 
         if (state === "stable") {
           console.log("[WebRTCService] Signaling completed successfully");
@@ -96,17 +98,17 @@ export class WebRTCService {
       this.peerConnection.onicegatheringstatechange = () => {
         const state = this.peerConnection?.iceGatheringState;
         console.log("[WebRTCService] ICE gathering state changed to:", state);
-        this.client.emit("webRTCStateChange", `ICE Gathering: ${state}`);
+        this.emit("webRTCStateChange", `ICE Gathering: ${state}`);
 
         if (state === "complete") {
           console.log("[WebRTCService] ICE gathering completed");
-          this.client.emit("iceGatheringComplete");
+          this.emit("iceGatheringComplete");
         }
       };
 
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log("[WebRTCService] New ICE candidate:", {
+          console.debug("[WebRTCService] New ICE candidate:", {
             type: event.candidate.type,
             protocol: event.candidate.protocol,
             address: event.candidate.address,
@@ -156,22 +158,22 @@ export class WebRTCService {
         "[WebRTCService] Data channel opened with state:",
         this.dataChannel?.readyState
       );
-      this.client.emit("dataChannelOpen");
+      this.emit("dataChannelOpen");
     };
 
     this.dataChannel.onclose = () => {
       console.log("[WebRTCService] Data channel closed");
-      this.client.emit("dataChannelClose");
+      this.emit("dataChannelClose");
     };
 
     this.dataChannel.onerror = (error) => {
       console.error("[WebRTCService] Data channel error:", error);
-      this.client.emit("dataChannelError", error);
+      this.emit("dataChannelError", error);
     };
 
     this.dataChannel.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
-        this.client.emit("dataChannelMessage", event.data);
+        this.emit("dataChannelMessage", event.data);
       }
     };
   }
@@ -201,7 +203,7 @@ export class WebRTCService {
       this.setupDataChannel();
     } catch (error) {
       console.error("Failed to recover data channel:", error);
-      this.client.emit("dataChannelRecoveryFailed", error);
+      this.emit("dataChannelRecoveryFailed", error);
     }
   }
 
@@ -317,7 +319,7 @@ export class WebRTCService {
     this.close();
     await this.createPeerConnection();
     // Reinitiate the connection process...
-    this.client.emit("webRTCReconnecting");
+    this.emit("webRTCReconnecting");
   }
 
   close(): void {
@@ -330,7 +332,7 @@ export class WebRTCService {
       this.peerConnection.close();
       this.peerConnection = null;
     }
-    this.client.emit("webRTCClosed");
+    this.emit("webRTCClosed");
   }
 
   async waitForConnection(): Promise<void> {
