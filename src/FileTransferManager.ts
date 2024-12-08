@@ -471,7 +471,7 @@ export default class FileTransferManager {
   }
 
   async acceptTransfer(sender: string, filename: string): Promise<void> {
-    console.log("Accepting transfer", sender, filename);
+    console.log("[FileTransferManager] Accepting transfer", sender, filename);
 
     // Check if we're already handling this transfer
     if (this.incomingTransfers.has(filename)) {
@@ -485,10 +485,11 @@ export default class FileTransferManager {
     }
 
     try {
-      console.log(
-        "[FileTransferManager] Setting remote description with offer"
-      );
+      // Initialize WebRTC first
+      await this.client.initializeWebRTC();
       this.webRTCService.recipient = sender;
+
+      console.log("[FileTransferManager] Setting remote description with offer");
       await this.webRTCService.handleOffer(JSON.parse(offer.offerSdp));
 
       console.log("[FileTransferManager] Creating WebRTC answer");
@@ -505,7 +506,7 @@ export default class FileTransferManager {
 
         // Wait for the data channel to open
         await this.waitForDataChannel();
-        console.log("Data channel ready for incoming transfer");
+        console.log("[FileTransferManager] Data channel ready for incoming transfer");
 
         this.pendingOffers.delete(`${sender}-${filename}`);
       } else {

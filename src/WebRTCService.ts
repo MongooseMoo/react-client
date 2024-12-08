@@ -6,7 +6,7 @@ export class WebRTCService {
   private client: MudClient;
   private connectionTimeout: number = 60000; // Increased timeout
   private recipient: string = "";
-  private pendingCandidates: RTCIceCandidateInit[] = [];
+  public pendingCandidates: RTCIceCandidateInit[] = [];
 
   constructor(client: MudClient) {
     this.client = client;
@@ -159,17 +159,14 @@ export class WebRTCService {
   }
 
   async handleIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
-    if (!this.peerConnection) throw new Error('Peer connection not initialized');
+    if (!this.peerConnection || !this.peerConnection.remoteDescription) {
+      console.log('[WebRTCService] Storing ICE candidate until peer connection is ready');
+      this.pendingCandidates.push(candidate);
+      return;
+    }
     
     try {
-      // If we don't have a remote description yet, store the candidate
-      if (!this.peerConnection.remoteDescription) {
-        console.log('[WebRTCService] Storing ICE candidate until remote description is set');
-        this.pendingCandidates.push(candidate);
-        return;
-      }
-      
-      // Otherwise add it immediately
+      console.log('[WebRTCService] Adding ICE candidate immediately');
       await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (error) {
       console.error('Error handling ICE candidate:', error);
@@ -261,15 +258,20 @@ export class WebRTCService {
       this.remoteOfferReceived = true;
       console.log('[WebRTCService] Remote offer set successfully');
       
-      // Add any pending candidates now that we have the remote description
+      // Process any pending candidates
       if (this.pendingCandidates.length > 0) {
-        console.log(`[WebRTCService] Adding ${this.pendingCandidates.length} pending ICE candidates`);
-        await Promise.all(
-          this.pendingCandidates.map(candidate =>
-            this.peerConnection!.addIceCandidate(new RTCIceCandidate(candidate))
-          )
-        );
-        this.pendingCandidates = []; // Clear pending candidates
+        console.log(`[WebRTCService] Processing ${this.pendingCandidates.length} pending ICE candidates`);
+        const candidates = [...this.pendingCandidates]; // Create a copy
+        this.pendingCandidates = []; // Clear the array before processing
+        
+        for (const candidate of candidates) {
+          try {
+            await this.peerConnection!.addIceCandidate(new RTCIceCandidate(candidate));
+            console.log('[WebRTCService] Successfully added pending ICE candidate');
+          } catch (error) {
+            console.warn('[WebRTCService] Failed to add pending ICE candidate:', error);
+          }
+        }
       }
     } catch (error) {
       console.error('[WebRTCService] Error handling offer:', error);
