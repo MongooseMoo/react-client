@@ -28,7 +28,7 @@ interface FileTransferProgress {
 interface FileTransferRequest {
   sender: string;
   filename: string;
-  offerSdp: string;
+  answerSdp: string;
 }
 
 export default class FileTransferManager {
@@ -211,7 +211,7 @@ export default class FileTransferManager {
 
   async handleAcceptedTransfer(transfer: FileTransferRequest): Promise<void> {
     console.log("[FileTransferManager] Handling accepted transfer for file transfer request ", transfer);
-    const { sender, filename, offerSdp } = transfer;
+    const { sender, filename, answerSdp } = transfer;
     const outgoingTransfer = this.outgoingTransfers.get(filename);
     if (!outgoingTransfer) {
       const error = `No outgoing transfer found for file: ${filename}. Active transfers: ${Array.from(this.outgoingTransfers.keys()).join(', ')}`;
@@ -222,7 +222,7 @@ export default class FileTransferManager {
 
     try {
       console.log(`[FileTransferManager] Processing WebRTC answer for file: ${filename}`);
-      const answerObj = JSON.parse(offerSdp);
+      const answerObj = JSON.parse(answerSdp);
       console.log(`[FileTransferManager] Answer object for file: ${filename}`, answerObj);
       await this.client.webRTCService.handleAnswer(answerObj);
 
@@ -505,7 +505,7 @@ export default class FileTransferManager {
       this.webRTCService.recipient = sender;
 
       console.log("[FileTransferManager] Setting remote description with offer");
-      await this.webRTCService.handleOffer(JSON.parse(offer.offerSdp));
+      await this.webRTCService.handleOffer(JSON.parse(offer.answerSdp));
 
       console.log("[FileTransferManager] Creating WebRTC answer");
       const answer = await this.webRTCService.createAnswer();
