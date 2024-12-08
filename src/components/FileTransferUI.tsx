@@ -95,9 +95,19 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     []
   );
 
+  const handleFileTransferAccepted = useCallback(
+    (data: { sender: string; filename: string }) => {
+      addToTransferHistory(
+        `File transfer accepted: ${data.filename} by ${data.sender}`
+      );
+    },
+    []
+  );
+
   useEffect(() => {
     console.log("[FileTransferUI] Setting up event listeners");
     client.on("fileTransferOffer", handleFileTransferOffer);
+    client.on("fileTransferAccepted", handleFileTransferAccepted);
     client.on("fileSendProgress", handleFileSendProgress);
     client.on("fileReceiveProgress", handleFileReceiveProgress);
     client.on("fileTransferError", handleFileTransferError);
@@ -109,6 +119,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     return () => {
       console.log("[FileTransferUI] Removing event listeners");
       client.off("fileTransferOffer", handleFileTransferOffer);
+      client.off("fileTransferAccepted", handleFileTransferAccepted);
       client.off("fileSendProgress", handleFileSendProgress);
       client.off("fileReceiveProgress", handleFileReceiveProgress);
       client.off("fileTransferError", handleFileTransferError);
