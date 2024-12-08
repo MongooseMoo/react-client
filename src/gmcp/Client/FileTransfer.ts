@@ -27,10 +27,6 @@ export class GMCPMessageClientFileTransferCancel extends GMCPMessage {
 export class GMCPClientFileTransfer extends GMCPPackage {
   public packageName: string = "Client.FileTransfer";
 
-  constructor(client: MudClient) {
-    super(client);
-  }
-
   sendCandidate(recipient: string, candidate: RTCIceCandidate): void {
     this.sendData("Candidate", {
       recipient,
