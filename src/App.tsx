@@ -107,7 +107,6 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
-      newClient.removeAllListeners();
     };
   }, [isMobile]);
 
