@@ -35,15 +35,66 @@ export class WebRTCService {
       this.peerConnection = new RTCPeerConnection(configuration);
 
       // Add better logging to debug the connection process
+      // Monitor all connection state changes
+      this.peerConnection.onconnectionstatechange = () => {
+        const state = this.peerConnection?.connectionState;
+        console.log("[WebRTCService] Connection state changed to:", state);
+        this.client.emit('webRTCStateChange', `Connection: ${state}`);
+        
+        switch (state) {
+          case 'connected':
+            console.log("[WebRTCService] Peer connection established successfully");
+            this.client.emit('webRTCConnected');
+            break;
+          case 'disconnected':
+            console.log("[WebRTCService] Connection temporarily disconnected");
+            this.client.emit('webRTCDisconnected');
+            // Give it a moment to auto-recover before attempting full recovery
+            setTimeout(() => {
+              if (this.peerConnection?.connectionState === 'disconnected') {
+                this.attemptRecovery();
+              }
+            }, 5000);
+            break;
+          case 'failed':
+            console.log("[WebRTCService] Connection failed - attempting immediate recovery");
+            this.attemptRecovery();
+            break;
+        }
+      };
+
+      // Monitor ICE connection state changes
       this.peerConnection.oniceconnectionstatechange = () => {
         const state = this.peerConnection?.iceConnectionState;
         console.log("[WebRTCService] ICE connection state changed to:", state);
         this.client.emit('webRTCStateChange', `ICE: ${state}`);
         
-        // Handle failed connections
         if (state === 'failed') {
-          console.log("[WebRTCService] Connection failed - attempting recovery");
+          console.log("[WebRTCService] ICE connection failed");
           this.attemptRecovery();
+        }
+      };
+
+      // Monitor signaling state changes
+      this.peerConnection.onsignalingstatechange = () => {
+        const state = this.peerConnection?.signalingState;
+        console.log("[WebRTCService] Signaling state changed to:", state);
+        this.client.emit('webRTCStateChange', `Signaling: ${state}`);
+        
+        if (state === 'stable') {
+          console.log("[WebRTCService] Signaling completed successfully");
+        }
+      };
+
+      // Monitor ICE gathering state
+      this.peerConnection.onicegatheringstatechange = () => {
+        const state = this.peerConnection?.iceGatheringState;
+        console.log("[WebRTCService] ICE gathering state changed to:", state);
+        this.client.emit('webRTCStateChange', `ICE Gathering: ${state}`);
+        
+        if (state === 'complete') {
+          console.log("[WebRTCService] ICE gathering completed");
+          this.client.emit('iceGatheringComplete');
         }
       };
 
