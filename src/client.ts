@@ -86,22 +86,7 @@ class MudClient extends EventEmitter {
       await this.webRTCService.createPeerConnection();
     }
   }
-
-  handleWebRTCSignal(sender: string, signal: string): void {
-    const parsedSignal = JSON.parse(signal);
-    if (parsedSignal.type === 'offer') {
-      this.webRTCService.handleOffer(parsedSignal)
-        .then(() => this.webRTCService.createAnswer())
-        .then(answer => {
-          this.gmcp_fileTransfer.sendAccept(sender, "", JSON.stringify(answer));
-        });
-    } else if (parsedSignal.type === 'answer') {
-      this.webRTCService.handleAnswer(parsedSignal);
-    } else if (parsedSignal.candidate) {
-      this.webRTCService.handleIceCandidate(parsedSignal);
-    }
-  }
-
+  
   // File Transfer related methods
   async sendFile(file: File, recipient: string): Promise<void> {
     await this.fileTransferManager.sendFile(file, recipient);
