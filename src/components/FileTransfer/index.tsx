@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
-import MudClient from "../client";
-import "./FileTransferUI.css";
+import MudClient from "../../client";
+import Controls from "./Controls";
+import ProgressBar from "./ProgressBar";
+import PendingTransfer from "./PendingTransfer";
+import History from "./History";
+import "./styles.css";
 
 interface FileTransferUIProps {
   client: MudClient;
@@ -139,15 +143,6 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
     handleFileReceiveComplete,
   ]);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files.length > 0) {
-      setSelectedFile(event.target.files[0]);
-    }
-  };
-
-  const handleRecipientChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRecipient(event.target.value);
-  };
 
   const handleSendFile = () => {
     if (selectedFile && recipient) {
@@ -184,60 +179,32 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
   return (
     <div className={`file-transfer-ui ${expanded ? "expanded" : "collapsed"}`}>
       <h3>File Transfer</h3>
-      <div className="file-transfer-controls">
-        <input type="file" onChange={handleFileChange} />
-        <input
-          type="text"
-          placeholder="Recipient"
-          value={recipient}
-          onChange={handleRecipientChange}
-        />
-        <button onClick={handleSendFile} disabled={!selectedFile || !recipient}>
-          Send File
-        </button>
-      </div>
+      
+      <Controls
+        onFileChange={setSelectedFile}
+        onRecipientChange={setRecipient}
+        onSendFile={handleSendFile}
+        selectedFile={selectedFile}
+        recipient={recipient}
+      />
+
       {(sendProgress > 0 || receiveProgress > 0) && (
-        <div className="progress-bar">
-          <progress
-            value={sendProgress > 0 ? sendProgress : receiveProgress}
-            max="100"
-          />
-          <span>
-            {(sendProgress > 0 ? sendProgress : receiveProgress).toFixed(2)}%
-          </span>
-        </div>
+        <ProgressBar 
+          progress={sendProgress > 0 ? sendProgress : receiveProgress} 
+        />
       )}
+
       {pendingOffers.map((offer) => (
-        <div
+        <PendingTransfer
           key={`${offer.sender}-${offer.filename}`}
-          className="incoming-transfer"
-        >
-          <p>
-            Incoming file: {offer.filename} from {offer.sender}
-          </p>
-          <button
-            onClick={() => handleAcceptTransfer(offer.sender, offer.filename)}
-          >
-            Accept
-          </button>
-          <button
-            onClick={() => handleRejectTransfer(offer.sender, offer.filename)}
-          >
-            Reject
-          </button>
-          <button onClick={() => handleCancelTransfer(offer.filename)}>
-            Cancel
-          </button>
-        </div>
+          offer={offer}
+          onAccept={handleAcceptTransfer}
+          onReject={handleRejectTransfer}
+          onCancel={handleCancelTransfer}
+        />
       ))}
-      <div className="transfer-history">
-        <h4>Transfer History</h4>
-        <ul>
-          {transferHistory.map((entry, index) => (
-            <li key={index}>{entry}</li>
-          ))}
-        </ul>
-      </div>
+
+      <History history={transferHistory} />
     </div>
   );
 };
