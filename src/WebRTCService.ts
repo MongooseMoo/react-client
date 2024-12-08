@@ -18,27 +18,53 @@ export class WebRTCService {
 
   async createPeerConnection(): Promise<void> {
     try {
-      this.peerConnection = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-        ]
-      });
+      const configuration = {
+        iceServers: [{
+          urls: [
+            'turn:mongoose.world:3478',
+            'stun:mongoose.world:3478'
+          ],
+          username: 'p2p',
+          credential: 'p2p'
+        }],
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+      };
 
-      this.peerConnection.onicecandidate = (event) => {
-        if (event.candidate && this.recipient) {
-          this.client.gmcp_fileTransfer.sendCandidate(
-            this.recipient,
-            event.candidate
-          );
+      this.peerConnection = new RTCPeerConnection(configuration);
+
+      // Add better logging to debug the connection process
+      this.peerConnection.oniceconnectionstatechange = () => {
+        const state = this.peerConnection?.iceConnectionState;
+        console.log("[WebRTCService] ICE connection state changed to:", state);
+        this.client.emit('webRTCStateChange', `ICE: ${state}`);
+        
+        // Handle failed connections
+        if (state === 'failed') {
+          console.log("[WebRTCService] Connection failed - attempting recovery");
+          this.attemptRecovery();
         }
       };
 
-      // Add connection state logging
-      this.peerConnection.onconnectionstatechange = () => {
-        console.log("[WebRTCService] Connection state:", this.peerConnection?.connectionState);
-        this.client.emit('webRTCStateChange', this.peerConnection?.connectionState);
+      this.peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log("[WebRTCService] New ICE candidate:", {
+            type: event.candidate.type,
+            protocol: event.candidate.protocol,
+            address: event.candidate.address,
+            port: event.candidate.port
+          });
+          
+          if (this.recipient) {
+            this.client.gmcp_fileTransfer.sendCandidate(
+              this.recipient,
+              event.candidate
+            );
+          }
+        } else {
+          console.log("[WebRTCService] ICE gathering complete");
+        }
       };
 
       this.peerConnection.ondatachannel = (event) => {
@@ -51,7 +77,8 @@ export class WebRTCService {
       if (!this.dataChannel) {
         console.log("[WebRTCService] Creating data channel");
         this.dataChannel = this.peerConnection.createDataChannel('fileTransfer', {
-          ordered: true
+          ordered: true,
+          maxRetransmits: 3  // Allow up to 3 retransmission attempts
         });
         this.setupDataChannel();
       }
@@ -65,7 +92,7 @@ export class WebRTCService {
     if (!this.dataChannel) return;
 
     this.dataChannel.onopen = () => {
-      console.log("[WebRTCService] Data channel opened");
+      console.log("[WebRTCService] Data channel opened with state:", this.dataChannel?.readyState);
       this.client.emit('dataChannelOpen');
     };
 
@@ -84,6 +111,24 @@ export class WebRTCService {
         this.client.emit('dataChannelMessage', event.data);
       }
     };
+  }
+
+  private async attemptRecovery(): Promise<void> {
+    try {
+      console.log("[WebRTCService] Attempting connection recovery");
+      // Close existing connection
+      this.close();
+      
+      // Wait a moment before reconnecting
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Try to establish a new connection
+      await this.createPeerConnection();
+      
+      console.log("[WebRTCService] Recovery attempt completed");
+    } catch (error) {
+      console.error("[WebRTCService] Recovery attempt failed:", error);
+    }
   }
 
   private async attemptChannelRecovery(): Promise<void> {
