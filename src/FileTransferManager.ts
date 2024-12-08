@@ -441,7 +441,7 @@ export default class FileTransferManager {
         const transfer = this.incomingTransfers.get(filename);
         if (transfer) {
           // Notify the sender to resend the offer
-          this.client.gmcp_fileTransfer.sendRequestResend(
+          this.gmcpFileTransfer.sendRequestResend(
             transfer.sender,
             filename
           );
