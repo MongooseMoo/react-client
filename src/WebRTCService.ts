@@ -222,14 +222,14 @@ export class WebRTCService {
     }
   }
 
-  async handleAnswer(answer: string): Promise<void> {
+  async handleAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
     if (!this.peerConnection) throw new Error('Peer connection not initialized');
     try {
       console.log('[WebRTCService] Received WebRTC answer:', answer);
       console.log('[WebRTCService] Current connection state:', this.peerConnection.connectionState);
       console.log('[WebRTCService] Current signaling state:', this.peerConnection.signalingState);
       
-      await this.peerConnection.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answer }));
+      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
       console.log('[WebRTCService] Remote description set successfully');
       console.log('[WebRTCService] Updated connection state:', this.peerConnection.connectionState);
       console.log('[WebRTCService] Updated signaling state:', this.peerConnection.signalingState);

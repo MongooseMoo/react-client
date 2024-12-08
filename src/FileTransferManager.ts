@@ -223,7 +223,8 @@ export default class FileTransferManager {
 
     try {
       console.log(`[FileTransferManager] Processing WebRTC answer for file: ${filename}`);
-      await this.client.webRTCService.handleAnswer(answerSdp);
+      const answerObj = JSON.parse(answerSdp);
+      await this.client.webRTCService.handleAnswer(answerObj);
 
       console.log(`[FileTransferManager] Waiting for data channel to open for file: ${filename}`);
       await this.waitForDataChannel();
