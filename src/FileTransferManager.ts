@@ -72,11 +72,30 @@ export default class FileTransferManager {
       );
     }
 
+    // Register the outgoing transfer before initiating WebRTC
+    console.log(`[FileTransferManager] Registering outgoing transfer for file: ${file.name}`);
+    this.outgoingTransfers.set(file.name, {
+      file,
+      timeout: setTimeout(() => {
+        console.warn(`[FileTransferManager] Timeout for file: ${file.name}`);
+        this.handleTransferError(
+          file.name,
+          "send",
+          new FileTransferError(
+            FileTransferErrorCodes.TRANSFER_TIMEOUT,
+            "Transfer offer timeout"
+          )
+        );
+        this.cleanupTransfer(file.name);
+      }, this.transferTimeout),
+    });
+
     try {
       await this.client.initializeWebRTC();
       this.webRTCService.recipient = recipient;
       const offer = await this.webRTCService.createOffer();
 
+      console.log(`[FileTransferManager] Sending offer for file: ${file.name}`);
       await this.gmcpFileTransfer.sendOffer(
         recipient,
         file.name,
@@ -84,40 +103,20 @@ export default class FileTransferManager {
         JSON.stringify(offer)
       );
 
-      // Store the outgoing transfer details
-      this.outgoingTransfers.set(file.name, {
-        file,
-        timeout: setTimeout(() => {
-          this.handleTransferError(
-            file.name,
-            "send",
-            new FileTransferError(
-              FileTransferErrorCodes.TRANSFER_TIMEOUT,
-              "Transfer offer timeout"
-            )
-          );
-          this.cleanupTransfer(file.name);
-        }, this.transferTimeout)
-      });
-
       // Wait for connection to be established
       await this.webRTCService.waitForConnection();
-
-      // The actual transfer will start after handleAcceptedTransfer is called
     } catch (error) {
-      console.error("Failed to send file:", error);
-      if (error instanceof FileTransferError) {
-        this.handleTransferError(file.name, "send", error);
-      } else {
-        this.handleTransferError(
-          file.name,
-          "send",
-          new FileTransferError(
-            FileTransferErrorCodes.CONNECTION_FAILED,
-            "Failed to establish connection"
-          )
-        );
-      }
+      console.error(`[FileTransferManager] Failed to send file ${file.name}:`, error);
+      this.handleTransferError(
+        file.name,
+        "send",
+        error instanceof FileTransferError
+          ? error
+          : new FileTransferError(
+              FileTransferErrorCodes.CONNECTION_FAILED,
+              "Failed to establish connection"
+            )
+      );
       this.cleanupTransfer(file.name);
     }
   }
@@ -212,12 +211,9 @@ export default class FileTransferManager {
     
     const outgoingTransfer = this.outgoingTransfers.get(filename);
     if (!outgoingTransfer) {
-      console.error(`[FileTransferManager] No outgoing transfer found for file: ${filename}`);
-      this.client.onFileTransferError(
-        filename,
-        "send",
-        "No outgoing transfer found for file"
-      );
+      const error = `No outgoing transfer found for file: ${filename}. Active transfers: ${Array.from(this.outgoingTransfers.keys()).join(', ')}`;
+      console.error(`[FileTransferManager] ${error}`);
+      this.client.onFileTransferError(filename, "send", error);
       return;
     }
 
@@ -231,10 +227,13 @@ export default class FileTransferManager {
       console.log(`[FileTransferManager] Data channel ready for outgoing transfer of: ${filename}`);
 
       await this.startFileTransfer(outgoingTransfer.file);
+      console.log(`[FileTransferManager] File transfer completed successfully: ${filename}`);
       this.client.onFileSendComplete(filename);
     } catch (error) {
+      console.error(`[FileTransferManager] Error in accepted transfer for ${filename}:`, error);
       this.handleTransferError(filename, "send", error);
     } finally {
+      console.log(`[FileTransferManager] Cleaning up successful transfer: ${filename}`);
       clearTimeout(outgoingTransfer.timeout);
       this.outgoingTransfers.delete(filename);
     }
@@ -376,22 +375,33 @@ export default class FileTransferManager {
   }
 
   private cleanupTransfer(filename: string): void {
+    console.log(`[FileTransferManager] Starting cleanup for file: ${filename}`);
+    
     // Cleanup outgoing transfers
     const transfer = this.outgoingTransfers.get(filename);
     if (transfer) {
+      console.log(`[FileTransferManager] Cleaning up outgoing transfer for: ${filename}`);
       clearTimeout(transfer.timeout);
       this.outgoingTransfers.delete(filename);
     }
 
     // Cleanup incoming transfers
-    this.incomingTransfers.delete(filename);
+    if (this.incomingTransfers.has(filename)) {
+      console.log(`[FileTransferManager] Cleaning up incoming transfer for: ${filename}`);
+      this.incomingTransfers.delete(filename);
+    }
 
     // Cleanup pending offers
+    let offersRemoved = 0;
     for (const [key, offer] of this.pendingOffers.entries()) {
       if (offer.filename === filename) {
+        console.log(`[FileTransferManager] Removing pending offer for: ${filename}`);
         this.pendingOffers.delete(key);
+        offersRemoved++;
       }
     }
+
+    console.log(`[FileTransferManager] Cleanup complete for ${filename}. Removed ${offersRemoved} pending offers`);
   }
 
   private async attemptRecovery(
