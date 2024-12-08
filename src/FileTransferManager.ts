@@ -84,14 +84,26 @@ export default class FileTransferManager {
         JSON.stringify(offer)
       );
 
+      // Store the outgoing transfer details
+      this.outgoingTransfers.set(file.name, {
+        file,
+        timeout: setTimeout(() => {
+          this.handleTransferError(
+            file.name,
+            "send",
+            new FileTransferError(
+              FileTransferErrorCodes.TRANSFER_TIMEOUT,
+              "Transfer offer timeout"
+            )
+          );
+          this.cleanupTransfer(file.name);
+        }, this.transferTimeout)
+      });
+
       // Wait for connection to be established
       await this.webRTCService.waitForConnection();
 
-      // Start transfer
-      await this.startFileTransfer(file);
-
-      // Wait for the recipient to accept the transfer
-      // `handleAcceptedTransfer` will be called upon acceptance
+      // The actual transfer will start after handleAcceptedTransfer is called
     } catch (error) {
       console.error("Failed to send file:", error);
       if (error instanceof FileTransferError) {
