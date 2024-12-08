@@ -343,6 +343,16 @@ export default class FileTransferManager {
       if (transfer.receivedSize === transfer.totalSize) {
         if (transfer.chunks.every((chunk) => chunk)) {
           const completeFile = new Blob(transfer.chunks);
+          // Create a URL for the blob and trigger download
+          const downloadUrl = window.URL.createObjectURL(completeFile);
+          const downloadLink = document.createElement('a');
+          downloadLink.href = downloadUrl;
+          downloadLink.download = header.filename;
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          document.body.removeChild(downloadLink);
+          window.URL.revokeObjectURL(downloadUrl);
+
           this.client.onFileReceiveComplete({
             filename: header.filename,
             file: completeFile,
