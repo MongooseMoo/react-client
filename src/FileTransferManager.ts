@@ -25,6 +25,12 @@ interface FileTransferProgress {
   sender: string;
 }
 
+interface FileTransferRequest {
+  sender: string;
+  filename: string;
+  offerSdp: string;
+}
+
 export default class FileTransferManager {
   private webRTCService: WebRTCService;
   private client: MudClient;
@@ -39,7 +45,7 @@ export default class FileTransferManager {
   private transferTimeout: number = 30000; // 30 seconds
   public pendingOffers: Map<
     string,
-    { sender: string; filename: string; offerSdp: string }
+    FileTransferRequest
   > = new Map();
 
   constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
@@ -203,12 +209,9 @@ export default class FileTransferManager {
     }
   }
 
-  async handleAcceptedTransfer(
-    filename: string,
-    answerSdp: string
-  ): Promise<void> {
-    console.log(`[FileTransferManager] Handling accepted transfer for file: ${filename}`);
-    
+  async handleAcceptedTransfer(transfer: FileTransferRequest): Promise<void> {
+    console.log("[FileTransferManager] Handling accepted transfer for file transfer request ", transfer);
+    const { sender, filename, offerSdp } = transfer;
     const outgoingTransfer = this.outgoingTransfers.get(filename);
     if (!outgoingTransfer) {
       const error = `No outgoing transfer found for file: ${filename}. Active transfers: ${Array.from(this.outgoingTransfers.keys()).join(', ')}`;
@@ -219,7 +222,8 @@ export default class FileTransferManager {
 
     try {
       console.log(`[FileTransferManager] Processing WebRTC answer for file: ${filename}`);
-      const answerObj = JSON.parse(answerSdp);
+      const answerObj = JSON.parse(offerSdp);
+      console.log(`[FileTransferManager] Answer object for file: ${filename}`, answerObj);
       await this.client.webRTCService.handleAnswer(answerObj);
 
       console.log(`[FileTransferManager] Waiting for data channel to open for file: ${filename}`);
