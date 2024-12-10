@@ -15,6 +15,7 @@ interface PendingOffer {
   sender: string;
   filename: string;
   filesize: number;
+  hash: string;
 }
 
 const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => {
@@ -157,23 +158,29 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
     }
   };
 
-  const handleAcceptTransfer = (sender: string, filename: string) => {
+  const handleAcceptTransfer = (sender: string, hash: string) => {
     // Accepting an offer triggers FileTransferManager to handle the rest
-    client.acceptTransfer(sender, filename);
-    addToTransferHistory(`Accepting file transfer: ${filename} from ${sender}`);
+    client.acceptTransfer(sender, hash);
+    const offer = pendingOffers.find(o => o.hash === hash);
+    if (offer) {
+      addToTransferHistory(`Accepting file transfer: ${offer.filename} from ${sender}`);
+    }
     // Remove the offer from pendingOffers
-    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.filename !== filename || o.sender !== sender));
+    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 
-  const handleRejectTransfer = (sender: string, filename: string) => {
-    client.rejectTransfer(sender, filename);
-    addToTransferHistory(`Rejected file transfer: ${filename} from ${sender}`);
-    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.filename !== filename || o.sender !== sender));
+  const handleRejectTransfer = (sender: string, hash: string) => {
+    client.rejectTransfer(sender, hash);
+    const offer = pendingOffers.find(o => o.hash === hash);
+    if (offer) {
+      addToTransferHistory(`Rejected file transfer: ${offer.filename} from ${sender}`);
+    }
+    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 
-  const handleCancelTransfer = (filename: string) => {
-    client.cancelTransfer(filename);
-    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.filename !== filename));
+  const handleCancelTransfer = (hash: string) => {
+    client.cancelTransfer(hash);
+    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 
   return (

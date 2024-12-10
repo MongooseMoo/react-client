@@ -5,12 +5,13 @@ interface PendingOffer {
   sender: string;
   filename: string;
   filesize: number;
+  hash: string;
 }
 
 interface PendingTransferProps {
   offer: PendingOffer;
-  onAccept: (sender: string, filename: string) => void;
-  onReject: (sender: string, filename: string) => void;
+  onAccept: (sender: string, hash: string) => void;
+  onReject: (sender: string, hash: string) => void;
 }
 
 const PendingTransfer: React.FC<PendingTransferProps> = ({
@@ -23,10 +24,10 @@ const PendingTransfer: React.FC<PendingTransferProps> = ({
       <p>
         Incoming file: {offer.filename} from {offer.sender}
       </p>
-      <button onClick={() => onAccept(offer.sender, offer.filename)}>
+      <button onClick={() => onAccept(offer.sender, offer.hash)}>
         Accept
       </button>
-      <button onClick={() => onReject(offer.sender, offer.filename)}>
+      <button onClick={() => onReject(offer.sender, offer.hash)}>
         Reject
       </button>
     </div>
