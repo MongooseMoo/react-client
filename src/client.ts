@@ -78,7 +78,10 @@ class MudClient extends EventEmitter {
     this.cacophony = new Cacophony();
     this.editors = new EditorManager(this);
     this.webRTCService = new WebRTCService(this);
-    this.fileTransferManager = new FileTransferManager(this, this.gmcp_fileTransfer);
+    this.fileTransferManager = new FileTransferManager(
+      this,
+      this.gmcp_fileTransfer
+    );
   }
 
   async initializeWebRTC(): Promise<void> {
@@ -86,7 +89,7 @@ class MudClient extends EventEmitter {
       await this.webRTCService.createPeerConnection();
     }
   }
-  
+
   // File Transfer related methods
   async sendFile(file: File, recipient: string): Promise<void> {
     await this.fileTransferManager.sendFile(file, recipient);
@@ -105,67 +108,131 @@ class MudClient extends EventEmitter {
   }
 
   // File Transfer event handlers
-  onFileTransferOffer(sender: string, hash: string, thash: string, filename: string, filesize: number, offerSdp: string): void {
-    console.log("[MudClient] Emitting fileTransferOffer event:", { sender, hash, thash, filename, filesize, offerSdp });
-    this.emit('fileTransferOffer', { sender, hash, thash, filename, filesize, offerSdp });
+  onFileTransferOffer(
+    sender: string,
+    hash: string,
+    filename: string,
+    filesize: number,
+    offerSdp: string
+  ): void {
+    console.log("[MudClient] Emitting fileTransferOffer event:", {
+      sender,
+      hash,
+      filename,
+      filesize,
+      offerSdp,
+    });
+    this.emit("fileTransferOffer", {
+      sender,
+      hash,
+      filename,
+      filesize,
+      offerSdp,
+    });
   }
 
-  onFileTransferAccept(sender: string, hash: string, thash: string, filename: string, answerSdp: string): void {
-    console.log("[MudClient] Emitting fileTransferAccepted event:", { sender, hash, thash, filename, answerSdp });
-    this.emit('fileTransferAccepted', { sender, hash, thash, filename, answerSdp });
+  onFileTransferAccept(
+    sender: string,
+    hash: string,
+    filename: string,
+    answerSdp: string
+  ): void {
+    console.log("[MudClient] Emitting fileTransferAccepted event:", {
+      sender,
+      hash,
+      filename,
+      answerSdp,
+    });
+    this.emit("fileTransferAccepted", { sender, hash, filename, answerSdp });
   }
 
-  onFileTransferReject(sender: string, hash: string, thash: string): void {
-    this.emit('fileTransferRejected', { sender, hash, thash });
+  onFileTransferReject(sender: string, hash: string): void {
+    this.emit("fileTransferRejected", { sender, hash });
   }
 
-  onFileTransferCancel(sender: string, hash: string, thash: string): void {
-    this.emit('fileTransferCancelled', { sender, hash, thash });
+  onFileTransferCancel(sender: string, hash: string): void {
+    this.emit("fileTransferCancelled", { sender, hash });
   }
 
-  onFileSendProgress(data: { hash: string, thash: string, filename: string, sentBytes: number, totalBytes: number }): void {
-    this.emit('fileSendProgress', data);
+  onFileSendProgress(data: {
+    hash: string;
+    filename: string;
+    sentBytes: number;
+    totalBytes: number;
+  }): void {
+    this.emit("fileSendProgress", data);
   }
 
-  onFileReceiveProgress(data: { hash: string, thash: string, filename: string, receivedBytes: number, totalBytes: number }): void {
-    this.emit('fileReceiveProgress', data);
+  onFileReceiveProgress(data: {
+    hash: string;
+    filename: string;
+    receivedBytes: number;
+    totalBytes: number;
+  }): void {
+    this.emit("fileReceiveProgress", data);
   }
 
-  onFileSendComplete(hash: string, thash: string, filename: string): void {
-    this.emit('fileSendComplete', { hash, thash, filename });
+  onFileSendComplete(hash: string, filename: string): void {
+    this.emit("fileSendComplete", { hash, filename });
   }
 
-  onFileReceiveComplete(data: { hash: string, thash: string, filename: string, file: Blob }): void {
-    this.emit('fileReceiveComplete', data);
+  onFileReceiveComplete(data: {
+    hash: string;
+    filename: string;
+    file: Blob;
+  }): void {
+    this.emit("fileReceiveComplete", data);
   }
 
-  onFileTransferError(hash: string, thash: string, direction: 'send' | 'receive', error: string): void {
-    this.emit('fileTransferError', { hash, thash, direction, error });
+  onFileTransferError(
+    hash: string,
+    filename: string,
+    direction: "send" | "receive",
+    error: string
+  ): void {
+    this.emit("fileTransferError", { hash, filename, direction, error });
   }
 
-  onConnectionRecovered(data: { filename: string, direction: 'send' | 'receive' }): void {
-    this.emit('connectionRecovered', data);
+  onConnectionRecovered(data: {
+    filename: string;
+    direction: "send" | "receive";
+    hash: string;
+  }): void {
+    this.emit("connectionRecovered", data);
   }
 
-  onRecoveryFailed(data: { filename: string, direction: 'send' | 'receive', error: string }): void {
-    this.emit('recoveryFailed', data);
+  onRecoveryFailed(data: {
+    filename: string;
+    direction: "send" | "receive";
+    error: string;
+  }): void {
+    this.emit("recoveryFailed", data);
   }
 
   // GMCP methods for file transfer
-  sendFileTransferOffer(recipient: string, filename: string, filesize: number, offerSdp: string): void {
-    this.gmcp_fileTransfer.sendOffer(recipient, filename, filesize, offerSdp);
+  sendFileTransferOffer(
+    recipient: string,
+    filename: string,
+    hash: string,
+    filesize: number,
+    offerSdp: string
+  ): void {
+    this.gmcp_fileTransfer.sendOffer(
+      recipient,
+      filename,
+      filesize,
+      offerSdp,
+      hash
+    );
   }
 
-  sendFileTransferAccept(sender: string, filename: string, answerSdp: string): void {
-    this.gmcp_fileTransfer.sendAccept(sender, filename, answerSdp);
-  }
-
-  sendFileTransferReject(sender: string, filename: string): void {
-    this.gmcp_fileTransfer.sendReject(sender, filename);
-  }
-
-  sendFileTransferCancel(recipient: string, filename: string): void {
-    this.gmcp_fileTransfer.sendCancel(recipient, filename);
+  sendFileTransferAccept(
+    sender: string,
+    filename: string,
+    hash: string,
+    answerSdp: string
+  ): void {
+    this.gmcp_fileTransfer.sendAccept(sender, hash, filename, answerSdp);
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
