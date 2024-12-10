@@ -161,7 +161,7 @@ export default class FileTransferManager {
     });
   }
 
-  private async startFileTransfer(file: File): Promise<void> {
+  private async startFileTransfer(file: File, hash: string): Promise<void> {
     let offset = 0;
     const fileReader = new FileReader();
 
@@ -191,7 +191,7 @@ export default class FileTransferManager {
         fileReader.readAsArrayBuffer(slice);
       });
 
-      await this.sendChunk(file.name, chunk, offset, file.size);
+      await this.sendChunk(file.name, hash, chunk, offset, file.size);
 
       offset += chunk.byteLength;
 
@@ -205,13 +205,14 @@ export default class FileTransferManager {
 
   private async sendChunk(
     filename: string,
+    hash: string,
     chunk: ArrayBuffer,
     offset: number,
     totalSize: number
   ): Promise<void> {
     try {
       const header = {
-        hash: fileHash, // Add hash to identify the transfer
+        hash,
         filename,
         chunkIndex: Math.floor(offset / this.chunkSize),
         totalChunks: Math.ceil(totalSize / this.chunkSize),
@@ -265,7 +266,7 @@ export default class FileTransferManager {
       await this.waitForDataChannel();
       console.log(`[FileTransferManager] Data channel ready for outgoing transfer of: ${filename}`);
 
-      await this.startFileTransfer(outgoingTransfer.file);
+      await this.startFileTransfer(outgoingTransfer.file, outgoingTransfer.hash);
       console.log(`[FileTransferManager] File transfer completed successfully: ${filename}`);
       this.client.onFileSendComplete(filename);
     } catch (error) {
@@ -575,10 +576,11 @@ export default class FileTransferManager {
       console.log("[FileTransferManager] WebRTC answer created successfully");
 
       // Send accept only if we're still in a valid state
-      if (this.pendingOffers.has(`${sender}-${filename}`)) {
+      if (this.pendingOffers.has(hash)) {
         await this.gmcpFileTransfer.sendAccept(
           sender,
-          filename,
+          hash,
+          offer.filename,
           JSON.stringify(answer)
         );
 
@@ -586,7 +588,7 @@ export default class FileTransferManager {
         await this.waitForDataChannel();
         console.log("[FileTransferManager] Data channel ready for incoming transfer");
 
-        this.pendingOffers.delete(`${sender}-${filename}`);
+        this.pendingOffers.delete(hash);
       } else {
         throw new Error("Transfer was cancelled during setup");
       }
