@@ -247,12 +247,12 @@ export default class FileTransferManager {
 
   async handleAcceptedTransfer(transfer: FileTransferRequest): Promise<void> {
     console.log("[FileTransferManager] Handling accepted transfer for file transfer request ", transfer);
-    const { sender, filename, answerSdp } = transfer;
-    const outgoingTransfer = this.outgoingTransfers.get(filename);
+    const { sender, hash, filename, answerSdp } = transfer;
+    const outgoingTransfer = this.outgoingTransfers.get(hash);
     if (!outgoingTransfer) {
-      const error = `No outgoing transfer found for file: ${filename}. Active transfers: ${Array.from(this.outgoingTransfers.keys()).join(', ')}`;
+      const error = `No outgoing transfer found for hash: ${hash} (${filename}). Active transfers: ${Array.from(this.outgoingTransfers.keys()).join(', ')}`;
       console.error(`[FileTransferManager] ${error}`);
-      this.client.onFileTransferError(filename, "send", error);
+      this.client.onFileTransferError(hash, filename, "send", error);
       return;
     }
 
@@ -442,34 +442,32 @@ export default class FileTransferManager {
     this.attemptRecovery(hash, filename, direction);
   }
 
-  private cleanupTransfer(filename: string): void {
-    console.log(`[FileTransferManager] Starting cleanup for file: ${filename}`);
+  private cleanupTransfer(hash: string): void {
+    console.log(`[FileTransferManager] Starting cleanup for hash: ${hash}`);
     
     // Cleanup outgoing transfers
-    const transfer = this.outgoingTransfers.get(filename);
-    if (transfer) {
-      console.log(`[FileTransferManager] Cleaning up outgoing transfer for: ${filename}`);
-      clearTimeout(transfer.timeout);
-      this.outgoingTransfers.delete(filename);
+    const outgoingTransfer = this.outgoingTransfers.get(hash);
+    if (outgoingTransfer) {
+      console.log(`[FileTransferManager] Cleaning up outgoing transfer for: ${outgoingTransfer.filename} (${hash})`);
+      clearTimeout(outgoingTransfer.timeout);
+      this.outgoingTransfers.delete(hash);
     }
 
     // Cleanup incoming transfers
-    if (this.incomingTransfers.has(filename)) {
-      console.log(`[FileTransferManager] Cleaning up incoming transfer for: ${filename}`);
-      this.incomingTransfers.delete(filename);
+    const incomingTransfer = this.incomingTransfers.get(hash);
+    if (incomingTransfer) {
+      console.log(`[FileTransferManager] Cleaning up incoming transfer for: ${incomingTransfer.filename} (${hash})`);
+      this.incomingTransfers.delete(hash);
     }
 
     // Cleanup pending offers
-    let offersRemoved = 0;
-    for (const [key, offer] of this.pendingOffers.entries()) {
-      if (offer.filename === filename) {
-        console.log(`[FileTransferManager] Removing pending offer for: ${filename}`);
-        this.pendingOffers.delete(key);
-        offersRemoved++;
-      }
+    if (this.pendingOffers.has(hash)) {
+      const offer = this.pendingOffers.get(hash);
+      console.log(`[FileTransferManager] Removing pending offer for: ${offer?.filename} (${hash})`);
+      this.pendingOffers.delete(hash);
     }
 
-    console.log(`[FileTransferManager] Cleanup complete for ${filename}. Removed ${offersRemoved} pending offers`);
+    console.log(`[FileTransferManager] Cleanup complete for hash: ${hash}`);
   }
 
   private async attemptRecovery(
@@ -525,34 +523,21 @@ export default class FileTransferManager {
   }
 
   cancelTransfer(hash: string): void {
-    const outgoingTransfer = this.outgoingTransfers.get(hash);
-    if (outgoingTransfer) {
+    const transfer = this.outgoingTransfers.get(hash) || this.incomingTransfers.get(hash);
+    if (transfer) {
+      console.log(`[FileTransferManager] Cancelling transfer for hash: ${hash} (${transfer.filename})`);
       this.cleanupTransfer(hash);
       this.client.onFileTransferCancel(
         this.client.worldData.playerId,
         hash,
-        outgoingTransfer.filename
+        transfer.filename
       );
       this.gmcpFileTransfer.sendCancel(
         this.client.worldData.playerId,
         hash
       );
-    }
-
-    if (this.incomingTransfers.has(hash)) {
-      const transfer = this.incomingTransfers.get(hash);
-      if (transfer) {
-        this.cleanupTransfer(hash);
-        this.client.onFileTransferCancel(
-          this.client.worldData.playerId,
-          hash,
-          transfer.filename
-        );
-        this.gmcpFileTransfer.sendCancel(
-          this.client.worldData.playerId,
-          hash
-        );
-      }
+    } else {
+      console.log(`[FileTransferManager] No active transfer found for hash: ${hash}`);
     }
   }
 
@@ -601,7 +586,7 @@ export default class FileTransferManager {
       }
     } catch (error) {
       console.error("Failed to accept transfer:", error);
-      this.cleanupTransfer(filename);
+      this.cleanupTransfer(hash);
       throw new FileTransferError(
         FileTransferErrorCodes.CONNECTION_FAILED,
         `Failed to accept transfer: ${
