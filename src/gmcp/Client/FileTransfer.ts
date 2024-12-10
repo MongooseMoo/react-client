@@ -6,6 +6,7 @@ export class GMCPMessageClientFileTransferOffer extends GMCPMessage {
   filename: string = "";
   filesize: number = 0;
   offerSdp: string = "";
+  hash: string = "";
 }
 
 export class GMCPMessageClientFileTransferAccept extends GMCPMessage {

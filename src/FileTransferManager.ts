@@ -18,6 +18,7 @@ export const FileTransferErrorCodes = {
 };
 
 interface FileTransferProgress {
+  hash: string;
   filename: string;
   totalSize: number;
   receivedSize: number;
@@ -28,12 +29,15 @@ interface FileTransferProgress {
 
 interface FileTransferRequest {
   sender: string;
+  hash: string;
   filename: string;
   answerSdp: string;
 }
 
 interface FileTransferTask {
   file: File;
+  filename: string;
+  hash: string;
   timeout: NodeJS.Timeout;
 }
 
@@ -42,17 +46,17 @@ export default class FileTransferManager {
   private client: MudClient;
   private gmcpFileTransfer: GMCPClientFileTransfer;
   private chunkSize: number = 16384; // 16 KB chunks
-  private incomingTransfers: Map<string, FileTransferProgress> = new Map();
+  private incomingTransfers: Map<string, FileTransferProgress> = new Map(); // keyed by hash
   private outgoingTransfers: Map<
     string,
     FileTransferTask
-  > = new Map();
+  > = new Map(); // keyed by hash
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
   public pendingOffers: Map<
     string,
     GMCPMessageClientFileTransferOffer
-  > = new Map();
+  > = new Map(); // keyed by hash
 
   constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
     this.client = client;
@@ -90,11 +94,14 @@ export default class FileTransferManager {
 
     // Register the outgoing transfer before initiating WebRTC
     console.log(`[FileTransferManager] Registering outgoing transfer for file: ${file.name}`);
-    this.outgoingTransfers.set(file.name, {
+    this.outgoingTransfers.set(fileHash, {
       file,
+      filename: file.name,
+      hash: fileHash,
       timeout: setTimeout(() => {
         console.warn(`[FileTransferManager] Timeout for file: ${file.name}`);
         this.handleTransferError(
+          fileHash,
           file.name,
           "send",
           new FileTransferError(
@@ -102,7 +109,7 @@ export default class FileTransferManager {
             "Transfer offer timeout"
           )
         );
-        this.cleanupTransfer(file.name);
+        this.cleanupTransfer(fileHash);
       }, this.transferTimeout),
     });
 
@@ -403,16 +410,17 @@ export default class FileTransferManager {
   }
 
   private handleTransferError(
+    hash: string,
     filename: string,
     direction: "send" | "receive",
     error: FileTransferError | Error | unknown
   ): void {
-    console.error(`Error ${direction}ing file ${filename}:`, error);
+    console.error(`Error ${direction}ing file ${filename} (${hash}):`, error);
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     this.client.onFileTransferError(filename, direction, errorMessage);
-    this.cleanupTransfer(filename);
-    this.attemptRecovery(filename, direction);
+    this.cleanupTransfer(hash);
+    this.attemptRecovery(hash, filename, direction);
   }
 
   private cleanupTransfer(filename: string): void {
