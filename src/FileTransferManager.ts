@@ -211,6 +211,7 @@ export default class FileTransferManager {
   ): Promise<void> {
     try {
       const header = {
+        hash: fileHash, // Add hash to identify the transfer
         filename,
         chunkIndex: Math.floor(offset / this.chunkSize),
         totalChunks: Math.ceil(totalSize / this.chunkSize),
@@ -341,10 +342,11 @@ export default class FileTransferManager {
         4 + headerSize + header.chunkSize
       );
 
-      let transfer = this.incomingTransfers.get(header.filename);
+      let transfer = this.incomingTransfers.get(header.hash);
       if (!transfer) {
         if (header.totalSize > this.maxFileSize) {
           this.client.onFileTransferError(
+            header.hash,
             header.filename,
             "receive",
             `Incoming file size exceeds the maximum allowed size of ${
@@ -354,6 +356,7 @@ export default class FileTransferManager {
           return;
         }
         transfer = {
+          hash: header.hash,
           filename: header.filename,
           totalSize: header.totalSize,
           receivedSize: 0,
@@ -361,7 +364,7 @@ export default class FileTransferManager {
           lastActivityTimestamp: Date.now(),
           sender: sender,
         };
-        this.incomingTransfers.set(header.filename, transfer);
+        this.incomingTransfers.set(header.hash, transfer);
       }
 
       transfer.chunks[header.chunkIndex] = chunkData;
@@ -377,6 +380,20 @@ export default class FileTransferManager {
       if (transfer.receivedSize === transfer.totalSize) {
         if (transfer.chunks.every((chunk) => chunk)) {
           const completeFile = new Blob(transfer.chunks);
+          
+          // Validate file hash
+          const computedHash = await this.computeFileHash(completeFile);
+          if (computedHash !== transfer.hash) {
+            this.client.onFileTransferError(
+              transfer.hash,
+              header.filename,
+              "receive",
+              "File integrity check failed - hash mismatch"
+            );
+            this.incomingTransfers.delete(transfer.hash);
+            return;
+          }
+
           // Create a URL for the blob and trigger download
           const downloadUrl = window.URL.createObjectURL(completeFile);
           const downloadLink = document.createElement('a');
@@ -388,10 +405,11 @@ export default class FileTransferManager {
           window.URL.revokeObjectURL(downloadUrl);
 
           this.client.onFileReceiveComplete({
+            hash: transfer.hash,
             filename: header.filename,
             file: completeFile,
           });
-          this.incomingTransfers.delete(header.filename);
+          this.incomingTransfers.delete(transfer.hash);
         } else {
           this.client.onFileTransferError(
             header.filename,
@@ -530,16 +548,16 @@ export default class FileTransferManager {
     }
   }
 
-  async acceptTransfer(sender: string, filename: string): Promise<void> {
-    console.log("[FileTransferManager] Accepting transfer", sender, filename);
+  async acceptTransfer(sender: string, hash: string): Promise<void> {
+    console.log("[FileTransferManager] Accepting transfer", sender, hash);
 
     // Check if we're already handling this transfer
-    if (this.incomingTransfers.has(filename)) {
+    if (this.incomingTransfers.has(hash)) {
       throw new Error("Already receiving this file");
     }
 
     // Check if we have a valid offer
-    const offer = this.pendingOffers.get(`${sender}-${filename}`);
+    const offer = this.pendingOffers.get(hash);
     if (!offer) {
       throw new Error("No pending offer found for this transfer");
     }
