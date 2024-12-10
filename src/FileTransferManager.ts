@@ -1,6 +1,7 @@
 import { WebRTCService } from "./WebRTCService";
 import MudClient from "./client";
 import { GMCPClientFileTransfer, GMCPMessageClientFileTransferOffer } from "./gmcp/Client/FileTransfer";
+import CryptoJS from 'crypto-js';
 
 export class FileTransferError extends Error {
   constructor(public code: string, message: string) {
@@ -83,6 +84,10 @@ export default class FileTransferManager {
       );
     }
 
+    // Compute file hash before starting transfer
+    const fileHash = await this.computeFileHash(file);
+    console.log(`[FileTransferManager] Computed hash for ${file.name}: ${fileHash}`);
+
     // Register the outgoing transfer before initiating WebRTC
     console.log(`[FileTransferManager] Registering outgoing transfer for file: ${file.name}`);
     this.outgoingTransfers.set(file.name, {
@@ -130,6 +135,23 @@ export default class FileTransferManager {
       );
       this.cleanupTransfer(file.name);
     }
+  }
+
+  private async computeFileHash(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (reader.result instanceof ArrayBuffer) {
+          const wordArray = CryptoJS.lib.WordArray.create(reader.result);
+          const hash = CryptoJS.SHA256(wordArray).toString();
+          resolve(hash);
+        } else {
+          reject(new Error('Failed to read file for hashing'));
+        }
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(file);
+    });
   }
 
   private async startFileTransfer(file: File): Promise<void> {
