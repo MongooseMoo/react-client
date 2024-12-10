@@ -131,6 +131,7 @@ export default class FileTransferManager {
     } catch (error) {
       console.error(`[FileTransferManager] Failed to send file ${file.name}:`, error);
       this.handleTransferError(
+        fileHash,
         file.name,
         "send",
         error instanceof FileTransferError
@@ -140,7 +141,7 @@ export default class FileTransferManager {
               "Failed to establish connection"
             )
       );
-      this.cleanupTransfer(file.name);
+      this.cleanupTransfer(fileHash);
     }
   }
 
@@ -196,6 +197,7 @@ export default class FileTransferManager {
       offset += chunk.byteLength;
 
       this.client.onFileSendProgress({
+        hash: hash,
         filename: file.name,
         sentBytes: offset,
         totalBytes: file.size,
@@ -268,14 +270,17 @@ export default class FileTransferManager {
 
       await this.startFileTransfer(outgoingTransfer.file, outgoingTransfer.hash);
       console.log(`[FileTransferManager] File transfer completed successfully: ${filename}`);
-      this.client.onFileSendComplete(filename);
+      this.client.onFileSendComplete({
+        hash: hash,
+        filename: filename
+      });
     } catch (error) {
       console.error(`[FileTransferManager] Error in accepted transfer for ${filename}:`, error);
       this.handleTransferError(filename, "send", error);
     } finally {
-      console.log(`[FileTransferManager] Cleaning up successful transfer: ${filename}`);
+      console.log(`[FileTransferManager] Cleaning up successful transfer: ${filename} (${hash})`);
       clearTimeout(outgoingTransfer.timeout);
-      this.outgoingTransfers.delete(filename);
+      this.outgoingTransfers.delete(hash);
     }
   }
 
@@ -373,6 +378,7 @@ export default class FileTransferManager {
       transfer.lastActivityTimestamp = Date.now();
 
       this.client.onFileReceiveProgress({
+        hash: header.hash,
         filename: header.filename,
         receivedBytes: transfer.receivedSize,
         totalBytes: transfer.totalSize,
