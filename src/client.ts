@@ -92,56 +92,55 @@ class MudClient extends EventEmitter {
     await this.fileTransferManager.sendFile(file, recipient);
   }
 
-  cancelTransfer(filename: string): void {
-    this.fileTransferManager.cancelTransfer(filename);
+  cancelTransfer(hash: string): void {
+    this.fileTransferManager.cancelTransfer(hash);
   }
 
-  acceptTransfer(sender: string, filename: string): void {
-    this.fileTransferManager.acceptTransfer(sender, filename);
+  acceptTransfer(sender: string, hash: string): void {
+    this.fileTransferManager.acceptTransfer(sender, hash);
   }
 
-  rejectTransfer(sender: string, filename: string): void {
-    this.gmcp_fileTransfer.sendReject(sender, filename);
+  rejectTransfer(sender: string, hash: string): void {
+    this.gmcp_fileTransfer.sendReject(sender, hash);
   }
 
   // File Transfer event handlers
-  onFileTransferOffer(sender: string, filename: string, filesize: number, offerSdp: string): void {
-    console.log("[MudClient] Emitting fileTransferOffer event:", { sender, filename, filesize, offerSdp });
-    this.emit('fileTransferOffer', { sender, filename, filesize, offerSdp });
+  onFileTransferOffer(sender: string, hash: string, filename: string, filesize: number, offerSdp: string): void {
+    console.log("[MudClient] Emitting fileTransferOffer event:", { sender, hash, filename, filesize, offerSdp });
+    this.emit('fileTransferOffer', { sender, hash, filename, filesize, offerSdp });
   }
 
-  onFileTransferAccept(sender: string, filename: string, answerSdp: string): void {
-    console.log("[MudClient] Emitting fileTransferAccepted event:", { sender, filename, answerSdp });
-    this.emit('fileTransferAccepted', { sender, filename, answerSdp });
-    
+  onFileTransferAccept(sender: string, hash: string, filename: string, answerSdp: string): void {
+    console.log("[MudClient] Emitting fileTransferAccepted event:", { sender, hash, filename, answerSdp });
+    this.emit('fileTransferAccepted', { sender, hash, filename, answerSdp });
   }
 
-  onFileTransferReject(sender: string, filename: string): void {
-    this.emit('fileTransferRejected', { sender, filename });
+  onFileTransferReject(sender: string, hash: string): void {
+    this.emit('fileTransferRejected', { sender, hash });
   }
 
-  onFileTransferCancel(sender: string, filename: string): void {
-    this.emit('fileTransferCancelled', { sender, filename });
+  onFileTransferCancel(sender: string, hash: string): void {
+    this.emit('fileTransferCancelled', { sender, hash });
   }
 
-  onFileSendProgress(data: { filename: string, sentBytes: number, totalBytes: number }): void {
+  onFileSendProgress(data: { hash: string, filename: string, sentBytes: number, totalBytes: number }): void {
     this.emit('fileSendProgress', data);
   }
 
-  onFileReceiveProgress(data: { filename: string, receivedBytes: number, totalBytes: number }): void {
+  onFileReceiveProgress(data: { hash: string, filename: string, receivedBytes: number, totalBytes: number }): void {
     this.emit('fileReceiveProgress', data);
   }
 
-  onFileSendComplete(filename: string): void {
-    this.emit('fileSendComplete', filename);
+  onFileSendComplete(hash: string, filename: string): void {
+    this.emit('fileSendComplete', { hash, filename });
   }
 
-  onFileReceiveComplete(data: { filename: string, file: Blob }): void {
+  onFileReceiveComplete(data: { hash: string, filename: string, file: Blob }): void {
     this.emit('fileReceiveComplete', data);
   }
 
-  onFileTransferError(filename: string, direction: 'send' | 'receive', error: string): void {
-    this.emit('fileTransferError', { filename, direction, error });
+  onFileTransferError(hash: string, direction: 'send' | 'receive', error: string): void {
+    this.emit('fileTransferError', { hash, direction, error });
   }
 
   onConnectionRecovered(data: { filename: string, direction: 'send' | 'receive' }): void {
