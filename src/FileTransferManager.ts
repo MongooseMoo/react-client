@@ -354,11 +354,9 @@ export default class FileTransferManager {
         throw new Error("Received data is too short to contain chunk data");
       }
 
-      // Extract sender from the transfer key in pendingOffers
-      const sender =
-        Array.from(this.pendingOffers.entries()).find(
-          ([_, offer]) => offer.filename === header.filename
-        )?.[1]?.sender || "unknown";
+      // Get sender from the pending offer using hash
+      const offer = this.pendingOffers.get(header.hash);
+      const sender = offer?.sender || "unknown";
 
       // Validate header fields
       if (
