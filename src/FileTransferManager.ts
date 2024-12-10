@@ -437,7 +437,7 @@ export default class FileTransferManager {
     console.error(`Error ${direction}ing file ${filename} (${hash}):`, error);
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    this.client.onFileTransferError(filename, direction, errorMessage);
+    this.client.onFileTransferError(hash, filename, direction, errorMessage);
     this.cleanupTransfer(hash);
     this.attemptRecovery(hash, filename, direction);
   }
@@ -473,25 +473,27 @@ export default class FileTransferManager {
   }
 
   private async attemptRecovery(
+    hash: string,
     filename: string,
     direction: "send" | "receive"
   ): Promise<void> {
     try {
       await this.webRTCService.createPeerConnection();
-      this.client.onConnectionRecovered({ filename, direction });
+      this.client.onConnectionRecovered({ hash, filename, direction });
 
       if (direction === "send") {
-        const transfer = this.outgoingTransfers.get(filename);
+        const transfer = this.outgoingTransfers.get(hash);
         if (transfer) {
-          await this.startFileTransfer(transfer.file);
+          await this.startFileTransfer(transfer.file, transfer.hash);
         }
       } else if (direction === "receive") {
         // Logic to attempt recovery for incoming transfers
-        const transfer = this.incomingTransfers.get(filename);
+        const transfer = this.incomingTransfers.get(hash);
         if (transfer) {
           // Notify the sender to resend the offer
           this.gmcpFileTransfer.sendRequestResend(
             transfer.sender,
+            hash,
             filename
           );
         }
@@ -522,30 +524,35 @@ export default class FileTransferManager {
     });
   }
 
-  cancelTransfer(filename: string): void {
-    const outgoingTransfer = this.outgoingTransfers.get(filename);
+  cancelTransfer(hash: string): void {
+    const outgoingTransfer = this.outgoingTransfers.get(hash);
     if (outgoingTransfer) {
-      this.cleanupTransfer(filename);
+      this.cleanupTransfer(hash);
       this.client.onFileTransferCancel(
         this.client.worldData.playerId,
-        filename
+        hash,
+        outgoingTransfer.filename
       );
       this.gmcpFileTransfer.sendCancel(
         this.client.worldData.playerId,
-        filename
+        hash
       );
     }
 
-    if (this.incomingTransfers.has(filename)) {
-      this.cleanupTransfer(filename);
-      this.client.onFileTransferCancel(
-        this.client.worldData.playerId,
-        filename
-      );
-      this.gmcpFileTransfer.sendCancel(
-        this.client.worldData.playerId,
-        filename
-      );
+    if (this.incomingTransfers.has(hash)) {
+      const transfer = this.incomingTransfers.get(hash);
+      if (transfer) {
+        this.cleanupTransfer(hash);
+        this.client.onFileTransferCancel(
+          this.client.worldData.playerId,
+          hash,
+          transfer.filename
+        );
+        this.gmcpFileTransfer.sendCancel(
+          this.client.worldData.playerId,
+          hash
+        );
+      }
     }
   }
 
