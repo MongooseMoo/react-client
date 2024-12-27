@@ -647,7 +647,7 @@ export default class FileTransferManager {
         );
 
         // Wait for the data channel to open
-        await this.waitForDataChannel();
+        await this.waitForDataChannel(hash);
         console.log(
           "[FileTransferManager] Data channel ready for incoming transfer"
         );
