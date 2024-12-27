@@ -206,12 +206,16 @@ export class WebRTCService  extends EventEmitter {
       this.emit("dataChannelRecoveryFailed", error);
     }
   }
-
-  sendData(data: ArrayBuffer): void {
+  async sendData(data: ArrayBuffer): Promise<void> {
     if (!this.dataChannel) throw new Error("Data channel not initialized");
-    if (this.dataChannel.readyState !== "open")
-      throw new Error("Data channel is not open");
-    this.dataChannel.send(data);
+    if (this.dataChannel.readyState !== "open") throw new Error("Data channel is not open");
+
+    try {
+      this.dataChannel.send(data);
+    } catch (error) {
+      console.error("[WebRTCService] Error sending data:", error);
+      throw error;
+    }
   }
 
   async createOffer(): Promise<RTCSessionDescriptionInit> {
