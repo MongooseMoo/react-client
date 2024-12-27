@@ -1,0 +1,21 @@
+.transfer-history {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 10px;
+}
+
+.transfer-history h4 {
+  margin-top: 0;
+}
+
+.transfer-history ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.transfer-history li {
+  margin-bottom: 5px;
+  font-size: 14px;
+}
