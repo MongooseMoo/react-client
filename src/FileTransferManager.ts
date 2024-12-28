@@ -41,7 +41,7 @@ interface FileTransferTask {
   file: File;
   filename: string;
   hash: string;
-  timeout: NodeJS.Timeout;
+  lastActivityTimestamp: number;
 }
 
 export default class FileTransferManager {
@@ -103,19 +103,7 @@ export default class FileTransferManager {
       file,
       filename: file.name,
       hash: fileHash,
-      timeout: setTimeout(() => {
-        console.warn(`[FileTransferManager] Timeout for file: ${file.name}`);
-        this.handleTransferError(
-          fileHash,
-          file.name,
-          "send",
-          new FileTransferError(
-            FileTransferErrorCodes.TRANSFER_TIMEOUT,
-            "Transfer offer timeout"
-          )
-        );
-        this.cleanupTransfer(fileHash);
-      }, this.transferTimeout),
+      lastActivityTimestamp: Date.now()
     });
 
     try {
@@ -309,7 +297,6 @@ export default class FileTransferManager {
       console.log(
         `[FileTransferManager] Cleaning up successful transfer: ${filename} (${hash})`
       );
-      clearTimeout(outgoingTransfer.timeout);
       this.outgoingTransfers.delete(hash);
     }
   }
@@ -503,7 +490,6 @@ export default class FileTransferManager {
       console.log(
         `[FileTransferManager] Cleaning up outgoing transfer for: ${outgoingTransfer.filename} (${hash})`
       );
-      clearTimeout(outgoingTransfer.timeout);
       this.outgoingTransfers.delete(hash);
     }
 
@@ -562,6 +548,8 @@ export default class FileTransferManager {
 
   private checkTransferTimeouts(): void {
     const now = Date.now();
+    
+    // Check incoming transfers
     this.incomingTransfers.forEach((transfer, hash) => {
       if (now - transfer.lastActivityTimestamp > this.transferTimeout) {
         this.handleTransferError(
@@ -570,7 +558,22 @@ export default class FileTransferManager {
           "receive",
           new FileTransferError(
             FileTransferErrorCodes.TRANSFER_TIMEOUT,
-            "Transfer timeout"
+            "Transfer timeout - no data received"
+          )
+        );
+      }
+    });
+
+    // Check outgoing transfers
+    this.outgoingTransfers.forEach((transfer, hash) => {
+      if (now - transfer.lastActivityTimestamp > this.transferTimeout) {
+        this.handleTransferError(
+          hash,
+          transfer.filename,
+          "send",
+          new FileTransferError(
+            FileTransferErrorCodes.TRANSFER_TIMEOUT,
+            "Transfer timeout - no activity"
           )
         );
       }
