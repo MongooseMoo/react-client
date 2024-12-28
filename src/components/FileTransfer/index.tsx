@@ -5,10 +5,11 @@ import ProgressBar from "./ProgressBar";
 import PendingTransfer from "./PendingTransfer";
 import History from "./History";
 import { FileTransferEvents } from "../../FileTransferManager";
+import type FileTransferManager from "../../FileTransferManager";
 import "./styles.css";
 
 interface FileTransferUIProps {
-  client: MudClient;
+  manager: FileTransferManager;
   expanded: boolean;
 }
 
@@ -25,7 +26,7 @@ interface PendingOffer {
 }
 
 const FileTransferUI: React.FC<FileTransferUIProps> = ({
-  client,
+  manager,
   expanded,
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -94,8 +95,10 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
   const handleFileTransferCancelled = useCallback(
     (data: Parameters<FileTransferEvents["fileTransferCancelled"]>[0]) => {
-      const transfer = [...outgoingTransfers.values(), ...incomingTransfers.values()]
-        .find(t => t.hash === data.hash);
+      const transfer = [
+        ...outgoingTransfers.values(),
+        ...incomingTransfers.values(),
+      ].find((t) => t.hash === data.hash);
       if (transfer) {
         addToTransferHistory(
           `File transfer cancelled: ${transfer.filename} from ${data.sender}`
@@ -112,7 +115,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
   const handleFileTransferRejected = useCallback(
     (data: Parameters<FileTransferEvents["fileTransferRejected"]>[0]) => {
-      const offer = pendingOffers.find(o => o.hash === data.hash);
+      const offer = pendingOffers.find((o) => o.hash === data.hash);
       if (offer) {
         addToTransferHistory(
           `File transfer rejected: ${offer.filename} from ${data.sender}`
@@ -144,7 +147,6 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
   useEffect(() => {
     // Set up event listeners
-    const manager = client.fileTransferManager;
     manager.on("fileTransferOffer", handleFileTransferOffer);
     manager.on("fileTransferAccepted", handleFileTransferAccepted);
     manager.on("fileSendProgress", handleFileSendProgress);
@@ -159,8 +161,8 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
       // Clean up event listeners
       manager.off("fileTransferOffer", handleFileTransferOffer);
       manager.off("fileTransferAccepted", handleFileTransferAccepted);
-      client.fileTransferManager.off("fileSendProgress", handleFileSendProgress);
-      client.fileTransferManager.off("fileReceiveProgress", handleFileReceiveProgress);
+      manager.off("fileSendProgress", handleFileSendProgress);
+      manager.off("fileReceiveProgress", handleFileReceiveProgress);
       manager.off("fileTransferError", handleFileTransferError);
       manager.off("fileTransferCancelled", handleFileTransferCancelled);
       manager.off("fileTransferRejected", handleFileTransferRejected);
@@ -168,7 +170,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
       manager.off("fileReceiveComplete", handleFileReceiveComplete);
     };
   }, [
-    client,
+    manager,
     handleFileTransferOffer,
     handleFileTransferAccepted,
     handleFileSendProgress,
@@ -182,7 +184,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
   const handleSendFile = () => {
     if (selectedFile && recipient) {
-      client.fileTransferManager
+      manager
         .sendFile(selectedFile, recipient)
         .then(() => {
           addToTransferHistory(`Sending ${selectedFile.name} to ${recipient}`);
@@ -195,40 +197,48 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
   const handleAcceptTransfer = async (sender: string, hash: string) => {
     try {
-      await client.fileTransferManager.acceptTransfer(sender, hash);
+      await manager.acceptTransfer(sender, hash);
       const offer = pendingOffers.find((o) => o.hash === hash);
       if (offer) {
         addToTransferHistory(
           `Accepting file transfer: ${offer.filename} from ${sender}`
         );
       }
-      setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
+      setPendingOffers((prevOffers) =>
+        prevOffers.filter((o) => o.hash !== hash)
+      );
     } catch (error) {
       addToTransferHistory(
-        `Error accepting transfer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Error accepting transfer: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
       );
     }
   };
 
   const handleRejectTransfer = async (sender: string, hash: string) => {
     try {
-      await client.fileTransferManager.rejectTransfer(sender, hash);
+      await manager.rejectTransfer(sender, hash);
       const offer = pendingOffers.find((o) => o.hash === hash);
       if (offer) {
         addToTransferHistory(
           `Rejected file transfer: ${offer.filename} from ${sender}`
         );
       }
-      setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
+      setPendingOffers((prevOffers) =>
+        prevOffers.filter((o) => o.hash !== hash)
+      );
     } catch (error) {
       addToTransferHistory(
-        `Error rejecting transfer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Error rejecting transfer: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
       );
     }
   };
 
   const handleCancelTransfer = (hash: string) => {
-    client.fileTransferManager.cancelTransfer(hash);
+    manager.cancelTransfer(hash);
     setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 

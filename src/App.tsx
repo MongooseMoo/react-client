@@ -36,7 +36,8 @@ function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
-  const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
+  const [fileTransferExpanded, setFileTransferExpanded] =
+    useState<boolean>(false);
   const [players, setPlayers] = useState<UserlistPlayer[]>([]);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -127,12 +128,12 @@ function App() {
 
       client.on("userlist", handleUserlist);
       client.on("disconnect", handleDisconnect);
-      client.on('fileTransferOffer', handleFileTransferOffer);
+      client.on("fileTransferOffer", handleFileTransferOffer);
 
       return () => {
         client.off("userlist", handleUserlist);
         client.off("disconnect", handleDisconnect);
-        client.off('fileTransferOffer', handleFileTransferOffer);
+        client.off("fileTransferOffer", handleFileTransferOffer);
       };
     }
   }, [client]);
@@ -167,10 +168,13 @@ function App() {
           aria-expanded={showFileTransfer}
           aria-controls="file-transfer-ui"
         >
-          {showFileTransfer ? 'Hide' : 'Show'} File Transfer
+          {showFileTransfer ? "Hide" : "Show"} File Transfer
         </button>
-        <div style={{ display: showFileTransfer ? 'block' : 'none' }}>
-          <FileTransferUI client={client} expanded={fileTransferExpanded} />
+        <div style={{ display: showFileTransfer ? "block" : "none" }}>
+          <FileTransferUI
+            manager={client.fileTransferManager}
+            expanded={fileTransferExpanded}
+          />
         </div>
       </div>
       <Statusbar client={client} />
