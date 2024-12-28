@@ -411,8 +411,7 @@ export default class FileTransferManager extends EventEmitter{
       transfer.chunks[header.chunkIndex] = chunkData;
       transfer.receivedSize += chunkData.byteLength;
       transfer.lastActivityTimestamp = Date.now();
-
-      this.client.onFileReceiveProgress({
+      this.emit("fileReceiveProgress", {
         hash: header.hash,
         filename: header.filename,
         receivedBytes: transfer.receivedSize,
