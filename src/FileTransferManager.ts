@@ -606,7 +606,7 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
   ): Promise<void> {
     try {
       await this.webRTCService.createPeerConnection();
-      this.client.onConnectionRecovered({ hash, filename, direction });
+      this.emit('connectionRecovered', { hash, filename, direction });
 
       if (direction === "send") {
         const transfer = this.outgoingTransfers.get(hash);
@@ -623,7 +623,7 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
       }
     } catch (error) {
       console.error("Failed to recover connection:", error);
-      this.client.onRecoveryFailed({
+      this.emit('recoveryFailed', {
         filename,
         direction,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -673,7 +673,10 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
         `[FileTransferManager] Cancelling transfer for hash: ${hash} (${transfer.filename})`
       );
       this.cleanupTransfer(hash);
-      this.client.onFileTransferCancel(this.client.worldData.playerId, hash);
+      this.emit('fileTransferCancelled', {
+        sender: this.client.worldData.playerId,
+        hash
+      });
       this.gmcpFileTransfer.sendCancel(this.client.worldData.playerId, hash);
     } else {
       console.log(
