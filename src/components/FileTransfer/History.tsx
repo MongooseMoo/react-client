@@ -7,7 +7,7 @@ interface TransferHistoryProps {
 
 const History: React.FC<TransferHistoryProps> = ({ history }) => {
   return (
-    <div className="transfer-history">
+    <div className="transfer-history" aria-live="polite">
       <h4>Transfer History</h4>
       <ul>
         {history.map((entry, index) => (
