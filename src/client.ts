@@ -83,46 +83,6 @@ class MudClient extends EventEmitter {
       this.gmcp_fileTransfer
     );
   }
-  // File Transfer related methods
-  async sendFile(file: File, recipient: string): Promise<void> {
-    await this.fileTransferManager.sendFile(file, recipient);
-  }
-
-  cancelTransfer(hash: string): void {
-    this.fileTransferManager.cancelTransfer(hash);
-  }
-
-
-
-  // File Transfer event handlers
-
-
-
-  // GMCP methods for file transfer
-  sendFileTransferOffer(
-    recipient: string,
-    filename: string,
-    hash: string,
-    filesize: number,
-    offerSdp: string
-  ): void {
-    this.gmcp_fileTransfer.sendOffer(
-      recipient,
-      filename,
-      filesize,
-      offerSdp,
-      hash
-    );
-  }
-
-  sendFileTransferAccept(
-    sender: string,
-    filename: string,
-    hash: string,
-    answerSdp: string
-  ): void {
-    this.gmcp_fileTransfer.sendAccept(sender, hash, filename, answerSdp);
-  }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
     const gmcpPackage = new p(this);

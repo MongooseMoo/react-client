@@ -167,7 +167,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
   const handleSendFile = () => {
     if (selectedFile && recipient) {
-      client
+      client.fileTransferManager
         .sendFile(selectedFile, recipient)
         .then(() => {
           addToTransferHistory(`Sending ${selectedFile.name} to ${recipient}`);
@@ -209,7 +209,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
   };
 
   const handleCancelTransfer = (hash: string) => {
-    client.cancelTransfer(hash);
+    client.fileTransferManager.cancelTransfer(hash);
     setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 
