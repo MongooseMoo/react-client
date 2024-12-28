@@ -324,7 +324,12 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
         this.outgoingTransfers.keys()
       ).join(", ")}`;
       console.error(`[FileTransferManager] ${error}`);
-      this.client.onFileTransferError(hash, filename, "send", error);
+      this.emit('fileTransferError', {
+        hash,
+        filename,
+        direction: "send",
+        error
+      });
       return;
     }
 
@@ -450,14 +455,14 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
       let transfer = this.incomingTransfers.get(header.hash);
       if (!transfer) {
         if (header.totalSize > this.maxFileSize) {
-          this.client.onFileTransferError(
-            header.hash,
-            header.filename,
-            "receive",
-            `Incoming file size exceeds the maximum allowed size of ${
+          this.emit('fileTransferError', {
+            hash: header.hash,
+            filename: header.filename,
+            direction: "receive",
+            error: `Incoming file size exceeds the maximum allowed size of ${
               this.maxFileSize / (1024 * 1024)
             } MB`
-          );
+          });
           return;
         }
         transfer = {
@@ -492,12 +497,12 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
           });
           const computedHash = await this.computeFileHash(file);
           if (computedHash !== transfer.hash) {
-            this.client.onFileTransferError(
-              transfer.hash,
-              header.filename,
-              "receive",
-              "File integrity check failed - hash mismatch"
-            );
+            this.emit('fileTransferError', {
+              hash: transfer.hash,
+              filename: header.filename,
+              direction: "receive",
+              error: "File integrity check failed - hash mismatch"
+            });
             this.incomingTransfers.delete(transfer.hash);
             return;
           }
@@ -519,12 +524,12 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
           });
           this.incomingTransfers.delete(transfer.hash);
         } else {
-          this.client.onFileTransferError(
-            transfer.hash,
-            header.filename,
-            "receive",
-            "Missing chunks in received file"
-          );
+          this.emit('fileTransferError', {
+            hash: transfer.hash,
+            filename: header.filename,
+            direction: "receive",
+            error: "Missing chunks in received file"
+          });
         }
       }
     } catch (error) {
@@ -551,7 +556,12 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
     console.error(`Error ${direction}ing file ${filename} (${hash}):`, error);
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    this.client.onFileTransferError(hash, filename, direction, errorMessage);
+    this.emit('fileTransferError', {
+      hash,
+      filename,
+      direction,
+      error: errorMessage
+    });
     this.cleanupTransfer(hash);
     this.attemptRecovery(hash, filename, direction);
   }
