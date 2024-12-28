@@ -96,9 +96,6 @@ class MudClient extends EventEmitter {
     this.fileTransferManager.acceptTransfer(sender, hash);
   }
 
-  rejectTransfer(sender: string, hash: string): void {
-    this.gmcp_fileTransfer.sendReject(sender, hash);
-  }
 
   // File Transfer event handlers
   onFileTransferOffer(

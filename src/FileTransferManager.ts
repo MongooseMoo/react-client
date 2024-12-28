@@ -685,6 +685,21 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
     }
   }
 
+  async rejectTransfer(sender: string, hash: string): Promise<void> {
+    const offer = this.pendingOffers.get(hash);
+    if (!offer) {
+      throw new Error(`No pending offer found for hash: ${hash}`);
+    }
+
+    this.emit('fileTransferRejected', {
+      sender,
+      hash
+    });
+    
+    this.gmcpFileTransfer.sendReject(sender, hash);
+    this.pendingOffers.delete(hash);
+  }
+
   async acceptTransfer(sender: string, hash: string): Promise<void> {
     console.log("[FileTransferManager] Accepting transfer", sender, hash);
 

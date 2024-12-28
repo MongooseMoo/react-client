@@ -191,15 +191,21 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 
-  const handleRejectTransfer = (sender: string, hash: string) => {
-    client.rejectTransfer(sender, hash);
-    const offer = pendingOffers.find((o) => o.hash === hash);
-    if (offer) {
+  const handleRejectTransfer = async (sender: string, hash: string) => {
+    try {
+      await client.fileTransferManager.rejectTransfer(sender, hash);
+      const offer = pendingOffers.find((o) => o.hash === hash);
+      if (offer) {
+        addToTransferHistory(
+          `Rejected file transfer: ${offer.filename} from ${sender}`
+        );
+      }
+      setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
+    } catch (error) {
       addToTransferHistory(
-        `Rejected file transfer: ${offer.filename} from ${sender}`
+        `Error rejecting transfer: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
-    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 
   const handleCancelTransfer = (hash: string) => {
