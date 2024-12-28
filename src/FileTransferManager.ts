@@ -1,3 +1,4 @@
+import EventEmitter from "eventemitter3";
 import { WebRTCService } from "./WebRTCService";
 import MudClient from "./client";
 import {
@@ -44,7 +45,7 @@ interface FileTransferTask {
   lastActivityTimestamp: number;
 }
 
-export default class FileTransferManager {
+export default class FileTransferManager extends EventEmitter{
   private webRTCService: WebRTCService;
   private client: MudClient;
   private gmcpFileTransfer: GMCPClientFileTransfer;
@@ -57,6 +58,7 @@ export default class FileTransferManager {
     new Map(); // keyed by hash
 
   constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
+    super();
     this.client = client;
     this.gmcpFileTransfer = gmcpFileTransfer;
     this.webRTCService = client.webRTCService;
@@ -198,8 +200,7 @@ export default class FileTransferManager {
       await this.sendChunk(file.name, hash, chunk, offset, file.size);
 
       offset += chunk.byteLength;
-
-      this.client.onFileSendProgress({
+      this.emit("fileSendProgress", {
         hash: hash,
         filename: file.name,
         sentBytes: offset,

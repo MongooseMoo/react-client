@@ -147,15 +147,6 @@ class MudClient extends EventEmitter {
     this.emit("fileTransferCancelled", { sender, hash });
   }
 
-  onFileSendProgress(data: {
-    hash: string;
-    filename: string;
-    sentBytes: number;
-    totalBytes: number;
-  }): void {
-    this.emit("fileSendProgress", data);
-  }
-
   onFileReceiveProgress(data: {
     hash: string;
     filename: string;

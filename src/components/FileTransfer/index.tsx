@@ -131,7 +131,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     // Set up event listeners
     client.on("fileTransferOffer", handleFileTransferOffer);
     client.on("fileTransferAccepted", handleFileTransferAccepted);
-    client.on("fileSendProgress", handleFileSendProgress);
+    client.fileTransferManager.on("fileSendProgress", handleFileSendProgress);
     client.on("fileReceiveProgress", handleFileReceiveProgress);
     client.on("fileTransferError", handleFileTransferError);
     client.on("fileTransferCancelled", handleFileTransferCancelled);
