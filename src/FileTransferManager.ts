@@ -80,6 +80,12 @@ export default class FileTransferManager {
     this.transferTimeoutInterval = window.setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
+  async initializeWebRTC(): Promise<void> {
+    if (!this.webRTCService.isDataChannelOpen()) {
+      await this.webRTCService.createPeerConnection();
+    }
+  }
+
   async sendFile(file: File, recipient: string): Promise<void> {
     if (file.size > this.maxFileSize) {
       throw new FileTransferError(
@@ -104,11 +110,11 @@ export default class FileTransferManager {
       file,
       filename: file.name,
       hash: fileHash,
-      lastActivityTimestamp: Date.now()
+      lastActivityTimestamp: Date.now(),
     });
 
     try {
-      await this.client.initializeWebRTC();
+      await this.initializeWebRTC();
       this.webRTCService.recipient = recipient;
       const offer = await this.webRTCService.createOffer();
 
@@ -318,10 +324,12 @@ export default class FileTransferManager {
           resolve();
         } else if (attempts >= maxAttempts) {
           clearInterval(checkInterval);
-          reject(new FileTransferError(
-            FileTransferErrorCodes.CONNECTION_FAILED,
-            `Data channel failed to open for transfer ${hash} after ${attempts} attempts`
-          ));
+          reject(
+            new FileTransferError(
+              FileTransferErrorCodes.CONNECTION_FAILED,
+              `Data channel failed to open for transfer ${hash} after ${attempts} attempts`
+            )
+          );
         }
       }, 100);
     });
@@ -463,7 +471,10 @@ export default class FileTransferManager {
         errorHash,
         "unknown_file",
         "receive",
-        new FileTransferError("UNKNOWN_ERROR", error instanceof Error ? error.message : "Unknown error")
+        new FileTransferError(
+          "UNKNOWN_ERROR",
+          error instanceof Error ? error.message : "Unknown error"
+        )
       );
     }
   }
@@ -549,7 +560,7 @@ export default class FileTransferManager {
 
   private checkTransferTimeouts(): void {
     const now = Date.now();
-    
+
     // Check incoming transfers
     this.incomingTransfers.forEach((transfer, hash) => {
       if (now - transfer.lastActivityTimestamp > this.transferTimeout) {
@@ -638,18 +649,15 @@ export default class FileTransferManager {
         `No pending offer found for transfer with hash: ${hash}`
       );
     }
-    console.log(
-      "[FileTransferManager] Found pending offer for transfer:",
-      {
-        sender,
-        hash,
-        filename: offer.filename,
-        filesize: offer.filesize
-      }
-    );
+    console.log("[FileTransferManager] Found pending offer for transfer:", {
+      sender,
+      hash,
+      filename: offer.filename,
+      filesize: offer.filesize,
+    });
     try {
       // Initialize WebRTC first
-      await this.client.initializeWebRTC();
+      await this.initializeWebRTC();
       this.webRTCService.recipient = sender;
 
       console.log(
