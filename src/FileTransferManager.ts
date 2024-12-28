@@ -135,10 +135,6 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
       "dataChannelMessage",
       this.handleIncomingChunk.bind(this)
     );
-    this.client.on(
-      "fileTransferAccepted",
-      this.handleAcceptedTransfer.bind(this)
-    );
     setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
