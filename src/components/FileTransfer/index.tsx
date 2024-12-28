@@ -4,11 +4,17 @@ import Controls from "./Controls";
 import ProgressBar from "./ProgressBar";
 import PendingTransfer from "./PendingTransfer";
 import History from "./History";
+import { FileTransferEvents } from "../../FileTransferManager";
 import "./styles.css";
 
 interface FileTransferUIProps {
   client: MudClient;
   expanded: boolean;
+}
+
+interface Transfer {
+  filename: string;
+  hash: string;
 }
 
 interface PendingOffer {
@@ -27,6 +33,8 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
   const [sendProgress, setSendProgress] = useState<number>(0);
   const [receiveProgress, setReceiveProgress] = useState<number>(0);
   const [pendingOffers, setPendingOffers] = useState<PendingOffer[]>([]);
+  const [outgoingTransfers] = useState<Map<string, Transfer>>(new Map());
+  const [incomingTransfers] = useState<Map<string, Transfer>>(new Map());
   const [transferHistory, setTransferHistory] = useState<string[]>([]);
 
   const addToTransferHistory = useCallback((message: string) => {
@@ -85,26 +93,33 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
   );
 
   const handleFileTransferCancelled = useCallback(
-    (data: { filename: string; direction: "send" | "receive" }) => {
-      addToTransferHistory(
-        `File transfer cancelled: ${data.filename} (${data.direction})`
-      );
-      if (data.direction === "send") {
-        setSendProgress(0);
-      } else {
-        setReceiveProgress(0);
+    (data: Parameters<FileTransferEvents["fileTransferCancelled"]>[0]) => {
+      const transfer = [...outgoingTransfers.values(), ...incomingTransfers.values()]
+        .find(t => t.hash === data.hash);
+      if (transfer) {
+        addToTransferHistory(
+          `File transfer cancelled: ${transfer.filename} from ${data.sender}`
+        );
+        if (outgoingTransfers.has(data.hash)) {
+          setSendProgress(0);
+        } else {
+          setReceiveProgress(0);
+        }
       }
     },
-    [addToTransferHistory]
+    [addToTransferHistory, outgoingTransfers, incomingTransfers]
   );
 
   const handleFileTransferRejected = useCallback(
-    (data: { sender: string; filename: string }) => {
-      addToTransferHistory(
-        `File transfer rejected: ${data.filename} from ${data.sender}`
-      );
+    (data: Parameters<FileTransferEvents["fileTransferRejected"]>[0]) => {
+      const offer = pendingOffers.find(o => o.hash === data.hash);
+      if (offer) {
+        addToTransferHistory(
+          `File transfer rejected: ${offer.filename} from ${data.sender}`
+        );
+      }
     },
-    [addToTransferHistory]
+    [addToTransferHistory, pendingOffers]
   );
 
   const handleFileTransferAccepted = useCallback(
