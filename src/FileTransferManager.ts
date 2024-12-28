@@ -1,6 +1,67 @@
 import EventEmitter from "eventemitter3";
 import { WebRTCService } from "./WebRTCService";
 import MudClient from "./client";
+
+interface FileTransferEvents {
+  fileTransferOffer: (data: {
+    sender: string;
+    hash: string;
+    filename: string;
+    filesize: number;
+    offerSdp: string;
+  }) => void;
+  fileTransferAccepted: (data: {
+    sender: string;
+    hash: string;
+    filename: string;
+    answerSdp: string;
+  }) => void;
+  fileTransferRejected: (data: {
+    sender: string;
+    hash: string;
+  }) => void;
+  fileSendProgress: (data: {
+    hash: string;
+    filename: string;
+    sentBytes: number;
+    totalBytes: number;
+  }) => void;
+  fileReceiveProgress: (data: {
+    hash: string;
+    filename: string;
+    receivedBytes: number;
+    totalBytes: number;
+  }) => void;
+  fileSendComplete: (data: {
+    hash: string;
+    filename: string;
+  }) => void;
+  fileReceiveComplete: (data: {
+    hash: string;
+    filename: string;
+    file: Blob;
+  }) => void;
+  fileTransferError: (data: {
+    hash: string;
+    filename: string;
+    direction: 'send' | 'receive';
+    error: string;
+  }) => void;
+  fileTransferCancelled: (data: {
+    sender: string;
+    hash: string;
+  }) => void;
+  connectionRecovered: (data: {
+    filename: string;
+    direction: 'send' | 'receive';
+    hash: string;
+  }) => void;
+  recoveryFailed: (data: {
+    filename: string;
+    direction: 'send' | 'receive';
+    error: string;
+  }) => void;
+}
 import {
   GMCPClientFileTransfer,
   GMCPMessageClientFileTransferOffer,
@@ -45,7 +106,7 @@ interface FileTransferTask {
   lastActivityTimestamp: number;
 }
 
-export default class FileTransferManager extends EventEmitter{
+export default class FileTransferManager extends EventEmitter<FileTransferEvents> {
   private webRTCService: WebRTCService;
   private client: MudClient;
   private gmcpFileTransfer: GMCPClientFileTransfer;
