@@ -50,11 +50,11 @@ export class GMCPClientFileTransfer extends GMCPPackage {
   }
 
   handleReject(data: GMCPMessageClientFileTransferReject): void {
-    this.client.onFileTransferReject(data.sender, data.hash);
+    this.client.fileTransferManager.handleRejection(data.sender, data.hash);
   }
 
   handleCancel(data: GMCPMessageClientFileTransferCancel): void {
-    this.client.onFileTransferCancel(data.sender, data.hash);
+    this.client.fileTransferManager.handleCancel(data.sender, data.hash);
   }
 
   sendOffer(

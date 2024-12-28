@@ -715,6 +715,24 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
     });
   }
 
+  handleRejection(sender: string, hash: string): void {
+    console.log("[FileTransferManager] Transfer rejected by", sender, hash);
+    this.cleanupTransfer(hash);
+    this.emit('fileTransferRejected', {
+      sender,
+      hash
+    });
+  }
+
+  handleCancel(sender: string, hash: string): void {
+    console.log("[FileTransferManager] Transfer cancelled by", sender, hash);
+    this.cleanupTransfer(hash);
+    this.emit('fileTransferCancelled', {
+      sender,
+      hash
+    });
+  }
+
   async acceptTransfer(sender: string, hash: string): Promise<void> {
     console.log("[FileTransferManager] Accepting transfer", sender, hash);
 
@@ -785,4 +803,5 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
       );
     }
   }
+
 }
