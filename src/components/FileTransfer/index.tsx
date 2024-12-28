@@ -129,8 +129,9 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
   useEffect(() => {
     // Set up event listeners
-    client.on("fileTransferOffer", handleFileTransferOffer);
-    client.on("fileTransferAccepted", handleFileTransferAccepted);
+    const manager = client.fileTransferManager;
+    manager.on("fileTransferOffer", handleFileTransferOffer);
+    manager.on("fileTransferAccepted", handleFileTransferAccepted);
     const manager = client.fileTransferManager;
     manager.on("fileSendProgress", handleFileSendProgress);
     manager.on("fileReceiveProgress", handleFileReceiveProgress);
@@ -142,8 +143,8 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
     return () => {
       // Clean up event listeners
-      client.off("fileTransferOffer", handleFileTransferOffer);
-      client.off("fileTransferAccepted", handleFileTransferAccepted);
+      manager.off("fileTransferOffer", handleFileTransferOffer);
+      manager.off("fileTransferAccepted", handleFileTransferAccepted);
       client.fileTransferManager.off("fileSendProgress", handleFileSendProgress);
       client.fileTransferManager.off("fileReceiveProgress", handleFileReceiveProgress);
       manager.off("fileTransferError", handleFileTransferError);

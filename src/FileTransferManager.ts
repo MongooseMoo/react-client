@@ -700,6 +700,25 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
     this.pendingOffers.delete(hash);
   }
 
+  handleOffer(offer: GMCPMessageClientFileTransferOffer): void {
+    const { sender, hash, filename, filesize, offerSdp } = offer;
+    console.log("[FileTransferManager] Received file transfer offer:", {
+      sender,
+      hash,
+      filename,
+      filesize,
+    });
+
+    this.pendingOffers.set(hash, offer);
+    this.emit('fileTransferOffer', {
+      sender,
+      hash,
+      filename,
+      filesize,
+      offerSdp
+    });
+  }
+
   async acceptTransfer(sender: string, hash: string): Promise<void> {
     console.log("[FileTransferManager] Accepting transfer", sender, hash);
 
