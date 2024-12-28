@@ -42,24 +42,11 @@ export class GMCPClientFileTransfer extends GMCPPackage {
   }
 
   handleOffer(data: GMCPMessageClientFileTransferOffer): void {
-    console.log("[GMCPClientFileTransfer] Received offer:", data);
-    this.client.fileTransferManager.pendingOffers.set(`${data.hash}`, data);
-    this.client.onFileTransferOffer(
-      data.sender,
-      data.hash,
-      data.filename,
-      data.filesize,
-      data.offerSdp
-    );
+    this.client.fileTransferManager.handleOffer(data);
   }
 
   handleAccept(data: GMCPMessageClientFileTransferAccept): void {
-    this.client.onFileTransferAccept(
-      data.sender,
-      data.hash,
-      data.filename,
-      data.answerSdp
-    );
+    this.client.fileTransferManager.handleAcceptedTransfer(data);
   }
 
   handleReject(data: GMCPMessageClientFileTransferReject): void {
