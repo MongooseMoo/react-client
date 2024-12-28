@@ -2,7 +2,7 @@ import EventEmitter from "eventemitter3";
 import { WebRTCService } from "./WebRTCService";
 import MudClient from "./client";
 
-interface FileTransferEvents {
+export interface FileTransferEvents {
   fileTransferOffer: (data: {
     sender: string;
     hash: string;
@@ -691,7 +691,7 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
       sender,
       hash
     });
-    
+
     this.gmcpFileTransfer.sendReject(sender, hash);
     this.pendingOffers.delete(hash);
   }
