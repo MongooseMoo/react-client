@@ -99,13 +99,6 @@ class MudClient extends EventEmitter {
       this.gmcp_fileTransfer
     );
   }
-
-  async initializeWebRTC(): Promise<void> {
-    if (!this.webRTCService.isDataChannelOpen()) {
-      await this.webRTCService.createPeerConnection();
-    }
-  }
-
   // File Transfer related methods
   async sendFile(file: File, recipient: string): Promise<void> {
     await this.fileTransferManager.sendFile(file, recipient);
