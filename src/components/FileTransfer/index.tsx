@@ -136,7 +136,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     client.on("fileTransferError", handleFileTransferError);
     client.on("fileTransferCancelled", handleFileTransferCancelled);
     client.on("fileTransferRejected", handleFileTransferRejected);
-    client.on("fileSendComplete", handleFileSendComplete);
+    client.fileTransferManager.on("fileSendComplete", handleFileSendComplete);
     client.on("fileReceiveComplete", handleFileReceiveComplete);
 
     return () => {
@@ -148,7 +148,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
       client.off("fileTransferError", handleFileTransferError);
       client.off("fileTransferCancelled", handleFileTransferCancelled);
       client.off("fileTransferRejected", handleFileTransferRejected);
-      client.off("fileSendComplete", handleFileSendComplete);
+      client.fileTransferManager.off("fileSendComplete", handleFileSendComplete);
       client.off("fileReceiveComplete", handleFileReceiveComplete);
     };
   }, [

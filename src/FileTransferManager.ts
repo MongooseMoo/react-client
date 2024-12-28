@@ -291,8 +291,9 @@ export default class FileTransferManager extends EventEmitter{
         outgoingTransfer.hash
       );
       console.log(
-        `[FileTransferManager] File transfer completed successfully: ${filename}`
+        `[FileTransferManager] Outbound file transfer completed successfully: ${filename}`
       );
+      this.emit('fileSendComplete', hash, filename);
       this.client.onFileSendComplete(hash, filename);
     } catch (error) {
       console.error(
