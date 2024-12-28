@@ -218,8 +218,8 @@ export class WebRTCService  extends EventEmitter {
             this.dataChannel?.removeEventListener("bufferedamountlow", onBufferedAmountLow);
             resolve();
           };
-          this.dataChannel.addEventListener("bufferedamountlow", onBufferedAmountLow);
-          this.dataChannel.bufferedAmountLowThreshold = maxBufferSize / 2;
+          this.dataChannel?.addEventListener("bufferedamountlow", onBufferedAmountLow);
+          this.dataChannel!.bufferedAmountLowThreshold = maxBufferSize / 2;
         });
       }
 
