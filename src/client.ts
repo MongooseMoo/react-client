@@ -97,46 +97,6 @@ class MudClient extends EventEmitter {
   // File Transfer event handlers
 
 
-  onFileTransferReject(sender: string, hash: string): void {
-    this.emit("fileTransferRejected", { sender, hash });
-  }
-
-  onFileTransferCancel(sender: string, hash: string): void {
-    this.emit("fileTransferCancelled", { sender, hash });
-  }
-
-  onFileReceiveComplete(data: {
-    hash: string;
-    filename: string;
-    file: Blob;
-  }): void {
-    this.emit("fileReceiveComplete", data);
-  }
-
-  onFileTransferError(
-    hash: string,
-    filename: string,
-    direction: "send" | "receive",
-    error: string
-  ): void {
-    this.emit("fileTransferError", { hash, filename, direction, error });
-  }
-
-  onConnectionRecovered(data: {
-    filename: string;
-    direction: "send" | "receive";
-    hash: string;
-  }): void {
-    this.emit("connectionRecovered", data);
-  }
-
-  onRecoveryFailed(data: {
-    filename: string;
-    direction: "send" | "receive";
-    error: string;
-  }): void {
-    this.emit("recoveryFailed", data);
-  }
 
   // GMCP methods for file transfer
   sendFileTransferOffer(

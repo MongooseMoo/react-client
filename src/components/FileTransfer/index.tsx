@@ -132,7 +132,6 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     const manager = client.fileTransferManager;
     manager.on("fileTransferOffer", handleFileTransferOffer);
     manager.on("fileTransferAccepted", handleFileTransferAccepted);
-    const manager = client.fileTransferManager;
     manager.on("fileSendProgress", handleFileSendProgress);
     manager.on("fileReceiveProgress", handleFileReceiveProgress);
     manager.on("fileTransferError", handleFileTransferError);
