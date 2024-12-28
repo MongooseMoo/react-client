@@ -5,7 +5,7 @@ export class WebRTCService  extends EventEmitter {
   private peerConnection: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
   private client: MudClient;
-  private connectionTimeout: number = 60000; // Increased timeout
+  private connectionTimeout: number = 300000; // 5 minutes timeout
   public recipient: string = "";
   public pendingCandidates: RTCIceCandidateInit[] = [];
 
@@ -210,6 +210,19 @@ export class WebRTCService  extends EventEmitter {
     if (this.dataChannel.readyState !== "open") throw new Error("Data channel is not open");
 
     try {
+      // Implement flow control - wait if buffer is getting full
+      const maxBufferSize = 1048576; // 1MB threshold
+      while (this.dataChannel.bufferedAmount > maxBufferSize) {
+        await new Promise<void>((resolve) => {
+          const onBufferedAmountLow = () => {
+            this.dataChannel?.removeEventListener("bufferedamountlow", onBufferedAmountLow);
+            resolve();
+          };
+          this.dataChannel.addEventListener("bufferedamountlow", onBufferedAmountLow);
+          this.dataChannel.bufferedAmountLowThreshold = maxBufferSize / 2;
+        });
+      }
+
       this.dataChannel.send(data);
     } catch (error) {
       console.error("[WebRTCService] Error sending data:", error);
