@@ -131,13 +131,14 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     // Set up event listeners
     client.on("fileTransferOffer", handleFileTransferOffer);
     client.on("fileTransferAccepted", handleFileTransferAccepted);
-    client.fileTransferManager.on("fileSendProgress", handleFileSendProgress);
-    client.fileTransferManager.on("fileReceiveProgress", handleFileReceiveProgress);
-    client.on("fileTransferError", handleFileTransferError);
-    client.on("fileTransferCancelled", handleFileTransferCancelled);
-    client.on("fileTransferRejected", handleFileTransferRejected);
-    client.fileTransferManager.on("fileSendComplete", handleFileSendComplete);
-    client.on("fileReceiveComplete", handleFileReceiveComplete);
+    const manager = client.fileTransferManager;
+    manager.on("fileSendProgress", handleFileSendProgress);
+    manager.on("fileReceiveProgress", handleFileReceiveProgress);
+    manager.on("fileTransferError", handleFileTransferError);
+    manager.on("fileTransferCancelled", handleFileTransferCancelled);
+    manager.on("fileTransferRejected", handleFileTransferRejected);
+    manager.on("fileSendComplete", handleFileSendComplete);
+    manager.on("fileReceiveComplete", handleFileReceiveComplete);
 
     return () => {
       // Clean up event listeners
@@ -145,11 +146,11 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
       client.off("fileTransferAccepted", handleFileTransferAccepted);
       client.fileTransferManager.off("fileSendProgress", handleFileSendProgress);
       client.fileTransferManager.off("fileReceiveProgress", handleFileReceiveProgress);
-      client.off("fileTransferError", handleFileTransferError);
-      client.off("fileTransferCancelled", handleFileTransferCancelled);
-      client.off("fileTransferRejected", handleFileTransferRejected);
-      client.fileTransferManager.off("fileSendComplete", handleFileSendComplete);
-      client.off("fileReceiveComplete", handleFileReceiveComplete);
+      manager.off("fileTransferError", handleFileTransferError);
+      manager.off("fileTransferCancelled", handleFileTransferCancelled);
+      manager.off("fileTransferRejected", handleFileTransferRejected);
+      manager.off("fileSendComplete", handleFileSendComplete);
+      manager.off("fileReceiveComplete", handleFileReceiveComplete);
     };
   }, [
     client,

@@ -354,8 +354,10 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
       console.log(
         `[FileTransferManager] Outbound file transfer completed successfully: ${filename}`
       );
-      this.emit('fileSendComplete', hash, filename);
-      this.client.onFileSendComplete(hash, filename);
+      this.emit('fileSendComplete', {
+        hash,
+        filename
+      });
     } catch (error) {
       console.error(
         `[FileTransferManager] Error in accepted transfer for ${filename}:`,
@@ -510,7 +512,7 @@ export default class FileTransferManager extends EventEmitter<FileTransferEvents
           document.body.removeChild(downloadLink);
           window.URL.revokeObjectURL(downloadUrl);
 
-          this.client.onFileReceiveComplete({
+          this.emit('fileReceiveComplete', {
             hash: transfer.hash,
             filename: header.filename,
             file: completeFile,
