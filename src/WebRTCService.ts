@@ -138,8 +138,7 @@ export class WebRTCService  extends EventEmitter {
         this.dataChannel = this.peerConnection.createDataChannel(
           "fileTransfer",
           {
-            ordered: true,
-            maxRetransmits: 3, // Allow up to 3 retransmission attempts
+            ordered: true
           }
         );
         this.setupDataChannel();
