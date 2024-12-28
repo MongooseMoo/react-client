@@ -186,7 +186,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
   return (
     <div className={`file-transfer-ui ${expanded ? "expanded" : "collapsed"}`}>
       <h3>File Transfer</h3>
-      
+
       <Controls
         onFileChange={setSelectedFile}
         onRecipientChange={setRecipient}
@@ -196,8 +196,8 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded }) => 
       />
 
       {(sendProgress > 0 || receiveProgress > 0) && (
-        <ProgressBar 
-          progress={sendProgress > 0 ? sendProgress : receiveProgress} 
+        <ProgressBar
+          progress={sendProgress > 0 ? sendProgress : receiveProgress}
         />
       )}
 
