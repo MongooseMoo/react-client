@@ -6,6 +6,7 @@ export enum AutoreadMode {
 
 export type GeneralPreferences = {
   localEcho: boolean;
+  volume: number;
 };
 
 export type SpeechPreferences = {
@@ -63,6 +64,7 @@ class PreferencesStore {
     return {
       general: {
         localEcho: false,
+        volume: 1.0,
       },
       speech: {
         autoreadMode: AutoreadMode.Off,

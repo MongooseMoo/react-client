@@ -7,6 +7,7 @@ import {
   FaVolumeUp,
 } from "react-icons/fa";
 import type MudClient from "../client";
+import { preferencesStore, PrefActionType } from "../PreferencesStore";
 
 export interface ToolbarProps {
   client: MudClient;
@@ -25,6 +26,7 @@ const Toolbar = ({
 }: ToolbarProps) => {
   const [muted, setMuted] = React.useState(client.cacophony.muted);
   const [autosay, setAutosay] = React.useState(client.autosay);
+  const [volume, setVolume] = React.useState(preferencesStore.getState().general.volume);
 
   return (
     <div className="toolbar">
@@ -56,9 +58,19 @@ const Toolbar = ({
           type="range"
           min="0"
           max="100"
-          onChange={(e) =>
-            client.cacophony.setGlobalVolume(Number(e.target.value) / 100)
-          }
+          value={volume * 100}
+          onChange={(e) => {
+            const newVolume = Number(e.target.value) / 100;
+            setVolume(newVolume);
+            client.cacophony.setGlobalVolume(newVolume);
+            preferencesStore.dispatch({
+              type: PrefActionType.SetGeneral,
+              data: {
+                ...preferencesStore.getState().general,
+                volume: newVolume
+              }
+            });
+          }}
         />
       </label>
       <label>
