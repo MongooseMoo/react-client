@@ -66,6 +66,7 @@ class MudClient extends EventEmitter {
   public editors: EditorManager;
   public webRTCService: WebRTCService;
   public fileTransferManager: FileTransferManager;
+  public autosay: boolean = false;
 
   constructor(host: string, port: number) {
     super();
@@ -318,6 +319,9 @@ class MudClient extends EventEmitter {
     const localEchoEnabled = preferencesStore.getState().general.localEcho;
     if (localEchoEnabled) {
       this.emit("command", command);
+    }
+    if (this.autosay) {
+      command = "say " + command;
     }
     this.send(command + "\r\n");
     console.log("> " + command);

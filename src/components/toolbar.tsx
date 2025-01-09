@@ -24,6 +24,7 @@ const Toolbar = ({
   onOpenPrefs,
 }: ToolbarProps) => {
   const [muted, setMuted] = React.useState(client.cacophony.muted);
+  const [autosay, setAutosay] = React.useState(client.autosay);
 
   return (
     <div className="toolbar">
@@ -58,6 +59,16 @@ const Toolbar = ({
           onChange={(e) =>
             client.cacophony.setGlobalVolume(Number(e.target.value) / 100)
           }
+        />
+      </label>
+      <label>
+        Autosay
+        <input type="checkbox"
+          checked={autosay}
+          onChange={(e) => {
+            setAutosay(e.target.checked);
+            client.autosay = e.target.checked;
+          }}
         />
       </label>
       <button onClick={onToggleUsers} accessKey="u">
