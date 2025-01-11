@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef } from "react";
+import { useClientEvent } from "./hooks/useClientEvent";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import OutputWindow from "./components/output";
@@ -37,7 +38,7 @@ function App() {
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
-  const [players, setPlayers] = useState<UserlistPlayer[]>([]);
+  const players = useClientEvent<UserlistPlayer[]>(client!, "userlist", []);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
@@ -110,32 +111,21 @@ function App() {
     };
   }, [isMobile]);
 
+  const isDisconnected = useClientEvent<boolean>(client!, "disconnect", false);
+  const fileTransferOffer = useClientEvent<boolean>(client!, "fileTransferOffer", false);
+
   useEffect(() => {
-    if (client) {
-      const handleUserlist = (players: UserlistPlayer[]) => {
-        setPlayers(players);
-      };
-
-      const handleDisconnect = () => {
-        setPlayers([]);
-      };
-
-      const handleFileTransferOffer = () => {
-        setFileTransferExpanded(true);
-        setShowFileTransfer(true);
-      };
-
-      client.on("userlist", handleUserlist);
-      client.on("disconnect", handleDisconnect);
-      client.on('fileTransferOffer', handleFileTransferOffer);
-
-      return () => {
-        client.off("userlist", handleUserlist);
-        client.off("disconnect", handleDisconnect);
-        client.off('fileTransferOffer', handleFileTransferOffer);
-      };
+    if (isDisconnected) {
+      setPlayers([]);
     }
-  }, [client]);
+  }, [isDisconnected]);
+
+  useEffect(() => {
+    if (fileTransferOffer) {
+      setFileTransferExpanded(true);
+      setShowFileTransfer(true);
+    }
+  }, [fileTransferOffer]);
 
   useBeforeunload((event) => {
     if (client) {
