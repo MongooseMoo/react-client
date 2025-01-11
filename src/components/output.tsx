@@ -18,7 +18,7 @@ interface State {
 
 class Output extends React.Component<Props, State> {
   outputRef: React.RefObject<HTMLDivElement> = React.createRef();
-  static MAX_OUTPUT_LENGTH = 5000; // Maximum number of messages to display in the output
+  static MAX_OUTPUT_LENGTH = 7500; // Maximum number of messages to display in the output
   static LOCAL_STORAGE_KEY = "outputLog"; // Key for saving output in LocalStorage
   messageKey: number = 0;
 
