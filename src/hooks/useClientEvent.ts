@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
-import MudClient from '../client'
-import { UserlistPlayer } from '../mcp'
+import { useEffect, useState } from 'react';
+import MudClient from '../client';
+import { UserlistPlayer } from '../mcp';
 
 type ClientEventMap = {
   userlist: UserlistPlayer[];
@@ -10,7 +10,7 @@ type ClientEventMap = {
 }
 
 export function useClientEvent<K extends keyof ClientEventMap>(
-  client: MudClient | null, 
+  client: MudClient | null,
   event: K,
   initialValue: ClientEventMap[K]
 ): ClientEventMap[K] {
@@ -18,7 +18,7 @@ export function useClientEvent<K extends keyof ClientEventMap>(
 
   useEffect(() => {
     if (!client) return;
-    
+
     const handler = (newValue: ClientEventMap[K]) => setValue(newValue)
     client.on(event, handler)
     return () => client.off(event, handler)
