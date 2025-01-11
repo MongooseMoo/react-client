@@ -1,15 +1,23 @@
 import { useState, useEffect } from 'react'
 import MudClient from '../client'
+import { UserlistPlayer } from '../mcp'
 
-export function useClientEvent<T>(
+type ClientEventMap = {
+  userlist: UserlistPlayer[];
+  disconnect: boolean;
+  fileTransferOffer: boolean;
+  // Add other events as needed
+}
+
+export function useClientEvent<K extends keyof ClientEventMap>(
   client: MudClient, 
-  event: string,
-  initialValue: T
-): T {
-  const [value, setValue] = useState<T>(initialValue)
+  event: K,
+  initialValue: ClientEventMap[K]
+): ClientEventMap[K] {
+  const [value, setValue] = useState<ClientEventMap[K]>(initialValue)
 
   useEffect(() => {
-    const handler = (newValue: T) => setValue(newValue)
+    const handler = (newValue: ClientEventMap[K]) => setValue(newValue)
     client.on(event, handler)
     return () => client.off(event, handler)
   }, [client, event])
