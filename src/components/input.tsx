@@ -30,19 +30,15 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
 
   // Save history when commands are added
   const saveHistory = () => {
-    const history: string[] = [];
-    let current = commandHistoryRef.current.getCurrentInput();
-    while (current) {
-      history.unshift(current);
-      commandHistoryRef.current.navigateUp(current);
-      current = commandHistoryRef.current.getCurrentInput();
+    try {
+      // Get direct access to the history array
+      const history = commandHistoryRef.current.getHistory();
+      // Save only up to MAX_HISTORY commands
+      const trimmedHistory = history.slice(-MAX_HISTORY);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmedHistory));
+    } catch (e) {
+      console.warn('Failed to save command history:', e);
     }
-    // Reset the navigation
-    commandHistoryRef.current.navigateDown("");
-    
-    // Save only up to MAX_HISTORY commands
-    const trimmedHistory = history.slice(-MAX_HISTORY);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmedHistory));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

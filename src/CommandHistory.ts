@@ -43,4 +43,8 @@ export class CommandHistory {
     }
     return this.history[this.history.length - 1 - this.currentIndex];  // Reverse the index
   }
+
+  getHistory(): string[] {
+    return [...this.history]; // Return a copy to prevent external modification
+  }
 }
