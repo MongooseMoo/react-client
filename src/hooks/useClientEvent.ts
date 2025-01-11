@@ -10,13 +10,15 @@ type ClientEventMap = {
 }
 
 export function useClientEvent<K extends keyof ClientEventMap>(
-  client: MudClient, 
+  client: MudClient | null, 
   event: K,
   initialValue: ClientEventMap[K]
 ): ClientEventMap[K] {
   const [value, setValue] = useState<ClientEventMap[K]>(initialValue)
 
   useEffect(() => {
+    if (!client) return;
+    
     const handler = (newValue: ClientEventMap[K]) => setValue(newValue)
     client.on(event, handler)
     return () => client.off(event, handler)
