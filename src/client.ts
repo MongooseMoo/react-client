@@ -311,10 +311,7 @@ class MudClient extends EventEmitter {
     });
 
     this.ws.onclose = () => {
-      this._connected = false;
-      this.emit("disconnect");
-      this.emit("connectionChange", false);
-      this.mcpAuthKey = null;
+      this.cleanupConnection();
       // auto reconnect
       setTimeout(() => {
         this.connect();
@@ -330,11 +327,23 @@ class MudClient extends EventEmitter {
     this.ws.send(data);
   }
 
-  public close() {
-    this.ws.close();
+  private cleanupConnection(): void {
+    this._connected = false;
+    this.mcpAuthKey = null;
+    this.telnetBuffer = "";
+    this.telnetNegotiation = false;
+    this.emit("disconnect");
+    this.emit("connectionChange", false);
   }
 
-  sendCommand = (command: string) => {
+  public close(): void {
+    if (this.ws) {
+      this.ws.close();
+    }
+    this.cleanupConnection();
+  }
+
+  public sendCommand(command: string): void {
     const localEchoEnabled = preferencesStore.getState().general.localEcho;
     if (localEchoEnabled) {
       this.emit("command", command);
@@ -344,7 +353,7 @@ class MudClient extends EventEmitter {
     }
     this.send(command + "\r\n");
     console.log("> " + command);
-  };
+  }
 
   /*
 <message> ::= <message-start>
