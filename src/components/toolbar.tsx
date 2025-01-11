@@ -26,7 +26,7 @@ const Toolbar = ({
   onToggleUsers,
   onOpenPrefs,
 }: ToolbarProps) => {
-  const connected = useClientEvent(client, 'connect', false);
+  const connected = useClientEvent(client, 'connectionChange', client.connected);
   const [muted, setMuted] = React.useState(client.cacophony.muted);
   const autosay = useClientEvent(client, 'autosayChanged', client.autosay);
   const [volume, setVolume] = React.useState(preferencesStore.getState().general.volume);

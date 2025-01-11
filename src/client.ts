@@ -43,6 +43,11 @@ class MudClient extends EventEmitter {
   private ws!: WebSocket;
   private decoder = new TextDecoder("utf8");
   private telnet!: TelnetParser;
+  private _connected: boolean = false;
+  
+  get connected(): boolean {
+    return this._connected;
+  }
 
   private host: string;
   private port: number;
@@ -264,7 +269,9 @@ class MudClient extends EventEmitter {
     this.ws.binaryType = "arraybuffer";
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
     this.ws.onopen = () => {
+      this._connected = true;
       this.emit("connect");
+      this.emit("connectionChange", true);
     };
 
     this.telnet.on("data", (data: ArrayBuffer) => {
@@ -304,7 +311,9 @@ class MudClient extends EventEmitter {
     });
 
     this.ws.onclose = () => {
+      this._connected = false;
       this.emit("disconnect");
+      this.emit("connectionChange", false);
       this.mcpAuthKey = null;
       // auto reconnect
       setTimeout(() => {
