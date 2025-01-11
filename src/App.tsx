@@ -119,6 +119,12 @@ function App() {
     offerSdp: string;
   }>(client, "fileTransferOffer", null);
 
+  const handleCommand = useCallback((text: string) => {
+    if (client) {
+      client.sendCommand(text);
+    }
+  }, [client]);
+
   useEffect(() => {
     if (fileTransferOffer !== null) {
       setFileTransferExpanded(true);
@@ -153,9 +159,7 @@ function App() {
         {showUsers && <Userlist users={players} />}
         <AudioChat client={client} />
       </div>
-      <CommandInput onSend={useCallback((text: string) => {
-        client.sendCommand(text);
-      }, [client])} inputRef={inRef} />
+      <CommandInput onSend={handleCommand} inputRef={inRef} />
       <div>
         <button
           onClick={() => setShowFileTransfer(!showFileTransfer)}
