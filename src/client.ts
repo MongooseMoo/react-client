@@ -66,7 +66,16 @@ class MudClient extends EventEmitter {
   public editors: EditorManager;
   public webRTCService: WebRTCService;
   public fileTransferManager: FileTransferManager;
-  public autosay: boolean = false;
+  private _autosay: boolean = false;
+  
+  get autosay(): boolean {
+    return this._autosay;
+  }
+  
+  set autosay(value: boolean) {
+    this._autosay = value;
+    this.emit('autosayChanged', value);
+  }
 
   constructor(host: string, port: number) {
     super();
