@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import {
   FaCog,
   FaCommentDots,
@@ -31,6 +31,36 @@ const Toolbar = ({
   const autosay = useClientEvent(client, 'autosayChanged', client.autosay);
   const [volume, setVolume] = React.useState(preferencesStore.getState().general.volume);
 
+  const handleMuteToggle = useCallback(() => {
+    setMuted(!muted);
+    client.cacophony.muted = !muted;
+  }, [muted, client]);
+
+  const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = Number(e.target.value) / 100;
+    setVolume(newVolume);
+    client.cacophony.setGlobalVolume(newVolume);
+    preferencesStore.dispatch({
+      type: PrefActionType.SetGeneral,
+      data: {
+        ...preferencesStore.getState().general,
+        volume: newVolume
+      }
+    });
+  }, [client]);
+
+  const handleAutosayChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    client.autosay = e.target.checked;
+  }, [client]);
+
+  const handleConnectionToggle = useCallback(() => {
+    if (connected) {
+      client.close();
+    } else {
+      client.connect();
+    }
+  }, [connected, client]);
+
   return (
     <div className="toolbar">
       <button onClick={onSaveLog} accessKey="l">
@@ -46,10 +76,7 @@ const Toolbar = ({
         Preferences
       </button>
       <button
-        onClick={() => {
-          setMuted(!muted);
-          client.cacophony.muted = !muted;
-        }}
+        onClick={handleMuteToggle}
         accessKey="m"
       >
         {muted ? <FaVolumeUp /> : <FaVolumeMute />}
@@ -62,18 +89,7 @@ const Toolbar = ({
           min="0"
           max="100"
           value={volume * 100}
-          onChange={(e) => {
-            const newVolume = Number(e.target.value) / 100;
-            setVolume(newVolume);
-            client.cacophony.setGlobalVolume(newVolume);
-            preferencesStore.dispatch({
-              type: PrefActionType.SetGeneral,
-              data: {
-                ...preferencesStore.getState().general,
-                volume: newVolume
-              }
-            });
-          }}
+          onChange={handleVolumeChange}
         />
       </label>
       <label>
@@ -81,12 +97,10 @@ const Toolbar = ({
         Autosay
         <input type="checkbox"
           checked={autosay}
-          onChange={(e) => {
-            client.autosay = e.target.checked;
-          }}
+          onChange={handleAutosayChange}
         />
       </label>
-      <button onClick={() => connected ? client.close() : client.connect()}>
+      <button onClick={handleConnectionToggle}>
         {connected ? 'Disconnect' : 'Connect'}
       </button>
       <button onClick={onToggleUsers} accessKey="u">
