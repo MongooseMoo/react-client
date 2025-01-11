@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useClientEvent } from "./hooks/useClientEvent";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
@@ -153,7 +153,9 @@ function App() {
         {showUsers && <Userlist users={players} />}
         <AudioChat client={client} />
       </div>
-      <CommandInput onSend={client.sendCommand} inputRef={inRef} />
+      <CommandInput onSend={useCallback((text: string) => {
+        client.sendCommand(text);
+      }, [client])} inputRef={inRef} />
       <div>
         <button
           onClick={() => setShowFileTransfer(!showFileTransfer)}
