@@ -149,11 +149,25 @@ const PreviewButton: React.FC = () => {
   const [state] = usePreferences();
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // Add a ref to track if component is mounted
+  const isMounted = React.useRef(true);
+
+  // Clean up on component unmount
+  React.useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      speechSynthesis.cancel();
+    };
+  }, []);
+
   const handlePreview = () => {
+    if (isPlaying) return; // Extra guard against concurrent calls
     setIsPlaying(true);
     console.log("Preview button clicked");
 
     const speakText = () => {
+      if (!isMounted.current) return; // Don't proceed if unmounted
+
       const utterance = new SpeechSynthesisUtterance("This is a preview of the selected voice settings.");
       
       // Find the selected voice
@@ -175,12 +189,16 @@ const PreviewButton: React.FC = () => {
       });
 
       utterance.onend = () => {
-        console.log("Speech ended");
-        setIsPlaying(false);
+        if (isMounted.current) {
+          console.log("Speech ended");
+          setIsPlaying(false);
+        }
       };
       utterance.onerror = (event) => {
-        console.error('Speech synthesis error:', event);
-        setIsPlaying(false);
+        if (isMounted.current) {
+          console.error('Speech synthesis error:', event);
+          setIsPlaying(false);
+        }
       };
 
       // Cancel any ongoing speech
@@ -195,20 +213,32 @@ const PreviewButton: React.FC = () => {
     if (speechSynthesis.getVoices().length > 0) {
       speakText();
     } else {
-      // If voices are not loaded yet, wait for them
-      speechSynthesis.onvoiceschanged = () => {
-        speechSynthesis.onvoiceschanged = null; // Remove the event listener
-        speakText();
+      // Create a cleanup function for the voices changed handler
+      let voicesChangedHandler: (() => void) | null = () => {
+        if (voicesChangedHandler) {
+          speechSynthesis.onvoiceschanged = null; // Remove the event listener
+          voicesChangedHandler = null; // Clear the reference
+          if (isMounted.current) {
+            speakText();
+          }
+        }
       };
+
+      // Set up the handler
+      speechSynthesis.onvoiceschanged = voicesChangedHandler;
+
+      // Clean up the handler if component unmounts while waiting for voices
+      const cleanup = () => {
+        if (voicesChangedHandler) {
+          speechSynthesis.onvoiceschanged = null;
+          voicesChangedHandler = null;
+        }
+      };
+
+      // Add cleanup to effect
+      React.useEffect(() => cleanup, []);
     }
   };
-
-  // Clean up on component unmount
-  React.useEffect(() => {
-    return () => {
-      speechSynthesis.cancel();
-    };
-  }, []);
 
   return (
     <button onClick={handlePreview} disabled={isPlaying}>
