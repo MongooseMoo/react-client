@@ -1,35 +1,11 @@
 export class CommandHistory {
-  private static readonly STORAGE_KEY = 'command_history';
-  private static readonly MAX_HISTORY = 1000;
-  
   private history: string[] = [];
   private currentIndex: number = -1;
   private unsentInput: string = "";
 
-  constructor() {
-    this.loadHistory();
-  }
-
-  private loadHistory(): void {
-    const saved = localStorage.getItem(CommandHistory.STORAGE_KEY);
-    if (saved) {
-      this.history = JSON.parse(saved);
-    }
-  }
-
-  private saveHistory(): void {
-    localStorage.setItem(CommandHistory.STORAGE_KEY, JSON.stringify(this.history));
-  }
-
   addCommand(command: string): void {
-    const trimmedCommand = command.trim();
-    if (trimmedCommand !== "" && (this.history.length === 0 || this.history[this.history.length - 1] !== trimmedCommand)) {
-      this.history.push(trimmedCommand);
-      // Trim history to max size if needed
-      if (this.history.length > CommandHistory.MAX_HISTORY) {
-        this.history = this.history.slice(-CommandHistory.MAX_HISTORY);
-      }
-      this.saveHistory();
+    if (command.trim() !== "" && (this.history.length === 0 || this.history[this.history.length - 1] !== command)) {
+      this.history.push(command.trim());
     }
     this.currentIndex = -1;
     this.unsentInput = "";
