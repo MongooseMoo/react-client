@@ -111,15 +111,24 @@ function App() {
     };
   }, [isMobile]);
 
-  const isDisconnected = useClientEvent(client, "disconnect", false);
-  const fileTransferOffer = useClientEvent(client, "fileTransferOffer", false);
+  const fileTransferOffer = useClientEvent<{
+    sender: string;
+    hash: string;
+    filename: string;
+    filesize: number;
+    offerSdp: string;
+  }>(client, "fileTransferOffer", null);
 
   useEffect(() => {
-    if (fileTransferOffer) {
+    if (fileTransferOffer !== null) {
       setFileTransferExpanded(true);
       setShowFileTransfer(true);
+      client?.sendNotification(
+        "File Transfer Offer",
+        `${fileTransferOffer.sender} wants to send you ${fileTransferOffer.filename} (${Math.round(fileTransferOffer.filesize / 1024)} KB)`
+      );
     }
-  }, [fileTransferOffer]);
+  }, [fileTransferOffer, client]);
 
   useBeforeunload((event) => {
     if (client) {
