@@ -14,10 +14,13 @@ export function useClientEvent<K extends keyof ClientEventMap>(
   event: K,
   initialValue: ClientEventMap[K]
 ): ClientEventMap[K] {
-  const [value, setValue] = useState<ClientEventMap[K]>(initialValue)
+  const [value, setValue] = useState<ClientEventMap[K]>(initialValue);
 
   useEffect(() => {
-    if (!client) return;
+    if (!client) {
+      setValue(initialValue);
+      return;
+    }
 
     const handler = (newValue: ClientEventMap[K]) => setValue(newValue)
     client.on(event, handler)
