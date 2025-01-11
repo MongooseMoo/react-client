@@ -1,6 +1,7 @@
 import React from "react";
 import {
   FaCog,
+  FaCommentDots,
   FaEraser,
   FaSave,
   FaVolumeMute,
@@ -76,12 +77,12 @@ const Toolbar = ({
         />
       </label>
       <label>
+        <FaCommentDots/>
         Autosay
         <input type="checkbox"
           checked={autosay}
           onChange={(e) => {
             client.autosay = e.target.checked;
-            client.emit('autosayChanged', e.target.checked);
           }}
         />
       </label>

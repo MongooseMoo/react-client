@@ -38,7 +38,7 @@ function App() {
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
-  const players = useClientEvent<UserlistPlayer[]>(client, "userlist", []);
+  const players = client ? useClientEvent<UserlistPlayer[]>(client, "userlist", []) : [];
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
@@ -111,8 +111,8 @@ function App() {
     };
   }, [isMobile]);
 
-  const isDisconnected = useClientEvent(client, "disconnect", false);
-  const fileTransferOffer = useClientEvent(client, "fileTransferOffer", false);
+  const isDisconnected = client ? useClientEvent(client, "disconnect", false) : false;
+  const fileTransferOffer = client ? useClientEvent(client, "fileTransferOffer", false) : false;
 
   useEffect(() => {
     if (fileTransferOffer) {
