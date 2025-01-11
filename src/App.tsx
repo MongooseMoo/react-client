@@ -111,14 +111,8 @@ function App() {
     };
   }, [isMobile]);
 
-  const isDisconnected = useClientEvent<boolean>(client!, "disconnect", false);
-  const fileTransferOffer = useClientEvent<boolean>(client!, "fileTransferOffer", false);
-
-  useEffect(() => {
-    if (isDisconnected) {
-      setPlayers([]);
-    }
-  }, [isDisconnected]);
+  const isDisconnected = useClientEvent(client!, "disconnect", false);
+  const fileTransferOffer = useClientEvent(client!, "fileTransferOffer", false);
 
   useEffect(() => {
     if (fileTransferOffer) {
