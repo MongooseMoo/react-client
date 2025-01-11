@@ -49,6 +49,7 @@ export default class FileTransferManager {
   private client: MudClient;
   private gmcpFileTransfer: GMCPClientFileTransfer;
   private chunkSize: number = 16384; // 16 KB chunks
+  private transferTimeoutInterval?: number;
   private incomingTransfers: Map<string, FileTransferProgress> = new Map(); // keyed by hash
   private outgoingTransfers: Map<string, FileTransferTask> = new Map(); // keyed by hash
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
@@ -76,7 +77,7 @@ export default class FileTransferManager {
       "fileTransferAccepted",
       this.handleAcceptedTransfer.bind(this)
     );
-    setInterval(() => this.checkTransferTimeouts(), 5000);
+    this.transferTimeoutInterval = window.setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
   async sendFile(file: File, recipient: string): Promise<void> {
@@ -578,6 +579,26 @@ export default class FileTransferManager {
         );
       }
     });
+  }
+
+  cleanup(): void {
+    // Clear the interval
+    if (this.transferTimeoutInterval) {
+      clearInterval(this.transferTimeoutInterval);
+      this.transferTimeoutInterval = undefined;
+    }
+
+    // Clean up any ongoing transfers
+    [...this.outgoingTransfers.keys()].forEach(hash => this.cancelTransfer(hash));
+    [...this.incomingTransfers.keys()].forEach(hash => this.cancelTransfer(hash));
+    
+    // Clear all maps
+    this.incomingTransfers.clear();
+    this.outgoingTransfers.clear();
+    this.pendingOffers.clear();
+
+    // Clean up WebRTC service
+    this.webRTCService.cleanup();
   }
 
   cancelTransfer(hash: string): void {

@@ -332,6 +332,8 @@ class MudClient extends EventEmitter {
     this.mcpAuthKey = null;
     this.telnetBuffer = "";
     this.telnetNegotiation = false;
+    this.webRTCService.cleanup();
+    this.fileTransferManager.cleanup();
     this.emit("disconnect");
     this.emit("connectionChange", false);
   }
@@ -510,6 +512,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
       handler.shutdown();
     });
     this.editors.shutdown();
+    this.webRTCService.cleanup();
+    this.fileTransferManager.cleanup();
   }
 
   requestNotificationPermission() {

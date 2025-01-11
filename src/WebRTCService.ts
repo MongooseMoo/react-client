@@ -1,11 +1,12 @@
 import MudClient from "./client";
 import EventEmitter from "eventemitter3";
 
-export class WebRTCService  extends EventEmitter {
+export class WebRTCService extends EventEmitter {
   private peerConnection: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
   private client: MudClient;
   private connectionTimeout: number = 300000; // 5 minutes timeout
+  private connectionTimeoutId?: number;
   public recipient: string = "";
   public pendingCandidates: RTCIceCandidateInit[] = [];
 
@@ -338,6 +339,17 @@ export class WebRTCService  extends EventEmitter {
     this.emit("webRTCReconnecting");
   }
 
+  cleanup(): void {
+    // Clear any pending timeouts
+    if (this.connectionTimeoutId) {
+      clearTimeout(this.connectionTimeoutId);
+      this.connectionTimeoutId = undefined;
+    }
+    
+    // Close connections
+    this.close();
+  }
+
   close(): void {
     this.pendingCandidates = []; // Clear pending candidates
     if (this.dataChannel) {
@@ -353,7 +365,7 @@ export class WebRTCService  extends EventEmitter {
 
   async waitForConnection(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
+      this.connectionTimeoutId = window.setTimeout(() => {
         cleanup();
         reject(new Error("Connection timeout"));
       }, this.connectionTimeout);
