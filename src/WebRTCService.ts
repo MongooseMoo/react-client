@@ -345,7 +345,7 @@ export class WebRTCService extends EventEmitter {
       clearTimeout(this.connectionTimeoutId);
       this.connectionTimeoutId = undefined;
     }
-    
+
     // Close connections
     this.close();
   }
@@ -372,13 +372,13 @@ export class WebRTCService extends EventEmitter {
 
       // If the channel is already open, resolve immediately
       if (this.isDataChannelOpen()) {
-        clearTimeout(timeoutId);
+        clearTimeout(this.connectionTimeoutId);
         return resolve();
       }
 
       // Listen for the data channel opening
       const handleOpen = () => {
-        clearTimeout(timeoutId);
+        clearTimeout(this.connectionTimeoutId);
         cleanup();
         resolve();
       };
@@ -386,7 +386,7 @@ export class WebRTCService extends EventEmitter {
       // Listen for connection failure
       const handleFailure = () => {
         if (this.peerConnection?.connectionState === "failed") {
-          clearTimeout(timeoutId);
+          clearTimeout(this.connectionTimeoutId);
           cleanup();
           reject(new Error("Connection failed"));
         }
