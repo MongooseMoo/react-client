@@ -38,7 +38,7 @@ function App() {
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
-  const players = useClientEvent<UserlistPlayer[]>(client, "userlist", []);
+  const players = useClientEvent<'userlist'>(client, "userlist", []);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);

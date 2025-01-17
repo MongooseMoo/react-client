@@ -44,6 +44,7 @@ class MudClient extends EventEmitter {
   private decoder = new TextDecoder("utf8");
   private telnet!: TelnetParser;
   private _connected: boolean = false;
+  private intentionalDisconnect: boolean = false;
   
   get connected(): boolean {
     return this._connected;
@@ -258,6 +259,7 @@ class MudClient extends EventEmitter {
   }
 
   public connect() {
+    this.intentionalDisconnect = false;
     this.ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
     this.ws.binaryType = "arraybuffer";
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
@@ -305,10 +307,12 @@ class MudClient extends EventEmitter {
 
     this.ws.onclose = () => {
       this.cleanupConnection();
-      // auto reconnect
-      setTimeout(() => {
-        this.connect();
-      }, 10000);
+      // Only auto reconnect if it wasn't an intentional disconnect
+      if (!this.intentionalDisconnect) {
+        setTimeout(() => {
+          this.connect();
+        }, 10000);
+      }
     };
 
     this.ws.onerror = (error: Event) => {
@@ -332,6 +336,7 @@ class MudClient extends EventEmitter {
   }
 
   public close(): void {
+    this.intentionalDisconnect = true;
     if (this.ws) {
       this.ws.close();
     }
