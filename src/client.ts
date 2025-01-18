@@ -45,7 +45,7 @@ class MudClient extends EventEmitter {
   private telnet!: TelnetParser;
   private _connected: boolean = false;
   private intentionalDisconnect: boolean = false;
-  
+
   get connected(): boolean {
     return this._connected;
   }
@@ -73,11 +73,11 @@ class MudClient extends EventEmitter {
   public webRTCService: WebRTCService;
   public fileTransferManager: FileTransferManager;
   private _autosay: boolean = false;
-  
+
   get autosay(): boolean {
     return this._autosay;
   }
-  
+
   set autosay(value: boolean) {
     this._autosay = value;
     this.emit('autosayChanged', value);
@@ -435,7 +435,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private handleGmcpData(gmcpPackage: string, gmcpMessage: string) {
-    //split to packageName and message type. the message name is after the last period of the gmcp package. the package can hav emultiple dots.
+    //split to packageName and message type. the message name is after the last period of the gmcp package. the package can have multiple dots.
     const lastDot = gmcpPackage.lastIndexOf(".");
     const packageName = gmcpPackage.substring(0, lastDot);
     const messageType = gmcpPackage.substring(lastDot + 1);
