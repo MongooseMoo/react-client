@@ -156,7 +156,7 @@ function App() {
       />
       <div>
         <OutputWindow client={client} ref={outRef} />
-        {showUsers && <Userlist users={players} />}
+        {showUsers && <Userlist users={players} client={client} />}
         <AudioChat client={client} />
       </div>
       <CommandInput onSend={handleCommand} inputRef={inRef} />
