@@ -1,12 +1,14 @@
 import "./userlist.css";
-
 import { UserlistPlayer } from "../mcp";
+import { UserContextMenu } from "./UserContextMenu";
+import MudClient from "../client";
 
 export interface UserlistProps {
   users: UserlistPlayer[];
+  client: MudClient;
 }
 
-const Userlist: React.FC<UserlistProps> = ({ users }) => {
+const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
   return (
     <div className="sidebar">
       <div className="sidebar-header" role="heading" aria-level={2}>
@@ -19,9 +21,11 @@ const Userlist: React.FC<UserlistProps> = ({ users }) => {
             if (player.away) classes += " away";
             if (player.idle) classes += " idle";
             return (
-              <li className={classes} key={player.Object}>
-                {player.Name}
-              </li>
+              <UserContextMenu key={player.Object} user={player} client={client}>
+                <li className={classes}>
+                  {player.Name}
+                </li>
+              </UserContextMenu>
             );
           })}
         </ul>
