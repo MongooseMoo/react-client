@@ -16,7 +16,7 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
       </div>
       <div className="sidebar-content">
         <ul role="listbox">
-          {users.map((player) => {
+          {users.map((player, index) => {
             let classes = "";
             if (player.away) classes += " away";
             if (player.idle) classes += " idle";
@@ -27,6 +27,18 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
                   role="option"
                   tabIndex={0}
                   aria-label={`${player.Name}${player.away ? ' (away)' : ''}${player.idle ? ' (idle)' : ''}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown' && index < users.length - 1) {
+                      e.preventDefault();
+                      const nextElement = e.currentTarget.parentElement?.nextElementSibling?.querySelector('li');
+                      nextElement?.focus();
+                    }
+                    if (e.key === 'ArrowUp' && index > 0) {
+                      e.preventDefault();
+                      const prevElement = e.currentTarget.parentElement?.previousElementSibling?.querySelector('li');
+                      prevElement?.focus();
+                    }
+                  }}
                 >
                   {player.Name}
                 </li>
