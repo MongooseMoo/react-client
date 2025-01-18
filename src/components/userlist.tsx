@@ -15,14 +15,19 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
         Connected Players
       </div>
       <div className="sidebar-content">
-        <ul>
+        <ul role="listbox">
           {users.map((player) => {
             let classes = "";
             if (player.away) classes += " away";
             if (player.idle) classes += " idle";
             return (
               <UserContextMenu key={player.Object} user={player} client={client}>
-                <li className={classes}>
+                <li 
+                  className={classes}
+                  role="option"
+                  tabIndex={0}
+                  aria-label={`${player.Name}${player.away ? ' (away)' : ''}${player.idle ? ' (idle)' : ''}`}
+                >
                   {player.Name}
                 </li>
               </UserContextMenu>
