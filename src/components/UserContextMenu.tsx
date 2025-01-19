@@ -42,6 +42,12 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
     event.target.value = '';
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    // Focus the li element when right-clicking
+    const liElement = e.currentTarget as HTMLElement;
+    liElement.focus();
+  };
+
   return (
     <>
       <input
@@ -51,7 +57,9 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
         onChange={handleFileSelect}
       />
       <ContextMenu 
-        trigger={children}
+        trigger={React.cloneElement(children, {
+          onContextMenu: handleContextMenu
+        })}
         menuGroup="userlist"
       >
         <MenuItem icon={IoMdChatboxes} onClick={handleSendMessage}>
