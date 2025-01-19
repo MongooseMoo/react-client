@@ -45,7 +45,7 @@ class MudClient extends EventEmitter {
   private telnet!: TelnetParser;
   private _connected: boolean = false;
   private intentionalDisconnect: boolean = false;
-  
+
   get connected(): boolean {
     return this._connected;
   }
@@ -73,11 +73,11 @@ class MudClient extends EventEmitter {
   public webRTCService: WebRTCService;
   public fileTransferManager: FileTransferManager;
   private _autosay: boolean = false;
-  
+
   get autosay(): boolean {
     return this._autosay;
   }
-  
+
   set autosay(value: boolean) {
     this._autosay = value;
     this.emit('autosayChanged', value);
@@ -164,34 +164,8 @@ class MudClient extends EventEmitter {
     this.emit("fileTransferCancelled", { sender, hash });
   }
 
-  onFileSendProgress(data: {
-    hash: string;
-    filename: string;
-    sentBytes: number;
-    totalBytes: number;
-  }): void {
-    this.emit("fileSendProgress", data);
-  }
-
-  onFileReceiveProgress(data: {
-    hash: string;
-    filename: string;
-    receivedBytes: number;
-    totalBytes: number;
-  }): void {
-    this.emit("fileReceiveProgress", data);
-  }
-
   onFileSendComplete(hash: string, filename: string): void {
     this.emit("fileSendComplete", { hash, filename });
-  }
-
-  onFileReceiveComplete(data: {
-    hash: string;
-    filename: string;
-    file: Blob;
-  }): void {
-    this.emit("fileReceiveComplete", data);
   }
 
   onFileTransferError(

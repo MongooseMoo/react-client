@@ -1,3 +1,4 @@
+import EventEmitter from "eventemitter3";
 import { WebRTCService } from "./WebRTCService";
 import MudClient from "./client";
 import {
@@ -44,7 +45,7 @@ interface FileTransferTask {
   lastActivityTimestamp: number;
 }
 
-export default class FileTransferManager {
+export default class FileTransferManager extends EventEmitter {
   private webRTCService: WebRTCService;
   private client: MudClient;
   private gmcpFileTransfer: GMCPClientFileTransfer;
@@ -58,6 +59,7 @@ export default class FileTransferManager {
     new Map(); // keyed by hash
 
   constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
+    super();
     this.client = client;
     this.gmcpFileTransfer = gmcpFileTransfer;
     this.webRTCService = client.webRTCService;
@@ -200,12 +202,14 @@ export default class FileTransferManager {
 
       offset += chunk.byteLength;
 
-      this.client.onFileSendProgress({
+      const fileTransferProgress = {
         hash: hash,
         filename: file.name,
         sentBytes: offset,
         totalBytes: file.size,
-      });
+      };
+
+      this.emit("fileSendProgress", fileTransferProgress);
     }
   }
 
@@ -411,13 +415,13 @@ export default class FileTransferManager {
       transfer.chunks[header.chunkIndex] = chunkData;
       transfer.receivedSize += chunkData.byteLength;
       transfer.lastActivityTimestamp = Date.now();
-
-      this.client.onFileReceiveProgress({
+      const fileTransferProgress = {
         hash: header.hash,
         filename: header.filename,
         receivedBytes: transfer.receivedSize,
         totalBytes: transfer.totalSize,
-      });
+      };
+      this.emit("fileReceiveProgress", fileTransferProgress);
 
       if (transfer.receivedSize === transfer.totalSize) {
         if (transfer.chunks.every((chunk) => chunk)) {
@@ -449,11 +453,12 @@ export default class FileTransferManager {
           document.body.removeChild(downloadLink);
           window.URL.revokeObjectURL(downloadUrl);
 
-          this.client.onFileReceiveComplete({
+          const completedFileData = {
             hash: transfer.hash,
             filename: header.filename,
             file: completeFile,
-          });
+          };
+          this.emit("fileReceiveComplete", completedFileData);
           this.incomingTransfers.delete(transfer.hash);
         } else {
           this.client.onFileTransferError(
@@ -602,7 +607,7 @@ export default class FileTransferManager {
     // Clean up any ongoing transfers
     [...this.outgoingTransfers.keys()].forEach(hash => this.cancelTransfer(hash));
     [...this.incomingTransfers.keys()].forEach(hash => this.cancelTransfer(hash));
-    
+
     // Clear all maps
     this.incomingTransfers.clear();
     this.outgoingTransfers.clear();
