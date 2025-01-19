@@ -131,25 +131,40 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     // Set up event listeners
     client.on("fileTransferOffer", handleFileTransferOffer);
     client.on("fileTransferAccepted", handleFileTransferAccepted);
-    client.on("fileSendProgress", handleFileSendProgress);
-    client.on("fileReceiveProgress", handleFileReceiveProgress);
+    client.fileTransferManager.on("fileSendProgress", handleFileSendProgress);
+    client.fileTransferManager.on(
+      "fileReceiveProgress",
+      handleFileReceiveProgress
+    );
     client.on("fileTransferError", handleFileTransferError);
     client.on("fileTransferCancelled", handleFileTransferCancelled);
     client.on("fileTransferRejected", handleFileTransferRejected);
     client.on("fileSendComplete", handleFileSendComplete);
-    client.on("fileReceiveComplete", handleFileReceiveComplete);
+    client.fileTransferManager.on(
+      "fileReceiveComplete",
+      handleFileReceiveComplete
+    );
 
     return () => {
       // Clean up event listeners
       client.off("fileTransferOffer", handleFileTransferOffer);
       client.off("fileTransferAccepted", handleFileTransferAccepted);
-      client.off("fileSendProgress", handleFileSendProgress);
-      client.off("fileReceiveProgress", handleFileReceiveProgress);
+      client.fileTransferManager.off(
+        "fileSendProgress",
+        handleFileSendProgress
+      );
+      client.fileTransferManager.off(
+        "fileReceiveProgress",
+        handleFileReceiveProgress
+      );
       client.off("fileTransferError", handleFileTransferError);
       client.off("fileTransferCancelled", handleFileTransferCancelled);
       client.off("fileTransferRejected", handleFileTransferRejected);
       client.off("fileSendComplete", handleFileSendComplete);
-      client.off("fileReceiveComplete", handleFileReceiveComplete);
+      client.fileTransferManager.off(
+        "fileReceiveComplete",
+        handleFileReceiveComplete
+      );
     };
   }, [
     client,
