@@ -158,15 +158,9 @@ function App() {
         onToggleUsers={() => setShowUsers(!showUsers)}
         onOpenPrefs={() => prefsDialogRef.current?.open()}
       />
-      <div className="main-container">
-        <div className="output-container">
-          <OutputWindow client={client} ref={outRef} />
-        </div>
-        {showUsers && (
-          <div className="userlist-container">
-            <Userlist users={players} client={client} onExpandFileTransfer={expandFileTransfer} />
-          </div>
-        )}
+      <div>
+        <OutputWindow client={client} ref={outRef} />
+        {showUsers && <Userlist users={players} client={client} onExpandFileTransfer={expandFileTransfer} />}
         <AudioChat client={client} />
       </div>
       <CommandInput onSend={handleCommand} inputRef={inRef} />
