@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import MudClient from "../../client";
 import Controls from "./Controls";
 import ProgressBar from "./ProgressBar";
