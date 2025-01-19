@@ -279,15 +279,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!menuState.visible) {
-      if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
-        e.preventDefault();
-        e.stopPropagation();
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      if (!menuState.visible) {
         const rect = e.currentTarget.getBoundingClientRect();
         show(rect.left, rect.bottom, e.currentTarget as HTMLElement);
       }
       return;
     }
+
+    if (!menuState.visible) return;
 
     switch (e.key) {
       case 'ArrowDown':
