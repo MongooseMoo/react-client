@@ -26,9 +26,15 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 }) => {
   const historyRef = useRef<HTMLDivElement>(null);
 
-  const focusHistory = useCallback(() => {
-    historyRef.current?.focus();
-  }, []);
+  // Focus history when expanded changes to true
+  useEffect(() => {
+    if (expanded) {
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        historyRef.current?.focus();
+      }, 0);
+    }
+  }, [expanded]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [recipient, setRecipient] = useState<string>("");
   const [sendProgress, setSendProgress] = useState<number>(0);
