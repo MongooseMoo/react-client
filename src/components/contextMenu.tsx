@@ -282,6 +282,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     if (!menuState.visible) {
       if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
         e.preventDefault();
+        e.stopPropagation();
         const rect = e.currentTarget.getBoundingClientRect();
         show(rect.left, rect.bottom, e.currentTarget as HTMLElement);
       }
@@ -374,7 +375,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       >
         {React.Children.map(children, (child, index) => {
           if (!React.isValidElement(child) || child.type !== MenuItem) return null;
-          
+
           return React.cloneElement(child, {
             tabIndex: index === activeIndex ? 0 : -1,
             'data-index': index,
