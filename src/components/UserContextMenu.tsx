@@ -50,7 +50,10 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
         style={{ display: 'none' }}
         onChange={handleFileSelect}
       />
-      <ContextMenu trigger={children}>
+      <ContextMenu 
+        trigger={children}
+        menuGroup="userlist"
+      >
         <MenuItem icon={IoMdChatboxes} onClick={handleSendMessage}>
           Send Message
         </MenuItem>

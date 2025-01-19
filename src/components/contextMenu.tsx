@@ -17,6 +17,7 @@ interface ContextMenuProps {
   onClose?: () => void;
   className?: string;
   longPressDelay?: number;
+  menuGroup?: string;
 }
 
 interface MenuItemProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -170,6 +171,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onClose,
   className = '',
   longPressDelay = LONG_PRESS_DELAY_DEFAULT,
+  menuGroup = 'default',
 }) => {
   const [menuState, setMenuState] = useState<MenuState>({
     visible: false,
@@ -212,6 +214,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   }, []);
 
   const show = useCallback((x: number, y: number, trigger: HTMLElement) => {
+    // Dispatch with menu group info
+    window.dispatchEvent(new CustomEvent('menuOpen', { 
+      detail: { group: menuGroup } 
+    }));
+    
     const adjusted = adjustPosition(x, y);
     setMenuState({
       visible: true,
@@ -220,7 +227,19 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     });
     setActiveIndex(0);
     setIsClosing(false);
-  }, [adjustPosition]);
+  }, [adjustPosition, menuGroup]);
+
+  useEffect(() => {
+    const handleMenuOpen = (e: CustomEvent) => {
+      // Only close if it's the same menu group
+      if (menuState.visible && e.detail.group === menuGroup) {
+        hide();
+      }
+    };
+    
+    window.addEventListener('menuOpen', handleMenuOpen as EventListener);
+    return () => window.removeEventListener('menuOpen', handleMenuOpen as EventListener);
+  }, [menuState.visible, hide, menuGroup]);
 
   const hide = useCallback(() => {
     setIsClosing(true);
