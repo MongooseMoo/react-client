@@ -38,8 +38,6 @@ function App() {
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
-  const [fileTransferRef, setFileTransferRef] = useState<HTMLDivElement | null>(null);
-
   const expandFileTransfer = useCallback(() => {
     setShowFileTransfer(true);
     setFileTransferExpanded(true);
@@ -178,7 +176,6 @@ function App() {
           <FileTransferUI 
             client={client} 
             expanded={fileTransferExpanded}
-            ref={setFileTransferRef}
           />
         </div>
       </div>
