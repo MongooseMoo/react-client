@@ -5,6 +5,33 @@ body {
   color: #333;
 }
 
+.App {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Container for output and userlist */
+.main-container {
+  display: flex;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Style for the output window container */
+.output-container {
+  flex: 1;
+  overflow: auto;
+}
+
+/* Style for the userlist container */
+.userlist-container {
+  position: relative;
+  height: 100%;
+  overflow: auto;
+}
+
 .lk-audio-visualizer {
   display:none;
 }
