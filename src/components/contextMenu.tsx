@@ -225,6 +225,24 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     return { x: Math.max(8, adjustedX), y: Math.max(8, adjustedY) };
   }, []);
 
+  const hide = useCallback(() => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setMenuState(prev => {
+        if (prev.triggerElement && document.body.contains(prev.triggerElement)) {
+          prev.triggerElement.focus();
+        }
+        return {
+          visible: false,
+          position: { x: 0, y: 0 },
+          triggerElement: null
+        };
+      });
+      setIsClosing(false);
+      onClose?.();
+    }, ANIMATION_DURATION);
+  }, [onClose]);
+
   const show = useCallback((x: number, y: number, trigger: HTMLElement) => {
     // Dispatch with menu group info
     window.dispatchEvent(new CustomEvent('menuOpen', { 
@@ -252,24 +270,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     window.addEventListener('menuOpen', handleMenuOpen as EventListener);
     return () => window.removeEventListener('menuOpen', handleMenuOpen as EventListener);
   }, [menuState.visible, hide, menuGroup]);
-
-  const hide = useCallback(() => {
-    setIsClosing(true);
-    setTimeout(() => {
-      setMenuState(prev => {
-        if (prev.triggerElement && document.body.contains(prev.triggerElement)) {
-          prev.triggerElement.focus();
-        }
-        return {
-          visible: false,
-          position: { x: 0, y: 0 },
-          triggerElement: null
-        };
-      });
-      setIsClosing(false);
-      onClose?.();
-    }, ANIMATION_DURATION);
-  }, [onClose]);
 
   const menuItems = React.Children.toArray(children).filter(
     child => React.isValidElement(child) && child.type === MenuItem
