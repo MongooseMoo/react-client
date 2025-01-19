@@ -8,9 +8,15 @@ interface UserContextMenuProps {
   user: UserlistPlayer;
   client: MudClient;
   children: React.ReactElement;
+  onExpandFileTransfer: () => void;
 }
 
-export const UserContextMenu: React.FC<UserContextMenuProps> = ({ user, client, children }) => {
+export const UserContextMenu: React.FC<UserContextMenuProps> = ({ 
+  user, 
+  client, 
+  children,
+  onExpandFileTransfer 
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSendMessage = () => {
@@ -25,6 +31,7 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({ user, client, 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      onExpandFileTransfer(); // Expand the UI first
       client.sendFile(file, user.Object)
         .catch(error => {
           console.error('Failed to send file:', error);

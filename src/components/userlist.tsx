@@ -6,9 +6,10 @@ import MudClient from "../client";
 export interface UserlistProps {
   users: UserlistPlayer[];
   client: MudClient;
+  onExpandFileTransfer: () => void;
 }
 
-const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
+const Userlist: React.FC<UserlistProps> = ({ users, client, onExpandFileTransfer }) => {
   return (
     <div className="sidebar">
       <div className="sidebar-header" role="heading" aria-level={2}>
@@ -67,7 +68,12 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
             if (player.away) classes += " away";
             if (player.idle) classes += " idle";
             return (
-              <UserContextMenu key={player.Object} user={player} client={client}>
+              <UserContextMenu 
+                key={player.Object} 
+                user={player} 
+                client={client}
+                onExpandFileTransfer={onExpandFileTransfer}
+              >
                 <li 
                   className={classes}
                   role="option"

@@ -9,6 +9,7 @@ import "./styles.css";
 interface FileTransferUIProps {
   client: MudClient;
   expanded: boolean;
+  onFocus?: () => void;
 }
 
 interface PendingOffer {
@@ -21,7 +22,13 @@ interface PendingOffer {
 const FileTransferUI: React.FC<FileTransferUIProps> = ({
   client,
   expanded,
+  onFocus
 }) => {
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  const focusHistory = useCallback(() => {
+    historyRef.current?.focus();
+  }, []);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [recipient, setRecipient] = useState<string>("");
   const [sendProgress, setSendProgress] = useState<number>(0);
@@ -233,7 +240,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
         />
       ))}
 
-      <History history={transferHistory} />
+      <History ref={historyRef} history={transferHistory} />
     </div>
   );
 };

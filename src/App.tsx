@@ -38,6 +38,12 @@ function App() {
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
+  const [fileTransferRef, setFileTransferRef] = useState<HTMLDivElement | null>(null);
+
+  const expandFileTransfer = useCallback(() => {
+    setShowFileTransfer(true);
+    setFileTransferExpanded(true);
+  }, []);
   const players = useClientEvent<'userlist'>(client, "userlist", []);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -169,7 +175,11 @@ function App() {
           {showFileTransfer ? 'Hide' : 'Show'} File Transfer
         </button>
         <div style={{ display: showFileTransfer ? 'block' : 'none' }}>
-          <FileTransferUI client={client} expanded={fileTransferExpanded} />
+          <FileTransferUI 
+            client={client} 
+            expanded={fileTransferExpanded}
+            ref={setFileTransferRef}
+          />
         </div>
       </div>
       <Statusbar client={client} />
