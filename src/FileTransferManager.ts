@@ -3,7 +3,7 @@ import { WebRTCService } from "./WebRTCService";
 import MudClient from "./client";
 import {
   GMCPClientFileTransfer,
-  GMCPMessageClientFileTransferOffer,
+  FileTransferOffer,
 } from "./gmcp/Client/FileTransfer";
 import CryptoJS from "crypto-js";
 
@@ -55,7 +55,7 @@ export default class FileTransferManager extends EventEmitter {
   private outgoingTransfers: Map<string, FileTransferTask> = new Map(); // keyed by hash
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
-  public pendingOffers: Map<string, GMCPMessageClientFileTransferOffer> =
+  public pendingOffers: Map<string, FileTransferOffer> =
     new Map(); // keyed by hash
 
   constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
