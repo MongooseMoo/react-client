@@ -203,9 +203,21 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     let adjustedX = x;
     let adjustedY = y;
 
-    if (x + rect.width > viewportWidth) {
-      adjustedX = viewportWidth - rect.width - 8;
-    }
+    // Try positioning to the left first
+    const leftPosition = x - rect.width - 8;
+    const rightPosition = x;
+
+    // Calculate how much adjustment would be needed for each position
+    const leftAdjustment = leftPosition < 8 ? 8 - leftPosition : 0;
+    const rightAdjustment = (x + rect.width + 8) > viewportWidth ? 
+      (x + rect.width + 8) - viewportWidth : 0;
+
+    // Choose the position that needs less adjustment
+    adjustedX = leftAdjustment <= rightAdjustment ? 
+      Math.max(8, leftPosition) : 
+      Math.min(viewportWidth - rect.width - 8, rightPosition);
+
+    // Adjust Y position if needed
     if (y + rect.height > viewportHeight) {
       adjustedY = viewportHeight - rect.height - 8;
     }
