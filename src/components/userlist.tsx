@@ -15,7 +15,34 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
         Connected Players
       </div>
       <div className="sidebar-content">
-        <ul role="listbox">
+        <ul 
+          role="listbox"
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              e.stopPropagation();
+              
+              const currentElement = document.activeElement as HTMLElement;
+              const currentIndex = currentElement?.getAttribute('data-index');
+              
+              if (currentIndex !== null) {
+                const idx = parseInt(currentIndex);
+                let nextIndex: number;
+                
+                if (e.key === 'ArrowDown') {
+                  nextIndex = idx === users.length - 1 ? 0 : idx + 1;
+                } else {
+                  nextIndex = idx === 0 ? users.length - 1 : idx - 1;
+                }
+                
+                const nextElement = document.querySelector(`[data-index="${nextIndex}"]`) as HTMLElement;
+                if (nextElement) {
+                  nextElement.focus();
+                }
+              }
+            }
+          }}
+        >
           {users.map((player, index) => {
             let classes = "";
             if (player.away) classes += " away";
@@ -29,27 +56,6 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
                   data-index={index}
                   aria-label={`${player.Name}${player.away ? ' (away)' : ''}${player.idle ? ' (idle)' : ''}`}
                   onContextMenu={(e) => e.preventDefault()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                      // Always prevent default for arrow keys
-                      e.preventDefault();
-                      e.stopPropagation();
-                      
-                      let nextElement: HTMLElement | null = null;
-                      
-                      if (e.key === 'ArrowDown') {
-                        const nextIndex = index === users.length - 1 ? 0 : index + 1;
-                        nextElement = document.querySelector(`[data-index="${nextIndex}"]`) as HTMLElement;
-                      } else if (e.key === 'ArrowUp') {
-                        const prevIndex = index === 0 ? users.length - 1 : index - 1;
-                        nextElement = document.querySelector(`[data-index="${prevIndex}"]`) as HTMLElement;
-                      }
-
-                      if (nextElement) {
-                        nextElement.focus();
-                      }
-                    }
-                  }}
                 >
                   {player.Name}
                 </li>
