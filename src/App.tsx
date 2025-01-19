@@ -160,7 +160,7 @@ function App() {
       />
       <div>
         <OutputWindow client={client} ref={outRef} />
-        {showUsers && <Userlist users={players} client={client} />}
+        {showUsers && <Userlist users={players} client={client} onExpandFileTransfer={expandFileTransfer} />}
         <AudioChat client={client} />
       </div>
       <CommandInput onSend={handleCommand} inputRef={inRef} />
