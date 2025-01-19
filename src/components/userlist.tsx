@@ -30,19 +30,23 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
                   aria-label={`${player.Name}${player.away ? ' (away)' : ''}${player.idle ? ' (idle)' : ''}`}
                   onContextMenu={(e) => e.preventDefault()}
                   onKeyDown={(e) => {
-                    // Prevent default for all arrow keys to stop scrolling
                     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                      // Always prevent default for arrow keys
                       e.preventDefault();
+                      e.stopPropagation();
+                      
+                      let nextElement: HTMLElement | null = null;
                       
                       if (e.key === 'ArrowDown') {
                         const nextIndex = index === users.length - 1 ? 0 : index + 1;
-                        const nextElement = document.querySelector(`[data-index="${nextIndex}"]`) as HTMLElement;
-                        nextElement?.focus();
-                      }
-                      if (e.key === 'ArrowUp') {
+                        nextElement = document.querySelector(`[data-index="${nextIndex}"]`) as HTMLElement;
+                      } else if (e.key === 'ArrowUp') {
                         const prevIndex = index === 0 ? users.length - 1 : index - 1;
-                        const prevElement = document.querySelector(`[data-index="${prevIndex}"]`) as HTMLElement;
-                        prevElement?.focus();
+                        nextElement = document.querySelector(`[data-index="${prevIndex}"]`) as HTMLElement;
+                      }
+
+                      if (nextElement) {
+                        nextElement.focus();
                       }
                     }
                   }}
