@@ -17,6 +17,7 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
       <div className="sidebar-content">
         <ul 
           role="listbox"
+          tabIndex={0}
           onKeyDown={(e) => {
             // Check if any menu is open by looking for elements with role="menu"
             const openMenu = document.querySelector('[role="menu"]');
