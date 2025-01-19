@@ -244,6 +244,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   }, [onClose]);
 
   const show = useCallback((x: number, y: number, trigger: HTMLElement) => {
+    // Focus the trigger element first
+    trigger.focus();
+    
     // Dispatch with menu group info
     window.dispatchEvent(new CustomEvent('menuOpen', { 
       detail: { group: menuGroup } 
