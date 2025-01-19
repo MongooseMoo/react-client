@@ -18,6 +18,13 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
         <ul 
           role="listbox"
           onKeyDown={(e) => {
+            // Check if any menu is open by looking for elements with role="menu"
+            const openMenu = document.querySelector('[role="menu"]');
+            if (openMenu) {
+              // Let the context menu handle the event
+              return;
+            }
+
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
               e.preventDefault();
               e.stopPropagation();
