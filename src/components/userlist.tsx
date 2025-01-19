@@ -59,7 +59,7 @@ const Userlist: React.FC<UserlistProps> = ({ users, client }) => {
                 <li 
                   className={classes}
                   role="option"
-                  tabIndex={0}
+                  tabIndex={-1}
                   data-index={index}
                   aria-label={`${player.Name}${player.away ? ' (away)' : ''}${player.idle ? ' (idle)' : ''}`}
                   onContextMenu={(e) => e.preventDefault()}
