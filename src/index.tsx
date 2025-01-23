@@ -5,7 +5,7 @@ import App from "./App";
 import EditorWindow from "./components/editor/editorWindow";
 import "./index.css";
 import reportWebVitals from "./reportWebVitals";
-import { register } from './serviceWorker'
+import { registerSW } from 'virtual:pwa-register'
 
 const router = createBrowserRouter([
   { path: "/", element: <App /> },
@@ -25,6 +25,8 @@ root.render(
 // to log results (for example: reportWebVitals(console.log))
 // or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
 reportWebVitals(console.log);
-// register serviceWorker we don't really need so we can be installable
 
-register();
+// Register service worker for PWA support
+if (import.meta.env.PROD) {
+  registerSW()
+}
