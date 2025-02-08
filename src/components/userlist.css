@@ -1,13 +1,13 @@
 .sidebar {
   border-radius: 2px;
-  border-color: black;
+  border: 1px solid black;
 }
 
 .sidebar-header {
   border-bottom: 1px solid #000;
 }
 
-ul {
+.sidebar ul {
   list-style-type: none;
   margin: 0;
   padding: 0;

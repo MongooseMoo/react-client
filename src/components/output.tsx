@@ -16,6 +16,9 @@ interface State {
   newLinesCount: number; // Added to track the count of new lines
 }
 
+// Add a small threshold for scroll calculations to handle browser differences
+const SCROLL_THRESHOLD = 2; 
+
 class Output extends React.Component<Props, State> {
   outputRef: React.RefObject<HTMLDivElement> = React.createRef();
   static MAX_OUTPUT_LENGTH = 7500; // Maximum number of messages to display in the output
@@ -72,16 +75,14 @@ class Output extends React.Component<Props, State> {
   handleUserList = (players: any) =>
     this.setState({ sidebarVisible: !!players });
 
-  getSnapshotBeforeUpdate(prevProps: Props, prevState: State) {
+getSnapshotBeforeUpdate(prevProps: Props, prevState: State) { 
     // Check if the user is scrolled to the bottom before the update
-    if (this.outputRef.current) {
-      const output = this.outputRef.current;
-      return output.scrollHeight - output.scrollTop <= output.clientHeight;
-    }
-    return null;
-  }
 
-  componentDidUpdate(
+if (this.outputRef.current) { const output = this.outputRef.current; return this.isScrolledToBottom(); 
+// Use the same check method consistently 
+ } return null; }
+ 
+componentDidUpdate(
     prevProps: Props,
     prevState: State,
     wasScrolledToBottom: boolean | null
@@ -113,14 +114,11 @@ class Output extends React.Component<Props, State> {
       this.setState({ newLinesCount: 0 });
     }
   };
-
-  isScrolledToBottom = () => {
-    const output = this.outputRef.current;
-    if (!output) return false;
-
-    // Check if the scroll is at the bottom
-    return output.scrollHeight - output.scrollTop <= output.clientHeight + 1; // +1 for potential rounding issues
-  };
+  
+  isScrolledToBottom = () => { const output = this.outputRef.current; if (!output) return false; 
+  // Use Math.ceil to handle fractional pixels 
+  // Add a small threshold to account for browser differences 
+  const scrollBottom = Math.ceil(output.scrollHeight - output.scrollTop); const viewportHeight = Math.ceil(output.clientHeight); return scrollBottom <= viewportHeight + SCROLL_THRESHOLD; };
 
   handleScrollToBottom = () => {
     this.scrollToBottom();
@@ -178,13 +176,9 @@ class Output extends React.Component<Props, State> {
     });
   }
 
-  scrollToBottom = () => {
-    const output = this.outputRef.current;
-    if (output) {
-      output.scrollTop = output.scrollHeight;
-    }
-  };
-
+scrollToBottom = () => { const output = this.outputRef.current; if (output) { 
+// Use requestAnimationFrame to ensure DOM updates are complete 
+ requestAnimationFrame(() => { output.scrollTop = output.scrollHeight; }); } };
   handleMessage = (message: string) => {
     if (!message) {
       return;
