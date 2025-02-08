@@ -13,14 +13,14 @@
   background-color: #4CAF50;
   color: white;
   border: none;
-  padding: 10px 15px;
+  padding: 0.625rem 0.9375rem;
   text-align: center;
   text-decoration: none;
   display: inline-block;
   font-size: 14px;
-  margin: 4px 2px;
+  margin: 0.25rem 0.125rem;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--border-radius);
 }
 
 .file-transfer-controls button:disabled {

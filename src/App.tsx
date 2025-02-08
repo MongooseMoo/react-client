@@ -1,44 +1,42 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
-import { useClientEvent } from "./hooks/useClientEvent";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
-import OutputWindow from "./components/output";
 import MudClient from "./client";
 import CommandInput from "./components/input";
+import OutputWindow from "./components/output";
+import PreferencesDialog, {
+  PreferencesDialogRef,
+} from "./components/PreferencesDialog";
+import Sidebar from "./components/sidebar";
+import Statusbar from "./components/statusbar";
+import Toolbar from "./components/toolbar";
 import {
-  GMCPCore,
-  GMCPCoreSupports,
+  GMCPAutoLogin,
+  GMCPClientFileTransfer,
+  GMCPClientHtml,
   GMCPClientKeystrokes,
   GMCPClientMedia,
   GMCPClientSpeech,
-  GMCPCommLiveKit,
   GMCPCommChannel,
-  GMCPAutoLogin,
-  GMCPClientHtml,
-  GMCPClientFileTransfer,
+  GMCPCommLiveKit,
+  GMCPCore,
+  GMCPCoreSupports,
 } from "./gmcp";
+import { useClientEvent } from "./hooks/useClientEvent";
 import {
   McpAwnsPing,
   McpAwnsStatus,
   McpSimpleEdit,
   McpVmooUserlist,
-  UserlistPlayer,
 } from "./mcp";
-import PreferencesDialog, {
-  PreferencesDialogRef,
-} from "./components/PreferencesDialog";
-import Toolbar from "./components/toolbar";
-import Statusbar from "./components/statusbar";
-import Userlist from "./components/userlist";
-import AudioChat from "./components/audioChat";
-import FileTransferUI from "./components/FileTransfer";
 
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showUsers, setShowUsers] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
-  const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
-  const players = useClientEvent<'userlist'>(client, "userlist", []);
+  const [fileTransferExpanded, setFileTransferExpanded] =
+    useState<boolean>(false);
+  const players = useClientEvent<"userlist">(client, "userlist", []);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
@@ -119,11 +117,14 @@ function App() {
     offerSdp: string;
   }>(client, "fileTransferOffer", null);
 
-  const handleCommand = useCallback((text: string) => {
-    if (client) {
-      client.sendCommand(text);
-    }
-  }, [client]);
+  const handleCommand = useCallback(
+    (text: string) => {
+      if (client) {
+        client.sendCommand(text);
+      }
+    },
+    [client]
+  );
 
   useEffect(() => {
     if (fileTransferOffer !== null) {
@@ -131,7 +132,9 @@ function App() {
       setShowFileTransfer(true);
       client?.sendNotification(
         "File Transfer Offer",
-        `${fileTransferOffer.sender} wants to send you ${fileTransferOffer.filename} (${Math.round(fileTransferOffer.filesize / 1024)} KB)`
+        `${fileTransferOffer.sender} wants to send you ${
+          fileTransferOffer.filename
+        } (${Math.round(fileTransferOffer.filesize / 1024)} KB)`
       );
     }
   }, [fileTransferOffer, client]);
@@ -146,33 +149,40 @@ function App() {
 
   return (
     <div className="App">
-      <header className="App-header"></header>
-      <Toolbar
-        client={client}
-        onSaveLog={saveLog}
-        onClearLog={clearLog}
-        onToggleUsers={() => setShowUsers(!showUsers)}
-        onOpenPrefs={() => prefsDialogRef.current?.open()}
-      />
-      <div>
+      <header role="banner" style={{ gridArea: "header" }}>
+        <Toolbar
+          client={client}
+          onSaveLog={saveLog}
+          onClearLog={clearLog}
+          onToggleUsers={() => setShowUsers(!showUsers)}
+          onOpenPrefs={() => prefsDialogRef.current?.open()}
+        />
+      </header>
+      <main role="main" style={{ gridArea: "main" }}>
         <OutputWindow client={client} ref={outRef} />
-        {showUsers && <Userlist users={players} />}
-        <AudioChat client={client} />
+      </main>
+      <aside
+        role="complementary"
+        style={{ gridArea: "sidebar", display: showUsers ? "block" : "none" }}
+        aria-label="Connected users and file transfers"
+      >
+        <Sidebar
+          users={players}
+          client={client}
+          fileTransferExpanded={fileTransferExpanded}
+        />{" "}
+      </aside>
+
+      <div
+        role="region"
+        aria-label="Command input"
+        style={{ gridArea: "input" }}
+      >
+        <CommandInput onSend={handleCommand} inputRef={inRef} />
       </div>
-      <CommandInput onSend={handleCommand} inputRef={inRef} />
-      <div>
-        <button
-          onClick={() => setShowFileTransfer(!showFileTransfer)}
-          aria-expanded={showFileTransfer}
-          aria-controls="file-transfer-ui"
-        >
-          {showFileTransfer ? 'Hide' : 'Show'} File Transfer
-        </button>
-        <div style={{ display: showFileTransfer ? 'block' : 'none' }}>
-          <FileTransferUI client={client} expanded={fileTransferExpanded} />
-        </div>
-      </div>
-      <Statusbar client={client} />
+      <footer role="contentinfo" style={{ gridArea: "status" }}>
+        <Statusbar client={client} />
+      </footer>
       <PreferencesDialog ref={prefsDialogRef} />
     </div>
   );
