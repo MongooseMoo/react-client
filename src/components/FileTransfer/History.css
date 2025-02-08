@@ -1,9 +1,9 @@
 .transfer-history {
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  padding: 0.625rem;
 }
 
 .transfer-history h4 {
@@ -16,6 +16,6 @@
 }
 
 .transfer-history li {
-  margin-bottom: 5px;
-  font-size: 14px;
+  margin-bottom: 0.3125rem;
+  font-size: 0.875rem;
 }

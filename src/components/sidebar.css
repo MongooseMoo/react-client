@@ -1,0 +1,19 @@
+.sidebar-content {
+  height: 100%;
+  width: var(--sidebar-width);
+  background: var(--color-bg);
+  border-left: 1px solid var(--color-border);
+  overflow: auto;
+}
+
+.sidebar-tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-tab-content {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+}
