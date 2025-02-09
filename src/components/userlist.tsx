@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import "./userlist.css";
 
 import { UserlistPlayer } from "../mcp";
@@ -16,6 +16,15 @@ const Userlist: React.FC<UserlistProps> = ({ users }) => {
       setSelectedIndex(0);
     }
   };
+  
+  useEffect(() => {
+    if (selectedIndex !== -1) {
+      const selectedEl = document.getElementById(`userlist-option-${selectedIndex}`);
+      if (selectedEl) {
+        selectedEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [selectedIndex]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (users.length === 0) return;
@@ -44,31 +53,36 @@ const Userlist: React.FC<UserlistProps> = ({ users }) => {
   };
 
   return (
-    <div
-      className="sidebar"
-      ref={containerRef}
-      tabIndex={0}
-      role="listbox"
-      aria-label="Connected Players"
-      onFocus={handleFocus}
-      onKeyDown={handleKeyDown}
-    >
-      <div className="sidebar-header">
+    <>
+      <div className="sidebar-header" id="userlist-header" aria-hidden="true">
         Connected Players
       </div>
+      <div
+        className="sidebar"
+        ref={containerRef}
+        tabIndex={0}
+        role="listbox"
+        aria-labelledby="userlist-header"
+        aria-activedescendant={selectedIndex !== -1 ? `userlist-option-${selectedIndex}` : undefined}
+        onFocus={handleFocus}
+        onKeyDown={handleKeyDown}
+      >
       <div className="sidebar-content">
         <ul>
           {users.map((player, index) => {
             let classes = "";
-            if (player.away) classes += " away";
-            if (player.idle) classes += " idle";
+            let status = "Online";
+            if (player.away) { classes += " away"; status = "Away"; }
+            if (player.idle) { classes += " idle"; if (status === "Online") { status = "Idle"; } }
             if (index === selectedIndex) classes += " selected";
             return (
               <li
+                id={`userlist-option-${index}`}
                 className={classes}
                 key={player.Object}
                 role="option"
                 aria-selected={index === selectedIndex}
+                aria-label={`${player.Name} (${status})`}
               >
                 {player.Name}
               </li>
@@ -77,6 +91,7 @@ const Userlist: React.FC<UserlistProps> = ({ users }) => {
         </ul>
       </div>
     </div>
+    </>
   );
 };
 
