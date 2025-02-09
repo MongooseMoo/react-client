@@ -53,7 +53,7 @@ const Userlist: React.FC<UserlistProps> = ({ users }) => {
       onFocus={handleFocus}
       onKeyDown={handleKeyDown}
     >
-      <div className="sidebar-header" role="heading" aria-level={2}>
+      <div className="sidebar-header">
         Connected Players
       </div>
       <div className="sidebar-content">
