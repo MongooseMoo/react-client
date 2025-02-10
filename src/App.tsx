@@ -164,7 +164,7 @@ function App() {
       <aside
         role="complementary"
         style={{ gridArea: "sidebar", display: showUsers ? "block" : "none" }}
-        aria-label="Connected users and file transfers"
+        aria-label="Sidebar"
       >
         <Sidebar
           users={players}
