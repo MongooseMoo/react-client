@@ -163,8 +163,9 @@ function App() {
       </main>
       <aside
         role="complementary"
+        aria-roledescription="Sidebar"
         style={{ gridArea: "sidebar", display: showUsers ? "block" : "none" }}
-        aria-label="Sidebar"
+        
       >
         <Sidebar
           users={players}
