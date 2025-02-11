@@ -145,6 +145,10 @@ function App() {
     }
   });
 
+  useEffect(() => {
+    inRef.current?.focus();
+  }, []);
+
   if (!client) return null; // or some loading component
 
   return (
