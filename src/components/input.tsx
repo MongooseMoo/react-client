@@ -64,6 +64,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       commandHistoryRef.current.addCommand(input);
       saveHistory();
       setInput("");
+      inputRef.current?.focus();
     }
   };
 
