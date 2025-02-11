@@ -12,6 +12,7 @@ export interface TabsProps {
 const Tabs: React.FC<TabsProps> = ({ tabs }) => {
   const [selectedTab, setSelectedTab] = useState(0);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
+  const userInteractedRef = useRef(false);
 
   useEffect(() => {
     tabsRef.current = tabsRef.current.slice(0, tabs.length);
@@ -21,11 +22,13 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
     const handleKeyDown = (event: KeyboardEvent) => {
       switch (event.key) {
         case "ArrowLeft":
+          userInteractedRef.current = true;
           setSelectedTab((prevTab) =>
             prevTab > 0 ? prevTab - 1 : tabs.length - 1
           );
           break;
         case "ArrowRight":
+          userInteractedRef.current = true;
           setSelectedTab((prevTab) =>
             prevTab < tabs.length - 1 ? prevTab + 1 : 0
           );
@@ -44,7 +47,9 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
   }, [tabs.length, selectedTab]);
 
   useEffect(() => {
-    tabsRef.current[selectedTab]?.focus();
+    if (userInteractedRef.current) {
+      tabsRef.current[selectedTab]?.focus();
+    }
   }, [selectedTab]);
 
   return (
@@ -58,7 +63,10 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
             aria-selected={selectedTab === index}
             id={`${tab.label}-tab`}
             aria-controls={`${tab.label}-panel`}
-            onClick={() => setSelectedTab(index)}
+            onClick={() => {
+              userInteractedRef.current = true;
+              setSelectedTab(index);
+            }}
             tabIndex={selectedTab === index ? undefined : -1}
           >
             {tab.label}
