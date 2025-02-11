@@ -82,9 +82,9 @@ const Userlist: React.FC<UserlistProps> = ({ users }) => {
                 key={player.Object}
                 role="option"
                 aria-selected={index === selectedIndex}
-                aria-label={`${player.Name} (${status})`}
               >
                 {player.Name}
+                <span className="sr-only">&nbsp;{`(${status})`}</span>
               </li>
             );
           })}
