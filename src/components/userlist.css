@@ -17,3 +17,8 @@
 .idle {
   color: gray;
 }
+
+.sidebar ul li.selected {
+  background-color: #bde4ff;
+  border-radius: 2px;
+}
