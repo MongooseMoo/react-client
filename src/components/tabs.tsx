@@ -72,7 +72,6 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
           id={`${tab.label}-panel`}
           aria-labelledby={`${tab.label}-tab`}
           hidden={selectedTab !== index}
-          tabIndex={selectedTab === index ? 0 : -1}
         >
           {tab.content}
         </div>
