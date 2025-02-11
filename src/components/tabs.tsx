@@ -54,7 +54,7 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
 
   return (
     <div>
-      <div role="tablist" aria-label="Tabs">
+      <div role="tablist">
         {tabs.map((tab, index) => (
           <button
             key={index}
@@ -78,7 +78,6 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
           key={index}
           role="tabpanel"
           id={`${tab.label}-panel`}
-          aria-labelledby={`${tab.label}-tab`}
           hidden={selectedTab !== index}
         >
           {tab.content}
