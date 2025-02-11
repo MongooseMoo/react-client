@@ -68,7 +68,7 @@ const Userlist: React.FC<UserlistProps> = ({ users }) => {
         onKeyDown={handleKeyDown}
       >
       <div className="sidebar-content">
-        <ul>
+        <ul role="none">
           {users.map((player, index) => {
             let classes = "";
             let status = "Online";
