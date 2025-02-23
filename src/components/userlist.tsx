@@ -34,6 +34,18 @@ const Userlist: React.FC<UserlistProps> = ({ users }) => {
     } else if (e.key === "ArrowUp") {
       setSelectedIndex((prev) => (prev - 1 + users.length) % users.length);
       e.preventDefault();
+    } else if (e.key === "Home") {
+      setSelectedIndex(0);
+      e.preventDefault();
+    } else if (e.key === "End") {
+      setSelectedIndex(users.length - 1);
+      e.preventDefault();
+    } else if (e.key === "PageUp") {
+      setSelectedIndex((prev) => Math.max(prev - 5, 0));
+      e.preventDefault();
+    } else if (e.key === "PageDown") {
+      setSelectedIndex((prev) => Math.min(prev + 5, users.length - 1));
+      e.preventDefault();
     } else if (e.key.length === 1) {
       const letter = e.key.toLowerCase();
       let startIndex = selectedIndex === -1 ? 0 : (selectedIndex + 1) % users.length;
