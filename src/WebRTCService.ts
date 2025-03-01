@@ -402,6 +402,15 @@ export class WebRTCService extends EventEmitter {
             handleFailure
           );
         }
+        this.off("dataChannelOpen", handleOpen);
+        this.off("webRTCFailed", handleFailureEvent);
+      };
+
+      // Additional event handler for direct event emission in tests
+      const handleFailureEvent = () => {
+        clearTimeout(this.connectionTimeoutId);
+        cleanup();
+        reject(new Error("Connection failed"));
       };
 
       // Add event listeners
@@ -414,6 +423,10 @@ export class WebRTCService extends EventEmitter {
           handleFailure
         );
       }
+      
+      // Add event emitter listeners for testing
+      this.on("dataChannelOpen", handleOpen);
+      this.on("webRTCFailed", handleFailureEvent);
     });
   }
 
