@@ -15,7 +15,7 @@ export interface ToolbarProps {
   client: MudClient;
   onClearLog: () => void;
   onSaveLog: () => void;
-  onToggleUsers: () => void;
+  onToggleSidebar: () => void;
   onOpenPrefs: () => void;
 }
 
@@ -23,7 +23,7 @@ const Toolbar = ({
   client,
   onClearLog,
   onSaveLog,
-  onToggleUsers,
+  onToggleSidebar,
   onOpenPrefs,
 }: ToolbarProps) => {
   const connected = useClientEvent(client, 'connectionChange', client.connected);
@@ -103,8 +103,8 @@ const Toolbar = ({
       <button onClick={handleConnectionToggle}>
         {connected ? 'Disconnect' : 'Connect'}
       </button>
-      <button onClick={onToggleUsers} accessKey="u">
-        Show/Hide Users
+      <button onClick={onToggleSidebar} accessKey="u">
+        Toggle Sidebar
       </button>
     </div>
   );

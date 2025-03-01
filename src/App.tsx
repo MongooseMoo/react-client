@@ -32,7 +32,7 @@ import {
 
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
-  const [showUsers, setShowUsers] = useState<boolean>(false);
+  const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] =
     useState<boolean>(false);
@@ -78,7 +78,7 @@ function App() {
     newClient.connect();
     newClient.requestNotificationPermission();
     setClient(newClient);
-    setShowUsers(!isMobile);
+    setShowSidebar(!isMobile);
     window.mudClient = newClient;
     clientInitialized.current = true;
 
@@ -158,7 +158,7 @@ function App() {
           client={client}
           onSaveLog={saveLog}
           onClearLog={clearLog}
-          onToggleUsers={() => setShowUsers(!showUsers)}
+          onToggleSidebar={() => setShowSidebar(!showSidebar)}
           onOpenPrefs={() => prefsDialogRef.current?.open()}
         />
       </header>
@@ -168,7 +168,7 @@ function App() {
       <aside
         role="complementary"
         aria-roledescription="Sidebar"
-        style={{ gridArea: "sidebar", display: showUsers ? "block" : "none" }}
+        style={{ gridArea: "sidebar", display: showSidebar ? "block" : "none" }}
         
       >
         <Sidebar
