@@ -28,6 +28,7 @@ const Toolbar = ({
   onSaveLog,
   onToggleSidebar,
   onOpenPrefs,
+  showSidebar,
 }: ToolbarProps) => {
   const connected = useClientEvent(client, 'connectionChange', client.connected);
   const [muted, setMuted] = React.useState(client.cacophony.muted);
