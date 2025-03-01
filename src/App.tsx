@@ -160,6 +160,7 @@ function App() {
           onClearLog={clearLog}
           onToggleSidebar={() => setShowSidebar(!showSidebar)}
           onOpenPrefs={() => prefsDialogRef.current?.open()}
+          showSidebar={showSidebar}
         />
       </header>
       <main role="main" style={{ gridArea: "main" }}>
