@@ -17,6 +17,7 @@ export interface ToolbarProps {
   onSaveLog: () => void;
   onToggleSidebar: () => void;
   onOpenPrefs: () => void;
+  showSidebar?: boolean;
 }
 
 const Toolbar = ({
@@ -104,7 +105,7 @@ const Toolbar = ({
         {connected ? 'Disconnect' : 'Connect'}
       </button>
       <button onClick={onToggleSidebar} accessKey="u">
-        Toggle Sidebar
+        {showSidebar ? "Hide Sidebar" : "Show Sidebar"}
       </button>
     </div>
   );
