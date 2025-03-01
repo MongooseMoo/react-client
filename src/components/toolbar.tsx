@@ -6,6 +6,8 @@ import {
   FaSave,
   FaVolumeMute,
   FaVolumeUp,
+  FaChevronRight,
+  FaChevronLeft,
 } from "react-icons/fa";
 import type MudClient from "../client";
 import { preferencesStore, PrefActionType } from "../PreferencesStore";
@@ -105,6 +107,7 @@ const Toolbar = ({
         {connected ? 'Disconnect' : 'Connect'}
       </button>
       <button onClick={onToggleSidebar} accessKey="u">
+        {showSidebar ? <FaChevronRight /> : <FaChevronLeft />}
         {showSidebar ? "Hide Sidebar" : "Show Sidebar"}
       </button>
     </div>

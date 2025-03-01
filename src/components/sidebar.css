@@ -4,6 +4,7 @@
   background: var(--color-bg);
   border-left: 1px solid var(--color-border);
   overflow: auto;
+  transition: all 0.3s ease;
 }
 
 .sidebar-tabs {
