@@ -113,6 +113,14 @@ aside {
   margin: 0 auto;
 }
 
+.sidebar-visible {
+  display: block;
+}
+
+.sidebar-hidden {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .App {
     grid-template-areas:
