@@ -32,7 +32,7 @@ const Toolbar = ({
 }: ToolbarProps) => {
   const connected = useClientEvent(client, 'connectionChange', client.connected);
   const [muted, setMuted] = React.useState(client.cacophony.muted);
-  const autosay = useClientEvent(client, 'autosayChanged', client.autosay);
+  const autosay = useClientEvent(client, 'autosayChanged', client.autosay) || false;
   const [volume, setVolume] = React.useState(preferencesStore.getState().general.volume);
 
   const handleMuteToggle = useCallback(() => {

@@ -23,9 +23,14 @@
     "typeRoots": [
       "./node_modules/@types",
       "./src/@types"
-    ],
+    ]
   },
   "include": [
     "src"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "src/setupTests.ts"
   ]
 }

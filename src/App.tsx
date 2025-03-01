@@ -29,6 +29,7 @@ import {
   McpSimpleEdit,
   McpVmooUserlist,
 } from "./mcp";
+import { FileTransferOffer } from "./hooks/useClientEvent";
 
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
@@ -36,7 +37,7 @@ function App() {
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] =
     useState<boolean>(false);
-  const players = useClientEvent<"userlist">(client, "userlist", []);
+  const players = useClientEvent<"userlist">(client, "userlist", []) || [];
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
@@ -109,13 +110,7 @@ function App() {
     };
   }, [isMobile]);
 
-  const fileTransferOffer = useClientEvent<{
-    sender: string;
-    hash: string;
-    filename: string;
-    filesize: number;
-    offerSdp: string;
-  }>(client, "fileTransferOffer", null);
+  const fileTransferOffer = useClientEvent<"fileTransferOffer">(client, "fileTransferOffer", null as unknown as FileTransferOffer);
 
   const handleCommand = useCallback(
     (text: string) => {
