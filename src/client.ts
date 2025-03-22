@@ -322,7 +322,7 @@ class MudClient extends EventEmitter {
     if (localEchoEnabled) {
       this.emit("command", command);
     }
-    if (this.autosay) {
+    if (this.autosay && !command.startsWith("-") && !command.startsWith("'")) {
       command = "say " + command;
     }
     this.send(command + "\r\n");
