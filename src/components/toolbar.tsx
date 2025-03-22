@@ -94,6 +94,7 @@ const Toolbar = ({
           max="100"
           value={volume * 100}
           onChange={handleVolumeChange}
+          accessKey="v"
         />
       </label>
       <label>
