@@ -28,6 +28,11 @@ class GMCPMessageClientKeystrokesUnbindAll extends GMCPMessage {
     // No specific properties needed for this message
 }
 
+// Message class for the server's request to list bindings
+class GMCPMessageClientKeystrokesListBindings extends GMCPMessage {
+    // No specific properties needed for this message
+}
+
 export class GMCPClientKeystrokes extends GMCPPackage {
     public packageName: string = "Client.Keystrokes";
     private bindings: KeyBinding[] = [];
@@ -163,6 +168,15 @@ export class GMCPClientKeystrokes extends GMCPPackage {
         // with how handleGmcpData calls handlers.
         console.log("Received Client.Keystrokes.UnbindAll, clearing all bindings."); // Optional logging
         this.unbindAll();
+    }
+
+    // Handler for the server's request to list bindings
+    public handleListBindings(data: GMCPMessageClientKeystrokesListBindings): void {
+        // data parameter is unused but kept for consistency
+        console.log("Received Client.Keystrokes.ListBindings request, sending current bindings."); // Optional logging
+        const bindingsArray = this.listBindings();
+        // Send the list back using the "BindingsList" message name
+        this.sendData("BindingsList", bindingsArray);
     }
 
     public listBindings(): KeyBinding[] {
