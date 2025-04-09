@@ -158,6 +158,13 @@ export class GMCPClientKeystrokes extends GMCPPackage {
         this.bindings = data.bindings.map(binding => ({ ...binding }));
     }
 
+    public handleUnbindAll(data: GMCPMessageClientKeystrokesUnbindAll): void {
+        // The data parameter isn't strictly needed here, but included for consistency
+        // with how handleGmcpData calls handlers.
+        console.log("Received Client.Keystrokes.UnbindAll, clearing all bindings."); // Optional logging
+        this.unbindAll();
+    }
+
     public listBindings(): KeyBinding[] {
         return [...this.bindings];
     }
