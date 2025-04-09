@@ -420,13 +420,11 @@ An MCP message consists of three parts: the name of the message, the authenticat
       console.log("No handler for GMCP package:", packageName);
       return;
     }
-    // Normalize messageType to ensure first letter is capitalized (e.g., "unbindAll" -> "UnbindAll")
-    // Note: This normalization was missing in the provided file content, adding it back.
-    const normalizedMessageType = messageType.charAt(0).toUpperCase() + messageType.slice(1);
-    const messageHandler = (handler as any)["handle" + normalizedMessageType]; // Look for "handleUnbindAll" etc.
+    // Look for the handler using the exact messageType from the package string
+    const messageHandler = (handler as any)["handle" + messageType];
 
     if (messageHandler) {
-      console.log("Calling handler for:", normalizedMessageType, messageHandler); // Log normalized type
+      console.log("Calling handler for:", messageType, messageHandler); // Log original type
 
       let jsonStringToParse: string;
       // Check if gmcpMessage is a valid, non-empty string
@@ -434,7 +432,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
         jsonStringToParse = gmcpMessage;
       } else {
         // Log a warning and default to an empty JSON object string
-        console.warn(`GMCP message data for ${packageName}.${normalizedMessageType} is missing or empty. Defaulting to {}. Original data:`, gmcpMessage);
+        console.warn(`GMCP message data for ${packageName}.${messageType} is missing or empty. Defaulting to {}. Original data:`, gmcpMessage);
         jsonStringToParse = '{}';
       }
 
@@ -443,14 +441,14 @@ An MCP message consists of three parts: the name of the message, the authenticat
         messageHandler.call(handler, parsedData);
       } catch (e) {
         // Add specific error handling for JSON parsing failure
-        console.error(`Error parsing GMCP JSON for ${packageName}.${normalizedMessageType}:`, e);
+        console.error(`Error parsing GMCP JSON for ${packageName}.${messageType}:`, e);
         console.error("Attempted to parse:", jsonStringToParse); // Log the string we tried to parse
         // Optionally, you could decide whether to still call the handler with null/undefined/default data
         // messageHandler.call(handler, {}); // Example: Call with empty object on parse failure
       }
     } else {
-      // Use normalizedMessageType in the error message for consistency
-      console.log("No handler on package:", packageName, normalizedMessageType);
+      // Use original messageType in the error message
+      console.log("No handler on package:", packageName, messageType);
     }
   }
 
