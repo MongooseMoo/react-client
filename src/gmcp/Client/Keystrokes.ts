@@ -55,12 +55,12 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     private findBinding(event: KeyboardEvent): KeyBinding | undefined {
         try {
             return this.bindings.find(binding => {
-                // Case-insensitive comparison for the key
+                // Compare key (case-insensitive)
                 if (binding.key.toLowerCase() !== event.key.toLowerCase()) {
                     return false;
                 }
 
-                // Flexible modifier checking
+                // Get pressed modifiers
                 const eventModifiers = new Set([
                     event.altKey && "Alt",
                     event.ctrlKey && "Control",
@@ -68,7 +68,17 @@ export class GMCPClientKeystrokes extends GMCPPackage {
                     event.metaKey && "Meta"
                 ].filter(Boolean));
 
-                return binding.modifiers && binding.modifiers.every(modifier =>
+                // Get required modifiers for the binding
+                const requiredModifiers = new Set(binding.modifiers || []); // Ensure it's a Set, handle undefined/null
+
+                // Check if the set of pressed modifiers exactly matches the set of required modifiers
+                if (eventModifiers.size !== requiredModifiers.size) {
+                    return false; // Different number of modifiers pressed than required
+                }
+
+                // Check if all required modifiers are present in the pressed modifiers
+                // (This is slightly redundant given the size check, but safe)
+                return Array.from(requiredModifiers).every(modifier =>
                     eventModifiers.has(modifier)
                 );
             });
