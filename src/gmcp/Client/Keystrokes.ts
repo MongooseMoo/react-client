@@ -24,6 +24,10 @@ class GMCPMessageClientKeystrokesBindAll extends GMCPMessage {
     public readonly bindings!: KeyBinding[];
 }
 
+class GMCPMessageClientKeystrokesUnbindAll extends GMCPMessage {
+    // No specific properties needed for this message
+}
+
 export class GMCPClientKeystrokes extends GMCPPackage {
     public packageName: string = "Client.Keystrokes";
     private bindings: KeyBinding[] = [];
