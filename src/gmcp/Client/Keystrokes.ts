@@ -27,11 +27,14 @@ class GMCPMessageClientKeystrokesBindAll extends GMCPMessage {
 export class GMCPClientKeystrokes extends GMCPPackage {
     public packageName: string = "Client.Keystrokes";
     private bindings: KeyBinding[] = [];
-    private boundKeyUpHandler: (event: KeyboardEvent) => void = () => {};
+    // Store the bound handler function
+    private boundKeyDownHandler: (event: KeyboardEvent) => void;
 
     constructor(client: MudClient) {
         super(client);
-        document.addEventListener('keydown', (event) => this.handleKeydown(event));
+        // Bind the handler once and store it
+        this.boundKeyDownHandler = this.handleKeydown.bind(this);
+        document.addEventListener('keydown', this.boundKeyDownHandler);
     }
 
     private handleKeydown(event: KeyboardEvent): void {
@@ -49,7 +52,8 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     }
 
     shutdown() {
-        document.removeEventListener('keydown', (event) => this.handleKeydown(event));
+        // Use the stored handler reference for removal
+        document.removeEventListener('keydown', this.boundKeyDownHandler);
     }
 
     private findBinding(event: KeyboardEvent): KeyBinding | undefined {
@@ -60,26 +64,29 @@ export class GMCPClientKeystrokes extends GMCPPackage {
                     return false;
                 }
 
-                // Get pressed modifiers
-                const eventModifiers = new Set([
-                    event.altKey && "Alt",
-                    event.ctrlKey && "Control",
-                    event.shiftKey && "Shift",
-                    event.metaKey && "Meta"
-                ].filter(Boolean));
+                // Get pressed modifiers and convert to lowercase
+                const eventModifiers = new Set(
+                    [
+                        event.altKey && "alt",
+                        event.ctrlKey && "control",
+                        event.shiftKey && "shift",
+                        event.metaKey && "meta",
+                    ].filter(Boolean) as string[] // Filter out false values and assert as string array
+                );
 
-                // Get required modifiers for the binding
-                const requiredModifiers = new Set(binding.modifiers || []); // Ensure it's a Set, handle undefined/null
+                // Get required modifiers for the binding and convert to lowercase
+                const requiredModifiers = new Set(
+                    (binding.modifiers || []).map(mod => mod.toLowerCase())
+                );
 
                 // Check if the set of pressed modifiers exactly matches the set of required modifiers
                 if (eventModifiers.size !== requiredModifiers.size) {
                     return false; // Different number of modifiers pressed than required
                 }
 
-                // Check if all required modifiers are present in the pressed modifiers
-                // (This is slightly redundant given the size check, but safe)
+                // Check if all required modifiers (now lowercase) are present in the pressed modifiers (now lowercase)
                 return Array.from(requiredModifiers).every(modifier =>
-                    eventModifiers.has(modifier)
+                    eventModifiers.has(modifier) // .has() is case-sensitive, but both sets are now lowercase
                 );
             });
         } catch (error) {
@@ -114,11 +121,21 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     }
 
     public unbindKey(data: GMCPMessageClientKeystrokesUnbind): void {
-        this.bindings = this.bindings.filter(binding =>
-            !(binding.key === data.key &&
-                binding.modifiers.length === data.modifiers.length &&
-                binding.modifiers.every(modifier => data.modifiers.includes(modifier)))
-        );
+        const dataModifiersLower = new Set((data.modifiers || []).map(mod => mod.toLowerCase()));
+        this.bindings = this.bindings.filter(binding => {
+            const bindingModifiersLower = new Set((binding.modifiers || []).map(mod => mod.toLowerCase()));
+            // Check key (case-insensitive, matching findBinding logic)
+            if (binding.key.toLowerCase() !== data.key.toLowerCase()) {
+                return true; // Keep binding if keys don't match
+            }
+            // Check modifier count
+            if (bindingModifiersLower.size !== dataModifiersLower.size) {
+                return true; // Keep binding if modifier counts differ
+            }
+            // Check if all modifiers match (case-insensitive)
+            const allModifiersMatch = Array.from(dataModifiersLower).every(mod => bindingModifiersLower.has(mod));
+            return !allModifiersMatch; // Remove binding only if all modifiers match
+        });
     }
 
     public unbindAll(): void {
