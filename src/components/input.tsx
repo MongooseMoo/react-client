@@ -1,6 +1,8 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useRef, useEffect, useCallback } from "react";
 import { CommandHistory } from "../CommandHistory";
 import "./input.css";
+import { useInputStore } from "../hooks/useInputStore";
+import { InputActionType, setInputText, clearInputText } from "../InputStore";
 
 type SendFunction = (text: string) => void;
 
@@ -13,8 +15,8 @@ const STORAGE_KEY = 'command_history';
 const MAX_HISTORY = 1000;
 
 const CommandInput = ({ onSend, inputRef }: Props) => {
-  const [input, setInput] = useState("");
   const commandHistoryRef = useRef(new CommandHistory());
+  const [inputState, dispatch] = useInputStore();
 
   // Load saved history on component mount
   useEffect(() => {
@@ -41,38 +43,40 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const commandHistory = commandHistoryRef.current;
+    const currentInput = inputState.text;
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      const prevCommand = commandHistory.navigateUp(input);
-      setInput(prevCommand);
+      const prevCommand = commandHistory.navigateUp(currentInput);
+      setInputText(prevCommand);
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      const nextCommand = commandHistory.navigateDown(input);
-      setInput(nextCommand);
+      const nextCommand = commandHistory.navigateDown(currentInput);
+      setInputText(nextCommand);
     }
-  };
+  }, [inputState.text]);
 
-  const handleSend = () => {
-    if (input.trim()) {
-      onSend(input);
-      commandHistoryRef.current.addCommand(input);
+  const handleSend = useCallback(() => {
+    const currentInput = inputState.text;
+    if (currentInput.trim()) {
+      onSend(currentInput);
+      commandHistoryRef.current.addCommand(currentInput);
       saveHistory();
-      setInput("");
+      clearInputText();
       inputRef.current?.focus();
     }
-  };
+  }, [inputState.text, onSend, inputRef]);
 
   return (
     <div className="command-input-container">
       <textarea
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
+        value={inputState.text}
+        onChange={(e) => setInputText(e.target.value)}
         onKeyDown={handleKeyDown}
         id="command-input"
         ref={inputRef}

@@ -563,18 +563,6 @@ An MCP message consists of three parts: the name of the message, the authenticat
     ] as GMCPClientMedia;
     gmcpClientMedia.stopAllSounds();
   }
-
-  getInput(): string {
-    // get what the user has typed so far
-    return document.getElementById("command-input")?.textContent || "";
-  }
-
-  setInput(text: string) {
-    // place text in the input field
-    const input = document.getElementById("command-input");
-    if (!input) return;
-    input.textContent = text;
-  }
 }
 
 export default MudClient;
