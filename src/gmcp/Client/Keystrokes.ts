@@ -1,5 +1,6 @@
 import type MudClient from "../../client";
 import { GMCPMessage, GMCPPackage } from "../package";
+import { inputStore, setInputText } from "../../InputStore"; // Import the store and helper
 
 interface KeyBinding {
     key: string;
@@ -50,7 +51,8 @@ export class GMCPClientKeystrokes extends GMCPPackage {
         const binding = this.findBinding(event);
         if (binding) {
             event.preventDefault();
-            const commandInput = this.client.getInput();
+            // Get input directly from the store
+            const commandInput = inputStore.getState().text;
             const command = this.parseCommand(binding.command, commandInput);
             if (binding.autosend) {
                 this.client.sendCommand(command);
@@ -116,7 +118,8 @@ export class GMCPClientKeystrokes extends GMCPPackage {
     }
 
     private placeInInputField(command: string): void {
-        this.client.setInput(command);
+        // Use the centralized store action
+        setInputText(command);
     }
 
     public bindKey(data: GMCPMessageClientKeystrokesBind): void {
