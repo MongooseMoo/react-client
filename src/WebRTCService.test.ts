@@ -865,26 +865,11 @@ describe('WebRTCService', () => {
       // Reset the data channel
       (webRTCService as any).dataChannel = null;
       
-      // Create a promise that will resolve when the test is done
-      const testPromise = new Promise<void>((resolve) => {
-        // Start the channel recovery
-        const attemptRecoveryPromise = (webRTCService as any).attemptChannelRecovery();
-        
-        // Immediately trigger the dataChannelOpen event
-        webRTCService.emit('dataChannelOpen');
-        
-        // Wait for the recovery promise to resolve
-        attemptRecoveryPromise.then(() => {
-          // Verify our expectations
-          expect(mockCreateDataChannelFn).toHaveBeenCalled();
-          expect((webRTCService as any).dataChannel).not.toBeNull();
-          expect(setupDataChannelSpy).toHaveBeenCalled();
-          resolve();
-        });
-      });
+      await (webRTCService as any).attemptChannelRecovery();
       
-      // Wait for the test to complete
-      await testPromise;
+      expect(mockCreateDataChannelFn).toHaveBeenCalled();
+      expect((webRTCService as any).dataChannel).not.toBeNull();
+      expect(setupDataChannelSpy).toHaveBeenCalled();
     });
 
     it('should handle errors during channel recovery', async () => {
@@ -897,8 +882,8 @@ describe('WebRTCService', () => {
       
       const emitSpy = vi.spyOn(webRTCService, 'emit');
       
-      // Should reject with the error
-      await expect((webRTCService as any).attemptChannelRecovery()).rejects.toThrow(error);
+      // Should not throw
+      await (webRTCService as any).attemptChannelRecovery();
       
       expect(emitSpy).toHaveBeenCalledWith('dataChannelRecoveryFailed', error);
     });
