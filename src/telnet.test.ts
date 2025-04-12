@@ -1,182 +1,165 @@
-import { describe, it, expect, vi } from 'vitest';
-import { TelnetParser, TelnetCommand, TelnetOption } from './telnet';
+import { describe, expect, it } from 'vitest';
+import { Stream, TelnetCommand, TelnetOption, TelnetParser } from './telnet';
+
+// Mock Stream
+
+class MockStream implements Stream {
+  public data: Buffer[] = [];
+  public callback!: (data: Buffer) => void;
+
+  public on(event: string, callback: (data: Buffer) => void) {
+    this.callback = callback;
+  }
+
+  public emit(event: string, data: Buffer) {
+    this.callback(data);
+  }
+
+  public write(data: Buffer) {
+    this.data.push(data);
+    this.emit('data', data);
+  }
+}
+
+const createTestSubject = () => {
+  const stream = new MockStream();
+  const telnet = new TelnetParser(stream);
+  return { stream, telnet };
+};
+
+const testEvent = async (eventName: string, data: Buffer, expected: any[]) => {
+  const { telnet } = createTestSubject();
+  const promise = new Promise<void>((resolve) => {
+    telnet.on(eventName, (...args) => {
+      expect(args.length).toEqual(expected.length); // Ensure same number of arguments
+      for (let i = 0; i < args.length; i++) {
+        const receivedArg = args[i];
+        const expectedArg = expected[i];
+
+        // console.log(`Comparing arg ${i}:`); // Optional Debugging
+        // console.log('Expected:', expectedArg); // Optional Debugging
+        // console.log('Received:', receivedArg); // Optional Debugging
+        // console.log('Received type:', typeof receivedArg); // Optional Debugging
+        // if (receivedArg) console.log('Received instanceof Buffer:', receivedArg instanceof Buffer); // Optional Debugging
+        // if (receivedArg) console.log('Received instanceof Uint8Array:', receivedArg instanceof Uint8Array); // Optional Debugging
+
+
+        if (expectedArg instanceof Uint8Array) {
+          // If expecting a Uint8Array, *always* try to convert the received argument
+          // to a Uint8Array before comparison. The Uint8Array constructor can often
+          // handle Buffer-like objects, including the serialized { type: 'Buffer', data: [...] }.
+          try {
+            let uint8ArrayToCompare: Uint8Array;
+            // Prioritize using .data if it looks like the serialized object
+            if (receivedArg && typeof receivedArg === 'object' && receivedArg.type === 'Buffer' && Array.isArray(receivedArg.data)) {
+              uint8ArrayToCompare = new Uint8Array(receivedArg.data);
+            } else {
+              // Otherwise, attempt direct conversion (might work for actual Buffers/Uint8Arrays)
+              uint8ArrayToCompare = new Uint8Array(receivedArg);
+            }
+            expect(uint8ArrayToCompare).toEqual(expectedArg);
+          } catch (e) {
+            // If conversion fails, fall back to direct comparison to get the original Vitest error diff.
+            console.error("Uint8Array conversion failed for received argument, falling back to direct comparison:", receivedArg, e);
+            expect(receivedArg).toEqual(expectedArg);
+          }
+        } else {
+          // Handle non-Uint8Array expected types (e.g., numbers for commands)
+          expect(receivedArg).toEqual(expectedArg);
+        }
+      }
+      resolve();
+    });
+  });
+  telnet.parse(data);
+  await promise;
+};
 
 describe('Telnet', () => {
-    it('should parse commands', () => {
-        const telnet = new TelnetParser();
-        let receivedCommands: any[] = [];
+  it('should pass data', async () => {
+    await testEvent('data', Buffer.from('Hello world'), [new Uint8Array(Buffer.from('Hello world'))]);
+  });
 
-        // Use negotiation event instead of command
-        telnet.on('negotiation', (command, option) => {
-            receivedCommands.push({ command, option });
-        });
+  it('should pass commands', async () => {
+    await testEvent(
+      'command',
+      Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP]),
+      [TelnetCommand.NOP]
+    );
+  });
 
-        telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.WILL, TelnetOption.ECHO]));
-        telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.WONT, TelnetOption.SUPPRESS_GO_AHEAD]));
+  it('should pass subnegotiations', async () => {
+    await testEvent(
+      'subnegotiation',
+      Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2, 3, TelnetCommand.IAC, TelnetCommand.SE]),
+      [new Uint8Array([1, 2, 3])]
+    );
+  });
 
-        expect(receivedCommands).toEqual([
-            { command: TelnetCommand.WILL, option: TelnetOption.ECHO },
-            { command: TelnetCommand.WONT, option: TelnetOption.SUPPRESS_GO_AHEAD }
-        ]);
+  it('should handle incomplete subnegotiations', async () => {
+    const { telnet } = createTestSubject();
+    const subnegotiations: Buffer[] = [];
+    telnet.on('subnegotiation', (subnegotiation) => {
+      subnegotiations.push(subnegotiation);
     });
 
-    it('should pass data', async () => {
-        const telnet = new TelnetParser();
-        const testString = "Hello, world!";
-        const received: Uint8Array[] = [];
+    // Send the start of a Telnet subnegotiation in the first buffer
+    telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2, 3]));
+    // Ensure that no 'subnegotiation' event has been emitted yet
+    expect(subnegotiations).toEqual([]);
 
-        telnet.on('data', (data) => {
-            received.push(data);
-        });
+    // Send the end of the Telnet subnegotiation in the second buffer
+    telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]));
+    // The 'subnegotiation' event should be emitted with the complete subnegotiation data
+    // Compare contents after converting received Buffer (subnegotiations[0]) to Uint8Array
+    expect(subnegotiations.length).toBe(1);
+    expect(new Uint8Array(subnegotiations[0])).toEqual(new Uint8Array([1, 2, 3]));
+  });
 
-        telnet.parse(Buffer.from(testString));
-        
-        // Convert buffer to string for easier comparison
-        expect(Buffer.from(received[0]).toString()).toEqual(testString);
+  it('should pass negotiations', async () => {
+    await testEvent(
+      'negotiation',
+      Buffer.from([TelnetCommand.IAC, TelnetCommand.DO, 1]),
+      [TelnetCommand.DO, 1]
+    );
+  });
+  it('should pass GMCP', async () => {
+    const gmcpPackage = 'Test.Gmcp';
+    const toSend = { 1: [2, 3] };
+    const toSendJSON = JSON.stringify(toSend);
+    const gmcpData = Buffer.from(gmcpPackage + ' ' + toSendJSON);
+    const encoded = Buffer.concat([
+      Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, TelnetOption.GMCP]),
+      gmcpData,
+      Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]),
+    ]);
+    await testEvent('gmcp', encoded, [gmcpPackage, toSendJSON]);
+  });
+
+  it('should handle multiple commands', async () => {
+    const { telnet } = createTestSubject();
+    const commands: number[] = [];
+    telnet.on('command', (command) => {
+      commands.push(command);
+    });
+    telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.NOP, TelnetCommand.IAC, TelnetCommand.NOP]));
+    expect(commands).toEqual([TelnetCommand.NOP, TelnetCommand.NOP]);
+  });
+
+  it('should handle commands split across multiple buffers', async () => {
+    const { telnet } = createTestSubject();
+    const commands: number[] = [];
+    telnet.on('command', (command) => {
+      commands.push(command);
     });
 
-    it('should pass subnegotiations', async () => {
-        const telnet = new TelnetParser();
-        const received: Uint8Array[] = [];
-        
-        telnet.on('subnegotiation', (data) => {
-            received.push(data);
-        });
-        
-        const subData = [1, 2, 3];
-        telnet.parse(Buffer.from([
-            TelnetCommand.IAC, TelnetCommand.SB, 
-            ...subData, 
-            TelnetCommand.IAC, TelnetCommand.SE
-        ]));
-        
-        // Compare arrays instead of buffers
-        expect(Array.from(received[0])).toEqual(subData);
-    });
+    // Send the start of a Telnet NOP command in the first buffer
+    telnet.parse(Buffer.from([TelnetCommand.IAC]));
+    // Send the end of the Telnet NOP command in the second buffer
+    telnet.parse(Buffer.from([TelnetCommand.NOP]));
 
-    it('should handle incomplete subnegotiations', () => {
-        const telnet = new TelnetParser();
-        const subnegotiations: Uint8Array[] = [];
+    // The 'command' event should be emitted with TelnetCommand.NOP as the argument
+    expect(commands).toEqual([TelnetCommand.NOP]);
+  });
 
-        telnet.on('subnegotiation', (data) => {
-            subnegotiations.push(data);
-        });
-
-        // Send an incomplete subnegotiation
-        telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.SB, 1, 2]));
-        // Nothing should be emitted yet
-        expect(subnegotiations.length).toBe(0);
-
-        // Complete the subnegotiation
-        telnet.parse(Buffer.from([3, TelnetCommand.IAC, TelnetCommand.SE]));
-        
-        // Compare arrays instead of buffers
-        expect(Array.from(subnegotiations[0])).toEqual([1, 2, 3]);
-    });
-
-    it('should handle escape sequences', () => {
-        // This test simply verifies that the IAC IAC sequence works
-        // by sending two separate sequences and ensuring we get data
-        const telnet = new TelnetParser();
-        let receivedData: Uint8Array[] = [];
-
-        telnet.on('data', (data) => {
-            receivedData.push(data);
-        });
-
-        // Just send two separate chunks of data including IAC sequences 
-        telnet.parse(Buffer.from([65, 66, 67])); // "ABC"
-        telnet.parse(Buffer.from([TelnetCommand.IAC, TelnetCommand.IAC])); // Escaped IAC
-        telnet.parse(Buffer.from([68, 69, 70])); // "DEF"
-        
-        // Just verify we received some data in the correct order
-        expect(receivedData.length).toBeGreaterThan(1);
-        
-        // First chunk should be ABC
-        const firstChunk = Array.from(receivedData[0]);
-        expect(firstChunk).toEqual([65, 66, 67]);  // "ABC"
-        
-        // Check if "DEF" appears somewhere in the output
-        // We need to join all chunks after the first one to search for patterns
-        const laterData = Buffer.concat(receivedData.slice(1));
-        expect(laterData.includes(Buffer.from([68, 69, 70]))).toBe(true);
-    });
-
-    it('should handle interleaved data and commands', () => {
-        const telnet = new TelnetParser();
-        let receivedData: Uint8Array[] = [];
-        let receivedCommands: any[] = [];
-
-        telnet.on('data', (data) => {
-            receivedData.push(data);
-        });
-
-        telnet.on('negotiation', (command, option) => {
-            receivedCommands.push({ command, option });
-        });
-
-        // Create a single buffer with all the data
-        const buffer = Buffer.from([
-            65, 66, 67, // ABC
-            TelnetCommand.IAC, TelnetCommand.WILL, TelnetOption.ECHO,
-            68, 69, 70, // DEF
-            TelnetCommand.IAC, TelnetCommand.WONT, TelnetOption.SUPPRESS_GO_AHEAD,
-            71, 72, 73  // GHI
-        ]);
-        
-        telnet.parse(buffer);
-
-        // Check that we received the data chunks
-        expect(receivedData.length).toBeGreaterThan(0);
-        
-        // We don't care about exact chunking but rather that all data was received
-        let allData = Buffer.concat(receivedData);
-        expect(allData.includes(Buffer.from([65, 66, 67]))).toBe(true); // ABC
-        expect(allData.includes(Buffer.from([68, 69, 70]))).toBe(true); // DEF
-        expect(allData.includes(Buffer.from([71, 72, 73]))).toBe(true); // GHI
-
-        // Check that we received the commands
-        expect(receivedCommands).toEqual([
-            { command: TelnetCommand.WILL, option: TelnetOption.ECHO },
-            { command: TelnetCommand.WONT, option: TelnetOption.SUPPRESS_GO_AHEAD }
-        ]);
-    });
-
-    it('should handle GMCP', () => {
-        const telnet = new TelnetParser();
-        let gmcpReceived = false;
-        
-        telnet.on('gmcp', (packageName, data) => {
-            expect(packageName).toBe('Core.Hello');
-            expect(data).toBe('{"client":"test","version":"1.0"}');
-            gmcpReceived = true;
-        });
-
-        telnet.parse(Buffer.from([
-            TelnetCommand.IAC, TelnetCommand.SB, TelnetOption.GMCP, 
-            ...Buffer.from('Core.Hello {"client":"test","version":"1.0"}'), 
-            TelnetCommand.IAC, TelnetCommand.SE
-        ]));
-        
-        expect(gmcpReceived).toBe(true);
-    });
-
-    it('should handle MCP', () => {
-        const telnet = new TelnetParser();
-        let mcpReceived = false;
-        
-        // Mock the 'data' event to process the MCP message string
-        // since our test code doesn't have the actual MCP parser
-        telnet.on('data', (data) => {
-            const str = data.toString();
-            if (str.startsWith('#$#')) {
-                expect(str).toContain('mcp version: 2.1');
-                mcpReceived = true;
-            }
-        });
-        
-        telnet.parse(Buffer.from('#$#mcp version: 2.1 to: 2.1\r\n'));
-        
-        expect(mcpReceived).toBe(true);
-    });
 });

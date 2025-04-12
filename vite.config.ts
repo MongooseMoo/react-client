@@ -16,5 +16,10 @@ export default defineConfig({
         theme_color: '#000000'
       }
     })
-  ]
+  ],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/setupTests.ts', // Optional: if you have setup files
+  },
 })
