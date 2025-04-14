@@ -5,6 +5,7 @@ import { parseToElements } from "../ansiParser";
 import MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
 import DOMPurify from 'dompurify';
+import { setInputText } from '../InputStore';
 
 interface Props {
   client: MudClient;
@@ -197,6 +198,29 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     this.props.client.sendCommand(exit);
   };
 
+  // --- New Method for data-text links ---
+  handleDataTextClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    // Use .closest() to check if the clicked element or its parent is the link
+    const linkElement = (event.target as HTMLElement).closest('a.command[data-text]');
+
+    if (linkElement instanceof HTMLAnchorElement) {
+      // Prevent the default link navigation (#)
+      event.preventDefault();
+
+      // Get the text from the data-text attribute
+      const commandText = linkElement.dataset.text; // Use dataset for data-* attributes
+
+      if (commandText !== undefined && commandText !== null) {
+        // Dispatch the action to update the input store
+        setInputText(commandText);
+      }
+    }
+    // NOTE: This handler *only* deals with data-text links.
+    // Other click handling (like exits or the scroll-to-bottom button)
+    // remains separate as per the request to avoid unrelated changes.
+  };
+  // --- End New Method ---
+
   saveLog() {
     const output = this.outputRef.current;
     if (output) {
@@ -246,6 +270,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         ref={this.outputRef}
         className={classname}
         onScroll={this.handleScroll}
+        onClick={this.handleDataTextClick} // Add the click handler here
       >
         {this.state.output}
         {this.state.newLinesCount > 0 && (
