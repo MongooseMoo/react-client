@@ -121,6 +121,11 @@ function App() {
     [client]
   );
 
+  // Function to focus the input element
+  const focusInput = useCallback(() => {
+    inRef.current?.focus();
+  }, []); // No dependencies, so the function reference is stable
+
   useEffect(() => {
     if (fileTransferOffer !== null) {
       setFileTransferExpanded(true);
@@ -159,7 +164,8 @@ function App() {
         />
       </header>
       <main role="main" style={{ gridArea: "main" }}>
-        <OutputWindow client={client} ref={outRef} />
+        {/* Pass the focusInput function down to OutputWindow */}
+        <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
       </main>
       <aside
         role="complementary"
