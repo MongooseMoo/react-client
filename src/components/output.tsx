@@ -9,6 +9,7 @@ import { setInputText } from '../InputStore';
 
 interface Props {
   client: MudClient;
+  focusInput?: () => void; // Add optional prop to focus the input
 }
 
 interface State {
@@ -213,6 +214,8 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       if (commandText !== undefined && commandText !== null) {
         // Dispatch the action to update the input store
         setInputText(commandText);
+        // Attempt to focus the input field via the passed-in function
+        this.props.focusInput?.();
       }
     }
     // NOTE: This handler *only* deals with data-text links.
