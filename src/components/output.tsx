@@ -109,7 +109,33 @@ componentDidUpdate(
     }
 
     this.saveOutput(); // Save output to LocalStorage whenever it updates
+    this.addCopyButtons(); // Add copy buttons to new blockquotes
   }
+
+  // Method to add copy buttons to blockquotes that don't have them yet
+  addCopyButtons = () => {
+    const outputDiv = this.outputRef.current;
+    if (!outputDiv) return;
+
+    const blockquotes = outputDiv.querySelectorAll('blockquote:not(:has(.blockquote-copy-button))');
+
+    blockquotes.forEach(blockquote => {
+      const button = document.createElement('button');
+      button.classList.add('blockquote-copy-button');
+      button.textContent = 'Copy';
+      button.setAttribute('aria-label', 'Copy quote text');
+      button.setAttribute('type', 'button'); // Good practice for buttons not submitting forms
+
+      // Ensure the blockquote itself can contain the absolutely positioned button
+      // This might already be handled by CSS, but setting it here ensures it
+      if (window.getComputedStyle(blockquote).position === 'static') {
+         blockquote.style.position = 'relative';
+      }
+
+      blockquote.appendChild(button);
+    });
+  }
+
 
   handleScroll = () => {
     if (this.isScrolledToBottom()) {
@@ -199,13 +225,44 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     this.props.client.sendCommand(exit);
   };
 
-  // --- New Method for data-text links ---
+  // --- Modified Method to handle both data-text links and copy buttons ---
   handleDataTextClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    // Use .closest() to check if the clicked element or its parent is the link
-    const linkElement = (event.target as HTMLElement).closest('a.command[data-text]');
+    const targetElement = event.target as HTMLElement;
 
+    // --- Handle Blockquote Copy Button Clicks ---
+    const copyButton = targetElement.closest('.blockquote-copy-button');
+    if (copyButton instanceof HTMLButtonElement) {
+      event.preventDefault(); // Prevent any default button behavior
+      event.stopPropagation(); // Stop the event from bubbling further
+
+      const blockquote = copyButton.closest('blockquote');
+      if (blockquote) {
+        const textToCopy = blockquote.textContent || '';
+        navigator.clipboard.writeText(textToCopy.trim())
+          .then(() => {
+            // Visual feedback: Change text, add class, then revert
+            copyButton.textContent = 'Copied!';
+            copyButton.classList.add('copied');
+            setTimeout(() => {
+              copyButton.textContent = 'Copy';
+              copyButton.classList.remove('copied');
+            }, 1500); // Revert after 1.5 seconds
+          })
+          .catch(err => {
+            console.error('Failed to copy text: ', err);
+            // Optional: Provide error feedback to the user
+            copyButton.textContent = 'Error';
+             setTimeout(() => {
+              copyButton.textContent = 'Copy';
+            }, 1500);
+          });
+      }
+      return; // Stop processing here if it was a copy button click
+    }
+
+    // --- Handle data-text link clicks (existing logic) ---
+    const linkElement = targetElement.closest('a.command[data-text]');
     if (linkElement instanceof HTMLAnchorElement) {
-      // Prevent the default link navigation (#)
       event.preventDefault();
 
       // Get the text from the data-text attribute
