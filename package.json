@@ -27,6 +27,7 @@
     "react-router-dom": "^6.30.0",
     "react-use": "^17.6.0",
     "strip-ansi": "^7.1.0",
+    "turndown": "^7.2.0",
     "vite-plugin-commit-hash": "^1.0.8",
     "web-vitals": "^3.5.2"
   },
@@ -54,6 +55,7 @@
     "@types/react": "^18.3.20",
     "@types/react-beforeunload": "^2.1.5",
     "@types/react-dom": "^18.3.6",
+    "@types/turndown": "^5.0.5",
     "@vitejs/plugin-react": "^4.3.4",
     "cross-env": "^7.0.3",
     "jsdom": "^26.0.0",
