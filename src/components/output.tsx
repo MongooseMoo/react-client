@@ -37,9 +37,15 @@ class Output extends React.Component<Props, State> {
   }
 
   saveOutput = () => {
-    const outputHtml = this.state.output.map((element) =>
-      ReactDOMServer.renderToStaticMarkup(element)
-    );
+    const outputHtml = this.state.output.map((element) => {
+      // Ensure it's a valid element with props and children before rendering children
+      if (React.isValidElement(element) && element.props && element.props.children) {
+        // Render only the children to static markup
+        return ReactDOMServer.renderToStaticMarkup(element.props.children);
+      }
+      // Fallback for unexpected element types (though unlikely)
+      return "";
+    }).filter(html => html !== ""); // Filter out any empty strings from fallbacks
     localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify(outputHtml));
   };
 
