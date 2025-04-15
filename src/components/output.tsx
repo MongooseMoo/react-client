@@ -123,7 +123,7 @@ componentDidUpdate(
       const button = document.createElement('button');
       button.classList.add('blockquote-copy-button');
       button.textContent = 'Copy';
-      button.setAttribute('aria-label', 'Copy quote text');
+      // Removed aria-label as button text is sufficient
       button.setAttribute('type', 'button'); // Good practice for buttons not submitting forms
 
       // Ensure the blockquote itself can contain the absolutely positioned button
@@ -237,10 +237,19 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
       const blockquote = copyButton.closest('blockquote');
       if (blockquote) {
-        const textToCopy = blockquote.textContent || '';
+        // Clone the blockquote to avoid modifying the live DOM
+        const clonedBlockquote = blockquote.cloneNode(true) as HTMLElement;
+        // Find and remove the button *from the clone*
+        const buttonInClone = clonedBlockquote.querySelector('.blockquote-copy-button');
+        if (buttonInClone) {
+          buttonInClone.remove();
+        }
+        // Get text content from the clone, which now excludes the button text
+        const textToCopy = clonedBlockquote.textContent || '';
+
         navigator.clipboard.writeText(textToCopy.trim())
           .then(() => {
-            // Visual feedback: Change text, add class, then revert
+            // Visual feedback: Change text, add class, then revert (targets the original button)
             copyButton.textContent = 'Copied!';
             copyButton.classList.add('copied');
             setTimeout(() => {
