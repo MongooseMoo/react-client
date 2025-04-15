@@ -6,6 +6,7 @@ import MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
 import DOMPurify from 'dompurify';
 import { setInputText } from '../InputStore';
+import TurndownService from 'turndown'; // <-- Import TurndownService
 
 interface Props {
   client: MudClient;
@@ -26,6 +27,8 @@ class Output extends React.Component<Props, State> {
   static MAX_OUTPUT_LENGTH = 7500; // Maximum number of messages to display in the output
   static LOCAL_STORAGE_KEY = "outputLog"; // Key for saving output in LocalStorage
   messageKey: number = 0;
+  // Add a TurndownService instance (can be reused)
+  turndownService = new TurndownService({headingStyle: 'atx', emDelimiter: '*'});
 
   constructor(props: Props) {
     super(props);
@@ -258,8 +261,20 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         if (buttonInClone) {
           buttonInClone.remove();
         }
-        // Get text content from the clone, which now excludes the button text
-        const textToCopy = clonedBlockquote.textContent || '';
+
+        let textToCopy: string;
+        const contentType = blockquote.dataset.contentType; // Check for data-content-type
+
+        // Check if the content type is markdown
+        if (contentType === 'text/markdown') {
+          // Get the inner HTML of the clone (without the button)
+          const htmlContent = clonedBlockquote.innerHTML;
+          // Convert HTML to Markdown using Turndown
+          textToCopy = this.turndownService.turndown(htmlContent);
+        } else {
+          // Default behavior: Get text content from the clone
+          textToCopy = clonedBlockquote.textContent || '';
+        }
 
         navigator.clipboard.writeText(textToCopy.trim())
           .then(() => {
