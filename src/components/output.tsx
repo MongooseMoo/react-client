@@ -46,12 +46,20 @@ class Output extends React.Component<Props, State> {
   loadOutput = () => {
     const savedOutput = localStorage.getItem(Output.LOCAL_STORAGE_KEY);
     if (savedOutput) {
-      const outputElements = JSON.parse(savedOutput).map((htmlString: string) =>
-        React.createElement("div", {
-          dangerouslySetInnerHTML: { __html: htmlString },
-        })
-      );
-      return outputElements;
+      try { // Add try-catch for robust JSON parsing
+        const outputContentHtml = JSON.parse(savedOutput) as string[];
+        return outputContentHtml.map((htmlString: string, index: number) => // Add index for key
+          // Recreate the wrapper div with a key and set innerHTML to the saved content
+          React.createElement("div", {
+            key: `loaded-${index}`, // Add a unique key using the index
+            dangerouslySetInnerHTML: { __html: htmlString },
+          })
+        );
+      } catch (error) {
+        console.error("Failed to parse saved output log:", error);
+        localStorage.removeItem(Output.LOCAL_STORAGE_KEY); // Clear corrupted data
+        return []; // Return empty array on error
+      }
     }
     return [];
   };
