@@ -12,6 +12,8 @@ import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
 import {
   GMCPAutoLogin,
+  GMCPCharItems,
+  GMCPCharStatus,
   GMCPClientFileTransfer,
   GMCPClientHtml,
   GMCPClientKeystrokes,
@@ -21,15 +23,27 @@ import {
   GMCPCommLiveKit,
   GMCPCore,
   GMCPCoreSupports,
+  GMCPChar, // Added
+  GMCPCharOffer, // Added
+  GMCPCharPrompt, // Added
+  GMCPCharStatusAffectedBy, // Added
+  GMCPCharStatusConditions, // Added
+  GMCPCharStatusTimers, // Added
+  GMCPCharAfflictions, // Added
+  GMCPCharDefences, // Added
+  GMCPCharSkills, // Added
+  GMCPGroup, // Added
+  GMCPLogging, // Added
+  GMCPRedirect, // Added
+  GMCPRoom, // Added
 } from "./gmcp";
-import { useClientEvent } from "./hooks/useClientEvent";
+import { FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
 import {
   McpAwnsPing,
   McpAwnsStatus,
   McpSimpleEdit,
   McpVmooUserlist,
 } from "./mcp";
-import { FileTransferOffer } from "./hooks/useClientEvent";
 
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
@@ -72,6 +86,23 @@ function App() {
     newClient.registerGMCPPackage(GMCPAutoLogin);
     newClient.registerGMCPPackage(GMCPClientHtml);
     newClient.registerGMCPPackage(GMCPClientFileTransfer);
+    newClient.registerGMCPPackage(GMCPCharItems);
+    newClient.registerGMCPPackage(GMCPCharStatus); // Removed duplicate below
+    // Added missing GMCP packages
+    newClient.registerGMCPPackage(GMCPChar);
+    newClient.registerGMCPPackage(GMCPCharOffer);
+    newClient.registerGMCPPackage(GMCPCharPrompt);
+    newClient.registerGMCPPackage(GMCPCharStatusAffectedBy);
+    newClient.registerGMCPPackage(GMCPCharStatusConditions);
+    newClient.registerGMCPPackage(GMCPCharStatusTimers);
+    newClient.registerGMCPPackage(GMCPCharAfflictions);
+    newClient.registerGMCPPackage(GMCPCharDefences);
+    newClient.registerGMCPPackage(GMCPCharSkills);
+    newClient.registerGMCPPackage(GMCPGroup);
+    newClient.registerGMCPPackage(GMCPLogging);
+    newClient.registerGMCPPackage(GMCPRedirect);
+    newClient.registerGMCPPackage(GMCPRoom);
+    // MCP Packages
     newClient.registerMcpPackage(McpAwnsStatus);
     newClient.registerMcpPackage(McpSimpleEdit);
     newClient.registerMcpPackage(McpVmooUserlist);
@@ -110,7 +141,11 @@ function App() {
     };
   }, [isMobile]);
 
-  const fileTransferOffer = useClientEvent<"fileTransferOffer">(client, "fileTransferOffer", null as unknown as FileTransferOffer);
+  const fileTransferOffer = useClientEvent<"fileTransferOffer">(
+    client,
+    "fileTransferOffer",
+    null as unknown as FileTransferOffer
+  );
 
   const handleCommand = useCallback(
     (text: string) => {

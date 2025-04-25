@@ -1,0 +1,62 @@
+.room-info-display {
+    padding: 0.5rem;
+    font-size: 0.9em;
+}
+
+.room-info-display h4 {
+    margin-top: 0;
+    margin-bottom: 0.3rem;
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 0.25rem;
+    font-size: 1.1em; /* Slightly larger heading */
+}
+
+.room-info-display .room-area {
+    font-style: italic;
+    color: var(--color-text-muted);
+    margin-bottom: 0.8rem;
+}
+
+.room-info-display .room-exits h5 {
+    margin-top: 0.5rem;
+    margin-bottom: 0.3rem;
+    font-weight: bold;
+}
+
+.room-info-display .room-exits ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex; /* Arrange exits horizontally */
+    flex-wrap: wrap; /* Allow wrapping */
+    gap: 0.5rem; /* Space between exit buttons */
+}
+
+.room-info-display .room-exits li {
+    margin: 0;
+}
+
+.room-info-display .room-exits button {
+    background-color: var(--color-button-bg, #e0e0e0);
+    color: var(--color-button-text, #333);
+    border: 1px solid var(--color-border-light, #ccc);
+    border-radius: var(--border-radius-small, 4px);
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s ease;
+    min-width: 40px; /* Ensure buttons have some minimum width */
+    text-align: center;
+}
+
+.room-info-display .room-exits button:hover,
+.room-info-display .room-exits button:focus {
+    background-color: var(--color-button-hover-bg, #d0d0d0);
+    outline: 2px solid var(--color-focus-ring, blue);
+    outline-offset: 1px;
+}
+
+.room-info-display p:not(.room-area) { /* Style for loading/no data text */
+    font-style: italic;
+    color: var(--color-text-muted);
+}
