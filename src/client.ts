@@ -31,6 +31,7 @@ import { Cacophony } from "cacophony";
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
+import { GMCPMessageRoomInfo } from "./gmcp/Room"; // Import RoomInfo type
 
 export interface WorldData {
   liveKitTokens: string[];
@@ -72,6 +73,7 @@ class MudClient extends EventEmitter {
   public editors: EditorManager;
   public webRTCService: WebRTCService;
   public fileTransferManager: FileTransferManager;
+  public currentRoomInfo: GMCPMessageRoomInfo | null = null; // Add property to store room info
   private _autosay: boolean = false;
 
   get autosay(): boolean {
@@ -303,6 +305,7 @@ class MudClient extends EventEmitter {
     this.mcpAuthKey = null;
     this.telnetBuffer = "";
     this.telnetNegotiation = false;
+    this.currentRoomInfo = null; // Reset room info on cleanup
     this.webRTCService.cleanup();
     this.fileTransferManager.cleanup();
     this.emit("disconnect");

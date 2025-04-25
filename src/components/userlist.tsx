@@ -1,109 +1,69 @@
-import React, { useState, useRef, useEffect } from "react";
+import React from "react";
 import "./userlist.css";
-
+import AccessibleList from "./AccessibleList"; // Import the new component
 import { UserlistPlayer } from "../mcp";
 
 export interface UserlistProps {
-  users: UserlistPlayer[];
+    users: UserlistPlayer[];
 }
 
+// Map UserlistPlayer to the structure expected by AccessibleList
+// Ensure UserlistPlayer has a unique 'id' property or adapt AccessibleList/mapping
+// For now, assuming 'Object' can serve as a unique ID. If not, this needs adjustment.
+const mapUserToListItem = (user: UserlistPlayer) => ({
+    ...user,
+    id: user.Object, // Use 'Object' as the unique ID
+});
+
 const Userlist: React.FC<UserlistProps> = ({ users }) => {
-  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  const handleFocus = () => {
-    if (selectedIndex === -1 && users.length > 0) {
-      setSelectedIndex(0);
-    }
-  };
-  
-  useEffect(() => {
-    if (selectedIndex !== -1) {
-      const selectedEl = document.getElementById(`userlist-option-${selectedIndex}`);
-      if (selectedEl) {
-        selectedEl.scrollIntoView({ block: 'nearest' });
-      }
-    }
-  }, [selectedIndex]);
+    const listItems = users.map(mapUserToListItem);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (users.length === 0) return;
-    if (e.key === "ArrowDown") {
-      setSelectedIndex((prev) => (prev + 1) % users.length);
-      e.preventDefault();
-    } else if (e.key === "ArrowUp") {
-      setSelectedIndex((prev) => (prev - 1 + users.length) % users.length);
-      e.preventDefault();
-    } else if (e.key === "Home") {
-      setSelectedIndex(0);
-      e.preventDefault();
-    } else if (e.key === "End") {
-      setSelectedIndex(users.length - 1);
-      e.preventDefault();
-    } else if (e.key === "PageUp") {
-      setSelectedIndex((prev) => Math.max(prev - 5, 0));
-      e.preventDefault();
-    } else if (e.key === "PageDown") {
-      setSelectedIndex((prev) => Math.min(prev + 5, users.length - 1));
-      e.preventDefault();
-    } else if (e.key.length === 1) {
-      const letter = e.key.toLowerCase();
-      let startIndex = selectedIndex === -1 ? 0 : (selectedIndex + 1) % users.length;
-      let foundIndex = -1;
-      for (let i = 0; i < users.length; i++) {
-        const idx = (startIndex + i) % users.length;
-        if (users[idx].Name && users[idx].Name[0].toLowerCase() === letter) {
-          foundIndex = idx;
-          break;
-        }
-      }
-      if (foundIndex !== -1) {
-        setSelectedIndex(foundIndex);
-        e.preventDefault();
-      }
-    }
-  };
+    const renderUserItem = (player: UserlistPlayer, index: number, isSelected: boolean) => {
+        let status = "Online";
+        if (player.away) { status = "Away"; }
+        if (player.idle) { if (status === "Online") { status = "Idle"; } else { status += " + Idle"; } }
 
-  return (
-    <>
-      <div className="sidebar-header" id="userlist-header" aria-hidden="true">
-        Connected Players
-      </div>
-      <div
-        className="sidebar"
-        ref={containerRef}
-        tabIndex={0}
-        role="listbox"
-        aria-labelledby="userlist-header"
-        aria-activedescendant={selectedIndex !== -1 ? `userlist-option-${selectedIndex}` : undefined}
-        onFocus={handleFocus}
-        onKeyDown={handleKeyDown}
-      >
-      <div className="sidebar-content">
-        <ul role="none">
-          {users.map((player, index) => {
-            let classes = "";
-            let status = "Online";
-            if (player.away) { classes += " away"; status = "Away"; }
-            if (player.idle) { classes += " idle"; if (status === "Online") { status = "Idle"; } }
-            if (index === selectedIndex) classes += " selected";
-            return (
-              <li
-                id={`userlist-option-${index}`}
-                className={classes}
-                key={player.Object}
-                role="option"
-                aria-selected={index === selectedIndex}
-              >
+        return (
+            <>
                 {player.Name}
                 <span className="sr-only">&nbsp;{`(${status})`}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
-    </>
+            </>
+        );
+    };
+
+    const getUserItemClassName = (player: UserlistPlayer, index: number, isSelected: boolean): string => {
+        let classes = "userlist-item"; // Base class for styling
+        if (player.away) { classes += " away"; }
+        if (player.idle) { classes += " idle"; }
+        // 'selected' class is handled by AccessibleList now
+        // if (isSelected) classes += " selected";
+        return classes;
+    };
+
+    const getUserTextValue = (player: UserlistPlayer): string => {
+        return player.Name ? player.Name.toLowerCase() : '';
+    };
+
+    return (
+        <>
+            <div className="sidebar-header" id="userlist-header" aria-hidden="true">
+                Connected Players
+            </div>
+            <div className="sidebar"> {/* Keep sidebar for overall layout */}
+                <div className="sidebar-content"> {/* Keep sidebar-content for padding/scrolling */}
+                    <AccessibleList
+                        items={listItems}
+                        renderItem={renderUserItem}
+                        listId="userlist" // Unique ID for this list instance
+                        labelledBy="userlist-header"
+                        className="userlist-accessible-container" // Optional: for specific styling
+                        itemClassName={getUserItemClassName}
+                        getItemTextValue={getUserTextValue}
+                    />
+                </div>
+            </div>
+        </>
   );
 };
 

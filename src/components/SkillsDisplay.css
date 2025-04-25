@@ -1,0 +1,84 @@
+.skills-display {
+    padding: 0.5rem;
+    font-size: 0.9em;
+}
+
+.skills-display h4 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 0.25rem;
+}
+
+.skill-accordion {
+    border: 1px solid var(--color-border-light, #ccc);
+    border-radius: var(--border-radius);
+    overflow: hidden; /* Ensures children conform to border radius */
+}
+
+.skill-group {
+    border-bottom: 1px solid var(--color-border-light, #ccc);
+}
+.skill-group:last-child {
+    border-bottom: none;
+}
+
+.skill-group h5 {
+    margin: 0; /* Remove default heading margin */
+}
+
+.skill-group-header {
+    background-color: var(--color-bg-light, #f0f0f0);
+    border: none;
+    padding: 0.5rem 0.75rem;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    font-size: 1em; /* Match surrounding text */
+    font-weight: bold;
+    display: flex; /* Use flexbox for alignment */
+    justify-content: space-between; /* Space out text and icon */
+    align-items: center;
+    color: var(--color-text);
+}
+
+.skill-group-header:hover,
+.skill-group-header:focus {
+    background-color: var(--color-bg-hover, #e0e0e0);
+    outline: 2px solid var(--color-focus-ring, blue); /* Add focus indicator */
+    outline-offset: -2px;
+}
+
+.skill-rank {
+    font-weight: normal;
+    color: var(--color-text-muted, #555);
+    margin-left: 0.5em;
+    font-size: 0.9em;
+}
+
+.accordion-icon {
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+.skill-list-panel {
+    padding: 0.5rem 1rem; /* Indent skill list */
+    background-color: var(--color-bg-panel, #fff); /* Slightly different background for panel */
+}
+
+.skill-list-panel ul {
+    list-style: disc; /* Use standard list style */
+    padding-left: 1.5rem; /* Indent list items */
+    margin: 0.5rem 0;
+}
+
+.skill-list-panel li {
+    margin-bottom: 0.3rem;
+    cursor: default;
+}
+
+.skill-list-panel p {
+    font-style: italic;
+    color: var(--color-text-muted);
+    margin: 0.5rem 0;
+}

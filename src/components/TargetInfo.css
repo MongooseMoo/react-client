@@ -1,0 +1,38 @@
+.target-info {
+    padding: 0.5rem;
+    font-size: 0.9em;
+}
+
+.target-info h4 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 0.25rem;
+}
+
+.target-info p {
+    margin: 0.25rem 0;
+}
+
+.target-info strong {
+    margin-right: 0.5em;
+}
+
+/* Style definition list */
+.target-info dl {
+    margin: 0;
+    padding: 0;
+}
+
+.target-info dt {
+    font-weight: bold;
+    display: inline;
+    margin-right: 0.5em;
+}
+
+.target-info dd {
+    display: inline;
+    margin-left: 0;
+    margin-bottom: 0.25rem; /* Add some space below each item */
+    display: block; /* Make each definition pair appear on a new line */
+}

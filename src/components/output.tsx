@@ -211,10 +211,11 @@ componentDidUpdate(
     }
 
     this.setState((state) => {
-      const newOutput = elements.map((element, index) => (
-        <div key={this.messageKey + index}>{element}</div>
+      // Increment messageKey *inside* the map to ensure uniqueness for each element
+      const newOutput = elements.map((element) => (
+        <div key={this.messageKey++}>{element}</div>
       ));
-      this.messageKey += elements.length;
+      // this.messageKey is already incremented in the map
       const combinedOutput = [...state.output, ...newOutput];
       const trimmedOutput = combinedOutput.slice(-Output.MAX_OUTPUT_LENGTH);
       return { output: trimmedOutput };
