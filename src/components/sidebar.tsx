@@ -44,9 +44,10 @@ const Sidebar: React.FC<SidebarProps> = ({ client }) => {
   // Effect to update room data state if it arrives *after* initial render
   useEffect(() => {
     const handleRoomData = () => {
-        if (!hasRoomData) { // Only update state if it wasn't already true
-            setHasRoomData(true);
-        }
+      if (!hasRoomData) {
+        // Only update state if it wasn't already true
+        setHasRoomData(true);
+      }
     };
     client.on("roomInfo", handleRoomData);
     return () => {
@@ -56,12 +57,6 @@ const Sidebar: React.FC<SidebarProps> = ({ client }) => {
 
   // Define all possible tabs
   const allTabs: TabProps[] = [
-    {
-      id: "users-tab", // Add unique IDs
-      label: "Users",
-      content: <Userlist users={users} />,
-      condition: true,
-    },
     {
       id: "room-tab",
       label: "Room",
@@ -74,6 +69,13 @@ const Sidebar: React.FC<SidebarProps> = ({ client }) => {
       content: <InventoryList client={client} />,
       condition: hasInventoryData,
     },
+    {
+      id: "users-tab", // Add unique IDs
+      label: "Users",
+      content: <Userlist users={users} />,
+      condition: true,
+    },
+
     // { // Removed Skills Tab
     //   id: "skills-tab",
     //   label: "Skills",
