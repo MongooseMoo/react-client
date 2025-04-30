@@ -92,8 +92,7 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
           // Add class for styling panel content if needed
           className="sidebar-tab-content"
         >
-          {/* Render content only when selected for performance, or always if needed */}
-          {selectedTab === index && tab.content}
+          {tab.content}
         </div>
       ))}
     </div>
