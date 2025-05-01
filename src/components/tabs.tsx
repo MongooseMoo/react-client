@@ -57,7 +57,8 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
   }, [selectedTab]);
 
   return (
-    <div>
+    // Add the tabs-container class here
+    <div className="tabs-container">
       <div role="tablist">
         {tabs.map((tab, index) => (
           <button

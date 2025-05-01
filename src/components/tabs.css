@@ -16,13 +16,27 @@ button[role="tab"][aria-selected="true"] {
     border-bottom: 2px solid;
 }
 
+/* Container for the tab panel content */
 div[role="tabpanel"] {
-    display: none;
+    /* display: none; is handled by the 'hidden' attribute */
+    /* Ensure it can grow and potentially scroll */
+    flex: 1;
+    min-height: 0; /* Important for flex + overflow */
+    /* overflow: auto; /* Let the specific .sidebar-tab-content handle overflow */
 }
 
-div[role="tabpanel"]:not([hidden]) {
-    display: block;
+div[role="tabpanel"][hidden] {
+    display: none; /* Explicitly hide when hidden */
 }
+
+/* Keep hover effect */
 button[role="tab"]:hover {
     background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Ensure the main Tabs container allows flex children to grow */
+.tabs-container { /* Assuming you might add a wrapper div inside Tabs component if needed */
+    display: flex;
+    flex-direction: column;
+    height: 100%; /* Take full height of its container (.sidebar-content) */
 }

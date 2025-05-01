@@ -1,0 +1,76 @@
+/* Main editor window container */
+#editor-window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* Fill the viewport height */
+  background-color: #f5f5f5; /* Base background */
+}
+
+/* Editor Toolbar Styles */
+.editor-toolbar {
+  display: flex;
+  justify-content: flex-start; /* Align buttons to the start */
+  align-items: center;
+  padding: 0.5rem 1rem; /* Adjust padding */
+  /* height: 10vh; Remove fixed height */
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0; /* Prevent toolbar from shrinking */
+}
+
+.editor-toolbar form {
+  display: flex;
+  gap: 0.5rem; /* Space between buttons */
+}
+
+.editor-toolbar button {
+  /* Add common button styles */
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex; /* Align icon and text */
+  align-items: center;
+  gap: 0.4rem; /* Space between icon and text */
+}
+
+.editor-toolbar button:hover {
+  background-color: #eee;
+}
+
+/* Container for the Monaco editor */
+.editor-container {
+  flex: 1; /* Allow editor to grow and fill available space */
+  min-height: 0; /* Crucial for flex item with overflow */
+  position: relative; /* Needed for Monaco editor layout */
+}
+
+/* Ensure Monaco editor fills its container */
+.editor-container .react-monaco-editor-container,
+.editor-container .monaco-editor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+
+/* Editor Status Bar Styles */
+.editor-statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem; /* Adjust padding */
+  /* height: 10vh; Remove fixed height */
+  background-color: #f5f5f5;
+  border-top: 1px solid #e8e8e8;
+  font-size: 0.9em;
+  color: #555;
+  flex-shrink: 0; /* Prevent status bar from shrinking */
+}
+
+.editor-statusbar span {
+  margin: 0 0.5rem;
+}

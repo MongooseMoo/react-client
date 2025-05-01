@@ -1,24 +1,30 @@
-.sidebar {
-  border-radius: 2px;
-  border: 1px solid black;
-}
+/* .sidebar rule removed (handled globally) */
 
 .sidebar-header {
   border-bottom: 1px solid #000;
+  /* Consider using CSS variables for colors/borders */
+  padding: 0.5rem 1rem; /* Add some padding */
+  font-weight: bold;
 }
 
-.sidebar ul {
-  list-style-type: none;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-}
+/* .sidebar ul rule removed (handled by AccessibleList) */
 
 .idle {
-  color: gray;
+  color: gray; /* Consider using CSS variable */
 }
 
-.sidebar ul li.selected {
-  background-color: #bde4ff;
+/* Updated selector to target li within AccessibleList's ul */
+.accessible-list-ul li.selected {
+  background-color: #bde4ff; /* Consider using CSS variable */
   border-radius: 2px;
+}
+
+/* Add base styling for userlist items if needed */
+.userlist-item {
+  padding: 0.25rem 0; /* Example padding */
+}
+
+.userlist-item.away {
+  /* Style for away users */
+  opacity: 0.7;
 }

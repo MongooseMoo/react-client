@@ -135,10 +135,9 @@ const Sidebar: React.FC<SidebarProps> = ({ client }) => {
   // For now, we assume at least one tab will always be potentially visible.
 
   return (
-    <div className="sidebar-content">
-      <div className="sidebar-tabs">
-        {" "}
-        {/* Added wrapper div */}
+    <div className="sidebar"> {/* Add the main sidebar container */}
+      <div className="sidebar-content">
+        {/* Removed the redundant sidebar-tabs div */}
         <Tabs tabs={visibleTabs} /> {/* Pass the filtered tabs */}
       </div>
     </div>

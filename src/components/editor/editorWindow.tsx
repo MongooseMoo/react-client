@@ -7,6 +7,7 @@ import { usePreferences } from "../../hooks/usePreferences";
 import { EditorSession } from "../../mcp";
 import EditorToolbar from './toolbar';
 import { EditorStatusBar } from "./statusbar";
+import './editor.css'; // Import the new CSS file
 
 export enum DocumentState {
   Unchanged,
@@ -171,7 +172,8 @@ function EditorWindow() {
   };
 
   return (
-    <div id="editor">
+    // Use the ID for CSS targeting
+    <div id="editor-window">
       <EditorToolbar
         onSave={onSave}
         onRevert={revert}
