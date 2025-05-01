@@ -1,0 +1,27 @@
+/* Reset default list styles */
+.accessible-list-ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+/* Default styling for list items */
+.accessible-list-ul li {
+    padding: 0.25rem 0.5rem; /* Example padding, adjust as needed */
+    margin: 0;
+    cursor: default; /* Indicate items are not directly clickable unless intended */
+    outline: none; /* Remove default outline, focus is managed on container */
+}
+
+/* Styling for the currently selected/focused item */
+.accessible-list-ul li.selected {
+    background-color: var(--color-selected-bg, #bde4ff); /* Use CSS variable */
+    color: var(--color-selected-text, inherit); /* Ensure text contrast */
+    border-radius: var(--border-radius-small, 2px);
+}
+
+/* Styling for the container when focused */
+.accessible-list-container:focus {
+    outline: 2px solid var(--color-focus-ring, blue); /* Standard focus ring */
+    outline-offset: 1px;
+}

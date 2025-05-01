@@ -1,20 +1,28 @@
-.sidebar-content {
-  height: 100%;
-  width: var(--sidebar-width);
+/* Main sidebar container */
+.sidebar {
+  height: 100%; /* Take full available height */
+  width: var(--sidebar-width, 300px); /* Use variable or fallback */
+  display: flex; /* Use flexbox for internal layout */
+  flex-direction: column; /* Stack children vertically */
   background: var(--color-bg);
   border-left: 1px solid var(--color-border);
-  overflow: auto;
-  transition: all 0.3s ease;
+  transition: width 0.3s ease; /* Transition width changes */
 }
 
-.sidebar-tabs {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+/* Container for the tab component */
+.sidebar-content {
+  flex: 1; /* Grow to fill available space in .sidebar */
+  display: flex; /* Use flexbox for tab layout */
+  flex-direction: column; /* Stack tab list and panels */
+  overflow: hidden; /* Prevent content from spilling out, manage overflow in panels */
+  min-height: 0; /* Necessary for flex children with overflow */
 }
 
+/* Individual tab panel content area */
 .sidebar-tab-content {
-  flex: 1;
-  overflow: auto;
-  padding: 1rem;
+  flex: 1; /* Grow to fill available space in .sidebar-content */
+  overflow-y: auto; /* Allow vertical scrolling within the panel */
+  overflow-x: hidden; /* Hide horizontal overflow */
+  padding: 1rem; /* Keep padding */
+  min-height: 0; /* Necessary for flex children with overflow */
 }

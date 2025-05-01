@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import './AccessibleList.css'; // Import the CSS file
 
 interface AccessibleListItem {
     id: string; // Unique identifier for the item
@@ -122,6 +123,7 @@ const AccessibleList = <T extends AccessibleListItem>({
             onFocus={handleFocus}
             onKeyDown={handleKeyDown}
         >
+            {/* Add className to ul */}
             <ul role="none" className="accessible-list-ul">
                 {items.map((item, index) => {
                     const isSelected = index === selectedIndex;

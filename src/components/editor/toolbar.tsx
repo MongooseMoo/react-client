@@ -7,30 +7,22 @@ interface ToolbarProps {
 }
 
 export default function EditorToolbar({ onSave, onRevert, onDownload }: ToolbarProps) {
+    // Use a more specific class name to avoid conflicts
     return (
-        <div
-            className="toolbar"
-            style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "0 1rem",
-                height: "10vh",
-                backgroundColor: "#f5f5f5",
-                borderBottom: "1px solid #e8e8e8",
-            }}
-        >
+        <div className="editor-toolbar">
+            {/* Remove inline styles, move to editor.css */}
             <form onSubmit={(event) => event.preventDefault()}>
-                <button onClick={onSave} accessKey="s">
-                    <FaSave />
+                {/* Consider adding aria-labels or improving accessibility */}
+                <button onClick={onSave} accessKey="s" title="Save (Alt+S)">
+                    <FaSave aria-hidden="true" />
                     Save
                 </button>
-                <button onClick={onRevert} accessKey="r">
-                    <FaUndo />
+                <button onClick={onRevert} accessKey="r" title="Revert (Alt+R)">
+                    <FaUndo aria-hidden="true" />
                     Revert
                 </button>
-                <button onClick={onDownload} accessKey="d">
-                    <FaDownload />
+                <button onClick={onDownload} accessKey="d" title="Download (Alt+D)">
+                    <FaDownload aria-hidden="true" />
                     Download
                 </button>
             </form>

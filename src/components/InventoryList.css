@@ -1,34 +1,35 @@
-.inventory-list {
+/* Renamed selectors to use .inventory-list-container */
+.inventory-list-container {
     padding: 0.5rem;
     font-size: 0.9em;
 }
 
-.inventory-list h4 {
+.inventory-list-container h4 {
     margin-top: 0;
     margin-bottom: 0.5rem;
     border-bottom: 1px solid var(--color-border);
     padding-bottom: 0.25rem;
 }
 
-.inventory-list ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
+/* Removed .inventory-list ul and li rules (handled by AccessibleList) */
 
-.inventory-list li {
-    margin-bottom: 0.25rem;
-    cursor: default; /* Indicate hover is available */
-}
-
-.inventory-list p {
+.inventory-list-container p { /* For empty message */
     font-style: italic;
     color: var(--color-text-muted); /* Use a muted color if available */
 }
 
-.inventory-list .item-attributes {
+/* Style for item attributes span */
+.inventory-list-container .item-attributes {
     font-style: italic;
     color: var(--color-text-muted);
     margin-left: 0.5em;
     font-size: 0.9em;
 }
+
+/* Add base styling for inventory items if needed */
+.inventory-item {
+    padding: 0.25rem 0; /* Example padding */
+    cursor: default; /* Indicate hover is available */
+}
+
+/* Styling for selected items handled by AccessibleList.css */

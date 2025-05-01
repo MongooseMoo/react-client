@@ -11,24 +11,17 @@ interface EditorStatusBarProps {
 }
 
 export const EditorStatusBar: React.FC<EditorStatusBarProps> = ({ docstate, session }) => {
+    // Use a more specific class name to avoid conflicts
     return (
         <div
             aria-live="polite"
-            className="statusbar"
-            style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "0 1rem",
-                height: "10vh",
-                backgroundColor: "#f5f5f5",
-                borderTop: "1px solid #e8e8e8",
-            }}
+            className="editor-statusbar"
+            // Remove inline styles, move to editor.css
         >
             <span>{docstate}</span>
-            <span>|</span>
+            <span aria-hidden="true">|</span>
             <span>{session.reference}</span>
-            <span>|</span>
+            <span aria-hidden="true">|</span>
             <span>{session.type}</span>
         </div>
     );
