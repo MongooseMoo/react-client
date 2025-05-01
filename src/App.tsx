@@ -70,6 +70,12 @@ function App() {
     }
   };
 
+  const copyLog = () => {
+    if (outRef.current) {
+      outRef.current.copyLog();
+    }
+  };
+
   // are we on mobile?
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -191,12 +197,13 @@ function App() {
       <header role="banner" style={{ gridArea: "header" }}>
         <Toolbar
           client={client}
-          onSaveLog={saveLog}
-          onClearLog={clearLog}
-          onToggleSidebar={() => setShowSidebar(!showSidebar)}
-          onOpenPrefs={() => prefsDialogRef.current?.open()}
-          showSidebar={showSidebar}
-        />
+         onSaveLog={saveLog}
+         onClearLog={clearLog}
+         onCopyLog={copyLog} // <-- Pass copyLog function
+         onToggleSidebar={() => setShowSidebar(!showSidebar)}
+         onOpenPrefs={() => prefsDialogRef.current?.open()}
+         showSidebar={showSidebar}
+       />
       </header>
       <main role="main" style={{ gridArea: "main" }}>
         {/* Pass the focusInput function down to OutputWindow */}
