@@ -4,6 +4,7 @@ import {
   FaCommentDots,
   FaEraser,
   FaSave,
+  FaCopy, // <-- Import FaCopy
   FaVolumeMute,
   FaVolumeUp,
   FaChevronRight,
@@ -17,6 +18,7 @@ export interface ToolbarProps {
   client: MudClient;
   onClearLog: () => void;
   onSaveLog: () => void;
+  onCopyLog: () => void; // <-- Add onCopyLog prop
   onToggleSidebar: () => void;
   onOpenPrefs: () => void;
   showSidebar?: boolean;
@@ -26,6 +28,7 @@ const Toolbar = ({
   client,
   onClearLog,
   onSaveLog,
+  onCopyLog, // <-- Destructure onCopyLog
   onToggleSidebar,
   onOpenPrefs,
   showSidebar,
@@ -69,19 +72,24 @@ const Toolbar = ({
     <div className="toolbar">
       <button onClick={onSaveLog} accessKey="l">
         <FaSave />
-        Save Log
+        Save Log (Alt+L)
       </button>
-      <button onClick={onClearLog} accessKey="c">
+      {/* Note: accessKey="C" typically maps to Alt+C or Alt+Shift+C depending on browser/OS */}
+      <button onClick={onCopyLog} accessKey="C">
+        <FaCopy />
+        Copy Log (Alt+Shift+C)
+      </button>
+      <button onClick={onClearLog} accessKey="E"> {/* Changed accessKey to avoid conflict */}
         <FaEraser />
-        Clear Log
+        Clear Log (Alt+E)
       </button>
       <button onClick={onOpenPrefs} accessKey="p">
         <FaCog />
-        Preferences
+        Preferences (Alt+P)
       </button>
       <button
         onClick={handleMuteToggle}
-        accessKey="m"
+        accessKey="M" // Changed accessKey to avoid conflict if needed, or keep 'm'
       >
         {muted ? <FaVolumeUp /> : <FaVolumeMute />}
         {muted ? "Unmute" : "Mute"}
@@ -94,7 +102,7 @@ const Toolbar = ({
           max="100"
           value={volume * 100}
           onChange={handleVolumeChange}
-          accessKey="v"
+          accessKey="V" // Changed accessKey to avoid conflict if needed, or keep 'v'
         />
       </label>
       <label>
@@ -108,9 +116,9 @@ const Toolbar = ({
       <button onClick={handleConnectionToggle}>
         {connected ? 'Disconnect' : 'Connect'}
       </button>
-      <button onClick={onToggleSidebar} accessKey="u">
+      <button onClick={onToggleSidebar} accessKey="U"> {/* Changed accessKey to avoid conflict */}
         {showSidebar ? <FaChevronRight /> : <FaChevronLeft />}
-        {showSidebar ? "Hide Sidebar" : "Show Sidebar"}
+        {showSidebar ? "Hide Sidebar (Alt+U)" : "Show Sidebar (Alt+U)"}
       </button>
     </div>
   );

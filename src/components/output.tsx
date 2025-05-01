@@ -353,6 +353,23 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
   clearLog() {
     this.setState({ output: [] });
+    localStorage.removeItem(Output.LOCAL_STORAGE_KEY); // Also clear from local storage
+  }
+
+  copyLog() {
+    const output = this.outputRef.current;
+    if (output) {
+      const textToCopy = output.innerText; // Get plain text content
+      navigator.clipboard.writeText(textToCopy)
+        .then(() => {
+          console.log("Log copied to clipboard.");
+          // Optional: Add visual feedback here if needed
+        })
+        .catch(err => {
+          console.error('Failed to copy log: ', err);
+          alert("Failed to copy log to clipboard. See console for details.");
+        });
+    }
   }
 
   render() {
