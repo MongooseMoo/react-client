@@ -90,10 +90,12 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
           // Link back to the tab button
           aria-labelledby={tab.id}
           hidden={selectedTab !== index}
-          // Add class for styling panel content if needed
-          className="sidebar-tab-content"
+          // Panel itself should handle flex sizing (from tabs.css)
         >
-          {tab.content}
+          {/* Inner div handles padding and content overflow */}
+          <div className="sidebar-tab-content">
+            {tab.content}
+          </div>
         </div>
       ))}
     </div>

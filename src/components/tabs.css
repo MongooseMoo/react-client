@@ -22,7 +22,7 @@ div[role="tabpanel"] {
     /* Ensure it can grow and potentially scroll */
     flex: 1;
     min-height: 0; /* Important for flex + overflow */
-    /* overflow: auto; /* Let the specific .sidebar-tab-content handle overflow */
+    overflow: auto; /* Allow the panel itself to scroll */
 }
 
 div[role="tabpanel"][hidden] {

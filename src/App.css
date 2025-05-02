@@ -82,54 +82,134 @@ body {
 }
 
 /* Main layout */
+/* .App rules moved below */
+/* main rules moved below */
+/* aside rules moved below */
+
+.sidebar-visible {
+  /* This class might not need specific rules now if defaults are on 'aside' */
+  /* Or explicitly define the visible state here */
+  width: var(--sidebar-width);
+  padding: var(--spacing-unit);
+  border-left: 1px solid var(--color-border);
+}
+
+.sidebar-hidden {
+  /* Instead of display: none; */
+  width: 0;
+  padding: 0;
+  margin: 0; /* Remove margin if any */
+  border: none; /* Hide border */
+  overflow: hidden; /* Hide content that might overflow the 0 width */
+}
+
+/* --- Adjust the Grid Layout --- */
 .App {
   display: grid;
   grid-template-areas:
     "header header"
-    "main sidebar"
+    "main sidebar" /* Keep sidebar area */
     "input input"
     "status status";
+  /* Keep the column definition, the width: 0 will handle hiding */
   grid-template-columns: 1fr var(--sidebar-width);
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   width: 100%;
   height: 100vh;
   overflow: hidden;
-  gap: var(--spacing-unit);
+  /* Removed gap as it might interfere when width is 0 */
+  /* gap: var(--spacing-unit); */
   margin: 0;
   padding: 0;
+  box-sizing: border-box; /* Ensure padding/border included if App has them */
 }
 
+/* Add back some spacing using padding on grid items if needed */
 main {
   grid-area: main;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  padding-right: var(--spacing-unit); /* Add spacing previously provided by gap */
 }
 
 aside {
   grid-area: sidebar;
   min-height: 0;
   overflow: auto;
-  margin: 0 auto;
+  /* Removed margin: 0 auto; */
+  transition: width 0.3s ease, padding 0.3s ease, border 0.3s ease;
+  width: var(--sidebar-width);
+  /* padding: var(--spacing-unit); */ /* Padding is handled by visible/hidden */
+  /* border-left: 1px solid var(--color-border); */ /* Border handled by visible/hidden */
+  box-sizing: border-box;
 }
 
-.sidebar-visible {
-  display: block;
+/* Adjust padding for other areas if gap was removed */
+header[role="banner"],
+div[role="region"][aria-label="Command input"],
+footer[role="contentinfo"] {
+   padding-left: var(--spacing-unit);
+   padding-right: var(--spacing-unit);
+   /* Add top/bottom padding if needed */
 }
 
-.sidebar-hidden {
-  display: none;
-}
 
+/* --- Mobile View --- */
 @media (max-width: 768px) {
   .App {
     grid-template-areas:
       "header"
       "main"
       "input"
-      "sidebar"
+      "sidebar" /* Sidebar is now a row */
       "status";
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr; /* Single column */
+    /* Adjust rows - sidebar might need height auto or specific height */
     grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+    gap: 0; /* Remove gap here too */
   }
+
+  /* Adjust padding for mobile */
+  main { padding-right: 0; padding-bottom: var(--spacing-unit); }
+  aside {
+      /* Reset width for stacked layout */
+      width: 100%;
+      /* Adjust height as needed for mobile */
+      height: auto; /* Or a specific height */
+      max-height: 40vh; /* Example max height */
+      border-left: none; /* Remove side border */
+      border-top: 1px solid var(--color-border); /* Add top border */
+      /* Apply hiding styles for mobile */
+      transition: max-height 0.3s ease, padding 0.3s ease, border 0.3s ease; /* Transition height */
+  }
+
+  .sidebar-hidden {
+      /* Hide using max-height for mobile */
+      max-height: 0;
+      padding: 0;
+      margin: 0;
+      border: none;
+      overflow: hidden;
+  }
+   .sidebar-visible {
+      /* Explicitly set visible styles for mobile */
+      max-height: 40vh; /* Match aside max-height */
+      padding: var(--spacing-unit);
+      border-top: 1px solid var(--color-border);
+   }
+
+   /* Reset padding for other elements in mobile if needed */
+   header[role="banner"],
+   div[role="region"][aria-label="Command input"],
+   footer[role="contentinfo"] {
+      padding-left: var(--spacing-unit);
+      padding-right: var(--spacing-unit);
+      padding-top: var(--spacing-unit); /* Add spacing */
+      padding-bottom: var(--spacing-unit); /* Add spacing */
+   }
+   /* Remove bottom padding from input if statusbar is directly below */
+    div[role="region"][aria-label="Command input"] {
+        padding-bottom: 0;
+    }
 }
