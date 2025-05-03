@@ -14,15 +14,15 @@
   flex: 1; /* Grow to fill available space in .sidebar */
   display: flex; /* Use flexbox for tab layout */
   flex-direction: column; /* Stack tab list and panels */
-  overflow: hidden; /* Prevent content from spilling out, manage overflow in panels */
+  /* overflow: hidden; */ /* Removed: Let tab panel handle overflow */
   min-height: 0; /* Necessary for flex children with overflow */
 }
 
 /* Individual tab panel content area (inside the tabpanel) */
 .sidebar-tab-content {
   /* flex: 1; /* Removed: Parent tabpanel handles flexing */
-  overflow-y: auto; /* Allow vertical scrolling *within* the content area if needed */
-  overflow-x: hidden; /* Hide horizontal overflow */
+  /* overflow-y: auto; */ /* Removed: Scrolling handled by tabpanel */
+  /* overflow-x: hidden; */ /* Removed: Scrolling handled by tabpanel */
   padding: 1rem; /* Keep padding */
   /* min-height: 0; /* Removed: Parent tabpanel handles flexing */
 }
