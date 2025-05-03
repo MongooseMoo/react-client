@@ -136,7 +136,7 @@ main {
 aside {
   grid-area: sidebar;
   min-height: 0;
-  overflow: auto;
+  /* overflow: auto; */ /* Removed: Let content handle scroll */
   /* Removed margin: 0 auto; */
   transition: width 0.3s ease, padding 0.3s ease, border 0.3s ease;
   width: var(--sidebar-width);
