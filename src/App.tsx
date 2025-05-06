@@ -7,7 +7,8 @@ import OutputWindow from "./components/output";
 import PreferencesDialog, {
   PreferencesDialogRef,
 } from "./components/PreferencesDialog";
-import Sidebar from "./components/sidebar";
+// Import SidebarRef type along with the component
+import Sidebar, { SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
 import {
@@ -55,6 +56,7 @@ function App() {
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
+  const sidebarRef = React.useRef<SidebarRef | null>(null); // Add ref for Sidebar
 
   const clientInitialized = useRef(false);
 
@@ -145,7 +147,38 @@ function App() {
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
     };
-  }, [isMobile]);
+  }, [isMobile]); // Keep client initialization separate
+
+  // Effect for CTRL + Number shortcut
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only act if sidebar is shown and CTRL is pressed
+      if (!showSidebar || !event.ctrlKey) {
+        return;
+      }
+
+      // Check if key is a digit 1-9
+      const digit = parseInt(event.key, 10);
+      if (!isNaN(digit) && digit >= 1 && digit <= 9) {
+        const targetIndex = digit - 1; // 0-based index
+
+        // Prevent browser default action (like switching browser tabs)
+        event.preventDefault();
+
+        // Call the function exposed by Sidebar via ref
+        console.log(`App: Detected CTRL+${digit}, calling switchToTab(${targetIndex})`);
+        sidebarRef.current?.switchToTab(targetIndex);
+      }
+    };
+
+    // Add the event listener in the capture phase
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      // Remove the event listener also specifying the capture phase
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+    // Re-run if sidebar visibility changes
+  }, [showSidebar]); // Dependency: showSidebar
 
   const fileTransferOffer = useClientEvent<"fileTransferOffer">(
     client,
@@ -193,7 +226,8 @@ function App() {
   if (!client) return null; // or some loading component
 
   return (
-    <div className="App">
+    // Add conditional 'sidebar-shown' class based on showSidebar state
+    <div className={`App ${showSidebar ? 'sidebar-shown' : ''}`}>
       <header role="banner" style={{ gridArea: "header" }}>
         <Toolbar
           client={client}
@@ -215,11 +249,11 @@ function App() {
         style={{ gridArea: "sidebar" }}
         className={showSidebar ? "sidebar-visible" : "sidebar-hidden"}
       >
+        {/* Pass the ref and remove unnecessary props */}
         <Sidebar
-          users={players}
+          ref={sidebarRef}
           client={client}
-          fileTransferExpanded={fileTransferExpanded}
-        />{" "}
+        />
       </aside>
 
       <div

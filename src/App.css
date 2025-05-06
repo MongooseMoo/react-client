@@ -104,15 +104,15 @@ body {
 }
 
 /* --- Adjust the Grid Layout --- */
+/* Default grid layout (sidebar hidden) */
 .App {
   display: grid;
   grid-template-areas:
-    "header header"
-    "main sidebar" /* Keep sidebar area */
-    "input input"
-    "status status";
-  /* Keep the column definition, the width: 0 will handle hiding */
-  grid-template-columns: 1fr var(--sidebar-width);
+    "header" /* Single column layout */
+    "main"
+    "input"
+    "status";
+  grid-template-columns: 1fr; /* Single column takes full width */
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   width: 100%;
   height: 100vh;
@@ -124,25 +124,40 @@ body {
   box-sizing: border-box; /* Ensure padding/border included if App has them */
 }
 
+/* Grid layout when sidebar is shown */
+.App.sidebar-shown {
+  grid-template-areas:
+    "header header"
+    "main sidebar" /* Two columns */
+    "input input"
+    "status status";
+  grid-template-columns: 1fr var(--sidebar-width); /* Define column sizes */
+  /* Rows remain the same */
+}
+
+
 /* Add back some spacing using padding on grid items if needed */
 main {
   grid-area: main;
+  /* Ensure main area doesn't get spacing when sidebar is hidden */
+  padding-right: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding-right: var(--spacing-unit); /* Add spacing previously provided by gap */
+}
+
+/* Add spacing only when sidebar is shown */
+.App.sidebar-shown main {
+    padding-right: var(--spacing-unit);
 }
 
 aside {
   grid-area: sidebar;
   min-height: 0;
-  /* overflow: auto; */ /* Removed: Let content handle scroll */
-  /* Removed margin: 0 auto; */
+  overflow: hidden; /* Hide content that overflows during transition */
   transition: width 0.3s ease, padding 0.3s ease, border 0.3s ease;
-  width: var(--sidebar-width);
-  /* padding: var(--spacing-unit); */ /* Padding is handled by visible/hidden */
-  /* border-left: 1px solid var(--color-border); */ /* Border handled by visible/hidden */
-  box-sizing: border-box;
+  /* Default width/padding/border handled by .sidebar-hidden/.sidebar-visible */
+  box-sizing: border-box; /* Keep box-sizing */
 }
 
 /* Adjust padding for other areas if gap was removed */
@@ -152,51 +167,77 @@ footer[role="contentinfo"] {
    padding-left: var(--spacing-unit);
    padding-right: var(--spacing-unit);
    /* Add top/bottom padding if needed */
+   padding-top: var(--spacing-unit);
+   padding-bottom: var(--spacing-unit);
+}
+
+/* --- Sidebar Visibility Classes --- */
+/* Styles for when sidebar is hidden (desktop) */
+.sidebar-hidden {
+    width: 0;
+    padding: 0;
+    margin: 0; /* Ensure no margin */
+    border: none; /* Hide border */
+    overflow: hidden; /* Ensure content is clipped */
+}
+
+/* Styles for when sidebar is visible (desktop) */
+.sidebar-visible {
+    width: var(--sidebar-width);
+    padding: var(--spacing-unit);
+    border-left: 1px solid var(--color-border);
+    overflow: hidden; /* Prevent overflow during transition */
 }
 
 
 /* --- Mobile View --- */
 @media (max-width: 768px) {
-  .App {
+  /* Mobile grid layout (always stacked) */
+  .App, .App.sidebar-shown { /* Apply to both base and shown states */
     grid-template-areas:
       "header"
       "main"
       "input"
       "sidebar" /* Sidebar is now a row */
       "status";
-    grid-template-columns: 1fr; /* Single column */
-    /* Adjust rows - sidebar might need height auto or specific height */
-    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
-    gap: 0; /* Remove gap here too */
+    grid-template-columns: 1fr; /* Always single column */
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto; /* Keep row definitions */
+    gap: 0; /* Ensure no gap */
   }
 
   /* Adjust padding for mobile */
   main { padding-right: 0; padding-bottom: var(--spacing-unit); }
+
+  /* Base aside styles for mobile */
   aside {
-      /* Reset width for stacked layout */
-      width: 100%;
-      /* Adjust height as needed for mobile */
-      height: auto; /* Or a specific height */
-      max-height: 40vh; /* Example max height */
-      border-left: none; /* Remove side border */
-      border-top: 1px solid var(--color-border); /* Add top border */
-      /* Apply hiding styles for mobile */
-      transition: max-height 0.3s ease, padding 0.3s ease, border 0.3s ease; /* Transition height */
+      width: 100%; /* Full width */
+      height: auto; /* Allow height adjustment */
+      border-left: none; /* No left border */
+      /* Transition height, padding, and border for mobile */
+      transition: max-height 0.3s ease, padding 0.3s ease, border-top 0.3s ease;
   }
 
+  /* Sidebar hidden styles for mobile */
   .sidebar-hidden {
-      /* Hide using max-height for mobile */
       max-height: 0;
-      padding: 0;
+      padding-top: 0; /* Collapse padding */
+      padding-bottom: 0;
       margin: 0;
-      border: none;
+      border: none; /* No border */
       overflow: hidden;
+      /* Ensure desktop styles are overridden */
+      width: 100%;
+      border-left: none;
   }
+
+  /* Sidebar visible styles for mobile */
    .sidebar-visible {
-      /* Explicitly set visible styles for mobile */
-      max-height: 40vh; /* Match aside max-height */
-      padding: var(--spacing-unit);
-      border-top: 1px solid var(--color-border);
+      max-height: 40vh; /* Or desired visible height */
+      padding: var(--spacing-unit); /* Restore padding */
+      border-top: 1px solid var(--color-border); /* Add top border */
+      /* Ensure desktop styles are overridden */
+      width: 100%;
+      border-left: none;
    }
 
    /* Reset padding for other elements in mobile if needed */
