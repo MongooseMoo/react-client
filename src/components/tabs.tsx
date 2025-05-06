@@ -71,8 +71,10 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
             // Use the provided id to link to the panel
             aria-controls={`${tab.id}-panel`}
             onClick={() => {
+              console.log(`Tab onClick triggered for: ${tab.label} (Index: ${index})`);
               userInteractedRef.current = true; // Keep track of user interaction for focus management
               setSelectedTab(index);
+              console.log(`Tab state updated to index: ${index}`);
             }}
             tabIndex={selectedTab === index ? undefined : -1}
           >

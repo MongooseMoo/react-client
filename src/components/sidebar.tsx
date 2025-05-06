@@ -13,12 +13,18 @@ import { useClientEvent } from "../hooks/useClientEvent"; // Import useClientEve
 import { UserlistPlayer } from "../mcp";
 import RoomInfoDisplay from "./RoomInfoDisplay"; // Import new component
 
+// Define the type for the imperative handle
+export type SidebarRef = {
+  switchToTab: (index: number) => void;
+};
+
 interface SidebarProps {
   client: MudClient;
-  // fileTransferExpanded is likely managed internally now or via context
+  // showSidebar prop is removed
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ client }) => {
+// Wrap component with forwardRef
+const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => {
   const users = useClientEvent(client, "userlist", [] as UserlistPlayer[]);
   const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
 
@@ -116,8 +122,36 @@ const Sidebar: React.FC<SidebarProps> = ({ client }) => {
     },
   ];
 
-  // Filter tabs based on their condition
-  const visibleTabs = allTabs.filter((tab) => tab.condition);
+  // Memoize visibleTabs to prevent unnecessary effect re-runs if conditions don't change
+  // Note: If tab conditions become more dynamic, add them to the dependency array.
+  const visibleTabs = React.useMemo(() => {
+    return allTabs.filter((tab) => tab.condition ?? true); // Default condition to true
+  }, [hasRoomData, hasInventoryData]); // Add dependencies based on actual conditions used
+
+  // Expose switchToTab function via useImperativeHandle
+  React.useImperativeHandle(ref, () => ({
+    switchToTab: (targetIndex: number) => {
+      if (targetIndex >= 0 && targetIndex < visibleTabs.length) {
+        const targetTabId = visibleTabs[targetIndex]?.id;
+        if (targetTabId) {
+          console.log(`switchToTab: Trying index ${targetIndex}, ID: ${targetTabId}`);
+          const buttonElement = document.getElementById(targetTabId);
+          if (buttonElement) {
+            console.log(`switchToTab: Found button element, attempting click...`);
+            buttonElement.click(); // Simulate click
+            console.log(`switchToTab: Click simulation finished.`);
+          } else {
+            console.error(`switchToTab: Could not find button element with ID: ${targetTabId}`);
+          }
+        } else {
+          console.warn(`switchToTab: Could not determine targetTabId for index ${targetIndex}. Visible tabs:`, visibleTabs);
+        }
+      } else {
+         console.warn(`switchToTab: Invalid targetIndex ${targetIndex}. Visible tabs count: ${visibleTabs.length}`);
+      }
+    }
+  }), [visibleTabs]); // Dependency: visibleTabs
+
 
   // Example effect to toggle file transfer based on activity
   useEffect(() => {
@@ -142,6 +176,6 @@ const Sidebar: React.FC<SidebarProps> = ({ client }) => {
       </div>
     </div>
   );
-};
+}); // Close the forwardRef
 
 export default Sidebar;
