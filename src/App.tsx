@@ -243,19 +243,21 @@ function App() {
         {/* Pass the focusInput function down to OutputWindow */}
         <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
       </main>
-      <aside
-        role="complementary"
-        aria-roledescription="Sidebar"
-        style={{ gridArea: "sidebar" }}
-        className={showSidebar ? "sidebar-visible" : "sidebar-hidden"}
-      >
-        {/* Pass the ref and remove unnecessary props */}
-        <Sidebar
-          ref={sidebarRef}
-          client={client}
-        />
-      </aside>
-
+      {/* Conditionally render the aside element */}
+      {showSidebar && (
+        <aside
+          role="complementary"
+          aria-roledescription="Sidebar"
+          style={{ gridArea: "sidebar" }}
+          // className is no longer needed here for visibility
+        >
+          {/* Pass the ref and client prop */}
+          <Sidebar
+            ref={sidebarRef}
+            client={client}
+          />
+        </aside>
+      )}
       <div
         role="region"
         aria-label="Command input"

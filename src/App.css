@@ -171,25 +171,6 @@ footer[role="contentinfo"] {
    padding-bottom: var(--spacing-unit);
 }
 
-/* --- Sidebar Visibility Classes --- */
-/* Styles for when sidebar is hidden (desktop) */
-.sidebar-hidden {
-    width: 0;
-    padding: 0;
-    margin: 0; /* Ensure no margin */
-    border: none; /* Hide border */
-    overflow: hidden; /* Ensure content is clipped */
-}
-
-/* Styles for when sidebar is visible (desktop) */
-.sidebar-visible {
-    width: var(--sidebar-width);
-    padding: var(--spacing-unit);
-    border-left: 1px solid var(--color-border);
-    overflow: hidden; /* Prevent overflow during transition */
-}
-
-
 /* --- Mobile View --- */
 @media (max-width: 768px) {
   /* Mobile grid layout (always stacked) */
@@ -214,31 +195,17 @@ footer[role="contentinfo"] {
       height: auto; /* Allow height adjustment */
       border-left: none; /* No left border */
       /* Transition height, padding, and border for mobile */
+      /* Transition height, padding, and border for mobile */
+      /* Note: Transitions might not work smoothly with conditional rendering */
+      /* Consider React transition groups if animation is crucial */
       transition: max-height 0.3s ease, padding 0.3s ease, border-top 0.3s ease;
-  }
-
-  /* Sidebar hidden styles for mobile */
-  .sidebar-hidden {
-      max-height: 0;
-      padding-top: 0; /* Collapse padding */
-      padding-bottom: 0;
-      margin: 0;
-      border: none; /* No border */
-      overflow: hidden;
-      /* Ensure desktop styles are overridden */
-      width: 100%;
-      border-left: none;
-  }
-
-  /* Sidebar visible styles for mobile */
-   .sidebar-visible {
+      /* Apply visible styles directly when rendered */
       max-height: 40vh; /* Or desired visible height */
       padding: var(--spacing-unit); /* Restore padding */
       border-top: 1px solid var(--color-border); /* Add top border */
-      /* Ensure desktop styles are overridden */
-      width: 100%;
-      border-left: none;
-   }
+      width: 100%; /* Ensure full width */
+      border-left: none; /* Ensure no left border */
+  }
 
    /* Reset padding for other elements in mobile if needed */
    header[role="banner"],

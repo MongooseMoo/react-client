@@ -116,9 +116,16 @@ const Toolbar = ({
       <button onClick={handleConnectionToggle}>
         {connected ? 'Disconnect' : 'Connect'}
       </button>
-      <button onClick={onToggleSidebar} accessKey="U"> {/* Changed accessKey to avoid conflict */}
+      <button
+        onClick={onToggleSidebar}
+        accessKey="U"
+        title={showSidebar ? "Hide Sidebar (Alt+U)" : "Show Sidebar (Alt+U)"} // Add title attribute
+        aria-label={showSidebar ? "Hide Sidebar" : "Show Sidebar"} // Add aria-label for clarity
+        aria-expanded={showSidebar} // Indicate expanded state
+      >
         {showSidebar ? <FaChevronRight /> : <FaChevronLeft />}
-        {showSidebar ? "Hide Sidebar (Alt+U)" : "Show Sidebar (Alt+U)"}
+        {/* Keep concise text, title/aria-label provide details */}
+        {showSidebar ? "Hide Sidebar" : "Show Sidebar"}
       </button>
     </div>
   );
