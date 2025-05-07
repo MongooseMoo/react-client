@@ -37,6 +37,14 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
             prevTab < tabs.length - 1 ? prevTab + 1 : 0
           );
           break;
+        case "Home":
+          userInteractedRef.current = true;
+          setSelectedTab(0);
+          break;
+        case "End":
+          userInteractedRef.current = true;
+          setSelectedTab(tabs.length - 1);
+          break;
         default:
           break;
       }
