@@ -1,0 +1,132 @@
+.item-card {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border-subtle, #ccc);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    background-color: var(--color-bg-secondary, #f9f9f9);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: box-shadow 0.2s ease-in-out;
+}
+
+.item-card:hover {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.item-icon {
+    width: 32px;
+    height: 32px;
+    margin-right: 12px;
+    object-fit: contain; /* Or 'cover', depending on icon style */
+    border-radius: 3px;
+}
+
+.item-details {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0; /* Prevents overflow issues with long names */
+}
+
+.item-name {
+    font-weight: bold;
+    color: var(--color-text-primary, #333);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.item-attributes {
+    font-size: 0.85em;
+    color: var(--color-text-secondary, #666);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.item-drop-button {
+    margin-left: 12px;
+    padding: 4px 8px; /* Adjusted padding for a symbol */
+    font-size: 1.1em;  /* Make symbol slightly larger */
+    font-weight: bold; /* Ensure symbol is prominent */
+    line-height: 1;    /* Consistent height for single character */
+    position: relative; /* Needed if ::before is positioned, but for simple content, not strictly necessary */
+    color: var(--color-text-button, #fff);
+    background-color: var(--color-button-danger-bg, #e74c3c);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.item-drop-button::before {
+    content: "✕";
+    display: inline-block; /* Or block, depending on layout needs */
+    text-align: center;
+    /* Ensure it inherits font styles for boldness, size */
+}
+
+.item-drop-button:hover {
+    background-color: var(--color-button-danger-hover-bg, #c0392b);
+}
+
+.item-drop-button:focus {
+    outline: 2px solid var(--color-focus-ring, #3498db);
+    outline-offset: 1px;
+}
+
+.item-actions {
+    display: flex;
+    align-items: center;
+    margin-left: auto; /* Pushes all buttons to the right */
+}
+
+.item-actions button {
+    margin-left: 8px; /* Spacing between buttons */
+    padding: 4px 8px;
+    font-size: 0.9em;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.item-wear-button {
+    color: var(--color-text-button, #fff);
+    background-color: var(--color-button-primary-bg, #2ecc71); /* Green for wear */
+}
+
+.item-wear-button:hover {
+    background-color: var(--color-button-primary-hover-bg, #27ae60);
+}
+
+.item-remove-button {
+    color: var(--color-text-button, #fff);
+    background-color: var(--color-button-secondary-bg, #f39c12); /* Orange for remove */
+}
+
+.item-remove-button:hover {
+    background-color: var(--color-button-secondary-hover-bg, #e67e22);
+}
+
+/* Adjust drop button margin if it's the first in .item-actions or alone */
+.item-actions .item-drop-button {
+    margin-left: 8px;
+}
+
+/* Ensure drop button specific styles are maintained or enhanced */
+.item-drop-button {
+    /* padding, font-size, etc. already defined, ensure they are not overridden if not intended */
+    /* background-color is already var(--color-button-danger-bg, #e74c3c) */
+}
+
+.item-drop-button:hover {
+    /* background-color is already var(--color-button-danger-hover-bg, #c0392b) */
+}
+
+.item-actions button:focus {
+    outline: 2px solid var(--color-focus-ring, #3498db);
+    outline-offset: 1px;
+}

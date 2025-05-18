@@ -6,7 +6,7 @@ import Userlist from "./userlist";
 // import AfflictionsList from "./AfflictionsList"; // Removed
 // import DefencesList from "./DefencesList"; // Removed
 // import TargetInfoDisplay from "./TargetInfo"; // Removed
-import InventoryList from "./InventoryList";
+import Inventory from "./inventory"; // Changed from InventoryList to Inventory
 // import SkillsDisplay from "./SkillsDisplay"; // Removed
 import MudClient from "../client";
 import { useClientEvent } from "../hooks/useClientEvent"; // Import useClientEvent
@@ -72,7 +72,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => 
     {
       id: "inventory-tab",
       label: "Inventory",
-      content: <InventoryList client={client} />,
+      content: <Inventory client={client} />, // Changed to use Inventory component
       condition: hasInventoryData,
     },
     {

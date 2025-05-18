@@ -16,7 +16,8 @@
 /* Styling for the currently selected/focused item */
 .accessible-list-ul li.selected {
     background-color: var(--color-selected-bg, #bde4ff); /* Use CSS variable */
-    color: var(--color-selected-text, inherit); /* Ensure text contrast */
+    /* Ensure text contrast, fallback to --color-text or black if --color-selected-text is not defined */
+    color: var(--color-selected-text, var(--color-text, black)); 
     border-radius: var(--border-radius-small, 2px);
 }
 
