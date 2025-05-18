@@ -1,147 +1,63 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import MudClient from '../client';
-import { Item, ItemLocation } from '../gmcp/Char/Items';
-import AccessibleList from './AccessibleList'; // Import the new component
-import './InventoryList.css';
+import React from 'react';
+import { Item } from '../gmcp/Char/Items';
+import AccessibleList from './AccessibleList';
+// Note: InventoryList.css is now imported by the parent Inventory.tsx
 
 interface InventoryListProps {
-    client: MudClient;
+  items: Item[];
+  onItemSelected: (item: Item | null) => void;
+  listId: string;
+  labelledBy: string;
 }
 
-// Helper function to parse item attributes (remains the same)
-const parseAttributes = (attrib?: string): string[] => {
-    if (!attrib) return [];
-    const attributes: string[] = [];
-    if (attrib.includes('w')) attributes.push('worn');
-    if (attrib.includes('l')) attributes.push('wielded');
-    if (attrib.includes('c')) attributes.push('container');
-    // Add more as needed (W=wearable, g=groupable, t=takeable, etc.)
-    return attributes;
-};
+const InventoryList: React.FC<InventoryListProps> = ({
+  items,
+  onItemSelected,
+  listId,
+  labelledBy,
+}) => {
 
-// Ensure Item has a unique 'id' property (it already does)
+  const handleSelectionChange = (index: number) => {
+    if (index > -1 && items[index]) {
+      onItemSelected(items[index]);
+    } else {
+      onItemSelected(null);
+    }
+  };
 
-const InventoryList: React.FC<InventoryListProps> = ({ client }) => {
-    const [items, setItems] = useState<Item[]>([]); // Item already has 'id'
-
-    const updateInventory = useCallback((location: ItemLocation, newItems: Item[]) => {
-        if (location === 'inv') {
-            setItems(newItems);
-            // Signal that inventory data is available (for sidebar tab)
-            client.emit('inventoryDataReceived');
-        }
-    }, [client]);
-
-    const addItemToInventory = useCallback((location: ItemLocation, item: Item) => {
-        if (location === 'inv') {
-            setItems(prev => {
-                // Avoid duplicates if server sends add for existing item
-                if (prev.some(i => i.id === item.id)) {
-                    return prev;
-                }
-                const newItems = [...prev, item];
-                 client.emit('inventoryDataReceived'); // Signal data received
-                return newItems;
-            });
-        }
-    }, [client]);
-
-    const removeItemFromInventory = useCallback((location: ItemLocation, itemToRemove: Item) => {
-        // Using item object based on GMCP example, might need adjustment if only ID is sent
-        if (location === 'inv') {
-            setItems(prev => prev.filter(item => item.id !== itemToRemove.id));
-             client.emit('inventoryDataReceived'); // Signal data received (even if empty)
-        }
-    }, [client]);
-
-    const updateItemInInventory = useCallback((location: ItemLocation, updatedItem: Item) => {
-        if (location === 'inv') {
-            setItems(prev => prev.map(item => item.id === updatedItem.id ? { ...item, ...updatedItem } : item));
-             client.emit('inventoryDataReceived'); // Signal data received
-        }
-    }, [client]);
-
-
-    useEffect(() => {
-        // Type assertion needed because the handlers expect specific GMCP message types
-        const handleList = (data: any) => updateInventory(data.location, data.items);
-        const handleAdd = (data: any) => addItemToInventory(data.location, data.item);
-        const handleRemove = (data: any) => removeItemFromInventory(data.location, data.item);
-        const handleUpdate = (data: any) => updateItemInInventory(data.location, data.item);
-
-        client.on('itemsList', handleList);
-        client.on('itemAdd', handleAdd);
-        client.on('itemRemove', handleRemove);
-        client.on('itemUpdate', handleUpdate);
-
-        // Request initial inventory list when component mounts
-        const charItemsHandler = client.gmcpHandlers['Char.Items'] as any; // Cast to access method
-        if (charItemsHandler?.sendInventoryRequest) {
-            console.log("Requesting initial inventory list...");
-            charItemsHandler.sendInventoryRequest();
-        } else {
-            console.warn("Char.Items handler or sendInventoryRequest method not found.");
-        }
-
-        return () => {
-            client.off('itemsList', handleList);
-            client.off('itemAdd', handleAdd);
-            client.off('itemRemove', handleRemove);
-            client.off('itemUpdate', handleUpdate);
-        };
-    }, [client, updateInventory, addItemToInventory, removeItemFromInventory, updateItemInInventory]);
-
-    const headingId = "inventory-heading";
-    const listId = "inventory-listbox"; // Unique ID for the AccessibleList
-
-    const renderInventoryItem = (item: Item, index: number, isSelected: boolean) => {
-        const attributes = parseAttributes(item.attrib);
-        const title = attributes.length > 0 ? `Attributes: ${attributes.join(', ')}` : undefined;
-        // Note: title attribute might be better placed on the li generated by AccessibleList if possible,
-        // or we can wrap the content in a span with the title. For now, keep it simple.
-        return (
-            <span title={title}> {/* Apply title to span for hover effect */}
-                {item.name}
-                {attributes.length > 0 && (
-                    <span className="item-attributes" aria-hidden="true"> ({attributes.join(', ')})</span>
-                )}
-            </span>
-        );
-    };
-
-     const getInventoryItemClassName = (item: Item, index: number, isSelected: boolean): string => {
-        // Add specific classes based on item properties if needed
-        let classes = "inventory-item";
-        // Example: if (item.attrib?.includes('w')) classes += " worn-item";
-        return classes;
-    };
-
-     const getInventoryItemTextValue = (item: Item): string => {
-        return item.name ? item.name.toLowerCase() : '';
-    };
-
-
+  const renderInventoryItem = (item: Item, index: number, isSelected: boolean) => {
     return (
-        // Use role="region" for the overall component section if appropriate,
-        // AccessibleList provides the listbox role itself.
-        <div className="inventory-list-container" role="region" aria-labelledby={headingId}>
-            {/* Make heading focusable only if it's interactive, otherwise keep it static */}
-            <h4 id={headingId} tabIndex={-1}>Inventory</h4>
-            {items.length === 0 ? (
-                <p>Your inventory is empty.</p>
-            ) : (
-                <AccessibleList
-                    items={items}
-                    renderItem={renderInventoryItem}
-                    listId={listId}
-                    labelledBy={headingId}
-                    className="inventory-accessible-list" // Optional class for styling the list container
-                    itemClassName={getInventoryItemClassName}
-                    getItemTextValue={getInventoryItemTextValue}
-                />
-            )}
-        </div>
+      <span > {/* Apply title to span for hover effect */}
+        {item.name}
+      </span>
     );
+  };
+
+
+  const getInventoryItemClassName = (item: Item, index: number, isSelected: boolean): string => {
+    // This class is applied to the <li> element by AccessibleList.
+    // It will be styled by rules in InventoryList.css (imported by parent)
+    // or AccessibleList.css
+    let classes = "inventory-list-li";
+    return classes;
+  };
+
+  const getInventoryItemTextValue = (item: Item): string => {
+    return item.name ? item.name.toLowerCase() : '';
+  };
+
+  return (
+    <AccessibleList
+      items={items}
+      renderItem={renderInventoryItem}
+      listId={listId}
+      labelledBy={labelledBy}
+      className="inventory-accessible-list" // Class for the AccessibleList's root div
+      itemClassName={getInventoryItemClassName}
+      getItemTextValue={getInventoryItemTextValue}
+      onSelectedIndexChange={handleSelectionChange}
+    />
+  );
 };
 
 export default InventoryList;
