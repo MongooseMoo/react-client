@@ -2,8 +2,8 @@
 .sidebar {
   height: 100%; /* Take full available height */
   width: var(--sidebar-width, 300px); /* Use variable or fallback */
-  display: flex; /* Use flexbox for internal layout */
-  flex-direction: column; /* Stack children vertically */
+  display: flex;
+  flex-direction: column;
   background: var(--color-bg);
   border-left: 1px solid var(--color-border);
   transition: width 0.3s ease; /* Transition width changes */
@@ -12,17 +12,12 @@
 /* Container for the tab component */
 .sidebar-content {
   flex: 1; /* Grow to fill available space in .sidebar */
-  display: flex; /* Use flexbox for tab layout */
-  flex-direction: column; /* Stack tab list and panels */
-  /* overflow: hidden; */ /* Removed: Let tab panel handle overflow */
+  display: flex;
+  flex-direction: column;
   min-height: 0; /* Necessary for flex children with overflow */
 }
 
 /* Individual tab panel content area (inside the tabpanel) */
 .sidebar-tab-content {
-  /* flex: 1; /* Removed: Parent tabpanel handles flexing */
-  /* overflow-y: auto; */ /* Removed: Scrolling handled by tabpanel */
-  /* overflow-x: hidden; */ /* Removed: Scrolling handled by tabpanel */
-  padding: 1rem; /* Keep padding */
-  /* min-height: 0; /* Removed: Parent tabpanel handles flexing */
+  padding: 1rem;
 }

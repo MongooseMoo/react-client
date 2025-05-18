@@ -4,7 +4,7 @@ export interface Item {
   id: string; // Docs say number, but examples show string IDs sometimes
   name: string;
   icon?: string;
-  attrib?: string; // wWlgctmdx
+  Attrib?: string; // wWlgctmdx
 }
 
 export type ItemLocation = "inv" | "room" | string; // "repNUMBER" for containers
