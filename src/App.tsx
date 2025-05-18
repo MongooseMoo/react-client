@@ -243,6 +243,13 @@ function App() {
         {/* Pass the focusInput function down to OutputWindow */}
         <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
       </main>
+      <div
+        role="region"
+        aria-label="Command input"
+        style={{ gridArea: "input" }}
+      >
+        <CommandInput onSend={handleCommand} inputRef={inRef} />
+      </div>
       {/* Conditionally render the aside element */}
       {showSidebar && (
         <aside
@@ -258,13 +265,6 @@ function App() {
           />
         </aside>
       )}
-      <div
-        role="region"
-        aria-label="Command input"
-        style={{ gridArea: "input" }}
-      >
-        <CommandInput onSend={handleCommand} inputRef={inRef} />
-      </div>
       <footer role="contentinfo" style={{ gridArea: "status" }}>
         <Statusbar client={client} />
       </footer>
