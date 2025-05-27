@@ -55,3 +55,33 @@ a.exit {
 .new-lines-notification:hover {
   background-color: pink;
 }
+
+/* Styles for different types of output lines */
+/* .output-line-serverMessage {} */ /* Default, no specific style needed unless desired */
+
+.output-line-command {
+  /* Commands are already styled by an inner .command span if needed. */
+  /* This class is for line-level styling if desired. */
+  /* Example: slightly dimmer text for the whole line if it's a command and visible */
+  /* color: #c0c0c0; */
+}
+
+.output-line-systemInfo {
+  color: #87ceeb; /* Sky blue for the text of system info */
+}
+.output-line-systemInfo h2 { /* System info content is often wrapped in h2 */
+  font-size: 1em; /* Normalize font size */
+  margin: 0; /* Reset margin */
+  font-weight: normal; /* Make it less prominent than default h2 */
+  display: inline; /* Prevent h2 from taking full width if not desired */
+}
+
+.output-line-errorMessage {
+  color: #ff6347; /* Tomato red for the text of error messages */
+}
+.output-line-errorMessage h2 { /* Error message content is often wrapped in h2 */
+  font-size: 1em; /* Normalize font size */
+  margin: 0; /* Reset margin */
+  font-weight: bold; /* Keep errors bold */
+  display: inline; /* Prevent h2 from taking full width if not desired */
+}
