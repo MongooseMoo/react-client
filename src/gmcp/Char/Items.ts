@@ -5,6 +5,7 @@ export interface Item {
   name: string;
   icon?: string;
   Attrib?: string; // wWlgctmdx
+  location?: ItemLocation; // Added location
 }
 
 export type ItemLocation = "inv" | "room" | string; // "repNUMBER" for containers
@@ -40,26 +41,26 @@ export class GMCPCharItems extends GMCPPackage {
 
   handleList(data: GMCPMessageCharItemsList): void {
     console.log(`Received Char.Items.List for ${data.location}:`, data.items);
-    // TODO: Update item list for the specified location
-    this.client.emit("itemsList", data);
+    const itemsWithLocation = data.items.map(item => ({ ...item, location: data.location }));
+    this.client.emit("itemsList", { ...data, items: itemsWithLocation });
   }
 
   handleAdd(data: GMCPMessageCharItemsAdd): void {
     console.log(`Received Char.Items.Add for ${data.location}:`, data.item);
-    // TODO: Add item to the specified location
-    this.client.emit("itemAdd", data);
+    const itemWithLocation = { ...data.item, location: data.location };
+    this.client.emit("itemAdd", { ...data, item: itemWithLocation });
   }
 
   handleRemove(data: GMCPMessageCharItemsRemove): void {
     console.log(`Received Char.Items.Remove for ${data.location}:`, data.item);
-    // TODO: Remove item from the specified location
-    this.client.emit("itemRemove", data);
+    const itemWithLocationDetails = { ...data.item, location: data.location };
+    this.client.emit("itemRemove", { ...data, item: itemWithLocationDetails });
   }
 
   handleUpdate(data: GMCPMessageCharItemsUpdate): void {
     console.log(`Received Char.Items.Update for ${data.location}:`, data.item);
-    // TODO: Update item attributes in inventory
-    this.client.emit("itemUpdate", data);
+    const itemWithLocation = { ...data.item, location: data.location };
+    this.client.emit("itemUpdate", { ...data, item: itemWithLocation });
   }
 
   // --- Client Messages ---
