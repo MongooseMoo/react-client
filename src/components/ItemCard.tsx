@@ -7,11 +7,12 @@ interface ItemCardProps {
     onDrop: (item: Item) => void;
     onWear?: (item: Item) => void;
     onRemove?: (item: Item) => void;
+    onGet?: (item: Item) => void; // Added onGet prop
     // isSelected is no longer needed as card is only shown for the selected item
     // detailsId is no longer needed
 }
 
-const ItemCard: React.FC<ItemCardProps> = ({ item, onDrop, onWear, onRemove }) => {
+const ItemCard: React.FC<ItemCardProps> = ({ item, onDrop, onWear, onRemove, onGet }) => {
     // const attributes = parseAttributes(item.Attrib); // Removed attribute parsing
     const itemTitle = item.name; // Title is just the item name for now
 
@@ -20,7 +21,12 @@ const ItemCard: React.FC<ItemCardProps> = ({ item, onDrop, onWear, onRemove }) =
 
     const handleDropClick = (e: React.MouseEvent) => {
         e.stopPropagation(); // Prevent click from propagating to parent elements if any
-        onDrop(item);
+        if (onDrop) onDrop(item);
+    };
+
+    const handleGetClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (onGet) onGet(item);
     };
 
     return (
@@ -31,7 +37,18 @@ const ItemCard: React.FC<ItemCardProps> = ({ item, onDrop, onWear, onRemove }) =
                 {/* Attribute display removed for now */}
             </div>
             <div className="item-actions">
-                {isWearable && !isWorn && onWear && (
+                {item.location === 'room' && onGet && (
+                    <button
+                        className="item-get-button" // New class for styling
+                        onClick={handleGetClick}
+                        aria-label={`Get ${item.name}`}
+                        tabIndex={0}
+                        accessKey="g" 
+                    >
+                        Get
+                    </button>
+                )}
+                {item.location === 'inv' && isWearable && !isWorn && onWear && (
                     <button
                         className="item-wear-button"
                         onClick={() => onWear(item)}
@@ -42,7 +59,7 @@ const ItemCard: React.FC<ItemCardProps> = ({ item, onDrop, onWear, onRemove }) =
                         Wear
                     </button>
                 )}
-                {isWorn && onRemove && (
+                {item.location === 'inv' && isWorn && onRemove && (
                     <button
                         className="item-remove-button"
                         onClick={() => onRemove(item)}
@@ -53,15 +70,17 @@ const ItemCard: React.FC<ItemCardProps> = ({ item, onDrop, onWear, onRemove }) =
                         Remove
                     </button>
                 )}
-                <button
-                    className="item-drop-button"
-                    onClick={handleDropClick}
-                    aria-label={`Drop ${item.name}`}
-                    tabIndex={0} // Always tabbable as it's only rendered for the selected item's card
-                    accessKey="d"
-                >
-                    {/* Visual symbol for this button is rendered using a CSS ::before pseudo-element */}
-                </button>
+                {item.location === 'inv' && onDrop && (
+                    <button
+                        className="item-drop-button"
+                        onClick={handleDropClick}
+                        aria-label={`Drop ${item.name}`}
+                        tabIndex={0} 
+                        accessKey="d"
+                    >
+                        {/* Visual symbol for this button is rendered using a CSS ::before pseudo-element */}
+                    </button>
+                )}
             </div>
         </div>
     );

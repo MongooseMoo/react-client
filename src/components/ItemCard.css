@@ -77,6 +77,20 @@
     outline-offset: 1px;
 }
 
+.item-get-button { /* Style for the new Get button */
+    color: var(--color-text-button, #fff);
+    background-color: var(--color-button-success-bg, #5cb85c); /* Example: Green for Get */
+    /* Add other button styles similar to item-wear-button if needed */
+}
+
+.item-get-button:hover {
+    background-color: var(--color-button-success-hover-bg, #4cae4c);
+}
+
+/* Ensure .item-actions button styles apply or are specifically added */
+/* .item-actions button styles are already defined and should cover .item-get-button */
+/* .item-actions button:focus styles are also already defined */
+
 .item-actions {
     display: flex;
     align-items: center;

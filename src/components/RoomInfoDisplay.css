@@ -60,3 +60,40 @@
     font-style: italic;
     color: var(--color-text-muted);
 }
+
+.room-contents-section {
+    margin-top: 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--color-border-light, #eee);
+}
+
+.room-contents-section h5 {
+    margin-top: 0;
+    margin-bottom: 0.3rem;
+    font-weight: bold;
+}
+
+.room-contents-section p { /* For "Nothing on the ground." message */
+    font-style: italic;
+    color: var(--color-text-muted);
+    font-size: 0.9em;
+}
+
+.room-items-accessible-list {
+    font-size: 0.9em;
+    /* max-height: 150px; */ /* Optional: if the list can be very long */
+    /* overflow-y: auto;   */
+}
+
+.room-item-li { /* Style for <li> elements in the room items list */
+    padding: 0.3rem 0.5rem;
+    cursor: default;
+    border-radius: var(--border-radius-small, 2px);
+    color: var(--color-text, black);
+}
+
+.selected-room-item-card-container {
+    margin-top: 1rem;
+    border-top: 1px solid var(--color-border-subtle, #eee);
+    padding-top: 1rem;
+}
