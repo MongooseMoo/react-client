@@ -31,13 +31,14 @@ import { Cacophony } from "cacophony";
 import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
-import { GMCPMessageRoomInfo } from "./gmcp/Room"; // Import RoomInfo type
+import { GMCPMessageRoomInfo, RoomPlayer } from "./gmcp/Room"; // Import RoomPlayer
 
 export interface WorldData {
   liveKitTokens: string[];
   playerId: string;
   playerName: string;
   roomId: string;
+  roomPlayers: RoomPlayer[]; // Changed from string[]
 }
 
 class MudClient extends EventEmitter {
@@ -68,6 +69,7 @@ class MudClient extends EventEmitter {
     playerName: "",
     roomId: "",
     liveKitTokens: [],
+    roomPlayers: [], // Initialized as RoomPlayer[]
   };
   public cacophony: Cacophony;
   public editors: EditorManager;
