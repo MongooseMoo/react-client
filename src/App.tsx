@@ -13,8 +13,17 @@ import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
 import {
   GMCPAutoLogin,
-  GMCPCharItems,
-  GMCPCharStatus,
+  GMCPChar, // Added
+  GMCPCharAfflictions, // Added
+  GMCPCharDefences,
+  GMCPCharItems, // Added
+  GMCPCharOffer, // Added
+  GMCPCharPrompt, // Added
+  GMCPCharSkills,
+  GMCPCharStatus, // Added
+  GMCPCharStatusAffectedBy, // Added
+  GMCPCharStatusConditions, // Added
+  GMCPCharStatusTimers,
   GMCPClientFileTransfer,
   GMCPClientHtml,
   GMCPClientKeystrokes,
@@ -23,16 +32,7 @@ import {
   GMCPCommChannel,
   GMCPCommLiveKit,
   GMCPCore,
-  GMCPCoreSupports,
-  GMCPChar, // Added
-  GMCPCharOffer, // Added
-  GMCPCharPrompt, // Added
-  GMCPCharStatusAffectedBy, // Added
-  GMCPCharStatusConditions, // Added
-  GMCPCharStatusTimers, // Added
-  GMCPCharAfflictions, // Added
-  GMCPCharDefences, // Added
-  GMCPCharSkills, // Added
+  GMCPCoreSupports, // Added
   GMCPGroup, // Added
   GMCPLogging, // Added
   GMCPRedirect, // Added
@@ -166,7 +166,9 @@ function App() {
         event.preventDefault();
 
         // Call the function exposed by Sidebar via ref
-        console.log(`App: Detected CTRL+${digit}, calling switchToTab(${targetIndex})`);
+        console.log(
+          `App: Detected CTRL+${digit}, calling switchToTab(${targetIndex})`
+        );
         sidebarRef.current?.switchToTab(targetIndex);
       }
     };
@@ -227,17 +229,17 @@ function App() {
 
   return (
     // Add conditional 'sidebar-shown' class based on showSidebar state
-    <div className={`App ${showSidebar ? 'sidebar-shown' : ''}`}>
+    <div className={`App ${showSidebar ? "sidebar-shown" : ""}`}>
       <header role="banner" style={{ gridArea: "header" }}>
         <Toolbar
           client={client}
-         onSaveLog={saveLog}
-         onClearLog={clearLog}
-         onCopyLog={copyLog} // <-- Pass copyLog function
-         onToggleSidebar={() => setShowSidebar(!showSidebar)}
-         onOpenPrefs={() => prefsDialogRef.current?.open()}
-         showSidebar={showSidebar}
-       />
+          onSaveLog={saveLog}
+          onClearLog={clearLog}
+          onCopyLog={copyLog} // <-- Pass copyLog function
+          onToggleSidebar={() => setShowSidebar(!showSidebar)}
+          onOpenPrefs={() => prefsDialogRef.current?.open()}
+          showSidebar={showSidebar}
+        />
       </header>
       <main role="main" style={{ gridArea: "main" }}>
         {/* Pass the focusInput function down to OutputWindow */}
@@ -248,7 +250,8 @@ function App() {
         aria-label="Command input"
         style={{ gridArea: "input" }}
       >
-        <CommandInput onSend={handleCommand} inputRef={inRef} />
+        {/* Pass the client prop to CommandInput */}
+        <CommandInput onSend={handleCommand} inputRef={inRef} client={client} />
       </div>
       {/* Conditionally render the aside element */}
       {showSidebar && (
@@ -259,10 +262,7 @@ function App() {
           // className is no longer needed here for visibility
         >
           {/* Pass the ref and client prop */}
-          <Sidebar
-            ref={sidebarRef}
-            client={client}
-          />
+          <Sidebar ref={sidebarRef} client={client} />
         </aside>
       )}
       <footer role="contentinfo" style={{ gridArea: "status" }}>
