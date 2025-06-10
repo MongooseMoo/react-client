@@ -98,7 +98,7 @@ class MudClient extends EventEmitter {
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
     this.gmcp_fileTransfer = this.registerGMCPPackage(GMCPClientFileTransfer);
     this.cacophony = new Cacophony();
-    this.cacophony.setGlobalVolume(preferencesStore.getState().general.volume);
+    this.cacophony.setGlobalVolume(preferencesStore.getState().sound.volume);
     this.editors = new EditorManager(this);
     this.webRTCService = new WebRTCService(this);
     this.fileTransferManager = new FileTransferManager(

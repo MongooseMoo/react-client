@@ -6,7 +6,6 @@ export enum AutoreadMode {
 
 export type GeneralPreferences = {
   localEcho: boolean;
-  volume: number;
 };
 
 export type SpeechPreferences = {
@@ -19,6 +18,7 @@ export type SpeechPreferences = {
 
 export type SoundPreferences = {
   muteInBackground: boolean;
+  volume: number;
 };
 
 export type ChannelPreferences = {
@@ -64,14 +64,23 @@ class PreferencesStore {
     // Merge the initial preferences with the stored preferences from localStorage
     const storedData = localStorage.getItem("preferences");
     const initialPreferences = this.getInitialPreferences();
-    this.state = storedData ? this.mergePreferences(initialPreferences, JSON.parse(storedData)) : initialPreferences;
+    let parsedData = storedData ? JSON.parse(storedData) : null;
+    
+    // Migration: move volume from general to sound if it exists
+    if (parsedData?.general?.volume !== undefined && parsedData?.sound) {
+      if (!parsedData.sound.volume) {
+        parsedData.sound.volume = parsedData.general.volume;
+      }
+      delete parsedData.general.volume;
+    }
+    
+    this.state = parsedData ? this.mergePreferences(initialPreferences, parsedData) : initialPreferences;
   }
 
   private getInitialPreferences(): PrefState {
     return {
       general: {
         localEcho: false,
-        volume: 1.0,
       },
       speech: {
         autoreadMode: AutoreadMode.Off,
@@ -82,6 +91,7 @@ class PreferencesStore {
       },
       sound: {
         muteInBackground: false,
+        volume: 1.0,
       },
       channels: {
         "sayto": {
