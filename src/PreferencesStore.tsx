@@ -17,6 +17,10 @@ export type SpeechPreferences = {
   volume: number;
 };
 
+export type SoundPreferences = {
+  muteInBackground: boolean;
+};
+
 export type ChannelPreferences = {
   autoreadMode: AutoreadMode;
   notify: boolean;
@@ -30,6 +34,7 @@ export type EditorPreferences = {
 export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
+  sound: SoundPreferences;
   channels?: { [channelId: string]: ChannelPreferences };
   editor: EditorPreferences;
 };
@@ -37,6 +42,7 @@ export type PrefState = {
 export enum PrefActionType {
   SetGeneral = "SET_GENERAL",
   SetSpeech = "SET_SPEECH",
+  SetSound = "SET_SOUND",
   SetChannels = "SET_CHANNELS",
   SetEditorAutocompleteEnabled = "SET_EDITOR_AUTOCOMPLETE_ENABLED",
   SetEditorAccessibilityMode = "SET_EDITOR_ACCESSIBILITY_MODE",
@@ -45,6 +51,7 @@ export enum PrefActionType {
 export type PrefAction =
   | { type: PrefActionType.SetGeneral; data: GeneralPreferences }
   | { type: PrefActionType.SetSpeech; data: SpeechPreferences }
+  | { type: PrefActionType.SetSound; data: SoundPreferences }
   | { type: PrefActionType.SetChannels; data: { [channelId: string]: ChannelPreferences } }
   | { type: PrefActionType.SetEditorAutocompleteEnabled; data: boolean }
   | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean };
@@ -73,6 +80,9 @@ class PreferencesStore {
         pitch: 1.0,
         volume: 1.0,
       },
+      sound: {
+        muteInBackground: false,
+      },
       channels: {
         "sayto": {
           autoreadMode: AutoreadMode.Off,
@@ -92,6 +102,7 @@ class PreferencesStore {
       ...initial,
       general: { ...initial.general, ...stored.general },
       speech: { ...initial.speech, ...stored.speech },
+      sound: { ...initial.sound, ...stored.sound },
       channels: stored.channels ? { ...initial.channels, ...stored.channels } : initial.channels,
       editor: { ...initial.editor, ...stored.editor },
     };
@@ -103,6 +114,8 @@ class PreferencesStore {
         return { ...state, general: action.data };
       case PrefActionType.SetSpeech:
         return { ...state, speech: action.data };
+      case PrefActionType.SetSound:
+        return { ...state, sound: action.data };
       case PrefActionType.SetChannels:
         return { ...state, channels: action.data };
       case PrefActionType.SetEditorAutocompleteEnabled:

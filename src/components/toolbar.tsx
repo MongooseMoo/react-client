@@ -39,8 +39,9 @@ const Toolbar = ({
   const [volume, setVolume] = React.useState(preferencesStore.getState().general.volume);
 
   const handleMuteToggle = useCallback(() => {
-    setMuted(!muted);
-    client.cacophony.muted = !muted;
+    const newMutedState = !muted;
+    setMuted(newMutedState);
+    client.setGlobalMute(newMutedState);
   }, [muted, client]);
 
   const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

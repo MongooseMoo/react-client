@@ -77,6 +77,8 @@ class MudClient extends EventEmitter {
   public fileTransferManager: FileTransferManager;
   public currentRoomInfo: GMCPMessageRoomInfo | null = null; // Add property to store room info
   private _autosay: boolean = false;
+  private globalMuted: boolean = false;
+  private isWindowFocused: boolean = true;
 
   get autosay(): boolean {
     return this._autosay;
@@ -103,6 +105,22 @@ class MudClient extends EventEmitter {
       this,
       this.gmcp_fileTransfer
     );
+    
+    // Set up window focus event listeners
+    window.addEventListener('focus', () => {
+      this.isWindowFocused = true;
+      this.updateBackgroundMuteState();
+    });
+    
+    window.addEventListener('blur', () => {
+      this.isWindowFocused = false;
+      this.updateBackgroundMuteState();
+    });
+    
+    // Subscribe to preference changes
+    preferencesStore.subscribe(() => {
+      this.updateBackgroundMuteState();
+    });
   }
   // File Transfer related methods
   async sendFile(file: File, recipient: string): Promise<void> {
@@ -567,6 +585,19 @@ An MCP message consists of three parts: the name of the message, the authenticat
       "Client.Media"
     ] as GMCPClientMedia;
     gmcpClientMedia.stopAllSounds();
+  }
+
+  updateBackgroundMuteState() {
+    const prefs = preferencesStore.getState();
+    const shouldMuteInBackground = prefs.sound.muteInBackground && !this.isWindowFocused;
+    
+    // Apply mute state: global mute OR background mute
+    this.cacophony.muted = this.globalMuted || shouldMuteInBackground;
+  }
+
+  setGlobalMute(muted: boolean) {
+    this.globalMuted = muted;
+    this.updateBackgroundMuteState();
   }
 }
 
