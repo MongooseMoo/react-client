@@ -266,6 +266,28 @@ const SpeechTab: React.FC = () => {
 };
 
 
+const SoundsTab: React.FC = () => {
+  const [state, dispatch] = usePreferences();
+
+  return (
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={state.sound.muteInBackground}
+          onChange={(e) =>
+            dispatch({
+              type: PrefActionType.SetSound,
+              data: { ...state.sound, muteInBackground: e.target.checked },
+            })
+          }
+        />
+        Mute sounds when in background
+      </label>
+    </div>
+  );
+};
+
 const EditorTab: React.FC = () => {
   const [state, dispatch] = usePreferences();
   const editor = state.editor;
@@ -304,7 +326,8 @@ const Preferences: React.FC = () => {
   const tabs = [
     { label: "General", content: <GeneralTab /> },
     { label: "Speech", content: <SpeechTab /> },
-    { label: "Editor", content: <EditorTab /> }, // New Editor Tab
+    { label: "Sounds", content: <SoundsTab /> },
+    { label: "Editor", content: <EditorTab /> },
   ];
 
   return <Tabs tabs={tabs} />;
