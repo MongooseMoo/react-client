@@ -36,11 +36,12 @@ const Toolbar = ({
   const connected = useClientEvent(client, 'connectionChange', client.connected);
   const [muted, setMuted] = React.useState(client.cacophony.muted);
   const autosay = useClientEvent(client, 'autosayChanged', client.autosay) || false;
-  const [volume, setVolume] = React.useState(preferencesStore.getState().general.volume);
+  const [volume, setVolume] = React.useState(preferencesStore.getState().sound.volume);
 
   const handleMuteToggle = useCallback(() => {
-    setMuted(!muted);
-    client.cacophony.muted = !muted;
+    const newMutedState = !muted;
+    setMuted(newMutedState);
+    client.setGlobalMute(newMutedState);
   }, [muted, client]);
 
   const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,9 +49,9 @@ const Toolbar = ({
     setVolume(newVolume);
     client.cacophony.setGlobalVolume(newVolume);
     preferencesStore.dispatch({
-      type: PrefActionType.SetGeneral,
+      type: PrefActionType.SetSound,
       data: {
-        ...preferencesStore.getState().general,
+        ...preferencesStore.getState().sound,
         volume: newVolume
       }
     });
