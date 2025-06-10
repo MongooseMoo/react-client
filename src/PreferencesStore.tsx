@@ -6,7 +6,6 @@ export enum AutoreadMode {
 
 export type GeneralPreferences = {
   localEcho: boolean;
-  volume: number;
 };
 
 export type SpeechPreferences = {
@@ -14,6 +13,11 @@ export type SpeechPreferences = {
   voice: string;
   rate: number;
   pitch: number;
+  volume: number;
+};
+
+export type SoundPreferences = {
+  muteInBackground: boolean;
   volume: number;
 };
 
@@ -30,6 +34,7 @@ export type EditorPreferences = {
 export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
+  sound: SoundPreferences;
   channels?: { [channelId: string]: ChannelPreferences };
   editor: EditorPreferences;
 };
@@ -37,6 +42,7 @@ export type PrefState = {
 export enum PrefActionType {
   SetGeneral = "SET_GENERAL",
   SetSpeech = "SET_SPEECH",
+  SetSound = "SET_SOUND",
   SetChannels = "SET_CHANNELS",
   SetEditorAutocompleteEnabled = "SET_EDITOR_AUTOCOMPLETE_ENABLED",
   SetEditorAccessibilityMode = "SET_EDITOR_ACCESSIBILITY_MODE",
@@ -45,6 +51,7 @@ export enum PrefActionType {
 export type PrefAction =
   | { type: PrefActionType.SetGeneral; data: GeneralPreferences }
   | { type: PrefActionType.SetSpeech; data: SpeechPreferences }
+  | { type: PrefActionType.SetSound; data: SoundPreferences }
   | { type: PrefActionType.SetChannels; data: { [channelId: string]: ChannelPreferences } }
   | { type: PrefActionType.SetEditorAutocompleteEnabled; data: boolean }
   | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean };
@@ -57,20 +64,33 @@ class PreferencesStore {
     // Merge the initial preferences with the stored preferences from localStorage
     const storedData = localStorage.getItem("preferences");
     const initialPreferences = this.getInitialPreferences();
-    this.state = storedData ? this.mergePreferences(initialPreferences, JSON.parse(storedData)) : initialPreferences;
+    let parsedData = storedData ? JSON.parse(storedData) : null;
+    
+    // Migration: move volume from general to sound if it exists
+    if (parsedData?.general?.volume !== undefined && parsedData?.sound) {
+      if (!parsedData.sound.volume) {
+        parsedData.sound.volume = parsedData.general.volume;
+      }
+      delete parsedData.general.volume;
+    }
+    
+    this.state = parsedData ? this.mergePreferences(initialPreferences, parsedData) : initialPreferences;
   }
 
   private getInitialPreferences(): PrefState {
     return {
       general: {
         localEcho: false,
-        volume: 1.0,
       },
       speech: {
         autoreadMode: AutoreadMode.Off,
         voice: "",
         rate: 1.0,
         pitch: 1.0,
+        volume: 1.0,
+      },
+      sound: {
+        muteInBackground: false,
         volume: 1.0,
       },
       channels: {
@@ -92,6 +112,7 @@ class PreferencesStore {
       ...initial,
       general: { ...initial.general, ...stored.general },
       speech: { ...initial.speech, ...stored.speech },
+      sound: { ...initial.sound, ...stored.sound },
       channels: stored.channels ? { ...initial.channels, ...stored.channels } : initial.channels,
       editor: { ...initial.editor, ...stored.editor },
     };
@@ -103,6 +124,8 @@ class PreferencesStore {
         return { ...state, general: action.data };
       case PrefActionType.SetSpeech:
         return { ...state, speech: action.data };
+      case PrefActionType.SetSound:
+        return { ...state, sound: action.data };
       case PrefActionType.SetChannels:
         return { ...state, channels: action.data };
       case PrefActionType.SetEditorAutocompleteEnabled:
