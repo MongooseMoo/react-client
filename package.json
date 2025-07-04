@@ -10,7 +10,7 @@
     "@types/marked": "^5.0.2",
     "anser": "^2.3.2",
     "buffer": "^6.0.3",
-    "cacophony": "^0.14.1",
+    "cacophony": "^0.14.2",
     "crypto-js": "^4.2.0",
     "dompurify": "^3.2.6",
     "eventemitter3": "^5.0.1",
@@ -50,7 +50,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
-    "@types/node": "^20.19.1",
+    "@types/node": "^20.19.4",
     "@types/react": "^18.3.23",
     "@types/react-beforeunload": "^2.1.5",
     "@types/react-dom": "^18.3.7",
@@ -60,7 +60,7 @@
     "jsdom": "^26.1.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
-    "vite-plugin-pwa": "^1.0.0",
+    "vite-plugin-pwa": "^1.0.1",
     "vitest": "^1.6.1"
   }
 }
