@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import MudClient from "../client";
-import { GMCPMessageRoomInfo } from "../gmcp/Room";
+import { GMCPMessageRoomInfo, RoomPlayer } from "../gmcp/Room";
 import { Item, ItemLocation, GMCPCharItems } from "../gmcp/Char/Items"; // Import Item, ItemLocation, GMCPCharItems
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
 import ItemCard from "./ItemCard"; // Import ItemCard
+import PlayerCard from "./PlayerCard"; // Import PlayerCard
 import "./RoomInfoDisplay.css"; 
 
 interface RoomInfoDisplayProps {
@@ -17,6 +18,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   );
   const [roomItems, setRoomItems] = useState<Item[]>([]);
   const [selectedRoomItem, setSelectedRoomItem] = useState<Item | null>(null);
+  const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>(client.worldData.roomPlayers || []);
+  const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
 
   const charItemsHandler = client.gmcpHandlers['Char.Items'] as GMCPCharItems | undefined;
 
@@ -75,6 +78,36 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     };
   }, [client, updateRoomItemsList, addRoomItem, removeRoomItem]);
 
+  // Player event handlers
+  const handleRoomPlayers = useCallback((players: RoomPlayer[]) => {
+    setRoomPlayers(players);
+    if (selectedPlayer && !players.find(p => p.name === selectedPlayer.name)) {
+      setSelectedPlayer(null);
+    }
+  }, [selectedPlayer]);
+
+  const handleAddPlayer = useCallback((player: RoomPlayer) => {
+    setRoomPlayers(prev => prev.some(p => p.name === player.name) ? prev : [...prev, player]);
+  }, []);
+
+  const handleRemovePlayer = useCallback((playerName: string) => {
+    setRoomPlayers(prev => prev.filter(p => p.name !== playerName));
+    if (selectedPlayer?.name === playerName) {
+      setSelectedPlayer(null);
+    }
+  }, [selectedPlayer]);
+
+  useEffect(() => {
+    client.on('roomPlayers', handleRoomPlayers);
+    client.on('roomAddPlayer', handleAddPlayer);
+    client.on('roomRemovePlayer', handleRemovePlayer);
+
+    return () => {
+      client.off('roomPlayers', handleRoomPlayers);
+      client.off('roomAddPlayer', handleAddPlayer);
+      client.off('roomRemovePlayer', handleRemovePlayer);
+    };
+  }, [client, handleRoomPlayers, handleAddPlayer, handleRemovePlayer]);
 
   const handleExitClick = (direction: string) => {
     client.sendCommand(direction); 
@@ -88,13 +121,39 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     client.sendCommand(`get ${itemToGet.id}`);
   }, [client]);
 
+  const handleSelectPlayer = (index: number) => {
+    setSelectedPlayer(index > -1 && roomPlayers[index] ? roomPlayers[index] : null);
+  };
+
+  const handlePagePlayer = useCallback((player: RoomPlayer) => {
+    client.sendCommand(`page ${player.name} `);
+  }, [client]);
+
+  const handleSayToPlayer = useCallback((player: RoomPlayer) => {
+    client.sendCommand(`say to ${player.name} `);
+  }, [client]);
+
+  const handleLookAtPlayer = useCallback((player: RoomPlayer) => {
+    client.sendCommand(`look ${player.name}`);
+  }, [client]);
+
+  const handleFollowPlayer = useCallback((player: RoomPlayer) => {
+    client.sendCommand(`follow ${player.name}`);
+  }, [client]);
+
   const renderRoomItem = (item: Item) => <span>{item.name}</span>;
   const getRoomItemClassName = () => "room-item-li"; // For styling list items
   const getRoomItemTextValue = (item: Item) => item.name.toLowerCase();
 
+  const renderPlayerItem = (player: RoomPlayer) => <span>{player.fullname}</span>;
+  const getPlayerItemClassName = () => "room-player-li"; // For styling list items
+  const getPlayerTextValue = (player: RoomPlayer) => player.fullname.toLowerCase();
+
   const headingId = "room-info-heading";
   const contentsHeadingId = "room-contents-heading";
   const contentsListId = "room-contents-list";
+  const playersHeadingId = "room-players-heading";
+  const playersListId = "room-players-list";
 
   if (!roomInfo && roomItems.length === 0) {
     return (
@@ -166,6 +225,36 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
             item={selectedRoomItem}
             onGet={handleGetItem}
             // No onDrop, onWear, onRemove for items on the ground via RoomInfoDisplay
+          />
+        </div>
+      )}
+
+      <div className="room-players-section">
+        <h5 id={playersHeadingId} tabIndex={-1}>Players in Room</h5>
+        {roomPlayers.length === 0 ? (
+          <p>No other players here.</p>
+        ) : (
+          <AccessibleList
+            items={roomPlayers.map(player => ({ ...player, id: player.name }))}
+            renderItem={renderPlayerItem}
+            listId={playersListId}
+            labelledBy={playersHeadingId}
+            className="room-players-accessible-list"
+            itemClassName={getPlayerItemClassName}
+            getItemTextValue={getPlayerTextValue}
+            onSelectedIndexChange={handleSelectPlayer}
+          />
+        )}
+      </div>
+
+      {selectedPlayer && (
+        <div className="selected-player-card-container" style={{ marginTop: '1rem' }}>
+          <PlayerCard
+            player={selectedPlayer}
+            onPage={handlePagePlayer}
+            onSayTo={handleSayToPlayer}
+            onLook={handleLookAtPlayer}
+            onFollow={handleFollowPlayer}
           />
         </div>
       )}
