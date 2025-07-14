@@ -1,0 +1,88 @@
+.player-card {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-subtle, #ccc);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  background-color: var(--color-bg-secondary, #f9f9f9);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  transition: box-shadow 0.2s ease-in-out;
+}
+
+.player-card:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.player-details {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.player-name {
+  font-weight: bold;
+  color: var(--color-text-primary, #333);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.player-actions button {
+  margin-left: 8px;
+  padding: 4px 8px;
+  font-size: 0.9em;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.player-page-button {
+  color: var(--color-text-button, #fff);
+  background-color: var(--color-button-primary-bg, #3498db);
+}
+
+.player-page-button:hover {
+  background-color: var(--color-button-primary-hover-bg, #2980b9);
+}
+
+.player-sayto-button {
+  color: var(--color-text-button, #fff);
+  background-color: var(--color-button-success-bg, #2ecc71);
+}
+
+.player-sayto-button:hover {
+  background-color: var(--color-button-success-hover-bg, #27ae60);
+}
+
+.player-look-button {
+  color: var(--color-text-button, #fff);
+  background-color: var(--color-button-warning-bg, #f39c12);
+}
+
+.player-look-button:hover {
+  background-color: var(--color-button-warning-hover-bg, #e67e22);
+}
+
+.player-follow-button {
+  color: var(--color-text-button, #fff);
+  background-color: var(--color-button-info-bg, #9b59b6);
+}
+
+.player-follow-button:hover {
+  background-color: var(--color-button-info-hover-bg, #8e44ad);
+}
+
+.player-actions button:focus {
+  outline: 2px solid var(--color-focus-ring, #3498db);
+  outline-offset: 1px;
+}
