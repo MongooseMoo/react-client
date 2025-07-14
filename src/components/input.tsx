@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback } from "react";
 import { CommandHistory } from "../CommandHistory";
 import "./input.css";
 import { useInputStore } from "../hooks/useInputStore";
-import { InputActionType, setInputText, clearInputText } from "../InputStore";
+import { InputActionType, setInputText, clearInputText, inputStore } from "../InputStore";
 import MudClient from "../client"; // Import MudClient
 import { RoomPlayer } from "../gmcp/Room"; // Import RoomPlayer type
 
@@ -66,6 +66,11 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
       });
     }
   }, []);
+
+  // Register input ref with InputStore for focus functionality
+  useEffect(() => {
+    inputStore.registerInputRef(inputRef);
+  }, [inputRef]);
 
   // Save history when commands are added
   const saveHistory = () => {
