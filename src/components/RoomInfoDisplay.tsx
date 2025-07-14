@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useMemo } from "react";
 import MudClient from "../client";
-import { GMCPMessageRoomInfo } from "../gmcp/Room";
+import { GMCPMessageRoomInfo, RoomPlayer } from "../gmcp/Room";
 import { Item, ItemLocation, GMCPCharItems } from "../gmcp/Char/Items"; // Import Item, ItemLocation, GMCPCharItems
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
 import ItemCard from "./ItemCard"; // Import ItemCard
+import PlayerCard from "./PlayerCard"; // Import PlayerCard
 import "./RoomInfoDisplay.css"; 
 
 interface RoomInfoDisplayProps {
@@ -17,8 +18,22 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   );
   const [roomItems, setRoomItems] = useState<Item[]>([]);
   const [selectedRoomItem, setSelectedRoomItem] = useState<Item | null>(null);
+  const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>(client.worldData.roomPlayers || []);
+  const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
 
   const charItemsHandler = client.gmcpHandlers['Char.Items'] as GMCPCharItems | undefined;
+
+  // Helper function to check if an item name matches a player name
+  const isPlayerItem = useCallback((item: Item, players: RoomPlayer[]): boolean => {
+    return players.some(player => 
+      item.name.toLowerCase() === player.fullname.toLowerCase()
+    );
+  }, []);
+
+  // Filter room items to exclude players that appear in the players list
+  const filteredRoomItems = useMemo(() => {
+    return roomItems.filter(item => !isPlayerItem(item, roomPlayers));
+  }, [roomItems, roomPlayers, isPlayerItem]);
 
   const handleRoomInfo = useCallback((data: GMCPMessageRoomInfo) => {
     setRoomInfo(data);
@@ -75,28 +90,77 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     };
   }, [client, updateRoomItemsList, addRoomItem, removeRoomItem]);
 
+  // Player event handlers
+  const handleRoomPlayers = useCallback((players: RoomPlayer[]) => {
+    setRoomPlayers(players);
+    if (selectedPlayer && !players.find(p => p.name === selectedPlayer.name)) {
+      setSelectedPlayer(null);
+    }
+  }, [selectedPlayer]);
+
+  const handleAddPlayer = useCallback((player: RoomPlayer) => {
+    setRoomPlayers(prev => prev.some(p => p.name === player.name) ? prev : [...prev, player]);
+  }, []);
+
+  const handleRemovePlayer = useCallback((playerName: string) => {
+    setRoomPlayers(prev => prev.filter(p => p.name !== playerName));
+    if (selectedPlayer?.name === playerName) {
+      setSelectedPlayer(null);
+    }
+  }, [selectedPlayer]);
+
+  useEffect(() => {
+    client.on('roomPlayers', handleRoomPlayers);
+    client.on('roomAddPlayer', handleAddPlayer);
+    client.on('roomRemovePlayer', handleRemovePlayer);
+
+    return () => {
+      client.off('roomPlayers', handleRoomPlayers);
+      client.off('roomAddPlayer', handleAddPlayer);
+      client.off('roomRemovePlayer', handleRemovePlayer);
+    };
+  }, [client, handleRoomPlayers, handleAddPlayer, handleRemovePlayer]);
 
   const handleExitClick = (direction: string) => {
     client.sendCommand(direction); 
   };
 
   const handleSelectItemFromRoom = (index: number) => {
-    setSelectedRoomItem(index > -1 && roomItems[index] ? roomItems[index] : null);
+    setSelectedRoomItem(index > -1 && filteredRoomItems[index] ? filteredRoomItems[index] : null);
   };
 
   const handleGetItem = useCallback((itemToGet: Item) => {
     client.sendCommand(`get ${itemToGet.id}`);
   }, [client]);
 
+  const handleSelectPlayer = (index: number) => {
+    setSelectedPlayer(index > -1 && roomPlayers[index] ? roomPlayers[index] : null);
+  };
+
+
+  const handleLookAtPlayer = useCallback((player: RoomPlayer) => {
+    client.sendCommand(`look ${player.name}`);
+  }, [client]);
+
+  const handleFollowPlayer = useCallback((player: RoomPlayer) => {
+    client.sendCommand(`follow ${player.name}`);
+  }, [client]);
+
   const renderRoomItem = (item: Item) => <span>{item.name}</span>;
   const getRoomItemClassName = () => "room-item-li"; // For styling list items
   const getRoomItemTextValue = (item: Item) => item.name.toLowerCase();
 
+  const renderPlayerItem = (player: RoomPlayer) => <span>{player.fullname}</span>;
+  const getPlayerItemClassName = () => "room-player-li"; // For styling list items
+  const getPlayerTextValue = (player: RoomPlayer) => player.fullname.toLowerCase();
+
   const headingId = "room-info-heading";
   const contentsHeadingId = "room-contents-heading";
   const contentsListId = "room-contents-list";
+  const playersHeadingId = "room-players-heading";
+  const playersListId = "room-players-list";
 
-  if (!roomInfo && roomItems.length === 0) {
+  if (!roomInfo && filteredRoomItems.length === 0) {
     return (
       <div
         className="room-info-display"
@@ -144,11 +208,11 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
 
       <div className="room-contents-section">
         <h5 id={contentsHeadingId} tabIndex={-1}>Contents</h5>
-        {roomItems.length === 0 ? (
+        {filteredRoomItems.length === 0 ? (
           <p>Nothing on the ground.</p>
         ) : (
           <AccessibleList
-            items={roomItems}
+            items={filteredRoomItems}
             renderItem={renderRoomItem}
             listId={contentsListId}
             labelledBy={contentsHeadingId}
@@ -166,6 +230,34 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
             item={selectedRoomItem}
             onGet={handleGetItem}
             // No onDrop, onWear, onRemove for items on the ground via RoomInfoDisplay
+          />
+        </div>
+      )}
+
+      <div className="room-players-section">
+        <h5 id={playersHeadingId} tabIndex={-1}>Players in Room</h5>
+        {roomPlayers.length === 0 ? (
+          <p>No other players here.</p>
+        ) : (
+          <AccessibleList
+            items={roomPlayers.map(player => ({ ...player, id: player.name }))}
+            renderItem={renderPlayerItem}
+            listId={playersListId}
+            labelledBy={playersHeadingId}
+            className="room-players-accessible-list"
+            itemClassName={getPlayerItemClassName}
+            getItemTextValue={getPlayerTextValue}
+            onSelectedIndexChange={handleSelectPlayer}
+          />
+        )}
+      </div>
+
+      {selectedPlayer && (
+        <div className="selected-player-card-container" style={{ marginTop: '1rem' }}>
+          <PlayerCard
+            player={selectedPlayer}
+            onLook={handleLookAtPlayer}
+            onFollow={handleFollowPlayer}
           />
         </div>
       )}

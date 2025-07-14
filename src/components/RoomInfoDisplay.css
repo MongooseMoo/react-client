@@ -97,3 +97,38 @@
     border-top: 1px solid var(--color-border-subtle, #eee);
     padding-top: 1rem;
 }
+
+.room-players-section {
+    margin-top: 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--color-border-light, #eee);
+}
+
+.room-players-section h5 {
+    margin-top: 0;
+    margin-bottom: 0.3rem;
+    font-weight: bold;
+}
+
+.room-players-section p {
+    font-style: italic;
+    color: var(--color-text-muted);
+    font-size: 0.9em;
+}
+
+.room-players-accessible-list {
+    font-size: 0.9em;
+}
+
+.room-player-li {
+    padding: 0.3rem 0.5rem;
+    cursor: default;
+    border-radius: var(--border-radius-small, 2px);
+    color: var(--color-text, black);
+}
+
+.selected-player-card-container {
+    margin-top: 1rem;
+    border-top: 1px solid var(--color-border-subtle, #eee);
+    padding-top: 1rem;
+}
