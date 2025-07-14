@@ -1,3 +1,5 @@
+import React from 'react';
+
 // State
 export type InputState = {
   text: string;
@@ -18,6 +20,7 @@ export type InputAction =
 class InputStore {
   private state: InputState = { text: "" };
   private listeners: Set<() => void> = new Set();
+  private inputRef: React.RefObject<HTMLTextAreaElement> | null = null;
 
   private reducer(state: InputState, action: InputAction): InputState {
     switch (action.type) {
@@ -56,6 +59,16 @@ class InputStore {
       this.listeners.delete(listener);
     };
   }
+
+  registerInputRef(ref: React.RefObject<HTMLTextAreaElement>) {
+    this.inputRef = ref;
+  }
+
+  focusInput() {
+    if (this.inputRef?.current) {
+      this.inputRef.current.focus();
+    }
+  }
 }
 
 // Singleton instance
@@ -64,6 +77,11 @@ export const inputStore = new InputStore();
 // Helper functions for easier dispatching
 export const setInputText = (text: string) => {
   inputStore.dispatch({ type: InputActionType.SetInput, data: text });
+};
+
+export const setInputTextAndFocus = (text: string) => {
+  inputStore.dispatch({ type: InputActionType.SetInput, data: text });
+  inputStore.focusInput();
 };
 
 export const clearInputText = () => {

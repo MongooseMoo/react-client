@@ -1,30 +1,27 @@
 import React from 'react';
 import { RoomPlayer } from '../gmcp/Room';
+import { setInputTextAndFocus } from '../InputStore';
 import './PlayerCard.css';
 
 interface PlayerCardProps {
   player: RoomPlayer;
-  onPage: (player: RoomPlayer) => void;
-  onSayTo: (player: RoomPlayer) => void;
   onLook: (player: RoomPlayer) => void;
   onFollow: (player: RoomPlayer) => void;
 }
 
 const PlayerCard: React.FC<PlayerCardProps> = ({ 
   player, 
-  onPage, 
-  onSayTo, 
   onLook, 
   onFollow 
 }) => {
   const handlePageClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onPage(player);
+    setInputTextAndFocus(`page ${player.name} `);
   };
 
   const handleSayToClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onSayTo(player);
+    setInputTextAndFocus(`-${player.name} `);
   };
 
   const handleLookClick = (e: React.MouseEvent) => {
@@ -55,7 +52,8 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
         <button
           className="player-sayto-button"
           onClick={handleSayToClick}
-          aria-label={`Say to ${player.fullname}`}
+          aria-label={`Say to ${player.fullname} (using -${player.name})`}
+          title={`Say to ${player.fullname} (uses -${player.name} command)`}
           tabIndex={0}
           accessKey="s"
         >

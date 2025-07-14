@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useMemo } from "react";
 import MudClient from "../client";
 import { GMCPMessageRoomInfo, RoomPlayer } from "../gmcp/Room";
 import { Item, ItemLocation, GMCPCharItems } from "../gmcp/Char/Items"; // Import Item, ItemLocation, GMCPCharItems
@@ -22,6 +22,18 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
 
   const charItemsHandler = client.gmcpHandlers['Char.Items'] as GMCPCharItems | undefined;
+
+  // Helper function to check if an item name matches a player name
+  const isPlayerItem = useCallback((item: Item, players: RoomPlayer[]): boolean => {
+    return players.some(player => 
+      item.name.toLowerCase() === player.fullname.toLowerCase()
+    );
+  }, []);
+
+  // Filter room items to exclude players that appear in the players list
+  const filteredRoomItems = useMemo(() => {
+    return roomItems.filter(item => !isPlayerItem(item, roomPlayers));
+  }, [roomItems, roomPlayers, isPlayerItem]);
 
   const handleRoomInfo = useCallback((data: GMCPMessageRoomInfo) => {
     setRoomInfo(data);
@@ -114,7 +126,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   };
 
   const handleSelectItemFromRoom = (index: number) => {
-    setSelectedRoomItem(index > -1 && roomItems[index] ? roomItems[index] : null);
+    setSelectedRoomItem(index > -1 && filteredRoomItems[index] ? filteredRoomItems[index] : null);
   };
 
   const handleGetItem = useCallback((itemToGet: Item) => {
@@ -125,13 +137,6 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     setSelectedPlayer(index > -1 && roomPlayers[index] ? roomPlayers[index] : null);
   };
 
-  const handlePagePlayer = useCallback((player: RoomPlayer) => {
-    client.sendCommand(`page ${player.name} `);
-  }, [client]);
-
-  const handleSayToPlayer = useCallback((player: RoomPlayer) => {
-    client.sendCommand(`say to ${player.name} `);
-  }, [client]);
 
   const handleLookAtPlayer = useCallback((player: RoomPlayer) => {
     client.sendCommand(`look ${player.name}`);
@@ -155,7 +160,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   const playersHeadingId = "room-players-heading";
   const playersListId = "room-players-list";
 
-  if (!roomInfo && roomItems.length === 0) {
+  if (!roomInfo && filteredRoomItems.length === 0) {
     return (
       <div
         className="room-info-display"
@@ -203,11 +208,11 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
 
       <div className="room-contents-section">
         <h5 id={contentsHeadingId} tabIndex={-1}>Contents</h5>
-        {roomItems.length === 0 ? (
+        {filteredRoomItems.length === 0 ? (
           <p>Nothing on the ground.</p>
         ) : (
           <AccessibleList
-            items={roomItems}
+            items={filteredRoomItems}
             renderItem={renderRoomItem}
             listId={contentsListId}
             labelledBy={contentsHeadingId}
@@ -251,8 +256,6 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
         <div className="selected-player-card-container" style={{ marginTop: '1rem' }}>
           <PlayerCard
             player={selectedPlayer}
-            onPage={handlePagePlayer}
-            onSayTo={handleSayToPlayer}
             onLook={handleLookAtPlayer}
             onFollow={handleFollowPlayer}
           />
