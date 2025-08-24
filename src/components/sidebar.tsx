@@ -12,6 +12,9 @@ import MudClient from "../client";
 import { useClientEvent } from "../hooks/useClientEvent"; // Import useClientEvent
 import { UserlistPlayer } from "../mcp";
 import RoomInfoDisplay from "./RoomInfoDisplay"; // Import new component
+import MidiStatus from "./MidiStatus"; // Import MIDI component
+import { usePreferences } from "../hooks/usePreferences";
+import { GMCPClientMidi } from "../gmcp/Client/Midi";
 
 // Define the type for the imperative handle
 export type SidebarRef = {
@@ -26,6 +29,7 @@ interface SidebarProps {
 // Wrap component with forwardRef
 const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => {
   const users = useClientEvent(client, "userlist", [] as UserlistPlayer[]);
+  const [preferences] = usePreferences(); // Add preferences hook
   const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
 
   // State to track if data has been received for optional tabs
@@ -36,6 +40,30 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => 
   // const [hasSkillsData, setHasSkillsData] = useState(false); // Removed
   // Initial check for room data directly from client
   const [hasRoomData, setHasRoomData] = useState(!!client.currentRoomInfo);
+
+  // Handle MIDI support advertisement based on preferences
+  useEffect(() => {
+    const midiPackage = client.gmcpHandlers["Client.Midi"] as GMCPClientMidi;
+    if (!midiPackage) return;
+
+    // Wait for client to be connected before advertising MIDI support
+    if (!client.connected) {
+      const handleConnect = () => {
+        if (preferences.midi.enabled) {
+          midiPackage.advertiseMidiSupport();
+        }
+      };
+      client.on('connect', handleConnect);
+      return () => client.off('connect', handleConnect);
+    }
+
+    // Client is already connected, advertise immediately
+    if (preferences.midi.enabled) {
+      midiPackage.advertiseMidiSupport();
+    } else {
+      midiPackage.unadvertiseMidiSupport();
+    }
+  }, [preferences.midi.enabled, client]);
 
   // Effect to check for inventory data
   useEffect(() => {
@@ -80,6 +108,12 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => 
       label: "Users",
       content: <Userlist users={users} />,
       condition: true,
+    },
+    {
+      id: "midi-tab",
+      label: "MIDI",
+      content: <MidiStatus client={client} />,
+      condition: preferences.midi.enabled,
     },
 
     // { // Removed Skills Tab
@@ -126,7 +160,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => 
   // Note: If tab conditions become more dynamic, add them to the dependency array.
   const visibleTabs = React.useMemo(() => {
     return allTabs.filter((tab) => tab.condition ?? true); // Default condition to true
-  }, [hasRoomData, hasInventoryData]); // Add dependencies based on actual conditions used
+  }, [hasRoomData, hasInventoryData, preferences.midi.enabled]); // Add dependencies based on actual conditions used
 
   // Expose switchToTab function via useImperativeHandle
   React.useImperativeHandle(ref, () => ({

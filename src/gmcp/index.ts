@@ -10,6 +10,7 @@ export { GMCPClientFileTransfer } from "./Client/FileTransfer";
 export { GMCPClientHtml } from "./Client/Html";
 export { GMCPClientKeystrokes } from "./Client/Keystrokes";
 export { GMCPClientMedia } from "./Client/Media";
+export { GMCPClientMidi } from "./Client/Midi";
 export { GMCPClientSpeech } from "./Client/Speech";
 export { GMCPCommChannel } from "./Comm/Channel";
 export { GMCPCommLiveKit } from "./Comm/LiveKit";

@@ -28,6 +28,7 @@ import {
   GMCPClientHtml,
   GMCPClientKeystrokes,
   GMCPClientMedia,
+  GMCPClientMidi,
   GMCPClientSpeech,
   GMCPCommChannel,
   GMCPCommLiveKit,
@@ -86,6 +87,7 @@ function App() {
     const newClient = new MudClient("mongoose.moo.mud.org", 8765);
     newClient.registerGMCPPackage(GMCPCore);
     newClient.registerGMCPPackage(GMCPClientMedia);
+    newClient.registerGMCPPackage(GMCPClientMidi);
     newClient.registerGMCPPackage(GMCPClientSpeech);
     newClient.registerGMCPPackage(GMCPClientKeystrokes);
     newClient.registerGMCPPackage(GMCPCoreSupports);
@@ -131,6 +133,11 @@ function App() {
       }
       if (event.key === "Escape") {
         newClient.stopAllSounds();
+        // Also send MIDI all notes off if MIDI is enabled
+        const midiPackage = newClient.gmcpHandlers["Client.Midi"];
+        if (midiPackage) {
+          (midiPackage as any).sendAllNotesOff();
+        }
       }
     };
 
