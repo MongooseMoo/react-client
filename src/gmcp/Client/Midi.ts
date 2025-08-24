@@ -82,7 +82,7 @@ export class GMCPClientMidi extends GMCPPackage {
     const initialized = await this.ensureInitialized();
     if (!initialized) return false;
 
-    return midiService.connectOutputDevice(deviceId);
+    return await midiService.connectOutputDevice(deviceId);
   }
 
   private handleInputMessage(message: MidiMessage): void {

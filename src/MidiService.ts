@@ -1,3 +1,5 @@
+import { virtualMidiService } from './VirtualMidiService';
+
 export interface MidiDevice {
   id: string;
   name: string;
@@ -82,15 +84,26 @@ class MidiService {
   }
 
   getOutputDevices(): MidiDevice[] {
-    if (!this.midiAccess) return [];
-    
     const devices: MidiDevice[] = [];
-    this.midiAccess.outputs.forEach((output) => {
+    
+    // Add virtual synthesizer if initialized
+    if (virtualMidiService.initialized) {
       devices.push({
-        id: output.id,
-        name: output.name || "Unknown Output Device"
+        id: 'virtual-synth',
+        name: virtualMidiService.getPortName()
       });
-    });
+    }
+    
+    // Add hardware MIDI devices if available
+    if (this.midiAccess) {
+      this.midiAccess.outputs.forEach((output) => {
+        devices.push({
+          id: output.id,
+          name: output.name || "Unknown Output Device"
+        });
+      });
+    }
+    
     return devices;
   }
 
@@ -165,7 +178,24 @@ class MidiService {
     return true;
   }
 
-  connectOutputDevice(deviceId: string): boolean {
+  async connectOutputDevice(deviceId: string): Promise<boolean> {
+    // Handle virtual synthesizer connection
+    if (deviceId === 'virtual-synth') {
+      try {
+        const virtualPort = await virtualMidiService.getVirtualPort();
+        if (virtualPort) {
+          this.outputDevice = virtualPort;
+          console.log(`Connected to virtual MIDI synthesizer: ${virtualMidiService.getPortName()}`);
+          return true;
+        }
+        return false;
+      } catch (error) {
+        console.error('Failed to connect to virtual synthesizer:', error);
+        return false;
+      }
+    }
+
+    // Handle hardware MIDI device connection
     if (!this.midiAccess) return false;
 
     const output = this.midiAccess.outputs.get(deviceId);

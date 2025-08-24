@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import MudClient from "./client";
+import { virtualMidiService } from "./VirtualMidiService";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
 import PreferencesDialog, {
@@ -123,6 +124,17 @@ function App() {
     setShowSidebar(!isMobile);
     window.mudClient = newClient;
     clientInitialized.current = true;
+
+    // Initialize virtual MIDI synthesizer
+    virtualMidiService.initialize().then((success) => {
+      if (success) {
+        console.log("Virtual MIDI synthesizer initialized");
+      } else {
+        console.log("Failed to initialize virtual MIDI synthesizer");
+      }
+    }).catch((error) => {
+      console.error("Error initializing virtual MIDI synthesizer:", error);
+    });
 
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
