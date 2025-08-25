@@ -12,6 +12,10 @@ export class GMCPPackage {
         this.client = client;
     }
 
+    get enabled(): boolean {
+        return true;
+    }
+
     sendData(messageName: string, data?: any): void {
         this.client.sendGmcp(
             this.packageName + "." + messageName,

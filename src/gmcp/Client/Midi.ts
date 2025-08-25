@@ -1,5 +1,6 @@
 import { GMCPMessage, GMCPPackage } from "../package";
 import { midiService, MidiNote, MidiMessage } from "../../MidiService";
+import { preferencesStore } from "../../PreferencesStore";
 
 export class GMCPMessageClientMidiNote extends GMCPMessage {
   public readonly note!: number;
@@ -37,10 +38,14 @@ export class GMCPMessageClientMidiEnable extends GMCPMessage {
 
 export class GMCPClientMidi extends GMCPPackage {
   public packageName: string = "Client.Midi";
-  public packageVersion?: number = undefined; // Don't advertise by default
+  public packageVersion?: number = 1; // Use standard version
   private activeNotes: Map<number, NodeJS.Timeout> = new Map();
   private isAdvertised: boolean = false;
   private debugCallback?: (hex: string, type: string, gmcpMessage: string) => void;
+
+  get enabled(): boolean {
+    return preferencesStore.getState().midi.enabled;
+  }
 
   constructor(client: any) {
     super(client);
