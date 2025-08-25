@@ -53,7 +53,7 @@ export class GMCPCoreSupports extends GMCPPackage {
   // Sends the initial list of supported packages
   sendSet(): void {
     const packages = Object.values(this.client.gmcpHandlers)
-      .filter(p => p.packageName && p.packageVersion) // Ensure package has name and version
+      .filter(p => p.packageName && p.packageVersion && p.enabled) // Ensure package has name, version, and is enabled
       .map(p => `${p.packageName} ${p.packageVersion!.toString()}`);
     this.sendData("Set", packages);
   }

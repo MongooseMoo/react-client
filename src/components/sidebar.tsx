@@ -46,22 +46,13 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => 
     const midiPackage = client.gmcpHandlers["Client.Midi"] as GMCPClientMidi;
     if (!midiPackage) return;
 
-    // Wait for client to be connected before advertising MIDI support
-    if (!client.connected) {
-      const handleConnect = () => {
-        if (preferences.midi.enabled) {
-          midiPackage.advertiseMidiSupport();
-        }
-      };
-      client.on('connect', handleConnect);
-      return () => client.off('connect', handleConnect);
-    }
-
-    // Client is already connected, advertise immediately
-    if (preferences.midi.enabled) {
-      midiPackage.advertiseMidiSupport();
-    } else {
-      midiPackage.unadvertiseMidiSupport();
+    // Only handle runtime preference changes - initial advertisement handled by Core.Supports
+    if (client.connected) {
+      if (preferences.midi.enabled) {
+        midiPackage.advertiseMidiSupport();
+      } else {
+        midiPackage.unadvertiseMidiSupport();
+      }
     }
   }, [preferences.midi.enabled, client]);
 
