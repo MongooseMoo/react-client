@@ -22,11 +22,17 @@ export class VirtualMidiService {
     }
 
     try {
+      // Wait for JZZ to be ready first
+      const jzz = await JZZ();
+      
       // Initialize JZZ with Tiny synthesizer
       Tiny(JZZ);
       
       // Register the virtual synthesizer as a MIDI port
       JZZ.synth.Tiny.register(this.portName);
+      
+      // Refresh JZZ to update the device list
+      jzz.refresh();
       
       console.log(`Virtual MIDI synthesizer registered as: ${this.portName}`);
       this.isInitialized = true;

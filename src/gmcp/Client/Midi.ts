@@ -65,6 +65,11 @@ export class GMCPClientMidi extends GMCPPackage {
     const success = await midiService.initialize();
     if (success) {
       console.log("MIDI service initialized");
+      
+      // Try to auto-reconnect to last used input device now that we have a callback available
+      await midiService.attemptAutoReconnectInput((message) => {
+        this.handleInputMessage(message);
+      });
     }
     return success;
   }
@@ -77,7 +82,7 @@ export class GMCPClientMidi extends GMCPPackage {
     const initialized = await this.ensureInitialized();
     if (!initialized) return false;
 
-    return midiService.connectInputDevice(deviceId, (message: MidiMessage) => {
+    return await midiService.connectInputDevice(deviceId, (message: MidiMessage) => {
       // Route different message types to appropriate handlers
       this.handleInputMessage(message);
     });
