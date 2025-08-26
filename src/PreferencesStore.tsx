@@ -33,6 +33,8 @@ export type EditorPreferences = {
 
 export type MidiPreferences = {
   enabled: boolean;
+  lastInputDeviceId?: string;
+  lastOutputDeviceId?: string;
 };
 
 export type PrefState = {
