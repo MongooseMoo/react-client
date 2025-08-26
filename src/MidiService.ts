@@ -68,6 +68,12 @@ class MidiService {
     outputConnected: false
   };
 
+  // Flags to track intentional disconnections (prevent auto-reconnect until next server connection)
+  private intentionalDisconnectFlags = {
+    input: false,
+    output: false
+  };
+
   async initialize(): Promise<boolean> {
     try {
       this.jzz = await JZZ();
@@ -222,6 +228,9 @@ class MidiService {
         }
       });
 
+      // Clear intentional disconnect flag since user manually connected
+      this.intentionalDisconnectFlags.input = false;
+
       console.log(`Connected to MIDI input: ${this.connectionState.inputDeviceName}`);
       return true;
     } catch (error) {
@@ -254,6 +263,9 @@ class MidiService {
               lastOutputDeviceId: deviceId
             }
           });
+
+          // Clear intentional disconnect flag since user manually connected
+          this.intentionalDisconnectFlags.output = false;
           
           console.log(`Connected to virtual MIDI synthesizer: ${virtualMidiService.getPortName()}`);
           return true;
@@ -283,6 +295,9 @@ class MidiService {
           lastOutputDeviceId: deviceId
         }
       });
+
+      // Clear intentional disconnect flag since user manually connected
+      this.intentionalDisconnectFlags.output = false;
 
       console.log(`Connected to MIDI output: ${this.connectionState.outputDeviceName}`);
       return true;
@@ -316,6 +331,44 @@ class MidiService {
       this.outputDevice.send([0xb0 | channel, 123, 0]);
       // All sound off (CC 120)
       this.outputDevice.send([0xb0 | channel, 120, 0]);
+    }
+  }
+
+  // Disconnect specific device type
+  disconnectDevice(deviceType: 'input' | 'output'): void {
+    if (deviceType === 'input') {
+      if (this.inputDevice) {
+        this.inputDevice.close?.();
+        this.inputDevice = null;
+      }
+      this.inputCallback = null;
+      this.connectionState.inputConnected = false;
+      this.connectionState.inputDeviceId = undefined;
+      this.connectionState.inputDeviceName = undefined;
+      console.log("Disconnected input device");
+    } else if (deviceType === 'output') {
+      if (this.outputDevice) {
+        this.outputDevice.close?.();
+        this.outputDevice = null;
+      }
+      this.connectionState.outputConnected = false;
+      this.connectionState.outputDeviceId = undefined;
+      this.connectionState.outputDeviceName = undefined;
+      console.log("Disconnected output device");
+    }
+  }
+
+  // Disconnect with intentional flag setting
+  disconnectWithIntent(deviceType: 'input' | 'output' | 'both'): void {
+    this.setIntentionalDisconnect(deviceType);
+    
+    if (deviceType === 'input') {
+      this.disconnectDevice('input');
+    } else if (deviceType === 'output') {
+      this.disconnectDevice('output');
+    } else {
+      // 'both'
+      this.disconnect();
     }
   }
 
@@ -357,6 +410,11 @@ class MidiService {
 
   get connectionStatus() {
     return { ...this.connectionState };
+  }
+
+  // Get intentional disconnect flags
+  get intentionalDisconnectStatus() {
+    return { ...this.intentionalDisconnectFlags };
   }
 
   // Device change monitoring
@@ -447,22 +505,26 @@ class MidiService {
     
     // For input devices, we need a callback, so we'll defer this until someone actually tries to connect
     // Just log what we would try to reconnect to
-    if (preferences.lastInputDeviceId) {
+    if (preferences.lastInputDeviceId && !this.intentionalDisconnectFlags.input) {
       const inputDevices = this.getInputDevices();
       const lastInputDevice = inputDevices.find(d => d.id === preferences.lastInputDeviceId);
       if (lastInputDevice) {
         console.log(`Input device available for auto-reconnect: ${lastInputDevice.name}`);
       }
+    } else if (preferences.lastInputDeviceId && this.intentionalDisconnectFlags.input) {
+      console.log(`Skipping input auto-reconnect due to intentional disconnect`);
     }
 
     // For output devices, we can attempt reconnection immediately
-    if (preferences.lastOutputDeviceId) {
+    if (preferences.lastOutputDeviceId && !this.intentionalDisconnectFlags.output) {
       const outputDevices = this.getOutputDevices();
       const lastOutputDevice = outputDevices.find(d => d.id === preferences.lastOutputDeviceId);
       if (lastOutputDevice) {
         console.log(`Attempting to auto-reconnect to output device: ${lastOutputDevice.name}`);
         await this.connectOutputDevice(preferences.lastOutputDeviceId);
       }
+    } else if (preferences.lastOutputDeviceId && this.intentionalDisconnectFlags.output) {
+      console.log(`Skipping output auto-reconnect due to intentional disconnect`);
     }
   }
 
@@ -470,13 +532,15 @@ class MidiService {
   async attemptAutoReconnectInput(callback: MidiInputCallback): Promise<boolean> {
     const preferences = preferencesStore.getState().midi;
     
-    if (preferences.lastInputDeviceId) {
+    if (preferences.lastInputDeviceId && !this.intentionalDisconnectFlags.input) {
       const inputDevices = this.getInputDevices();
       const lastInputDevice = inputDevices.find(d => d.id === preferences.lastInputDeviceId);
       if (lastInputDevice) {
         console.log(`Attempting to auto-reconnect to input device: ${lastInputDevice.name}`);
         return await this.connectInputDevice(preferences.lastInputDeviceId, callback);
       }
+    } else if (preferences.lastInputDeviceId && this.intentionalDisconnectFlags.input) {
+      console.log(`Skipping input auto-reconnect due to intentional disconnect`);
     }
     
     return false;
@@ -497,6 +561,25 @@ class MidiService {
     }
     return false;
   }
+
+  // Set intentional disconnect flag for a device type
+  setIntentionalDisconnect(deviceType: 'input' | 'output' | 'both'): void {
+    if (deviceType === 'input' || deviceType === 'both') {
+      this.intentionalDisconnectFlags.input = true;
+    }
+    if (deviceType === 'output' || deviceType === 'both') {
+      this.intentionalDisconnectFlags.output = true;
+    }
+    console.log(`Set intentional disconnect flag for: ${deviceType}`);
+  }
+
+  // Reset all intentional disconnect flags (called when server reconnects)
+  resetIntentionalDisconnectFlags(): void {
+    this.intentionalDisconnectFlags.input = false;
+    this.intentionalDisconnectFlags.output = false;
+    console.log("Reset intentional disconnect flags");
+  }
+
 
   // Shutdown and cleanup
   shutdown(): void {
