@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import MudClient from "./client";
+import { virtualMidiService } from "./VirtualMidiService";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
 import PreferencesDialog, {
@@ -28,6 +29,7 @@ import {
   GMCPClientHtml,
   GMCPClientKeystrokes,
   GMCPClientMedia,
+  GMCPClientMidi,
   GMCPClientSpeech,
   GMCPCommChannel,
   GMCPCommLiveKit,
@@ -86,6 +88,7 @@ function App() {
     const newClient = new MudClient("mongoose.moo.mud.org", 8765);
     newClient.registerGMCPPackage(GMCPCore);
     newClient.registerGMCPPackage(GMCPClientMedia);
+    newClient.registerGMCPPackage(GMCPClientMidi);
     newClient.registerGMCPPackage(GMCPClientSpeech);
     newClient.registerGMCPPackage(GMCPClientKeystrokes);
     newClient.registerGMCPPackage(GMCPCoreSupports);
@@ -121,6 +124,17 @@ function App() {
     setShowSidebar(!isMobile);
     window.mudClient = newClient;
     clientInitialized.current = true;
+    
+    // Initialize virtual MIDI synthesizer
+    virtualMidiService.initialize().then((success) => {
+      if (success) {
+        console.log("Virtual MIDI synthesizer initialized");
+      } else {
+        console.log("Failed to initialize virtual MIDI synthesizer");
+      }
+    }).catch((error) => {
+      console.error("Error initializing virtual MIDI synthesizer:", error);
+    });
 
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -131,6 +145,11 @@ function App() {
       }
       if (event.key === "Escape") {
         newClient.stopAllSounds();
+        // Also send MIDI all notes off if MIDI is enabled
+        const midiPackage = newClient.gmcpHandlers["Client.Midi"];
+        if (midiPackage) {
+          (midiPackage as any).sendAllNotesOff();
+        }
       }
     };
 

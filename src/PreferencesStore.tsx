@@ -31,12 +31,19 @@ export type EditorPreferences = {
   accessibilityMode: boolean;
 };
 
+export type MidiPreferences = {
+  enabled: boolean;
+  lastInputDeviceId?: string;
+  lastOutputDeviceId?: string;
+};
+
 export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
   sound: SoundPreferences;
   channels?: { [channelId: string]: ChannelPreferences };
   editor: EditorPreferences;
+  midi: MidiPreferences;
 };
 
 export enum PrefActionType {
@@ -46,6 +53,7 @@ export enum PrefActionType {
   SetChannels = "SET_CHANNELS",
   SetEditorAutocompleteEnabled = "SET_EDITOR_AUTOCOMPLETE_ENABLED",
   SetEditorAccessibilityMode = "SET_EDITOR_ACCESSIBILITY_MODE",
+  SetMidi = "SET_MIDI",
 }
 
 export type PrefAction =
@@ -54,7 +62,8 @@ export type PrefAction =
   | { type: PrefActionType.SetSound; data: SoundPreferences }
   | { type: PrefActionType.SetChannels; data: { [channelId: string]: ChannelPreferences } }
   | { type: PrefActionType.SetEditorAutocompleteEnabled; data: boolean }
-  | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean };
+  | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean }
+  | { type: PrefActionType.SetMidi; data: MidiPreferences };
 
 class PreferencesStore {
   private state: PrefState;
@@ -103,6 +112,9 @@ class PreferencesStore {
         autocompleteEnabled: true,
         accessibilityMode: true,
       },
+      midi: {
+        enabled: false,
+      },
     };
   }
 
@@ -115,6 +127,7 @@ class PreferencesStore {
       sound: { ...initial.sound, ...stored.sound },
       channels: stored.channels ? { ...initial.channels, ...stored.channels } : initial.channels,
       editor: { ...initial.editor, ...stored.editor },
+      midi: { ...initial.midi, ...stored.midi },
     };
   }
 
@@ -132,6 +145,8 @@ class PreferencesStore {
         return { ...state, editor: { ...state.editor, autocompleteEnabled: action.data } };
       case PrefActionType.SetEditorAccessibilityMode:
         return { ...state, editor: { ...state.editor, accessibilityMode: action.data } };
+      case PrefActionType.SetMidi:
+        return { ...state, midi: action.data };
       default:
         return state;
     }

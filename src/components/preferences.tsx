@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { PrefActionType } from "../PreferencesStore";
 import { usePreferences } from "../hooks/usePreferences";
 import { useVoices } from "../hooks/useVoices";
+import { midiService, MidiDevice } from "../MidiService";
 import Tabs from "./tabs";
 
 const GeneralTab: React.FC = () => {
@@ -322,12 +323,54 @@ const EditorTab: React.FC = () => {
   );
 };
 
+const MidiTab: React.FC = () => {
+  const [state, dispatch] = usePreferences();
+
+  const handleMidiEnabledChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    dispatch({
+      type: PrefActionType.SetMidi,
+      data: { enabled: e.target.checked },
+    });
+  };
+
+  if (!midiService.isSupported) {
+    return (
+      <div>
+        <p>MIDI is not supported in this browser.</p>
+        <p>MIDI support is available in Chrome, Edge, Opera, and Brave.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={state.midi.enabled}
+          onChange={handleMidiEnabledChange}
+        />
+        Enable MIDI
+      </label>
+      <br />
+      <br />
+      
+      {state.midi.enabled && (
+        <p style={{ color: "#666", fontSize: "0.9em" }}>
+          Device selection and management is available in the MIDI tab when connected to a server.
+        </p>
+      )}
+    </div>
+  );
+};
+
 const Preferences: React.FC = () => {
   const tabs = [
     { label: "General", content: <GeneralTab /> },
     { label: "Speech", content: <SpeechTab /> },
     { label: "Sounds", content: <SoundsTab /> },
     { label: "Editor", content: <EditorTab /> },
+    { label: "MIDI", content: <MidiTab /> },
   ];
 
   return <Tabs tabs={tabs} />;
