@@ -1,4 +1,6 @@
 import { virtualMidiService } from './VirtualMidiService';
+import JZZ from 'jzz';
+import { preferencesStore } from './PreferencesStore';
 
 export interface MidiDevice {
   id: string;
@@ -45,41 +47,66 @@ export interface MidiMessage {
 }
 
 export type MidiInputCallback = (message: MidiMessage) => void;
+export type DeviceChangeCallback = (info: { inputs: { added: MidiDevice[], removed: MidiDevice[] }, outputs: { added: MidiDevice[], removed: MidiDevice[] } }) => void;
 
 class MidiService {
-  private midiAccess: WebMidi.MIDIAccess | null = null;
-  private inputDevice: WebMidi.MIDIInput | null = null;
-  private outputDevice: WebMidi.MIDIOutput | null = null;
+  private jzz: any = null;
+  private inputDevice: any = null;
+  private outputDevice: any = null;
   private inputCallback: MidiInputCallback | null = null;
+  private deviceChangeCallbacks: Set<DeviceChangeCallback> = new Set();
+  private deviceWatcher: any = null;
+  private connectionState: {
+    inputConnected: boolean;
+    outputConnected: boolean;
+    inputDeviceId?: string;
+    outputDeviceId?: string;
+    inputDeviceName?: string;
+    outputDeviceName?: string;
+  } = {
+    inputConnected: false,
+    outputConnected: false
+  };
 
   async initialize(): Promise<boolean> {
-    // Don't request MIDI access during initialization
-    // This will be called when MIDI is enabled in settings
     try {
-      if (navigator.requestMIDIAccess) {
-        this.midiAccess = await navigator.requestMIDIAccess();
-        console.log("MIDI access granted");
-        return true;
-      } else {
-        console.log("Web MIDI API not supported");
-        return false;
-      }
+      this.jzz = await JZZ();
+      console.log("JZZ MIDI engine initialized");
+      
+      // Set up device change monitoring
+      this.deviceWatcher = this.jzz.onChange((info: any) => {
+        const changeInfo = this.processDeviceChanges(info);
+        this.deviceChangeCallbacks.forEach(callback => callback(changeInfo));
+        
+        // Check if connected devices were removed
+        this.handleDeviceDisconnections(changeInfo);
+      });
+      
+      // Try to auto-reconnect to last used devices
+      await this.attemptAutoReconnect();
+      
+      return true;
     } catch (error) {
-      console.error("Failed to get MIDI access:", error);
+      console.error("Failed to initialize JZZ MIDI engine:", error);
       return false;
     }
   }
 
   getInputDevices(): MidiDevice[] {
-    if (!this.midiAccess) return [];
+    if (!this.jzz) return [];
     
     const devices: MidiDevice[] = [];
-    this.midiAccess.inputs.forEach((input) => {
-      devices.push({
-        id: input.id,
-        name: input.name || "Unknown Input Device"
+    const info = this.jzz.info();
+    
+    if (info && info.inputs) {
+      info.inputs.forEach((input: any) => {
+        devices.push({
+          id: input.id || input.name,
+          name: input.name || "Unknown Input Device"
+        });
       });
-    });
+    }
+    
     return devices;
   }
 
@@ -95,115 +122,174 @@ class MidiService {
     }
     
     // Add hardware MIDI devices if available
-    if (this.midiAccess) {
-      this.midiAccess.outputs.forEach((output) => {
-        devices.push({
-          id: output.id,
-          name: output.name || "Unknown Output Device"
+    if (this.jzz) {
+      const info = this.jzz.info();
+      if (info && info.outputs) {
+        info.outputs.forEach((output: any) => {
+          devices.push({
+            id: output.id || output.name,
+            name: output.name || "Unknown Output Device"
+          });
         });
-      });
+      }
     }
     
     return devices;
   }
 
-  connectInputDevice(deviceId: string, callback: MidiInputCallback): boolean {
-    if (!this.midiAccess) return false;
+  async connectInputDevice(deviceId: string, callback: MidiInputCallback): Promise<boolean> {
+    if (!this.jzz) return false;
 
-    const input = this.midiAccess.inputs.get(deviceId);
-    if (!input) return false;
-
-    // Disconnect previous device
-    if (this.inputDevice) {
-      this.inputDevice.onmidimessage = null;
-    }
-
-    this.inputDevice = input;
-    this.inputCallback = callback;
-
-    input.onmidimessage = (event) => {
-      const rawData = event.data;
-      const status = rawData[0];
-      
-      // SUPPRESS Active Sensing (0xFE) - floods data every ~300ms
-      if (status === 0xFE) {
-        return;
+    try {
+      // Disconnect previous device
+      if (this.inputDevice) {
+        this.inputDevice.close();
       }
-      
-      const messageType = status & 0xf0;
-      const channel = status & 0x0f;
-      
-      // Create raw message for debugging
-      const rawMessage: RawMidiMessage = {
-        hex: Array.from(rawData).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
-        data: rawData,
-        type: this.getMidiMessageType(status)
-      };
-      
-      const message: MidiMessage = {
-        rawData: rawMessage // Always include raw data for debugging
-      };
-      
-      // Categorize messages
-      if (messageType === 0x90 || messageType === 0x80) {
-        // Note On/Off
-        const note = rawData[1];
-        const velocity = rawData[2];
-        const isNoteOn = messageType === 0x90 && velocity > 0;
-        message.note = { note, velocity, on: isNoteOn, channel };
-      } else if (messageType === 0xB0) {
-        // Control Change
-        const controller = rawData[1];
-        const value = rawData[2];
-        message.controlChange = { controller, value, channel };
-      } else if (messageType === 0xC0) {
-        // Program Change
-        const program = rawData[1];
-        message.programChange = { program, channel };
-      } else if ((status & 0xF0) === 0xF0) {
-        // System Messages
-        message.systemMessage = {
-          type: this.getSystemMessageType(status),
-          data: Array.from(rawData)
+
+      // Connect to new device using JZZ
+      this.inputDevice = await this.jzz.openMidiIn(deviceId);
+      this.inputCallback = callback;
+
+      // Set up message handler
+      this.inputDevice.connect((message: any) => {
+        const rawData = message.data || message;
+        const status = rawData[0];
+        
+        // SUPPRESS Active Sensing (0xFE) - floods data every ~300ms
+        if (status === 0xFE) {
+          return;
+        }
+        
+        const messageType = status & 0xf0;
+        const channel = status & 0x0f;
+        
+        // Create raw message for debugging
+        const rawMessage: RawMidiMessage = {
+          hex: Array.from(rawData).map((b: number) => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
+          data: new Uint8Array(rawData),
+          type: this.getMidiMessageType(status)
         };
-      } else {
-        // Unknown/uncategorized - use raw
-        message.raw = rawMessage;
-      }
-      
-      this.inputCallback?.(message);
-    };
+        
+        const midiMessage: MidiMessage = {
+          rawData: rawMessage // Always include raw data for debugging
+        };
+        
+        // Categorize messages
+        if (messageType === 0x90 || messageType === 0x80) {
+          // Note On/Off
+          const note = rawData[1];
+          const velocity = rawData[2];
+          const isNoteOn = messageType === 0x90 && velocity > 0;
+          midiMessage.note = { note, velocity, on: isNoteOn, channel };
+        } else if (messageType === 0xB0) {
+          // Control Change
+          const controller = rawData[1];
+          const value = rawData[2];
+          midiMessage.controlChange = { controller, value, channel };
+        } else if (messageType === 0xC0) {
+          // Program Change
+          const program = rawData[1];
+          midiMessage.programChange = { program, channel };
+        } else if ((status & 0xF0) === 0xF0) {
+          // System Messages
+          midiMessage.systemMessage = {
+            type: this.getSystemMessageType(status),
+            data: Array.from(rawData)
+          };
+        } else {
+          // Unknown/uncategorized - use raw
+          midiMessage.raw = rawMessage;
+        }
+        
+        this.inputCallback?.(midiMessage);
+      });
 
-    console.log(`Connected to MIDI input: ${input.name}`);
-    return true;
+      // Update connection state
+      this.connectionState.inputConnected = true;
+      this.connectionState.inputDeviceId = deviceId;
+      
+      // Find device name
+      const devices = this.getInputDevices();
+      const device = devices.find(d => d.id === deviceId);
+      this.connectionState.inputDeviceName = device?.name || "Unknown Device";
+      
+      // Save to preferences for auto-reconnect
+      preferencesStore.dispatch({
+        type: 'SET_MIDI',
+        data: { 
+          ...preferencesStore.getState().midi,
+          lastInputDeviceId: deviceId
+        }
+      });
+
+      console.log(`Connected to MIDI input: ${this.connectionState.inputDeviceName}`);
+      return true;
+    } catch (error) {
+      console.error("Failed to connect to MIDI input:", error);
+      return false;
+    }
   }
 
   async connectOutputDevice(deviceId: string): Promise<boolean> {
-    // Handle virtual synthesizer connection
-    if (deviceId === 'virtual-synth') {
-      try {
+    try {
+      // Disconnect previous device
+      if (this.outputDevice) {
+        this.outputDevice.close?.();
+      }
+
+      // Handle virtual synthesizer connection
+      if (deviceId === 'virtual-synth') {
         const virtualPort = await virtualMidiService.getVirtualPort();
         if (virtualPort) {
           this.outputDevice = virtualPort;
+          this.connectionState.outputConnected = true;
+          this.connectionState.outputDeviceId = deviceId;
+          this.connectionState.outputDeviceName = virtualMidiService.getPortName();
+          
+          // Save to preferences for auto-reconnect
+          preferencesStore.dispatch({
+            type: 'SET_MIDI',
+            data: { 
+              ...preferencesStore.getState().midi,
+              lastOutputDeviceId: deviceId
+            }
+          });
+          
           console.log(`Connected to virtual MIDI synthesizer: ${virtualMidiService.getPortName()}`);
           return true;
         }
         return false;
-      } catch (error) {
-        console.error('Failed to connect to virtual synthesizer:', error);
-        return false;
       }
+
+      // Handle hardware MIDI device connection using JZZ
+      if (!this.jzz) return false;
+
+      this.outputDevice = await this.jzz.openMidiOut(deviceId);
+      
+      // Update connection state
+      this.connectionState.outputConnected = true;
+      this.connectionState.outputDeviceId = deviceId;
+      
+      // Find device name
+      const devices = this.getOutputDevices();
+      const device = devices.find(d => d.id === deviceId);
+      this.connectionState.outputDeviceName = device?.name || "Unknown Device";
+      
+      // Save to preferences for auto-reconnect
+      preferencesStore.dispatch({
+        type: 'SET_MIDI',
+        data: { 
+          ...preferencesStore.getState().midi,
+          lastOutputDeviceId: deviceId
+        }
+      });
+
+      console.log(`Connected to MIDI output: ${this.connectionState.outputDeviceName}`);
+      return true;
+    } catch (error) {
+      console.error("Failed to connect to MIDI output:", error);
+      return false;
     }
-
-    // Handle hardware MIDI device connection
-    if (!this.midiAccess) return false;
-
-    const output = this.midiAccess.outputs.get(deviceId);
-    if (!output) return false;
-
-    this.outputDevice = output;
-    console.log(`Connected to MIDI output: ${output.name}`);
-    return true;
   }
 
   sendNote(note: MidiNote): void {
@@ -235,27 +321,195 @@ class MidiService {
 
   disconnect(): void {
     if (this.inputDevice) {
-      this.inputDevice.onmidimessage = null;
+      this.inputDevice.close?.();
       this.inputDevice = null;
     }
-    this.outputDevice = null;
+    if (this.outputDevice) {
+      this.outputDevice.close?.();
+      this.outputDevice = null;
+    }
     this.inputCallback = null;
+    
+    // Update connection state
+    this.connectionState.inputConnected = false;
+    this.connectionState.outputConnected = false;
+    this.connectionState.inputDeviceId = undefined;
+    this.connectionState.outputDeviceId = undefined;
+    this.connectionState.inputDeviceName = undefined;
+    this.connectionState.outputDeviceName = undefined;
   }
 
   get isSupported(): boolean {
-    return !!navigator.requestMIDIAccess;
+    return true; // JZZ handles browser compatibility
   }
 
   get isInitialized(): boolean {
-    return !!this.midiAccess;
+    return !!this.jzz;
   }
 
   get hasInputDevice(): boolean {
-    return !!this.inputDevice;
+    return this.connectionState.inputConnected;
   }
 
   get hasOutputDevice(): boolean {
-    return !!this.outputDevice;
+    return this.connectionState.outputConnected;
+  }
+
+  get connectionStatus() {
+    return { ...this.connectionState };
+  }
+
+  // Device change monitoring
+  onDeviceChange(callback: DeviceChangeCallback): () => void {
+    this.deviceChangeCallbacks.add(callback);
+    return () => this.deviceChangeCallbacks.delete(callback);
+  }
+
+  // Refresh device list
+  refresh(): void {
+    if (this.jzz) {
+      this.jzz.refresh();
+    }
+  }
+
+  // Process device changes from JZZ onChange event
+  private processDeviceChanges(info: any): { inputs: { added: MidiDevice[], removed: MidiDevice[] }, outputs: { added: MidiDevice[], removed: MidiDevice[] } } {
+    const result = {
+      inputs: { added: [] as MidiDevice[], removed: [] as MidiDevice[] },
+      outputs: { added: [] as MidiDevice[], removed: [] as MidiDevice[] }
+    };
+
+    if (info.inputs?.added) {
+      info.inputs.added.forEach((input: any) => {
+        result.inputs.added.push({
+          id: input.id || input.name,
+          name: input.name || "Unknown Input Device"
+        });
+      });
+    }
+
+    if (info.inputs?.removed) {
+      info.inputs.removed.forEach((input: any) => {
+        result.inputs.removed.push({
+          id: input.id || input.name,
+          name: input.name || "Unknown Input Device"
+        });
+      });
+    }
+
+    if (info.outputs?.added) {
+      info.outputs.added.forEach((output: any) => {
+        result.outputs.added.push({
+          id: output.id || output.name,
+          name: output.name || "Unknown Output Device"
+        });
+      });
+    }
+
+    if (info.outputs?.removed) {
+      info.outputs.removed.forEach((output: any) => {
+        result.outputs.removed.push({
+          id: output.id || output.name,
+          name: output.name || "Unknown Output Device"
+        });
+      });
+    }
+
+    return result;
+  }
+
+  // Handle device disconnections
+  private handleDeviceDisconnections(changeInfo: { inputs: { added: MidiDevice[], removed: MidiDevice[] }, outputs: { added: MidiDevice[], removed: MidiDevice[] } }): void {
+    // Check if connected input device was removed
+    if (this.connectionState.inputConnected && this.connectionState.inputDeviceId) {
+      const inputRemoved = changeInfo.inputs.removed.some(device => device.id === this.connectionState.inputDeviceId);
+      if (inputRemoved) {
+        console.log(`Input device ${this.connectionState.inputDeviceName} was disconnected`);
+        this.connectionState.inputConnected = false;
+        this.inputDevice = null;
+      }
+    }
+
+    // Check if connected output device was removed
+    if (this.connectionState.outputConnected && this.connectionState.outputDeviceId) {
+      const outputRemoved = changeInfo.outputs.removed.some(device => device.id === this.connectionState.outputDeviceId);
+      if (outputRemoved) {
+        console.log(`Output device ${this.connectionState.outputDeviceName} was disconnected`);
+        this.connectionState.outputConnected = false;
+        this.outputDevice = null;
+      }
+    }
+  }
+
+  // Attempt auto-reconnection to last used devices
+  private async attemptAutoReconnect(): Promise<void> {
+    const preferences = preferencesStore.getState().midi;
+    
+    // For input devices, we need a callback, so we'll defer this until someone actually tries to connect
+    // Just log what we would try to reconnect to
+    if (preferences.lastInputDeviceId) {
+      const inputDevices = this.getInputDevices();
+      const lastInputDevice = inputDevices.find(d => d.id === preferences.lastInputDeviceId);
+      if (lastInputDevice) {
+        console.log(`Input device available for auto-reconnect: ${lastInputDevice.name}`);
+      }
+    }
+
+    // For output devices, we can attempt reconnection immediately
+    if (preferences.lastOutputDeviceId) {
+      const outputDevices = this.getOutputDevices();
+      const lastOutputDevice = outputDevices.find(d => d.id === preferences.lastOutputDeviceId);
+      if (lastOutputDevice) {
+        console.log(`Attempting to auto-reconnect to output device: ${lastOutputDevice.name}`);
+        await this.connectOutputDevice(preferences.lastOutputDeviceId);
+      }
+    }
+  }
+
+  // Public method to attempt auto-reconnection when callback is available
+  async attemptAutoReconnectInput(callback: MidiInputCallback): Promise<boolean> {
+    const preferences = preferencesStore.getState().midi;
+    
+    if (preferences.lastInputDeviceId) {
+      const inputDevices = this.getInputDevices();
+      const lastInputDevice = inputDevices.find(d => d.id === preferences.lastInputDeviceId);
+      if (lastInputDevice) {
+        console.log(`Attempting to auto-reconnect to input device: ${lastInputDevice.name}`);
+        return await this.connectInputDevice(preferences.lastInputDeviceId, callback);
+      }
+    }
+    
+    return false;
+  }
+
+  // Check if a device is available for reconnection
+  canReconnectToDevice(deviceId: string, type: 'input' | 'output'): boolean {
+    const devices = type === 'input' ? this.getInputDevices() : this.getOutputDevices();
+    return devices.some(d => d.id === deviceId);
+  }
+
+  // Attempt to reconnect to a specific device
+  async attemptReconnect(deviceId: string, type: 'input' | 'output'): Promise<boolean> {
+    if (type === 'input' && this.inputCallback) {
+      return await this.connectInputDevice(deviceId, this.inputCallback);
+    } else if (type === 'output') {
+      return await this.connectOutputDevice(deviceId);
+    }
+    return false;
+  }
+
+  // Shutdown and cleanup
+  shutdown(): void {
+    this.disconnect();
+    if (this.deviceWatcher) {
+      this.deviceWatcher.disconnect();
+      this.deviceWatcher = null;
+    }
+    if (this.jzz) {
+      this.jzz.close();
+      this.jzz = null;
+    }
+    this.deviceChangeCallbacks.clear();
   }
 
   private getMidiMessageType(status: number): string {
