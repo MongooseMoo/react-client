@@ -124,7 +124,7 @@ function App() {
     setShowSidebar(!isMobile);
     window.mudClient = newClient;
     clientInitialized.current = true;
-
+    
     // Initialize virtual MIDI synthesizer
     virtualMidiService.initialize().then((success) => {
       if (success) {
