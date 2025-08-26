@@ -39,7 +39,7 @@ export class GMCPMessageClientMidiEnable extends GMCPMessage {
 export class GMCPClientMidi extends GMCPPackage {
   public packageName: string = "Client.Midi";
   public packageVersion?: number = 1; // Use standard version
-  private activeNotes: Map<number, NodeJS.Timeout> = new Map();
+  private activeNotes: Map<string, NodeJS.Timeout> = new Map();
   private isAdvertised: boolean = false;
   private debugCallback?: (hex: string, type: string, gmcpMessage: string) => void;
 
@@ -175,9 +175,10 @@ export class GMCPClientMidi extends GMCPPackage {
     };
 
     // Clear any existing timeout for this note
-    if (this.activeNotes.has(data.note)) {
-      clearTimeout(this.activeNotes.get(data.note)!);
-      this.activeNotes.delete(data.note);
+    const noteKey = `${data.note}_${data.channel || 0}`;
+    if (this.activeNotes.has(noteKey)) {
+      clearTimeout(this.activeNotes.get(noteKey)!);
+      this.activeNotes.delete(noteKey);
     }
 
     // Send the note
@@ -191,10 +192,10 @@ export class GMCPClientMidi extends GMCPPackage {
           on: false,
           velocity: 0
         });
-        this.activeNotes.delete(data.note);
+        this.activeNotes.delete(noteKey);
       }, data.duration);
       
-      this.activeNotes.set(data.note, timeout);
+      this.activeNotes.set(noteKey, timeout);
     }
   }
 
