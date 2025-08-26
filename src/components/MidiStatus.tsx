@@ -76,17 +76,19 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   // Update reconnectable device suggestions and attempt auto-reconnection
   const updateReconnectableDevices = async () => {
     const prefs = preferencesStore.getState().midi;
+    const intentionalFlags = midiService.intentionalDisconnectStatus;
     const newReconnectables: { input?: { id: string, name: string }; output?: { id: string, name: string } } = {};
     
     
     // Check if last input device is available but not connected
     if (prefs.lastInputDeviceId && !connectionState.inputConnected) {
       const device = inputDevices.find(d => d.id === prefs.lastInputDeviceId);
+      
       if (device && midiService.canReconnectToDevice(prefs.lastInputDeviceId, 'input')) {
         newReconnectables.input = device;
         
-        // Auto-reconnect input device if midiPackage is available
-        if (midiPackage) {
+        // Only auto-reconnect if not intentionally disconnected
+        if (midiPackage && !intentionalFlags.input) {
           try {
             const success = await midiPackage.connectInputDevice(prefs.lastInputDeviceId);
             if (success) {
@@ -101,6 +103,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           } catch (error) {
             console.error('Error during input auto-reconnection:', error);
           }
+        } else if (intentionalFlags.input) {
+          console.log(`Skipping input auto-reconnect due to intentional disconnect`);
         }
       }
     }
@@ -108,11 +112,12 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     // Check if last output device is available but not connected  
     if (prefs.lastOutputDeviceId && !connectionState.outputConnected) {
       const device = outputDevices.find(d => d.id === prefs.lastOutputDeviceId);
+      
       if (device && midiService.canReconnectToDevice(prefs.lastOutputDeviceId, 'output')) {
         newReconnectables.output = device;
         
-        // Auto-reconnect output device if midiPackage is available
-        if (midiPackage) {
+        // Only auto-reconnect if not intentionally disconnected
+        if (midiPackage && !intentionalFlags.output) {
           try {
             const success = await midiPackage.connectOutputDevice(prefs.lastOutputDeviceId);
             if (success) {
@@ -127,6 +132,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           } catch (error) {
             console.error('Error during output auto-reconnection:', error);
           }
+        } else if (intentionalFlags.output) {
+          console.log(`Skipping output auto-reconnect due to intentional disconnect`);
         }
       }
     }
@@ -235,7 +242,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   };
   
   const handleDisconnectInput = () => {
-    midiService.disconnect();
+    midiService.disconnectWithIntent('input');
     setConnectionState(midiService.connectionStatus);
     loadDevices(); // Refresh to update reconnectable devices
   };
@@ -251,7 +258,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   };
   
   const handleDisconnectOutput = () => {
-    midiService.disconnect();
+    midiService.disconnectWithIntent('output');
     setConnectionState(midiService.connectionStatus);
     loadDevices(); // Refresh to update reconnectable devices
   };

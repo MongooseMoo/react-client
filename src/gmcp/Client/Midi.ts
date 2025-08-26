@@ -321,6 +321,7 @@ export class GMCPClientMidi extends GMCPPackage {
     this.debugCallback = callback;
   }
 
+
   shutdown(): void {
     midiService.disconnect();
     this.activeNotes.forEach((timeout) => {
