@@ -32,6 +32,7 @@ import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
 import { GMCPMessageRoomInfo, RoomPlayer } from "./gmcp/Room"; // Import RoomPlayer
+import { midiService } from "./MidiService";
 
 export interface WorldData {
   liveKitTokens: string[];
@@ -261,6 +262,10 @@ class MudClient extends EventEmitter {
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
     this.ws.onopen = () => {
       this._connected = true;
+      
+      // Reset MIDI intentional disconnect flags when successfully reconnecting to server
+      midiService.resetIntentionalDisconnectFlags();
+      
       this.emit("connect");
       this.emit("connectionChange", true);
     };
@@ -328,6 +333,12 @@ class MudClient extends EventEmitter {
     this.currentRoomInfo = null; // Reset room info on cleanup
     this.webRTCService.cleanup();
     this.fileTransferManager.cleanup();
+    
+    // Reset intentional disconnect flag after handling disconnect
+    if (this.intentionalDisconnect) {
+      this.intentionalDisconnect = false;
+    }
+    
     this.emit("disconnect");
     this.emit("connectionChange", false);
   }
