@@ -8,6 +8,7 @@ import DOMPurify from 'dompurify';
 import { setInputText } from '../InputStore';
 import TurndownService from 'turndown'; // <-- Import TurndownService
 import { preferencesStore } from '../PreferencesStore'; // Import preferences store
+import BlockquoteWithCopy from './BlockquoteWithCopy';
 
 export enum OutputType {
   Command = 'command',
@@ -20,12 +21,17 @@ export interface OutputLine {
   id: number; // Unique key for React list
   type: OutputType;
   content: JSX.Element; // The actual JSX to render for this line
+  sourceType: string; // Track what created this message
+  sourceContent: string; // Store original input data
+  metadata?: Record<string, any>; // Optional additional data
 }
 
 // For storing in localStorage
 interface SavedOutputLine {
   type: OutputType;
-  htmlContent: string;
+  sourceType: string; // 'ansi' | 'html' | 'command' | 'system' | 'error'
+  sourceContent: string; // Original input data
+  metadata?: Record<string, any>; // Optional additional data
 }
 
 interface StoredOutputLog {
@@ -33,7 +39,7 @@ interface StoredOutputLog {
   lines: SavedOutputLine[];
 }
 
-const OUTPUT_LOG_VERSION = 1;
+const OUTPUT_LOG_VERSION = 2;
 
 interface Props {
   client: MudClient;
@@ -77,44 +83,104 @@ class Output extends React.Component<Props, State> {
 
   saveOutput = () => {
     const linesToSave: SavedOutputLine[] = this.state.output.map((line: OutputLine) => {
-      let htmlContent = "";
-      const outerDivProps = line.content.props; // Props of the <div key={id} className="output-line...">
-
-      if (outerDivProps.dangerouslySetInnerHTML && outerDivProps.dangerouslySetInnerHTML.__html) {
-        // Case 1: Line loaded from storage, or from handleHtml's direct inner div.
-        // The content is already HTML.
-        htmlContent = outerDivProps.dangerouslySetInnerHTML.__html;
-      } else if (outerDivProps.children) {
-        // Case 2: Line created dynamically, children JSX exists.
-        const innerElement = outerDivProps.children;
-
-        // Check if the innerElement itself was created with dangerouslySetInnerHTML (e.g. from handleHtml)
-        if (React.isValidElement(innerElement) && innerElement.props.dangerouslySetInnerHTML && innerElement.props.dangerouslySetInnerHTML.__html) {
-          htmlContent = innerElement.props.dangerouslySetInnerHTML.__html;
-        } else {
-          // Otherwise, the innerElement is JSX that needs to be rendered to string.
-          if (React.isValidElement(innerElement) || (Array.isArray(innerElement) && innerElement.every(ch => React.isValidElement(ch) || typeof ch === 'string'))) {
-            htmlContent = ReactDOMServer.renderToStaticMarkup(innerElement);
-          } else if (typeof innerElement === 'string') {
-            htmlContent = innerElement; // Should not typically happen as we wrap strings in addToOutput
-          } else {
-            console.warn("Unexpected children structure in OutputLine for saving:", innerElement);
-            htmlContent = "";
-          }
-        }
-      }
-
       return {
         type: line.type,
-        htmlContent: htmlContent,
+        sourceType: line.sourceType,
+        sourceContent: line.sourceContent,
+        metadata: line.metadata,
       };
-    }).filter(savedLine => savedLine.htmlContent !== ""); // Filter out lines that ended up empty
+    }).filter(savedLine => savedLine.sourceContent !== ""); // Filter out lines that ended up empty
 
     const storedLog: StoredOutputLog = {
       version: OUTPUT_LOG_VERSION,
       lines: linesToSave,
     };
     localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify(storedLog));
+  };
+
+  // Helper method to re-create content from source data
+  recreateContentFromSource = (savedLine: SavedOutputLine): React.ReactElement[] => {
+    switch (savedLine.sourceType) {
+      case 'ansi':
+        return parseToElements(savedLine.sourceContent, this.handleExitClick);
+      
+      case 'html':
+        // Re-process through handleHtml logic
+        const clean = DOMPurify.sanitize(savedLine.sourceContent);
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(clean, 'text/html');
+        const blockquotes = doc.querySelectorAll('blockquote');
+        
+        if (blockquotes.length > 0) {
+          const elements: React.ReactElement[] = [];
+          const bodyElement = doc.body;
+          let currentContent = '';
+          
+          Array.from(bodyElement.childNodes).forEach((node, index) => {
+            if (node.nodeName === 'BLOCKQUOTE') {
+              if (currentContent.trim()) {
+                elements.push(
+                  <div 
+                    key={`content-${index}`} 
+                    style={{ whiteSpace: "normal" }} 
+                    dangerouslySetInnerHTML={{ __html: currentContent }} 
+                  />
+                );
+                currentContent = '';
+              }
+              
+              const blockquoteElement = node as HTMLElement;
+              const contentType = blockquoteElement.getAttribute('data-content-type') || undefined;
+              
+              elements.push(
+                <BlockquoteWithCopy 
+                  key={`blockquote-${index}`} 
+                  contentType={contentType}
+                >
+                  {blockquoteElement.innerHTML}
+                </BlockquoteWithCopy>
+              );
+            } else {
+              if (node.nodeType === Node.ELEMENT_NODE) {
+                currentContent += (node as HTMLElement).outerHTML;
+              } else if (node.nodeType === Node.TEXT_NODE) {
+                currentContent += node.textContent || '';
+              }
+            }
+          });
+          
+          if (currentContent.trim()) {
+            elements.push(
+              <div 
+                key="remaining-content" 
+                style={{ whiteSpace: "normal" }} 
+                dangerouslySetInnerHTML={{ __html: currentContent }} 
+              />
+            );
+          }
+          
+          return elements;
+        } else {
+          return [<div style={{ whiteSpace: "normal" }} dangerouslySetInnerHTML={{ __html: clean }}></div>];
+        }
+      
+      case 'command':
+        return [
+          <span className="command" aria-live="off">
+            {savedLine.sourceContent}
+          </span>
+        ];
+      
+      case 'error':
+        return [<h2> Error: {savedLine.sourceContent}</h2>];
+      
+      case 'system':
+        return [<h2> {savedLine.sourceContent}</h2>];
+      
+      default:
+        console.warn(`Unknown sourceType: ${savedLine.sourceType}, falling back to text display`);
+        return [<span>{savedLine.sourceContent}</span>];
+    }
   };
 
   loadOutput = (): OutputLine[] => {
@@ -127,44 +193,35 @@ class Output extends React.Component<Props, State> {
         if (parsedData && typeof parsedData === 'object' && 'version' in parsedData && 'lines' in parsedData) {
           const storedLog = parsedData as StoredOutputLog;
           if (storedLog.version === OUTPUT_LOG_VERSION) {
+            // Re-process source data through handlers to recreate proper React components
             return storedLog.lines.map((savedLine: SavedOutputLine): OutputLine => {
               const currentKey = this.messageKey++;
+              const recreatedElements = this.recreateContentFromSource(savedLine);
+              
+              // Create the wrapper div with the recreated content
+              const wrappedContent = recreatedElements.length === 1 ? 
+                recreatedElements[0] : 
+                <>{recreatedElements}</>;
+              
               return {
                 id: currentKey,
                 type: savedLine.type,
-                content: React.createElement("div", {
-                  key: currentKey,
-                  className: `output-line output-line-${savedLine.type}`,
-                  dangerouslySetInnerHTML: { __html: savedLine.htmlContent },
-                })
+                content: <div key={currentKey} className={`output-line output-line-${savedLine.type}`}>{wrappedContent}</div>,
+                sourceType: savedLine.sourceType,
+                sourceContent: savedLine.sourceContent,
+                metadata: savedLine.metadata
               };
             });
           } else {
-            // Handle other versions if/when they exist, for now, treat as old or discard
-            console.warn(`Unsupported log version: ${storedLog.version}. Discarding.`);
+            // Clear old incompatible data
+            console.warn(`Unsupported log version: ${storedLog.version}. Clearing old data.`);
             localStorage.removeItem(Output.LOCAL_STORAGE_KEY);
             return [];
           }
-        } else if (Array.isArray(parsedData)) {
-          // Handle old format (array of strings) for backward compatibility
-          console.log("Loading old format output log.");
-          const outputContentHtml = parsedData as string[];
-          return outputContentHtml.map((htmlString: string): OutputLine => {
-            const currentKey = this.messageKey++;
-            return {
-              id: currentKey,
-              type: OutputType.ServerMessage, // Default type for old format
-              content: React.createElement("div", {
-                key: currentKey,
-                className: `output-line output-line-${OutputType.ServerMessage}`, // Add class for old format
-                dangerouslySetInnerHTML: { __html: htmlString },
-              })
-            };
-          });
         } else {
-          // Data is in an unexpected format
-          console.error("Saved output log is in an unrecognized format:", parsedData);
-          localStorage.removeItem(Output.LOCAL_STORAGE_KEY); // Clear corrupted data
+          // Clear old format data
+          console.log("Clearing old format output log.");
+          localStorage.removeItem(Output.LOCAL_STORAGE_KEY);
           return [];
         }
       } catch (error) {
@@ -184,17 +241,19 @@ class Output extends React.Component<Props, State> {
         </span>,
       ],
       OutputType.Command, // Specify type
-      false
+      false,
+      'command',
+      command
     );
   };
 
   addError = (error: Error) =>
-    this.addToOutput([<h2> Error: {error.message}</h2>], OutputType.ErrorMessage);
+    this.addToOutput([<h2> Error: {error.message}</h2>], OutputType.ErrorMessage, true, 'error', error.message);
 
-  handleConnected = () => this.addToOutput([<h2> Connected</h2>], OutputType.SystemInfo);
+  handleConnected = () => this.addToOutput([<h2> Connected</h2>], OutputType.SystemInfo, true, 'system', 'Connected');
 
   handleDisconnected = () => {
-    this.addToOutput([<h2> Disconnected</h2>], OutputType.SystemInfo);
+    this.addToOutput([<h2> Disconnected</h2>], OutputType.SystemInfo, true, 'system', 'Disconnected');
     this.setState({ sidebarVisible: false });
   };
 
@@ -238,32 +297,8 @@ componentDidUpdate(
     }
 
     this.saveOutput(); // Save output to LocalStorage whenever it updates
-    this.addCopyButtons(); // Add copy buttons to new blockquotes
   }
 
-  // Method to add copy buttons to blockquotes that don't have them yet
-  addCopyButtons = () => {
-    const outputDiv = this.outputRef.current;
-    if (!outputDiv) return;
-
-    const blockquotes = outputDiv.querySelectorAll('blockquote:not(:has(.blockquote-copy-button))');
-
-    blockquotes.forEach(blockquote => {
-      const button = document.createElement('button');
-      button.classList.add('blockquote-copy-button');
-      button.textContent = 'Copy';
-      // Removed aria-label as button text is sufficient
-      button.setAttribute('type', 'button'); // Good practice for buttons not submitting forms
-
-      // Ensure the blockquote itself can contain the absolutely positioned button
-      // This might already be handled by CSS, but setting it here ensures it
-      if (window.getComputedStyle(blockquote).position === 'static') {
-         blockquote.style.position = 'relative';
-      }
-
-      blockquote.appendChild(button);
-    });
-  }
 
 
   handleScroll = () => {
@@ -313,7 +348,14 @@ componentDidUpdate(
     return doc.body.textContent || "";
   }
 
-  addToOutput(elements: React.ReactNode[], type: OutputType, shouldAnnounce: boolean = true) {
+  addToOutput(
+    elements: React.ReactNode[], 
+    type: OutputType, 
+    shouldAnnounce: boolean = true,
+    sourceType: string = 'unknown',
+    sourceContent: string = '',
+    metadata?: Record<string, any>
+  ) {
     if (shouldAnnounce) {
       elements.forEach((element) => {
         if (React.isValidElement(element)) {
@@ -332,7 +374,10 @@ componentDidUpdate(
         return {
           id: currentKey,
           type: type,
-          content: <div key={currentKey} className={`output-line output-line-${type}`}>{element}</div>
+          content: <div key={currentKey} className={`output-line output-line-${type}`}>{element}</div>,
+          sourceType: sourceType,
+          sourceContent: sourceContent,
+          metadata: metadata
         };
       });
       const combinedOutput = [...state.output, ...newOutputLines];
@@ -349,76 +394,89 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       return;
     }
     const elements = parseToElements(message, this.handleExitClick);
-    this.addToOutput(elements, OutputType.ServerMessage);
+    this.addToOutput(elements, OutputType.ServerMessage, true, 'ansi', message);
   };
 
   handleHtml = (html: string) => {
     const clean = DOMPurify.sanitize(html);
-    const e = <div style={{ whiteSpace: "normal" }} dangerouslySetInnerHTML={{ __html: clean }}></div>;
-    this.addToOutput([e], OutputType.ServerMessage);
+    
+    // Parse the cleaned HTML to detect blockquotes
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(clean, 'text/html');
+    const blockquotes = doc.querySelectorAll('blockquote');
+    
+    if (blockquotes.length > 0) {
+      // If we have blockquotes, we need to process them individually
+      const elements: React.ReactElement[] = [];
+      
+      // Split content around blockquotes
+      const bodyElement = doc.body;
+      let currentContent = '';
+      
+      Array.from(bodyElement.childNodes).forEach((node, index) => {
+        if (node.nodeName === 'BLOCKQUOTE') {
+          // Add any accumulated content before this blockquote
+          if (currentContent.trim()) {
+            elements.push(
+              <div 
+                key={`content-${index}`} 
+                style={{ whiteSpace: "normal" }} 
+                dangerouslySetInnerHTML={{ __html: currentContent }} 
+              />
+            );
+            currentContent = '';
+          }
+          
+          // Add the blockquote with copy functionality
+          const blockquoteElement = node as HTMLElement;
+          const contentType = blockquoteElement.getAttribute('data-content-type') || undefined;
+          
+          elements.push(
+            <BlockquoteWithCopy 
+              key={`blockquote-${index}`} 
+              contentType={contentType}
+            >
+              {blockquoteElement.innerHTML}
+            </BlockquoteWithCopy>
+          );
+        } else {
+          // Accumulate non-blockquote content
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            currentContent += (node as HTMLElement).outerHTML;
+          } else if (node.nodeType === Node.TEXT_NODE) {
+            currentContent += node.textContent || '';
+          }
+        }
+      });
+      
+      // Add any remaining content
+      if (currentContent.trim()) {
+        elements.push(
+          <div 
+            key="remaining-content" 
+            style={{ whiteSpace: "normal" }} 
+            dangerouslySetInnerHTML={{ __html: currentContent }} 
+          />
+        );
+      }
+      
+      this.addToOutput(elements, OutputType.ServerMessage, true, 'html', html);
+    } else {
+      // No blockquotes, use original logic
+      const e = <div style={{ whiteSpace: "normal" }} dangerouslySetInnerHTML={{ __html: clean }}></div>;
+      this.addToOutput([e], OutputType.ServerMessage, true, 'html', html);
+    }
   }
 
   handleExitClick = (exit: string) => {
     this.props.client.sendCommand(exit);
   };
 
-  // --- Modified Method to handle both data-text links and copy buttons ---
+  // --- Method to handle data-text links ---
   handleDataTextClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const targetElement = event.target as HTMLElement;
 
-    // --- Handle Blockquote Copy Button Clicks ---
-    const copyButton = targetElement.closest('.blockquote-copy-button');
-    if (copyButton instanceof HTMLButtonElement) {
-      event.preventDefault(); // Prevent any default button behavior
-      event.stopPropagation(); // Stop the event from bubbling further
-
-      const blockquote = copyButton.closest('blockquote');
-      if (blockquote) {
-        // Clone the blockquote to avoid modifying the live DOM
-        const clonedBlockquote = blockquote.cloneNode(true) as HTMLElement;
-        // Find and remove the button *from the clone*
-        const buttonInClone = clonedBlockquote.querySelector('.blockquote-copy-button');
-        if (buttonInClone) {
-          buttonInClone.remove();
-        }
-
-        let textToCopy: string;
-        const contentType = blockquote.dataset.contentType; // Check for data-content-type
-
-        // Check if the content type is markdown
-        if (contentType === 'text/markdown') {
-          // Get the inner HTML of the clone (without the button)
-          const htmlContent = clonedBlockquote.innerHTML;
-          // Convert HTML to Markdown using Turndown
-          textToCopy = this.turndownService.turndown(htmlContent);
-        } else {
-          // Default behavior: Get text content from the clone
-          textToCopy = clonedBlockquote.textContent || '';
-        }
-
-        navigator.clipboard.writeText(textToCopy.trim())
-          .then(() => {
-            // Visual feedback: Change text, add class, then revert (targets the original button)
-            copyButton.textContent = 'Copied!';
-            copyButton.classList.add('copied');
-            setTimeout(() => {
-              copyButton.textContent = 'Copy';
-              copyButton.classList.remove('copied');
-            }, 1500); // Revert after 1.5 seconds
-          })
-          .catch(err => {
-            console.error('Failed to copy text: ', err);
-            // Optional: Provide error feedback to the user
-            copyButton.textContent = 'Error';
-             setTimeout(() => {
-              copyButton.textContent = 'Copy';
-            }, 1500);
-          });
-      }
-      return; // Stop processing here if it was a copy button click
-    }
-
-    // --- Handle data-text link clicks (existing logic) ---
+    // --- Handle data-text link clicks ---
     const linkElement = targetElement.closest('a.command[data-text]');
     if (linkElement instanceof HTMLAnchorElement) {
       event.preventDefault();
