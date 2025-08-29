@@ -85,3 +85,56 @@ a.exit {
   font-weight: bold; /* Keep errors bold */
   display: inline; /* Prevent h2 from taking full width if not desired */
 }
+
+/* BlockquoteWithCopy wrapper styles */
+.blockquote-with-copy {
+  position: relative;
+  margin: 0.5rem 0;
+}
+
+.blockquote-with-copy blockquote {
+  margin: 0;
+  padding: 1rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-left: 4px solid #87ceeb;
+  border-radius: 4px;
+  position: relative;
+}
+
+/* BlockquoteCopyButton styles */
+.blockquote-copy-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.7);
+  color: #ffffff;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.blockquote-copy-button:hover {
+  background-color: rgba(0, 0, 0, 0.9);
+  border-color: #87ceeb;
+}
+
+.blockquote-copy-button:active {
+  transform: translateY(1px);
+}
+
+/* Visual feedback styles for copy button */
+.blockquote-copy-button.copied {
+  background-color: #28a745;
+  border-color: #28a745;
+  color: #ffffff;
+}
+
+.blockquote-copy-button.error {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: #ffffff;
+}
