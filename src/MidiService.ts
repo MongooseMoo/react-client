@@ -142,13 +142,21 @@ class MidiService {
         throw new Error(`MIDI.js script loading failed: ${scriptError.message}`);
       }
       
-      // Register MIDI.js synthesizer with soundfont configuration
-      (window.JZZ.synth.MIDIjs as any).register('MIDI.js Synthesizer', {
-        soundfontUrl: 'https://mongoose.world/sounds/soundfont/MusyngKite/',
-        instruments: ['acoustic_grand_piano'], // Always load piano as fallback for dynamic loading
-        targetFormat: 'mp3' // Use MP3 format
+      // Register multiple MIDI.js synthesizers with different soundfonts
+      const soundfonts = [
+        { name: 'FatBoy Synthesizer', url: 'https://mongoose.world/sounds/soundfont/FatBoy/' },
+        { name: 'FluidR3 Synthesizer', url: 'https://mongoose.world/sounds/soundfont/FluidR3_GM/' },
+        { name: 'MusyngKite Synthesizer', url: 'https://mongoose.world/sounds/soundfont/MusyngKite/' }
+      ];
+      
+      soundfonts.forEach(sf => {
+        (window.JZZ.synth.MIDIjs as any).register(sf.name, {
+          soundfontUrl: sf.url,
+          instruments: ['acoustic_grand_piano'], // Always load piano as fallback for dynamic loading
+          targetFormat: 'mp3' // Use MP3 format
+        });
+        console.log(`${sf.name} registered with soundfont: ${sf.url}`);
       });
-      console.log('MIDI.js Synthesizer registered with soundfont support');
       
       // Wait a bit for registration to complete then refresh
       setTimeout(() => {
