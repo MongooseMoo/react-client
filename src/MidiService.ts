@@ -1,6 +1,23 @@
-import { virtualMidiService } from './VirtualMidiService';
 import JZZ from 'jzz';
-import { preferencesStore } from './PreferencesStore';
+// @ts-ignore
+import { Tiny } from 'jzz-synth-tiny';
+import { preferencesStore, PrefActionType } from './PreferencesStore';
+import { midiJsScriptLoader } from './utils/MidiJsScriptLoader';
+
+declare global {
+  namespace JZZ {
+    interface JZZ {
+      synth: {
+        Tiny: {
+          register(name: string): void;
+        };
+        MIDIjs?: {
+          register(name: string): void;
+        };
+      };
+    }
+  }
+}
 
 export interface MidiDevice {
   id: string;
@@ -55,7 +72,6 @@ class MidiService {
   private outputDevice: any = null;
   private inputCallback: MidiInputCallback | null = null;
   private deviceChangeCallbacks: Set<DeviceChangeCallback> = new Set();
-  private deviceWatcher: any = null;
   private connectionState: {
     inputConnected: boolean;
     outputConnected: boolean;
@@ -76,11 +92,21 @@ class MidiService {
 
   async initialize(): Promise<boolean> {
     try {
+      console.log("Starting MIDI service initialization...");
       this.jzz = await JZZ();
       console.log("JZZ MIDI engine initialized");
       
+      // Make JZZ available globally for MIDI.js integration
+      if (typeof window !== 'undefined') {
+        (window as any).JZZ = JZZ;
+        console.log('JZZ made available globally as window.JZZ');
+      }
+      
+      // Initialize virtual synthesizers
+      await this.initializeVirtualSynths();
+      
       // Set up device change monitoring
-      this.deviceWatcher = this.jzz.onChange((info: any) => {
+      this.jzz.onChange((info: any) => {
         const changeInfo = this.processDeviceChanges(info);
         this.deviceChangeCallbacks.forEach(callback => callback(changeInfo));
         
@@ -91,12 +117,52 @@ class MidiService {
       // Try to auto-reconnect to last used devices
       await this.attemptAutoReconnect();
       
+      console.log("MIDI service initialization completed successfully");
       return true;
     } catch (error) {
       console.error("Failed to initialize JZZ MIDI engine:", error);
       return false;
     }
   }
+
+  private async initializeVirtualSynths(): Promise<void> {
+    try {
+      console.log('Initializing virtual synthesizers...');
+      
+      // Initialize JZZ with Tiny synthesizer
+      Tiny(JZZ);
+      (JZZ as any).synth.Tiny.register('JZZ Tiny Synthesizer');
+      console.log('JZZ Tiny Synthesizer registered');
+      
+      // Load MIDI.js scripts and initialize MIDI.js synthesizer
+      try {
+        await midiJsScriptLoader.loadScripts();
+      } catch (scriptError) {
+        console.error('❌ MIDI.js script loading failed:', scriptError);
+        throw new Error(`MIDI.js script loading failed: ${scriptError.message}`);
+      }
+      
+      // Register MIDI.js synthesizer with soundfont configuration
+      (window.JZZ.synth.MIDIjs as any).register('MIDI.js Synthesizer', {
+        soundfontUrl: 'https://mongoose.world/sounds/soundfont/MusyngKite/',
+        instruments: ['acoustic_grand_piano'], // Always load piano as fallback for dynamic loading
+        targetFormat: 'mp3' // Use MP3 format
+      });
+      console.log('MIDI.js Synthesizer registered with soundfont support');
+      
+      // Wait a bit for registration to complete then refresh
+      setTimeout(() => {
+        this.jzz.refresh();
+        console.log('JZZ refreshed, devices should now be available');
+      }, 100);
+      
+      console.log('Virtual synthesizers initialization complete');
+    } catch (error) {
+      console.error('Failed to initialize virtual synthesizers:', error);
+      throw error;
+    }
+  }
+
 
   getInputDevices(): MidiDevice[] {
     if (!this.jzz) return [];
@@ -117,27 +183,18 @@ class MidiService {
   }
 
   getOutputDevices(): MidiDevice[] {
+    if (!this.jzz) return [];
+    
     const devices: MidiDevice[] = [];
+    const info = this.jzz.info();
     
-    // Add virtual synthesizer if initialized
-    if (virtualMidiService.initialized) {
-      devices.push({
-        id: 'virtual-synth',
-        name: virtualMidiService.getPortName()
-      });
-    }
-    
-    // Add hardware MIDI devices if available
-    if (this.jzz) {
-      const info = this.jzz.info();
-      if (info && info.outputs) {
-        info.outputs.forEach((output: any) => {
-          devices.push({
-            id: output.id || output.name,
-            name: output.name || "Unknown Output Device"
-          });
+    if (info?.outputs) {
+      info.outputs.forEach((output: any) => {
+        devices.push({
+          id: output.id || output.name,
+          name: output.name || "Unknown Output Device"
         });
-      }
+      });
     }
     
     return devices;
@@ -171,7 +228,7 @@ class MidiService {
         
         // Create raw message for debugging
         const rawMessage: RawMidiMessage = {
-          hex: Array.from(rawData).map((b: number) => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
+          hex: Array.from(rawData as ArrayLike<number>).map((b: number) => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
           data: new Uint8Array(rawData),
           type: this.getMidiMessageType(status)
         };
@@ -221,7 +278,7 @@ class MidiService {
       
       // Save to preferences for auto-reconnect
       preferencesStore.dispatch({
-        type: 'SET_MIDI',
+        type: PrefActionType.SetMidi,
         data: { 
           ...preferencesStore.getState().midi,
           lastInputDeviceId: deviceId
@@ -240,42 +297,15 @@ class MidiService {
   }
 
   async connectOutputDevice(deviceId: string): Promise<boolean> {
+    if (!this.jzz) return false;
+
     try {
       // Disconnect previous device
       if (this.outputDevice) {
         this.outputDevice.close?.();
       }
 
-      // Handle virtual synthesizer connection
-      if (deviceId === 'virtual-synth') {
-        const virtualPort = await virtualMidiService.getVirtualPort();
-        if (virtualPort) {
-          this.outputDevice = virtualPort;
-          this.connectionState.outputConnected = true;
-          this.connectionState.outputDeviceId = deviceId;
-          this.connectionState.outputDeviceName = virtualMidiService.getPortName();
-          
-          // Save to preferences for auto-reconnect
-          preferencesStore.dispatch({
-            type: 'SET_MIDI',
-            data: { 
-              ...preferencesStore.getState().midi,
-              lastOutputDeviceId: deviceId
-            }
-          });
-
-          // Clear intentional disconnect flag since user manually connected
-          this.intentionalDisconnectFlags.output = false;
-          
-          console.log(`Connected to virtual MIDI synthesizer: ${virtualMidiService.getPortName()}`);
-          return true;
-        }
-        return false;
-      }
-
-      // Handle hardware MIDI device connection using JZZ
-      if (!this.jzz) return false;
-
+      // Connect using JZZ's unified interface (handles both hardware and virtual devices)
       this.outputDevice = await this.jzz.openMidiOut(deviceId);
       
       // Update connection state
@@ -289,7 +319,7 @@ class MidiService {
       
       // Save to preferences for auto-reconnect
       preferencesStore.dispatch({
-        type: 'SET_MIDI',
+        type: PrefActionType.SetMidi,
         data: { 
           ...preferencesStore.getState().midi,
           lastOutputDeviceId: deviceId
@@ -584,10 +614,6 @@ class MidiService {
   // Shutdown and cleanup
   shutdown(): void {
     this.disconnect();
-    if (this.deviceWatcher) {
-      this.deviceWatcher.disconnect();
-      this.deviceWatcher = null;
-    }
     if (this.jzz) {
       this.jzz.close();
       this.jzz = null;
