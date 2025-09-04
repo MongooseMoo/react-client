@@ -12,10 +12,36 @@
   // Dynamic loading state management
   var _loadingInstruments = {}; // Track instruments currently being loaded
   var _pendingProgramChanges = []; // Queue program changes waiting for load completion
+  
+  // Drum routing: Connect to JZZ.synth.Tiny for channel 10 (drums)
+  var _tinyPort = null;
+  
+  function _initTinyPort() {
+    if (!_tinyPort && JZZ.synth && JZZ.synth.Tiny) {
+      try {
+        _tinyPort = JZZ.synth.Tiny();
+        console.log('JZZ.synth.Tiny port initialized for drum routing');
+      } catch (e) {
+        console.warn('Failed to initialize JZZ.synth.Tiny port for drums:', e);
+      }
+    }
+  }
 
   function _receive(a) {
     var s = a[0]>>4;
     var c = a[0]&0xf;
+    
+    // Initialize Tiny port if needed
+    if (!_tinyPort) {
+      _initTinyPort();
+    }
+    
+    // Route channel 10 (index 9) to JZZ.synth.Tiny for drums
+    if (c === 9 && _tinyPort) {
+      console.log('Routing channel 10 (drums) to JZZ.synth.Tiny:', a);
+      _tinyPort.send(a);
+      return;
+    }
     
     if (s == 0xC) { // Program Change (0xC0-0xCF)
       var program = a[1];
@@ -104,6 +130,10 @@
   function _onsuccess() {
     _running = true;
     _waiting = false;
+    
+    // Initialize Tiny port for drum routing
+    _initTinyPort();
+    
     for (var i=0; i<_ports.length; i++) _release(_ports[i][0], _ports[i][1]);
   }
 
