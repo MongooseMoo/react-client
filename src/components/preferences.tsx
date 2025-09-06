@@ -329,8 +329,32 @@ const MidiTab: React.FC = () => {
   const handleMidiEnabledChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     dispatch({
       type: PrefActionType.SetMidi,
-      data: { enabled: e.target.checked },
+      data: { ...state.midi, enabled: e.target.checked },
     });
+  };
+
+  const handleMidiJsSoundfontChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newSoundfont = e.target.value;
+    dispatch({
+      type: PrefActionType.SetMidi,
+      data: { ...state.midi, midiJsSoundfont: newSoundfont },
+    });
+    // Reload synthesizers with new soundfont
+    if (midiService.isInitialized) {
+      await midiService.reloadSynthesizers();
+    }
+  };
+
+  const handleSpessaSynthSoundfontChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newSoundfontUrl = e.target.value;
+    dispatch({
+      type: PrefActionType.SetMidi,
+      data: { ...state.midi, spessaSynthSoundfont: newSoundfontUrl },
+    });
+    // Reload synthesizers with new soundfont
+    if (midiService.isInitialized) {
+      await midiService.reloadSynthesizers();
+    }
   };
 
   if (!midiService.isSupported) {
@@ -356,9 +380,46 @@ const MidiTab: React.FC = () => {
       <br />
       
       {state.midi.enabled && (
-        <p style={{ color: "#666", fontSize: "0.9em" }}>
-          Device selection and management is available in the MIDI tab when connected to a server.
-        </p>
+        <div>
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+              MIDI.js Soundfont:
+            </label>
+            <select 
+              value={state.midi.midiJsSoundfont || 'MusyngKite'}
+              onChange={handleMidiJsSoundfontChange}
+              style={{ padding: '5px', minWidth: '200px' }}
+            >
+              <option value="FatBoy">FatBoy</option>
+              <option value="FluidR3">FluidR3 GM</option>
+              <option value="MusyngKite">MusyngKite (Default)</option>
+            </select>
+            <p style={{ color: '#666', fontSize: '0.8em', margin: '5px 0' }}>
+              Soundfont used by the MIDI.js Synthesizer port.
+            </p>
+          </div>
+          
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+              SpessaSynth Soundfont URL:
+            </label>
+            <input
+              type="url"
+              value={state.midi.spessaSynthSoundfont || ''}
+              onChange={handleSpessaSynthSoundfontChange}
+              placeholder="https://example.com/soundfont.sf2"
+              style={{ padding: '5px', minWidth: '300px' }}
+            />
+            <p style={{ color: '#666', fontSize: '0.8em', margin: '5px 0' }}>
+              Optional: URL to a SF2/SF3 soundfont file for the SpessaSynth Synthesizer port.
+              Leave empty to use SpessaSynth's built-in sounds.
+            </p>
+          </div>
+          
+          <p style={{ color: "#666", fontSize: "0.9em" }}>
+            Device selection and management is available in the MIDI tab when connected to a server.
+          </p>
+        </div>
       )}
     </div>
   );
