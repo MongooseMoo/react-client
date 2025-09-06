@@ -27,7 +27,6 @@
     "react-icons": "^5.5.0",
     "react-router-dom": "^6.30.1",
     "react-use": "^17.6.0",
-    "spessasynth_lib": "^4.0.3",
     "strip-ansi": "^7.1.0",
     "turndown": "^7.2.0",
     "vite-plugin-commit-hash": "^1.0.8",

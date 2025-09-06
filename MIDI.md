@@ -1,6 +1,6 @@
 # MIDI System Documentation
 
-The Mongoose React Client includes a comprehensive MIDI system that enables real-time MIDI input/output, multiple synthesizer engines, and seamless integration with the MUD's GMCP (Generic MUD Communication Protocol) MIDI features.
+The Mongoose React Client includes a comprehensive MIDI system that enables real-time MIDI input/output, synthesizer engines, and seamless integration with the MUD's GMCP (Generic MUD Communication Protocol) MIDI features.
 
 ## Table of Contents
 
@@ -20,8 +20,8 @@ The MIDI system is built around several key components:
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   MIDI Devices  │────│   MidiService    │────│  Synthesizers   │
-│  (Hardware/     │    │ (Core Engine)    │    │ (JZZ/MIDI.js/   │
-│   Virtual)      │    │                  │    │  SpessaSynth)   │
+│  (Hardware/     │    │ (Core Engine)    │    │ (JZZ/MIDI.js)   │
+│   Virtual)      │    │                  │    │                 │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
          │                       │                       │
          │              ┌────────────────────┐          │
@@ -44,7 +44,7 @@ The `MidiService` class is the central hub for all MIDI functionality:
 
 #### Key Features:
 - **Device Management**: Automatic discovery and connection to MIDI input/output devices
-- **Multiple Synthesizers**: Supports JZZ Tiny, MIDI.js, and SpessaSynth engines
+- **Multiple Synthesizers**: Supports JZZ Tiny and MIDI.js engines
 - **Auto-reconnection**: Remembers and reconnects to previously used devices
 - **Message Processing**: Real-time MIDI message parsing and routing
 - **Event System**: Observable device changes and connection status
@@ -60,9 +60,6 @@ async initializeVirtualSynths() {
 
   // 2. MIDI.js Synthesizer (Soundfont-based, configurable)
   await this.initializeMIDIjsSynthesizer();
-
-  // 3. SpessaSynth (High-quality SF2/SF3 support)
-  await this.initializeSpessaSynth();
 }
 ```
 
@@ -91,7 +88,6 @@ interface ConnectionState {
   - FatBoy (Warm, analog-style sounds)
   - FluidR3 GM (General MIDI standard)
   - MusyngKite (High-quality, default selection)
-- **SpessaSynth Soundfont URL**: Custom SF2/SF3 soundfont input
 - Real-time synthesizer reloading when preferences change
 
 **Code Structure**:
@@ -99,11 +95,6 @@ interface ConnectionState {
 const MidiTab: React.FC = () => {
   const handleMidiJsSoundfontChange = async (e) => {
     // Updates preferences and reloads MIDI.js synthesizer
-    await midiService.reloadSynthesizers();
-  };
-
-  const handleSpessaSynthSoundfontChange = async (e) => {
-    // Updates SpessaSynth soundfont URL and reloads
     await midiService.reloadSynthesizers();
   };
 };
@@ -215,33 +206,6 @@ const soundfontUrls = {
 - **Resource Management**: Only one soundfont loaded at a time
 - **Performance**: Configurable quality vs. resource usage
 
-### 4. SpessaSynth - Professional SF2/SF3 Support
-
-**Library**: `spessasynth_lib` npm package
-**Role**: High-end SoundFont2/SoundFont3 synthesizer with professional features
-
-**Features**:
-- **SF2/SF3 Support**: Full SoundFont2 and SoundFont3 compatibility
-- **Audio Worklet**: Uses Web Audio worklets for stable, low-latency audio
-- **Advanced Synthesis**: Supports complex soundfont features (modulators, effects)
-- **Custom Soundfonts**: User can specify any SF2/SF3 file URL
-- **High Performance**: Optimized audio processing pipeline
-
-**Integration Architecture**:
-```typescript
-// SpessaSynth uses Web Audio Worklets for professional audio processing
-const audioContext = new AudioContext({ sampleRate: 44100 });
-await audioContext.audioWorklet.addModule('/spessasynth_processor.min.js');
-
-const synthesizer = new WorkletSynthesizer(audioContext, config);
-synthesizer.connect(audioContext.destination);
-
-// Load custom soundfont
-await synthesizer.soundBankManager.addSoundBank(soundfontBuffer, 'user-soundfont');
-```
-
-**Default Behavior**: Uses built-in basic sounds (no external soundfont required)
-
 ## GMCP MIDI Integration
 
 ### GMCP Package: `Client.Midi` (`src/gmcp/Client/Midi.ts`)
@@ -282,14 +246,12 @@ export type MidiPreferences = {
   lastInputDeviceId?: string;          // Remember last input device
   lastOutputDeviceId?: string;         // Remember last output device  
   midiJsSoundfont: string;            // Selected MIDI.js soundfont
-  spessaSynthSoundfont: string;       // Custom SpessaSynth soundfont URL
 };
 ```
 
 ### Default Settings:
 - **MIDI Enabled**: `false` (must be explicitly enabled by user)
 - **MIDI.js Soundfont**: `MusyngKite` (highest quality)
-- **SpessaSynth Soundfont**: Empty (uses built-in basic sounds by default)
 - **Auto-reconnect**: Enabled (remembers last used devices)
 
 ### Preference Persistence:
@@ -304,13 +266,6 @@ export type MidiPreferences = {
 2. **Choose Soundfont**: Select preferred MIDI.js soundfont
 3. **Connect**: Sidebar → MIDI → Select input/output devices
 4. **Test**: Play notes on MIDI keyboard or via GMCP
-
-### Custom SpessaSynth Setup:
-1. Find a SoundFont file (.sf2 or .sf3)
-2. Host it on a web server or use a public URL
-3. Settings → MIDI → SpessaSynth Soundfont URL → Enter URL
-4. Select "SpessaSynth Synthesizer" as output device
-5. Soundfont will download automatically on first use
 
 ### GMCP Integration:
 ```javascript
@@ -338,12 +293,7 @@ void gmcp_client_midi_input(mapping data) {
 - **Browser Audio Policy**: Some browsers block audio until user interaction
 - **Soundfont Loading**: Check console for soundfont download errors
 
-**3. SpessaSynth Not Working**
-- **Worklet Loading**: Check `/spessasynth_processor.min.js` is accessible
-- **Soundfont Issues**: Invalid soundfont URL or corrupted file
-- **Memory Limits**: Large soundfonts may exceed browser memory limits
-
-**4. MIDI Input Not Detected**
+**3. MIDI Input Not Detected**
 - **Device Permissions**: Browser may prompt for MIDI access permission
 - **Device Conflicts**: Another application may be using the MIDI device
 - **USB Connection**: Try reconnecting USB MIDI devices
@@ -364,14 +314,8 @@ The MIDI system provides extensive console logging:
 - **FluidR3**: ~10MB, standard GM sounds, moderate CPU usage  
 - **MusyngKite**: ~25MB, highest quality, balanced performance
 
-**SpessaSynth**:
-- Custom soundfonts can be 1MB-100MB+
-- Larger soundfonts use more memory but provide higher quality
-- Audio worklet processing is very efficient
-
 **Recommendations**:
 - Use **MusyngKite** for best balance of quality and performance
-- Use **SpessaSynth** for professional music production
 - Use **JZZ Tiny** for minimal resource usage
 
 ---

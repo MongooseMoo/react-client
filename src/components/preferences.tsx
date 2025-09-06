@@ -345,17 +345,6 @@ const MidiTab: React.FC = () => {
     }
   };
 
-  const handleSpessaSynthSoundfontChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newSoundfontUrl = e.target.value;
-    dispatch({
-      type: PrefActionType.SetMidi,
-      data: { ...state.midi, spessaSynthSoundfont: newSoundfontUrl },
-    });
-    // Reload synthesizers with new soundfont
-    if (midiService.isInitialized) {
-      await midiService.reloadSynthesizers();
-    }
-  };
 
   if (!midiService.isSupported) {
     return (
@@ -396,23 +385,6 @@ const MidiTab: React.FC = () => {
             </select>
             <p style={{ color: '#666', fontSize: '0.8em', margin: '5px 0' }}>
               Soundfont used by the MIDI.js Synthesizer port.
-            </p>
-          </div>
-          
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              SpessaSynth Soundfont URL:
-            </label>
-            <input
-              type="url"
-              value={state.midi.spessaSynthSoundfont || ''}
-              onChange={handleSpessaSynthSoundfontChange}
-              placeholder="https://example.com/soundfont.sf2"
-              style={{ padding: '5px', minWidth: '300px' }}
-            />
-            <p style={{ color: '#666', fontSize: '0.8em', margin: '5px 0' }}>
-              Optional: URL to a SF2/SF3 soundfont file for the SpessaSynth Synthesizer port.
-              Leave empty to use SpessaSynth's built-in sounds.
             </p>
           </div>
           
