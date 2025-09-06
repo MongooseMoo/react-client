@@ -35,6 +35,8 @@ export type MidiPreferences = {
   enabled: boolean;
   lastInputDeviceId?: string;
   lastOutputDeviceId?: string;
+  midiJsSoundfont: string;
+  spessaSynthSoundfont: string;
 };
 
 export type PrefState = {
@@ -114,6 +116,8 @@ class PreferencesStore {
       },
       midi: {
         enabled: false,
+        midiJsSoundfont: 'MusyngKite', // Default to MusyngKite
+        spessaSynthSoundfont: '', // Empty default, user will need to provide soundfont URL
       },
     };
   }
