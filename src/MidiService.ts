@@ -1,6 +1,7 @@
 import JZZ from 'jzz';
 // @ts-ignore
 import { Tiny } from 'jzz-synth-tiny';
+import { WorkletSynthesizer, DEFAULT_SYNTH_CONFIG } from 'spessasynth_lib';
 import { preferencesStore, PrefActionType } from './PreferencesStore';
 import { midiJsScriptLoader } from './utils/MidiJsScriptLoader';
 
@@ -13,6 +14,9 @@ declare global {
         };
         MIDIjs?: {
           register(name: string): void;
+        };
+        SpessaSynth?: {
+          register(name: string, options?: any): void;
         };
       };
     }
@@ -90,6 +94,9 @@ class MidiService {
     output: false
   };
 
+  // SpessaSynth instance
+  private spessaSynth: WorkletSynthesizer | null = null;
+
   async initialize(): Promise<boolean> {
     try {
       console.log("Starting MIDI service initialization...");
@@ -139,24 +146,14 @@ class MidiService {
         await midiJsScriptLoader.loadScripts();
       } catch (scriptError) {
         console.error('❌ MIDI.js script loading failed:', scriptError);
-        throw new Error(`MIDI.js script loading failed: ${scriptError.message}`);
+        throw new Error(`MIDI.js script loading failed: ${(scriptError as Error).message || scriptError}`);
       }
       
-      // Register multiple MIDI.js synthesizers with different soundfonts
-      const soundfonts = [
-        { name: 'FatBoy Synthesizer', url: 'https://mongoose.world/sounds/soundfont/FatBoy/' },
-        { name: 'FluidR3 Synthesizer', url: 'https://mongoose.world/sounds/soundfont/FluidR3_GM/' },
-        { name: 'MusyngKite Synthesizer', url: 'https://mongoose.world/sounds/soundfont/MusyngKite/' }
-      ];
+      // Register single MIDI.js synthesizer with configurable soundfont
+      await this.initializeMIDIjsSynthesizer();
       
-      soundfonts.forEach(sf => {
-        (window.JZZ.synth.MIDIjs as any).register(sf.name, {
-          soundfontUrl: sf.url,
-          instruments: ['acoustic_grand_piano'], // Always load piano as fallback for dynamic loading
-          targetFormat: 'mp3' // Use MP3 format
-        });
-        console.log(`${sf.name} registered with soundfont: ${sf.url}`);
-      });
+      // Initialize SpessaSynth synthesizer
+      await this.initializeSpessaSynth();
       
       // Wait a bit for registration to complete then refresh
       setTimeout(() => {
@@ -168,6 +165,203 @@ class MidiService {
     } catch (error) {
       console.error('Failed to initialize virtual synthesizers:', error);
       throw error;
+    }
+  }
+
+  private async initializeMIDIjsSynthesizer(): Promise<void> {
+    try {
+      const preferences = preferencesStore.getState().midi;
+      const selectedSoundfont = preferences.midiJsSoundfont || 'MusyngKite';
+      
+      // Available soundfonts mapping
+      const soundfontUrls: { [key: string]: string } = {
+        'FatBoy': 'https://mongoose.world/sounds/soundfont/FatBoy/',
+        'FluidR3': 'https://mongoose.world/sounds/soundfont/FluidR3_GM/',
+        'MusyngKite': 'https://mongoose.world/sounds/soundfont/MusyngKite/'
+      };
+      
+      const soundfontUrl = soundfontUrls[selectedSoundfont] || soundfontUrls['MusyngKite'];
+      
+      // Register single MIDI.js synthesizer with selected soundfont
+      (window.JZZ.synth.MIDIjs as any).register('MIDI.js Synthesizer', {
+        soundfontUrl: soundfontUrl,
+        instruments: ['acoustic_grand_piano'], // Always load piano as fallback for dynamic loading
+        targetFormat: 'mp3' // Use MP3 format
+      });
+      
+      console.log(`MIDI.js Synthesizer registered with ${selectedSoundfont} soundfont: ${soundfontUrl}`);
+    } catch (error) {
+      console.error('Failed to initialize MIDI.js synthesizer:', error);
+      throw error;
+    }
+  }
+
+  private async initializeSpessaSynth(): Promise<void> {
+    try {
+      console.log('Initializing SpessaSynth synthesizer...');
+      
+      // Create AudioContext if not available - but don't start it yet
+      let audioContext: AudioContext;
+      if (typeof window !== 'undefined' && window.AudioContext) {
+        audioContext = new AudioContext({ sampleRate: 44100 });
+        console.log('AudioContext created, state:', audioContext.state);
+      } else {
+        console.warn('AudioContext not available, skipping SpessaSynth');
+        return;
+      }
+      
+      // Don't try to resume suspended context here - it will be resumed on first MIDI message
+      
+      // Add worklet module
+      console.log('Loading SpessaSynth worklet processor...');
+      try {
+        await audioContext.audioWorklet.addModule('/spessasynth_processor.min.js');
+        console.log('✅ SpessaSynth worklet loaded successfully');
+      } catch (workletError) {
+        console.error('❌ Failed to load SpessaSynth worklet:', workletError);
+        throw workletError;
+      }
+      
+      // Create synthesizer instance
+      console.log('Creating SpessaSynth WorkletSynthesizer instance...');
+      try {
+        this.spessaSynth = new WorkletSynthesizer(audioContext, {
+          ...DEFAULT_SYNTH_CONFIG,
+          enableEventSystem: true
+        });
+        console.log('✅ WorkletSynthesizer instance created');
+      } catch (synthError) {
+        console.error('❌ Failed to create WorkletSynthesizer:', synthError);
+        throw synthError;
+      }
+      
+      // Connect to audio destination
+      console.log('Connecting SpessaSynth to audio destination...');
+      try {
+        this.spessaSynth.connect(audioContext.destination);
+        console.log('✅ SpessaSynth connected to audio output');
+      } catch (connectError) {
+        console.error('❌ Failed to connect SpessaSynth:', connectError);
+        throw connectError;
+      }
+      
+      // Load custom soundfont if specified in preferences
+      const preferences = preferencesStore.getState().midi;
+      if (preferences.spessaSynthSoundfont && preferences.spessaSynthSoundfont.trim()) {
+        await this.loadSpessaSynthSoundfont(preferences.spessaSynthSoundfont);
+      } else {
+        console.log('No custom soundfont specified for SpessaSynth, using built-in sounds');
+      }
+      
+      // Defer JZZ registration until after the main JZZ refresh
+      setTimeout(() => {
+        this.createSpessaSynthJZZAdapter();
+      }, 150);
+      
+      console.log('✅ SpessaSynth synthesizer initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize SpessaSynth:', error);
+      this.spessaSynth = null;
+    }
+  }
+
+  private async loadSpessaSynthSoundfont(soundfontUrl: string): Promise<void> {
+    if (!this.spessaSynth) {
+      console.warn('SpessaSynth not initialized, cannot load soundfont');
+      return;
+    }
+    
+    try {
+      console.log(`Loading SpessaSynth soundfont from: ${soundfontUrl}`);
+      
+      // Fetch the soundfont
+      const response = await fetch(soundfontUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch soundfont: ${response.status} ${response.statusText}`);
+      }
+      
+      const contentLength = response.headers.get('content-length');
+      console.log(`Downloading soundfont: ${contentLength ? Math.round(parseInt(contentLength) / 1024) + 'KB' : 'unknown size'}`);
+      
+      const soundfontBuffer = await response.arrayBuffer();
+      console.log(`Soundfont downloaded: ${Math.round(soundfontBuffer.byteLength / 1024)}KB`);
+      
+      // Load soundfont into SpessaSynth
+      await this.spessaSynth.soundBankManager.addSoundBank(soundfontBuffer, 'default-soundfont', 0);
+      
+      console.log('✅ SpessaSynth soundfont loaded successfully');
+    } catch (error) {
+      console.error('❌ Failed to load SpessaSynth soundfont:', error);
+      console.warn('SpessaSynth will use built-in basic sounds');
+      // Don't throw - allow SpessaSynth to work without custom soundfont
+    }
+  }
+
+  private createSpessaSynthJZZAdapter(): void {
+    if (!this.spessaSynth) return;
+    
+    // Create JZZ engine for SpessaSynth following the same pattern as other synthesizers
+    const _spessaSynthEngine = {
+      _info: (name: string) => ({
+        name: name || 'SpessaSynth Synthesizer',
+        type: 'Software',
+        manufacturer: 'SpessaSynth',
+        version: '4.0.3'
+      }),
+      _openOut: (name: string, engine: any) => {
+        const port = (JZZ as any)._pool();
+        engine._init(port, name);
+        return port;
+      },
+      _init: (port: any, name: string) => {
+        port._info = _spessaSynthEngine._info(name);
+        port._receive = async (msg: number[]) => {
+          if (this.spessaSynth) {
+            // Resume AudioContext on first MIDI message if needed
+            const context = this.spessaSynth.context;
+            if (context && context.state === 'suspended') {
+              try {
+                await context.resume();
+                console.log('SpessaSynth AudioContext resumed on first MIDI message');
+              } catch (e) {
+                console.warn('Failed to resume AudioContext:', e);
+              }
+            }
+            this.spessaSynth.sendMessage(msg);
+          }
+        };
+        port._resume = () => {};
+        port._pause = () => {};
+        port._close = () => {
+          if (this.spessaSynth) {
+            this.spessaSynth.destroy();
+            this.spessaSynth = null;
+          }
+        };
+      }
+    };
+    
+    // Register SpessaSynth synthesizer following JZZ pattern
+    if (!(JZZ as any).synth.SpessaSynth) {
+      (JZZ as any).synth.SpessaSynth = {
+        register: (name?: string) => {
+          const synthName = name || 'SpessaSynth Synthesizer';
+          if ((JZZ as any).lib && (JZZ as any).lib.registerMidiOut) {
+            return (JZZ as any).lib.registerMidiOut(synthName, _spessaSynthEngine);
+          } else {
+            console.error('JZZ.lib.registerMidiOut not available');
+            return false;
+          }
+        }
+      };
+    }
+    
+    // Register the SpessaSynth synthesizer
+    const registered = ((JZZ as any).synth.SpessaSynth as any).register('SpessaSynth Synthesizer');
+    if (registered) {
+      console.log('SpessaSynth Synthesizer registered with JZZ');
+    } else {
+      console.error('Failed to register SpessaSynth Synthesizer');
     }
   }
 
@@ -618,10 +812,48 @@ class MidiService {
     console.log("Reset intentional disconnect flags");
   }
 
+  // Reload synthesizers when preferences change
+  async reloadSynthesizers(): Promise<void> {
+    try {
+      console.log('Reloading synthesizers with updated preferences...');
+      
+      // Re-initialize MIDI.js synthesizer with new soundfont
+      await this.initializeMIDIjsSynthesizer();
+      
+      // Re-initialize SpessaSynth with new soundfont if applicable
+      if (this.spessaSynth) {
+        const preferences = preferencesStore.getState().midi;
+        if (preferences.spessaSynthSoundfont && preferences.spessaSynthSoundfont.trim()) {
+          // Remove existing soundfont first
+          try {
+            await this.spessaSynth.soundBankManager.deleteSoundBank('user-soundfont');
+          } catch (e) {
+            // Ignore if soundfont doesn't exist
+          }
+          // Load new soundfont
+          await this.loadSpessaSynthSoundfont(preferences.spessaSynthSoundfont);
+        }
+      }
+      
+      // Refresh JZZ to update device list
+      setTimeout(() => {
+        this.jzz.refresh();
+        console.log('Synthesizers reloaded successfully');
+      }, 100);
+      
+    } catch (error) {
+      console.error('Failed to reload synthesizers:', error);
+    }
+  }
+
 
   // Shutdown and cleanup
   shutdown(): void {
     this.disconnect();
+    if (this.spessaSynth) {
+      this.spessaSynth.destroy();
+      this.spessaSynth = null;
+    }
     if (this.jzz) {
       this.jzz.close();
       this.jzz = null;
