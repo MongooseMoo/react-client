@@ -120,6 +120,24 @@ function App() {
     newClient.registerMcpPackage(McpAwnsPing);
     newClient.connect();
     newClient.requestNotificationPermission();
+    
+    // Check for URL parameters for auto-login (useful for testing/e2e)
+    const urlParams = new URLSearchParams(window.location.search);
+    const username = urlParams.get('username');
+    const password = urlParams.get('password');
+    
+    if (username && password) {
+      // Auto-login when connected
+      newClient.once('connect', () => {
+        console.log('Auto-logging in with URL params...');
+        setTimeout(() => {
+          newClient.sendCommand(username);
+          setTimeout(() => {
+            newClient.sendCommand(password);
+          }, 500);
+        }, 1000);
+      });
+    }
     setClient(newClient);
     setShowSidebar(!isMobile);
     window.mudClient = newClient;
