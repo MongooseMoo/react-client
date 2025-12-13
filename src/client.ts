@@ -133,7 +133,10 @@ class MudClient extends EventEmitter {
   }
 
   acceptTransfer(sender: string, hash: string): void {
-    this.fileTransferManager.acceptTransfer(sender, hash);
+    this.fileTransferManager.acceptTransfer(sender, hash).catch(error => {
+      console.error("[MudClient] Failed to accept transfer:", error);
+      this.onFileTransferError(hash, "unknown", "receive", error.message);
+    });
   }
 
   rejectTransfer(sender: string, hash: string): void {
