@@ -6,6 +6,7 @@ export { GMCPCharStatus } from "./Char/Status";
 export { GMCPCharStatusAffectedBy } from "./Char/Status/AffectedBy";
 export { GMCPCharStatusConditions } from "./Char/Status/Conditions";
 export { GMCPCharStatusTimers } from "./Char/Status/Timers";
+export { GMCPClientFile } from "./Client/File";
 export { GMCPClientFileTransfer } from "./Client/FileTransfer";
 export { GMCPClientHtml } from "./Client/Html";
 export { GMCPClientKeystrokes } from "./Client/Keystrokes";

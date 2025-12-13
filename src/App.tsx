@@ -25,6 +25,7 @@ import {
   GMCPCharStatusAffectedBy, // Added
   GMCPCharStatusConditions, // Added
   GMCPCharStatusTimers,
+  GMCPClientFile,
   GMCPClientFileTransfer,
   GMCPClientHtml,
   GMCPClientKeystrokes,
@@ -96,6 +97,7 @@ function App() {
     newClient.registerGMCPPackage(GMCPCommLiveKit);
     newClient.registerGMCPPackage(GMCPAutoLogin);
     newClient.registerGMCPPackage(GMCPClientHtml);
+    newClient.registerGMCPPackage(GMCPClientFile);
     newClient.registerGMCPPackage(GMCPClientFileTransfer);
     newClient.registerGMCPPackage(GMCPCharItems);
     newClient.registerGMCPPackage(GMCPCharStatus); // Removed duplicate below
