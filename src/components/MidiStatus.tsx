@@ -4,7 +4,6 @@ import { midiService, MidiDevice } from "../MidiService";
 import { usePreferences } from "../hooks/usePreferences";
 import { GMCPClientMidi } from "../gmcp/Client/Midi";
 import { preferencesStore } from "../PreferencesStore";
-import { virtualMidiService } from "../VirtualMidiService";
 
 interface MidiStatusProps {
   client: MudClient;
@@ -56,9 +55,13 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const loadDevices = async () => {
     if (!preferences.midi.enabled) return;
     
-    // Ensure virtual synthesizer is initialized
-    if (!virtualMidiService.initialized) {
-      await virtualMidiService.initialize();
+    // Ensure MIDI service is initialized before accessing devices
+    if (!midiService.isInitialized) {
+      const success = await midiService.initialize();
+      if (!success) {
+        console.error('Failed to initialize MIDI service');
+        return;
+      }
     }
     
     const inputs = midiService.getInputDevices();
@@ -152,15 +155,13 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         loadDevices();
       }
       
-      // Set up connection state monitoring (poll every 2 seconds to catch auto-reconnections and virtual synth)
+      // Set up periodic connection state monitoring (lightweight check every 5 seconds)
       const connectionStateInterval = setInterval(() => {
-        loadDevices(); // Always refresh devices to catch virtual synth initialization
-        
         const currentState = midiService.connectionStatus;
         if (JSON.stringify(currentState) !== JSON.stringify(connectionState)) {
           setConnectionState(currentState);
         }
-      }, 2000);
+      }, 5000); // Only check connection state, device changes handled by onChange callback
       
       // Set up device change monitoring
       const unsubscribe = midiService.onDeviceChange((info) => {
@@ -264,18 +265,21 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   };
 
   const handleRefreshDevices = async () => {
+    // Ensure MIDI service is initialized before refreshing
+    if (!midiService.isInitialized) {
+      const success = await midiService.initialize();
+      if (!success) {
+        console.error('Failed to initialize MIDI service');
+        return;
+      }
+    }
+    
     // Refresh JZZ device list
     midiService.refresh();
     
-    // Make sure virtual synthesizer is initialized
-    if (!virtualMidiService.initialized) {
-      await virtualMidiService.initialize();
-    }
-    
     // Load devices and update connection state
-    loadDevices();
+    await loadDevices();
     setConnectionState(midiService.connectionStatus);
-    
   };
 
   // Handle reconnection attempts
