@@ -1,42 +1,96 @@
+/* Tab list container */
 div[role="tablist"] {
     display: flex;
-    justify-content: space-around;
-    margin-bottom: 1em;
+    justify-content: flex-start;
+    gap: 0.25rem;
+    margin-bottom: 0;
+    padding: 0.75rem 0.75rem 0 0.75rem;
+    border-bottom: 1px solid var(--color-border, #e0e0e0);
+    background: var(--color-bg-secondary, #fafafa);
 }
 
+/* Individual tab button */
 button[role="tab"] {
     background-color: transparent;
     border: none;
-    padding: 1em;
+    border-bottom: 2px solid transparent;
+    padding: 0.625rem 1rem;
     cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text-secondary, #666);
+    transition: all 0.2s ease;
+    border-radius: 4px 4px 0 0;
+    position: relative;
+    white-space: nowrap;
 }
 
+/* Selected tab state */
 button[role="tab"][aria-selected="true"] {
-    font-weight: bold;
-    border-bottom: 2px solid;
+    color: var(--color-accent, #4a9eff);
+    background-color: var(--color-bg, #ffffff);
+    border-bottom-color: var(--color-accent, #4a9eff);
+    font-weight: 600;
 }
 
-/* Container for the tab panel content */
-div[role="tabpanel"] {
-    /* display: none; is handled by the 'hidden' attribute */
-    /* Ensure it can grow and potentially scroll */
-    flex: 1;
-    min-height: 0; /* Important for flex + overflow */
-    overflow: auto; /* Allow the panel itself to scroll */
-}
-
-div[role="tabpanel"][hidden] {
-    display: none; /* Explicitly hide when hidden */
-}
-
-/* Keep hover effect */
+/* Tab hover effect */
 button[role="tab"]:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--color-bg-hover, rgba(0, 0, 0, 0.03));
+    color: var(--color-text, #333);
 }
 
-/* Ensure the main Tabs container allows flex children to grow */
-.tabs-container { /* Assuming you might add a wrapper div inside Tabs component if needed */
+/* Active/selected tab hover */
+button[role="tab"][aria-selected="true"]:hover {
+    background-color: var(--color-bg, #ffffff);
+    color: var(--color-accent, #4a9eff);
+}
+
+/* Focus state for accessibility */
+button[role="tab"]:focus-visible {
+    outline: 2px solid var(--color-accent, #4a9eff);
+    outline-offset: -2px;
+    z-index: 1;
+}
+
+/* Tab panel container */
+div[role="tabpanel"] {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    background: var(--color-bg, #ffffff);
+    padding: 12px 16px;
+    line-height: 1.6;
+}
+
+/* Lists inside tab panels */
+div[role="tabpanel"] ul,
+div[role="tabpanel"] ol {
+    margin: 8px 0;
+    padding-left: 0;
+}
+
+div[role="tabpanel"] li {
+    padding: 6px 0;
+}
+
+/* Section headings in tab panels */
+div[role="tabpanel"] h3,
+div[role="tabpanel"] h4,
+div[role="tabpanel"] h5 {
+    margin: 16px 0 8px 0;
+    padding-bottom: 4px;
+    font-weight: 600;
+}
+
+/* Hidden panel */
+div[role="tabpanel"][hidden] {
+    display: none;
+}
+
+/* Main tabs container */
+.tabs-container {
     display: flex;
     flex-direction: column;
-    height: 100%; /* Take full height of its container (.sidebar-content) */
+    height: 100%;
+    background: var(--color-bg-secondary, #fafafa);
 }
