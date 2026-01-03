@@ -23,12 +23,13 @@
 /* InventoryList assigns "inventory-list-li" to these items. */
 /* AccessibleList.css provides .selected styling. */
 .inventory-list-li {
-    padding: 8px 10px;
+    padding: 10px 12px; /* Increased from 8px 10px for more breathing room */
     cursor: default;
     border-radius: var(--border-radius-small, 3px);
     color: var(--color-text, black);
-    margin-bottom: 4px;
+    margin-bottom: 6px; /* Increased from 4px for better separation */
     border-bottom: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.06));
+    line-height: 1.5; /* Explicit line-height for wrapped text */
 }
 
 .inventory-list-li:last-child {
@@ -49,6 +50,7 @@
     /* max-height: 300px; */ /* Example: if list can get very long */
     /* overflow-y: auto;   */
     font-size: 0.9em; /* Apply font size to the list items container */
+    line-height: 1.5; /* Better readability for wrapped text */
 }
 
 /* .item-attributes and .inventory-item rules are removed as they are no longer used or replaced. */

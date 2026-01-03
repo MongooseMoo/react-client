@@ -18,42 +18,54 @@
 
 /* Collapse button */
 .sidebar-collapse-btn {
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
+  background: linear-gradient(135deg, var(--color-bg-surface) 0%, var(--color-bg-hover) 100%);
+  border: 2px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  margin: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-3);
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-size-sm);
+  justify-content: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-base);
+  font-weight: 600;
   color: var(--color-text);
   transition: all var(--transition-base);
-  width: calc(100% - var(--space-4));
+  width: calc(100% - var(--space-6));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  min-height: 44px;
 }
 
 .sidebar-collapse-btn:hover {
-  background: var(--color-bg-hover);
+  background: linear-gradient(135deg, var(--color-bg-hover) 0%, var(--color-primary) 20%);
   border-color: var(--color-primary);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
 }
 
 .sidebar-collapse-btn:active {
   transform: translateY(0);
-  box-shadow: var(--shadow-xs);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .sidebar-collapse-btn:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 2px;
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 3px;
+}
+
+/* Make the chevron icon larger */
+.sidebar-collapse-btn svg {
+  font-size: 1.125rem;
+  flex-shrink: 0;
 }
 
 /* Adjust button in collapsed mode */
 .sidebar.collapsed .sidebar-collapse-btn {
   width: auto;
-  padding: var(--space-3);
+  padding: var(--space-4);
   justify-content: center;
+  min-width: 44px;
 }
 
 /* Hide text label when collapsed */
