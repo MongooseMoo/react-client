@@ -1,14 +1,15 @@
 .room-info-display {
-    padding: 0.5rem;
+    padding: 0;
     font-size: 0.9em;
+    line-height: 1.6;
 }
 
 .room-info-display h4 {
     margin-top: 0;
-    margin-bottom: 0.3rem;
+    margin-bottom: 12px;
     border-bottom: 1px solid var(--color-border);
-    padding-bottom: 0.25rem;
-    font-size: 1.1em; /* Slightly larger heading */
+    padding-bottom: 6px;
+    font-size: 1.1em;
 }
 
 .room-info-display .room-area {
@@ -18,9 +19,13 @@
 }
 
 .room-info-display .room-exits h5 {
-    margin-top: 0.5rem;
-    margin-bottom: 0.3rem;
-    font-weight: bold;
+    margin-top: 16px;
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.8;
 }
 
 .room-info-display .room-exits ul {
@@ -62,15 +67,19 @@
 }
 
 .room-contents-section {
-    margin-top: 1rem;
-    padding-top: 0.5rem;
+    margin-top: 20px;
+    padding-top: 12px;
     border-top: 1px solid var(--color-border-light, #eee);
 }
 
 .room-contents-section h5 {
     margin-top: 0;
-    margin-bottom: 0.3rem;
-    font-weight: bold;
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.8;
 }
 
 .room-contents-section p { /* For "Nothing on the ground." message */
@@ -85,11 +94,17 @@
     /* overflow-y: auto;   */
 }
 
-.room-item-li { /* Style for <li> elements in the room items list */
-    padding: 0.3rem 0.5rem;
+.room-item-li {
+    padding: 8px 10px;
     cursor: default;
-    border-radius: var(--border-radius-small, 2px);
+    border-radius: var(--border-radius-small, 3px);
     color: var(--color-text, black);
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.06));
+}
+
+.room-item-li:last-child {
+    border-bottom: none;
 }
 
 .selected-room-item-card-container {
@@ -99,15 +114,19 @@
 }
 
 .room-players-section {
-    margin-top: 1rem;
-    padding-top: 0.5rem;
+    margin-top: 20px;
+    padding-top: 12px;
     border-top: 1px solid var(--color-border-light, #eee);
 }
 
 .room-players-section h5 {
     margin-top: 0;
-    margin-bottom: 0.3rem;
-    font-weight: bold;
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.8;
 }
 
 .room-players-section p {
@@ -121,10 +140,16 @@
 }
 
 .room-player-li {
-    padding: 0.3rem 0.5rem;
+    padding: 8px 10px;
     cursor: default;
-    border-radius: var(--border-radius-small, 2px);
+    border-radius: var(--border-radius-small, 3px);
     color: var(--color-text, black);
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.06));
+}
+
+.room-player-li:last-child {
+    border-bottom: none;
 }
 
 .selected-player-card-container {

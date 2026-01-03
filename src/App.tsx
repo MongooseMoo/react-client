@@ -52,6 +52,7 @@ import {
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] =
     useState<boolean>(false);
@@ -267,8 +268,8 @@ function App() {
   if (!client) return null; // or some loading component
 
   return (
-    // Add conditional 'sidebar-shown' class based on showSidebar state
-    <div className={`App ${showSidebar ? "sidebar-shown" : ""}`}>
+    // Add conditional 'sidebar-shown' or 'sidebar-collapsed' class based on state
+    <div className={`App ${showSidebar ? (sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-shown') : ''}`}>
       <header role="banner" style={{ gridArea: "header" }}>
         <Toolbar
           client={client}
@@ -300,8 +301,13 @@ function App() {
           style={{ gridArea: "sidebar" }}
           // className is no longer needed here for visibility
         >
-          {/* Pass the ref and client prop */}
-          <Sidebar ref={sidebarRef} client={client} />
+          {/* Pass the ref, client prop, collapsed state, and toggle handler */}
+          <Sidebar
+            ref={sidebarRef}
+            client={client}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          />
         </aside>
       )}
       <footer role="contentinfo" style={{ gridArea: "status" }}>

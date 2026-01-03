@@ -1,23 +1,76 @@
 /* Main sidebar container */
 .sidebar {
-  height: 100%; /* Take full available height */
-  width: var(--sidebar-width, 300px); /* Use variable or fallback */
+  height: 100%;
+  width: var(--sidebar-width, 300px);
   display: flex;
   flex-direction: column;
-  background: var(--color-bg);
-  border-left: 1px solid var(--color-border);
-  transition: width 0.3s ease; /* Transition width changes */
+  background: var(--color-bg-secondary, #fafafa);
+  border-left: 1px solid var(--color-border, #e0e0e0);
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.05);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Collapsed sidebar styles */
+.sidebar.collapsed {
+  width: 50px;
+  box-shadow: -1px 0 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Collapse button */
+.sidebar-collapse-btn {
+  background: var(--color-bg-secondary, #1e1e2e);
+  border: 1px solid var(--color-border, #333);
+  border-radius: var(--border-radius, 4px);
+  padding: 10px 14px;
+  margin: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: var(--color-text, #fff);
+  transition: all 0.2s ease;
+  width: calc(100% - 16px);
+}
+
+.sidebar-collapse-btn:hover {
+  background: var(--color-bg-hover, #2a2a3e);
+  border-color: var(--color-accent, #4a9eff);
+}
+
+.sidebar-collapse-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.sidebar-collapse-btn:focus-visible {
+  outline: 2px solid var(--color-accent, #4a9eff);
+  outline-offset: 2px;
+}
+
+/* Adjust button in collapsed mode */
+.sidebar.collapsed .sidebar-collapse-btn {
+  width: auto;
+  padding: 10px;
+  justify-content: center;
+}
+
+/* Hide text label when collapsed */
+.sidebar.collapsed .sidebar-collapse-btn span {
+  display: none;
 }
 
 /* Container for the tab component */
 .sidebar-content {
-  flex: 1; /* Grow to fill available space in .sidebar */
+  flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0; /* Necessary for flex children with overflow */
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Individual tab panel content area (inside the tabpanel) */
 .sidebar-tab-content {
-  padding: 1rem;
+  padding: 1.25rem;
+  line-height: 1.6;
 }

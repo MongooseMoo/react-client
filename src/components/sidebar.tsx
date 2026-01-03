@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react"; // Import useState, useEffect
+import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
 import FileTransferUI from "./FileTransfer";
 import AudioChat from "./audioChat";
 import Tabs, { TabProps } from "./tabs";
@@ -23,11 +24,12 @@ export type SidebarRef = {
 
 interface SidebarProps {
   client: MudClient;
-  // showSidebar prop is removed
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 // Wrap component with forwardRef
-const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => {
+const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed, onToggleCollapse }, ref) => {
   const users = useClientEvent(client, "userlist", [] as UserlistPlayer[]);
   const [preferences] = usePreferences(); // Add preferences hook
   const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
@@ -194,11 +196,22 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => 
   // For now, we assume at least one tab will always be potentially visible.
 
   return (
-    <div className="sidebar"> {/* Add the main sidebar container */}
-      <div className="sidebar-content">
-        {/* Removed the redundant sidebar-tabs div */}
-        <Tabs tabs={visibleTabs} /> {/* Pass the filtered tabs */}
-      </div>
+    <div className={`sidebar ${collapsed ? 'collapsed' : ''}`}> {/* Add collapsed class conditionally */}
+      <button
+        className="sidebar-collapse-btn"
+        onClick={onToggleCollapse}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      >
+        {collapsed ? <FaChevronLeft /> : <FaChevronRight />}
+        <span>{collapsed ? "Expand" : "Collapse"}</span>
+      </button>
+      {!collapsed && (
+        <div className="sidebar-content">
+          {/* Removed the redundant sidebar-tabs div */}
+          <Tabs tabs={visibleTabs} /> {/* Pass the filtered tabs */}
+        </div>
+      )}
     </div>
   );
 }); // Close the forwardRef
