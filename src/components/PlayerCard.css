@@ -1,17 +1,18 @@
 .player-card {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border-subtle, #ccc);
-  border-radius: 4px;
-  margin-bottom: 8px;
-  background-color: var(--color-bg-secondary, #f9f9f9);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  transition: box-shadow 0.2s ease-in-out;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
 .player-card:hover {
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .player-details {
@@ -23,8 +24,8 @@
 }
 
 .player-name {
-  font-weight: bold;
-  color: var(--color-text-primary, #333);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -37,52 +38,52 @@
 }
 
 .player-actions button {
-  margin-left: 8px;
-  padding: 4px 8px;
+  margin-left: var(--space-2);
+  padding: var(--space-1) var(--space-2);
   font-size: 0.9em;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
+  transition: all var(--transition-fast);
 }
 
 .player-page-button {
   color: var(--color-text-button, #fff);
-  background-color: var(--color-button-primary-bg, #3498db);
+  background-color: var(--color-primary);
 }
 
 .player-page-button:hover {
-  background-color: var(--color-button-primary-hover-bg, #2980b9);
+  background-color: var(--color-primary-hover);
 }
 
 .player-sayto-button {
   color: var(--color-text-button, #fff);
-  background-color: var(--color-button-success-bg, #2ecc71);
+  background-color: var(--color-success);
 }
 
 .player-sayto-button:hover {
-  background-color: var(--color-button-success-hover-bg, #27ae60);
+  background-color: var(--color-success-hover);
 }
 
 .player-look-button {
   color: var(--color-text-button, #fff);
-  background-color: var(--color-button-warning-bg, #f39c12);
+  background-color: var(--color-warning);
 }
 
 .player-look-button:hover {
-  background-color: var(--color-button-warning-hover-bg, #e67e22);
+  background-color: var(--color-warning-hover);
 }
 
 .player-follow-button {
   color: var(--color-text-button, #fff);
-  background-color: var(--color-button-info-bg, #9b59b6);
+  background-color: var(--color-info);
 }
 
 .player-follow-button:hover {
-  background-color: var(--color-button-info-hover-bg, #8e44ad);
+  background-color: var(--color-info-hover);
 }
 
 .player-actions button:focus {
-  outline: 2px solid var(--color-focus-ring, #3498db);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 1px;
 }

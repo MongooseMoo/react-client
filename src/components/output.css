@@ -2,17 +2,17 @@
   font-family: var(--font-family-mono);
   font-size: clamp(0.9em, 2vw, 1.2em);
   color: #ffffff;
-  background-color: #000000;
+  background-color: var(--color-bg-deepest);
   white-space: pre-wrap;
   word-wrap: normal;
-  padding: var(--spacing-unit);
+  padding: var(--space-4);
   border: 1px solid var(--color-border);
-  border-radius: var(--border-radius);
+  border-radius: var(--radius-lg);
   width: 100%;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  overflow-anchor: none; /* disable Firefox’s scroll anchoring */
+  overflow-anchor: none; /* disable Firefox's scroll anchoring */
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -40,20 +40,23 @@ a.exit {
 .new-lines-notification {
   position: sticky;
   bottom: 0;
-  background-color: orange;
+  background: var(--gradient-primary);
   border: 0.5px solid white;
   font-size: 0.75em;
   min-width: 100px;
   text-align: center;
   color: #000000;
   padding: 0.625rem;
-  border-radius: var(--border-radius);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
   cursor: pointer;
   z-index: 3; /* Higher than .output to ensure it's on top */
+  transition: all 0.2s ease;
 }
 
 .new-lines-notification:hover {
-  background-color: pink;
+  filter: brightness(1.2);
+  box-shadow: 0 0 20px rgba(var(--color-primary-rgb), 0.5);
 }
 
 /* Styles for different types of output lines */
@@ -67,7 +70,7 @@ a.exit {
 }
 
 .output-line-systemInfo {
-  color: #87ceeb; /* Sky blue for the text of system info */
+  color: var(--color-info);
 }
 .output-line-systemInfo h2 { /* System info content is often wrapped in h2 */
   font-size: 1em; /* Normalize font size */
@@ -77,7 +80,7 @@ a.exit {
 }
 
 .output-line-errorMessage {
-  color: #ff6347; /* Tomato red for the text of error messages */
+  color: var(--color-danger);
 }
 .output-line-errorMessage h2 { /* Error message content is often wrapped in h2 */
   font-size: 1em; /* Normalize font size */
@@ -89,15 +92,15 @@ a.exit {
 /* BlockquoteWithCopy wrapper styles */
 .blockquote-with-copy {
   position: relative;
-  margin: 0.5rem 0;
+  margin: var(--space-2) 0;
 }
 
 .blockquote-with-copy blockquote {
   margin: 0;
-  padding: 1rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  border-left: 4px solid #87ceeb;
-  border-radius: 4px;
+  padding: var(--space-4);
+  background-color: var(--color-bg-elevated);
+  border-left: 4px solid var(--color-info);
+  border-radius: var(--radius-md);
   position: relative;
 }
 
@@ -106,10 +109,10 @@ a.exit {
   position: absolute;
   top: 8px;
   right: 8px;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: var(--color-bg-surface);
   color: #ffffff;
-  border: 1px solid #555;
-  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   padding: 4px 8px;
   font-size: 0.75rem;
   cursor: pointer;
@@ -118,8 +121,8 @@ a.exit {
 }
 
 .blockquote-copy-button:hover {
-  background-color: rgba(0, 0, 0, 0.9);
-  border-color: #87ceeb;
+  background-color: var(--color-bg-hover);
+  border-color: var(--color-primary);
 }
 
 .blockquote-copy-button:active {
@@ -128,13 +131,13 @@ a.exit {
 
 /* Visual feedback styles for copy button */
 .blockquote-copy-button.copied {
-  background-color: #28a745;
-  border-color: #28a745;
+  background-color: var(--color-success);
+  border-color: var(--color-success);
   color: #ffffff;
 }
 
 .blockquote-copy-button.error {
-  background-color: #dc3545;
-  border-color: #dc3545;
+  background-color: var(--color-danger);
+  border-color: var(--color-danger);
   color: #ffffff;
 }

@@ -5,10 +5,12 @@
   transform: translate(-50%, -50%);
   width: 80%;
   max-width: 500px;
-  padding: 0.625rem 1.25rem;
-  background-color: #ffffff;
-  box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.15);
-  border-radius: 10px;
+  padding: var(--space-4) var(--space-5);
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-xl);
+  border-radius: var(--radius-lg);
+  color: var(--color-text);
   z-index: 1000;
   display: none;
   font-size: 1.2em;
@@ -20,18 +22,35 @@
 
 .preferences-dialog button {
   display: inline-block;
-  margin: 0.9375rem 0.125rem;
-  padding: 0.625rem 1.25rem;
-  border: none;
-  background-color: #333333;
-  color: white;
+  margin: var(--space-3) var(--space-1);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--color-border-strong);
+  background-color: var(--color-bg-hover);
+  color: var(--color-text);
   text-align: center;
-  border-radius: var(--border-radius);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 1em;
+  font-size: var(--font-size-sm);
+  transition: all var(--transition-fast);
 }
 
 .preferences-dialog button:hover {
-  background-color: #666666;
+  background-color: var(--color-bg-active);
+  border-color: var(--color-primary);
 }
 
+.preferences-dialog button:focus {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.preferences-dialog button.btn-primary {
+  background: var(--gradient-primary);
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.preferences-dialog button.btn-primary:hover {
+  opacity: 0.9;
+  border-color: transparent;
+}
