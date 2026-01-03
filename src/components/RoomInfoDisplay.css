@@ -90,17 +90,19 @@
 
 .room-items-accessible-list {
     font-size: 0.9em;
+    line-height: 1.5; /* Better readability for wrapped text */
     /* max-height: 150px; */ /* Optional: if the list can be very long */
     /* overflow-y: auto;   */
 }
 
 .room-item-li {
-    padding: 8px 10px;
+    padding: 10px 12px; /* Increased from 8px 10px for more breathing room */
     cursor: default;
     border-radius: var(--border-radius-small, 3px);
     color: var(--color-text, black);
-    margin-bottom: 4px;
+    margin-bottom: 6px; /* Increased from 4px for better separation */
     border-bottom: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.06));
+    line-height: 1.5; /* Explicit line-height for wrapped text */
 }
 
 .room-item-li:last-child {
@@ -137,15 +139,17 @@
 
 .room-players-accessible-list {
     font-size: 0.9em;
+    line-height: 1.5; /* Better readability for wrapped text */
 }
 
 .room-player-li {
-    padding: 8px 10px;
+    padding: 10px 12px; /* Increased from 8px 10px for more breathing room */
     cursor: default;
     border-radius: var(--border-radius-small, 3px);
     color: var(--color-text, black);
-    margin-bottom: 4px;
+    margin-bottom: 6px; /* Increased from 4px for better separation */
     border-bottom: 1px solid var(--color-border-light, rgba(0, 0, 0, 0.06));
+    line-height: 1.5; /* Explicit line-height for wrapped text */
 }
 
 .room-player-li:last-child {
