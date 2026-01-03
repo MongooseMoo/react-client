@@ -1,7 +1,7 @@
 .file-transfer-controls {
   display: flex;
-  gap: 10px;
-  margin-bottom: 15px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .file-transfer-controls input[type="file"],
@@ -10,20 +10,35 @@
 }
 
 .file-transfer-controls button {
-  background-color: #4CAF50;
-  color: white;
+  background: var(--gradient-success);
+  color: #ffffff;
   border: none;
-  padding: 0.625rem 0.9375rem;
+  padding: var(--space-3) var(--space-4);
   text-align: center;
   text-decoration: none;
   display: inline-block;
-  font-size: 14px;
-  margin: 0.25rem 0.125rem;
+  font-size: var(--font-size-sm);
+  margin: var(--space-1) 0;
   cursor: pointer;
-  border-radius: var(--border-radius);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.file-transfer-controls button:hover {
+  background: var(--color-success-hover);
+  box-shadow: var(--shadow-glow-success);
+  transform: translateY(-1px);
 }
 
 .file-transfer-controls button:disabled {
-  background-color: #cccccc;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-muted);
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.file-transfer-controls button:focus {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }

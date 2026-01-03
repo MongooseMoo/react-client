@@ -1,21 +1,42 @@
 .incoming-transfer {
-  background-color: #e6f3ff;
-  border: 1px solid #b8daff;
-  border-radius: var(--border-radius);
-  padding: 0.625rem;
-  margin-bottom: 0.9375rem;
+  background-color: var(--color-info-subtle);
+  border: 1px solid var(--color-info);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 .incoming-transfer button {
-  margin-right: 0.625rem;
-  background-color: #4CAF50;
-  color: white;
+  margin-right: var(--space-3);
+  background: var(--gradient-success);
+  color: #ffffff;
   border: none;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   text-align: center;
   text-decoration: none;
   display: inline-block;
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   cursor: pointer;
-  border-radius: var(--border-radius);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.incoming-transfer button:hover {
+  background: var(--color-success-hover);
+  box-shadow: var(--shadow-glow-success);
+  transform: translateY(-1px);
+}
+
+.incoming-transfer button:focus {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.incoming-transfer button.reject {
+  background: var(--color-danger);
+}
+
+.incoming-transfer button.reject:hover {
+  background: var(--color-danger-hover);
+  box-shadow: var(--shadow-glow-danger);
 }

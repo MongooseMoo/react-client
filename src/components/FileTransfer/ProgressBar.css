@@ -1,8 +1,25 @@
 .progress-bar {
-  margin-bottom: 0.9375rem;
+  margin-bottom: var(--space-4);
 }
 
 .progress-bar progress {
   width: 100%;
   height: 20px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.progress-bar progress::-webkit-progress-bar {
+  background-color: var(--color-bg-hover);
+  border-radius: var(--radius-sm);
+}
+
+.progress-bar progress::-webkit-progress-value {
+  background: var(--gradient-primary);
+  border-radius: var(--radius-sm);
+}
+
+.progress-bar progress::-moz-progress-bar {
+  background: var(--gradient-primary);
+  border-radius: var(--radius-sm);
 }

@@ -2,52 +2,52 @@
 div[role="tablist"] {
     display: flex;
     justify-content: flex-start;
-    gap: 0.25rem;
+    gap: var(--space-1);
     margin-bottom: 0;
-    padding: 0.75rem 0.75rem 0 0.75rem;
-    border-bottom: 1px solid var(--color-border, #e0e0e0);
-    background: var(--color-bg-secondary, #fafafa);
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-elevated);
 }
 
 /* Individual tab button */
 button[role="tab"] {
     background-color: transparent;
     border: none;
-    border-bottom: 2px solid transparent;
-    padding: 0.625rem 1rem;
+    border-bottom: 3px solid transparent;
+    padding: var(--space-2) var(--space-4);
     cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-text-secondary, #666);
-    transition: all 0.2s ease;
-    border-radius: 4px 4px 0 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--color-text-secondary);
+    transition: all var(--transition-fast);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     position: relative;
     white-space: nowrap;
 }
 
 /* Selected tab state */
 button[role="tab"][aria-selected="true"] {
-    color: var(--color-accent, #4a9eff);
-    background-color: var(--color-bg, #ffffff);
-    border-bottom-color: var(--color-accent, #4a9eff);
-    font-weight: 600;
+    color: var(--color-primary);
+    background-color: var(--color-bg);
+    border-bottom-color: var(--color-primary);
+    font-weight: var(--font-weight-semibold, 600);
 }
 
 /* Tab hover effect */
 button[role="tab"]:hover {
-    background-color: var(--color-bg-hover, rgba(0, 0, 0, 0.03));
-    color: var(--color-text, #333);
+    background-color: var(--color-bg-hover);
+    color: var(--color-text);
 }
 
 /* Active/selected tab hover */
 button[role="tab"][aria-selected="true"]:hover {
-    background-color: var(--color-bg, #ffffff);
-    color: var(--color-accent, #4a9eff);
+    background-color: var(--color-bg);
+    color: var(--color-primary);
 }
 
 /* Focus state for accessibility */
 button[role="tab"]:focus-visible {
-    outline: 2px solid var(--color-accent, #4a9eff);
+    outline: 2px solid var(--color-focus-ring);
     outline-offset: -2px;
     z-index: 1;
 }
@@ -57,9 +57,9 @@ div[role="tabpanel"] {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    background: var(--color-bg, #ffffff);
-    padding: 12px 16px;
-    line-height: 1.6;
+    background: var(--color-bg);
+    padding: var(--space-3) var(--space-4);
+    line-height: var(--line-height-relaxed, 1.75);
 }
 
 /* Lists inside tab panels */
@@ -92,5 +92,5 @@ div[role="tabpanel"][hidden] {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--color-bg-secondary, #fafafa);
+    background: var(--color-bg-elevated);
 }
