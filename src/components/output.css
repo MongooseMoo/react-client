@@ -141,3 +141,56 @@ a.exit {
   border-color: var(--color-danger);
   color: #ffffff;
 }
+
+/* === Markdown Element Normalization === */
+/* Reset default browser margins for markdown-generated content */
+.output p {
+  margin: 0;
+  padding: 0;
+}
+
+.output ul,
+.output ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.output li {
+  margin: 0.25em 0;
+}
+
+.output h1,
+.output h2,
+.output h3,
+.output h4,
+.output h5,
+.output h6 {
+  margin: 0.5em 0 0.25em 0;
+  line-height: var(--line-height-tight);
+}
+
+.output pre {
+  margin: 0.5em 0;
+  padding: var(--space-2);
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+
+.output code {
+  background: var(--color-bg-elevated);
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-sm);
+  font-size: 0.9em;
+}
+
+.output pre code {
+  background: none;
+  padding: 0;
+}
+
+.output hr {
+  margin: 0.5em 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
