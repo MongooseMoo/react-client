@@ -1,12 +1,23 @@
+/* Tab bar row: wraps tablist + optional trailing element (e.g. collapse button) */
+.tab-bar-row {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-elevated);
+}
+
 /* Tab list container */
 div[role="tablist"] {
     display: flex;
     justify-content: flex-start;
+    flex: 1;
+    min-width: 0;
     gap: var(--space-1);
     margin-bottom: 0;
     padding: var(--space-1) var(--space-2);
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: none;
     background: var(--color-bg-elevated);
+    overflow-x: auto;
 }
 
 /* Individual tab button */

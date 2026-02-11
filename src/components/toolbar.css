@@ -104,10 +104,10 @@
 
 .toolbar-volume input[type="range"] {
   width: 80px;
-  height: 4px;
+  height: 5px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.25);
   border-radius: 2px;
   outline: none;
 }
@@ -118,7 +118,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--color-text-secondary);
+  background: var(--color-text);
   cursor: pointer;
 }
 
@@ -126,7 +126,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--color-text-secondary);
+  background: var(--color-text);
   cursor: pointer;
   border: none;
 }
@@ -147,7 +147,7 @@
   height: 18px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.25);
   border-radius: 9px;
   outline: none;
   cursor: pointer;
@@ -161,7 +161,7 @@
   left: 2px;
   width: 14px;
   height: 14px;
-  background: var(--color-text-secondary);
+  background: var(--color-text);
   border-radius: 50%;
   transition: transform 0.2s;
 }
