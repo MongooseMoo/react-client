@@ -30,3 +30,34 @@
 .status-time {
     color: var(--color-text-muted);
 }
+
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: var(--space-2);
+    flex-shrink: 0;
+}
+
+.status-dot.connected {
+    background: var(--color-success, #4ade80);
+}
+
+.status-dot.disconnected {
+    background: var(--color-danger, #ef4444);
+}
+
+.status-dot.connecting {
+    background: var(--color-warning, #f59e0b);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.vital-good { color: var(--color-success, #4ade80); }
+.vital-warning { color: var(--color-warning, #f59e0b); }
+.vital-danger { color: var(--color-danger, #ef4444); }
