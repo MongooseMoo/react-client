@@ -13,6 +13,7 @@ import {
 import type MudClient from "../client";
 import { preferencesStore, PrefActionType } from "../PreferencesStore";
 import { useClientEvent } from "../hooks/useClientEvent";
+import "./toolbar.css";
 
 export interface ToolbarProps {
   client: MudClient;
