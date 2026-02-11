@@ -12,7 +12,6 @@
 
 .player-card:hover {
   box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
 }
 
 .player-details {
