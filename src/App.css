@@ -56,9 +56,11 @@
   --color-text-inverse: #14141a;
 
   /* Borders */
-  --color-border: #2a2a38;
-  --color-border-light: #22222d;
-  --color-border-strong: #3a3a4a;
+  --color-border: rgba(255,255,255,0.06);
+  --color-border-light: rgba(255,255,255,0.03);
+  --color-border-strong: rgba(255,255,255,0.10);
+  --color-separator: rgba(255,255,255,0.08);
+  --toolbar-height: 44px;
 
   /* Primary - Electric Blue */
   --color-primary: #5ba0ff;
@@ -503,4 +505,28 @@ textarea::placeholder {
   margin-bottom: var(--space-3);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--color-border-light);
+}
+
+/* Custom scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.25);
 }
