@@ -20,14 +20,14 @@
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-2);
-  margin: 0 var(--space-2);
+  padding: var(--space-1);
+  margin: 0 var(--space-1);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
   font-weight: 500;
   color: var(--color-text-secondary);
   transition: all var(--transition-base);
