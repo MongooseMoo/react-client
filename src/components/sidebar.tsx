@@ -195,21 +195,25 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
   // you might want to render nothing or a placeholder.
   // For now, we assume at least one tab will always be potentially visible.
 
+  const collapseButton = (
+    <button
+      className="sidebar-collapse-btn"
+      onClick={onToggleCollapse}
+      title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+    >
+      {collapsed ? <FaChevronLeft /> : <FaChevronRight />}
+      {collapsed && <span>Expand</span>}
+    </button>
+  );
+
   return (
-    <div className={`sidebar ${collapsed ? 'collapsed' : ''}`}> {/* Add collapsed class conditionally */}
-      <button
-        className="sidebar-collapse-btn"
-        onClick={onToggleCollapse}
-        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-      >
-        {collapsed ? <FaChevronLeft /> : <FaChevronRight />}
-        <span>{collapsed ? "Expand" : "Collapse"}</span>
-      </button>
-      {!collapsed && (
+    <div className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      {collapsed ? (
+        collapseButton
+      ) : (
         <div className="sidebar-content">
-          {/* Removed the redundant sidebar-tabs div */}
-          <Tabs tabs={visibleTabs} /> {/* Pass the filtered tabs */}
+          <Tabs tabs={visibleTabs} trailingElement={collapseButton} />
         </div>
       )}
     </div>

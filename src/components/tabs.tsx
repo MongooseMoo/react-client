@@ -11,9 +11,10 @@ export interface TabProps {
 
 export interface TabsProps {
   tabs: TabProps[]; // Expecting already filtered tabs
+  trailingElement?: React.ReactNode; // Optional element rendered at end of tab bar
 }
 
-const Tabs: React.FC<TabsProps> = ({ tabs }) => {
+const Tabs: React.FC<TabsProps> = ({ tabs, trailingElement }) => {
   const [selectedTab, setSelectedTab] = useState(0);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
   const userInteractedRef = useRef(false);
@@ -67,28 +68,31 @@ const Tabs: React.FC<TabsProps> = ({ tabs }) => {
   return (
     // Add the tabs-container class here
     <div className="tabs-container">
-      <div role="tablist">
-        {tabs.map((tab, index) => (
-          <button
-            key={index}
-            ref={(el) => (tabsRef.current[index] = el)}
-            role="tab"
-            aria-selected={selectedTab === index}
-            // Use the provided id for the tab button
-            id={tab.id}
-            // Use the provided id to link to the panel
-            aria-controls={`${tab.id}-panel`}
-            onClick={() => {
-              console.log(`Tab onClick triggered for: ${tab.label} (Index: ${index})`);
-              userInteractedRef.current = true; // Keep track of user interaction for focus management
-              setSelectedTab(index);
-              console.log(`Tab state updated to index: ${index}`);
-            }}
-            tabIndex={selectedTab === index ? undefined : -1}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="tab-bar-row">
+        <div role="tablist">
+          {tabs.map((tab, index) => (
+            <button
+              key={index}
+              ref={(el) => (tabsRef.current[index] = el)}
+              role="tab"
+              aria-selected={selectedTab === index}
+              // Use the provided id for the tab button
+              id={tab.id}
+              // Use the provided id to link to the panel
+              aria-controls={`${tab.id}-panel`}
+              onClick={() => {
+                console.log(`Tab onClick triggered for: ${tab.label} (Index: ${index})`);
+                userInteractedRef.current = true; // Keep track of user interaction for focus management
+                setSelectedTab(index);
+                console.log(`Tab state updated to index: ${index}`);
+              }}
+              tabIndex={selectedTab === index ? undefined : -1}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {trailingElement}
       </div>
       {tabs.map((tab, index) => (
         // Use a container div for the panel content for better structure
