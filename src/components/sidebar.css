@@ -4,49 +4,43 @@
   width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
-  background: var(--gradient-surface);
+  background: var(--color-bg-elevated);
   border-left: 1px solid var(--color-border);
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.2);
   transition: width var(--duration-slow) var(--ease-default);
 }
 
 /* Collapsed sidebar styles */
 .sidebar.collapsed {
   width: var(--sidebar-width-collapsed, 50px);
-  box-shadow: -1px 0 4px rgba(0, 0, 0, 0.05);
+  /* no box-shadow in collapsed state */
 }
 
 /* Collapse button */
 .sidebar-collapse-btn {
-  background: linear-gradient(135deg, var(--color-bg-surface) 0%, var(--color-bg-hover) 100%);
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-4) var(--space-5);
-  margin: var(--space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1);
+  margin: var(--space-2) var(--space-3);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-3);
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  color: var(--color-text);
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
   transition: all var(--transition-base);
-  width: calc(100% - var(--space-6));
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  min-height: 44px;
+  width: auto;
 }
 
 .sidebar-collapse-btn:hover {
-  background: linear-gradient(135deg, var(--color-bg-hover) 0%, var(--color-primary) 20%);
-  border-color: var(--color-primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transform: translateY(-1px);
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .sidebar-collapse-btn:active {
-  transform: translateY(0);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  opacity: 0.8;
 }
 
 .sidebar-collapse-btn:focus-visible {
@@ -63,9 +57,8 @@
 /* Adjust button in collapsed mode */
 .sidebar.collapsed .sidebar-collapse-btn {
   width: auto;
-  padding: var(--space-4);
+  padding: var(--space-1);
   justify-content: center;
-  min-width: 44px;
 }
 
 /* Hide text label when collapsed */
