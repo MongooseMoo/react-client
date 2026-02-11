@@ -13,6 +13,7 @@ import {
 import type MudClient from "../client";
 import { preferencesStore, PrefActionType } from "../PreferencesStore";
 import { useClientEvent } from "../hooks/useClientEvent";
+import "./toolbar.css";
 
 export interface ToolbarProps {
   client: MudClient;
@@ -71,62 +72,95 @@ const Toolbar = ({
 
   return (
     <div className="toolbar">
-      <button onClick={onSaveLog} accessKey="l">
-        <FaSave />
-        Save Log (Alt+L)
-      </button>
-      {/* Note: accessKey="C" typically maps to Alt+C or Alt+Shift+C depending on browser/OS */}
-      <button onClick={onCopyLog} accessKey="C">
-        <FaCopy />
-        Copy Log (Alt+Shift+C)
-      </button>
-      <button onClick={onClearLog} accessKey="E"> {/* Changed accessKey to avoid conflict */}
-        <FaEraser />
-        Clear Log (Alt+E)
-      </button>
-      <button onClick={onOpenPrefs} accessKey="p">
-        <FaCog />
-        Preferences (Alt+P)
-      </button>
-      <button
-        onClick={handleMuteToggle}
-        accessKey="M" // Changed accessKey to avoid conflict if needed, or keep 'm'
-      >
-        {muted ? <FaVolumeUp /> : <FaVolumeMute />}
-        {muted ? "Unmute" : "Mute"}
-      </button>
-      <label>
-        Volume
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={volume * 100}
-          onChange={handleVolumeChange}
-          accessKey="V" // Changed accessKey to avoid conflict if needed, or keep 'v'
-        />
-      </label>
-      <label>
-        <FaCommentDots/>
-        Autosay
-        <input type="checkbox"
-          checked={autosay}
-          onChange={handleAutosayChange}
-        />
-      </label>
-      <button onClick={handleConnectionToggle}>
-        {connected ? 'Disconnect' : 'Connect'}
-      </button>
+      {/* Log buttons group */}
+      <div className="toolbar-group">
+        <button onClick={onSaveLog} accessKey="l">
+          <FaSave />
+          Save Log
+        </button>
+        <button onClick={onCopyLog} accessKey="C">
+          <FaCopy />
+          Copy Log
+        </button>
+        <button onClick={onClearLog} accessKey="E">
+          <FaEraser />
+          Clear Log
+        </button>
+      </div>
+
+      <div className="toolbar-separator" />
+
+      {/* Preferences group */}
+      <div className="toolbar-group">
+        <button onClick={onOpenPrefs} accessKey="p">
+          <FaCog />
+          Preferences
+        </button>
+      </div>
+
+      <div className="toolbar-separator" />
+
+      {/* Mute + Volume group */}
+      <div className="toolbar-group">
+        <button
+          onClick={handleMuteToggle}
+          accessKey="M"
+        >
+          {muted ? <FaVolumeUp /> : <FaVolumeMute />}
+          {muted ? "Unmute" : "Mute"}
+        </button>
+        <label className="toolbar-volume">
+          Volume
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={volume * 100}
+            onChange={handleVolumeChange}
+            accessKey="V"
+          />
+        </label>
+      </div>
+
+      <div className="toolbar-separator" />
+
+      {/* Autosay group */}
+      <div className="toolbar-group">
+        <label className="toolbar-toggle">
+          <FaCommentDots />
+          Autosay
+          <input
+            type="checkbox"
+            checked={autosay}
+            onChange={handleAutosayChange}
+          />
+        </label>
+      </div>
+
+      <div className="toolbar-separator" />
+
+      {/* Connect/Disconnect group */}
+      <div className="toolbar-group">
+        <button
+          className={connected ? 'btn-disconnect' : 'btn-connect'}
+          onClick={handleConnectionToggle}
+        >
+          {connected ? 'Disconnect' : 'Connect'}
+        </button>
+      </div>
+
+      <div className="toolbar-spacer" />
+
+      {/* Sidebar toggle */}
       <button
         onClick={onToggleSidebar}
         accessKey="U"
-        title={showSidebar ? "Hide Sidebar (Alt+U)" : "Show Sidebar (Alt+U)"} // Add title attribute
-        aria-label={showSidebar ? "Hide Sidebar" : "Show Sidebar"} // Add aria-label for clarity
-        aria-expanded={showSidebar} // Indicate expanded state
+        title={showSidebar ? "Hide Sidebar (Alt+U)" : "Show Sidebar (Alt+U)"}
+        aria-label={showSidebar ? "Hide Sidebar" : "Show Sidebar"}
+        aria-expanded={showSidebar}
       >
         {showSidebar ? <FaChevronRight /> : <FaChevronLeft />}
-        {/* Keep concise text, title/aria-label provide details */}
-        {showSidebar ? "Hide Sidebar" : "Show Sidebar"}
+        {showSidebar ? "Hide" : "Show"}
       </button>
     </div>
   );

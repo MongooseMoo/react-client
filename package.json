@@ -50,6 +50,7 @@
     "last 2 Safari versions"
   ],
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^20.19.4",
