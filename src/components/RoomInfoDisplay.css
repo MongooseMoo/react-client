@@ -18,8 +18,12 @@
     margin-bottom: 0.8rem;
 }
 
+.room-info-display .room-exits {
+    margin-top: var(--space-4, 16px);
+}
+
 .room-info-display .room-exits h5 {
-    margin-top: 16px;
+    margin-top: 0;
     margin-bottom: 10px;
     font-weight: 600;
     font-size: var(--font-size-xs);
@@ -67,8 +71,8 @@
 }
 
 .room-contents-section {
-    margin-top: 20px;
-    padding-top: 12px;
+    margin-top: var(--space-6, 24px);
+    padding-top: var(--space-3, 12px);
     border-top: 1px solid var(--color-border);
 }
 
@@ -116,8 +120,8 @@
 }
 
 .room-players-section {
-    margin-top: 20px;
-    padding-top: 12px;
+    margin-top: var(--space-6, 24px);
+    padding-top: var(--space-3, 12px);
     border-top: 1px solid var(--color-border);
 }
 

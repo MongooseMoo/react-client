@@ -13,11 +13,11 @@ div[role="tablist"] {
 button[role="tab"] {
     background-color: transparent;
     border: none;
-    border-bottom: 3px solid transparent;
+    border-bottom: 2px solid transparent;
     padding: var(--space-2) var(--space-4);
     cursor: pointer;
     font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--font-weight-normal, 400);
     color: var(--color-text-tertiary);
     transition: all var(--transition-fast);
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
@@ -30,7 +30,7 @@ button[role="tab"][aria-selected="true"] {
     color: var(--color-text);
     background-color: var(--color-bg);
     border-bottom: 2px solid var(--color-primary);
-    font-weight: var(--font-weight-semibold, 600);
+    font-weight: 600;
 }
 
 /* Tab hover effect */
