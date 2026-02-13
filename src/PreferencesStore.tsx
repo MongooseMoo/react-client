@@ -37,6 +37,14 @@ export type MidiPreferences = {
   lastOutputDeviceId?: string;
 };
 
+export type HapticsPreferences = {
+  enabled: boolean;
+  intifaceUrl: string;
+  intensityCap: number;
+  autoStopTimeout: number;
+  autoConnect: boolean;
+};
+
 export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
@@ -44,6 +52,7 @@ export type PrefState = {
   channels?: { [channelId: string]: ChannelPreferences };
   editor: EditorPreferences;
   midi: MidiPreferences;
+  haptics: HapticsPreferences;
 };
 
 export enum PrefActionType {
@@ -54,6 +63,7 @@ export enum PrefActionType {
   SetEditorAutocompleteEnabled = "SET_EDITOR_AUTOCOMPLETE_ENABLED",
   SetEditorAccessibilityMode = "SET_EDITOR_ACCESSIBILITY_MODE",
   SetMidi = "SET_MIDI",
+  SetHaptics = "SET_HAPTICS",
 }
 
 export type PrefAction =
@@ -63,7 +73,8 @@ export type PrefAction =
   | { type: PrefActionType.SetChannels; data: { [channelId: string]: ChannelPreferences } }
   | { type: PrefActionType.SetEditorAutocompleteEnabled; data: boolean }
   | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean }
-  | { type: PrefActionType.SetMidi; data: MidiPreferences };
+  | { type: PrefActionType.SetMidi; data: MidiPreferences }
+  | { type: PrefActionType.SetHaptics; data: HapticsPreferences };
 
 class PreferencesStore {
   private state: PrefState;
@@ -115,6 +126,13 @@ class PreferencesStore {
       midi: {
         enabled: false,
       },
+      haptics: {
+        enabled: false,
+        intifaceUrl: "ws://127.0.0.1:12345",
+        intensityCap: 1.0,
+        autoStopTimeout: 5,
+        autoConnect: false,
+      },
     };
   }
 
@@ -128,6 +146,7 @@ class PreferencesStore {
       channels: stored.channels ? { ...initial.channels, ...stored.channels } : initial.channels,
       editor: { ...initial.editor, ...stored.editor },
       midi: { ...initial.midi, ...stored.midi },
+      haptics: { ...initial.haptics, ...stored.haptics },
     };
   }
 
@@ -147,6 +166,8 @@ class PreferencesStore {
         return { ...state, editor: { ...state.editor, accessibilityMode: action.data } };
       case PrefActionType.SetMidi:
         return { ...state, midi: action.data };
+      case PrefActionType.SetHaptics:
+        return { ...state, haptics: action.data };
       default:
         return state;
     }
