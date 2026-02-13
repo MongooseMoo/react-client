@@ -136,6 +136,18 @@ export class HapticsService extends EventEmitter<HapticsServiceEvents> {
     this.sensorListeners.set(backend, onSensorReading);
     backend.on("sensorreading", onSensorReading);
 
+    // Wrap backend connect/disconnect to emit connectionchanged
+    const originalConnect = backend.connect.bind(backend);
+    const originalDisconnect = backend.disconnect.bind(backend);
+    backend.connect = async (options?: Record<string, unknown>): Promise<void> => {
+      await originalConnect(options);
+      this.emit("connectionchanged", backend.name, true);
+    };
+    backend.disconnect = async (): Promise<void> => {
+      await originalDisconnect();
+      this.emit("connectionchanged", backend.name, false);
+    };
+
     // Rebuild maps to include any devices this backend already has
     this.rebuildMaps();
   }

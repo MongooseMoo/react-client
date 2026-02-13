@@ -14,8 +14,11 @@ import { useClientEvent } from "../hooks/useClientEvent"; // Import useClientEve
 import { UserlistPlayer } from "../mcp";
 import RoomInfoDisplay from "./RoomInfoDisplay"; // Import new component
 import MidiStatus from "./MidiStatus"; // Import MIDI component
+import HapticsStatus from "./HapticsStatus"; // Import Haptics component
 import { usePreferences } from "../hooks/usePreferences";
 import { GMCPClientMidi } from "../gmcp/Client/Midi";
+import { GMCPClientHaptics } from "../gmcp/Client/Haptics";
+import { hapticsService } from "../HapticsService";
 
 // Define the type for the imperative handle
 export type SidebarRef = {
@@ -57,6 +60,25 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
       }
     }
   }, [preferences.midi.enabled, client]);
+
+  // Handle Haptics support advertisement based on preferences
+  useEffect(() => {
+    const hapticsPackage = client.gmcpHandlers["Client.Haptics"] as GMCPClientHaptics;
+    if (!hapticsPackage) return;
+    if (client.connected) {
+      if (preferences.haptics.enabled) {
+        hapticsPackage.advertiseHapticsSupport();
+      } else {
+        hapticsPackage.unadvertiseHapticsSupport();
+      }
+    }
+  }, [preferences.haptics.enabled, client]);
+
+  // Wire haptics preferences to the service
+  useEffect(() => {
+    hapticsService.intensityCap = preferences.haptics.intensityCap;
+    hapticsService.autoStopTimeoutSecs = preferences.haptics.autoStopTimeout;
+  }, [preferences.haptics.intensityCap, preferences.haptics.autoStopTimeout]);
 
   // Effect to check for inventory data
   useEffect(() => {
@@ -108,6 +130,12 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
       content: <MidiStatus client={client} />,
       condition: preferences.midi.enabled,
     },
+    {
+      id: "haptics-tab",
+      label: "Haptics",
+      content: <HapticsStatus client={client} />,
+      condition: preferences.haptics.enabled,
+    },
 
     // { // Removed Skills Tab
     //   id: "skills-tab",
@@ -153,7 +181,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
   // Note: If tab conditions become more dynamic, add them to the dependency array.
   const visibleTabs = React.useMemo(() => {
     return allTabs.filter((tab) => tab.condition ?? true); // Default condition to true
-  }, [hasRoomData, hasInventoryData, preferences.midi.enabled]); // Add dependencies based on actual conditions used
+  }, [hasRoomData, hasInventoryData, preferences.midi.enabled, preferences.haptics.enabled]); // Add dependencies based on actual conditions used
 
   // Expose switchToTab function via useImperativeHandle
   React.useImperativeHandle(ref, () => ({
