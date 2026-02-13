@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import MudClient from "./client";
+import { hapticsService } from "./HapticsService";
+import { GamepadBackend } from "./haptics/GamepadBackend";
 import { virtualMidiService } from "./VirtualMidiService";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
@@ -27,6 +29,7 @@ import {
   GMCPCharStatusTimers,
   GMCPClientFile,
   GMCPClientFileTransfer,
+  GMCPClientHaptics,
   GMCPClientHtml,
   GMCPClientKeystrokes,
   GMCPClientMedia,
@@ -116,6 +119,7 @@ function App() {
     newClient.registerGMCPPackage(GMCPLogging);
     newClient.registerGMCPPackage(GMCPRedirect);
     newClient.registerGMCPPackage(GMCPRoom);
+    newClient.registerGMCPPackage(GMCPClientHaptics);
     // MCP Packages
     newClient.registerMcpPackage(McpAwnsStatus);
     newClient.registerMcpPackage(McpSimpleEdit);
@@ -157,6 +161,11 @@ function App() {
       console.error("Error initializing virtual MIDI synthesizer:", error);
     });
 
+    // Register gamepad backend (always available, zero config)
+    const gamepadBackend = new GamepadBackend();
+    hapticsService.registerBackend(gamepadBackend);
+    gamepadBackend.connect();
+
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!newClient) return;
@@ -171,6 +180,8 @@ function App() {
         if (midiPackage) {
           (midiPackage as any).sendAllNotesOff();
         }
+        // Emergency stop all haptic devices
+        hapticsService.emergencyStop();
       }
     };
 
