@@ -421,33 +421,9 @@ const HapticsTab: React.FC = () => {
             />
           </label>
           <br />
-          <label>
-            Intiface Central URL:
-            <input
-              type="text"
-              value={state.haptics.intifaceUrl}
-              onChange={(e) =>
-                dispatch({
-                  type: PrefActionType.SetHaptics,
-                  data: { ...state.haptics, intifaceUrl: e.target.value },
-                })
-              }
-            />
-          </label>
-          <br />
-          <label>
-            <input
-              type="checkbox"
-              checked={state.haptics.autoConnect}
-              onChange={(e) =>
-                dispatch({
-                  type: PrefActionType.SetHaptics,
-                  data: { ...state.haptics, autoConnect: e.target.checked },
-                })
-              }
-            />
-            Auto-Connect to Intiface Central
-          </label>
+          <p style={{ color: "#666", fontSize: "0.9em", marginTop: "8px" }}>
+            Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
+          </p>
         </div>
       )}
     </div>

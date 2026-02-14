@@ -39,10 +39,8 @@ export type MidiPreferences = {
 
 export type HapticsPreferences = {
   enabled: boolean;
-  intifaceUrl: string;
   intensityCap: number;
   autoStopTimeout: number;
-  autoConnect: boolean;
 };
 
 export type PrefState = {
@@ -128,16 +126,17 @@ class PreferencesStore {
       },
       haptics: {
         enabled: false,
-        intifaceUrl: "ws://127.0.0.1:12345",
         intensityCap: 1.0,
         autoStopTimeout: 5,
-        autoConnect: false,
       },
     };
   }
 
   private mergePreferences(initial: PrefState, stored: PrefState): PrefState {
     // Merge the stored preferences with the initial preferences, picking up new preferences
+    // Strip removed haptics fields from old localStorage data
+    const storedHaptics = stored.haptics ?? {};
+    const { intifaceUrl, autoConnect, ...cleanHaptics } = storedHaptics as Record<string, unknown>;
     return {
       ...initial,
       general: { ...initial.general, ...stored.general },
@@ -146,7 +145,7 @@ class PreferencesStore {
       channels: stored.channels ? { ...initial.channels, ...stored.channels } : initial.channels,
       editor: { ...initial.editor, ...stored.editor },
       midi: { ...initial.midi, ...stored.midi },
-      haptics: { ...initial.haptics, ...stored.haptics },
+      haptics: { ...initial.haptics, ...cleanHaptics },
     };
   }
 

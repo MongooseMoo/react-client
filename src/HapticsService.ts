@@ -239,6 +239,16 @@ export class HapticsService extends EventEmitter<HapticsServiceEvents> {
   }
 
   // -----------------------------------------------------------------------
+  // Scanning
+  // -----------------------------------------------------------------------
+
+  async scan(): Promise<void> {
+    for (const backend of this.backends) {
+      await backend.scan();
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Sensor Subscription
   // -----------------------------------------------------------------------
 

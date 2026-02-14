@@ -47,11 +47,17 @@ const HapticsStatus: React.FC<HapticsStatusProps> = ({ client }) => {
     hapticsService.emergencyStop();
   };
 
-  const handleIntifaceConnect = (): void => {
-    alert(
-      "Intiface Central support requires the 'buttplug' npm package, which is not currently installed. " +
-        "Install it and restart to enable Buttplug device connectivity."
-    );
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleScan = async (): Promise<void> => {
+    setIsScanning(true);
+    try {
+      await hapticsService.scan();
+    } catch (err) {
+      console.error("Scan failed:", err);
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   if (!preferences.haptics.enabled) {
@@ -66,10 +72,6 @@ const HapticsStatus: React.FC<HapticsStatusProps> = ({ client }) => {
   const gamepadActuators = capabilities.actuators.filter(
     (a) => a.deviceClass === "gaming"
   );
-  const intimateActuators = capabilities.actuators.filter(
-    (a) => a.deviceClass === "intimate"
-  );
-
   return (
     <div style={{ padding: "10px" }}>
       <h3>Haptics Status</h3>
@@ -101,36 +103,31 @@ const HapticsStatus: React.FC<HapticsStatusProps> = ({ client }) => {
         )}
       </div>
 
-      {/* Intiface Central Connection */}
+      {/* Bluetooth Devices */}
       <div style={{ marginBottom: "15px" }}>
         <div style={{ marginBottom: "8px" }}>
-          <strong>Intiface Central</strong>
+          <strong>Bluetooth Devices</strong>
         </div>
-        <div style={{ marginBottom: "5px", fontSize: "0.9em", color: "#666" }}>
-          URL: {preferences.haptics.intifaceUrl}
-        </div>
-        {backendStatus.get("buttplug") ? (
-          <div style={{ marginBottom: "8px" }}>
-            <span style={{ color: "green" }}>Connected</span>
+        {typeof navigator !== "undefined" && navigator.bluetooth ? (
+          <div>
             <button
-              onClick={() => {
-                // Buttplug not installed - no-op
-                alert("Buttplug package not installed.");
+              onClick={handleScan}
+              disabled={isScanning}
+              style={{
+                padding: "6px 16px",
+                fontSize: "0.9em",
+                cursor: isScanning ? "not-allowed" : "pointer",
               }}
-              style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "0.8em" }}
             >
-              Disconnect
+              {isScanning ? "Scanning..." : "Scan for Devices"}
             </button>
+            <div style={{ marginTop: "5px", fontSize: "0.85em", color: "#666" }}>
+              Opens the browser device picker. Your device must be in pairing mode.
+            </div>
           </div>
         ) : (
-          <div style={{ marginBottom: "8px" }}>
-            <span style={{ color: "#999", fontSize: "0.9em" }}>Disconnected</span>
-            <button
-              onClick={handleIntifaceConnect}
-              style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "0.8em" }}
-            >
-              Connect
-            </button>
+          <div style={{ fontSize: "0.9em", color: "#999" }}>
+            WebBluetooth is not supported in this browser. Use Chrome or Edge.
           </div>
         )}
       </div>
@@ -249,7 +246,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = ({ client }) => {
         <summary><strong>Info</strong></summary>
         <div style={{ padding: "10px 0", fontSize: "0.9em", color: "#666" }}>
           <p>Gamepad haptics are automatic when a compatible controller is connected.</p>
-          <p>Intiface Central provides access to Buttplug-compatible devices via WebSocket.</p>
+          <p>Bluetooth devices are discovered via in-browser WebBluetooth (Chromium browsers only).</p>
           <p>The server can send haptic commands when the Client.Haptics GMCP package is active.</p>
           <p>Press Escape or use the Emergency Stop button to immediately halt all haptic output.</p>
           <p>Intensity cap: {(preferences.haptics.intensityCap * 100).toFixed(0)}% | Auto-stop: {preferences.haptics.autoStopTimeout}s</p>
