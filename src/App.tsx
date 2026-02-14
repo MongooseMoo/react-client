@@ -169,7 +169,7 @@ function App() {
 
     // Register WASM buttplug backend (in-browser, requires Chromium for WebBluetooth)
     // Lazy-load the ~5MB WASM module, then register the backend.
-    // NOTE: Do NOT auto-connect — user must click "Scan for Devices" to trigger WebBluetooth.
+    // connect() is deferred — scan() auto-connects the WASM server on first use.
     createRealWasmDeps()
       .then((deps) => {
         const buttplugBackend = new ButtplugWasmBackend(deps);

@@ -311,11 +311,13 @@ export class ButtplugWasmBackend
   // --- Device Discovery ---
 
   async scan(): Promise<void> {
+    // Auto-connect if needed. connect() just initializes the embedded WASM
+    // server — no user gesture required. Only startScanning() below triggers
+    // the WebBluetooth device picker (which does need a user gesture).
     if (!this.client) {
-      throw new Error("ButtplugWasmBackend: not connected");
+      await this.connect();
     }
-    // This triggers the WebBluetooth device picker (requires user gesture)
-    await this.client.startScanning();
+    await this.client!.startScanning();
   }
 
   async stopScan(): Promise<void> {

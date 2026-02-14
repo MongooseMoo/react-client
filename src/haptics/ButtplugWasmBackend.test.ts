@@ -194,8 +194,12 @@ describe("ButtplugWasmBackend", () => {
       expect(latestMockClient.stopScanning).toHaveBeenCalled();
     });
 
-    it("throws when scanning while not connected", async () => {
-      await expect(backend.scan()).rejects.toThrow("not connected");
+    it("auto-connects when scanning while not connected", async () => {
+      expect(backend.isConnected()).toBe(false);
+      await backend.scan();
+      expect(backend.isConnected()).toBe(true);
+      expect(deps.createClient).toHaveBeenCalledWith("Mongoose Haptics WASM");
+      expect(latestMockClient.startScanning).toHaveBeenCalled();
     });
 
     it("maps a deviceadded event with ScalarCmd to actuators", async () => {
