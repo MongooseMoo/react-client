@@ -6,6 +6,7 @@ import { hapticsService } from "./HapticsService";
 import { GamepadBackend } from "./haptics/GamepadBackend";
 import { ButtplugWasmBackend, createRealWasmDeps } from "./haptics/ButtplugWasmBackend";
 import { virtualMidiService } from "./VirtualMidiService";
+import { usePreferences } from "./hooks/usePreferences";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
 import PreferencesDialog, {
@@ -67,6 +68,8 @@ function App() {
   const sidebarRef = React.useRef<SidebarRef | null>(null); // Add ref for Sidebar
 
   const clientInitialized = useRef(false);
+  const wasmBackendLoaded = useRef(false);
+  const [preferences] = usePreferences();
 
   const saveLog = () => {
     if (outRef.current) {
@@ -167,19 +170,6 @@ function App() {
     hapticsService.registerBackend(gamepadBackend);
     gamepadBackend.connect();
 
-    // Register WASM buttplug backend (in-browser, requires Chromium for WebBluetooth)
-    // Lazy-load the ~5MB WASM module, then register the backend.
-    // connect() is deferred — scan() auto-connects the WASM server on first use.
-    createRealWasmDeps()
-      .then((deps) => {
-        const buttplugBackend = new ButtplugWasmBackend(deps);
-        hapticsService.registerBackend(buttplugBackend);
-        console.log("ButtplugWasmBackend registered (WASM loaded)");
-      })
-      .catch((err) => {
-        console.warn("Failed to load buttplug WASM backend:", err);
-      });
-
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!newClient) return;
@@ -213,6 +203,30 @@ function App() {
       document.removeEventListener("focus", handleFocus);
     };
   }, [isMobile]); // Keep client initialization separate
+
+  // Load WASM buttplug backend when haptics is enabled (lazy — avoids 5MB download when disabled)
+  useEffect(() => {
+    if (!preferences.haptics.enabled) return;
+    if (wasmBackendLoaded.current) return;
+    wasmBackendLoaded.current = true;
+
+    let cancelled = false;
+    createRealWasmDeps()
+      .then((deps) => {
+        if (cancelled) return;
+        const buttplugBackend = new ButtplugWasmBackend(deps);
+        hapticsService.registerBackend(buttplugBackend);
+        console.log("ButtplugWasmBackend registered (WASM loaded)");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("Failed to load buttplug WASM backend:", err);
+        // Allow retry on next enable
+        wasmBackendLoaded.current = false;
+      });
+
+    return () => { cancelled = true; };
+  }, [preferences.haptics.enabled]);
 
   // Effect for CTRL + Number shortcut
   useEffect(() => {
