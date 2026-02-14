@@ -4,6 +4,7 @@ import "./App.css";
 import MudClient from "./client";
 import { hapticsService } from "./HapticsService";
 import { GamepadBackend } from "./haptics/GamepadBackend";
+import { ButtplugWasmBackend, createRealWasmDeps } from "./haptics/ButtplugWasmBackend";
 import { virtualMidiService } from "./VirtualMidiService";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
@@ -165,6 +166,19 @@ function App() {
     const gamepadBackend = new GamepadBackend();
     hapticsService.registerBackend(gamepadBackend);
     gamepadBackend.connect();
+
+    // Register WASM buttplug backend (in-browser, requires Chromium for WebBluetooth)
+    // Lazy-load the ~5MB WASM module, then register the backend.
+    // NOTE: Do NOT auto-connect — user must click "Scan for Devices" to trigger WebBluetooth.
+    createRealWasmDeps()
+      .then((deps) => {
+        const buttplugBackend = new ButtplugWasmBackend(deps);
+        hapticsService.registerBackend(buttplugBackend);
+        console.log("ButtplugWasmBackend registered (WASM loaded)");
+      })
+      .catch((err) => {
+        console.warn("Failed to load buttplug WASM backend:", err);
+      });
 
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
