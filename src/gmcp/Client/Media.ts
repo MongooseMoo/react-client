@@ -111,6 +111,11 @@ export class GMCPClientMedia extends GMCPPackage {
       sound.volume = data.volume / 100;
     }
 
+    // Update pan if provided (server sends -100 to 100, cacophony expects -1 to 1)
+    if (data.pan !== undefined) {
+      sound.stereoPan = data.pan / 100;
+    }
+
     // Update looping if provided
     if (data.loops !== undefined) {
       const loopCount = data.loops === -1 ? Infinity : data.loops - 1;
@@ -159,6 +164,14 @@ export class GMCPClientMedia extends GMCPPackage {
       }
       if (data.fadeout) {
         // Implement fade out functionality
+      }
+    } else {
+      // Update pan on existing playbacks
+      if (data.pan !== undefined) {
+        const pan = data.pan / 100;
+        for (const playback of sound.playbacks) {
+          playback.stereoPan = pan;
+        }
       }
     }
     sound.key = data.key;
