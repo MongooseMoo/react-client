@@ -154,11 +154,32 @@ export class GMCPClientMedia extends GMCPPackage {
     // Playback control
     if (!sound.isPlaying) {
       const playback = sound.play()[0] as Playback;
-      if (data.fadein) {
-        // Implement fade in functionality
+      const targetVolume = (data.volume ?? 50) / 100;
+      const context = this.client.cacophony.context;
+      const currentTime = context.currentTime;
+
+      if (data.fadein && playback.gainNode) {
+        // Start at 0, ramp to target volume over fadein ms
+        playback.gainNode.gain.setValueAtTime(0, currentTime);
+        playback.gainNode.gain.linearRampToValueAtTime(
+          targetVolume,
+          currentTime + data.fadein / 1000
+        );
       }
-      if (data.fadeout) {
-        // Implement fade out functionality
+
+      if (data.fadeout && playback.gainNode) {
+        // Schedule fadeout at end of sound
+        const duration = playback.duration;
+        if (isFinite(duration)) {
+          const fadeoutStart = currentTime + duration - data.fadeout / 1000;
+          if (fadeoutStart > currentTime) {
+            playback.gainNode.gain.setValueAtTime(targetVolume, fadeoutStart);
+            playback.gainNode.gain.linearRampToValueAtTime(
+              0,
+              currentTime + duration
+            );
+          }
+        }
       }
     }
     sound.key = data.key;
