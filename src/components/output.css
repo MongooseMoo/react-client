@@ -194,3 +194,32 @@ a.exit {
   border: none;
   border-top: 1px solid var(--color-border);
 }
+
+/* Keyboard Navigation Styles */
+.output:focus {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: -2px;
+}
+
+.output-line {
+  transition: background-color 0.15s ease;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 3px;
+}
+
+.output-line.focused-line {
+  background-color: rgba(59, 130, 246, 0.15);
+  outline: 1px solid rgba(59, 130, 246, 0.3);
+  outline-offset: -1px;
+}
+
+/* Make focus visible when navigating with keyboard */
+.output[role="log"]:focus {
+  box-shadow: inset 0 0 0 2px var(--color-primary, #3b82f6);
+}
+
+/* Ensure focused line is visible */
+.output .output-line.focused-line {
+  scroll-margin: 20px;
+}
