@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { PrefActionType } from "../PreferencesStore";
+import { PrefActionType, NavigationKeyScheme } from "../PreferencesStore";
 import { usePreferences } from "../hooks/usePreferences";
 import { useVoices } from "../hooks/useVoices";
 import { midiService, MidiDevice } from "../MidiService";
@@ -364,13 +364,43 @@ const MidiTab: React.FC = () => {
   );
 };
 
+const KeyboardTab: React.FC = () => {
+  const [state, dispatch] = usePreferences();
+
+  return (
+    <div>
+      <label>
+        Buffer Navigation Keys:
+        <select
+          value={state.keyboard.navigationKeyScheme}
+          onChange={(e) =>
+            dispatch({
+              type: PrefActionType.SetKeyboard,
+              data: { navigationKeyScheme: e.target.value as NavigationKeyScheme },
+            })
+          }
+        >
+          <option value="jkli">JKLI (QWERTY right-hand)</option>
+          <option value="wasd">WASD (QWERTY left-hand)</option>
+          <option value="dvorak-rh">HTNC (Dvorak right-hand)</option>
+          <option value="dvorak-lh">,OAE (Dvorak left-hand)</option>
+        </select>
+      </label>
+      <p style={{ color: "#666", fontSize: "0.9em", marginTop: "0.5em" }}>
+        Arrow keys always work in addition to the selected scheme.
+      </p>
+    </div>
+  );
+};
+
 const Preferences: React.FC = () => {
   const tabs = [
-    { label: "General", content: <GeneralTab /> },
-    { label: "Speech", content: <SpeechTab /> },
-    { label: "Sounds", content: <SoundsTab /> },
-    { label: "Editor", content: <EditorTab /> },
-    { label: "MIDI", content: <MidiTab /> },
+    { id: "general", label: "General", content: <GeneralTab /> },
+    { id: "speech", label: "Speech", content: <SpeechTab /> },
+    { id: "sounds", label: "Sounds", content: <SoundsTab /> },
+    { id: "editor", label: "Editor", content: <EditorTab /> },
+    { id: "keyboard", label: "Keyboard", content: <KeyboardTab /> },
+    { id: "midi", label: "MIDI", content: <MidiTab /> },
   ];
 
   return <Tabs tabs={tabs} />;
