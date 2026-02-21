@@ -576,6 +576,21 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
    * Handle keyboard navigation through output lines
    */
   handleOutputKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Suppress Alt+Arrow and Alt+letter so browser defaults
+    // don't interfere with app-level keybindings
+    if (e.altKey && (
+      e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+      'ijklwasdchtnoe,'.includes(e.key.toLowerCase()) ||
+      'IJKLWASDCHTNOE'.split('').some(c => e.code === `Key${c}`) || e.code === 'Comma'
+    )) {
+      e.preventDefault();
+      return;
+    }
+    if (e.altKey && e.code === 'Space') {
+      e.preventDefault();
+      return;
+    }
+
     const visibleOutput = this.state.output.filter(
       line => this.state.localEchoActive || line.type !== OutputType.Command
     );
@@ -618,14 +633,6 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
           this.announceOutputLine(visibleOutput[lastIndex]);
           this.scrollFocusedLineIntoView();
         });
-        break;
-
-      case 'Escape':
-        // Clear focus and return to input
-        this.setState({ focusedLineIndex: null });
-        if (this.props.focusInput) {
-          this.props.focusInput();
-        }
         break;
     }
   };
