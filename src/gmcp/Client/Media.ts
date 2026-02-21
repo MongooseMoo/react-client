@@ -67,9 +67,8 @@ export class GMCPClientMedia extends GMCPPackage {
   async handleLoad(data: GMCPMessageClientMediaLoad) {
     const url = (data.url || this.defaultUrl) + data.name;
     const key = data.url + data.name;
-    let sound = this.sounds[key] as ExtendedSound;
-    if (!sound) {
-      let sound: ExtendedSound = await this.client.cacophony.createSound(url);
+    if (!this.sounds[key]) {
+      const sound: ExtendedSound = await this.client.cacophony.createSound(url);
       sound.key = key;
       this.sounds[key] = sound;
     }
@@ -90,6 +89,10 @@ export class GMCPClientMedia extends GMCPPackage {
     const panType = data.is3d ? "HRTF" : "stereo";
     // Sound creation or updating
     if (!sound || sound.url !== mediaUrl) {
+      // Cleanup old sound before replacing
+      if (sound) {
+        sound.cleanup();
+      }
       // Create a new sound object
       if (data.type === "music") {
         sound = await this.client.cacophony.createSound(
@@ -128,9 +131,13 @@ export class GMCPClientMedia extends GMCPPackage {
     }
 
     if (data.end) {
+      const endKey = data.key!;
       setTimeout(() => {
-        delete this.sounds[sound.key!];
-        sound.stop();
+        // Only remove if the same sound is still at this key
+        if (this.sounds[endKey] === sound) {
+          delete this.sounds[endKey];
+        }
+        sound.cleanup();
       }, data.end);
     }
 
@@ -150,7 +157,8 @@ export class GMCPClientMedia extends GMCPPackage {
       for (let key in this.sounds) {
         const activeSound = this.sounds[key];
         if (activeSound.priority && activeSound.priority < data.priority) {
-          activeSound.stop();
+          activeSound.cleanup();
+          delete this.sounds[key];
         }
       }
       sound.priority = data.priority;
@@ -213,14 +221,14 @@ export class GMCPClientMedia extends GMCPPackage {
       this.soundsByKey(data.key).forEach((sound) => this.stopSound(sound));
     }
     if (!data.name && !data.type && !data.tag && !data.key) {
-      this.allSounds.forEach((sound) => sound.stop());
+      this.allSounds.forEach((sound) => sound.cleanup());
       this.sounds = {};
     }
   }
 
   private stopSound(sound: ExtendedSound) {
     delete this.sounds[sound.key!];
-    sound.stop();
+    sound.cleanup();
   }
 
   handleListenerPosition(data: GMCPMessageClientMediaListenerPosition) {
@@ -265,7 +273,7 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   stopAllSounds() {
-    this.allSounds.forEach((sound) => sound.stop());
+    this.allSounds.forEach((sound) => sound.cleanup());
     this.sounds = {};
   }
 }
