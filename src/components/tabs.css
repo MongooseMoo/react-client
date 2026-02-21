@@ -109,3 +109,18 @@ div[role="tabpanel"][hidden] {
     height: 100%;
     background: var(--color-bg-elevated);
 }
+
+/* === Mobile tabs === */
+@media (max-width: 768px) {
+    div[role="tablist"] {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+    }
+
+    button[role="tab"] {
+        min-height: 36px;
+        flex-shrink: 0;
+        padding: var(--space-1) var(--space-3);
+    }
+}

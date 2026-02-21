@@ -61,3 +61,11 @@
 .vital-good { color: var(--color-success, #4ade80); }
 .vital-warning { color: var(--color-warning, #f59e0b); }
 .vital-danger { color: var(--color-danger, #ef4444); }
+
+/* === Mobile statusbar === */
+@media (max-width: 768px) {
+  .status-vitals,
+  .status-time {
+    display: none;
+  }
+}
