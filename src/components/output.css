@@ -4,7 +4,7 @@
   color: #ffffff;
   background-color: var(--color-bg-deepest);
   white-space: pre-wrap;
-  word-wrap: normal;
+  overflow-wrap: break-word;
   padding: var(--space-4);
   border: none;
   border-radius: 0;
