@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react"; // Import useState, useEffect
+import React, { Suspense, useEffect, useState } from "react"; // Import useState, useEffect
 import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
 import FileTransferUI from "./FileTransfer";
-import AudioChat from "./audioChat";
+const AudioChat = React.lazy(() => import("./audioChat"));
 import Tabs, { TabProps } from "./tabs";
 import Userlist from "./userlist";
 // import AfflictionsList from "./AfflictionsList"; // Removed
@@ -172,7 +172,11 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
     {
       id: "audio-tab",
       label: "Audio",
-      content: <AudioChat client={client} />,
+      content: (
+        <Suspense fallback={null}>
+          <AudioChat client={client} />
+        </Suspense>
+      ),
       condition: true, // Always show Audio tab (or add condition if needed)
     },
   ];
