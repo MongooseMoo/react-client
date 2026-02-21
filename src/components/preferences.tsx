@@ -364,6 +364,72 @@ const MidiTab: React.FC = () => {
   );
 };
 
+const HapticsTab: React.FC = () => {
+  const [state, dispatch] = usePreferences();
+
+  const handleHapticsEnabledChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    dispatch({
+      type: PrefActionType.SetHaptics,
+      data: { ...state.haptics, enabled: e.target.checked },
+    });
+  };
+
+  return (
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={state.haptics.enabled}
+          onChange={handleHapticsEnabledChange}
+        />
+        Enable Haptics
+      </label>
+
+      {state.haptics.enabled && (
+        <div>
+          <br />
+          <label>
+            Intensity Cap ({Math.round(state.haptics.intensityCap * 100)}%):
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={state.haptics.intensityCap}
+              onChange={(e) =>
+                dispatch({
+                  type: PrefActionType.SetHaptics,
+                  data: { ...state.haptics, intensityCap: parseFloat(e.target.value) },
+                })
+              }
+            />
+          </label>
+          <br />
+          <label>
+            Auto-Stop Timeout (seconds):
+            <input
+              type="number"
+              min="1"
+              max="60"
+              value={state.haptics.autoStopTimeout}
+              onChange={(e) =>
+                dispatch({
+                  type: PrefActionType.SetHaptics,
+                  data: { ...state.haptics, autoStopTimeout: parseInt(e.target.value, 10) || 1 },
+                })
+              }
+            />
+          </label>
+          <br />
+          <p style={{ color: "#666", fontSize: "0.9em", marginTop: "8px" }}>
+            Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Preferences: React.FC = () => {
   const tabs = [
     { label: "General", content: <GeneralTab /> },
@@ -371,6 +437,7 @@ const Preferences: React.FC = () => {
     { label: "Sounds", content: <SoundsTab /> },
     { label: "Editor", content: <EditorTab /> },
     { label: "MIDI", content: <MidiTab /> },
+    { label: "Haptics", content: <HapticsTab /> },
   ];
 
   return <Tabs tabs={tabs} />;

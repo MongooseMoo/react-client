@@ -37,6 +37,12 @@ export type MidiPreferences = {
   lastOutputDeviceId?: string;
 };
 
+export type HapticsPreferences = {
+  enabled: boolean;
+  intensityCap: number;
+  autoStopTimeout: number;
+};
+
 export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
@@ -44,6 +50,7 @@ export type PrefState = {
   channels?: { [channelId: string]: ChannelPreferences };
   editor: EditorPreferences;
   midi: MidiPreferences;
+  haptics: HapticsPreferences;
 };
 
 export enum PrefActionType {
@@ -54,6 +61,7 @@ export enum PrefActionType {
   SetEditorAutocompleteEnabled = "SET_EDITOR_AUTOCOMPLETE_ENABLED",
   SetEditorAccessibilityMode = "SET_EDITOR_ACCESSIBILITY_MODE",
   SetMidi = "SET_MIDI",
+  SetHaptics = "SET_HAPTICS",
 }
 
 export type PrefAction =
@@ -63,7 +71,8 @@ export type PrefAction =
   | { type: PrefActionType.SetChannels; data: { [channelId: string]: ChannelPreferences } }
   | { type: PrefActionType.SetEditorAutocompleteEnabled; data: boolean }
   | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean }
-  | { type: PrefActionType.SetMidi; data: MidiPreferences };
+  | { type: PrefActionType.SetMidi; data: MidiPreferences }
+  | { type: PrefActionType.SetHaptics; data: HapticsPreferences };
 
 class PreferencesStore {
   private state: PrefState;
@@ -115,11 +124,19 @@ class PreferencesStore {
       midi: {
         enabled: false,
       },
+      haptics: {
+        enabled: false,
+        intensityCap: 1.0,
+        autoStopTimeout: 5,
+      },
     };
   }
 
   private mergePreferences(initial: PrefState, stored: PrefState): PrefState {
     // Merge the stored preferences with the initial preferences, picking up new preferences
+    // Strip removed haptics fields from old localStorage data
+    const storedHaptics = stored.haptics ?? {};
+    const { intifaceUrl, autoConnect, ...cleanHaptics } = storedHaptics as Record<string, unknown>;
     return {
       ...initial,
       general: { ...initial.general, ...stored.general },
@@ -128,6 +145,7 @@ class PreferencesStore {
       channels: stored.channels ? { ...initial.channels, ...stored.channels } : initial.channels,
       editor: { ...initial.editor, ...stored.editor },
       midi: { ...initial.midi, ...stored.midi },
+      haptics: { ...initial.haptics, ...cleanHaptics },
     };
   }
 
@@ -147,6 +165,8 @@ class PreferencesStore {
         return { ...state, editor: { ...state.editor, accessibilityMode: action.data } };
       case PrefActionType.SetMidi:
         return { ...state, midi: action.data };
+      case PrefActionType.SetHaptics:
+        return { ...state, haptics: action.data };
       default:
         return state;
     }

@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import MudClient from "./client";
+import { hapticsService } from "./HapticsService";
+import { GamepadBackend } from "./haptics/GamepadBackend";
+import { ButtplugWasmBackend, createRealWasmDeps } from "./haptics/ButtplugWasmBackend";
 import { virtualMidiService } from "./VirtualMidiService";
+import { usePreferences } from "./hooks/usePreferences";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
 import PreferencesDialog, {
@@ -27,6 +31,7 @@ import {
   GMCPCharStatusTimers,
   GMCPClientFile,
   GMCPClientFileTransfer,
+  GMCPClientHaptics,
   GMCPClientHtml,
   GMCPClientKeystrokes,
   GMCPClientMedia,
@@ -63,6 +68,8 @@ function App() {
   const sidebarRef = React.useRef<SidebarRef | null>(null); // Add ref for Sidebar
 
   const clientInitialized = useRef(false);
+  const wasmBackendLoaded = useRef(false);
+  const [preferences] = usePreferences();
 
   const saveLog = () => {
     if (outRef.current) {
@@ -116,6 +123,7 @@ function App() {
     newClient.registerGMCPPackage(GMCPLogging);
     newClient.registerGMCPPackage(GMCPRedirect);
     newClient.registerGMCPPackage(GMCPRoom);
+    newClient.registerGMCPPackage(GMCPClientHaptics);
     // MCP Packages
     newClient.registerMcpPackage(McpAwnsStatus);
     newClient.registerMcpPackage(McpSimpleEdit);
@@ -157,6 +165,11 @@ function App() {
       console.error("Error initializing virtual MIDI synthesizer:", error);
     });
 
+    // Register gamepad backend (always available, zero config)
+    const gamepadBackend = new GamepadBackend();
+    hapticsService.registerBackend(gamepadBackend);
+    gamepadBackend.connect();
+
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!newClient) return;
@@ -171,6 +184,8 @@ function App() {
         if (midiPackage) {
           (midiPackage as any).sendAllNotesOff();
         }
+        // Emergency stop all haptic devices
+        hapticsService.emergencyStop();
       }
     };
 
@@ -188,6 +203,30 @@ function App() {
       document.removeEventListener("focus", handleFocus);
     };
   }, [isMobile]); // Keep client initialization separate
+
+  // Load WASM buttplug backend when haptics is enabled (lazy — avoids 5MB download when disabled)
+  useEffect(() => {
+    if (!preferences.haptics.enabled) return;
+    if (wasmBackendLoaded.current) return;
+    wasmBackendLoaded.current = true;
+
+    let cancelled = false;
+    createRealWasmDeps()
+      .then((deps) => {
+        if (cancelled) return;
+        const buttplugBackend = new ButtplugWasmBackend(deps);
+        hapticsService.registerBackend(buttplugBackend);
+        console.log("ButtplugWasmBackend registered (WASM loaded)");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("Failed to load buttplug WASM backend:", err);
+        // Allow retry on next enable
+        wasmBackendLoaded.current = false;
+      });
+
+    return () => { cancelled = true; };
+  }, [preferences.haptics.enabled]);
 
   // Effect for CTRL + Number shortcut
   useEffect(() => {
