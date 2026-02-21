@@ -60,8 +60,8 @@ export const useChannelHistory = (client: MudClient | null) => {
       const saved = localStorage.getItem("channelHistory");
       if (saved) {
         const parsed = JSON.parse(saved);
-        const loadedBuffers = new Map(
-          parsed.bufferOrder.map((name: string) => [
+        const loadedBuffers = new Map<string, Buffer>(
+          parsed.bufferOrder.map((name: string): [string, Buffer] => [
             name,
             parsed.buffers[name] || { name, messages: [], currentIndex: 0 }
           ])
