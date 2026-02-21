@@ -93,15 +93,15 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
 
   const handleSend = useCallback(() => {
     const currentInput = inputState.text;
+    onSend(currentInput);
     if (currentInput.trim()) {
-      onSend(currentInput);
       commandHistoryRef.current.addCommand(currentInput);
       saveHistory();
-      clearInputText();
-      inputRef.current?.focus();
-      resetCompletionState(); // Explicitly reset on send
     }
-  }, [inputState.text, onSend, inputRef, resetCompletionState]); // Added resetCompletionState
+    clearInputText();
+    inputRef.current?.focus();
+    resetCompletionState();
+  }, [inputState.text, onSend, inputRef, resetCompletionState]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const commandHistory = commandHistoryRef.current;
