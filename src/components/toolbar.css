@@ -174,3 +174,64 @@
   transform: translateX(14px);
   background: white;
 }
+
+/* === Mobile toolbar === */
+@media (max-width: 768px) {
+  .toolbar {
+    flex-wrap: wrap;
+    padding: var(--space-1);
+    gap: var(--space-1);
+    overflow-x: visible;
+    margin-bottom: var(--space-2);
+  }
+
+  /* Hide text labels — icon-only on mobile */
+  .toolbar .toolbar-label {
+    display: none;
+  }
+
+  /* Keep text visible on connect/disconnect (no icon) */
+  .toolbar .btn-connect .toolbar-label,
+  .toolbar .btn-disconnect .toolbar-label {
+    display: inline;
+  }
+
+  /* Hide separators and spacer */
+  .toolbar .toolbar-separator,
+  .toolbar .toolbar-spacer {
+    display: none;
+  }
+
+  /* Reorder: connection first, sidebar toggle second */
+  .toolbar .toolbar-connection {
+    order: -2;
+  }
+
+  .toolbar .toolbar-sidebar-toggle {
+    order: -1;
+  }
+
+  /* Touch-friendly sizing */
+  .toolbar button,
+  .toolbar .toolbar-btn {
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
+    padding: var(--space-1);
+  }
+
+  /* Keep volume slider compact */
+  .toolbar-volume {
+    min-width: 0;
+  }
+
+  .toolbar-volume input[type="range"] {
+    width: 60px;
+  }
+
+  /* Compact toggle */
+  .toolbar-toggle {
+    min-height: 44px;
+    align-items: center;
+  }
+}

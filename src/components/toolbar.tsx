@@ -74,17 +74,17 @@ const Toolbar = ({
     <div className="toolbar">
       {/* Log buttons group */}
       <div className="toolbar-group">
-        <button onClick={onSaveLog} accessKey="l">
+        <button onClick={onSaveLog} accessKey="l" aria-label="Save Log" title="Save Log">
           <FaSave />
-          Save Log
+          <span className="toolbar-label">Save Log</span>
         </button>
-        <button onClick={onCopyLog} accessKey="C">
+        <button onClick={onCopyLog} accessKey="C" aria-label="Copy Log" title="Copy Log">
           <FaCopy />
-          Copy Log
+          <span className="toolbar-label">Copy Log</span>
         </button>
-        <button onClick={onClearLog} accessKey="E">
+        <button onClick={onClearLog} accessKey="E" aria-label="Clear Log" title="Clear Log">
           <FaEraser />
-          Clear Log
+          <span className="toolbar-label">Clear Log</span>
         </button>
       </div>
 
@@ -92,9 +92,9 @@ const Toolbar = ({
 
       {/* Preferences group */}
       <div className="toolbar-group">
-        <button onClick={onOpenPrefs} accessKey="p">
+        <button onClick={onOpenPrefs} accessKey="p" aria-label="Preferences" title="Preferences">
           <FaCog />
-          Preferences
+          <span className="toolbar-label">Preferences</span>
         </button>
       </div>
 
@@ -105,12 +105,14 @@ const Toolbar = ({
         <button
           onClick={handleMuteToggle}
           accessKey="M"
+          aria-label={muted ? "Unmute" : "Mute"}
+          title={muted ? "Unmute" : "Mute"}
         >
           {muted ? <FaVolumeUp /> : <FaVolumeMute />}
-          {muted ? "Unmute" : "Mute"}
+          <span className="toolbar-label">{muted ? "Unmute" : "Mute"}</span>
         </button>
         <label className="toolbar-volume">
-          Volume
+          <span className="toolbar-label">Volume</span>
           <input
             type="range"
             min="0"
@@ -118,6 +120,7 @@ const Toolbar = ({
             value={volume * 100}
             onChange={handleVolumeChange}
             accessKey="V"
+            aria-label="Volume"
           />
         </label>
       </div>
@@ -128,11 +131,12 @@ const Toolbar = ({
       <div className="toolbar-group">
         <label className="toolbar-toggle">
           <FaCommentDots />
-          Autosay
+          <span className="toolbar-label">Autosay</span>
           <input
             type="checkbox"
             checked={autosay}
             onChange={handleAutosayChange}
+            aria-label="Toggle autosay"
           />
         </label>
       </div>
@@ -140,12 +144,14 @@ const Toolbar = ({
       <div className="toolbar-separator" />
 
       {/* Connect/Disconnect group */}
-      <div className="toolbar-group">
+      <div className="toolbar-group toolbar-connection">
         <button
           className={connected ? 'btn-disconnect' : 'btn-connect'}
           onClick={handleConnectionToggle}
+          aria-label={connected ? 'Disconnect' : 'Connect'}
+          title={connected ? 'Disconnect' : 'Connect'}
         >
-          {connected ? 'Disconnect' : 'Connect'}
+          <span className="toolbar-label">{connected ? 'Disconnect' : 'Connect'}</span>
         </button>
       </div>
 
@@ -153,6 +159,7 @@ const Toolbar = ({
 
       {/* Sidebar toggle */}
       <button
+        className="toolbar-sidebar-toggle"
         onClick={onToggleSidebar}
         accessKey="U"
         title={showSidebar ? "Hide Sidebar (Alt+U)" : "Show Sidebar (Alt+U)"}
@@ -160,7 +167,7 @@ const Toolbar = ({
         aria-expanded={showSidebar}
       >
         {showSidebar ? <FaChevronRight /> : <FaChevronLeft />}
-        {showSidebar ? "Hide" : "Show"}
+        <span className="toolbar-label">{showSidebar ? "Hide" : "Show"}</span>
       </button>
     </div>
   );

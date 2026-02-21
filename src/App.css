@@ -360,6 +360,13 @@ footer[role="contentinfo"] {
     div[role="region"][aria-label="Command input"] {
         padding-bottom: 0;
     }
+
+    /* Shorter sidebar on small phones */
+    @media (max-height: 700px) {
+        aside {
+            max-height: 30vh;
+        }
+    }
 }
 
 /* === BUTTON SYSTEM === */
