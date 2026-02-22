@@ -11,7 +11,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        globIgnores: ['**/buttplug_wasm-*.js']
+        globIgnores: ['**/buttplug_wasm-*.js', '**/wasm/**', '**/wasm-worker.js']
       },
       manifest: {
         theme_color: '#000000'

@@ -1,10 +1,12 @@
 import {
+  Stream,
   TelnetCommand,
   TelnetOption,
   TelnetParser,
   WebSocketStream,
 } from "./telnet";
 
+import { Buffer } from "buffer";
 import { EventEmitter } from "eventemitter3";
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
@@ -48,6 +50,8 @@ class MudClient extends EventEmitter {
   private telnet!: TelnetParser;
   private _connected: boolean = false;
   private intentionalDisconnect: boolean = false;
+  private localMode: boolean = false;
+  private localStream?: Stream;
 
   get connected(): boolean {
     return this._connected;
@@ -324,8 +328,74 @@ class MudClient extends EventEmitter {
     };
   }
 
+  /**
+   * Connect using a local Stream (e.g. WorkerStream for WASM mode).
+   * Sets up the telnet parser with the provided stream instead of
+   * creating a WebSocket.
+   */
+  public connectLocal(stream: Stream) {
+    this.localMode = true;
+    this.localStream = stream;
+    this.intentionalDisconnect = false;
+    this.telnet = new TelnetParser(stream);
+
+    this.telnet.on("data", (data: ArrayBuffer) => {
+      this.handleData(data);
+    });
+
+    // The WASM server does not send telnet negotiation (no IAC sequences),
+    // so these handlers are unlikely to fire — but wire them up anyway
+    // for correctness.
+    this.telnet.on("negotiation", (command, option) => {
+      if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
+        console.log("GMCP Negotiation (local)");
+        this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
+        (this.gmcpHandlers["Core"] as GMCPCore).sendHello();
+        (this.gmcpHandlers["Core.Supports"] as GMCPCoreSupports).sendSet();
+        (this.gmcpHandlers["Auth.Autologin"] as GMCPAutoLogin).sendLogin();
+      } else if (
+        command === TelnetCommand.DO &&
+        option === TelnetOption.TERMINAL_TYPE
+      ) {
+        console.log("TTYPE Negotiation (local)");
+        this.telnet.sendNegotiation(
+          TelnetCommand.WILL,
+          TelnetOption.TERMINAL_TYPE
+        );
+        this.telnet.sendTerminalType("Mongoose Client");
+        this.telnet.sendTerminalType("ANSI");
+        this.telnet.sendTerminalType("PROXY");
+      }
+    });
+
+    this.telnet.on("gmcp", (packageName, data) => {
+      console.log("GMCP Package (local):", packageName, data);
+      try {
+        this.handleGmcpData(packageName, data);
+      } catch (e) {
+        console.error("Calling GMCP:", e);
+      }
+    });
+
+    stream.on("close", () => {
+      this.cleanupConnection();
+    });
+
+    // Mark as connected immediately — the worker will send the "connected"
+    // message once the virtual connection is created.
+    this._connected = true;
+    midiService.resetIntentionalDisconnectFlags();
+    this.emit("connect");
+    this.emit("connectionChange", true);
+  }
+
   public send(data: string) {
-    this.ws.send(data);
+    if (this.localMode && this.localStream) {
+      // In local mode, write through the stream (WorkerStream -> Worker)
+      this.localStream.write(Buffer.from(data));
+    } else {
+      this.ws.send(data);
+    }
   }
 
   private cleanupConnection(): void {

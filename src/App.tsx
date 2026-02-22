@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import MudClient from "./client";
+import { WorkerStream } from "./WorkerStream";
 import { hapticsService } from "./HapticsService";
 import { GamepadBackend } from "./haptics/GamepadBackend";
 import { ButtplugWasmBackend, createRealWasmDeps } from "./haptics/ButtplugWasmBackend";
@@ -131,14 +132,72 @@ function App() {
     newClient.registerMcpPackage(McpSimpleEdit);
     newClient.registerMcpPackage(McpVmooUserlist);
     newClient.registerMcpPackage(McpAwnsPing);
-    newClient.connect();
-    newClient.requestNotificationPermission();
-    
-    // Check for URL parameters for auto-login (useful for testing/e2e)
+    // Check for URL parameters
     const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode');
+
+    if (mode === 'local') {
+      // WASM local mode: run the MOO server in a Web Worker
+      console.log("[WASM] Starting local mode...");
+      const worker = new Worker("/wasm-worker.js");
+      const stream = new WorkerStream(worker);
+
+      // Listen for worker status messages
+      worker.addEventListener("message", (e: MessageEvent) => {
+        const msg = e.data;
+        if (msg.type === "log") {
+          console.log("[WASM server]", msg.data);
+        } else if (msg.type === "error") {
+          console.error("[WASM error]", msg.message);
+        } else if (msg.type === "ready") {
+          console.log("[WASM] Server is listening, connecting...");
+        } else if (msg.type === "connected") {
+          console.log("[WASM] Virtual connection established, connId:", msg.connId);
+        } else if (msg.type === "saved") {
+          console.log("[WASM] Database saved, size:", msg.data.byteLength);
+          // Offer the saved DB as a download
+          const blob = new Blob([msg.data], { type: "application/octet-stream" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "server.db";
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      });
+
+      // Fetch the database file and boot the server
+      fetch("/wasm/Minimal.db")
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to fetch Minimal.db: " + res.status);
+          return res.arrayBuffer();
+        })
+        .then((dbBuffer) => {
+          console.log("[WASM] Database loaded, size:", dbBuffer.byteLength);
+          worker.postMessage({
+            type: "start",
+            dbData: new Uint8Array(dbBuffer),
+          });
+        })
+        .catch((err) => {
+          console.error("[WASM] Failed to load database:", err);
+        });
+
+      // Connect the client using the worker stream
+      newClient.connectLocal(stream);
+
+      // Store worker reference on window for debugging / save button
+      (window as any).wasmWorker = worker;
+    } else {
+      // Normal WebSocket mode
+      newClient.connect();
+    }
+
+    newClient.requestNotificationPermission();
+
     const username = urlParams.get('username');
     const password = urlParams.get('password');
-    
+
     if (username && password) {
       // Auto-login when connected
       newClient.once('connect', () => {
