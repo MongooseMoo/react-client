@@ -51,6 +51,7 @@ interface State {
   sidebarVisible: boolean;
   newLinesCount: number; // Added to track the count of new lines
   localEchoActive: boolean; // To store the current local echo preference
+  focusedLineIndex: number | null; // Index of currently focused line for keyboard navigation
 }
 
 // Add a small threshold for scroll calculations to handle browser differences
@@ -72,6 +73,7 @@ class Output extends React.Component<Props, State> {
       sidebarVisible: false,
       newLinesCount: 0,
       localEchoActive: preferencesStore.getState().general.localEcho,
+      focusedLineIndex: null,
     };
   }
 
@@ -549,6 +551,132 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     }
   }
 
+  /**
+   * Scroll focused line into view
+   */
+  scrollFocusedLineIntoView = () => {
+    if (this.state.focusedLineIndex === null) return;
+
+    // Use setTimeout to ensure DOM has updated
+    setTimeout(() => {
+      const outputDiv = this.outputRef.current;
+      if (!outputDiv) return;
+
+      const focusedElement = outputDiv.querySelector(`[data-line-index="${this.state.focusedLineIndex}"]`);
+      if (focusedElement) {
+        focusedElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      }
+    }, 0);
+  };
+
+  /**
+   * Handle keyboard navigation through output lines
+   */
+  handleOutputKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Suppress Alt+Arrow and Alt+letter so browser defaults
+    // don't interfere with app-level keybindings
+    if (e.altKey && (
+      e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+      'ijklwasdchtnoe,'.includes(e.key.toLowerCase()) ||
+      'IJKLWASDCHTNOE'.split('').some(c => e.code === `Key${c}`) || e.code === 'Comma'
+    )) {
+      e.preventDefault();
+      return;
+    }
+    if (e.altKey && e.code === 'Space') {
+      e.preventDefault();
+      return;
+    }
+
+    const visibleOutput = this.state.output.filter(
+      line => this.state.localEchoActive || line.type !== OutputType.Command
+    );
+
+    if (visibleOutput.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        this.setState(prevState => {
+          const currentIndex = prevState.focusedLineIndex ?? -1;
+          const nextIndex = Math.min(currentIndex + 1, visibleOutput.length - 1);
+          this.announceOutputLine(visibleOutput[nextIndex]);
+          return { focusedLineIndex: nextIndex };
+        }, this.scrollFocusedLineIntoView);
+        break;
+
+      case 'ArrowUp':
+        e.preventDefault();
+        this.setState(prevState => {
+          const currentIndex = prevState.focusedLineIndex ?? visibleOutput.length;
+          const prevIndex = Math.max(currentIndex - 1, 0);
+          this.announceOutputLine(visibleOutput[prevIndex]);
+          return { focusedLineIndex: prevIndex };
+        }, this.scrollFocusedLineIntoView);
+        break;
+
+      case 'Home':
+        e.preventDefault();
+        this.setState({ focusedLineIndex: 0 }, () => {
+          this.announceOutputLine(visibleOutput[0]);
+          this.scrollFocusedLineIntoView();
+        });
+        break;
+
+      case 'End':
+        e.preventDefault();
+        const lastIndex = visibleOutput.length - 1;
+        this.setState({ focusedLineIndex: lastIndex }, () => {
+          this.announceOutputLine(visibleOutput[lastIndex]);
+          this.scrollFocusedLineIntoView();
+        });
+        break;
+    }
+  };
+
+  /**
+   * Announce output line to screen readers
+   */
+  announceOutputLine = (line: OutputLine) => {
+    if (!line) return;
+
+    // Extract text content from the JSX element
+    const tempDiv = document.createElement('div');
+    const html = ReactDOMServer.renderToStaticMarkup(line.content);
+    tempDiv.innerHTML = html;
+    const textContent = tempDiv.textContent || tempDiv.innerText || '';
+
+    // Announce to screen reader
+    announce(textContent, 'polite');
+  };
+
+  /**
+   * Handle focus on output area
+   */
+  handleOutputFocus = () => {
+    // If no line is focused, start at the last line
+    if (this.state.focusedLineIndex === null) {
+      const visibleOutput = this.state.output.filter(
+        line => this.state.localEchoActive || line.type !== OutputType.Command
+      );
+      if (visibleOutput.length > 0) {
+        const lastIndex = visibleOutput.length - 1;
+        this.setState({ focusedLineIndex: lastIndex });
+      }
+    }
+  };
+
+  /**
+   * Handle blur on output area
+   */
+  handleOutputBlur = () => {
+    // Optionally clear focus indicator when tabbing away
+    // this.setState({ focusedLineIndex: null });
+  };
+
   render() {
     var classname = "output";
     if (this.state.sidebarVisible) {
@@ -558,16 +686,34 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     const newLinesText = `${this.state.newLinesCount} new ${this.state.newLinesCount === 1 ? "message" : "messages"
       }`;
 
+    const visibleOutput = this.state.output.filter(
+      line => this.state.localEchoActive || line.type !== OutputType.Command
+    );
+
     return (
       <div
         ref={this.outputRef}
         className={classname}
         onScroll={this.handleScroll}
-        onClick={this.handleDataTextClick} // Add the click handler here
+        onClick={this.handleDataTextClick}
+        onKeyDown={this.handleOutputKeyDown}
+        onFocus={this.handleOutputFocus}
+        onBlur={this.handleOutputBlur}
+        tabIndex={0}
+        role="log"
+        aria-label="Game output log - use arrow keys to navigate"
+        aria-live="polite"
+        aria-atomic="false"
       >
-        {this.state.output
-          .filter(line => this.state.localEchoActive || line.type !== OutputType.Command)
-          .map(line => line.content)}
+        {visibleOutput.map((line, index) => (
+          <div
+            key={line.id}
+            className={`output-line ${this.state.focusedLineIndex === index ? 'focused-line' : ''}`}
+            data-line-index={index}
+          >
+            {line.content}
+          </div>
+        ))}
         {this.state.newLinesCount > 0 && (
           <div
             className="new-lines-notification"

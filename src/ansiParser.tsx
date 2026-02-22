@@ -1,3 +1,4 @@
+import React from "react";
 import Anser, { AnserJsonEntry } from "anser";
 
 export function parseToElements(
@@ -13,7 +14,7 @@ export function parseToElements(
             const newElements = convertBundleIntoReact(bundle, onExitClick);
             children = [...children, ...newElements];
         }
-        elements = [...elements, <span key={elements.length}>{children}</span>];
+        elements = [...elements, <React.Fragment key={elements.length}>{children}</React.Fragment>];
     }
     return elements;
 }
@@ -90,7 +91,11 @@ function convertBundleIntoReact(
     if (index < bundle.content.length) {
         content.push(bundle.content.substring(index));
     }
-    return content.map((c) => <span style={style} key={keyCounter++}>{c}</span>);
+    const hasStyle = Object.keys(style).length > 0;
+    return content.map((c) => hasStyle
+        ? <span style={style} key={keyCounter++}>{c}</span>
+        : <React.Fragment key={keyCounter++}>{c}</React.Fragment>
+    );
 }
 
 /**
