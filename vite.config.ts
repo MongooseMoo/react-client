@@ -11,7 +11,21 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        globIgnores: ['**/buttplug_wasm-*.js', '**/wasm/**', '**/wasm-worker.js']
+        globIgnores: ['**/buttplug_wasm-*.js', '**/wasm/**', '**/wasm-worker.js'],
+        runtimeCaching: [{
+          urlPattern: /\/wasm\/.*/,
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'wasm-assets',
+            expiration: {
+              maxEntries: 10,
+              maxAgeSeconds: 30 * 24 * 60 * 60
+            },
+            cacheableResponse: {
+              statuses: [0, 200]
+            }
+          }
+        }]
       },
       manifest: {
         theme_color: '#000000'
