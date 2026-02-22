@@ -46,6 +46,7 @@ import {
   GMCPRedirect, // Added
   GMCPRoom, // Added
 } from "./gmcp";
+import { useChannelHistory } from "./hooks/useChannelHistory";
 import { FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
 import {
   McpAwnsPing,
@@ -61,6 +62,7 @@ function App() {
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] =
     useState<boolean>(false);
+  useChannelHistory(client);
   const players = useClientEvent<"userlist">(client, "userlist", []) || [];
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { PrefActionType } from "../PreferencesStore";
+import { PrefActionType, NavigationKeyScheme } from "../PreferencesStore";
 import { usePreferences } from "../hooks/usePreferences";
 import { useVoices } from "../hooks/useVoices";
 import { midiService, MidiDevice } from "../MidiService";
@@ -170,7 +170,7 @@ const PreviewButton: React.FC = () => {
       if (!isMounted.current) return; // Don't proceed if unmounted
 
       const utterance = new SpeechSynthesisUtterance("This is a preview of the selected voice settings.");
-      
+
       // Find the selected voice
       const voices = speechSynthesis.getVoices();
       console.log("Available voices:", voices.map(v => v.name));
@@ -354,7 +354,7 @@ const MidiTab: React.FC = () => {
       </label>
       <br />
       <br />
-      
+
       {state.midi.enabled && (
         <p style={{ color: "#666", fontSize: "0.9em" }}>
           Device selection and management is available in the MIDI tab when connected to a server.
@@ -430,12 +430,42 @@ const HapticsTab: React.FC = () => {
   );
 };
 
+const KeyboardTab: React.FC = () => {
+  const [state, dispatch] = usePreferences();
+
+  return (
+    <div>
+      <label>
+        Buffer Navigation Keys:
+        <select
+          value={state.keyboard.navigationKeyScheme}
+          onChange={(e) =>
+            dispatch({
+              type: PrefActionType.SetKeyboard,
+              data: { navigationKeyScheme: e.target.value as NavigationKeyScheme },
+            })
+          }
+        >
+          <option value="jkli">JKLI (QWERTY right-hand)</option>
+          <option value="wasd">WASD (QWERTY left-hand)</option>
+          <option value="dvorak-rh">HTNC (Dvorak right-hand)</option>
+          <option value="dvorak-lh">,OAE (Dvorak left-hand)</option>
+        </select>
+      </label>
+      <p style={{ color: "#666", fontSize: "0.9em", marginTop: "0.5em" }}>
+        Arrow keys always work in addition to the selected scheme.
+      </p>
+    </div>
+  );
+};
+
 const Preferences: React.FC = () => {
   const tabs = [
     { label: "General", content: <GeneralTab /> },
     { label: "Speech", content: <SpeechTab /> },
     { label: "Sounds", content: <SoundsTab /> },
     { label: "Editor", content: <EditorTab /> },
+    { label: "Keyboard", content: <KeyboardTab /> },
     { label: "MIDI", content: <MidiTab /> },
     { label: "Haptics", content: <HapticsTab /> },
   ];
