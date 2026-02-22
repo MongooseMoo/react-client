@@ -17,6 +17,8 @@ import PreferencesDialog, {
 import Sidebar, { SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
+import HostPanel from "./components/HostPanel";
+import JoinDialog from "./components/JoinDialog";
 import {
   GMCPAutoLogin,
   GMCPChar, // Added
@@ -63,6 +65,10 @@ function App() {
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
   const [fileTransferExpanded, setFileTransferExpanded] =
     useState<boolean>(false);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [guestCount, setGuestCount] = useState(0);
+  const [showJoinDialog, setShowJoinDialog] = useState(false);
+  const connectToRoomRef = useRef<((targetRoomId: string) => void) | null>(null);
   useChannelHistory(client);
   const players = useClientEvent<"userlist">(client, "userlist", []) || [];
   const outRef = React.useRef<OutputWindow | null>(null);
@@ -94,6 +100,18 @@ function App() {
 
   // are we on mobile?
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  // Determine mode from URL params (available to both effect and JSX)
+  const urlModeParams = React.useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    const dbUrl = params.get('db');
+    const roomParam = params.get('room');
+    const isHostMode = mode === 'host';
+    const isJoinMode = mode === 'join';
+    const isLocalMode = mode === 'local' || (dbUrl !== null && !isHostMode && !isJoinMode);
+    return { mode, dbUrl, roomParam, isHostMode, isJoinMode, isLocalMode };
+  }, []);
 
   useEffect(() => {
     if (clientInitialized.current) return;
@@ -132,30 +150,47 @@ function App() {
     newClient.registerMcpPackage(McpSimpleEdit);
     newClient.registerMcpPackage(McpVmooUserlist);
     newClient.registerMcpPackage(McpAwnsPing);
-    // Check for URL parameters
+    // Use pre-computed URL mode params
+    const { dbUrl, roomParam, isHostMode, isJoinMode, isLocalMode } = urlModeParams;
     const urlParams = new URLSearchParams(window.location.search);
-    const mode = urlParams.get('mode');
-    const dbUrl = urlParams.get('db');
-    const isLocalMode = mode === 'local' || dbUrl !== null;
 
-    if (isLocalMode) {
-      // WASM local mode: run the MOO server in a Web Worker
+    if (isLocalMode || isHostMode) {
+      // WASM mode: run the MOO server in a Web Worker (local or host)
       const fetchUrl = dbUrl || '/wasm/Minimal.db';
-      console.log("[WASM] Starting local mode, db:", fetchUrl);
+      console.log(`[WASM] Starting ${isHostMode ? 'host' : 'local'} mode, db:`, fetchUrl);
       const worker = new Worker("/wasm-worker.js");
       const stream = new WorkerStream(worker);
 
       // Listen for worker status messages
-      worker.addEventListener("message", (e: MessageEvent) => {
+      worker.addEventListener("message", async (e: MessageEvent) => {
         const msg = e.data;
         if (msg.type === "log") {
           console.log("[WASM server]", msg.data);
         } else if (msg.type === "error") {
           console.error("[WASM error]", msg.message);
         } else if (msg.type === "ready") {
-          console.log("[WASM] Server is listening, connecting...");
-        } else if (msg.type === "connected") {
-          console.log("[WASM] Virtual connection established, connId:", msg.connId);
+          console.log("[WASM] Server is listening");
+          // In host mode, lazily load WebRTC modules and start hosting
+          if (isHostMode) {
+            try {
+              const [{ PeerService }, { MultiUserManager }] = await Promise.all([
+                import('./PeerService'),
+                import('./MultiUserManager')
+              ]);
+              const peerSvc = new PeerService();
+              const mum = new MultiUserManager(worker);
+              const hostRoomId = await peerSvc.hostSession();
+              setRoomId(hostRoomId);
+              console.log("[WebRTC] Hosting session, room:", hostRoomId);
+              peerSvc.onGuestConnected(async (conn) => {
+                await mum.addGuest(conn);
+                setGuestCount(mum.getGuestCount());
+                conn.on('close', () => setGuestCount(mum.getGuestCount()));
+              });
+            } catch (err) {
+              console.error("[WebRTC] Failed to start host session:", err);
+            }
+          }
         } else if (msg.type === "saved") {
           console.log("[WASM] Database saved, size:", msg.data.byteLength);
           // Offer the saved DB as a download
@@ -186,11 +221,40 @@ function App() {
           console.error("[WASM] Failed to load database:", err);
         });
 
-      // Connect the client using the worker stream
+      // Connect the host client using the worker stream
       newClient.connectLocal(stream);
 
       // Store worker reference on window for debugging / save button
       (window as any).wasmWorker = worker;
+    } else if (isJoinMode) {
+      // Guest mode: connect to a host via WebRTC
+      const connectToRoom = async (targetRoomId: string) => {
+        try {
+          console.log("[WebRTC] Joining room:", targetRoomId);
+          const [{ PeerService }, { GuestStream }] = await Promise.all([
+            import('./PeerService'),
+            import('./GuestStream')
+          ]);
+          const peerSvc = new PeerService();
+          const conn = await peerSvc.joinSession(targetRoomId);
+          const guestStream = new GuestStream(conn);
+          newClient.connectLocal(guestStream);
+          console.log("[WebRTC] Connected to host");
+        } catch (err) {
+          console.error("[WebRTC] Failed to join session:", err);
+        }
+      };
+      connectToRoomRef.current = (targetRoomId: string) => {
+        setShowJoinDialog(false);
+        connectToRoom(targetRoomId);
+      };
+
+      if (roomParam) {
+        connectToRoom(roomParam);
+      } else {
+        // Show JoinDialog for user to enter room ID
+        setShowJoinDialog(true);
+      }
     } else {
       // Normal WebSocket mode
       newClient.connect();
@@ -266,7 +330,7 @@ function App() {
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
     };
-  }, [isMobile]); // Keep client initialization separate
+  }, [isMobile, urlModeParams]); // Keep client initialization separate
 
   // Load WASM buttplug backend when haptics is enabled (lazy — avoids 5MB download when disabled)
   useEffect(() => {
@@ -384,10 +448,17 @@ function App() {
           showSidebar={showSidebar}
         />
       </header>
+      {urlModeParams.isHostMode && <HostPanel roomId={roomId} guestCount={guestCount} />}
+      {showJoinDialog && connectToRoomRef.current ? (
+        <main role="main" style={{ gridArea: "main" }}>
+          <JoinDialog onJoin={connectToRoomRef.current} />
+        </main>
+      ) : (
       <main role="main" style={{ gridArea: "main" }}>
         {/* Pass the focusInput function down to OutputWindow */}
         <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
       </main>
+      )}
       <div
         role="region"
         aria-label="Command input"
