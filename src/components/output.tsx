@@ -598,25 +598,27 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     if (visibleOutput.length === 0) return;
 
     switch (e.key) {
-      case 'ArrowDown':
+      case 'ArrowDown': {
         e.preventDefault();
-        this.setState(prevState => {
-          const currentIndex = prevState.focusedLineIndex ?? -1;
-          const nextIndex = Math.min(currentIndex + 1, visibleOutput.length - 1);
+        const currentIndex = this.state.focusedLineIndex ?? -1;
+        const nextIndex = Math.min(currentIndex + 1, visibleOutput.length - 1);
+        this.setState({ focusedLineIndex: nextIndex }, () => {
           this.announceOutputLine(visibleOutput[nextIndex]);
-          return { focusedLineIndex: nextIndex };
-        }, this.scrollFocusedLineIntoView);
+          this.scrollFocusedLineIntoView();
+        });
         break;
+      }
 
-      case 'ArrowUp':
+      case 'ArrowUp': {
         e.preventDefault();
-        this.setState(prevState => {
-          const currentIndex = prevState.focusedLineIndex ?? visibleOutput.length;
-          const prevIndex = Math.max(currentIndex - 1, 0);
+        const currentIndex = this.state.focusedLineIndex ?? visibleOutput.length;
+        const prevIndex = Math.max(currentIndex - 1, 0);
+        this.setState({ focusedLineIndex: prevIndex }, () => {
           this.announceOutputLine(visibleOutput[prevIndex]);
-          return { focusedLineIndex: prevIndex };
-        }, this.scrollFocusedLineIntoView);
+          this.scrollFocusedLineIntoView();
+        });
         break;
+      }
 
       case 'Home':
         e.preventDefault();
@@ -700,10 +702,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         onFocus={this.handleOutputFocus}
         onBlur={this.handleOutputBlur}
         tabIndex={0}
-        role="log"
         aria-label="Game output log - use arrow keys to navigate"
-        aria-live="polite"
-        aria-atomic="false"
       >
         {visibleOutput.map((line, index) => (
           <div
