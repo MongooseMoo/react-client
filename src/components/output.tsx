@@ -700,10 +700,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         onFocus={this.handleOutputFocus}
         onBlur={this.handleOutputBlur}
         tabIndex={0}
-        role="log"
         aria-label="Game output log - use arrow keys to navigate"
-        aria-live="polite"
-        aria-atomic="false"
       >
         {visibleOutput.map((line, index) => (
           <div
