@@ -20,80 +20,50 @@ describe("Output", () => {
   describe("parseToElements", () => {
     describe("plain text", () => {
       testRenderedMarkup("test",
-        <span key="0">
-          <span style={{}}>test</span>
-        </span>
+        <>test</>
       );
     });
 
     describe("links", () => {
       testRenderedMarkup("https://www.google.com",
-        <span key="0">
-          <span style={{}}>
-            <a href="https://www.google.com" target="_blank" rel="noreferrer">
-              https://www.google.com
-            </a>
-          </span>
-        </span>
+        <>
+          <a href="https://www.google.com" target="_blank" rel="noreferrer">
+            https://www.google.com
+          </a>
+        </>
       );
 
       testRenderedMarkup("bob@gmail.com",
-        <span key="0">
-          <span style={{}}>
-            <a href="mailto:bob@gmail.com" target="_blank" rel="noreferrer">
-              bob@gmail.com
-            </a>
-          </span>
-        </span>
+        <>
+          <a href="mailto:bob@gmail.com" target="_blank" rel="noreferrer">
+            bob@gmail.com
+          </a>
+        </>
       );
     });
 
     describe("formatting", () => {
       testRenderedMarkup(
         "This is a sentence with a bold word: \x1b[1mbold\x1b[0m",
-
-        <span key="0">
-          <span>This is a sentence with a bold word: </span>
-          <span style={{ fontWeight: "bold" }}>bold</span>
-        </span>
+        <>This is a sentence with a bold word: <span style={{ fontWeight: "bold" }}>bold</span></>
       );
 
       testRenderedMarkup(
         "This is a sentence with an underlined word: \x1b[4munderlined\x1b[0m",
-
-        <span key="0">
-          <span style={{}}>This is a sentence with an underlined word: </span>
-          <span style={{ textDecoration: "underline" }}>underlined</span>
-        </span>
-
+        <>This is a sentence with an underlined word: <span style={{ textDecoration: "underline" }}>underlined</span></>
       );
       testRenderedMarkup(
         "This is a sentence with a red word: \x1b[31mred\x1b[0m",
-
-        <span key="0">
-          <span style={{}}>This is a sentence with a red word: </span>
-          <span style={{ color: "rgb(187, 0, 0)" }}>red</span>
-        </span>
-
+        <>This is a sentence with a red word: <span style={{ color: "rgb(187, 0, 0)" }}>red</span></>
       );
       testRenderedMarkup(
         "This is a sentence with a blue background: \x1b[44mblue background\x1b[0m",
-
-        <span key="0">
-          <span style={{}}>This is a sentence with a blue background: </span>
-          <span style={{ backgroundColor: "rgb(0, 0, 187)" }}>
-            blue background
-          </span>
-        </span>
-
+        <>This is a sentence with a blue background: <span style={{ backgroundColor: "rgb(0, 0, 187)" }}>blue background</span></>
       );
 
       testRenderedMarkup(
         'This is a sentence with a bold, underlined, and red word: \x1b[1;4;31mbold, underlined, and red\x1b[0m',
-        <span key="0">
-          <span style={{}}>This is a sentence with a bold, underlined, and red word: </span>
-          <span style={{ color: "rgb(187, 0, 0)", textDecoration: "underline" }}>bold, underlined, and red</span>
-        </span>
+        <>This is a sentence with a bold, underlined, and red word: <span style={{ color: "rgb(187, 0, 0)", textDecoration: "underline" }}>bold, underlined, and red</span></>
       )
     });
 
