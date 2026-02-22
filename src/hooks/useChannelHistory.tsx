@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { announce } from "@react-aria/live-announcer";
+import Anser from "anser";
 import MudClient from "../client";
 import { preferencesStore, NavigationKeyScheme } from "../PreferencesStore";
 
@@ -132,7 +133,9 @@ export const useChannelHistory = (client: MudClient | null) => {
   // Handle regular messages
   const handleMessage = (message: string) => {
     if (!message.trim()) return;
-    addMessageToBuffer("all", message);
+    // Strip ANSI codes before storing
+    const plainText = Anser.ansiToText(message);
+    addMessageToBuffer("all", plainText);
   };
 
   // Handle channel messages
@@ -372,6 +375,28 @@ export const useChannelHistory = (client: MudClient | null) => {
     });
   };
 
+  const clearBuffer = (bufferName: string) => {
+    setBuffers(prev => {
+      const newBuffers = new Map(prev);
+      const buffer = newBuffers.get(bufferName);
+      if (buffer) {
+        newBuffers.set(bufferName, {
+          ...buffer,
+          messages: [],
+          currentIndex: 0,
+        });
+      }
+      return newBuffers;
+    });
+  };
+
+  const clearAllBuffers = () => {
+    // Delete all buffers except "all", then clear "all"
+    setBuffers(new Map([["all", { name: "all", messages: [], currentIndex: 0 }]]));
+    setBufferOrder(["all"]);
+    setCurrentBufferIndex(0);
+  };
+
   // Global keyboard handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -546,5 +571,6 @@ export const useChannelHistory = (client: MudClient | null) => {
     currentBufferIndex,
     bufferOrder,
     getCurrentBuffer,
+    clearAllBuffers,
   };
 };

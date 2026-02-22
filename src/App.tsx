@@ -69,7 +69,7 @@ function App() {
   const [guestCount, setGuestCount] = useState(0);
   const [showJoinDialog, setShowJoinDialog] = useState(false);
   const connectToRoomRef = useRef<((targetRoomId: string) => void) | null>(null);
-  useChannelHistory(client);
+  const { clearAllBuffers } = useChannelHistory(client);
   const players = useClientEvent<"userlist">(client, "userlist", []) || [];
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -90,6 +90,7 @@ function App() {
     if (outRef.current) {
       outRef.current.clearLog();
     }
+    clearAllBuffers();
   };
 
   const copyLog = () => {
