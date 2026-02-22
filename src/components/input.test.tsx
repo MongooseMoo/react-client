@@ -81,14 +81,14 @@ describe('CommandInput Component', () => {
     expect((textarea as HTMLTextAreaElement).value).toBe(''); // Input should clear after sending
   });
   
-  it('does not send empty input', () => {
+  it('sends blank lines to the MOO', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
-    
+
     const textarea = screen.getByRole('textbox');
     fireEvent.change(textarea, { target: { value: '   ' } }); // Just spaces
     fireEvent.keyDown(textarea, { key: 'Enter' });
-    
-    expect(onSendMock).not.toHaveBeenCalled();
+
+    expect(onSendMock).toHaveBeenCalledWith('   ');
   });
   
   it('adds command to history when sent', () => {
