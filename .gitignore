@@ -28,3 +28,4 @@ dist/
 .aider*
 .env
 screenshots/
+public/wasm/mongoose.db
