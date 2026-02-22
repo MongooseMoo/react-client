@@ -56,10 +56,23 @@ self.onmessage = async function (e) {
         preRun: [
           function (mod) {
             // Write the database file into the virtual filesystem.
-            // Normalize CRLF line endings to LF (the MOO DB parser expects LF).
-            var text = new TextDecoder().decode(msg.dbData);
-            text = text.replace(/\r\n/g, "\n");
-            var data = new TextEncoder().encode(text);
+            var data = new Uint8Array(msg.dbData);
+            // Check if CRLF normalization is needed (scan first 1000 bytes).
+            // Only do the TextDecoder roundtrip if CRLF is actually present,
+            // which avoids overhead for large LF-only files like mongoose.db.
+            var needsCrlfFix = false;
+            var scanLen = Math.min(data.length, 1000);
+            for (var i = 0; i < scanLen; i++) {
+              if (data[i] === 0x0d && i + 1 < data.length && data[i + 1] === 0x0a) {
+                needsCrlfFix = true;
+                break;
+              }
+            }
+            if (needsCrlfFix) {
+              var text = new TextDecoder("utf-8").decode(data);
+              text = text.replace(/\r\n/g, "\n");
+              data = new TextEncoder().encode(text);
+            }
             mod.FS.writeFile("/server.db", data);
             // Create an empty .new file for checkpoint output
             mod.FS.writeFile("/server.db.new", new Uint8Array(0));

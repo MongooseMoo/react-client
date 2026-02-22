@@ -135,10 +135,13 @@ function App() {
     // Check for URL parameters
     const urlParams = new URLSearchParams(window.location.search);
     const mode = urlParams.get('mode');
+    const dbUrl = urlParams.get('db');
+    const isLocalMode = mode === 'local' || dbUrl !== null;
 
-    if (mode === 'local') {
+    if (isLocalMode) {
       // WASM local mode: run the MOO server in a Web Worker
-      console.log("[WASM] Starting local mode...");
+      const fetchUrl = dbUrl || '/wasm/Minimal.db';
+      console.log("[WASM] Starting local mode, db:", fetchUrl);
       const worker = new Worker("/wasm-worker.js");
       const stream = new WorkerStream(worker);
 
@@ -167,9 +170,9 @@ function App() {
       });
 
       // Fetch the database file and boot the server
-      fetch("/wasm/Minimal.db")
+      fetch(fetchUrl)
         .then((res) => {
-          if (!res.ok) throw new Error("Failed to fetch Minimal.db: " + res.status);
+          if (!res.ok) throw new Error("Failed to fetch " + fetchUrl + ": " + res.status);
           return res.arrayBuffer();
         })
         .then((dbBuffer) => {
