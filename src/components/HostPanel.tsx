@@ -13,6 +13,12 @@ const HostPanel: React.FC<HostPanelProps> = ({ roomId, guestCount }) => {
         navigator.clipboard.writeText(url);
     };
 
+    const resetUrl = (() => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('reset', '1');
+        return url.toString();
+    })();
+
     return (
         <div style={{
             display: 'flex',
@@ -40,6 +46,13 @@ const HostPanel: React.FC<HostPanelProps> = ({ roomId, guestCount }) => {
             >
                 Copy
             </button>
+            <a
+                href={resetUrl}
+                style={{ color: '#888', fontSize: '12px', marginLeft: '8px' }}
+                title="Reset database to original state"
+            >
+                Reset DB
+            </a>
             <span style={{ marginLeft: 'auto', color: '#888' }}>
                 {guestCount} guest{guestCount !== 1 ? 's' : ''} connected
             </span>

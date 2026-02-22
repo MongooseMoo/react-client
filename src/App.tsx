@@ -19,6 +19,7 @@ import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
 import HostPanel from "./components/HostPanel";
 import JoinDialog from "./components/JoinDialog";
+import { saveCheckpoint, loadCheckpoint, deleteCheckpoint, hashDbBytes } from './dbStorage';
 import {
   GMCPAutoLogin,
   GMCPChar, // Added
@@ -171,6 +172,11 @@ function App() {
           console.error("[WASM error]", msg.message);
         } else if (msg.type === "ready") {
           console.log("[WASM] Server is listening");
+          // Start periodic auto-save (every 5 minutes)
+          const autoSaveInterval = setInterval(() => {
+            worker.postMessage({ type: "save" });
+          }, 5 * 60 * 1000);
+          (window as any).__wasmAutoSaveInterval = autoSaveInterval;
           // In host mode, lazily load WebRTC modules and start hosting
           if (isHostMode) {
             try {
@@ -197,29 +203,46 @@ function App() {
             worker.postMessage({ type: "remote-connect" });
           }
         } else if (msg.type === "saved") {
-          console.log("[WASM] Database saved, size:", msg.data.byteLength);
-          // Offer the saved DB as a download
-          const blob = new Blob([msg.data], { type: "application/octet-stream" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "server.db";
-          a.click();
-          URL.revokeObjectURL(url);
+          const dbKey = (window as any).wasmDbKey;
+          if (dbKey && msg.data) {
+            saveCheckpoint(dbKey, new Uint8Array(msg.data))
+              .then(() => console.log('[WASM] Checkpoint saved to IndexedDB, size:', msg.data.byteLength))
+              .catch(err => console.error('[WASM] Failed to save checkpoint:', err));
+          }
         }
       });
 
-      // Fetch the database file and boot the server
+      // Fetch the database file, check IndexedDB for saved state, and boot
+      const resetParam = urlParams.get('reset');
       fetch(fetchUrl)
         .then((res) => {
           if (!res.ok) throw new Error("Failed to fetch " + fetchUrl + ": " + res.status);
           return res.arrayBuffer();
         })
-        .then((dbBuffer) => {
-          console.log("[WASM] Database loaded, size:", dbBuffer.byteLength);
+        .then(async (originalDbBuffer) => {
+          const dbKey = await hashDbBytes(originalDbBuffer);
+          let dbData: Uint8Array;
+
+          if (resetParam === '1') {
+            await deleteCheckpoint(dbKey);
+            dbData = new Uint8Array(originalDbBuffer);
+            console.log('[WASM] Reset: using original DB, cleared saved state');
+          } else {
+            const saved = await loadCheckpoint(dbKey);
+            if (saved) {
+              dbData = saved;
+              console.log('[WASM] Loaded saved checkpoint from IndexedDB');
+            } else {
+              dbData = new Uint8Array(originalDbBuffer);
+              console.log('[WASM] No saved state, using original DB');
+            }
+          }
+
+          (window as any).wasmDbKey = dbKey;
+          console.log("[WASM] Database ready, size:", dbData.byteLength, "key:", dbKey.slice(0, 12) + "...");
           worker.postMessage({
             type: "start",
-            dbData: new Uint8Array(dbBuffer),
+            dbData,
           });
         })
         .catch((err) => {
@@ -334,6 +357,9 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
+      // Clean up auto-save interval if one was started
+      const interval = (window as any).__wasmAutoSaveInterval;
+      if (interval) clearInterval(interval);
     };
   }, [isMobile, urlModeParams]); // Keep client initialization separate
 
@@ -430,6 +456,11 @@ function App() {
   useBeforeunload((event) => {
     if (client) {
       client.shutdown();
+    }
+    // Best-effort checkpoint on tab close
+    const wasmWorker = (window as any).wasmWorker;
+    if (wasmWorker) {
+      wasmWorker.postMessage({ type: "save" });
     }
   });
 
