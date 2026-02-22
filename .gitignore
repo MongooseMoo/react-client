@@ -29,3 +29,4 @@ dist/
 .env
 screenshots/
 public/wasm/mongoose.db
+public/wasm/toastcore.db
