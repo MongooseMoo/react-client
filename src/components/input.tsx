@@ -202,6 +202,14 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
     } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    } else if (e.altKey && (
+      e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight" ||
+      "ijklwasdchtnoe,".includes(e.key.toLowerCase()) ||
+      "IJKLWASDCHTNOE".split("").some(c => e.code === `Key${c}`) || e.code === "Comma"
+    )) {
+      e.preventDefault();
+    } else if (e.altKey && e.code === "Space") {
+      e.preventDefault();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       const prevCommand = commandHistory.navigateUp(currentInputText);

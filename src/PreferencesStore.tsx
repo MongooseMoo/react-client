@@ -31,6 +31,12 @@ export type EditorPreferences = {
   accessibilityMode: boolean;
 };
 
+export type NavigationKeyScheme = "jkli" | "wasd" | "dvorak-rh" | "dvorak-lh";
+
+export type KeyboardPreferences = {
+  navigationKeyScheme: NavigationKeyScheme;
+};
+
 export type MidiPreferences = {
   enabled: boolean;
   lastInputDeviceId?: string;
@@ -49,6 +55,7 @@ export type PrefState = {
   sound: SoundPreferences;
   channels?: { [channelId: string]: ChannelPreferences };
   editor: EditorPreferences;
+  keyboard: KeyboardPreferences;
   midi: MidiPreferences;
   haptics: HapticsPreferences;
 };
@@ -60,6 +67,7 @@ export enum PrefActionType {
   SetChannels = "SET_CHANNELS",
   SetEditorAutocompleteEnabled = "SET_EDITOR_AUTOCOMPLETE_ENABLED",
   SetEditorAccessibilityMode = "SET_EDITOR_ACCESSIBILITY_MODE",
+  SetKeyboard = "SET_KEYBOARD",
   SetMidi = "SET_MIDI",
   SetHaptics = "SET_HAPTICS",
 }
@@ -71,6 +79,7 @@ export type PrefAction =
   | { type: PrefActionType.SetChannels; data: { [channelId: string]: ChannelPreferences } }
   | { type: PrefActionType.SetEditorAutocompleteEnabled; data: boolean }
   | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean }
+  | { type: PrefActionType.SetKeyboard; data: KeyboardPreferences }
   | { type: PrefActionType.SetMidi; data: MidiPreferences }
   | { type: PrefActionType.SetHaptics; data: HapticsPreferences };
 
@@ -121,6 +130,9 @@ class PreferencesStore {
         autocompleteEnabled: true,
         accessibilityMode: true,
       },
+      keyboard: {
+        navigationKeyScheme: "jkli",
+      },
       midi: {
         enabled: false,
       },
@@ -144,6 +156,7 @@ class PreferencesStore {
       sound: { ...initial.sound, ...stored.sound },
       channels: stored.channels ? { ...initial.channels, ...stored.channels } : initial.channels,
       editor: { ...initial.editor, ...stored.editor },
+      keyboard: { ...initial.keyboard, ...stored.keyboard },
       midi: { ...initial.midi, ...stored.midi },
       haptics: { ...initial.haptics, ...cleanHaptics },
     };
@@ -163,6 +176,8 @@ class PreferencesStore {
         return { ...state, editor: { ...state.editor, autocompleteEnabled: action.data } };
       case PrefActionType.SetEditorAccessibilityMode:
         return { ...state, editor: { ...state.editor, accessibilityMode: action.data } };
+      case PrefActionType.SetKeyboard:
+        return { ...state, keyboard: action.data };
       case PrefActionType.SetMidi:
         return { ...state, midi: action.data };
       case PrefActionType.SetHaptics:
