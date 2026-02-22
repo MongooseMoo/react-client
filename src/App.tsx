@@ -179,6 +179,7 @@ function App() {
               ]);
               const peerSvc = new PeerService();
               const mum = new MultiUserManager(worker);
+              await mum.connectHost(); // Creates WASM connection 0 for the host
               const hostRoomId = await peerSvc.hostSession();
               setRoomId(hostRoomId);
               console.log("[WebRTC] Hosting session, room:", hostRoomId);
@@ -190,6 +191,9 @@ function App() {
             } catch (err) {
               console.error("[WebRTC] Failed to start host session:", err);
             }
+          } else {
+            // Local mode: create a connection for the solo player
+            worker.postMessage({ type: "remote-connect" });
           }
         } else if (msg.type === "saved") {
           console.log("[WASM] Database saved, size:", msg.data.byteLength);
