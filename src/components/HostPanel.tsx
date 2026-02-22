@@ -9,7 +9,8 @@ const HostPanel: React.FC<HostPanelProps> = ({ roomId, guestCount }) => {
     if (!roomId) return null;
 
     const copyRoomId = () => {
-        navigator.clipboard.writeText(roomId);
+        const url = `${window.location.origin}/?mode=join&room=${roomId}`;
+        navigator.clipboard.writeText(url);
     };
 
     return (
