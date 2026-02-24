@@ -30,10 +30,7 @@ export function useClientEvent<K extends keyof ClientEventMap>(
   const [value, setValue] = useState<ClientEventMap[K] | null>(initialValue);
 
   useEffect(() => {
-    if (!client) {
-      setValue(initialValue);
-      return () => {};
-    }
+    if (!client) return () => {};
 
     const handler = (newValue: ClientEventMap[K]) => {
       setValue(newValue);
@@ -42,7 +39,7 @@ export function useClientEvent<K extends keyof ClientEventMap>(
     return () => {
       client.off(event, handler);
     };
-  }, [client, event, initialValue]);
+  }, [client, event]);
 
   return value;
 }
