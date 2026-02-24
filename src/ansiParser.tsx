@@ -78,7 +78,7 @@ function convertBundleIntoReact(
         const [, exitType, exitName] = match;
         return (
             // eslint-disable-next-line jsx-a11y/anchor-is-valid
-            <a onClick={() => onExitClick(exitType)} className="exit">
+            <a data-exit={exitType} className="exit" href="#">
                 {exitName}
             </a>
         );

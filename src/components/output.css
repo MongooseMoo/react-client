@@ -195,6 +195,11 @@ a.exit {
   border-top: 1px solid var(--color-border);
 }
 
+/* Hide command lines when local echo is off (used for frozen region) */
+.hide-commands .output-line-command {
+  display: none;
+}
+
 /* Keyboard Navigation Styles */
 .output:focus {
   outline: 2px solid var(--color-primary, #3b82f6);

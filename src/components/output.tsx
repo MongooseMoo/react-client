@@ -47,7 +47,7 @@ interface Props {
 }
 
 interface State {
-  output: OutputLine[];
+  liveOutput: OutputLine[]; // Only the last LIVE_WINDOW_SIZE lines (React-managed)
   sidebarVisible: boolean;
   newLinesCount: number; // Added to track the count of new lines
   localEchoActive: boolean; // To store the current local echo preference
@@ -55,21 +55,34 @@ interface State {
 }
 
 // Add a small threshold for scroll calculations to handle browser differences
-const SCROLL_THRESHOLD = 2; 
+const SCROLL_THRESHOLD = 2;
 
 class Output extends React.Component<Props, State> {
   outputRef: React.RefObject<HTMLDivElement> = React.createRef();
-  static MAX_OUTPUT_LENGTH = 7500; // Maximum number of messages to display in the output
+  private frozenRef: React.RefObject<HTMLDivElement> = React.createRef();
+  static MAX_OUTPUT_LENGTH = 3000; // Maximum number of messages to keep
+  static LIVE_WINDOW_SIZE = 200; // Number of lines React manages (rest are frozen HTML)
   static LOCAL_STORAGE_KEY = "outputLog"; // Key for saving output in LocalStorage
   messageKey: number = 0;
   private unsubscribePrefs: (() => void) | undefined;
   // Add a TurndownService instance (can be reused)
   turndownService = new TurndownService({headingStyle: 'atx', emDelimiter: '*'});
 
+  // Full output history (NOT in React state — avoids O(N) reconciliation)
+  private allLines: OutputLine[] = [];
+  // How many lines have been rendered into the frozen container
+  private frozenCount: number = 0;
+  // Total lines ever added (monotonically increasing, survives trimming)
+  private totalLinesAdded: number = 0;
+  private prevTotalLinesAdded: number = 0;
+
   constructor(props: Props) {
     super(props);
+    this.allLines = this.loadOutput();
+    this.totalLinesAdded = this.allLines.length;
+    this.prevTotalLinesAdded = this.allLines.length;
     this.state = {
-      output: this.loadOutput(),
+      liveOutput: this.allLines.slice(-Output.LIVE_WINDOW_SIZE),
       sidebarVisible: false,
       newLinesCount: 0,
       localEchoActive: preferencesStore.getState().general.localEcho,
@@ -84,7 +97,7 @@ class Output extends React.Component<Props, State> {
   };
 
   saveOutput = () => {
-    const linesToSave: SavedOutputLine[] = this.state.output.map((line: OutputLine) => {
+    const linesToSave: SavedOutputLine[] = this.allLines.map((line: OutputLine) => {
       return {
         type: line.type,
         sourceType: line.sourceType,
@@ -105,38 +118,38 @@ class Output extends React.Component<Props, State> {
     switch (savedLine.sourceType) {
       case 'ansi':
         return parseToElements(savedLine.sourceContent, this.handleExitClick);
-      
+
       case 'html':
         // Re-process through handleHtml logic
         const clean = DOMPurify.sanitize(savedLine.sourceContent);
         const parser = new DOMParser();
         const doc = parser.parseFromString(clean, 'text/html');
         const blockquotes = doc.querySelectorAll('blockquote');
-        
+
         if (blockquotes.length > 0) {
           const elements: React.ReactElement[] = [];
           const bodyElement = doc.body;
           let currentContent = '';
-          
+
           Array.from(bodyElement.childNodes).forEach((node, index) => {
             if (node.nodeName === 'BLOCKQUOTE') {
               if (currentContent.trim()) {
                 elements.push(
-                  <div 
-                    key={`content-${index}`} 
-                    style={{ whiteSpace: "normal" }} 
-                    dangerouslySetInnerHTML={{ __html: currentContent }} 
+                  <div
+                    key={`content-${index}`}
+                    style={{ whiteSpace: "normal" }}
+                    dangerouslySetInnerHTML={{ __html: currentContent }}
                   />
                 );
                 currentContent = '';
               }
-              
+
               const blockquoteElement = node as HTMLElement;
               const contentType = blockquoteElement.getAttribute('data-content-type') || undefined;
-              
+
               elements.push(
-                <BlockquoteWithCopy 
-                  key={`blockquote-${index}`} 
+                <BlockquoteWithCopy
+                  key={`blockquote-${index}`}
                   contentType={contentType}
                 >
                   {blockquoteElement.innerHTML}
@@ -150,35 +163,35 @@ class Output extends React.Component<Props, State> {
               }
             }
           });
-          
+
           if (currentContent.trim()) {
             elements.push(
-              <div 
-                key="remaining-content" 
-                style={{ whiteSpace: "normal" }} 
-                dangerouslySetInnerHTML={{ __html: currentContent }} 
+              <div
+                key="remaining-content"
+                style={{ whiteSpace: "normal" }}
+                dangerouslySetInnerHTML={{ __html: currentContent }}
               />
             );
           }
-          
+
           return elements;
         } else {
           return [<div style={{ whiteSpace: "normal" }} dangerouslySetInnerHTML={{ __html: clean }}></div>];
         }
-      
+
       case 'command':
         return [
           <span className="command" aria-live="off">
             {savedLine.sourceContent}
           </span>
         ];
-      
+
       case 'error':
         return [<h2> Error: {savedLine.sourceContent}</h2>];
-      
+
       case 'system':
         return [<h2> {savedLine.sourceContent}</h2>];
-      
+
       default:
         console.warn(`Unknown sourceType: ${savedLine.sourceType}, falling back to text display`);
         return [<span>{savedLine.sourceContent}</span>];
@@ -199,12 +212,12 @@ class Output extends React.Component<Props, State> {
             return storedLog.lines.map((savedLine: SavedOutputLine): OutputLine => {
               const currentKey = this.messageKey++;
               const recreatedElements = this.recreateContentFromSource(savedLine);
-              
+
               // Create the wrapper div with the recreated content
-              const wrappedContent = recreatedElements.length === 1 ? 
-                recreatedElements[0] : 
+              const wrappedContent = recreatedElements.length === 1 ?
+                recreatedElements[0] :
                 <>{recreatedElements}</>;
-              
+
               return {
                 id: currentKey,
                 type: savedLine.type,
@@ -262,13 +275,13 @@ class Output extends React.Component<Props, State> {
   handleUserList = (players: any) =>
     this.setState({ sidebarVisible: !!players });
 
-getSnapshotBeforeUpdate(prevProps: Props, prevState: State) { 
+getSnapshotBeforeUpdate(prevProps: Props, prevState: State) {
     // Check if the user is scrolled to the bottom before the update
 
-if (this.outputRef.current) { const output = this.outputRef.current; return this.isScrolledToBottom(); 
-// Use the same check method consistently 
+if (this.outputRef.current) { const output = this.outputRef.current; return this.isScrolledToBottom();
+// Use the same check method consistently
  } return null; }
- 
+
 componentDidUpdate(
     prevProps: Props,
     prevState: State,
@@ -279,20 +292,26 @@ componentDidUpdate(
       this.scrollToBottom();
     }
 
-    // Calculate newly added lines and count how many are visible
-    const newLines = this.state.output.slice(prevState.output.length);
-    if (newLines.length > 0) {
+    // Freeze overflow lines into the static HTML container
+    this.freezeOverflow();
+
+    // Track new lines for the "N new messages" notification
+    const newLineCount = this.totalLinesAdded - this.prevTotalLinesAdded;
+    this.prevTotalLinesAdded = this.totalLinesAdded;
+
+    if (newLineCount > 0) {
+      const newLines = this.allLines.slice(-newLineCount);
       const visibleNewLinesCount = newLines.filter(
         line => this.state.localEchoActive || line.type !== OutputType.Command
       ).length;
 
       if (visibleNewLinesCount > 0) {
         if (!this.isScrolledToBottom()) {
-          this.setState(state => ({ // Use functional update for safety
+          this.setState(state => ({
             newLinesCount: state.newLinesCount + visibleNewLinesCount,
           }));
-        } else {
-          // Reset newLinesCount if already at the bottom and new lines were added
+        } else if (this.state.newLinesCount !== 0) {
+          // Only reset if it's not already 0 (avoids double-render)
           this.setState({ newLinesCount: 0 });
         }
       }
@@ -301,17 +320,55 @@ componentDidUpdate(
     this.saveOutput(); // Save output to LocalStorage whenever it updates
   }
 
+  /**
+   * Render overflow lines from allLines into the frozen HTML container.
+   * Lines in the frozen container are static HTML — React doesn't touch them.
+   */
+  private freezeOverflow() {
+    const frozenDiv = this.frozenRef.current;
+    if (!frozenDiv) return;
+
+    // How many lines should be frozen (everything not in the live window)
+    const shouldBeFrozen = Math.max(0, this.allLines.length - Output.LIVE_WINDOW_SIZE);
+
+    // Freeze new lines
+    while (this.frozenCount < shouldBeFrozen) {
+      const line = this.allLines[this.frozenCount];
+      const wrapper = document.createElement('div');
+      wrapper.className = `output-line output-line-${line.type}`;
+      wrapper.innerHTML = ReactDOMServer.renderToStaticMarkup(line.content);
+      frozenDiv.appendChild(wrapper);
+      this.frozenCount++;
+    }
+  }
+
+  /**
+   * Remove old lines from the front of the frozen container.
+   */
+  private trimFrozen(count: number) {
+    const frozenDiv = this.frozenRef.current;
+    if (!frozenDiv) return;
+    const toRemove = Math.min(count, frozenDiv.childNodes.length);
+    for (let i = 0; i < toRemove; i++) {
+      if (frozenDiv.firstChild) {
+        frozenDiv.removeChild(frozenDiv.firstChild);
+      }
+    }
+    this.frozenCount = Math.max(0, this.frozenCount - count);
+  }
 
 
   handleScroll = () => {
     if (this.isScrolledToBottom()) {
-      this.setState({ newLinesCount: 0 });
+      if (this.state.newLinesCount !== 0) {
+        this.setState({ newLinesCount: 0 });
+      }
     }
   };
-  
-  isScrolledToBottom = () => { const output = this.outputRef.current; if (!output) return false; 
-  // Use Math.ceil to handle fractional pixels 
-  // Add a small threshold to account for browser differences 
+
+  isScrolledToBottom = () => { const output = this.outputRef.current; if (!output) return false;
+  // Use Math.ceil to handle fractional pixels
+  // Add a small threshold to account for browser differences
   const scrollBottom = Math.ceil(output.scrollHeight - output.scrollTop); const viewportHeight = Math.ceil(output.clientHeight); return scrollBottom <= viewportHeight + SCROLL_THRESHOLD; };
 
   handleScrollToBottom = () => {
@@ -329,6 +386,9 @@ componentDidUpdate(
     client.on("command", this.addCommand);
     client.on("userlist", this.handleUserList);
     this.unsubscribePrefs = preferencesStore.subscribe(this.handlePreferencesChange);
+
+    // Freeze any loaded output that exceeds the live window
+    this.freezeOverflow();
   }
 
   componentWillUnmount() {
@@ -351,8 +411,8 @@ componentDidUpdate(
   }
 
   addToOutput(
-    elements: React.ReactNode[], 
-    type: OutputType, 
+    elements: React.ReactNode[],
+    type: OutputType,
     shouldAnnounce: boolean = true,
     sourceType: string = 'unknown',
     sourceContent: string = '',
@@ -370,26 +430,37 @@ componentDidUpdate(
       });
     }
 
-    this.setState((state) => {
-      const newOutputLines: OutputLine[] = elements.map((element) => {
-        const currentKey = this.messageKey++;
-        return {
-          id: currentKey,
-          type: type,
-          content: <div key={currentKey} className={`output-line output-line-${type}`}>{element}</div>,
-          sourceType: sourceType,
-          sourceContent: sourceContent,
-          metadata: metadata
-        };
-      });
-      const combinedOutput = [...state.output, ...newOutputLines];
-      const trimmedOutput = combinedOutput.slice(-Output.MAX_OUTPUT_LENGTH);
-      return { output: trimmedOutput };
+    const newOutputLines: OutputLine[] = elements.map((element) => {
+      const currentKey = this.messageKey++;
+      return {
+        id: currentKey,
+        type: type,
+        content: <div key={currentKey} className={`output-line output-line-${type}`}>{element}</div>,
+        sourceType: sourceType,
+        sourceContent: sourceContent,
+        metadata: metadata
+      };
+    });
+
+    // Append to full history
+    this.allLines.push(...newOutputLines);
+    this.totalLinesAdded += newOutputLines.length;
+
+    // Trim if over max
+    if (this.allLines.length > Output.MAX_OUTPUT_LENGTH) {
+      const excess = this.allLines.length - Output.MAX_OUTPUT_LENGTH;
+      this.allLines.splice(0, excess);
+      this.trimFrozen(excess);
+    }
+
+    // Only put the tail into React state — React reconciles O(LIVE_WINDOW_SIZE) not O(N)
+    this.setState({
+      liveOutput: this.allLines.slice(-Output.LIVE_WINDOW_SIZE),
     });
   }
 
-scrollToBottom = () => { const output = this.outputRef.current; if (output) { 
-// Use requestAnimationFrame to ensure DOM updates are complete 
+scrollToBottom = () => { const output = this.outputRef.current; if (output) {
+// Use requestAnimationFrame to ensure DOM updates are complete
  requestAnimationFrame(() => { output.scrollTop = output.scrollHeight; }); } };
   handleMessage = (message: string) => {
     if (!message) {
@@ -401,41 +472,41 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
   handleHtml = (html: string) => {
     const clean = DOMPurify.sanitize(html);
-    
+
     // Parse the cleaned HTML to detect blockquotes
     const parser = new DOMParser();
     const doc = parser.parseFromString(clean, 'text/html');
     const blockquotes = doc.querySelectorAll('blockquote');
-    
+
     if (blockquotes.length > 0) {
       // If we have blockquotes, we need to process them individually
       const elements: React.ReactElement[] = [];
-      
+
       // Split content around blockquotes
       const bodyElement = doc.body;
       let currentContent = '';
-      
+
       Array.from(bodyElement.childNodes).forEach((node, index) => {
         if (node.nodeName === 'BLOCKQUOTE') {
           // Add any accumulated content before this blockquote
           if (currentContent.trim()) {
             elements.push(
-              <div 
-                key={`content-${index}`} 
-                style={{ whiteSpace: "normal" }} 
-                dangerouslySetInnerHTML={{ __html: currentContent }} 
+              <div
+                key={`content-${index}`}
+                style={{ whiteSpace: "normal" }}
+                dangerouslySetInnerHTML={{ __html: currentContent }}
               />
             );
             currentContent = '';
           }
-          
+
           // Add the blockquote with copy functionality
           const blockquoteElement = node as HTMLElement;
           const contentType = blockquoteElement.getAttribute('data-content-type') || undefined;
-          
+
           elements.push(
-            <BlockquoteWithCopy 
-              key={`blockquote-${index}`} 
+            <BlockquoteWithCopy
+              key={`blockquote-${index}`}
               contentType={contentType}
             >
               {blockquoteElement.innerHTML}
@@ -450,18 +521,18 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
           }
         }
       });
-      
+
       // Add any remaining content
       if (currentContent.trim()) {
         elements.push(
-          <div 
-            key="remaining-content" 
-            style={{ whiteSpace: "normal" }} 
-            dangerouslySetInnerHTML={{ __html: currentContent }} 
+          <div
+            key="remaining-content"
+            style={{ whiteSpace: "normal" }}
+            dangerouslySetInnerHTML={{ __html: currentContent }}
           />
         );
       }
-      
+
       this.addToOutput(elements, OutputType.ServerMessage, true, 'html', html);
     } else {
       // No blockquotes, use original logic
@@ -474,30 +545,32 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     this.props.client.sendCommand(exit);
   };
 
-  // --- Method to handle data-text links ---
-  handleDataTextClick = (event: React.MouseEvent<HTMLDivElement>) => {
+  // --- Combined click handler for delegated events ---
+  handleOutputClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const targetElement = event.target as HTMLElement;
+
+    // --- Handle exit link clicks (data-exit delegation) ---
+    const exitLink = targetElement.closest('a.exit[data-exit]');
+    if (exitLink instanceof HTMLAnchorElement) {
+      event.preventDefault();
+      const exitDirection = exitLink.dataset.exit;
+      if (exitDirection) {
+        this.props.client.sendCommand(exitDirection);
+      }
+      return;
+    }
 
     // --- Handle data-text link clicks ---
     const linkElement = targetElement.closest('a.command[data-text]');
     if (linkElement instanceof HTMLAnchorElement) {
       event.preventDefault();
-
-      // Get the text from the data-text attribute
-      const commandText = linkElement.dataset.text; // Use dataset for data-* attributes
-
+      const commandText = linkElement.dataset.text;
       if (commandText !== undefined && commandText !== null) {
-        // Dispatch the action to update the input store
         setInputText(commandText);
-        // Attempt to focus the input field via the passed-in function
         this.props.focusInput?.();
       }
     }
-    // NOTE: This handler *only* deals with data-text links.
-    // Other click handling (like exits or the scroll-to-bottom button)
-    // remains separate as per the request to avoid unrelated changes.
   };
-  // --- End New Method ---
 
   saveLog() {
     const output = this.outputRef.current;
@@ -531,7 +604,13 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   }
 
   clearLog() {
-    this.setState({ output: [] });
+    this.allLines = [];
+    this.frozenCount = 0;
+    this.totalLinesAdded = 0;
+    this.prevTotalLinesAdded = 0;
+    const frozenDiv = this.frozenRef.current;
+    if (frozenDiv) frozenDiv.innerHTML = '';
+    this.setState({ liveOutput: [] });
     localStorage.removeItem(Output.LOCAL_STORAGE_KEY); // Also clear from local storage
   }
 
@@ -591,7 +670,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       return;
     }
 
-    const visibleOutput = this.state.output.filter(
+    const visibleOutput = this.state.liveOutput.filter(
       line => this.state.localEchoActive || line.type !== OutputType.Command
     );
 
@@ -661,7 +740,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   handleOutputFocus = () => {
     // If no line is focused, start at the last line
     if (this.state.focusedLineIndex === null) {
-      const visibleOutput = this.state.output.filter(
+      const visibleOutput = this.state.liveOutput.filter(
         line => this.state.localEchoActive || line.type !== OutputType.Command
       );
       if (visibleOutput.length > 0) {
@@ -684,11 +763,15 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     if (this.state.sidebarVisible) {
       classname += " sidebar-visible";
     }
+    if (!this.state.localEchoActive) {
+      classname += " hide-commands";
+    }
 
     const newLinesText = `${this.state.newLinesCount} new ${this.state.newLinesCount === 1 ? "message" : "messages"
       }`;
 
-    const visibleOutput = this.state.output.filter(
+    // Only filter + render the live window — frozen lines are static HTML
+    const visibleLiveOutput = this.state.liveOutput.filter(
       line => this.state.localEchoActive || line.type !== OutputType.Command
     );
 
@@ -697,14 +780,15 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         ref={this.outputRef}
         className={classname}
         onScroll={this.handleScroll}
-        onClick={this.handleDataTextClick}
+        onClick={this.handleOutputClick}
         onKeyDown={this.handleOutputKeyDown}
         onFocus={this.handleOutputFocus}
         onBlur={this.handleOutputBlur}
         tabIndex={0}
         aria-label="Game output log - use arrow keys to navigate"
       >
-        {visibleOutput.map((line, index) => (
+        <div ref={this.frozenRef} />
+        {visibleLiveOutput.map((line, index) => (
           <div
             key={line.id}
             className={`output-line ${this.state.focusedLineIndex === index ? 'focused-line' : ''}`}
