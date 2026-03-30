@@ -125,11 +125,6 @@ export class GMCPClientMedia extends GMCPPackage {
       sound.loop(loopCount);
     }
 
-    // Start at a specific position
-    if (data.start) {
-      sound.seek(data.start / 1000);
-    }
-
     if (data.end) {
       const endKey = data.key!;
       setTimeout(() => {
@@ -167,6 +162,10 @@ export class GMCPClientMedia extends GMCPPackage {
     // Playback control
     if (!sound.isPlaying) {
       const playback = sound.play()[0] as Playback;
+      // Seek after play so playback exists for seek to act on
+      if (data.start) {
+        sound.seek(data.start / 1000);
+      }
       const targetVolume = (data.volume ?? 50) / 100;
       const context = this.client.cacophony.context;
       const currentTime = context.currentTime;
@@ -195,6 +194,10 @@ export class GMCPClientMedia extends GMCPPackage {
         }
       }
     } else {
+      // Sync position on already-playing sound
+      if (data.start) {
+        sound.seek(data.start / 1000);
+      }
       // Update pan on existing playbacks
       if (data.pan !== undefined) {
         const pan = data.pan / 100;
