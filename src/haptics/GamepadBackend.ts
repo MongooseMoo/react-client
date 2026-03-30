@@ -362,6 +362,6 @@ interface GamepadHapticActuatorExtended {
   reset(): Promise<string>;
 }
 
-interface GamepadWithVibration extends Gamepad {
+type GamepadWithVibration = Gamepad & {
   vibrationActuator: GamepadHapticActuatorExtended | null;
-}
+};

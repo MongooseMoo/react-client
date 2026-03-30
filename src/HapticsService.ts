@@ -281,15 +281,11 @@ export class HapticsService extends EventEmitter<HapticsServiceEvents> {
     let nextActuatorId = 0;
     let nextSensorId = 0;
 
-    // Determine effective auto-stop timeout based on device classes present
-    const deviceClasses = new Set<HapticsDeviceClass>();
-
     for (const backend of this.backends) {
       // Actuators
       const actuators = backend.getActuators();
       for (const actuator of actuators) {
         const globalId = nextActuatorId++;
-        deviceClasses.add(actuator.deviceClass);
         this.actuatorMap.set(globalId, {
           backend,
           localId: actuator.id,
@@ -315,12 +311,6 @@ export class HapticsService extends EventEmitter<HapticsServiceEvents> {
       }
     }
 
-    // Auto-stop timeout: use shorter timeout if intimate devices are present
-    if (deviceClasses.has("intimate")) {
-      this._autoStopTimeoutSecs = 5;
-    } else if (deviceClasses.has("gaming")) {
-      this._autoStopTimeoutSecs = 30;
-    }
   }
 
   // -----------------------------------------------------------------------

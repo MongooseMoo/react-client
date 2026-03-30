@@ -195,7 +195,10 @@ function App() {
         wasmBackendLoaded.current = false;
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      wasmBackendLoaded.current = false;
+    };
   }, [preferences.haptics.enabled]);
 
   // Effect for CTRL + Number shortcut

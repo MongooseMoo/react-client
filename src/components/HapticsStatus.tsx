@@ -108,7 +108,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = ({ client }) => {
         <div style={{ marginBottom: "8px" }}>
           <strong>Bluetooth Devices</strong>
         </div>
-        {typeof navigator !== "undefined" && navigator.bluetooth ? (
+        {typeof navigator !== "undefined" && (navigator as any).bluetooth ? (
           <div>
             <button
               onClick={handleScan}

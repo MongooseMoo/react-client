@@ -1,4 +1,5 @@
 import { GMCPPackage } from "../package";
+import type { GMCPCoreSupports } from "../Core";
 import { hapticsService } from "../../HapticsService";
 import { preferencesStore } from "../../PreferencesStore";
 import type { HapticsCommand, HapticsSensorReading } from "../../haptics/types";
@@ -183,7 +184,7 @@ export class GMCPClientHaptics extends GMCPPackage {
 
   advertiseHapticsSupport(): void {
     if (!this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcpHandlers["Core.Supports"] as GMCPCoreSupports | undefined;
       if (coreSupports) {
         coreSupports.sendAdd([
           { name: "Client.Haptics", version: this.packageVersion || 1 },
@@ -195,7 +196,7 @@ export class GMCPClientHaptics extends GMCPPackage {
 
   unadvertiseHapticsSupport(): void {
     if (this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcpHandlers["Core.Supports"] as GMCPCoreSupports | undefined;
       if (coreSupports) {
         coreSupports.sendRemove(["Client.Haptics"]);
         this.isAdvertised = false;
