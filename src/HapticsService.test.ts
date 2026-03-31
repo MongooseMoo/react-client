@@ -648,7 +648,7 @@ describe("HapticsService", () => {
       expect(backend.stop).toHaveBeenCalled();
     });
 
-    it("uses 5s timeout when intimate devices are present", () => {
+    it("respects configured timeout for intimate devices", () => {
       const buttplug = createMockBackend({
         name: "buttplug",
         deviceClass: "intimate",
@@ -657,6 +657,7 @@ describe("HapticsService", () => {
         ],
       });
       service.registerBackend(buttplug);
+      service.autoStopTimeoutSecs = 5; // Simulates preference wiring
 
       const stoppedListener = vi.fn();
       service.on("stopped", stoppedListener);
@@ -674,7 +675,7 @@ describe("HapticsService", () => {
       expect(stoppedListener).toHaveBeenCalledWith("auto_stop");
     });
 
-    it("uses shorter intimate timeout when mixed classes are active", () => {
+    it("does not override configured timeout when device classes change", () => {
       const gamepad = createMockBackend({
         name: "gamepad",
         deviceClass: "gaming",
@@ -690,14 +691,22 @@ describe("HapticsService", () => {
         ],
       });
 
+      service.autoStopTimeoutSecs = 10; // User-configured preference
       service.registerBackend(gamepad);
       service.registerBackend(buttplug);
+
+      // Timeout should still be 10s, not auto-overridden
+      expect(service.autoStopTimeoutSecs).toBe(10);
 
       service.actuate([{ actuator: 0, type: "Vibrate", intensity: 0.5 }]);
       gamepad.stop.mockClear();
       buttplug.stop.mockClear();
 
-      // Should fire at 5s (intimate timeout), not 30s
+      // Should NOT fire at 5s
+      vi.advanceTimersByTime(5000);
+      expect(gamepad.stop).not.toHaveBeenCalled();
+
+      // Should fire at 10s
       vi.advanceTimersByTime(5000);
       expect(gamepad.stop).toHaveBeenCalled();
       expect(buttplug.stop).toHaveBeenCalled();
