@@ -29,6 +29,13 @@ interface TrackedGamepad {
   intensities: [number, number, number, number];
   // The setInterval ID for the vibration loop
   loopInterval: ReturnType<typeof setInterval> | null;
+  // Per-motor auto-stop timers (when server specifies duration)
+  stopTimers: [
+    ReturnType<typeof setTimeout> | null,
+    ReturnType<typeof setTimeout> | null,
+    ReturnType<typeof setTimeout> | null,
+    ReturnType<typeof setTimeout> | null,
+  ];
 }
 
 export class GamepadBackend
@@ -142,7 +149,7 @@ export class GamepadBackend
     actuatorId: number,
     type: HapticsActuatorType,
     intensity: number,
-    _options?: { duration?: number; clockwise?: boolean }
+    options?: { duration?: number; clockwise?: boolean }
   ): Promise<void> {
     if (type !== "Vibrate") return;
 
@@ -160,6 +167,21 @@ export class GamepadBackend
 
     // Start the vibration loop if not already running and any intensity > 0
     this.ensureLoop(tracked);
+
+    // A new command cancels any previous duration timer for this motor
+    this.clearStopTimer(tracked, motorOffset);
+
+    // If server specified a duration (ms), schedule this motor to stop
+    if (options?.duration !== undefined && options.duration > 0) {
+      tracked.stopTimers[motorOffset] = setTimeout(() => {
+        tracked.stopTimers[motorOffset] = null;
+        tracked.intensities[motorOffset] = 0;
+        if (tracked.intensities.every((v) => v === 0)) {
+          this.clearLoop(tracked);
+          void this.resetGamepad(tracked.gamepadIndex);
+        }
+      }, options.duration);
+    }
   }
 
   async stop(actuatorId?: number): Promise<void> {
@@ -167,6 +189,7 @@ export class GamepadBackend
       // Stop all motors on all gamepads
       for (const tracked of this.gamepads.values()) {
         tracked.intensities = [0, 0, 0, 0];
+        this.clearAllStopTimers(tracked);
         this.clearLoop(tracked);
         await this.resetGamepad(tracked.gamepadIndex);
       }
@@ -177,6 +200,7 @@ export class GamepadBackend
       if (!tracked) return;
 
       tracked.intensities[motorOffset] = 0;
+      this.clearStopTimer(tracked, motorOffset);
 
       // If all intensities are zero, stop the loop and reset
       if (tracked.intensities.every((v) => v === 0)) {
@@ -202,6 +226,7 @@ export class GamepadBackend
     // Immediately clear all intervals and reset all gamepads
     for (const tracked of this.gamepads.values()) {
       tracked.intensities = [0, 0, 0, 0];
+      this.clearAllStopTimers(tracked);
       this.clearLoop(tracked);
       await this.resetGamepad(tracked.gamepadIndex);
     }
@@ -244,6 +269,7 @@ export class GamepadBackend
       hasTriggerRumble,
       intensities: [0, 0, 0, 0],
       loopInterval: null,
+      stopTimers: [null, null, null, null],
     });
 
     this.emit("devicechanged");
@@ -255,9 +281,24 @@ export class GamepadBackend
     if (!tracked) return;
 
     tracked.intensities = [0, 0, 0, 0];
+    this.clearAllStopTimers(tracked);
     this.clearLoop(tracked);
     this.gamepads.delete(gamepadIndex);
     this.emit("devicechanged");
+  }
+
+  private clearStopTimer(tracked: TrackedGamepad, motorOffset: number): void {
+    const t = tracked.stopTimers[motorOffset];
+    if (t !== null) {
+      clearTimeout(t);
+      tracked.stopTimers[motorOffset] = null;
+    }
+  }
+
+  private clearAllStopTimers(tracked: TrackedGamepad): void {
+    for (let i = 0; i < 4; i++) {
+      this.clearStopTimer(tracked, i);
+    }
   }
 
   private ensureLoop(tracked: TrackedGamepad): void {

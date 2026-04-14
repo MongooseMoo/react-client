@@ -234,6 +234,8 @@ export class ButtplugWasmBackend
   private sensorMap = new Map<number, SensorMapping>();
   /** Maps sensor ID -> polling interval handle */
   private sensorSubscriptions = new Map<number, ReturnType<typeof setInterval>>();
+  /** Maps actuator ID -> pending auto-stop timer (for server-specified durations) */
+  private actuatorStopTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
   constructor(deps: ButtplugWasmDeps) {
     super();
@@ -281,6 +283,9 @@ export class ButtplugWasmBackend
 
   async disconnect(): Promise<void> {
     if (!this.client) return;
+
+    // Cancel any pending auto-stop timers
+    this.clearAllActuatorStopTimers();
 
     // Stop all sensor subscriptions
     for (const [id] of this.sensorSubscriptions) {
@@ -373,6 +378,9 @@ export class ButtplugWasmBackend
 
     const { device, featureIndex, actuatorType } = mapping;
 
+    // Any new command cancels a pending duration-driven auto-stop
+    this.clearActuatorStopTimer(actuatorId);
+
     // Route commands through the appropriate v3 API:
     // - Scalar types (Vibrate, Oscillate, Constrict, Inflate) use device.scalar()
     //   with explicit Index and ActuatorType to target exact features
@@ -401,19 +409,50 @@ export class ButtplugWasmBackend
         break;
       }
     }
+
+    // For continuous (non-Position) actuators, honor server-specified duration
+    // by scheduling a stop after the given ms. Position encodes duration as the
+    // movement time, so it's excluded here.
+    if (
+      type !== "Position" &&
+      options?.duration !== undefined &&
+      options.duration > 0 &&
+      intensity > 0
+    ) {
+      const handle = setTimeout(() => {
+        this.actuatorStopTimers.delete(actuatorId);
+        // Best-effort stop; swallow errors if device is gone
+        void device.stop().catch(() => {});
+      }, options.duration);
+      this.actuatorStopTimers.set(actuatorId, handle);
+    }
+  }
+
+  private clearActuatorStopTimer(actuatorId: number): void {
+    const t = this.actuatorStopTimers.get(actuatorId);
+    if (t !== undefined) {
+      clearTimeout(t);
+      this.actuatorStopTimers.delete(actuatorId);
+    }
+  }
+
+  private clearAllActuatorStopTimers(): void {
+    for (const t of this.actuatorStopTimers.values()) {
+      clearTimeout(t);
+    }
+    this.actuatorStopTimers.clear();
   }
 
   async stop(actuatorId?: number): Promise<void> {
     if (actuatorId != null) {
+      this.clearActuatorStopTimer(actuatorId);
       const mapping = this.actuatorMap.get(actuatorId);
-      if (!mapping) {
-        throw new Error(`ButtplugWasmBackend: unknown actuator ${actuatorId}`);
-      }
+      if (!mapping) return;
       await mapping.device.stop();
     } else {
-      if (!this.client) {
-        throw new Error("ButtplugWasmBackend: not connected");
-      }
+      this.clearAllActuatorStopTimers();
+      // No client yet (lazy-registered backend not connected) → nothing to stop
+      if (!this.client) return;
       await this.client.stopAllDevices();
     }
   }
@@ -471,6 +510,7 @@ export class ButtplugWasmBackend
   // --- Safety ---
 
   async emergencyStop(): Promise<void> {
+    this.clearAllActuatorStopTimers();
     if (!this.client) return;
     await this.client.stopAllDevices();
   }

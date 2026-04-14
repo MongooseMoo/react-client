@@ -459,8 +459,8 @@ describe("ButtplugWasmBackend", () => {
       expect(latestMockClient.stopAllDevices).toHaveBeenCalled();
     });
 
-    it("throws for an unknown actuator ID", async () => {
-      await expect(backend.stop(9999)).rejects.toThrow("unknown actuator 9999");
+    it("silently ignores an unknown actuator ID", async () => {
+      await expect(backend.stop(9999)).resolves.toBeUndefined();
     });
   });
 
