@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { PrefActionType, NavigationKeyScheme } from "../PreferencesStore";
 import { usePreferences } from "../hooks/usePreferences";
 import { useVoices } from "../hooks/useVoices";
-import { midiService, MidiDevice } from "../MidiService";
 import Tabs from "./tabs";
 
 const GeneralTab: React.FC = () => {
@@ -332,15 +331,6 @@ const MidiTab: React.FC = () => {
       data: { enabled: e.target.checked },
     });
   };
-
-  if (!midiService.isSupported) {
-    return (
-      <div>
-        <p>MIDI is not supported in this browser.</p>
-        <p>MIDI support is available in Chrome, Edge, Opera, and Brave.</p>
-      </div>
-    );
-  }
 
   return (
     <div>

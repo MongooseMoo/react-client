@@ -34,7 +34,6 @@ import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
 import { GMCPMessageRoomInfo, RoomPlayer } from "./gmcp/Room"; // Import RoomPlayer
-import { midiService } from "./MidiService";
 
 export interface WorldData {
   liveKitTokens: string[];
@@ -42,6 +41,18 @@ export interface WorldData {
   playerName: string;
   roomId: string;
   roomPlayers: RoomPlayer[]; // Changed from string[]
+}
+
+function resetMidiIntentionalDisconnectFlags(): void {
+  if (!preferencesStore.getState().midi.enabled) return;
+
+  import("./MidiService")
+    .then(({ midiService }) => {
+      midiService.resetIntentionalDisconnectFlags();
+    })
+    .catch((error) => {
+      console.error("Failed to reset MIDI disconnect flags:", error);
+    });
 }
 
 class MudClient extends EventEmitter {
@@ -271,7 +282,7 @@ class MudClient extends EventEmitter {
       this._connected = true;
       
       // Reset MIDI intentional disconnect flags when successfully reconnecting to server
-      midiService.resetIntentionalDisconnectFlags();
+      resetMidiIntentionalDisconnectFlags();
       
       this.emit("connect");
       this.emit("connectionChange", true);
@@ -384,7 +395,7 @@ class MudClient extends EventEmitter {
     // Mark as connected immediately — the worker will send the "connected"
     // message once the virtual connection is created.
     this._connected = true;
-    midiService.resetIntentionalDisconnectFlags();
+    resetMidiIntentionalDisconnectFlags();
     this.emit("connect");
     this.emit("connectionChange", true);
   }

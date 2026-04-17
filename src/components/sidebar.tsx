@@ -2,6 +2,7 @@ import React, { Suspense, useEffect, useState } from "react"; // Import useState
 import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
 import FileTransferUI from "./FileTransfer";
 const AudioChat = React.lazy(() => import("./audioChat"));
+const MidiStatus = React.lazy(() => import("./MidiStatus"));
 import Tabs, { TabProps } from "./tabs";
 import Userlist from "./userlist";
 // import AfflictionsList from "./AfflictionsList"; // Removed
@@ -13,7 +14,6 @@ import MudClient from "../client";
 import { useClientEvent } from "../hooks/useClientEvent"; // Import useClientEvent
 import { UserlistPlayer } from "../mcp";
 import RoomInfoDisplay from "./RoomInfoDisplay"; // Import new component
-import MidiStatus from "./MidiStatus"; // Import MIDI component
 import HapticsStatus from "./HapticsStatus"; // Import Haptics component
 import { usePreferences } from "../hooks/usePreferences";
 import { GMCPClientMidi } from "../gmcp/Client/Midi";
@@ -127,7 +127,11 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
     {
       id: "midi-tab",
       label: "MIDI",
-      content: <MidiStatus client={client} />,
+      content: (
+        <Suspense fallback={null}>
+          <MidiStatus client={client} />
+        </Suspense>
+      ),
       condition: preferences.midi.enabled,
     },
     {

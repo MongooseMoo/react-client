@@ -6,7 +6,6 @@ import { createConfiguredClient } from "./createConfiguredClient";
 import { hapticsService } from "./HapticsService";
 import { GamepadBackend } from "./haptics/GamepadBackend";
 import { ButtplugWasmBackend, createRealWasmDeps } from "./haptics/ButtplugWasmBackend";
-import { virtualMidiService } from "./VirtualMidiService";
 import { usePreferences } from "./hooks/usePreferences";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
@@ -145,17 +144,6 @@ function App() {
       });
     }
 
-    // Initialize virtual MIDI synthesizer
-    virtualMidiService.initialize().then((success) => {
-      if (success) {
-        console.log("Virtual MIDI synthesizer initialized");
-      } else {
-        console.log("Failed to initialize virtual MIDI synthesizer");
-      }
-    }).catch((error) => {
-      console.error("Error initializing virtual MIDI synthesizer:", error);
-    });
-
     // Register gamepad backend (always available, zero config)
     const gamepadBackend = new GamepadBackend();
     hapticsService.registerBackend(gamepadBackend);
@@ -189,6 +177,30 @@ function App() {
       document.removeEventListener("focus", handleFocus);
     };
   }, [client]);
+
+  useEffect(() => {
+    if (!preferences.midi.enabled) return;
+
+    let cancelled = false;
+    import("./VirtualMidiService")
+      .then(({ virtualMidiService }) => virtualMidiService.initialize())
+      .then((success) => {
+        if (cancelled) return;
+        if (success) {
+          console.log("Virtual MIDI synthesizer initialized");
+        } else {
+          console.log("Failed to initialize virtual MIDI synthesizer");
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Error initializing virtual MIDI synthesizer:", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [preferences.midi.enabled]);
 
   useEffect(() => {
     if (!client) {
