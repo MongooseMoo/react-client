@@ -30,6 +30,14 @@ function setWindowSubtitle(subtitle?: string) {
   document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
 }
 
+function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
+  if (roomInfo.area && roomInfo.name) {
+    return `${roomInfo.area}: ${roomInfo.name}`;
+  }
+
+  return roomInfo.name || roomInfo.area || undefined;
+}
+
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
@@ -189,7 +197,7 @@ function App() {
     }
 
     const handleRoomInfo = (roomInfo: GMCPMessageRoomInfo) => {
-      setWindowSubtitle(roomInfo.name);
+      setWindowSubtitle(getRoomSubtitle(roomInfo));
     };
     const handleDisconnect = () => {
       setWindowSubtitle();
