@@ -22,6 +22,13 @@ import WasmGuest from "./components/WasmGuest";
 import HostPanel from "./components/HostPanel";
 import { useChannelHistory } from "./hooks/useChannelHistory";
 import { FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
+import type { GMCPMessageRoomInfo } from "./gmcp/Room";
+
+const WINDOW_TITLE = "Mongoose Client";
+
+function setWindowSubtitle(subtitle?: string) {
+  document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
+}
 
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
@@ -172,6 +179,35 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
+    };
+  }, [client]);
+
+  useEffect(() => {
+    if (!client) {
+      setWindowSubtitle();
+      return;
+    }
+
+    const handleRoomInfo = (roomInfo: GMCPMessageRoomInfo) => {
+      setWindowSubtitle(roomInfo.name);
+    };
+    const handleDisconnect = () => {
+      setWindowSubtitle();
+    };
+
+    if (client.currentRoomInfo) {
+      handleRoomInfo(client.currentRoomInfo);
+    } else {
+      setWindowSubtitle();
+    }
+
+    client.on("roomInfo", handleRoomInfo);
+    client.on("disconnect", handleDisconnect);
+
+    return () => {
+      client.off("roomInfo", handleRoomInfo);
+      client.off("disconnect", handleDisconnect);
+      setWindowSubtitle();
     };
   }, [client]);
 
