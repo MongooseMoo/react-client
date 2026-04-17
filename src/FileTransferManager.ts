@@ -5,7 +5,6 @@ import {
   GMCPClientFileTransfer,
   FileTransferOffer,
 } from "./gmcp/Client/FileTransfer";
-import CryptoJS from "crypto-js";
 import { FileTransferStore, FileMetadata } from "./FileTransferStore";
 
 export class FileTransferError extends Error {
@@ -167,20 +166,11 @@ export default class FileTransferManager extends EventEmitter {
   }
 
   private async computeFileHash(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (reader.result instanceof ArrayBuffer) {
-          const wordArray = CryptoJS.lib.WordArray.create(reader.result);
-          const hash = CryptoJS.SHA256(wordArray).toString();
-          resolve(hash);
-        } else {
-          reject(new Error("Failed to read file for hashing"));
-        }
-      };
-      reader.onerror = () => reject(reader.error);
-      reader.readAsArrayBuffer(file);
-    });
+    const fileBytes = await file.arrayBuffer();
+    const hashBytes = await crypto.subtle.digest("SHA-256", fileBytes);
+    return Array.from(new Uint8Array(hashBytes))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   private async startFileTransfer(file: File, hash: string): Promise<void> {
