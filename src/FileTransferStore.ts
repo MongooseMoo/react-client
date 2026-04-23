@@ -99,7 +99,7 @@ export class FileTransferStore {
     
     // Delete all chunks
     const tx = this.db!.transaction(['chunks', 'metadata'], 'readwrite');
-    const chunks = await tx.objectStore('chunks').getAllFromIndex('hash', hash);
+    const chunks = await tx.objectStore('chunks').index('hash').getAll(hash);
     
     for (const chunk of chunks) {
       await tx.objectStore('chunks').delete([hash, chunk.index]);
