@@ -158,7 +158,7 @@ function App() {
         client.stopAllSounds();
         const midiPackage = client.gmcpHandlers["Client.Midi"];
         if (midiPackage) {
-          (midiPackage as any).sendAllNotesOff();
+          midiPackage.sendAllNotesOff();
         }
         hapticsService.emergencyStop();
       }
