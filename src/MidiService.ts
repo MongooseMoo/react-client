@@ -1,6 +1,6 @@
 import { virtualMidiService } from './VirtualMidiService';
 import JZZ from 'jzz';
-import { preferencesStore } from './PreferencesStore';
+import { PrefActionType, preferencesStore } from './PreferencesStore';
 
 export interface MidiDevice {
   id: string;
@@ -49,13 +49,42 @@ export interface MidiMessage {
 export type MidiInputCallback = (message: MidiMessage) => void;
 export type DeviceChangeCallback = (info: { inputs: { added: MidiDevice[], removed: MidiDevice[] }, outputs: { added: MidiDevice[], removed: MidiDevice[] } }) => void;
 
+type JzzPortInfo = {
+  id?: string;
+  name?: string;
+};
+
+type JzzEngineInfo = {
+  inputs?: JzzPortInfo[];
+  outputs?: JzzPortInfo[];
+};
+
+type JzzDeviceChange = {
+  inputs?: {
+    added?: JzzPortInfo[];
+    removed?: JzzPortInfo[];
+  };
+  outputs?: {
+    added?: JzzPortInfo[];
+    removed?: JzzPortInfo[];
+  };
+};
+
+type JzzMidiMessage = {
+  data?: Iterable<number> | ArrayLike<number>;
+} & Iterable<number> & ArrayLike<number>;
+
+type JzzEngine = Awaited<ReturnType<typeof JZZ>>;
+type JzzPort = Awaited<ReturnType<JzzEngine["openMidiIn"]>>;
+type JzzWatcher = Awaited<ReturnType<JzzEngine["onChange"]>>;
+
 class MidiService {
-  private jzz: any = null;
-  private inputDevice: any = null;
-  private outputDevice: any = null;
+  private jzz: JzzEngine | null = null;
+  private inputDevice: JzzPort | null = null;
+  private outputDevice: JzzPort | null = null;
   private inputCallback: MidiInputCallback | null = null;
   private deviceChangeCallbacks: Set<DeviceChangeCallback> = new Set();
-  private deviceWatcher: any = null;
+  private deviceWatcher: JzzWatcher | null = null;
   private connectionState: {
     inputConnected: boolean;
     outputConnected: boolean;
@@ -80,7 +109,7 @@ class MidiService {
       console.log("JZZ MIDI engine initialized");
       
       // Set up device change monitoring
-      this.deviceWatcher = this.jzz.onChange((info: any) => {
+      this.deviceWatcher = this.jzz.onChange((info: JzzDeviceChange) => {
         const changeInfo = this.processDeviceChanges(info);
         this.deviceChangeCallbacks.forEach(callback => callback(changeInfo));
         
@@ -102,12 +131,12 @@ class MidiService {
     if (!this.jzz) return [];
     
     const devices: MidiDevice[] = [];
-    const info = this.jzz.info();
+    const info = this.jzz.info() as JzzEngineInfo;
     
     if (info && info.inputs) {
-      info.inputs.forEach((input: any) => {
+      info.inputs.forEach((input) => {
         devices.push({
-          id: input.id || input.name,
+          id: input.id ?? input.name ?? 'unknown-input',
           name: input.name || "Unknown Input Device"
         });
       });
@@ -129,11 +158,11 @@ class MidiService {
     
     // Add hardware MIDI devices if available
     if (this.jzz) {
-      const info = this.jzz.info();
+      const info = this.jzz.info() as JzzEngineInfo;
       if (info && info.outputs) {
-        info.outputs.forEach((output: any) => {
+        info.outputs.forEach((output) => {
           devices.push({
-            id: output.id || output.name,
+            id: output.id ?? output.name ?? 'unknown-output',
             name: output.name || "Unknown Output Device"
           });
         });
@@ -157,8 +186,8 @@ class MidiService {
       this.inputCallback = callback;
 
       // Set up message handler
-      this.inputDevice.connect((message: any) => {
-        const rawData = message.data || message;
+      this.inputDevice.connect((message: JzzMidiMessage) => {
+        const rawData = Array.from(message.data ?? message, (value) => Number(value));
         const status = rawData[0];
         
         // SUPPRESS Active Sensing (0xFE) - floods data every ~300ms
@@ -171,7 +200,7 @@ class MidiService {
         
         // Create raw message for debugging
         const rawMessage: RawMidiMessage = {
-          hex: Array.from(rawData).map((b: number) => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
+          hex: rawData.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
           data: new Uint8Array(rawData),
           type: this.getMidiMessageType(status)
         };
@@ -221,7 +250,7 @@ class MidiService {
       
       // Save to preferences for auto-reconnect
       preferencesStore.dispatch({
-        type: 'SET_MIDI',
+        type: PrefActionType.SetMidi,
         data: { 
           ...preferencesStore.getState().midi,
           lastInputDeviceId: deviceId
@@ -257,7 +286,7 @@ class MidiService {
           
           // Save to preferences for auto-reconnect
           preferencesStore.dispatch({
-            type: 'SET_MIDI',
+            type: PrefActionType.SetMidi,
             data: { 
               ...preferencesStore.getState().midi,
               lastOutputDeviceId: deviceId
@@ -289,7 +318,7 @@ class MidiService {
       
       // Save to preferences for auto-reconnect
       preferencesStore.dispatch({
-        type: 'SET_MIDI',
+        type: PrefActionType.SetMidi,
         data: { 
           ...preferencesStore.getState().midi,
           lastOutputDeviceId: deviceId
@@ -431,43 +460,43 @@ class MidiService {
   }
 
   // Process device changes from JZZ onChange event
-  private processDeviceChanges(info: any): { inputs: { added: MidiDevice[], removed: MidiDevice[] }, outputs: { added: MidiDevice[], removed: MidiDevice[] } } {
+  private processDeviceChanges(info: JzzDeviceChange): { inputs: { added: MidiDevice[], removed: MidiDevice[] }, outputs: { added: MidiDevice[], removed: MidiDevice[] } } {
     const result = {
       inputs: { added: [] as MidiDevice[], removed: [] as MidiDevice[] },
       outputs: { added: [] as MidiDevice[], removed: [] as MidiDevice[] }
     };
 
     if (info.inputs?.added) {
-      info.inputs.added.forEach((input: any) => {
+      info.inputs.added.forEach((input) => {
         result.inputs.added.push({
-          id: input.id || input.name,
+          id: input.id ?? input.name ?? 'unknown-input',
           name: input.name || "Unknown Input Device"
         });
       });
     }
 
     if (info.inputs?.removed) {
-      info.inputs.removed.forEach((input: any) => {
+      info.inputs.removed.forEach((input) => {
         result.inputs.removed.push({
-          id: input.id || input.name,
+          id: input.id ?? input.name ?? 'unknown-input',
           name: input.name || "Unknown Input Device"
         });
       });
     }
 
     if (info.outputs?.added) {
-      info.outputs.added.forEach((output: any) => {
+      info.outputs.added.forEach((output) => {
         result.outputs.added.push({
-          id: output.id || output.name,
+          id: output.id ?? output.name ?? 'unknown-output',
           name: output.name || "Unknown Output Device"
         });
       });
     }
 
     if (info.outputs?.removed) {
-      info.outputs.removed.forEach((output: any) => {
+      info.outputs.removed.forEach((output) => {
         result.outputs.removed.push({
-          id: output.id || output.name,
+          id: output.id ?? output.name ?? 'unknown-output',
           name: output.name || "Unknown Output Device"
         });
       });
