@@ -43,8 +43,9 @@ const TargetInfoDisplay: React.FC<TargetInfoProps> = ({ client }) => {
   const handleSetTarget = (id: string) => {
     // Allow manual setting via UI if needed (e.g., clicking a name)
     // This would likely come from another component, but demonstrates sending
-    if (client.gmcpHandlers["IRE.Target"]) {
-      (client.gmcpHandlers["IRE.Target"] as any).sendSet(id);
+    const targetHandler = client.gmcpHandlers["IRE.Target"];
+    if (targetHandler) {
+      targetHandler.sendSet(id);
       setTargetId(id);
       setTarget(null); // Clear old info
     }
