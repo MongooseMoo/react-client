@@ -9,6 +9,16 @@ interface InventoryProps {
   client: MudClient;
 }
 
+type ItemListEvent = {
+  location: ItemLocation;
+  items: Item[];
+};
+
+type ItemChangeEvent = {
+  location: ItemLocation;
+  item: Item;
+};
+
 const Inventory: React.FC<InventoryProps> = ({ client }) => {
   const [items, setItems] = useState<Item[]>([]);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -60,20 +70,17 @@ const Inventory: React.FC<InventoryProps> = ({ client }) => {
   }, [client, selectedItem?.id]);
 
   useEffect(() => {
-    const handleList = (data: any) => updateInventory(data.location, data.items);
-    const handleAdd = (data: any) => addItemToInventory(data.location, data.item);
-    const handleRemove = (data: any) => removeItemFromInventory(data.location, data.item);
-    const handleUpdate = (data: any) => updateItemInInventory(data.location, data.item);
+    const handleList = (data: ItemListEvent) => updateInventory(data.location, data.items);
+    const handleAdd = (data: ItemChangeEvent) => addItemToInventory(data.location, data.item);
+    const handleRemove = (data: ItemChangeEvent) => removeItemFromInventory(data.location, data.item);
+    const handleUpdate = (data: ItemChangeEvent) => updateItemInInventory(data.location, data.item);
 
     client.on('itemsList', handleList);
     client.on('itemAdd', handleAdd);
     client.on('itemRemove', handleRemove);
     client.on('itemUpdate', handleUpdate);
 
-    const charItemsHandler = client.gmcpHandlers['Char.Items'] as any;
-    if (charItemsHandler?.sendInventoryRequest) {
-      charItemsHandler.sendInventoryRequest();
-    }
+    client.gmcpHandlers['Char.Items']?.sendInventoryRequest();
 
     return () => {
       client.off('itemsList', handleList);
