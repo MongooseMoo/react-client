@@ -38,7 +38,7 @@ export class GmcPIRESound extends GMCPPackage {
     super(client);
     // Get a reference to the Client.Media handler if needed for delegation
     // This assumes Client.Media is already initialized on the client
-    this.mediaHandler = client.gmcpHandlers['Client.Media'] as GMCPClientMedia;
+    this.mediaHandler = client.gmcpHandlers['Client.Media'];
     if (!this.mediaHandler) {
       console.warn("IRE.Sound: Could not find Client.Media handler for potential delegation.");
     }
@@ -51,7 +51,7 @@ export class GmcPIRESound extends GMCPPackage {
     // Option 1: Delegate to Client.Media if parameters map well
     if (this.mediaHandler) {
       // Translate IRE parameters to Client.Media parameters
-      const mediaPlayData: GMCPMessageClientMediaPlay = {
+      const mediaPlayData = Object.assign(new GMCPMessageClientMediaPlay(), {
         name: data.name,
         // url: undefined, // Assuming name is sufficient or needs resolving
         type: "sound", // Default type
@@ -65,7 +65,7 @@ export class GmcPIRESound extends GMCPPackage {
         // is3d: false, // Default
         // pan: 0, // Default
         // position: [0, 0, 0], // Default
-      };
+      });
       this.mediaHandler.handlePlay(mediaPlayData);
     } else {
       // Option 2: Implement directly using cacophony (if parameters differ significantly)
