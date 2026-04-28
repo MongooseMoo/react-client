@@ -1,5 +1,6 @@
 import type { MidiMessage, MidiNote } from "../../MidiService";
 import { preferencesStore } from "../../PreferencesStore";
+import type { GMCPCoreSupports } from "../Core";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export class GMCPMessageClientMidiNote extends GMCPMessage {
@@ -261,7 +262,7 @@ export class GMCPClientMidi extends GMCPPackage {
 
   advertiseMidiSupport(): void {
     if (!this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcpHandlers["Core.Supports"] as GMCPCoreSupports | undefined;
       if (coreSupports) {
         coreSupports.sendAdd([{ name: "Client.Midi", version: this.packageVersion || 1 }]);
         this.isAdvertised = true;
@@ -272,7 +273,7 @@ export class GMCPClientMidi extends GMCPPackage {
 
   unadvertiseMidiSupport(): void {
     if (this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcpHandlers["Core.Supports"] as GMCPCoreSupports | undefined;
       if (coreSupports) {
         coreSupports.sendRemove(["Client.Midi"]);
         this.isAdvertised = false;
