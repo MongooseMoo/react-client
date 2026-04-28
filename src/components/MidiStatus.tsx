@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import MudClient from "../client";
 import { midiService, MidiDevice } from "../MidiService";
 import { usePreferences } from "../hooks/usePreferences";
-import { GMCPClientMidi } from "../gmcp/Client/Midi";
+import type { GMCPClientMidi } from "../gmcp/Client/Midi";
 import { preferencesStore } from "../PreferencesStore";
 import { virtualMidiService } from "../VirtualMidiService";
 
@@ -50,7 +50,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
 
   useEffect(() => {
     // Get MIDI package reference
-    const midi = client.gmcpHandlers["Client.Midi"] as GMCPClientMidi;
+    const midi = client.gmcpHandlers["Client.Midi"];
     if (midi) {
       setMidiPackage(midi);
     }
