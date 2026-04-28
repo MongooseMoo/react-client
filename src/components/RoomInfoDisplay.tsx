@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState, useMemo } from "react";
 import MudClient from "../client";
-import { GMCPMessageRoomInfo, RoomPlayer } from "../gmcp/Room";
-import { Item, ItemLocation, GMCPCharItems } from "../gmcp/Char/Items"; // Import Item, ItemLocation, GMCPCharItems
+import type { GMCPMessageRoomInfo, RoomPlayer } from "../gmcp/Room";
+import type { Item, ItemLocation } from "../gmcp/Char/Items";
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
 import ItemCard from "./ItemCard"; // Import ItemCard
 import PlayerCard from "./PlayerCard"; // Import PlayerCard
@@ -21,7 +21,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>(client.worldData.roomPlayers || []);
   const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
 
-  const charItemsHandler = client.gmcpHandlers['Char.Items'] as GMCPCharItems | undefined;
+  const charItemsHandler = client.gmcpHandlers['Char.Items'];
 
   // Helper function to check if an item name matches a player name
   const isPlayerItem = useCallback((item: Item, players: RoomPlayer[]): boolean => {
