@@ -13,6 +13,7 @@ export { GMCPClientKeystrokes } from "./Client/Keystrokes";
 export { GMCPClientMedia } from "./Client/Media";
 export { GMCPClientMidi } from "./Client/Midi";
 export { GMCPClientHaptics } from "./Client/Haptics";
+export { GMCPClientSpatial } from "./Client/Spatial";
 export { GMCPClientSpeech } from "./Client/Speech";
 export { GMCPCommChannel } from "./Comm/Channel";
 export { GMCPCommLiveKit } from "./Comm/LiveKit";

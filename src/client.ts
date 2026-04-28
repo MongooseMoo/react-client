@@ -32,6 +32,12 @@ import { AutoreadMode, preferencesStore } from "./PreferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
 import { GMCPMessageRoomInfo, RoomPlayer } from "./gmcp/Room"; // Import RoomPlayer
+import type {
+  SpatialEmitter,
+  SpatialEntity,
+  SpatialListenerOrientation,
+  SpatialVector,
+} from "./gmcp/Client/Spatial";
 
 export interface WorldData {
   liveKitTokens: string[];
@@ -39,6 +45,11 @@ export interface WorldData {
   playerName: string;
   roomId: string;
   roomPlayers: RoomPlayer[]; // Changed from string[]
+  spatialEntities: Record<string, SpatialEntity>;
+  spatialEmitters: Record<string, SpatialEmitter>;
+  listenerEntityId: string;
+  listenerPosition: SpatialVector | null;
+  listenerOrientation: SpatialListenerOrientation;
 }
 
 function resetMidiIntentionalDisconnectFlags(): void {
@@ -84,6 +95,11 @@ class MudClient extends EventEmitter {
     roomId: "",
     liveKitTokens: [],
     roomPlayers: [], // Initialized as RoomPlayer[]
+    spatialEntities: {},
+    spatialEmitters: {},
+    listenerEntityId: "",
+    listenerPosition: null,
+    listenerOrientation: { forward: null, up: null },
   };
   public cacophony: Cacophony;
   public editors: EditorManager;
@@ -425,6 +441,11 @@ class MudClient extends EventEmitter {
     this.telnetBuffer = "";
     this.telnetNegotiation = false;
     this.currentRoomInfo = null; // Reset room info on cleanup
+    this.worldData.spatialEntities = {};
+    this.worldData.spatialEmitters = {};
+    this.worldData.listenerEntityId = "";
+    this.worldData.listenerPosition = null;
+    this.worldData.listenerOrientation = { forward: null, up: null };
     this.webRTCService.cleanup();
     this.fileTransferManager.cleanup();
     

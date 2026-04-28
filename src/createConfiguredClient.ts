@@ -19,6 +19,7 @@ import {
   GMCPClientKeystrokes,
   GMCPClientMedia,
   GMCPClientMidi,
+  GMCPClientSpatial,
   GMCPClientSpeech,
   GMCPCommChannel,
   GMCPCommLiveKit,
@@ -45,6 +46,7 @@ export function createConfiguredClient(): MudClient {
   // GMCP packages
   client.registerGMCPPackage(GMCPCore);
   client.registerGMCPPackage(GMCPClientMedia);
+  client.registerGMCPPackage(GMCPClientSpatial);
   client.registerGMCPPackage(GMCPClientMidi);
   client.registerGMCPPackage(GMCPClientSpeech);
   client.registerGMCPPackage(GMCPClientKeystrokes);
