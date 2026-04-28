@@ -1,10 +1,25 @@
 import JZZ from 'jzz';
 import { Tiny } from 'jzz-synth-tiny';
 
+type JzzEngine = Awaited<ReturnType<typeof JZZ>>;
+type JzzPort = Awaited<ReturnType<JzzEngine["openMidiOut"]>>;
+
+type TinySynthFactory = {
+  (name?: string): unknown;
+  register(name?: string): void;
+  version(): string;
+};
+
+type JzzWithTinySynth = typeof JZZ & {
+  synth: {
+    Tiny: TinySynthFactory;
+  };
+};
+
 export class VirtualMidiService {
   private static instance: VirtualMidiService;
   private isInitialized = false;
-  private virtualPort: any = null;
+  private virtualPort: JzzPort | null = null;
   private readonly portName = 'Virtual Synthesizer';
 
   private constructor() {}
@@ -29,7 +44,8 @@ export class VirtualMidiService {
       Tiny(JZZ);
       
       // Register the virtual synthesizer as a MIDI port
-      JZZ.synth.Tiny.register(this.portName);
+      const jzzWithTinySynth = JZZ as JzzWithTinySynth;
+      jzzWithTinySynth.synth.Tiny.register(this.portName);
       
       // Refresh JZZ to update the device list
       jzz.refresh();
@@ -43,7 +59,7 @@ export class VirtualMidiService {
     }
   }
 
-  async getVirtualPort(): Promise<any> {
+  async getVirtualPort(): Promise<JzzPort | null> {
     if (!this.isInitialized) {
       const success = await this.initialize();
       if (!success) return null;
