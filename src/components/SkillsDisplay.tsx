@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import MudClient from '../client';
-import { SkillGroupInfo, GMCPMessageCharSkillsList } from '../gmcp/Char/Skills';
+import type { SkillGroupInfo, GMCPMessageCharSkillsList } from '../gmcp/Char/Skills';
 import './SkillsDisplay.css'; // We'll create this CSS file next
 
 interface SkillsDisplayProps {
@@ -16,7 +16,7 @@ const SkillsDisplay: React.FC<SkillsDisplayProps> = ({ client }) => {
     const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
     const [skillsData, setSkillsData] = useState<{ [groupName: string]: SkillDetails }>({});
 
-    const charSkillsHandler = client.gmcpHandlers['Char.Skills'] as any; // Cast for method access
+    const charSkillsHandler = client.gmcpHandlers['Char.Skills'];
 
     // --- Handlers for GMCP Messages ---
     const handleGroups = useCallback((groupList: SkillGroupInfo[]) => {
