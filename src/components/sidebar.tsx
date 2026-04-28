@@ -16,8 +16,6 @@ import { UserlistPlayer } from "../mcp";
 import RoomInfoDisplay from "./RoomInfoDisplay"; // Import new component
 import HapticsStatus from "./HapticsStatus"; // Import Haptics component
 import { usePreferences } from "../hooks/usePreferences";
-import { GMCPClientMidi } from "../gmcp/Client/Midi";
-import { GMCPClientHaptics } from "../gmcp/Client/Haptics";
 import { hapticsService } from "../HapticsService";
 
 // Define the type for the imperative handle
@@ -48,7 +46,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
 
   // Handle MIDI support advertisement based on preferences
   useEffect(() => {
-    const midiPackage = client.gmcpHandlers["Client.Midi"] as GMCPClientMidi;
+    const midiPackage = client.gmcpHandlers["Client.Midi"];
     if (!midiPackage) return;
 
     // Only handle runtime preference changes - initial advertisement handled by Core.Supports
@@ -63,7 +61,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
 
   // Handle Haptics support advertisement based on preferences
   useEffect(() => {
-    const hapticsPackage = client.gmcpHandlers["Client.Haptics"] as GMCPClientHaptics;
+    const hapticsPackage = client.gmcpHandlers["Client.Haptics"];
     if (!hapticsPackage) return;
     if (client.connected) {
       if (preferences.haptics.enabled) {
