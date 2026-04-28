@@ -39,6 +39,25 @@ export class GMCPMessageClientMediaStop extends GMCPMessage {
   public readonly key?: string; // Stops playing media by key matching the value specified.
 }
 
+export class GMCPMessageClientMediaUpdate extends GMCPMessage {
+  public readonly name?: string;
+  public readonly url?: string;
+  public readonly type?: MediaType = "sound";
+  public readonly tag?: string;
+  public readonly volume?: number;
+  public readonly fadein?: number = 0;
+  public readonly fadeout?: number = 0;
+  public readonly start?: number = 0;
+  public readonly loops?: number = 0;
+  public readonly priority?: number = 0;
+  public continue?: boolean = true;
+  public key?: string;
+  public readonly end?: number = 0;
+  public is3d?: boolean = false;
+  public pan?: number = 0;
+  public position?: number[] = [0, 0, 0];
+}
+
 export class GMCPMessageClientMediaListenerOrientation extends GMCPMessage {
   public readonly up?: Position;
   public readonly forward?: Position;
@@ -59,6 +78,64 @@ export class GMCPClientMedia extends GMCPPackage {
   public packageName: string = "Client.Media";
   sounds: { [key: string]: ExtendedSound } = {};
   defaultUrl: string = "";
+
+  private assignSoundMetadata(sound: ExtendedSound, data: Pick<GMCPMessageClientMediaPlay, "key" | "tag" | "type">) {
+    sound.key = data.key;
+    sound.tag = data.tag;
+    sound.mediaType = data.type;
+  }
+
+  private applySoundState(
+    sound: ExtendedSound,
+    data: Pick<
+      GMCPMessageClientMediaUpdate,
+      "volume" | "pan" | "loops" | "is3d" | "position" | "start" | "priority"
+    >,
+  ) {
+    if (data.volume !== undefined) {
+      sound.volume = data.volume / 100;
+    }
+
+    if (data.pan !== undefined) {
+      sound.stereoPan = data.pan / 100;
+    }
+
+    if (data.loops !== undefined) {
+      const loopCount = data.loops === -1 ? Infinity : data.loops - 1;
+      sound.loop(loopCount);
+    }
+
+    if (data.is3d) {
+      sound.threeDOptions = {
+        coneInnerAngle: 360,
+        coneOuterAngle: 0,
+        panningModel: "HRTF",
+        distanceModel: "inverse",
+      };
+    }
+
+    if (data.position?.length) {
+      sound.position = [data.position[0], data.position[1], data.position[2]];
+    }
+
+    if (data.start !== undefined) {
+      sound.seek(data.start / 1000);
+    }
+
+    if (data.priority) {
+      for (const key in this.sounds) {
+        const activeSound = this.sounds[key];
+        if (activeSound === sound) {
+          continue;
+        }
+        if (activeSound.priority && activeSound.priority < data.priority) {
+          activeSound.cleanup();
+          delete this.sounds[key];
+        }
+      }
+      sound.priority = data.priority;
+    }
+  }
 
   handleDefault(url: string) {
     this.defaultUrl = url;
@@ -109,21 +186,7 @@ export class GMCPClientMedia extends GMCPPackage {
       }
     }
 
-    // Update volume if provided
-    if (data.volume !== undefined) {
-      sound.volume = data.volume / 100;
-    }
-
-    // Update pan if provided (server sends -100 to 100, cacophony expects -1 to 1)
-    if (data.pan !== undefined) {
-      sound.stereoPan = data.pan / 100;
-    }
-
-    // Update looping if provided
-    if (data.loops !== undefined) {
-      const loopCount = data.loops === -1 ? Infinity : data.loops - 1;
-      sound.loop(loopCount);
-    }
+    this.applySoundState(sound, data);
 
     if (data.end) {
       const endKey = data.key!;
@@ -136,34 +199,10 @@ export class GMCPClientMedia extends GMCPPackage {
       }, data.end);
     }
 
-    // 3D functionality
-    if (data.is3d) {
-      sound.threeDOptions = {
-        coneInnerAngle: 360,
-        coneOuterAngle: 0,
-        panningModel: "HRTF",
-        distanceModel: "inverse",
-      };
-      sound.position = [data.position[0], data.position[1], data.position[2]];
-    }
-
-    // Priority handling
-    if (data.priority) {
-      for (let key in this.sounds) {
-        const activeSound = this.sounds[key];
-        if (activeSound.priority && activeSound.priority < data.priority) {
-          activeSound.cleanup();
-          delete this.sounds[key];
-        }
-      }
-      sound.priority = data.priority;
-    }
-
     // Playback control
     if (!sound.isPlaying) {
       const playback = sound.play()[0] as Playback;
-      // Seek after play so playback exists for seek to act on
-      if (data.start) {
+      if (data.start !== undefined) {
         sound.seek(data.start / 1000);
       }
       const targetVolume = (data.volume ?? 50) / 100;
@@ -193,21 +232,33 @@ export class GMCPClientMedia extends GMCPPackage {
           }
         }
       }
-    } else {
-      // Sync position on already-playing sound
-      if (data.start) {
-        sound.seek(data.start / 1000);
-      }
-      // Update pan on existing playbacks
-      if (data.pan !== undefined) {
-        const pan = data.pan / 100;
-        for (const playback of sound.playbacks) {
-          playback.stereoPan = pan;
-        }
-      }
     }
-    sound.key = data.key;
-    this.sounds[sound.key] = sound;
+    this.assignSoundMetadata(sound, data);
+    const soundKey = sound.key ?? data.key ?? mediaUrl;
+    sound.key = soundKey;
+    this.sounds[soundKey] = sound;
+  }
+
+  handleUpdate(data: GMCPMessageClientMediaUpdate) {
+    const targetSounds = data.key
+      ? this.soundsByKey(data.key)
+      : data.name
+        ? this.soundsByName(data.name)
+        : [];
+
+    targetSounds.forEach((sound) => {
+      this.assignSoundMetadata(sound, {
+        key: data.key ?? sound.key,
+        tag: data.tag ?? sound.tag,
+        type: data.type ?? sound.mediaType,
+      });
+      this.applySoundState(sound, data);
+      const soundKey = sound.key ?? data.key;
+      if (soundKey) {
+        sound.key = soundKey;
+        this.sounds[soundKey] = sound;
+      }
+    });
   }
 
   handleStop(data: GMCPMessageClientMediaStop): void {
@@ -250,9 +301,8 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   soundsByName(name: string) {
-    // must check the end of the url because the url isn't in the sound object
     return Object.values(this.sounds).filter((sound) => {
-      return sound.url && sound.url[sound.url.length - 1].endsWith(name);
+      return typeof sound.url === "string" && sound.url.endsWith(name);
     });
   }
 
