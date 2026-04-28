@@ -10,6 +10,14 @@ interface MidiStatusProps {
   client: MudClient;
 }
 
+type DeviceChangeEventType = 'connected' | 'disconnected' | 'reconnect';
+
+interface DeviceChangeEvent {
+  timestamp: string;
+  message: string;
+  type: DeviceChangeEventType;
+}
+
 const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const [preferences] = usePreferences();
   const [midiPackage, setMidiPackage] = useState<GMCPClientMidi | null>(null);
@@ -18,11 +26,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const [selectedInputId, setSelectedInputId] = useState("");
   const [selectedOutputId, setSelectedOutputId] = useState("");
   const [connectionState, setConnectionState] = useState(midiService.connectionStatus);
-  const [deviceChangeEvents, setDeviceChangeEvents] = useState<Array<{
-    timestamp: string;
-    message: string;
-    type: 'connected' | 'disconnected' | 'reconnect';
-  }>>([]);
+  const [deviceChangeEvents, setDeviceChangeEvents] = useState<DeviceChangeEvent[]>([]);
   const [reconnectableDevices, setReconnectableDevices] = useState<{
     input?: { id: string, name: string };
     output?: { id: string, name: string };
@@ -96,7 +100,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
               setDeviceChangeEvents(prev => [{
                 timestamp: new Date().toLocaleTimeString(),
                 message: `Auto-reconnected to input: ${device.name}`,
-                type: 'reconnect'
+                type: 'reconnect' as const
               }, ...prev].slice(0, 10));
               return; // Don't show reconnectable if we successfully reconnected
             }
@@ -125,7 +129,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
               setDeviceChangeEvents(prev => [{
                 timestamp: new Date().toLocaleTimeString(),
                 message: `Auto-reconnected to output: ${device.name}`,
-                type: 'reconnect'
+                type: 'reconnect' as const
               }, ...prev].slice(0, 10));
               return; // Don't show reconnectable if we successfully reconnected
             }
@@ -165,7 +169,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       // Set up device change monitoring
       const unsubscribe = midiService.onDeviceChange((info) => {
         const timestamp = new Date().toLocaleTimeString();
-        const events: typeof deviceChangeEvents = [];
+        const events: DeviceChangeEvent[] = [];
         
         // Log device additions
         info.inputs.added.forEach(device => {
@@ -288,7 +292,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       setDeviceChangeEvents(prev => [{
         timestamp: new Date().toLocaleTimeString(),
         message: `Reconnected to input: ${reconnectableDevices.input!.name}`,
-        type: 'reconnect'
+        type: 'reconnect' as const
       }, ...prev].slice(0, 10));
     }
   };
@@ -302,7 +306,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       setDeviceChangeEvents(prev => [{
         timestamp: new Date().toLocaleTimeString(),
         message: `Reconnected to output: ${reconnectableDevices.output!.name}`,
-        type: 'reconnect'
+        type: 'reconnect' as const
       }, ...prev].slice(0, 10));
     }
   };
