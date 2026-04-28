@@ -1,0 +1,83 @@
+import type { GMCPAutoLogin } from "./Auth";
+import type { GMCPChar } from "./Char";
+import type { GMCPCharAfflictions } from "./Char/Afflictions";
+import type { GMCPCharDefences } from "./Char/Defences";
+import type { GMCPCharItems } from "./Char/Items";
+import type { GMCPCharOffer } from "./Char/Offer";
+import type { GMCPCharPrompt } from "./Char/Prompt";
+import type { GMCPCharSkills } from "./Char/Skills";
+import type { GMCPCharStatus } from "./Char/Status";
+import type { GMCPCharStatusAffectedBy } from "./Char/Status/AffectedBy";
+import type { GMCPCharStatusConditions } from "./Char/Status/Conditions";
+import type { GMCPCharStatusTimers } from "./Char/Status/Timers";
+import type { GMCPClientFile } from "./Client/File";
+import type { GMCPClientFileTransfer } from "./Client/FileTransfer";
+import type { GMCPClientHaptics } from "./Client/Haptics";
+import type { GMCPClientHtml } from "./Client/Html";
+import type { GMCPClientKeystrokes } from "./Client/Keystrokes";
+import type { GMCPClientMedia } from "./Client/Media";
+import type { GMCPClientMidi } from "./Client/Midi";
+import type { GMCPClientSpeech } from "./Client/Speech";
+import type { GMCPCommChannel } from "./Comm/Channel";
+import type { GMCPCommLiveKit } from "./Comm/LiveKit";
+import type { GMCPCore, GMCPCoreSupports } from "./Core";
+import type { GMCPGroup } from "./Group";
+import type { GmcPIRECombatMessage } from "./IRE/CombatMessage";
+import type { GmcPIREComposer } from "./IRE/Composer";
+import type { GmcPIREDisplay } from "./IRE/Display";
+import type { GmcPIREMisc } from "./IRE/Misc";
+import type { GmcPIRERift } from "./IRE/Rift";
+import type { GmcPIRESound } from "./IRE/Sound";
+import type { GmcPIRETarget } from "./IRE/Target";
+import type { GmcPIRETasks } from "./IRE/Tasks";
+import type { GmcPIRETime } from "./IRE/Time";
+import type { GMCPLogging } from "./Logging";
+import type { GMCPPackage } from "./package";
+import type { GMCPRedirect } from "./Redirect";
+import type { GMCPRoom } from "./Room";
+
+export interface KnownGMCPPackageMap {
+  "Auth.Autologin": GMCPAutoLogin;
+  "Char": GMCPChar;
+  "Char.Afflictions": GMCPCharAfflictions;
+  "Char.Defences": GMCPCharDefences;
+  "Char.Items": GMCPCharItems;
+  "Char.Offer": GMCPCharOffer;
+  "Char.Prompt": GMCPCharPrompt;
+  "Char.Skills": GMCPCharSkills;
+  "Char.Status": GMCPCharStatus;
+  "Char.Status.AffectedBy": GMCPCharStatusAffectedBy;
+  "Char.Status.Conditions": GMCPCharStatusConditions;
+  "Char.Status.Timers": GMCPCharStatusTimers;
+  "Client.File": GMCPClientFile;
+  "Client.FileTransfer": GMCPClientFileTransfer;
+  "Client.Haptics": GMCPClientHaptics;
+  "Client.Html": GMCPClientHtml;
+  "Client.Keystrokes": GMCPClientKeystrokes;
+  "Client.Media": GMCPClientMedia;
+  "Client.Midi": GMCPClientMidi;
+  "Client.Speech": GMCPClientSpeech;
+  "Comm.Channel": GMCPCommChannel;
+  "Comm.LiveKit": GMCPCommLiveKit;
+  "Core": GMCPCore;
+  "Core.Supports": GMCPCoreSupports;
+  "Group": GMCPGroup;
+  "IRE.CombatMessage": GmcPIRECombatMessage;
+  "IRE.Composer": GmcPIREComposer;
+  "IRE.Display": GmcPIREDisplay;
+  "IRE.Misc": GmcPIREMisc;
+  "IRE.Rift": GmcPIRERift;
+  "IRE.Sound": GmcPIRESound;
+  "IRE.Target": GmcPIRETarget;
+  "IRE.Tasks": GmcPIRETasks;
+  "IRE.Time": GmcPIRETime;
+  "Logging": GMCPLogging;
+  "Redirect": GMCPRedirect;
+  "Room": GMCPRoom;
+}
+
+export type KnownGMCPPackageName = keyof KnownGMCPPackageMap;
+
+export type GMCPHandlerMap =
+  Partial<KnownGMCPPackageMap> &
+  Record<string, GMCPPackage | undefined>;
