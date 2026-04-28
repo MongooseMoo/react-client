@@ -25,6 +25,18 @@ export type ClientEventMap = {
 export function useClientEvent<K extends keyof ClientEventMap>(
   client: MudClient | null,
   event: K,
+  initialValue: ClientEventMap[K]
+): ClientEventMap[K];
+
+export function useClientEvent<K extends keyof ClientEventMap>(
+  client: MudClient | null,
+  event: K,
+  initialValue: null
+): ClientEventMap[K] | null;
+
+export function useClientEvent<K extends keyof ClientEventMap>(
+  client: MudClient | null,
+  event: K,
   initialValue: ClientEventMap[K] | null
 ): ClientEventMap[K] | null {
   const [value, setValue] = useState<ClientEventMap[K] | null>(initialValue);
