@@ -4,7 +4,7 @@ import './ItemCard.css';
 
 interface ItemCardProps {
     item: Item;
-    onDrop: (item: Item) => void;
+    onDrop?: (item: Item) => void;
     onWear?: (item: Item) => void;
     onRemove?: (item: Item) => void;
     onGet?: (item: Item) => void; // Added onGet prop
