@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { PrefActionType, NavigationKeyScheme } from "../PreferencesStore";
 import { usePreferences } from "../hooks/usePreferences";
 import { useVoices } from "../hooks/useVoices";
-import Tabs from "./tabs";
+import Tabs, { TabProps } from "./tabs";
 
 const GeneralTab: React.FC = () => {
   const [state, dispatch] = usePreferences();
@@ -450,14 +450,14 @@ const KeyboardTab: React.FC = () => {
 };
 
 const Preferences: React.FC = () => {
-  const tabs = [
-    { label: "General", content: <GeneralTab /> },
-    { label: "Speech", content: <SpeechTab /> },
-    { label: "Sounds", content: <SoundsTab /> },
-    { label: "Editor", content: <EditorTab /> },
-    { label: "Keyboard", content: <KeyboardTab /> },
-    { label: "MIDI", content: <MidiTab /> },
-    { label: "Haptics", content: <HapticsTab /> },
+  const tabs: TabProps[] = [
+    { id: "preferences-general-tab", label: "General", content: <GeneralTab /> },
+    { id: "preferences-speech-tab", label: "Speech", content: <SpeechTab /> },
+    { id: "preferences-sounds-tab", label: "Sounds", content: <SoundsTab /> },
+    { id: "preferences-editor-tab", label: "Editor", content: <EditorTab /> },
+    { id: "preferences-keyboard-tab", label: "Keyboard", content: <KeyboardTab /> },
+    { id: "preferences-midi-tab", label: "MIDI", content: <MidiTab /> },
+    { id: "preferences-haptics-tab", label: "Haptics", content: <HapticsTab /> },
   ];
 
   return <Tabs tabs={tabs} />;
