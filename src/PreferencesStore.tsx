@@ -49,6 +49,11 @@ export type HapticsPreferences = {
   autoStopTimeout: number;
 };
 
+export type AutologgingPreferences = {
+  enabled: boolean;
+  maxBytes: number;
+};
+
 export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
@@ -58,6 +63,7 @@ export type PrefState = {
   keyboard: KeyboardPreferences;
   midi: MidiPreferences;
   haptics: HapticsPreferences;
+  autologging: AutologgingPreferences;
 };
 
 export enum PrefActionType {
@@ -70,6 +76,7 @@ export enum PrefActionType {
   SetKeyboard = "SET_KEYBOARD",
   SetMidi = "SET_MIDI",
   SetHaptics = "SET_HAPTICS",
+  SetAutologging = "SET_AUTOLOGGING",
 }
 
 export type PrefAction =
@@ -81,7 +88,8 @@ export type PrefAction =
   | { type: PrefActionType.SetEditorAccessibilityMode; data: boolean }
   | { type: PrefActionType.SetKeyboard; data: KeyboardPreferences }
   | { type: PrefActionType.SetMidi; data: MidiPreferences }
-  | { type: PrefActionType.SetHaptics; data: HapticsPreferences };
+  | { type: PrefActionType.SetHaptics; data: HapticsPreferences }
+  | { type: PrefActionType.SetAutologging; data: AutologgingPreferences };
 
 class PreferencesStore {
   private state: PrefState;
@@ -141,6 +149,10 @@ class PreferencesStore {
         intensityCap: 1.0,
         autoStopTimeout: 5,
       },
+      autologging: {
+        enabled: false,
+        maxBytes: 100 * 1024 * 1024,
+      },
     };
   }
 
@@ -159,6 +171,7 @@ class PreferencesStore {
       keyboard: { ...initial.keyboard, ...stored.keyboard },
       midi: { ...initial.midi, ...stored.midi },
       haptics: { ...initial.haptics, ...cleanHaptics },
+      autologging: { ...initial.autologging, ...stored.autologging },
     };
   }
 
@@ -182,6 +195,8 @@ class PreferencesStore {
         return { ...state, midi: action.data };
       case PrefActionType.SetHaptics:
         return { ...state, haptics: action.data };
+      case PrefActionType.SetAutologging:
+        return { ...state, autologging: action.data };
       default:
         return state;
     }
