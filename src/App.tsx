@@ -12,6 +12,7 @@ import OutputWindow from "./components/output";
 import PreferencesDialog, {
   PreferencesDialogRef,
 } from "./components/PreferencesDialog";
+import AutoLogDialog, { AutoLogDialogRef } from "./components/AutoLogDialog";
 import Sidebar, { SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
@@ -51,6 +52,7 @@ function App() {
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
+  const autoLogDialogRef = React.useRef<AutoLogDialogRef | null>(null);
   const sidebarRef = React.useRef<SidebarRef | null>(null);
 
   const clientInitialized = useRef(false);
@@ -405,6 +407,7 @@ function App() {
               onCopyLog={copyLog}
               onToggleSidebar={() => setShowSidebar(!showSidebar)}
               onOpenPrefs={() => prefsDialogRef.current?.open()}
+              onOpenLogs={() => autoLogDialogRef.current?.open()}
               showSidebar={showSidebar}
             />
           </header>
@@ -437,6 +440,7 @@ function App() {
             <Statusbar client={client} />
           </footer>
           <PreferencesDialog ref={prefsDialogRef} />
+          <AutoLogDialog ref={autoLogDialogRef} />
         </div>
       )}
       {/* Default mode with no client yet — blank */}
