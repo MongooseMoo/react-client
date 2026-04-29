@@ -9,6 +9,7 @@ import {
   FaVolumeUp,
   FaChevronRight,
   FaChevronLeft,
+  FaHistory,
 } from "react-icons/fa";
 import type MudClient from "../client";
 import { preferencesStore, PrefActionType } from "../PreferencesStore";
@@ -22,6 +23,7 @@ export interface ToolbarProps {
   onCopyLog: () => void; // <-- Add onCopyLog prop
   onToggleSidebar: () => void;
   onOpenPrefs: () => void;
+  onOpenLogs?: () => void;
   showSidebar?: boolean;
 }
 
@@ -32,6 +34,7 @@ const Toolbar = ({
   onCopyLog, // <-- Destructure onCopyLog
   onToggleSidebar,
   onOpenPrefs,
+  onOpenLogs,
   showSidebar,
 }: ToolbarProps) => {
   const connected = useClientEvent(client, 'connectionChange', client.connected);
@@ -86,6 +89,12 @@ const Toolbar = ({
           <FaEraser />
           <span className="toolbar-label">Clear Log</span>
         </button>
+        {onOpenLogs && (
+          <button onClick={onOpenLogs} aria-label="Autologs" title="Autologs">
+            <FaHistory />
+            <span className="toolbar-label">Autologs</span>
+          </button>
+        )}
       </div>
 
       <div className="toolbar-separator" />
