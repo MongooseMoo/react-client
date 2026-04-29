@@ -22,6 +22,7 @@ import HostPanel from "./components/HostPanel";
 import { useChannelHistory } from "./hooks/useChannelHistory";
 import { FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
+import { autoLogService, createAutoLogSessionDraft } from "./logging/AutoLogService";
 
 const WINDOW_TITLE = "Mongoose Client";
 
@@ -120,6 +121,45 @@ function App() {
     if (client && !clientInitialized.current) {
       clientInitialized.current = true;
     }
+  }, [client]);
+
+  useEffect(() => {
+    if (!client) {
+      autoLogService.configureSession(null);
+      return;
+    }
+
+    const configureAutologSession = () => {
+      autoLogService.configureSession(createAutoLogSessionDraft(document.title || WINDOW_TITLE));
+    };
+    const handleConnect = () => {
+      configureAutologSession();
+      autoLogService.startSession().catch((error) => {
+        console.error("Failed to start autolog session:", error);
+      });
+    };
+    const handleDisconnect = () => {
+      autoLogService.endSession().catch((error) => {
+        console.error("Failed to end autolog session:", error);
+      });
+    };
+
+    configureAutologSession();
+    if (client.connected) {
+      handleConnect();
+    }
+
+    client.on("connect", handleConnect);
+    client.on("disconnect", handleDisconnect);
+
+    return () => {
+      client.off("connect", handleConnect);
+      client.off("disconnect", handleDisconnect);
+      autoLogService.endSession().catch((error) => {
+        console.error("Failed to end autolog session during cleanup:", error);
+      });
+      autoLogService.configureSession(null);
+    };
   }, [client]);
 
   // Common client setup: notifications, auto-login, MIDI, haptics, keyboard handlers
@@ -316,6 +356,9 @@ function App() {
     if (client) {
       client.shutdown();
     }
+    autoLogService.flush().catch((error) => {
+      console.error("Failed to flush autolog entries before unload:", error);
+    });
     // Best-effort checkpoint on tab close
     const wasmWorker = (window as any).wasmWorker;
     if (wasmWorker) {
