@@ -9,6 +9,8 @@ import { setInputText } from '../InputStore';
 import TurndownService from 'turndown'; // <-- Import TurndownService
 import { preferencesStore } from '../PreferencesStore'; // Import preferences store
 import BlockquoteWithCopy from './BlockquoteWithCopy';
+import { autoLogService } from '../logging/AutoLogService';
+import { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
 
 export enum OutputType {
   Command = 'command',
@@ -445,6 +447,15 @@ componentDidUpdate(
     // Append to full history
     this.allLines.push(...newOutputLines);
     this.totalLinesAdded += newOutputLines.length;
+
+    if (sourceContent !== "") {
+      autoLogService.recordLine({
+        type: type as unknown as AutoLogLineType,
+        sourceType: sourceType as AutoLogSourceType,
+        sourceContent,
+        metadata,
+      });
+    }
 
     // Trim if over max
     if (this.allLines.length > Output.MAX_OUTPUT_LENGTH) {

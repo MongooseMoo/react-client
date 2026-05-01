@@ -3,6 +3,7 @@ import { PrefActionType, NavigationKeyScheme } from "../PreferencesStore";
 import { usePreferences } from "../hooks/usePreferences";
 import { useVoices } from "../hooks/useVoices";
 import Tabs, { TabProps } from "./tabs";
+import AutoLogDialog, { AutoLogDialogRef } from "./AutoLogDialog";
 
 const GeneralTab: React.FC = () => {
   const [state, dispatch] = usePreferences();
@@ -449,6 +450,52 @@ const KeyboardTab: React.FC = () => {
   );
 };
 
+const AutologgingTab: React.FC = () => {
+  const [state, dispatch] = usePreferences();
+  const dialogRef = React.useRef<AutoLogDialogRef | null>(null);
+  const maxMegabytes = Math.round(state.autologging.maxBytes / 1024 / 1024);
+
+  return (
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={state.autologging.enabled}
+          onChange={(e) =>
+            dispatch({
+              type: PrefActionType.SetAutologging,
+              data: { ...state.autologging, enabled: e.target.checked },
+            })
+          }
+        />
+        Enable Autologging
+      </label>
+      <br />
+      <label>
+        Storage Cap (MB):
+        <input
+          type="number"
+          min="1"
+          max="2048"
+          value={maxMegabytes}
+          onChange={(e) =>
+            dispatch({
+              type: PrefActionType.SetAutologging,
+              data: {
+                ...state.autologging,
+                maxBytes: Math.max(1, parseInt(e.target.value, 10) || 1) * 1024 * 1024,
+              },
+            })
+          }
+        />
+      </label>
+      <br />
+      <button onClick={() => dialogRef.current?.open()}>Manage Autologs</button>
+      <AutoLogDialog ref={dialogRef} />
+    </div>
+  );
+};
+
 const Preferences: React.FC = () => {
   const tabs: TabProps[] = [
     { id: "preferences-general-tab", label: "General", content: <GeneralTab /> },
@@ -458,6 +505,7 @@ const Preferences: React.FC = () => {
     { id: "preferences-keyboard-tab", label: "Keyboard", content: <KeyboardTab /> },
     { id: "preferences-midi-tab", label: "MIDI", content: <MidiTab /> },
     { id: "preferences-haptics-tab", label: "Haptics", content: <HapticsTab /> },
+    { id: "preferences-autologging-tab", label: "Logging", content: <AutologgingTab /> },
   ];
 
   return <Tabs tabs={tabs} />;

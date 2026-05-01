@@ -12,6 +12,7 @@ import OutputWindow from "./components/output";
 import PreferencesDialog, {
   PreferencesDialogRef,
 } from "./components/PreferencesDialog";
+import AutoLogDialog, { AutoLogDialogRef } from "./components/AutoLogDialog";
 import Sidebar, { SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
@@ -22,6 +23,7 @@ import HostPanel from "./components/HostPanel";
 import { useChannelHistory } from "./hooks/useChannelHistory";
 import { FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
+import { autoLogService, createAutoLogSessionDraft } from "./logging/AutoLogService";
 
 const WINDOW_TITLE = "Mongoose Client";
 
@@ -50,6 +52,7 @@ function App() {
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
+  const autoLogDialogRef = React.useRef<AutoLogDialogRef | null>(null);
   const sidebarRef = React.useRef<SidebarRef | null>(null);
 
   const clientInitialized = useRef(false);
@@ -120,6 +123,45 @@ function App() {
     if (client && !clientInitialized.current) {
       clientInitialized.current = true;
     }
+  }, [client]);
+
+  useEffect(() => {
+    if (!client) {
+      autoLogService.configureSession(null);
+      return;
+    }
+
+    const configureAutologSession = () => {
+      autoLogService.configureSession(createAutoLogSessionDraft(document.title || WINDOW_TITLE));
+    };
+    const handleConnect = () => {
+      configureAutologSession();
+      autoLogService.startSession().catch((error) => {
+        console.error("Failed to start autolog session:", error);
+      });
+    };
+    const handleDisconnect = () => {
+      autoLogService.endSession().catch((error) => {
+        console.error("Failed to end autolog session:", error);
+      });
+    };
+
+    configureAutologSession();
+    if (client.connected) {
+      handleConnect();
+    }
+
+    client.on("connect", handleConnect);
+    client.on("disconnect", handleDisconnect);
+
+    return () => {
+      client.off("connect", handleConnect);
+      client.off("disconnect", handleDisconnect);
+      autoLogService.endSession().catch((error) => {
+        console.error("Failed to end autolog session during cleanup:", error);
+      });
+      autoLogService.configureSession(null);
+    };
   }, [client]);
 
   // Common client setup: notifications, auto-login, MIDI, haptics, keyboard handlers
@@ -316,6 +358,9 @@ function App() {
     if (client) {
       client.shutdown();
     }
+    autoLogService.flush().catch((error) => {
+      console.error("Failed to flush autolog entries before unload:", error);
+    });
     // Best-effort checkpoint on tab close
     const wasmWorker = (window as any).wasmWorker;
     if (wasmWorker) {
@@ -362,6 +407,7 @@ function App() {
               onCopyLog={copyLog}
               onToggleSidebar={() => setShowSidebar(!showSidebar)}
               onOpenPrefs={() => prefsDialogRef.current?.open()}
+              onOpenLogs={() => autoLogDialogRef.current?.open()}
               showSidebar={showSidebar}
             />
           </header>
@@ -394,6 +440,7 @@ function App() {
             <Statusbar client={client} />
           </footer>
           <PreferencesDialog ref={prefsDialogRef} />
+          <AutoLogDialog ref={autoLogDialogRef} />
         </div>
       )}
       {/* Default mode with no client yet — blank */}

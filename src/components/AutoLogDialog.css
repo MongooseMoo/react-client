@@ -1,0 +1,188 @@
+.autolog-dialog {
+  position: fixed;
+  inset: 5vh 4vw;
+  width: min(1100px, 92vw);
+  max-height: 90vh;
+  margin: auto;
+  padding: 0;
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  z-index: 1200;
+}
+
+.autolog-dialog-header,
+.autolog-dialog-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.autolog-dialog-header h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.autolog-dialog-toolbar {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.autolog-dialog-toolbar span {
+  flex: 1;
+}
+
+.autolog-dialog button {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+}
+
+.autolog-dialog button:hover {
+  background: var(--color-bg-active);
+  border-color: var(--color-primary);
+}
+
+.autolog-dialog button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.autolog-dialog-error {
+  margin: var(--space-3) var(--space-4) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  color: var(--color-danger);
+  background: var(--color-danger-subtle);
+}
+
+.autolog-dialog-body {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  min-height: 0;
+  height: calc(90vh - 112px);
+}
+
+.autolog-session-list,
+.autolog-entry-viewer {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.autolog-session-list {
+  border-right: 1px solid var(--color-border);
+}
+
+.autolog-session-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-2);
+  background: var(--color-bg);
+}
+
+.autolog-session-row.selected {
+  border-color: var(--color-primary);
+}
+
+.autolog-session-main {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.autolog-session-title {
+  display: block;
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+}
+
+.autolog-session-meta,
+.autolog-entry-meta {
+  display: block;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.autolog-session-actions {
+  display: flex;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.autolog-session-actions button {
+  flex: 1;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+}
+
+.autolog-entry-viewer h2 {
+  margin: 0 0 var(--space-1);
+  font-size: 1rem;
+}
+
+.autolog-entry-list {
+  margin-top: var(--space-3);
+}
+
+.autolog-entry {
+  margin: 0;
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+}
+
+.autolog-entry-time {
+  display: block;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  margin-bottom: var(--space-1);
+}
+
+.autolog-entry-systemInfo {
+  color: var(--color-info);
+}
+
+.autolog-entry-errorMessage {
+  color: var(--color-danger);
+}
+
+.autolog-entry-command {
+  color: var(--color-text-secondary);
+}
+
+.autolog-empty {
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 768px) {
+  .autolog-dialog {
+    inset: 2vh 2vw;
+    width: 96vw;
+  }
+
+  .autolog-dialog-body {
+    grid-template-columns: 1fr;
+    height: calc(96vh - 112px);
+  }
+
+  .autolog-session-list {
+    max-height: 34vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+}

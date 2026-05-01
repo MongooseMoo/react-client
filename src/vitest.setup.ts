@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import 'fake-indexeddb/auto';
 
 // Mock BroadcastChannel
 global.BroadcastChannel = vi.fn().mockImplementation(() => ({
