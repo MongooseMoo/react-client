@@ -45,28 +45,6 @@ interface Buffer {
 
 const MAX_MESSAGES_PER_BUFFER = 100000;
 
-export function formatChannelMessage(channel: string, talker: string, text: string): string {
-  const plainText = Anser.ansiToText(text).trim();
-
-  if (!talker) {
-    return plainText;
-  }
-
-  if (plainText.startsWith("S/He ")) {
-    return `${talker}${plainText.slice(4)}`;
-  }
-
-  if (plainText.includes(talker)) {
-    return plainText;
-  }
-
-  if (channel === "say") {
-    return `${talker}: ${plainText}`;
-  }
-
-  return `${talker}: ${plainText}`;
-}
-
 export const useChannelHistory = (client: MudClient | null) => {
   const [buffers, setBuffers] = useState<Map<string, Buffer>>(
     new Map([["all", { name: "all", messages: [], currentIndex: 0 }]])
@@ -163,7 +141,6 @@ export const useChannelHistory = (client: MudClient | null) => {
   // Handle channel messages
   const handleChannelText = (data: { channel: string; talker: string; text: string }) => {
     const { channel, talker, text } = data;
-    const formattedText = formatChannelMessage(channel, talker, text);
 
     // Create channel buffer if it doesn't exist
     if (!buffers.has(channel)) {
@@ -179,9 +156,9 @@ export const useChannelHistory = (client: MudClient | null) => {
       setBufferOrder(prev => [...prev, channel]);
 
       // Add message after buffer is created
-      setTimeout(() => addMessageToBuffer(channel, formattedText, channel, talker), 0);
+      setTimeout(() => addMessageToBuffer(channel, text, channel, talker), 0);
     } else {
-      addMessageToBuffer(channel, formattedText, channel, talker);
+      addMessageToBuffer(channel, text, channel, talker);
     }
   };
 
