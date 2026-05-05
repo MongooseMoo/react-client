@@ -1,5 +1,11 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import MudClient from "../../client";
+import type { UserlistPlayer } from "../../mcp";
+import {
+  findTransferPeerByAddress,
+  userlistPlayersToTransferPeers,
+} from "../../fileTransferPeers";
+import type { TransferPeer } from "../../fileTransferPeers";
 import Controls from "./Controls";
 import ProgressBar from "./ProgressBar";
 import PendingTransfer from "./PendingTransfer";
@@ -9,6 +15,7 @@ import "./styles.css";
 interface FileTransferUIProps {
   client: MudClient;
   expanded: boolean;
+  users: UserlistPlayer[];
 }
 
 interface PendingOffer {
@@ -21,17 +28,38 @@ interface PendingOffer {
 const FileTransferUI: React.FC<FileTransferUIProps> = ({
   client,
   expanded,
+  users,
 }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [recipient, setRecipient] = useState<string>("");
+  const [selectedRecipient, setSelectedRecipient] =
+    useState<TransferPeer | null>(null);
   const [sendProgress, setSendProgress] = useState<number>(0);
   const [receiveProgress, setReceiveProgress] = useState<number>(0);
   const [pendingOffers, setPendingOffers] = useState<PendingOffer[]>([]);
   const [transferHistory, setTransferHistory] = useState<string[]>([]);
+  const recipients = useMemo(
+    () => userlistPlayersToTransferPeers(users),
+    [users]
+  );
 
   const addToTransferHistory = useCallback((message: string) => {
     setTransferHistory((prevHistory) => [...prevHistory, message].slice(-10));
   }, []);
+
+  const getPeerLabel = useCallback(
+    (address: string) =>
+      findTransferPeerByAddress(recipients, address)?.label ?? address,
+    [recipients]
+  );
+
+  useEffect(() => {
+    if (
+      selectedRecipient &&
+      !recipients.some((recipient) => recipient.id === selectedRecipient.id)
+    ) {
+      setSelectedRecipient(null);
+    }
+  }, [recipients, selectedRecipient]);
 
   const handleFileSendProgress = useCallback(
     (data: { filename: string; sentBytes: number; totalBytes: number }) => {
@@ -101,30 +129,36 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
   const handleFileTransferRejected = useCallback(
     (data: { sender: string; filename: string }) => {
       addToTransferHistory(
-        `File transfer rejected: ${data.filename} from ${data.sender}`
+        `File transfer rejected: ${data.filename} from ${getPeerLabel(
+          data.sender
+        )}`
       );
     },
-    [addToTransferHistory]
+    [addToTransferHistory, getPeerLabel]
   );
 
   const handleFileTransferAccepted = useCallback(
     (data: { sender: string; filename: string }) => {
       // Just log acceptance; actual sending is handled internally by FileTransferManager.
       addToTransferHistory(
-        `File transfer accepted: ${data.filename} by ${data.sender}`
+        `File transfer accepted: ${data.filename} by ${getPeerLabel(
+          data.sender
+        )}`
       );
     },
-    [addToTransferHistory]
+    [addToTransferHistory, getPeerLabel]
   );
 
   const handleFileTransferOffer = useCallback(
     (data: PendingOffer) => {
       setPendingOffers((prevOffers) => [...prevOffers, data]);
       addToTransferHistory(
-        `Incoming file offer: ${data.filename} from ${data.sender}`
+        `Incoming file offer: ${data.filename} from ${getPeerLabel(
+          data.sender
+        )}`
       );
     },
-    [addToTransferHistory]
+    [addToTransferHistory, getPeerLabel]
   );
 
   useEffect(() => {
@@ -180,11 +214,13 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
   ]);
 
   const handleSendFile = () => {
-    if (selectedFile && recipient) {
+    if (selectedFile && selectedRecipient) {
       client
-        .sendFile(selectedFile, recipient)
+        .sendFile(selectedFile, selectedRecipient.transferAddress)
         .then(() => {
-          addToTransferHistory(`Sending ${selectedFile.name} to ${recipient}`);
+          addToTransferHistory(
+            `Sending ${selectedFile.name} to ${selectedRecipient.label}`
+          );
         })
         .catch((error) => {
           addToTransferHistory(`Error sending file: ${error.message}`);
@@ -198,7 +234,9 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     const offer = pendingOffers.find((o) => o.hash === hash);
     if (offer) {
       addToTransferHistory(
-        `Accepting file transfer: ${offer.filename} from ${sender}`
+        `Accepting file transfer: ${offer.filename} from ${getPeerLabel(
+          sender
+        )}`
       );
     }
     // Remove the offer from pendingOffers
@@ -210,7 +248,9 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     const offer = pendingOffers.find((o) => o.hash === hash);
     if (offer) {
       addToTransferHistory(
-        `Rejected file transfer: ${offer.filename} from ${sender}`
+        `Rejected file transfer: ${offer.filename} from ${getPeerLabel(
+          sender
+        )}`
       );
     }
     setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
@@ -227,10 +267,11 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
       <Controls
         onFileChange={setSelectedFile}
-        onRecipientChange={setRecipient}
+        onRecipientChange={setSelectedRecipient}
         onSendFile={handleSendFile}
         selectedFile={selectedFile}
-        recipient={recipient}
+        selectedRecipient={selectedRecipient}
+        recipients={recipients}
       />
 
       {(sendProgress > 0 || receiveProgress > 0) && (
