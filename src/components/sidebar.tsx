@@ -167,7 +167,11 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
       id: "files-tab",
       label: "Files",
       content: (
-        <FileTransferUI client={client} expanded={fileTransferExpanded} />
+        <FileTransferUI
+          client={client}
+          expanded={fileTransferExpanded}
+          users={users}
+        />
       ),
       condition: true, // Always show Files tab
     },
@@ -187,7 +191,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
   // Note: If tab conditions become more dynamic, add them to the dependency array.
   const visibleTabs = React.useMemo(() => {
     return allTabs.filter((tab) => tab.condition ?? true); // Default condition to true
-  }, [hasRoomData, hasInventoryData, preferences.midi.enabled, preferences.haptics.enabled]); // Add dependencies based on actual conditions used
+  }, [hasRoomData, hasInventoryData, preferences.midi.enabled, preferences.haptics.enabled, users]); // Add dependencies based on actual conditions used
 
   // Expose switchToTab function via useImperativeHandle
   React.useImperativeHandle(ref, () => ({

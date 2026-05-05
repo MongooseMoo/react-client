@@ -2,11 +2,72 @@
   display: flex;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
+  align-items: flex-start;
 }
 
 .file-transfer-controls input[type="file"],
 .file-transfer-controls input[type="text"] {
   flex-grow: 1;
+}
+
+.file-transfer-recipient {
+  flex: 1 1 12rem;
+  min-width: 10rem;
+  position: relative;
+}
+
+.file-transfer-recipient input[type="text"] {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.file-transfer-recipient-list {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  left: 0;
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  max-height: 12rem;
+  min-width: 100%;
+  overflow-y: auto;
+  padding: var(--space-1);
+  position: absolute;
+  right: 0;
+  z-index: 20;
+}
+
+.file-transfer-recipient-option,
+.file-transfer-recipient-empty {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  display: flex;
+  font-size: var(--font-size-sm);
+  gap: var(--space-2);
+  justify-content: space-between;
+  min-height: 2rem;
+  padding: var(--space-2) var(--space-3);
+  white-space: nowrap;
+}
+
+.file-transfer-recipient-option {
+  cursor: pointer;
+}
+
+.file-transfer-recipient-option.active,
+.file-transfer-recipient-option:hover {
+  background: var(--color-bg-hover);
+}
+
+.file-transfer-recipient-status,
+.file-transfer-recipient-empty {
+  color: var(--color-text-muted);
+}
+
+.file-transfer-recipient-status {
+  font-size: var(--font-size-xs);
 }
 
 .file-transfer-controls button {
