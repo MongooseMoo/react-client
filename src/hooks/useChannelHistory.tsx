@@ -45,6 +45,20 @@ interface Buffer {
 
 const MAX_MESSAGES_PER_BUFFER = 100000;
 
+export function formatAnnouncementMessage(message: Message): string {
+  const plainText = message.message;
+
+  if (!message.channel || !message.talker) {
+    return plainText;
+  }
+
+  if (plainText.includes(message.talker)) {
+    return plainText;
+  }
+
+  return `${message.talker}. ${plainText}`;
+}
+
 export const useChannelHistory = (client: MudClient | null) => {
   const [buffers, setBuffers] = useState<Map<string, Buffer>>(
     new Map([["all", { name: "all", messages: [], currentIndex: 0 }]])
@@ -232,11 +246,11 @@ export const useChannelHistory = (client: MudClient | null) => {
   };
 
   const announceMessage = (message: Message, prefix: string = "") => {
-    let announcement = prefix + message.message;
+    let announcement = prefix + formatAnnouncementMessage(message);
 
     if (timestampsEnabled) {
       const relativeTime = calculateRelativeTime(Date.now() - message.timestamp);
-      const lastChar = message.message.slice(-1);
+      const lastChar = announcement.slice(-1);
       if (/[a-zA-Z0-9]/.test(lastChar)) {
         announcement += ".";
       }
