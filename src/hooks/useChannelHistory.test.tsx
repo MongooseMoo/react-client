@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { formatAnnouncementMessage } from "./useChannelHistory";
 
 describe("formatAnnouncementMessage", () => {
-  it("adds the talker for channel messages whose text does not identify the speaker", () => {
+  it("always prefixes talker when talker metadata is present", () => {
     expect(
       formatAnnouncementMessage({
         id: 1,
@@ -15,7 +15,7 @@ describe("formatAnnouncementMessage", () => {
     ).toBe("claude. Changelog posted. Standing by.");
   });
 
-  it("preserves the original text when it already names the talker", () => {
+  it("keeps the original message text intact while still announcing the talker separately", () => {
     expect(
       formatAnnouncementMessage({
         id: 2,
@@ -24,10 +24,10 @@ describe("formatAnnouncementMessage", () => {
         channel: "say_to_you",
         talker: "Q",
       })
-    ).toBe('Q says to you, "Sup broski."');
+    ).toBe('Q. Q says to you, "Sup broski."');
   });
 
-  it("preserves the original page message text while still announcing the talker separately", () => {
+  it("does the same for page messages without rewriting the message body", () => {
     expect(
       formatAnnouncementMessage({
         id: 3,

@@ -48,11 +48,7 @@ const MAX_MESSAGES_PER_BUFFER = 100000;
 export function formatAnnouncementMessage(message: Message): string {
   const plainText = message.message;
 
-  if (!message.channel || !message.talker) {
-    return plainText;
-  }
-
-  if (plainText.includes(message.talker)) {
+  if (!message.talker) {
     return plainText;
   }
 
