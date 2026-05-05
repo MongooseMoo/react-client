@@ -54,7 +54,10 @@ describe("FileTransfer Controls", () => {
       target: { value: "Not Connected" },
     });
 
-    expect(screen.getByRole("button", { name: "Send File" })).toBeDisabled();
+    expect(
+      (screen.getByRole("button", { name: "Send File" }) as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
   });
 
   it("enables Send after selecting a connected player", () => {
@@ -63,6 +66,9 @@ describe("FileTransfer Controls", () => {
     fireEvent.focus(screen.getByLabelText("Recipient"));
     fireEvent.mouseDown(screen.getByRole("option", { name: "Quinn" }));
 
-    expect(screen.getByRole("button", { name: "Send File" })).toBeEnabled();
+    expect(
+      (screen.getByRole("button", { name: "Send File" }) as HTMLButtonElement)
+        .disabled
+    ).toBe(false);
   });
 });
