@@ -284,6 +284,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
         <PendingTransfer
           key={`${offer.sender}-${offer.filename}`}
           offer={offer}
+          senderLabel={getPeerLabel(offer.sender)}
           onAccept={handleAcceptTransfer}
           onReject={handleRejectTransfer}
         />
