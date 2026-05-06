@@ -9,6 +9,7 @@ import type { TransferPeer } from "../../fileTransferPeers";
 import Controls from "./Controls";
 import ProgressBar from "./ProgressBar";
 import PendingTransfer from "./PendingTransfer";
+import OutgoingTransfer from "./OutgoingTransfer";
 import History from "./History";
 import "./styles.css";
 
@@ -25,6 +26,12 @@ interface PendingOffer {
   hash: string;
 }
 
+interface OutgoingOffer {
+  filename: string;
+  recipientLabel: string;
+  recipientAddress: string;
+}
+
 const FileTransferUI: React.FC<FileTransferUIProps> = ({
   client,
   expanded,
@@ -36,6 +43,9 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
   const [sendProgress, setSendProgress] = useState<number>(0);
   const [receiveProgress, setReceiveProgress] = useState<number>(0);
   const [pendingOffers, setPendingOffers] = useState<PendingOffer[]>([]);
+  const [outgoingOffer, setOutgoingOffer] = useState<OutgoingOffer | null>(
+    null
+  );
   const [transferHistory, setTransferHistory] = useState<string[]>([]);
   const recipients = useMemo(
     () => userlistPlayersToTransferPeers(users),
@@ -81,6 +91,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
     (data: { filename: string; hash: string }) => {
       addToTransferHistory(`File sent successfully: ${data.filename}`);
       setSendProgress(0);
+      setOutgoingOffer(null);
     },
     [addToTransferHistory]
   );
@@ -105,6 +116,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
       );
       if (data.direction === "send") {
         setSendProgress(0);
+        setOutgoingOffer(null);
       } else {
         setReceiveProgress(0);
       }
@@ -119,6 +131,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
       );
       if (data.direction === "send") {
         setSendProgress(0);
+        setOutgoingOffer(null);
       } else {
         setReceiveProgress(0);
       }
@@ -133,6 +146,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
           data.sender
         )}`
       );
+      setOutgoingOffer(null);
     },
     [addToTransferHistory, getPeerLabel]
   );
@@ -145,6 +159,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
           data.sender
         )}`
       );
+      setOutgoingOffer(null);
     },
     [addToTransferHistory, getPeerLabel]
   );
@@ -215,15 +230,21 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
 
   const handleSendFile = () => {
     if (selectedFile && selectedRecipient) {
+      const filename = selectedFile.name;
+      const recipientLabel = selectedRecipient.label;
+      const recipientAddress = selectedRecipient.transferAddress;
+      setOutgoingOffer({ filename, recipientLabel, recipientAddress });
+      addToTransferHistory(
+        `Offered ${filename} to ${recipientLabel} — waiting for accept…`
+      );
       client
-        .sendFile(selectedFile, selectedRecipient.transferAddress)
+        .sendFile(selectedFile, recipientAddress)
         .then(() => {
-          addToTransferHistory(
-            `Sending ${selectedFile.name} to ${selectedRecipient.label}`
-          );
+          addToTransferHistory(`Sending ${filename} to ${recipientLabel}`);
         })
         .catch((error) => {
           addToTransferHistory(`Error sending file: ${error.message}`);
+          setOutgoingOffer(null);
         });
     }
   };
@@ -273,6 +294,13 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({
         selectedRecipient={selectedRecipient}
         recipients={recipients}
       />
+
+      {outgoingOffer && (
+        <OutgoingTransfer
+          filename={outgoingOffer.filename}
+          recipientLabel={outgoingOffer.recipientLabel}
+        />
+      )}
 
       {(sendProgress > 0 || receiveProgress > 0) && (
         <ProgressBar
