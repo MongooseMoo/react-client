@@ -159,13 +159,6 @@ const Controls: React.FC<FileTransferControlsProps> = ({
                   }}
                 >
                   <span>{recipient.label}</span>
-                  {(recipient.away || recipient.idle) && (
-                    <span className="file-transfer-recipient-status">
-                      {[recipient.away ? "away" : "", recipient.idle ? "idle" : ""]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </span>
-                  )}
                 </li>
               ))
             )}

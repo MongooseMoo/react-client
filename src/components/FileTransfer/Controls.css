@@ -1,5 +1,6 @@
 .file-transfer-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
   align-items: flex-start;
@@ -8,11 +9,14 @@
 .file-transfer-controls input[type="file"],
 .file-transfer-controls input[type="text"] {
   flex-grow: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .file-transfer-recipient {
   flex: 1 1 12rem;
-  min-width: 10rem;
+  min-width: 0;
+  max-width: 100%;
   position: relative;
 }
 
@@ -61,13 +65,8 @@
   background: var(--color-bg-hover);
 }
 
-.file-transfer-recipient-status,
 .file-transfer-recipient-empty {
   color: var(--color-text-muted);
-}
-
-.file-transfer-recipient-status {
-  font-size: var(--font-size-xs);
 }
 
 .file-transfer-controls button {
