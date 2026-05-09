@@ -94,6 +94,7 @@ function createMockSound(url: string): MockSound {
 }
 
 function createMockClient() {
+  const listeners = new Map<string, Set<(data: unknown) => void>>();
   return {
     cacophony: {
       context: {
@@ -105,7 +106,21 @@ function createMockClient() {
       listenerPosition: [0, 0, 0],
     },
     emit: vi.fn(),
+    off: vi.fn((event: string, handler: (data: unknown) => void) => {
+      listeners.get(event)?.delete(handler);
+    }),
+    on: vi.fn((event: string, handler: (data: unknown) => void) => {
+      if (!listeners.has(event)) {
+        listeners.set(event, new Set());
+      }
+      listeners.get(event)!.add(handler);
+    }),
     sendGmcp: vi.fn(),
+    trigger(event: string, data: unknown) {
+      for (const handler of listeners.get(event) ?? []) {
+        handler(data);
+      }
+    },
   };
 }
 
@@ -221,5 +236,29 @@ describe("GMCPClientMedia", () => {
 
     handler.handleStop({ key: "show-1" } as GMCPMessageClientMediaStop);
     expect(renderer.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it("updates ambisonic renderer rotation on Client.Spatial orientation events", async () => {
+    const sound = createMockSound("https://media.example/show.ogg");
+    mockCreateSound.mockResolvedValue(sound);
+
+    await handler.handlePlay({
+      key: "show-1",
+      name: "show.ogg",
+      type: "music",
+      upmix: "ambisonic",
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
+
+    client.cacophony.listenerForwardOrientation = [-1, 0, 0];
+    client.trigger("spatialListenerOrientation", {
+      listenerId: "player-1",
+      forward: [-1, 0, 0],
+      up: [0, 1, 0],
+    });
+
+    expect(renderer.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(-Math.PI / 2);
   });
 });

@@ -84,6 +84,12 @@ export class GMCPClientMedia extends GMCPPackage {
   sounds: { [key: string]: ExtendedSound } = {};
   defaultUrl: string = "";
 
+  constructor(client: GMCPPackage["client"]) {
+    super(client);
+    this.client.on("spatialListenerOrientation", this.handleSpatialListenerOrientation);
+    this.client.on("spatialScene", this.handleSpatialScene);
+  }
+
   private assignSoundMetadata(
     sound: ExtendedSound,
     data: Pick<GMCPMessageClientMediaPlay, "key" | "tag" | "type" | "upmix">,
@@ -106,6 +112,21 @@ export class GMCPClientMedia extends GMCPPackage {
     }
     return Math.atan2(forward[0], -forward[2]);
   }
+
+  private syncAmbisonicRendererYaw(): void {
+    const yaw = this.currentListenerYaw();
+    for (const sound of this.allSounds) {
+      sound.ambisonicRenderer?.setRotationMatrixFromYaw(yaw);
+    }
+  }
+
+  private handleSpatialListenerOrientation = (): void => {
+    this.syncAmbisonicRendererYaw();
+  };
+
+  private handleSpatialScene = (): void => {
+    this.syncAmbisonicRendererYaw();
+  };
 
   private async configureAmbisonicPlayback(sound: ExtendedSound, playback: Playback) {
     this.cleanupUpmix(sound);
@@ -345,10 +366,7 @@ export class GMCPClientMedia extends GMCPPackage {
     }
     if (data.forward && data.forward.length) {
       this.client.cacophony.listenerForwardOrientation = data.forward;
-      const yaw = this.currentListenerYaw();
-      for (const sound of this.allSounds) {
-        sound.ambisonicRenderer?.setRotationMatrixFromYaw(yaw);
-      }
+      this.syncAmbisonicRendererYaw();
     }
   }
 
@@ -383,5 +401,10 @@ export class GMCPClientMedia extends GMCPPackage {
       sound.cleanup();
     });
     this.sounds = {};
+  }
+
+  override shutdown() {
+    this.client.off("spatialListenerOrientation", this.handleSpatialListenerOrientation);
+    this.client.off("spatialScene", this.handleSpatialScene);
   }
 }
