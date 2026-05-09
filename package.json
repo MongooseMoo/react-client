@@ -11,7 +11,7 @@
     "buffer": "^6.0.3",
     "buttplug": "^3.2.2",
     "buttplug-wasm": "^2.0.1",
-    "cacophony": "^0.20.3",
+    "cacophony": "^0.20.4",
     "dompurify": "^3.4.1",
     "eventemitter3": "^5.0.4",
     "jzz": "^1.9.6",
