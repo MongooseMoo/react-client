@@ -87,12 +87,26 @@ function indexById<T extends { id: string }>(items: T[]): Record<string, T> {
 export class GMCPClientSpatial extends GMCPPackage {
   public packageName: string = "Client.Spatial";
 
+  private syncCacophonyListenerPosition(position: SpatialVector | null | undefined): void {
+    this.client.cacophony.listenerPosition = position ?? [0, 0, 0];
+  }
+
+  private syncCacophonyListenerOrientation(
+    orientation: SpatialListenerOrientation | null | undefined,
+  ): void {
+    this.client.cacophony.listenerForwardOrientation =
+      orientation?.forward ?? [0, 0, -1];
+    this.client.cacophony.listenerUpOrientation = orientation?.up ?? [0, 1, 0];
+  }
+
   handleScene(data: GMCPMessageClientSpatialScene): void {
     this.client.worldData.roomId = data.roomId;
     this.client.worldData.listenerEntityId = data.listenerId;
     this.client.worldData.listenerPosition = data.listenerPosition ?? null;
     this.client.worldData.listenerOrientation =
       data.listenerOrientation ?? { forward: null, up: null };
+    this.syncCacophonyListenerPosition(this.client.worldData.listenerPosition);
+    this.syncCacophonyListenerOrientation(this.client.worldData.listenerOrientation);
     this.client.worldData.spatialEntities = indexById(data.entities);
     this.client.worldData.spatialEmitters = indexById(data.emitters);
     this.client.emit("spatialScene", data);
@@ -132,6 +146,7 @@ export class GMCPClientSpatial extends GMCPPackage {
       this.client.worldData.listenerEntityId = data.listenerId;
     }
     this.client.worldData.listenerPosition = data.position;
+    this.syncCacophonyListenerPosition(data.position);
     this.client.emit("spatialListenerPosition", data);
   }
 
@@ -145,6 +160,7 @@ export class GMCPClientSpatial extends GMCPPackage {
       forward: data.forward,
       up: data.up,
     };
+    this.syncCacophonyListenerOrientation(this.client.worldData.listenerOrientation);
     this.client.emit("spatialListenerOrientation", data);
   }
 

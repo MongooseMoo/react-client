@@ -1,11 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockCreateSound = vi.fn();
+const { mockAmbisonicRendererCreate, mockCreateSound } = vi.hoisted(() => ({
+  mockAmbisonicRendererCreate: vi.fn(),
+  mockCreateSound: vi.fn(),
+}));
 
 vi.mock("cacophony", () => ({
   SoundType: {
     Buffer: "buffer",
     HTML: "html",
+  },
+}));
+
+vi.mock("../../audio/AmbisonicRenderer", () => ({
+  AmbisonicRenderer: {
+    create: mockAmbisonicRendererCreate,
   },
 }));
 
@@ -17,12 +26,14 @@ import {
 } from "./Media";
 
 type MockPlayback = {
+  connect: ReturnType<typeof vi.fn>;
   gainNode: {
     gain: {
       setValueAtTime: ReturnType<typeof vi.fn>;
       linearRampToValueAtTime: ReturnType<typeof vi.fn>;
     };
   };
+  disconnect: ReturnType<typeof vi.fn>;
   duration: number;
   stereoPan: number;
 };
@@ -47,6 +58,8 @@ type MockSound = {
 
 function createMockSound(url: string): MockSound {
   const playback: MockPlayback = {
+    connect: vi.fn(),
+    disconnect: vi.fn(),
     gainNode: {
       gain: {
         setValueAtTime: vi.fn(),
@@ -87,6 +100,9 @@ function createMockClient() {
         currentTime: 100,
       },
       createSound: mockCreateSound,
+      listenerForwardOrientation: [0, 0, -1],
+      listenerUpOrientation: [0, 1, 0],
+      listenerPosition: [0, 0, 0],
     },
     emit: vi.fn(),
     sendGmcp: vi.fn(),
@@ -99,6 +115,11 @@ describe("GMCPClientMedia", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAmbisonicRendererCreate.mockResolvedValue({
+      attachPlayback: vi.fn(),
+      cleanup: vi.fn(),
+      setRotationMatrixFromYaw: vi.fn(),
+    });
     client = createMockClient();
     handler = new GMCPClientMedia(client as any);
   });
@@ -173,5 +194,32 @@ describe("GMCPClientMedia", () => {
       distanceModel: "inverse",
       panningModel: "HRTF",
     });
+  });
+
+  it("routes ambisonic upmix playback through the renderer and follows listener yaw", async () => {
+    const sound = createMockSound("https://media.example/show.ogg");
+    mockCreateSound.mockResolvedValue(sound);
+
+    await handler.handlePlay({
+      key: "show-1",
+      name: "show.ogg",
+      type: "music",
+      upmix: "ambisonic",
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
+    expect(mockAmbisonicRendererCreate).toHaveBeenCalledOnce();
+    expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0]);
+    expect(renderer.setRotationMatrixFromYaw).toHaveBeenCalledWith(0);
+
+    handler.handleListenerOrientation({
+      forward: [1, 0, 0],
+    } as any);
+
+    expect(renderer.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(Math.PI / 2);
+
+    handler.handleStop({ key: "show-1" } as GMCPMessageClientMediaStop);
+    expect(renderer.cleanup).toHaveBeenCalledOnce();
   });
 });

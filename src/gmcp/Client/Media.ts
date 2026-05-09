@@ -1,5 +1,6 @@
 import { Playback, Position, Sound, SoundType } from "cacophony";
 
+import { AmbisonicRenderer } from "../../audio/AmbisonicRenderer";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 const CORS_PROXY = "https://mongoose.world:9080/?url=";
@@ -29,6 +30,7 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public is3d: boolean = false; // If true, the media is 3D and should be played in the 3D space.
   public pan: number = 0; // -1 to 1
   public position: number[] = [0, 0, 0]; // x, y, z
+  public readonly upmix?: string;
 }
 
 export class GMCPMessageClientMediaStop extends GMCPMessage {
@@ -56,6 +58,7 @@ export class GMCPMessageClientMediaUpdate extends GMCPMessage {
   public is3d?: boolean = false;
   public pan?: number = 0;
   public position?: number[] = [0, 0, 0];
+  public upmix?: string;
 }
 
 export class GMCPMessageClientMediaListenerOrientation extends GMCPMessage {
@@ -68,10 +71,12 @@ export class GMCPMessageClientMediaListenerPosition {
 }
 
 export interface ExtendedSound extends Sound {
+  ambisonicRenderer?: AmbisonicRenderer;
   priority?: number;
   tag?: string;
   key?: string;
   mediaType?: MediaType;
+  upmix?: string;
 }
 
 export class GMCPClientMedia extends GMCPPackage {
@@ -79,10 +84,35 @@ export class GMCPClientMedia extends GMCPPackage {
   sounds: { [key: string]: ExtendedSound } = {};
   defaultUrl: string = "";
 
-  private assignSoundMetadata(sound: ExtendedSound, data: Pick<GMCPMessageClientMediaPlay, "key" | "tag" | "type">) {
+  private assignSoundMetadata(
+    sound: ExtendedSound,
+    data: Pick<GMCPMessageClientMediaPlay, "key" | "tag" | "type" | "upmix">,
+  ) {
     sound.key = data.key;
     sound.tag = data.tag;
     sound.mediaType = data.type;
+    sound.upmix = data.upmix;
+  }
+
+  private cleanupUpmix(sound: ExtendedSound) {
+    sound.ambisonicRenderer?.cleanup();
+    delete sound.ambisonicRenderer;
+  }
+
+  private currentListenerYaw(): number {
+    const forward = this.client.cacophony.listenerForwardOrientation;
+    if (!forward?.length) {
+      return 0;
+    }
+    return Math.atan2(forward[0], -forward[2]);
+  }
+
+  private async configureAmbisonicPlayback(sound: ExtendedSound, playback: Playback) {
+    this.cleanupUpmix(sound);
+    const renderer = await AmbisonicRenderer.create(this.client.cacophony);
+    renderer.attachPlayback(playback);
+    renderer.setRotationMatrixFromYaw(this.currentListenerYaw());
+    sound.ambisonicRenderer = renderer;
   }
 
   private applySoundState(
@@ -129,6 +159,7 @@ export class GMCPClientMedia extends GMCPPackage {
           continue;
         }
         if (activeSound.priority && activeSound.priority < data.priority) {
+          this.cleanupUpmix(activeSound);
           activeSound.cleanup();
           delete this.sounds[key];
         }
@@ -168,6 +199,7 @@ export class GMCPClientMedia extends GMCPPackage {
     if (!sound || sound.url !== mediaUrl) {
       // Cleanup old sound before replacing
       if (sound) {
+        this.cleanupUpmix(sound);
         sound.cleanup();
       }
       // Create a new sound object
@@ -195,13 +227,14 @@ export class GMCPClientMedia extends GMCPPackage {
         if (this.sounds[endKey] === sound) {
           delete this.sounds[endKey];
         }
+        this.cleanupUpmix(sound);
         sound.cleanup();
       }, data.end);
     }
 
     // Playback control
     if (!sound.isPlaying) {
-      const playback = sound.play()[0] as Playback;
+      const [playback] = sound.play() as Playback[];
       if (data.start !== undefined) {
         sound.seek(data.start / 1000);
       }
@@ -232,6 +265,10 @@ export class GMCPClientMedia extends GMCPPackage {
           }
         }
       }
+
+      if (data.upmix === "ambisonic") {
+        await this.configureAmbisonicPlayback(sound, playback);
+      }
     }
     this.assignSoundMetadata(sound, data);
     const soundKey = sound.key ?? data.key ?? mediaUrl;
@@ -251,8 +288,15 @@ export class GMCPClientMedia extends GMCPPackage {
         key: data.key ?? sound.key,
         tag: data.tag ?? sound.tag,
         type: data.type ?? sound.mediaType,
+        upmix: data.upmix ?? sound.upmix,
       });
       this.applySoundState(sound, data);
+      const [playback] = sound.playbacks;
+      if (data.upmix === "ambisonic" && playback) {
+        this.configureAmbisonicPlayback(sound, playback).catch(console.error);
+      } else if (data.upmix && data.upmix !== "ambisonic") {
+        this.cleanupUpmix(sound);
+      }
       const soundKey = sound.key ?? data.key;
       if (soundKey) {
         sound.key = soundKey;
@@ -275,13 +319,17 @@ export class GMCPClientMedia extends GMCPPackage {
       this.soundsByKey(data.key).forEach((sound) => this.stopSound(sound));
     }
     if (!data.name && !data.type && !data.tag && !data.key) {
-      this.allSounds.forEach((sound) => sound.cleanup());
+      this.allSounds.forEach((sound) => {
+        this.cleanupUpmix(sound);
+        sound.cleanup();
+      });
       this.sounds = {};
     }
   }
 
   private stopSound(sound: ExtendedSound) {
     delete this.sounds[sound.key!];
+    this.cleanupUpmix(sound);
     sound.cleanup();
   }
 
@@ -297,6 +345,10 @@ export class GMCPClientMedia extends GMCPPackage {
     }
     if (data.forward && data.forward.length) {
       this.client.cacophony.listenerForwardOrientation = data.forward;
+      const yaw = this.currentListenerYaw();
+      for (const sound of this.allSounds) {
+        sound.ambisonicRenderer?.setRotationMatrixFromYaw(yaw);
+      }
     }
   }
 
@@ -326,7 +378,10 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   stopAllSounds() {
-    this.allSounds.forEach((sound) => sound.cleanup());
+    this.allSounds.forEach((sound) => {
+      this.cleanupUpmix(sound);
+      sound.cleanup();
+    });
     this.sounds = {};
   }
 }

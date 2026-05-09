@@ -8,6 +8,11 @@ import {
 
 function createMockClient() {
   return {
+    cacophony: {
+      listenerForwardOrientation: [9, 9, 9],
+      listenerPosition: [9, 9, 9],
+      listenerUpOrientation: [9, 9, 9],
+    },
     emit: vi.fn(),
     sendGmcp: vi.fn(),
     worldData: {
@@ -84,6 +89,9 @@ describe("GMCPClientSpatial", () => {
       forward: [0, 1, 0],
       up: [0, 0, 1],
     });
+    expect(client.cacophony.listenerPosition).toEqual([1, 2, 3]);
+    expect(client.cacophony.listenerForwardOrientation).toEqual([0, 1, 0]);
+    expect(client.cacophony.listenerUpOrientation).toEqual([0, 0, 1]);
     expect(client.worldData.spatialEntities).toEqual({
       "player-1": {
         id: "player-1",
@@ -213,6 +221,9 @@ describe("GMCPClientSpatial", () => {
       forward: [0, 1, 0],
       up: [0, 0, 1],
     });
+    expect(client.cacophony.listenerPosition).toEqual([7, 8, 9]);
+    expect(client.cacophony.listenerForwardOrientation).toEqual([0, 1, 0]);
+    expect(client.cacophony.listenerUpOrientation).toEqual([0, 0, 1]);
     expect(client.emit).toHaveBeenCalledWith("spatialListenerPosition", {
       listenerId: "player-1",
       position: [7, 8, 9],
@@ -222,5 +233,23 @@ describe("GMCPClientSpatial", () => {
       forward: [0, 1, 0],
       up: [0, 0, 1],
     });
+  });
+
+  it("resets cacophony listener state to defaults when a Scene omits listener vectors", () => {
+    handler.handleScene({
+      roomId: "new-room",
+      listenerId: "player-1",
+      entities: [],
+      emitters: [],
+    });
+
+    expect(client.worldData.listenerPosition).toBeNull();
+    expect(client.worldData.listenerOrientation).toEqual({
+      forward: null,
+      up: null,
+    });
+    expect(client.cacophony.listenerPosition).toEqual([0, 0, 0]);
+    expect(client.cacophony.listenerForwardOrientation).toEqual([0, 0, -1]);
+    expect(client.cacophony.listenerUpOrientation).toEqual([0, 1, 0]);
   });
 });
