@@ -82,6 +82,6 @@ export class AmbisonicRenderer {
     }
     const cos = Math.cos(yaw);
     const sin = Math.sin(yaw);
-    return new Float32Array([cos, -sin, 0, sin, cos, 0, 0, 0, 1]);
+    return new Float32Array([cos, 0, -sin, 0, 1, 0, sin, 0, cos]);
   }
 }

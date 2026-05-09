@@ -111,14 +111,14 @@ describe("AmbisonicRenderer", () => {
 
     expect(Array.from(matrix)).toEqual([
       expect.closeTo(0, 6),
+      0,
       -1,
       0,
       1,
-      expect.closeTo(0, 6),
-      0,
-      0,
       0,
       1,
+      0,
+      expect.closeTo(0, 6),
     ]);
   });
 });
