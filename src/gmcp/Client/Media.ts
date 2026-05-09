@@ -31,6 +31,7 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public pan: number = 0; // -1 to 1
   public position: number[] = [0, 0, 0]; // x, y, z
   public readonly upmix?: string;
+  public readonly channels?: number;
 }
 
 export class GMCPMessageClientMediaStop extends GMCPMessage {
@@ -59,6 +60,7 @@ export class GMCPMessageClientMediaUpdate extends GMCPMessage {
   public pan?: number = 0;
   public position?: number[] = [0, 0, 0];
   public upmix?: string;
+  public channels?: number;
 }
 
 export class GMCPMessageClientMediaListenerOrientation extends GMCPMessage {
@@ -72,6 +74,7 @@ export class GMCPMessageClientMediaListenerPosition {
 
 export interface ExtendedSound extends Sound {
   ambisonicRenderer?: AmbisonicRenderer;
+  inputChannels?: number;
   priority?: number;
   tag?: string;
   key?: string;
@@ -92,12 +95,16 @@ export class GMCPClientMedia extends GMCPPackage {
 
   private assignSoundMetadata(
     sound: ExtendedSound,
-    data: Pick<GMCPMessageClientMediaPlay, "key" | "tag" | "type" | "upmix">,
+    data: Pick<GMCPMessageClientMediaPlay, "key" | "tag" | "type" | "upmix" | "channels">,
   ) {
     sound.key = data.key;
     sound.tag = data.tag;
     sound.mediaType = data.type;
     sound.upmix = data.upmix;
+    const channels = this.normalizeInputChannels(data.channels);
+    if (channels !== undefined) {
+      sound.inputChannels = channels;
+    }
   }
 
   private cleanupUpmix(sound: ExtendedSound) {
@@ -128,9 +135,46 @@ export class GMCPClientMedia extends GMCPPackage {
     this.syncAmbisonicRendererYaw();
   };
 
-  private async configureAmbisonicPlayback(sound: ExtendedSound, playback: Playback) {
+  private normalizeInputChannels(channels?: number): number | undefined {
+    if (!Number.isFinite(channels)) {
+      return undefined;
+    }
+    const normalized = Math.trunc(channels);
+    if (normalized < 1) {
+      return undefined;
+    }
+    return normalized;
+  }
+
+  private resolveAmbisonicInputChannels(
+    sound: ExtendedSound,
+    data: Pick<GMCPMessageClientMediaPlay, "channels">,
+  ): number {
+    return (
+      this.normalizeInputChannels(data.channels) ??
+      this.normalizeInputChannels(sound.inputChannels) ??
+      this.normalizeInputChannels(sound.buffer?.numberOfChannels) ??
+      2
+    );
+  }
+
+  private async configureAmbisonicPlayback(
+    sound: ExtendedSound,
+    playback: Playback,
+    inputChannels: number,
+  ) {
     this.cleanupUpmix(sound);
-    const renderer = await AmbisonicRenderer.create(this.client.cacophony);
+    let renderer: AmbisonicRenderer;
+    try {
+      renderer = await AmbisonicRenderer.create(this.client.cacophony, inputChannels);
+    } catch (error) {
+      console.warn("Unsupported ambisonic input channel count", {
+        error,
+        inputChannels,
+        sound: sound.key ?? sound.url,
+      });
+      return;
+    }
     renderer.attachPlayback(playback);
     renderer.setRotationMatrixFromYaw(this.currentListenerYaw());
     sound.ambisonicRenderer = renderer;
@@ -288,7 +332,8 @@ export class GMCPClientMedia extends GMCPPackage {
       }
 
       if (data.upmix === "ambisonic") {
-        await this.configureAmbisonicPlayback(sound, playback);
+        const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
+        await this.configureAmbisonicPlayback(sound, playback, inputChannels);
       }
     }
     this.assignSoundMetadata(sound, data);
@@ -310,11 +355,13 @@ export class GMCPClientMedia extends GMCPPackage {
         tag: data.tag ?? sound.tag,
         type: data.type ?? sound.mediaType,
         upmix: data.upmix ?? sound.upmix,
+        channels: data.channels ?? sound.inputChannels,
       });
       this.applySoundState(sound, data);
       const [playback] = sound.playbacks;
       if (data.upmix === "ambisonic" && playback) {
-        this.configureAmbisonicPlayback(sound, playback).catch(console.error);
+        const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
+        this.configureAmbisonicPlayback(sound, playback, inputChannels).catch(console.error);
       } else if (data.upmix && data.upmix !== "ambisonic") {
         this.cleanupUpmix(sound);
       }

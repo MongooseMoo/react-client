@@ -224,7 +224,7 @@ describe("GMCPClientMedia", () => {
     } as GMCPMessageClientMediaPlay);
 
     const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
-    expect(mockAmbisonicRendererCreate).toHaveBeenCalledOnce();
+    expect(mockAmbisonicRendererCreate).toHaveBeenCalledWith(client.cacophony, 2);
     expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0]);
     expect(renderer.setRotationMatrixFromYaw).toHaveBeenCalledWith(0);
 
@@ -236,6 +236,25 @@ describe("GMCPClientMedia", () => {
 
     handler.handleStop({ key: "show-1" } as GMCPMessageClientMediaStop);
     expect(renderer.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it("routes declared four-channel ambisonic playback through FOA passthrough", async () => {
+    const sound = createMockSound("https://media.example/foa.ogg");
+    mockCreateSound.mockResolvedValue(sound);
+
+    await handler.handlePlay({
+      channels: 4,
+      key: "foa-1",
+      name: "foa.ogg",
+      type: "music",
+      upmix: "ambisonic",
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
+    expect(mockAmbisonicRendererCreate).toHaveBeenCalledWith(client.cacophony, 4);
+    expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0]);
+    expect(sound.inputChannels).toBe(4);
   });
 
   it("updates ambisonic renderer rotation on Client.Spatial orientation events", async () => {
