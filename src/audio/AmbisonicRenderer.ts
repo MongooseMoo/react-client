@@ -7,7 +7,6 @@ export class AmbisonicRenderer {
   private constructor(
     private readonly cacophony: Cacophony,
     private readonly renderer: FOARenderer,
-    private readonly splitter: AudioNode,
     private readonly encoder: AudioNode,
   ) {}
 
@@ -15,15 +14,14 @@ export class AmbisonicRenderer {
     const renderer = Omnitone.createFOARenderer(cacophony.context as unknown as BaseAudioContext);
     await renderer.initialize();
     renderer.setRenderingMode("ambisonic");
-    const splitter = cacophony.createSplitter(2);
+    await cacophony.loadStereoToBFormatWorklet();
     const encoder = await cacophony.createStereoToBFormatNode();
-    return new AmbisonicRenderer(cacophony, renderer, splitter as unknown as AudioNode, encoder as AudioNode);
+    return new AmbisonicRenderer(cacophony, renderer, encoder as AudioNode);
   }
 
   attachPlayback(playback: Playback): void {
     playback.disconnect();
-    playback.connect(this.splitter);
-    this.splitter.connect(this.encoder);
+    playback.connect(this.encoder);
     this.encoder.connect(this.renderer.input);
     this.renderer.output.connect(this.cacophony.globalGainNode);
   }
@@ -31,7 +29,6 @@ export class AmbisonicRenderer {
   cleanup(): void {
     this.renderer.output.disconnect();
     this.encoder.disconnect();
-    this.splitter.disconnect();
   }
 
   setRotationMatrixFromYaw(yaw: number): void {

@@ -25,7 +25,6 @@ describe("AmbisonicRenderer", () => {
   });
 
   it("builds the ambisonic playback graph against cacophony", async () => {
-    const splitter = createNode();
     const encoder = createNode();
     const input = createNode();
     const output = createNode();
@@ -41,7 +40,7 @@ describe("AmbisonicRenderer", () => {
 
     const cacophony = {
       context: {},
-      createSplitter: vi.fn(() => splitter),
+      loadStereoToBFormatWorklet: vi.fn().mockResolvedValue(undefined),
       createStereoToBFormatNode: vi.fn().mockResolvedValue(encoder),
       globalGainNode: createNode(),
     };
@@ -55,11 +54,10 @@ describe("AmbisonicRenderer", () => {
 
     expect(renderer.initialize).toHaveBeenCalledOnce();
     expect(renderer.setRenderingMode).toHaveBeenCalledWith("ambisonic");
-    expect(cacophony.createSplitter).toHaveBeenCalledWith(2);
+    expect(cacophony.loadStereoToBFormatWorklet).toHaveBeenCalledOnce();
     expect(cacophony.createStereoToBFormatNode).toHaveBeenCalledOnce();
     expect(playback.disconnect).toHaveBeenCalledOnce();
-    expect(playback.connect).toHaveBeenCalledWith(splitter);
-    expect(splitter.connect).toHaveBeenCalledWith(encoder);
+    expect(playback.connect).toHaveBeenCalledWith(encoder);
     expect(encoder.connect).toHaveBeenCalledWith(input);
     expect(output.connect).toHaveBeenCalledWith(cacophony.globalGainNode);
   });
