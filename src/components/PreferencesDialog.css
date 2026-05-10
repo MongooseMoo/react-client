@@ -3,8 +3,9 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 80%;
-  max-width: 500px;
+  width: min(92vw, 760px);
+  max-width: 760px;
+  max-height: 88vh;
   padding: var(--space-4) var(--space-5);
   background-color: var(--color-bg-surface);
   border: 1px solid var(--color-border);
@@ -14,6 +15,7 @@
   z-index: 1000;
   display: none;
   font-size: 1.2em;
+  overflow: auto;
 }
 
 .preferences-dialog[open] {
@@ -53,4 +55,15 @@
 .preferences-dialog button.btn-primary:hover {
   opacity: 0.9;
   border-color: transparent;
+}
+
+.preferences-dialog .tabs-container div[role="tablist"] {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.preferences-dialog .tabs-container button[role="tab"] {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
 }
