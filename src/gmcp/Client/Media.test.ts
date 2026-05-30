@@ -20,17 +20,9 @@ import {
 
 type MockPlayback = {
   connect: ReturnType<typeof vi.fn>;
-  gainNode: {
-    gain: {
-      setValueAtTime: ReturnType<typeof vi.fn>;
-      linearRampToValueAtTime: ReturnType<typeof vi.fn>;
-    };
-  };
   disconnect: ReturnType<typeof vi.fn>;
   duration: number;
-  on: ReturnType<typeof vi.fn>;
   stereoPan: number;
-  trigger: (event: string) => void;
 };
 
 type MockSound = {
@@ -39,6 +31,7 @@ type MockSound = {
   key?: string;
   loop: ReturnType<typeof vi.fn>;
   mediaType?: string;
+  on: ReturnType<typeof vi.fn>;
   play: ReturnType<typeof vi.fn>;
   playbacks: MockPlayback[];
   position: number[];
@@ -47,35 +40,18 @@ type MockSound = {
   stereoPan: number;
   tag?: string;
   threeDOptions?: Record<string, unknown>;
+  trigger: (event: string) => void;
   url: string;
   volume: number;
 };
 
 function createMockSound(url: string): MockSound {
-  const playbackListeners = new Map<string, Set<() => void>>();
+  const soundListeners = new Map<string, Set<() => void>>();
   const playback: MockPlayback = {
     connect: vi.fn(),
     disconnect: vi.fn(),
-    gainNode: {
-      gain: {
-        setValueAtTime: vi.fn(),
-        linearRampToValueAtTime: vi.fn(),
-      },
-    },
     duration: 5,
-    on: vi.fn((event: string, listener: () => void) => {
-      if (!playbackListeners.has(event)) {
-        playbackListeners.set(event, new Set());
-      }
-      playbackListeners.get(event)!.add(listener);
-      return () => playbackListeners.get(event)?.delete(listener);
-    }),
     stereoPan: 0,
-    trigger(event: string) {
-      for (const listener of playbackListeners.get(event) ?? []) {
-        listener();
-      }
-    },
   };
 
   const sound: MockSound = {
@@ -83,6 +59,13 @@ function createMockSound(url: string): MockSound {
     isPlaying: false,
     loop: vi.fn(),
     mediaType: undefined,
+    on: vi.fn((event: string, listener: () => void) => {
+      if (!soundListeners.has(event)) {
+        soundListeners.set(event, new Set());
+      }
+      soundListeners.get(event)!.add(listener);
+      return () => soundListeners.get(event)?.delete(listener);
+    }),
     play: vi.fn(() => {
       sound.isPlaying = true;
       return [playback];
@@ -94,6 +77,11 @@ function createMockSound(url: string): MockSound {
     stereoPan: 0,
     tag: undefined,
     threeDOptions: undefined,
+    trigger(event: string) {
+      for (const listener of soundListeners.get(event) ?? []) {
+        listener();
+      }
+    },
     url,
     volume: 1,
   };
@@ -184,7 +172,7 @@ describe("GMCPClientMedia", () => {
 
     expect(mockCreateSound).toHaveBeenCalledWith(
       "https://mongoose.world:9080/?url=theme.ogg",
-      "HTML",
+      "html",
       "stereo",
     );
   });
@@ -262,7 +250,7 @@ describe("GMCPClientMedia", () => {
       volume: 50,
     } as GMCPMessageClientMediaPlay);
 
-    sound.playbacks[0].trigger("ended");
+    sound.trigger("ended");
 
     expect(sound.cleanup).toHaveBeenCalledOnce();
     expect(handler.sounds).toEqual({});

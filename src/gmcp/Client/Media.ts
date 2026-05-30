@@ -5,8 +5,8 @@ import { GMCPMessage, GMCPPackage } from "../package";
 
 const CORS_PROXY = "https://mongoose.world:9080/?url=";
 type CacophonySoundKind = NonNullable<Parameters<Cacophony["createSound"]>[1]>;
-const CACOPHONY_BUFFER = "Buffer" as CacophonySoundKind;
-const CACOPHONY_HTML = "HTML" as CacophonySoundKind;
+const CACOPHONY_BUFFER = "buffer" satisfies CacophonySoundKind;
+const CACOPHONY_HTML = "html" satisfies CacophonySoundKind;
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage {
   public readonly url?: string;
@@ -139,9 +139,10 @@ export class GMCPClientMedia extends GMCPPackage {
   private releaseSoundWhenPlaybackEnds(
     sound: ExtendedSound,
     key: string,
-    playback: Playback,
   ): void {
-    playback.on("ended", () => {
+    let unsubscribe: (() => void) | undefined;
+    unsubscribe = sound.on("ended", () => {
+      unsubscribe?.();
       if (this.sounds[key] === sound) {
         this.releaseSound(sound, key);
       }
@@ -337,37 +338,13 @@ export class GMCPClientMedia extends GMCPPackage {
 
     // Playback control
     if (!sound.isPlaying) {
-      const [playback] = sound.play() as Playback[];
-      this.releaseSoundWhenPlaybackEnds(sound, soundKey, playback);
+      const [playback] = sound.play({
+        fadeIn: data.fadein || undefined,
+        fadeOut: data.fadeout || undefined,
+      }) as Playback[];
+      this.releaseSoundWhenPlaybackEnds(sound, soundKey);
       if (data.start !== undefined) {
         sound.seek(data.start / 1000);
-      }
-      const targetVolume = (data.volume ?? 50) / 100;
-      const context = this.client.cacophony.context;
-      const currentTime = context.currentTime;
-
-      if (data.fadein && playback.gainNode) {
-        // Start at 0, ramp to target volume over fadein ms
-        playback.gainNode.gain.setValueAtTime(0, currentTime);
-        playback.gainNode.gain.linearRampToValueAtTime(
-          targetVolume,
-          currentTime + data.fadein / 1000
-        );
-      }
-
-      if (data.fadeout && playback.gainNode) {
-        // Schedule fadeout at end of sound
-        const duration = playback.duration;
-        if (isFinite(duration)) {
-          const fadeoutStart = currentTime + duration - data.fadeout / 1000;
-          if (fadeoutStart > currentTime) {
-            playback.gainNode.gain.setValueAtTime(targetVolume, fadeoutStart);
-            playback.gainNode.gain.linearRampToValueAtTime(
-              0,
-              currentTime + duration
-            );
-          }
-        }
       }
 
       if (data.upmix === "ambisonic") {

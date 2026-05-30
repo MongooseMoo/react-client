@@ -100,9 +100,10 @@ describe("AmbisonicRenderer", () => {
     expect(cacophony.loadStereoToBFormatWorklet).not.toHaveBeenCalled();
     expect(cacophony.createStereoToBFormatNode).not.toHaveBeenCalled();
     expect(playback.disconnect).toHaveBeenCalledOnce();
-    expect(source.disconnect).toHaveBeenCalledOnce();
-    expect(source.connect).toHaveBeenCalledWith(gainNode);
-    expect(gainNode.connect).toHaveBeenCalledWith(input);
+    expect(playback.connect).toHaveBeenCalledWith(input);
+    expect(source.disconnect).not.toHaveBeenCalled();
+    expect(source.connect).not.toHaveBeenCalled();
+    expect(gainNode.connect).not.toHaveBeenCalled();
     expect(output.connect).toHaveBeenCalledWith(cacophony.globalGainNode);
   });
 

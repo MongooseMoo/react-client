@@ -1,4 +1,4 @@
-import type { Cacophony, Playback } from "cacophony";
+import type { AudioNode as CacophonyAudioNode, Cacophony, Playback } from "cacophony";
 import Omnitone, { type FOARenderer } from "omnitone/build/omnitone.min.esm.js";
 
 const IDENTITY_ROTATION = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
@@ -11,7 +11,7 @@ export class AmbisonicRenderer {
     private readonly cacophony: Cacophony,
     private readonly renderer: FOARenderer,
     private readonly mode: AmbisonicInputMode,
-    private readonly encoder?: AudioNode,
+    private readonly encoder?: CacophonyAudioNode,
   ) {}
 
   static async create(cacophony: Cacophony, inputChannels: number): Promise<AmbisonicRenderer> {
@@ -21,7 +21,7 @@ export class AmbisonicRenderer {
     if (inputChannels === 2) {
       await cacophony.loadStereoToBFormatWorklet();
       const encoder = await cacophony.createStereoToBFormatNode();
-      return new AmbisonicRenderer(cacophony, renderer, "stereo-upmix", encoder as AudioNode);
+      return new AmbisonicRenderer(cacophony, renderer, "stereo-upmix", encoder);
     }
     if (inputChannels === 4) {
       return new AmbisonicRenderer(cacophony, renderer, "foa-passthrough");
@@ -37,16 +37,11 @@ export class AmbisonicRenderer {
         throw new Error("Stereo ambisonic upmix requires an encoder node");
       }
       playback.connect(this.encoder);
-      this.encoder.connect(this.renderer.input);
+      this.encoder.connect(this.renderer.input as unknown as CacophonyAudioNode);
     } else {
-      if (!playback.source || !playback.gainNode || !playback.panner) {
-        throw new Error("FOA passthrough requires source, panner, and gain nodes");
-      }
-      playback.source.disconnect();
-      playback.source.connect(playback.gainNode);
-      playback.gainNode.connect(this.renderer.input);
+      playback.connect(this.renderer.input as unknown as CacophonyAudioNode);
     }
-    this.renderer.output.connect(this.cacophony.globalGainNode);
+    (this.renderer.output as unknown as CacophonyAudioNode).connect(this.cacophony.globalGainNode);
   }
 
   cleanup(): void {
@@ -57,18 +52,9 @@ export class AmbisonicRenderer {
     }
     if (this.mode === "stereo-upmix") {
       this.encoder?.disconnect();
-      this.attachedPlayback.disconnect();
-      this.attachedPlayback.connect(this.cacophony.globalGainNode);
-    } else {
-      this.attachedPlayback.gainNode?.disconnect();
-      this.attachedPlayback.source?.disconnect();
-      if (this.attachedPlayback.source && this.attachedPlayback.panner) {
-        this.attachedPlayback.source.connect(this.attachedPlayback.panner);
-      }
-      if (this.attachedPlayback.gainNode) {
-        this.attachedPlayback.gainNode.connect(this.cacophony.globalGainNode);
-      }
     }
+    this.attachedPlayback.disconnect();
+    this.attachedPlayback.connect(this.cacophony.globalGainNode);
     this.attachedPlayback = undefined;
   }
 
