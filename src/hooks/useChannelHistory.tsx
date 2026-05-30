@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { announce } from "@react-aria/live-announcer";
-import Anser from "anser";
 import MudClient from "../client";
 import { preferencesStore, NavigationKeyScheme } from "../PreferencesStore";
 
@@ -183,36 +182,10 @@ export const useChannelHistory = (client: MudClient | null) => {
     }
   }, [buffers, bufferOrder, currentBufferIndex, timestampsEnabled]);
 
-  const addMessageToBuffer = useCallback((bufferName: string, message: string, channel?: string, talker?: string) => {
-    setBuffers(prevBuffers => {
-      const newBuffers = new Map(prevBuffers);
-      const buffer = newBuffers.get(bufferName);
-
-      if (!buffer) return prevBuffers;
-
-      const newMessage: Message = {
-        id: messageIdCounter.current++,
-        message,
-        timestamp: Date.now(),
-        channel,
-        talker,
-      };
-
-      newBuffers.set(bufferName, appendMessage(buffer, newMessage));
-
-      return newBuffers;
-    });
-  }, []);
-
-  // Handle regular messages
-  const handleMessage = useCallback((message: string) => {
-    if (!message.trim()) return;
-    // Strip ANSI codes before storing
-    const plainText = Anser.ansiToText(message);
-    addMessageToBuffer(ALL_BUFFER_NAME, plainText);
-  }, [addMessageToBuffer]);
-
-  // Handle channel messages
+  // Handle channel messages. The "all" buffer is the aggregate of every
+  // channel, so each channel message is appended both to its own channel
+  // buffer and to "all". Non-channel traffic (the generic "message" event) is
+  // shown in the main output terminal and deliberately does NOT enter "all".
   const handleChannelText = useCallback((data: { channel: string; talker: string; text: string }) => {
     const { channel, talker, text } = data;
     const newMessage: Message = {
@@ -225,8 +198,10 @@ export const useChannelHistory = (client: MudClient | null) => {
 
     setBuffers(prev => {
       const newBuffers = new Map(prev);
-      const buffer = newBuffers.get(channel) || createEmptyBuffer(channel);
-      newBuffers.set(channel, appendMessage(buffer, newMessage));
+      const channelBuffer = newBuffers.get(channel) || createEmptyBuffer(channel);
+      newBuffers.set(channel, appendMessage(channelBuffer, newMessage));
+      const allBuffer = newBuffers.get(ALL_BUFFER_NAME) || createEmptyBuffer(ALL_BUFFER_NAME);
+      newBuffers.set(ALL_BUFFER_NAME, appendMessage(allBuffer, newMessage));
       return newBuffers;
     });
 
@@ -238,13 +213,11 @@ export const useChannelHistory = (client: MudClient | null) => {
     if (!client) return;
 
     client.on("channelText", handleChannelText);
-    client.on("message", handleMessage);
 
     return () => {
       client.removeListener("channelText", handleChannelText);
-      client.removeListener("message", handleMessage);
     };
-  }, [client, handleChannelText, handleMessage]);
+  }, [client, handleChannelText]);
 
   const getCurrentBuffer = (): Buffer | undefined => {
     return buffers.get(bufferOrder[currentBufferIndex]);
