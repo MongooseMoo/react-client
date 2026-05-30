@@ -1,9 +1,12 @@
-import { Playback, Position, Sound, SoundType } from "cacophony";
+import type { Cacophony, Playback, Position, Sound } from "cacophony";
 
 import { AmbisonicRenderer } from "../../audio/AmbisonicRenderer";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 const CORS_PROXY = "https://mongoose.world:9080/?url=";
+type CacophonySoundKind = NonNullable<Parameters<Cacophony["createSound"]>[1]>;
+const CACOPHONY_BUFFER = "Buffer" as CacophonySoundKind;
+const CACOPHONY_HTML = "HTML" as CacophonySoundKind;
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage {
   public readonly url?: string;
@@ -86,6 +89,7 @@ export class GMCPClientMedia extends GMCPPackage {
   public packageName: string = "Client.Media";
   sounds: { [key: string]: ExtendedSound } = {};
   defaultUrl: string = "";
+  private cleanedSounds = new WeakSet<ExtendedSound>();
 
   constructor(client: GMCPPackage["client"]) {
     super(client);
@@ -112,6 +116,42 @@ export class GMCPClientMedia extends GMCPPackage {
     delete sound.ambisonicRenderer;
   }
 
+  private releaseSound(sound: ExtendedSound, key?: string): void {
+    if (key !== undefined && this.sounds[key] === sound) {
+      delete this.sounds[key];
+    }
+
+    for (const soundKey of Object.keys(this.sounds)) {
+      if (this.sounds[soundKey] === sound) {
+        delete this.sounds[soundKey];
+      }
+    }
+
+    if (this.cleanedSounds.has(sound)) {
+      return;
+    }
+
+    this.cleanedSounds.add(sound);
+    this.cleanupUpmix(sound);
+    sound.cleanup();
+  }
+
+  private releaseSoundWhenPlaybackEnds(
+    sound: ExtendedSound,
+    key: string,
+    playback: Playback,
+  ): void {
+    playback.on("ended", () => {
+      if (this.sounds[key] === sound) {
+        this.releaseSound(sound, key);
+      }
+    });
+  }
+
+  private resolvedUrl(data: Pick<GMCPMessageClientMediaLoad, "name" | "url">): string {
+    return (data.url || this.defaultUrl) + data.name;
+  }
+
   private currentListenerYaw(): number {
     const forward = this.client.cacophony.listenerForwardOrientation;
     if (!forward?.length) {
@@ -136,7 +176,7 @@ export class GMCPClientMedia extends GMCPPackage {
   };
 
   private normalizeInputChannels(channels?: number): number | undefined {
-    if (!Number.isFinite(channels)) {
+    if (channels === undefined || !Number.isFinite(channels)) {
       return undefined;
     }
     const normalized = Math.trunc(channels);
@@ -224,9 +264,7 @@ export class GMCPClientMedia extends GMCPPackage {
           continue;
         }
         if (activeSound.priority && activeSound.priority < data.priority) {
-          this.cleanupUpmix(activeSound);
-          activeSound.cleanup();
-          delete this.sounds[key];
+          this.releaseSound(activeSound, key);
         }
       }
       sound.priority = data.priority;
@@ -238,8 +276,8 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   async handleLoad(data: GMCPMessageClientMediaLoad) {
-    const url = (data.url || this.defaultUrl) + data.name;
-    const key = data.url + data.name;
+    const url = this.resolvedUrl(data);
+    const key = url;
     if (!this.sounds[key]) {
       const sound: ExtendedSound = await this.client.cacophony.createSound(url);
       sound.key = key;
@@ -248,7 +286,7 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   mediaUrl(data: GMCPMessageClientMediaPlay): string {
-    let mediaUrl = (data.url || this.defaultUrl) + data.name;
+    let mediaUrl = this.resolvedUrl(data);
     if (data.type?.toLowerCase() === "music") {
       mediaUrl = CORS_PROXY + encodeURIComponent(mediaUrl);
     }
@@ -258,48 +296,49 @@ export class GMCPClientMedia extends GMCPPackage {
   async handlePlay(data: GMCPMessageClientMediaPlay) {
     let mediaUrl = this.mediaUrl(data);
     data.key = data.key || mediaUrl;
-    let sound = this.sounds[data.key] as ExtendedSound;
+    const soundKey = data.key;
+    let sound = this.sounds[soundKey] as ExtendedSound;
     const panType = data.is3d ? "HRTF" : "stereo";
     // Sound creation or updating
     if (!sound || sound.url !== mediaUrl) {
       // Cleanup old sound before replacing
       if (sound) {
-        this.cleanupUpmix(sound);
-        sound.cleanup();
+        this.releaseSound(sound, soundKey);
       }
       // Create a new sound object
       if (data.type === "music") {
         sound = await this.client.cacophony.createSound(
           mediaUrl,
-          SoundType.HTML,
+          CACOPHONY_HTML,
           panType
         );
       } else {
         sound = await this.client.cacophony.createSound(
           mediaUrl,
-          SoundType.Buffer,
+          CACOPHONY_BUFFER,
           panType
         );
       }
     }
 
+    sound.key = soundKey;
+    this.assignSoundMetadata(sound, data);
+    this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
 
     if (data.end) {
-      const endKey = data.key!;
+      const endKey = soundKey;
       setTimeout(() => {
-        // Only remove if the same sound is still at this key
         if (this.sounds[endKey] === sound) {
-          delete this.sounds[endKey];
+          this.releaseSound(sound, endKey);
         }
-        this.cleanupUpmix(sound);
-        sound.cleanup();
       }, data.end);
     }
 
     // Playback control
     if (!sound.isPlaying) {
       const [playback] = sound.play() as Playback[];
+      this.releaseSoundWhenPlaybackEnds(sound, soundKey, playback);
       if (data.start !== undefined) {
         sound.seek(data.start / 1000);
       }
@@ -336,10 +375,6 @@ export class GMCPClientMedia extends GMCPPackage {
         await this.configureAmbisonicPlayback(sound, playback, inputChannels);
       }
     }
-    this.assignSoundMetadata(sound, data);
-    const soundKey = sound.key ?? data.key ?? mediaUrl;
-    sound.key = soundKey;
-    this.sounds[soundKey] = sound;
   }
 
   handleUpdate(data: GMCPMessageClientMediaUpdate) {
@@ -396,9 +431,7 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   private stopSound(sound: ExtendedSound) {
-    delete this.sounds[sound.key!];
-    this.cleanupUpmix(sound);
-    sound.cleanup();
+    this.releaseSound(sound, sound.key);
   }
 
   handleListenerPosition(data: GMCPMessageClientMediaListenerPosition) {
@@ -444,8 +477,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
   stopAllSounds() {
     this.allSounds.forEach((sound) => {
-      this.cleanupUpmix(sound);
-      sound.cleanup();
+      this.releaseSound(sound);
     });
     this.sounds = {};
   }
