@@ -1,6 +1,77 @@
-import { describe, expect, it } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { formatAnnouncementMessage } from "./useChannelHistory";
+import type MudClient from "../client";
+import {
+  formatAnnouncementMessage,
+  MAX_ALL_BUFFER_MESSAGES,
+  MAX_CHANNEL_BUFFER_MESSAGES,
+  MAX_PERSISTED_ALL_MESSAGES,
+  MAX_PERSISTED_CHANNEL_MESSAGES,
+  useChannelHistory,
+} from "./useChannelHistory";
+
+type Listener = (payload: unknown) => void;
+
+class FakeClient {
+  private listeners = new Map<string, Set<Listener>>();
+
+  on(eventName: string, listener: Listener): this {
+    const listeners = this.listeners.get(eventName) || new Set<Listener>();
+    listeners.add(listener);
+    this.listeners.set(eventName, listeners);
+    return this;
+  }
+
+  removeListener(eventName: string, listener: Listener): this {
+    this.listeners.get(eventName)?.delete(listener);
+    return this;
+  }
+
+  emit(eventName: string, payload: unknown): void {
+    this.listeners.get(eventName)?.forEach(listener => listener(payload));
+  }
+
+  listenerCount(eventName: string): number {
+    return this.listeners.get(eventName)?.size || 0;
+  }
+}
+
+const asMudClient = (client: FakeClient): MudClient => client as unknown as MudClient;
+
+const makeMessages = (count: number) =>
+  Array.from({ length: count }, (_, index) => ({
+    id: index,
+    message: `message ${index}`,
+    timestamp: index,
+  }));
+
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+
+  return {
+    getItem: vi.fn((key: string) => store[key] || null),
+    setItem: vi.fn((key: string, value: string) => {
+      store[key] = value.toString();
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key];
+    }),
+    clear: vi.fn(() => {
+      store = {};
+    }),
+  };
+})();
+
+Object.defineProperty(window, "localStorage", {
+  value: localStorageMock,
+  configurable: true,
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  localStorage.clear();
+});
 
 describe("formatAnnouncementMessage", () => {
   it("always prefixes talker when talker metadata is present", () => {
@@ -37,5 +108,119 @@ describe("formatAnnouncementMessage", () => {
         talker: "codex",
       })
     ).toBe('codex. S/He pages, "gmcp-page-probe"');
+  });
+});
+
+describe("useChannelHistory", () => {
+  it("keeps client listeners stable while messages update hook state", () => {
+    const client = new FakeClient();
+    const { rerender, unmount } = renderHook(
+      ({ currentClient }) => useChannelHistory(asMudClient(currentClient)),
+      { initialProps: { currentClient: client } }
+    );
+
+    expect(client.listenerCount("message")).toBe(1);
+    expect(client.listenerCount("channelText")).toBe(1);
+
+    act(() => {
+      client.emit("message", "plain message");
+      client.emit("channelText", {
+        channel: "gossip",
+        talker: "Reader",
+        text: "channel message",
+      });
+    });
+
+    rerender({ currentClient: client });
+
+    expect(client.listenerCount("message")).toBe(1);
+    expect(client.listenerCount("channelText")).toBe(1);
+
+    unmount();
+
+    expect(client.listenerCount("message")).toBe(0);
+    expect(client.listenerCount("channelText")).toBe(0);
+  });
+
+  it("caps the all buffer and per-channel buffers in memory", () => {
+    const client = new FakeClient();
+    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+
+    act(() => {
+      for (let index = 0; index < MAX_ALL_BUFFER_MESSAGES + 5; index += 1) {
+        client.emit("message", `all ${index}`);
+      }
+
+      for (let index = 0; index < MAX_CHANNEL_BUFFER_MESSAGES + 5; index += 1) {
+        client.emit("channelText", {
+          channel: "gossip",
+          talker: "Reader",
+          text: `gossip ${index}`,
+        });
+      }
+    });
+
+    const allBuffer = result.current.buffers.get("all");
+    const gossipBuffer = result.current.buffers.get("gossip");
+
+    expect(allBuffer?.messages).toHaveLength(MAX_ALL_BUFFER_MESSAGES);
+    expect(allBuffer?.messages[0]?.message).toBe("all 5");
+    expect(gossipBuffer?.messages).toHaveLength(MAX_CHANNEL_BUFFER_MESSAGES);
+    expect(gossipBuffer?.messages[0]?.message).toBe("gossip 5");
+  });
+
+  it("writes bounded channel history payloads to localStorage", async () => {
+    const client = new FakeClient();
+    renderHook(() => useChannelHistory(asMudClient(client)));
+
+    act(() => {
+      for (let index = 0; index < MAX_ALL_BUFFER_MESSAGES; index += 1) {
+        client.emit("message", `all ${index}`);
+      }
+
+      for (let index = 0; index < MAX_CHANNEL_BUFFER_MESSAGES; index += 1) {
+        client.emit("channelText", {
+          channel: "gossip",
+          talker: "Reader",
+          text: `gossip ${index}`,
+        });
+      }
+    });
+
+    await waitFor(() => {
+      const saved = localStorage.getItem("channelHistory");
+      expect(saved).not.toBeNull();
+
+      const parsed = JSON.parse(saved || "{}");
+      expect(parsed.buffers.all.messages).toHaveLength(MAX_PERSISTED_ALL_MESSAGES);
+      expect(parsed.buffers.gossip.messages).toHaveLength(MAX_PERSISTED_CHANNEL_MESSAGES);
+    });
+  });
+
+  it("caps older localStorage history when loading it", () => {
+    localStorage.setItem("channelHistory", JSON.stringify({
+      buffers: {
+        all: {
+          name: "all",
+          messages: makeMessages(MAX_ALL_BUFFER_MESSAGES + 10),
+          currentIndex: 0,
+        },
+        gossip: {
+          name: "gossip",
+          messages: makeMessages(MAX_CHANNEL_BUFFER_MESSAGES + 10),
+          currentIndex: 0,
+        },
+      },
+      bufferOrder: ["all", "gossip"],
+      currentBufferIndex: 1,
+      timestampsEnabled: true,
+    }));
+
+    const { result } = renderHook(() => useChannelHistory(null));
+
+    expect(result.current.buffers.get("all")?.messages).toHaveLength(MAX_ALL_BUFFER_MESSAGES);
+    expect(result.current.buffers.get("all")?.messages[0]?.message).toBe("message 10");
+    expect(result.current.buffers.get("gossip")?.messages).toHaveLength(MAX_CHANNEL_BUFFER_MESSAGES);
+    expect(result.current.buffers.get("gossip")?.messages[0]?.message).toBe("message 10");
   });
 });

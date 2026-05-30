@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { announce } from "@react-aria/live-announcer";
 import Anser from "anser";
 import MudClient from "../client";
@@ -43,7 +43,81 @@ interface Buffer {
   currentIndex: number;
 }
 
-const MAX_MESSAGES_PER_BUFFER = 100000;
+const CHANNEL_HISTORY_STORAGE_KEY = "channelHistory";
+const ALL_BUFFER_NAME = "all";
+
+export const MAX_ALL_BUFFER_MESSAGES = 1000;
+export const MAX_CHANNEL_BUFFER_MESSAGES = 500;
+export const MAX_PERSISTED_ALL_MESSAGES = 200;
+export const MAX_PERSISTED_CHANNEL_MESSAGES = 100;
+
+const createEmptyBuffer = (name: string): Buffer => ({
+  name,
+  messages: [],
+  currentIndex: 0,
+});
+
+const getMemoryLimitForBuffer = (bufferName: string): number =>
+  bufferName === ALL_BUFFER_NAME ? MAX_ALL_BUFFER_MESSAGES : MAX_CHANNEL_BUFFER_MESSAGES;
+
+const getPersistenceLimitForBuffer = (bufferName: string): number =>
+  bufferName === ALL_BUFFER_NAME ? MAX_PERSISTED_ALL_MESSAGES : MAX_PERSISTED_CHANNEL_MESSAGES;
+
+const clampCurrentIndex = (currentIndex: number, droppedMessages: number, messageCount: number): number => {
+  if (currentIndex <= 0 || messageCount === 0) {
+    return 0;
+  }
+
+  return Math.min(Math.max(currentIndex - droppedMessages, 1), messageCount);
+};
+
+const limitBufferMessages = (buffer: Buffer, messageLimit: number): Buffer => {
+  if (buffer.messages.length <= messageLimit) {
+    return buffer;
+  }
+
+  const droppedMessages = buffer.messages.length - messageLimit;
+  const messages = buffer.messages.slice(droppedMessages);
+
+  return {
+    ...buffer,
+    messages,
+    currentIndex: clampCurrentIndex(buffer.currentIndex, droppedMessages, messages.length),
+  };
+};
+
+const appendMessage = (buffer: Buffer, message: Message): Buffer =>
+  limitBufferMessages(
+    {
+      ...buffer,
+      messages: [...buffer.messages, message],
+    },
+    getMemoryLimitForBuffer(buffer.name)
+  );
+
+const normalizeLoadedBuffer = (bufferName: string, storedBuffer: Partial<Buffer> | undefined): Buffer => {
+  const messages = Array.isArray(storedBuffer?.messages) ? storedBuffer.messages : [];
+  const currentIndex = typeof storedBuffer?.currentIndex === "number" ? storedBuffer.currentIndex : 0;
+
+  return limitBufferMessages(
+    {
+      name: bufferName,
+      messages,
+      currentIndex,
+    },
+    getMemoryLimitForBuffer(bufferName)
+  );
+};
+
+const serializeBuffersForStorage = (buffers: Map<string, Buffer>): Record<string, Buffer> => {
+  const buffersObj: Record<string, Buffer> = {};
+
+  buffers.forEach((buffer, name) => {
+    buffersObj[name] = limitBufferMessages(buffer, getPersistenceLimitForBuffer(name));
+  });
+
+  return buffersObj;
+};
 
 export function formatAnnouncementMessage(message: Message): string {
   const plainText = message.message;
@@ -68,18 +142,26 @@ export const useChannelHistory = (client: MudClient | null) => {
   // Load state from localStorage on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("channelHistory");
+      const saved = localStorage.getItem(CHANNEL_HISTORY_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        const storedOrder = Array.isArray(parsed.bufferOrder) ? parsed.bufferOrder : [];
+        const loadedOrder = [
+          ALL_BUFFER_NAME,
+          ...storedOrder.filter((name: unknown): name is string => typeof name === "string" && name !== ALL_BUFFER_NAME),
+        ];
+        const storedBuffers = parsed.buffers && typeof parsed.buffers === "object" ? parsed.buffers : {};
         const loadedBuffers = new Map<string, Buffer>(
-          parsed.bufferOrder.map((name: string): [string, Buffer] => [
+          loadedOrder.map((name: string): [string, Buffer] => [
             name,
-            parsed.buffers[name] || { name, messages: [], currentIndex: 0 }
+            normalizeLoadedBuffer(name, storedBuffers[name])
           ])
         );
         setBuffers(loadedBuffers);
-        setBufferOrder(parsed.bufferOrder);
-        setCurrentBufferIndex(parsed.currentBufferIndex || 0);
+        setBufferOrder(loadedOrder);
+        setCurrentBufferIndex(
+          Math.min(Math.max(parsed.currentBufferIndex || 0, 0), loadedOrder.length - 1)
+        );
         setTimestampsEnabled(parsed.timestampsEnabled ?? true);
       }
     } catch (error) {
@@ -90,13 +172,8 @@ export const useChannelHistory = (client: MudClient | null) => {
   // Save state to localStorage whenever it changes
   useEffect(() => {
     try {
-      const buffersObj: Record<string, Buffer> = {};
-      buffers.forEach((buffer, name) => {
-        buffersObj[name] = buffer;
-      });
-
-      localStorage.setItem("channelHistory", JSON.stringify({
-        buffers: buffersObj,
+      localStorage.setItem(CHANNEL_HISTORY_STORAGE_KEY, JSON.stringify({
+        buffers: serializeBuffersForStorage(buffers),
         bufferOrder,
         currentBufferIndex,
         timestampsEnabled,
@@ -106,7 +183,7 @@ export const useChannelHistory = (client: MudClient | null) => {
     }
   }, [buffers, bufferOrder, currentBufferIndex, timestampsEnabled]);
 
-  const addMessageToBuffer = (bufferName: string, message: string, channel?: string, talker?: string) => {
+  const addMessageToBuffer = useCallback((bufferName: string, message: string, channel?: string, talker?: string) => {
     setBuffers(prevBuffers => {
       const newBuffers = new Map(prevBuffers);
       const buffer = newBuffers.get(bufferName);
@@ -121,56 +198,40 @@ export const useChannelHistory = (client: MudClient | null) => {
         talker,
       };
 
-      const updatedMessages = [...buffer.messages, newMessage];
-
-      // Trim if exceeds max
-      if (updatedMessages.length > MAX_MESSAGES_PER_BUFFER) {
-        updatedMessages.shift();
-        if (buffer.currentIndex > 0) {
-          buffer.currentIndex--;
-        }
-      }
-
-      newBuffers.set(bufferName, {
-        ...buffer,
-        messages: updatedMessages,
-      });
+      newBuffers.set(bufferName, appendMessage(buffer, newMessage));
 
       return newBuffers;
     });
-  };
+  }, []);
 
   // Handle regular messages
-  const handleMessage = (message: string) => {
+  const handleMessage = useCallback((message: string) => {
     if (!message.trim()) return;
     // Strip ANSI codes before storing
     const plainText = Anser.ansiToText(message);
-    addMessageToBuffer("all", plainText);
-  };
+    addMessageToBuffer(ALL_BUFFER_NAME, plainText);
+  }, [addMessageToBuffer]);
 
   // Handle channel messages
-  const handleChannelText = (data: { channel: string; talker: string; text: string }) => {
+  const handleChannelText = useCallback((data: { channel: string; talker: string; text: string }) => {
     const { channel, talker, text } = data;
+    const newMessage: Message = {
+      id: messageIdCounter.current++,
+      message: text,
+      timestamp: Date.now(),
+      channel,
+      talker,
+    };
 
-    // Create channel buffer if it doesn't exist
-    if (!buffers.has(channel)) {
-      setBuffers(prev => {
-        const newBuffers = new Map(prev);
-        newBuffers.set(channel, {
-          name: channel,
-          messages: [],
-          currentIndex: 0,
-        });
-        return newBuffers;
-      });
-      setBufferOrder(prev => [...prev, channel]);
+    setBuffers(prev => {
+      const newBuffers = new Map(prev);
+      const buffer = newBuffers.get(channel) || createEmptyBuffer(channel);
+      newBuffers.set(channel, appendMessage(buffer, newMessage));
+      return newBuffers;
+    });
 
-      // Add message after buffer is created
-      setTimeout(() => addMessageToBuffer(channel, text, channel, talker), 0);
-    } else {
-      addMessageToBuffer(channel, text, channel, talker);
-    }
-  };
+    setBufferOrder(prev => prev.includes(channel) ? prev : [...prev, channel]);
+  }, []);
 
   // Set up client event listeners
   useEffect(() => {
@@ -183,7 +244,7 @@ export const useChannelHistory = (client: MudClient | null) => {
       client.removeListener("channelText", handleChannelText);
       client.removeListener("message", handleMessage);
     };
-  }, [client, buffers]);
+  }, [client, handleChannelText, handleMessage]);
 
   const getCurrentBuffer = (): Buffer | undefined => {
     return buffers.get(bufferOrder[currentBufferIndex]);
@@ -402,8 +463,8 @@ export const useChannelHistory = (client: MudClient | null) => {
 
   const clearAllBuffers = () => {
     // Delete all buffers except "all", then clear "all"
-    setBuffers(new Map([["all", { name: "all", messages: [], currentIndex: 0 }]]));
-    setBufferOrder(["all"]);
+    setBuffers(new Map([[ALL_BUFFER_NAME, createEmptyBuffer(ALL_BUFFER_NAME)]]));
+    setBufferOrder([ALL_BUFFER_NAME]);
     setCurrentBufferIndex(0);
   };
 
