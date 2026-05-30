@@ -10,6 +10,20 @@ import { DataConnection } from "peerjs";
 export class MultiUserManager {
   private connMap: Map<number, DataConnection> = new Map();
   private worker: Worker;
+  private disposed = false;
+  private readonly pendingWorkerHandlers = new Map<
+    (event: MessageEvent) => void,
+    (error: Error) => void
+  >();
+  private readonly handleWorkerMessage = (event: MessageEvent): void => {
+    const msg = event.data;
+    if (msg.type === "conn-output" && msg.connId !== undefined) {
+      const conn = this.connMap.get(msg.connId);
+      if (conn && conn.open) {
+        conn.send({ type: "output", data: msg.data });
+      }
+    }
+  };
 
   constructor(worker: Worker) {
     this.worker = worker;
@@ -22,15 +36,20 @@ export class MultiUserManager {
   private setupWorkerListener(): void {
     // We need to add our listener alongside any existing ones.
     // The worker posts { type: "conn-output", connId, data } for guest connections.
-    this.worker.addEventListener("message", (event: MessageEvent) => {
-      const msg = event.data;
-      if (msg.type === "conn-output" && msg.connId !== undefined) {
-        const conn = this.connMap.get(msg.connId);
-        if (conn && conn.open) {
-          conn.send({ type: "output", data: msg.data });
-        }
-      }
-    });
+    this.worker.addEventListener("message", this.handleWorkerMessage);
+  }
+
+  private addPendingWorkerHandler(
+    handler: (event: MessageEvent) => void,
+    reject: (error: Error) => void
+  ): void {
+    this.pendingWorkerHandlers.set(handler, reject);
+    this.worker.addEventListener("message", handler);
+  }
+
+  private removePendingWorkerHandler(handler: (event: MessageEvent) => void): void {
+    this.pendingWorkerHandlers.delete(handler);
+    this.worker.removeEventListener("message", handler);
   }
 
   /**
@@ -39,17 +58,21 @@ export class MultiUserManager {
    */
   connectHost(): Promise<number> {
     return new Promise((resolve, reject) => {
+      if (this.disposed) {
+        reject(new Error("MultiUserManager destroyed"));
+        return;
+      }
       const handler = (event: MessageEvent) => {
         const msg = event.data;
         if (msg.type === "remote-connected") {
-          this.worker.removeEventListener("message", handler);
+          this.removePendingWorkerHandler(handler);
           resolve(msg.connId);
         } else if (msg.type === "error") {
-          this.worker.removeEventListener("message", handler);
+          this.removePendingWorkerHandler(handler);
           reject(new Error(msg.message));
         }
       };
-      this.worker.addEventListener("message", handler);
+      this.addPendingWorkerHandler(handler, reject);
       this.worker.postMessage({ type: "remote-connect" });
     });
   }
@@ -61,10 +84,14 @@ export class MultiUserManager {
    */
   addGuest(dataConnection: DataConnection): Promise<number> {
     return new Promise((resolve, reject) => {
+      if (this.disposed) {
+        reject(new Error("MultiUserManager destroyed"));
+        return;
+      }
       const handler = (event: MessageEvent) => {
         const msg = event.data;
         if (msg.type === "remote-connected") {
-          this.worker.removeEventListener("message", handler);
+          this.removePendingWorkerHandler(handler);
           const connId = msg.connId;
           this.connMap.set(connId, dataConnection);
 
@@ -94,11 +121,11 @@ export class MultiUserManager {
 
           resolve(connId);
         } else if (msg.type === "error") {
-          this.worker.removeEventListener("message", handler);
+          this.removePendingWorkerHandler(handler);
           reject(new Error(msg.message));
         }
       };
-      this.worker.addEventListener("message", handler);
+      this.addPendingWorkerHandler(handler, reject);
       this.worker.postMessage({ type: "remote-connect" });
     });
   }
@@ -130,6 +157,14 @@ export class MultiUserManager {
    * Clean up all guest connections.
    */
   destroy(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.worker.removeEventListener("message", this.handleWorkerMessage);
+    this.pendingWorkerHandlers.forEach((reject, handler) => {
+      this.worker.removeEventListener("message", handler);
+      reject(new Error("MultiUserManager destroyed"));
+    });
+    this.pendingWorkerHandlers.clear();
     this.connMap.forEach((conn, connId) => {
       try {
         conn.close();

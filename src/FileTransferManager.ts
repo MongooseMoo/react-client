@@ -59,6 +59,14 @@ export default class FileTransferManager extends EventEmitter {
     new Map(); // keyed by hash
   private store: FileTransferStore;
   private storeInitialized: boolean = false;
+  private readonly handleDataChannelMessage = (data: ArrayBuffer): void => {
+    void this.handleIncomingChunk(data);
+  };
+  private readonly handleFileTransferAccepted = (
+    transfer: FileTransferRequest
+  ): void => {
+    void this.handleAcceptedTransfer(transfer);
+  };
 
   constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
     super();
@@ -87,11 +95,11 @@ export default class FileTransferManager extends EventEmitter {
   private setupListeners(): void {
     this.webRTCService.on(
       "dataChannelMessage",
-      this.handleIncomingChunk.bind(this)
+      this.handleDataChannelMessage
     );
     this.client.on(
       "fileTransferAccepted",
-      this.handleAcceptedTransfer.bind(this)
+      this.handleFileTransferAccepted
     );
     this.transferTimeoutInterval = window.setInterval(() => this.checkTransferTimeouts(), 5000);
   }
@@ -637,6 +645,15 @@ export default class FileTransferManager extends EventEmitter {
   }
 
   cleanup(): void {
+    this.webRTCService.off(
+      "dataChannelMessage",
+      this.handleDataChannelMessage
+    );
+    this.client.off(
+      "fileTransferAccepted",
+      this.handleFileTransferAccepted
+    );
+
     // Clear the interval
     if (this.transferTimeoutInterval) {
       clearInterval(this.transferTimeoutInterval);

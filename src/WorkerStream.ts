@@ -12,22 +12,24 @@ export class WorkerStream implements Stream {
   private worker: Worker;
   private dataCallback?: (data: Buffer) => void;
   private closeCallback?: () => void;
+  private disposed = false;
+  private readonly handleWorkerMessage = (e: MessageEvent): void => {
+    const msg = e.data;
+    if (msg.type === "output") {
+      // Convert text line to bytes (as if from a telnet connection).
+      // The WASM server sends plain text lines via Module.print().
+      // Append \r\n so the client's line-splitting logic works the same
+      // as it does for real telnet data.
+      const text = msg.data + "\r\n";
+      this.dataCallback?.(Buffer.from(text));
+    } else if (msg.type === "disconnect") {
+      this.closeCallback?.();
+    }
+  };
 
   constructor(worker: Worker) {
     this.worker = worker;
-    this.worker.addEventListener("message", (e: MessageEvent) => {
-      const msg = e.data;
-      if (msg.type === "output") {
-        // Convert text line to bytes (as if from a telnet connection).
-        // The WASM server sends plain text lines via Module.print().
-        // Append \r\n so the client's line-splitting logic works the same
-        // as it does for real telnet data.
-        const text = msg.data + "\r\n";
-        this.dataCallback?.(Buffer.from(text));
-      } else if (msg.type === "disconnect") {
-        this.closeCallback?.();
-      }
-    });
+    this.worker.addEventListener("message", this.handleWorkerMessage);
   }
 
   on(event: "data", cb: (data: Buffer) => void): void;
@@ -44,5 +46,13 @@ export class WorkerStream implements Stream {
     let text = data.toString("utf-8");
     text = text.replace(/\r?\n$/, "");
     this.worker.postMessage({ type: "input", data: text });
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.worker.removeEventListener("message", this.handleWorkerMessage);
+    this.dataCallback = undefined;
+    this.closeCallback = undefined;
   }
 }

@@ -4,6 +4,8 @@ import { createConfiguredClient } from '../createConfiguredClient';
 import { WorkerStream } from '../WorkerStream';
 import { saveCheckpoint, loadCheckpoint, deleteCheckpoint, hashDbBytes } from '../dbStorage';
 import DbUploadDialog from './DbUploadDialog';
+import type { MultiUserManager } from '../MultiUserManager';
+import type { PeerService } from '../PeerService';
 
 export interface WasmHostState {
     roomId: string | null;
@@ -22,35 +24,93 @@ interface WasmHostProps {
 const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, onHostStateChange, clientReady }) => {
     const [waitingForDb, setWaitingForDb] = useState(isHostMode && !dbUrl);
     const bootedRef = useRef(false);
+    const disposedRef = useRef(false);
+    const workerRef = useRef<Worker | null>(null);
+    const streamRef = useRef<WorkerStream | null>(null);
+    const clientRef = useRef<MudClient | null>(null);
+    const peerServiceRef = useRef<PeerService | null>(null);
+    const multiUserManagerRef = useRef<MultiUserManager | null>(null);
+    const autoSaveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const workerMessageHandlerRef = useRef<((e: MessageEvent) => void) | null>(null);
+
+    const cleanupWasmResources = React.useCallback(() => {
+        disposedRef.current = true;
+
+        if (autoSaveIntervalRef.current !== null) {
+            clearInterval(autoSaveIntervalRef.current);
+            const globalWindow = window as typeof window & {
+                __wasmAutoSaveInterval?: ReturnType<typeof setInterval>;
+            };
+            if (globalWindow.__wasmAutoSaveInterval === autoSaveIntervalRef.current) {
+                delete globalWindow.__wasmAutoSaveInterval;
+            }
+            autoSaveIntervalRef.current = null;
+        }
+
+        multiUserManagerRef.current?.destroy();
+        multiUserManagerRef.current = null;
+
+        peerServiceRef.current?.destroy();
+        peerServiceRef.current = null;
+
+        clientRef.current?.fileTransferManager?.cleanup();
+        clientRef.current?.webRTCService?.cleanup();
+        clientRef.current?.removeAllListeners();
+        clientRef.current = null;
+
+        streamRef.current?.dispose();
+        streamRef.current = null;
+
+        if (workerRef.current && workerMessageHandlerRef.current) {
+            workerRef.current.removeEventListener('message', workerMessageHandlerRef.current);
+        }
+        workerMessageHandlerRef.current = null;
+
+        workerRef.current?.terminate();
+        const globalWindow = window as typeof window & {
+            wasmWorker?: Worker;
+            wasmDbKey?: string;
+        };
+        if (!workerRef.current || globalWindow.wasmWorker === workerRef.current) {
+            delete globalWindow.wasmWorker;
+        }
+        delete globalWindow.wasmDbKey;
+        workerRef.current = null;
+    }, []);
 
     // Boot the WASM server with the given database bytes
     const bootWithDb = React.useCallback((dbBuffer: ArrayBuffer) => {
-        if (bootedRef.current) return;
+        if (bootedRef.current || disposedRef.current) return;
         bootedRef.current = true;
         setWaitingForDb(false);
 
         const worker = new Worker('/wasm-worker.js');
         const stream = new WorkerStream(worker);
+        workerRef.current = worker;
+        streamRef.current = stream;
         // Expose worker reference for beforeunload save
         (window as any).wasmWorker = worker;
 
         // Create client with all GMCP/MCP packages and connect
         const newClient = createConfiguredClient();
+        clientRef.current = newClient;
         newClient.connectLocal(stream);
 
         // Listen for worker status messages
-        worker.addEventListener('message', async (e: MessageEvent) => {
+        const handleWorkerMessage = async (e: MessageEvent) => {
             const msg = e.data;
             if (msg.type === 'log') {
                 console.log('[WASM server]', msg.data);
             } else if (msg.type === 'error') {
                 console.error('[WASM error]', msg.message);
             } else if (msg.type === 'ready') {
+                if (disposedRef.current) return;
                 console.log('[WASM] Server is listening');
                 // Start periodic auto-save (every 5 minutes)
                 const autoSaveInterval = setInterval(() => {
                     worker.postMessage({ type: 'save' });
                 }, 5 * 60 * 1000);
+                autoSaveIntervalRef.current = autoSaveInterval;
                 (window as any).__wasmAutoSaveInterval = autoSaveInterval;
 
                 if (isHostMode) {
@@ -60,13 +120,19 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
                             import('../PeerService'),
                             import('../MultiUserManager')
                         ]);
+                        if (disposedRef.current) return;
                         const peerSvc = new PeerService();
                         const mum = new MultiUserManager(worker);
+                        peerServiceRef.current = peerSvc;
+                        multiUserManagerRef.current = mum;
                         await mum.connectHost();
+                        if (disposedRef.current) return;
                         const hostRoomId = await peerSvc.hostSession();
+                        if (disposedRef.current) return;
                         console.log('[WebRTC] Hosting session, room:', hostRoomId);
                         onHostStateChange?.({ roomId: hostRoomId, guestCount: 0 });
                         peerSvc.onGuestConnected(async (conn) => {
+                            if (disposedRef.current) return;
                             await mum.addGuest(conn);
                             const count = mum.getGuestCount();
                             onHostStateChange?.({ roomId: hostRoomId, guestCount: count });
@@ -75,7 +141,9 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
                             });
                         });
                     } catch (err) {
-                        console.error('[WebRTC] Failed to start host session:', err);
+                        if (!disposedRef.current) {
+                            console.error('[WebRTC] Failed to start host session:', err);
+                        }
                     }
                 } else {
                     // Local mode: create a connection for the solo player
@@ -89,7 +157,9 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
                         .catch(err => console.error('[WASM] Failed to save checkpoint:', err));
                 }
             }
-        });
+        };
+        workerMessageHandlerRef.current = handleWorkerMessage;
+        worker.addEventListener('message', handleWorkerMessage);
 
         // Handle DB persistence: hash, check IndexedDB, and start worker
         const urlParams = new URLSearchParams(window.location.search);
@@ -117,9 +187,13 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
 
                 (window as any).wasmDbKey = dbKey;
                 console.log('[WASM] Database ready, size:', dbData.byteLength, 'key:', dbKey.slice(0, 12) + '...');
-                worker.postMessage({ type: 'start', dbData });
+                if (!disposedRef.current) {
+                    worker.postMessage({ type: 'start', dbData });
+                }
             } catch (err) {
-                console.error('[WASM] Failed to load database:', err);
+                if (!disposedRef.current) {
+                    console.error('[WASM] Failed to load database:', err);
+                }
             }
         })();
 
@@ -150,11 +224,8 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
 
     // Cleanup on unmount
     useEffect(() => {
-        return () => {
-            const interval = (window as any).__wasmAutoSaveInterval;
-            if (interval) clearInterval(interval);
-        };
-    }, []);
+        return cleanupWasmResources;
+    }, [cleanupWasmResources]);
 
     // Before client is ready: show upload dialog if waiting for DB
     if (!clientReady && waitingForDb) {
