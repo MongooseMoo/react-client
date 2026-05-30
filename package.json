@@ -38,7 +38,15 @@
     "start": "vite --open",
     "build": "vite build",
     "serve": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "typecheck:watch": "tsc --noEmit --watch --preserveWatchOutput",
+    "lint": "biome lint --staged --no-errors-on-unmatched",
+    "lint:staged": "biome lint --staged --no-errors-on-unmatched",
+    "format": "biome format src vite.config.ts vitest.config.ts",
+    "format:write": "biome format --write src vite.config.ts vitest.config.ts",
+    "precommit": "npm run typecheck && npm run lint:staged",
+    "prepare": "husky"
   },
   "eslintConfig": {
     "extends": [
@@ -52,6 +60,7 @@
     "last 2 Safari versions"
   ],
   "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
     "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -63,6 +72,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "cross-env": "^7.0.3",
     "fake-indexeddb": "^6.2.5",
+    "husky": "^9.1.7",
     "jsdom": "^26.1.0",
     "typescript": "^5.9.3",
     "vite": "^6.4.2",
