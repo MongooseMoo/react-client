@@ -467,6 +467,17 @@ describe("GMCPClientHaptics", () => {
     expect(mockHapticsService.stop).toHaveBeenCalledWith();
   });
 
+  it("shutdown unsubscribes active sensor subscriptions", () => {
+    handler.handleSensorSubscribe({ sensors: [0, 3], rate: 10 });
+    mockHapticsService.unsubscribeSensor.mockClear();
+
+    handler.shutdown();
+
+    expect(mockHapticsService.unsubscribeSensor).toHaveBeenCalledTimes(2);
+    expect(mockHapticsService.unsubscribeSensor).toHaveBeenCalledWith(0);
+    expect(mockHapticsService.unsubscribeSensor).toHaveBeenCalledWith(3);
+  });
+
   // -----------------------------------------------------------------
   // Service event: capabilitieschanged sends capabilities when advertised
   // -----------------------------------------------------------------

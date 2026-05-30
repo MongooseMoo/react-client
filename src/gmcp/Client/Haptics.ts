@@ -148,14 +148,24 @@ export class GMCPClientHaptics extends GMCPPackage {
 
   handleSensorSubscribe(data: HapticsSensorSubscribeData): void {
     for (const sensorId of data.sensors) {
+      this.sensorSubscriptions.get(sensorId)?.();
       hapticsService.subscribeSensor(sensorId, data.rate);
+      this.sensorSubscriptions.set(sensorId, () => {
+        hapticsService.unsubscribeSensor(sensorId);
+      });
     }
     this.client.emit("hapticsSensorSubscribe", data);
   }
 
   handleSensorUnsubscribe(data: HapticsSensorUnsubscribeData): void {
     for (const sensorId of data.sensors) {
-      hapticsService.unsubscribeSensor(sensorId);
+      const cleanup = this.sensorSubscriptions.get(sensorId);
+      if (cleanup) {
+        cleanup();
+        this.sensorSubscriptions.delete(sensorId);
+      } else {
+        hapticsService.unsubscribeSensor(sensorId);
+      }
     }
     this.client.emit("hapticsSensorUnsubscribe", data);
   }
@@ -233,6 +243,9 @@ export class GMCPClientHaptics extends GMCPPackage {
     this.serviceCleanup = [];
 
     // Clean up sensor subscriptions
+    for (const cleanup of this.sensorSubscriptions.values()) {
+      cleanup();
+    }
     this.sensorSubscriptions.clear();
 
     // Stop all devices

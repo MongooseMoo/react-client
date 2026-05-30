@@ -37,6 +37,11 @@ interface SensorEntry {
   sensor: HapticsSensor;
 }
 
+interface BackendLifecycle {
+  connect: HapticsBackend["connect"];
+  disconnect: HapticsBackend["disconnect"];
+}
+
 // ---------------------------------------------------------------------------
 // HapticsService
 // ---------------------------------------------------------------------------
@@ -84,6 +89,8 @@ export class HapticsService extends EventEmitter<HapticsServiceEvents> {
 
   // Device-changed listeners per backend (for cleanup)
   private deviceChangedListeners = new Map<HapticsBackend, () => void>();
+
+  private backendLifecycles = new Map<HapticsBackend, BackendLifecycle>();
 
   // -----------------------------------------------------------------------
   // Configuration
@@ -137,19 +144,54 @@ export class HapticsService extends EventEmitter<HapticsServiceEvents> {
     backend.on("sensorreading", onSensorReading);
 
     // Wrap backend connect/disconnect to emit connectionchanged
-    const originalConnect = backend.connect.bind(backend);
-    const originalDisconnect = backend.disconnect.bind(backend);
+    const originalConnect = backend.connect;
+    const originalDisconnect = backend.disconnect;
+    this.backendLifecycles.set(backend, {
+      connect: originalConnect,
+      disconnect: originalDisconnect,
+    });
     backend.connect = async (options?: Record<string, unknown>): Promise<void> => {
-      await originalConnect(options);
+      await originalConnect.call(backend, options);
       this.emit("connectionchanged", backend.name, true);
     };
     backend.disconnect = async (): Promise<void> => {
-      await originalDisconnect();
+      await originalDisconnect.call(backend);
       this.emit("connectionchanged", backend.name, false);
     };
 
     // Rebuild maps to include any devices this backend already has
     this.rebuildMaps();
+  }
+
+  async unregisterBackend(backend: HapticsBackend): Promise<void> {
+    const index = this.backends.indexOf(backend);
+    if (index === -1) return;
+
+    const onDeviceChanged = this.deviceChangedListeners.get(backend);
+    if (onDeviceChanged) {
+      backend.off("devicechanged", onDeviceChanged);
+      this.deviceChangedListeners.delete(backend);
+    }
+
+    const onSensorReading = this.sensorListeners.get(backend);
+    if (onSensorReading) {
+      backend.off("sensorreading", onSensorReading);
+      this.sensorListeners.delete(backend);
+    }
+
+    const lifecycle = this.backendLifecycles.get(backend);
+    if (lifecycle) {
+      backend.connect = lifecycle.connect;
+      backend.disconnect = lifecycle.disconnect;
+      this.backendLifecycles.delete(backend);
+    }
+
+    this.backends.splice(index, 1);
+    this.rebuildMaps();
+    this.emit("capabilitieschanged", this.getCapabilities());
+
+    await (lifecycle?.disconnect ?? backend.disconnect).call(backend);
+    this.emit("connectionchanged", backend.name, false);
   }
 
   // -----------------------------------------------------------------------

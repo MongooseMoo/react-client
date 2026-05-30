@@ -109,6 +109,19 @@ class MudClient extends EventEmitter {
   private _autosay: boolean = false;
   private globalMuted: boolean = false;
   private isWindowFocused: boolean = true;
+  private unsubscribePreferences: (() => void) | null = null;
+  private connectionCleanupComplete: boolean = true;
+  private shutdownComplete: boolean = false;
+
+  private handleWindowFocus = (): void => {
+    this.isWindowFocused = true;
+    this.updateBackgroundMuteState();
+  };
+
+  private handleWindowBlur = (): void => {
+    this.isWindowFocused = false;
+    this.updateBackgroundMuteState();
+  };
 
   get autosay(): boolean {
     return this._autosay;
@@ -136,19 +149,10 @@ class MudClient extends EventEmitter {
       this.gmcp_fileTransfer
     );
     
-    // Set up window focus event listeners
-    window.addEventListener('focus', () => {
-      this.isWindowFocused = true;
-      this.updateBackgroundMuteState();
-    });
-    
-    window.addEventListener('blur', () => {
-      this.isWindowFocused = false;
-      this.updateBackgroundMuteState();
-    });
-    
-    // Subscribe to preference changes
-    preferencesStore.subscribe(() => {
+    window.addEventListener("focus", this.handleWindowFocus);
+    window.addEventListener("blur", this.handleWindowBlur);
+
+    this.unsubscribePreferences = preferencesStore.subscribe(() => {
       this.updateBackgroundMuteState();
     });
   }
@@ -301,6 +305,7 @@ class MudClient extends EventEmitter {
 
   public connect() {
     this.intentionalDisconnect = false;
+    this.connectionCleanupComplete = false;
     this.ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
     this.ws.binaryType = "arraybuffer";
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
@@ -374,6 +379,7 @@ class MudClient extends EventEmitter {
     this.localMode = true;
     this.localStream = stream;
     this.intentionalDisconnect = false;
+    this.connectionCleanupComplete = false;
     this.telnet = new TelnetParser(stream);
 
     this.telnet.on("data", (data: ArrayBuffer) => {
@@ -436,6 +442,8 @@ class MudClient extends EventEmitter {
   }
 
   private cleanupConnection(): void {
+    if (this.connectionCleanupComplete) return;
+    this.connectionCleanupComplete = true;
     this._connected = false;
     this.mcpAuthKey = null;
     this.telnetBuffer = "";
@@ -449,20 +457,24 @@ class MudClient extends EventEmitter {
     this.webRTCService.cleanup();
     this.fileTransferManager.cleanup();
     
-    // Reset intentional disconnect flag after handling disconnect
-    if (this.intentionalDisconnect) {
-      this.intentionalDisconnect = false;
-    }
-    
     this.emit("disconnect");
     this.emit("connectionChange", false);
   }
 
   public close(): void {
     this.intentionalDisconnect = true;
-    if (this.ws) {
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.CONNECTING ||
+        this.ws.readyState === WebSocket.OPEN)
+    ) {
       this.ws.close();
     }
+    const closableStream = this.localStream as
+      | (Stream & { close?: () => void; disconnect?: () => void })
+      | undefined;
+    closableStream?.close?.();
+    closableStream?.disconnect?.();
     this.cleanupConnection();
   }
 
@@ -649,6 +661,14 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   shutdown() {
+    if (this.shutdownComplete) return;
+    this.shutdownComplete = true;
+
+    window.removeEventListener("focus", this.handleWindowFocus);
+    window.removeEventListener("blur", this.handleWindowBlur);
+    this.unsubscribePreferences?.();
+    this.unsubscribePreferences = null;
+
     Object.values(this.mcpHandlers).forEach((handler) => {
       handler.shutdown();
     });
@@ -656,8 +676,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
       handler?.shutdown();
     });
     this.editors.shutdown();
-    this.webRTCService.cleanup();
-    this.fileTransferManager.cleanup();
+    this.close();
   }
 
   requestNotificationPermission() {

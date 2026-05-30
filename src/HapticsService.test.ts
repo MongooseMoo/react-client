@@ -175,6 +175,31 @@ describe("HapticsService", () => {
       // Should still only have 1 actuator, not 2
       expect(caps.actuators).toHaveLength(1);
     });
+
+    it("unregisters backend listeners and disconnects the backend", async () => {
+      const backend = createMockBackend({
+        name: "gamepad",
+        deviceClass: "gaming",
+        actuators: [
+          { id: 0, types: ["Vibrate"], steps: 256, deviceClass: "gaming" },
+        ],
+      });
+
+      service.registerBackend(backend);
+      expect(backend.listenerCount("devicechanged")).toBe(1);
+      expect(backend.listenerCount("sensorreading")).toBe(1);
+
+      await service.unregisterBackend(backend);
+
+      expect(backend.listenerCount("devicechanged")).toBe(0);
+      expect(backend.listenerCount("sensorreading")).toBe(0);
+      expect(backend.disconnect).toHaveBeenCalledOnce();
+      expect(service.getCapabilities()).toEqual({
+        available: false,
+        actuators: [],
+        sensors: [],
+      });
+    });
   });
 
   // -------------------------------------------------------------------------

@@ -1,0 +1,181 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const {
+  mockCacophonyInstances,
+  mockPreferenceListeners,
+  mockPreferenceSubscribe,
+  mockPreferencesState,
+  mockWebSocketInstances,
+} = vi.hoisted(() => {
+  return {
+    mockCacophonyInstances: [] as Array<{ muted: boolean; setGlobalVolume: ReturnType<typeof vi.fn> }>,
+    mockPreferenceListeners: new Set<() => void>(),
+    mockPreferenceSubscribe: vi.fn((listener: () => void) => {
+      mockPreferenceListeners.add(listener);
+      return () => {
+        mockPreferenceListeners.delete(listener);
+      };
+    }),
+    mockPreferencesState: {
+      general: { localEcho: false },
+      midi: { enabled: false },
+      sound: { muteInBackground: false, volume: 1 },
+      speech: {
+        autoreadMode: "off",
+        voice: "",
+        rate: 1,
+        pitch: 1,
+        volume: 1,
+      },
+    },
+    mockWebSocketInstances: [] as Array<{
+      binaryType: BinaryType;
+      close: ReturnType<typeof vi.fn>;
+      onclose: ((event: Event) => void) | null;
+      onerror: ((event: Event) => void) | null;
+      onmessage: ((event: MessageEvent) => void) | null;
+      onopen: ((event: Event) => void) | null;
+      readyState: number;
+      send: ReturnType<typeof vi.fn>;
+      url: string;
+    }>,
+  };
+});
+
+vi.mock("cacophony", () => ({
+  Cacophony: class {
+    muted = false;
+    setGlobalVolume = vi.fn();
+
+    constructor() {
+      mockCacophonyInstances.push(this);
+    }
+  },
+}));
+
+vi.mock("./PreferencesStore", () => ({
+  AutoreadMode: {
+    All: "all",
+    Off: "off",
+    Unfocused: "unfocused",
+  },
+  preferencesStore: {
+    getState: () => mockPreferencesState,
+    subscribe: mockPreferenceSubscribe,
+  },
+}));
+
+vi.mock("./EditorManager", () => ({
+  EditorManager: class {
+    shutdown = vi.fn();
+  },
+}));
+
+vi.mock("./FileTransferManager.js", () => ({
+  default: class {
+    acceptTransfer = vi.fn(async () => {});
+    cancelTransfer = vi.fn();
+    cleanup = vi.fn();
+    sendFile = vi.fn(async () => {});
+  },
+}));
+
+vi.mock("./WebRTCService", () => ({
+  WebRTCService: class {
+    cleanup = vi.fn();
+  },
+}));
+
+vi.mock("./gmcp", () => ({
+  GMCPChar: class {
+    packageName = "Char";
+    shutdown = vi.fn();
+  },
+  GMCPClientFileTransfer: class {
+    packageName = "Client.FileTransfer";
+    sendReject = vi.fn();
+    shutdown = vi.fn();
+  },
+}));
+
+vi.mock("./mcp", () => ({
+  McpAwnsGetSet: class {
+    packageName = "mcp-awns-getset";
+    shutdown = vi.fn();
+  },
+  McpNegotiate: class {
+    packageName = "mcp-negotiate";
+    shutdown = vi.fn();
+    sendNegotiate = vi.fn();
+  },
+  generateTag: () => "test-tag",
+  parseMcpMessage: vi.fn(),
+  parseMcpMultiline: vi.fn(),
+}));
+
+import MudClient from "./client";
+
+class MockWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+
+  binaryType: BinaryType = "blob";
+  close = vi.fn(() => {
+    this.readyState = MockWebSocket.CLOSED;
+  });
+  onclose: ((event: Event) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onopen: ((event: Event) => void) | null = null;
+  readyState = MockWebSocket.OPEN;
+  send = vi.fn();
+
+  constructor(public url: string) {
+    mockWebSocketInstances.push(this);
+  }
+}
+
+describe("MudClient lifecycle cleanup", () => {
+  beforeEach(() => {
+    mockCacophonyInstances.length = 0;
+    mockPreferenceListeners.clear();
+    mockPreferenceSubscribe.mockClear();
+    mockPreferencesState.sound.muteInBackground = false;
+    mockWebSocketInstances.length = 0;
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    Object.defineProperty(window, "WebSocket", {
+      configurable: true,
+      value: MockWebSocket,
+    });
+  });
+
+  it("shutdown removes window focus listeners and preferences subscription", () => {
+    const addListener = vi.spyOn(window, "addEventListener");
+    const removeListener = vi.spyOn(window, "removeEventListener");
+    const client = new MudClient("example.test", 443);
+
+    expect(mockPreferenceListeners.size).toBe(1);
+
+    client.shutdown();
+
+    expect(mockPreferenceListeners.size).toBe(0);
+    expect(removeListener).toHaveBeenCalledWith("focus", addListener.mock.calls[0][1]);
+    expect(removeListener).toHaveBeenCalledWith("blur", addListener.mock.calls[1][1]);
+  });
+
+  it("shutdown closes an open websocket and suppresses reconnect on close", () => {
+    const client = new MudClient("example.test", 443);
+    client.connect();
+
+    expect(mockWebSocketInstances).toHaveLength(1);
+    const socket = mockWebSocketInstances[0];
+
+    client.shutdown();
+    socket.onclose?.(new Event("close"));
+
+    expect(socket.close).toHaveBeenCalledOnce();
+    expect(mockWebSocketInstances).toHaveLength(1);
+  });
+});

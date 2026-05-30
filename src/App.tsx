@@ -6,6 +6,7 @@ import { createConfiguredClient } from "./createConfiguredClient";
 import { hapticsService } from "./HapticsService";
 import { GamepadBackend } from "./haptics/GamepadBackend";
 import { ButtplugWasmBackend, createRealWasmDeps } from "./haptics/ButtplugWasmBackend";
+import type { HapticsBackend } from "./haptics/types";
 import { usePreferences } from "./hooks/usePreferences";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
@@ -189,6 +190,7 @@ function App() {
     // Register gamepad backend (always available, zero config)
     const gamepadBackend = new GamepadBackend();
     hapticsService.registerBackend(gamepadBackend);
+    const registeredBackends: HapticsBackend[] = [gamepadBackend];
     gamepadBackend.connect();
 
     // Listen to 'keydown' event
@@ -217,6 +219,11 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
+      for (const backend of registeredBackends) {
+        hapticsService.unregisterBackend(backend).catch((error) => {
+          console.error("Failed to unregister haptics backend:", error);
+        });
+      }
     };
   }, [client]);
 
@@ -280,10 +287,11 @@ function App() {
     wasmBackendLoaded.current = true;
 
     let cancelled = false;
+    let buttplugBackend: ButtplugWasmBackend | null = null;
     createRealWasmDeps()
       .then((deps) => {
         if (cancelled) return;
-        const buttplugBackend = new ButtplugWasmBackend(deps);
+        buttplugBackend = new ButtplugWasmBackend(deps);
         hapticsService.registerBackend(buttplugBackend);
         console.log("ButtplugWasmBackend registered (WASM loaded)");
       })
@@ -296,6 +304,11 @@ function App() {
     return () => {
       cancelled = true;
       wasmBackendLoaded.current = false;
+      if (buttplugBackend) {
+        hapticsService.unregisterBackend(buttplugBackend).catch((error) => {
+          console.error("Failed to unregister WASM haptics backend:", error);
+        });
+      }
     };
   }, [preferences.haptics.enabled]);
 
