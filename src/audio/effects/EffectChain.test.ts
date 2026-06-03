@@ -5,10 +5,15 @@ import { EffectChain } from './EffectChain';
 
 type MockBus = {
   name: string | null;
+  input: Record<string, unknown>;
   addFilter: ReturnType<typeof vi.fn>;
   removeFilter: ReturnType<typeof vi.fn>;
   destroy: ReturnType<typeof vi.fn>;
   drainTo: ReturnType<typeof vi.fn>;
+  connect: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+  rampFilterParam: ReturnType<typeof vi.fn>;
+  setFilterBypassed: ReturnType<typeof vi.fn>;
   destroyed: boolean;
   gain: number;
   output: {
@@ -23,11 +28,16 @@ type MockBus = {
 function makeBus(name: string | null): MockBus {
   return {
     name,
+    input: { __input: name },
     // addFilter returns the node it was given (mirrors cacophony returning the built node).
     addFilter: vi.fn(async (arg: unknown) => arg),
     removeFilter: vi.fn(),
     destroy: vi.fn(),
     drainTo: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    rampFilterParam: vi.fn(),
+    setFilterBypassed: vi.fn(),
     destroyed: false,
     gain: 1,
     output: { gain: { value: 1, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() } },
@@ -172,5 +182,79 @@ describe('EffectChain', () => {
     expect(g).not.toBe(0);
     // old reverb removed, new distortion added
     expect(bus.removeFilter).toHaveBeenCalledTimes(1);
+  });
+
+  it('automate ramps the translated cacophony param(s) on the effect node', async () => {
+    const { cacophony, createdBuses } = makeCacophony(master);
+    await EffectChain.create(cacophony, 'cave', [{ type: 'reverb', id: 'env' }]);
+    const bus = createdBuses.get('cave')!;
+    const chain = await EffectChain.create(cacophony, 'cave2', [{ type: 'reverb', id: 'env' }]);
+    const bus2 = createdBuses.get('cave2')!;
+    chain.automate('env', { mix: 0.8, decayTime: 4 }, { duration: 1500, curve: 'linear' });
+    expect(bus2.rampFilterParam).toHaveBeenCalledWith(expect.anything(), 'mix', 0.8, {
+      duration: 1500,
+      type: 'linear',
+    });
+    expect(bus2.rampFilterParam).toHaveBeenCalledWith(expect.anything(), 'decayTime', 4, {
+      duration: 1500,
+      type: 'linear',
+    });
+    void bus;
+  });
+
+  it('automate on plate reverb ramps both wet AND dry (mix split)', async () => {
+    const { cacophony, createdBuses } = makeCacophony(master);
+    const chain = await EffectChain.create(cacophony, 'cave', [
+      { type: 'reverb', algorithm: 'plate', id: 'r' },
+    ]);
+    const bus = createdBuses.get('cave')!;
+    chain.automate('r', { mix: 0.4 });
+    const rampedParams = bus.rampFilterParam.mock.calls.map((c) => c[1]);
+    expect(rampedParams).toContain('wet');
+    expect(rampedParams).toContain('dry');
+  });
+
+  it('automate no-ops on a missing target', async () => {
+    const { cacophony, createdBuses } = makeCacophony(master);
+    const chain = await EffectChain.create(cacophony, 'cave', [{ type: 'reverb' }]);
+    const bus = createdBuses.get('cave')!;
+    chain.automate('nonexistent', { mix: 0.5 });
+    expect(bus.rampFilterParam).not.toHaveBeenCalled();
+  });
+
+  it('setBypass toggles cacophony filter bypass for the targeted effect', async () => {
+    const { cacophony, createdBuses } = makeCacophony(master);
+    const chain = await EffectChain.create(cacophony, 'cave', [{ type: 'reverb', id: 'env' }]);
+    const bus = createdBuses.get('cave')!;
+    chain.setBypass('env', true);
+    expect(bus.setFilterBypassed).toHaveBeenCalledWith(expect.anything(), true);
+  });
+
+  it('honors EffectSpec.bypass at build time', async () => {
+    const { cacophony, createdBuses } = makeCacophony(master);
+    await EffectChain.create(cacophony, 'cave', [{ type: 'reverb', bypass: true }]);
+    const bus = createdBuses.get('cave')!;
+    expect(bus.setFilterBypassed).toHaveBeenCalledWith(expect.anything(), true);
+  });
+
+  it('createAnonymous builds on an unnamed bus and destroys WITHOUT a drain', async () => {
+    const { cacophony } = makeCacophony(master);
+    const chain = await EffectChain.createAnonymous(cacophony, [{ type: 'distortion' }]);
+    expect(cacophony.createBus).toHaveBeenCalledWith();
+    const anon = (cacophony.createBus as ReturnType<typeof vi.fn>).mock.results[0]
+      ?.value as MockBus;
+    chain.destroy(master as unknown as Bus);
+    expect(anon.destroy).toHaveBeenCalledWith(undefined); // anonymous: no drainTo
+  });
+
+  it('connectDownstream rewires the inline bus from master to a chain bus', async () => {
+    const { cacophony } = makeCacophony(master);
+    const chain = await EffectChain.createAnonymous(cacophony, [{ type: 'distortion' }]);
+    const anon = (cacophony.createBus as ReturnType<typeof vi.fn>).mock.results[0]
+      ?.value as MockBus;
+    const target = makeBus('cave');
+    chain.connectDownstream(target as unknown as Bus);
+    expect(anon.disconnect).toHaveBeenCalledWith(master); // drop the auto master edge
+    expect(anon.connect).toHaveBeenCalledWith(target);
   });
 });

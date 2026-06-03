@@ -1,6 +1,7 @@
 import type { Cacophony, Playback, Position, Sound } from 'cacophony';
 
 import { AmbisonicRenderer } from '../../audio/AmbisonicRenderer';
+import { EffectChain } from '../../audio/effects/EffectChain';
 import { buildEffectsSupport, MediaEffects } from '../../audio/effects/MediaEffects';
 import type { EffectSpec } from '../../audio/effects/types';
 import { GMCPMessage, GMCPPackage } from '../package';
@@ -40,6 +41,7 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage {
   // MCMP effects extension
   public readonly chain?: string; // Route this sound through the named effect chain.
   public readonly send?: number; // Aux-send level into `chain` (stays dry on master).
+  public readonly effects?: EffectSpec[]; // Inline per-sound effect chain (one-off).
 }
 
 export class GMCPMessageClientMediaStop extends GMCPMessage {
@@ -72,6 +74,7 @@ export class GMCPMessageClientMediaUpdate extends GMCPMessage {
   // MCMP effects extension
   public readonly chain?: string;
   public readonly send?: number;
+  public readonly effects?: EffectSpec[];
 }
 
 /** Define / replace / remove a named effect chain. Empty `effects` removes it. */
@@ -86,6 +89,17 @@ export class GMCPMessageClientMediaChain extends GMCPMessage {
 /** Remove a named effect chain by id (rerouting its live sounds to master). */
 export class GMCPMessageClientMediaChainStop extends GMCPMessage {
   public readonly id!: string;
+}
+
+/** Ramp an effect's params (or toggle bypass) on a chain or a playing sound's inline chain. */
+export class GMCPMessageClientMediaAutomate extends GMCPMessage {
+  public readonly chain?: string; // target a named chain…
+  public readonly key?: string; // …or a playing sound's inline chain (by media key)
+  public readonly target!: string | number; // effect id or index within the chain
+  public readonly params?: Record<string, number | string>; // wire params to ramp
+  public readonly ramp?: number; // ms (0 / absent = instant)
+  public readonly curve?: 'linear' | 'exponential';
+  public readonly bypass?: boolean; // toggle bypass instead of ramping
 }
 
 export class GMCPMessageClientMediaListenerOrientation extends GMCPMessage {
@@ -105,6 +119,10 @@ export interface ExtendedSound extends Sound {
   key?: string;
   mediaType?: MediaType;
   upmix?: string;
+  /** Inline per-sound effect chain (anonymous bus), torn down with the sound. */
+  effectChain?: EffectChain;
+  /** Bumped each time inline effects are (re)built, to discard stale async builds. */
+  effectGeneration?: number;
 }
 
 export class GMCPClientMedia extends GMCPPackage {
@@ -171,6 +189,95 @@ export class GMCPClientMedia extends GMCPPackage {
     }
   }
 
+  /** Dispatch a sound to an inline effect chain (one-off) or a named chain. */
+  private async applyEffectRouting(
+    sound: ExtendedSound,
+    soundKey: string,
+    data: Pick<GMCPMessageClientMediaPlay, 'chain' | 'send' | 'effects' | 'upmix'>,
+  ): Promise<void> {
+    if (data.effects && data.effects.length > 0) {
+      if (data.upmix === 'ambisonic') {
+        console.warn('Client.Media: inline effects not supported for ambisonic sounds; ignored');
+        return;
+      }
+      await this.applyInlineEffects(sound, soundKey, data);
+      return;
+    }
+    this.applyChainRouting(sound, data);
+  }
+
+  /**
+   * Build an anonymous per-sound effect chain and route the sound through it
+   * (`sound → inline → named chain | master`). Guarded by a per-sound generation
+   * so a sound released during the async build never gets a worklet bus attached
+   * to a corpse (V5).
+   */
+  private async applyInlineEffects(
+    sound: ExtendedSound,
+    soundKey: string,
+    data: Pick<GMCPMessageClientMediaPlay, 'chain' | 'effects'>,
+  ): Promise<void> {
+    const master = this.client.cacophony.getBus('master');
+    // Replace any prior inline chain.
+    if (sound.effectChain && master) {
+      sound.effectChain.destroy(master);
+      sound.effectChain = undefined;
+    }
+    const generation = (sound.effectGeneration ?? 0) + 1;
+    sound.effectGeneration = generation;
+
+    const inline = await EffectChain.createAnonymous(this.client.cacophony, data.effects ?? []);
+
+    const stale =
+      sound.effectGeneration !== generation ||
+      this.cleanedSounds.has(sound) ||
+      this.sounds[soundKey] !== sound;
+    if (stale) {
+      if (master) {
+        inline.destroy(master);
+      }
+      return;
+    }
+
+    sound.effectChain = inline;
+    if (data.chain) {
+      const downstream = this.effects.getChain(data.chain);
+      inline.connectDownstream(downstream ? downstream.bus : null);
+    }
+    try {
+      sound.routeTo(inline.bus);
+    } catch (error) {
+      console.warn('Client.Media: failed to route sound through inline effects', error);
+    }
+  }
+
+  /** `Client.Media.Automate` — ramp an effect's params or toggle its bypass. */
+  handleAutomate(data: GMCPMessageClientMediaAutomate): void {
+    const chain = this.resolveAutomateTarget(data);
+    if (!chain) {
+      console.warn('Client.Media.Automate: target chain/sound not found; ignored');
+      return;
+    }
+    if (typeof data.bypass === 'boolean') {
+      chain.setBypass(data.target, data.bypass);
+      return;
+    }
+    if (data.params) {
+      chain.automate(data.target, data.params, { duration: data.ramp, curve: data.curve });
+    }
+  }
+
+  private resolveAutomateTarget(data: GMCPMessageClientMediaAutomate): EffectChain | undefined {
+    if (data.chain) {
+      return this.effects.getChain(data.chain);
+    }
+    if (data.key) {
+      const [sound] = this.soundsByKey(data.key);
+      return sound?.effectChain;
+    }
+    return undefined;
+  }
+
   private assignSoundMetadata(
     sound: ExtendedSound,
     data: Pick<GMCPMessageClientMediaPlay, 'key' | 'tag' | 'type' | 'upmix' | 'channels'>,
@@ -201,6 +308,10 @@ export class GMCPClientMedia extends GMCPPackage {
       }
     }
 
+    // Destroy the inline effect chain BEFORE the cleaned-sounds guard, so a
+    // partial/out-of-order release can never skip the worklet-bus teardown (V4).
+    this.destroyInlineChain(sound);
+
     if (this.cleanedSounds.has(sound)) {
       return;
     }
@@ -208,6 +319,20 @@ export class GMCPClientMedia extends GMCPPackage {
     this.cleanedSounds.add(sound);
     this.cleanupUpmix(sound);
     sound.cleanup();
+  }
+
+  /** Tear down a sound's inline effect chain, if any (idempotent). */
+  private destroyInlineChain(sound: ExtendedSound): void {
+    const chain = sound.effectChain;
+    if (!chain) {
+      return;
+    }
+    sound.effectChain = undefined;
+    sound.effectGeneration = undefined;
+    const master = this.client.cacophony.getBus('master');
+    if (master) {
+      chain.destroy(master);
+    }
   }
 
   private releaseSoundWhenPlaybackEnds(sound: ExtendedSound, key: string): void {
@@ -416,7 +541,7 @@ export class GMCPClientMedia extends GMCPPackage {
       }
     }
 
-    this.applyChainRouting(sound, data);
+    await this.applyEffectRouting(sound, soundKey, data);
   }
 
   handleUpdate(data: GMCPMessageClientMediaUpdate) {
@@ -435,7 +560,9 @@ export class GMCPClientMedia extends GMCPPackage {
         channels: data.channels ?? sound.inputChannels,
       });
       this.applySoundState(sound, data);
-      this.applyChainRouting(sound, data);
+      void this.applyEffectRouting(sound, sound.key ?? data.key ?? '', data).catch((error) =>
+        console.error('Client.Media.Update: effect routing failed', error),
+      );
       const [playback] = sound.playbacks;
       if (data.upmix === 'ambisonic' && playback) {
         const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
@@ -473,11 +600,9 @@ export class GMCPClientMedia extends GMCPPackage {
       });
     }
     if (!data.name && !data.type && !data.tag && !data.key) {
-      this.allSounds.forEach((sound) => {
-        this.cleanupUpmix(sound);
-        sound.cleanup();
-      });
-      this.sounds = {};
+      // Route through the single release funnel so inline effect buses are torn
+      // down too (V4) — never a bare sound.cleanup() that bypasses releaseSound.
+      this.stopAllSounds();
     }
   }
 

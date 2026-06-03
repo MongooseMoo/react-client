@@ -133,6 +133,6 @@ describe('buildEffectsSupport', () => {
     expect(s.types).not.toContain('echo'); // alias, not advertised
     expect(s.reverbAlgorithms).toEqual(['fdn', 'plate']);
     expect(s.chains).toBe(true);
-    expect(s.automation).toBe(false); // P2
+    expect(s.automation).toBe(true);
   });
 });

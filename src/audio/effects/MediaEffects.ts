@@ -30,7 +30,7 @@ export function buildEffectsSupport(): EffectsSupport {
     types: ADVERTISED_EFFECT_TYPES,
     reverbAlgorithms: ['fdn', 'plate'],
     presets: Object.keys(CHAIN_PRESETS),
-    automation: false, // P2
+    automation: true,
     chains: true,
     maxChains: MAX_CHAINS,
     maxEffectsPerChain: MAX_EFFECTS_PER_CHAIN,
