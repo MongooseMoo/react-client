@@ -341,6 +341,33 @@ describe('GMCPClientMedia', () => {
       handler.handleAutomate({ key: 'k1', target: 'env', bypass: true } as never);
       expect(anonBus.setFilterBypassed).toHaveBeenCalledWith(expect.anything(), true);
     });
+
+    it("routes an ambisonic sound's binaural output through its inline effect bus (V11)", async () => {
+      const renderer = {
+        attachPlayback: vi.fn(),
+        cleanup: vi.fn(),
+        setRotationMatrixFromYaw: vi.fn(),
+      };
+      mockAmbisonicRendererCreate.mockResolvedValue(renderer);
+      const sound = createMockSound('https://media.example/amb.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        name: 'amb.ogg',
+        type: 'sound',
+        volume: 50,
+        key: 'amb',
+        upmix: 'ambisonic',
+        channels: 4,
+        effects: [{ type: 'reverb' }],
+      } as unknown as GMCPMessageClientMediaPlay);
+
+      const anonBus = client.effectBuses.anon[0];
+      expect(anonBus).toBeDefined();
+      // The renderer's binaural output is targeted at the inline bus input, NOT master.
+      expect(renderer.attachPlayback).toHaveBeenCalledWith(expect.anything(), anonBus.input);
+      // An ambisonic sound's playback is not routeTo'd (it feeds the FOA decoder).
+      expect(sound.routeTo).not.toHaveBeenCalled();
+    });
   });
 
   it('stores tag and type so stop-by-tag and stop-by-type work', async () => {
@@ -488,7 +515,7 @@ describe('GMCPClientMedia', () => {
 
     const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
     expect(mockAmbisonicRendererCreate).toHaveBeenCalledWith(client.cacophony, 2);
-    expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0]);
+    expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0], undefined);
     expect(renderer.setRotationMatrixFromYaw).toHaveBeenCalledWith(0);
 
     handler.handleListenerOrientation({
@@ -516,7 +543,7 @@ describe('GMCPClientMedia', () => {
 
     const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
     expect(mockAmbisonicRendererCreate).toHaveBeenCalledWith(client.cacophony, 4);
-    expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0]);
+    expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0], undefined);
     expect(sound.inputChannels).toBe(4);
   });
 

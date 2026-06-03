@@ -1,16 +1,16 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockCreateFOARenderer } = vi.hoisted(() => ({
   mockCreateFOARenderer: vi.fn(),
 }));
 
-vi.mock("omnitone/build/omnitone.min.esm.js", () => ({
+vi.mock('omnitone/build/omnitone.min.esm.js', () => ({
   default: {
     createFOARenderer: mockCreateFOARenderer,
   },
 }));
 
-import { AmbisonicRenderer } from "./AmbisonicRenderer";
+import { AmbisonicRenderer } from './AmbisonicRenderer';
 
 function createNode() {
   return {
@@ -19,12 +19,12 @@ function createNode() {
   };
 }
 
-describe("AmbisonicRenderer", () => {
+describe('AmbisonicRenderer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("builds the stereo-upmix ambisonic playback graph against cacophony", async () => {
+  it('builds the stereo-upmix ambisonic playback graph against cacophony', async () => {
     const encoder = createNode();
     const input = createNode();
     const output = createNode();
@@ -53,7 +53,7 @@ describe("AmbisonicRenderer", () => {
     ambisonicRenderer.attachPlayback(playback as any);
 
     expect(renderer.initialize).toHaveBeenCalledOnce();
-    expect(renderer.setRenderingMode).toHaveBeenCalledWith("ambisonic");
+    expect(renderer.setRenderingMode).toHaveBeenCalledWith('ambisonic');
     expect(cacophony.loadStereoToBFormatWorklet).toHaveBeenCalledOnce();
     expect(cacophony.createStereoToBFormatNode).toHaveBeenCalledOnce();
     expect(playback.disconnect).toHaveBeenCalledOnce();
@@ -62,7 +62,7 @@ describe("AmbisonicRenderer", () => {
     expect(output.connect).toHaveBeenCalledWith(cacophony.globalGainNode);
   });
 
-  it("builds the FOA passthrough graph without a stereo encoder", async () => {
+  it('builds the FOA passthrough graph without a stereo encoder', async () => {
     const input = createNode();
     const output = createNode();
     const renderer = {
@@ -96,7 +96,7 @@ describe("AmbisonicRenderer", () => {
     ambisonicRenderer.attachPlayback(playback as any);
 
     expect(renderer.initialize).toHaveBeenCalledOnce();
-    expect(renderer.setRenderingMode).toHaveBeenCalledWith("ambisonic");
+    expect(renderer.setRenderingMode).toHaveBeenCalledWith('ambisonic');
     expect(cacophony.loadStereoToBFormatWorklet).not.toHaveBeenCalled();
     expect(cacophony.createStereoToBFormatNode).not.toHaveBeenCalled();
     expect(playback.disconnect).toHaveBeenCalledOnce();
@@ -107,7 +107,36 @@ describe("AmbisonicRenderer", () => {
     expect(output.connect).toHaveBeenCalledWith(cacophony.globalGainNode);
   });
 
-  it("computes the expected yaw rotation matrix", () => {
+  it('routes the binaural output to an explicit target instead of master (V11)', async () => {
+    const input = createNode();
+    const output = createNode();
+    const renderer = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      input,
+      output,
+      setRenderingMode: vi.fn(),
+      setRotationMatrix3: vi.fn(),
+      setRotationMatrix4: vi.fn(),
+    };
+    mockCreateFOARenderer.mockReturnValue(renderer);
+
+    const cacophony = {
+      context: {},
+      loadStereoToBFormatWorklet: vi.fn().mockResolvedValue(undefined),
+      createStereoToBFormatNode: vi.fn(),
+      globalGainNode: createNode(),
+    };
+    const playback = { connect: vi.fn(), disconnect: vi.fn() };
+    const effectBusInput = createNode();
+
+    const ambisonicRenderer = await AmbisonicRenderer.create(cacophony as any, 4);
+    ambisonicRenderer.attachPlayback(playback as any, effectBusInput as any);
+
+    expect(output.connect).toHaveBeenCalledWith(effectBusInput);
+    expect(output.connect).not.toHaveBeenCalledWith(cacophony.globalGainNode);
+  });
+
+  it('computes the expected yaw rotation matrix', () => {
     const matrix = AmbisonicRenderer.rotationMatrixFromYaw(Math.PI / 2);
 
     expect(Array.from(matrix)).toEqual([

@@ -1,4 +1,10 @@
-import type { Cacophony, Playback, Position, Sound } from 'cacophony';
+import type {
+  Cacophony,
+  AudioNode as CacophonyAudioNode,
+  Playback,
+  Position,
+  Sound,
+} from 'cacophony';
 
 import { AmbisonicRenderer } from '../../audio/AmbisonicRenderer';
 import { EffectChain } from '../../audio/effects/EffectChain';
@@ -165,17 +171,9 @@ export class GMCPClientMedia extends GMCPPackage {
    */
   private applyChainRouting(
     sound: ExtendedSound,
-    data: Pick<GMCPMessageClientMediaPlay, 'chain' | 'send' | 'upmix'>,
+    data: Pick<GMCPMessageClientMediaPlay, 'chain' | 'send'>,
   ): void {
     if (!data.chain) {
-      return;
-    }
-    if (data.upmix === 'ambisonic') {
-      // The ambisonic renderer hard-wires its output to master and would clobber
-      // a chain route (V11). Effects on ambisonic sounds are out of scope for P0.
-      console.warn(
-        `Client.Media: chain routing not supported for ambisonic sounds; '${data.chain}' ignored`,
-      );
       return;
     }
     try {
@@ -189,17 +187,21 @@ export class GMCPClientMedia extends GMCPPackage {
     }
   }
 
-  /** Dispatch a sound to an inline effect chain (one-off) or a named chain. */
+  /**
+   * Dispatch a (non-ambisonic) sound to an inline effect chain or a named chain.
+   * Ambisonic sounds are routed via the renderer's output target in the
+   * ambisonic-setup path instead (their playback output feeds the FOA decoder,
+   * not a bus), so this is a no-op for them.
+   */
   private async applyEffectRouting(
     sound: ExtendedSound,
     soundKey: string,
     data: Pick<GMCPMessageClientMediaPlay, 'chain' | 'send' | 'effects' | 'upmix'>,
   ): Promise<void> {
+    if (data.upmix === 'ambisonic') {
+      return;
+    }
     if (data.effects && data.effects.length > 0) {
-      if (data.upmix === 'ambisonic') {
-        console.warn('Client.Media: inline effects not supported for ambisonic sounds; ignored');
-        return;
-      }
       await this.applyInlineEffects(sound, soundKey, data);
       return;
     }
@@ -207,18 +209,19 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   /**
-   * Build an anonymous per-sound effect chain and route the sound through it
-   * (`sound → inline → named chain | master`). Guarded by a per-sound generation
-   * so a sound released during the async build never gets a worklet bus attached
-   * to a corpse (V5).
+   * Build an anonymous per-sound effect chain, generation-guarded so a sound
+   * released during the async build never gets a worklet bus attached to a
+   * corpse (V5). Stores it on the sound (torn down in `releaseSound`) and wires
+   * its downstream target, but does NOT route the sound — the caller decides how
+   * the sound reaches the inline bus (playback route vs ambisonic renderer).
    */
-  private async applyInlineEffects(
+  private async buildInlineChain(
     sound: ExtendedSound,
     soundKey: string,
-    data: Pick<GMCPMessageClientMediaPlay, 'chain' | 'effects'>,
-  ): Promise<void> {
+    effects: EffectSpec[],
+    downstream?: ReturnType<MediaEffects['getChain']> | null,
+  ): Promise<EffectChain | undefined> {
     const master = this.client.cacophony.getBus('master');
-    // Replace any prior inline chain.
     if (sound.effectChain && master) {
       sound.effectChain.destroy(master);
       sound.effectChain = undefined;
@@ -226,7 +229,7 @@ export class GMCPClientMedia extends GMCPPackage {
     const generation = (sound.effectGeneration ?? 0) + 1;
     sound.effectGeneration = generation;
 
-    const inline = await EffectChain.createAnonymous(this.client.cacophony, data.effects ?? []);
+    const inline = await EffectChain.createAnonymous(this.client.cacophony, effects);
 
     const stale =
       sound.effectGeneration !== generation ||
@@ -236,13 +239,29 @@ export class GMCPClientMedia extends GMCPPackage {
       if (master) {
         inline.destroy(master);
       }
-      return;
+      return undefined;
     }
 
     sound.effectChain = inline;
-    if (data.chain) {
-      const downstream = this.effects.getChain(data.chain);
+    if (downstream !== undefined) {
       inline.connectDownstream(downstream ? downstream.bus : null);
+    }
+    return inline;
+  }
+
+  /**
+   * Build an inline chain and route the (non-ambisonic) sound through it
+   * (`sound → inline → named chain | master`).
+   */
+  private async applyInlineEffects(
+    sound: ExtendedSound,
+    soundKey: string,
+    data: Pick<GMCPMessageClientMediaPlay, 'chain' | 'effects'>,
+  ): Promise<void> {
+    const downstream = data.chain ? this.effects.getChain(data.chain) : undefined;
+    const inline = await this.buildInlineChain(sound, soundKey, data.effects ?? [], downstream);
+    if (!inline) {
+      return;
     }
     try {
       sound.routeTo(inline.bus);
@@ -399,6 +418,7 @@ export class GMCPClientMedia extends GMCPPackage {
     sound: ExtendedSound,
     playback: Playback,
     inputChannels: number,
+    outputTarget?: CacophonyAudioNode,
   ) {
     this.cleanupUpmix(sound);
     let renderer: AmbisonicRenderer;
@@ -412,9 +432,32 @@ export class GMCPClientMedia extends GMCPPackage {
       });
       return;
     }
-    renderer.attachPlayback(playback);
+    renderer.attachPlayback(playback, outputTarget);
     renderer.setRotationMatrixFromYaw(this.currentListenerYaw());
     sound.ambisonicRenderer = renderer;
+  }
+
+  /**
+   * For an ambisonic sound, resolve the node its binaural output should feed:
+   * the input of an inline effect bus (built here, P3/V11), or master. Named
+   * chains are not supported for ambisonic sounds — the renderer's manual output
+   * connection is not tracked by the bus, so chain-removal could not reroute it.
+   */
+  private async resolveAmbisonicTarget(
+    sound: ExtendedSound,
+    soundKey: string,
+    data: Pick<GMCPMessageClientMediaPlay, 'chain' | 'effects'>,
+  ): Promise<CacophonyAudioNode | undefined> {
+    if (data.effects && data.effects.length > 0) {
+      const inline = await this.buildInlineChain(sound, soundKey, data.effects);
+      return inline?.bus.input;
+    }
+    if (data.chain) {
+      console.warn(
+        `Client.Media: named chain '${data.chain}' is not supported for ambisonic sounds; use inline effects`,
+      );
+    }
+    return undefined;
   }
 
   private applySoundState(
@@ -537,7 +580,8 @@ export class GMCPClientMedia extends GMCPPackage {
 
       if (data.upmix === 'ambisonic') {
         const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
-        await this.configureAmbisonicPlayback(sound, playback, inputChannels);
+        const target = await this.resolveAmbisonicTarget(sound, soundKey, data);
+        await this.configureAmbisonicPlayback(sound, playback, inputChannels, target);
       }
     }
 
