@@ -1,7 +1,7 @@
 {
   "name": "mongoose-web-client",
   "version": "0.7.0",
-  "homepage": "https://client.rustytelephone.net/",
+  "homepage": "https://client.mongoose.world/",
   "dependencies": {
     "@livekit/components-react": "^2.9.20",
     "@monaco-editor/react": "^4.7.0",
@@ -11,7 +11,7 @@
     "buffer": "^6.0.3",
     "buttplug": "^3.2.2",
     "buttplug-wasm": "^2.0.1",
-    "cacophony": "^0.23.0",
+    "cacophony": "^0.25.1",
     "dompurify": "^3.4.1",
     "eventemitter3": "^5.0.4",
     "jzz": "^1.9.6",

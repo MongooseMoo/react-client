@@ -36,6 +36,7 @@ type MockSound = {
   playbacks: MockPlayback[];
   position: number[];
   priority?: number;
+  routeTo: ReturnType<typeof vi.fn>;
   seek: ReturnType<typeof vi.fn>;
   stereoPan: number;
   tag?: string;
@@ -73,6 +74,7 @@ function createMockSound(url: string): MockSound {
     playbacks: [playback],
     position: [0, 0, 0],
     priority: undefined,
+    routeTo: vi.fn(),
     seek: vi.fn(),
     stereoPan: 0,
     tag: undefined,
@@ -175,6 +177,69 @@ describe("GMCPClientMedia", () => {
       "html",
       "stereo",
     );
+  });
+
+  describe("effect chain routing", () => {
+    it("routes a played sound through a named chain", async () => {
+      const sound = createMockSound("https://media.example/spell.ogg");
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        name: "spell.ogg",
+        type: "sound",
+        volume: 50,
+        chain: "cave",
+      } as unknown as GMCPMessageClientMediaPlay);
+      expect(sound.routeTo).toHaveBeenCalledWith("cave");
+    });
+
+    it("uses an aux send when `send` is provided (sound stays dry on master)", async () => {
+      const sound = createMockSound("https://media.example/spell.ogg");
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        name: "spell.ogg",
+        type: "sound",
+        volume: 50,
+        chain: "cave",
+        send: 0.3,
+      } as unknown as GMCPMessageClientMediaPlay);
+      expect(sound.routeTo).toHaveBeenCalledWith("cave", 0.3);
+    });
+
+    it("does not route ambisonic sounds through a chain (out of scope for P0)", async () => {
+      const sound = createMockSound("https://media.example/amb.ogg");
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        name: "amb.ogg",
+        type: "sound",
+        volume: 50,
+        chain: "cave",
+        upmix: "ambisonic",
+      } as unknown as GMCPMessageClientMediaPlay);
+      expect(sound.routeTo).not.toHaveBeenCalled();
+    });
+
+    it("plays dry (and never crashes) when the chain is unavailable", async () => {
+      const sound = createMockSound("https://media.example/spell.ogg");
+      sound.routeTo.mockImplementation(() => {
+        throw new Error("No bus registered with name 'ghost'");
+      });
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        name: "spell.ogg",
+        type: "sound",
+        volume: 50,
+        chain: "ghost",
+      } as unknown as GMCPMessageClientMediaPlay);
+      expect(sound.play).toHaveBeenCalledOnce(); // the sound still played
+    });
+
+    it("advertises EffectsSupport to the server", () => {
+      handler.sendEffectsSupport();
+      expect(client.sendGmcp).toHaveBeenCalledWith(
+        "Client.Media.EffectsSupport",
+        expect.stringContaining("reverb"),
+      );
+    });
   });
 
   it("stores tag and type so stop-by-tag and stop-by-type work", async () => {

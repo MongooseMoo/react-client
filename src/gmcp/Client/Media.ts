@@ -1,24 +1,26 @@
-import type { Cacophony, Playback, Position, Sound } from "cacophony";
+import type { Cacophony, Playback, Position, Sound } from 'cacophony';
 
-import { AmbisonicRenderer } from "../../audio/AmbisonicRenderer";
-import { GMCPMessage, GMCPPackage } from "../package";
+import { AmbisonicRenderer } from '../../audio/AmbisonicRenderer';
+import { buildEffectsSupport, MediaEffects } from '../../audio/effects/MediaEffects';
+import type { EffectSpec } from '../../audio/effects/types';
+import { GMCPMessage, GMCPPackage } from '../package';
 
-const CORS_PROXY = "https://mongoose.world:9080/?url=";
-type CacophonySoundKind = NonNullable<Parameters<Cacophony["createSound"]>[1]>;
-const CACOPHONY_BUFFER = "buffer" satisfies CacophonySoundKind;
-const CACOPHONY_HTML = "html" satisfies CacophonySoundKind;
+const CORS_PROXY = 'https://mongoose.world:9080/?url=';
+type CacophonySoundKind = NonNullable<Parameters<Cacophony['createSound']>[1]>;
+const CACOPHONY_BUFFER = 'buffer' satisfies CacophonySoundKind;
+const CACOPHONY_HTML = 'html' satisfies CacophonySoundKind;
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage {
   public readonly url?: string;
   public readonly name!: string;
 }
 
-export type MediaType = "sound" | "music" | "video";
+export type MediaType = 'sound' | 'music' | 'video';
 
 export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public readonly name!: string;
   public readonly url?: string;
-  public readonly type?: MediaType = "sound";
+  public readonly type?: MediaType = 'sound';
   public readonly tag?: string;
   public readonly volume: number = 50; // Relative to the volume set on the player's client.
   public readonly fadein?: number = 0; // Volume increases, or fades in, ranged across a linear pattern from one to the volume set with the "volume" key.
@@ -35,6 +37,9 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public position: number[] = [0, 0, 0]; // x, y, z
   public readonly upmix?: string;
   public readonly channels?: number;
+  // MCMP effects extension
+  public readonly chain?: string; // Route this sound through the named effect chain.
+  public readonly send?: number; // Aux-send level into `chain` (stays dry on master).
 }
 
 export class GMCPMessageClientMediaStop extends GMCPMessage {
@@ -48,7 +53,7 @@ export class GMCPMessageClientMediaStop extends GMCPMessage {
 export class GMCPMessageClientMediaUpdate extends GMCPMessage {
   public readonly name?: string;
   public readonly url?: string;
-  public readonly type?: MediaType = "sound";
+  public readonly type?: MediaType = 'sound';
   public readonly tag?: string;
   public readonly volume?: number;
   public readonly fadein?: number = 0;
@@ -64,6 +69,23 @@ export class GMCPMessageClientMediaUpdate extends GMCPMessage {
   public position?: number[] = [0, 0, 0];
   public upmix?: string;
   public channels?: number;
+  // MCMP effects extension
+  public readonly chain?: string;
+  public readonly send?: number;
+}
+
+/** Define / replace / remove a named effect chain. Empty `effects` removes it. */
+export class GMCPMessageClientMediaChain extends GMCPMessage {
+  public readonly id!: string;
+  public readonly effects?: EffectSpec[];
+  public readonly preset?: string;
+  public readonly gain?: number;
+  public readonly fadein?: number;
+}
+
+/** Remove a named effect chain by id (rerouting its live sounds to master). */
+export class GMCPMessageClientMediaChainStop extends GMCPMessage {
+  public readonly id!: string;
 }
 
 export class GMCPMessageClientMediaListenerOrientation extends GMCPMessage {
@@ -86,20 +108,72 @@ export interface ExtendedSound extends Sound {
 }
 
 export class GMCPClientMedia extends GMCPPackage {
-  public packageName: string = "Client.Media";
+  public packageName: string = 'Client.Media';
   sounds: { [key: string]: ExtendedSound } = {};
-  defaultUrl: string = "";
+  defaultUrl: string = '';
   private cleanedSounds = new WeakSet<ExtendedSound>();
+  private readonly effects: MediaEffects;
 
-  constructor(client: GMCPPackage["client"]) {
+  constructor(client: GMCPPackage['client']) {
     super(client);
-    this.client.on("spatialListenerOrientation", this.handleSpatialListenerOrientation);
-    this.client.on("spatialScene", this.handleSpatialScene);
+    this.effects = new MediaEffects(this.client.cacophony);
+    this.client.on('spatialListenerOrientation', this.handleSpatialListenerOrientation);
+    this.client.on('spatialScene', this.handleSpatialScene);
+  }
+
+  /** Advertise effect support to the server (client → server). Sent on GMCP negotiation. */
+  sendEffectsSupport(): void {
+    this.sendData('EffectsSupport', buildEffectsSupport());
+  }
+
+  /** `Client.Media.Chain` — define / replace / remove a named effect chain. */
+  handleChain(data: GMCPMessageClientMediaChain): void {
+    this.effects
+      .setChain(data)
+      .catch((error) => console.error(`Client.Media.Chain '${data.id}' failed`, error));
+  }
+
+  /** `Client.Media.ChainStop` — remove a named effect chain by id. */
+  handleChainStop(data: GMCPMessageClientMediaChainStop): void {
+    if (data.id) {
+      this.effects.removeChain(data.id);
+    }
+  }
+
+  /**
+   * Route a sound through an effect chain when `data.chain` is set. A missing
+   * chain plays dry (routeTo throws on an unregistered bus name) — the sound is
+   * never dropped for an effect's sake (§6).
+   */
+  private applyChainRouting(
+    sound: ExtendedSound,
+    data: Pick<GMCPMessageClientMediaPlay, 'chain' | 'send' | 'upmix'>,
+  ): void {
+    if (!data.chain) {
+      return;
+    }
+    if (data.upmix === 'ambisonic') {
+      // The ambisonic renderer hard-wires its output to master and would clobber
+      // a chain route (V11). Effects on ambisonic sounds are out of scope for P0.
+      console.warn(
+        `Client.Media: chain routing not supported for ambisonic sounds; '${data.chain}' ignored`,
+      );
+      return;
+    }
+    try {
+      if (typeof data.send === 'number') {
+        sound.routeTo(data.chain, data.send);
+      } else {
+        sound.routeTo(data.chain);
+      }
+    } catch (error) {
+      console.warn(`Client.Media: chain '${data.chain}' unavailable; playing dry`, error);
+    }
   }
 
   private assignSoundMetadata(
     sound: ExtendedSound,
-    data: Pick<GMCPMessageClientMediaPlay, "key" | "tag" | "type" | "upmix" | "channels">,
+    data: Pick<GMCPMessageClientMediaPlay, 'key' | 'tag' | 'type' | 'upmix' | 'channels'>,
   ) {
     sound.key = data.key;
     sound.tag = data.tag;
@@ -136,12 +210,9 @@ export class GMCPClientMedia extends GMCPPackage {
     sound.cleanup();
   }
 
-  private releaseSoundWhenPlaybackEnds(
-    sound: ExtendedSound,
-    key: string,
-  ): void {
+  private releaseSoundWhenPlaybackEnds(sound: ExtendedSound, key: string): void {
     let unsubscribe: (() => void) | undefined;
-    unsubscribe = sound.on("ended", () => {
+    unsubscribe = sound.on('ended', () => {
       unsubscribe?.();
       if (this.sounds[key] === sound) {
         this.releaseSound(sound, key);
@@ -149,7 +220,7 @@ export class GMCPClientMedia extends GMCPPackage {
     });
   }
 
-  private resolvedUrl(data: Pick<GMCPMessageClientMediaLoad, "name" | "url">): string {
+  private resolvedUrl(data: Pick<GMCPMessageClientMediaLoad, 'name' | 'url'>): string {
     return (data.url || this.defaultUrl) + data.name;
   }
 
@@ -189,7 +260,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
   private resolveAmbisonicInputChannels(
     sound: ExtendedSound,
-    data: Pick<GMCPMessageClientMediaPlay, "channels">,
+    data: Pick<GMCPMessageClientMediaPlay, 'channels'>,
   ): number {
     return (
       this.normalizeInputChannels(data.channels) ??
@@ -209,7 +280,7 @@ export class GMCPClientMedia extends GMCPPackage {
     try {
       renderer = await AmbisonicRenderer.create(this.client.cacophony, inputChannels);
     } catch (error) {
-      console.warn("Unsupported ambisonic input channel count", {
+      console.warn('Unsupported ambisonic input channel count', {
         error,
         inputChannels,
         sound: sound.key ?? sound.url,
@@ -225,7 +296,7 @@ export class GMCPClientMedia extends GMCPPackage {
     sound: ExtendedSound,
     data: Pick<
       GMCPMessageClientMediaUpdate,
-      "volume" | "pan" | "loops" | "is3d" | "position" | "start" | "priority"
+      'volume' | 'pan' | 'loops' | 'is3d' | 'position' | 'start' | 'priority'
     >,
   ) {
     if (data.volume !== undefined) {
@@ -245,8 +316,8 @@ export class GMCPClientMedia extends GMCPPackage {
       sound.threeDOptions = {
         coneInnerAngle: 360,
         coneOuterAngle: 0,
-        panningModel: "HRTF",
-        distanceModel: "inverse",
+        panningModel: 'HRTF',
+        distanceModel: 'inverse',
       };
     }
 
@@ -288,18 +359,18 @@ export class GMCPClientMedia extends GMCPPackage {
 
   mediaUrl(data: GMCPMessageClientMediaPlay): string {
     let mediaUrl = this.resolvedUrl(data);
-    if (data.type?.toLowerCase() === "music") {
+    if (data.type?.toLowerCase() === 'music') {
       mediaUrl = CORS_PROXY + encodeURIComponent(mediaUrl);
     }
     return mediaUrl;
   }
 
   async handlePlay(data: GMCPMessageClientMediaPlay) {
-    let mediaUrl = this.mediaUrl(data);
+    const mediaUrl = this.mediaUrl(data);
     data.key = data.key || mediaUrl;
     const soundKey = data.key;
     let sound = this.sounds[soundKey] as ExtendedSound;
-    const panType = data.is3d ? "HRTF" : "stereo";
+    const panType = data.is3d ? 'HRTF' : 'stereo';
     // Sound creation or updating
     if (!sound || sound.url !== mediaUrl) {
       // Cleanup old sound before replacing
@@ -307,18 +378,10 @@ export class GMCPClientMedia extends GMCPPackage {
         this.releaseSound(sound, soundKey);
       }
       // Create a new sound object
-      if (data.type === "music") {
-        sound = await this.client.cacophony.createSound(
-          mediaUrl,
-          CACOPHONY_HTML,
-          panType
-        );
+      if (data.type === 'music') {
+        sound = await this.client.cacophony.createSound(mediaUrl, CACOPHONY_HTML, panType);
       } else {
-        sound = await this.client.cacophony.createSound(
-          mediaUrl,
-          CACOPHONY_BUFFER,
-          panType
-        );
+        sound = await this.client.cacophony.createSound(mediaUrl, CACOPHONY_BUFFER, panType);
       }
     }
 
@@ -347,11 +410,13 @@ export class GMCPClientMedia extends GMCPPackage {
         sound.seek(data.start / 1000);
       }
 
-      if (data.upmix === "ambisonic") {
+      if (data.upmix === 'ambisonic') {
         const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
         await this.configureAmbisonicPlayback(sound, playback, inputChannels);
       }
     }
+
+    this.applyChainRouting(sound, data);
   }
 
   handleUpdate(data: GMCPMessageClientMediaUpdate) {
@@ -370,11 +435,12 @@ export class GMCPClientMedia extends GMCPPackage {
         channels: data.channels ?? sound.inputChannels,
       });
       this.applySoundState(sound, data);
+      this.applyChainRouting(sound, data);
       const [playback] = sound.playbacks;
-      if (data.upmix === "ambisonic" && playback) {
+      if (data.upmix === 'ambisonic' && playback) {
         const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
         this.configureAmbisonicPlayback(sound, playback, inputChannels).catch(console.error);
-      } else if (data.upmix && data.upmix !== "ambisonic") {
+      } else if (data.upmix && data.upmix !== 'ambisonic') {
         this.cleanupUpmix(sound);
       }
       const soundKey = sound.key ?? data.key;
@@ -387,16 +453,24 @@ export class GMCPClientMedia extends GMCPPackage {
 
   handleStop(data: GMCPMessageClientMediaStop): void {
     if (data.name) {
-      this.soundsByName(data.name).forEach((sound) => this.stopSound(sound));
+      this.soundsByName(data.name).forEach((sound) => {
+        this.stopSound(sound);
+      });
     }
     if (data.type) {
-      this.soundsByType(data.type).forEach((sound) => this.stopSound(sound));
+      this.soundsByType(data.type).forEach((sound) => {
+        this.stopSound(sound);
+      });
     }
     if (data.tag) {
-      this.soundsByTag(data.tag).forEach((sound) => this.stopSound(sound));
+      this.soundsByTag(data.tag).forEach((sound) => {
+        this.stopSound(sound);
+      });
     }
     if (data.key) {
-      this.soundsByKey(data.key).forEach((sound) => this.stopSound(sound));
+      this.soundsByKey(data.key).forEach((sound) => {
+        this.stopSound(sound);
+      });
     }
     if (!data.name && !data.type && !data.tag && !data.key) {
       this.allSounds.forEach((sound) => {
@@ -429,7 +503,7 @@ export class GMCPClientMedia extends GMCPPackage {
 
   soundsByName(name: string) {
     return Object.values(this.sounds).filter((sound) => {
-      return typeof sound.url === "string" && sound.url.endsWith(name);
+      return typeof sound.url === 'string' && sound.url.endsWith(name);
     });
   }
 
@@ -443,9 +517,7 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   soundsByType(type: MediaType) {
-    return Object.values(this.sounds).filter(
-      (sound: ExtendedSound) => sound.mediaType === type
-    );
+    return Object.values(this.sounds).filter((sound: ExtendedSound) => sound.mediaType === type);
   }
 
   get allSounds() {
@@ -460,7 +532,8 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   override shutdown() {
-    this.client.off("spatialListenerOrientation", this.handleSpatialListenerOrientation);
-    this.client.off("spatialScene", this.handleSpatialScene);
+    this.effects.shutdown();
+    this.client.off('spatialListenerOrientation', this.handleSpatialListenerOrientation);
+    this.client.off('spatialScene', this.handleSpatialScene);
   }
 }
