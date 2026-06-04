@@ -331,6 +331,8 @@ class MudClient extends EventEmitter {
         this.requireGMCPPackage("Core").sendHello();
         this.requireGMCPPackage("Core.Supports").sendSet();
         this.requireGMCPPackage("Auth.Autologin").sendLogin();
+        // Advertise MCMP effect support so the server only sends what we can render.
+        this.requireGMCPPackage("Client.Media").sendEffectsSupport();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -396,6 +398,8 @@ class MudClient extends EventEmitter {
         this.requireGMCPPackage("Core").sendHello();
         this.requireGMCPPackage("Core.Supports").sendSet();
         this.requireGMCPPackage("Auth.Autologin").sendLogin();
+        // Advertise MCMP effect support so the server only sends what we can render.
+        this.requireGMCPPackage("Client.Media").sendEffectsSupport();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
