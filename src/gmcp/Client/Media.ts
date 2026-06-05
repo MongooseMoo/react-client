@@ -10,6 +10,7 @@ import { AmbisonicRenderer } from '../../audio/AmbisonicRenderer';
 import { EffectChain } from '../../audio/effects/EffectChain';
 import { buildEffectsSupport, MediaEffects } from '../../audio/effects/MediaEffects';
 import type { EffectSpec } from '../../audio/effects/types';
+import { MediaSessionController } from '../../audio/MediaSessionController';
 import { GMCPMessage, GMCPPackage } from '../package';
 
 const CORS_PROXY = 'https://mongoose.world:9080/?url=';
@@ -48,6 +49,12 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public readonly chain?: string; // Route this sound through the named effect chain.
   public readonly send?: number; // Aux-send level into `chain` (stays dry on master).
   public readonly effects?: EffectSpec[]; // Inline per-sound effect chain (one-off).
+  // Media Session metadata (OS lock screen / transport controls). Optional —
+  // the title falls back to the media name when these are absent.
+  public readonly title?: string;
+  public readonly artist?: string;
+  public readonly album?: string;
+  public readonly artwork?: MediaImage[];
 }
 
 export class GMCPMessageClientMediaStop extends GMCPMessage {
@@ -137,6 +144,10 @@ export class GMCPClientMedia extends GMCPPackage {
   defaultUrl: string = '';
   private cleanedSounds = new WeakSet<ExtendedSound>();
   private readonly effects: MediaEffects;
+  /** OS lock screen / transport-control surface for the active music track. */
+  private readonly mediaSession = new MediaSessionController();
+  /** The music sound currently bound to the Media Session, if any. */
+  private currentMusic?: ExtendedSound;
 
   constructor(client: GMCPPackage['client']) {
     super(client);
@@ -317,6 +328,11 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   private releaseSound(sound: ExtendedSound, key?: string): void {
+    if (sound === this.currentMusic) {
+      this.currentMusic = undefined;
+      this.mediaSession.clear();
+    }
+
     if (key !== undefined && this.sounds[key] === sound) {
       delete this.sounds[key];
     }
@@ -586,6 +602,109 @@ export class GMCPClientMedia extends GMCPPackage {
     }
 
     await this.applyEffectRouting(sound, soundKey, data);
+
+    if (data.type === 'music') {
+      this.activateMusicSession(sound, data);
+    }
+  }
+
+  /**
+   * Make `sound` the OS "now playing" track: publish its metadata to the lock
+   * screen and bind the hardware/lock-screen transport controls to it. The
+   * controls act locally on the cacophony sound — MCMP has no client→server
+   * transport verb, so a lock-screen pause pauses the user's local audio only.
+   */
+  private activateMusicSession(sound: ExtendedSound, data: GMCPMessageClientMediaPlay): void {
+    this.currentMusic = sound;
+    this.mediaSession.setNowPlaying(
+      {
+        title: this.musicTitle(data),
+        artist: data.artist,
+        album: data.album,
+        artwork: data.artwork,
+      },
+      {
+        play: () => this.resumeCurrentMusic(),
+        pause: () => this.pauseCurrentMusic(),
+        stop: () => this.stopCurrentMusic(),
+        seekTo: (time) => this.seekCurrentMusic(time),
+        seekBackward: (offset) => this.nudgeCurrentMusic(-offset),
+        seekForward: (offset) => this.nudgeCurrentMusic(offset),
+      },
+    );
+    this.mediaSession.setPlaybackState(sound.isPlaying ? 'playing' : 'paused');
+    this.updateMusicPosition();
+  }
+
+  /** Lock-screen title: explicit `title`, else the media filename sans path/ext. */
+  private musicTitle(data: GMCPMessageClientMediaPlay): string {
+    if (data.title) {
+      return data.title;
+    }
+    const base = data.name.split('/').pop() ?? data.name;
+    return base.replace(/\.[^.]+$/, '') || data.name;
+  }
+
+  private resumeCurrentMusic(): void {
+    const sound = this.currentMusic;
+    if (!sound) {
+      return;
+    }
+    sound.resume();
+    this.mediaSession.setPlaybackState('playing');
+    this.updateMusicPosition();
+  }
+
+  private pauseCurrentMusic(): void {
+    const sound = this.currentMusic;
+    if (!sound) {
+      return;
+    }
+    sound.pause();
+    this.mediaSession.setPlaybackState('paused');
+    this.updateMusicPosition();
+  }
+
+  private stopCurrentMusic(): void {
+    const sound = this.currentMusic;
+    if (sound) {
+      this.releaseSound(sound, sound.key);
+    }
+  }
+
+  private seekCurrentMusic(time: number): void {
+    const sound = this.currentMusic;
+    if (!sound) {
+      return;
+    }
+    sound.seek(time);
+    this.updateMusicPosition();
+  }
+
+  private nudgeCurrentMusic(deltaSeconds: number): void {
+    const sound = this.currentMusic;
+    if (!sound) {
+      return;
+    }
+    const current = sound.playbacks[0]?.currentTime ?? 0;
+    const duration = sound.duration;
+    let next = current + deltaSeconds;
+    if (next < 0) {
+      next = 0;
+    } else if (Number.isFinite(duration) && next > duration) {
+      next = duration;
+    }
+    this.seekCurrentMusic(next);
+  }
+
+  /** Push the current track's duration/position to the lock-screen scrubber. */
+  private updateMusicPosition(): void {
+    const sound = this.currentMusic;
+    if (!sound) {
+      return;
+    }
+    const position = sound.playbacks[0]?.currentTime ?? 0;
+    this.mediaSession.setPositionState(sound.duration, position, sound.isPlaying ? 1 : 0);
   }
 
   handleUpdate(data: GMCPMessageClientMediaUpdate) {
@@ -701,6 +820,8 @@ export class GMCPClientMedia extends GMCPPackage {
   }
 
   override shutdown() {
+    this.currentMusic = undefined;
+    this.mediaSession.clear();
     this.effects.shutdown();
     this.client.off('spatialListenerOrientation', this.handleSpatialListenerOrientation);
     this.client.off('spatialScene', this.handleSpatialScene);

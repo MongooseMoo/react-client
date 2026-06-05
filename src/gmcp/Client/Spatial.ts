@@ -26,6 +26,15 @@ export interface SpatialEmitter {
   loops?: number;
   volume?: number;
   sourceKind?: string;
+  // P5 overlay fields (all optional → absent = the world scene, today's behavior).
+  /** Overlay id this emitter belongs to. Absent = world (PannerNode) scene. */
+  overlay?: string;
+  /** Overlay reference frame; "head" = a head-stable instrument (sensor sphere). */
+  frame?: "head" | "world";
+  /** 0..1 — how much of the world shows through under this overlay (transparency duck). */
+  transparency?: number;
+  /** Overlay stack order (higher = on top). */
+  priority?: number;
 }
 
 export interface SpatialListenerOrientation {
