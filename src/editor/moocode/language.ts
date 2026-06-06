@@ -644,7 +644,7 @@ export function createMooCodeLensProvider(): MonacoEditor.languages.CodeLensProv
 function toCodeActionMarker(diagnostic: MooQuickFixDiagnostic): MonacoEditor.editor.IMarkerData {
   return {
     ...diagnostic,
-    severity: 8,
+    severity: diagnostic.severity === 'warning' ? 4 : 8,
     startLineNumber: diagnostic.lineNumber,
     endLineNumber: diagnostic.lineNumber,
     source: MOO_LANGUAGE_ID,

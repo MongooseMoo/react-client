@@ -7,7 +7,9 @@ describe('MOO code actions', () => {
       '\n',
     );
 
-    expect(getMooQuickFixes(source)).toEqual([
+    const fixes = getMooQuickFixes(source);
+
+    expect(fixes).toContainEqual(
       {
         title: 'Insert closing quote',
         diagnostics: [expect.objectContaining({ code: 'unterminated-string' })],
@@ -21,6 +23,8 @@ describe('MOO code actions', () => {
           text: '"',
         },
       },
+    );
+    expect(fixes).toContainEqual(
       {
         title: 'Insert missing }',
         diagnostics: [expect.objectContaining({ code: 'unclosed-delimiter' })],
@@ -34,6 +38,8 @@ describe('MOO code actions', () => {
           text: '}',
         },
       },
+    );
+    expect(fixes).toContainEqual(
       {
         title: 'Insert missing endif',
         diagnostics: [expect.objectContaining({ code: 'unclosed-block' })],
@@ -47,7 +53,7 @@ describe('MOO code actions', () => {
           text: '\nendif',
         },
       },
-    ]);
+    );
   });
 
   it('preserves the opening block indentation when inserting a missing close keyword', () => {
@@ -84,7 +90,9 @@ describe('MOO code actions', () => {
   it('offers remove quick fixes for unexpected closers and delimiters', () => {
     const source = ['endif', 'value = listappend(items, item));'].join('\n');
 
-    expect(getMooQuickFixes(source)).toEqual([
+    const fixes = getMooQuickFixes(source);
+
+    expect(fixes).toContainEqual(
       {
         title: 'Remove unexpected endif',
         diagnostics: [expect.objectContaining({ code: 'unexpected-close' })],
@@ -98,6 +106,8 @@ describe('MOO code actions', () => {
           text: '',
         },
       },
+    );
+    expect(fixes).toContainEqual(
       {
         title: 'Remove unexpected )',
         diagnostics: [expect.objectContaining({ code: 'unexpected-delimiter' })],
@@ -111,7 +121,7 @@ describe('MOO code actions', () => {
           text: '',
         },
       },
-    ]);
+    );
   });
 
   it('offers quick fixes for parser-reported missing syntax', () => {
@@ -139,6 +149,24 @@ describe('MOO code actions', () => {
           endColumn: 21,
         },
         text: ';',
+      },
+    });
+  });
+
+  it('offers a quick fix to mark an unused local as intentionally ignored', () => {
+    const source = ['used = 1;', 'unused = 2;', 'notify(player, used);'].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Mark unused as intentionally ignored',
+      diagnostics: [expect.objectContaining({ code: 'unused-local', severity: 'warning' })],
+      edit: {
+        range: {
+          startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 1,
+        },
+        text: '_',
       },
     });
   });

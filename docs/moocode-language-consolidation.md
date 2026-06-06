@@ -422,3 +422,13 @@ Iterations:
     summary and target helpers.
   - Focused red-to-green gate:
     `npm test -- --run src/components/editor/editorWindow.test.tsx`.
+- 2026-06-06 unused-local warning quick fix:
+  - The MOO code-action provider now offers `Mark unused as intentionally
+    ignored` for `unused-local` warning diagnostics.
+  - The fix inserts `_` at the local definition, reusing the semantic warning's
+    existing underscore-prefixed opt-out rule without deleting code or guessing
+    programmer intent.
+  - Monaco code actions now preserve warning severity when mapping quick-fix
+    diagnostics back into action metadata.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/codeActions.test.ts src/editor/moocode/language.test.ts`.

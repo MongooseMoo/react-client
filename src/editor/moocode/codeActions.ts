@@ -123,6 +123,16 @@ export function getMooQuickFixes(
           },
         });
         break;
+      case 'unused-local':
+        fixes.push({
+          title: 'Mark unused as intentionally ignored',
+          diagnostics: [diagnostic],
+          edit: {
+            range: insertionRange(diagnostic),
+            text: '_',
+          },
+        });
+        break;
       default:
         break;
     }

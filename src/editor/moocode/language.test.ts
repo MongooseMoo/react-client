@@ -747,6 +747,45 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('provides Monaco quick fixes for unused local warnings', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () => ['used = 1;', 'unused = 2;', 'notify(player, used);'].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      { markers: [], trigger: 1 } as never,
+      {} as never,
+    );
+
+    expect(actions.actions).toContainEqual({
+      title: 'Mark unused as intentionally ignored',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [expect.objectContaining({ code: 'unused-local', severity: 4 })],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 2,
+                startColumn: 1,
+                endLineNumber: 2,
+                endColumn: 1,
+              },
+              text: '_',
+            },
+            versionId: undefined,
+          },
+        ],
+      },
+    });
+  });
+
   it('provides Monaco parameter inlay hints for builtin calls', () => {
     const provider = createMooInlayHintsProvider({ Parameter: 2 });
     const hints = provider.provideInlayHints(
