@@ -6,7 +6,7 @@ import {
   OPERATOR_WORDS,
   STATEMENT_KEYWORDS,
 } from './contract';
-import { analyzeMooSemantics } from './semantics';
+import { collectMooSemanticSymbolRanges } from './semantics';
 import { maskMooSource, positionAtMooOffset } from './scanner';
 
 const MOO_SEMANTIC_TOKEN_TYPES = [
@@ -60,7 +60,7 @@ export function collectMooSemanticTokens(source: string): MooSemanticToken[] {
   const tokens: MooSemanticToken[] = [];
   const masked = maskMooSource(source);
   const lineOffsets = getLineOffsets(source);
-  const localSymbolRanges = collectLocalSymbolRanges(source);
+  const semanticSymbolRanges = collectSemanticSymbolRanges(source);
   const occupiedOffsets = new Set<number>();
 
   for (const token of collectStringAndCommentTokens(source)) {
@@ -96,15 +96,15 @@ export function collectMooSemanticTokens(source: string): MooSemanticToken[] {
 
     const range = rangeFromOffsets(source, startOffset, startOffset + text.length);
     const rangeKey = semanticRangeKey(range);
-    const local = localSymbolRanges.get(rangeKey);
-    if (local) {
+    const semanticSymbol = semanticSymbolRanges.get(rangeKey);
+    if (semanticSymbol) {
       tokens.push({
         lineNumber: range.startLineNumber,
         startColumn: range.startColumn,
         length: text.length,
         text,
         tokenType: 'variable',
-        tokenModifiers: local.isDeclaration ? ['declaration'] : [],
+        tokenModifiers: semanticSymbol.isDeclaration ? ['declaration'] : [],
       });
       continue;
     }
@@ -186,7 +186,10 @@ export function encodeMooSemanticTokensForRange(
   );
 }
 
-function encodeSemanticTokens(tokens: MooSemanticToken[]): { data: Uint32Array; resultId?: string } {
+function encodeSemanticTokens(tokens: MooSemanticToken[]): {
+  data: Uint32Array;
+  resultId?: string;
+} {
   const encoded: number[] = [];
   let previousLine = 0;
   let previousStartCharacter = 0;
@@ -338,19 +341,13 @@ function pushSpanTokens(
   }
 }
 
-function collectLocalSymbolRanges(
-  source: string,
-): Map<string, { isDeclaration: boolean }> {
+function collectSemanticSymbolRanges(source: string): Map<string, { isDeclaration: boolean }> {
   const ranges = new Map<string, { isDeclaration: boolean }>();
 
-  for (const symbol of analyzeMooSemantics(source).symbols) {
-    for (const range of symbol.definitions) {
-      ranges.set(semanticRangeKey(range), { isDeclaration: true });
-    }
-
-    for (const range of symbol.references) {
-      ranges.set(semanticRangeKey(range), { isDeclaration: false });
-    }
+  for (const symbolRange of collectMooSemanticSymbolRanges(source)) {
+    ranges.set(semanticRangeKey(symbolRange.range), {
+      isDeclaration: symbolRange.isDeclaration,
+    });
   }
 
   return ranges;

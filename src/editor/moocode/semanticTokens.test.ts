@@ -49,6 +49,23 @@ describe('MOO semantic tokens', () => {
     );
   });
 
+  it('classifies loop labels as semantic variables with declaration modifiers', () => {
+    const source = [
+      'while outer (valid(player))',
+      '  continue outer;',
+      '  break outer;',
+      'endwhile',
+    ].join('\n');
+
+    expect(tokenSummary(source)).toEqual(
+      expect.arrayContaining([
+        '1:7:outer:variable:declaration',
+        '2:12:outer:variable:',
+        '3:9:outer:variable:',
+      ]),
+    );
+  });
+
   it('encodes Monaco semantic tokens in line-relative order', () => {
     const encoded = encodeMooSemanticTokens('total = 0;\nnotify(player, total);');
 

@@ -33,6 +33,12 @@ export type MooSemanticSymbolSummary = {
   references: MonacoRange[];
 };
 
+export type MooSemanticSymbolRange = {
+  isDeclaration: boolean;
+  kind: MooSemanticSymbolSummary['kind'];
+  range: MonacoRange;
+};
+
 export type MooUndefinedLocalReference = {
   definitionRange?: MonacoRange;
   name: string;
@@ -205,9 +211,23 @@ export function getMooSemanticSymbolSummary(
   return null;
 }
 
+export function collectMooSemanticSymbolRanges(source: string): MooSemanticSymbolRange[] {
+  const ranges: MooSemanticSymbolRange[] = [];
+
+  for (const record of getSymbolRecords(source).values()) {
+    ranges.push(...toSemanticSymbolRanges(record, 'local'));
+  }
+
+  for (const record of collectLoopLabelReferences(source).records) {
+    ranges.push(...toSemanticSymbolRanges(record, 'loop-label'));
+  }
+
+  return ranges.sort((left, right) => compareRanges(left.range, right.range));
+}
+
 export function getMooCodeLenses(source: string): MooCodeLens[] {
-  return analyzeMooSemantics(source).symbols
-    .filter((symbol) => symbol.definitions.length > 0)
+  return analyzeMooSemantics(source)
+    .symbols.filter((symbol) => symbol.definitions.length > 0)
     .map((symbol) => ({
       range: symbol.definitions[0],
       title: `${countLabel(symbol.definitions.length, 'definition')}, ${countLabel(
@@ -327,7 +347,8 @@ export function findMooUndefinedLocalReferences(source: string): MooUndefinedLoc
     if (
       NON_LOCAL_NAMES.has(normalizedName) ||
       definitionOffsets.has(occurrence.occurrence.startOffset) ||
-      (firstDefinition !== undefined && firstDefinition.startOffset < occurrence.occurrence.startOffset) ||
+      (firstDefinition !== undefined &&
+        firstDefinition.startOffset < occurrence.occurrence.startOffset) ||
       isNonVariableIdentifierOccurrence(masked, occurrence.occurrence)
     ) {
       continue;
@@ -510,9 +531,10 @@ function collectLoopLabelReferences(
 
     const openBlock = MOO_BLOCKS[normalized as BlockKind];
     if (openBlock) {
-      const labelRecord = normalized === 'while'
-        ? collectWhileLabelRecord(source, scannedLine, lineOffset, records)
-        : undefined;
+      const labelRecord =
+        normalized === 'while'
+          ? collectWhileLabelRecord(source, scannedLine, lineOffset, records)
+          : undefined;
       blockStack.push({
         kind: normalized as BlockKind,
         labelRecord,
@@ -531,9 +553,7 @@ function collectWhileLabelRecord(
   lineOffset: number,
   records: SymbolRecord[],
 ): SymbolRecord | undefined {
-  const match = new RegExp(`\\bwhile\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*\\(`, 'i').exec(
-    line,
-  );
+  const match = new RegExp(`\\bwhile\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*\\(`, 'i').exec(line);
   if (!match?.[1]) {
     return undefined;
   }
@@ -554,9 +574,10 @@ function readLoopControlLabel(
   line: string,
   lineOffset: number,
 ): { name: string; occurrence: Occurrence } | null {
-  const match = new RegExp(`\\b(?:break|continue)\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\b`, 'i').exec(
-    line,
-  );
+  const match = new RegExp(
+    `\\b(?:break|continue)\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\b`,
+    'i',
+  ).exec(line);
   if (!match?.[1]) {
     return null;
   }
@@ -667,9 +688,7 @@ function collectForkDefinitions(
   lineOffset: number,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
-  const match = new RegExp(`\\bfork\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*\\(`, 'i').exec(
-    line,
-  );
+  const match = new RegExp(`\\bfork\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*\\(`, 'i').exec(line);
   if (!match?.[1]) {
     return;
   }
@@ -721,7 +740,14 @@ function collectScatterDefinitions(
 
     const nextIndex = nextNonWhitespaceIndex(line, closeIndex + 1);
     if (nextIndex !== null && line[nextIndex] === '=') {
-      collectScatterTargetListDefinitions(source, line, lineOffset, index + 1, closeIndex, definitions);
+      collectScatterTargetListDefinitions(
+        source,
+        line,
+        lineOffset,
+        index + 1,
+        closeIndex,
+        definitions,
+      );
       index = closeIndex;
     }
   }
@@ -752,7 +778,14 @@ function collectScatterTargetListDefinitions(
     }
 
     if (character === ',' && delimiters.length === 0) {
-      collectScatterTargetDefinition(source, line, lineOffset, targetStartIndex, index, definitions);
+      collectScatterTargetDefinition(
+        source,
+        line,
+        lineOffset,
+        targetStartIndex,
+        index,
+        definitions,
+      );
       targetStartIndex = index + 1;
     }
   }
@@ -908,6 +941,24 @@ function toSemanticSymbolSummary(
   };
 }
 
+function toSemanticSymbolRanges(
+  record: SymbolRecord,
+  kind: MooSemanticSymbolSummary['kind'],
+): MooSemanticSymbolRange[] {
+  return [
+    ...record.definitions.map((definition) => ({
+      kind,
+      range: definition.range,
+      isDeclaration: true,
+    })),
+    ...record.references.map((reference) => ({
+      kind,
+      range: reference.range,
+      isDeclaration: false,
+    })),
+  ];
+}
+
 function sameOccurrence(left: Occurrence, right: Occurrence): boolean {
   return left.startOffset === right.startOffset && left.endOffset === right.endOffset;
 }
@@ -934,7 +985,10 @@ function isBareExceptionSelectorIdentifier(source: string, occurrence: Occurrenc
   const line = lineAroundOffset(source, occurrence.startOffset);
   const localStart = occurrence.startOffset - line.startOffset;
 
-  return isBareExceptClauseSelector(line.text, localStart) || isBareCatchExpressionSelector(line.text, localStart);
+  return (
+    isBareExceptClauseSelector(line.text, localStart) ||
+    isBareCatchExpressionSelector(line.text, localStart)
+  );
 }
 
 function isBareExceptClauseSelector(line: string, localStart: number): boolean {
@@ -972,10 +1026,7 @@ function isAtExpressionExceptionSelector(
   selectorListStart: number,
   localStart: number,
 ): boolean {
-  const segmentStart = Math.max(
-    selectorListStart,
-    line.lastIndexOf(',', localStart - 1) + 1,
-  );
+  const segmentStart = Math.max(selectorListStart, line.lastIndexOf(',', localStart - 1) + 1);
   return line.slice(segmentStart, localStart).trimStart().startsWith('@');
 }
 
