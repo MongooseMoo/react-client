@@ -62,6 +62,41 @@ describe('MOO signature help analysis', () => {
       });
   });
 
+  it('offers generic signature help for static MOO verb calls', () => {
+    const source = 'player:tell("hello", caller);';
+
+    expect(findMooCallContext(source, { lineNumber: 1, column: 24 })).toEqual({
+      activeParameter: 1,
+      callKind: 'verb',
+      functionName: 'tell',
+      receiverName: 'player',
+    });
+    expect(getMooSignatureHelp(source, { lineNumber: 1, column: 24 })).toEqual({
+      activeSignature: 0,
+      activeParameter: 1,
+      signatures: [
+        {
+          label: 'player:tell(arg1, arg2)',
+          documentation: 'MOO verb call. Arguments are available to the target verb as args.',
+          parameters: [{ label: 'arg1' }, { label: 'arg2' }],
+        },
+      ],
+    });
+  });
+
+  it('offers generic signature help for object-number and system-reference verb calls', () => {
+    expect(getMooSignatureHelp('#123:initialize(player);', { lineNumber: 1, column: 21 }))
+      .toMatchObject({
+        activeParameter: 0,
+        signatures: [{ label: '#123:initialize(arg1)' }],
+      });
+    expect(getMooSignatureHelp('$room:announce("ok");', { lineNumber: 1, column: 18 }))
+      .toMatchObject({
+        activeParameter: 0,
+        signatures: [{ label: '$room:announce(arg1)' }],
+      });
+  });
+
   it('does not offer signature help for unknown call names', () => {
     expect(getMooSignatureHelp('custom(player, args);', { lineNumber: 1, column: 10 })).toBeNull();
   });

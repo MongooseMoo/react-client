@@ -2,10 +2,19 @@ import { BUILTIN_FUNCTIONS, MOO_IDENTIFIER_PATTERN_SOURCE } from './contract';
 import { formatMooBuiltinArity, getMooBuiltinMetadata } from './builtins';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
 
-export type MooCallContext = {
+type MooBuiltinCallContext = {
   functionName: string;
   activeParameter: number;
 };
+
+type MooVerbCallContext = {
+  callKind: 'verb';
+  receiverName: string;
+  functionName: string;
+  activeParameter: number;
+};
+
+export type MooCallContext = MooBuiltinCallContext | MooVerbCallContext;
 
 export type MooParameterInformation = {
   label: string;
@@ -123,6 +132,16 @@ export function findMooCallContext(
         continue;
       }
 
+      const verbCall = readStaticVerbCallBefore(maskedSource, index);
+      if (verbCall) {
+        return {
+          callKind: 'verb',
+          receiverName: verbCall.receiverName,
+          functionName: verbCall.verbName,
+          activeParameter,
+        };
+      }
+
       const functionName = readIdentifierBefore(maskedSource, index);
       if (!functionName) {
         return null;
@@ -154,6 +173,15 @@ export function getMooSignatureHelp(
   const context = findMooCallContext(source, position);
   if (!context) {
     return null;
+  }
+
+  if ('callKind' in context && context.callKind === 'verb') {
+    const definition = getVerbSignatureDefinition(context);
+    return {
+      signatures: [definition],
+      activeSignature: 0,
+      activeParameter: Math.min(context.activeParameter, definition.parameters.length - 1),
+    };
   }
 
   const definition = getSignatureDefinition(context.functionName, context.activeParameter + 1);
@@ -192,6 +220,21 @@ export function getMooBuiltinSignature(
     label: definition.label ?? formatSignatureLabel(normalizedName, definition.parameters),
     documentation: definition.documentation,
     parameters: definition.parameters,
+  };
+}
+
+function getVerbSignatureDefinition(context: MooVerbCallContext): MooSignatureInformation {
+  const parameterCount = Math.max(context.activeParameter + 1, 1);
+  const parameters = Array.from({ length: parameterCount }, (_, index) => ({
+    label: `arg${index + 1}`,
+  }));
+
+  return {
+    label: `${context.receiverName}:${context.functionName}(${parameters
+      .map((parameter) => parameter.label)
+      .join(', ')})`,
+    documentation: 'MOO verb call. Arguments are available to the target verb as args.',
+    parameters,
   };
 }
 
@@ -244,6 +287,13 @@ function formatSignatureLabel(
 }
 
 function readIdentifierBefore(source: string, openParenIndex: number): string | null {
+  return readIdentifierSpanBefore(source, openParenIndex)?.name ?? null;
+}
+
+function readIdentifierSpanBefore(
+  source: string,
+  openParenIndex: number,
+): { name: string; startIndex: number; endIndex: number } | null {
   let endIndex = openParenIndex - 1;
   while (endIndex >= 0 && /\s/.test(source[endIndex])) {
     endIndex -= 1;
@@ -255,5 +305,76 @@ function readIdentifierBefore(source: string, openParenIndex: number): string | 
   }
 
   const identifier = source.slice(startIndex + 1, endIndex + 1);
-  return VALID_IDENTIFIER_PATTERN.test(identifier) ? identifier : null;
+  return VALID_IDENTIFIER_PATTERN.test(identifier)
+    ? { name: identifier, startIndex: startIndex + 1, endIndex: endIndex + 1 }
+    : null;
+}
+
+function readStaticVerbCallBefore(
+  source: string,
+  openParenIndex: number,
+): { receiverName: string; verbName: string } | null {
+  const verb = readIdentifierSpanBefore(source, openParenIndex);
+  if (!verb) {
+    return null;
+  }
+
+  let colonIndex = verb.startIndex - 1;
+  while (colonIndex >= 0 && /\s/.test(source[colonIndex])) {
+    colonIndex -= 1;
+  }
+
+  if (source[colonIndex] !== ':') {
+    return null;
+  }
+
+  const receiverName = readStaticVerbReceiverBefore(source, colonIndex);
+  return receiverName ? { receiverName, verbName: verb.name } : null;
+}
+
+function readStaticVerbReceiverBefore(source: string, colonIndex: number): string | null {
+  let endIndex = colonIndex - 1;
+  while (endIndex >= 0 && /\s/.test(source[endIndex])) {
+    endIndex -= 1;
+  }
+
+  if (endIndex < 0) {
+    return null;
+  }
+
+  if (/\d/.test(source[endIndex])) {
+    let startIndex = endIndex;
+    while (startIndex >= 0 && /\d/.test(source[startIndex])) {
+      startIndex -= 1;
+    }
+
+    if (source[startIndex] === '-') {
+      startIndex -= 1;
+    }
+
+    if (source[startIndex] !== '#') {
+      return null;
+    }
+
+    const receiver = source.slice(startIndex, endIndex + 1);
+    return /^#-?\d+$/.test(receiver) ? receiver : null;
+  }
+
+  if (IDENTIFIER_CHARACTER_PATTERN.test(source[endIndex])) {
+    let startIndex = endIndex;
+    while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
+      startIndex -= 1;
+    }
+
+    if (source[startIndex] === '$') {
+      startIndex -= 1;
+    }
+
+    const receiver = source.slice(startIndex + 1, endIndex + 1);
+    return /^(?:[A-Za-z_][A-Za-z0-9_]*|\$[A-Za-z_][A-Za-z0-9_]*)$/.test(receiver)
+      ? receiver
+      : null;
+  }
+
+  return null;
 }
