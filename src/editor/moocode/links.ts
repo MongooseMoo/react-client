@@ -8,11 +8,12 @@ export type MooDocumentLink = {
 };
 
 const OBJECT_REFERENCE_PATTERN = /#-?\d+/g;
+const SYSTEM_REFERENCE_PATTERN = /\$[A-Za-z_][\w$]*/g;
 
 export function getMooDocumentLinks(source: string): MooDocumentLink[] {
   const masked = maskMooSource(source);
 
-  return [...masked.matchAll(OBJECT_REFERENCE_PATTERN)].map((match) => {
+  const objectLinks = [...masked.matchAll(OBJECT_REFERENCE_PATTERN)].map((match) => {
     const text = match[0];
     const startOffset = match.index;
     const endOffset = startOffset + text.length;
@@ -24,6 +25,24 @@ export function getMooDocumentLinks(source: string): MooDocumentLink[] {
       tooltip: `Open MOO object ${text}`,
     };
   });
+  const systemLinks = [...masked.matchAll(SYSTEM_REFERENCE_PATTERN)].map((match) => {
+    const text = match[0];
+    const startOffset = match.index;
+    const endOffset = startOffset + text.length;
+    const propertyName = text.slice(1);
+
+    return {
+      range: rangeFromOffsets(source, startOffset, endOffset),
+      url: `moo://system/${propertyName}`,
+      tooltip: `Open MOO system reference ${text}`,
+    };
+  });
+
+  return [...objectLinks, ...systemLinks].sort(
+    (left, right) =>
+      left.range.startLineNumber - right.range.startLineNumber ||
+      left.range.startColumn - right.range.startColumn,
+  );
 }
 
 function rangeFromOffsets(source: string, startOffset: number, endOffset: number): MonacoRange {

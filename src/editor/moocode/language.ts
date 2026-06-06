@@ -9,6 +9,7 @@ export {
   OPERATOR_WORDS,
   PLAINTEXT_LANGUAGE_ID,
   STATEMENT_KEYWORDS,
+  SYSTEM_REFERENCES,
 } from './contract';
 import { getMooQuickFixes } from './codeActions';
 import type { MooDiagnostic } from './diagnostics';
@@ -33,6 +34,7 @@ import {
   OPERATOR_WORDS,
   PLAINTEXT_LANGUAGE_ID,
   STATEMENT_KEYWORDS,
+  SYSTEM_REFERENCES,
 } from './contract';
 import { getMooBuiltinSignature, getMooSignatureHelp } from './signatures';
 import {
@@ -949,18 +951,6 @@ export function registerMooLanguage(monaco: MonacoLike) {
 }
 
 type CompletionContext = 'default' | 'error' | 'system-reference' | 'verb';
-
-const SYSTEM_REFERENCES = [
-  '$login',
-  '$local',
-  '$network',
-  '$player',
-  '$room',
-  '$string_utils',
-  '$telnet_utils',
-  '$utils',
-  '$wiz',
-] as const;
 
 function getCompletionContext(
   model: CompletionTextModelLike,

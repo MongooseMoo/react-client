@@ -258,9 +258,9 @@ Iterations:
 - 2026-06-06 Monaco document links:
   - Added a Monaco `LinkProvider` for MOO object-number references like `#123`
     and `#-1`.
-  - Document links use stable `moo://object/<number>` targets with descriptive
-    tooltips, and reuse the shared source masker so comments and strings do not
-    become clickable.
+  - Document links use stable `moo://object/<number>` targets and
+    `moo://system/<property>` targets with descriptive tooltips, and reuse the
+    shared source masker so comments and strings do not become clickable.
   - Added shared scanner offset-to-position mapping for Monaco-compatible link
     ranges.
   - Focused red-to-green gate:

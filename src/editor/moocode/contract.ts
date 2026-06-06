@@ -63,6 +63,18 @@ export const BUILTIN_VARIABLES = [
   'iobjstr',
 ] as const;
 
+export const SYSTEM_REFERENCES = [
+  '$login',
+  '$local',
+  '$network',
+  '$player',
+  '$room',
+  '$string_utils',
+  '$telnet_utils',
+  '$utils',
+  '$wiz',
+] as const;
+
 export const BUILTIN_FUNCTIONS = [
   'abs',
   'add_property',

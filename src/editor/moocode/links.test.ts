@@ -29,8 +29,39 @@ describe('MOO document links', () => {
     ]);
   });
 
+  it('links dollar system-property references to stable MOO system URIs', () => {
+    const source = 'notify($player, $string_utils:english_list(names));';
+
+    expect(getMooDocumentLinks(source)).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 8,
+          endLineNumber: 1,
+          endColumn: 15,
+        },
+        url: 'moo://system/player',
+        tooltip: 'Open MOO system reference $player',
+      },
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 17,
+          endLineNumber: 1,
+          endColumn: 30,
+        },
+        url: 'moo://system/string_utils',
+        tooltip: 'Open MOO system reference $string_utils',
+      },
+    ]);
+  });
+
   it('ignores object-looking text inside comments and strings', () => {
-    const source = ['// owner = #123;', 'notify(player, "#456");', 'real = #789;'].join('\n');
+    const source = [
+      '// owner = #123; $player',
+      'notify(player, "#456 $string_utils");',
+      'real = #789;',
+    ].join('\n');
 
     expect(getMooDocumentLinks(source)).toEqual([
       {

@@ -8,6 +8,7 @@ import {
   MOO_LANGUAGE_ID,
   MOO_SESSION_TYPES,
   STATEMENT_KEYWORDS,
+  SYSTEM_REFERENCES,
 } from './contract';
 
 describe('MOO language contract', () => {
@@ -22,6 +23,7 @@ describe('MOO language contract', () => {
     expect(STATEMENT_KEYWORDS).toContain('endtry');
     expect(ERROR_CONSTANTS).toContain('E_PERM');
     expect(BUILTIN_FUNCTIONS).toContain('notify');
+    expect(SYSTEM_REFERENCES).toContain('$string_utils');
   });
 
   it('keeps block ownership in one contract instead of duplicating parser facts', () => {
@@ -33,4 +35,3 @@ describe('MOO language contract', () => {
     expect(MOO_INDENT_OPEN_KEYWORDS).toContain('finally');
   });
 });
-
