@@ -11,7 +11,7 @@ export {
   STATEMENT_KEYWORDS,
   SYSTEM_REFERENCES,
 } from './contract';
-import { findMooBuiltinAtPosition, findMooBuiltinReferences } from './builtinNavigation';
+import { findMooBuiltinAtPosition } from './builtinNavigation';
 import { getMooQuickFixes, type MooQuickFix, type MooQuickFixDiagnostic } from './codeActions';
 import { getMooBuiltinMetadata, getMooBuiltinParameterLabel } from './builtins';
 import { formatMooCode, formatMooCodeRange } from './formatter';
@@ -862,10 +862,7 @@ export function createMooDocumentHighlightProvider(
         );
       }
 
-      return [
-        ...findMooDocumentLinkReferences(source, position),
-        ...findMooBuiltinReferences(source, position),
-      ].map((reference) => ({
+      return findMooDocumentLinkReferences(source, position).map((reference) => ({
         range: reference.range,
         kind: documentHighlightKind.Read,
       }));
@@ -1035,10 +1032,7 @@ export function createMooReferenceProvider(): MonacoEditor.languages.ReferencePr
       const references =
         semanticReferences.length > 0
           ? semanticReferences
-          : [
-              ...findMooDocumentLinkReferences(source, position),
-              ...findMooBuiltinReferences(source, position),
-            ];
+          : findMooDocumentLinkReferences(source, position);
 
       return references.map((reference) => ({
         uri: model.uri,

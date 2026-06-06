@@ -1,4 +1,5 @@
 import { MOO_SYSTEM_REFERENCE_PATTERN_SOURCE } from './contract';
+import { getMooBuiltinReferences } from './builtinNavigation';
 import type { MonacoRange } from './language';
 import { maskMooSource, offsetAtMooPosition, positionAtMooOffset } from './scanner';
 
@@ -38,8 +39,13 @@ export function getMooDocumentLinks(source: string): MooDocumentLink[] {
       tooltip: `Open MOO system reference ${text}`,
     };
   });
+  const builtinLinks = getMooBuiltinReferences(source).map((reference) => ({
+    range: reference.range,
+    url: reference.url,
+    tooltip: `Open ToastStunt builtin ${reference.name}`,
+  }));
 
-  return [...objectLinks, ...systemLinks].sort(
+  return [...objectLinks, ...systemLinks, ...builtinLinks].sort(
     (left, right) =>
       left.range.startLineNumber - right.range.startLineNumber ||
       left.range.startColumn - right.range.startColumn,

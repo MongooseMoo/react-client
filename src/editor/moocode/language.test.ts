@@ -1130,11 +1130,11 @@ describe('MOO Monaco language support', () => {
     });
   });
 
-  it('provides Monaco document links for MOO object references', () => {
+  it('provides Monaco document links for MOO object references and builtin calls', () => {
     const provider = createMooLinkProvider();
     const links = provider.provideLinks(
       {
-        getValue: () => 'owner = #123;',
+        getValue: () => 'owner = #123;\nnotify(player, "hi");',
       } as never,
       {} as never,
     );
@@ -1150,6 +1150,16 @@ describe('MOO Monaco language support', () => {
           },
           url: 'moo://object/123',
           tooltip: 'Open MOO object #123',
+        },
+        {
+          range: {
+            startLineNumber: 2,
+            startColumn: 1,
+            endLineNumber: 2,
+            endColumn: 7,
+          },
+          url: 'moo://builtin/notify',
+          tooltip: 'Open ToastStunt builtin notify',
         },
       ],
       dispose: expect.any(Function),

@@ -23,6 +23,26 @@ describe('MOO document links', () => {
       {
         range: {
           startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 7,
+        },
+        url: 'moo://builtin/notify',
+        tooltip: 'Open ToastStunt builtin notify',
+      },
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 16,
+          endLineNumber: 2,
+          endColumn: 21,
+        },
+        url: 'moo://builtin/tostr',
+        tooltip: 'Open ToastStunt builtin tostr',
+      },
+      {
+        range: {
+          startLineNumber: 2,
           startColumn: 22,
           endLineNumber: 2,
           endColumn: 25,
@@ -37,6 +57,16 @@ describe('MOO document links', () => {
     const source = 'notify($player, $string_utils:english_list(names));';
 
     expect(getMooDocumentLinks(source)).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 7,
+        },
+        url: 'moo://builtin/notify',
+        tooltip: 'Open ToastStunt builtin notify',
+      },
       {
         range: {
           startLineNumber: 1,
@@ -56,6 +86,40 @@ describe('MOO document links', () => {
         },
         url: 'moo://system/string_utils',
         tooltip: 'Open MOO system reference $string_utils',
+      },
+    ]);
+  });
+
+  it('links ToastStunt builtin calls to stable builtin URIs', () => {
+    const source = [
+      'notify(player, "hi");',
+      'if (valid(player))',
+      '  player:notify("verb");',
+      'endif',
+      '// notify(player, "comment");',
+      '"valid(player)"',
+    ].join('\n');
+
+    expect(getMooDocumentLinks(source)).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 7,
+        },
+        url: 'moo://builtin/notify',
+        tooltip: 'Open ToastStunt builtin notify',
+      },
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 5,
+          endLineNumber: 2,
+          endColumn: 10,
+        },
+        url: 'moo://builtin/valid',
+        tooltip: 'Open ToastStunt builtin valid',
       },
     ]);
   });
@@ -95,6 +159,16 @@ describe('MOO document links', () => {
     ].join('\n');
 
     expect(getMooDocumentLinks(source)).toEqual([
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 7,
+        },
+        url: 'moo://builtin/notify',
+        tooltip: 'Open ToastStunt builtin notify',
+      },
       {
         range: {
           startLineNumber: 3,
@@ -191,6 +265,39 @@ describe('MOO document links', () => {
         },
         url: 'moo://system/player',
         tooltip: 'Open MOO system reference $player',
+      },
+    ]);
+  });
+
+  it('finds same-target builtin call links', () => {
+    const source = [
+      'notify(player, "hi");',
+      'if (valid(player))',
+      '  notify(player, "still here");',
+      'endif',
+      'player:notify("verb");',
+    ].join('\n');
+
+    expect(findMooDocumentLinkReferences(source, { lineNumber: 1, column: 3 })).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 7,
+        },
+        url: 'moo://builtin/notify',
+        tooltip: 'Open ToastStunt builtin notify',
+      },
+      {
+        range: {
+          startLineNumber: 3,
+          startColumn: 3,
+          endLineNumber: 3,
+          endColumn: 9,
+        },
+        url: 'moo://builtin/notify',
+        tooltip: 'Open ToastStunt builtin notify',
       },
     ]);
   });

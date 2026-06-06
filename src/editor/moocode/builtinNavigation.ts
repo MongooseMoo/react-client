@@ -18,7 +18,7 @@ export function findMooBuiltinAtPosition(
   const positionOffset = offsetAtMooPosition(source, position);
 
   return (
-    collectMooBuiltinReferences(source).find((reference) => {
+    getMooBuiltinReferences(source).find((reference) => {
       const startOffset = offsetAtMooPosition(source, {
         lineNumber: reference.range.startLineNumber,
         column: reference.range.startColumn,
@@ -43,12 +43,12 @@ export function findMooBuiltinReferences(
   }
 
   const targetName = target.name.toLowerCase();
-  return collectMooBuiltinReferences(source).filter(
+  return getMooBuiltinReferences(source).filter(
     (reference) => reference.name.toLowerCase() === targetName,
   );
 }
 
-function collectMooBuiltinReferences(source: string): MooBuiltinReference[] {
+export function getMooBuiltinReferences(source: string): MooBuiltinReference[] {
   const masked = maskMooSource(source);
   const references: MooBuiltinReference[] = [];
 
