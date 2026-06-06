@@ -581,6 +581,23 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('returns Monaco rename rejection reasons for MOO name collisions', () => {
+    const provider = createMooRenameProvider();
+    const model = {
+      getValue: () => ['total = 0;', 'score = 1;', 'notify(player, total);'].join('\n'),
+      uri: 'moo://#1:test',
+    };
+
+    expect(provider.provideRenameEdits(model, { lineNumber: 3, column: 18 }, 'score')).toEqual({
+      edits: [],
+      rejectReason: 'A MOO local named score already exists.',
+    });
+    expect(provider.provideRenameEdits(model, { lineNumber: 3, column: 18 }, 'player')).toEqual({
+      edits: [],
+      rejectReason: 'player is a reserved MOO name.',
+    });
+  });
+
   it('uses document link targets for object and system reference definitions', () => {
     const parseUri = vi.fn((uri: string) => ({ parsed: uri }));
     const source = ['owner = #123;', '$player:tell("hi");'].join('\n');

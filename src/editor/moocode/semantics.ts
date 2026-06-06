@@ -257,11 +257,22 @@ export function createMooRenameWorkspaceEdit(
     return { rejectReason: validationError };
   }
 
-  const lookup = getSymbolAtPosition(source, position) ?? getLoopLabelAtPosition(source, position);
+  const localLookup = getSymbolAtPosition(source, position);
+  const labelLookup = localLookup ? null : getLoopLabelAtPosition(source, position);
+  const lookup = localLookup ?? labelLookup;
   if (!lookup) {
     return {
       rejectReason: 'No local MOO symbol or loop label is available at this position.',
     };
+  }
+
+  const conflictError = validateMooRenameConflict(
+    source,
+    newName,
+    lookup.record.name,
+  );
+  if (conflictError) {
+    return { rejectReason: conflictError };
   }
 
   return {
@@ -1221,6 +1232,39 @@ function validateMooIdentifier(value: string): string | null {
 
   if (!VALID_IDENTIFIER_PATTERN.test(value)) {
     return 'MOO identifiers may contain only letters, digits, and underscores.';
+  }
+
+  return null;
+}
+
+function validateMooRenameConflict(
+  source: string,
+  newName: string,
+  currentName: string,
+): string | null {
+  const targetKey = symbolKey(newName);
+  const currentKey = symbolKey(currentName);
+
+  if (targetKey === currentKey) {
+    return null;
+  }
+
+  if (NON_LOCAL_NAMES.has(targetKey)) {
+    return `${newName} is a reserved MOO name.`;
+  }
+
+  const localConflict = [...getSymbolRecords(source).values()].some(
+    (record) => symbolKey(record.name) === targetKey,
+  );
+  if (localConflict) {
+    return `A MOO local named ${newName} already exists.`;
+  }
+
+  const labelConflict = collectLoopLabelReferences(source).records.some(
+    (record) => symbolKey(record.name) === targetKey,
+  );
+  if (labelConflict) {
+    return `A MOO loop label named ${newName} already exists.`;
   }
 
   return null;

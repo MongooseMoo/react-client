@@ -211,6 +211,34 @@ describe('MOO semantic model', () => {
     });
   });
 
+  it('rejects local renames that would collide with other MOO names', () => {
+    const source = ['total = 0;', 'score = 1;', 'notify(player, total);'].join('\n');
+
+    expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'total);'), 'score')).toEqual({
+      rejectReason: 'A MOO local named score already exists.',
+    });
+    expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'total);'), 'player')).toEqual({
+      rejectReason: 'player is a reserved MOO name.',
+    });
+  });
+
+  it('rejects loop-label renames that would collide with another loop label', () => {
+    const source = [
+      'while outer (valid(player))',
+      '  while inner (valid(player))',
+      '    continue inner;',
+      '  endwhile',
+      '  continue outer;',
+      'endwhile',
+    ].join('\n');
+
+    expect(
+      createMooRenameWorkspaceEdit(source, positionFor(source, 'outer;'), 'inner'),
+    ).toEqual({
+      rejectReason: 'A MOO loop label named inner already exists.',
+    });
+  });
+
   it('renames every mixed-case occurrence of the same local symbol', () => {
     const source = ['Total = 0;', 'TOTAL = total + 1;', 'notify(player, ToTaL);'].join('\n');
 
