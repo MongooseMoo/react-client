@@ -101,6 +101,50 @@ describe('MOO hover service', () => {
     );
   });
 
+  it('describes link-backed MOO object references', () => {
+    expect(getMooHover('owner = #123;', { lineNumber: 1, column: 10 })).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 9,
+        endLineNumber: 1,
+        endColumn: 13,
+      },
+      contents: [
+        {
+          value: [
+            '```moocode',
+            '#123',
+            '```',
+            'MOO object reference.',
+            'Target: moo://object/123',
+          ].join('\n'),
+        },
+      ],
+    });
+  });
+
+  it('describes generic dollar system references that are not in the curated table', () => {
+    expect(getMooHover('$builder:setup();', { lineNumber: 1, column: 3 })).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 9,
+      },
+      contents: [
+        {
+          value: [
+            '```moocode',
+            '$builder',
+            '```',
+            'MOO system object reference.',
+            'Target: moo://system/builder',
+          ].join('\n'),
+        },
+      ],
+    });
+  });
+
   it('does not consume invalid dollar-separated text as one hover word', () => {
     expect(getMooHover('$room$extra:announce("bad");', { lineNumber: 1, column: 3 })).toEqual({
       range: {

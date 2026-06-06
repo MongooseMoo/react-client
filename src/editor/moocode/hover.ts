@@ -10,6 +10,7 @@ import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './sc
 import { analyzeMooSemantics } from './semantics';
 import { getMooBuiltinSignature } from './signatures';
 import type { MonacoRange } from './language';
+import { findMooDocumentLinkAtPosition } from './links';
 
 export type MooHover = {
   range: MonacoRange;
@@ -139,7 +140,7 @@ export function getMooKeywordDocumentation(name: string): string | null {
 export function getMooHover(source: string, position: MooSourcePosition): MooHover | null {
   const word = wordAtPosition(source, position);
   if (!word) {
-    return null;
+    return getDocumentLinkHover(source, position);
   }
 
   const localHover = getLocalSymbolHover(source, word);
@@ -172,6 +173,28 @@ export function getMooHover(source: string, position: MooSourcePosition): MooHov
   const keywordDocumentation = getMooKeywordDocumentation(normalizedName);
   if (keywordDocumentation) {
     return hover(word.range, normalizedName, keywordDocumentation);
+  }
+
+  return getDocumentLinkHover(source, position);
+}
+
+function getDocumentLinkHover(source: string, position: MooSourcePosition): MooHover | null {
+  const link = findMooDocumentLinkAtPosition(source, position);
+  if (!link) {
+    return null;
+  }
+
+  const label = textForRange(source, link.range);
+  if (link.url.startsWith('moo://object/')) {
+    return hover(link.range, label, ['MOO object reference.', `Target: ${link.url}`].join('\n'));
+  }
+
+  if (link.url.startsWith('moo://system/')) {
+    return hover(
+      link.range,
+      label,
+      ['MOO system object reference.', `Target: ${link.url}`].join('\n'),
+    );
   }
 
   return null;
@@ -253,6 +276,19 @@ function rangeFromOffsets(source: string, startOffset: number, endOffset: number
     endLineNumber: end.lineNumber,
     endColumn: end.column,
   };
+}
+
+function textForRange(source: string, range: MonacoRange): string {
+  const startOffset = offsetAtMooPosition(source, {
+    lineNumber: range.startLineNumber,
+    column: range.startColumn,
+  });
+  const endOffset = offsetAtMooPosition(source, {
+    lineNumber: range.endLineNumber,
+    column: range.endColumn,
+  });
+
+  return source.slice(startOffset, endOffset);
 }
 
 function positionAt(source: string, offset: number): MooSourcePosition {
