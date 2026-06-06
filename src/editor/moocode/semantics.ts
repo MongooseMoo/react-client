@@ -327,6 +327,7 @@ function collectDefinitions(
     collectAssignmentDefinitions(source, line, lineOffset, definitions);
     collectForDefinitions(source, line, lineOffset, definitions);
     collectForkDefinitions(source, line, lineOffset, definitions);
+    collectExceptDefinitions(source, line, lineOffset, definitions);
     collectScatterDefinitions(source, line, lineOffset, definitions);
   });
 
@@ -381,6 +382,25 @@ function collectForkDefinitions(
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
   const match = /\bfork\s+([A-Za-z_][\w$]*)\s*\(/i.exec(line);
+  if (!match?.[1]) {
+    return;
+  }
+
+  const name = match[1];
+  const nameStart = lineOffset + match.index + match[0].indexOf(name);
+  definitions.push({
+    name,
+    occurrence: occurrenceAt(source, nameStart, name.length),
+  });
+}
+
+function collectExceptDefinitions(
+  source: string,
+  line: string,
+  lineOffset: number,
+  definitions: Array<{ name: string; occurrence: Occurrence }>,
+): void {
+  const match = /\bexcept\s+([A-Za-z_][\w$]*)\s*\(/i.exec(line);
   if (!match?.[1]) {
     return;
   }

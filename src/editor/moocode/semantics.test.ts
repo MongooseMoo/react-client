@@ -21,6 +21,11 @@ describe('MOO semantic model', () => {
       '    total = total + value;',
       '  endfork',
       'endfor',
+      'try',
+      '  raise(E_PERM);',
+      'except error_code (E_PERM)',
+      '  notify(player, error_code);',
+      'endtry',
       '// ghost = no;',
       'notify(player, "item");',
     ].join('\n');
@@ -28,6 +33,7 @@ describe('MOO semantic model', () => {
     const analysis = analyzeMooSemantics(source);
 
     expect(analysis.symbols.map((symbol) => symbol.name)).toEqual([
+      'error_code',
       'index',
       'item',
       'name',
