@@ -177,6 +177,24 @@ describe('MOO code actions', () => {
     });
   });
 
+  it('offers a quick fix to replace an undefined local with a likely visible local typo target', () => {
+    const source = ['total = 0;', 'notify(player, totla);'].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Replace totla with total',
+      diagnostics: [expect.objectContaining({ code: 'undefined-local' })],
+      edit: {
+        range: {
+          startLineNumber: 2,
+          startColumn: 16,
+          endLineNumber: 2,
+          endColumn: 21,
+        },
+        text: 'total',
+      },
+    });
+  });
+
   it('offers a quick fix to remove extra builtin arguments', () => {
     const source = 'notify(#1, "hello", 0, 1, 2);';
 

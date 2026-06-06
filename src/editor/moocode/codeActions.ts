@@ -2,6 +2,7 @@ import { MOO_BLOCKS, type MooBlockKind } from './contract';
 import { getMooBuiltinMetadata } from './builtins';
 import { validateMooSyntax, type MooDiagnostic } from './diagnostics';
 import { firstMooKeyword } from './scanner';
+import { getMooLocalCompletions } from './semantics';
 import type { MonacoRange } from './language';
 
 export type MooQuickFixDiagnostic = Omit<MooDiagnostic, 'code'> & {
@@ -141,6 +142,18 @@ export function getMooQuickFixes(
           break;
         }
 
+        const replacement = likelyLocalTypoReplacement(source, diagnostic, name);
+        if (replacement) {
+          fixes.push({
+            title: `Replace ${name} with ${replacement}`,
+            diagnostics: [diagnostic],
+            edit: {
+              range: diagnosticRange(diagnostic),
+              text: replacement,
+            },
+          });
+        }
+
         fixes.push({
           title: `Initialize ${name} before use`,
           diagnostics: [diagnostic],
@@ -269,6 +282,71 @@ function diagnosticText(lines: string[], diagnostic: MooQuickFixDiagnostic): str
 
 function leadingWhitespace(line: string): string {
   return /^\s*/.exec(line)?.[0] ?? '';
+}
+
+function likelyLocalTypoReplacement(
+  source: string,
+  diagnostic: MooQuickFixDiagnostic,
+  name: string,
+): string | null {
+  const normalizedName = name.toLowerCase();
+  const candidates = getMooLocalCompletions(source, {
+    lineNumber: diagnostic.lineNumber,
+    column: diagnostic.startColumn,
+  })
+    .map((candidate) => candidate.name)
+    .filter((candidate) => candidate.toLowerCase() !== normalizedName)
+    .map((candidate) => ({
+      candidate,
+      distance: damerauLevenshteinDistance(normalizedName, candidate.toLowerCase()),
+    }))
+    .filter((candidate) => candidate.distance <= typoDistanceThreshold(name))
+    .sort((left, right) => left.distance - right.distance);
+
+  return candidates[0]?.candidate ?? null;
+}
+
+function typoDistanceThreshold(name: string): number {
+  return name.length <= 4 ? 1 : 2;
+}
+
+function damerauLevenshteinDistance(left: string, right: string): number {
+  const distances: number[][] = Array.from({ length: left.length + 1 }, () =>
+    Array.from({ length: right.length + 1 }, () => 0),
+  );
+
+  for (let row = 0; row <= left.length; row += 1) {
+    distances[row][0] = row;
+  }
+
+  for (let column = 0; column <= right.length; column += 1) {
+    distances[0][column] = column;
+  }
+
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      const substitutionCost = left[row - 1] === right[column - 1] ? 0 : 1;
+      distances[row][column] = Math.min(
+        distances[row - 1][column] + 1,
+        distances[row][column - 1] + 1,
+        distances[row - 1][column - 1] + substitutionCost,
+      );
+
+      if (
+        row > 1 &&
+        column > 1 &&
+        left[row - 1] === right[column - 2] &&
+        left[row - 2] === right[column - 1]
+      ) {
+        distances[row][column] = Math.min(
+          distances[row][column],
+          distances[row - 2][column - 2] + 1,
+        );
+      }
+    }
+  }
+
+  return distances[left.length][right.length];
 }
 
 function extraBuiltinArgumentsEdit(
