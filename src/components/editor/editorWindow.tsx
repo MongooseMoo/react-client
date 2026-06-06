@@ -20,6 +20,7 @@ import {
   registerMooLanguage,
 } from '../../editor/moocode/language';
 import { MOO_CODE_ACTION_FIX_ALL_KIND } from '../../editor/moocode/contract';
+import { MOO_EDITOR_THEME_NAME } from '../../editor/moocode/theme';
 import { toMonacoTreeSitterMarkers } from '../../editor/moocode/treeSitter';
 import { usePreferences } from '../../hooks/usePreferences';
 import type { EditorSession } from '../../mcp';
@@ -344,6 +345,7 @@ function EditorWindow() {
         height="80vh"
         defaultLanguage={editorLanguage}
         language={editorLanguage}
+        theme={MOO_EDITOR_THEME_NAME}
         value={code}
         onChange={onChanges}
         options={editorOptions}

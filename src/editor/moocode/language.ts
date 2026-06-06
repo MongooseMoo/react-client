@@ -54,6 +54,7 @@ import {
   SYSTEM_REFERENCES,
 } from './contract';
 import { getMooBuiltinSignature, getMooSignatureHelp } from './signatures';
+import { defineMooEditorTheme } from './theme';
 import {
   createMooRenameWorkspaceEdit,
   findMooBlockDelimiterHighlights,
@@ -267,6 +268,9 @@ type MooUriParser = {
 export type MonacoLike = {
   Uri?: {
     parse: (uri: string) => MonacoEditor.Uri;
+  };
+  editor?: {
+    defineTheme?: (name: string, theme: MonacoEditor.editor.IStandaloneThemeData) => void;
   };
   languages: {
     CodeActionKind?: {
@@ -1409,6 +1413,8 @@ export function registerMooLanguage(monaco: MonacoLike) {
   }
 
   REGISTERED_MONACO_INSTANCES.add(monaco);
+
+  defineMooEditorTheme(monaco);
 
   const hasLanguage = monaco.languages
     .getLanguages()

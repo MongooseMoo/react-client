@@ -1,9 +1,17 @@
+/*
+  Editor window chrome. Colors come from the shared design tokens in
+  src/tokens.css (loaded globally via index.tsx), so this window matches the
+  rest of the dark app. The Monaco editor surface itself is themed separately
+  in src/editor/moocode/theme.ts.
+*/
+
 /* Main editor window container */
 #editor-window {
   display: flex;
   flex-direction: column;
   height: 100vh; /* Fill the viewport height */
-  background-color: #f5f5f5; /* Base background */
+  background-color: var(--color-bg-deep);
+  color: var(--color-text);
 }
 
 /* Editor Toolbar Styles */
@@ -11,10 +19,9 @@
   display: flex;
   justify-content: flex-start; /* Align buttons to the start */
   align-items: center;
-  padding: 0.5rem 1rem; /* Adjust padding */
-  /* height: 10vh; Remove fixed height */
-  background-color: #f5f5f5;
-  border-bottom: 1px solid #e8e8e8;
+  padding: 0.5rem 1rem;
+  background-color: var(--color-bg-elevated);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0; /* Prevent toolbar from shrinking */
 }
 
@@ -24,11 +31,11 @@
 }
 
 .editor-toolbar button {
-  /* Add common button styles */
   padding: 0.5rem 1rem;
-  border: 1px solid #ccc;
-  background-color: #fff;
-  border-radius: 4px;
+  border: 1px solid var(--color-border-strong);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   display: inline-flex; /* Align icon and text */
   align-items: center;
@@ -36,7 +43,12 @@
 }
 
 .editor-toolbar button:hover {
-  background-color: #eee;
+  background-color: var(--color-bg-hover);
+}
+
+.editor-toolbar button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 /* Container for the Monaco editor */
@@ -62,12 +74,11 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem 1rem; /* Adjust padding */
-  /* height: 10vh; Remove fixed height */
-  background-color: #f5f5f5;
-  border-top: 1px solid #e8e8e8;
+  padding: 0.5rem 1rem;
+  background-color: var(--color-bg-elevated);
+  border-top: 1px solid var(--color-border);
   font-size: 0.9em;
-  color: #555;
+  color: var(--color-text-secondary);
   flex-shrink: 0; /* Prevent status bar from shrinking */
 }
 
@@ -80,7 +91,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #8a3f00;
+  color: var(--color-primary);
   cursor: pointer;
   font: inherit;
   text-decoration: underline;
@@ -88,7 +99,7 @@
 }
 
 .editor-statusbar-button:focus-visible {
-  outline: 2px solid #4b8bd6;
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -96,8 +107,8 @@
   flex-shrink: 0;
   max-height: 9.5rem;
   overflow: auto;
-  border-top: 1px solid #d6dce5;
-  background: #fbfcfe;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
 
 .editor-problems-filters {
@@ -109,34 +120,35 @@
 .editor-problems-filter {
   min-height: 1.75rem;
   padding: 0.2rem 0.65rem;
-  border: 1px solid #c9d5e7;
+  border: 1px solid var(--color-border-strong);
   border-right-width: 0;
-  background: #fff;
-  color: #405167;
+  background: var(--color-bg-surface);
+  color: var(--color-text);
   cursor: pointer;
   font: inherit;
 }
 
 .editor-problems-filter:first-child {
-  border-radius: 4px 0 0 4px;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
 
 .editor-problems-filter:last-child {
   border-right-width: 1px;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
 .editor-problems-filter:hover {
-  background: #f1f5fb;
+  background: var(--color-bg-hover);
 }
 
 .editor-problems-filter[aria-pressed='true'] {
-  background: #233143;
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border-color: var(--color-primary);
 }
 
 .editor-problems-filter:focus-visible {
-  outline: 2px solid #4b8bd6;
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -144,21 +156,21 @@
   min-height: 1.75rem;
   margin-left: 0.5rem;
   padding: 0.2rem 0.65rem;
-  border: 1px solid #c9d5e7;
-  border-radius: 4px;
-  background: #fff;
-  color: #233143;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
   cursor: pointer;
   font: inherit;
   white-space: nowrap;
 }
 
 .editor-problems-fix-all-button:hover {
-  background: #f1f5fb;
+  background: var(--color-bg-hover);
 }
 
 .editor-problems-fix-all-button:focus-visible {
-  outline: 2px solid #4b8bd6;
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -187,42 +199,42 @@
   gap: 0.75rem;
   padding: 0.25rem 0.5rem;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #233143;
+  color: var(--color-text);
   cursor: pointer;
   font: inherit;
   text-align: left;
 }
 
 .editor-problem-button:hover {
-  border-color: #c9d5e7;
-  background: #f1f5fb;
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-hover);
 }
 
 .editor-problem-button:focus-visible {
-  outline: 2px solid #4b8bd6;
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 1px;
 }
 
 .editor-problem-fix-button {
   min-height: 2rem;
   padding: 0.25rem 0.6rem;
-  border: 1px solid #c9d5e7;
-  border-radius: 4px;
-  background: #fff;
-  color: #233143;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
   cursor: pointer;
   font: inherit;
   white-space: nowrap;
 }
 
 .editor-problem-fix-button:hover {
-  background: #f1f5fb;
+  background: var(--color-bg-hover);
 }
 
 .editor-problem-fix-button:focus-visible {
-  outline: 2px solid #4b8bd6;
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 1px;
 }
 
@@ -231,25 +243,25 @@
 }
 
 .editor-problem-severity-error {
-  color: #b42318;
+  color: var(--color-danger);
 }
 
 .editor-problem-severity-warning {
-  color: #996f00;
+  color: var(--color-warning);
 }
 
 .editor-problem-code {
   min-width: 0;
   overflow: hidden;
-  color: #405167;
-  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
   font-size: 0.9em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .editor-problem-location {
-  color: #5b6472;
+  color: var(--color-text-tertiary);
   white-space: nowrap;
 }
 
@@ -263,5 +275,5 @@
 .editor-problems-empty {
   margin: 0;
   padding: 0.75rem;
-  color: #5b6472;
+  color: var(--color-text-tertiary);
 }
