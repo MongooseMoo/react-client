@@ -1,6 +1,11 @@
 import { MOO_IDENTIFIER_PATTERN_SOURCE, MOO_LANGUAGE_ID } from './contract';
-import type { MooBlockKind } from './contract';
-import type { MooFoldingRange, MooStructure, MooStructureSymbol } from './structure';
+import type { MooBlockKind, MooMiddleKeyword } from './contract';
+import type {
+  MooFoldingRange,
+  MooStructure,
+  MooStructureSymbol,
+  MooStructureSymbolKind,
+} from './structure';
 
 export type MooTreeSitterDiagnosticCode = 'missing-node' | 'parse-error';
 
@@ -244,6 +249,12 @@ const BLOCK_NODE_KINDS: Partial<Record<string, MooBlockKind>> = {
   try_finally_statement: 'try',
   while_statement: 'while',
 };
+const MIDDLE_NODE_KINDS: Partial<Record<string, MooMiddleKeyword>> = {
+  elseif_clause: 'elseif',
+  else_clause: 'else',
+  except_statement: 'except',
+  finally_statement: 'finally',
+};
 const WHILE_LABEL_PATTERN = new RegExp(
   `^while(?:\\s+${MOO_IDENTIFIER_PATTERN_SOURCE})?\\s*\\((.*)\\)`,
   'i',
@@ -281,7 +292,7 @@ function collectBlockSymbols(nodes: TreeSitterNodeLike[]): MooStructureSymbol[] 
 }
 
 function toBlockSymbol(node: TreeSitterNodeLike): MooStructureSymbol | null {
-  const blockKind = BLOCK_NODE_KINDS[node.type];
+  const blockKind = getStructureNodeKind(node.type);
   if (!blockKind) {
     return null;
   }
@@ -297,7 +308,7 @@ function toBlockSymbol(node: TreeSitterNodeLike): MooStructureSymbol | null {
   };
 
   return {
-    name: describeParserBlock(blockKind, node.text ?? ''),
+    name: describeParserStructure(blockKind, node.text ?? ''),
     blockKind,
     range: {
       startLineNumber,
@@ -333,7 +344,11 @@ function collectFoldingRanges(symbols: MooStructureSymbol[]): MooFoldingRange[] 
   return ranges.sort((left, right) => left.start - right.start);
 }
 
-function describeParserBlock(kind: MooBlockKind, text: string): string {
+function getStructureNodeKind(type: string): MooStructureSymbolKind | null {
+  return BLOCK_NODE_KINDS[type] ?? MIDDLE_NODE_KINDS[type] ?? null;
+}
+
+function describeParserStructure(kind: MooStructureSymbolKind, text: string): string {
   const firstLine = text.split(/\r\n|\r|\n/, 1)[0]?.trim() ?? '';
 
   switch (kind) {
@@ -355,5 +370,17 @@ function describeParserBlock(kind: MooBlockKind, text: string): string {
     }
     case 'try':
       return 'try';
+    case 'elseif': {
+      const condition = /^elseif\s*\((.*)\)/i.exec(firstLine)?.[1]?.trim();
+      return condition ? `elseif ${condition}` : 'elseif';
+    }
+    case 'else':
+      return 'else';
+    case 'except': {
+      const exceptClause = /^except\s+(.*)$/i.exec(firstLine)?.[1]?.trim();
+      return exceptClause ? `except ${exceptClause}` : 'except';
+    }
+    case 'finally':
+      return 'finally';
   }
 }

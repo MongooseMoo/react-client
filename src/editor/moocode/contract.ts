@@ -326,6 +326,7 @@ export const BUILTIN_FUNCTIONS = [
 ] as const;
 
 export type MooBlockKind = 'if' | 'for' | 'while' | 'fork' | 'try';
+export type MooMiddleKeyword = 'elseif' | 'else' | 'except' | 'finally';
 
 export type MooBlockDefinition = {
   close: string;

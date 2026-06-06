@@ -1187,10 +1187,7 @@ function getCompletionContext(
 
 function isExceptionCompletionContext(linePrefix: string): boolean {
   if (EXCEPT_COMPLETION_PATTERN.test(linePrefix)) {
-    return !isAtExpressionExceptionSelectorCompletion(
-      linePrefix,
-      linePrefix.lastIndexOf('(') + 1,
-    );
+    return !isAtExpressionExceptionSelectorCompletion(linePrefix, linePrefix.lastIndexOf('(') + 1);
   }
 
   return CATCH_COMPLETION_PATTERN.test(linePrefix);
@@ -1243,13 +1240,17 @@ async function getParserStructure<K extends keyof MooTreeSitterParseResult['stru
 function toDocumentSymbol(symbol: MooStructureSymbol, kind: number): DocumentSymbol {
   return {
     name: symbol.name,
-    detail: 'MOO block',
+    detail: isMooClauseSymbol(symbol) ? 'MOO clause' : 'MOO block',
     kind,
     tags: [],
     range: symbol.range,
     selectionRange: symbol.selectionRange,
     children: symbol.children.map((child) => toDocumentSymbol(child, kind)),
   };
+}
+
+function isMooClauseSymbol(symbol: MooStructureSymbol): boolean {
+  return ['elseif', 'else', 'except', 'finally'].includes(symbol.blockKind);
 }
 
 function fullModelRange(model: DocumentFormattingTextModelLike): MonacoRange {

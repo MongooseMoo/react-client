@@ -139,6 +139,132 @@ describe('MOO Tree-sitter service', () => {
     ]);
   });
 
+  it('extracts parser-backed middle-clause symbols and folding ranges', async () => {
+    const service = await createMooTreeSitterService({
+      loadLanguageWasmUrl: () => Promise.resolve('/moo.wasm'),
+      loadRuntime: () =>
+        Promise.resolve({
+          Language: { load: vi.fn(() => Promise.resolve({})) },
+          Parser: class {
+            static init = vi.fn(() => Promise.resolve());
+            parse = vi.fn(() => ({
+              delete: vi.fn(),
+              rootNode: {
+                children: [
+                  {
+                    children: [
+                      blockNode(
+                        'elseif_clause',
+                        'elseif (valid(caller))\n  notify(caller, "ok");',
+                        2,
+                        0,
+                        4,
+                        23,
+                      ),
+                      blockNode('else_clause', 'else\n  raise(E_PERM);', 4, 0, 6, 16),
+                    ],
+                    endPosition: { row: 6, column: 5 },
+                    hasError: false,
+                    isError: false,
+                    isMissing: false,
+                    startPosition: { row: 0, column: 0 },
+                    text: [
+                      'if (valid(player))',
+                      '  notify(player, "ok");',
+                      'elseif (valid(caller))',
+                      '  notify(caller, "ok");',
+                      'else',
+                      '  raise(E_PERM);',
+                      'endif',
+                    ].join('\n'),
+                    toString: () => '(if_statement)',
+                    type: 'if_statement',
+                  },
+                  {
+                    children: [
+                      blockNode(
+                        'except_statement',
+                        'except caught (E_PERM)\n  notify(player, caught);',
+                        9,
+                        0,
+                        11,
+                        24,
+                      ),
+                      blockNode('finally_statement', 'finally\n  cleanup();', 11, 0, 13, 12),
+                    ],
+                    endPosition: { row: 13, column: 6 },
+                    hasError: false,
+                    isError: false,
+                    isMissing: false,
+                    startPosition: { row: 7, column: 0 },
+                    text: [
+                      'try',
+                      '  risky();',
+                      'except caught (E_PERM)',
+                      '  notify(player, caught);',
+                      'finally',
+                      '  cleanup();',
+                      'endtry',
+                    ].join('\n'),
+                    toString: () => '(try_except_statement)',
+                    type: 'try_except_statement',
+                  },
+                ],
+                endPosition: { row: 13, column: 6 },
+                hasError: false,
+                isError: false,
+                isMissing: false,
+                startPosition: { row: 0, column: 0 },
+                toString: () => '(source_file)',
+                type: 'source_file',
+              },
+            }));
+            setLanguage = vi.fn();
+          },
+        }),
+      loadRuntimeWasmUrl: () => Promise.resolve('/runtime.wasm'),
+    });
+
+    const structure = service.parse('if (valid(player))\nendif\ntry\nendtry').structure;
+
+    expect(structure.symbols[0].children).toEqual([
+      expect.objectContaining({
+        blockKind: 'elseif',
+        name: 'elseif valid(caller)',
+        range: expect.objectContaining({
+          startLineNumber: 3,
+          endLineNumber: 5,
+        }),
+      }),
+      expect.objectContaining({
+        blockKind: 'else',
+        name: 'else',
+        range: expect.objectContaining({
+          startLineNumber: 5,
+          endLineNumber: 7,
+        }),
+      }),
+    ]);
+    expect(structure.symbols[1].children).toEqual([
+      expect.objectContaining({
+        blockKind: 'except',
+        name: 'except caught (E_PERM)',
+      }),
+      expect.objectContaining({
+        blockKind: 'finally',
+        name: 'finally',
+      }),
+    ]);
+    expect(structure.foldingRanges).toEqual([
+      { start: 1, end: 7 },
+      { start: 3, end: 5 },
+      { start: 5, end: 7 },
+      { start: 8, end: 14 },
+      { start: 10, end: 12 },
+      { start: 12, end: 14 },
+    ]);
+  });
+
   it('extracts parse-error diagnostics from ERROR and missing nodes', async () => {
     const service = await createMooTreeSitterService({
       loadLanguageWasmUrl: () => Promise.resolve('/moo.wasm'),

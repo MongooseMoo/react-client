@@ -1440,6 +1440,94 @@ describe('MOO Monaco language support', () => {
     expect(parse).toHaveBeenCalledWith(source);
   });
 
+  it('provides middle-clause Monaco document symbols and folding ranges', async () => {
+    const source = [
+      'if (valid(player))',
+      '  notify(player, "ok");',
+      'else',
+      '  raise(E_PERM);',
+      'endif',
+    ].join('\n');
+    const parse = vi.fn(async () => ({
+      diagnostics: [],
+      hasError: false,
+      rootType: 'source_file',
+      structure: {
+        foldingRanges: [
+          { start: 1, end: 5 },
+          { start: 3, end: 4 },
+        ],
+        symbols: [
+          {
+            blockKind: 'if' as const,
+            children: [
+              {
+                blockKind: 'else' as const,
+                children: [],
+                name: 'else',
+                range: {
+                  startLineNumber: 3,
+                  startColumn: 1,
+                  endLineNumber: 4,
+                  endColumn: 17,
+                },
+                selectionRange: {
+                  startLineNumber: 3,
+                  startColumn: 1,
+                  endLineNumber: 3,
+                  endColumn: 5,
+                },
+              },
+            ],
+            name: 'if valid(player)',
+            range: {
+              startLineNumber: 1,
+              startColumn: 1,
+              endLineNumber: 5,
+              endColumn: 6,
+            },
+            selectionRange: {
+              startLineNumber: 1,
+              startColumn: 1,
+              endLineNumber: 1,
+              endColumn: 3,
+            },
+          },
+        ],
+      },
+      treeText: '(source_file (if_statement))',
+    }));
+    const symbolProvider = createMooDocumentSymbolProvider(undefined, parse);
+    const foldingProvider = createMooFoldingRangeProvider(parse);
+
+    await expect(
+      symbolProvider.provideDocumentSymbols({ getValue: () => source }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        name: 'if valid(player)',
+        children: [
+          expect.objectContaining({
+            name: 'else',
+            detail: 'MOO clause',
+            kind: 11,
+            range: {
+              startLineNumber: 3,
+              startColumn: 1,
+              endLineNumber: 4,
+              endColumn: 17,
+            },
+          }),
+        ],
+      }),
+    ]);
+    await expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).resolves.toEqual(
+      [
+        { start: 1, end: 5 },
+        { start: 3, end: 4 },
+      ],
+    );
+  });
+
   it('falls back to scanner document symbols and folding ranges while parser structure is unavailable', async () => {
     const parse = vi.fn(async () => {
       throw new Error('WASM unavailable');

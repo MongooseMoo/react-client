@@ -4,8 +4,11 @@ import {
   MOO_IDENTIFIER_PATTERN_SOURCE,
   MOO_MIDDLE_KEYWORDS,
   type MooBlockKind,
+  type MooMiddleKeyword,
 } from './contract';
 import { firstMooKeyword, maskMooSource, type MooKeywordMatch } from './scanner';
+
+export type MooStructureSymbolKind = MooBlockKind | MooMiddleKeyword;
 
 export type MooStructureRange = {
   startLineNumber: number;
@@ -16,7 +19,7 @@ export type MooStructureRange = {
 
 export type MooStructureSymbol = {
   name: string;
-  blockKind: MooBlockKind;
+  blockKind: MooStructureSymbolKind;
   range: MooStructureRange;
   selectionRange: MooStructureRange;
   children: MooStructureSymbol[];
@@ -33,6 +36,7 @@ export type MooStructure = {
 };
 
 type BlockFrame = {
+  activeSection?: MooStructureSymbol;
   symbol: MooStructureSymbol;
 };
 
@@ -64,6 +68,7 @@ export function analyzeMooStructure(source: string): MooStructure {
         return;
       }
 
+      finishActiveSection(frame, lines, foldingRanges, lineNumber - 1);
       frame.symbol.range = {
         ...frame.symbol.range,
         endLineNumber: lineNumber,
@@ -79,7 +84,16 @@ export function analyzeMooStructure(source: string): MooStructure {
       return;
     }
 
-    if (MOO_MIDDLE_KEYWORDS[normalized]) {
+    if (isMooMiddleKeyword(normalized)) {
+      const frame = stack.at(-1);
+      if (!frame || MOO_MIDDLE_KEYWORDS[normalized] !== frame.symbol.blockKind) {
+        return;
+      }
+
+      finishActiveSection(frame, lines, foldingRanges, lineNumber - 1);
+      const symbol = createSymbol(normalized, code, keyword, line, lineNumber);
+      frame.symbol.children.push(symbol);
+      frame.activeSection = symbol;
       return;
     }
 
@@ -87,27 +101,11 @@ export function analyzeMooStructure(source: string): MooStructure {
       return;
     }
 
-    const symbol: MooStructureSymbol = {
-      name: describeBlock(normalized, code, keyword),
-      blockKind: normalized,
-      range: {
-        startLineNumber: lineNumber,
-        startColumn: keyword.startColumn,
-        endLineNumber: lineNumber,
-        endColumn: line.length + 1,
-      },
-      selectionRange: {
-        startLineNumber: lineNumber,
-        startColumn: keyword.startColumn,
-        endLineNumber: lineNumber,
-        endColumn: keyword.endColumn,
-      },
-      children: [],
-    };
+    const symbol = createSymbol(normalized, code, keyword, line, lineNumber);
 
-    const parent = stack.at(-1);
+    const parent = currentSymbolParent(stack);
     if (parent) {
-      parent.symbol.children.push(symbol);
+      parent.children.push(symbol);
     } else {
       symbols.push(symbol);
     }
@@ -121,7 +119,68 @@ export function analyzeMooStructure(source: string): MooStructure {
   };
 }
 
-function describeBlock(kind: MooBlockKind, code: string, keyword: MooKeywordMatch): string {
+function createSymbol(
+  kind: MooStructureSymbolKind,
+  code: string,
+  keyword: MooKeywordMatch,
+  line: string,
+  lineNumber: number,
+): MooStructureSymbol {
+  return {
+    name: describeBlock(kind, code, keyword),
+    blockKind: kind,
+    range: {
+      startLineNumber: lineNumber,
+      startColumn: keyword.startColumn,
+      endLineNumber: lineNumber,
+      endColumn: line.length + 1,
+    },
+    selectionRange: {
+      startLineNumber: lineNumber,
+      startColumn: keyword.startColumn,
+      endLineNumber: lineNumber,
+      endColumn: keyword.endColumn,
+    },
+    children: [],
+  };
+}
+
+function currentSymbolParent(stack: BlockFrame[]): MooStructureSymbol | undefined {
+  const frame = stack.at(-1);
+  return frame?.activeSection ?? frame?.symbol;
+}
+
+function finishActiveSection(
+  frame: BlockFrame,
+  lines: string[],
+  foldingRanges: MooFoldingRange[],
+  endLineNumber: number,
+): void {
+  const section = frame.activeSection;
+  if (!section) {
+    return;
+  }
+
+  const boundedEndLineNumber = Math.max(section.range.startLineNumber, endLineNumber);
+  section.range = {
+    ...section.range,
+    endLineNumber: boundedEndLineNumber,
+    endColumn: (lines[boundedEndLineNumber - 1] ?? '').length + 1,
+  };
+  if (section.range.endLineNumber > section.range.startLineNumber) {
+    foldingRanges.push({
+      start: section.range.startLineNumber,
+      end: section.range.endLineNumber,
+    });
+  }
+  frame.activeSection = undefined;
+}
+
+function describeBlock(
+  kind: MooStructureSymbolKind,
+  code: string,
+  keyword: MooKeywordMatch,
+): string {
   const remainder = code.slice(keyword.endColumn - 1).trim();
 
   switch (kind) {
@@ -144,6 +203,15 @@ function describeBlock(kind: MooBlockKind, code: string, keyword: MooKeywordMatc
     }
     case 'try':
       return kind;
+    case 'elseif': {
+      const condition = unwrapParenthesized(remainder);
+      return condition ? `elseif ${condition}` : kind;
+    }
+    case 'else':
+    case 'finally':
+      return kind;
+    case 'except':
+      return remainder ? `except ${remainder}` : kind;
   }
 }
 
@@ -158,4 +226,8 @@ function unwrapParenthesized(value: string): string {
 
 function isMooBlockKind(value: string): value is MooBlockKind {
   return value in MOO_BLOCKS;
+}
+
+function isMooMiddleKeyword(value: string): value is MooMiddleKeyword {
+  return value in MOO_MIDDLE_KEYWORDS;
 }
