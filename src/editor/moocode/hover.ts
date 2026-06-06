@@ -1,0 +1,237 @@
+import type {
+  BUILTIN_VARIABLES,
+  ERROR_CONSTANTS,
+  OPERATOR_WORDS,
+  STATEMENT_KEYWORDS,
+} from './contract';
+import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
+import { analyzeMooSemantics } from './semantics';
+import { getMooBuiltinSignature } from './signatures';
+import type { MonacoRange } from './language';
+
+export type MooHover = {
+  range: MonacoRange;
+  contents: Array<{ value: string }>;
+};
+
+type MooWord = {
+  name: string;
+  range: MonacoRange;
+};
+
+const BUILTIN_VARIABLE_DOCUMENTATION: Record<(typeof BUILTIN_VARIABLES)[number], string> = {
+  player: 'The player whose command started this task.',
+  this: 'The object whose verb is executing.',
+  caller: 'The object or verb that called this verb.',
+  verb: 'The name of the verb currently executing.',
+  args: 'The list of arguments supplied to the verb.',
+  argstr: 'The unparsed argument string supplied to the verb.',
+  dobj: 'The direct object matched by command parsing.',
+  dobjstr: 'The direct-object text supplied by command parsing.',
+  prepstr: 'The preposition text matched by command parsing.',
+  iobj: 'The indirect object matched by command parsing.',
+  iobjstr: 'The indirect-object text supplied by command parsing.',
+};
+
+const ERROR_DOCUMENTATION: Record<(typeof ERROR_CONSTANTS)[number], string> = {
+  E_NONE: 'No error.',
+  E_TYPE: 'Type mismatch.',
+  E_DIV: 'Division by zero.',
+  E_PERM: 'Permission denied.',
+  E_PROPNF: 'Property not found.',
+  E_VERBNF: 'Verb not found.',
+  E_VARNF: 'Variable not found.',
+  E_INVIND: 'Invalid index.',
+  E_RECMOVE: 'Recursive move.',
+  E_MAXREC: 'Maximum recursion exceeded.',
+  E_RANGE: 'Range error.',
+  E_ARGS: 'Incorrect arguments.',
+  E_NACC: 'Network access denied or unavailable.',
+  E_INVARG: 'Invalid argument.',
+  E_QUOTA: 'Resource quota exceeded.',
+  E_FLOAT: 'Floating-point error.',
+  E_FILE: 'File operation error.',
+  E_EXEC: 'Execution error.',
+  E_INTRPT: 'Task interrupted.',
+};
+
+const KEYWORD_DOCUMENTATION: Partial<Record<(typeof STATEMENT_KEYWORDS)[number], string>> = {
+  if: 'Begins a conditional block.',
+  elseif: 'Starts another condition branch in an if block.',
+  else: 'Starts the fallback branch in an if block.',
+  endif: 'Closes an if block.',
+  for: 'Begins iteration over a list or range.',
+  endfor: 'Closes a for block.',
+  fork: 'Starts a forked task block.',
+  endfork: 'Closes a fork block.',
+  return: 'Returns a value from the current verb.',
+  while: 'Begins a loop that continues while its condition is true.',
+  endwhile: 'Closes a while block.',
+  try: 'Begins an exception-handling block.',
+  except: 'Handles matching exceptions in a try block.',
+  finally: 'Runs cleanup code before leaving a try block.',
+  endtry: 'Closes a try block.',
+  break: 'Leaves the nearest enclosing loop.',
+  continue: 'Skips to the next iteration of the nearest enclosing loop.',
+};
+
+const OPERATOR_DOCUMENTATION: Partial<Record<(typeof OPERATOR_WORDS)[number], string>> = {
+  and: 'Logical AND operator.',
+  or: 'Logical OR operator.',
+  bitor: 'Bitwise OR operator.',
+  bitand: 'Bitwise AND operator.',
+  bitxor: 'Bitwise XOR operator.',
+};
+
+export function getMooHover(source: string, position: MooSourcePosition): MooHover | null {
+  const word = wordAtPosition(source, position);
+  if (!word) {
+    return null;
+  }
+
+  const localHover = getLocalSymbolHover(source, word);
+  if (localHover) {
+    return localHover;
+  }
+
+  const normalizedName = word.name.toLowerCase();
+  const upperName = word.name.toUpperCase();
+  const builtinSignature = getMooBuiltinSignature(normalizedName);
+  if (builtinSignature) {
+    return hover(word.range, builtinSignature.label, builtinSignature.documentation);
+  }
+
+  const variableDocumentation =
+    BUILTIN_VARIABLE_DOCUMENTATION[normalizedName as keyof typeof BUILTIN_VARIABLE_DOCUMENTATION];
+  if (variableDocumentation) {
+    return hover(word.range, normalizedName, variableDocumentation);
+  }
+
+  const errorDocumentation = ERROR_DOCUMENTATION[upperName as keyof typeof ERROR_DOCUMENTATION];
+  if (errorDocumentation) {
+    return hover(word.range, upperName, errorDocumentation);
+  }
+
+  const keywordDocumentation =
+    KEYWORD_DOCUMENTATION[normalizedName as keyof typeof KEYWORD_DOCUMENTATION] ??
+    OPERATOR_DOCUMENTATION[normalizedName as keyof typeof OPERATOR_DOCUMENTATION];
+  if (keywordDocumentation) {
+    return hover(word.range, normalizedName, keywordDocumentation);
+  }
+
+  return null;
+}
+
+function getLocalSymbolHover(source: string, word: MooWord): MooHover | null {
+  const symbol = analyzeMooSemantics(source).symbols.find((candidate) =>
+    [...candidate.definitions, ...candidate.references].some((range) => sameRange(range, word.range)),
+  );
+  if (!symbol) {
+    return null;
+  }
+
+  return hover(
+    word.range,
+    `local ${symbol.name}`,
+    `${countLabel(symbol.definitions.length, 'Defined')} ${countLabel(
+      symbol.references.length,
+      'Referenced',
+    )}`,
+  );
+}
+
+function hover(range: MonacoRange, label: string, documentation: string): MooHover {
+  return {
+    range,
+    contents: [
+      {
+        value: ['```moocode', label, '```', documentation].join('\n'),
+      },
+    ],
+  };
+}
+
+function countLabel(count: number, verb: string): string {
+  return `${verb} ${count === 1 ? '1 time.' : `${count} times.`}`;
+}
+
+function wordAtPosition(source: string, position: MooSourcePosition): MooWord | null {
+  const masked = maskMooSource(source);
+  const offset = offsetAtMooPosition(masked, position);
+  const wordOffsets = wordOffsetsAt(masked, offset);
+  if (!wordOffsets) {
+    return null;
+  }
+
+  return {
+    name: source.slice(wordOffsets.startOffset, wordOffsets.endOffset),
+    range: rangeFromOffsets(source, wordOffsets.startOffset, wordOffsets.endOffset),
+  };
+}
+
+function wordOffsetsAt(
+  source: string,
+  offset: number,
+): { startOffset: number; endOffset: number } | null {
+  const candidateOffset =
+    isWordCharacter(source[offset]) || !isWordCharacter(source[offset - 1]) ? offset : offset - 1;
+  if (!isWordCharacter(source[candidateOffset])) {
+    return null;
+  }
+
+  let startOffset = candidateOffset;
+  while (startOffset > 0 && isWordCharacter(source[startOffset - 1])) {
+    startOffset -= 1;
+  }
+
+  let endOffset = candidateOffset + 1;
+  while (endOffset < source.length && isWordCharacter(source[endOffset])) {
+    endOffset += 1;
+  }
+
+  return { startOffset, endOffset };
+}
+
+function isWordCharacter(character: string | undefined): boolean {
+  return Boolean(character && /[\w$]/.test(character));
+}
+
+function rangeFromOffsets(source: string, startOffset: number, endOffset: number): MonacoRange {
+  const start = positionAt(source, startOffset);
+  const end = positionAt(source, endOffset);
+
+  return {
+    startLineNumber: start.lineNumber,
+    startColumn: start.column,
+    endLineNumber: end.lineNumber,
+    endColumn: end.column,
+  };
+}
+
+function positionAt(source: string, offset: number): MooSourcePosition {
+  let lineNumber = 1;
+  let column = 1;
+
+  for (let index = 0; index < offset; index += 1) {
+    if (source[index] === '\n') {
+      lineNumber += 1;
+      column = 1;
+      continue;
+    }
+
+    if (source[index] !== '\r') {
+      column += 1;
+    }
+  }
+
+  return { lineNumber, column };
+}
+
+function sameRange(left: MonacoRange, right: MonacoRange): boolean {
+  return (
+    left.startLineNumber === right.startLineNumber &&
+    left.startColumn === right.startColumn &&
+    left.endLineNumber === right.endLineNumber &&
+    left.endColumn === right.endColumn
+  );
+}

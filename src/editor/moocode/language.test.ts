@@ -10,6 +10,7 @@ import {
   createMooDefinitionProvider,
   createMooDocumentSymbolProvider,
   createMooFoldingRangeProvider,
+  createMooHoverProvider,
   createMooInlayHintsProvider,
   createMooLanguageConfiguration,
   createMooMonarchLanguage,
@@ -320,6 +321,29 @@ describe('MOO Monaco language support', () => {
       dispose: expect.any(Function),
     });
     expect(hints.dispose()).toBeUndefined();
+  });
+
+  it('provides rich Monaco hovers from MOO language metadata', () => {
+    const provider = createMooHoverProvider();
+
+    expect(
+      provider.provideHover(
+        { getValue: () => 'notify(player, "hello");' } as never,
+        { lineNumber: 1, column: 3 },
+      ),
+    ).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 7,
+      },
+      contents: [
+        {
+          value: expect.stringContaining('notify(player, text)'),
+        },
+      ],
+    });
   });
 
   it('provides a full-document Monaco formatting edit', () => {

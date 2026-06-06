@@ -13,6 +13,7 @@ export {
 import { getMooQuickFixes } from './codeActions';
 import type { MooDiagnostic } from './diagnostics';
 import { formatMooCode } from './formatter';
+import { getMooHover } from './hover';
 import { collectMooInlayHints } from './inlayHints';
 import {
   BUILTIN_FUNCTIONS,
@@ -91,11 +92,8 @@ type CompletionList = {
 };
 
 type Hover = {
+  range?: MonacoRange;
   contents: Array<{ value: string }>;
-};
-
-type TextModelLike = {
-  getWordAtPosition(position: unknown): { word: string } | null;
 };
 
 type TextModelValueLike = {
@@ -243,7 +241,7 @@ export type MonacoLike = {
     registerHoverProvider: (
       languageId: string,
       provider: {
-        provideHover: (model: TextModelLike, position: unknown) => Hover | null;
+        provideHover: (model: TextModelValueLike, position: CompletionPosition) => Hover | null;
       },
     ) => { dispose: () => void };
     registerInlayHintsProvider?: (
@@ -579,6 +577,14 @@ export function createMooInlayHintsProvider(
   };
 }
 
+export function createMooHoverProvider(): {
+  provideHover: (model: TextModelValueLike, position: CompletionPosition) => Hover | null;
+} {
+  return {
+    provideHover: (model, position) => getMooHover(model.getValue(), position),
+  };
+}
+
 export function createMooReferenceProvider(): MonacoEditor.languages.ReferenceProvider {
   return {
     provideReferences: (model, position) =>
@@ -685,23 +691,7 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.registerReferenceProvider?.(MOO_LANGUAGE_ID, createMooReferenceProvider());
   monaco.languages.registerRenameProvider?.(MOO_LANGUAGE_ID, createMooRenameProvider());
   monaco.languages.registerSignatureHelpProvider?.(MOO_LANGUAGE_ID, createMooSignatureHelpProvider());
-  monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, {
-    provideHover: (model, position) => {
-      const word = model.getWordAtPosition(position)?.word;
-      if (!word) {
-        return null;
-      }
-
-      const value = HOVER_TEXT[word];
-      if (!value) {
-        return null;
-      }
-
-      return {
-        contents: [{ value }],
-      };
-    },
-  });
+  monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, createMooHoverProvider());
 }
 
 type CompletionContext = 'default' | 'error' | 'system-reference' | 'verb';
@@ -808,13 +798,3 @@ const BUILTIN_SNIPPETS: Partial<Record<(typeof BUILTIN_FUNCTIONS)[number], strin
 function placeholder(index: number, name: string): string {
   return `\${${index}:${name}}`;
 }
-
-const HOVER_TEXT: Record<string, string> = {
-  player: 'The player whose command started this task.',
-  this: 'The object whose verb is executing.',
-  caller: 'The object or verb that called this verb.',
-  args: 'The list of arguments supplied to the verb.',
-  notify: '`notify(player, text)` sends text to a connected player.',
-  pass: '`pass(...)` calls the inherited verb implementation.',
-  valid: '`valid(object)` returns whether an object reference is valid.',
-};
