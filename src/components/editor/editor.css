@@ -149,6 +149,13 @@
   list-style: none;
 }
 
+.editor-problem-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .editor-problem-button {
   display: grid;
   grid-template-columns: 4.25rem minmax(7rem, 11rem) 6.5rem minmax(0, 1fr);
@@ -172,6 +179,27 @@
 }
 
 .editor-problem-button:focus-visible {
+  outline: 2px solid #4b8bd6;
+  outline-offset: 1px;
+}
+
+.editor-problem-fix-button {
+  min-height: 2rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #c9d5e7;
+  border-radius: 4px;
+  background: #fff;
+  color: #233143;
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.editor-problem-fix-button:hover {
+  background: #f1f5fb;
+}
+
+.editor-problem-fix-button:focus-visible {
   outline: 2px solid #4b8bd6;
   outline-offset: 1px;
 }

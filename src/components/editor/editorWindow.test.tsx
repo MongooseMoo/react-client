@@ -651,4 +651,39 @@ describe('EditorWindow language selection', () => {
     expect(screen.getByRole('button', { name: /^MOO error unclosed-block/ })).not.toBeNull();
     expect(screen.queryByRole('button', { name: /^MOO warning unused-local/ })).toBeNull();
   });
+
+  it('applies MOO quick fixes from the problems panel', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['while (1)', '  notify(player, "tick");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Apply quick fix: Insert missing endwhile' }),
+    );
+
+    await waitFor(() =>
+      expect(editorMock.props?.value).toBe(
+        ['while (1)', '  notify(player, "tick");', 'endwhile'].join('\n'),
+      ),
+    );
+    expect(screen.getByRole('status').textContent).toContain('Changed');
+  });
 });

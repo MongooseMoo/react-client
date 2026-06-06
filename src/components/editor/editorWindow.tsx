@@ -6,6 +6,12 @@ import { useBeforeunload } from 'react-beforeunload';
 import { useLocation } from 'react-router-dom';
 import { useTitle } from 'react-use';
 import { configureMonacoLoader } from '../../editor/monacoLoader';
+import {
+  getMooQuickFixes,
+  type MooQuickFix,
+  type MooQuickFixDiagnostic,
+  type MooQuickFixEdit,
+} from '../../editor/moocode/codeActions';
 import { toMonacoMarkers } from '../../editor/moocode/diagnostics';
 import {
   getEditorLanguageForSessionType,
@@ -174,6 +180,13 @@ function EditorWindow() {
         : [],
     [editorLanguage, mooDiagnosticMarkers],
   );
+  const mooQuickFixes = useMemo(
+    () =>
+      editorLanguage === MOO_LANGUAGE_ID
+        ? getMooQuickFixes(code, getMooParserQuickFixDiagnostics(mooDiagnosticMarkers))
+        : [],
+    [code, editorLanguage, mooDiagnosticMarkers],
+  );
   const editorAriaLabel = formatEditorAriaLabel(session.reference, editorLanguage);
   const editorDescribedBy =
     mooDiagnosticProblems.length > 0
@@ -205,6 +218,17 @@ function EditorWindow() {
     editorInstance.current?.revealPositionInCenter(target);
     editorInstance.current?.focus();
   }, []);
+  const applyMooQuickFix = React.useCallback(
+    (quickFix: MooQuickFix) => {
+      const updatedCode = applyMooQuickFixEdits(code, quickFix);
+
+      setCode(updatedCode);
+      setDocumentState(getDocumentStateForCode(updatedCode, originalCode));
+      setIsLoaded(true);
+      editorInstance.current?.focus();
+    },
+    [code, originalCode],
+  );
   const channel = useMemo(() => new BroadcastChannel('editor'), []);
   const params = new URLSearchParams(location.search);
   const id = decodeURIComponent(params.get('reference') || '');
@@ -275,11 +299,7 @@ function EditorWindow() {
       return;
     }
     setCode(value);
-    if (value.split(/\r\n|\r|\n/).join('\n') !== originalCode) {
-      setDocumentState(DocumentState.Changed);
-    } else {
-      setDocumentState(DocumentState.Unchanged);
-    }
+    setDocumentState(getDocumentStateForCode(value, originalCode));
 
     if (!isLoaded) {
       setIsLoaded(true);
@@ -328,6 +348,8 @@ function EditorWindow() {
         id={EDITOR_PROBLEMS_ID}
         markers={mooDiagnosticProblems}
         onProblemClick={showMooDiagnostic}
+        onQuickFixClick={applyMooQuickFix}
+        quickFixes={mooQuickFixes}
       />
       <EditorStatusBar
         id={EDITOR_STATUSBAR_ID}
@@ -344,9 +366,17 @@ type MooProblemsPanelProps = {
   id: string;
   markers: MonacoEditor.IMarkerData[];
   onProblemClick: (marker: MonacoEditor.IMarkerData) => void;
+  onQuickFixClick: (quickFix: MooQuickFix) => void;
+  quickFixes: MooQuickFix[];
 };
 
-function MooProblemsPanel({ id, markers, onProblemClick }: MooProblemsPanelProps) {
+function MooProblemsPanel({
+  id,
+  markers,
+  onProblemClick,
+  onQuickFixClick,
+  quickFixes,
+}: MooProblemsPanelProps) {
   const [filter, setFilter] = useState<MooProblemFilter>('all');
 
   if (markers.length === 0) {
@@ -381,26 +411,39 @@ function MooProblemsPanel({ id, markers, onProblemClick }: MooProblemsPanelProps
             const label = `MOO ${severity.toLowerCase()} ${code} on line ${
               target.lineNumber
             }, column ${target.column}: ${marker.message}`;
+            const quickFix = findMooQuickFixForMarker(quickFixes, marker);
 
             return (
               <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
-                <button
-                  aria-label={label}
-                  className="editor-problem-button"
-                  onClick={() => onProblemClick(marker)}
-                  type="button"
-                >
-                  <span
-                    className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
+                <div className="editor-problem-row">
+                  <button
+                    aria-label={label}
+                    className="editor-problem-button"
+                    onClick={() => onProblemClick(marker)}
+                    type="button"
                   >
-                    {severity}
-                  </span>{' '}
-                  <span className="editor-problem-code">{code}</span>{' '}
-                  <span className="editor-problem-location">
-                    Ln {target.lineNumber}, Col {target.column}
-                  </span>{' '}
-                  <span className="editor-problem-message">{marker.message}</span>
-                </button>
+                    <span
+                      className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
+                    >
+                      {severity}
+                    </span>{' '}
+                    <span className="editor-problem-code">{code}</span>{' '}
+                    <span className="editor-problem-location">
+                      Ln {target.lineNumber}, Col {target.column}
+                    </span>{' '}
+                    <span className="editor-problem-message">{marker.message}</span>
+                  </button>
+                  {quickFix ? (
+                    <button
+                      aria-label={`Apply quick fix: ${quickFix.title}`}
+                      className="editor-problem-fix-button"
+                      onClick={() => onQuickFixClick(quickFix)}
+                      type="button"
+                    >
+                      Fix
+                    </button>
+                  ) : null}
+                </div>
               </li>
             );
           })}
@@ -475,6 +518,107 @@ function formatEditorAriaLabel(sessionReference: string, language: string): stri
   return language === MOO_LANGUAGE_ID
     ? `MOO code editor for ${target}`
     : `Text editor for ${target}`;
+}
+
+function getDocumentStateForCode(value: string, originalCode: string): DocumentState {
+  return normalizeEditorCode(value) === originalCode
+    ? DocumentState.Unchanged
+    : DocumentState.Changed;
+}
+
+function normalizeEditorCode(value: string): string {
+  return value.split(/\r\n|\r|\n/).join('\n');
+}
+
+function getMooParserQuickFixDiagnostics(
+  markers: MonacoEditor.IMarkerData[],
+): MooQuickFixDiagnostic[] {
+  return markers
+    .filter((marker) => formatMooProblemCode(marker) === 'missing-node')
+    .map((marker) => {
+      const markerWithMissingText = marker as MonacoEditor.IMarkerData & {
+        missingText?: string;
+      };
+
+      return {
+        code: 'missing-node',
+        lineNumber: marker.startLineNumber,
+        startColumn: marker.startColumn,
+        endColumn: marker.endColumn,
+        message: marker.message,
+        missingText: markerWithMissingText.missingText,
+      };
+    });
+}
+
+function findMooQuickFixForMarker(
+  quickFixes: MooQuickFix[],
+  marker: MonacoEditor.IMarkerData,
+): MooQuickFix | null {
+  const markerCode = formatMooProblemCode(marker);
+
+  return (
+    quickFixes.find((quickFix) =>
+      quickFix.diagnostics.some((diagnostic) =>
+        mooQuickFixDiagnosticMatchesMarker(diagnostic, marker, markerCode),
+      ),
+    ) ?? null
+  );
+}
+
+function mooQuickFixDiagnosticMatchesMarker(
+  diagnostic: MooQuickFixDiagnostic,
+  marker: MonacoEditor.IMarkerData,
+  markerCode: string,
+): boolean {
+  return (
+    diagnostic.code === markerCode &&
+    diagnostic.lineNumber === marker.startLineNumber &&
+    diagnostic.startColumn === marker.startColumn &&
+    diagnostic.endColumn === marker.endColumn
+  );
+}
+
+function applyMooQuickFixEdits(source: string, quickFix: MooQuickFix): string {
+  return applyMooTextEdits(source, quickFix.edits ?? [quickFix.edit]);
+}
+
+function applyMooTextEdits(source: string, edits: readonly MooQuickFixEdit[]): string {
+  return [...edits]
+    .map((edit) => ({
+      ...edit,
+      startOffset: offsetAtEditorPosition(
+        source,
+        edit.range.startLineNumber,
+        edit.range.startColumn,
+      ),
+      endOffset: offsetAtEditorPosition(source, edit.range.endLineNumber, edit.range.endColumn),
+    }))
+    .sort((left, right) => right.startOffset - left.startOffset)
+    .reduce(
+      (updated, edit) =>
+        `${updated.slice(0, edit.startOffset)}${edit.text}${updated.slice(edit.endOffset)}`,
+      source,
+    );
+}
+
+function offsetAtEditorPosition(source: string, lineNumber: number, column: number): number {
+  const lineStarts = getEditorLineStartOffsets(source);
+  const lineStart = lineStarts[lineNumber - 1] ?? source.length;
+
+  return Math.min(source.length, lineStart + Math.max(0, column - 1));
+}
+
+function getEditorLineStartOffsets(source: string): number[] {
+  const offsets = [0];
+
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === '\n') {
+      offsets.push(index + 1);
+    }
+  }
+
+  return offsets;
 }
 
 function formatMooDiagnosticsSummary(counts: MooDiagnosticCounts): string | undefined {
