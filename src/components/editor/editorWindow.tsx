@@ -493,7 +493,10 @@ function createEditorOptions({
   const baseOptions: MonacoEditor.IStandaloneEditorConstructionOptions = {
     wordWrap: 'on',
     ariaLabel,
-    accessibilitySupport: accessibilityMode ? 'on' : 'off',
+    // Never pass Monaco 'off': in this standalone build that blanks the
+    // screen-reader textarea and overrides ariaLabel with an error string.
+    // 'auto' is the safe floor; 'on' forces full screen-reader optimization.
+    accessibilitySupport: accessibilityMode ? 'on' : 'auto',
     quickSuggestions: autocompleteEnabled,
   };
 

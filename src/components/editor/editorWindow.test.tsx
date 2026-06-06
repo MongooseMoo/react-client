@@ -332,6 +332,37 @@ describe('EditorWindow language selection', () => {
     expect(screen.getByRole('status').getAttribute('id')).toBe('editor-statusbar');
   });
 
+  it('never sends Monaco an "off" accessibility support that would blank the screen reader', async () => {
+    // usePreferences is mocked with accessibilityMode: false. Monaco 0.55 treats
+    // accessibilitySupport: 'off' as "no screen reader attached" — it stops
+    // mirroring the editor text into the hidden textarea and replaces our
+    // ariaLabel with an error string. The off-state must resolve to 'auto'.
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() => expect(editorMock.props?.language).toBe(MOO_LANGUAGE_ID));
+    const options = editorMock.props?.options as Record<string, unknown>;
+    expect(options.accessibilitySupport).toBe('auto');
+    expect(options.accessibilitySupport).not.toBe('off');
+  });
+
   it('enables the richer Monaco language-service UI for MOO sessions', async () => {
     render(
       <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
