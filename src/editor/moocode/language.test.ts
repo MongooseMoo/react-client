@@ -97,10 +97,7 @@ describe('MOO Monaco language support', () => {
     ).toBe(true);
     expect(
       config.onEnterRules?.some(
-        (rule) =>
-          rule.beforeText.test('else') &&
-          !rule.afterText &&
-          rule.action.indentAction === 1,
+        (rule) => rule.beforeText.test('else') && !rule.afterText && rule.action.indentAction === 1,
       ),
     ).toBe(true);
   });
@@ -258,10 +255,13 @@ describe('MOO Monaco language support', () => {
       ]),
     );
     expect(
-      createMooCompletionItems(range, undefined, 'loop-label', [], [
-        { name: 'inner' },
-        { name: 'outer' },
-      ]),
+      createMooCompletionItems(
+        range,
+        undefined,
+        'loop-label',
+        [],
+        [{ name: 'inner' }, { name: 'outer' }],
+      ),
     ).toEqual([
       expect.objectContaining({
         label: 'inner',
@@ -1209,9 +1209,7 @@ describe('MOO Monaco language support', () => {
         color: { red: 128 / 255, green: 64 / 255, blue: 1, alpha: 1 },
       },
     ]);
-    expect(
-      provider.provideColorPresentations(model as never, colors[0], {} as never),
-    ).toEqual([
+    expect(provider.provideColorPresentations(model as never, colors[0], {} as never)).toEqual([
       {
         label: '#8040ff',
         textEdit: {
@@ -2405,12 +2403,17 @@ describe('MOO Monaco language support', () => {
       contents: [{ value: expect.not.stringContaining('MOO hover detail') }],
     });
 
-    const verboseHover = provider.provideHover(model, position, {}, {
-      verbosityRequest: {
-        verbosityDelta: 1,
-        previousHover: baseHover,
+    const verboseHover = provider.provideHover(
+      model,
+      position,
+      {},
+      {
+        verbosityRequest: {
+          verbosityDelta: 1,
+          previousHover: baseHover,
+        },
       },
-    });
+    );
     if (!verboseHover) {
       throw new Error('Expected verbose hover');
     }
@@ -2427,12 +2430,17 @@ describe('MOO Monaco language support', () => {
     expect(verboseHover.contents[0].value).toContain('line 1, columns 1-7');
 
     expect(
-      provider.provideHover(model, position, {}, {
-        verbosityRequest: {
-          verbosityDelta: -1,
-          previousHover: verboseHover,
+      provider.provideHover(
+        model,
+        position,
+        {},
+        {
+          verbosityRequest: {
+            verbosityDelta: -1,
+            previousHover: verboseHover,
+          },
         },
-      }),
+      ),
     ).toMatchObject({
       canIncreaseVerbosity: true,
       canDecreaseVerbosity: false,
@@ -2511,6 +2519,61 @@ describe('MOO Monaco language support', () => {
     );
 
     expect(edits).toEqual([]);
+  });
+
+  it('provides Monaco multi-range formatting edits for disjoint selected MOO lines', () => {
+    const provider = createMooDocumentRangeFormattingEditProvider();
+    const source = [
+      'if (valid(player))',
+      'notify(player, "ok");',
+      'endif',
+      '',
+      'while (connected)',
+      'notify(player, "tick");',
+      'endwhile',
+    ].join('\n');
+    const edits = provider.provideDocumentRangesFormattingEdits?.(
+      {
+        getValue: () => source,
+      } as never,
+      [
+        {
+          startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 22,
+        },
+        {
+          startLineNumber: 6,
+          startColumn: 1,
+          endLineNumber: 6,
+          endColumn: 24,
+        },
+      ] as never,
+      { tabSize: 2, insertSpaces: true } as never,
+      {} as never,
+    );
+
+    expect(edits).toEqual([
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 22,
+        },
+        text: '  notify(player, "ok");',
+      },
+      {
+        range: {
+          startLineNumber: 6,
+          startColumn: 1,
+          endLineNumber: 6,
+          endColumn: 24,
+        },
+        text: '  notify(player, "tick");',
+      },
+    ]);
   });
 
   it('provides Monaco on-type formatting edits for the current MOO line', () => {

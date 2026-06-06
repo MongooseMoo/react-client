@@ -778,7 +778,7 @@ function filterMooQuickFixesForRequestedKind(
   }
 
   return fixes.filter((fix) =>
-    codeActionKindMatches((fix.kind ?? MOO_CODE_ACTION_QUICKFIX_KIND), requestedKind),
+    codeActionKindMatches(fix.kind ?? MOO_CODE_ACTION_QUICKFIX_KIND, requestedKind),
   );
 }
 
@@ -1150,6 +1150,15 @@ export function createMooDocumentRangeFormattingEditProvider(): MonacoEditor.lan
 
       return edit ? [edit] : [];
     },
+    provideDocumentRangesFormattingEdits: (model, ranges, options) =>
+      ranges.flatMap((range) => {
+        const edit = formatMooCodeRange(model.getValue(), range, {
+          tabSize: options.tabSize,
+          insertSpaces: options.insertSpaces,
+        });
+
+        return edit ? [edit] : [];
+      }),
   };
 }
 
