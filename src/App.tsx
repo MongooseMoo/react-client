@@ -412,7 +412,7 @@ function App() {
       {/* UI shell — only renders when client is ready */}
       {client && (
         <div className={`App ${showSidebar ? (sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-shown') : ''}`}>
-          <header role="banner" style={{ gridArea: "header" }}>
+          <header style={{ gridArea: "header" }}>
             <Toolbar
               client={client}
               onSaveLog={saveLog}
@@ -425,19 +425,17 @@ function App() {
             />
           </header>
           {urlModeParams.isHostMode && <HostPanel roomId={hostState.roomId} guestCount={hostState.guestCount} />}
-          <main role="main" style={{ gridArea: "main" }}>
+          <main style={{ gridArea: "main" }}>
             <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
           </main>
-          <div
-            role="region"
+          <section
             aria-label="Command input"
             style={{ gridArea: "input" }}
           >
             <CommandInput onSend={handleCommand} inputRef={inRef} client={client} />
-          </div>
+          </section>
           {showSidebar && (
             <aside
-              role="complementary"
               aria-roledescription="Sidebar"
               style={{ gridArea: "sidebar" }}
             >
@@ -449,7 +447,7 @@ function App() {
               />
             </aside>
           )}
-          <footer role="contentinfo" style={{ gridArea: "status" }}>
+          <footer style={{ gridArea: "status" }}>
             <Statusbar client={client} />
           </footer>
           <PreferencesDialog ref={prefsDialogRef} />
