@@ -6,6 +6,7 @@ export type MooInlayHint = {
   label: string;
   lineNumber: number;
   column: number;
+  tooltip: string;
 };
 
 type CallFrame = {
@@ -107,12 +108,14 @@ function flushArgumentHint(source: string, frame: CallFrame, hints: MooInlayHint
     return;
   }
 
+  const signature =
+    frame.callKind === 'verb'
+      ? null
+      : getMooBuiltinSignature(frame.functionName, frame.parameterIndex + 1);
   const parameter =
     frame.callKind === 'verb'
       ? { label: `arg${frame.parameterIndex + 1}` }
-      : getMooBuiltinSignature(frame.functionName, frame.parameterIndex + 1)?.parameters[
-          frame.parameterIndex
-        ];
+      : signature?.parameters[frame.parameterIndex];
   if (!parameter) {
     return;
   }
@@ -122,7 +125,22 @@ function flushArgumentHint(source: string, frame: CallFrame, hints: MooInlayHint
     label: `${parameter.label}:`,
     lineNumber: position.lineNumber,
     column: position.column,
+    tooltip: getMooInlayHintTooltip(frame, parameter.label, signature?.label),
   });
+}
+
+function getMooInlayHintTooltip(
+  frame: CallFrame,
+  parameterLabel: string,
+  signatureLabel: string | undefined,
+): string {
+  if (frame.callKind === 'verb') {
+    const argumentIndex = frame.parameterIndex + 1;
+    return `MOO verb argument ${argumentIndex}. The target verb receives this value as args[${argumentIndex}].`;
+  }
+
+  const optionalPrefix = parameterLabel.endsWith('?') ? 'Optional ' : '';
+  return `${optionalPrefix}ToastStunt builtin parameter ${parameterLabel} for ${signatureLabel ?? `${frame.functionName}()`}.`;
 }
 
 function maskMooSourceForArgumentHints(source: string): string {

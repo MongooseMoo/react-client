@@ -10,21 +10,25 @@ describe('MOO inlay hints', () => {
         label: 'player:',
         lineNumber: 1,
         column: 8,
+        tooltip: 'ToastStunt builtin parameter player for notify(player, text).',
       },
       {
         label: 'text:',
         lineNumber: 1,
         column: 16,
+        tooltip: 'ToastStunt builtin parameter text for notify(player, text).',
       },
       {
         label: 'object:',
         lineNumber: 2,
         column: 6,
+        tooltip: 'ToastStunt builtin parameter object for move(object, destination).',
       },
       {
         label: 'destination:',
         lineNumber: 2,
         column: 12,
+        tooltip: 'ToastStunt builtin parameter destination for move(object, destination).',
       },
     ]);
   });
@@ -41,26 +45,31 @@ describe('MOO inlay hints', () => {
         label: 'player:',
         lineNumber: 2,
         column: 8,
+        tooltip: 'ToastStunt builtin parameter player for notify(player, text).',
       },
       {
         label: 'text:',
         lineNumber: 2,
         column: 16,
+        tooltip: 'ToastStunt builtin parameter text for notify(player, text).',
       },
       {
         label: 'value:',
         lineNumber: 2,
         column: 22,
+        tooltip: 'ToastStunt builtin parameter value for tostr(value).',
       },
       {
         label: 'player:',
         lineNumber: 3,
         column: 8,
+        tooltip: 'ToastStunt builtin parameter player for notify(player, text).',
       },
       {
         label: 'text:',
         lineNumber: 3,
         column: 16,
+        tooltip: 'ToastStunt builtin parameter text for notify(player, text).',
       },
     ]);
   });
@@ -71,16 +80,22 @@ describe('MOO inlay hints', () => {
         label: 'handle:',
         lineNumber: 1,
         column: 14,
+        tooltip:
+          'ToastStunt builtin parameter handle for sqlite_query(handle: int, sql: str, options?: any).',
       },
       {
         label: 'sql:',
         lineNumber: 1,
         column: 22,
+        tooltip:
+          'ToastStunt builtin parameter sql for sqlite_query(handle: int, sql: str, options?: any).',
       },
       {
         label: 'options?:',
         lineNumber: 1,
         column: 27,
+        tooltip:
+          'Optional ToastStunt builtin parameter options? for sqlite_query(handle: int, sql: str, options?: any).',
       },
     ]);
   });
@@ -91,11 +106,13 @@ describe('MOO inlay hints', () => {
         label: 'arg1:',
         lineNumber: 1,
         column: 13,
+        tooltip: 'MOO verb argument 1. The target verb receives this value as args[1].',
       },
       {
         label: 'arg2:',
         lineNumber: 1,
         column: 22,
+        tooltip: 'MOO verb argument 2. The target verb receives this value as args[2].',
       },
     ]);
   });
@@ -108,16 +125,19 @@ describe('MOO inlay hints', () => {
         label: 'arg1:',
         lineNumber: 1,
         column: 17,
+        tooltip: 'MOO verb argument 1. The target verb receives this value as args[1].',
       },
       {
         label: 'arg1:',
         lineNumber: 2,
         column: 16,
+        tooltip: 'MOO verb argument 1. The target verb receives this value as args[1].',
       },
       {
         label: 'value:',
         lineNumber: 2,
         column: 22,
+        tooltip: 'ToastStunt builtin parameter value for tostr(value).',
       },
     ]);
   });
@@ -128,11 +148,13 @@ describe('MOO inlay hints', () => {
         label: 'arg1:',
         lineNumber: 1,
         column: 20,
+        tooltip: 'MOO verb argument 1. The target verb receives this value as args[1].',
       },
       {
         label: 'arg2:',
         lineNumber: 1,
         column: 29,
+        tooltip: 'MOO verb argument 2. The target verb receives this value as args[2].',
       },
     ]);
   });
@@ -143,16 +165,19 @@ describe('MOO inlay hints', () => {
         label: 'arg1:',
         lineNumber: 1,
         column: 9,
+        tooltip: 'MOO verb argument 1. The target verb receives this value as args[1].',
       },
       {
         label: 'arg2:',
         lineNumber: 1,
         column: 18,
+        tooltip: 'MOO verb argument 2. The target verb receives this value as args[2].',
       },
       {
         label: 'arg1:',
         lineNumber: 2,
         column: 14,
+        tooltip: 'MOO verb argument 1. The target verb receives this value as args[1].',
       },
     ]);
   });

@@ -1124,6 +1124,7 @@ export function createMooInlayHintsProvider(
               lineNumber: hint.lineNumber,
               column: hint.column,
             },
+            tooltip: hint.tooltip,
             kind: inlayHintKind.Parameter,
             paddingRight: true,
           })),
