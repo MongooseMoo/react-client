@@ -2,7 +2,7 @@ import { announce } from "@react-aria/live-announcer";
 import "./output.css";
 import React from "react";
 import { parseToElements } from "../ansiParser";
-import MudClient from "../client";
+import type MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
 import DOMPurify from 'dompurify';
 import { setInputText } from '../InputStore';
@@ -10,7 +10,7 @@ import TurndownService from 'turndown'; // <-- Import TurndownService
 import { preferencesStore } from '../PreferencesStore'; // Import preferences store
 import BlockquoteWithCopy from './BlockquoteWithCopy';
 import { autoLogService } from '../logging/AutoLogService';
-import { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
+import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
 
 export enum OutputType {
   Command = 'command',
@@ -121,7 +121,7 @@ class Output extends React.Component<Props, State> {
       case 'ansi':
         return parseToElements(savedLine.sourceContent, this.handleExitClick);
 
-      case 'html':
+      case 'html': {
         // Re-process through handleHtml logic
         const clean = DOMPurify.sanitize(savedLine.sourceContent);
         const parser = new DOMParser();
@@ -180,6 +180,7 @@ class Output extends React.Component<Props, State> {
         } else {
           return [<div style={{ whiteSpace: "normal" }} dangerouslySetInnerHTML={{ __html: clean }}></div>];
         }
+      }
 
       case 'command':
         return [
@@ -718,7 +719,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         });
         break;
 
-      case 'End':
+      case 'End': {
         e.preventDefault();
         const lastIndex = visibleOutput.length - 1;
         this.setState({ focusedLineIndex: lastIndex }, () => {
@@ -726,6 +727,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
           this.scrollFocusedLineIntoView();
         });
         break;
+      }
     }
   };
 
