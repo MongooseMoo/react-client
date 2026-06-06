@@ -1,4 +1,5 @@
-import { MOO_IDENTIFIER_PATTERN_SOURCE } from './contract';
+import { readMooCallTargetBeforeOpen } from './calls';
+import { positionAtMooOffset } from './scanner';
 import { getMooBuiltinSignature } from './signatures';
 
 export type MooInlayHint = {
@@ -15,11 +16,8 @@ type CallFrame = {
   parameterIndex: number;
 };
 
-const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
-const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
-
 export function collectMooInlayHints(source: string): MooInlayHint[] {
-  const masked = maskMooSourceForInlayHints(source);
+  const masked = maskMooSourceForArgumentHints(source);
   const frames: CallFrame[] = [];
   const hints: MooInlayHint[] = [];
 
@@ -28,20 +26,19 @@ export function collectMooInlayHints(source: string): MooInlayHint[] {
     const frame = frames.at(-1);
 
     if (character === '(') {
-      const functionName = readIdentifierBefore(masked, index);
-      const verbCall = readStaticVerbCallBefore(masked, index);
-      if (verbCall) {
+      const callTarget = readMooCallTargetBeforeOpen(masked, index);
+      if (callTarget?.callKind === 'verb') {
         frames.push({
           callKind: 'verb',
-          functionName: verbCall.verbName.toLowerCase(),
+          functionName: callTarget.functionName.toLowerCase(),
           argumentStartOffset: null,
           nestedDelimiterDepth: 0,
           parameterIndex: 0,
         });
-      } else if (functionName && getMooBuiltinSignature(functionName)) {
+      } else if (callTarget?.callKind === 'function' && getMooBuiltinSignature(callTarget.functionName)) {
         frames.push({
           callKind: 'builtin',
-          functionName: functionName.toLowerCase(),
+          functionName: callTarget.functionName.toLowerCase(),
           argumentStartOffset: null,
           nestedDelimiterDepth: 0,
           parameterIndex: 0,
@@ -116,7 +113,7 @@ function flushArgumentHint(source: string, frame: CallFrame, hints: MooInlayHint
     return;
   }
 
-  const position = positionAt(source, frame.argumentStartOffset);
+  const position = positionAtMooOffset(source, frame.argumentStartOffset);
   hints.push({
     label: `${parameter.label}:`,
     lineNumber: position.lineNumber,
@@ -124,116 +121,7 @@ function flushArgumentHint(source: string, frame: CallFrame, hints: MooInlayHint
   });
 }
 
-function readIdentifierBefore(source: string, openParenIndex: number): string | null {
-  return readIdentifierSpanBefore(source, openParenIndex)?.name ?? null;
-}
-
-function readIdentifierSpanBefore(
-  source: string,
-  openParenIndex: number,
-): { name: string; startIndex: number; endIndex: number } | null {
-  let endIndex = openParenIndex - 1;
-  while (endIndex >= 0 && /\s/.test(source[endIndex])) {
-    endIndex -= 1;
-  }
-
-  let startIndex = endIndex;
-  while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
-    startIndex -= 1;
-  }
-
-  const identifier = source.slice(startIndex + 1, endIndex + 1);
-  return VALID_IDENTIFIER_PATTERN.test(identifier)
-    ? { name: identifier, startIndex: startIndex + 1, endIndex: endIndex + 1 }
-    : null;
-}
-
-function readStaticVerbCallBefore(
-  source: string,
-  openParenIndex: number,
-): { verbName: string } | null {
-  const verb = readIdentifierSpanBefore(source, openParenIndex);
-  if (!verb) {
-    return null;
-  }
-
-  let colonIndex = verb.startIndex - 1;
-  while (colonIndex >= 0 && /\s/.test(source[colonIndex])) {
-    colonIndex -= 1;
-  }
-
-  if (source[colonIndex] !== ':') {
-    return null;
-  }
-
-  return hasStaticVerbReceiverBefore(source, colonIndex) ? { verbName: verb.name } : null;
-}
-
-function hasStaticVerbReceiverBefore(source: string, colonIndex: number): boolean {
-  let endIndex = colonIndex - 1;
-  while (endIndex >= 0 && /\s/.test(source[endIndex])) {
-    endIndex -= 1;
-  }
-
-  if (endIndex < 0) {
-    return false;
-  }
-
-  if (/\d/.test(source[endIndex])) {
-    let startIndex = endIndex;
-    while (startIndex >= 0 && /\d/.test(source[startIndex])) {
-      startIndex -= 1;
-    }
-
-    if (source[startIndex] === '-') {
-      startIndex -= 1;
-    }
-
-    if (source[startIndex] !== '#') {
-      return false;
-    }
-
-    return /^#-?\d+$/.test(source.slice(startIndex, endIndex + 1));
-  }
-
-  if (!IDENTIFIER_CHARACTER_PATTERN.test(source[endIndex])) {
-    return false;
-  }
-
-  let startIndex = endIndex;
-  while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
-    startIndex -= 1;
-  }
-
-  if (source[startIndex] === '$') {
-    startIndex -= 1;
-  }
-
-  return /^(?:[A-Za-z_][A-Za-z0-9_]*|\$[A-Za-z_][A-Za-z0-9_]*)$/.test(
-    source.slice(startIndex + 1, endIndex + 1),
-  );
-}
-
-function positionAt(source: string, offset: number) {
-  let lineNumber = 1;
-  let column = 1;
-
-  for (let index = 0; index < offset; index += 1) {
-    if (source[index] === '\n') {
-      lineNumber += 1;
-      column = 1;
-      continue;
-    }
-
-    if (source[index] !== '\r') {
-      column += 1;
-    }
-  }
-
-  return { lineNumber, column };
-}
-
-function maskMooSourceForInlayHints(source: string): string {
+function maskMooSourceForArgumentHints(source: string): string {
   let inString = false;
   let inBlockComment = false;
   let escaped = false;

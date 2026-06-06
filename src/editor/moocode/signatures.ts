@@ -1,6 +1,7 @@
-import { BUILTIN_FUNCTIONS, MOO_IDENTIFIER_PATTERN_SOURCE } from './contract';
+import { BUILTIN_FUNCTIONS } from './contract';
 import { formatMooBuiltinArity, getMooBuiltinMetadata } from './builtins';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
+import { readMooCallTargetBeforeOpen } from './calls';
 
 type MooBuiltinCallContext = {
   functionName: string;
@@ -106,8 +107,6 @@ const BUILTIN_SIGNATURES: Partial<Record<(typeof BUILTIN_FUNCTIONS)[number], Sig
   };
 
 const BUILTIN_NAMES = new Set<string>(BUILTIN_FUNCTIONS);
-const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
-const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
 
 export function findMooCallContext(
   source: string,
@@ -132,22 +131,21 @@ export function findMooCallContext(
         continue;
       }
 
-      const verbCall = readStaticVerbCallBefore(maskedSource, index);
-      if (verbCall) {
+      const callTarget = readMooCallTargetBeforeOpen(maskedSource, index);
+      if (!callTarget) {
+        return null;
+      }
+
+      if (callTarget.callKind === 'verb') {
         return {
           callKind: 'verb',
-          receiverName: verbCall.receiverName,
-          functionName: verbCall.verbName,
+          receiverName: callTarget.receiverName,
+          functionName: callTarget.functionName,
           activeParameter,
         };
       }
 
-      const functionName = readIdentifierBefore(maskedSource, index);
-      if (!functionName) {
-        return null;
-      }
-
-      const normalizedName = functionName.toLowerCase();
+      const normalizedName = callTarget.functionName.toLowerCase();
       if (!BUILTIN_NAMES.has(normalizedName)) {
         return null;
       }
@@ -284,97 +282,4 @@ function formatSignatureLabel(
   parameters: readonly MooParameterInformation[],
 ): string {
   return `${functionName}(${parameters.map((parameter) => parameter.label).join(', ')})`;
-}
-
-function readIdentifierBefore(source: string, openParenIndex: number): string | null {
-  return readIdentifierSpanBefore(source, openParenIndex)?.name ?? null;
-}
-
-function readIdentifierSpanBefore(
-  source: string,
-  openParenIndex: number,
-): { name: string; startIndex: number; endIndex: number } | null {
-  let endIndex = openParenIndex - 1;
-  while (endIndex >= 0 && /\s/.test(source[endIndex])) {
-    endIndex -= 1;
-  }
-
-  let startIndex = endIndex;
-  while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
-    startIndex -= 1;
-  }
-
-  const identifier = source.slice(startIndex + 1, endIndex + 1);
-  return VALID_IDENTIFIER_PATTERN.test(identifier)
-    ? { name: identifier, startIndex: startIndex + 1, endIndex: endIndex + 1 }
-    : null;
-}
-
-function readStaticVerbCallBefore(
-  source: string,
-  openParenIndex: number,
-): { receiverName: string; verbName: string } | null {
-  const verb = readIdentifierSpanBefore(source, openParenIndex);
-  if (!verb) {
-    return null;
-  }
-
-  let colonIndex = verb.startIndex - 1;
-  while (colonIndex >= 0 && /\s/.test(source[colonIndex])) {
-    colonIndex -= 1;
-  }
-
-  if (source[colonIndex] !== ':') {
-    return null;
-  }
-
-  const receiverName = readStaticVerbReceiverBefore(source, colonIndex);
-  return receiverName ? { receiverName, verbName: verb.name } : null;
-}
-
-function readStaticVerbReceiverBefore(source: string, colonIndex: number): string | null {
-  let endIndex = colonIndex - 1;
-  while (endIndex >= 0 && /\s/.test(source[endIndex])) {
-    endIndex -= 1;
-  }
-
-  if (endIndex < 0) {
-    return null;
-  }
-
-  if (/\d/.test(source[endIndex])) {
-    let startIndex = endIndex;
-    while (startIndex >= 0 && /\d/.test(source[startIndex])) {
-      startIndex -= 1;
-    }
-
-    if (source[startIndex] === '-') {
-      startIndex -= 1;
-    }
-
-    if (source[startIndex] !== '#') {
-      return null;
-    }
-
-    const receiver = source.slice(startIndex, endIndex + 1);
-    return /^#-?\d+$/.test(receiver) ? receiver : null;
-  }
-
-  if (IDENTIFIER_CHARACTER_PATTERN.test(source[endIndex])) {
-    let startIndex = endIndex;
-    while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
-      startIndex -= 1;
-    }
-
-    if (source[startIndex] === '$') {
-      startIndex -= 1;
-    }
-
-    const receiver = source.slice(startIndex + 1, endIndex + 1);
-    return /^(?:[A-Za-z_][A-Za-z0-9_]*|\$[A-Za-z_][A-Za-z0-9_]*)$/.test(receiver)
-      ? receiver
-      : null;
-  }
-
-  return null;
 }
