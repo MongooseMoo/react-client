@@ -201,3 +201,11 @@ Iterations:
   - Already formatted current lines return no edits.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco CodeLens:
+  - Added local-symbol CodeLens summaries for browser-side MOO semantics.
+  - CodeLens entries appear at each primary local definition and summarize
+    definition/reference counts using the same semantic model as rename,
+    references, hovers, and highlights.
+  - Builtins, comments, strings, and unknown globals remain excluded.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

@@ -5,6 +5,7 @@ import {
   findMooDefinition,
   findMooDocumentHighlights,
   findMooReferences,
+  getMooCodeLenses,
   getMooLocalCompletions,
   getMooRenameLocation,
 } from './semantics';
@@ -64,6 +65,30 @@ describe('MOO semantic model', () => {
     ]);
     expect(findMooDocumentHighlights(source, positionFor(source, 'player'))).toEqual([]);
     expect(findMooDocumentHighlights('// total = 0;', { lineNumber: 1, column: 4 })).toEqual([]);
+  });
+
+  it('creates local symbol CodeLens summaries at primary definitions', () => {
+    const source = [
+      'total = 0;',
+      'for item in (items)',
+      '  total = total + item;',
+      'endfor',
+      'notify(player, total);',
+      '// ghost = no;',
+    ].join('\n');
+
+    expect(getMooCodeLenses(source)).toEqual([
+      {
+        range: wordRange(source, 'total', 1),
+        title: '2 definitions, 2 references',
+        tooltip: 'Local total: 2 definitions, 2 references.',
+      },
+      {
+        range: wordRange(source, 'item', 1),
+        title: '1 definition, 1 reference',
+        tooltip: 'Local item: 1 definition, 1 reference.',
+      },
+    ]);
   });
 
   it('creates whole-symbol rename edits and rejects invalid rename targets', () => {

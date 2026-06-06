@@ -4,6 +4,7 @@ import {
   ERROR_CONSTANTS,
   MOO_LANGUAGE_ID,
   createMooCodeActionProvider,
+  createMooCodeLensProvider,
   createMooCompletionItems,
   createMooCompletionProvider,
   createMooDocumentFormattingEditProvider,
@@ -190,6 +191,7 @@ describe('MOO Monaco language support', () => {
         getLanguages: vi.fn(() => []),
         register: vi.fn(),
         registerCodeActionProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerCodeLensProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentHighlightProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -224,6 +226,7 @@ describe('MOO Monaco language support', () => {
       expect.any(Object),
     );
     expect(monaco.languages.registerCodeActionProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerCodeLensProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerCompletionItemProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDefinitionProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentHighlightProvider).toHaveBeenCalledTimes(1);
@@ -316,6 +319,37 @@ describe('MOO Monaco language support', () => {
       },
       text: '',
       rejectReason: 'No local MOO symbol is available at this position.',
+    });
+  });
+
+  it('provides Monaco CodeLens summaries for local MOO symbols', () => {
+    const provider = createMooCodeLensProvider();
+    const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
+
+    expect(
+      provider.provideCodeLenses(
+        {
+          getValue: () => source,
+        } as never,
+        {} as never,
+      ),
+    ).toEqual({
+      lenses: [
+        {
+          range: {
+            startLineNumber: 1,
+            startColumn: 1,
+            endLineNumber: 1,
+            endColumn: 6,
+          },
+          command: {
+            id: 'moocode.showReferences',
+            title: '2 definitions, 2 references',
+            tooltip: 'Local total: 2 definitions, 2 references.',
+          },
+        },
+      ],
+      dispose: expect.any(Function),
     });
   });
 

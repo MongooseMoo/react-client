@@ -27,6 +27,12 @@ export type MooDocumentHighlight = {
   kind: 'read' | 'write';
 };
 
+export type MooCodeLens = {
+  range: MonacoRange;
+  title: string;
+  tooltip: string;
+};
+
 export type MooRenameWorkspaceEdit = { edits: MooTextEdit[] } | { rejectReason: string };
 
 export type MooRenameLocation =
@@ -144,6 +150,23 @@ export function findMooDocumentHighlights(
       kind: 'read' as const,
     })),
   ].sort((left, right) => compareRanges(left.range, right.range));
+}
+
+export function getMooCodeLenses(source: string): MooCodeLens[] {
+  return analyzeMooSemantics(source).symbols
+    .filter((symbol) => symbol.definitions.length > 0)
+    .map((symbol) => ({
+      range: symbol.definitions[0],
+      title: `${countLabel(symbol.definitions.length, 'definition')}, ${countLabel(
+        symbol.references.length,
+        'reference',
+      )}`,
+      tooltip: `Local ${symbol.name}: ${countLabel(
+        symbol.definitions.length,
+        'definition',
+      )}, ${countLabel(symbol.references.length, 'reference')}.`,
+    }))
+    .sort((left, right) => compareRanges(left.range, right.range));
 }
 
 export function createMooRenameWorkspaceEdit(
@@ -428,6 +451,10 @@ function compareRanges(left: MonacoRange, right: MonacoRange): number {
   }
 
   return left.startColumn - right.startColumn;
+}
+
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 function wordAtOffset(source: string, offset: number): { name: string; offset: number } | null {

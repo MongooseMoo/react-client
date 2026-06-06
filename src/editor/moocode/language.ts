@@ -38,6 +38,7 @@ import {
   findMooDefinition,
   findMooDocumentHighlights,
   findMooReferences,
+  getMooCodeLenses,
   getMooLocalCompletions,
   getMooRenameLocation,
 } from './semantics';
@@ -226,6 +227,10 @@ export type MonacoLike = {
       languageId: string,
       provider: MonacoEditor.languages.CodeActionProvider,
       metadata?: MonacoEditor.languages.CodeActionProviderMetadata,
+    ) => { dispose: () => void };
+    registerCodeLensProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.CodeLensProvider,
     ) => { dispose: () => void };
     registerCompletionItemProvider: (
       languageId: string,
@@ -489,6 +494,22 @@ export function createMooCodeActionProvider(): MonacoEditor.languages.CodeAction
               versionId: undefined,
             },
           ],
+        },
+      })),
+      dispose: () => {},
+    }),
+  };
+}
+
+export function createMooCodeLensProvider(): MonacoEditor.languages.CodeLensProvider {
+  return {
+    provideCodeLenses: (model) => ({
+      lenses: getMooCodeLenses(model.getValue()).map((lens) => ({
+        range: lens.range,
+        command: {
+          id: 'moocode.showReferences',
+          title: lens.title,
+          tooltip: lens.tooltip,
         },
       })),
       dispose: () => {},
@@ -778,6 +799,7 @@ export function registerMooLanguage(monaco: MonacoLike) {
       providedCodeActionKinds: [monaco.languages.CodeActionKind?.QuickFix ?? 'quickfix'],
     },
   );
+  monaco.languages.registerCodeLensProvider?.(MOO_LANGUAGE_ID, createMooCodeLensProvider());
   monaco.languages.registerCompletionItemProvider(MOO_LANGUAGE_ID, createMooCompletionProvider(monaco));
   monaco.languages.registerDefinitionProvider?.(MOO_LANGUAGE_ID, createMooDefinitionProvider());
   monaco.languages.registerDocumentHighlightProvider?.(
