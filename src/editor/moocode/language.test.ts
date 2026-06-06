@@ -24,6 +24,7 @@ import {
   createMooLinkedEditingRangeProvider,
   createMooLinkProvider,
   createMooMonarchLanguage,
+  createMooNewSymbolNameProvider,
   createMooOnTypeFormattingEditProvider,
   createMooReferenceProvider,
   createMooRenameProvider,
@@ -687,6 +688,33 @@ describe('MOO Monaco language support', () => {
         endColumn: 13,
       },
     });
+  });
+
+  it('provides Monaco rename suggestions for local MOO symbols', async () => {
+    const provider = createMooNewSymbolNameProvider();
+    const source = ['total = 0;', 'total_value = 1;', 'notify(player, total);'].join('\n');
+
+    await expect(provider.supportsAutomaticNewSymbolNamesTriggerKind).resolves.toBe(true);
+    expect(
+      provider.provideNewSymbolNames(
+        {
+          getValue: () => source,
+        } as never,
+        {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 6,
+        },
+        0,
+        {} as never,
+      ),
+    ).toEqual([
+      { newSymbolName: 'new_total' },
+      { newSymbolName: 'total_result' },
+      { newSymbolName: 'total_count' },
+      { newSymbolName: 'total_item' },
+    ]);
   });
 
   it('uses document link targets for object and system reference searches', () => {
@@ -1901,6 +1929,7 @@ describe('MOO Monaco language support', () => {
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerImplementationProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerNewSymbolNameProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerSelectionRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -1923,6 +1952,12 @@ describe('MOO Monaco language support', () => {
       MOO_LANGUAGE_ID,
       expect.objectContaining({
         provideTypeDefinition: expect.any(Function),
+      }),
+    );
+    expect(monaco.languages.registerNewSymbolNameProvider).toHaveBeenCalledWith(
+      MOO_LANGUAGE_ID,
+      expect.objectContaining({
+        provideNewSymbolNames: expect.any(Function),
       }),
     );
   });

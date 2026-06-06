@@ -10,6 +10,7 @@ import {
   getMooCodeLenses,
   getMooLinkedEditingRanges,
   getMooLocalCompletions,
+  getMooNewSymbolNameSuggestions,
   getMooRenameLocation,
 } from './semantics';
 
@@ -239,6 +240,31 @@ describe('MOO semantic model', () => {
     expect(getMooRenameLocation('// total = 0;', { lineNumber: 1, column: 4 })).toEqual({
       rejectReason: 'No local MOO symbol or loop label is available at this position.',
     });
+  });
+
+  it('suggests valid non-conflicting names for Monaco rename flows', () => {
+    const source = [
+      'total = 0;',
+      'total_value = 1;',
+      'for i in ({1, 2, 3})',
+      '  total = total + i;',
+      'endfor',
+      'notify(player, total);',
+    ].join('\n');
+
+    expect(getMooNewSymbolNameSuggestions(source, wordRange(source, 'total', 1))).toEqual([
+      { newSymbolName: 'new_total' },
+      { newSymbolName: 'total_result' },
+      { newSymbolName: 'total_count' },
+      { newSymbolName: 'total_item' },
+    ]);
+    expect(getMooNewSymbolNameSuggestions(source, wordRange(source, 'i', 1))).toEqual([
+      { newSymbolName: 'index' },
+      { newSymbolName: 'item_index' },
+      { newSymbolName: 'loop_index' },
+      { newSymbolName: 'counter' },
+    ]);
+    expect(getMooNewSymbolNameSuggestions(source, wordRange(source, 'player', 1))).toEqual([]);
   });
 
   it('offers local completions that are in scope before the cursor', () => {

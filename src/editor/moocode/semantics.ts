@@ -80,6 +80,10 @@ export type MooRenameLocation =
     }
   | { rejectReason: string };
 
+export type MooNewSymbolNameSuggestion = {
+  newSymbolName: string;
+};
+
 type SymbolRecord = {
   name: string;
   definitions: Occurrence[];
@@ -274,6 +278,34 @@ export function getMooRenameLocation(
     range: lookup.occurrence.range,
     text: lookup.record.name,
   };
+}
+
+export function getMooNewSymbolNameSuggestions(
+  source: string,
+  range: MonacoRange,
+): MooNewSymbolNameSuggestion[] {
+  const location = getMooRenameLocation(source, {
+    lineNumber: range.startLineNumber,
+    column: range.startColumn,
+  });
+  if ('rejectReason' in location) {
+    return [];
+  }
+
+  const currentName = location.text;
+  const reservedNames = new Set([
+    ...NON_LOCAL_NAMES,
+    ...[...getSymbolRecords(source).values()].map((record) => record.name.toLowerCase()),
+    ...collectLoopLabelReferences(source).records.map((record) => record.name.toLowerCase()),
+  ]);
+  const currentNameKey = currentName.toLowerCase();
+
+  return candidateRenameNames(currentName)
+    .filter((candidate) => candidate.toLowerCase() !== currentNameKey)
+    .filter((candidate) => validateMooIdentifier(candidate) === null)
+    .filter((candidate) => !reservedNames.has(candidate.toLowerCase()))
+    .slice(0, 5)
+    .map((newSymbolName) => ({ newSymbolName }));
 }
 
 export function getMooLocalCompletions(
@@ -1073,6 +1105,29 @@ function validateMooIdentifier(value: string): string | null {
   }
 
   return null;
+}
+
+function candidateRenameNames(name: string): string[] {
+  const normalized = toSnakeCase(name);
+  if (normalized === 'i') {
+    return ['index', 'item_index', 'loop_index', 'counter'];
+  }
+
+  if (normalized === 'tmp' || normalized === 'temp') {
+    return ['value', 'result', 'scratch', 'item'];
+  }
+
+  const stem = normalized || 'value';
+  return [`new_${stem}`, `${stem}_value`, `${stem}_result`, `${stem}_count`, `${stem}_item`];
+}
+
+function toSnakeCase(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
 }
 
 function previousNonWhitespaceCharacter(source: string, offset: number): string | null {

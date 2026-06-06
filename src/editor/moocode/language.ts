@@ -53,6 +53,7 @@ import {
   getMooLinkedEditingRanges,
   getMooLocalCompletions,
   getMooLoopLabelCompletions,
+  getMooNewSymbolNameSuggestions,
   getMooRenameLocation,
 } from './semantics';
 import { getMooSelectionRanges, type MooSelectionRange } from './selectionRanges';
@@ -326,6 +327,10 @@ export type MonacoLike = {
     registerLinkProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.LinkProvider,
+    ) => { dispose: () => void };
+    registerNewSymbolNameProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.NewSymbolNamesProvider,
     ) => { dispose: () => void };
     registerOnTypeFormattingEditProvider?: (
       languageId: string,
@@ -1085,6 +1090,14 @@ export function createMooRenameProvider(): MonacoEditor.languages.RenameProvider
   };
 }
 
+export function createMooNewSymbolNameProvider(): MonacoEditor.languages.NewSymbolNamesProvider {
+  return {
+    supportsAutomaticNewSymbolNamesTriggerKind: Promise.resolve(true),
+    provideNewSymbolNames: (model, range) =>
+      getMooNewSymbolNameSuggestions(model.getValue(), range),
+  };
+}
+
 export function createMooSelectionRangeProvider(): MonacoEditor.languages.SelectionRangeProvider {
   return {
     provideSelectionRanges: (model, positions) =>
@@ -1208,6 +1221,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
   );
   monaco.languages.registerReferenceProvider?.(MOO_LANGUAGE_ID, createMooReferenceProvider());
   monaco.languages.registerRenameProvider?.(MOO_LANGUAGE_ID, createMooRenameProvider());
+  monaco.languages.registerNewSymbolNameProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooNewSymbolNameProvider(),
+  );
   monaco.languages.registerSelectionRangeProvider?.(
     MOO_LANGUAGE_ID,
     createMooSelectionRangeProvider(),
