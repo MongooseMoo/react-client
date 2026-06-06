@@ -14,6 +14,7 @@ import {
   createMooDocumentSymbolProvider,
   createMooFoldingRangeProvider,
   createMooHoverProvider,
+  createMooInlineCompletionsProvider,
   createMooInlayHintsProvider,
   createMooLanguageConfiguration,
   createMooMonarchLanguage,
@@ -201,6 +202,7 @@ describe('MOO Monaco language support', () => {
         registerDocumentRangeFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerInlineCompletionsProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerOnTypeFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -236,6 +238,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerDocumentRangeFormattingEditProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerFoldingRangeProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerHoverProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerInlineCompletionsProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerInlayHintsProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerOnTypeFormattingEditProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerReferenceProvider).toHaveBeenCalledTimes(1);
@@ -492,6 +495,33 @@ describe('MOO Monaco language support', () => {
       dispose: expect.any(Function),
     });
     expect(hints.dispose()).toBeUndefined();
+  });
+
+  it('provides Monaco inline completions for MOO block close scaffolding', () => {
+    const provider = createMooInlineCompletionsProvider();
+    const source = 'if (valid(player))';
+    const completions = provider.provideInlineCompletions(
+      { getValue: () => source } as never,
+      { lineNumber: 1, column: source.length + 1 } as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(completions).toEqual({
+      items: [
+        {
+          insertText: '\n  \nendif',
+          range: {
+            startLineNumber: 1,
+            startColumn: source.length + 1,
+            endLineNumber: 1,
+            endColumn: source.length + 1,
+          },
+        },
+      ],
+      suppressSuggestions: false,
+    });
+    expect(provider.disposeInlineCompletions(completions, { kind: 'notTaken' })).toBeUndefined();
   });
 
   it('provides rich Monaco hovers from MOO language metadata', () => {

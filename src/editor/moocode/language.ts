@@ -19,6 +19,7 @@ import {
   getMooHover,
   getMooKeywordDocumentation,
 } from './hover';
+import { getMooInlineCompletions } from './inlineCompletions';
 import { collectMooInlayHints } from './inlayHints';
 import {
   BUILTIN_FUNCTIONS,
@@ -269,6 +270,10 @@ export type MonacoLike = {
       provider: {
         provideHover: (model: TextModelValueLike, position: CompletionPosition) => Hover | null;
       },
+    ) => { dispose: () => void };
+    registerInlineCompletionsProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.InlineCompletionsProvider,
     ) => { dispose: () => void };
     registerInlayHintsProvider?: (
       languageId: string,
@@ -683,6 +688,16 @@ export function createMooInlayHintsProvider(
   };
 }
 
+export function createMooInlineCompletionsProvider(): MonacoEditor.languages.InlineCompletionsProvider {
+  return {
+    provideInlineCompletions: (model, position) => ({
+      items: getMooInlineCompletions(model.getValue(), position),
+      suppressSuggestions: false,
+    }),
+    disposeInlineCompletions: () => {},
+  };
+}
+
 export function createMooHoverProvider(): {
   provideHover: (model: TextModelValueLike, position: CompletionPosition) => Hover | null;
 } {
@@ -823,6 +838,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
     createMooDocumentRangeFormattingEditProvider(),
   );
   monaco.languages.registerFoldingRangeProvider?.(MOO_LANGUAGE_ID, createMooFoldingRangeProvider());
+  monaco.languages.registerInlineCompletionsProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooInlineCompletionsProvider(),
+  );
   monaco.languages.registerInlayHintsProvider?.(
     MOO_LANGUAGE_ID,
     createMooInlayHintsProvider(monaco.languages.InlayHintKind ?? { Parameter: 2 }),

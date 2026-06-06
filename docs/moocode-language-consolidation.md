@@ -209,3 +209,11 @@ Iterations:
   - Builtins, comments, strings, and unknown globals remain excluded.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco inline completions:
+  - Added a Monaco `InlineCompletionsProvider` for block-close scaffolding.
+  - Inline completions suggest matching `end*` block lines at the end of MOO
+    block openers, preserving current indentation and tab style.
+  - Suggestions are suppressed when the next meaningful line already closes the
+    block or when the opener appears inside masked comments/strings.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.
