@@ -452,3 +452,13 @@ Iterations:
     locations to stay compatible with Monaco's marker shape.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/diagnostics.test.ts src/editor/moocode/semantics.test.ts src/editor/moocode/language.test.ts src/components/editor/editorWindow.test.tsx`.
+- 2026-06-06 scoped Monaco quick fixes:
+  - The Monaco code-action provider now narrows quick fixes to the diagnostic
+    markers in Monaco's current code-action context when recognizable MOO
+    marker metadata is available.
+  - This keeps the lightbulb/right-click menu focused on the problem under the
+    cursor instead of offering unrelated fixes from elsewhere in the verb.
+  - Document-wide fallback behavior is preserved when Monaco does not provide
+    usable marker codes and ranges.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/language.test.ts`.

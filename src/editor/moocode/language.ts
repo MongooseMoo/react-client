@@ -11,7 +11,7 @@ export {
   STATEMENT_KEYWORDS,
   SYSTEM_REFERENCES,
 } from './contract';
-import { getMooQuickFixes, type MooQuickFixDiagnostic } from './codeActions';
+import { getMooQuickFixes, type MooQuickFix, type MooQuickFixDiagnostic } from './codeActions';
 import { getMooBuiltinMetadata } from './builtins';
 import { formatMooCode, formatMooCodeRange } from './formatter';
 import {
@@ -405,9 +405,7 @@ export function createMooLanguageConfiguration(): MooLanguageConfiguration {
       ['{', '}'],
       ['[', ']'],
       ['(', ')'],
-      ...Object.entries(MOO_BLOCKS).map(
-        ([open, block]) => [open, block.close] as [string, string],
-      ),
+      ...Object.entries(MOO_BLOCKS).map(([open, block]) => [open, block.close] as [string, string]),
     ],
     autoClosingPairs: [
       { open: '{', close: '}' },
@@ -422,11 +420,10 @@ export function createMooLanguageConfiguration(): MooLanguageConfiguration {
       { open: '"', close: '"' },
     ],
     indentationRules: {
-      increaseIndentPattern:
-        new RegExp(
-          `^\\s*(?:${MOO_INDENT_OPEN_KEYWORDS.join('|')})\\b(?!.*\\b(?:endif|endfor|endwhile|endfork|endtry)\\b).*$`,
-          'i',
-        ),
+      increaseIndentPattern: new RegExp(
+        `^\\s*(?:${MOO_INDENT_OPEN_KEYWORDS.join('|')})\\b(?!.*\\b(?:endif|endfor|endwhile|endfork|endtry)\\b).*$`,
+        'i',
+      ),
       decreaseIndentPattern:
         /^\s*(?:elseif|else|except|finally|endif|endfor|endwhile|endfork|endtry)\b/i,
     },
@@ -546,28 +543,89 @@ export function createMooCompletionItems(
 
 export function createMooCodeActionProvider(): MonacoEditor.languages.CodeActionProvider {
   return {
-    provideCodeActions: (model, _range, context) => ({
-      actions: getMooQuickFixes(model.getValue(), quickFixDiagnosticsFromMarkers(context.markers)).map((fix) => ({
-        title: fix.title,
-        kind: 'quickfix',
-        isPreferred: true,
-        diagnostics: fix.diagnostics.map(toCodeActionMarker),
-        edit: {
-          edits: [
-            {
-              resource: model.uri,
-              textEdit: {
-                range: fix.edit.range,
-                text: fix.edit.text,
+    provideCodeActions: (model, _range, context) => {
+      const fixes = filterMooQuickFixesForMarkers(
+        getMooQuickFixes(model.getValue(), quickFixDiagnosticsFromMarkers(context.markers)),
+        context.markers,
+      );
+
+      return {
+        actions: fixes.map((fix) => ({
+          title: fix.title,
+          kind: 'quickfix',
+          isPreferred: true,
+          diagnostics: fix.diagnostics.map(toCodeActionMarker),
+          edit: {
+            edits: [
+              {
+                resource: model.uri,
+                textEdit: {
+                  range: fix.edit.range,
+                  text: fix.edit.text,
+                },
+                versionId: undefined,
               },
-              versionId: undefined,
-            },
-          ],
-        },
-      })),
-      dispose: () => {},
-    }),
+            ],
+          },
+        })),
+        dispose: () => {},
+      };
+    },
   };
+}
+
+type MooQuickFixMarkerTarget = {
+  code: string;
+  endColumn: number;
+  startColumn: number;
+  startLineNumber: number;
+};
+
+function filterMooQuickFixesForMarkers(
+  fixes: MooQuickFix[],
+  markers: readonly MonacoEditor.editor.IMarkerData[],
+): MooQuickFix[] {
+  const targets = markers
+    .map(toMooQuickFixMarkerTarget)
+    .filter((target): target is MooQuickFixMarkerTarget => target !== null);
+
+  if (targets.length === 0) {
+    return fixes;
+  }
+
+  return fixes.filter((fix) =>
+    fix.diagnostics.some((diagnostic) =>
+      targets.some((target) => diagnosticMatchesMarkerTarget(diagnostic, target)),
+    ),
+  );
+}
+
+function toMooQuickFixMarkerTarget(
+  marker: MonacoEditor.editor.IMarkerData,
+): MooQuickFixMarkerTarget | null {
+  const code = markerCode(marker.code);
+  if (!code) {
+    return null;
+  }
+
+  return {
+    code,
+    endColumn: marker.endColumn,
+    startColumn: marker.startColumn,
+    startLineNumber: marker.startLineNumber,
+  };
+}
+
+function diagnosticMatchesMarkerTarget(
+  diagnostic: MooQuickFixDiagnostic,
+  target: MooQuickFixMarkerTarget,
+): boolean {
+  return (
+    diagnostic.code === target.code &&
+    diagnostic.lineNumber === target.startLineNumber &&
+    diagnostic.startColumn === target.startColumn &&
+    diagnostic.endColumn === target.endColumn
+  );
 }
 
 function quickFixDiagnosticsFromMarkers(
@@ -706,8 +764,7 @@ export function createMooDocumentHighlightProvider(
     provideDocumentHighlights: (model, position) =>
       findMooDocumentHighlights(model.getValue(), position).map((highlight) => ({
         range: highlight.range,
-        kind:
-          highlight.kind === 'write' ? documentHighlightKind.Write : documentHighlightKind.Read,
+        kind: highlight.kind === 'write' ? documentHighlightKind.Write : documentHighlightKind.Read,
       })),
   };
 }
@@ -965,20 +1022,21 @@ export function registerMooLanguage(monaco: MonacoLike) {
 
   monaco.languages.setMonarchTokensProvider(MOO_LANGUAGE_ID, createMooMonarchLanguage());
   monaco.languages.setLanguageConfiguration(MOO_LANGUAGE_ID, createMooLanguageConfiguration());
-  monaco.languages.registerCodeActionProvider?.(
-    MOO_LANGUAGE_ID,
-    createMooCodeActionProvider(),
-    {
-      providedCodeActionKinds: [monaco.languages.CodeActionKind?.QuickFix ?? 'quickfix'],
-    },
-  );
+  monaco.languages.registerCodeActionProvider?.(MOO_LANGUAGE_ID, createMooCodeActionProvider(), {
+    providedCodeActionKinds: [monaco.languages.CodeActionKind?.QuickFix ?? 'quickfix'],
+  });
   monaco.languages.registerCodeLensProvider?.(MOO_LANGUAGE_ID, createMooCodeLensProvider());
-  monaco.languages.registerCompletionItemProvider(MOO_LANGUAGE_ID, createMooCompletionProvider(monaco));
+  monaco.languages.registerCompletionItemProvider(
+    MOO_LANGUAGE_ID,
+    createMooCompletionProvider(monaco),
+  );
   monaco.languages.registerDeclarationProvider?.(MOO_LANGUAGE_ID, createMooDeclarationProvider());
   monaco.languages.registerDefinitionProvider?.(MOO_LANGUAGE_ID, createMooDefinitionProvider());
   monaco.languages.registerDocumentHighlightProvider?.(
     MOO_LANGUAGE_ID,
-    createMooDocumentHighlightProvider(monaco.languages.DocumentHighlightKind ?? { Read: 1, Write: 2 }),
+    createMooDocumentHighlightProvider(
+      monaco.languages.DocumentHighlightKind ?? { Read: 1, Write: 2 },
+    ),
   );
   monaco.languages.registerDocumentSymbolProvider?.(
     MOO_LANGUAGE_ID,
@@ -1024,7 +1082,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
     MOO_LANGUAGE_ID,
     createMooSelectionRangeProvider(),
   );
-  monaco.languages.registerSignatureHelpProvider?.(MOO_LANGUAGE_ID, createMooSignatureHelpProvider());
+  monaco.languages.registerSignatureHelpProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooSignatureHelpProvider(),
+  );
   monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, createMooHoverProvider());
 }
 

@@ -121,9 +121,18 @@ describe('MOO Monaco language support', () => {
 
     expect(items.find((item) => item.label === 'sqlite_query')).toMatchObject({
       detail: 'sqlite_query(arg1: int, arg2: str, arg3?: any)',
-      insertText: ['sqlite_query(', '$', '{1:int}', ', ', '$', '{2:str}', ', ', '$', '{3:any?}', ')'].join(
-        '',
-      ),
+      insertText: [
+        'sqlite_query(',
+        '$',
+        '{1:int}',
+        ', ',
+        '$',
+        '{2:str}',
+        ', ',
+        '$',
+        '{3:any?}',
+        ')',
+      ].join(''),
     });
     expect(items.find((item) => item.label === 'threads')).toMatchObject({
       detail: 'threads()',
@@ -397,7 +406,9 @@ describe('MOO Monaco language support', () => {
       expect.objectContaining({ uri: 'moo://#1:test' }),
       expect.objectContaining({ uri: 'moo://#1:test' }),
     ]);
-    expect(renameProvider.provideRenameEdits(model, { lineNumber: 2, column: 10 }, 'score')).toEqual({
+    expect(
+      renameProvider.provideRenameEdits(model, { lineNumber: 2, column: 10 }, 'score'),
+    ).toEqual({
       edits: [
         {
           resource: 'moo://#1:test',
@@ -418,11 +429,7 @@ describe('MOO Monaco language support', () => {
       ],
     });
     expect(
-      renameProvider.resolveRenameLocation?.(
-        model,
-        { lineNumber: 2, column: 10 },
-        {} as never,
-      ),
+      renameProvider.resolveRenameLocation?.(model, { lineNumber: 2, column: 10 }, {} as never),
     ).toEqual({
       range: {
         startLineNumber: 2,
@@ -433,11 +440,7 @@ describe('MOO Monaco language support', () => {
       text: 'total',
     });
     expect(
-      renameProvider.resolveRenameLocation?.(
-        model,
-        { lineNumber: 3, column: 8 },
-        {} as never,
-      ),
+      renameProvider.resolveRenameLocation?.(model, { lineNumber: 3, column: 8 }, {} as never),
     ).toEqual({
       range: {
         startLineNumber: 3,
@@ -747,6 +750,40 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('scopes Monaco quick fixes to the requested diagnostic context', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () => ['while (connected)', '  unused = 1;'].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      {
+        markers: [
+          {
+            code: { value: 'unused-local', target: 'moo://#1:tick#unused' },
+            lineNumber: 2,
+            startLineNumber: 2,
+            endLineNumber: 2,
+            startColumn: 3,
+            endColumn: 9,
+            message: 'unused is defined but never used.',
+            severity: 4,
+            source: MOO_LANGUAGE_ID,
+          },
+        ],
+        trigger: 1,
+      } as never,
+      {} as never,
+    );
+
+    expect(actions.actions.map((action) => action.title)).toEqual([
+      'Mark unused as intentionally ignored',
+    ]);
+  });
+
   it('provides Monaco quick fixes for unused local warnings', () => {
     const provider = createMooCodeActionProvider();
     const model = {
@@ -845,10 +882,10 @@ describe('MOO Monaco language support', () => {
     const provider = createMooHoverProvider();
 
     expect(
-      provider.provideHover(
-        { getValue: () => 'notify(player, "hello");' } as never,
-        { lineNumber: 1, column: 3 },
-      ),
+      provider.provideHover({ getValue: () => 'notify(player, "hello");' } as never, {
+        lineNumber: 1,
+        column: 3,
+      }),
     ).toEqual({
       range: {
         startLineNumber: 1,
@@ -893,8 +930,7 @@ describe('MOO Monaco language support', () => {
     const provider = createMooDocumentRangeFormattingEditProvider();
     const edits = provider.provideDocumentRangeFormattingEdits(
       {
-        getValue: () =>
-          ['if (valid(player))', 'notify(player, "ok");', 'endif'].join('\n'),
+        getValue: () => ['if (valid(player))', 'notify(player, "ok");', 'endif'].join('\n'),
       } as never,
       {
         startLineNumber: 2,
@@ -923,8 +959,7 @@ describe('MOO Monaco language support', () => {
     const provider = createMooDocumentRangeFormattingEditProvider();
     const edits = provider.provideDocumentRangeFormattingEdits(
       {
-        getValue: () =>
-          ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
+        getValue: () => ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
       } as never,
       {
         startLineNumber: 2,
@@ -943,8 +978,7 @@ describe('MOO Monaco language support', () => {
     const provider = createMooOnTypeFormattingEditProvider();
     const edits = provider.provideOnTypeFormattingEdits(
       {
-        getValue: () =>
-          ['if (valid(player))', 'notify(player, "ok");', 'endif'].join('\n'),
+        getValue: () => ['if (valid(player))', 'notify(player, "ok");', 'endif'].join('\n'),
       } as never,
       { lineNumber: 2, column: 22 } as never,
       ';',
@@ -971,8 +1005,7 @@ describe('MOO Monaco language support', () => {
     const provider = createMooOnTypeFormattingEditProvider();
     const edits = provider.provideOnTypeFormattingEdits(
       {
-        getValue: () =>
-          ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
+        getValue: () => ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
       } as never,
       { lineNumber: 2, column: 24 } as never,
       ';',
@@ -1138,7 +1171,9 @@ describe('MOO Monaco language support', () => {
     const foldingProvider = createMooFoldingRangeProvider(parse);
     const source = ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n');
 
-    await expect(symbolProvider.provideDocumentSymbols({ getValue: () => source })).resolves.toEqual([
+    await expect(
+      symbolProvider.provideDocumentSymbols({ getValue: () => source }),
+    ).resolves.toEqual([
       expect.objectContaining({
         name: 'if valid(player)',
         kind: 11,
@@ -1148,9 +1183,9 @@ describe('MOO Monaco language support', () => {
         }),
       }),
     ]);
-    await expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).resolves.toEqual([
-      { start: 1, end: 3 },
-    ]);
+    await expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).resolves.toEqual(
+      [{ start: 1, end: 3 }],
+    );
     expect(parse).toHaveBeenCalledWith(source);
   });
 
@@ -1162,7 +1197,9 @@ describe('MOO Monaco language support', () => {
     const symbolProvider = createMooDocumentSymbolProvider(undefined, parse);
     const foldingProvider = createMooFoldingRangeProvider(parse);
 
-    await expect(symbolProvider.provideDocumentSymbols({ getValue: () => source })).resolves.toEqual([
+    await expect(
+      symbolProvider.provideDocumentSymbols({ getValue: () => source }),
+    ).resolves.toEqual([
       expect.objectContaining({
         name: 'while connected',
         range: expect.objectContaining({
@@ -1171,9 +1208,9 @@ describe('MOO Monaco language support', () => {
         }),
       }),
     ]);
-    await expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).resolves.toEqual([
-      { start: 1, end: 3 },
-    ]);
+    await expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).resolves.toEqual(
+      [{ start: 1, end: 3 }],
+    );
   });
 
   it('provides Monaco signature help for ToastStunt builtin calls', () => {
