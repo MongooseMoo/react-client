@@ -606,4 +606,53 @@ describe('EditorWindow language selection', () => {
     expect(editorMock.revealPositionInCenter).toHaveBeenCalledWith({ lineNumber: 1, column: 1 });
     expect(editorMock.focus).toHaveBeenCalled();
   });
+
+  it('filters the MOO problems list by severity without hiding filter state from assistive tech', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['unused = 1;', 'while (1)', '  notify(player, "tick");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    const allFilter = await screen.findByRole('button', { name: 'Show all MOO problems (2)' });
+    const errorFilter = screen.getByRole('button', { name: 'Show MOO errors (1)' });
+    const warningFilter = screen.getByRole('button', { name: 'Show MOO warnings (1)' });
+
+    expect(allFilter).toHaveAttribute('aria-pressed', 'true');
+    expect(errorFilter).toHaveAttribute('aria-pressed', 'false');
+    expect(warningFilter).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(warningFilter);
+
+    expect(allFilter).toHaveAttribute('aria-pressed', 'false');
+    expect(warningFilter).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.queryByRole('button', { name: /^MOO error unclosed-block/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^MOO warning unused-local/ })).toBeInTheDocument();
+
+    fireEvent.click(errorFilter);
+
+    expect(errorFilter).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^MOO error unclosed-block/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^MOO warning unused-local/ }),
+    ).not.toBeInTheDocument();
+  });
 });

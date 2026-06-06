@@ -37,6 +37,8 @@ type MooDiagnosticCounts = {
   warningCount: number;
 };
 
+type MooProblemFilter = 'all' | 'error' | 'warning';
+
 const TREE_SITTER_DIAGNOSTIC_DELAY_MS = 200;
 const MONACO_WARNING_MARKER_SEVERITY = 4;
 const EDITOR_STATUSBAR_ID = 'editor-statusbar';
@@ -345,44 +347,67 @@ type MooProblemsPanelProps = {
 };
 
 function MooProblemsPanel({ id, markers, onProblemClick }: MooProblemsPanelProps) {
+  const [filter, setFilter] = useState<MooProblemFilter>('all');
+
   if (markers.length === 0) {
     return null;
   }
 
+  const counts = getMooDiagnosticCounts(markers);
+  const visibleMarkers = markers.filter((marker) => mooProblemFilterIncludesMarker(filter, marker));
+
   return (
     <section aria-label="MOO problems" className="editor-problems" id={id}>
-      <ol className="editor-problems-list">
-        {markers.map((marker, index) => {
-          const severity = formatMooProblemSeverity(marker);
-          const code = formatMooProblemCode(marker);
-          const target = getMooDiagnosticTarget(marker);
-          const label = `MOO ${severity.toLowerCase()} ${code} on line ${
-            target.lineNumber
-          }, column ${target.column}: ${marker.message}`;
+      <div aria-label="MOO problem filters" className="editor-problems-filters" role="toolbar">
+        {mooProblemFilterOptions(markers.length, counts).map((option) => (
+          <button
+            aria-label={option.ariaLabel}
+            aria-pressed={filter === option.filter}
+            className="editor-problems-filter"
+            key={option.filter}
+            onClick={() => setFilter(option.filter)}
+            type="button"
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {visibleMarkers.length > 0 ? (
+        <ol className="editor-problems-list">
+          {visibleMarkers.map((marker, index) => {
+            const severity = formatMooProblemSeverity(marker);
+            const code = formatMooProblemCode(marker);
+            const target = getMooDiagnosticTarget(marker);
+            const label = `MOO ${severity.toLowerCase()} ${code} on line ${
+              target.lineNumber
+            }, column ${target.column}: ${marker.message}`;
 
-          return (
-            <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
-              <button
-                aria-label={label}
-                className="editor-problem-button"
-                onClick={() => onProblemClick(marker)}
-                type="button"
-              >
-                <span
-                  className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
+            return (
+              <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
+                <button
+                  aria-label={label}
+                  className="editor-problem-button"
+                  onClick={() => onProblemClick(marker)}
+                  type="button"
                 >
-                  {severity}
-                </span>{' '}
-                <span className="editor-problem-code">{code}</span>{' '}
-                <span className="editor-problem-location">
-                  Ln {target.lineNumber}, Col {target.column}
-                </span>{' '}
-                <span className="editor-problem-message">{marker.message}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
+                  <span
+                    className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
+                  >
+                    {severity}
+                  </span>{' '}
+                  <span className="editor-problem-code">{code}</span>{' '}
+                  <span className="editor-problem-location">
+                    Ln {target.lineNumber}, Col {target.column}
+                  </span>{' '}
+                  <span className="editor-problem-message">{marker.message}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage(filter)}</p>
+      )}
     </section>
   );
 }
@@ -499,6 +524,51 @@ function getMooDiagnosticCounts(markers: MonacoEditor.IMarkerData[]): MooDiagnos
     },
     { errorCount: 0, warningCount: 0 },
   );
+}
+
+function mooProblemFilterOptions(totalCount: number, counts: MooDiagnosticCounts) {
+  return [
+    {
+      filter: 'all' as const,
+      label: `All (${totalCount})`,
+      ariaLabel: `Show all MOO problems (${totalCount})`,
+    },
+    {
+      filter: 'error' as const,
+      label: `Errors (${counts.errorCount})`,
+      ariaLabel: `Show MOO errors (${counts.errorCount})`,
+    },
+    {
+      filter: 'warning' as const,
+      label: `Warnings (${counts.warningCount})`,
+      ariaLabel: `Show MOO warnings (${counts.warningCount})`,
+    },
+  ];
+}
+
+function mooProblemFilterIncludesMarker(
+  filter: MooProblemFilter,
+  marker: MonacoEditor.IMarkerData,
+): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'error':
+      return marker.severity !== MONACO_WARNING_MARKER_SEVERITY;
+    case 'warning':
+      return marker.severity === MONACO_WARNING_MARKER_SEVERITY;
+  }
+}
+
+function formatEmptyMooProblemsFilterMessage(filter: MooProblemFilter): string {
+  switch (filter) {
+    case 'all':
+      return 'No MOO problems.';
+    case 'error':
+      return 'No MOO errors.';
+    case 'warning':
+      return 'No MOO warnings.';
+  }
 }
 
 function compareMooDiagnosticMarkers(
