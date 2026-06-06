@@ -113,3 +113,12 @@ Iterations:
     and tested the packed integer encoding Monaco consumes.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco quick fixes:
+  - Added `src/editor/moocode/codeActions.ts` for browser-side quick fixes
+    derived from the existing MOO diagnostics.
+  - Registered a Monaco `CodeActionProvider` that inserts missing block close
+    keywords, delimiters, and string quotes with Monaco workspace edits.
+  - Provider metadata advertises `quickfix` actions so Monaco can route lightbulb
+    requests efficiently.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

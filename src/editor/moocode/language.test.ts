@@ -3,6 +3,7 @@ import {
   BUILTIN_FUNCTIONS,
   ERROR_CONSTANTS,
   MOO_LANGUAGE_ID,
+  createMooCodeActionProvider,
   createMooCompletionItems,
   createMooCompletionProvider,
   createMooDefinitionProvider,
@@ -155,6 +156,7 @@ describe('MOO Monaco language support', () => {
         },
         getLanguages: vi.fn(() => []),
         register: vi.fn(),
+        registerCodeActionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -182,6 +184,7 @@ describe('MOO Monaco language support', () => {
       MOO_LANGUAGE_ID,
       expect.any(Object),
     );
+    expect(monaco.languages.registerCodeActionProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerCompletionItemProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDefinitionProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentSymbolProvider).toHaveBeenCalledTimes(1);
@@ -238,6 +241,51 @@ describe('MOO Monaco language support', () => {
         expect.objectContaining({ resource: 'moo://#1:test' }),
       ],
     });
+  });
+
+  it('provides Monaco quick fixes for fixable MOO diagnostics', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () => 'while (connected)\n  suspend(1);',
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      { markers: [], trigger: 1 } as never,
+      {} as never,
+    );
+
+    expect(actions).toEqual({
+      actions: [
+        {
+          title: 'Insert missing endwhile',
+          kind: 'quickfix',
+          isPreferred: true,
+          diagnostics: [expect.objectContaining({ code: 'unclosed-block' })],
+          edit: {
+            edits: [
+              {
+                resource: 'moo://#1:tick',
+                textEdit: {
+                  range: {
+                    startLineNumber: 2,
+                    startColumn: 14,
+                    endLineNumber: 2,
+                    endColumn: 14,
+                  },
+                  text: '\nendwhile',
+                },
+                versionId: undefined,
+              },
+            ],
+          },
+        },
+      ],
+      dispose: expect.any(Function),
+    });
+    expect(actions.dispose()).toBeUndefined();
   });
 
   it('provides Monaco semantic tokens for MOO source', () => {
@@ -341,6 +389,7 @@ describe('MOO Monaco language support', () => {
         },
         getLanguages: vi.fn(() => [{ id: MOO_LANGUAGE_ID }]),
         register: vi.fn(),
+        registerCodeActionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),

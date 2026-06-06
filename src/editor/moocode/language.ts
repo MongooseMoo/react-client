@@ -10,6 +10,8 @@ export {
   PLAINTEXT_LANGUAGE_ID,
   STATEMENT_KEYWORDS,
 } from './contract';
+import { getMooQuickFixes } from './codeActions';
+import type { MooDiagnostic } from './diagnostics';
 import {
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
@@ -182,6 +184,9 @@ type SignatureHelpProvider = {
 
 export type MonacoLike = {
   languages: {
+    CodeActionKind?: {
+      QuickFix: string;
+    };
     CompletionItemInsertTextRule: {
       InsertAsSnippet: number;
     };
@@ -196,6 +201,11 @@ export type MonacoLike = {
     };
     getLanguages: () => Array<{ id: string }>;
     register: (language: { id: string }) => void;
+    registerCodeActionProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.CodeActionProvider,
+      metadata?: MonacoEditor.languages.CodeActionProviderMetadata,
+    ) => { dispose: () => void };
     registerCompletionItemProvider: (
       languageId: string,
       provider: CompletionProvider,
@@ -408,6 +418,42 @@ export function createMooCompletionItems(
   }
 }
 
+export function createMooCodeActionProvider(): MonacoEditor.languages.CodeActionProvider {
+  return {
+    provideCodeActions: (model) => ({
+      actions: getMooQuickFixes(model.getValue()).map((fix) => ({
+        title: fix.title,
+        kind: 'quickfix',
+        isPreferred: true,
+        diagnostics: fix.diagnostics.map(toCodeActionMarker),
+        edit: {
+          edits: [
+            {
+              resource: model.uri,
+              textEdit: {
+                range: fix.edit.range,
+                text: fix.edit.text,
+              },
+              versionId: undefined,
+            },
+          ],
+        },
+      })),
+      dispose: () => {},
+    }),
+  };
+}
+
+function toCodeActionMarker(diagnostic: MooDiagnostic): MonacoEditor.editor.IMarkerData {
+  return {
+    ...diagnostic,
+    severity: 8,
+    startLineNumber: diagnostic.lineNumber,
+    endLineNumber: diagnostic.lineNumber,
+    source: MOO_LANGUAGE_ID,
+  };
+}
+
 export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProvider {
   return {
     triggerCharacters: ['.', ':', '$', 'E', '_'],
@@ -550,6 +596,13 @@ export function registerMooLanguage(monaco: MonacoLike) {
 
   monaco.languages.setMonarchTokensProvider(MOO_LANGUAGE_ID, createMooMonarchLanguage());
   monaco.languages.setLanguageConfiguration(MOO_LANGUAGE_ID, createMooLanguageConfiguration());
+  monaco.languages.registerCodeActionProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooCodeActionProvider(),
+    {
+      providedCodeActionKinds: [monaco.languages.CodeActionKind?.QuickFix ?? 'quickfix'],
+    },
+  );
   monaco.languages.registerCompletionItemProvider(MOO_LANGUAGE_ID, createMooCompletionProvider(monaco));
   monaco.languages.registerDefinitionProvider?.(MOO_LANGUAGE_ID, createMooDefinitionProvider());
   monaco.languages.registerDocumentSymbolProvider?.(
