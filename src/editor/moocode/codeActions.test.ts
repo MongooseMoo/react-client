@@ -80,4 +80,37 @@ describe('MOO code actions', () => {
       },
     });
   });
+
+  it('offers remove quick fixes for unexpected closers and delimiters', () => {
+    const source = ['endif', 'value = listappend(items, item));'].join('\n');
+
+    expect(getMooQuickFixes(source)).toEqual([
+      {
+        title: 'Remove unexpected endif',
+        diagnostics: [expect.objectContaining({ code: 'unexpected-close' })],
+        edit: {
+          range: {
+            startLineNumber: 1,
+            startColumn: 1,
+            endLineNumber: 1,
+            endColumn: 6,
+          },
+          text: '',
+        },
+      },
+      {
+        title: 'Remove unexpected )',
+        diagnostics: [expect.objectContaining({ code: 'unexpected-delimiter' })],
+        edit: {
+          range: {
+            startLineNumber: 2,
+            startColumn: 32,
+            endLineNumber: 2,
+            endColumn: 33,
+          },
+          text: '',
+        },
+      },
+    ]);
+  });
 });

@@ -275,6 +275,8 @@ Iterations:
   - Added a quick fix for mismatched block close keywords, so a bad closer like
     `endwhile` under an `if` can be replaced with `endif` from Monaco's
     lightbulb actions.
+  - Added remove quick fixes for unexpected close keywords and unexpected
+    delimiters, using narrow edits over the exact offending token.
   - Cleaned up editor toolbar buttons with explicit button types and without
     `accessKey` shortcuts that conflict with assistive-technology keymaps.
   - Focused red-to-green gate:

@@ -77,6 +77,20 @@ export function getMooQuickFixes(source: string): MooQuickFix[] {
           },
         });
         break;
+      case 'unexpected-close':
+      case 'unexpected-delimiter': {
+        const text = diagnosticText(lines, diagnostic);
+
+        fixes.push({
+          title: `Remove unexpected ${text}`,
+          diagnostics: [diagnostic],
+          edit: {
+            range: diagnosticRange(diagnostic),
+            text: '',
+          },
+        });
+        break;
+      }
       case 'unterminated-string':
         fixes.push({
           title: 'Insert closing quote',
@@ -119,6 +133,12 @@ function diagnosticRange(diagnostic: MooDiagnostic): MonacoRange {
     endLineNumber: diagnostic.lineNumber,
     endColumn: diagnostic.endColumn,
   };
+}
+
+function diagnosticText(lines: string[], diagnostic: MooDiagnostic): string {
+  const line = lines[diagnostic.lineNumber - 1] ?? '';
+
+  return line.slice(diagnostic.startColumn - 1, diagnostic.endColumn - 1);
 }
 
 function leadingWhitespace(line: string): string {
