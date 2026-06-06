@@ -334,6 +334,31 @@ describe('MOO semantic model', () => {
     ]);
   });
 
+  it('does not treat break and continue labels as local references', () => {
+    const source = [
+      'while outer (valid(player))',
+      '  break outer;',
+      'endwhile',
+      'for item in (items)',
+      '  continue outer;',
+      'endfor',
+    ].join('\n');
+
+    expect(findMooUndefinedLocalReferences(source)).toEqual([
+      {
+        name: 'items',
+        range: wordRange(source, 'items', 1),
+      },
+    ]);
+    expect(analyzeMooSemantics(source).symbols).toEqual([
+      {
+        name: 'item',
+        definitions: [wordRange(source, 'item', 1)],
+        references: [],
+      },
+    ]);
+  });
+
   it('does not report mixed-case references as undefined or unused', () => {
     const source = ['Total = 0;', 'notify(player, total);'].join('\n');
 

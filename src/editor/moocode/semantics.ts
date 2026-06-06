@@ -680,6 +680,10 @@ function isNonVariableIdentifierOccurrence(source: string, occurrence: Occurrenc
     return true;
   }
 
+  if (isLoopControlLabelIdentifier(source, occurrence)) {
+    return true;
+  }
+
   const previous = previousNonWhitespaceCharacter(source, occurrence.startOffset);
   if (previous === '.' || previous === ':' || previous === '$') {
     return true;
@@ -746,6 +750,13 @@ function lineAroundOffset(source: string, offset: number): { text: string; start
     text: source.slice(startOffset, endOffset < 0 ? source.length : endOffset),
     startOffset,
   };
+}
+
+function isLoopControlLabelIdentifier(source: string, occurrence: Occurrence): boolean {
+  const line = lineAroundOffset(source, occurrence.startOffset);
+  const localStart = occurrence.startOffset - line.startOffset;
+
+  return /\b(?:break|continue)\s+$/i.test(line.text.slice(0, localStart));
 }
 
 function validateMooIdentifier(value: string): string | null {
