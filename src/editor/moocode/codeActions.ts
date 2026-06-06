@@ -1,4 +1,5 @@
 import { MOO_BLOCKS, type MooBlockKind } from './contract';
+import { getMooBuiltinMetadata } from './builtins';
 import { validateMooSyntax, type MooDiagnostic } from './diagnostics';
 import { firstMooKeyword } from './scanner';
 import type { MonacoRange } from './language';
@@ -150,6 +151,23 @@ export function getMooQuickFixes(
         });
         break;
       }
+      case 'builtin-arity': {
+        const name = diagnosticText(lines, diagnostic);
+        const edit = extraBuiltinArgumentsEdit(lines, diagnostic, name);
+        if (!edit) {
+          break;
+        }
+
+        fixes.push({
+          title: `Remove extra ${name} ${edit.removedCount === 1 ? 'argument' : 'arguments'}`,
+          diagnostics: [diagnostic],
+          edit: {
+            range: edit.range,
+            text: '',
+          },
+        });
+        break;
+      }
       case 'unknown-loop-label':
         fixes.push({
           title: 'Remove unknown loop label',
@@ -239,6 +257,158 @@ function diagnosticText(lines: string[], diagnostic: MooQuickFixDiagnostic): str
 
 function leadingWhitespace(line: string): string {
   return /^\s*/.exec(line)?.[0] ?? '';
+}
+
+function extraBuiltinArgumentsEdit(
+  lines: string[],
+  diagnostic: MooQuickFixDiagnostic,
+  name: string,
+): { range: MonacoRange; removedCount: number } | null {
+  const metadata = getMooBuiltinMetadata(name);
+  if (!metadata || metadata.maxArgs < 0) {
+    return null;
+  }
+
+  const line = lines[diagnostic.lineNumber - 1] ?? '';
+  const openIndex = line.indexOf('(', diagnostic.endColumn - 1);
+  if (openIndex < 0) {
+    return null;
+  }
+
+  const closeIndex = findMatchingCloseParenInLine(line, openIndex);
+  if (closeIndex === null) {
+    return null;
+  }
+
+  const argumentCount = countTopLevelArguments(line, openIndex + 1, closeIndex);
+  if (argumentCount <= metadata.maxArgs) {
+    return null;
+  }
+
+  const startIndex =
+    metadata.maxArgs === 0
+      ? openIndex + 1
+      : topLevelCommaIndexes(line, openIndex + 1, closeIndex)[metadata.maxArgs - 1];
+  if (startIndex === undefined) {
+    return null;
+  }
+
+  return {
+    removedCount: argumentCount - metadata.maxArgs,
+    range: {
+      startLineNumber: diagnostic.lineNumber,
+      startColumn: startIndex + 1,
+      endLineNumber: diagnostic.lineNumber,
+      endColumn: closeIndex + 1,
+    },
+  };
+}
+
+function findMatchingCloseParenInLine(line: string, openIndex: number): number | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = openIndex; index < line.length; index += 1) {
+    const character = line[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (character === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (character === '"') {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (character === '(' || character === '[' || character === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (character !== ')' && character !== ']' && character !== '}') {
+      continue;
+    }
+
+    depth -= 1;
+    if (depth === 0) {
+      return character === ')' ? index : null;
+    }
+  }
+
+  return null;
+}
+
+function countTopLevelArguments(line: string, startIndex: number, endIndex: number): number {
+  if (line.slice(startIndex, endIndex).trim() === '') {
+    return 0;
+  }
+
+  return topLevelCommaIndexes(line, startIndex, endIndex).length + 1;
+}
+
+function topLevelCommaIndexes(line: string, startIndex: number, endIndex: number): number[] {
+  const commaIndexes: number[] = [];
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const character = line[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (character === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (character === '"') {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (character === '(' || character === '[' || character === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (character === ')' || character === ']' || character === '}') {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+
+    if (character === ',' && depth === 0) {
+      commaIndexes.push(index);
+    }
+  }
+
+  return commaIndexes;
 }
 
 function isMooBlockKind(value: string | undefined): value is MooBlockKind {

@@ -1100,6 +1100,60 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('provides Monaco quick fixes for extra builtin arguments', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () => 'notify(#1, "hello", 0, 1, 2);',
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      {
+        markers: [
+          {
+            code: 'builtin-arity',
+            lineNumber: 1,
+            startLineNumber: 1,
+            endLineNumber: 1,
+            startColumn: 1,
+            endColumn: 7,
+            message: 'notify expects 2 to 4 arguments, but got 5.',
+            severity: 8,
+            source: MOO_LANGUAGE_ID,
+          },
+        ],
+        trigger: 1,
+      } as never,
+      {} as never,
+    );
+
+    expect(actions.actions).toContainEqual({
+      title: 'Remove extra notify argument',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [expect.objectContaining({ code: 'builtin-arity' })],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 1,
+                startColumn: 25,
+                endLineNumber: 1,
+                endColumn: 28,
+              },
+              text: '',
+            },
+            versionId: undefined,
+          },
+        ],
+      },
+    });
+  });
+
   it('provides Monaco quick fixes for unknown loop label diagnostics', () => {
     const provider = createMooCodeActionProvider();
     const model = {

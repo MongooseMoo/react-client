@@ -177,6 +177,24 @@ describe('MOO code actions', () => {
     });
   });
 
+  it('offers a quick fix to remove extra builtin arguments', () => {
+    const source = 'notify(#1, "hello", 0, 1, 2);';
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Remove extra notify argument',
+      diagnostics: [expect.objectContaining({ code: 'builtin-arity' })],
+      edit: {
+        range: {
+          startLineNumber: 1,
+          startColumn: 25,
+          endLineNumber: 1,
+          endColumn: 28,
+        },
+        text: '',
+      },
+    });
+  });
+
   it('offers a quick fix to remove unknown loop labels from loop control statements', () => {
     const source = ['while outer (valid(player))', '  break missing;', 'endwhile'].join('\n');
 
