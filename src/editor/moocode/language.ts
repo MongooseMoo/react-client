@@ -120,6 +120,7 @@ type CompletionItem = {
   insertTextRules?: number;
   documentation: string;
   range: MonacoRange;
+  sortText?: string;
 };
 
 type CompletionList = {
@@ -499,6 +500,7 @@ export function createMooCompletionItems(
     insertText: keyword,
     documentation: getMooKeywordDocumentation(keyword) ?? 'MOO statement keyword',
     range,
+    sortText: completionSortText('keyword', keyword),
   }));
   const variables = BUILTIN_VARIABLES.map((variable) => ({
     label: variable,
@@ -507,6 +509,7 @@ export function createMooCompletionItems(
     insertText: variable,
     documentation: getMooBuiltinVariableDocumentation(variable) ?? 'MOO builtin variable',
     range,
+    sortText: completionSortText('variable', variable),
   }));
   const errors = ERROR_CONSTANTS.map((error) => ({
     label: error,
@@ -515,6 +518,7 @@ export function createMooCompletionItems(
     insertText: error,
     documentation: getMooErrorDocumentation(error) ?? 'MOO error constant',
     range,
+    sortText: completionSortText('error', error),
   }));
   const exceptionCodes = [
     {
@@ -524,6 +528,7 @@ export function createMooCompletionItems(
       insertText: 'any',
       documentation: 'Matches any raised MOO exception.',
       range,
+      sortText: completionSortText('exception', 'any'),
     },
     {
       label: 'error',
@@ -532,6 +537,7 @@ export function createMooCompletionItems(
       insertText: 'error',
       documentation: 'Matches a generic MOO error value.',
       range,
+      sortText: completionSortText('exception', 'error'),
     },
     ...errors,
   ];
@@ -542,6 +548,7 @@ export function createMooCompletionItems(
     insertText: reference,
     documentation: 'MOO system object reference',
     range,
+    sortText: completionSortText('system', reference),
   }));
   const functions = BUILTIN_FUNCTIONS.map((name) => {
     const signature = BUILTIN_SNIPPETS[name] ?? createMooBuiltinSnippet(name);
@@ -555,6 +562,7 @@ export function createMooCompletionItems(
       insertTextRules: snippetRule,
       documentation: builtinSignature?.documentation ?? 'ToastStunt builtin function',
       range,
+      sortText: completionSortText('function', name),
     };
   });
   const localVariables = locals.map((local) => ({
@@ -564,6 +572,7 @@ export function createMooCompletionItems(
     insertText: local.name,
     documentation: 'MOO local variable',
     range,
+    sortText: completionSortText('local', local.name),
   }));
   const loopLabelItems = loopLabels.map((label) => ({
     label: label.name,
@@ -572,6 +581,7 @@ export function createMooCompletionItems(
     insertText: label.name,
     documentation: 'Enclosing while label',
     range,
+    sortText: completionSortText('loop', label.name),
   }));
 
   switch (context) {
@@ -1249,6 +1259,29 @@ type CompletionContext =
   | 'system-reference'
   | 'verb';
 
+type CompletionSortTier =
+  | 'local'
+  | 'loop'
+  | 'system'
+  | 'exception'
+  | 'snippet'
+  | 'keyword'
+  | 'variable'
+  | 'error'
+  | 'function';
+
+const COMPLETION_SORT_PREFIX: Record<CompletionSortTier, string> = {
+  local: '00',
+  loop: '00',
+  system: '00',
+  exception: '00',
+  snippet: '02',
+  keyword: '03',
+  variable: '04',
+  error: '05',
+  function: '06',
+};
+
 function getCompletionContext(
   model: CompletionTextModelLike,
   position: CompletionPosition,
@@ -1455,7 +1488,12 @@ function createMooBlockSnippetItems(
     insertTextRules,
     documentation: snippet.documentation,
     range,
+    sortText: completionSortText('snippet', snippet.label),
   }));
+}
+
+function completionSortText(tier: CompletionSortTier, label: string): string {
+  return `${COMPLETION_SORT_PREFIX[tier]}_${tier}_${label.toLowerCase()}`;
 }
 
 function placeholder(index: number, name: string): string {

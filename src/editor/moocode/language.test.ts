@@ -129,6 +129,77 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('adds stable sort tiers to Monaco completion items', () => {
+    const items = createMooCompletionItems(
+      {
+        startLineNumber: 1,
+        endLineNumber: 1,
+        startColumn: 1,
+        endColumn: 1,
+      },
+      undefined,
+      'default',
+      [{ name: 'total' }],
+    );
+
+    expect(items.find((item) => item.label === 'total')).toMatchObject({
+      sortText: '00_local_total',
+    });
+    expect(items.find((item) => item.label === 'if block')).toMatchObject({
+      sortText: '02_snippet_if block',
+    });
+    expect(items.find((item) => item.label === 'if')).toMatchObject({
+      sortText: '03_keyword_if',
+    });
+    expect(items.find((item) => item.label === 'player')).toMatchObject({
+      sortText: '04_variable_player',
+    });
+    expect(items.find((item) => item.label === 'E_PERM')).toMatchObject({
+      sortText: '05_error_e_perm',
+    });
+    expect(items.find((item) => item.label === 'notify')).toMatchObject({
+      sortText: '06_function_notify',
+    });
+  });
+
+  it('adds stable sort tiers to context-filtered MOO completions', () => {
+    const range = {
+      startLineNumber: 1,
+      endLineNumber: 1,
+      startColumn: 1,
+      endColumn: 1,
+    };
+
+    expect(
+      createMooCompletionItems(range, undefined, 'loop-label', [], [{ name: 'outer' }]),
+    ).toEqual([
+      expect.objectContaining({
+        label: 'outer',
+        sortText: '00_loop_outer',
+      }),
+    ]);
+    expect(createMooCompletionItems(range, undefined, 'system-reference')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: '$room',
+          sortText: '00_system_$room',
+        }),
+      ]),
+    );
+    expect(createMooCompletionItems(range, undefined, 'exception')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'any',
+          sortText: '00_exception_any',
+        }),
+        expect.objectContaining({
+          label: 'E_PERM',
+          sortText: '05_error_e_perm',
+        }),
+      ]),
+    );
+  });
+
   it('uses ToastStunt arity metadata for generic builtin completion snippets', () => {
     const items = createMooCompletionItems({
       startLineNumber: 1,
@@ -200,6 +271,7 @@ describe('MOO Monaco language support', () => {
           insertText: ifBlockSnippet,
           insertTextRules: 4,
           documentation: 'Insert an if/endif block.',
+          sortText: '02_snippet_if block',
           range: {
             startLineNumber: 1,
             endLineNumber: 1,
