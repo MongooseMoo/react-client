@@ -1,3 +1,5 @@
+import type * as MonacoEditor from 'monaco-editor';
+
 export {
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
@@ -21,6 +23,12 @@ import {
   STATEMENT_KEYWORDS,
 } from './contract';
 import { getMooSignatureHelp } from './signatures';
+import {
+  createMooRenameWorkspaceEdit,
+  findMooDefinition,
+  findMooReferences,
+  getMooLocalCompletions,
+} from './semantics';
 import { analyzeMooStructure, type MooStructureSymbol } from './structure';
 import { parseMooCodeWithTreeSitter, type MooTreeSitterParseResult } from './treeSitter';
 
@@ -87,9 +95,11 @@ type TextModelLike = {
 
 type TextModelValueLike = {
   getValue(): string;
+  uri?: unknown;
 };
 
 type CompletionTextModelLike = {
+  getValue(): string;
   getLineContent(lineNumber: number): string;
   getWordUntilPosition(position: { lineNumber: number; column: number }): {
     word: string;
@@ -122,7 +132,9 @@ type DocumentSymbol = {
 };
 
 type DocumentSymbolProvider = {
-  provideDocumentSymbols: (model: TextModelValueLike) => DocumentSymbol[] | Promise<DocumentSymbol[]>;
+  provideDocumentSymbols: (
+    model: TextModelValueLike,
+  ) => DocumentSymbol[] | Promise<DocumentSymbol[]>;
 };
 
 type FoldingRange = {
@@ -187,6 +199,10 @@ export type MonacoLike = {
       languageId: string,
       provider: CompletionProvider,
     ) => { dispose: () => void };
+    registerDefinitionProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.DefinitionProvider,
+    ) => { dispose: () => void };
     registerDocumentSymbolProvider?: (
       languageId: string,
       provider: DocumentSymbolProvider,
@@ -200,6 +216,14 @@ export type MonacoLike = {
       provider: {
         provideHover: (model: TextModelLike, position: unknown) => Hover | null;
       },
+    ) => { dispose: () => void };
+    registerReferenceProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.ReferenceProvider,
+    ) => { dispose: () => void };
+    registerRenameProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.RenameProvider,
     ) => { dispose: () => void };
     registerSignatureHelpProvider?: (
       languageId: string,
@@ -309,6 +333,7 @@ export function createMooCompletionItems(
   range: MonacoRange,
   monaco?: MonacoLike,
   context: CompletionContext = 'default',
+  locals: Array<{ name: string }> = [],
 ): CompletionItem[] {
   const kind = monaco?.languages.CompletionItemKind ?? {
     Constant: 14,
@@ -358,6 +383,13 @@ export function createMooCompletionItems(
       range,
     };
   });
+  const localVariables = locals.map((local) => ({
+    label: local.name,
+    kind: kind.Variable,
+    insertText: local.name,
+    documentation: 'MOO local variable',
+    range,
+  }));
 
   switch (context) {
     case 'error':
@@ -367,7 +399,7 @@ export function createMooCompletionItems(
     case 'verb':
       return functions;
     case 'default':
-      return [...statements, ...variables, ...errors, ...functions];
+      return [...localVariables, ...statements, ...variables, ...errors, ...functions];
   }
 }
 
@@ -384,8 +416,22 @@ export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProv
       };
 
       return {
-        suggestions: createMooCompletionItems(range, monaco, getCompletionContext(model, position)),
+        suggestions: createMooCompletionItems(
+          range,
+          monaco,
+          getCompletionContext(model, position),
+          getMooLocalCompletions(model.getValue(), position),
+        ),
       };
+    },
+  };
+}
+
+export function createMooDefinitionProvider(): MonacoEditor.languages.DefinitionProvider {
+  return {
+    provideDefinition: (model, position) => {
+      const definition = findMooDefinition(model.getValue(), position);
+      return definition ? { uri: model.uri, range: definition.range } : null;
     },
   };
 }
@@ -418,6 +464,41 @@ export function createMooFoldingRangeProvider(
       const foldingRanges = await getParserStructure(source, parse, 'foldingRanges');
 
       return foldingRanges ?? analyzeMooStructure(source).foldingRanges;
+    },
+  };
+}
+
+export function createMooReferenceProvider(): MonacoEditor.languages.ReferenceProvider {
+  return {
+    provideReferences: (model, position) =>
+      findMooReferences(model.getValue(), position).map((reference) => ({
+        uri: model.uri,
+        range: reference.range,
+      })),
+  };
+}
+
+export function createMooRenameProvider(): MonacoEditor.languages.RenameProvider {
+  return {
+    provideRenameEdits: (model, position, newName) => {
+      const rename = createMooRenameWorkspaceEdit(model.getValue(), position, newName);
+      if ('rejectReason' in rename) {
+        return {
+          edits: [],
+          rejectReason: rename.rejectReason,
+        };
+      }
+
+      return {
+        edits: rename.edits.map((edit) => ({
+          resource: model.uri,
+          textEdit: {
+            range: edit.range,
+            text: edit.text,
+          },
+          versionId: undefined,
+        })),
+      };
     },
   };
 }
@@ -457,11 +538,14 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.setMonarchTokensProvider(MOO_LANGUAGE_ID, createMooMonarchLanguage());
   monaco.languages.setLanguageConfiguration(MOO_LANGUAGE_ID, createMooLanguageConfiguration());
   monaco.languages.registerCompletionItemProvider(MOO_LANGUAGE_ID, createMooCompletionProvider(monaco));
+  monaco.languages.registerDefinitionProvider?.(MOO_LANGUAGE_ID, createMooDefinitionProvider());
   monaco.languages.registerDocumentSymbolProvider?.(
     MOO_LANGUAGE_ID,
     createMooDocumentSymbolProvider(monaco),
   );
   monaco.languages.registerFoldingRangeProvider?.(MOO_LANGUAGE_ID, createMooFoldingRangeProvider());
+  monaco.languages.registerReferenceProvider?.(MOO_LANGUAGE_ID, createMooReferenceProvider());
+  monaco.languages.registerRenameProvider?.(MOO_LANGUAGE_ID, createMooRenameProvider());
   monaco.languages.registerSignatureHelpProvider?.(MOO_LANGUAGE_ID, createMooSignatureHelpProvider());
   monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, {
     provideHover: (model, position) => {

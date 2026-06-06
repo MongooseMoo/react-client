@@ -93,3 +93,13 @@ Iterations:
     unavailable.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco semantic navigation:
+  - Added `src/editor/moocode/semantics.ts` for browser-side local symbol
+    discovery across assignments, `for` variables, `fork` task variables, and
+    scatter targets.
+  - Registered Monaco definition, reference, and rename providers for local
+    MOO symbols, and added local variables to default completions.
+  - Rename edits use Monaco's real `WorkspaceEdit` shape and reject invalid MOO
+    identifiers or positions without a local symbol.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

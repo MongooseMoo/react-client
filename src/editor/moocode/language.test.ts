@@ -5,10 +5,13 @@ import {
   MOO_LANGUAGE_ID,
   createMooCompletionItems,
   createMooCompletionProvider,
+  createMooDefinitionProvider,
   createMooDocumentSymbolProvider,
   createMooFoldingRangeProvider,
   createMooLanguageConfiguration,
   createMooMonarchLanguage,
+  createMooReferenceProvider,
+  createMooRenameProvider,
   getEditorLanguageForSessionType,
   registerMooLanguage,
 } from './language';
@@ -65,6 +68,7 @@ describe('MOO Monaco language support', () => {
   it('computes completion replacement ranges from the active model word', () => {
     const provider = createMooCompletionProvider();
     const model = {
+      getValue: vi.fn(() => '  not'),
       getLineContent: vi.fn(() => '  not'),
       getWordUntilPosition: vi.fn(() => ({
         word: 'not',
@@ -84,6 +88,36 @@ describe('MOO Monaco language support', () => {
       startColumn: 3,
       endColumn: 6,
     });
+  });
+
+  it('adds local MOO symbols to default completions', () => {
+    const provider = createMooCompletionProvider();
+    const source = ['total = 0;', 'for item in (items)', '  it', 'endfor'].join('\n');
+    const completions = provider.provideCompletionItems(
+      {
+        getValue: () => source,
+        getLineContent: () => '  it',
+        getWordUntilPosition: () => ({
+          word: 'it',
+          startColumn: 3,
+          endColumn: 5,
+        }),
+      },
+      { lineNumber: 3, column: 5 },
+    );
+
+    expect(completions.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'item',
+          documentation: 'MOO local variable',
+        }),
+        expect.objectContaining({
+          label: 'total',
+          documentation: 'MOO local variable',
+        }),
+      ]),
+    );
   });
 
   it('filters completions for error constants, system references, and verb-call contexts', () => {
@@ -121,9 +155,12 @@ describe('MOO Monaco language support', () => {
         getLanguages: vi.fn(() => []),
         register: vi.fn(),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
         setLanguageConfiguration: vi.fn(),
         setMonarchTokensProvider: vi.fn(),
@@ -144,10 +181,60 @@ describe('MOO Monaco language support', () => {
       expect.any(Object),
     );
     expect(monaco.languages.registerCompletionItemProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerDefinitionProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentSymbolProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerFoldingRangeProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerHoverProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerReferenceProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerRenameProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerSignatureHelpProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it('provides local definition, reference, and rename operations for Monaco', () => {
+    const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
+    const model = {
+      getValue: () => source,
+      uri: 'moo://#1:test',
+    };
+    const definitionProvider = createMooDefinitionProvider();
+    const referenceProvider = createMooReferenceProvider();
+    const renameProvider = createMooRenameProvider();
+
+    expect(definitionProvider.provideDefinition(model, { lineNumber: 2, column: 10 })).toEqual({
+      uri: 'moo://#1:test',
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 6,
+      },
+    });
+    expect(referenceProvider.provideReferences(model, { lineNumber: 3, column: 18 })).toEqual([
+      expect.objectContaining({ uri: 'moo://#1:test' }),
+      expect.objectContaining({ uri: 'moo://#1:test' }),
+      expect.objectContaining({ uri: 'moo://#1:test' }),
+      expect.objectContaining({ uri: 'moo://#1:test' }),
+    ]);
+    expect(renameProvider.provideRenameEdits(model, { lineNumber: 2, column: 10 }, 'score')).toEqual({
+      edits: [
+        {
+          resource: 'moo://#1:test',
+          textEdit: {
+            range: {
+              startLineNumber: 1,
+              startColumn: 1,
+              endLineNumber: 1,
+              endColumn: 6,
+            },
+            text: 'score',
+          },
+          versionId: undefined,
+        },
+        expect.objectContaining({ resource: 'moo://#1:test' }),
+        expect.objectContaining({ resource: 'moo://#1:test' }),
+        expect.objectContaining({ resource: 'moo://#1:test' }),
+      ],
+    });
   });
 
   it('provides Monaco document symbols and folding ranges from parser-backed MOO structure', async () => {
@@ -238,9 +325,12 @@ describe('MOO Monaco language support', () => {
         getLanguages: vi.fn(() => [{ id: MOO_LANGUAGE_ID }]),
         register: vi.fn(),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
         setLanguageConfiguration: vi.fn(),
         setMonarchTokensProvider: vi.fn(),
@@ -276,6 +366,7 @@ function labelsForCompletion(
   const startColumn = column - word.length;
   const completions = provider.provideCompletionItems(
     {
+      getValue: () => line,
       getLineContent: () => line,
       getWordUntilPosition: () => ({
         word,
