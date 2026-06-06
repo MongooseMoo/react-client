@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { findMooDocumentLinkAtPosition, getMooDocumentLinks } from './links';
+import {
+  findMooDocumentLinkAtPosition,
+  findMooDocumentLinkReferences,
+  getMooDocumentLinks,
+} from './links';
 
 describe('MOO document links', () => {
   it('links object number references to stable MOO object URIs', () => {
@@ -134,5 +138,60 @@ describe('MOO document links', () => {
 
     expect(findMooDocumentLinkAtPosition(source, { lineNumber: 1, column: 5 })).toBeNull();
     expect(findMooDocumentLinkAtPosition(source, { lineNumber: 2, column: 18 })).toBeNull();
+  });
+
+  it('finds same-target object and system reference links', () => {
+    const source = [
+      'owner = #123;',
+      'if (#123 != #-1)',
+      '  notify($player, $player.name);',
+      'endif',
+      '// #123 $player',
+    ].join('\n');
+
+    expect(findMooDocumentLinkReferences(source, { lineNumber: 1, column: 10 })).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 9,
+          endLineNumber: 1,
+          endColumn: 13,
+        },
+        url: 'moo://object/123',
+        tooltip: 'Open MOO object #123',
+      },
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 5,
+          endLineNumber: 2,
+          endColumn: 9,
+        },
+        url: 'moo://object/123',
+        tooltip: 'Open MOO object #123',
+      },
+    ]);
+    expect(findMooDocumentLinkReferences(source, { lineNumber: 3, column: 21 })).toEqual([
+      {
+        range: {
+          startLineNumber: 3,
+          startColumn: 10,
+          endLineNumber: 3,
+          endColumn: 17,
+        },
+        url: 'moo://system/player',
+        tooltip: 'Open MOO system reference $player',
+      },
+      {
+        range: {
+          startLineNumber: 3,
+          startColumn: 19,
+          endLineNumber: 3,
+          endColumn: 26,
+        },
+        url: 'moo://system/player',
+        tooltip: 'Open MOO system reference $player',
+      },
+    ]);
   });
 });

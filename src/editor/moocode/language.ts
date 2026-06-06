@@ -22,7 +22,11 @@ import {
 } from './hover';
 import { getMooInlineCompletions } from './inlineCompletions';
 import { collectMooInlayHints } from './inlayHints';
-import { findMooDocumentLinkAtPosition, getMooDocumentLinks } from './links';
+import {
+  findMooDocumentLinkAtPosition,
+  findMooDocumentLinkReferences,
+  getMooDocumentLinks,
+} from './links';
 import {
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
@@ -813,11 +817,30 @@ export function createMooDocumentHighlightProvider(
   documentHighlightKind: { Read: number; Write: number } = { Read: 1, Write: 2 },
 ): MonacoEditor.languages.DocumentHighlightProvider {
   return {
-    provideDocumentHighlights: (model, position) =>
-      findMooDocumentHighlights(model.getValue(), position).map((highlight) => ({
-        range: highlight.range,
-        kind: highlight.kind === 'write' ? documentHighlightKind.Write : documentHighlightKind.Read,
-      })),
+    provideDocumentHighlights: (model, position) => {
+      const source = model.getValue();
+      const semanticHighlights = findMooDocumentHighlights(source, position);
+      if (semanticHighlights.length > 0) {
+        return semanticHighlights.map((highlight) =>
+          toMooDocumentHighlight(highlight, documentHighlightKind),
+        );
+      }
+
+      return findMooDocumentLinkReferences(source, position).map((reference) => ({
+        range: reference.range,
+        kind: documentHighlightKind.Read,
+      }));
+    },
+  };
+}
+
+function toMooDocumentHighlight(
+  highlight: { range: MonacoRange; kind: 'read' | 'write' },
+  documentHighlightKind: { Read: number; Write: number },
+): MonacoEditor.languages.DocumentHighlight {
+  return {
+    range: highlight.range,
+    kind: highlight.kind === 'write' ? documentHighlightKind.Write : documentHighlightKind.Read,
   };
 }
 
@@ -967,11 +990,19 @@ export function createMooHoverProvider(): {
 
 export function createMooReferenceProvider(): MonacoEditor.languages.ReferenceProvider {
   return {
-    provideReferences: (model, position) =>
-      findMooReferences(model.getValue(), position).map((reference) => ({
+    provideReferences: (model, position) => {
+      const source = model.getValue();
+      const semanticReferences = findMooReferences(source, position);
+      const references =
+        semanticReferences.length > 0
+          ? semanticReferences
+          : findMooDocumentLinkReferences(source, position);
+
+      return references.map((reference) => ({
         uri: model.uri,
         range: reference.range,
-      })),
+      }));
+    },
   };
 }
 

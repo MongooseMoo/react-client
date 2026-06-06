@@ -610,6 +610,61 @@ describe('MOO Monaco language support', () => {
     expect(parseUri).toHaveBeenCalledWith('moo://system/player');
   });
 
+  it('uses document link targets for object and system reference searches', () => {
+    const source = [
+      'owner = #123;',
+      'if (#123 != #-1)',
+      '  notify($player, $player.name);',
+      'endif',
+    ].join('\n');
+    const model = {
+      getValue: () => source,
+      uri: 'moo://#1:test',
+    };
+    const referenceProvider = createMooReferenceProvider();
+
+    expect(referenceProvider.provideReferences(model, { lineNumber: 1, column: 10 })).toEqual([
+      {
+        uri: 'moo://#1:test',
+        range: {
+          startLineNumber: 1,
+          startColumn: 9,
+          endLineNumber: 1,
+          endColumn: 13,
+        },
+      },
+      {
+        uri: 'moo://#1:test',
+        range: {
+          startLineNumber: 2,
+          startColumn: 5,
+          endLineNumber: 2,
+          endColumn: 9,
+        },
+      },
+    ]);
+    expect(referenceProvider.provideReferences(model, { lineNumber: 3, column: 21 })).toEqual([
+      {
+        uri: 'moo://#1:test',
+        range: {
+          startLineNumber: 3,
+          startColumn: 10,
+          endLineNumber: 3,
+          endColumn: 17,
+        },
+      },
+      {
+        uri: 'moo://#1:test',
+        range: {
+          startLineNumber: 3,
+          startColumn: 19,
+          endLineNumber: 3,
+          endColumn: 26,
+        },
+      },
+    ]);
+  });
+
   it('provides Monaco CodeLens summaries for local MOO symbols', () => {
     const provider = createMooCodeLensProvider();
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
@@ -779,6 +834,73 @@ describe('MOO Monaco language support', () => {
       expect.objectContaining({ kind: 2 }),
       expect.objectContaining({ kind: 1 }),
       expect.objectContaining({ kind: 1 }),
+    ]);
+  });
+
+  it('provides Monaco document highlights for object and system references', () => {
+    const provider = createMooDocumentHighlightProvider({ Read: 1, Write: 2 });
+    const source = [
+      'owner = #123;',
+      'if (#123 != #-1)',
+      '  notify($player, $player.name);',
+      'endif',
+    ].join('\n');
+
+    expect(
+      provider.provideDocumentHighlights(
+        {
+          getValue: () => source,
+        } as never,
+        { lineNumber: 1, column: 10 },
+        {} as never,
+      ),
+    ).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 9,
+          endLineNumber: 1,
+          endColumn: 13,
+        },
+        kind: 1,
+      },
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 5,
+          endLineNumber: 2,
+          endColumn: 9,
+        },
+        kind: 1,
+      },
+    ]);
+    expect(
+      provider.provideDocumentHighlights(
+        {
+          getValue: () => source,
+        } as never,
+        { lineNumber: 3, column: 21 },
+        {} as never,
+      ),
+    ).toEqual([
+      {
+        range: {
+          startLineNumber: 3,
+          startColumn: 10,
+          endLineNumber: 3,
+          endColumn: 17,
+        },
+        kind: 1,
+      },
+      {
+        range: {
+          startLineNumber: 3,
+          startColumn: 19,
+          endLineNumber: 3,
+          endColumn: 26,
+        },
+        kind: 1,
+      },
     ]);
   });
 

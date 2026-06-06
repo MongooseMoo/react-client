@@ -68,6 +68,18 @@ export function findMooDocumentLinkAtPosition(
   );
 }
 
+export function findMooDocumentLinkReferences(
+  source: string,
+  position: { lineNumber: number; column: number },
+): MooDocumentLink[] {
+  const target = findMooDocumentLinkAtPosition(source, position);
+  if (!target) {
+    return [];
+  }
+
+  return getMooDocumentLinks(source).filter((link) => link.url === target.url);
+}
+
 function rangeFromOffsets(source: string, startOffset: number, endOffset: number): MonacoRange {
   const start = positionAtMooOffset(source, startOffset);
   const end = positionAtMooOffset(source, endOffset);
