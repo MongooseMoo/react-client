@@ -20,6 +20,7 @@ import {
   PLAINTEXT_LANGUAGE_ID,
   STATEMENT_KEYWORDS,
 } from './contract';
+import { analyzeMooStructure, type MooStructureSymbol } from './structure';
 
 export type MonacoRange = {
   startLineNumber: number;
@@ -82,6 +83,10 @@ type TextModelLike = {
   getWordAtPosition(position: unknown): { word: string } | null;
 };
 
+type TextModelValueLike = {
+  getValue(): string;
+};
+
 type CompletionTextModelLike = {
   getLineContent(lineNumber: number): string;
   getWordUntilPosition(position: { lineNumber: number; column: number }): {
@@ -104,6 +109,29 @@ type CompletionProvider = {
   ) => CompletionList;
 };
 
+type DocumentSymbol = {
+  name: string;
+  detail: string;
+  kind: number;
+  tags: [];
+  range: MonacoRange;
+  selectionRange: MonacoRange;
+  children: DocumentSymbol[];
+};
+
+type DocumentSymbolProvider = {
+  provideDocumentSymbols: (model: TextModelValueLike) => DocumentSymbol[];
+};
+
+type FoldingRange = {
+  start: number;
+  end: number;
+};
+
+type FoldingRangeProvider = {
+  provideFoldingRanges: (model: TextModelValueLike) => FoldingRange[];
+};
+
 export type MonacoLike = {
   languages: {
     CompletionItemInsertTextRule: {
@@ -115,11 +143,22 @@ export type MonacoLike = {
       Keyword: number;
       Variable: number;
     };
+    SymbolKind?: {
+      Function: number;
+    };
     getLanguages: () => Array<{ id: string }>;
     register: (language: { id: string }) => void;
     registerCompletionItemProvider: (
       languageId: string,
       provider: CompletionProvider,
+    ) => { dispose: () => void };
+    registerDocumentSymbolProvider?: (
+      languageId: string,
+      provider: DocumentSymbolProvider,
+    ) => { dispose: () => void };
+    registerFoldingRangeProvider?: (
+      languageId: string,
+      provider: FoldingRangeProvider,
     ) => { dispose: () => void };
     registerHoverProvider: (
       languageId: string,
@@ -312,6 +351,23 @@ export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProv
   };
 }
 
+export function createMooDocumentSymbolProvider(monaco?: MonacoLike): DocumentSymbolProvider {
+  const symbolKind = monaco?.languages.SymbolKind?.Function ?? 11;
+
+  return {
+    provideDocumentSymbols: (model) =>
+      analyzeMooStructure(model.getValue()).symbols.map((symbol) =>
+        toDocumentSymbol(symbol, symbolKind),
+      ),
+  };
+}
+
+export function createMooFoldingRangeProvider(): FoldingRangeProvider {
+  return {
+    provideFoldingRanges: (model) => analyzeMooStructure(model.getValue()).foldingRanges,
+  };
+}
+
 export function registerMooLanguage(monaco: MonacoLike) {
   if (REGISTERED_MONACO_INSTANCES.has(monaco)) {
     return;
@@ -329,6 +385,11 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.setMonarchTokensProvider(MOO_LANGUAGE_ID, createMooMonarchLanguage());
   monaco.languages.setLanguageConfiguration(MOO_LANGUAGE_ID, createMooLanguageConfiguration());
   monaco.languages.registerCompletionItemProvider(MOO_LANGUAGE_ID, createMooCompletionProvider(monaco));
+  monaco.languages.registerDocumentSymbolProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooDocumentSymbolProvider(monaco),
+  );
+  monaco.languages.registerFoldingRangeProvider?.(MOO_LANGUAGE_ID, createMooFoldingRangeProvider());
   monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, {
     provideHover: (model, position) => {
       const word = model.getWordAtPosition(position)?.word;
@@ -382,6 +443,18 @@ function getCompletionContext(
   }
 
   return 'default';
+}
+
+function toDocumentSymbol(symbol: MooStructureSymbol, kind: number): DocumentSymbol {
+  return {
+    name: symbol.name,
+    detail: 'MOO block',
+    kind,
+    tags: [],
+    range: symbol.range,
+    selectionRange: symbol.selectionRange,
+    children: symbol.children.map((child) => toDocumentSymbol(child, kind)),
+  };
 }
 
 const BUILTIN_SNIPPETS: Partial<Record<(typeof BUILTIN_FUNCTIONS)[number], string>> = {

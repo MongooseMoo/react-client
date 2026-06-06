@@ -25,9 +25,14 @@ const editorMock = vi.hoisted(() => ({
         Keyword: 17,
         Variable: 4,
       },
+      SymbolKind: {
+        Function: 11,
+      },
       getLanguages: vi.fn(() => []),
       register: vi.fn(),
       registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+      registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
+      registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
       registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
       setLanguageConfiguration: vi.fn(),
       setMonarchTokensProvider: vi.fn(),
@@ -99,6 +104,8 @@ describe('EditorWindow language selection', () => {
     editorMock.monaco.languages.getLanguages.mockReturnValue([]);
     editorMock.monaco.languages.register.mockClear();
     editorMock.monaco.languages.registerCompletionItemProvider.mockClear();
+    editorMock.monaco.languages.registerDocumentSymbolProvider.mockClear();
+    editorMock.monaco.languages.registerFoldingRangeProvider.mockClear();
     editorMock.monaco.languages.registerHoverProvider.mockClear();
     editorMock.monaco.languages.setLanguageConfiguration.mockClear();
     editorMock.monaco.languages.setMonarchTokensProvider.mockClear();

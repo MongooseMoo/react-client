@@ -113,9 +113,14 @@ describe('MOO Monaco language support', () => {
           Keyword: 17,
           Variable: 4,
         },
+        SymbolKind: {
+          Function: 11,
+        },
         getLanguages: vi.fn(() => []),
         register: vi.fn(),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
         setLanguageConfiguration: vi.fn(),
         setMonarchTokensProvider: vi.fn(),
@@ -136,7 +141,54 @@ describe('MOO Monaco language support', () => {
       expect.any(Object),
     );
     expect(monaco.languages.registerCompletionItemProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerDocumentSymbolProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerFoldingRangeProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerHoverProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it('provides Monaco document symbols and folding ranges from MOO block structure', () => {
+    const monaco = {
+      languages: {
+        CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
+        CompletionItemKind: {
+          Constant: 14,
+          Function: 1,
+          Keyword: 17,
+          Variable: 4,
+        },
+        SymbolKind: {
+          Function: 11,
+        },
+        getLanguages: vi.fn(() => [{ id: MOO_LANGUAGE_ID }]),
+        register: vi.fn(),
+        registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        setLanguageConfiguration: vi.fn(),
+        setMonarchTokensProvider: vi.fn(),
+      },
+    };
+
+    registerMooLanguage(monaco);
+
+    const source = ['while (connected)', '  notify(player, "tick");', 'endwhile'].join('\n');
+    const symbolProvider = monaco.languages.registerDocumentSymbolProvider.mock.calls[0][1];
+    const foldingProvider = monaco.languages.registerFoldingRangeProvider.mock.calls[0][1];
+
+    expect(symbolProvider.provideDocumentSymbols({ getValue: () => source })).toEqual([
+      expect.objectContaining({
+        name: 'while connected',
+        kind: 11,
+        range: expect.objectContaining({
+          startLineNumber: 1,
+          endLineNumber: 3,
+        }),
+      }),
+    ]);
+    expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).toEqual([
+      { start: 1, end: 3 },
+    ]);
   });
 });
 

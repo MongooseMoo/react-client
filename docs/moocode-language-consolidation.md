@@ -45,3 +45,13 @@ Iterations:
     and no `OPEN_BLOCKS`, `CLOSE_BLOCKS`, or `MIDDLE_BLOCKS` leftovers.
   - Tree-sitter corpus expansion remains paused pending approved MOO artifacts;
     `moocoder` was inspected but not used as corpus.
+- 2026-06-05 Monaco structure providers:
+  - Added `src/editor/moocode/structure.ts` as the browser-side block structure
+    analyzer for MOO document symbols and folding ranges.
+  - Registered Monaco document-symbol and folding-range providers for
+    `moocode`, backed by the same block contract used by indentation and
+    diagnostics.
+  - Structure scanning masks strings, line comments, and block comments so
+    block-looking text does not create fake symbols or folds.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.
