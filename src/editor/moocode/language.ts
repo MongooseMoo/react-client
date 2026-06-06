@@ -1112,19 +1112,68 @@ export function createMooInlayHintsProvider(
   inlayHintKind: { Parameter: number } = { Parameter: 2 },
 ): MonacoEditor.languages.InlayHintsProvider {
   return {
-    provideInlayHints: (model) => ({
-      hints: collectMooInlayHints(model.getValue()).map((hint) => ({
-        label: hint.label,
-        position: {
-          lineNumber: hint.lineNumber,
-          column: hint.column,
-        },
-        kind: inlayHintKind.Parameter,
-        paddingRight: true,
-      })),
-      dispose: () => {},
-    }),
+    provideInlayHints: (model, range) => {
+      const requestedRange = toInlayHintRange(range);
+
+      return {
+        hints: collectMooInlayHints(model.getValue())
+          .filter((hint) => isMooInlayHintInRange(hint, requestedRange))
+          .map((hint) => ({
+            label: hint.label,
+            position: {
+              lineNumber: hint.lineNumber,
+              column: hint.column,
+            },
+            kind: inlayHintKind.Parameter,
+            paddingRight: true,
+          })),
+        dispose: () => {},
+      };
+    },
   };
+}
+
+function toInlayHintRange(range: unknown): MonacoRange | null {
+  if (
+    typeof range === 'object' &&
+    range !== null &&
+    'startLineNumber' in range &&
+    'startColumn' in range &&
+    'endLineNumber' in range &&
+    'endColumn' in range &&
+    typeof range.startLineNumber === 'number' &&
+    typeof range.startColumn === 'number' &&
+    typeof range.endLineNumber === 'number' &&
+    typeof range.endColumn === 'number'
+  ) {
+    return {
+      startLineNumber: range.startLineNumber,
+      startColumn: range.startColumn,
+      endLineNumber: range.endLineNumber,
+      endColumn: range.endColumn,
+    };
+  }
+
+  return null;
+}
+
+function isMooInlayHintInRange(
+  hint: { lineNumber: number; column: number },
+  range: MonacoRange | null,
+): boolean {
+  if (!range) {
+    return true;
+  }
+
+  if (hint.lineNumber < range.startLineNumber || hint.lineNumber > range.endLineNumber) {
+    return false;
+  }
+
+  if (hint.lineNumber === range.startLineNumber && hint.column < range.startColumn) {
+    return false;
+  }
+
+  return !(hint.lineNumber === range.endLineNumber && hint.column > range.endColumn);
 }
 
 export function createMooInlineCompletionsProvider(): MonacoEditor.languages.InlineCompletionsProvider {

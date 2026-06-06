@@ -2097,9 +2097,15 @@ describe('MOO Monaco language support', () => {
 
   it('provides Monaco parameter inlay hints for builtin and verb calls', () => {
     const provider = createMooInlayHintsProvider({ Parameter: 2 });
+    const source = 'notify(player, "hello");\nplayer:tell("hi", caller);';
     const hints = provider.provideInlayHints(
-      { getValue: () => 'notify(player, "hello");\nplayer:tell("hi", caller);' } as never,
-      {} as never,
+      { getValue: () => source } as never,
+      {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 2,
+        endColumn: source.split('\n')[1].length + 1,
+      } as never,
       {} as never,
     );
 
@@ -2133,6 +2139,40 @@ describe('MOO Monaco language support', () => {
       dispose: expect.any(Function),
     });
     expect(hints.dispose()).toBeUndefined();
+  });
+
+  it('filters Monaco parameter inlay hints to the requested visible range', () => {
+    const provider = createMooInlayHintsProvider({ Parameter: 2 });
+    const hints = provider.provideInlayHints(
+      {
+        getValue: () => 'notify(player, "hello");\nplayer:tell("hi", caller);',
+      } as never,
+      {
+        startLineNumber: 2,
+        startColumn: 1,
+        endLineNumber: 2,
+        endColumn: 27,
+      } as never,
+      {} as never,
+    );
+
+    expect(hints).toEqual({
+      hints: [
+        {
+          label: 'arg1:',
+          position: { lineNumber: 2, column: 13 },
+          kind: 2,
+          paddingRight: true,
+        },
+        {
+          label: 'arg2:',
+          position: { lineNumber: 2, column: 19 },
+          kind: 2,
+          paddingRight: true,
+        },
+      ],
+      dispose: expect.any(Function),
+    });
   });
 
   it('provides Monaco inline completions for MOO block close scaffolding', () => {
