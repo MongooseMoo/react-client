@@ -486,24 +486,134 @@ function collectScatterDefinitions(
   lineOffset: number,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
-  for (const match of line.matchAll(/\{([^}]*)\}\s*=/g)) {
-    const targetList = match[1] ?? '';
-    const targetListOffset = lineOffset + match.index + 1;
-
-    for (const target of targetList.split(',')) {
-      const name = new RegExp(`^\\s*(?:[?@]\\s*)?(${MOO_IDENTIFIER_PATTERN_SOURCE})`).exec(
-        target,
-      )?.[1];
-      if (!name) {
-        continue;
-      }
-
-      const nameStart = targetListOffset + targetList.indexOf(target) + target.indexOf(name);
-      definitions.push({
-        name,
-        occurrence: occurrenceAt(source, nameStart, name.length),
-      });
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] !== '{') {
+      continue;
     }
+
+    const closeIndex = findMatchingDelimiter(line, index);
+    if (closeIndex === null) {
+      continue;
+    }
+
+    const nextIndex = nextNonWhitespaceIndex(line, closeIndex + 1);
+    if (nextIndex !== null && line[nextIndex] === '=') {
+      collectScatterTargetListDefinitions(source, line, lineOffset, index + 1, closeIndex, definitions);
+      index = closeIndex;
+    }
+  }
+}
+
+function collectScatterTargetListDefinitions(
+  source: string,
+  line: string,
+  lineOffset: number,
+  startIndex: number,
+  endIndex: number,
+  definitions: Array<{ name: string; occurrence: Occurrence }>,
+): void {
+  let targetStartIndex = startIndex;
+  const delimiters: string[] = [];
+
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    const character = index === endIndex ? ',' : line[index];
+
+    if (isOpeningDelimiter(character)) {
+      delimiters.push(character);
+      continue;
+    }
+
+    if (isClosingDelimiter(character) && delimiters.at(-1) === matchingOpenDelimiter(character)) {
+      delimiters.pop();
+      continue;
+    }
+
+    if (character === ',' && delimiters.length === 0) {
+      collectScatterTargetDefinition(source, line, lineOffset, targetStartIndex, index, definitions);
+      targetStartIndex = index + 1;
+    }
+  }
+}
+
+function collectScatterTargetDefinition(
+  source: string,
+  line: string,
+  lineOffset: number,
+  startIndex: number,
+  endIndex: number,
+  definitions: Array<{ name: string; occurrence: Occurrence }>,
+): void {
+  const target = line.slice(startIndex, endIndex);
+  const name = new RegExp(`^\\s*(?:[?@]\\s*)?(${MOO_IDENTIFIER_PATTERN_SOURCE})\\b`).exec(
+    target,
+  )?.[1];
+  if (!name) {
+    return;
+  }
+
+  const nameStart = lineOffset + startIndex + target.indexOf(name);
+  definitions.push({
+    name,
+    occurrence: occurrenceAt(source, nameStart, name.length),
+  });
+}
+
+function findMatchingDelimiter(line: string, openIndex: number): number | null {
+  const openDelimiter = line[openIndex];
+  const closeDelimiter = matchingCloseDelimiter(openDelimiter);
+  if (!closeDelimiter) {
+    return null;
+  }
+
+  let depth = 0;
+  for (let index = openIndex; index < line.length; index += 1) {
+    if (line[index] === openDelimiter) {
+      depth += 1;
+      continue;
+    }
+
+    if (line[index] === closeDelimiter) {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return null;
+}
+
+function isOpeningDelimiter(character: string): boolean {
+  return character === '(' || character === '[' || character === '{';
+}
+
+function isClosingDelimiter(character: string): boolean {
+  return character === ')' || character === ']' || character === '}';
+}
+
+function matchingOpenDelimiter(character: string): string | null {
+  switch (character) {
+    case ')':
+      return '(';
+    case ']':
+      return '[';
+    case '}':
+      return '{';
+    default:
+      return null;
+  }
+}
+
+function matchingCloseDelimiter(character: string): string | null {
+  switch (character) {
+    case '(':
+      return ')';
+    case '[':
+      return ']';
+    case '{':
+      return '}';
+    default:
+      return null;
   }
 }
 
@@ -591,6 +701,16 @@ function previousNonWhitespaceCharacter(source: string, offset: number): string 
   for (let index = offset - 1; index >= 0; index -= 1) {
     if (!/\s/.test(source[index])) {
       return source[index];
+    }
+  }
+
+  return null;
+}
+
+function nextNonWhitespaceIndex(source: string, offset: number): number | null {
+  for (let index = offset; index < source.length; index += 1) {
+    if (!/\s/.test(source[index])) {
+      return index;
     }
   }
 

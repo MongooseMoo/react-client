@@ -49,6 +49,37 @@ describe('MOO semantic model', () => {
     expect(analysis.symbols.find((symbol) => symbol.name === 'notify')).toBeUndefined();
   });
 
+  it('parses scatter targets without treating default-expression identifiers as locals', () => {
+    const source = [
+      '{?item = {@fallback, "literal, comma"}, rest, name} = args;',
+      '{name, name} = rest;',
+      'notify(player, item);',
+      'notify(player, name);',
+    ].join('\n');
+
+    expect(analyzeMooSemantics(source).symbols).toEqual([
+      {
+        name: 'item',
+        definitions: [wordRange(source, 'item', 1)],
+        references: [wordRange(source, 'item', 2)],
+      },
+      {
+        name: 'name',
+        definitions: [
+          wordRange(source, 'name', 1),
+          wordRange(source, 'name', 2),
+          wordRange(source, 'name', 3),
+        ],
+        references: [wordRange(source, 'name', 4)],
+      },
+      {
+        name: 'rest',
+        definitions: [wordRange(source, 'rest', 1)],
+        references: [wordRange(source, 'rest', 2)],
+      },
+    ]);
+  });
+
   it('finds definitions and references for a local name at the cursor', () => {
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
 
