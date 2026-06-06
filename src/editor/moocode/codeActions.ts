@@ -153,19 +153,31 @@ export function getMooQuickFixes(
       }
       case 'builtin-arity': {
         const name = diagnosticText(lines, diagnostic);
-        const edit = extraBuiltinArgumentsEdit(lines, diagnostic, name);
-        if (!edit) {
+        const extraArgumentEdit = extraBuiltinArgumentsEdit(lines, diagnostic, name);
+        if (extraArgumentEdit) {
+          fixes.push({
+            title: `Remove extra ${name} ${
+              extraArgumentEdit.removedCount === 1 ? 'argument' : 'arguments'
+            }`,
+            diagnostics: [diagnostic],
+            edit: {
+              range: extraArgumentEdit.range,
+              text: '',
+            },
+          });
           break;
         }
 
-        fixes.push({
-          title: `Remove extra ${name} ${edit.removedCount === 1 ? 'argument' : 'arguments'}`,
-          diagnostics: [diagnostic],
-          edit: {
-            range: edit.range,
-            text: '',
-          },
-        });
+        const missingArgumentEdit = missingBuiltinArgumentsEdit(lines, diagnostic, name);
+        if (missingArgumentEdit) {
+          fixes.push({
+            title: `Add missing ${name} ${
+              missingArgumentEdit.addedCount === 1 ? 'argument' : 'arguments'
+            }`,
+            diagnostics: [diagnostic],
+            edit: missingArgumentEdit.edit,
+          });
+        }
         break;
       }
       case 'unknown-loop-label':
@@ -269,6 +281,76 @@ function extraBuiltinArgumentsEdit(
     return null;
   }
 
+  const call = findBuiltinCallInLine(lines, diagnostic);
+  if (!call) {
+    return null;
+  }
+
+  const argumentCount = countTopLevelArguments(call.line, call.openIndex + 1, call.closeIndex);
+  if (argumentCount <= metadata.maxArgs) {
+    return null;
+  }
+
+  const startIndex =
+    metadata.maxArgs === 0
+      ? call.openIndex + 1
+      : topLevelCommaIndexes(call.line, call.openIndex + 1, call.closeIndex)[metadata.maxArgs - 1];
+  if (startIndex === undefined) {
+    return null;
+  }
+
+  return {
+    removedCount: argumentCount - metadata.maxArgs,
+    range: {
+      startLineNumber: diagnostic.lineNumber,
+      startColumn: startIndex + 1,
+      endLineNumber: diagnostic.lineNumber,
+      endColumn: call.closeIndex + 1,
+    },
+  };
+}
+
+function missingBuiltinArgumentsEdit(
+  lines: string[],
+  diagnostic: MooQuickFixDiagnostic,
+  name: string,
+): { edit: MooQuickFix['edit']; addedCount: number } | null {
+  const metadata = getMooBuiltinMetadata(name);
+  const call = findBuiltinCallInLine(lines, diagnostic);
+  if (!metadata || !call) {
+    return null;
+  }
+
+  const argumentCount = countTopLevelArguments(call.line, call.openIndex + 1, call.closeIndex);
+  if (argumentCount >= metadata.minArgs) {
+    return null;
+  }
+
+  const missingArguments = metadata.parameterTypes
+    .slice(argumentCount, metadata.minArgs)
+    .map(defaultExpressionForParameterType);
+  if (missingArguments.length === 0) {
+    return null;
+  }
+
+  return {
+    addedCount: missingArguments.length,
+    edit: {
+      range: {
+        startLineNumber: diagnostic.lineNumber,
+        startColumn: call.closeIndex + 1,
+        endLineNumber: diagnostic.lineNumber,
+        endColumn: call.closeIndex + 1,
+      },
+      text: `${argumentCount === 0 ? '' : ', '}${missingArguments.join(', ')}`,
+    },
+  };
+}
+
+function findBuiltinCallInLine(
+  lines: string[],
+  diagnostic: MooQuickFixDiagnostic,
+): { closeIndex: number; line: string; openIndex: number } | null {
   const line = lines[diagnostic.lineNumber - 1] ?? '';
   const openIndex = line.indexOf('(', diagnostic.endColumn - 1);
   if (openIndex < 0) {
@@ -280,28 +362,24 @@ function extraBuiltinArgumentsEdit(
     return null;
   }
 
-  const argumentCount = countTopLevelArguments(line, openIndex + 1, closeIndex);
-  if (argumentCount <= metadata.maxArgs) {
-    return null;
-  }
+  return { closeIndex, line, openIndex };
+}
 
-  const startIndex =
-    metadata.maxArgs === 0
-      ? openIndex + 1
-      : topLevelCommaIndexes(line, openIndex + 1, closeIndex)[metadata.maxArgs - 1];
-  if (startIndex === undefined) {
-    return null;
+function defaultExpressionForParameterType(type: string): string {
+  switch (type) {
+    case 'str':
+      return '""';
+    case 'obj':
+      return '#-1';
+    case 'list':
+      return '{}';
+    case 'map':
+      return '[]';
+    case 'float':
+      return '0.0';
+    default:
+      return '0';
   }
-
-  return {
-    removedCount: argumentCount - metadata.maxArgs,
-    range: {
-      startLineNumber: diagnostic.lineNumber,
-      startColumn: startIndex + 1,
-      endLineNumber: diagnostic.lineNumber,
-      endColumn: closeIndex + 1,
-    },
-  };
 }
 
 function findMatchingCloseParenInLine(line: string, openIndex: number): number | null {

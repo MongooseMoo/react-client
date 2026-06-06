@@ -1276,6 +1276,60 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('provides Monaco quick fixes for missing builtin arguments', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () => ['handle = 1;', 'rows = sqlite_query(handle);'].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      {
+        markers: [
+          {
+            code: 'builtin-arity',
+            lineNumber: 2,
+            startLineNumber: 2,
+            endLineNumber: 2,
+            startColumn: 8,
+            endColumn: 20,
+            message: 'sqlite_query expects 2 to 3 arguments, but got 1.',
+            severity: 8,
+            source: MOO_LANGUAGE_ID,
+          },
+        ],
+        trigger: 1,
+      } as never,
+      {} as never,
+    );
+
+    expect(actions.actions).toContainEqual({
+      title: 'Add missing sqlite_query argument',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [expect.objectContaining({ code: 'builtin-arity' })],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 2,
+                startColumn: 27,
+                endLineNumber: 2,
+                endColumn: 27,
+              },
+              text: ', ""',
+            },
+            versionId: undefined,
+          },
+        ],
+      },
+    });
+  });
+
   it('provides Monaco quick fixes for unknown loop label diagnostics', () => {
     const provider = createMooCodeActionProvider();
     const model = {

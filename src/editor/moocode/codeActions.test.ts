@@ -195,6 +195,24 @@ describe('MOO code actions', () => {
     });
   });
 
+  it('offers a quick fix to add missing builtin arguments', () => {
+    const source = ['handle = 1;', 'rows = sqlite_query(handle);'].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Add missing sqlite_query argument',
+      diagnostics: [expect.objectContaining({ code: 'builtin-arity' })],
+      edit: {
+        range: {
+          startLineNumber: 2,
+          startColumn: 27,
+          endLineNumber: 2,
+          endColumn: 27,
+        },
+        text: ', ""',
+      },
+    });
+  });
+
   it('offers a quick fix to remove unknown loop labels from loop control statements', () => {
     const source = ['while outer (valid(player))', '  break missing;', 'endwhile'].join('\n');
 
