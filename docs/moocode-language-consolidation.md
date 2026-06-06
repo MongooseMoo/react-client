@@ -85,3 +85,11 @@ Iterations:
   - Editor markers now show synchronous scanner diagnostics immediately, then
     merge parser-backed Tree-sitter diagnostics when the parser finishes loading
     for the current MOO model.
+- 2026-06-06 parser-backed Monaco structure:
+  - Tree-sitter parse results now include editor structure extracted from MOO
+    block nodes: document symbols, nested child symbols, and folding ranges.
+  - Monaco document-symbol and folding providers prefer the lazy parser-backed
+    structure, then fall back to the scanner structure while WASM is loading or
+    unavailable.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

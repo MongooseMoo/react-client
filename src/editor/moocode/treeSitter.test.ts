@@ -52,7 +52,91 @@ describe('MOO Tree-sitter service', () => {
       diagnostics: [],
       hasError: false,
       rootType: 'source_file',
+      structure: {
+        foldingRanges: [],
+        symbols: [],
+      },
     });
+  });
+
+  it('extracts block symbols and folding ranges from parser nodes', async () => {
+    const service = await createMooTreeSitterService({
+      loadLanguageWasmUrl: () => Promise.resolve('/moo.wasm'),
+      loadRuntime: () =>
+        Promise.resolve({
+          Language: { load: vi.fn(() => Promise.resolve({})) },
+          Parser: class {
+            static init = vi.fn(() => Promise.resolve());
+            parse = vi.fn(() => ({
+              delete: vi.fn(),
+              rootNode: {
+                children: [
+                  {
+                    children: [
+                      {
+                        children: [
+                          blockNode('for_statement', 'for item in (items)\nendfor', 1, 2, 3, 8),
+                        ],
+                        endPosition: { row: 3, column: 8 },
+                        hasError: false,
+                        isError: false,
+                        isMissing: false,
+                        startPosition: { row: 0, column: 0 },
+                        toString: () => '(if_clause)',
+                        type: 'if_clause',
+                      },
+                    ],
+                    endPosition: { row: 6, column: 5 },
+                    hasError: false,
+                    isError: false,
+                    isMissing: false,
+                    startPosition: { row: 0, column: 0 },
+                    toString: () => '(if_statement)',
+                    type: 'if_statement',
+                    text: 'if (valid(player))\n  for item in (items)\n  endfor\nendif',
+                  },
+                ],
+                endPosition: { row: 6, column: 5 },
+                hasError: false,
+                isError: false,
+                isMissing: false,
+                startPosition: { row: 0, column: 0 },
+                toString: () => '(source_file (if_statement))',
+                type: 'source_file',
+              },
+            }));
+            setLanguage = vi.fn();
+          },
+        }),
+      loadRuntimeWasmUrl: () => Promise.resolve('/runtime.wasm'),
+    });
+
+    const structure = service.parse('if (valid(player))\nendif').structure;
+
+    expect(structure.symbols).toEqual([
+      expect.objectContaining({
+        blockKind: 'if',
+        name: 'if valid(player)',
+        range: expect.objectContaining({
+          startLineNumber: 1,
+          endLineNumber: 7,
+        }),
+        children: [
+          expect.objectContaining({
+            blockKind: 'for',
+            name: 'for item',
+            range: expect.objectContaining({
+              startLineNumber: 2,
+              endLineNumber: 4,
+            }),
+          }),
+        ],
+      }),
+    ]);
+    expect(structure.foldingRanges).toEqual([
+      { start: 1, end: 7 },
+      { start: 2, end: 4 },
+    ]);
   });
 
   it('extracts parse-error diagnostics from ERROR and missing nodes', async () => {
@@ -174,3 +258,24 @@ describe('MOO Tree-sitter service', () => {
     ]);
   });
 });
+
+function blockNode(
+  type: string,
+  text: string,
+  startRow: number,
+  startColumn: number,
+  endRow: number,
+  endColumn: number,
+) {
+  return {
+    children: [],
+    endPosition: { row: endRow, column: endColumn },
+    hasError: false,
+    isError: false,
+    isMissing: false,
+    startPosition: { row: startRow, column: startColumn },
+    text,
+    toString: () => `(${type})`,
+    type,
+  };
+}

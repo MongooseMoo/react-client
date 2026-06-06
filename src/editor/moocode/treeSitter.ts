@@ -1,4 +1,6 @@
 import { MOO_LANGUAGE_ID } from './contract';
+import type { MooBlockKind } from './contract';
+import type { MooFoldingRange, MooStructure, MooStructureSymbol } from './structure';
 
 export type MooTreeSitterDiagnosticCode = 'missing-node' | 'parse-error';
 
@@ -22,6 +24,7 @@ export type MooTreeSitterParseResult = {
   hasError: boolean;
   treeText: string;
   diagnostics: MooTreeSitterDiagnostic[];
+  structure: MooStructure;
 };
 
 type TreeSitterPoint = {
@@ -36,6 +39,7 @@ type TreeSitterNodeLike = {
   isError: boolean;
   isMissing: boolean;
   startPosition: TreeSitterPoint;
+  text?: string;
   toString(): string;
   type: string;
 };
@@ -124,15 +128,19 @@ export async function createMooTreeSitterService(
               endColumn: 2,
             },
           ],
+          structure: emptyMooStructure(),
         };
       }
 
       try {
+        const structure = collectTreeSitterStructure(tree.rootNode);
+
         return {
           rootType: tree.rootNode.type,
           hasError: tree.rootNode.hasError,
           treeText: tree.rootNode.toString(),
           diagnostics: collectTreeSitterDiagnostics(tree.rootNode),
+          structure,
         };
       } finally {
         tree.delete?.();
@@ -167,6 +175,13 @@ export async function toMonacoTreeSitterMarkers(
 
 export function resetMooTreeSitterServiceForTests(): void {
   defaultServicePromise = null;
+}
+
+function emptyMooStructure(): MooStructure {
+  return {
+    foldingRanges: [],
+    symbols: [],
+  };
 }
 
 function collectTreeSitterDiagnostics(root: TreeSitterNodeLike): MooTreeSitterDiagnostic[] {
@@ -208,4 +223,119 @@ function toDiagnostic(node: TreeSitterNodeLike): MooTreeSitterDiagnostic {
     startColumn,
     endColumn,
   };
+}
+
+const BLOCK_NODE_KINDS: Partial<Record<string, MooBlockKind>> = {
+  fork_statement: 'fork',
+  for_statement: 'for',
+  if_statement: 'if',
+  try_except_statement: 'try',
+  try_finally_statement: 'try',
+  while_statement: 'while',
+};
+
+function collectTreeSitterStructure(root: TreeSitterNodeLike): MooStructure {
+  const symbols = collectBlockSymbols(root.children);
+  const foldingRanges = collectFoldingRanges(symbols);
+
+  return {
+    foldingRanges,
+    symbols,
+  };
+}
+
+function collectBlockSymbols(nodes: TreeSitterNodeLike[]): MooStructureSymbol[] {
+  const symbols: MooStructureSymbol[] = [];
+
+  for (const node of nodes) {
+    const symbol = toBlockSymbol(node);
+    if (symbol) {
+      symbols.push(symbol);
+      continue;
+    }
+
+    symbols.push(...collectBlockSymbols(node.children));
+  }
+
+  return symbols;
+}
+
+function toBlockSymbol(node: TreeSitterNodeLike): MooStructureSymbol | null {
+  const blockKind = BLOCK_NODE_KINDS[node.type];
+  if (!blockKind) {
+    return null;
+  }
+
+  const startLineNumber = node.startPosition.row + 1;
+  const startColumn = node.startPosition.column + 1;
+  const keywordLength = blockKind.length;
+  const selectionRange = {
+    startLineNumber,
+    startColumn,
+    endLineNumber: startLineNumber,
+    endColumn: startColumn + keywordLength,
+  };
+
+  return {
+    name: describeParserBlock(blockKind, node.text ?? ''),
+    blockKind,
+    range: {
+      startLineNumber,
+      startColumn,
+      endLineNumber: node.endPosition.row + 1,
+      endColumn: node.endPosition.column + 1,
+    },
+    selectionRange,
+    children: collectBlockSymbols(node.children),
+  };
+}
+
+function collectFoldingRanges(symbols: MooStructureSymbol[]): MooFoldingRange[] {
+  const ranges: MooFoldingRange[] = [];
+
+  const visit = (symbol: MooStructureSymbol) => {
+    if (symbol.range.endLineNumber > symbol.range.startLineNumber) {
+      ranges.push({
+        start: symbol.range.startLineNumber,
+        end: symbol.range.endLineNumber,
+      });
+    }
+
+    for (const child of symbol.children) {
+      visit(child);
+    }
+  };
+
+  for (const symbol of symbols) {
+    visit(symbol);
+  }
+
+  return ranges.sort((left, right) => left.start - right.start);
+}
+
+function describeParserBlock(kind: MooBlockKind, text: string): string {
+  const firstLine = text.split(/\r\n|\r|\n/, 1)[0]?.trim() ?? '';
+
+  switch (kind) {
+    case 'if': {
+      const condition = /^if\s*\((.*)\)/i.exec(firstLine)?.[1]?.trim();
+      return condition ? `if ${condition}` : 'if';
+    }
+    case 'while': {
+      const condition = /^while(?:\s+[A-Za-z_][\w$]*)?\s*\((.*)\)/i.exec(firstLine)?.[1]?.trim();
+      return condition ? `while ${condition}` : 'while';
+    }
+    case 'for': {
+      const variables = /^for\s+([A-Za-z_][\w$]*(?:\s*,\s*[A-Za-z_][\w$]*)?)/i.exec(
+        firstLine,
+      )?.[1];
+      return variables ? `for ${variables.replace(/\s*,\s*/, ', ')}` : 'for';
+    }
+    case 'fork': {
+      const name = /^fork(?:\s+([A-Za-z_][\w$]*))?/i.exec(firstLine)?.[1];
+      return name ? `fork ${name}` : 'fork';
+    }
+    case 'try':
+      return 'try';
+  }
 }

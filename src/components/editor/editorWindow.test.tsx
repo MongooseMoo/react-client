@@ -42,6 +42,20 @@ const editorMock = vi.hoisted(() => ({
 }));
 
 const treeSitterDiagnosticsMock = vi.hoisted(() => vi.fn(() => Promise.resolve([])));
+const treeSitterParseMock = vi.hoisted(() =>
+  vi.fn(() =>
+    Promise.resolve({
+      diagnostics: [],
+      hasError: false,
+      rootType: 'source_file',
+      structure: {
+        foldingRanges: [],
+        symbols: [],
+      },
+      treeText: '(source_file)',
+    }),
+  ),
+);
 
 vi.mock('@monaco-editor/react', () => ({
   default: (props: Record<string, unknown>) => {
@@ -74,6 +88,7 @@ vi.mock('../../editor/monacoLoader', () => ({
 }));
 
 vi.mock('../../editor/moocode/treeSitter', () => ({
+  parseMooCodeWithTreeSitter: treeSitterParseMock,
   toMonacoTreeSitterMarkers: treeSitterDiagnosticsMock,
 }));
 
@@ -119,6 +134,17 @@ describe('EditorWindow language selection', () => {
     editorMock.monaco.languages.setMonarchTokensProvider.mockClear();
     treeSitterDiagnosticsMock.mockClear();
     treeSitterDiagnosticsMock.mockResolvedValue([]);
+    treeSitterParseMock.mockClear();
+    treeSitterParseMock.mockResolvedValue({
+      diagnostics: [],
+      hasError: false,
+      rootType: 'source_file',
+      structure: {
+        foldingRanges: [],
+        symbols: [],
+      },
+      treeText: '(source_file)',
+    });
     MockBroadcastChannel.instances = [];
     vi.stubGlobal('BroadcastChannel', MockBroadcastChannel);
   });

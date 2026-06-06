@@ -22,6 +22,7 @@ import {
 } from './contract';
 import { getMooSignatureHelp } from './signatures';
 import { analyzeMooStructure, type MooStructureSymbol } from './structure';
+import { parseMooCodeWithTreeSitter, type MooTreeSitterParseResult } from './treeSitter';
 
 export type MonacoRange = {
   startLineNumber: number;
@@ -121,7 +122,7 @@ type DocumentSymbol = {
 };
 
 type DocumentSymbolProvider = {
-  provideDocumentSymbols: (model: TextModelValueLike) => DocumentSymbol[];
+  provideDocumentSymbols: (model: TextModelValueLike) => DocumentSymbol[] | Promise<DocumentSymbol[]>;
 };
 
 type FoldingRange = {
@@ -130,7 +131,7 @@ type FoldingRange = {
 };
 
 type FoldingRangeProvider = {
-  provideFoldingRanges: (model: TextModelValueLike) => FoldingRange[];
+  provideFoldingRanges: (model: TextModelValueLike) => FoldingRange[] | Promise<FoldingRange[]>;
 };
 
 type SignatureParameterInformation = {
@@ -389,20 +390,35 @@ export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProv
   };
 }
 
-export function createMooDocumentSymbolProvider(monaco?: MonacoLike): DocumentSymbolProvider {
+type MooParser = (source: string) => Promise<MooTreeSitterParseResult>;
+
+export function createMooDocumentSymbolProvider(
+  monaco?: MonacoLike,
+  parse: MooParser = parseMooCodeWithTreeSitter,
+): DocumentSymbolProvider {
   const symbolKind = monaco?.languages.SymbolKind?.Function ?? 11;
 
   return {
-    provideDocumentSymbols: (model) =>
-      analyzeMooStructure(model.getValue()).symbols.map((symbol) =>
-        toDocumentSymbol(symbol, symbolKind),
-      ),
+    provideDocumentSymbols: async (model) => {
+      const source = model.getValue();
+      const symbols = await getParserStructure(source, parse, 'symbols');
+      const structureSymbols = symbols ?? analyzeMooStructure(source).symbols;
+
+      return structureSymbols.map((symbol) => toDocumentSymbol(symbol, symbolKind));
+    },
   };
 }
 
-export function createMooFoldingRangeProvider(): FoldingRangeProvider {
+export function createMooFoldingRangeProvider(
+  parse: MooParser = parseMooCodeWithTreeSitter,
+): FoldingRangeProvider {
   return {
-    provideFoldingRanges: (model) => analyzeMooStructure(model.getValue()).foldingRanges,
+    provideFoldingRanges: async (model) => {
+      const source = model.getValue();
+      const foldingRanges = await getParserStructure(source, parse, 'foldingRanges');
+
+      return foldingRanges ?? analyzeMooStructure(source).foldingRanges;
+    },
   };
 }
 
@@ -500,6 +516,21 @@ function getCompletionContext(
   }
 
   return 'default';
+}
+
+async function getParserStructure<K extends keyof MooTreeSitterParseResult['structure']>(
+  source: string,
+  parse: MooParser,
+  key: K,
+): Promise<MooTreeSitterParseResult['structure'][K] | null> {
+  try {
+    const parsed = await parse(source);
+    const values = parsed.structure[key];
+
+    return values.length > 0 ? values : null;
+  } catch {
+    return null;
+  }
 }
 
 function toDocumentSymbol(symbol: MooStructureSymbol, kind: number): DocumentSymbol {

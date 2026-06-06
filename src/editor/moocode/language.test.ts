@@ -5,6 +5,8 @@ import {
   MOO_LANGUAGE_ID,
   createMooCompletionItems,
   createMooCompletionProvider,
+  createMooDocumentSymbolProvider,
+  createMooFoldingRangeProvider,
   createMooLanguageConfiguration,
   createMooMonarchLanguage,
   getEditorLanguageForSessionType,
@@ -148,40 +150,43 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerSignatureHelpProvider).toHaveBeenCalledTimes(1);
   });
 
-  it('provides Monaco document symbols and folding ranges from MOO block structure', () => {
-    const monaco = {
-      languages: {
-        CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
-        CompletionItemKind: {
-          Constant: 14,
-          Function: 1,
-          Keyword: 17,
-          Variable: 4,
-        },
-        SymbolKind: {
-          Function: 11,
-        },
-        getLanguages: vi.fn(() => [{ id: MOO_LANGUAGE_ID }]),
-        register: vi.fn(),
-        registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
-        registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
-        registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
-        registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
-        registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
-        setLanguageConfiguration: vi.fn(),
-        setMonarchTokensProvider: vi.fn(),
+  it('provides Monaco document symbols and folding ranges from parser-backed MOO structure', async () => {
+    const parse = vi.fn(async () => ({
+      diagnostics: [],
+      hasError: false,
+      rootType: 'source_file',
+      structure: {
+        foldingRanges: [{ start: 1, end: 3 }],
+        symbols: [
+          {
+            blockKind: 'if' as const,
+            children: [],
+            name: 'if valid(player)',
+            range: {
+              startLineNumber: 1,
+              startColumn: 1,
+              endLineNumber: 3,
+              endColumn: 6,
+            },
+            selectionRange: {
+              startLineNumber: 1,
+              startColumn: 1,
+              endLineNumber: 1,
+              endColumn: 3,
+            },
+          },
+        ],
       },
-    };
+      treeText: '(source_file (if_statement))',
+    }));
 
-    registerMooLanguage(monaco);
+    const symbolProvider = createMooDocumentSymbolProvider(undefined, parse);
+    const foldingProvider = createMooFoldingRangeProvider(parse);
+    const source = ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n');
 
-    const source = ['while (connected)', '  notify(player, "tick");', 'endwhile'].join('\n');
-    const symbolProvider = monaco.languages.registerDocumentSymbolProvider.mock.calls[0][1];
-    const foldingProvider = monaco.languages.registerFoldingRangeProvider.mock.calls[0][1];
-
-    expect(symbolProvider.provideDocumentSymbols({ getValue: () => source })).toEqual([
+    await expect(symbolProvider.provideDocumentSymbols({ getValue: () => source })).resolves.toEqual([
       expect.objectContaining({
-        name: 'while connected',
+        name: 'if valid(player)',
         kind: 11,
         range: expect.objectContaining({
           startLineNumber: 1,
@@ -189,7 +194,30 @@ describe('MOO Monaco language support', () => {
         }),
       }),
     ]);
-    expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).toEqual([
+    await expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).resolves.toEqual([
+      { start: 1, end: 3 },
+    ]);
+    expect(parse).toHaveBeenCalledWith(source);
+  });
+
+  it('falls back to scanner document symbols and folding ranges while parser structure is unavailable', async () => {
+    const parse = vi.fn(async () => {
+      throw new Error('WASM unavailable');
+    });
+    const source = ['while (connected)', '  notify(player, "tick");', 'endwhile'].join('\n');
+    const symbolProvider = createMooDocumentSymbolProvider(undefined, parse);
+    const foldingProvider = createMooFoldingRangeProvider(parse);
+
+    await expect(symbolProvider.provideDocumentSymbols({ getValue: () => source })).resolves.toEqual([
+      expect.objectContaining({
+        name: 'while connected',
+        range: expect.objectContaining({
+          startLineNumber: 1,
+          endLineNumber: 3,
+        }),
+      }),
+    ]);
+    await expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).resolves.toEqual([
       { start: 1, end: 3 },
     ]);
   });
