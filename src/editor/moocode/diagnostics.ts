@@ -105,6 +105,10 @@ type ScanState = {
 type TerminalControlKeyword = 'return' | 'break' | 'continue';
 
 const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
+const LABELED_WHILE_PREFIX_PATTERN = new RegExp(
+  `^\\s*while\\s+${MOO_IDENTIFIER_PATTERN_SOURCE}\\s*$`,
+  'i',
+);
 const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
 const LOOP_CONTROL_KEYWORDS = new Set(['break', 'continue']);
 const TERMINAL_CONTROL_KEYWORDS = new Set<TerminalControlKeyword>([
@@ -545,7 +549,7 @@ function collectPlainFunctionCalls(source: string): PlainFunctionCall[] {
       continue;
     }
 
-    if (!isPlainFunctionCallIdentifier(masked, functionIdentifier.startOffset)) {
+    if (!isPlainFunctionCallIdentifier(masked, functionIdentifier.startOffset, index)) {
       continue;
     }
 
@@ -724,9 +728,31 @@ function readIdentifierBefore(
     : null;
 }
 
-function isPlainFunctionCallIdentifier(source: string, identifierStartOffset: number): boolean {
+function isPlainFunctionCallIdentifier(
+  source: string,
+  identifierStartOffset: number,
+  openParenIndex: number,
+): boolean {
+  if (isWhileLoopLabel(source, identifierStartOffset, openParenIndex)) {
+    return false;
+  }
+
   const previous = previousNonWhitespaceCharacter(source, identifierStartOffset);
   return previous !== ':' && previous !== '.' && previous !== '$';
+}
+
+function isWhileLoopLabel(
+  source: string,
+  identifierStartOffset: number,
+  openParenIndex: number,
+): boolean {
+  const lineStartOffset = source.lastIndexOf('\n', openParenIndex) + 1;
+  if (identifierStartOffset < lineStartOffset) {
+    return false;
+  }
+
+  const linePrefix = source.slice(lineStartOffset, openParenIndex);
+  return LABELED_WHILE_PREFIX_PATTERN.test(linePrefix);
 }
 
 function previousNonWhitespaceCharacter(source: string, offset: number): string | null {

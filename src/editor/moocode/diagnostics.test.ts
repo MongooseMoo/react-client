@@ -300,6 +300,30 @@ describe('validateMooSyntax', () => {
     expect(diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-builtin')).toEqual([]);
   });
 
+  it('does not report labeled while loops as unknown builtin calls', () => {
+    const diagnostics = validateMooSyntax(
+      [
+        'while outer (valid(player))',
+        '  notify(player, "ok");',
+        '  notfiy(player, "typo");',
+        'endwhile',
+      ].join('\n'),
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unknown-builtin',
+        lineNumber: 3,
+        startColumn: 3,
+        endColumn: 9,
+        message: 'notfiy is not a known ToastStunt builtin. Did you mean notify?',
+      }),
+    );
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-builtin')).toHaveLength(
+      1,
+    );
+  });
+
   it('reports likely undefined local references', () => {
     const diagnostics = validateMooSyntax(
       ['total = count + 1;', 'notify(player, total);', '// ghost;'].join('\n'),
