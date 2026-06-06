@@ -224,10 +224,12 @@ function EditorWindow() {
     (quickFix: MooQuickFix) => {
       const updatedCode = applyMooQuickFixEdits(code, quickFix);
 
+      editorInstance.current?.pushUndoStop();
       editorInstance.current?.executeEdits(
         MOO_PROBLEMS_QUICK_FIX_EDIT_SOURCE,
         getMooQuickFixEditOperations(quickFix),
       );
+      editorInstance.current?.pushUndoStop();
       setCode(updatedCode);
       setDocumentState(getDocumentStateForCode(updatedCode, originalCode));
       setIsLoaded(true);

@@ -9,6 +9,7 @@ const editorMock = vi.hoisted(() => ({
   props: undefined as Record<string, unknown> | undefined,
   focus: vi.fn(),
   executeEdits: vi.fn(),
+  pushUndoStop: vi.fn(),
   modelVersion: 1,
   model: {
     getVersionId: vi.fn(() => editorMock.modelVersion),
@@ -76,6 +77,7 @@ vi.mock('@monaco-editor/react', () => ({
           focus: editorMock.focus,
           executeEdits: editorMock.executeEdits,
           getModel: () => editorMock.model,
+          pushUndoStop: editorMock.pushUndoStop,
           revealPositionInCenter: editorMock.revealPositionInCenter,
           setPosition: editorMock.setPosition,
         },
@@ -140,6 +142,7 @@ describe('EditorWindow language selection', () => {
     editorMock.modelVersion = 1;
     editorMock.model.getVersionId.mockClear();
     editorMock.executeEdits.mockClear();
+    editorMock.pushUndoStop.mockClear();
     editorMock.focus.mockClear();
     editorMock.revealPositionInCenter.mockClear();
     editorMock.setPosition.mockClear();
@@ -699,6 +702,13 @@ describe('EditorWindow language selection', () => {
         text: '\nendwhile',
       },
     ]);
+    expect(editorMock.pushUndoStop).toHaveBeenCalledTimes(2);
+    expect(editorMock.pushUndoStop.mock.invocationCallOrder[0]).toBeLessThan(
+      editorMock.executeEdits.mock.invocationCallOrder[0],
+    );
+    expect(editorMock.pushUndoStop.mock.invocationCallOrder[1]).toBeGreaterThan(
+      editorMock.executeEdits.mock.invocationCallOrder[0],
+    );
     expect(screen.getByRole('status').textContent).toContain('Changed');
   });
 
