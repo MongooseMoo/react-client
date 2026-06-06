@@ -208,9 +208,9 @@ Iterations:
     and MOO keywords.
   - Completion metadata reuses the same builtin signature and hover
     documentation sources as signature help and hover cards.
-  - Exception-handler completion contexts now offer `any`, `error`, and MOO
-    error constants inside `except name? (...)` instead of the full default
-    completion list.
+  - Exception-code completion contexts now offer `any`, `error`, and MOO error
+    constants inside `except name? (...)` and catch-expression `!` clauses
+    instead of the full default completion list.
   - Existing labels, snippets, and replacement ranges are unchanged.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.

@@ -1017,7 +1017,10 @@ function getCompletionContext(
 }
 
 function isExceptionCompletionContext(linePrefix: string): boolean {
-  return /\bexcept\s+(?:[A-Za-z_][\w$]*\s*)?\([^)]*$/i.test(linePrefix);
+  return (
+    /\bexcept\s+(?:[A-Za-z_][\w$]*\s*)?\([^)]*$/i.test(linePrefix) ||
+    /!\s*(?:[A-Za-z_][\w$]*\s*,\s*)*[A-Za-z_]*$/i.test(linePrefix)
+  );
 }
 
 function isCompletionInMaskedSource(source: string, position: CompletionPosition): boolean {
