@@ -79,6 +79,7 @@ type BlockFrame = {
   kind: BlockKind;
   closeKeyword: string;
   hasFinalBranch?: boolean;
+  hasFinallyBranch?: boolean;
   inheritedUnreachableAfter?: UnreachableReason;
   lineNumber: number;
   startColumn: number;
@@ -105,7 +106,7 @@ type ScanState = {
 };
 
 type TerminalControlKeyword = 'return' | 'break' | 'continue';
-type UnreachableReason = TerminalControlKeyword | 'if-branches';
+type UnreachableReason = TerminalControlKeyword | 'if-branches' | 'finally';
 
 const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
 const LABELED_WHILE_PREFIX_PATTERN = new RegExp(
@@ -200,6 +201,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
       if (currentBlock) {
         recordCurrentBranchTermination(currentBlock);
         currentBlock.hasFinalBranch ||= normalized === 'else';
+        currentBlock.hasFinallyBranch ||= normalized === 'finally';
       }
       clearCurrentUnreachableAfter(blockStack);
       return;
@@ -244,12 +246,18 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
 
       recordCurrentBranchTermination(open);
       if (terminatesByClosedIfBlock(open)) {
-        if (blockStack.length > 0) {
-          const currentBlock = blockStack[blockStack.length - 1];
-          currentBlock.unreachableAfter ??= 'if-branches';
-        } else {
-          topLevelUnreachableAfter ??= 'if-branches';
-        }
+        topLevelUnreachableAfter = applyUnreachableReason(
+          blockStack,
+          topLevelUnreachableAfter,
+          'if-branches',
+        );
+      }
+      if (terminatesByClosedTryFinallyBlock(open)) {
+        topLevelUnreachableAfter = applyUnreachableReason(
+          blockStack,
+          topLevelUnreachableAfter,
+          'finally',
+        );
       }
 
       return;
@@ -333,9 +341,14 @@ function currentUnreachableAfter(
 }
 
 function formatUnreachableStatementMessage(reason: UnreachableReason): string {
-  return reason === 'if-branches'
-    ? 'Statement is unreachable because all if branches terminate.'
-    : `Statement is unreachable after ${reason}.`;
+  switch (reason) {
+    case 'if-branches':
+      return 'Statement is unreachable because all if branches terminate.';
+    case 'finally':
+      return 'Statement is unreachable because finally always terminates.';
+    default:
+      return `Statement is unreachable after ${reason}.`;
+  }
 }
 
 function recordCurrentBranchTermination(block: BlockFrame): void {
@@ -354,6 +367,28 @@ function terminatesByClosedIfBlock(block: BlockFrame): boolean {
     (block.branchUnreachableAfter?.length ?? 0) > 0 &&
     block.branchUnreachableAfter?.every((reason) => reason !== undefined) === true
   );
+}
+
+function terminatesByClosedTryFinallyBlock(block: BlockFrame): boolean {
+  return (
+    block.kind === 'try' &&
+    block.hasFinallyBranch === true &&
+    block.unreachableAfter !== undefined
+  );
+}
+
+function applyUnreachableReason(
+  blockStack: BlockFrame[],
+  topLevelUnreachableAfter: UnreachableReason | undefined,
+  reason: UnreachableReason,
+): UnreachableReason | undefined {
+  if (blockStack.length > 0) {
+    const currentBlock = blockStack[blockStack.length - 1];
+    currentBlock.unreachableAfter ??= reason;
+    return topLevelUnreachableAfter;
+  }
+
+  return topLevelUnreachableAfter ?? reason;
 }
 
 function clearCurrentUnreachableAfter(blockStack: BlockFrame[]): void {

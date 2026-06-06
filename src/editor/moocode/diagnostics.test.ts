@@ -199,6 +199,38 @@ describe('validateMooSyntax', () => {
     ).toHaveLength(1);
   });
 
+  it('reports statements unreachable after terminating finally blocks', () => {
+    const source = [
+      'try',
+      '  notify(player, "body");',
+      'finally',
+      '  notify(player, "cleanup");',
+      'endtry',
+      'notify(player, "maybe");',
+      'try',
+      '  notify(player, "body");',
+      'finally',
+      '  return E_NONE;',
+      'endtry',
+      'notify(player, "never");',
+    ].join('\n');
+    const diagnostics = validateMooSyntax(source);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unreachable-statement',
+        lineNumber: 12,
+        startColumn: 1,
+        endColumn: 25,
+        message: 'Statement is unreachable because finally always terminates.',
+        severity: 'warning',
+      }),
+    );
+    expect(
+      diagnostics.filter((diagnostic) => diagnostic.code === 'unreachable-statement'),
+    ).toHaveLength(1);
+  });
+
   it('reports named break and continue targets that do not match an enclosing while label', () => {
     const diagnostics = validateMooSyntax(
       [
