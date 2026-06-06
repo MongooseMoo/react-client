@@ -255,8 +255,62 @@ export type MooBuiltinName = keyof typeof MOO_BUILTIN_METADATA;
 
 export const MOO_BUILTIN_NAMES = Object.keys(MOO_BUILTIN_METADATA).sort() as MooBuiltinName[];
 
+const MOO_BUILTIN_PARAMETER_LABELS: Partial<Record<MooBuiltinName, readonly string[]>> = {
+  add_property: ['object', 'property', 'value', 'info'],
+  add_verb: ['object', 'info', 'args'],
+  file_open: ['path', 'mode'],
+  listappend: ['list', 'value', 'index'],
+  listdelete: ['list', 'index'],
+  listinsert: ['list', 'value', 'index'],
+  listset: ['list', 'value', 'index'],
+  match: ['string', 'pattern', 'caseMatters'],
+  move: ['object', 'destination', 'quiet'],
+  notify: ['player', 'text', 'noFlush', 'trusted'],
+  property_info: ['object', 'property'],
+  raise: ['error', 'message', 'value'],
+  random: ['max', 'min'],
+  read: ['player', 'nonblocking'],
+  set_verb_code: ['object', 'verb', 'code'],
+  sqlite_execute: ['handle', 'sql', 'params'],
+  sqlite_query: ['handle', 'sql', 'options'],
+  suspend: ['seconds'],
+  toliteral: ['value'],
+  tostr: ['value'],
+  valid: ['object'],
+  verb_code: ['object', 'verb', 'fullyParenthesize', 'indent'],
+  verb_info: ['object', 'verb'],
+};
+
 export function getMooBuiltinMetadata(name: string): MooBuiltinMetadata | null {
   return MOO_BUILTIN_METADATA[name.toLowerCase() as MooBuiltinName] ?? null;
+}
+
+export function getMooBuiltinParameterLabel(name: string, index: number): string {
+  const normalizedName = name.toLowerCase() as MooBuiltinName;
+  const explicitLabel = MOO_BUILTIN_PARAMETER_LABELS[normalizedName]?.[index];
+  if (explicitLabel) {
+    return explicitLabel;
+  }
+
+  const type = getMooBuiltinMetadata(name)?.parameterTypes[index];
+  switch (type) {
+    case 'obj':
+      return 'object';
+    case 'str':
+      return 'text';
+    case 'int':
+      return 'integer';
+    case 'float':
+      return 'number';
+    case 'numeric':
+      return 'number';
+    case 'list':
+      return 'list';
+    case 'map':
+      return 'map';
+    default:
+      return `arg${index + 1}`;
+  }
 }
 
 export function formatMooBuiltinArity(metadata: MooBuiltinMetadata): string {

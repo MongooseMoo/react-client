@@ -68,17 +68,17 @@ describe('MOO inlay hints', () => {
   it('adds generic parameter labels for known ToastStunt builtins without curated docs', () => {
     expect(collectMooInlayHints('sqlite_query(handle, sql, options);')).toEqual([
       {
-        label: 'arg1:',
+        label: 'handle:',
         lineNumber: 1,
         column: 14,
       },
       {
-        label: 'arg2:',
+        label: 'sql:',
         lineNumber: 1,
         column: 22,
       },
       {
-        label: 'arg3?:',
+        label: 'options?:',
         lineNumber: 1,
         column: 27,
       },

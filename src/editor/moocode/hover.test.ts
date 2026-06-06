@@ -42,7 +42,7 @@ describe('MOO hover service', () => {
         {
           value: [
             '```moocode',
-            'sqlite_query(arg1: int, arg2: str, arg3?: any)',
+            'sqlite_query(handle: int, sql: str, options?: any)',
             '```',
             'ToastStunt builtin function.',
             'Registered arity: 2 to 3 arguments.',

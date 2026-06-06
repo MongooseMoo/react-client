@@ -40,26 +40,27 @@ describe('MOO signature help analysis', () => {
   });
 
   it('offers generic signature help for known ToastStunt builtins without curated docs', () => {
-    expect(getMooSignatureHelp('sqlite_query(handle, sql, options);', { lineNumber: 1, column: 27 }))
-      .toMatchObject({
-        activeSignature: 0,
-        activeParameter: 2,
-        signatures: [
-          {
-            label: 'sqlite_query(arg1: int, arg2: str, arg3?: any)',
-            documentation: [
-              'ToastStunt builtin function.',
-              'Registered arity: 2 to 3 arguments.',
-              'Parameter types: int, str, any.',
-            ].join('\n'),
-            parameters: [
-              { label: 'arg1', documentation: 'Registered ToastStunt type: int.' },
-              { label: 'arg2', documentation: 'Registered ToastStunt type: str.' },
-              { label: 'arg3?', documentation: 'Registered ToastStunt type: any. Optional.' },
-            ],
-          },
-        ],
-      });
+    expect(
+      getMooSignatureHelp('sqlite_query(handle, sql, options);', { lineNumber: 1, column: 27 }),
+    ).toMatchObject({
+      activeSignature: 0,
+      activeParameter: 2,
+      signatures: [
+        {
+          label: 'sqlite_query(handle: int, sql: str, options?: any)',
+          documentation: [
+            'ToastStunt builtin function.',
+            'Registered arity: 2 to 3 arguments.',
+            'Parameter types: int, str, any.',
+          ].join('\n'),
+          parameters: [
+            { label: 'handle', documentation: 'Registered ToastStunt type: int.' },
+            { label: 'sql', documentation: 'Registered ToastStunt type: str.' },
+            { label: 'options?', documentation: 'Registered ToastStunt type: any. Optional.' },
+          ],
+        },
+      ],
+    });
   });
 
   it('offers generic signature help for static MOO verb calls', () => {
@@ -85,16 +86,18 @@ describe('MOO signature help analysis', () => {
   });
 
   it('offers generic signature help for object-number and system-reference verb calls', () => {
-    expect(getMooSignatureHelp('#123:initialize(player);', { lineNumber: 1, column: 21 }))
-      .toMatchObject({
-        activeParameter: 0,
-        signatures: [{ label: '#123:initialize(arg1)' }],
-      });
-    expect(getMooSignatureHelp('$room:announce("ok");', { lineNumber: 1, column: 18 }))
-      .toMatchObject({
-        activeParameter: 0,
-        signatures: [{ label: '$room:announce(arg1)' }],
-      });
+    expect(
+      getMooSignatureHelp('#123:initialize(player);', { lineNumber: 1, column: 21 }),
+    ).toMatchObject({
+      activeParameter: 0,
+      signatures: [{ label: '#123:initialize(arg1)' }],
+    });
+    expect(
+      getMooSignatureHelp('$room:announce("ok");', { lineNumber: 1, column: 18 }),
+    ).toMatchObject({
+      activeParameter: 0,
+      signatures: [{ label: '$room:announce(arg1)' }],
+    });
   });
 
   it('offers generic signature help for dynamic MOO verb calls', () => {
@@ -125,23 +128,25 @@ describe('MOO signature help analysis', () => {
       callKind: 'dollar-verb',
       functionName: 'notify',
     });
-    expect(getMooSignatureHelp('$notify("hello", caller);', { lineNumber: 1, column: 22 })).toEqual({
-      activeSignature: 0,
-      activeParameter: 1,
-      signatures: [
-        {
-          label: '$notify(arg1, arg2)',
-          documentation: 'MOO verb call. Arguments are available to the target verb as args.',
-          parameters: [{ label: 'arg1' }, { label: 'arg2' }],
-        },
-      ],
-    });
-    expect(getMooSignatureHelp('$(verb_name)("hello");', { lineNumber: 1, column: 18 })).toMatchObject(
+    expect(getMooSignatureHelp('$notify("hello", caller);', { lineNumber: 1, column: 22 })).toEqual(
       {
-        activeParameter: 0,
-        signatures: [{ label: '$(verb_name)(arg1)' }],
+        activeSignature: 0,
+        activeParameter: 1,
+        signatures: [
+          {
+            label: '$notify(arg1, arg2)',
+            documentation: 'MOO verb call. Arguments are available to the target verb as args.',
+            parameters: [{ label: 'arg1' }, { label: 'arg2' }],
+          },
+        ],
       },
     );
+    expect(
+      getMooSignatureHelp('$(verb_name)("hello");', { lineNumber: 1, column: 18 }),
+    ).toMatchObject({
+      activeParameter: 0,
+      signatures: [{ label: '$(verb_name)(arg1)' }],
+    });
   });
 
   it('does not offer signature help for unknown call names', () => {

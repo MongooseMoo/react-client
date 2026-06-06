@@ -135,17 +135,17 @@ describe('MOO Monaco language support', () => {
     });
 
     expect(items.find((item) => item.label === 'sqlite_query')).toMatchObject({
-      detail: 'sqlite_query(arg1: int, arg2: str, arg3?: any)',
+      detail: 'sqlite_query(handle: int, sql: str, options?: any)',
       insertText: [
         'sqlite_query(',
         '$',
-        '{1:int}',
+        '{1:handle}',
         ', ',
         '$',
-        '{2:str}',
+        '{2:sql}',
         ', ',
         '$',
-        '{3:any?}',
+        '{3:options?}',
         ')',
       ].join(''),
     });

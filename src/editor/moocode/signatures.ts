@@ -1,5 +1,9 @@
 import { BUILTIN_FUNCTIONS } from './contract';
-import { formatMooBuiltinArity, getMooBuiltinMetadata } from './builtins';
+import {
+  formatMooBuiltinArity,
+  getMooBuiltinMetadata,
+  getMooBuiltinParameterLabel,
+} from './builtins';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
 import { readMooCallTargetBeforeOpen } from './calls';
 
@@ -8,16 +12,18 @@ type MooBuiltinCallContext = {
   activeParameter: number;
 };
 
-type MooVerbCallContext = {
-  callKind: 'dollar-verb';
-  functionName: string;
-  activeParameter: number;
-} | {
-  callKind: 'verb' | 'dynamic-verb';
-  receiverName: string;
-  functionName: string;
-  activeParameter: number;
-};
+type MooVerbCallContext =
+  | {
+      callKind: 'dollar-verb';
+      functionName: string;
+      activeParameter: number;
+    }
+  | {
+      callKind: 'verb' | 'dynamic-verb';
+      receiverName: string;
+      functionName: string;
+      activeParameter: number;
+    };
 
 export type MooCallContext = MooBuiltinCallContext | MooVerbCallContext;
 
@@ -271,8 +277,9 @@ function getSignatureDefinition(
   const parameters = Array.from({ length: parameterCount }, (_, index) => {
     const type = metadata.parameterTypes[index] ?? 'any';
     const optional = index >= metadata.minArgs;
+    const label = getMooBuiltinParameterLabel(normalizedName, index);
     return {
-      label: `arg${index + 1}${optional ? '?' : ''}`,
+      label: `${label}${optional ? '?' : ''}`,
       documentation: `Registered ToastStunt type: ${type}.${optional ? ' Optional.' : ''}`,
     };
   });

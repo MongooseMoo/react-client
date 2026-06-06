@@ -12,7 +12,7 @@ export {
   SYSTEM_REFERENCES,
 } from './contract';
 import { getMooQuickFixes, type MooQuickFix, type MooQuickFixDiagnostic } from './codeActions';
-import { getMooBuiltinMetadata } from './builtins';
+import { getMooBuiltinMetadata, getMooBuiltinParameterLabel } from './builtins';
 import { formatMooCode, formatMooCodeRange } from './formatter';
 import {
   getMooBuiltinVariableDocumentation,
@@ -1415,10 +1415,10 @@ function createMooBuiltinSnippet(name: string): string {
   }
 
   const parameters = Array.from({ length: parameterCount }, (_, index) => {
-    const type = metadata.parameterTypes[index] ?? `arg${index + 1}`;
+    const label = getMooBuiltinParameterLabel(name, index);
     const optionalMarker = index >= metadata.minArgs ? '?' : '';
 
-    return placeholder(index + 1, `${type}${optionalMarker}`);
+    return placeholder(index + 1, `${label}${optionalMarker}`);
   });
 
   return `${name}(${parameters.join(', ')})`;
