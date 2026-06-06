@@ -83,6 +83,29 @@ const OPERATOR_DOCUMENTATION: Partial<Record<(typeof OPERATOR_WORDS)[number], st
   bitxor: 'Bitwise XOR operator.',
 };
 
+export function getMooBuiltinVariableDocumentation(name: string): string | null {
+  const normalizedName = name.toLowerCase();
+  return (
+    BUILTIN_VARIABLE_DOCUMENTATION[
+      normalizedName as keyof typeof BUILTIN_VARIABLE_DOCUMENTATION
+    ] ?? null
+  );
+}
+
+export function getMooErrorDocumentation(name: string): string | null {
+  const upperName = name.toUpperCase();
+  return ERROR_DOCUMENTATION[upperName as keyof typeof ERROR_DOCUMENTATION] ?? null;
+}
+
+export function getMooKeywordDocumentation(name: string): string | null {
+  const normalizedName = name.toLowerCase();
+  return (
+    KEYWORD_DOCUMENTATION[normalizedName as keyof typeof KEYWORD_DOCUMENTATION] ??
+    OPERATOR_DOCUMENTATION[normalizedName as keyof typeof OPERATOR_DOCUMENTATION] ??
+    null
+  );
+}
+
 export function getMooHover(source: string, position: MooSourcePosition): MooHover | null {
   const word = wordAtPosition(source, position);
   if (!word) {
@@ -101,20 +124,17 @@ export function getMooHover(source: string, position: MooSourcePosition): MooHov
     return hover(word.range, builtinSignature.label, builtinSignature.documentation);
   }
 
-  const variableDocumentation =
-    BUILTIN_VARIABLE_DOCUMENTATION[normalizedName as keyof typeof BUILTIN_VARIABLE_DOCUMENTATION];
+  const variableDocumentation = getMooBuiltinVariableDocumentation(normalizedName);
   if (variableDocumentation) {
     return hover(word.range, normalizedName, variableDocumentation);
   }
 
-  const errorDocumentation = ERROR_DOCUMENTATION[upperName as keyof typeof ERROR_DOCUMENTATION];
+  const errorDocumentation = getMooErrorDocumentation(upperName);
   if (errorDocumentation) {
     return hover(word.range, upperName, errorDocumentation);
   }
 
-  const keywordDocumentation =
-    KEYWORD_DOCUMENTATION[normalizedName as keyof typeof KEYWORD_DOCUMENTATION] ??
-    OPERATOR_DOCUMENTATION[normalizedName as keyof typeof OPERATOR_DOCUMENTATION];
+  const keywordDocumentation = getMooKeywordDocumentation(normalizedName);
   if (keywordDocumentation) {
     return hover(word.range, normalizedName, keywordDocumentation);
   }

@@ -13,7 +13,12 @@ export {
 import { getMooQuickFixes } from './codeActions';
 import type { MooDiagnostic } from './diagnostics';
 import { formatMooCode, formatMooCodeRange } from './formatter';
-import { getMooHover } from './hover';
+import {
+  getMooBuiltinVariableDocumentation,
+  getMooErrorDocumentation,
+  getMooHover,
+  getMooKeywordDocumentation,
+} from './hover';
 import { collectMooInlayHints } from './inlayHints';
 import {
   BUILTIN_FUNCTIONS,
@@ -27,7 +32,7 @@ import {
   PLAINTEXT_LANGUAGE_ID,
   STATEMENT_KEYWORDS,
 } from './contract';
-import { getMooSignatureHelp } from './signatures';
+import { getMooBuiltinSignature, getMooSignatureHelp } from './signatures';
 import {
   createMooRenameWorkspaceEdit,
   findMooDefinition,
@@ -84,6 +89,7 @@ export type MooLanguageConfiguration = {
 type CompletionItem = {
   label: string;
   kind: number;
+  detail?: string;
   insertText: string;
   insertTextRules?: number;
   documentation: string;
@@ -396,46 +402,53 @@ export function createMooCompletionItems(
   const statements = STATEMENT_KEYWORDS.map((keyword) => ({
     label: keyword,
     kind: kind.Keyword,
+    detail: 'MOO statement keyword',
     insertText: keyword,
-    documentation: 'MOO statement keyword',
+    documentation: getMooKeywordDocumentation(keyword) ?? 'MOO statement keyword',
     range,
   }));
   const variables = BUILTIN_VARIABLES.map((variable) => ({
     label: variable,
     kind: kind.Variable,
+    detail: 'Builtin variable',
     insertText: variable,
-    documentation: 'MOO builtin variable',
+    documentation: getMooBuiltinVariableDocumentation(variable) ?? 'MOO builtin variable',
     range,
   }));
   const errors = ERROR_CONSTANTS.map((error) => ({
     label: error,
     kind: kind.Constant,
+    detail: 'MOO error constant',
     insertText: error,
-    documentation: 'MOO error constant',
+    documentation: getMooErrorDocumentation(error) ?? 'MOO error constant',
     range,
   }));
   const systemReferences = SYSTEM_REFERENCES.map((reference) => ({
     label: reference,
     kind: kind.Variable,
+    detail: 'System object reference',
     insertText: reference,
     documentation: 'MOO system object reference',
     range,
   }));
   const functions = BUILTIN_FUNCTIONS.map((name) => {
     const signature = BUILTIN_SNIPPETS[name] ?? `${name}($1)`;
+    const builtinSignature = getMooBuiltinSignature(name);
 
     return {
       label: name,
       kind: kind.Function,
+      detail: builtinSignature?.label ?? 'ToastStunt builtin function',
       insertText: signature,
       insertTextRules: snippetRule,
-      documentation: 'ToastStunt builtin function',
+      documentation: builtinSignature?.documentation ?? 'ToastStunt builtin function',
       range,
     };
   });
   const localVariables = locals.map((local) => ({
     label: local.name,
     kind: kind.Variable,
+    detail: 'Local variable',
     insertText: local.name,
     documentation: 'MOO local variable',
     range,

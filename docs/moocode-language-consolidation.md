@@ -183,3 +183,12 @@ Iterations:
     quiet when selected lines are already formatted.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco completion metadata:
+  - Completion items now include Monaco `detail` fields and richer
+    documentation for builtin functions, builtin variables, error constants,
+    and MOO keywords.
+  - Completion metadata reuses the same builtin signature and hover
+    documentation sources as signature help and hover cards.
+  - Existing labels, snippets, and replacement ranges are unchanged.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

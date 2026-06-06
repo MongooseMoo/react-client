@@ -73,6 +73,32 @@ describe('MOO Monaco language support', () => {
     expect(ERROR_CONSTANTS).toContain('E_INVARG');
   });
 
+  it('adds rich detail and documentation to Monaco completion items', () => {
+    const items = createMooCompletionItems({
+      startLineNumber: 1,
+      endLineNumber: 1,
+      startColumn: 1,
+      endColumn: 1,
+    });
+
+    expect(items.find((item) => item.label === 'notify')).toMatchObject({
+      detail: 'notify(player, text)',
+      documentation: 'Sends text to a connected player.',
+    });
+    expect(items.find((item) => item.label === 'player')).toMatchObject({
+      detail: 'Builtin variable',
+      documentation: 'The player whose command started this task.',
+    });
+    expect(items.find((item) => item.label === 'E_PERM')).toMatchObject({
+      detail: 'MOO error constant',
+      documentation: 'Permission denied.',
+    });
+    expect(items.find((item) => item.label === 'if')).toMatchObject({
+      detail: 'MOO statement keyword',
+      documentation: 'Begins a conditional block.',
+    });
+  });
+
   it('computes completion replacement ranges from the active model word', () => {
     const provider = createMooCompletionProvider();
     const model = {
