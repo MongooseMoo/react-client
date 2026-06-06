@@ -132,6 +132,10 @@ describe('MOO Monaco language support', () => {
     expect(items.find((item) => item.label === 'notify')).toMatchObject({
       detail: 'notify(player, text)',
       documentation: 'Sends text to a connected player.',
+      command: {
+        id: 'editor.action.triggerParameterHints',
+        title: 'Trigger parameter hints',
+      },
     });
     expect(items.find((item) => item.label === 'player')).toMatchObject({
       detail: 'Builtin variable',
@@ -294,6 +298,7 @@ describe('MOO Monaco language support', () => {
       commitCharacters: ['('],
     });
     expect(notifyCompletion).not.toHaveProperty('insertTextRules');
+    expect(notifyCompletion).not.toHaveProperty('command');
   });
 
   it('uses ToastStunt arity metadata for generic builtin completion snippets', () => {
@@ -427,6 +432,10 @@ describe('MOO Monaco language support', () => {
     expect(notifyCompletion).toMatchObject({
       label: 'notify',
       insertText: ['notify(', '$', '{1:player}', ', ', '$', '{2:text}', ')'].join(''),
+      command: {
+        id: 'editor.action.triggerParameterHints',
+        title: 'Trigger parameter hints',
+      },
     });
     expect(notifyCompletion).not.toHaveProperty('detail');
     expect(notifyCompletion).not.toHaveProperty('documentation');

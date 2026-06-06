@@ -131,6 +131,10 @@ type CompletionItem = {
   insertText: string;
   insertTextRules?: number;
   documentation?: string;
+  command?: {
+    id: string;
+    title: string;
+  };
   range: MonacoRange;
   sortText?: string;
   filterText?: string;
@@ -401,6 +405,10 @@ export type MonacoLike = {
 };
 
 const REGISTERED_MONACO_INSTANCES = new WeakSet<object>();
+const TRIGGER_PARAMETER_HINTS_COMMAND = {
+  id: 'editor.action.triggerParameterHints',
+  title: 'Trigger parameter hints',
+} as const;
 const MOO_IDENTIFIER_PATTERN = new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE);
 const MOO_SYSTEM_REFERENCE_PATTERN = new RegExp(MOO_SYSTEM_REFERENCE_PATTERN_SOURCE);
 const MOO_END_KEYWORD_PATTERN_SOURCE = 'endif|endfor|endwhile|endfork|endtry';
@@ -649,6 +657,7 @@ export function createMooCompletionItems(
       kind: kind.Function,
       insertText: signature,
       insertTextRules: snippetRule,
+      command: TRIGGER_PARAMETER_HINTS_COMMAND,
       range,
       sortText: completionSortText('function', name),
       filterText: completionFilterText('function', name),
