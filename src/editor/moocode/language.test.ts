@@ -985,6 +985,48 @@ describe('MOO Monaco language support', () => {
     ]);
   });
 
+  it('provides Monaco document highlights for ToastStunt builtin calls', () => {
+    const provider = createMooDocumentHighlightProvider({ Read: 1, Write: 2 });
+    const source = [
+      'notify(player, "hi");',
+      'if (valid(player))',
+      '  notify(player, "still here");',
+      'endif',
+      'player:notify("verb");',
+      '// notify(player, "comment");',
+      '"notify(player, string)"',
+    ].join('\n');
+
+    expect(
+      provider.provideDocumentHighlights(
+        {
+          getValue: () => source,
+        } as never,
+        { lineNumber: 1, column: 3 },
+        {} as never,
+      ),
+    ).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 7,
+        },
+        kind: 1,
+      },
+      {
+        range: {
+          startLineNumber: 3,
+          startColumn: 3,
+          endLineNumber: 3,
+          endColumn: 9,
+        },
+        kind: 1,
+      },
+    ]);
+  });
+
   it('provides Monaco linked editing ranges for local symbols', () => {
     const provider = createMooLinkedEditingRangeProvider();
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');

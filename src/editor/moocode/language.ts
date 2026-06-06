@@ -841,7 +841,10 @@ export function createMooDocumentHighlightProvider(
         );
       }
 
-      return findMooDocumentLinkReferences(source, position).map((reference) => ({
+      return [
+        ...findMooDocumentLinkReferences(source, position),
+        ...findMooBuiltinReferences(source, position),
+      ].map((reference) => ({
         range: reference.range,
         kind: documentHighlightKind.Read,
       }));
