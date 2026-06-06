@@ -99,14 +99,7 @@ describe('validateMooSyntax', () => {
 
   it('ignores block comment contents when validating blocks and delimiters', () => {
     const diagnostics = validateMooSyntax(
-      [
-        '/*',
-        'break;',
-        'endif',
-        'values = {1, 2;',
-        '*/',
-        'notify(player, "ok");',
-      ].join('\n'),
+      ['/*', 'break;', 'endif', 'values = {1, 2;', '*/', 'notify(player, "ok");'].join('\n'),
     );
 
     expect(diagnostics).toEqual([]);
@@ -129,7 +122,9 @@ describe('validateMooSyntax', () => {
         message: 'continue can only be used inside a for or while block.',
       }),
     );
-    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-loop-label')).toEqual([]);
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-loop-label')).toEqual(
+      [],
+    );
   });
 
   it('reports named break and continue targets that do not match an enclosing while label', () => {
@@ -154,9 +149,9 @@ describe('validateMooSyntax', () => {
         message: 'missing does not name an enclosing while label.',
       }),
     );
-    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-loop-label')).toHaveLength(
-      1,
-    );
+    expect(
+      diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-loop-label'),
+    ).toHaveLength(1);
   });
 
   it('reports ToastStunt builtin calls outside their registered arity', () => {
@@ -243,7 +238,9 @@ describe('validateMooSyntax', () => {
         ],
       }),
     );
-    expect(toMonacoMarkers(source, { error: 8, warning: 4 }, 'moo://#1:test' as never)).toContainEqual(
+    expect(
+      toMonacoMarkers(source, { error: 8, warning: 4 }, 'moo://#1:test' as never),
+    ).toContainEqual(
       expect.objectContaining({
         code: 'undefined-local',
         relatedInformation: [
@@ -260,6 +257,44 @@ describe('validateMooSyntax', () => {
     );
     expect(diagnostics.filter((diagnostic) => diagnostic.code === 'undefined-local')).toHaveLength(
       1,
+    );
+  });
+
+  it('reports likely local typo targets in undefined local diagnostics and Monaco markers', () => {
+    const source = ['total = 0;', 'notify(player, totla);'].join('\n');
+
+    expect(validateMooSyntax(source)).toContainEqual(
+      expect.objectContaining({
+        code: 'undefined-local',
+        lineNumber: 2,
+        startColumn: 16,
+        endColumn: 21,
+        message: 'totla is used before it is defined. Did you mean total?',
+        relatedInformation: [
+          {
+            message: 'Similar local total is defined here.',
+            range: {
+              startLineNumber: 1,
+              startColumn: 1,
+              endLineNumber: 1,
+              endColumn: 6,
+            },
+          },
+        ],
+      }),
+    );
+    expect(
+      toMonacoMarkers(source, { error: 8, warning: 4 }, 'moo://#1:test' as never),
+    ).toContainEqual(
+      expect.objectContaining({
+        code: 'undefined-local',
+        relatedInformation: [
+          expect.objectContaining({
+            resource: 'moo://#1:test',
+            message: 'Similar local total is defined here.',
+          }),
+        ],
+      }),
     );
   });
 

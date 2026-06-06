@@ -42,6 +42,8 @@ export type MooDiagnostic = {
   message: string;
   relatedInformation?: MooDiagnosticRelatedInformation[];
   severity?: MooDiagnosticSeverity;
+  suggestedName?: string;
+  suggestedRange?: MonacoRange;
   lineNumber: number;
   startColumn: number;
   endColumn: number;
@@ -428,19 +430,40 @@ function validateBuiltinCallArity(source: string): MooDiagnostic[] {
 function validateUndefinedLocals(source: string): MooDiagnostic[] {
   return findMooUndefinedLocalReferences(source).map((reference) => ({
     code: 'undefined-local',
-    message: `${reference.name} is used before it is defined.`,
-    relatedInformation: reference.definitionRange
-      ? [
-          {
-            message: `First ${reference.name} definition is here.`,
-            range: reference.definitionRange,
-          },
-        ]
-      : undefined,
+    message: reference.suggestedName
+      ? `${reference.name} is used before it is defined. Did you mean ${reference.suggestedName}?`
+      : `${reference.name} is used before it is defined.`,
+    relatedInformation: undefinedLocalRelatedInformation(reference),
+    suggestedName: reference.suggestedName,
+    suggestedRange: reference.suggestedRange,
     lineNumber: reference.range.startLineNumber,
     startColumn: reference.range.startColumn,
     endColumn: reference.range.endColumn,
   }));
+}
+
+function undefinedLocalRelatedInformation(
+  reference: ReturnType<typeof findMooUndefinedLocalReferences>[number],
+): MooDiagnosticRelatedInformation[] | undefined {
+  if (reference.suggestedName && reference.suggestedRange) {
+    return [
+      {
+        message: `Similar local ${reference.suggestedName} is defined here.`,
+        range: reference.suggestedRange,
+      },
+    ];
+  }
+
+  if (reference.definitionRange) {
+    return [
+      {
+        message: `First ${reference.name} definition is here.`,
+        range: reference.definitionRange,
+      },
+    ];
+  }
+
+  return undefined;
 }
 
 function validateUnknownLoopLabels(source: string): MooDiagnostic[] {

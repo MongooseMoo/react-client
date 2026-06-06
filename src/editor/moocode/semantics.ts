@@ -43,6 +43,8 @@ export type MooUndefinedLocalReference = {
   definitionRange?: MonacoRange;
   name: string;
   range: MonacoRange;
+  suggestedName?: string;
+  suggestedRange?: MonacoRange;
 };
 
 export type MooUnusedLocalDefinition = {
@@ -383,14 +385,94 @@ export function findMooUndefinedLocalReferences(source: string): MooUndefinedLoc
     }
 
     seenOffsets.add(occurrence.occurrence.startOffset);
-    references.push({
-      definitionRange: firstDefinition?.range,
+    const suggestion =
+      firstDefinition === undefined
+        ? findLikelyLocalTypoReplacement(source, occurrence.name, {
+            lineNumber: occurrence.occurrence.range.startLineNumber,
+            column: occurrence.occurrence.range.startColumn,
+          })
+        : null;
+    const reference: MooUndefinedLocalReference = {
       name: occurrence.name,
       range: occurrence.occurrence.range,
-    });
+    };
+    if (firstDefinition) {
+      reference.definitionRange = firstDefinition.range;
+    }
+    if (suggestion) {
+      reference.suggestedName = suggestion.name;
+      reference.suggestedRange = suggestion.range;
+    }
+    references.push(reference);
   }
 
   return references.sort((left, right) => compareRanges(left.range, right.range));
+}
+
+function findLikelyLocalTypoReplacement(
+  source: string,
+  name: string,
+  position: MooSourcePosition,
+): { name: string; range: MonacoRange } | null {
+  const normalizedName = name.toLowerCase();
+  const candidates = getMooLocalCompletions(source, position)
+    .filter((candidate) => candidate.name.toLowerCase() !== normalizedName)
+    .filter((candidate) => !isLikelyPluralVariant(normalizedName, candidate.name.toLowerCase()))
+    .map((candidate) => ({
+      ...candidate,
+      distance: damerauLevenshteinDistance(normalizedName, candidate.name.toLowerCase()),
+    }))
+    .filter((candidate) => candidate.distance <= typoDistanceThreshold(name))
+    .sort((left, right) => left.distance - right.distance);
+
+  return candidates[0] ?? null;
+}
+
+function isLikelyPluralVariant(left: string, right: string): boolean {
+  return left === `${right}s` || right === `${left}s`;
+}
+
+function typoDistanceThreshold(name: string): number {
+  return name.length <= 4 ? 1 : 2;
+}
+
+function damerauLevenshteinDistance(left: string, right: string): number {
+  const distances: number[][] = Array.from({ length: left.length + 1 }, () =>
+    Array.from({ length: right.length + 1 }, () => 0),
+  );
+
+  for (let row = 0; row <= left.length; row += 1) {
+    distances[row][0] = row;
+  }
+
+  for (let column = 0; column <= right.length; column += 1) {
+    distances[0][column] = column;
+  }
+
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      const substitutionCost = left[row - 1] === right[column - 1] ? 0 : 1;
+      distances[row][column] = Math.min(
+        distances[row - 1][column] + 1,
+        distances[row][column - 1] + 1,
+        distances[row - 1][column - 1] + substitutionCost,
+      );
+
+      if (
+        row > 1 &&
+        column > 1 &&
+        left[row - 1] === right[column - 2] &&
+        left[row - 2] === right[column - 1]
+      ) {
+        distances[row][column] = Math.min(
+          distances[row][column],
+          distances[row - 2][column - 2] + 1,
+        );
+      }
+    }
+  }
+
+  return distances[left.length][right.length];
 }
 
 export function findMooUnusedLocalDefinitions(source: string): MooUnusedLocalDefinition[] {

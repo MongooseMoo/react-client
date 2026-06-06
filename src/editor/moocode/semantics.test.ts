@@ -305,6 +305,19 @@ describe('MOO semantic model', () => {
     expect(analyzeMooSemantics(source).symbols.map((symbol) => symbol.name)).toContain('utils');
   });
 
+  it('suggests visible local typo targets for undefined local references', () => {
+    const source = ['total = 0;', 'notify(player, totla);'].join('\n');
+
+    expect(findMooUndefinedLocalReferences(source)).toEqual([
+      {
+        name: 'totla',
+        range: wordRange(source, 'totla', 1),
+        suggestedName: 'total',
+        suggestedRange: wordRange(source, 'total', 1),
+      },
+    ]);
+  });
+
   it('reports local references that appear before their first definition', () => {
     const source = [
       'notify(player, total);',
