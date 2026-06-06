@@ -113,6 +113,15 @@ Iterations:
     and tested the packed integer encoding Monaco consumes.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco range semantic tokens:
+  - Added range-scoped semantic token encoding so Monaco can request only the
+    visible/editing slice of a MOO document without changing token semantics.
+  - Registered a Monaco `DocumentRangeSemanticTokensProvider` beside the
+    full-document provider, sharing the same stable legend and classifier.
+  - Consolidated semantic-token offset mapping through the shared MOO scanner
+    position helper.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/semanticTokens.test.ts src/editor/moocode/language.test.ts`.
 - 2026-06-06 Monaco quick fixes:
   - Added `src/editor/moocode/codeActions.ts` for browser-side quick fixes
     derived from the existing MOO diagnostics.

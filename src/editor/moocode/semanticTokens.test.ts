@@ -3,6 +3,7 @@ import {
   MOO_SEMANTIC_TOKEN_LEGEND,
   collectMooSemanticTokens,
   encodeMooSemanticTokens,
+  encodeMooSemanticTokensForRange,
 } from './semanticTokens';
 
 describe('MOO semantic tokens', () => {
@@ -48,6 +49,33 @@ describe('MOO semantic tokens', () => {
       1,
       MOO_SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('number'),
       0,
+      1,
+      0,
+      6,
+      MOO_SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('function'),
+      2,
+      0,
+      7,
+      6,
+      MOO_SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('variable'),
+      2,
+      0,
+      8,
+      5,
+      MOO_SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('variable'),
+      0,
+    ]);
+  });
+
+  it('encodes Monaco semantic tokens scoped to a requested range', () => {
+    const encoded = encodeMooSemanticTokensForRange('total = 0;\nnotify(player, total);\n// done', {
+      startLineNumber: 2,
+      startColumn: 1,
+      endLineNumber: 2,
+      endColumn: 29,
+    });
+
+    expect(Array.from(encoded.data)).toEqual([
       1,
       0,
       6,

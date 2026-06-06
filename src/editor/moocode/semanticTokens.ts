@@ -6,7 +6,7 @@ import {
   STATEMENT_KEYWORDS,
 } from './contract';
 import { analyzeMooSemantics } from './semantics';
-import { maskMooSource } from './scanner';
+import { maskMooSource, positionAtMooOffset } from './scanner';
 
 const MOO_SEMANTIC_TOKEN_TYPES = [
   'keyword',
@@ -38,6 +38,13 @@ export type MooSemanticToken = {
   text: string;
   tokenType: MooSemanticTokenType;
   tokenModifiers: MooSemanticTokenModifier[];
+};
+
+export type MooSemanticTokenRange = {
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
 };
 
 const KEYWORDS = new Set<string>(STATEMENT_KEYWORDS.map((keyword) => keyword.toLowerCase()));
@@ -164,11 +171,24 @@ export function collectMooSemanticTokens(source: string): MooSemanticToken[] {
 }
 
 export function encodeMooSemanticTokens(source: string): { data: Uint32Array; resultId?: string } {
+  return encodeSemanticTokens(collectMooSemanticTokens(source));
+}
+
+export function encodeMooSemanticTokensForRange(
+  source: string,
+  range: MooSemanticTokenRange,
+): { data: Uint32Array; resultId?: string } {
+  return encodeSemanticTokens(
+    collectMooSemanticTokens(source).filter((token) => semanticTokenIntersectsRange(token, range)),
+  );
+}
+
+function encodeSemanticTokens(tokens: MooSemanticToken[]): { data: Uint32Array; resultId?: string } {
   const encoded: number[] = [];
   let previousLine = 0;
   let previousStartCharacter = 0;
 
-  for (const token of collectMooSemanticTokens(source)) {
+  for (const token of tokens) {
     const line = token.lineNumber - 1;
     const startCharacter = token.startColumn - 1;
     const deltaLine = line - previousLine;
@@ -401,9 +421,45 @@ function semanticRangeKey(range: {
   return `${range.startLineNumber}:${range.startColumn}:${range.endLineNumber}:${range.endColumn}`;
 }
 
+function semanticTokenIntersectsRange(
+  token: MooSemanticToken,
+  range: MooSemanticTokenRange,
+): boolean {
+  const tokenStart = {
+    lineNumber: token.lineNumber,
+    column: token.startColumn,
+  };
+  const tokenEnd = {
+    lineNumber: token.lineNumber,
+    column: token.startColumn + token.length,
+  };
+
+  return (
+    comparePositions(tokenEnd, {
+      lineNumber: range.startLineNumber,
+      column: range.startColumn,
+    }) > 0 &&
+    comparePositions(tokenStart, {
+      lineNumber: range.endLineNumber,
+      column: range.endColumn,
+    }) < 0
+  );
+}
+
+function comparePositions(
+  left: { lineNumber: number; column: number },
+  right: { lineNumber: number; column: number },
+): number {
+  if (left.lineNumber !== right.lineNumber) {
+    return left.lineNumber - right.lineNumber;
+  }
+
+  return left.column - right.column;
+}
+
 function rangeFromOffsets(source: string, startOffset: number, endOffset: number) {
-  const start = positionAt(source, startOffset);
-  const end = positionAt(source, endOffset);
+  const start = positionAtMooOffset(source, startOffset);
+  const end = positionAtMooOffset(source, endOffset);
 
   return {
     startLineNumber: start.lineNumber,
@@ -411,25 +467,6 @@ function rangeFromOffsets(source: string, startOffset: number, endOffset: number
     endLineNumber: end.lineNumber,
     endColumn: end.column,
   };
-}
-
-function positionAt(source: string, offset: number) {
-  let lineNumber = 1;
-  let column = 1;
-
-  for (let index = 0; index < offset; index += 1) {
-    if (source[index] === '\n') {
-      lineNumber += 1;
-      column = 1;
-      continue;
-    }
-
-    if (source[index] !== '\r') {
-      column += 1;
-    }
-  }
-
-  return { lineNumber, column };
 }
 
 function getLineOffsets(source: string): number[] {

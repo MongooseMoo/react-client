@@ -10,6 +10,7 @@ import {
   createMooDocumentFormattingEditProvider,
   createMooDocumentRangeFormattingEditProvider,
   createMooDocumentHighlightProvider,
+  createMooDocumentRangeSemanticTokensProvider,
   createMooDefinitionProvider,
   createMooDocumentSymbolProvider,
   createMooFoldingRangeProvider,
@@ -261,6 +262,7 @@ describe('MOO Monaco language support', () => {
         registerDocumentHighlightProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentRangeSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentRangeFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -299,6 +301,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerDocumentHighlightProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentSymbolProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentSemanticTokensProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerDocumentRangeSemanticTokensProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentFormattingEditProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentRangeFormattingEditProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerFoldingRangeProvider).toHaveBeenCalledTimes(1);
@@ -889,6 +892,24 @@ describe('MOO Monaco language support', () => {
     expect(provider.getLegend().tokenModifiers).toContain('defaultLibrary');
     expect(Array.from(tokens.data)).toEqual(expect.arrayContaining([5, 6]));
     expect(provider.releaseDocumentSemanticTokens(undefined)).toBeUndefined();
+  });
+
+  it('provides Monaco range semantic tokens for MOO source', () => {
+    const provider = createMooDocumentRangeSemanticTokensProvider();
+    const tokens = provider.provideDocumentRangeSemanticTokens(
+      { getValue: () => 'total = 0;\nnotify(player, total);\n// done' } as never,
+      {
+        startLineNumber: 2,
+        startColumn: 1,
+        endLineNumber: 2,
+        endColumn: 29,
+      } as never,
+      {} as never,
+    );
+
+    expect(provider.getLegend().tokenTypes).toContain('variable');
+    expect(provider.getLegend().tokenModifiers).toContain('defaultLibrary');
+    expect(Array.from(tokens.data)).toEqual(expect.arrayContaining([1, 0, 6]));
   });
 
   it('provides Monaco document symbols and folding ranges from parser-backed MOO structure', async () => {

@@ -46,7 +46,11 @@ import {
   getMooRenameLocation,
 } from './semantics';
 import { getMooSelectionRanges, type MooSelectionRange } from './selectionRanges';
-import { MOO_SEMANTIC_TOKEN_LEGEND, encodeMooSemanticTokens } from './semanticTokens';
+import {
+  MOO_SEMANTIC_TOKEN_LEGEND,
+  encodeMooSemanticTokens,
+  encodeMooSemanticTokensForRange,
+} from './semanticTokens';
 import { maskMooSource, offsetAtMooPosition } from './scanner';
 import { analyzeMooStructure, type MooStructureSymbol } from './structure';
 import { parseMooCodeWithTreeSitter, type MooTreeSitterParseResult } from './treeSitter';
@@ -256,6 +260,10 @@ export type MonacoLike = {
     registerDocumentSemanticTokensProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.DocumentSemanticTokensProvider,
+    ) => { dispose: () => void };
+    registerDocumentRangeSemanticTokensProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.DocumentRangeSemanticTokensProvider,
     ) => { dispose: () => void };
     registerDocumentFormattingEditProvider?: (
       languageId: string,
@@ -814,6 +822,14 @@ export function createMooSemanticTokensProvider(): MonacoEditor.languages.Docume
   };
 }
 
+export function createMooDocumentRangeSemanticTokensProvider(): MonacoEditor.languages.DocumentRangeSemanticTokensProvider {
+  return {
+    getLegend: () => MOO_SEMANTIC_TOKEN_LEGEND,
+    provideDocumentRangeSemanticTokens: (model, range) =>
+      encodeMooSemanticTokensForRange(model.getValue(), range),
+  };
+}
+
 export function createMooSignatureHelpProvider(): SignatureHelpProvider {
   return {
     signatureHelpTriggerCharacters: ['(', ','],
@@ -869,6 +885,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.registerDocumentSemanticTokensProvider?.(
     MOO_LANGUAGE_ID,
     createMooSemanticTokensProvider(),
+  );
+  monaco.languages.registerDocumentRangeSemanticTokensProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooDocumentRangeSemanticTokensProvider(),
   );
   monaco.languages.registerDocumentFormattingEditProvider?.(
     MOO_LANGUAGE_ID,
