@@ -44,6 +44,8 @@ function EditorWindow() {
   const handleEditorMount: OnMount = (editor, monaco) => {
     editorInstance.current = editor;
     monacoInstance.current = monaco;
+  };
+  const handleEditorBeforeMount = (monaco: Monaco) => {
     registerMooLanguage(monaco);
   };
   const [prefState] = usePreferences();
@@ -207,6 +209,7 @@ function EditorWindow() {
           accessibilitySupport: accessibilityMode ? 'on' : 'off',
           quickSuggestions: autocompleteEnabled,
         }}
+        beforeMount={handleEditorBeforeMount}
         onMount={handleEditorMount}
         path={session.reference}
       />

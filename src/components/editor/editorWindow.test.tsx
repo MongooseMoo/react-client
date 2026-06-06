@@ -38,10 +38,12 @@ const editorMock = vi.hoisted(() => ({
 vi.mock('@monaco-editor/react', () => ({
   default: (props: Record<string, unknown>) => {
     editorMock.props = props;
+    const beforeMount = props.beforeMount as ((monaco: unknown) => void) | undefined;
     const onMount = props.onMount as ((editor: unknown, monaco: unknown) => void) | undefined;
     React.useEffect(() => {
+      beforeMount?.(editorMock.monaco);
       onMount?.({ focus: editorMock.focus, getModel: () => editorMock.model }, editorMock.monaco);
-    }, [onMount]);
+    }, [beforeMount, onMount]);
     return <div data-testid="monaco-editor" />;
   },
   loader: editorMock.monaco.loader,
@@ -95,6 +97,11 @@ describe('EditorWindow language selection', () => {
     editorMock.focus.mockClear();
     editorMock.monaco.editor.setModelMarkers.mockClear();
     editorMock.monaco.languages.getLanguages.mockReturnValue([]);
+    editorMock.monaco.languages.register.mockClear();
+    editorMock.monaco.languages.registerCompletionItemProvider.mockClear();
+    editorMock.monaco.languages.registerHoverProvider.mockClear();
+    editorMock.monaco.languages.setLanguageConfiguration.mockClear();
+    editorMock.monaco.languages.setMonarchTokensProvider.mockClear();
     MockBroadcastChannel.instances = [];
     vi.stubGlobal('BroadcastChannel', MockBroadcastChannel);
   });
@@ -121,6 +128,8 @@ describe('EditorWindow language selection', () => {
     });
 
     await waitFor(() => expect(editorMock.props?.language).toBe(MOO_LANGUAGE_ID));
+    expect(editorMock.props?.beforeMount).toEqual(expect.any(Function));
+    expect(editorMock.monaco.languages.register).toHaveBeenCalledWith({ id: MOO_LANGUAGE_ID });
     expect(editorMock.props?.path).toBe('#1:test');
     expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenLastCalledWith(
       editorMock.model,
