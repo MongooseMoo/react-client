@@ -167,6 +167,38 @@ describe('validateMooSyntax', () => {
     ).toHaveLength(2);
   });
 
+  it('reports statements unreachable after if blocks where every branch terminates', () => {
+    const source = [
+      'if (player == #-1)',
+      '  return E_INVARG;',
+      'endif',
+      'notify(player, "maybe");',
+      'if (valid(player))',
+      '  return E_PERM;',
+      'elseif (player == #-1)',
+      '  return E_INVARG;',
+      'else',
+      '  return E_NONE;',
+      'endif',
+      'notify(player, "never");',
+    ].join('\n');
+    const diagnostics = validateMooSyntax(source);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unreachable-statement',
+        lineNumber: 12,
+        startColumn: 1,
+        endColumn: 25,
+        message: 'Statement is unreachable because all if branches terminate.',
+        severity: 'warning',
+      }),
+    );
+    expect(
+      diagnostics.filter((diagnostic) => diagnostic.code === 'unreachable-statement'),
+    ).toHaveLength(1);
+  });
+
   it('reports named break and continue targets that do not match an enclosing while label', () => {
     const diagnostics = validateMooSyntax(
       [

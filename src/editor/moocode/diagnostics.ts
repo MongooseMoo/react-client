@@ -75,12 +75,14 @@ export type MonacoMarkerSeverities = {
 type BlockKind = keyof typeof MOO_BLOCKS;
 
 type BlockFrame = {
+  branchUnreachableAfter?: Array<UnreachableReason | undefined>;
   kind: BlockKind;
   closeKeyword: string;
-  inheritedUnreachableAfter?: TerminalControlKeyword;
+  hasFinalBranch?: boolean;
+  inheritedUnreachableAfter?: UnreachableReason;
   lineNumber: number;
   startColumn: number;
-  unreachableAfter?: TerminalControlKeyword;
+  unreachableAfter?: UnreachableReason;
 };
 
 type DelimiterFrame = {
@@ -103,6 +105,7 @@ type ScanState = {
 };
 
 type TerminalControlKeyword = 'return' | 'break' | 'continue';
+type UnreachableReason = TerminalControlKeyword | 'if-branches';
 
 const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
 const LABELED_WHILE_PREFIX_PATTERN = new RegExp(
@@ -138,7 +141,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
   const blockStack: BlockFrame[] = [];
   const delimiterStack: DelimiterFrame[] = [];
   const scanState: ScanState = { inBlockComment: false };
-  let topLevelUnreachableAfter: TerminalControlKeyword | undefined;
+  let topLevelUnreachableAfter: UnreachableReason | undefined;
 
   const lines = source.split(/\r\n|\r|\n/);
 
@@ -158,7 +161,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
     if (unreachableAfter && startColumn && !isBlockBoundary) {
       diagnostics.push({
         code: 'unreachable-statement',
-        message: `Statement is unreachable after ${unreachableAfter}.`,
+        message: formatUnreachableStatementMessage(unreachableAfter),
         severity: 'warning',
         lineNumber,
         startColumn,
@@ -193,6 +196,11 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
     }
 
     if (middleKind) {
+      const currentBlock = blockStack.at(-1);
+      if (currentBlock) {
+        recordCurrentBranchTermination(currentBlock);
+        currentBlock.hasFinalBranch ||= normalized === 'else';
+      }
       clearCurrentUnreachableAfter(blockStack);
       return;
     }
@@ -232,6 +240,16 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
           startColumn: keyword.startColumn,
           endColumn: keyword.endColumn,
         });
+      }
+
+      recordCurrentBranchTermination(open);
+      if (terminatesByClosedIfBlock(open)) {
+        if (blockStack.length > 0) {
+          const currentBlock = blockStack[blockStack.length - 1];
+          currentBlock.unreachableAfter ??= 'if-branches';
+        } else {
+          topLevelUnreachableAfter ??= 'if-branches';
+        }
       }
 
       return;
@@ -304,13 +322,37 @@ export function toMonacoMarkers(
 
 function currentUnreachableAfter(
   blockStack: BlockFrame[],
-  topLevelUnreachableAfter: TerminalControlKeyword | undefined,
-): TerminalControlKeyword | undefined {
+  topLevelUnreachableAfter: UnreachableReason | undefined,
+): UnreachableReason | undefined {
   const currentBlock = blockStack.at(-1);
   return (
     currentBlock?.unreachableAfter ??
     currentBlock?.inheritedUnreachableAfter ??
     topLevelUnreachableAfter
+  );
+}
+
+function formatUnreachableStatementMessage(reason: UnreachableReason): string {
+  return reason === 'if-branches'
+    ? 'Statement is unreachable because all if branches terminate.'
+    : `Statement is unreachable after ${reason}.`;
+}
+
+function recordCurrentBranchTermination(block: BlockFrame): void {
+  if (block.kind !== 'if') {
+    return;
+  }
+
+  block.branchUnreachableAfter ??= [];
+  block.branchUnreachableAfter.push(block.unreachableAfter);
+}
+
+function terminatesByClosedIfBlock(block: BlockFrame): boolean {
+  return (
+    block.kind === 'if' &&
+    block.hasFinalBranch === true &&
+    (block.branchUnreachableAfter?.length ?? 0) > 0 &&
+    block.branchUnreachableAfter?.every((reason) => reason !== undefined) === true
   );
 }
 
