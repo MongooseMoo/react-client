@@ -475,3 +475,16 @@ Iterations:
     aligned.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/semanticTokens.test.ts src/editor/moocode/language.test.ts src/editor/moocode/treeSitter.test.ts`.
+- 2026-06-06 identifier regex consolidation:
+  - Added a shared system-reference pattern derived from the shared MOO
+    identifier pattern.
+  - Monarch tokenization, document links, scanner first-keyword detection,
+    fallback structure labels, hover word lookup, selection ranges, signature
+    call detection, inlay hint call detection, and builtin-arity diagnostics now
+    all consume the shared identifier contract instead of local `$`-friendly
+    regexes.
+  - Invalid dollar-separated text such as `$room$extra` is split into valid
+    `$room` and `$extra` spans where appropriate, instead of being treated as
+    one impossible identifier.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/links.test.ts src/editor/moocode/structure.test.ts src/editor/moocode/hover.test.ts src/editor/moocode/selectionRanges.test.ts src/editor/moocode/language.test.ts src/editor/moocode/scanner.test.ts src/editor/moocode/contract.test.ts src/editor/moocode/signatures.test.ts src/editor/moocode/inlayHints.test.ts src/editor/moocode/diagnostics.test.ts`.

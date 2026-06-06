@@ -75,4 +75,13 @@ describe('MOO code structure analysis', () => {
     });
     expect(structure.foldingRanges).toEqual([{ start: 3, end: 7 }]);
   });
+
+  it('uses grammar identifiers in block symbol labels', () => {
+    const source = ['for item$bad in (items)', 'endfor', 'fork task$bad (0)', 'endfork'].join('\n');
+
+    expect(analyzeMooStructure(source).symbols.map((symbol) => symbol.name)).toEqual([
+      'for item',
+      'fork task',
+    ]);
+  });
 });

@@ -1,4 +1,4 @@
-import { BUILTIN_FUNCTIONS } from './contract';
+import { BUILTIN_FUNCTIONS, MOO_IDENTIFIER_PATTERN_SOURCE } from './contract';
 import { formatMooBuiltinArity, getMooBuiltinMetadata } from './builtins';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
 
@@ -97,6 +97,8 @@ const BUILTIN_SIGNATURES: Partial<Record<(typeof BUILTIN_FUNCTIONS)[number], Sig
   };
 
 const BUILTIN_NAMES = new Set<string>(BUILTIN_FUNCTIONS);
+const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
+const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
 
 export function findMooCallContext(
   source: string,
@@ -162,7 +164,8 @@ export function getMooSignatureHelp(
   return {
     signatures: [
       {
-        label: definition.label ?? formatSignatureLabel(context.functionName, definition.parameters),
+        label:
+          definition.label ?? formatSignatureLabel(context.functionName, definition.parameters),
         documentation: definition.documentation,
         parameters: definition.parameters,
       },
@@ -247,10 +250,10 @@ function readIdentifierBefore(source: string, openParenIndex: number): string | 
   }
 
   let startIndex = endIndex;
-  while (startIndex >= 0 && /[A-Za-z0-9_$]/.test(source[startIndex])) {
+  while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
     startIndex -= 1;
   }
 
   const identifier = source.slice(startIndex + 1, endIndex + 1);
-  return /^[A-Za-z_][\w$]*$/.test(identifier) ? identifier : null;
+  return VALID_IDENTIFIER_PATTERN.test(identifier) ? identifier : null;
 }

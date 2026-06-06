@@ -9,6 +9,7 @@ import {
   MOO_INDENT_OPEN_KEYWORDS,
   MOO_LANGUAGE_ID,
   MOO_SESSION_TYPES,
+  MOO_SYSTEM_REFERENCE_PATTERN_SOURCE,
   STATEMENT_KEYWORDS,
   SYSTEM_REFERENCES,
 } from './contract';
@@ -30,11 +31,14 @@ describe('MOO language contract', () => {
 
   it('owns the shared MOO identifier shape', () => {
     const identifier = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
+    const systemReference = new RegExp(`^${MOO_SYSTEM_REFERENCE_PATTERN_SOURCE}$`);
 
     expect(identifier.test('valid_name9')).toBe(true);
     expect(identifier.test('_scratch')).toBe(true);
     expect(identifier.test('9bad')).toBe(false);
     expect(identifier.test('bad$name')).toBe(false);
+    expect(systemReference.test('$string_utils')).toBe(true);
+    expect(systemReference.test('$room$extra')).toBe(false);
   });
 
   it('keeps block ownership in one contract instead of duplicating parser facts', () => {

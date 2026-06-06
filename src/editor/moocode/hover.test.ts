@@ -14,9 +14,12 @@ describe('MOO hover service', () => {
       },
       contents: [
         {
-          value: ['```moocode', 'notify(player, text)', '```', 'Sends text to a connected player.'].join(
-            '\n',
-          ),
+          value: [
+            '```moocode',
+            'notify(player, text)',
+            '```',
+            'Sends text to a connected player.',
+          ].join('\n'),
         },
       ],
     });
@@ -81,16 +84,34 @@ describe('MOO hover service', () => {
   });
 
   it('describes MOO system references', () => {
-    expect(getMooHover('$string_utils:english_list(names);', { lineNumber: 1, column: 4 })).toEqual({
+    expect(getMooHover('$string_utils:english_list(names);', { lineNumber: 1, column: 4 })).toEqual(
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 14,
+        },
+        contents: [
+          {
+            value: ['```moocode', '$string_utils', '```', 'MOO string utility object.'].join('\n'),
+          },
+        ],
+      },
+    );
+  });
+
+  it('does not consume invalid dollar-separated text as one hover word', () => {
+    expect(getMooHover('$room$extra:announce("bad");', { lineNumber: 1, column: 3 })).toEqual({
       range: {
         startLineNumber: 1,
         startColumn: 1,
         endLineNumber: 1,
-        endColumn: 14,
+        endColumn: 6,
       },
       contents: [
         {
-          value: ['```moocode', '$string_utils', '```', 'MOO string utility object.'].join('\n'),
+          value: ['```moocode', '$room', '```', 'MOO room utility object.'].join('\n'),
         },
       ],
     });

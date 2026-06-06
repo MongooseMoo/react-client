@@ -1,3 +1,4 @@
+import { MOO_SYSTEM_REFERENCE_PATTERN_SOURCE } from './contract';
 import type { MonacoRange } from './language';
 import { maskMooSource, positionAtMooOffset } from './scanner';
 
@@ -8,7 +9,7 @@ export type MooDocumentLink = {
 };
 
 const OBJECT_REFERENCE_PATTERN = /#-?\d+/g;
-const SYSTEM_REFERENCE_PATTERN = /\$[A-Za-z_][\w$]*/g;
+const SYSTEM_REFERENCE_PATTERN = new RegExp(MOO_SYSTEM_REFERENCE_PATTERN_SOURCE, 'g');
 
 export function getMooDocumentLinks(source: string): MooDocumentLink[] {
   const masked = maskMooSource(source);

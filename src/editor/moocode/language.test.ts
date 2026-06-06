@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { MOO_IDENTIFIER_PATTERN_SOURCE, MOO_SYSTEM_REFERENCE_PATTERN_SOURCE } from './contract';
 import {
   BUILTIN_FUNCTIONS,
   ERROR_CONSTANTS,
@@ -31,6 +32,11 @@ import {
   registerMooLanguage,
 } from './language';
 
+const COMPLETION_WORD_PATTERNS = [
+  new RegExp(`${MOO_SYSTEM_REFERENCE_PATTERN_SOURCE}$`),
+  new RegExp(`${MOO_IDENTIFIER_PATTERN_SOURCE}$`),
+];
+
 describe('MOO Monaco language support', () => {
   it('uses moocode only for MOO editor sessions', () => {
     expect(getEditorLanguageForSessionType('moo-code')).toBe(MOO_LANGUAGE_ID);
@@ -54,6 +60,15 @@ describe('MOO Monaco language support', () => {
     expect(monarch.tokenizer.root).toEqual(
       expect.arrayContaining([[/\/\*/, { token: 'comment', next: '@comment' }]]),
     );
+  });
+
+  it('keeps Monarch identifier tokenization aligned with the MOO grammar', () => {
+    const monarch = createMooMonarchLanguage();
+    const identifierRule = monarch.tokenizer.root[0][0] as RegExp;
+    const systemReferenceRule = monarch.tokenizer.root[1][0] as RegExp;
+
+    expect(identifierRule.exec('bad$name')?.[0]).toBe('bad');
+    expect(systemReferenceRule.exec('$room$extra')?.[0]).toBe('$room');
   });
 
   it('configures MOO brackets, comments, and statement indentation', () => {
@@ -1271,7 +1286,10 @@ function labelsForCompletion(
   line: string,
   column: number,
 ): string[] {
-  const wordMatch = /[A-Za-z_$][\w$]*$/.exec(line.slice(0, column - 1));
+  const linePrefix = line.slice(0, column - 1);
+  const wordMatch = COMPLETION_WORD_PATTERNS.map((pattern) => pattern.exec(linePrefix)).find(
+    (match) => match !== null,
+  );
   const word = wordMatch?.[0] ?? '';
   const startColumn = column - word.length;
   const completions = provider.provideCompletionItems(

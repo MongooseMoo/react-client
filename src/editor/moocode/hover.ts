@@ -5,6 +5,7 @@ import type {
   STATEMENT_KEYWORDS,
   SYSTEM_REFERENCES,
 } from './contract';
+import { MOO_IDENTIFIER_PATTERN_SOURCE, MOO_SYSTEM_REFERENCE_PATTERN_SOURCE } from './contract';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
 import { analyzeMooSemantics } from './semantics';
 import { getMooBuiltinSignature } from './signatures';
@@ -18,6 +19,11 @@ export type MooHover = {
 type MooWord = {
   name: string;
   range: MonacoRange;
+};
+
+type WordOffsets = {
+  startOffset: number;
+  endOffset: number;
 };
 
 const BUILTIN_VARIABLE_DOCUMENTATION: Record<(typeof BUILTIN_VARIABLES)[number], string> = {
@@ -95,13 +101,16 @@ const OPERATOR_DOCUMENTATION: Partial<Record<(typeof OPERATOR_WORDS)[number], st
   bitand: 'Bitwise AND operator.',
   bitxor: 'Bitwise XOR operator.',
 };
+const WORD_PATTERNS = [
+  new RegExp(MOO_SYSTEM_REFERENCE_PATTERN_SOURCE, 'g'),
+  new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE, 'g'),
+];
 
 export function getMooBuiltinVariableDocumentation(name: string): string | null {
   const normalizedName = name.toLowerCase();
   return (
-    BUILTIN_VARIABLE_DOCUMENTATION[
-      normalizedName as keyof typeof BUILTIN_VARIABLE_DOCUMENTATION
-    ] ?? null
+    BUILTIN_VARIABLE_DOCUMENTATION[normalizedName as keyof typeof BUILTIN_VARIABLE_DOCUMENTATION] ??
+    null
   );
 }
 
@@ -113,9 +122,8 @@ export function getMooErrorDocumentation(name: string): string | null {
 export function getMooSystemReferenceDocumentation(name: string): string | null {
   const normalizedName = name.toLowerCase();
   return (
-    SYSTEM_REFERENCE_DOCUMENTATION[
-      normalizedName as keyof typeof SYSTEM_REFERENCE_DOCUMENTATION
-    ] ?? null
+    SYSTEM_REFERENCE_DOCUMENTATION[normalizedName as keyof typeof SYSTEM_REFERENCE_DOCUMENTATION] ??
+    null
   );
 }
 
@@ -171,7 +179,9 @@ export function getMooHover(source: string, position: MooSourcePosition): MooHov
 
 function getLocalSymbolHover(source: string, word: MooWord): MooHover | null {
   const symbol = analyzeMooSemantics(source).symbols.find((candidate) =>
-    [...candidate.definitions, ...candidate.references].some((range) => sameRange(range, word.range)),
+    [...candidate.definitions, ...candidate.references].some((range) =>
+      sameRange(range, word.range),
+    ),
   );
   if (!symbol) {
     return null;
@@ -216,31 +226,21 @@ function wordAtPosition(source: string, position: MooSourcePosition): MooWord | 
   };
 }
 
-function wordOffsetsAt(
-  source: string,
-  offset: number,
-): { startOffset: number; endOffset: number } | null {
-  const candidateOffset =
-    isWordCharacter(source[offset]) || !isWordCharacter(source[offset - 1]) ? offset : offset - 1;
-  if (!isWordCharacter(source[candidateOffset])) {
-    return null;
+function wordOffsetsAt(source: string, offset: number): WordOffsets | null {
+  const candidateOffset = Math.max(0, offset - 1);
+
+  for (const pattern of WORD_PATTERNS) {
+    pattern.lastIndex = 0;
+    for (const match of source.matchAll(pattern)) {
+      const startOffset = match.index;
+      const endOffset = startOffset + match[0].length;
+      if (startOffset <= candidateOffset && candidateOffset < endOffset) {
+        return { startOffset, endOffset };
+      }
+    }
   }
 
-  let startOffset = candidateOffset;
-  while (startOffset > 0 && isWordCharacter(source[startOffset - 1])) {
-    startOffset -= 1;
-  }
-
-  let endOffset = candidateOffset + 1;
-  while (endOffset < source.length && isWordCharacter(source[endOffset])) {
-    endOffset += 1;
-  }
-
-  return { startOffset, endOffset };
-}
-
-function isWordCharacter(character: string | undefined): boolean {
-  return Boolean(character && /[\w$]/.test(character));
+  return null;
 }
 
 function rangeFromOffsets(source: string, startOffset: number, endOffset: number): MonacoRange {

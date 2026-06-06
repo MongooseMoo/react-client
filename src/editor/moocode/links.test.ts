@@ -56,6 +56,33 @@ describe('MOO document links', () => {
     ]);
   });
 
+  it('does not consume invalid dollar-separated text as one system reference', () => {
+    const source = '$room$extra:announce("bad");';
+
+    expect(getMooDocumentLinks(source)).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 6,
+        },
+        url: 'moo://system/room',
+        tooltip: 'Open MOO system reference $room',
+      },
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 6,
+          endLineNumber: 1,
+          endColumn: 12,
+        },
+        url: 'moo://system/extra',
+        tooltip: 'Open MOO system reference $extra',
+      },
+    ]);
+  });
+
   it('ignores object-looking text inside comments and strings', () => {
     const source = [
       '// owner = #123; $player',

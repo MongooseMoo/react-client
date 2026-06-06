@@ -1,6 +1,12 @@
 import type { Uri } from 'monaco-editor';
 import { formatMooBuiltinArity, getMooBuiltinMetadata, type MooBuiltinMetadata } from './builtins';
-import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_LANGUAGE_ID, MOO_MIDDLE_KEYWORDS } from './contract';
+import {
+  MOO_BLOCKS,
+  MOO_CLOSE_KEYWORDS,
+  MOO_IDENTIFIER_PATTERN_SOURCE,
+  MOO_LANGUAGE_ID,
+  MOO_MIDDLE_KEYWORDS,
+} from './contract';
 import type { MonacoRange } from './language';
 import { firstMooKeyword, maskMooSource, positionAtMooOffset } from './scanner';
 import { findMooUndefinedLocalReferences, findMooUnusedLocalDefinitions } from './semantics';
@@ -74,6 +80,8 @@ type ScanState = {
   inBlockComment: boolean;
 };
 
+const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
+const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
 const LOOP_CONTROL_KEYWORDS = new Set(['break', 'continue']);
 
 const OPEN_DELIMITERS: Record<string, DelimiterFrame['close']> = {
@@ -446,12 +454,12 @@ function readIdentifierBefore(
   }
 
   let startIndex = endIndex;
-  while (startIndex >= 0 && /[A-Za-z0-9_$]/.test(source[startIndex])) {
+  while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
     startIndex -= 1;
   }
 
   const identifier = source.slice(startIndex + 1, endIndex + 1);
-  return /^[A-Za-z_][\w$]*$/.test(identifier)
+  return VALID_IDENTIFIER_PATTERN.test(identifier)
     ? { name: identifier, startOffset: startIndex + 1 }
     : null;
 }
@@ -507,5 +515,7 @@ function countCallArguments(argumentSource: string): number {
 }
 
 function isBuiltinArityValid(argumentCount: number, metadata: MooBuiltinMetadata): boolean {
-  return argumentCount >= metadata.minArgs && (metadata.maxArgs < 0 || argumentCount <= metadata.maxArgs);
+  return (
+    argumentCount >= metadata.minArgs && (metadata.maxArgs < 0 || argumentCount <= metadata.maxArgs)
+  );
 }

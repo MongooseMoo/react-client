@@ -1,3 +1,5 @@
+import { MOO_IDENTIFIER_PATTERN_SOURCE } from './contract';
+
 export type MooSourcePosition = {
   lineNumber: number;
   column: number;
@@ -8,6 +10,8 @@ export type MooKeywordMatch = {
   startColumn: number;
   endColumn: number;
 };
+
+const FIRST_KEYWORD_PATTERN = new RegExp(`^\\s*(${MOO_IDENTIFIER_PATTERN_SOURCE})`);
 
 export function maskMooSource(source: string): string {
   let inString = false;
@@ -80,7 +84,7 @@ export function maskMooSource(source: string): string {
 }
 
 export function firstMooKeyword(code: string): MooKeywordMatch | null {
-  const match = /^\s*([A-Za-z_][\w$]*)/.exec(code);
+  const match = FIRST_KEYWORD_PATTERN.exec(code);
   if (!match?.[1]) {
     return null;
   }

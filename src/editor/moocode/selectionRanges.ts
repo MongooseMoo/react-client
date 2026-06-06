@@ -1,3 +1,4 @@
+import { MOO_IDENTIFIER_PATTERN_SOURCE, MOO_SYSTEM_REFERENCE_PATTERN_SOURCE } from './contract';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
 import { analyzeMooStructure, type MooStructureRange, type MooStructureSymbol } from './structure';
 
@@ -5,6 +6,16 @@ export type MooSelectionRange = {
   range: MooStructureRange;
   parent?: MooSelectionRange;
 };
+
+type WordOffsets = {
+  startOffset: number;
+  endOffset: number;
+};
+
+const WORD_PATTERNS = [
+  new RegExp(MOO_SYSTEM_REFERENCE_PATTERN_SOURCE, 'g'),
+  new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE, 'g'),
+];
 
 export function getMooSelectionRanges(
   source: string,
@@ -110,31 +121,21 @@ function flattenSymbols(symbols: MooStructureSymbol[]): MooStructureSymbol[] {
   return symbols.flatMap((symbol) => [symbol, ...flattenSymbols(symbol.children)]);
 }
 
-function wordOffsetsAt(
-  source: string,
-  offset: number,
-): { startOffset: number; endOffset: number } | null {
-  const candidateOffset =
-    isWordCharacter(source[offset]) || !isWordCharacter(source[offset - 1]) ? offset : offset - 1;
-  if (!isWordCharacter(source[candidateOffset])) {
-    return null;
+function wordOffsetsAt(source: string, offset: number): WordOffsets | null {
+  const candidateOffset = Math.max(0, offset - 1);
+
+  for (const pattern of WORD_PATTERNS) {
+    pattern.lastIndex = 0;
+    for (const match of source.matchAll(pattern)) {
+      const startOffset = match.index;
+      const endOffset = startOffset + match[0].length;
+      if (startOffset <= candidateOffset && candidateOffset < endOffset) {
+        return { startOffset, endOffset };
+      }
+    }
   }
 
-  let startOffset = candidateOffset;
-  while (startOffset > 0 && isWordCharacter(source[startOffset - 1])) {
-    startOffset -= 1;
-  }
-
-  let endOffset = candidateOffset + 1;
-  while (endOffset < source.length && isWordCharacter(source[endOffset])) {
-    endOffset += 1;
-  }
-
-  return { startOffset, endOffset };
-}
-
-function isWordCharacter(character: string | undefined): boolean {
-  return Boolean(character && /[\w$]/.test(character));
+  return null;
 }
 
 function rangeFromOffsets(
@@ -190,16 +191,10 @@ function containsPosition(range: MooStructureRange, position: MooSourcePosition)
 
 function rangeSize(range: MooStructureRange): number {
   return (
-    (range.endLineNumber - range.startLineNumber) * 10000 +
-    (range.endColumn - range.startColumn)
+    (range.endLineNumber - range.startLineNumber) * 10000 + (range.endColumn - range.startColumn)
   );
 }
 
 function rangeKey(range: MooStructureRange): string {
-  return [
-    range.startLineNumber,
-    range.startColumn,
-    range.endLineNumber,
-    range.endColumn,
-  ].join(':');
+  return [range.startLineNumber, range.startColumn, range.endLineNumber, range.endColumn].join(':');
 }

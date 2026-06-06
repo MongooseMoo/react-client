@@ -33,6 +33,11 @@ describe('MOO scanner helpers', () => {
       startColumn: 3,
       endColumn: 8,
     });
+    expect(firstMooKeyword('  while$bad (valid(player))')).toEqual({
+      word: 'while',
+      startColumn: 3,
+      endColumn: 8,
+    });
 
     expect(offsetAtMooPosition('first\nsecond', { lineNumber: 2, column: 4 })).toBe(9);
   });

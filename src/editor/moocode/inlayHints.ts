@@ -1,3 +1,4 @@
+import { MOO_IDENTIFIER_PATTERN_SOURCE } from './contract';
 import { getMooBuiltinSignature } from './signatures';
 
 export type MooInlayHint = {
@@ -12,6 +13,9 @@ type CallFrame = {
   nestedDelimiterDepth: number;
   parameterIndex: number;
 };
+
+const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
+const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
 
 export function collectMooInlayHints(source: string): MooInlayHint[] {
   const masked = maskMooSourceForInlayHints(source);
@@ -112,12 +116,12 @@ function readIdentifierBefore(source: string, openParenIndex: number): string | 
   }
 
   let startIndex = endIndex;
-  while (startIndex >= 0 && /[A-Za-z0-9_$]/.test(source[startIndex])) {
+  while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
     startIndex -= 1;
   }
 
   const identifier = source.slice(startIndex + 1, endIndex + 1);
-  return /^[A-Za-z_][\w$]*$/.test(identifier) ? identifier : null;
+  return VALID_IDENTIFIER_PATTERN.test(identifier) ? identifier : null;
 }
 
 function positionAt(source: string, offset: number) {

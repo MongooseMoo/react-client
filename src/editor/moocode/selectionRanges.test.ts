@@ -67,4 +67,27 @@ describe('MOO selection ranges', () => {
       },
     });
   });
+
+  it('does not select invalid dollar-separated text as one word', () => {
+    expect(
+      getMooSelectionRanges('$room$extra:announce("bad");', [{ lineNumber: 1, column: 3 }]),
+    ).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 6,
+        },
+        parent: {
+          range: {
+            startLineNumber: 1,
+            startColumn: 1,
+            endLineNumber: 1,
+            endColumn: 29,
+          },
+        },
+      },
+    ]);
+  });
 });

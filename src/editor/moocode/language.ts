@@ -28,9 +28,11 @@ import {
   BUILTIN_VARIABLES,
   ERROR_CONSTANTS,
   MOO_BLOCKS,
+  MOO_IDENTIFIER_PATTERN_SOURCE,
   MOO_INDENT_OPEN_KEYWORDS,
   MOO_LANGUAGE_ID,
   MOO_SESSION_TYPES,
+  MOO_SYSTEM_REFERENCE_PATTERN_SOURCE,
   OPERATOR_WORDS,
   PLAINTEXT_LANGUAGE_ID,
   STATEMENT_KEYWORDS,
@@ -332,6 +334,16 @@ export type MonacoLike = {
 };
 
 const REGISTERED_MONACO_INSTANCES = new WeakSet<object>();
+const MOO_IDENTIFIER_PATTERN = new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE);
+const MOO_SYSTEM_REFERENCE_PATTERN = new RegExp(MOO_SYSTEM_REFERENCE_PATTERN_SOURCE);
+const EXCEPT_COMPLETION_PATTERN = new RegExp(
+  `\\bexcept\\s+(?:${MOO_IDENTIFIER_PATTERN_SOURCE}\\s*)?\\([^)]*$`,
+  'i',
+);
+const CATCH_COMPLETION_PATTERN = new RegExp(
+  `!\\s*(?:${MOO_IDENTIFIER_PATTERN_SOURCE}\\s*,\\s*)*[A-Za-z_]*$`,
+  'i',
+);
 
 export function getEditorLanguageForSessionType(sessionType: string | undefined): string {
   const normalized = sessionType?.trim().toLowerCase();
@@ -357,7 +369,7 @@ export function createMooMonarchLanguage(): MooMonarchLanguage {
     tokenizer: {
       root: [
         [
-          /[a-zA-Z_][\w$]*/,
+          MOO_IDENTIFIER_PATTERN,
           {
             cases: {
               '@keywords': 'keyword',
@@ -369,7 +381,7 @@ export function createMooMonarchLanguage(): MooMonarchLanguage {
             },
           },
         ],
-        [/\$[a-zA-Z_][\w$]*/, 'variable.predefined'],
+        [MOO_SYSTEM_REFERENCE_PATTERN, 'variable.predefined'],
         [/#-?\d+/, 'number.object'],
         [/\d+\.\d+(?:[eE][+-]?\d+)?/, 'number.float'],
         [/\d+(?:[eE][+-]?\d+)?/, 'number'],
@@ -1118,10 +1130,7 @@ function getCompletionContext(
 }
 
 function isExceptionCompletionContext(linePrefix: string): boolean {
-  return (
-    /\bexcept\s+(?:[A-Za-z_][\w$]*\s*)?\([^)]*$/i.test(linePrefix) ||
-    /!\s*(?:[A-Za-z_][\w$]*\s*,\s*)*[A-Za-z_]*$/i.test(linePrefix)
-  );
+  return EXCEPT_COMPLETION_PATTERN.test(linePrefix) || CATCH_COMPLETION_PATTERN.test(linePrefix);
 }
 
 function isCompletionInMaskedSource(source: string, position: CompletionPosition): boolean {

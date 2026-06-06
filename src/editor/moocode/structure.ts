@@ -1,4 +1,10 @@
-import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_MIDDLE_KEYWORDS, type MooBlockKind } from './contract';
+import {
+  MOO_BLOCKS,
+  MOO_CLOSE_KEYWORDS,
+  MOO_IDENTIFIER_PATTERN_SOURCE,
+  MOO_MIDDLE_KEYWORDS,
+  type MooBlockKind,
+} from './contract';
 import { firstMooKeyword, maskMooSource, type MooKeywordMatch } from './scanner';
 
 export type MooStructureRange = {
@@ -29,6 +35,11 @@ export type MooStructure = {
 type BlockFrame = {
   symbol: MooStructureSymbol;
 };
+
+const FOR_LABEL_PATTERN = new RegExp(
+  `^(${MOO_IDENTIFIER_PATTERN_SOURCE})(?:\\s*,\\s*(${MOO_IDENTIFIER_PATTERN_SOURCE}))?`,
+);
+const FORK_LABEL_PATTERN = new RegExp(`^(${MOO_IDENTIFIER_PATTERN_SOURCE})`);
 
 export function analyzeMooStructure(source: string): MooStructure {
   const symbols: MooStructureSymbol[] = [];
@@ -120,7 +131,7 @@ function describeBlock(kind: MooBlockKind, code: string, keyword: MooKeywordMatc
       return condition ? `${kind} ${condition}` : kind;
     }
     case 'for': {
-      const variables = /^([A-Za-z_][\w$]*)(?:\s*,\s*([A-Za-z_][\w$]*))?/.exec(remainder);
+      const variables = FOR_LABEL_PATTERN.exec(remainder);
       if (!variables?.[1]) {
         return kind;
       }
@@ -128,7 +139,7 @@ function describeBlock(kind: MooBlockKind, code: string, keyword: MooKeywordMatc
       return variables[2] ? `for ${variables[1]}, ${variables[2]}` : `for ${variables[1]}`;
     }
     case 'fork': {
-      const name = /^([A-Za-z_][\w$]*)/.exec(remainder)?.[1];
+      const name = FORK_LABEL_PATTERN.exec(remainder)?.[1];
       return name ? `fork ${name}` : kind;
     }
     case 'try':
