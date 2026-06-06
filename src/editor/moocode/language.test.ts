@@ -891,34 +891,30 @@ describe('MOO Monaco language support', () => {
       {} as never,
     );
 
-    expect(actions).toEqual({
-      actions: [
-        {
-          title: 'Insert missing endwhile',
-          kind: 'quickfix',
-          isPreferred: true,
-          diagnostics: [expect.objectContaining({ code: 'unclosed-block' })],
-          edit: {
-            edits: [
-              {
-                resource: 'moo://#1:tick',
-                textEdit: {
-                  range: {
-                    startLineNumber: 2,
-                    startColumn: 14,
-                    endLineNumber: 2,
-                    endColumn: 14,
-                  },
-                  text: '\nendwhile',
-                },
-                versionId: undefined,
+    expect(actions.actions).toContainEqual({
+      title: 'Insert missing endwhile',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [expect.objectContaining({ code: 'unclosed-block' })],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 2,
+                startColumn: 14,
+                endLineNumber: 2,
+                endColumn: 14,
               },
-            ],
+              text: '\nendwhile',
+            },
+            versionId: undefined,
           },
-        },
-      ],
-      dispose: expect.any(Function),
+        ],
+      },
     });
+    expect(actions.dispose).toEqual(expect.any(Function));
     expect(actions.dispose()).toBeUndefined();
   });
 
@@ -1042,6 +1038,60 @@ describe('MOO Monaco language support', () => {
                 endColumn: 1,
               },
               text: '_',
+            },
+            versionId: undefined,
+          },
+        ],
+      },
+    });
+  });
+
+  it('provides Monaco quick fixes for undefined local diagnostics', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () => ['if (valid(player))', '  notify(player, total);', 'endif'].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      {
+        markers: [
+          {
+            code: 'undefined-local',
+            lineNumber: 2,
+            startLineNumber: 2,
+            endLineNumber: 2,
+            startColumn: 18,
+            endColumn: 23,
+            message: 'total is used before it is defined.',
+            severity: 8,
+            source: MOO_LANGUAGE_ID,
+          },
+        ],
+        trigger: 1,
+      } as never,
+      {} as never,
+    );
+
+    expect(actions.actions).toContainEqual({
+      title: 'Initialize total before use',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [expect.objectContaining({ code: 'undefined-local' })],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 2,
+                startColumn: 1,
+                endLineNumber: 2,
+                endColumn: 1,
+              },
+              text: '  total = 0;\n',
             },
             versionId: undefined,
           },

@@ -3,57 +3,49 @@ import { getMooQuickFixes } from './codeActions';
 
 describe('MOO code actions', () => {
   it('offers quick fixes for missing block, delimiter, and string closers', () => {
-    const source = ['if (valid(player))', '  text = "unterminated', '  values = {1, 2;'].join(
-      '\n',
-    );
+    const source = ['if (valid(player))', '  text = "unterminated', '  values = {1, 2;'].join('\n');
 
     const fixes = getMooQuickFixes(source);
 
-    expect(fixes).toContainEqual(
-      {
-        title: 'Insert closing quote',
-        diagnostics: [expect.objectContaining({ code: 'unterminated-string' })],
-        edit: {
-          range: {
-            startLineNumber: 2,
-            startColumn: 23,
-            endLineNumber: 2,
-            endColumn: 23,
-          },
-          text: '"',
+    expect(fixes).toContainEqual({
+      title: 'Insert closing quote',
+      diagnostics: [expect.objectContaining({ code: 'unterminated-string' })],
+      edit: {
+        range: {
+          startLineNumber: 2,
+          startColumn: 23,
+          endLineNumber: 2,
+          endColumn: 23,
         },
+        text: '"',
       },
-    );
-    expect(fixes).toContainEqual(
-      {
-        title: 'Insert missing }',
-        diagnostics: [expect.objectContaining({ code: 'unclosed-delimiter' })],
-        edit: {
-          range: {
-            startLineNumber: 3,
-            startColumn: 18,
-            endLineNumber: 3,
-            endColumn: 18,
-          },
-          text: '}',
+    });
+    expect(fixes).toContainEqual({
+      title: 'Insert missing }',
+      diagnostics: [expect.objectContaining({ code: 'unclosed-delimiter' })],
+      edit: {
+        range: {
+          startLineNumber: 3,
+          startColumn: 18,
+          endLineNumber: 3,
+          endColumn: 18,
         },
+        text: '}',
       },
-    );
-    expect(fixes).toContainEqual(
-      {
-        title: 'Insert missing endif',
-        diagnostics: [expect.objectContaining({ code: 'unclosed-block' })],
-        edit: {
-          range: {
-            startLineNumber: 3,
-            startColumn: 18,
-            endLineNumber: 3,
-            endColumn: 18,
-          },
-          text: '\nendif',
+    });
+    expect(fixes).toContainEqual({
+      title: 'Insert missing endif',
+      diagnostics: [expect.objectContaining({ code: 'unclosed-block' })],
+      edit: {
+        range: {
+          startLineNumber: 3,
+          startColumn: 18,
+          endLineNumber: 3,
+          endColumn: 18,
         },
+        text: '\nendif',
       },
-    );
+    });
   });
 
   it('preserves the opening block indentation when inserting a missing close keyword', () => {
@@ -92,36 +84,32 @@ describe('MOO code actions', () => {
 
     const fixes = getMooQuickFixes(source);
 
-    expect(fixes).toContainEqual(
-      {
-        title: 'Remove unexpected endif',
-        diagnostics: [expect.objectContaining({ code: 'unexpected-close' })],
-        edit: {
-          range: {
-            startLineNumber: 1,
-            startColumn: 1,
-            endLineNumber: 1,
-            endColumn: 6,
-          },
-          text: '',
+    expect(fixes).toContainEqual({
+      title: 'Remove unexpected endif',
+      diagnostics: [expect.objectContaining({ code: 'unexpected-close' })],
+      edit: {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 6,
         },
+        text: '',
       },
-    );
-    expect(fixes).toContainEqual(
-      {
-        title: 'Remove unexpected )',
-        diagnostics: [expect.objectContaining({ code: 'unexpected-delimiter' })],
-        edit: {
-          range: {
-            startLineNumber: 2,
-            startColumn: 32,
-            endLineNumber: 2,
-            endColumn: 33,
-          },
-          text: '',
+    });
+    expect(fixes).toContainEqual({
+      title: 'Remove unexpected )',
+      diagnostics: [expect.objectContaining({ code: 'unexpected-delimiter' })],
+      edit: {
+        range: {
+          startLineNumber: 2,
+          startColumn: 32,
+          endLineNumber: 2,
+          endColumn: 33,
         },
+        text: '',
       },
-    );
+    });
   });
 
   it('offers quick fixes for parser-reported missing syntax', () => {
@@ -167,6 +155,24 @@ describe('MOO code actions', () => {
           endColumn: 1,
         },
         text: '_',
+      },
+    });
+  });
+
+  it('offers a quick fix to initialize an undefined local before first use', () => {
+    const source = ['if (valid(player))', '  notify(player, total);', 'endif'].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Initialize total before use',
+      diagnostics: [expect.objectContaining({ code: 'undefined-local' })],
+      edit: {
+        range: {
+          startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 1,
+        },
+        text: '  total = 0;\n',
       },
     });
   });

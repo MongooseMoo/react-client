@@ -133,6 +133,23 @@ export function getMooQuickFixes(
           },
         });
         break;
+      case 'undefined-local': {
+        const line = lines[diagnostic.lineNumber - 1] ?? '';
+        const name = diagnosticText(lines, diagnostic);
+        if (!name) {
+          break;
+        }
+
+        fixes.push({
+          title: `Initialize ${name} before use`,
+          diagnostics: [diagnostic],
+          edit: {
+            range: rangeAtStartOfLine(diagnostic.lineNumber),
+            text: `${leadingWhitespace(line)}${name} = 0;\n`,
+          },
+        });
+        break;
+      }
       case 'unknown-loop-label':
         fixes.push({
           title: 'Remove unknown loop label',
@@ -165,6 +182,15 @@ function rangeAtEndOfLine(lines: string[], lineNumber: number): MonacoRange {
     startColumn: column,
     endLineNumber: lineNumber,
     endColumn: column,
+  };
+}
+
+function rangeAtStartOfLine(lineNumber: number): MonacoRange {
+  return {
+    startLineNumber: lineNumber,
+    startColumn: 1,
+    endLineNumber: lineNumber,
+    endColumn: 1,
   };
 }
 
