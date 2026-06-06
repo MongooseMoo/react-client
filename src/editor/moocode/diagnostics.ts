@@ -1,5 +1,7 @@
+import type { Uri } from 'monaco-editor';
 import { formatMooBuiltinArity, getMooBuiltinMetadata, type MooBuiltinMetadata } from './builtins';
 import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_LANGUAGE_ID, MOO_MIDDLE_KEYWORDS } from './contract';
+import type { MonacoRange } from './language';
 import { firstMooKeyword, maskMooSource, positionAtMooOffset } from './scanner';
 import { findMooUndefinedLocalReferences, findMooUnusedLocalDefinitions } from './semantics';
 
@@ -18,21 +20,33 @@ export type MooDiagnosticCode =
 
 export type MooDiagnosticSeverity = 'error' | 'warning';
 
+export type MooDiagnosticRelatedInformation = {
+  message: string;
+  range: MonacoRange;
+};
+
 export type MooDiagnostic = {
   code: MooDiagnosticCode;
   expectedCloseKeyword?: string;
   message: string;
+  relatedInformation?: MooDiagnosticRelatedInformation[];
   severity?: MooDiagnosticSeverity;
   lineNumber: number;
   startColumn: number;
   endColumn: number;
 };
 
-export type MonacoMarker = Omit<MooDiagnostic, 'severity'> & {
+export type MonacoMarker = Omit<MooDiagnostic, 'severity' | 'relatedInformation'> & {
   severity: number;
   source: string;
   startLineNumber: number;
   endLineNumber: number;
+  relatedInformation?: Array<
+    MonacoRange & {
+      message: string;
+      resource: Uri;
+    }
+  >;
 };
 
 export type MonacoMarkerSeverities = {
@@ -136,6 +150,17 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
           code: 'mismatched-close',
           expectedCloseKeyword: open.closeKeyword,
           message: `${normalized} closes ${closeKind}, but the open block is ${open.kind}.`,
+          relatedInformation: [
+            {
+              message: `Open ${open.kind} block is here.`,
+              range: {
+                startLineNumber: open.lineNumber,
+                startColumn: open.startColumn,
+                endLineNumber: open.lineNumber,
+                endColumn: open.startColumn + open.kind.length,
+              },
+            },
+          ],
           lineNumber,
           startColumn: keyword.startColumn,
           endColumn: keyword.endColumn,
@@ -186,13 +211,33 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
 export function toMonacoMarkers(
   source: string,
   severity: number | MonacoMarkerSeverities,
+  resource?: Uri,
 ): MonacoMarker[] {
   return validateMooSyntax(source).map((diagnostic) => ({
     ...diagnostic,
+    relatedInformation: toMonacoRelatedInformation(diagnostic, resource),
     startLineNumber: diagnostic.lineNumber,
     endLineNumber: diagnostic.lineNumber,
     severity: toMarkerSeverity(diagnostic, severity),
     source: MOO_LANGUAGE_ID,
+  }));
+}
+
+function toMonacoRelatedInformation(
+  diagnostic: MooDiagnostic,
+  resource: Uri | undefined,
+): MonacoMarker['relatedInformation'] {
+  if (!resource || !diagnostic.relatedInformation) {
+    return undefined;
+  }
+
+  return diagnostic.relatedInformation.map((related) => ({
+    resource,
+    message: related.message,
+    startLineNumber: related.range.startLineNumber,
+    startColumn: related.range.startColumn,
+    endLineNumber: related.range.endLineNumber,
+    endColumn: related.range.endColumn,
   }));
 }
 
@@ -366,6 +411,14 @@ function validateUndefinedLocals(source: string): MooDiagnostic[] {
   return findMooUndefinedLocalReferences(source).map((reference) => ({
     code: 'undefined-local',
     message: `${reference.name} is used before it is defined.`,
+    relatedInformation: reference.definitionRange
+      ? [
+          {
+            message: `First ${reference.name} definition is here.`,
+            range: reference.definitionRange,
+          },
+        ]
+      : undefined,
     lineNumber: reference.range.startLineNumber,
     startColumn: reference.range.startColumn,
     endColumn: reference.range.endColumn,

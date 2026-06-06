@@ -89,7 +89,7 @@ function EditorWindow() {
         ? toMonacoMarkers(code, {
             error: monaco.MarkerSeverity.Error,
             warning: monaco.MarkerSeverity.Warning,
-          })
+          }, model.uri)
         : [];
 
     monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);

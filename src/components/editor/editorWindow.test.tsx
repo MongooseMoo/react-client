@@ -8,7 +8,7 @@ import EditorWindow from './editorWindow';
 const editorMock = vi.hoisted(() => ({
   props: undefined as Record<string, unknown> | undefined,
   focus: vi.fn(),
-  model: {},
+  model: { uri: 'moo://editor-model' },
   revealPositionInCenter: vi.fn(),
   setPosition: vi.fn(),
   monaco: {
@@ -313,6 +313,48 @@ describe('EditorWindow language selection', () => {
       ),
     );
     expect(await screen.findByRole('button', { name: '1 MOO warning' })).not.toBeNull();
+  });
+
+  it('passes Monaco model URIs through diagnostic related information', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, total);', 'total = 1;'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenLastCalledWith(
+        editorMock.model,
+        MOO_LANGUAGE_ID,
+        [
+          expect.objectContaining({
+            code: 'undefined-local',
+            relatedInformation: [
+              expect.objectContaining({
+                resource: 'moo://editor-model',
+                message: 'First total definition is here.',
+              }),
+            ],
+          }),
+        ],
+      ),
+    );
   });
 
   it('summarizes mixed MOO diagnostics and jumps to the first error before warnings', async () => {

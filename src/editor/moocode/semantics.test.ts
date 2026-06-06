@@ -240,10 +240,12 @@ describe('MOO semantic model', () => {
     expect(findMooUndefinedLocalReferences(source)).toEqual([
       {
         name: 'total',
+        definitionRange: wordRange(source, 'total', 2),
         range: wordRange(source, 'total', 1),
       },
       {
         name: 'items',
+        definitionRange: wordRange(source, 'items', 2),
         range: wordRange(source, 'items', 1),
       },
     ]);

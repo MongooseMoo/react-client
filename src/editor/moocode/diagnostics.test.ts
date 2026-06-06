@@ -42,6 +42,31 @@ describe('validateMooSyntax', () => {
     );
   });
 
+  it('adds related information for mismatched close keywords', () => {
+    const diagnostics = validateMooSyntax(
+      ['if (valid(player))', '  notify(player, "ok");', 'endwhile'].join('\n'),
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'mismatched-close',
+        lineNumber: 3,
+        message: 'endwhile closes while, but the open block is if.',
+        relatedInformation: [
+          {
+            message: 'Open if block is here.',
+            range: {
+              startLineNumber: 1,
+              startColumn: 1,
+              endLineNumber: 1,
+              endColumn: 3,
+            },
+          },
+        ],
+      }),
+    );
+  });
+
   it('reports misplaced block middle keywords', () => {
     const diagnostics = validateMooSyntax('try\n  notify(player, "ok");\nelse\nendtry');
 
@@ -154,9 +179,8 @@ describe('validateMooSyntax', () => {
   });
 
   it('reports local references before their first definition', () => {
-    const diagnostics = validateMooSyntax(
-      ['notify(player, total);', 'total = 1;', 'notify(player, total);'].join('\n'),
-    );
+    const source = ['notify(player, total);', 'total = 1;', 'notify(player, total);'].join('\n');
+    const diagnostics = validateMooSyntax(source);
 
     expect(diagnostics).toContainEqual(
       expect.objectContaining({
@@ -165,6 +189,32 @@ describe('validateMooSyntax', () => {
         startColumn: 16,
         endColumn: 21,
         message: 'total is used before it is defined.',
+        relatedInformation: [
+          {
+            message: 'First total definition is here.',
+            range: {
+              startLineNumber: 2,
+              startColumn: 1,
+              endLineNumber: 2,
+              endColumn: 6,
+            },
+          },
+        ],
+      }),
+    );
+    expect(toMonacoMarkers(source, { error: 8, warning: 4 }, 'moo://#1:test' as never)).toContainEqual(
+      expect.objectContaining({
+        code: 'undefined-local',
+        relatedInformation: [
+          {
+            resource: 'moo://#1:test',
+            message: 'First total definition is here.',
+            startLineNumber: 2,
+            startColumn: 1,
+            endLineNumber: 2,
+            endColumn: 6,
+          },
+        ],
       }),
     );
     expect(diagnostics.filter((diagnostic) => diagnostic.code === 'undefined-local')).toHaveLength(

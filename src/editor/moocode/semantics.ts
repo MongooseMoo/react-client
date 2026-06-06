@@ -18,6 +18,7 @@ export type MooSemanticAnalysis = {
 };
 
 export type MooUndefinedLocalReference = {
+  definitionRange?: MonacoRange;
   name: string;
   range: MonacoRange;
 };
@@ -251,7 +252,7 @@ export function findMooUndefinedLocalReferences(source: string): MooUndefinedLoc
   const definitions = collectDefinitions(source, masked).filter(
     (definition) => !NON_LOCAL_NAMES.has(definition.name.toLowerCase()),
   );
-  const firstDefinitionOffsets = firstDefinitionOffsetsByName(definitions);
+  const firstDefinitions = firstDefinitionsByName(definitions);
   const definitionOffsets = new Set(
     definitions.map((definition) => definition.occurrence.startOffset),
   );
@@ -260,11 +261,11 @@ export function findMooUndefinedLocalReferences(source: string): MooUndefinedLoc
 
   for (const occurrence of collectIdentifierOccurrences(source, masked)) {
     const normalizedName = occurrence.name.toLowerCase();
-    const firstDefinitionOffset = firstDefinitionOffsets.get(normalizedName);
+    const firstDefinition = firstDefinitions.get(normalizedName);
     if (
       NON_LOCAL_NAMES.has(normalizedName) ||
       definitionOffsets.has(occurrence.occurrence.startOffset) ||
-      (firstDefinitionOffset !== undefined && firstDefinitionOffset < occurrence.occurrence.startOffset) ||
+      (firstDefinition !== undefined && firstDefinition.startOffset < occurrence.occurrence.startOffset) ||
       isNonVariableIdentifierOccurrence(masked, occurrence.occurrence)
     ) {
       continue;
@@ -276,6 +277,7 @@ export function findMooUndefinedLocalReferences(source: string): MooUndefinedLoc
 
     seenOffsets.add(occurrence.occurrence.startOffset);
     references.push({
+      definitionRange: firstDefinition?.range,
       name: occurrence.name,
       range: occurrence.occurrence.range,
     });
@@ -296,20 +298,20 @@ export function findMooUnusedLocalDefinitions(source: string): MooUnusedLocalDef
     .sort((left, right) => compareRanges(left.range, right.range));
 }
 
-function firstDefinitionOffsetsByName(
+function firstDefinitionsByName(
   definitions: Array<{ name: string; occurrence: Occurrence }>,
-): Map<string, number> {
-  const offsets = new Map<string, number>();
+): Map<string, Occurrence> {
+  const definitionsByName = new Map<string, Occurrence>();
 
   for (const definition of definitions) {
     const normalizedName = definition.name.toLowerCase();
-    const existing = offsets.get(normalizedName);
-    if (existing === undefined || definition.occurrence.startOffset < existing) {
-      offsets.set(normalizedName, definition.occurrence.startOffset);
+    const existing = definitionsByName.get(normalizedName);
+    if (existing === undefined || definition.occurrence.startOffset < existing.startOffset) {
+      definitionsByName.set(normalizedName, definition.occurrence);
     }
   }
 
-  return offsets;
+  return definitionsByName;
 }
 
 function getSymbolAtPosition(

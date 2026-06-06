@@ -442,3 +442,13 @@ Iterations:
     `total` as the same MOO local.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/diagnostics.test.ts src/editor/moocode/language.test.ts src/editor/moocode/semanticTokens.test.ts src/editor/moocode/hover.test.ts`.
+- 2026-06-06 diagnostic related locations:
+  - MOO diagnostics now carry related source locations for mismatched block
+    closes and use-before-definition local references.
+  - Monaco marker conversion attaches the current model URI to those related
+    locations so editor diagnostics can navigate from the primary problem to
+    the relevant opening block or first local definition.
+  - Code-action diagnostic metadata deliberately strips resource-free related
+    locations to stay compatible with Monaco's marker shape.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/diagnostics.test.ts src/editor/moocode/semantics.test.ts src/editor/moocode/language.test.ts src/components/editor/editorWindow.test.tsx`.
