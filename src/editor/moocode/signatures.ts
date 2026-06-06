@@ -9,7 +9,7 @@ type MooBuiltinCallContext = {
 };
 
 type MooVerbCallContext = {
-  callKind: 'verb';
+  callKind: 'verb' | 'dynamic-verb';
   receiverName: string;
   functionName: string;
   activeParameter: number;
@@ -136,9 +136,9 @@ export function findMooCallContext(
         return null;
       }
 
-      if (callTarget.callKind === 'verb') {
+      if (callTarget.callKind === 'verb' || callTarget.callKind === 'dynamic-verb') {
         return {
-          callKind: 'verb',
+          callKind: callTarget.callKind,
           receiverName: callTarget.receiverName,
           functionName: callTarget.functionName,
           activeParameter,
@@ -173,7 +173,7 @@ export function getMooSignatureHelp(
     return null;
   }
 
-  if ('callKind' in context && context.callKind === 'verb') {
+  if ('callKind' in context) {
     const definition = getVerbSignatureDefinition(context);
     return {
       signatures: [definition],

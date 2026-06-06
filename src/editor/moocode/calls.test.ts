@@ -31,7 +31,16 @@ describe('MOO call target parser', () => {
     });
   });
 
-  it('does not treat dynamic verb expressions as static call targets', () => {
-    expect(readMooCallTargetBeforeOpen('player:(verb_name)(args)', 18)).toBeNull();
+  it('recognizes dynamic MOO verb expression targets before an argument list', () => {
+    expect(readMooCallTargetBeforeOpen('player:(verb_name)(args)', 18)).toEqual({
+      callKind: 'dynamic-verb',
+      receiverName: 'player',
+      functionName: '(verb_name)',
+    });
+    expect(readMooCallTargetBeforeOpen('$room:(verbs[index])("ok")', 20)).toEqual({
+      callKind: 'dynamic-verb',
+      receiverName: '$room',
+      functionName: '(verbs[index])',
+    });
   });
 });

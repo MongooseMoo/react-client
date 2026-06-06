@@ -9,6 +9,11 @@ export type MooCallTarget =
       callKind: 'verb';
       receiverName: string;
       functionName: string;
+    }
+  | {
+      callKind: 'dynamic-verb';
+      receiverName: string;
+      functionName: string;
     };
 
 const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
@@ -18,6 +23,11 @@ export function readMooCallTargetBeforeOpen(
   source: string,
   openParenIndex: number,
 ): MooCallTarget | null {
+  const dynamicVerbCall = readDynamicVerbCallBeforeOpen(source, openParenIndex);
+  if (dynamicVerbCall) {
+    return dynamicVerbCall;
+  }
+
   const functionName = readIdentifierSpanBefore(source, openParenIndex);
   if (!functionName) {
     return null;
@@ -35,6 +45,32 @@ export function readMooCallTargetBeforeOpen(
   return {
     callKind: 'function',
     functionName: functionName.name,
+  };
+}
+
+function readDynamicVerbCallBeforeOpen(
+  source: string,
+  openParenIndex: number,
+): MooCallTarget | null {
+  const expressionCloseIndex = previousNonWhitespaceIndex(source, openParenIndex - 1);
+  if (expressionCloseIndex === null || source[expressionCloseIndex] !== ')') {
+    return null;
+  }
+
+  const expressionOpenIndex = findMatchingOpenParenBefore(source, expressionCloseIndex);
+  if (expressionOpenIndex === null) {
+    return null;
+  }
+
+  const receiverName = readStaticVerbReceiverBefore(source, expressionOpenIndex);
+  if (!receiverName) {
+    return null;
+  }
+
+  return {
+    callKind: 'dynamic-verb',
+    receiverName,
+    functionName: source.slice(expressionOpenIndex, expressionCloseIndex + 1),
   };
 }
 
@@ -59,21 +95,14 @@ function readIdentifierSpanBefore(
 }
 
 function readStaticVerbReceiverBefore(source: string, verbStartIndex: number): string | null {
-  let colonIndex = verbStartIndex - 1;
-  while (colonIndex >= 0 && /\s/.test(source[colonIndex])) {
-    colonIndex -= 1;
-  }
+  const colonIndex = previousNonWhitespaceIndex(source, verbStartIndex - 1);
 
-  if (source[colonIndex] !== ':') {
+  if (colonIndex === null || source[colonIndex] !== ':') {
     return null;
   }
 
-  let endIndex = colonIndex - 1;
-  while (endIndex >= 0 && /\s/.test(source[endIndex])) {
-    endIndex -= 1;
-  }
-
-  if (endIndex < 0) {
+  const endIndex = previousNonWhitespaceIndex(source, colonIndex - 1);
+  if (endIndex === null) {
     return null;
   }
 
@@ -82,6 +111,36 @@ function readStaticVerbReceiverBefore(source: string, verbStartIndex: number): s
   }
 
   return readIdentifierReceiverBefore(source, endIndex);
+}
+
+function previousNonWhitespaceIndex(source: string, startIndex: number): number | null {
+  for (let index = startIndex; index >= 0; index -= 1) {
+    if (!/\s/.test(source[index])) {
+      return index;
+    }
+  }
+
+  return null;
+}
+
+function findMatchingOpenParenBefore(source: string, closeParenIndex: number): number | null {
+  let depth = 0;
+
+  for (let index = closeParenIndex; index >= 0; index -= 1) {
+    if (source[index] === ')') {
+      depth += 1;
+      continue;
+    }
+
+    if (source[index] === '(') {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  return null;
 }
 
 function readObjectNumberReceiverBefore(source: string, endIndex: number): string | null {

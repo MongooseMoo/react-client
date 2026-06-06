@@ -97,6 +97,28 @@ describe('MOO signature help analysis', () => {
       });
   });
 
+  it('offers generic signature help for dynamic MOO verb calls', () => {
+    const source = 'player:(verb_name)("hello", caller);';
+
+    expect(findMooCallContext(source, { lineNumber: 1, column: 31 })).toEqual({
+      activeParameter: 1,
+      callKind: 'dynamic-verb',
+      functionName: '(verb_name)',
+      receiverName: 'player',
+    });
+    expect(getMooSignatureHelp(source, { lineNumber: 1, column: 31 })).toEqual({
+      activeSignature: 0,
+      activeParameter: 1,
+      signatures: [
+        {
+          label: 'player:(verb_name)(arg1, arg2)',
+          documentation: 'MOO verb call. Arguments are available to the target verb as args.',
+          parameters: [{ label: 'arg1' }, { label: 'arg2' }],
+        },
+      ],
+    });
+  });
+
   it('does not offer signature help for unknown call names', () => {
     expect(getMooSignatureHelp('custom(player, args);', { lineNumber: 1, column: 10 })).toBeNull();
   });

@@ -121,4 +121,19 @@ describe('MOO inlay hints', () => {
       },
     ]);
   });
+
+  it('adds generic parameter labels for dynamic MOO verb call arguments', () => {
+    expect(collectMooInlayHints('player:(verb_name)("hello", caller);')).toEqual([
+      {
+        label: 'arg1:',
+        lineNumber: 1,
+        column: 20,
+      },
+      {
+        label: 'arg2:',
+        lineNumber: 1,
+        column: 29,
+      },
+    ]);
+  });
 });

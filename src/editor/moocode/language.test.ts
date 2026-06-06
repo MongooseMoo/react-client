@@ -1333,6 +1333,17 @@ describe('MOO Monaco language support', () => {
         signatures: [{ label: 'player:tell(arg1, arg2)' }],
       },
     });
+    expect(
+      signatureProvider.provideSignatureHelp(
+        { getValue: () => 'player:(verb_name)("hello", caller);' },
+        { lineNumber: 1, column: 31 },
+      ),
+    ).toMatchObject({
+      value: {
+        activeParameter: 1,
+        signatures: [{ label: 'player:(verb_name)(arg1, arg2)' }],
+      },
+    });
   });
 });
 
