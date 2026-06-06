@@ -12,6 +12,7 @@ import {
   createMooMonarchLanguage,
   createMooReferenceProvider,
   createMooRenameProvider,
+  createMooSemanticTokensProvider,
   getEditorLanguageForSessionType,
   registerMooLanguage,
 } from './language';
@@ -157,6 +158,7 @@ describe('MOO Monaco language support', () => {
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -183,6 +185,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerCompletionItemProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDefinitionProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentSymbolProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerDocumentSemanticTokensProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerFoldingRangeProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerHoverProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerReferenceProvider).toHaveBeenCalledTimes(1);
@@ -235,6 +238,20 @@ describe('MOO Monaco language support', () => {
         expect.objectContaining({ resource: 'moo://#1:test' }),
       ],
     });
+  });
+
+  it('provides Monaco semantic tokens for MOO source', () => {
+    const provider = createMooSemanticTokensProvider();
+    const tokens = provider.provideDocumentSemanticTokens(
+      { getValue: () => 'total = 0;\nnotify(player, total);' } as never,
+      null,
+      {} as never,
+    );
+
+    expect(provider.getLegend().tokenTypes).toContain('variable');
+    expect(provider.getLegend().tokenModifiers).toContain('defaultLibrary');
+    expect(Array.from(tokens.data)).toEqual(expect.arrayContaining([5, 6]));
+    expect(provider.releaseDocumentSemanticTokens(undefined)).toBeUndefined();
   });
 
   it('provides Monaco document symbols and folding ranges from parser-backed MOO structure', async () => {
@@ -327,6 +344,7 @@ describe('MOO Monaco language support', () => {
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),

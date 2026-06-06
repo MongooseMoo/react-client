@@ -29,6 +29,7 @@ import {
   findMooReferences,
   getMooLocalCompletions,
 } from './semantics';
+import { MOO_SEMANTIC_TOKEN_LEGEND, encodeMooSemanticTokens } from './semanticTokens';
 import { analyzeMooStructure, type MooStructureSymbol } from './structure';
 import { parseMooCodeWithTreeSitter, type MooTreeSitterParseResult } from './treeSitter';
 
@@ -206,6 +207,10 @@ export type MonacoLike = {
     registerDocumentSymbolProvider?: (
       languageId: string,
       provider: DocumentSymbolProvider,
+    ) => { dispose: () => void };
+    registerDocumentSemanticTokensProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.DocumentSemanticTokensProvider,
     ) => { dispose: () => void };
     registerFoldingRangeProvider?: (
       languageId: string,
@@ -503,6 +508,14 @@ export function createMooRenameProvider(): MonacoEditor.languages.RenameProvider
   };
 }
 
+export function createMooSemanticTokensProvider(): MonacoEditor.languages.DocumentSemanticTokensProvider {
+  return {
+    getLegend: () => MOO_SEMANTIC_TOKEN_LEGEND,
+    provideDocumentSemanticTokens: (model) => encodeMooSemanticTokens(model.getValue()),
+    releaseDocumentSemanticTokens: () => {},
+  };
+}
+
 export function createMooSignatureHelpProvider(): SignatureHelpProvider {
   return {
     signatureHelpTriggerCharacters: ['(', ','],
@@ -542,6 +555,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.registerDocumentSymbolProvider?.(
     MOO_LANGUAGE_ID,
     createMooDocumentSymbolProvider(monaco),
+  );
+  monaco.languages.registerDocumentSemanticTokensProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooSemanticTokensProvider(),
   );
   monaco.languages.registerFoldingRangeProvider?.(MOO_LANGUAGE_ID, createMooFoldingRangeProvider());
   monaco.languages.registerReferenceProvider?.(MOO_LANGUAGE_ID, createMooReferenceProvider());

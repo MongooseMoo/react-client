@@ -103,3 +103,13 @@ Iterations:
     identifiers or positions without a local symbol.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco semantic tokens:
+  - Added `src/editor/moocode/semanticTokens.ts` for Monaco document semantic
+    tokens layered on top of Monarch tokenization.
+  - Semantic tokens classify local declarations/references, ToastStunt builtin
+    functions and variables, MOO error constants, system references, strings,
+    comments, object numbers, numeric literals, keywords, and operator words.
+  - Registered a Monaco `DocumentSemanticTokensProvider` with a stable legend
+    and tested the packed integer encoding Monaco consumes.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.
