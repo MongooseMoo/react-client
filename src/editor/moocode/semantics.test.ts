@@ -5,6 +5,7 @@ import {
   findMooDefinition,
   findMooDocumentHighlights,
   findMooReferences,
+  findMooUnusedLocalDefinitions,
   findMooUndefinedLocalReferences,
   getMooCodeLenses,
   getMooLinkedEditingRanges,
@@ -198,6 +199,28 @@ describe('MOO semantic model', () => {
       {
         name: 'items',
         range: wordRange(source, 'items', 1),
+      },
+    ]);
+  });
+
+  it('finds local definitions that are never read', () => {
+    const source = [
+      'used = 1;',
+      'unused = 2;',
+      '_scratch = 3;',
+      'notify(player, used);',
+      'for item in ({1, 2})',
+      'endfor',
+    ].join('\n');
+
+    expect(findMooUnusedLocalDefinitions(source)).toEqual([
+      {
+        name: 'unused',
+        range: wordRange(source, 'unused', 1),
+      },
+      {
+        name: 'item',
+        range: wordRange(source, 'item', 1),
       },
     ]);
   });

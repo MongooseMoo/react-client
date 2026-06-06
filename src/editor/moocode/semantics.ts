@@ -22,6 +22,11 @@ export type MooUndefinedLocalReference = {
   range: MonacoRange;
 };
 
+export type MooUnusedLocalDefinition = {
+  name: string;
+  range: MonacoRange;
+};
+
 export type MooTextEdit = {
   range: MonacoRange;
   text: string;
@@ -303,6 +308,18 @@ export function findMooUndefinedLocalReferences(source: string): MooUndefinedLoc
   }
 
   return references.sort((left, right) => compareRanges(left.range, right.range));
+}
+
+export function findMooUnusedLocalDefinitions(source: string): MooUnusedLocalDefinition[] {
+  return [...getSymbolRecords(source).values()]
+    .filter((record) => record.definitions.length > 0)
+    .filter((record) => !record.name.startsWith('_'))
+    .filter((record) => record.references.length === 0)
+    .map((record) => ({
+      name: record.name,
+      range: record.definitions[0].range,
+    }))
+    .sort((left, right) => compareRanges(left.range, right.range));
 }
 
 function firstDefinitionOffsetsByName(

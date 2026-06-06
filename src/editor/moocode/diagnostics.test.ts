@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateMooSyntax } from './diagnostics';
+import { toMonacoMarkers, validateMooSyntax } from './diagnostics';
 
 describe('validateMooSyntax', () => {
   it('accepts balanced MOO blocks and delimiters', () => {
@@ -169,6 +169,28 @@ describe('validateMooSyntax', () => {
     );
     expect(diagnostics.filter((diagnostic) => diagnostic.code === 'undefined-local')).toHaveLength(
       1,
+    );
+  });
+
+  it('reports unused local definitions as warnings', () => {
+    const source = ['used = 1;', 'unused = 2;', 'notify(player, used);'].join('\n');
+    const diagnostics = validateMooSyntax(source);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unused-local',
+        lineNumber: 2,
+        startColumn: 1,
+        endColumn: 7,
+        message: 'unused is defined but never used.',
+        severity: 'warning',
+      }),
+    );
+    expect(toMonacoMarkers(source, { error: 8, warning: 4 })).toContainEqual(
+      expect.objectContaining({
+        code: 'unused-local',
+        severity: 4,
+      }),
     );
   });
 });

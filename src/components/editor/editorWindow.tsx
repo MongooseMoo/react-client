@@ -76,7 +76,12 @@ function EditorWindow() {
     }
 
     const markers =
-      editorLanguage === MOO_LANGUAGE_ID ? toMonacoMarkers(code, monaco.MarkerSeverity.Error) : [];
+      editorLanguage === MOO_LANGUAGE_ID
+        ? toMonacoMarkers(code, {
+            error: monaco.MarkerSeverity.Error,
+            warning: monaco.MarkerSeverity.Warning,
+          })
+        : [];
 
     monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
     setMooDiagnosticCount(markers.length);

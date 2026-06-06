@@ -1,7 +1,7 @@
 import { formatMooBuiltinArity, getMooBuiltinMetadata, type MooBuiltinMetadata } from './builtins';
 import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_LANGUAGE_ID, MOO_MIDDLE_KEYWORDS } from './contract';
 import { firstMooKeyword, maskMooSource, positionAtMooOffset } from './scanner';
-import { findMooUndefinedLocalReferences } from './semantics';
+import { findMooUndefinedLocalReferences, findMooUnusedLocalDefinitions } from './semantics';
 
 export type MooDiagnosticCode =
   | 'misplaced-middle'
@@ -13,22 +13,31 @@ export type MooDiagnosticCode =
   | 'unterminated-string'
   | 'loop-control-outside-loop'
   | 'builtin-arity'
-  | 'undefined-local';
+  | 'undefined-local'
+  | 'unused-local';
+
+export type MooDiagnosticSeverity = 'error' | 'warning';
 
 export type MooDiagnostic = {
   code: MooDiagnosticCode;
   expectedCloseKeyword?: string;
   message: string;
+  severity?: MooDiagnosticSeverity;
   lineNumber: number;
   startColumn: number;
   endColumn: number;
 };
 
-export type MonacoMarker = MooDiagnostic & {
+export type MonacoMarker = Omit<MooDiagnostic, 'severity'> & {
   severity: number;
   source: string;
   startLineNumber: number;
   endLineNumber: number;
+};
+
+export type MonacoMarkerSeverities = {
+  error: number;
+  warning: number;
 };
 
 type BlockKind = keyof typeof MOO_BLOCKS;
@@ -169,18 +178,33 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
 
   diagnostics.push(...validateBuiltinCallArity(source));
   diagnostics.push(...validateUndefinedLocals(source));
+  diagnostics.push(...validateUnusedLocals(source));
 
   return diagnostics;
 }
 
-export function toMonacoMarkers(source: string, severity: number): MonacoMarker[] {
+export function toMonacoMarkers(
+  source: string,
+  severity: number | MonacoMarkerSeverities,
+): MonacoMarker[] {
   return validateMooSyntax(source).map((diagnostic) => ({
     ...diagnostic,
     startLineNumber: diagnostic.lineNumber,
     endLineNumber: diagnostic.lineNumber,
-    severity,
+    severity: toMarkerSeverity(diagnostic, severity),
     source: MOO_LANGUAGE_ID,
   }));
+}
+
+function toMarkerSeverity(
+  diagnostic: MooDiagnostic,
+  severity: number | MonacoMarkerSeverities,
+): number {
+  if (typeof severity === 'number') {
+    return severity;
+  }
+
+  return diagnostic.severity === 'warning' ? severity.warning : severity.error;
 }
 
 function scanLine(
@@ -345,6 +369,17 @@ function validateUndefinedLocals(source: string): MooDiagnostic[] {
     lineNumber: reference.range.startLineNumber,
     startColumn: reference.range.startColumn,
     endColumn: reference.range.endColumn,
+  }));
+}
+
+function validateUnusedLocals(source: string): MooDiagnostic[] {
+  return findMooUnusedLocalDefinitions(source).map((definition) => ({
+    code: 'unused-local',
+    message: `${definition.name} is defined but never used.`,
+    severity: 'warning',
+    lineNumber: definition.range.startLineNumber,
+    startColumn: definition.range.startColumn,
+    endColumn: definition.range.endColumn,
   }));
 }
 

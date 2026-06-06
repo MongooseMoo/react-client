@@ -15,7 +15,7 @@ const editorMock = vi.hoisted(() => ({
     editor: {
       setModelMarkers: vi.fn(),
     },
-    MarkerSeverity: { Error: 8 },
+    MarkerSeverity: { Error: 8, Warning: 4 },
     loader: {
       config: vi.fn(),
     },
@@ -275,5 +275,42 @@ describe('EditorWindow language selection', () => {
     });
 
     expect(await screen.findByRole('button', { name: '1 MOO problem' })).not.toBeNull();
+  });
+
+  it('surfaces semantic warnings with Monaco warning severity', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['used = 1;', 'unused = 2;', 'notify(player, used);'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenLastCalledWith(
+        editorMock.model,
+        MOO_LANGUAGE_ID,
+        [
+          expect.objectContaining({
+            code: 'unused-local',
+            severity: 4,
+          }),
+        ],
+      ),
+    );
   });
 });

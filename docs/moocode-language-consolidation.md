@@ -399,3 +399,14 @@ Iterations:
     property/verb/function-call suppression.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/diagnostics.test.ts`.
+- 2026-06-06 unused-local semantic warnings:
+  - The browser-side semantic model now reports local definitions that are never
+    read, excluding underscore-prefixed locals so intentionally ignored scratch
+    bindings stay quiet.
+  - `validateMooSyntax` emits `unused-local` diagnostics as warnings rather than
+    errors, and Monaco marker conversion now preserves per-diagnostic severity.
+  - The editor window passes both Monaco error and warning severities into the
+    MOO marker conversion path, so semantic warnings appear with warning styling
+    while syntax and runtime hazards remain errors.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/diagnostics.test.ts src/components/editor/editorWindow.test.tsx`.
