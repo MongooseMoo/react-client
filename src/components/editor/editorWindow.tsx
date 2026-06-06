@@ -1,5 +1,6 @@
 import Editor from '@monaco-editor/react';
 import type { Monaco, OnMount } from '@monaco-editor/react';
+import { announce } from '@react-aria/live-announcer';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useBeforeunload } from 'react-beforeunload';
@@ -233,6 +234,7 @@ function EditorWindow() {
       setCode(updatedCode);
       setDocumentState(getDocumentStateForCode(updatedCode, originalCode));
       setIsLoaded(true);
+      announce(formatMooQuickFixAnnouncement(quickFix), 'polite', 2000);
       editorInstance.current?.focus();
     },
     [code, originalCode],
@@ -588,6 +590,12 @@ function findMooQuickFixForMarker(
 
 function isMooFixAllQuickFix(quickFix: MooQuickFix): boolean {
   return quickFix.kind === MOO_CODE_ACTION_FIX_ALL_KIND;
+}
+
+function formatMooQuickFixAnnouncement(quickFix: MooQuickFix): string {
+  return `Applied MOO ${isMooFixAllQuickFix(quickFix) ? 'fix all' : 'quick fix'}: ${
+    quickFix.title
+  }.`;
 }
 
 function mooQuickFixDiagnosticMatchesMarker(

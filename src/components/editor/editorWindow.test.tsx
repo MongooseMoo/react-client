@@ -64,6 +64,7 @@ const treeSitterParseMock = vi.hoisted(() =>
     }),
   ),
 );
+const announceMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@monaco-editor/react', () => ({
   default: (props: Record<string, unknown>) => {
@@ -87,6 +88,10 @@ vi.mock('@monaco-editor/react', () => ({
     return <div data-testid="monaco-editor" />;
   },
   loader: editorMock.monaco.loader,
+}));
+
+vi.mock('@react-aria/live-announcer', () => ({
+  announce: announceMock,
 }));
 
 vi.mock('../../hooks/usePreferences', () => ({
@@ -156,6 +161,7 @@ describe('EditorWindow language selection', () => {
     editorMock.monaco.languages.registerSignatureHelpProvider.mockClear();
     editorMock.monaco.languages.setLanguageConfiguration.mockClear();
     editorMock.monaco.languages.setMonarchTokensProvider.mockClear();
+    announceMock.mockClear();
     treeSitterDiagnosticsMock.mockClear();
     treeSitterDiagnosticsMock.mockResolvedValue([]);
     treeSitterParseMock.mockClear();
@@ -708,6 +714,11 @@ describe('EditorWindow language selection', () => {
     );
     expect(editorMock.pushUndoStop.mock.invocationCallOrder[1]).toBeGreaterThan(
       editorMock.executeEdits.mock.invocationCallOrder[0],
+    );
+    expect(announceMock).toHaveBeenCalledWith(
+      'Applied MOO quick fix: Insert missing endwhile.',
+      'polite',
+      2000,
     );
     expect(screen.getByRole('status').textContent).toContain('Changed');
   });
