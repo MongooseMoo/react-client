@@ -1,10 +1,11 @@
-import React, { useRef, useEffect, useCallback } from "react";
+import type React from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { CommandHistory } from "../CommandHistory";
 import "./input.css";
-import { useInputStore } from "../hooks/useInputStore";
-import { InputActionType, setInputText, clearInputText, inputStore } from "../InputStore";
-import MudClient from "../client"; // Import MudClient
-import { RoomPlayer } from "../gmcp/Room"; // Import RoomPlayer type
+import { useInputStore } from "../stores/inputStore";
+import { registerCommandInput } from "../inputFocus";
+import type MudClient from "../client"; // Import MudClient
+import type { RoomPlayer } from "../gmcp/Room"; // Import RoomPlayer type
 
 type SendFunction = (text: string) => void;
 
@@ -29,7 +30,7 @@ const parseWordForCompletion = (word: string): { leadingPunctuation: string, nam
     // If the input is fully quoted like "David Miller", namePart is "David Miller".
     // The quoteNameIfNeeded will handle re-quoting the completed name.
     // Leading punctuation is considered empty as quotes handle the structure.
-    let namePart = word.substring(1);
+    const namePart = word.substring(1);
     // Don't strip trailing quote from user's partial input like "David M
     // if (namePart.endsWith('"')) { 
     //   namePart = namePart.substring(0, namePart.length - 1);
@@ -47,7 +48,7 @@ const parseWordForCompletion = (word: string): { leadingPunctuation: string, nam
 
 const CommandInput = ({ onSend, inputRef, client }: Props) => {
   const commandHistoryRef = useRef(new CommandHistory());
-  const [inputState, dispatch] = useInputStore();
+  const text = useInputStore((s) => s.text);
 
   // Refs for tab completion state
   const completionCandidatesRef = useRef<RoomPlayer[]>([]); // Store RoomPlayer objects
@@ -69,11 +70,11 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
 
   // Register input ref with InputStore for focus functionality
   useEffect(() => {
-    inputStore.registerInputRef(inputRef);
+    registerCommandInput(inputRef);
   }, [inputRef]);
 
   // Save history when commands are added
-  const saveHistory = () => {
+  const saveHistory = useCallback(() => {
     try {
       // Get direct access to the history array
       const history = commandHistoryRef.current.getHistory();
@@ -83,7 +84,7 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
     } catch (e) {
       console.warn('Failed to save command history:', e);
     }
-  };
+  }, []);
 
   const resetCompletionState = useCallback(() => {
     completionCandidatesRef.current = [];
@@ -92,20 +93,20 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
   }, []);
 
   const handleSend = useCallback(() => {
-    const currentInput = inputState.text;
+    const currentInput = text;
     onSend(currentInput);
     if (currentInput.trim()) {
       commandHistoryRef.current.addCommand(currentInput);
       saveHistory();
     }
-    clearInputText();
+    useInputStore.getState().clear();
     inputRef.current?.focus();
     resetCompletionState();
-  }, [inputState.text, onSend, inputRef, resetCompletionState]);
+  }, [text, onSend, inputRef, resetCompletionState, saveHistory]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const commandHistory = commandHistoryRef.current;
-    const currentInputText = inputState.text;
+    const currentInputText = text;
     const textArea = inputRef.current;
 
     if (e.key === "Tab") {
@@ -154,7 +155,7 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
         const completedName = activeOriginalLeadingPunctuation + baseCompletedName;
 
         const newText = currentInputText.substring(0, wordStartIndex) + completedName + currentInputText.substring(cursorPos);
-        setInputText(newText);
+        useInputStore.getState().setText(newText);
         const newCursorPos = wordStartIndex + completedName.length;
         requestAnimationFrame(() => textArea.setSelectionRange(newCursorPos, newCursorPos));
       } else { // This is for initial completion or if currentWord changed (breaking the cycle)
@@ -192,7 +193,7 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
           const completedName = initialLeadingPunctuation + baseCompletedName;
           
           const newText = currentInputText.substring(0, wordStartIndex) + completedName + currentInputText.substring(cursorPos);
-          setInputText(newText);
+          useInputStore.getState().setText(newText);
           const newCursorPos = wordStartIndex + completedName.length;
           requestAnimationFrame(() => textArea.setSelectionRange(newCursorPos, newCursorPos));
         } else {
@@ -213,12 +214,12 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       const prevCommand = commandHistory.navigateUp(currentInputText);
-      setInputText(prevCommand);
+      useInputStore.getState().setText(prevCommand);
       resetCompletionState();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       const nextCommand = commandHistory.navigateDown(currentInputText);
-      setInputText(nextCommand);
+      useInputStore.getState().setText(nextCommand);
       resetCompletionState();
     } else {
       // For other keys that might change the text (like Backspace, Delete, or character input)
@@ -228,14 +229,14 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
         resetCompletionState();
       }
     }
-  }, [inputState.text, client, inputRef, onSend, resetCompletionState, handleSend]); // Added handleSend and resetCompletionState
+  }, [text, client, inputRef, resetCompletionState, handleSend]); // Added handleSend and resetCompletionState
 
   return (
     <div className="command-input-container">
       <textarea
-        value={inputState.text}
+        value={text}
         onChange={(e) => {
-          setInputText(e.target.value);
+          useInputStore.getState().setText(e.target.value);
           // If user types, reset tab completion state.
           // This ensures that typing new characters clears any ongoing completion.
           resetCompletionState();
@@ -245,7 +246,7 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
         ref={inputRef}
         autoFocus
       />
-      <button onClick={handleSend} className="send-button">
+      <button type="button" onClick={handleSend} className="send-button">
         Send
       </button>
     </div>

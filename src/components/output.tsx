@@ -5,7 +5,7 @@ import { parseToElements } from "../ansiParser";
 import type MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
 import DOMPurify from 'dompurify';
-import { setInputText } from '../InputStore';
+import { useInputStore } from '../stores/inputStore';
 import TurndownService from 'turndown'; // <-- Import TurndownService
 import { preferencesStore } from '../PreferencesStore'; // Import preferences store
 import BlockquoteWithCopy from './BlockquoteWithCopy';
@@ -578,7 +578,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       event.preventDefault();
       const commandText = linkElement.dataset.text;
       if (commandText !== undefined && commandText !== null) {
-        setInputText(commandText);
+        useInputStore.getState().setText(commandText);
         this.props.focusInput?.();
       }
     }

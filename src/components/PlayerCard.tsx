@@ -1,6 +1,6 @@
 import type React from 'react';
 import type { RoomPlayer } from '../gmcp/Room';
-import { setInputTextAndFocus } from '../InputStore';
+import { setInputTextAndFocus } from '../inputFocus';
 import './PlayerCard.css';
 
 interface PlayerCardProps {
