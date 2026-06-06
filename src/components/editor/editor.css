@@ -100,6 +100,46 @@
   background: #fbfcfe;
 }
 
+.editor-problems-filters {
+  display: flex;
+  gap: 0;
+  padding: 0.5rem 0.75rem 0;
+}
+
+.editor-problems-filter {
+  min-height: 1.75rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid #c9d5e7;
+  border-right-width: 0;
+  background: #fff;
+  color: #405167;
+  cursor: pointer;
+  font: inherit;
+}
+
+.editor-problems-filter:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.editor-problems-filter:last-child {
+  border-right-width: 1px;
+  border-radius: 0 4px 4px 0;
+}
+
+.editor-problems-filter:hover {
+  background: #f1f5fb;
+}
+
+.editor-problems-filter[aria-pressed='true'] {
+  background: #233143;
+  color: #fff;
+}
+
+.editor-problems-filter:focus-visible {
+  outline: 2px solid #4b8bd6;
+  outline-offset: 2px;
+}
+
 .editor-problems-list {
   display: flex;
   flex-direction: column;
@@ -168,4 +208,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.editor-problems-empty {
+  margin: 0;
+  padding: 0.75rem;
+  color: #5b6472;
 }

@@ -634,25 +634,21 @@ describe('EditorWindow language selection', () => {
     const errorFilter = screen.getByRole('button', { name: 'Show MOO errors (1)' });
     const warningFilter = screen.getByRole('button', { name: 'Show MOO warnings (1)' });
 
-    expect(allFilter).toHaveAttribute('aria-pressed', 'true');
-    expect(errorFilter).toHaveAttribute('aria-pressed', 'false');
-    expect(warningFilter).toHaveAttribute('aria-pressed', 'false');
+    expect(allFilter.getAttribute('aria-pressed')).toBe('true');
+    expect(errorFilter.getAttribute('aria-pressed')).toBe('false');
+    expect(warningFilter.getAttribute('aria-pressed')).toBe('false');
 
     fireEvent.click(warningFilter);
 
-    expect(allFilter).toHaveAttribute('aria-pressed', 'false');
-    expect(warningFilter).toHaveAttribute('aria-pressed', 'true');
-    expect(
-      screen.queryByRole('button', { name: /^MOO error unclosed-block/ }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^MOO warning unused-local/ })).toBeInTheDocument();
+    expect(allFilter.getAttribute('aria-pressed')).toBe('false');
+    expect(warningFilter.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('button', { name: /^MOO error unclosed-block/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /^MOO warning unused-local/ })).not.toBeNull();
 
     fireEvent.click(errorFilter);
 
-    expect(errorFilter).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: /^MOO error unclosed-block/ })).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: /^MOO warning unused-local/ }),
-    ).not.toBeInTheDocument();
+    expect(errorFilter.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: /^MOO error unclosed-block/ })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /^MOO warning unused-local/ })).toBeNull();
   });
 });
