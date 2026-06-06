@@ -2150,6 +2150,8 @@ describe('MOO Monaco language support', () => {
           value: expect.stringContaining('notify(player, text)'),
         },
       ],
+      canIncreaseVerbosity: true,
+      canDecreaseVerbosity: false,
     });
     expect(
       provider.provideHover(
@@ -2178,6 +2180,61 @@ describe('MOO Monaco language support', () => {
           ].join('\n'),
         },
       ],
+      canIncreaseVerbosity: true,
+      canDecreaseVerbosity: false,
+    });
+  });
+
+  it('supports Monaco hover verbosity controls for MOO hovers', () => {
+    const provider = createMooHoverProvider();
+    const model = { getValue: () => 'notify(player, "hello");' };
+    const position = {
+      lineNumber: 1,
+      column: 3,
+    };
+    const baseHover = provider.provideHover(model, position);
+    if (!baseHover) {
+      throw new Error('Expected base hover');
+    }
+
+    expect(baseHover).toMatchObject({
+      canIncreaseVerbosity: true,
+      canDecreaseVerbosity: false,
+      contents: [{ value: expect.not.stringContaining('MOO hover detail') }],
+    });
+
+    const verboseHover = provider.provideHover(model, position, {}, {
+      verbosityRequest: {
+        verbosityDelta: 1,
+        previousHover: baseHover,
+      },
+    });
+    if (!verboseHover) {
+      throw new Error('Expected verbose hover');
+    }
+
+    expect(verboseHover).toMatchObject({
+      canIncreaseVerbosity: false,
+      canDecreaseVerbosity: true,
+      contents: [
+        {
+          value: expect.stringContaining('MOO hover detail'),
+        },
+      ],
+    });
+    expect(verboseHover.contents[0].value).toContain('line 1, columns 1-7');
+
+    expect(
+      provider.provideHover(model, position, {}, {
+        verbosityRequest: {
+          verbosityDelta: -1,
+          previousHover: verboseHover,
+        },
+      }),
+    ).toMatchObject({
+      canIncreaseVerbosity: true,
+      canDecreaseVerbosity: false,
+      contents: [{ value: expect.not.stringContaining('MOO hover detail') }],
     });
   });
 

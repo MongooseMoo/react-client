@@ -137,6 +137,15 @@ type CompletionList = {
 type Hover = {
   range?: MonacoRange;
   contents: Array<{ value: string }>;
+  canIncreaseVerbosity?: boolean;
+  canDecreaseVerbosity?: boolean;
+};
+
+type HoverContext = {
+  verbosityRequest?: {
+    verbosityDelta: number;
+    previousHover: Hover;
+  };
 };
 
 type TextModelValueLike = {
@@ -323,7 +332,12 @@ export type MonacoLike = {
     registerHoverProvider: (
       languageId: string,
       provider: {
-        provideHover: (model: TextModelValueLike, position: CompletionPosition) => Hover | null;
+        provideHover: (
+          model: TextModelValueLike,
+          position: CompletionPosition,
+          token?: unknown,
+          context?: HoverContext,
+        ) => Hover | null;
       },
     ) => { dispose: () => void };
     registerInlineCompletionsProvider?: (
@@ -1087,10 +1101,16 @@ export function createMooLinkProvider(): MonacoEditor.languages.LinkProvider {
 }
 
 export function createMooHoverProvider(): {
-  provideHover: (model: TextModelValueLike, position: CompletionPosition) => Hover | null;
+  provideHover: (
+    model: TextModelValueLike,
+    position: CompletionPosition,
+    token?: unknown,
+    context?: HoverContext,
+  ) => Hover | null;
 } {
   return {
-    provideHover: (model, position) => getMooHover(model.getValue(), position),
+    provideHover: (model, position, _token, context) =>
+      withMooHoverVerbosity(getMooHover(model.getValue(), position), context),
   };
 }
 
@@ -1464,6 +1484,44 @@ function flattenSelectionRange(
   }
 
   return ranges;
+}
+
+function withMooHoverVerbosity(hover: Hover | null, context?: HoverContext): Hover | null {
+  if (!hover) {
+    return null;
+  }
+
+  const verbosityDelta = context?.verbosityRequest?.verbosityDelta ?? 0;
+  if (verbosityDelta > 0) {
+    return {
+      ...hover,
+      contents: hover.contents.map((content) => ({
+        value: `${content.value}\n\n---\n**MOO hover detail**\n\n- Token range: ${formatHoverRange(
+          hover.range,
+        )}\n- Source: ToastStunt/MOO language metadata.`,
+      })),
+      canIncreaseVerbosity: false,
+      canDecreaseVerbosity: true,
+    };
+  }
+
+  return {
+    ...hover,
+    canIncreaseVerbosity: true,
+    canDecreaseVerbosity: false,
+  };
+}
+
+function formatHoverRange(range: MonacoRange | undefined): string {
+  if (!range) {
+    return 'current cursor position';
+  }
+
+  if (range.startLineNumber === range.endLineNumber) {
+    return `line ${range.startLineNumber}, columns ${range.startColumn}-${range.endColumn}`;
+  }
+
+  return `line ${range.startLineNumber}, column ${range.startColumn} to line ${range.endLineNumber}, column ${range.endColumn}`;
 }
 
 const BUILTIN_SNIPPETS: Partial<Record<(typeof BUILTIN_FUNCTIONS)[number], string>> = {
