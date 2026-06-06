@@ -230,6 +230,13 @@ describe('MOO Monaco language support', () => {
     expect(verbLabels).not.toContain('E_PERM');
   });
 
+  it('suppresses completions inside comments and string literals', () => {
+    const provider = createMooCompletionProvider();
+
+    expect(labelsForCompletion(provider, '// not', 7)).toEqual([]);
+    expect(labelsForCompletion(provider, 'notify(player, "not")', 20)).toEqual([]);
+  });
+
   it('registers language features once for Monaco', () => {
     const monaco = {
       languages: {

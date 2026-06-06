@@ -45,6 +45,7 @@ import {
 } from './semantics';
 import { getMooSelectionRanges, type MooSelectionRange } from './selectionRanges';
 import { MOO_SEMANTIC_TOKEN_LEGEND, encodeMooSemanticTokens } from './semanticTokens';
+import { maskMooSource, offsetAtMooPosition } from './scanner';
 import { analyzeMooStructure, type MooStructureSymbol } from './structure';
 import { parseMooCodeWithTreeSitter, type MooTreeSitterParseResult } from './treeSitter';
 
@@ -546,6 +547,10 @@ export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProv
   return {
     triggerCharacters: ['.', ':', '$', 'E', '_'],
     provideCompletionItems: (model, position) => {
+      if (isCompletionInMaskedSource(model.getValue(), position)) {
+        return { suggestions: [] };
+      }
+
       const word = model.getWordUntilPosition(position);
       const range = {
         startLineNumber: position.lineNumber,
@@ -904,6 +909,27 @@ function getCompletionContext(
   }
 
   return 'default';
+}
+
+function isCompletionInMaskedSource(source: string, position: CompletionPosition): boolean {
+  const masked = maskMooSource(source);
+  const lineStartOffset = offsetAtMooPosition(source, {
+    lineNumber: position.lineNumber,
+    column: 1,
+  });
+  const cursorOffset = offsetAtMooPosition(source, position);
+  const originalPrefix = source.slice(lineStartOffset, cursorOffset);
+  const maskedPrefix = masked.slice(lineStartOffset, cursorOffset);
+
+  for (let index = originalPrefix.length - 1; index >= 0; index -= 1) {
+    if (/\s/.test(originalPrefix[index])) {
+      continue;
+    }
+
+    return maskedPrefix[index] === ' ';
+  }
+
+  return false;
 }
 
 async function getParserStructure<K extends keyof MooTreeSitterParseResult['structure']>(

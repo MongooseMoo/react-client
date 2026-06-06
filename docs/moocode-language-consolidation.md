@@ -225,3 +225,10 @@ Iterations:
     contexts.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 masked completion suppression:
+  - Reused the shared MOO source masker so Monaco completions are suppressed
+    inside line comments, block comments, and string literals.
+  - This brings completions in line with hovers, signatures, inline completions,
+    selection ranges, and semantic navigation, which already ignore masked text.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.
