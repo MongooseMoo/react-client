@@ -17,6 +17,7 @@ import {
   createMooInlineCompletionsProvider,
   createMooInlayHintsProvider,
   createMooLanguageConfiguration,
+  createMooLinkedEditingRangeProvider,
   createMooMonarchLanguage,
   createMooOnTypeFormattingEditProvider,
   createMooReferenceProvider,
@@ -265,6 +266,7 @@ describe('MOO Monaco language support', () => {
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerInlineCompletionsProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerLinkedEditingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerOnTypeFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -301,6 +303,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerHoverProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerInlineCompletionsProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerInlayHintsProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerLinkedEditingRangeProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerOnTypeFormattingEditProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerReferenceProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerRenameProvider).toHaveBeenCalledTimes(1);
@@ -443,6 +446,34 @@ describe('MOO Monaco language support', () => {
       expect.objectContaining({ kind: 1 }),
       expect.objectContaining({ kind: 1 }),
     ]);
+  });
+
+  it('provides Monaco linked editing ranges for local symbols', () => {
+    const provider = createMooLinkedEditingRangeProvider();
+    const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
+
+    expect(
+      provider.provideLinkedEditingRanges(
+        {
+          getValue: () => source,
+        } as never,
+        { lineNumber: 2, column: 10 } as never,
+        {} as never,
+      ),
+    ).toEqual({
+      ranges: [
+        {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 6,
+        },
+        expect.objectContaining({ startLineNumber: 2, startColumn: 1 }),
+        expect.objectContaining({ startLineNumber: 2, startColumn: 9 }),
+        expect.objectContaining({ startLineNumber: 3, startColumn: 16 }),
+      ],
+      wordPattern: /[A-Za-z_][\w$]*/,
+    });
   });
 
   it('provides Monaco selection ranges for smart expand selection', () => {

@@ -232,3 +232,10 @@ Iterations:
     selection ranges, and semantic navigation, which already ignore masked text.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco linked editing:
+  - Added a Monaco `LinkedEditingRangeProvider` for local MOO symbols.
+  - Linked editing reuses the semantic local-symbol model behind rename,
+    references, highlights, hovers, and CodeLens, so builtins and masked
+    comment/string text remain excluded.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

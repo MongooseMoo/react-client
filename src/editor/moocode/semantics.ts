@@ -33,6 +33,11 @@ export type MooCodeLens = {
   tooltip: string;
 };
 
+export type MooLinkedEditingRanges = {
+  ranges: MonacoRange[];
+  wordPattern: RegExp;
+};
+
 export type MooRenameWorkspaceEdit = { edits: MooTextEdit[] } | { rejectReason: string };
 
 export type MooRenameLocation =
@@ -55,6 +60,7 @@ type Occurrence = {
 };
 
 const IDENTIFIER_PATTERN = /[A-Za-z_][\w$]*/g;
+const LINKED_IDENTIFIER_PATTERN = /[A-Za-z_][\w$]*/;
 const VALID_IDENTIFIER_PATTERN = /^[A-Za-z_][\w$]*$/;
 const NON_LOCAL_NAMES = new Set<string>([
   ...STATEMENT_KEYWORDS.map((keyword) => keyword.toLowerCase()),
@@ -150,6 +156,26 @@ export function findMooDocumentHighlights(
       kind: 'read' as const,
     })),
   ].sort((left, right) => compareRanges(left.range, right.range));
+}
+
+export function getMooLinkedEditingRanges(
+  source: string,
+  position: MooSourcePosition,
+): MooLinkedEditingRanges | null {
+  const lookup = getSymbolAtPosition(source, position);
+  if (!lookup) {
+    return null;
+  }
+
+  const ranges = allSymbolOccurrences(lookup.record).map((occurrence) => occurrence.range);
+  if (ranges.length < 2) {
+    return null;
+  }
+
+  return {
+    ranges,
+    wordPattern: LINKED_IDENTIFIER_PATTERN,
+  };
 }
 
 export function getMooCodeLenses(source: string): MooCodeLens[] {

@@ -6,6 +6,7 @@ import {
   findMooDocumentHighlights,
   findMooReferences,
   getMooCodeLenses,
+  getMooLinkedEditingRanges,
   getMooLocalCompletions,
   getMooRenameLocation,
 } from './semantics';
@@ -65,6 +66,22 @@ describe('MOO semantic model', () => {
     ]);
     expect(findMooDocumentHighlights(source, positionFor(source, 'player'))).toEqual([]);
     expect(findMooDocumentHighlights('// total = 0;', { lineNumber: 1, column: 4 })).toEqual([]);
+  });
+
+  it('finds linked editing ranges for local names only', () => {
+    const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
+
+    expect(getMooLinkedEditingRanges(source, positionFor(source, 'total +'))).toEqual({
+      ranges: [
+        wordRange(source, 'total', 1),
+        wordRange(source, 'total', 2),
+        wordRange(source, 'total', 3),
+        wordRange(source, 'total', 4),
+      ],
+      wordPattern: /[A-Za-z_][\w$]*/,
+    });
+    expect(getMooLinkedEditingRanges(source, positionFor(source, 'player'))).toBeNull();
+    expect(getMooLinkedEditingRanges('// total = 0;', { lineNumber: 1, column: 4 })).toBeNull();
   });
 
   it('creates local symbol CodeLens summaries at primary definitions', () => {
