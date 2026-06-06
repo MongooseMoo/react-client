@@ -159,6 +159,19 @@ describe('validateMooSyntax', () => {
     expect(diagnostics.filter((diagnostic) => diagnostic.code === 'builtin-arity')).toHaveLength(2);
   });
 
+  it('does not apply ToastStunt builtin arity checks to verb calls with builtin-like names', () => {
+    const diagnostics = validateMooSyntax(
+      [
+        'player:notify("hello", caller, this, verb, args);',
+        '$room:valid(player, this, caller);',
+        '$valid(player, this, caller);',
+        'object:(verb_name)(player, this, caller, args);',
+      ].join('\n'),
+    );
+
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'builtin-arity')).toEqual([]);
+  });
+
   it('reports likely undefined local references', () => {
     const diagnostics = validateMooSyntax(
       ['total = count + 1;', 'notify(player, total);', '// ghost;'].join('\n'),

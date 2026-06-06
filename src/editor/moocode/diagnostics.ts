@@ -385,6 +385,10 @@ function validateBuiltinCallArity(source: string): MooDiagnostic[] {
       continue;
     }
 
+    if (!isPlainFunctionCallIdentifier(masked, functionIdentifier.startOffset)) {
+      continue;
+    }
+
     const metadata = getMooBuiltinMetadata(functionIdentifier.name);
     if (!metadata) {
       continue;
@@ -462,6 +466,21 @@ function readIdentifierBefore(
   return VALID_IDENTIFIER_PATTERN.test(identifier)
     ? { name: identifier, startOffset: startIndex + 1 }
     : null;
+}
+
+function isPlainFunctionCallIdentifier(source: string, identifierStartOffset: number): boolean {
+  const previous = previousNonWhitespaceCharacter(source, identifierStartOffset);
+  return previous !== ':' && previous !== '.' && previous !== '$';
+}
+
+function previousNonWhitespaceCharacter(source: string, offset: number): string | null {
+  for (let index = offset - 1; index >= 0; index -= 1) {
+    if (!/\s/.test(source[index])) {
+      return source[index];
+    }
+  }
+
+  return null;
 }
 
 function findMatchingCallClose(source: string, openOffset: number): number | null {
