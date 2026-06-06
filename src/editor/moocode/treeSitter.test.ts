@@ -199,7 +199,8 @@ describe('MOO Tree-sitter service', () => {
         code: 'missing-node',
         endColumn: 2,
         lineNumber: 3,
-        message: 'Tree-sitter recovered by inserting missing MOO syntax.',
+        message: 'Tree-sitter recovered by inserting missing ;.',
+        missingText: ';',
         startColumn: 1,
       },
     ]);

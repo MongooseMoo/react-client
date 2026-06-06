@@ -113,4 +113,33 @@ describe('MOO code actions', () => {
       },
     ]);
   });
+
+  it('offers quick fixes for parser-reported missing syntax', () => {
+    const source = 'notify(player, "ok")';
+
+    expect(
+      getMooQuickFixes(source, [
+        {
+          code: 'missing-node',
+          lineNumber: 1,
+          startColumn: 21,
+          endColumn: 22,
+          message: 'Tree-sitter recovered by inserting missing ;.',
+          missingText: ';',
+        },
+      ]),
+    ).toContainEqual({
+      title: 'Insert missing ;',
+      diagnostics: [expect.objectContaining({ code: 'missing-node' })],
+      edit: {
+        range: {
+          startLineNumber: 1,
+          startColumn: 21,
+          endLineNumber: 1,
+          endColumn: 21,
+        },
+        text: ';',
+      },
+    });
+  });
 });

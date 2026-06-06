@@ -3,9 +3,14 @@ import { validateMooSyntax, type MooDiagnostic } from './diagnostics';
 import { firstMooKeyword } from './scanner';
 import type { MonacoRange } from './language';
 
+export type MooQuickFixDiagnostic = Omit<MooDiagnostic, 'code'> & {
+  code: MooDiagnostic['code'] | 'missing-node';
+  missingText?: string;
+};
+
 export type MooQuickFix = {
   title: string;
-  diagnostics: MooDiagnostic[];
+  diagnostics: MooQuickFixDiagnostic[];
   edit: {
     range: MonacoRange;
     text: string;
@@ -18,8 +23,11 @@ const CLOSE_DELIMITER_BY_OPEN: Record<string, string> = {
   '{': '}',
 };
 
-export function getMooQuickFixes(source: string): MooQuickFix[] {
-  const diagnostics = validateMooSyntax(source);
+export function getMooQuickFixes(
+  source: string,
+  parserDiagnostics: readonly MooQuickFixDiagnostic[] = [],
+): MooQuickFix[] {
+  const diagnostics: MooQuickFixDiagnostic[] = [...validateMooSyntax(source), ...parserDiagnostics];
   const lines = source.split(/\r\n|\r|\n/);
   const endRange = rangeAtEndOfSource(source);
   const fixes: MooQuickFix[] = [];
@@ -101,6 +109,20 @@ export function getMooQuickFixes(source: string): MooQuickFix[] {
           },
         });
         break;
+      case 'missing-node':
+        if (!diagnostic.missingText) {
+          break;
+        }
+
+        fixes.push({
+          title: `Insert missing ${diagnostic.missingText}`,
+          diagnostics: [diagnostic],
+          edit: {
+            range: insertionRange(diagnostic),
+            text: diagnostic.missingText,
+          },
+        });
+        break;
       default:
         break;
     }
@@ -126,7 +148,7 @@ function rangeAtEndOfLine(lines: string[], lineNumber: number): MonacoRange {
   };
 }
 
-function diagnosticRange(diagnostic: MooDiagnostic): MonacoRange {
+function diagnosticRange(diagnostic: MooQuickFixDiagnostic): MonacoRange {
   return {
     startLineNumber: diagnostic.lineNumber,
     startColumn: diagnostic.startColumn,
@@ -135,7 +157,16 @@ function diagnosticRange(diagnostic: MooDiagnostic): MonacoRange {
   };
 }
 
-function diagnosticText(lines: string[], diagnostic: MooDiagnostic): string {
+function insertionRange(diagnostic: MooQuickFixDiagnostic): MonacoRange {
+  return {
+    startLineNumber: diagnostic.lineNumber,
+    startColumn: diagnostic.startColumn,
+    endLineNumber: diagnostic.lineNumber,
+    endColumn: diagnostic.startColumn,
+  };
+}
+
+function diagnosticText(lines: string[], diagnostic: MooQuickFixDiagnostic): string {
   const line = lines[diagnostic.lineNumber - 1] ?? '';
 
   return line.slice(diagnostic.startColumn - 1, diagnostic.endColumn - 1);

@@ -692,6 +692,61 @@ describe('MOO Monaco language support', () => {
     expect(actions.dispose()).toBeUndefined();
   });
 
+  it('provides Monaco quick fixes for parser markers from the current context', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () => 'notify(player, "ok")',
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      {
+        markers: [
+          {
+            code: 'missing-node',
+            lineNumber: 1,
+            startLineNumber: 1,
+            endLineNumber: 1,
+            startColumn: 21,
+            endColumn: 22,
+            message: 'Tree-sitter recovered by inserting missing ;.',
+            missingText: ';',
+            severity: 8,
+            source: MOO_LANGUAGE_ID,
+          },
+        ],
+        trigger: 1,
+      } as never,
+      {} as never,
+    );
+
+    expect(actions.actions).toContainEqual({
+      title: 'Insert missing ;',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [expect.objectContaining({ code: 'missing-node' })],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 1,
+                startColumn: 21,
+                endLineNumber: 1,
+                endColumn: 21,
+              },
+              text: ';',
+            },
+            versionId: undefined,
+          },
+        ],
+      },
+    });
+  });
+
   it('provides Monaco parameter inlay hints for builtin calls', () => {
     const provider = createMooInlayHintsProvider({ Parameter: 2 });
     const hints = provider.provideInlayHints(

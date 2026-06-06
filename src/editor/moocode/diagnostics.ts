@@ -1,4 +1,4 @@
-import { getMooBuiltinMetadata, type MooBuiltinMetadata } from './builtins';
+import { formatMooBuiltinArity, getMooBuiltinMetadata, type MooBuiltinMetadata } from './builtins';
 import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_LANGUAGE_ID, MOO_MIDDLE_KEYWORDS } from './contract';
 import { firstMooKeyword, maskMooSource, positionAtMooOffset } from './scanner';
 
@@ -324,7 +324,7 @@ function validateBuiltinCallArity(source: string): MooDiagnostic[] {
     const start = positionAtMooOffset(source, functionIdentifier.startOffset);
     diagnostics.push({
       code: 'builtin-arity',
-      message: `${functionIdentifier.name.toLowerCase()} expects ${formatArity(metadata)}, but got ${argumentCount}.`,
+      message: `${functionIdentifier.name.toLowerCase()} expects ${formatMooBuiltinArity(metadata)}, but got ${argumentCount}.`,
       lineNumber: start.lineNumber,
       startColumn: start.column,
       endColumn: start.column + functionIdentifier.name.length,
@@ -407,16 +407,4 @@ function countCallArguments(argumentSource: string): number {
 
 function isBuiltinArityValid(argumentCount: number, metadata: MooBuiltinMetadata): boolean {
   return argumentCount >= metadata.minArgs && (metadata.maxArgs < 0 || argumentCount <= metadata.maxArgs);
-}
-
-function formatArity(metadata: MooBuiltinMetadata): string {
-  if (metadata.maxArgs < 0) {
-    return `at least ${metadata.minArgs} ${metadata.minArgs === 1 ? 'argument' : 'arguments'}`;
-  }
-
-  if (metadata.minArgs === metadata.maxArgs) {
-    return `${metadata.minArgs} ${metadata.minArgs === 1 ? 'argument' : 'arguments'}`;
-  }
-
-  return `${metadata.minArgs} to ${metadata.maxArgs} arguments`;
 }

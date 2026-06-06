@@ -7,6 +7,7 @@ export type MooTreeSitterDiagnosticCode = 'missing-node' | 'parse-error';
 export type MooTreeSitterDiagnostic = {
   code: MooTreeSitterDiagnosticCode;
   message: string;
+  missingText?: string;
   lineNumber: number;
   startColumn: number;
   endColumn: number;
@@ -207,9 +208,11 @@ function toDiagnostic(node: TreeSitterNodeLike): MooTreeSitterDiagnostic {
   const endColumn = Math.max(startColumn + 1, node.endPosition.column + 1);
 
   if (node.isMissing) {
+    const missingText = missingNodeText(node.type);
     return {
       code: 'missing-node',
-      message: 'Tree-sitter recovered by inserting missing MOO syntax.',
+      message: `Tree-sitter recovered by inserting missing ${missingText}.`,
+      missingText,
       lineNumber,
       startColumn,
       endColumn,
@@ -223,6 +226,14 @@ function toDiagnostic(node: TreeSitterNodeLike): MooTreeSitterDiagnostic {
     startColumn,
     endColumn,
   };
+}
+
+function missingNodeText(type: string): string {
+  if (type === '_SEMI') {
+    return ';';
+  }
+
+  return type;
 }
 
 const BLOCK_NODE_KINDS: Partial<Record<string, MooBlockKind>> = {

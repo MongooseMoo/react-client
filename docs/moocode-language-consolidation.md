@@ -365,3 +365,14 @@ Iterations:
   - Focused red-to-green gates:
     `npm test -- --run src/editor/moocode/signatures.test.ts src/editor/moocode/hover.test.ts src/editor/moocode/language.test.ts`
     and `npm test -- --run src/editor/moocode`.
+- 2026-06-06 parser-backed quick fixes:
+  - Tree-sitter missing-node diagnostics now carry the inserted token text when
+    the parser can identify it, so Monaco can show concrete messages such as
+    missing `;`.
+  - The MOO code-action provider now consumes Monaco's current marker context,
+    allowing parser-only diagnostics to surface quick fixes without rerunning
+    async parsing inside the provider.
+  - Scanner builtin-arity diagnostics now reuse the shared ToastStunt arity
+    formatter used by signatures and hover text.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/treeSitter.test.ts src/editor/moocode/codeActions.test.ts src/editor/moocode/language.test.ts`.

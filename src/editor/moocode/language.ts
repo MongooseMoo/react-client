@@ -11,9 +11,8 @@ export {
   STATEMENT_KEYWORDS,
   SYSTEM_REFERENCES,
 } from './contract';
-import { getMooQuickFixes } from './codeActions';
+import { getMooQuickFixes, type MooQuickFixDiagnostic } from './codeActions';
 import { getMooBuiltinMetadata } from './builtins';
-import type { MooDiagnostic } from './diagnostics';
 import { formatMooCode, formatMooCodeRange } from './formatter';
 import {
   getMooBuiltinVariableDocumentation,
@@ -547,8 +546,8 @@ export function createMooCompletionItems(
 
 export function createMooCodeActionProvider(): MonacoEditor.languages.CodeActionProvider {
   return {
-    provideCodeActions: (model) => ({
-      actions: getMooQuickFixes(model.getValue()).map((fix) => ({
+    provideCodeActions: (model, _range, context) => ({
+      actions: getMooQuickFixes(model.getValue(), quickFixDiagnosticsFromMarkers(context.markers)).map((fix) => ({
         title: fix.title,
         kind: 'quickfix',
         isPreferred: true,
@@ -569,6 +568,44 @@ export function createMooCodeActionProvider(): MonacoEditor.languages.CodeAction
       dispose: () => {},
     }),
   };
+}
+
+function quickFixDiagnosticsFromMarkers(
+  markers: readonly MonacoEditor.editor.IMarkerData[],
+): MooQuickFixDiagnostic[] {
+  return markers
+    .map((marker): MooQuickFixDiagnostic | null => {
+      const code = markerCode(marker.code);
+      if (code !== 'missing-node') {
+        return null;
+      }
+
+      return {
+        code,
+        lineNumber: marker.startLineNumber,
+        startColumn: marker.startColumn,
+        endColumn: marker.endColumn,
+        message: marker.message,
+        missingText: markerMissingText(marker),
+      };
+    })
+    .filter((diagnostic): diagnostic is MooQuickFixDiagnostic => diagnostic !== null);
+}
+
+function markerCode(code: MonacoEditor.editor.IMarkerData['code']): string | null {
+  if (typeof code === 'string') {
+    return code;
+  }
+
+  return code?.value ?? null;
+}
+
+function markerMissingText(marker: MonacoEditor.editor.IMarkerData): string | undefined {
+  if ('missingText' in marker && typeof marker.missingText === 'string') {
+    return marker.missingText;
+  }
+
+  return undefined;
 }
 
 export function createMooCodeLensProvider(): MonacoEditor.languages.CodeLensProvider {
@@ -604,7 +641,7 @@ export function createMooCodeLensProvider(): MonacoEditor.languages.CodeLensProv
   };
 }
 
-function toCodeActionMarker(diagnostic: MooDiagnostic): MonacoEditor.editor.IMarkerData {
+function toCodeActionMarker(diagnostic: MooQuickFixDiagnostic): MonacoEditor.editor.IMarkerData {
   return {
     ...diagnostic,
     severity: 8,
