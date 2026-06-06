@@ -272,7 +272,7 @@ export function findMooUndefinedLocalReferences(source: string): MooUndefinedLoc
   const definitions = collectDefinitions(source, masked).filter(
     (definition) => !NON_LOCAL_NAMES.has(definition.name.toLowerCase()),
   );
-  const definedNames = new Set(definitions.map((definition) => definition.name.toLowerCase()));
+  const firstDefinitionOffsets = firstDefinitionOffsetsByName(definitions);
   const definitionOffsets = new Set(
     definitions.map((definition) => definition.occurrence.startOffset),
   );
@@ -281,10 +281,11 @@ export function findMooUndefinedLocalReferences(source: string): MooUndefinedLoc
 
   for (const occurrence of collectIdentifierOccurrences(source, masked)) {
     const normalizedName = occurrence.name.toLowerCase();
+    const firstDefinitionOffset = firstDefinitionOffsets.get(normalizedName);
     if (
-      definedNames.has(normalizedName) ||
       NON_LOCAL_NAMES.has(normalizedName) ||
       definitionOffsets.has(occurrence.occurrence.startOffset) ||
+      (firstDefinitionOffset !== undefined && firstDefinitionOffset < occurrence.occurrence.startOffset) ||
       isNonVariableIdentifierOccurrence(masked, occurrence.occurrence)
     ) {
       continue;
@@ -302,6 +303,22 @@ export function findMooUndefinedLocalReferences(source: string): MooUndefinedLoc
   }
 
   return references.sort((left, right) => compareRanges(left.range, right.range));
+}
+
+function firstDefinitionOffsetsByName(
+  definitions: Array<{ name: string; occurrence: Occurrence }>,
+): Map<string, number> {
+  const offsets = new Map<string, number>();
+
+  for (const definition of definitions) {
+    const normalizedName = definition.name.toLowerCase();
+    const existing = offsets.get(normalizedName);
+    if (existing === undefined || definition.occurrence.startOffset < existing) {
+      offsets.set(normalizedName, definition.occurrence.startOffset);
+    }
+  }
+
+  return offsets;
 }
 
 function getSymbolAtPosition(

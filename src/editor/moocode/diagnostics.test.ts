@@ -152,4 +152,23 @@ describe('validateMooSyntax', () => {
       1,
     );
   });
+
+  it('reports local references before their first definition', () => {
+    const diagnostics = validateMooSyntax(
+      ['notify(player, total);', 'total = 1;', 'notify(player, total);'].join('\n'),
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'undefined-local',
+        lineNumber: 1,
+        startColumn: 16,
+        endColumn: 21,
+        message: 'total is used before it is defined.',
+      }),
+    );
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'undefined-local')).toHaveLength(
+      1,
+    );
+  });
 });

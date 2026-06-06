@@ -178,6 +178,29 @@ describe('MOO semantic model', () => {
     ]);
     expect(analyzeMooSemantics(source).symbols.map((symbol) => symbol.name)).toContain('utils');
   });
+
+  it('reports local references that appear before their first definition', () => {
+    const source = [
+      'notify(player, total);',
+      'total = 1;',
+      'notify(player, total);',
+      'for item in (items)',
+      '  notify(player, item);',
+      'endfor',
+      'items = {};',
+    ].join('\n');
+
+    expect(findMooUndefinedLocalReferences(source)).toEqual([
+      {
+        name: 'total',
+        range: wordRange(source, 'total', 1),
+      },
+      {
+        name: 'items',
+        range: wordRange(source, 'items', 1),
+      },
+    ]);
+  });
 });
 
 function positionFor(source: string, text: string) {

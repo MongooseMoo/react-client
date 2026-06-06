@@ -388,3 +388,14 @@ Iterations:
     runtime.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/diagnostics.test.ts`.
+- 2026-06-06 ordered undefined-local diagnostics:
+  - Undefined-local diagnostics now compare each reference against the first
+    local definition offset for that name instead of suppressing every name that
+    appears on the left-hand side somewhere in the source.
+  - This catches common use-before-assignment mistakes such as calling
+    `notify(player, total);` before `total = ...;`, and range loop sources such
+    as `for item in (items)` before `items` is initialized.
+  - The check still preserves the existing language-owned-name filters and
+    property/verb/function-call suppression.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/diagnostics.test.ts`.
