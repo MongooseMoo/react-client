@@ -421,6 +421,7 @@ describe('MOO Monaco language support', () => {
       provider.provideCodeLenses(
         {
           getValue: () => source,
+          uri: 'moo://#1:test',
         } as never,
         {} as never,
       ),
@@ -434,9 +435,51 @@ describe('MOO Monaco language support', () => {
             endColumn: 6,
           },
           command: {
-            id: 'moocode.showReferences',
+            id: 'editor.action.showReferences',
             title: '2 definitions, 2 references',
             tooltip: 'Local total: 2 definitions, 2 references.',
+            arguments: [
+              'moo://#1:test',
+              { lineNumber: 1, column: 1 },
+              [
+                {
+                  uri: 'moo://#1:test',
+                  range: {
+                    startLineNumber: 1,
+                    startColumn: 1,
+                    endLineNumber: 1,
+                    endColumn: 6,
+                  },
+                },
+                {
+                  uri: 'moo://#1:test',
+                  range: {
+                    startLineNumber: 2,
+                    startColumn: 1,
+                    endLineNumber: 2,
+                    endColumn: 6,
+                  },
+                },
+                {
+                  uri: 'moo://#1:test',
+                  range: {
+                    startLineNumber: 2,
+                    startColumn: 9,
+                    endLineNumber: 2,
+                    endColumn: 14,
+                  },
+                },
+                {
+                  uri: 'moo://#1:test',
+                  range: {
+                    startLineNumber: 3,
+                    startColumn: 16,
+                    endLineNumber: 3,
+                    endColumn: 21,
+                  },
+                },
+              ],
+            ],
           },
         },
       ],

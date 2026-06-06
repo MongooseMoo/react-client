@@ -551,17 +551,34 @@ export function createMooCodeActionProvider(): MonacoEditor.languages.CodeAction
 
 export function createMooCodeLensProvider(): MonacoEditor.languages.CodeLensProvider {
   return {
-    provideCodeLenses: (model) => ({
-      lenses: getMooCodeLenses(model.getValue()).map((lens) => ({
-        range: lens.range,
-        command: {
-          id: 'moocode.showReferences',
-          title: lens.title,
-          tooltip: lens.tooltip,
-        },
-      })),
-      dispose: () => {},
-    }),
+    provideCodeLenses: (model) => {
+      const source = model.getValue();
+      return {
+        lenses: getMooCodeLenses(source).map((lens) => ({
+          range: lens.range,
+          command: {
+            id: 'editor.action.showReferences',
+            title: lens.title,
+            tooltip: lens.tooltip,
+            arguments: [
+              model.uri,
+              {
+                lineNumber: lens.range.startLineNumber,
+                column: lens.range.startColumn,
+              },
+              findMooReferences(source, {
+                lineNumber: lens.range.startLineNumber,
+                column: lens.range.startColumn,
+              }).map((reference) => ({
+                uri: model.uri,
+                range: reference.range,
+              })),
+            ],
+          },
+        })),
+        dispose: () => {},
+      };
+    },
   };
 }
 

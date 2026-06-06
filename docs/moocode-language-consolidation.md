@@ -225,6 +225,9 @@ Iterations:
   - CodeLens entries appear at each primary local definition and summarize
     definition/reference counts using the same semantic model as rename,
     references, hovers, and highlights.
+  - CodeLens commands now use Monaco's built-in `editor.action.showReferences`
+    command with concrete local reference locations instead of an unregistered
+    custom command id.
   - Builtins, comments, strings, and unknown globals remain excluded.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
