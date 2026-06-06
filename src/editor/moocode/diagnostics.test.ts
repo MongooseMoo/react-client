@@ -105,4 +105,32 @@ describe('validateMooSyntax', () => {
       }),
     );
   });
+
+  it('reports ToastStunt builtin calls outside their registered arity', () => {
+    const diagnostics = validateMooSyntax(
+      [
+        'sqlite_query(handle);',
+        'notify(player, "hello", 0, 1, 2);',
+        'pass(a, b, c, d, e);',
+        '// sqlite_query(handle);',
+        '"notify(player, text, a, b, c)"',
+      ].join('\n'),
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'builtin-arity',
+        lineNumber: 1,
+        message: 'sqlite_query expects 2 to 3 arguments, but got 1.',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'builtin-arity',
+        lineNumber: 2,
+        message: 'notify expects 2 to 4 arguments, but got 5.',
+      }),
+    );
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'builtin-arity')).toHaveLength(2);
+  });
 });

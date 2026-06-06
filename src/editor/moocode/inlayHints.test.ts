@@ -78,7 +78,7 @@ describe('MOO inlay hints', () => {
         column: 22,
       },
       {
-        label: 'arg3:',
+        label: 'arg3?:',
         lineNumber: 1,
         column: 27,
       },

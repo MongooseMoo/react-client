@@ -1,5 +1,6 @@
+import { getMooBuiltinMetadata, type MooBuiltinMetadata } from './builtins';
 import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_LANGUAGE_ID, MOO_MIDDLE_KEYWORDS } from './contract';
-import { firstMooKeyword } from './scanner';
+import { firstMooKeyword, maskMooSource, positionAtMooOffset } from './scanner';
 
 export type MooDiagnosticCode =
   | 'misplaced-middle'
@@ -9,7 +10,8 @@ export type MooDiagnosticCode =
   | 'unclosed-delimiter'
   | 'unexpected-delimiter'
   | 'unterminated-string'
-  | 'loop-control-outside-loop';
+  | 'loop-control-outside-loop'
+  | 'builtin-arity';
 
 export type MooDiagnostic = {
   code: MooDiagnosticCode;
@@ -163,6 +165,8 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
     });
   }
 
+  diagnostics.push(...validateBuiltinCallArity(source));
+
   return diagnostics;
 }
 
@@ -285,4 +289,134 @@ function scanLine(
 
 function isLoop(kind: BlockKind): boolean {
   return MOO_BLOCKS[kind].isLoop === true;
+}
+
+function validateBuiltinCallArity(source: string): MooDiagnostic[] {
+  const masked = maskMooSource(source);
+  const diagnostics: MooDiagnostic[] = [];
+
+  for (let index = 0; index < masked.length; index += 1) {
+    if (masked[index] !== '(') {
+      continue;
+    }
+
+    const functionIdentifier = readIdentifierBefore(masked, index);
+    if (!functionIdentifier) {
+      continue;
+    }
+
+    const metadata = getMooBuiltinMetadata(functionIdentifier.name);
+    if (!metadata) {
+      continue;
+    }
+
+    const closeOffset = findMatchingCallClose(masked, index);
+    if (closeOffset === null) {
+      continue;
+    }
+
+    const argumentCount = countCallArguments(masked.slice(index + 1, closeOffset));
+    if (isBuiltinArityValid(argumentCount, metadata)) {
+      index = closeOffset;
+      continue;
+    }
+
+    const start = positionAtMooOffset(source, functionIdentifier.startOffset);
+    diagnostics.push({
+      code: 'builtin-arity',
+      message: `${functionIdentifier.name.toLowerCase()} expects ${formatArity(metadata)}, but got ${argumentCount}.`,
+      lineNumber: start.lineNumber,
+      startColumn: start.column,
+      endColumn: start.column + functionIdentifier.name.length,
+    });
+    index = closeOffset;
+  }
+
+  return diagnostics;
+}
+
+function readIdentifierBefore(
+  source: string,
+  openParenIndex: number,
+): { name: string; startOffset: number } | null {
+  let endIndex = openParenIndex - 1;
+  while (endIndex >= 0 && /\s/.test(source[endIndex])) {
+    endIndex -= 1;
+  }
+
+  let startIndex = endIndex;
+  while (startIndex >= 0 && /[A-Za-z0-9_$]/.test(source[startIndex])) {
+    startIndex -= 1;
+  }
+
+  const identifier = source.slice(startIndex + 1, endIndex + 1);
+  return /^[A-Za-z_][\w$]*$/.test(identifier)
+    ? { name: identifier, startOffset: startIndex + 1 }
+    : null;
+}
+
+function findMatchingCallClose(source: string, openOffset: number): number | null {
+  let depth = 0;
+
+  for (let index = openOffset; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === '(' || character === '[' || character === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (character !== ')' && character !== ']' && character !== '}') {
+      continue;
+    }
+
+    depth -= 1;
+    if (depth === 0) {
+      return character === ')' ? index : null;
+    }
+  }
+
+  return null;
+}
+
+function countCallArguments(argumentSource: string): number {
+  if (argumentSource.trim() === '') {
+    return 0;
+  }
+
+  let argumentCount = 1;
+  let depth = 0;
+
+  for (const character of argumentSource) {
+    if (character === '(' || character === '[' || character === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (character === ')' || character === ']' || character === '}') {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+
+    if (character === ',' && depth === 0) {
+      argumentCount += 1;
+    }
+  }
+
+  return argumentCount;
+}
+
+function isBuiltinArityValid(argumentCount: number, metadata: MooBuiltinMetadata): boolean {
+  return argumentCount >= metadata.minArgs && (metadata.maxArgs < 0 || argumentCount <= metadata.maxArgs);
+}
+
+function formatArity(metadata: MooBuiltinMetadata): string {
+  if (metadata.maxArgs < 0) {
+    return `at least ${metadata.minArgs} ${metadata.minArgs === 1 ? 'argument' : 'arguments'}`;
+  }
+
+  if (metadata.minArgs === metadata.maxArgs) {
+    return `${metadata.minArgs} ${metadata.minArgs === 1 ? 'argument' : 'arguments'}`;
+  }
+
+  return `${metadata.minArgs} to ${metadata.maxArgs} arguments`;
 }

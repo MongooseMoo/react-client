@@ -1,4 +1,5 @@
 import { BUILTIN_FUNCTIONS } from './contract';
+import { getMooBuiltinMetadata } from './builtins';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
 
 export type MooCallContext = {
@@ -168,7 +169,10 @@ export function getMooSignatureHelp(
       },
     ],
     activeSignature: 0,
-    activeParameter: Math.min(context.activeParameter, definition.parameters.length - 1),
+    activeParameter:
+      definition.parameters.length > 0
+        ? Math.min(context.activeParameter, definition.parameters.length - 1)
+        : 0,
   };
 }
 
@@ -200,13 +204,17 @@ function getSignatureDefinition(
     return definition;
   }
 
-  if (!BUILTIN_NAMES.has(normalizedName)) {
+  const metadata = getMooBuiltinMetadata(normalizedName);
+  if (!metadata) {
     return null;
   }
 
+  const parameterCount =
+    metadata.maxArgs >= 0 ? metadata.maxArgs : Math.max(metadata.minArgs, minimumParameterCount);
+
   return {
-    parameters: Array.from({ length: Math.max(1, minimumParameterCount) }, (_, index) => ({
-      label: `arg${index + 1}`,
+    parameters: Array.from({ length: parameterCount }, (_, index) => ({
+      label: `arg${index + 1}${index >= metadata.minArgs ? '?' : ''}`,
     })),
     documentation: GENERIC_BUILTIN_DOCUMENTATION,
   };

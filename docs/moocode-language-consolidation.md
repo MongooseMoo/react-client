@@ -328,3 +328,19 @@ Iterations:
   - Focused red-to-green gates:
     `npm test -- --run src/editor/moocode/signatures.test.ts src/editor/moocode/inlayHints.test.ts`
     and `npm test -- --run src/editor/moocode src/components/editor/editorWindow.test.tsx`.
+- 2026-06-06 ToastStunt builtin arity metadata:
+  - Added `src/editor/moocode/builtins.ts` as a shared browser-side metadata
+    table extracted from local ToastStunt `register_function` and
+    `register_function_with_read_write` registrations.
+  - The metadata records min/max arity and registered parameter type names for
+    all 243 ToastStunt builtins, plus the retained `forked` compatibility alias.
+  - Generic signature help now uses registered arity, so optional parameters
+    render as `argN?` instead of an unbounded generic argument list.
+  - Scanner diagnostics now report builtin calls with too few or too many
+    arguments, while preserving variadic builtins like `pass()` and ignoring
+    call-looking text inside comments and strings.
+  - Added a contract invariant that `BUILTIN_FUNCTIONS` must match the shared
+    builtin metadata names exactly.
+  - Focused red-to-green gates:
+    `npm test -- --run src/editor/moocode/signatures.test.ts src/editor/moocode/diagnostics.test.ts`
+    and `npm test -- --run src/editor/moocode`.

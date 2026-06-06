@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MOO_BUILTIN_NAMES } from './builtins';
 import {
   BUILTIN_FUNCTIONS,
   ERROR_CONSTANTS,
@@ -57,5 +58,6 @@ describe('MOO language contract', () => {
     );
     expect(new Set(BUILTIN_FUNCTIONS).size).toBe(BUILTIN_FUNCTIONS.length);
     expect([...BUILTIN_FUNCTIONS]).toEqual([...BUILTIN_FUNCTIONS].sort());
+    expect(BUILTIN_FUNCTIONS).toEqual(MOO_BUILTIN_NAMES);
   });
 });

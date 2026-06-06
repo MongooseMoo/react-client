@@ -46,9 +46,9 @@ describe('MOO signature help analysis', () => {
         activeParameter: 2,
         signatures: [
           {
-            label: 'sqlite_query(arg1, arg2, arg3)',
+            label: 'sqlite_query(arg1, arg2, arg3?)',
             documentation: 'ToastStunt builtin function.',
-            parameters: [{ label: 'arg1' }, { label: 'arg2' }, { label: 'arg3' }],
+            parameters: [{ label: 'arg1' }, { label: 'arg2' }, { label: 'arg3?' }],
           },
         ],
       });
