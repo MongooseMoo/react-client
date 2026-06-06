@@ -8,6 +8,7 @@ export type MooInlayHint = {
 };
 
 type CallFrame = {
+  callKind: 'builtin' | 'verb';
   functionName: string;
   argumentStartOffset: number | null;
   nestedDelimiterDepth: number;
@@ -28,8 +29,18 @@ export function collectMooInlayHints(source: string): MooInlayHint[] {
 
     if (character === '(') {
       const functionName = readIdentifierBefore(masked, index);
-      if (functionName && getMooBuiltinSignature(functionName)) {
+      const verbCall = readStaticVerbCallBefore(masked, index);
+      if (verbCall) {
         frames.push({
+          callKind: 'verb',
+          functionName: verbCall.verbName.toLowerCase(),
+          argumentStartOffset: null,
+          nestedDelimiterDepth: 0,
+          parameterIndex: 0,
+        });
+      } else if (functionName && getMooBuiltinSignature(functionName)) {
+        frames.push({
+          callKind: 'builtin',
           functionName: functionName.toLowerCase(),
           argumentStartOffset: null,
           nestedDelimiterDepth: 0,
@@ -95,8 +106,12 @@ function flushArgumentHint(source: string, frame: CallFrame, hints: MooInlayHint
     return;
   }
 
-  const signature = getMooBuiltinSignature(frame.functionName, frame.parameterIndex + 1);
-  const parameter = signature?.parameters[frame.parameterIndex];
+  const parameter =
+    frame.callKind === 'verb'
+      ? { label: `arg${frame.parameterIndex + 1}` }
+      : getMooBuiltinSignature(frame.functionName, frame.parameterIndex + 1)?.parameters[
+          frame.parameterIndex
+        ];
   if (!parameter) {
     return;
   }
@@ -110,6 +125,13 @@ function flushArgumentHint(source: string, frame: CallFrame, hints: MooInlayHint
 }
 
 function readIdentifierBefore(source: string, openParenIndex: number): string | null {
+  return readIdentifierSpanBefore(source, openParenIndex)?.name ?? null;
+}
+
+function readIdentifierSpanBefore(
+  source: string,
+  openParenIndex: number,
+): { name: string; startIndex: number; endIndex: number } | null {
   let endIndex = openParenIndex - 1;
   while (endIndex >= 0 && /\s/.test(source[endIndex])) {
     endIndex -= 1;
@@ -121,7 +143,75 @@ function readIdentifierBefore(source: string, openParenIndex: number): string | 
   }
 
   const identifier = source.slice(startIndex + 1, endIndex + 1);
-  return VALID_IDENTIFIER_PATTERN.test(identifier) ? identifier : null;
+  return VALID_IDENTIFIER_PATTERN.test(identifier)
+    ? { name: identifier, startIndex: startIndex + 1, endIndex: endIndex + 1 }
+    : null;
+}
+
+function readStaticVerbCallBefore(
+  source: string,
+  openParenIndex: number,
+): { verbName: string } | null {
+  const verb = readIdentifierSpanBefore(source, openParenIndex);
+  if (!verb) {
+    return null;
+  }
+
+  let colonIndex = verb.startIndex - 1;
+  while (colonIndex >= 0 && /\s/.test(source[colonIndex])) {
+    colonIndex -= 1;
+  }
+
+  if (source[colonIndex] !== ':') {
+    return null;
+  }
+
+  return hasStaticVerbReceiverBefore(source, colonIndex) ? { verbName: verb.name } : null;
+}
+
+function hasStaticVerbReceiverBefore(source: string, colonIndex: number): boolean {
+  let endIndex = colonIndex - 1;
+  while (endIndex >= 0 && /\s/.test(source[endIndex])) {
+    endIndex -= 1;
+  }
+
+  if (endIndex < 0) {
+    return false;
+  }
+
+  if (/\d/.test(source[endIndex])) {
+    let startIndex = endIndex;
+    while (startIndex >= 0 && /\d/.test(source[startIndex])) {
+      startIndex -= 1;
+    }
+
+    if (source[startIndex] === '-') {
+      startIndex -= 1;
+    }
+
+    if (source[startIndex] !== '#') {
+      return false;
+    }
+
+    return /^#-?\d+$/.test(source.slice(startIndex, endIndex + 1));
+  }
+
+  if (!IDENTIFIER_CHARACTER_PATTERN.test(source[endIndex])) {
+    return false;
+  }
+
+  let startIndex = endIndex;
+  while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
+    startIndex -= 1;
+  }
+
+  if (source[startIndex] === '$') {
+    startIndex -= 1;
+  }
+
+  return /^(?:[A-Za-z_][A-Za-z0-9_]*|\$[A-Za-z_][A-Za-z0-9_]*)$/.test(
+    source.slice(startIndex + 1, endIndex + 1),
+  );
 }
 
 function positionAt(source: string, offset: number) {

@@ -870,10 +870,10 @@ describe('MOO Monaco language support', () => {
     });
   });
 
-  it('provides Monaco parameter inlay hints for builtin calls', () => {
+  it('provides Monaco parameter inlay hints for builtin and verb calls', () => {
     const provider = createMooInlayHintsProvider({ Parameter: 2 });
     const hints = provider.provideInlayHints(
-      { getValue: () => 'notify(player, "hello");' } as never,
+      { getValue: () => 'notify(player, "hello");\nplayer:tell("hi", caller);' } as never,
       {} as never,
       {} as never,
     );
@@ -889,6 +889,18 @@ describe('MOO Monaco language support', () => {
         {
           label: 'text:',
           position: { lineNumber: 1, column: 16 },
+          kind: 2,
+          paddingRight: true,
+        },
+        {
+          label: 'arg1:',
+          position: { lineNumber: 2, column: 13 },
+          kind: 2,
+          paddingRight: true,
+        },
+        {
+          label: 'arg2:',
+          position: { lineNumber: 2, column: 19 },
           kind: 2,
           paddingRight: true,
         },

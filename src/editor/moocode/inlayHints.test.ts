@@ -84,4 +84,41 @@ describe('MOO inlay hints', () => {
       },
     ]);
   });
+
+  it('adds generic parameter labels for static MOO verb call arguments', () => {
+    expect(collectMooInlayHints('player:tell("hello", caller);')).toEqual([
+      {
+        label: 'arg1:',
+        lineNumber: 1,
+        column: 13,
+      },
+      {
+        label: 'arg2:',
+        lineNumber: 1,
+        column: 22,
+      },
+    ]);
+  });
+
+  it('adds generic parameter labels for object-number and system-reference verb calls', () => {
+    const source = '#123:initialize(player);\n$room:announce(tostr(message));';
+
+    expect(collectMooInlayHints(source)).toEqual([
+      {
+        label: 'arg1:',
+        lineNumber: 1,
+        column: 17,
+      },
+      {
+        label: 'arg1:',
+        lineNumber: 2,
+        column: 16,
+      },
+      {
+        label: 'value:',
+        lineNumber: 2,
+        column: 22,
+      },
+    ]);
+  });
 });
