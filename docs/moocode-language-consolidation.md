@@ -279,3 +279,11 @@ Iterations:
     `accessKey` shortcuts that conflict with assistive-technology keymaps.
   - Focused red-to-green gate:
     `npm test -- --run src/components/editor/editorWindow.test.tsx`.
+- 2026-06-06 Monaco block comments:
+  - Added MOO `/* ... */` block comments to Monaco's language configuration so
+    editor comment commands understand both MOO comment forms.
+  - Added a Monarch block-comment tokenizer state so block comments are
+    highlighted consistently with the scanner, diagnostics, completions, hovers,
+    and other masked-source language features.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/language.test.ts`.

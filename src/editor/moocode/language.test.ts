@@ -50,12 +50,17 @@ describe('MOO Monaco language support', () => {
     expect(monarch.builtins).toContain('notify');
     expect(monarch.tokenizer).toHaveProperty('root');
     expect(monarch.tokenizer).toHaveProperty('string');
+    expect(monarch.tokenizer).toHaveProperty('comment');
+    expect(monarch.tokenizer.root).toEqual(
+      expect.arrayContaining([[/\/\*/, { token: 'comment', next: '@comment' }]]),
+    );
   });
 
   it('configures MOO brackets, comments, and statement indentation', () => {
     const config = createMooLanguageConfiguration();
 
     expect(config.comments?.lineComment).toBe('//');
+    expect(config.comments?.blockComment).toEqual(['/*', '*/']);
     expect(config.brackets).toContainEqual(['if', 'endif']);
     expect(config.brackets).toContainEqual(['try', 'endtry']);
     expect(config.autoClosingPairs).toContainEqual({ open: '"', close: '"', notIn: ['string'] });

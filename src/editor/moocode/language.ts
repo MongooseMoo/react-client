@@ -84,6 +84,7 @@ export type MooMonarchLanguage = {
 
 export type MooLanguageConfiguration = {
   comments: {
+    blockComment: [string, string];
     lineComment: string;
   };
   brackets: Array<[string, string]>;
@@ -371,6 +372,7 @@ export function createMooMonarchLanguage(): MooMonarchLanguage {
         [/\d+\.\d+(?:[eE][+-]?\d+)?/, 'number.float'],
         [/\d+(?:[eE][+-]?\d+)?/, 'number'],
         [/\/\/.*$/, 'comment'],
+        [/\/\*/, { token: 'comment', next: '@comment' }],
         [/"/, { token: 'string.quote', next: '@string' }],
         [/[{}()[\]]/, '@brackets'],
         [/@symbols/, { token: 'operator' }],
@@ -382,6 +384,11 @@ export function createMooMonarchLanguage(): MooMonarchLanguage {
         [/\\./, 'string.escape.invalid'],
         [/"/, { token: 'string.quote', next: '@pop' }],
       ],
+      comment: [
+        [/[^*/]+/, 'comment'],
+        [/\*\//, { token: 'comment', next: '@pop' }],
+        [/./, 'comment'],
+      ],
     },
   };
 }
@@ -389,6 +396,7 @@ export function createMooMonarchLanguage(): MooMonarchLanguage {
 export function createMooLanguageConfiguration(): MooLanguageConfiguration {
   return {
     comments: {
+      blockComment: ['/*', '*/'],
       lineComment: '//',
     },
     brackets: [
