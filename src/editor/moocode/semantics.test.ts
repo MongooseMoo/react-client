@@ -168,6 +168,23 @@ describe('MOO semantic model', () => {
     ]);
   });
 
+  it('creates loop-label CodeLens summaries at label definitions', () => {
+    const source = [
+      'while outer (valid(player))',
+      '  continue outer;',
+      '  break outer;',
+      'endwhile',
+    ].join('\n');
+
+    expect(getMooCodeLenses(source)).toEqual([
+      {
+        range: wordRange(source, 'outer', 1),
+        title: '1 definition, 2 references',
+        tooltip: 'Loop label outer: 1 definition, 2 references.',
+      },
+    ]);
+  });
+
   it('creates whole-symbol rename edits and rejects invalid rename targets', () => {
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
 
@@ -182,7 +199,9 @@ describe('MOO semantic model', () => {
     expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'total +'), '9bad')).toEqual({
       rejectReason: 'MOO identifiers must start with a letter or underscore.',
     });
-    expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'total +'), 'bad$name')).toEqual({
+    expect(
+      createMooRenameWorkspaceEdit(source, positionFor(source, 'total +'), 'bad$name'),
+    ).toEqual({
       rejectReason: 'MOO identifiers may contain only letters, digits, and underscores.',
     });
     expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'player'), 'actor')).toEqual({
@@ -391,16 +410,16 @@ describe('MOO semantic model', () => {
       ],
       wordPattern: /[A-Za-z_][A-Za-z0-9_]*/,
     });
-    expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'outer;'), 'main_loop')).toEqual({
+    expect(
+      createMooRenameWorkspaceEdit(source, positionFor(source, 'outer;'), 'main_loop'),
+    ).toEqual({
       edits: [
         { range: wordRange(source, 'outer', 1), text: 'main_loop' },
         { range: wordRange(source, 'outer', 2), text: 'main_loop' },
         { range: wordRange(source, 'outer', 3), text: 'main_loop' },
       ],
     });
-    expect(analyzeMooSemantics(source).symbols.map((symbol) => symbol.name)).not.toContain(
-      'outer',
-    );
+    expect(analyzeMooSemantics(source).symbols.map((symbol) => symbol.name)).not.toContain('outer');
   });
 
   it('does not report mixed-case references as undefined or unused', () => {

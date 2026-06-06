@@ -226,19 +226,11 @@ export function collectMooSemanticSymbolRanges(source: string): MooSemanticSymbo
 }
 
 export function getMooCodeLenses(source: string): MooCodeLens[] {
-  return analyzeMooSemantics(source)
-    .symbols.filter((symbol) => symbol.definitions.length > 0)
-    .map((symbol) => ({
-      range: symbol.definitions[0],
-      title: `${countLabel(symbol.definitions.length, 'definition')}, ${countLabel(
-        symbol.references.length,
-        'reference',
-      )}`,
-      tooltip: `Local ${symbol.name}: ${countLabel(
-        symbol.definitions.length,
-        'definition',
-      )}, ${countLabel(symbol.references.length, 'reference')}.`,
-    }))
+  return [
+    ...[...getSymbolRecords(source).values()].map((record) => toCodeLens(record, 'local')),
+    ...collectLoopLabelReferences(source).records.map((record) => toCodeLens(record, 'loop-label')),
+  ]
+    .filter((lens): lens is MooCodeLens => lens !== null)
     .sort((left, right) => compareRanges(left.range, right.range));
 }
 
@@ -957,6 +949,30 @@ function toSemanticSymbolRanges(
       isDeclaration: false,
     })),
   ];
+}
+
+function toCodeLens(
+  record: SymbolRecord,
+  kind: MooSemanticSymbolSummary['kind'],
+): MooCodeLens | null {
+  const firstDefinition = record.definitions[0];
+  if (!firstDefinition) {
+    return null;
+  }
+
+  const label = kind === 'loop-label' ? 'Loop label' : 'Local';
+
+  return {
+    range: firstDefinition.range,
+    title: `${countLabel(record.definitions.length, 'definition')}, ${countLabel(
+      record.references.length,
+      'reference',
+    )}`,
+    tooltip: `${label} ${record.name}: ${countLabel(
+      record.definitions.length,
+      'definition',
+    )}, ${countLabel(record.references.length, 'reference')}.`,
+  };
 }
 
 function sameOccurrence(left: Occurrence, right: Occurrence): boolean {

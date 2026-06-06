@@ -684,6 +684,76 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('provides Monaco CodeLens summaries for MOO loop labels', () => {
+    const provider = createMooCodeLensProvider();
+    const source = [
+      'while outer (valid(player))',
+      '  continue outer;',
+      '  break outer;',
+      'endwhile',
+    ].join('\n');
+
+    expect(
+      provider.provideCodeLenses(
+        {
+          getValue: () => source,
+          uri: 'moo://#1:test',
+        } as never,
+        {} as never,
+      ),
+    ).toEqual({
+      lenses: [
+        {
+          range: {
+            startLineNumber: 1,
+            startColumn: 7,
+            endLineNumber: 1,
+            endColumn: 12,
+          },
+          command: {
+            id: 'editor.action.showReferences',
+            title: '1 definition, 2 references',
+            tooltip: 'Loop label outer: 1 definition, 2 references.',
+            arguments: [
+              'moo://#1:test',
+              { lineNumber: 1, column: 7 },
+              [
+                {
+                  uri: 'moo://#1:test',
+                  range: {
+                    startLineNumber: 1,
+                    startColumn: 7,
+                    endLineNumber: 1,
+                    endColumn: 12,
+                  },
+                },
+                {
+                  uri: 'moo://#1:test',
+                  range: {
+                    startLineNumber: 2,
+                    startColumn: 12,
+                    endLineNumber: 2,
+                    endColumn: 17,
+                  },
+                },
+                {
+                  uri: 'moo://#1:test',
+                  range: {
+                    startLineNumber: 3,
+                    startColumn: 9,
+                    endLineNumber: 3,
+                    endColumn: 14,
+                  },
+                },
+              ],
+            ],
+          },
+        },
+      ],
+      dispose: expect.any(Function),
+    });
+  });
+
   it('provides Monaco document highlights for local symbols', () => {
     const provider = createMooDocumentHighlightProvider({ Read: 1, Write: 2 });
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
