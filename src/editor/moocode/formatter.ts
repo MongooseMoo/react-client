@@ -6,6 +6,18 @@ export type MooFormattingOptions = {
   insertSpaces: boolean;
 };
 
+export type MooFormatRange = {
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+};
+
+export type MooFormatEdit = {
+  range: MooFormatRange;
+  text: string;
+};
+
 export function formatMooCode(source: string, options: MooFormattingOptions): string {
   const eol = detectEol(source);
   const lines = source.split(/\r\n|\r|\n/);
@@ -40,7 +52,42 @@ export function formatMooCode(source: string, options: MooFormattingOptions): st
   return formattedLines.join(eol);
 }
 
+export function formatMooCodeRange(
+  source: string,
+  range: MooFormatRange,
+  options: MooFormattingOptions,
+): MooFormatEdit | null {
+  const eol = detectEol(source);
+  const originalLines = source.split(/\r\n|\r|\n/);
+  const formattedLines = formatMooCode(source, options).split(/\r\n|\r|\n/);
+  const startLineNumber = clampLineNumber(range.startLineNumber, originalLines.length);
+  const endLineNumber = Math.max(
+    startLineNumber,
+    clampLineNumber(range.endLineNumber, originalLines.length),
+  );
+  const originalText = originalLines.slice(startLineNumber - 1, endLineNumber).join(eol);
+  const formattedText = formattedLines.slice(startLineNumber - 1, endLineNumber).join(eol);
+
+  if (formattedText === originalText) {
+    return null;
+  }
+
+  return {
+    range: {
+      startLineNumber,
+      startColumn: 1,
+      endLineNumber,
+      endColumn: (originalLines[endLineNumber - 1]?.length ?? 0) + 1,
+    },
+    text: formattedText,
+  };
+}
+
 function detectEol(source: string): string {
   const match = /\r\n|\r|\n/.exec(source);
   return match?.[0] ?? '\n';
+}
+
+function clampLineNumber(lineNumber: number, lineCount: number): number {
+  return Math.min(Math.max(1, lineNumber), Math.max(1, lineCount));
 }

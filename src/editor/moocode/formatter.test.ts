@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMooCode } from './formatter';
+import { formatMooCode, formatMooCodeRange } from './formatter';
 
 describe('MOO formatter', () => {
   it('indents block bodies and aligns middle and close keywords', () => {
@@ -68,5 +68,35 @@ describe('MOO formatter', () => {
     expect(formatMooCode(source, { tabSize: 2, insertSpaces: false })).toBe(
       ['for x in ({1, 2})', '\tnotify(player, tostr(x));', 'endfor'].join('\n'),
     );
+  });
+
+  it('formats selected full lines while preserving surrounding block context', () => {
+    const source = [
+      'if (valid(player))',
+      'notify(player, "here");',
+      'endif',
+      'notify(player, "done");',
+    ].join('\n');
+
+    expect(
+      formatMooCodeRange(
+        source,
+        {
+          startLineNumber: 2,
+          startColumn: 5,
+          endLineNumber: 2,
+          endColumn: 12,
+        },
+        { tabSize: 2, insertSpaces: true },
+      ),
+    ).toEqual({
+      range: {
+        startLineNumber: 2,
+        startColumn: 1,
+        endLineNumber: 2,
+        endColumn: 24,
+      },
+      text: '  notify(player, "here");',
+    });
   });
 });

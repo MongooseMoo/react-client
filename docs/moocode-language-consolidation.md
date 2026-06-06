@@ -174,3 +174,12 @@ Iterations:
     unknown globals remain non-renameable.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco range formatting:
+  - Added line-based selection formatting through Monaco's
+    `DocumentRangeFormattingEditProvider`.
+  - Range formatting reuses the whole-document formatter for block context, then
+    returns only the selected full-line replacement.
+  - No-op range formatting requests return no edits, keeping Monaco's command
+    quiet when selected lines are already formatted.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

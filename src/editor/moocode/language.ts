@@ -12,7 +12,7 @@ export {
 } from './contract';
 import { getMooQuickFixes } from './codeActions';
 import type { MooDiagnostic } from './diagnostics';
-import { formatMooCode } from './formatter';
+import { formatMooCode, formatMooCodeRange } from './formatter';
 import { getMooHover } from './hover';
 import { collectMooInlayHints } from './inlayHints';
 import {
@@ -244,6 +244,10 @@ export type MonacoLike = {
     registerDocumentFormattingEditProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.DocumentFormattingEditProvider,
+    ) => { dispose: () => void };
+    registerDocumentRangeFormattingEditProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.DocumentRangeFormattingEditProvider,
     ) => { dispose: () => void };
     registerFoldingRangeProvider?: (
       languageId: string,
@@ -586,6 +590,19 @@ export function createMooDocumentFormattingEditProvider(): MonacoEditor.language
   };
 }
 
+export function createMooDocumentRangeFormattingEditProvider(): MonacoEditor.languages.DocumentRangeFormattingEditProvider {
+  return {
+    provideDocumentRangeFormattingEdits: (model, range, options) => {
+      const edit = formatMooCodeRange(model.getValue(), range, {
+        tabSize: options.tabSize,
+        insertSpaces: options.insertSpaces,
+      });
+
+      return edit ? [edit] : [];
+    },
+  };
+}
+
 export function createMooInlayHintsProvider(
   inlayHintKind: { Parameter: number } = { Parameter: 2 },
 ): MonacoEditor.languages.InlayHintsProvider {
@@ -738,6 +755,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.registerDocumentFormattingEditProvider?.(
     MOO_LANGUAGE_ID,
     createMooDocumentFormattingEditProvider(),
+  );
+  monaco.languages.registerDocumentRangeFormattingEditProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooDocumentRangeFormattingEditProvider(),
   );
   monaco.languages.registerFoldingRangeProvider?.(MOO_LANGUAGE_ID, createMooFoldingRangeProvider());
   monaco.languages.registerInlayHintsProvider?.(
