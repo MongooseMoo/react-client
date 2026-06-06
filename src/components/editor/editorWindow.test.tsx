@@ -1,6 +1,6 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MOO_LANGUAGE_ID } from '../../editor/moocode/language';
 import EditorWindow from './editorWindow';
@@ -192,6 +192,7 @@ describe('EditorWindow language selection', () => {
       MOO_LANGUAGE_ID,
       [parserMarker],
     );
+    expect(await screen.findByText('1 MOO problem')).not.toBeNull();
     expect(treeSitterDiagnosticsMock).toHaveBeenCalledWith(
       ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
       8,
@@ -225,6 +226,33 @@ describe('EditorWindow language selection', () => {
       MOO_LANGUAGE_ID,
       [],
     );
+    expect(screen.queryByText(/MOO problem/)).toBeNull();
     expect(treeSitterDiagnosticsMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces scanner diagnostics in the editor status bar before parser diagnostics resolve', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['while (1)', '  notify(player, "tick");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    expect(await screen.findByText('1 MOO problem')).not.toBeNull();
   });
 });

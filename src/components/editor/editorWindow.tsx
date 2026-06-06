@@ -35,6 +35,7 @@ function EditorWindow() {
   const [code, setCode] = useState<string>('');
   const [originalCode, setOriginalCode] = useState<string>('');
   const [documentState, setDocumentState] = useState<DocumentState>(DocumentState.Unchanged);
+  const [mooDiagnosticCount, setMooDiagnosticCount] = useState(0);
   const [session, setSession] = useState<EditorSession>({
     name: 'none',
     contents: [],
@@ -70,6 +71,7 @@ function EditorWindow() {
       editorLanguage === MOO_LANGUAGE_ID ? toMonacoMarkers(code, monaco.MarkerSeverity.Error) : [];
 
     monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
+    setMooDiagnosticCount(markers.length);
 
     if (editorLanguage !== MOO_LANGUAGE_ID) {
       return;
@@ -82,7 +84,9 @@ function EditorWindow() {
           return;
         }
 
-        monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, [...markers, ...treeSitterMarkers]);
+        const allMarkers = [...markers, ...treeSitterMarkers];
+        monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, allMarkers);
+        setMooDiagnosticCount(allMarkers.length);
       })
       .catch((error: unknown) => {
         console.warn('MOO Tree-sitter diagnostics failed', error);
@@ -115,6 +119,10 @@ function EditorWindow() {
         return 'Saved';
     }
   }, [documentState]);
+  const mooDiagnosticsSummary =
+    editorLanguage === MOO_LANGUAGE_ID
+      ? formatMooDiagnosticsSummary(mooDiagnosticCount)
+      : undefined;
   const channel = useMemo(() => new BroadcastChannel('editor'), []);
   const params = new URLSearchParams(location.search);
   const id = decodeURIComponent(params.get('reference') || '');
@@ -235,9 +243,17 @@ function EditorWindow() {
         onMount={handleEditorMount}
         path={session.reference}
       />
-      <EditorStatusBar docstate={docstate} session={session} />
+      <EditorStatusBar
+        diagnosticsSummary={mooDiagnosticsSummary}
+        docstate={docstate}
+        session={session}
+      />
     </div>
   );
+}
+
+function formatMooDiagnosticsSummary(count: number): string {
+  return count === 1 ? '1 MOO problem' : `${count} MOO problems`;
 }
 
 export default EditorWindow;

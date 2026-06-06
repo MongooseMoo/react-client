@@ -265,3 +265,12 @@ Iterations:
     ranges.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 accessible diagnostics status:
+  - Added a live editor status-bar summary for MOO diagnostics so parser and
+    scanner problems are visible outside Monaco squiggles.
+  - The summary updates immediately from scanner markers, then refreshes when
+    async Tree-sitter markers arrive, and stays hidden for plaintext sessions.
+  - Cleaned up editor toolbar buttons with explicit button types and without
+    `accessKey` shortcuts that conflict with assistive-technology keymaps.
+  - Focused red-to-green gate:
+    `npm test -- --run src/components/editor/editorWindow.test.tsx`.
