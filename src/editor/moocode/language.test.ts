@@ -86,6 +86,22 @@ describe('MOO Monaco language support', () => {
     expect(config.autoClosingPairs).toContainEqual({ open: '"', close: '"', notIn: ['string'] });
     expect(config.indentationRules?.increaseIndentPattern.test('if (valid(player))')).toBe(true);
     expect(config.indentationRules?.decreaseIndentPattern.test('endif')).toBe(true);
+    expect(
+      config.onEnterRules?.some(
+        (rule) =>
+          rule.beforeText.test('if (valid(player))') &&
+          rule.afterText?.test('endif') &&
+          rule.action.indentAction === 2,
+      ),
+    ).toBe(true);
+    expect(
+      config.onEnterRules?.some(
+        (rule) =>
+          rule.beforeText.test('else') &&
+          !rule.afterText &&
+          rule.action.indentAction === 1,
+      ),
+    ).toBe(true);
   });
 
   it('offers core builtin and error completions with insertion text', () => {

@@ -111,6 +111,13 @@ export type MooLanguageConfiguration = {
   brackets: Array<[string, string]>;
   autoClosingPairs: Array<{ open: string; close: string; notIn?: string[] }>;
   surroundingPairs: Array<{ open: string; close: string }>;
+  onEnterRules?: Array<{
+    beforeText: RegExp;
+    afterText?: RegExp;
+    action: {
+      indentAction: number;
+    };
+  }>;
   indentationRules: {
     increaseIndentPattern: RegExp;
     decreaseIndentPattern: RegExp;
@@ -396,6 +403,20 @@ export type MonacoLike = {
 const REGISTERED_MONACO_INSTANCES = new WeakSet<object>();
 const MOO_IDENTIFIER_PATTERN = new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE);
 const MOO_SYSTEM_REFERENCE_PATTERN = new RegExp(MOO_SYSTEM_REFERENCE_PATTERN_SOURCE);
+const MOO_END_KEYWORD_PATTERN_SOURCE = 'endif|endfor|endwhile|endfork|endtry';
+const MOO_OUTDENT_KEYWORD_PATTERN_SOURCE = `elseif|else|except|finally|${MOO_END_KEYWORD_PATTERN_SOURCE}`;
+const MOO_ON_ENTER_OPEN_PATTERN = new RegExp(
+  `^\\s*(?:${MOO_INDENT_OPEN_KEYWORDS.join('|')})\\b(?!.*\\b(?:${MOO_END_KEYWORD_PATTERN_SOURCE})\\b).*$`,
+  'i',
+);
+const MOO_ON_ENTER_OUTDENT_PATTERN = new RegExp(
+  `^\\s*(?:${MOO_OUTDENT_KEYWORD_PATTERN_SOURCE})\\b`,
+  'i',
+);
+const MOO_INDENT_ACTION = {
+  Indent: 1,
+  IndentOutdent: 2,
+} as const;
 const EXCEPT_COMPLETION_PATTERN = new RegExp(
   `\\bexcept\\s+(?:${MOO_IDENTIFIER_PATTERN_SOURCE}\\s*)?\\([^)]*$`,
   'i',
@@ -492,13 +513,20 @@ export function createMooLanguageConfiguration(): MooLanguageConfiguration {
       { open: '"', close: '"' },
     ],
     indentationRules: {
-      increaseIndentPattern: new RegExp(
-        `^\\s*(?:${MOO_INDENT_OPEN_KEYWORDS.join('|')})\\b(?!.*\\b(?:endif|endfor|endwhile|endfork|endtry)\\b).*$`,
-        'i',
-      ),
-      decreaseIndentPattern:
-        /^\s*(?:elseif|else|except|finally|endif|endfor|endwhile|endfork|endtry)\b/i,
+      increaseIndentPattern: MOO_ON_ENTER_OPEN_PATTERN,
+      decreaseIndentPattern: MOO_ON_ENTER_OUTDENT_PATTERN,
     },
+    onEnterRules: [
+      {
+        beforeText: MOO_ON_ENTER_OPEN_PATTERN,
+        afterText: MOO_ON_ENTER_OUTDENT_PATTERN,
+        action: { indentAction: MOO_INDENT_ACTION.IndentOutdent },
+      },
+      {
+        beforeText: MOO_ON_ENTER_OPEN_PATTERN,
+        action: { indentAction: MOO_INDENT_ACTION.Indent },
+      },
+    ],
   };
 }
 
