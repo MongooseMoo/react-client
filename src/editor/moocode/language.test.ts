@@ -1393,6 +1393,62 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('provides Monaco quick fixes with multiple edits for grouped unused locals', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () =>
+        ['used = 1;', 'unused = 2;', 'stale = 3;', 'notify(player, used);'].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      { markers: [], trigger: 1 } as never,
+      {} as never,
+    );
+
+    expect(actions.actions).toContainEqual({
+      title: 'Mark all unused locals as intentionally ignored',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [
+        expect.objectContaining({ code: 'unused-local', severity: 4 }),
+        expect.objectContaining({ code: 'unused-local', severity: 4 }),
+      ],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 2,
+                startColumn: 1,
+                endLineNumber: 2,
+                endColumn: 1,
+              },
+              text: '_',
+            },
+            versionId: undefined,
+          },
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 3,
+                startColumn: 1,
+                endLineNumber: 3,
+                endColumn: 1,
+              },
+              text: '_',
+            },
+            versionId: undefined,
+          },
+        ],
+      },
+    });
+  });
+
   it('provides Monaco quick fixes with multiple edits for grouped unreachable statements', () => {
     const provider = createMooCodeActionProvider();
     const model = {

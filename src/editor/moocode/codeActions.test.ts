@@ -159,6 +159,47 @@ describe('MOO code actions', () => {
     });
   });
 
+  it('offers a quick fix to mark all unused locals as intentionally ignored', () => {
+    const source = ['used = 1;', 'unused = 2;', 'stale = 3;', 'notify(player, used);'].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Mark all unused locals as intentionally ignored',
+      diagnostics: [
+        expect.objectContaining({ code: 'unused-local', lineNumber: 2, severity: 'warning' }),
+        expect.objectContaining({ code: 'unused-local', lineNumber: 3, severity: 'warning' }),
+      ],
+      edit: {
+        range: {
+          startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 1,
+        },
+        text: '_',
+      },
+      edits: [
+        {
+          range: {
+            startLineNumber: 2,
+            startColumn: 1,
+            endLineNumber: 2,
+            endColumn: 1,
+          },
+          text: '_',
+        },
+        {
+          range: {
+            startLineNumber: 3,
+            startColumn: 1,
+            endLineNumber: 3,
+            endColumn: 1,
+          },
+          text: '_',
+        },
+      ],
+    });
+  });
+
   it('offers a quick fix to remove unreachable statement lines', () => {
     const source = ['return;', 'notify(player, "never");', 'notify(player, "also never");'].join(
       '\n',

@@ -279,6 +279,23 @@ export function getMooQuickFixes(
     });
   }
 
+  const unusedLocalDiagnostics = diagnostics.filter(
+    (diagnostic) => diagnostic.code === 'unused-local',
+  );
+  if (unusedLocalDiagnostics.length > 1) {
+    const edits = unusedLocalDiagnostics.map((diagnostic) => ({
+      range: insertionRange(diagnostic),
+      text: '_',
+    }));
+
+    fixes.push({
+      title: 'Mark all unused locals as intentionally ignored',
+      diagnostics: unusedLocalDiagnostics,
+      edit: edits[0],
+      edits,
+    });
+  }
+
   return fixes;
 }
 
