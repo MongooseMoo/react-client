@@ -1068,6 +1068,34 @@ describe('MOO Monaco language support', () => {
         },
       ],
     });
+    expect(
+      provider.provideHover(
+        {
+          getValue: () => ['while outer (valid(player))', '  break outer;', 'endwhile'].join('\n'),
+        } as never,
+        {
+          lineNumber: 2,
+          column: 11,
+        },
+      ),
+    ).toEqual({
+      range: {
+        startLineNumber: 2,
+        startColumn: 9,
+        endLineNumber: 2,
+        endColumn: 14,
+      },
+      contents: [
+        {
+          value: [
+            '```moocode',
+            'loop label outer',
+            '```',
+            'Defined 1 time. Referenced 1 time.',
+          ].join('\n'),
+        },
+      ],
+    });
   });
 
   it('provides a full-document Monaco formatting edit', () => {

@@ -25,6 +25,14 @@ export type MooSemanticAnalysis = {
   symbols: MooLocalSymbol[];
 };
 
+export type MooSemanticSymbolSummary = {
+  definitions: MonacoRange[];
+  kind: 'local' | 'loop-label';
+  name: string;
+  occurrenceRange: MonacoRange;
+  references: MonacoRange[];
+};
+
 export type MooUndefinedLocalReference = {
   definitionRange?: MonacoRange;
   name: string;
@@ -178,6 +186,23 @@ export function getMooLinkedEditingRanges(
     ranges,
     wordPattern: LINKED_IDENTIFIER_PATTERN,
   };
+}
+
+export function getMooSemanticSymbolSummary(
+  source: string,
+  position: MooSourcePosition,
+): MooSemanticSymbolSummary | null {
+  const localLookup = getSymbolAtPosition(source, position);
+  if (localLookup) {
+    return toSemanticSymbolSummary(localLookup.record, localLookup.occurrence, 'local');
+  }
+
+  const labelLookup = getLoopLabelAtPosition(source, position);
+  if (labelLookup) {
+    return toSemanticSymbolSummary(labelLookup.record, labelLookup.occurrence, 'loop-label');
+  }
+
+  return null;
 }
 
 export function getMooCodeLenses(source: string): MooCodeLens[] {
@@ -867,6 +892,20 @@ function allSymbolOccurrences(record: SymbolRecord): Occurrence[] {
   return [...record.definitions, ...record.references].sort(
     (left, right) => left.startOffset - right.startOffset,
   );
+}
+
+function toSemanticSymbolSummary(
+  record: SymbolRecord,
+  occurrence: Occurrence,
+  kind: MooSemanticSymbolSummary['kind'],
+): MooSemanticSymbolSummary {
+  return {
+    kind,
+    name: record.name,
+    definitions: record.definitions.map((definition) => definition.range),
+    occurrenceRange: occurrence.range,
+    references: record.references.map((reference) => reference.range),
+  };
 }
 
 function sameOccurrence(left: Occurrence, right: Occurrence): boolean {

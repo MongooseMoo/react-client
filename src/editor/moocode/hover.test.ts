@@ -74,6 +74,35 @@ describe('MOO hover service', () => {
     });
   });
 
+  it('describes loop label symbols with definition and reference counts', () => {
+    const source = [
+      'while outer (valid(player))',
+      '  continue outer;',
+      '  break outer;',
+      'endwhile',
+    ].join('\n');
+    const hover = getMooHover(source, { lineNumber: 2, column: 14 });
+
+    expect(hover).toEqual({
+      range: {
+        startLineNumber: 2,
+        startColumn: 12,
+        endLineNumber: 2,
+        endColumn: 17,
+      },
+      contents: [
+        {
+          value: [
+            '```moocode',
+            'loop label outer',
+            '```',
+            'Defined 1 time. Referenced 2 times.',
+          ].join('\n'),
+        },
+      ],
+    });
+  });
+
   it('describes MOO error constants and ignores strings and comments', () => {
     expect(getMooHover('raise(E_PERM, "nope");', { lineNumber: 1, column: 8 })).toMatchObject({
       contents: [{ value: expect.stringContaining('Permission denied') }],

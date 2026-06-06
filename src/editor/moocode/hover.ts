@@ -7,7 +7,7 @@ import type {
 } from './contract';
 import { MOO_IDENTIFIER_PATTERN_SOURCE, MOO_SYSTEM_REFERENCE_PATTERN_SOURCE } from './contract';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
-import { analyzeMooSemantics } from './semantics';
+import { getMooSemanticSymbolSummary } from './semantics';
 import { getMooBuiltinSignature } from './signatures';
 import type { MonacoRange } from './language';
 import { findMooDocumentLinkAtPosition } from './links';
@@ -201,18 +201,18 @@ function getDocumentLinkHover(source: string, position: MooSourcePosition): MooH
 }
 
 function getLocalSymbolHover(source: string, word: MooWord): MooHover | null {
-  const symbol = analyzeMooSemantics(source).symbols.find((candidate) =>
-    [...candidate.definitions, ...candidate.references].some((range) =>
-      sameRange(range, word.range),
-    ),
-  );
+  const symbol = getMooSemanticSymbolSummary(source, {
+    lineNumber: word.range.startLineNumber,
+    column: word.range.startColumn,
+  });
   if (!symbol) {
     return null;
   }
 
+  const label = symbol.kind === 'loop-label' ? `loop label ${symbol.name}` : `local ${symbol.name}`;
   return hover(
-    word.range,
-    `local ${symbol.name}`,
+    symbol.occurrenceRange,
+    label,
     `${countLabel(symbol.definitions.length, 'Defined')} ${countLabel(
       symbol.references.length,
       'Referenced',
@@ -308,13 +308,4 @@ function positionAt(source: string, offset: number): MooSourcePosition {
   }
 
   return { lineNumber, column };
-}
-
-function sameRange(left: MonacoRange, right: MonacoRange): boolean {
-  return (
-    left.startLineNumber === right.startLineNumber &&
-    left.startColumn === right.startColumn &&
-    left.endLineNumber === right.endLineNumber &&
-    left.endColumn === right.endColumn
-  );
 }
