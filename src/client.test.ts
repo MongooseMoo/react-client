@@ -137,6 +137,30 @@ class MockWebSocket {
   }
 }
 
+class MockCorePackage {
+  packageName = "Core";
+  packageVersion = 1;
+  sendHello = vi.fn();
+}
+
+class MockCoreSupportsPackage {
+  packageName = "Core.Supports";
+  packageVersion = 1;
+  sendSet = vi.fn();
+}
+
+class MockAutoLoginPackage {
+  packageName = "Auth.Autologin";
+  packageVersion = 1;
+  sendLogin = vi.fn();
+}
+
+class MockClientMediaPackage {
+  packageName = "Client.Media";
+  packageVersion = 1;
+  sendEffectsSupport = vi.fn();
+}
+
 describe("MudClient lifecycle cleanup", () => {
   beforeEach(() => {
     mockCacophonyInstances.length = 0;
@@ -177,5 +201,35 @@ describe("MudClient lifecycle cleanup", () => {
 
     expect(socket.close).toHaveBeenCalledOnce();
     expect(mockWebSocketInstances).toHaveLength(1);
+  });
+
+  it("emits gmcpReady after GMCP negotiation startup messages are sent", () => {
+    const client = new MudClient("example.test", 443);
+    client.registerGMCPPackage(MockCorePackage);
+    client.registerGMCPPackage(MockCoreSupportsPackage);
+    client.registerGMCPPackage(MockAutoLoginPackage);
+    client.registerGMCPPackage(MockClientMediaPackage);
+    const handleGmcpReady = vi.fn();
+    client.on("gmcpReady", handleGmcpReady);
+
+    client.connect();
+    mockWebSocketInstances[0].onmessage?.({
+      data: new Uint8Array([255, 251, 201]).buffer,
+    } as MessageEvent);
+
+    expect(client.gmcpReady).toBe(true);
+    expect(handleGmcpReady).toHaveBeenCalledOnce();
+  });
+
+  it("emits sessionReady only once", () => {
+    const client = new MudClient("example.test", 443);
+    const handleSessionReady = vi.fn();
+    client.on("sessionReady", handleSessionReady);
+
+    client.markSessionReady();
+    client.markSessionReady();
+
+    expect(client.sessionReady).toBe(true);
+    expect(handleSessionReady).toHaveBeenCalledOnce();
   });
 });

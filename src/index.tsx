@@ -27,6 +27,4 @@ root.render(
 reportWebVitals(console.log);
 
 // Register service worker for PWA support
-if (import.meta.env.PROD) {
-  registerSW()
-}
+registerSW()

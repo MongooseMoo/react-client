@@ -69,12 +69,22 @@ class MudClient extends EventEmitter {
   private decoder = new TextDecoder("utf8");
   private telnet!: TelnetParser;
   private _connected: boolean = false;
+  private _gmcpReady: boolean = false;
+  private _sessionReady: boolean = false;
   private intentionalDisconnect: boolean = false;
   private localMode: boolean = false;
   private localStream?: Stream;
 
   get connected(): boolean {
     return this._connected;
+  }
+
+  get gmcpReady(): boolean {
+    return this._gmcpReady;
+  }
+
+  get sessionReady(): boolean {
+    return this._sessionReady;
   }
 
   private host: string;
@@ -306,6 +316,8 @@ class MudClient extends EventEmitter {
   public connect() {
     this.intentionalDisconnect = false;
     this.connectionCleanupComplete = false;
+    this._gmcpReady = false;
+    this._sessionReady = false;
     this.ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
     this.ws.binaryType = "arraybuffer";
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
@@ -333,6 +345,7 @@ class MudClient extends EventEmitter {
         this.requireGMCPPackage("Auth.Autologin").sendLogin();
         // Advertise MCMP effect support so the server only sends what we can render.
         this.requireGMCPPackage("Client.Media").sendEffectsSupport();
+        this.markGmcpReady();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -382,6 +395,8 @@ class MudClient extends EventEmitter {
     this.localStream = stream;
     this.intentionalDisconnect = false;
     this.connectionCleanupComplete = false;
+    this._gmcpReady = false;
+    this._sessionReady = false;
     this.telnet = new TelnetParser(stream);
 
     this.telnet.on("data", (data: ArrayBuffer) => {
@@ -400,6 +415,7 @@ class MudClient extends EventEmitter {
         this.requireGMCPPackage("Auth.Autologin").sendLogin();
         // Advertise MCMP effect support so the server only sends what we can render.
         this.requireGMCPPackage("Client.Media").sendEffectsSupport();
+        this.markGmcpReady();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -434,6 +450,19 @@ class MudClient extends EventEmitter {
     resetMidiIntentionalDisconnectFlags();
     this.emit("connect");
     this.emit("connectionChange", true);
+    this.markGmcpReady();
+  }
+
+  public markGmcpReady(): void {
+    if (this._gmcpReady) return;
+    this._gmcpReady = true;
+    this.emit("gmcpReady");
+  }
+
+  public markSessionReady(): void {
+    if (this._sessionReady) return;
+    this._sessionReady = true;
+    this.emit("sessionReady");
   }
 
   public send(data: string) {
@@ -449,6 +478,8 @@ class MudClient extends EventEmitter {
     if (this.connectionCleanupComplete) return;
     this.connectionCleanupComplete = true;
     this._connected = false;
+    this._gmcpReady = false;
+    this._sessionReady = false;
     this.mcpAuthKey = null;
     this.telnetBuffer = "";
     this.telnetNegotiation = false;

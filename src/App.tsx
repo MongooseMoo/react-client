@@ -25,6 +25,7 @@ import { useChannelHistory } from "./hooks/useChannelHistory";
 import { FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
 import { autoLogService, createAutoLogSessionDraft } from "./logging/AutoLogService";
+import { ensurePushSubscription } from "./webpush";
 
 const WINDOW_TITLE = "Mongoose Client";
 
@@ -170,6 +171,16 @@ function App() {
     if (!client) return;
 
     client.requestNotificationPermission();
+    const ensurePushSubscriptionForSession = () => {
+      ensurePushSubscription(client).catch((error) => {
+        console.error("Failed to ensure push subscription:", error);
+      });
+    };
+    if (client.sessionReady) {
+      ensurePushSubscriptionForSession();
+    } else {
+      client.once("sessionReady", ensurePushSubscriptionForSession);
+    }
 
     // Auto-login from URL params
     const urlParams = new URLSearchParams(window.location.search);
@@ -217,6 +228,7 @@ function App() {
     document.addEventListener("focus", handleFocus);
 
     return () => {
+      client.off("sessionReady", ensurePushSubscriptionForSession);
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
       for (const backend of registeredBackends) {
@@ -412,7 +424,7 @@ function App() {
       {/* UI shell — only renders when client is ready */}
       {client && (
         <div className={`App ${showSidebar ? (sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-shown') : ''}`}>
-          <header role="banner" style={{ gridArea: "header" }}>
+          <header style={{ gridArea: "header" }}>
             <Toolbar
               client={client}
               onSaveLog={saveLog}
@@ -425,19 +437,17 @@ function App() {
             />
           </header>
           {urlModeParams.isHostMode && <HostPanel roomId={hostState.roomId} guestCount={hostState.guestCount} />}
-          <main role="main" style={{ gridArea: "main" }}>
+          <main style={{ gridArea: "main" }}>
             <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
           </main>
-          <div
-            role="region"
+          <section
             aria-label="Command input"
             style={{ gridArea: "input" }}
           >
             <CommandInput onSend={handleCommand} inputRef={inRef} client={client} />
-          </div>
+          </section>
           {showSidebar && (
             <aside
-              role="complementary"
               aria-roledescription="Sidebar"
               style={{ gridArea: "sidebar" }}
             >
@@ -449,7 +459,7 @@ function App() {
               />
             </aside>
           )}
-          <footer role="contentinfo" style={{ gridArea: "status" }}>
+          <footer style={{ gridArea: "status" }}>
             <Statusbar client={client} />
           </footer>
           <PreferencesDialog ref={prefsDialogRef} />

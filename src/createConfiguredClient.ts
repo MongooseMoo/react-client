@@ -21,6 +21,7 @@ import {
   GMCPClientMidi,
   GMCPClientSpatial,
   GMCPClientSpeech,
+  GMCPClientWebPush,
   GMCPCommChannel,
   GMCPCommLiveKit,
   GMCPCore,
@@ -49,6 +50,7 @@ export function createConfiguredClient(): MudClient {
   client.registerGMCPPackage(GMCPClientSpatial);
   client.registerGMCPPackage(GMCPClientMidi);
   client.registerGMCPPackage(GMCPClientSpeech);
+  client.registerGMCPPackage(GMCPClientWebPush);
   client.registerGMCPPackage(GMCPClientKeystrokes);
   client.registerGMCPPackage(GMCPCoreSupports);
   client.registerGMCPPackage(GMCPCommChannel);

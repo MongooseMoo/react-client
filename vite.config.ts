@@ -8,30 +8,31 @@ export default defineConfig({
     react(),
     CommitHashPlugin(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
-      workbox: {
+      devOptions: {
+        enabled: true,
+        type: 'module',
+      },
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         globIgnores: ['**/buttplug_wasm-*.js', '**/wasm/**', '**/wasm-worker.js'],
-        runtimeCaching: [{
-          urlPattern: /\/wasm\/.*/,
-          handler: 'CacheFirst',
-          options: {
-            cacheName: 'wasm-assets',
-            expiration: {
-              maxEntries: 10,
-              maxAgeSeconds: 30 * 24 * 60 * 60
-            },
-            cacheableResponse: {
-              statuses: [0, 200]
-            }
-          }
-        }]
       },
       manifest: {
         theme_color: '#000000'
       }
     })
   ],
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://mongoose.moo.mud.org:7780",
+        changeOrigin: true,
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
