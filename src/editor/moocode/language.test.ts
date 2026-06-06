@@ -1381,6 +1381,66 @@ describe('MOO Monaco language support', () => {
     ]);
   });
 
+  it('provides Monaco document highlights for matching block delimiters', () => {
+    const provider = createMooDocumentHighlightProvider({ Read: 1, Write: 2 });
+    const source = [
+      'if (valid(player))',
+      '  notify(player, "ok");',
+      'elseif (valid(caller))',
+      '  notify(caller, "ok");',
+      'else',
+      '  raise(E_PERM);',
+      'endif',
+    ].join('\n');
+
+    expect(
+      provider.provideDocumentHighlights(
+        {
+          getValue: () => source,
+        } as never,
+        { lineNumber: 3, column: 2 },
+        {} as never,
+      ),
+    ).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 3,
+        },
+        kind: 1,
+      },
+      {
+        range: {
+          startLineNumber: 3,
+          startColumn: 1,
+          endLineNumber: 3,
+          endColumn: 7,
+        },
+        kind: 1,
+      },
+      {
+        range: {
+          startLineNumber: 5,
+          startColumn: 1,
+          endLineNumber: 5,
+          endColumn: 5,
+        },
+        kind: 1,
+      },
+      {
+        range: {
+          startLineNumber: 7,
+          startColumn: 1,
+          endLineNumber: 7,
+          endColumn: 6,
+        },
+        kind: 1,
+      },
+    ]);
+  });
+
   it('provides Monaco linked editing ranges for local symbols', () => {
     const provider = createMooLinkedEditingRangeProvider();
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');

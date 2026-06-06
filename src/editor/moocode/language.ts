@@ -55,6 +55,7 @@ import {
 import { getMooBuiltinSignature, getMooSignatureHelp } from './signatures';
 import {
   createMooRenameWorkspaceEdit,
+  findMooBlockDelimiterHighlights,
   findMooDefinition,
   findMooDocumentHighlights,
   findMooReferences,
@@ -999,10 +1000,17 @@ export function createMooDocumentHighlightProvider(
         );
       }
 
-      return findMooDocumentLinkReferences(source, position).map((reference) => ({
+      const linkHighlights = findMooDocumentLinkReferences(source, position).map((reference) => ({
         range: reference.range,
         kind: documentHighlightKind.Read,
       }));
+      if (linkHighlights.length > 0) {
+        return linkHighlights;
+      }
+
+      return findMooBlockDelimiterHighlights(source, position).map((highlight) =>
+        toMooDocumentHighlight(highlight, documentHighlightKind),
+      );
     },
   };
 }

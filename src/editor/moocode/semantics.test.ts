@@ -3,6 +3,7 @@ import {
   analyzeMooSemantics,
   createMooRenameWorkspaceEdit,
   findMooDefinition,
+  findMooBlockDelimiterHighlights,
   findMooDocumentHighlights,
   findMooReferences,
   findMooUnknownLoopLabelReferences,
@@ -128,6 +129,53 @@ describe('MOO semantic model', () => {
     ]);
     expect(findMooDocumentHighlights(source, positionFor(source, 'player'))).toEqual([]);
     expect(findMooDocumentHighlights('// total = 0;', { lineNumber: 1, column: 4 })).toEqual([]);
+  });
+
+  it('finds matching block delimiter highlights from any block keyword', () => {
+    const source = [
+      'if (valid(player))',
+      '  notify(player, "ok");',
+      'elseif (valid(caller))',
+      '  notify(caller, "ok");',
+      'else',
+      '  raise(E_PERM);',
+      'endif',
+    ].join('\n');
+
+    expect(findMooBlockDelimiterHighlights(source, positionFor(source, 'elseif'))).toEqual([
+      { range: wordRange(source, 'if', 1), kind: 'read' },
+      { range: wordRange(source, 'elseif', 1), kind: 'read' },
+      { range: wordRange(source, 'else', 2), kind: 'read' },
+      { range: wordRange(source, 'endif', 1), kind: 'read' },
+    ]);
+    expect(findMooBlockDelimiterHighlights(source, positionFor(source, 'endif'))).toEqual([
+      { range: wordRange(source, 'if', 1), kind: 'read' },
+      { range: wordRange(source, 'elseif', 1), kind: 'read' },
+      { range: wordRange(source, 'else', 2), kind: 'read' },
+      { range: wordRange(source, 'endif', 1), kind: 'read' },
+    ]);
+  });
+
+  it('keeps nested block delimiter highlights scoped to the innermost matching block', () => {
+    const source = [
+      'try',
+      '  if (valid(player))',
+      '    notify(player, "ok");',
+      '  endif',
+      'finally',
+      '  notify(player, "done");',
+      'endtry',
+    ].join('\n');
+
+    expect(findMooBlockDelimiterHighlights(source, positionFor(source, 'endif'))).toEqual([
+      { range: wordRange(source, 'if', 1), kind: 'read' },
+      { range: wordRange(source, 'endif', 1), kind: 'read' },
+    ]);
+    expect(findMooBlockDelimiterHighlights(source, positionFor(source, 'finally'))).toEqual([
+      { range: wordRange(source, 'try', 1), kind: 'read' },
+      { range: wordRange(source, 'finally', 1), kind: 'read' },
+      { range: wordRange(source, 'endtry', 1), kind: 'read' },
+    ]);
   });
 
   it('finds linked editing ranges for local names only', () => {

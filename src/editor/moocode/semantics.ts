@@ -4,6 +4,7 @@ import {
   MOO_BLOCKS,
   MOO_CLOSE_KEYWORDS,
   MOO_IDENTIFIER_PATTERN_SOURCE,
+  MOO_MIDDLE_KEYWORDS,
   OPERATOR_WORDS,
   STATEMENT_KEYWORDS,
 } from './contract';
@@ -99,6 +100,11 @@ type LabelBlockFrame = {
   labelRecord?: SymbolRecord;
 };
 
+type BlockDelimiterFrame = {
+  kind: BlockKind;
+  ranges: MonacoRange[];
+};
+
 type Occurrence = {
   endOffset: number;
   range: MonacoRange;
@@ -187,6 +193,17 @@ export function findMooDocumentHighlights(
   ].sort((left, right) => compareRanges(left.range, right.range));
 }
 
+export function findMooBlockDelimiterHighlights(
+  source: string,
+  position: MooSourcePosition,
+): MooDocumentHighlight[] {
+  const family = collectBlockDelimiterFamilies(source).find((ranges) =>
+    ranges.some((range) => rangeContainsPosition(range, position)),
+  );
+
+  return family?.map((range) => ({ range, kind: 'read' })) ?? [];
+}
+
 export function getMooLinkedEditingRanges(
   source: string,
   position: MooSourcePosition,
@@ -236,6 +253,90 @@ export function collectMooSemanticSymbolRanges(source: string): MooSemanticSymbo
   }
 
   return ranges.sort((left, right) => compareRanges(left.range, right.range));
+}
+
+function collectBlockDelimiterFamilies(source: string): MonacoRange[][] {
+  const families: MonacoRange[][] = [];
+  const stack: BlockDelimiterFrame[] = [];
+  const lines = source.split(/\r\n|\r|\n/);
+  const maskedLines = maskMooSource(source).split(/\r\n|\r|\n/);
+
+  lines.forEach((_line, lineIndex) => {
+    const lineNumber = lineIndex + 1;
+    const keyword = firstMooKeyword(maskedLines[lineIndex] ?? '');
+    if (!keyword) {
+      return;
+    }
+
+    const normalized = keyword.word.toLowerCase();
+    const range = {
+      startLineNumber: lineNumber,
+      startColumn: keyword.startColumn,
+      endLineNumber: lineNumber,
+      endColumn: keyword.endColumn,
+    };
+    const closeKind = MOO_CLOSE_KEYWORDS[normalized];
+    if (closeKind) {
+      const frame = popNearestBlockDelimiterFrame(stack, closeKind);
+      if (frame) {
+        families.push([...frame.ranges, range]);
+      }
+      return;
+    }
+
+    const middleKind = MOO_MIDDLE_KEYWORDS[normalized];
+    if (middleKind) {
+      const frame = nearestBlockDelimiterFrame(stack, middleKind);
+      frame?.ranges.push(range);
+      return;
+    }
+
+    if (isMooBlockKind(normalized)) {
+      stack.push({ kind: normalized, ranges: [range] });
+    }
+  });
+
+  families.push(...stack.filter((frame) => frame.ranges.length > 1).map((frame) => frame.ranges));
+  return families;
+}
+
+function popNearestBlockDelimiterFrame(
+  stack: BlockDelimiterFrame[],
+  kind: BlockKind,
+): BlockDelimiterFrame | null {
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    if (stack[index]?.kind === kind) {
+      return stack.splice(index, 1)[0] ?? null;
+    }
+  }
+
+  return null;
+}
+
+function nearestBlockDelimiterFrame(
+  stack: readonly BlockDelimiterFrame[],
+  kind: BlockKind,
+): BlockDelimiterFrame | null {
+  for (let index = stack.length - 1; index >= 0; index -= 1) {
+    const frame = stack[index];
+    if (frame?.kind === kind) {
+      return frame;
+    }
+  }
+
+  return null;
+}
+
+function rangeContainsPosition(range: MonacoRange, position: MooSourcePosition): boolean {
+  return (
+    position.lineNumber === range.startLineNumber &&
+    position.column >= range.startColumn &&
+    position.column <= range.endColumn
+  );
+}
+
+function isMooBlockKind(value: string): value is BlockKind {
+  return value in MOO_BLOCKS;
 }
 
 export function getMooCodeLenses(source: string): MooCodeLens[] {
