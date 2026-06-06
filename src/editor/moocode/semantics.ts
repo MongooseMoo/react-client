@@ -83,34 +83,8 @@ const NON_LOCAL_NAMES = new Set<string>([
 ]);
 
 export function analyzeMooSemantics(source: string): MooSemanticAnalysis {
-  const masked = maskMooSource(source);
-  const definitions = collectDefinitions(source, masked);
-  const records = new Map<string, SymbolRecord>();
-
-  for (const definition of definitions) {
-    if (NON_LOCAL_NAMES.has(definition.name.toLowerCase())) {
-      continue;
-    }
-
-    const record = ensureRecord(records, definition.name);
-    record.definitions.push(definition.occurrence);
-  }
-
-  for (const occurrence of collectIdentifierOccurrences(source, masked)) {
-    const record = records.get(occurrence.name);
-    if (!record) {
-      continue;
-    }
-
-    if (record.definitions.some((definition) => sameOccurrence(definition, occurrence.occurrence))) {
-      continue;
-    }
-
-    record.references.push(occurrence.occurrence);
-  }
-
   return {
-    symbols: [...records.values()]
+    symbols: [...getSymbolRecords(source).values()]
       .sort((left, right) => left.name.localeCompare(right.name))
       .map((record) => ({
         name: record.name,
@@ -349,7 +323,7 @@ function getSymbolAtPosition(
     return null;
   }
 
-  const record = getSymbolRecords(source).get(word.name);
+  const record = getSymbolRecords(source).get(symbolKey(word.name));
   if (!record) {
     return null;
   }
@@ -375,7 +349,7 @@ function getSymbolRecords(source: string): Map<string, SymbolRecord> {
   }
 
   for (const occurrence of collectIdentifierOccurrences(source, masked)) {
-    const record = records.get(occurrence.name);
+    const record = records.get(symbolKey(occurrence.name));
     if (!record) {
       continue;
     }
@@ -543,7 +517,8 @@ function dedupeDefinitionOccurrences(
 }
 
 function ensureRecord(records: Map<string, SymbolRecord>, name: string): SymbolRecord {
-  const existing = records.get(name);
+  const key = symbolKey(name);
+  const existing = records.get(key);
   if (existing) {
     return existing;
   }
@@ -553,8 +528,12 @@ function ensureRecord(records: Map<string, SymbolRecord>, name: string): SymbolR
     definitions: [],
     references: [],
   };
-  records.set(name, record);
+  records.set(key, record);
   return record;
+}
+
+function symbolKey(name: string): string {
+  return name.toLowerCase();
 }
 
 function allSymbolOccurrences(record: SymbolRecord): Occurrence[] {

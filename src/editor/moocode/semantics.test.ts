@@ -63,6 +63,27 @@ describe('MOO semantic model', () => {
     ]);
   });
 
+  it('treats local symbol names as case-insensitive while preserving definition spelling', () => {
+    const source = ['Total = 0;', 'TOTAL = total + 1;', 'notify(player, ToTaL);'].join('\n');
+
+    expect(analyzeMooSemantics(source).symbols).toEqual([
+      {
+        name: 'Total',
+        definitions: [wordRange(source, 'Total', 1), wordRange(source, 'TOTAL', 1)],
+        references: [wordRange(source, 'total', 1), wordRange(source, 'ToTaL', 1)],
+      },
+    ]);
+    expect(findMooDefinition(source, positionFor(source, 'ToTaL'))?.range).toEqual(
+      wordRange(source, 'Total', 1),
+    );
+    expect(findMooReferences(source, positionFor(source, 'total +'))).toEqual([
+      { range: wordRange(source, 'Total', 1) },
+      { range: wordRange(source, 'TOTAL', 1) },
+      { range: wordRange(source, 'total', 1) },
+      { range: wordRange(source, 'ToTaL', 1) },
+    ]);
+  });
+
   it('finds read and write document highlights for the local name at the cursor', () => {
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
 
@@ -135,6 +156,23 @@ describe('MOO semantic model', () => {
     });
   });
 
+  it('renames every mixed-case occurrence of the same local symbol', () => {
+    const source = ['Total = 0;', 'TOTAL = total + 1;', 'notify(player, ToTaL);'].join('\n');
+
+    expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'total +'), 'score')).toEqual({
+      edits: [
+        { range: wordRange(source, 'Total', 1), text: 'score' },
+        { range: wordRange(source, 'TOTAL', 1), text: 'score' },
+        { range: wordRange(source, 'total', 1), text: 'score' },
+        { range: wordRange(source, 'ToTaL', 1), text: 'score' },
+      ],
+    });
+    expect(getMooRenameLocation(source, positionFor(source, 'ToTaL'))).toEqual({
+      range: wordRange(source, 'ToTaL', 1),
+      text: 'Total',
+    });
+  });
+
   it('resolves rename locations only for local MOO symbols', () => {
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
 
@@ -156,6 +194,14 @@ describe('MOO semantic model', () => {
     expect(getMooLocalCompletions(source, { lineNumber: 3, column: 5 })).toEqual([
       expect.objectContaining({ name: 'item' }),
       expect.objectContaining({ name: 'total' }),
+    ]);
+  });
+
+  it('deduplicates mixed-case local completions by symbol identity', () => {
+    const source = ['Total = 0;', 'TOTAL = Total + 1;', 'to'].join('\n');
+
+    expect(getMooLocalCompletions(source, { lineNumber: 3, column: 3 })).toEqual([
+      expect.objectContaining({ name: 'Total' }),
     ]);
   });
 
@@ -201,6 +247,13 @@ describe('MOO semantic model', () => {
         range: wordRange(source, 'items', 1),
       },
     ]);
+  });
+
+  it('does not report mixed-case references as undefined or unused', () => {
+    const source = ['Total = 0;', 'notify(player, total);'].join('\n');
+
+    expect(findMooUndefinedLocalReferences(source)).toEqual([]);
+    expect(findMooUnusedLocalDefinitions(source)).toEqual([]);
   });
 
   it('finds local definitions that are never read', () => {

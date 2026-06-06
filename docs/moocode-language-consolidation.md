@@ -432,3 +432,13 @@ Iterations:
     diagnostics back into action metadata.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/codeActions.test.ts src/editor/moocode/language.test.ts`.
+- 2026-06-06 case-insensitive local symbol service:
+  - Local symbol analysis now follows ToastStunt's symbol table behavior and
+    keys local names case-insensitively while preserving the first definition's
+    spelling for labels and rename preparation.
+  - Go-to-definition, find references, document highlights, linked editing,
+    rename edits, local completions, semantic tokens, hovers, undefined-local
+    diagnostics, and unused-local diagnostics now treat `Total`, `TOTAL`, and
+    `total` as the same MOO local.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/diagnostics.test.ts src/editor/moocode/language.test.ts src/editor/moocode/semanticTokens.test.ts src/editor/moocode/hover.test.ts`.
