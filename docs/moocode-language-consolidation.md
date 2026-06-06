@@ -55,3 +55,11 @@ Iterations:
     block-looking text does not create fake symbols or folds.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-05 Monaco signature help:
+  - Added `src/editor/moocode/signatures.ts` for browser-side ToastStunt
+    builtin call-context detection and parameter selection.
+  - Registered Monaco signature help for `moocode`, triggered by `(` and `,`.
+  - Signature scanning masks strings, line comments, and block comments so
+    call-looking text does not create fake parameter hints.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

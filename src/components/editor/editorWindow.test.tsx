@@ -34,6 +34,7 @@ const editorMock = vi.hoisted(() => ({
       registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
       registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
       registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+      registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
       setLanguageConfiguration: vi.fn(),
       setMonarchTokensProvider: vi.fn(),
     },
@@ -107,6 +108,7 @@ describe('EditorWindow language selection', () => {
     editorMock.monaco.languages.registerDocumentSymbolProvider.mockClear();
     editorMock.monaco.languages.registerFoldingRangeProvider.mockClear();
     editorMock.monaco.languages.registerHoverProvider.mockClear();
+    editorMock.monaco.languages.registerSignatureHelpProvider.mockClear();
     editorMock.monaco.languages.setLanguageConfiguration.mockClear();
     editorMock.monaco.languages.setMonarchTokensProvider.mockClear();
     MockBroadcastChannel.instances = [];

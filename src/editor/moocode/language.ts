@@ -20,6 +20,7 @@ import {
   PLAINTEXT_LANGUAGE_ID,
   STATEMENT_KEYWORDS,
 } from './contract';
+import { getMooSignatureHelp } from './signatures';
 import { analyzeMooStructure, type MooStructureSymbol } from './structure';
 
 export type MonacoRange = {
@@ -132,6 +133,39 @@ type FoldingRangeProvider = {
   provideFoldingRanges: (model: TextModelValueLike) => FoldingRange[];
 };
 
+type SignatureParameterInformation = {
+  label: string;
+  documentation?: string;
+};
+
+type SignatureInformation = {
+  label: string;
+  documentation: string;
+  parameters: SignatureParameterInformation[];
+};
+
+type SignatureHelp = {
+  signatures: SignatureInformation[];
+  activeSignature: number;
+  activeParameter: number;
+};
+
+type SignatureHelpResult = {
+  value: SignatureHelp;
+  dispose: () => void;
+};
+
+type SignatureHelpProvider = {
+  signatureHelpTriggerCharacters: string[];
+  signatureHelpRetriggerCharacters: string[];
+  provideSignatureHelp: (
+    model: TextModelValueLike,
+    position: CompletionPosition,
+    token?: unknown,
+    context?: unknown,
+  ) => SignatureHelpResult | null;
+};
+
 export type MonacoLike = {
   languages: {
     CompletionItemInsertTextRule: {
@@ -165,6 +199,10 @@ export type MonacoLike = {
       provider: {
         provideHover: (model: TextModelLike, position: unknown) => Hover | null;
       },
+    ) => { dispose: () => void };
+    registerSignatureHelpProvider?: (
+      languageId: string,
+      provider: SignatureHelpProvider,
     ) => { dispose: () => void };
     setLanguageConfiguration: (languageId: string, config: MooLanguageConfiguration) => void;
     setMonarchTokensProvider: (languageId: string, language: MooMonarchLanguage) => void;
@@ -368,6 +406,24 @@ export function createMooFoldingRangeProvider(): FoldingRangeProvider {
   };
 }
 
+export function createMooSignatureHelpProvider(): SignatureHelpProvider {
+  return {
+    signatureHelpTriggerCharacters: ['(', ','],
+    signatureHelpRetriggerCharacters: [','],
+    provideSignatureHelp: (model, position) => {
+      const signatureHelp = getMooSignatureHelp(model.getValue(), position);
+      if (!signatureHelp) {
+        return null;
+      }
+
+      return {
+        value: signatureHelp,
+        dispose: () => {},
+      };
+    },
+  };
+}
+
 export function registerMooLanguage(monaco: MonacoLike) {
   if (REGISTERED_MONACO_INSTANCES.has(monaco)) {
     return;
@@ -390,6 +446,7 @@ export function registerMooLanguage(monaco: MonacoLike) {
     createMooDocumentSymbolProvider(monaco),
   );
   monaco.languages.registerFoldingRangeProvider?.(MOO_LANGUAGE_ID, createMooFoldingRangeProvider());
+  monaco.languages.registerSignatureHelpProvider?.(MOO_LANGUAGE_ID, createMooSignatureHelpProvider());
   monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, {
     provideHover: (model, position) => {
       const word = model.getWordAtPosition(position)?.word;

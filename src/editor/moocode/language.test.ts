@@ -122,6 +122,7 @@ describe('MOO Monaco language support', () => {
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
         setLanguageConfiguration: vi.fn(),
         setMonarchTokensProvider: vi.fn(),
       },
@@ -144,6 +145,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerDocumentSymbolProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerFoldingRangeProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerHoverProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerSignatureHelpProvider).toHaveBeenCalledTimes(1);
   });
 
   it('provides Monaco document symbols and folding ranges from MOO block structure', () => {
@@ -165,6 +167,7 @@ describe('MOO Monaco language support', () => {
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
         setLanguageConfiguration: vi.fn(),
         setMonarchTokensProvider: vi.fn(),
       },
@@ -189,6 +192,49 @@ describe('MOO Monaco language support', () => {
     expect(foldingProvider.provideFoldingRanges({ getValue: () => source })).toEqual([
       { start: 1, end: 3 },
     ]);
+  });
+
+  it('provides Monaco signature help for ToastStunt builtin calls', () => {
+    const monaco = {
+      languages: {
+        CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
+        CompletionItemKind: {
+          Constant: 14,
+          Function: 1,
+          Keyword: 17,
+          Variable: 4,
+        },
+        SymbolKind: {
+          Function: 11,
+        },
+        getLanguages: vi.fn(() => [{ id: MOO_LANGUAGE_ID }]),
+        register: vi.fn(),
+        registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        setLanguageConfiguration: vi.fn(),
+        setMonarchTokensProvider: vi.fn(),
+      },
+    };
+
+    registerMooLanguage(monaco);
+
+    const source = 'notify(player, "hello");';
+    const signatureProvider = monaco.languages.registerSignatureHelpProvider.mock.calls[0][1];
+
+    expect(
+      signatureProvider.provideSignatureHelp(
+        { getValue: () => source },
+        { lineNumber: 1, column: 16 },
+      ),
+    ).toMatchObject({
+      value: {
+        activeParameter: 1,
+        signatures: [{ label: 'notify(player, text)' }],
+      },
+    });
   });
 });
 
