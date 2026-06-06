@@ -22,7 +22,7 @@ import {
 } from './hover';
 import { getMooInlineCompletions } from './inlineCompletions';
 import { collectMooInlayHints } from './inlayHints';
-import { getMooDocumentLinks } from './links';
+import { findMooDocumentLinkAtPosition, getMooDocumentLinks } from './links';
 import {
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
@@ -210,7 +210,16 @@ type SignatureHelpProvider = {
   ) => SignatureHelpResult | null;
 };
 
+type MooUriParser = {
+  Uri?: {
+    parse: (uri: string) => unknown;
+  };
+};
+
 export type MonacoLike = {
+  Uri?: {
+    parse: (uri: string) => MonacoEditor.Uri;
+  };
   languages: {
     CodeActionKind?: {
       QuickFix: string;
@@ -751,22 +760,40 @@ export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProv
   };
 }
 
-export function createMooDefinitionProvider(): MonacoEditor.languages.DefinitionProvider {
+export function createMooDefinitionProvider(
+  uriParser?: MooUriParser,
+): MonacoEditor.languages.DefinitionProvider {
   return {
     provideDefinition: (model, position) => {
       const definition = findMooDefinition(model.getValue(), position);
-      return definition ? { uri: model.uri, range: definition.range } : null;
+      if (definition) {
+        return { uri: model.uri, range: definition.range };
+      }
+
+      const link = findMooDocumentLinkAtPosition(model.getValue(), position);
+      return link ? { uri: toMooDefinitionUri(link.url, uriParser), range: link.range } : null;
     },
   };
 }
 
-export function createMooDeclarationProvider(): MonacoEditor.languages.DeclarationProvider {
+export function createMooDeclarationProvider(
+  uriParser?: MooUriParser,
+): MonacoEditor.languages.DeclarationProvider {
   return {
     provideDeclaration: (model, position) => {
       const definition = findMooDefinition(model.getValue(), position);
-      return definition ? { uri: model.uri, range: definition.range } : null;
+      if (definition) {
+        return { uri: model.uri, range: definition.range };
+      }
+
+      const link = findMooDocumentLinkAtPosition(model.getValue(), position);
+      return link ? { uri: toMooDefinitionUri(link.url, uriParser), range: link.range } : null;
     },
   };
+}
+
+function toMooDefinitionUri(uri: string, uriParser?: MooUriParser): MonacoEditor.Uri {
+  return (uriParser?.Uri?.parse(uri) ?? uri) as MonacoEditor.Uri;
 }
 
 export function createMooDocumentHighlightProvider(
@@ -1042,8 +1069,14 @@ export function registerMooLanguage(monaco: MonacoLike) {
     MOO_LANGUAGE_ID,
     createMooCompletionProvider(monaco),
   );
-  monaco.languages.registerDeclarationProvider?.(MOO_LANGUAGE_ID, createMooDeclarationProvider());
-  monaco.languages.registerDefinitionProvider?.(MOO_LANGUAGE_ID, createMooDefinitionProvider());
+  monaco.languages.registerDeclarationProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooDeclarationProvider(monaco),
+  );
+  monaco.languages.registerDefinitionProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooDefinitionProvider(monaco),
+  );
   monaco.languages.registerDocumentHighlightProvider?.(
     MOO_LANGUAGE_ID,
     createMooDocumentHighlightProvider(

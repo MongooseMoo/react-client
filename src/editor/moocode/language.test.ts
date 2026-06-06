@@ -468,6 +468,38 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('uses document link targets for object and system reference definitions', () => {
+    const parseUri = vi.fn((uri: string) => ({ parsed: uri }));
+    const source = ['owner = #123;', '$player:tell("hi");'].join('\n');
+    const model = {
+      getValue: () => source,
+      uri: 'moo://#1:test',
+    };
+    const declarationProvider = createMooDeclarationProvider({ Uri: { parse: parseUri } });
+    const definitionProvider = createMooDefinitionProvider({ Uri: { parse: parseUri } });
+
+    expect(definitionProvider.provideDefinition(model, { lineNumber: 1, column: 10 })).toEqual({
+      uri: { parsed: 'moo://object/123' },
+      range: {
+        startLineNumber: 1,
+        startColumn: 9,
+        endLineNumber: 1,
+        endColumn: 13,
+      },
+    });
+    expect(declarationProvider.provideDeclaration(model, { lineNumber: 2, column: 4 })).toEqual({
+      uri: { parsed: 'moo://system/player' },
+      range: {
+        startLineNumber: 2,
+        startColumn: 1,
+        endLineNumber: 2,
+        endColumn: 8,
+      },
+    });
+    expect(parseUri).toHaveBeenCalledWith('moo://object/123');
+    expect(parseUri).toHaveBeenCalledWith('moo://system/player');
+  });
+
   it('provides Monaco CodeLens summaries for local MOO symbols', () => {
     const provider = createMooCodeLensProvider();
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');

@@ -1,6 +1,6 @@
 import { MOO_SYSTEM_REFERENCE_PATTERN_SOURCE } from './contract';
 import type { MonacoRange } from './language';
-import { maskMooSource, positionAtMooOffset } from './scanner';
+import { maskMooSource, offsetAtMooPosition, positionAtMooOffset } from './scanner';
 
 export type MooDocumentLink = {
   range: MonacoRange;
@@ -43,6 +43,28 @@ export function getMooDocumentLinks(source: string): MooDocumentLink[] {
     (left, right) =>
       left.range.startLineNumber - right.range.startLineNumber ||
       left.range.startColumn - right.range.startColumn,
+  );
+}
+
+export function findMooDocumentLinkAtPosition(
+  source: string,
+  position: { lineNumber: number; column: number },
+): MooDocumentLink | null {
+  const positionOffset = offsetAtMooPosition(source, position);
+
+  return (
+    getMooDocumentLinks(source).find((link) => {
+      const startOffset = offsetAtMooPosition(source, {
+        lineNumber: link.range.startLineNumber,
+        column: link.range.startColumn,
+      });
+      const endOffset = offsetAtMooPosition(source, {
+        lineNumber: link.range.endLineNumber,
+        column: link.range.endColumn,
+      });
+
+      return positionOffset >= startOffset && positionOffset <= endOffset;
+    }) ?? null
   );
 }
 

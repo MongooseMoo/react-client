@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getMooDocumentLinks } from './links';
+import { findMooDocumentLinkAtPosition, getMooDocumentLinks } from './links';
 
 describe('MOO document links', () => {
   it('links object number references to stable MOO object URIs', () => {
@@ -102,5 +102,37 @@ describe('MOO document links', () => {
         tooltip: 'Open MOO object #789',
       },
     ]);
+  });
+
+  it('finds the link target under the cursor for navigation providers', () => {
+    const source = 'owner = #123;\nnotify($player, "ok");';
+
+    expect(findMooDocumentLinkAtPosition(source, { lineNumber: 1, column: 10 })).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 9,
+        endLineNumber: 1,
+        endColumn: 13,
+      },
+      url: 'moo://object/123',
+      tooltip: 'Open MOO object #123',
+    });
+    expect(findMooDocumentLinkAtPosition(source, { lineNumber: 2, column: 10 })).toEqual({
+      range: {
+        startLineNumber: 2,
+        startColumn: 8,
+        endLineNumber: 2,
+        endColumn: 15,
+      },
+      url: 'moo://system/player',
+      tooltip: 'Open MOO system reference $player',
+    });
+  });
+
+  it('does not find cursor link targets inside masked comments and strings', () => {
+    const source = '// #123\nnotify(player, "$player");';
+
+    expect(findMooDocumentLinkAtPosition(source, { lineNumber: 1, column: 5 })).toBeNull();
+    expect(findMooDocumentLinkAtPosition(source, { lineNumber: 2, column: 18 })).toBeNull();
   });
 });
