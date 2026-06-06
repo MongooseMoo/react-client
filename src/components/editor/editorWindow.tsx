@@ -27,6 +27,11 @@ export enum DocumentState {
   Saved,
 }
 
+type MooDiagnosticTarget = {
+  lineNumber: number;
+  column: number;
+};
+
 function EditorWindow() {
   const location = useLocation();
   const editorInstance = React.useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
@@ -36,6 +41,7 @@ function EditorWindow() {
   const [originalCode, setOriginalCode] = useState<string>('');
   const [documentState, setDocumentState] = useState<DocumentState>(DocumentState.Unchanged);
   const [mooDiagnosticCount, setMooDiagnosticCount] = useState(0);
+  const [mooDiagnosticTarget, setMooDiagnosticTarget] = useState<MooDiagnosticTarget | null>(null);
   const [session, setSession] = useState<EditorSession>({
     name: 'none',
     contents: [],
@@ -72,6 +78,7 @@ function EditorWindow() {
 
     monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
     setMooDiagnosticCount(markers.length);
+    setMooDiagnosticTarget(getFirstMooDiagnosticTarget(markers));
 
     if (editorLanguage !== MOO_LANGUAGE_ID) {
       return;
@@ -87,6 +94,7 @@ function EditorWindow() {
         const allMarkers = [...markers, ...treeSitterMarkers];
         monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, allMarkers);
         setMooDiagnosticCount(allMarkers.length);
+        setMooDiagnosticTarget(getFirstMooDiagnosticTarget(allMarkers));
       })
       .catch((error: unknown) => {
         console.warn('MOO Tree-sitter diagnostics failed', error);
@@ -123,6 +131,15 @@ function EditorWindow() {
     editorLanguage === MOO_LANGUAGE_ID
       ? formatMooDiagnosticsSummary(mooDiagnosticCount)
       : undefined;
+  const showFirstMooDiagnostic = React.useCallback(() => {
+    if (!mooDiagnosticTarget) {
+      return;
+    }
+
+    editorInstance.current?.setPosition(mooDiagnosticTarget);
+    editorInstance.current?.revealPositionInCenter(mooDiagnosticTarget);
+    editorInstance.current?.focus();
+  }, [mooDiagnosticTarget]);
   const channel = useMemo(() => new BroadcastChannel('editor'), []);
   const params = new URLSearchParams(location.search);
   const id = decodeURIComponent(params.get('reference') || '');
@@ -244,6 +261,7 @@ function EditorWindow() {
         path={session.reference}
       />
       <EditorStatusBar
+        onDiagnosticsClick={mooDiagnosticTarget ? showFirstMooDiagnostic : undefined}
         diagnosticsSummary={mooDiagnosticsSummary}
         docstate={docstate}
         session={session}
@@ -254,6 +272,20 @@ function EditorWindow() {
 
 function formatMooDiagnosticsSummary(count: number): string {
   return count === 1 ? '1 MOO problem' : `${count} MOO problems`;
+}
+
+function getFirstMooDiagnosticTarget(
+  markers: MonacoEditor.IMarkerData[],
+): MooDiagnosticTarget | null {
+  const firstMarker = markers[0];
+  if (!firstMarker) {
+    return null;
+  }
+
+  return {
+    lineNumber: firstMarker.startLineNumber,
+    column: firstMarker.startColumn,
+  };
 }
 
 export default EditorWindow;

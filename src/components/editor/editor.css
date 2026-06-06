@@ -74,3 +74,20 @@
 .editor-statusbar span {
   margin: 0 0.5rem;
 }
+
+.editor-statusbar-button {
+  margin: 0 0.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #8a3f00;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.editor-statusbar-button:focus-visible {
+  outline: 2px solid #4b8bd6;
+  outline-offset: 2px;
+}

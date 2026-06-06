@@ -1,6 +1,6 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MOO_LANGUAGE_ID } from '../../editor/moocode/language';
 import EditorWindow from './editorWindow';
@@ -9,6 +9,8 @@ const editorMock = vi.hoisted(() => ({
   props: undefined as Record<string, unknown> | undefined,
   focus: vi.fn(),
   model: {},
+  revealPositionInCenter: vi.fn(),
+  setPosition: vi.fn(),
   monaco: {
     editor: {
       setModelMarkers: vi.fn(),
@@ -64,7 +66,15 @@ vi.mock('@monaco-editor/react', () => ({
     const onMount = props.onMount as ((editor: unknown, monaco: unknown) => void) | undefined;
     React.useEffect(() => {
       beforeMount?.(editorMock.monaco);
-      onMount?.({ focus: editorMock.focus, getModel: () => editorMock.model }, editorMock.monaco);
+      onMount?.(
+        {
+          focus: editorMock.focus,
+          getModel: () => editorMock.model,
+          revealPositionInCenter: editorMock.revealPositionInCenter,
+          setPosition: editorMock.setPosition,
+        },
+        editorMock.monaco,
+      );
     }, [beforeMount, onMount]);
     return <div data-testid="monaco-editor" />;
   },
@@ -122,6 +132,8 @@ describe('EditorWindow language selection', () => {
   beforeEach(() => {
     editorMock.props = undefined;
     editorMock.focus.mockClear();
+    editorMock.revealPositionInCenter.mockClear();
+    editorMock.setPosition.mockClear();
     editorMock.monaco.editor.setModelMarkers.mockClear();
     editorMock.monaco.languages.getLanguages.mockReturnValue([]);
     editorMock.monaco.languages.register.mockClear();
@@ -192,7 +204,11 @@ describe('EditorWindow language selection', () => {
       MOO_LANGUAGE_ID,
       [parserMarker],
     );
-    expect(await screen.findByText('1 MOO problem')).not.toBeNull();
+    const diagnosticsButton = await screen.findByRole('button', { name: '1 MOO problem' });
+    fireEvent.click(diagnosticsButton);
+    expect(editorMock.setPosition).toHaveBeenCalledWith({ lineNumber: 2, column: 17 });
+    expect(editorMock.revealPositionInCenter).toHaveBeenCalledWith({ lineNumber: 2, column: 17 });
+    expect(editorMock.focus).toHaveBeenCalled();
     expect(treeSitterDiagnosticsMock).toHaveBeenCalledWith(
       ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
       8,
@@ -253,6 +269,6 @@ describe('EditorWindow language selection', () => {
       });
     });
 
-    expect(await screen.findByText('1 MOO problem')).not.toBeNull();
+    expect(await screen.findByRole('button', { name: '1 MOO problem' })).not.toBeNull();
   });
 });
