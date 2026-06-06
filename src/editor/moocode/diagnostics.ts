@@ -9,7 +9,11 @@ import {
 } from './contract';
 import type { MonacoRange } from './language';
 import { firstMooKeyword, maskMooSource, positionAtMooOffset } from './scanner';
-import { findMooUndefinedLocalReferences, findMooUnusedLocalDefinitions } from './semantics';
+import {
+  findMooUndefinedLocalReferences,
+  findMooUnknownLoopLabelReferences,
+  findMooUnusedLocalDefinitions,
+} from './semantics';
 
 export type MooDiagnosticCode =
   | 'misplaced-middle'
@@ -20,6 +24,7 @@ export type MooDiagnosticCode =
   | 'unexpected-delimiter'
   | 'unterminated-string'
   | 'loop-control-outside-loop'
+  | 'unknown-loop-label'
   | 'builtin-arity'
   | 'undefined-local'
   | 'unused-local';
@@ -210,6 +215,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
   }
 
   diagnostics.push(...validateBuiltinCallArity(source));
+  diagnostics.push(...validateUnknownLoopLabels(source));
   diagnostics.push(...validateUndefinedLocals(source));
   diagnostics.push(...validateUnusedLocals(source));
 
@@ -431,6 +437,16 @@ function validateUndefinedLocals(source: string): MooDiagnostic[] {
           },
         ]
       : undefined,
+    lineNumber: reference.range.startLineNumber,
+    startColumn: reference.range.startColumn,
+    endColumn: reference.range.endColumn,
+  }));
+}
+
+function validateUnknownLoopLabels(source: string): MooDiagnostic[] {
+  return findMooUnknownLoopLabelReferences(source).map((reference) => ({
+    code: 'unknown-loop-label',
+    message: `${reference.name} does not name an enclosing while label.`,
     lineNumber: reference.range.startLineNumber,
     startColumn: reference.range.startColumn,
     endColumn: reference.range.endColumn,

@@ -47,6 +47,7 @@ import {
   getMooCodeLenses,
   getMooLinkedEditingRanges,
   getMooLocalCompletions,
+  getMooLoopLabelCompletions,
   getMooRenameLocation,
 } from './semantics';
 import { getMooSelectionRanges, type MooSelectionRange } from './selectionRanges';
@@ -456,6 +457,7 @@ export function createMooCompletionItems(
   monaco?: MonacoLike,
   context: CompletionContext = 'default',
   locals: Array<{ name: string }> = [],
+  loopLabels: Array<{ name: string }> = [],
 ): CompletionItem[] {
   const kind = monaco?.languages.CompletionItemKind ?? {
     Constant: 14,
@@ -540,12 +542,22 @@ export function createMooCompletionItems(
     documentation: 'MOO local variable',
     range,
   }));
+  const loopLabelItems = loopLabels.map((label) => ({
+    label: label.name,
+    kind: kind.Variable,
+    detail: 'Loop label',
+    insertText: label.name,
+    documentation: 'Enclosing while label',
+    range,
+  }));
 
   switch (context) {
     case 'error':
       return errors;
     case 'exception':
       return exceptionCodes;
+    case 'loop-label':
+      return loopLabelItems;
     case 'system-reference':
       return systemReferences;
     case 'verb':
@@ -754,6 +766,7 @@ export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProv
           monaco,
           getCompletionContext(model, position),
           getMooLocalCompletions(model.getValue(), position),
+          getMooLoopLabelCompletions(model.getValue(), position),
         ),
       };
     },
@@ -1134,7 +1147,13 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, createMooHoverProvider());
 }
 
-type CompletionContext = 'default' | 'error' | 'exception' | 'system-reference' | 'verb';
+type CompletionContext =
+  | 'default'
+  | 'error'
+  | 'exception'
+  | 'loop-label'
+  | 'system-reference'
+  | 'verb';
 
 function getCompletionContext(
   model: CompletionTextModelLike,
@@ -1149,6 +1168,10 @@ function getCompletionContext(
 
   if (isExceptionCompletionContext(linePrefix)) {
     return 'exception';
+  }
+
+  if (/\b(?:break|continue)\s+[A-Za-z_]*$/i.test(linePrefix)) {
+    return 'loop-label';
   }
 
   if (currentWord.startsWith('$') || /\$[A-Za-z_]*$/.test(linePrefix)) {

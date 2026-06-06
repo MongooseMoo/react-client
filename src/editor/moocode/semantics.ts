@@ -1,11 +1,18 @@
 import {
   BUILTIN_VARIABLES,
   ERROR_CONSTANTS,
+  MOO_BLOCKS,
+  MOO_CLOSE_KEYWORDS,
   MOO_IDENTIFIER_PATTERN_SOURCE,
   OPERATOR_WORDS,
   STATEMENT_KEYWORDS,
 } from './contract';
-import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
+import {
+  firstMooKeyword,
+  maskMooSource,
+  offsetAtMooPosition,
+  type MooSourcePosition,
+} from './scanner';
 import type { MonacoRange } from './language';
 
 export type MooLocalSymbol = {
@@ -65,6 +72,13 @@ type SymbolRecord = {
   references: Occurrence[];
 };
 
+type BlockKind = keyof typeof MOO_BLOCKS;
+
+type LabelBlockFrame = {
+  kind: BlockKind;
+  labelRecord?: SymbolRecord;
+};
+
 type Occurrence = {
   endOffset: number;
   range: MonacoRange;
@@ -102,7 +116,7 @@ export function findMooDefinition(
   source: string,
   position: MooSourcePosition,
 ): { range: MonacoRange } | null {
-  const lookup = getSymbolAtPosition(source, position);
+  const lookup = getSymbolAtPosition(source, position) ?? getLoopLabelAtPosition(source, position);
   if (!lookup) {
     return null;
   }
@@ -115,7 +129,7 @@ export function findMooReferences(
   source: string,
   position: MooSourcePosition,
 ): Array<{ range: MonacoRange }> {
-  const lookup = getSymbolAtPosition(source, position);
+  const lookup = getSymbolAtPosition(source, position) ?? getLoopLabelAtPosition(source, position);
   if (!lookup) {
     return [];
   }
@@ -129,7 +143,7 @@ export function findMooDocumentHighlights(
   source: string,
   position: MooSourcePosition,
 ): MooDocumentHighlight[] {
-  const lookup = getSymbolAtPosition(source, position);
+  const lookup = getSymbolAtPosition(source, position) ?? getLoopLabelAtPosition(source, position);
   if (!lookup) {
     return [];
   }
@@ -150,7 +164,7 @@ export function getMooLinkedEditingRanges(
   source: string,
   position: MooSourcePosition,
 ): MooLinkedEditingRanges | null {
-  const lookup = getSymbolAtPosition(source, position);
+  const lookup = getSymbolAtPosition(source, position) ?? getLoopLabelAtPosition(source, position);
   if (!lookup) {
     return null;
   }
@@ -193,10 +207,10 @@ export function createMooRenameWorkspaceEdit(
     return { rejectReason: validationError };
   }
 
-  const lookup = getSymbolAtPosition(source, position);
+  const lookup = getSymbolAtPosition(source, position) ?? getLoopLabelAtPosition(source, position);
   if (!lookup) {
     return {
-      rejectReason: 'No local MOO symbol is available at this position.',
+      rejectReason: 'No local MOO symbol or loop label is available at this position.',
     };
   }
 
@@ -212,10 +226,10 @@ export function getMooRenameLocation(
   source: string,
   position: MooSourcePosition,
 ): MooRenameLocation {
-  const lookup = getSymbolAtPosition(source, position);
+  const lookup = getSymbolAtPosition(source, position) ?? getLoopLabelAtPosition(source, position);
   if (!lookup) {
     return {
-      rejectReason: 'No local MOO symbol is available at this position.',
+      rejectReason: 'No local MOO symbol or loop label is available at this position.',
     };
   }
 
@@ -247,6 +261,27 @@ export function getMooLocalCompletions(
       name: entry.record.name,
       range: entry.record.definitions[0].range,
     }));
+}
+
+export function getMooLoopLabelCompletions(
+  source: string,
+  position: MooSourcePosition,
+): Array<{ name: string; range: MonacoRange }> {
+  const cursorOffset = offsetAtMooPosition(source, position);
+
+  return collectVisibleLoopLabelRecords(source, cursorOffset)
+    .map((record) => ({
+      name: record.name,
+      range: record.definitions[0].range,
+    }))
+    .reverse();
+}
+
+export function findMooUnknownLoopLabelReferences(source: string): MooUndefinedLocalReference[] {
+  return collectLoopLabelReferences(source).unknownReferences.map((reference) => ({
+    name: reference.name,
+    range: reference.occurrence.range,
+  }));
 }
 
 export function findMooUndefinedLocalReferences(source: string): MooUndefinedLocalReference[] {
@@ -338,6 +373,29 @@ function getSymbolAtPosition(
   return occurrence ? { record, occurrence } : null;
 }
 
+function getLoopLabelAtPosition(
+  source: string,
+  position: MooSourcePosition,
+): { record: SymbolRecord; occurrence: Occurrence } | null {
+  const offset = offsetAtMooPosition(source, position);
+  const masked = maskMooSource(source);
+  const word = wordAtOffset(masked, offset);
+  if (!word) {
+    return null;
+  }
+
+  for (const record of collectLoopLabelReferences(source).records) {
+    const occurrence = allSymbolOccurrences(record).find(
+      (candidate) => candidate.startOffset <= word.offset && word.offset < candidate.endOffset,
+    );
+    if (occurrence) {
+      return { record, occurrence };
+    }
+  }
+
+  return null;
+}
+
 function getSymbolRecords(source: string): Map<string, SymbolRecord> {
   const masked = maskMooSource(source);
   const definitions = collectDefinitions(source, masked);
@@ -369,6 +427,146 @@ function getSymbolRecords(source: string): Map<string, SymbolRecord> {
   }
 
   return records;
+}
+
+function collectVisibleLoopLabelRecords(source: string, cursorOffset: number): SymbolRecord[] {
+  return collectLoopLabelReferences(source, cursorOffset).visibleLabelRecords;
+}
+
+function collectLoopLabelReferences(
+  source: string,
+  stopOffset = source.length,
+): {
+  records: SymbolRecord[];
+  unknownReferences: Array<{ name: string; occurrence: Occurrence }>;
+  visibleLabelRecords: SymbolRecord[];
+} {
+  const masked = maskMooSource(source);
+  const lines = masked.split(/\r\n|\r|\n/);
+  const lineOffsets = getLineOffsets(source);
+  const blockStack: LabelBlockFrame[] = [];
+  const records: SymbolRecord[] = [];
+  const unknownReferences: Array<{ name: string; occurrence: Occurrence }> = [];
+  let visibleLabelRecords: SymbolRecord[] = [];
+
+  lines.forEach((line, lineIndex) => {
+    const lineOffset = lineOffsets[lineIndex] ?? 0;
+    if (lineOffset >= stopOffset) {
+      return;
+    }
+
+    const lineStopOffset = Math.min(stopOffset, lineOffset + line.length);
+    const scannedLine = line.slice(0, lineStopOffset - lineOffset);
+    const keyword = firstMooKeyword(scannedLine);
+    if (!keyword) {
+      visibleLabelRecords = labelRecordsFromStack(blockStack);
+      return;
+    }
+
+    const normalized = keyword.word.toLowerCase();
+    if (normalized === 'break' || normalized === 'continue') {
+      const reference = readLoopControlLabel(source, scannedLine, lineOffset);
+      if (reference) {
+        const record = findVisibleLoopLabelRecord(blockStack, reference.name);
+        if (record) {
+          record.references.push(reference.occurrence);
+        } else if (isInsideLoop(blockStack)) {
+          unknownReferences.push(reference);
+        }
+      }
+    }
+
+    const closeKind = MOO_CLOSE_KEYWORDS[normalized];
+    if (closeKind) {
+      blockStack.pop();
+      visibleLabelRecords = labelRecordsFromStack(blockStack);
+      return;
+    }
+
+    const openBlock = MOO_BLOCKS[normalized as BlockKind];
+    if (openBlock) {
+      const labelRecord = normalized === 'while'
+        ? collectWhileLabelRecord(source, scannedLine, lineOffset, records)
+        : undefined;
+      blockStack.push({
+        kind: normalized as BlockKind,
+        labelRecord,
+      });
+    }
+
+    visibleLabelRecords = labelRecordsFromStack(blockStack);
+  });
+
+  return { records, unknownReferences, visibleLabelRecords };
+}
+
+function collectWhileLabelRecord(
+  source: string,
+  line: string,
+  lineOffset: number,
+  records: SymbolRecord[],
+): SymbolRecord | undefined {
+  const match = new RegExp(`\\bwhile\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*\\(`, 'i').exec(
+    line,
+  );
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  const name = match[1];
+  const nameStart = lineOffset + match.index + match[0].indexOf(name);
+  const record = {
+    name,
+    definitions: [occurrenceAt(source, nameStart, name.length)],
+    references: [],
+  };
+  records.push(record);
+  return record;
+}
+
+function readLoopControlLabel(
+  source: string,
+  line: string,
+  lineOffset: number,
+): { name: string; occurrence: Occurrence } | null {
+  const match = new RegExp(`\\b(?:break|continue)\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\b`, 'i').exec(
+    line,
+  );
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const name = match[1];
+  const nameStart = lineOffset + match.index + match[0].indexOf(name);
+  return {
+    name,
+    occurrence: occurrenceAt(source, nameStart, name.length),
+  };
+}
+
+function findVisibleLoopLabelRecord(
+  blockStack: LabelBlockFrame[],
+  name: string,
+): SymbolRecord | undefined {
+  const key = symbolKey(name);
+  for (let index = blockStack.length - 1; index >= 0; index -= 1) {
+    const record = blockStack[index].labelRecord;
+    if (record && symbolKey(record.name) === key) {
+      return record;
+    }
+  }
+
+  return undefined;
+}
+
+function isInsideLoop(blockStack: LabelBlockFrame[]): boolean {
+  return blockStack.some((frame) => MOO_BLOCKS[frame.kind].isLoop === true);
+}
+
+function labelRecordsFromStack(blockStack: LabelBlockFrame[]): SymbolRecord[] {
+  return blockStack
+    .map((frame) => frame.labelRecord)
+    .filter((record): record is SymbolRecord => record !== undefined);
 }
 
 function collectDefinitions(

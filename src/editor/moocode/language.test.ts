@@ -369,6 +369,47 @@ describe('MOO Monaco language support', () => {
     expect(labelsForCompletion(provider, '`player:tell() ! @co', 21)).toContain('if');
   });
 
+  it('offers enclosing while labels in break and continue target completions', () => {
+    const provider = createMooCompletionProvider();
+    const source = [
+      'while outer (valid(player))',
+      '  while inner (connected)',
+      '    break ou',
+    ].join('\n');
+    const completions = provider.provideCompletionItems(
+      {
+        getValue: () => source,
+        getLineContent: () => '    break ou',
+        getWordUntilPosition: () => ({
+          word: 'ou',
+          startColumn: 11,
+          endColumn: 13,
+        }),
+      },
+      { lineNumber: 3, column: 13 },
+    );
+
+    expect(completions.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'outer',
+          detail: 'Loop label',
+          documentation: 'Enclosing while label',
+        }),
+        expect.objectContaining({
+          label: 'inner',
+          detail: 'Loop label',
+        }),
+      ]),
+    );
+    expect(completions.suggestions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'notify' }),
+        expect.objectContaining({ label: 'if' }),
+      ]),
+    );
+  });
+
   it('suppresses completions inside comments and string literals', () => {
     const provider = createMooCompletionProvider();
 
@@ -533,7 +574,7 @@ describe('MOO Monaco language support', () => {
         endColumn: 8,
       },
       text: '',
-      rejectReason: 'No local MOO symbol is available at this position.',
+      rejectReason: 'No local MOO symbol or loop label is available at this position.',
     });
   });
 

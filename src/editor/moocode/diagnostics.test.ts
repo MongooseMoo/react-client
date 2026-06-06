@@ -129,6 +129,34 @@ describe('validateMooSyntax', () => {
         message: 'continue can only be used inside a for or while block.',
       }),
     );
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-loop-label')).toEqual([]);
+  });
+
+  it('reports named break and continue targets that do not match an enclosing while label', () => {
+    const diagnostics = validateMooSyntax(
+      [
+        'items = {1, 2};',
+        'while outer (valid(player))',
+        '  for item in (items)',
+        '    break missing;',
+        '    continue outer;',
+        '  endfor',
+        'endwhile',
+      ].join('\n'),
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unknown-loop-label',
+        lineNumber: 4,
+        startColumn: 11,
+        endColumn: 18,
+        message: 'missing does not name an enclosing while label.',
+      }),
+    );
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-loop-label')).toHaveLength(
+      1,
+    );
   });
 
   it('reports ToastStunt builtin calls outside their registered arity', () => {

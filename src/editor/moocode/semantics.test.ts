@@ -186,7 +186,7 @@ describe('MOO semantic model', () => {
       rejectReason: 'MOO identifiers may contain only letters, digits, and underscores.',
     });
     expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'player'), 'actor')).toEqual({
-      rejectReason: 'No local MOO symbol is available at this position.',
+      rejectReason: 'No local MOO symbol or loop label is available at this position.',
     });
   });
 
@@ -215,10 +215,10 @@ describe('MOO semantic model', () => {
       text: 'total',
     });
     expect(getMooRenameLocation(source, positionFor(source, 'player'))).toEqual({
-      rejectReason: 'No local MOO symbol is available at this position.',
+      rejectReason: 'No local MOO symbol or loop label is available at this position.',
     });
     expect(getMooRenameLocation('// total = 0;', { lineNumber: 1, column: 4 })).toEqual({
-      rejectReason: 'No local MOO symbol is available at this position.',
+      rejectReason: 'No local MOO symbol or loop label is available at this position.',
     });
   });
 
@@ -357,6 +357,50 @@ describe('MOO semantic model', () => {
         references: [],
       },
     ]);
+  });
+
+  it('treats while labels as navigable control-flow symbols', () => {
+    const source = [
+      'items = {1, 2};',
+      'while outer (valid(player))',
+      '  for item in (items)',
+      '    continue outer;',
+      '  endfor',
+      '  break outer;',
+      'endwhile',
+    ].join('\n');
+
+    expect(findMooDefinition(source, positionFor(source, 'outer;'))?.range).toEqual(
+      wordRange(source, 'outer', 1),
+    );
+    expect(findMooReferences(source, positionFor(source, 'outer;'))).toEqual([
+      { range: wordRange(source, 'outer', 1) },
+      { range: wordRange(source, 'outer', 2) },
+      { range: wordRange(source, 'outer', 3) },
+    ]);
+    expect(findMooDocumentHighlights(source, positionFor(source, 'outer;'))).toEqual([
+      { range: wordRange(source, 'outer', 1), kind: 'write' },
+      { range: wordRange(source, 'outer', 2), kind: 'read' },
+      { range: wordRange(source, 'outer', 3), kind: 'read' },
+    ]);
+    expect(getMooLinkedEditingRanges(source, positionFor(source, 'outer;'))).toEqual({
+      ranges: [
+        wordRange(source, 'outer', 1),
+        wordRange(source, 'outer', 2),
+        wordRange(source, 'outer', 3),
+      ],
+      wordPattern: /[A-Za-z_][A-Za-z0-9_]*/,
+    });
+    expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'outer;'), 'main_loop')).toEqual({
+      edits: [
+        { range: wordRange(source, 'outer', 1), text: 'main_loop' },
+        { range: wordRange(source, 'outer', 2), text: 'main_loop' },
+        { range: wordRange(source, 'outer', 3), text: 'main_loop' },
+      ],
+    });
+    expect(analyzeMooSemantics(source).symbols.map((symbol) => symbol.name)).not.toContain(
+      'outer',
+    );
   });
 
   it('does not report mixed-case references as undefined or unused', () => {
