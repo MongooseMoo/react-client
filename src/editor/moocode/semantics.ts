@@ -17,6 +17,11 @@ export type MooSemanticAnalysis = {
   symbols: MooLocalSymbol[];
 };
 
+export type MooUndefinedLocalReference = {
+  name: string;
+  range: MonacoRange;
+};
+
 export type MooTextEdit = {
   range: MonacoRange;
   text: string;
@@ -262,6 +267,43 @@ export function getMooLocalCompletions(
     }));
 }
 
+export function findMooUndefinedLocalReferences(source: string): MooUndefinedLocalReference[] {
+  const masked = maskMooSource(source);
+  const definitions = collectDefinitions(source, masked).filter(
+    (definition) => !NON_LOCAL_NAMES.has(definition.name.toLowerCase()),
+  );
+  const definedNames = new Set(definitions.map((definition) => definition.name.toLowerCase()));
+  const definitionOffsets = new Set(
+    definitions.map((definition) => definition.occurrence.startOffset),
+  );
+  const seenOffsets = new Set<number>();
+  const references: MooUndefinedLocalReference[] = [];
+
+  for (const occurrence of collectIdentifierOccurrences(source, masked)) {
+    const normalizedName = occurrence.name.toLowerCase();
+    if (
+      definedNames.has(normalizedName) ||
+      NON_LOCAL_NAMES.has(normalizedName) ||
+      definitionOffsets.has(occurrence.occurrence.startOffset) ||
+      isNonVariableIdentifierOccurrence(masked, occurrence.occurrence)
+    ) {
+      continue;
+    }
+
+    if (seenOffsets.has(occurrence.occurrence.startOffset)) {
+      continue;
+    }
+
+    seenOffsets.add(occurrence.occurrence.startOffset);
+    references.push({
+      name: occurrence.name,
+      range: occurrence.occurrence.range,
+    });
+  }
+
+  return references.sort((left, right) => compareRanges(left.range, right.range));
+}
+
 function getSymbolAtPosition(
   source: string,
   position: MooSourcePosition,
@@ -489,6 +531,35 @@ function allSymbolOccurrences(record: SymbolRecord): Occurrence[] {
 
 function sameOccurrence(left: Occurrence, right: Occurrence): boolean {
   return left.startOffset === right.startOffset && left.endOffset === right.endOffset;
+}
+
+function isNonVariableIdentifierOccurrence(source: string, occurrence: Occurrence): boolean {
+  const previous = previousNonWhitespaceCharacter(source, occurrence.startOffset);
+  if (previous === '.' || previous === ':' || previous === '$') {
+    return true;
+  }
+
+  return nextNonWhitespaceCharacter(source, occurrence.endOffset) === '(';
+}
+
+function previousNonWhitespaceCharacter(source: string, offset: number): string | null {
+  for (let index = offset - 1; index >= 0; index -= 1) {
+    if (!/\s/.test(source[index])) {
+      return source[index];
+    }
+  }
+
+  return null;
+}
+
+function nextNonWhitespaceCharacter(source: string, offset: number): string | null {
+  for (let index = offset; index < source.length; index += 1) {
+    if (!/\s/.test(source[index])) {
+      return source[index];
+    }
+  }
+
+  return null;
 }
 
 function compareRanges(left: MonacoRange, right: MonacoRange): number {

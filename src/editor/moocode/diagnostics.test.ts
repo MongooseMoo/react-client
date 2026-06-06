@@ -133,4 +133,23 @@ describe('validateMooSyntax', () => {
     );
     expect(diagnostics.filter((diagnostic) => diagnostic.code === 'builtin-arity')).toHaveLength(2);
   });
+
+  it('reports likely undefined local references', () => {
+    const diagnostics = validateMooSyntax(
+      ['total = count + 1;', 'notify(player, total);', '// ghost;'].join('\n'),
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'undefined-local',
+        lineNumber: 1,
+        startColumn: 9,
+        endColumn: 14,
+        message: 'count is used before it is defined.',
+      }),
+    );
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'undefined-local')).toHaveLength(
+      1,
+    );
+  });
 });

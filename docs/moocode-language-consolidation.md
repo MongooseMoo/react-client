@@ -376,3 +376,15 @@ Iterations:
     formatter used by signatures and hover text.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/treeSitter.test.ts src/editor/moocode/codeActions.test.ts src/editor/moocode/language.test.ts`.
+- 2026-06-06 undefined-local semantic diagnostics:
+  - The browser-side semantic model now reports likely local variable references
+    that have no local definition in the verb source.
+  - The detector respects masked comments/strings, builtin variables, error
+    constants, system references, function-call positions, property names, and
+    verb-call names, while still allowing locals to shadow builtin function
+    names such as `index`.
+  - `validateMooSyntax` now emits `undefined-local` markers so the Monaco
+    diagnostics status and marker UI catch likely `E_VARNF` mistakes before
+    runtime.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/diagnostics.test.ts`.

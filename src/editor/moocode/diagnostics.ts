@@ -1,6 +1,7 @@
 import { formatMooBuiltinArity, getMooBuiltinMetadata, type MooBuiltinMetadata } from './builtins';
 import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_LANGUAGE_ID, MOO_MIDDLE_KEYWORDS } from './contract';
 import { firstMooKeyword, maskMooSource, positionAtMooOffset } from './scanner';
+import { findMooUndefinedLocalReferences } from './semantics';
 
 export type MooDiagnosticCode =
   | 'misplaced-middle'
@@ -11,7 +12,8 @@ export type MooDiagnosticCode =
   | 'unexpected-delimiter'
   | 'unterminated-string'
   | 'loop-control-outside-loop'
-  | 'builtin-arity';
+  | 'builtin-arity'
+  | 'undefined-local';
 
 export type MooDiagnostic = {
   code: MooDiagnosticCode;
@@ -166,6 +168,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
   }
 
   diagnostics.push(...validateBuiltinCallArity(source));
+  diagnostics.push(...validateUndefinedLocals(source));
 
   return diagnostics;
 }
@@ -333,6 +336,16 @@ function validateBuiltinCallArity(source: string): MooDiagnostic[] {
   }
 
   return diagnostics;
+}
+
+function validateUndefinedLocals(source: string): MooDiagnostic[] {
+  return findMooUndefinedLocalReferences(source).map((reference) => ({
+    code: 'undefined-local',
+    message: `${reference.name} is used before it is defined.`,
+    lineNumber: reference.range.startLineNumber,
+    startColumn: reference.range.startColumn,
+    endColumn: reference.range.endColumn,
+  }));
 }
 
 function readIdentifierBefore(

@@ -5,6 +5,7 @@ import {
   findMooDefinition,
   findMooDocumentHighlights,
   findMooReferences,
+  findMooUndefinedLocalReferences,
   getMooCodeLenses,
   getMooLinkedEditingRanges,
   getMooLocalCompletions,
@@ -155,6 +156,27 @@ describe('MOO semantic model', () => {
       expect.objectContaining({ name: 'item' }),
       expect.objectContaining({ name: 'total' }),
     ]);
+  });
+
+  it('finds likely undefined local references without flagging language-owned names', () => {
+    const source = [
+      'total = count + 1;',
+      'notify(player, total);',
+      'player:tell(total);',
+      'this.name = total;',
+      '$utils:format(total);',
+      'utils = total;',
+      'notify(player, utils);',
+      '// ghost;',
+    ].join('\n');
+
+    expect(findMooUndefinedLocalReferences(source)).toEqual([
+      {
+        name: 'count',
+        range: wordRange(source, 'count', 1),
+      },
+    ]);
+    expect(analyzeMooSemantics(source).symbols.map((symbol) => symbol.name)).toContain('utils');
   });
 });
 
