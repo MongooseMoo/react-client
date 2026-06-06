@@ -296,7 +296,72 @@ export function getMooQuickFixes(
     });
   }
 
+  const groupedUndefinedLocalFix = groupedUndefinedLocalInitializerFix(lines, diagnostics);
+  if (groupedUndefinedLocalFix) {
+    fixes.push(groupedUndefinedLocalFix);
+  }
+
   return fixes;
+}
+
+function groupedUndefinedLocalInitializerFix(
+  lines: string[],
+  diagnostics: MooQuickFixDiagnostic[],
+): MooQuickFix | null {
+  const diagnosticsByName = new Map<string, { diagnostic: MooQuickFixDiagnostic; name: string }>();
+
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.code !== 'undefined-local' || diagnostic.suggestedName) {
+      continue;
+    }
+
+    const name = diagnosticText(lines, diagnostic);
+    if (!name) {
+      continue;
+    }
+
+    const key = name.toLowerCase();
+    if (!diagnosticsByName.has(key)) {
+      diagnosticsByName.set(key, { diagnostic, name });
+    }
+  }
+
+  const distinctDiagnostics = [...diagnosticsByName.values()].sort((left, right) =>
+    compareDiagnosticPositions(left.diagnostic, right.diagnostic),
+  );
+  if (distinctDiagnostics.length < 2) {
+    return null;
+  }
+
+  const diagnosticsByLine = new Map<
+    number,
+    Array<{ diagnostic: MooQuickFixDiagnostic; name: string }>
+  >();
+  for (const entry of distinctDiagnostics) {
+    const lineDiagnostics = diagnosticsByLine.get(entry.diagnostic.lineNumber) ?? [];
+    lineDiagnostics.push(entry);
+    diagnosticsByLine.set(entry.diagnostic.lineNumber, lineDiagnostics);
+  }
+
+  const edits = [...diagnosticsByLine.entries()]
+    .sort(([leftLine], [rightLine]) => leftLine - rightLine)
+    .map(([lineNumber, entries]) => {
+      const line = lines[lineNumber - 1] ?? '';
+      const indent = leadingWhitespace(line);
+      const text = entries.map((entry) => `${indent}${entry.name} = 0;`).join('\n');
+
+      return {
+        range: rangeAtStartOfLine(lineNumber),
+        text: `${text}\n`,
+      };
+    });
+
+  return {
+    title: 'Initialize all undefined locals before use',
+    diagnostics: distinctDiagnostics.map((entry) => entry.diagnostic),
+    edit: edits[0],
+    edits,
+  };
 }
 
 function rangeAtEndOfSource(source: string): MonacoRange {
@@ -397,6 +462,17 @@ function diagnosticText(lines: string[], diagnostic: MooQuickFixDiagnostic): str
   const line = lines[diagnostic.lineNumber - 1] ?? '';
 
   return line.slice(diagnostic.startColumn - 1, diagnostic.endColumn - 1);
+}
+
+function compareDiagnosticPositions(
+  left: MooQuickFixDiagnostic,
+  right: MooQuickFixDiagnostic,
+): number {
+  if (left.lineNumber !== right.lineNumber) {
+    return left.lineNumber - right.lineNumber;
+  }
+
+  return left.startColumn - right.startColumn;
 }
 
 function leadingWhitespace(line: string): string {

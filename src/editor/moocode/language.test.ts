@@ -1567,6 +1567,49 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('provides Monaco quick fixes with grouped undefined local initializers', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () =>
+        ['if (valid(player))', '  notify(player, total + count);', 'endif'].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      { markers: [], trigger: 1 } as never,
+      {} as never,
+    );
+
+    expect(actions.actions).toContainEqual({
+      title: 'Initialize all undefined locals before use',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [
+        expect.objectContaining({ code: 'undefined-local' }),
+        expect.objectContaining({ code: 'undefined-local' }),
+      ],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 2,
+                startColumn: 1,
+                endLineNumber: 2,
+                endColumn: 1,
+              },
+              text: '  total = 0;\n  count = 0;\n',
+            },
+            versionId: undefined,
+          },
+        ],
+      },
+    });
+  });
+
   it('provides Monaco quick fixes for extra builtin arguments', () => {
     const provider = createMooCodeActionProvider();
     const model = {

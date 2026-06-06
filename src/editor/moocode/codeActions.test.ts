@@ -287,6 +287,38 @@ describe('MOO code actions', () => {
     });
   });
 
+  it('offers a quick fix to initialize all undefined locals before first use', () => {
+    const source = ['if (valid(player))', '  notify(player, total + count);', 'endif'].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Initialize all undefined locals before use',
+      diagnostics: [
+        expect.objectContaining({ code: 'undefined-local', lineNumber: 2, startColumn: 18 }),
+        expect.objectContaining({ code: 'undefined-local', lineNumber: 2, startColumn: 26 }),
+      ],
+      edit: {
+        range: {
+          startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 1,
+        },
+        text: '  total = 0;\n  count = 0;\n',
+      },
+      edits: [
+        {
+          range: {
+            startLineNumber: 2,
+            startColumn: 1,
+            endLineNumber: 2,
+            endColumn: 1,
+          },
+          text: '  total = 0;\n  count = 0;\n',
+        },
+      ],
+    });
+  });
+
   it('offers a quick fix to replace an undefined local with a likely visible local typo target', () => {
     const source = ['total = 0;', 'notify(player, totla);'].join('\n');
 
