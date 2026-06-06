@@ -267,6 +267,36 @@ describe('MOO Monaco language support', () => {
     );
   });
 
+  it('uses expression completions inside dynamic MOO verb-name targets', () => {
+    const provider = createMooCompletionProvider();
+    const source = ['verb_name = "tell";', 'player:(ver'].join('\n');
+    const completions = provider.provideCompletionItems(
+      {
+        getValue: () => source,
+        getLineContent: () => 'player:(ver',
+        getWordUntilPosition: () => ({
+          word: 'ver',
+          startColumn: 9,
+          endColumn: 12,
+        }),
+      },
+      { lineNumber: 2, column: 12 },
+    );
+
+    expect(completions.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'verb_name',
+          documentation: 'MOO local variable',
+        }),
+        expect.objectContaining({
+          label: 'if',
+          detail: 'MOO statement keyword',
+        }),
+      ]),
+    );
+  });
+
   it('filters completions for error constants, system references, and verb-call contexts', () => {
     const provider = createMooCompletionProvider();
 

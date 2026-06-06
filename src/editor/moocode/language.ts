@@ -1155,7 +1155,7 @@ function getCompletionContext(
     return 'system-reference';
   }
 
-  if (/:\(?[A-Za-z_]*$/.test(linePrefix)) {
+  if (/:[A-Za-z_]*$/.test(linePrefix)) {
     return 'verb';
   }
 
