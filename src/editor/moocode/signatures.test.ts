@@ -39,6 +39,21 @@ describe('MOO signature help analysis', () => {
     });
   });
 
+  it('offers generic signature help for known ToastStunt builtins without curated docs', () => {
+    expect(getMooSignatureHelp('sqlite_query(handle, sql, options);', { lineNumber: 1, column: 27 }))
+      .toMatchObject({
+        activeSignature: 0,
+        activeParameter: 2,
+        signatures: [
+          {
+            label: 'sqlite_query(arg1, arg2, arg3)',
+            documentation: 'ToastStunt builtin function.',
+            parameters: [{ label: 'arg1' }, { label: 'arg2' }, { label: 'arg3' }],
+          },
+        ],
+      });
+  });
+
   it('does not offer signature help for unknown call names', () => {
     expect(getMooSignatureHelp('custom(player, args);', { lineNumber: 1, column: 10 })).toBeNull();
   });

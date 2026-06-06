@@ -316,3 +316,15 @@ Iterations:
   - Focused red-to-green gates:
     `npm test -- --run src/editor/moocode/contract.test.ts` and
     `npm test -- --run src/editor/moocode src/components/editor/editorWindow.test.tsx`.
+- 2026-06-06 generic ToastStunt builtin signatures:
+  - Added generic signature-help fallback for every known ToastStunt builtin
+    that does not yet have curated parameter names and docs.
+  - Curated signatures such as `notify(player, text)` and `move(object,
+    destination)` still win; newly recognized builtins now produce conservative
+    `arg1`, `arg2`, ... labels instead of no signature help.
+  - Inlay hints pass the active argument count through the signature helper, so
+    multi-argument modern builtins like `sqlite_query(handle, sql, options)`
+    receive useful fallback argument labels.
+  - Focused red-to-green gates:
+    `npm test -- --run src/editor/moocode/signatures.test.ts src/editor/moocode/inlayHints.test.ts`
+    and `npm test -- --run src/editor/moocode src/components/editor/editorWindow.test.tsx`.

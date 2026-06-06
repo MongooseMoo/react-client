@@ -91,7 +91,7 @@ function flushArgumentHint(source: string, frame: CallFrame, hints: MooInlayHint
     return;
   }
 
-  const signature = getMooBuiltinSignature(frame.functionName);
+  const signature = getMooBuiltinSignature(frame.functionName, frame.parameterIndex + 1);
   const parameter = signature?.parameters[frame.parameterIndex];
   if (!parameter) {
     return;

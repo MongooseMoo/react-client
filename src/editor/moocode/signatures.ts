@@ -28,6 +28,8 @@ type SignatureDefinition = {
   documentation: string;
 };
 
+const GENERIC_BUILTIN_DOCUMENTATION = 'ToastStunt builtin function.';
+
 const BUILTIN_SIGNATURES: Partial<Record<(typeof BUILTIN_FUNCTIONS)[number], SignatureDefinition>> =
   {
     listappend: {
@@ -150,7 +152,7 @@ export function getMooSignatureHelp(
     return null;
   }
 
-  const definition = BUILTIN_SIGNATURES[context.functionName as keyof typeof BUILTIN_SIGNATURES];
+  const definition = getSignatureDefinition(context.functionName, context.activeParameter + 1);
   if (!definition) {
     return null;
   }
@@ -170,9 +172,12 @@ export function getMooSignatureHelp(
   };
 }
 
-export function getMooBuiltinSignature(functionName: string): MooSignatureInformation | null {
+export function getMooBuiltinSignature(
+  functionName: string,
+  minimumParameterCount = 1,
+): MooSignatureInformation | null {
   const normalizedName = functionName.toLowerCase();
-  const definition = BUILTIN_SIGNATURES[normalizedName as keyof typeof BUILTIN_SIGNATURES];
+  const definition = getSignatureDefinition(normalizedName, minimumParameterCount);
   if (!definition) {
     return null;
   }
@@ -183,6 +188,27 @@ export function getMooBuiltinSignature(functionName: string): MooSignatureInform
       .join(', ')})`,
     documentation: definition.documentation,
     parameters: definition.parameters,
+  };
+}
+
+function getSignatureDefinition(
+  normalizedName: string,
+  minimumParameterCount: number,
+): SignatureDefinition | null {
+  const definition = BUILTIN_SIGNATURES[normalizedName as keyof typeof BUILTIN_SIGNATURES];
+  if (definition) {
+    return definition;
+  }
+
+  if (!BUILTIN_NAMES.has(normalizedName)) {
+    return null;
+  }
+
+  return {
+    parameters: Array.from({ length: Math.max(1, minimumParameterCount) }, (_, index) => ({
+      label: `arg${index + 1}`,
+    })),
+    documentation: GENERIC_BUILTIN_DOCUMENTATION,
   };
 }
 
