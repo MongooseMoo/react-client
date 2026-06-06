@@ -9,13 +9,16 @@ export type MooQuickFixDiagnostic = Omit<MooDiagnostic, 'code'> & {
   missingText?: string;
 };
 
+export type MooQuickFixEdit = {
+  range: MonacoRange;
+  text: string;
+};
+
 export type MooQuickFix = {
   title: string;
   diagnostics: MooQuickFixDiagnostic[];
-  edit: {
-    range: MonacoRange;
-    text: string;
-  };
+  edit: MooQuickFixEdit;
+  edits?: MooQuickFixEdit[];
 };
 
 const CLOSE_DELIMITER_BY_OPEN: Record<string, string> = {
@@ -259,6 +262,23 @@ export function getMooQuickFixes(
     }
   }
 
+  const unreachableDiagnostics = diagnostics.filter(
+    (diagnostic) => diagnostic.code === 'unreachable-statement',
+  );
+  if (unreachableDiagnostics.length > 1) {
+    const edits = unreachableDiagnostics.map((diagnostic) => ({
+      range: lineRemovalRange(lines, diagnostic.lineNumber),
+      text: '',
+    }));
+
+    fixes.push({
+      title: 'Remove all unreachable statements',
+      diagnostics: unreachableDiagnostics,
+      edit: edits[0],
+      edits,
+    });
+  }
+
   return fixes;
 }
 
@@ -370,7 +390,7 @@ function dynamicBuiltinCallEdit(
   lines: string[],
   diagnostic: MooQuickFixDiagnostic,
   name: string,
-): MooQuickFix['edit'] | null {
+): MooQuickFixEdit | null {
   const call = findBuiltinCallInLine(lines, diagnostic);
   if (!call) {
     return null;
@@ -432,7 +452,7 @@ function missingBuiltinArgumentsEdit(
   lines: string[],
   diagnostic: MooQuickFixDiagnostic,
   name: string,
-): { edit: MooQuickFix['edit']; addedCount: number } | null {
+): { edit: MooQuickFixEdit; addedCount: number } | null {
   const metadata = getMooBuiltinMetadata(name);
   const call = findBuiltinCallInLine(lines, diagnostic);
   if (!metadata || !call) {

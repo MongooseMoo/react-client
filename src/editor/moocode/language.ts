@@ -12,7 +12,12 @@ export {
   SYSTEM_REFERENCES,
 } from './contract';
 import { findMooBuiltinAtPosition } from './builtinNavigation';
-import { getMooQuickFixes, type MooQuickFix, type MooQuickFixDiagnostic } from './codeActions';
+import {
+  getMooQuickFixes,
+  type MooQuickFix,
+  type MooQuickFixDiagnostic,
+  type MooQuickFixEdit,
+} from './codeActions';
 import { getMooBuiltinMetadata, getMooBuiltinParameterLabel } from './builtins';
 import { formatMooCode, formatMooCodeRange } from './formatter';
 import {
@@ -607,22 +612,24 @@ export function createMooCodeActionProvider(): MonacoEditor.languages.CodeAction
           isPreferred: true,
           diagnostics: fix.diagnostics.map(toCodeActionMarker),
           edit: {
-            edits: [
-              {
-                resource: model.uri,
-                textEdit: {
-                  range: fix.edit.range,
-                  text: fix.edit.text,
-                },
-                versionId: undefined,
+            edits: mooQuickFixEdits(fix).map((edit) => ({
+              resource: model.uri,
+              textEdit: {
+                range: edit.range,
+                text: edit.text,
               },
-            ],
+              versionId: undefined,
+            })),
           },
         })),
         dispose: () => {},
       };
     },
   };
+}
+
+function mooQuickFixEdits(fix: MooQuickFix): MooQuickFixEdit[] {
+  return fix.edits ?? [fix.edit];
 }
 
 type MooQuickFixMarkerTarget = {

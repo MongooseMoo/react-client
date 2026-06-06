@@ -179,6 +179,55 @@ describe('MOO code actions', () => {
     });
   });
 
+  it('offers a quick fix to remove all unreachable statement lines', () => {
+    const source = [
+      'if (valid(player))',
+      '  return E_PERM;',
+      '  notify(player, "never if");',
+      'else',
+      '  return E_NONE;',
+      '  notify(player, "never else");',
+      'endif',
+    ].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Remove all unreachable statements',
+      diagnostics: [
+        expect.objectContaining({ code: 'unreachable-statement', lineNumber: 3 }),
+        expect.objectContaining({ code: 'unreachable-statement', lineNumber: 6 }),
+      ],
+      edit: {
+        range: {
+          startLineNumber: 3,
+          startColumn: 1,
+          endLineNumber: 4,
+          endColumn: 1,
+        },
+        text: '',
+      },
+      edits: [
+        {
+          range: {
+            startLineNumber: 3,
+            startColumn: 1,
+            endLineNumber: 4,
+            endColumn: 1,
+          },
+          text: '',
+        },
+        {
+          range: {
+            startLineNumber: 6,
+            startColumn: 1,
+            endLineNumber: 7,
+            endColumn: 1,
+          },
+          text: '',
+        },
+      ],
+    });
+  });
+
   it('offers a quick fix to initialize an undefined local before first use', () => {
     const source = ['if (valid(player))', '  notify(player, total);', 'endif'].join('\n');
 

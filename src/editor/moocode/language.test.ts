@@ -1376,6 +1376,70 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('provides Monaco quick fixes with multiple edits for grouped unreachable statements', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () =>
+        [
+          'if (valid(player))',
+          '  return E_PERM;',
+          '  notify(player, "never if");',
+          'else',
+          '  return E_NONE;',
+          '  notify(player, "never else");',
+          'endif',
+        ].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      { markers: [], trigger: 1 } as never,
+      {} as never,
+    );
+
+    expect(actions.actions).toContainEqual({
+      title: 'Remove all unreachable statements',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [
+        expect.objectContaining({ code: 'unreachable-statement' }),
+        expect.objectContaining({ code: 'unreachable-statement' }),
+      ],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 3,
+                startColumn: 1,
+                endLineNumber: 4,
+                endColumn: 1,
+              },
+              text: '',
+            },
+            versionId: undefined,
+          },
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 6,
+                startColumn: 1,
+                endLineNumber: 7,
+                endColumn: 1,
+              },
+              text: '',
+            },
+            versionId: undefined,
+          },
+        ],
+      },
+    });
+  });
+
   it('provides Monaco quick fixes for undefined local diagnostics', () => {
     const provider = createMooCodeActionProvider();
     const model = {
