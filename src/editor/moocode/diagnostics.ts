@@ -469,11 +469,31 @@ function undefinedLocalRelatedInformation(
 function validateUnknownLoopLabels(source: string): MooDiagnostic[] {
   return findMooUnknownLoopLabelReferences(source).map((reference) => ({
     code: 'unknown-loop-label',
-    message: `${reference.name} does not name an enclosing while label.`,
+    message: reference.suggestedName
+      ? `${reference.name} does not name an enclosing while label. Did you mean ${reference.suggestedName}?`
+      : `${reference.name} does not name an enclosing while label.`,
+    relatedInformation: unknownLoopLabelRelatedInformation(reference),
+    suggestedName: reference.suggestedName,
+    suggestedRange: reference.suggestedRange,
     lineNumber: reference.range.startLineNumber,
     startColumn: reference.range.startColumn,
     endColumn: reference.range.endColumn,
   }));
+}
+
+function unknownLoopLabelRelatedInformation(
+  reference: ReturnType<typeof findMooUnknownLoopLabelReferences>[number],
+): MooDiagnosticRelatedInformation[] | undefined {
+  if (!reference.suggestedName || !reference.suggestedRange) {
+    return undefined;
+  }
+
+  return [
+    {
+      message: `Enclosing while label ${reference.suggestedName} is defined here.`,
+      range: reference.suggestedRange,
+    },
+  ];
 }
 
 function validateUnusedLocals(source: string): MooDiagnostic[] {

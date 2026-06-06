@@ -105,6 +105,13 @@ type Occurrence = {
   startOffset: number;
 };
 
+type LoopLabelReference = {
+  name: string;
+  occurrence: Occurrence;
+  suggestedName?: string;
+  suggestedRange?: MonacoRange;
+};
+
 const IDENTIFIER_PATTERN = new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE, 'g');
 const LINKED_IDENTIFIER_PATTERN = new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE);
 const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
@@ -349,10 +356,18 @@ export function getMooLoopLabelCompletions(
 }
 
 export function findMooUnknownLoopLabelReferences(source: string): MooUndefinedLocalReference[] {
-  return collectLoopLabelReferences(source).unknownReferences.map((reference) => ({
-    name: reference.name,
-    range: reference.occurrence.range,
-  }));
+  return collectLoopLabelReferences(source).unknownReferences.map((reference) => {
+    const unknownReference: MooUndefinedLocalReference = {
+      name: reference.name,
+      range: reference.occurrence.range,
+    };
+    if (reference.suggestedName && reference.suggestedRange) {
+      unknownReference.suggestedName = reference.suggestedName;
+      unknownReference.suggestedRange = reference.suggestedRange;
+    }
+
+    return unknownReference;
+  });
 }
 
 export function findMooUndefinedLocalReferences(source: string): MooUndefinedLocalReference[] {
@@ -590,7 +605,7 @@ function collectLoopLabelReferences(
   stopOffset = source.length,
 ): {
   records: SymbolRecord[];
-  unknownReferences: Array<{ name: string; occurrence: Occurrence }>;
+  unknownReferences: LoopLabelReference[];
   visibleLabelRecords: SymbolRecord[];
 } {
   const masked = maskMooSource(source);
@@ -598,7 +613,7 @@ function collectLoopLabelReferences(
   const lineOffsets = getLineOffsets(source);
   const blockStack: LabelBlockFrame[] = [];
   const records: SymbolRecord[] = [];
-  const unknownReferences: Array<{ name: string; occurrence: Occurrence }> = [];
+  const unknownReferences: LoopLabelReference[] = [];
   let visibleLabelRecords: SymbolRecord[] = [];
 
   lines.forEach((line, lineIndex) => {
@@ -623,6 +638,11 @@ function collectLoopLabelReferences(
         if (record) {
           record.references.push(reference.occurrence);
         } else if (isInsideLoop(blockStack)) {
+          const suggestion = findLikelyLoopLabelReplacement(blockStack, reference.name);
+          if (suggestion) {
+            reference.suggestedName = suggestion.name;
+            reference.suggestedRange = suggestion.definitions[0].range;
+          }
           unknownReferences.push(reference);
         }
       }
@@ -679,7 +699,7 @@ function readLoopControlLabel(
   source: string,
   line: string,
   lineOffset: number,
-): { name: string; occurrence: Occurrence } | null {
+): LoopLabelReference | null {
   const match = new RegExp(
     `\\b(?:break|continue)\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\b`,
     'i',
@@ -709,6 +729,23 @@ function findVisibleLoopLabelRecord(
   }
 
   return undefined;
+}
+
+function findLikelyLoopLabelReplacement(
+  blockStack: LabelBlockFrame[],
+  name: string,
+): SymbolRecord | null {
+  const normalizedName = name.toLowerCase();
+  const candidates = labelRecordsFromStack(blockStack)
+    .filter((record) => record.name.toLowerCase() !== normalizedName)
+    .map((record) => ({
+      record,
+      distance: damerauLevenshteinDistance(normalizedName, record.name.toLowerCase()),
+    }))
+    .filter((candidate) => candidate.distance <= typoDistanceThreshold(name))
+    .sort((left, right) => left.distance - right.distance);
+
+  return candidates[0]?.record ?? null;
 }
 
 function isInsideLoop(blockStack: LabelBlockFrame[]): boolean {

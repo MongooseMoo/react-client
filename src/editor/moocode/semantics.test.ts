@@ -5,6 +5,7 @@ import {
   findMooDefinition,
   findMooDocumentHighlights,
   findMooReferences,
+  findMooUnknownLoopLabelReferences,
   findMooUnusedLocalDefinitions,
   findMooUndefinedLocalReferences,
   getMooCodeLenses,
@@ -459,6 +460,25 @@ describe('MOO semantic model', () => {
       ],
     });
     expect(analyzeMooSemantics(source).symbols.map((symbol) => symbol.name)).not.toContain('outer');
+  });
+
+  it('suggests visible while-label typo targets for unknown loop labels', () => {
+    const source = [
+      'while outer (valid(player))',
+      '  for item in ({1, 2})',
+      '    continue outter;',
+      '  endfor',
+      'endwhile',
+    ].join('\n');
+
+    expect(findMooUnknownLoopLabelReferences(source)).toEqual([
+      {
+        name: 'outter',
+        range: wordRange(source, 'outter', 1),
+        suggestedName: 'outer',
+        suggestedRange: wordRange(source, 'outer', 1),
+      },
+    ]);
   });
 
   it('does not report mixed-case references as undefined or unused', () => {

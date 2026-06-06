@@ -192,6 +192,17 @@ export function getMooQuickFixes(
         break;
       }
       case 'unknown-loop-label':
+        if (diagnostic.suggestedName) {
+          fixes.push({
+            title: `Replace ${diagnosticText(lines, diagnostic)} with ${diagnostic.suggestedName}`,
+            diagnostics: [diagnostic],
+            edit: {
+              range: diagnosticRange(diagnostic),
+              text: diagnostic.suggestedName,
+            },
+          });
+        }
+
         fixes.push({
           title: 'Remove unknown loop label',
           diagnostics: [diagnostic],

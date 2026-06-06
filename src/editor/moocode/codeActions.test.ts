@@ -248,4 +248,28 @@ describe('MOO code actions', () => {
       },
     });
   });
+
+  it('offers a quick fix to replace unknown loop labels with likely visible label typo targets', () => {
+    const source = [
+      'while outer (valid(player))',
+      '  for item in ({1, 2})',
+      '    continue outter;',
+      '  endfor',
+      'endwhile',
+    ].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Replace outter with outer',
+      diagnostics: [expect.objectContaining({ code: 'unknown-loop-label' })],
+      edit: {
+        range: {
+          startLineNumber: 3,
+          startColumn: 14,
+          endLineNumber: 3,
+          endColumn: 20,
+        },
+        text: 'outer',
+      },
+    });
+  });
 });

@@ -154,6 +154,37 @@ describe('validateMooSyntax', () => {
     ).toHaveLength(1);
   });
 
+  it('reports likely loop-label typo targets in unknown loop-label diagnostics', () => {
+    const source = [
+      'while outer (valid(player))',
+      '  for item in ({1, 2})',
+      '    continue outter;',
+      '  endfor',
+      'endwhile',
+    ].join('\n');
+
+    expect(validateMooSyntax(source)).toContainEqual(
+      expect.objectContaining({
+        code: 'unknown-loop-label',
+        lineNumber: 3,
+        startColumn: 14,
+        endColumn: 20,
+        message: 'outter does not name an enclosing while label. Did you mean outer?',
+        relatedInformation: [
+          {
+            message: 'Enclosing while label outer is defined here.',
+            range: {
+              startLineNumber: 1,
+              startColumn: 7,
+              endLineNumber: 1,
+              endColumn: 12,
+            },
+          },
+        ],
+      }),
+    );
+  });
+
   it('reports ToastStunt builtin calls outside their registered arity', () => {
     const diagnostics = validateMooSyntax(
       [
