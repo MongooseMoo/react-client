@@ -35,6 +35,7 @@ import {
   findMooReferences,
   getMooLocalCompletions,
 } from './semantics';
+import { getMooSelectionRanges, type MooSelectionRange } from './selectionRanges';
 import { MOO_SEMANTIC_TOKEN_LEGEND, encodeMooSemanticTokens } from './semanticTokens';
 import { analyzeMooStructure, type MooStructureSymbol } from './structure';
 import { parseMooCodeWithTreeSitter, type MooTreeSitterParseResult } from './treeSitter';
@@ -264,6 +265,10 @@ export type MonacoLike = {
     registerRenameProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.RenameProvider,
+    ) => { dispose: () => void };
+    registerSelectionRangeProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.SelectionRangeProvider,
     ) => { dispose: () => void };
     registerSignatureHelpProvider?: (
       languageId: string,
@@ -642,6 +647,13 @@ export function createMooRenameProvider(): MonacoEditor.languages.RenameProvider
   };
 }
 
+export function createMooSelectionRangeProvider(): MonacoEditor.languages.SelectionRangeProvider {
+  return {
+    provideSelectionRanges: (model, positions) =>
+      getMooSelectionRanges(model.getValue(), positions).map(flattenSelectionRange),
+  };
+}
+
 export function createMooSemanticTokensProvider(): MonacoEditor.languages.DocumentSemanticTokensProvider {
   return {
     getLegend: () => MOO_SEMANTIC_TOKEN_LEGEND,
@@ -716,6 +728,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
   );
   monaco.languages.registerReferenceProvider?.(MOO_LANGUAGE_ID, createMooReferenceProvider());
   monaco.languages.registerRenameProvider?.(MOO_LANGUAGE_ID, createMooRenameProvider());
+  monaco.languages.registerSelectionRangeProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooSelectionRangeProvider(),
+  );
   monaco.languages.registerSignatureHelpProvider?.(MOO_LANGUAGE_ID, createMooSignatureHelpProvider());
   monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, createMooHoverProvider());
 }
@@ -792,6 +808,20 @@ function fullModelRange(model: DocumentFormattingTextModelLike): MonacoRange {
     endLineNumber: lastLineNumber,
     endColumn: model.getLineMaxColumn(lastLineNumber),
   };
+}
+
+function flattenSelectionRange(
+  selectionRange: MooSelectionRange,
+): MonacoEditor.languages.SelectionRange[] {
+  const ranges: MonacoEditor.languages.SelectionRange[] = [];
+  let current: MooSelectionRange | undefined = selectionRange;
+
+  while (current) {
+    ranges.push({ range: current.range });
+    current = current.parent;
+  }
+
+  return ranges;
 }
 
 const BUILTIN_SNIPPETS: Partial<Record<(typeof BUILTIN_FUNCTIONS)[number], string>> = {

@@ -17,6 +17,7 @@ import {
   createMooMonarchLanguage,
   createMooReferenceProvider,
   createMooRenameProvider,
+  createMooSelectionRangeProvider,
   createMooSemanticTokensProvider,
   getEditorLanguageForSessionType,
   registerMooLanguage,
@@ -172,6 +173,7 @@ describe('MOO Monaco language support', () => {
         registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerSelectionRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
         setLanguageConfiguration: vi.fn(),
         setMonarchTokensProvider: vi.fn(),
@@ -203,6 +205,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerInlayHintsProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerReferenceProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerRenameProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerSelectionRangeProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerSignatureHelpProvider).toHaveBeenCalledTimes(1);
   });
 
@@ -278,6 +281,46 @@ describe('MOO Monaco language support', () => {
       expect.objectContaining({ kind: 2 }),
       expect.objectContaining({ kind: 1 }),
       expect.objectContaining({ kind: 1 }),
+    ]);
+  });
+
+  it('provides Monaco selection ranges for smart expand selection', () => {
+    const provider = createMooSelectionRangeProvider();
+    const source = ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n');
+
+    expect(
+      provider.provideSelectionRanges(
+        { getValue: () => source } as never,
+        [{ lineNumber: 2, column: 12 }],
+        {} as never,
+      ),
+    ).toEqual([
+      [
+        {
+          range: {
+            startLineNumber: 2,
+            startColumn: 10,
+            endLineNumber: 2,
+            endColumn: 16,
+          },
+        },
+        {
+          range: {
+            startLineNumber: 2,
+            startColumn: 3,
+            endLineNumber: 2,
+            endColumn: 24,
+          },
+        },
+        {
+          range: {
+            startLineNumber: 1,
+            startColumn: 1,
+            endLineNumber: 3,
+            endColumn: 6,
+          },
+        },
+      ],
     ]);
   });
 
@@ -515,6 +558,7 @@ describe('MOO Monaco language support', () => {
         registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerSelectionRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
         setLanguageConfiguration: vi.fn(),
         setMonarchTokensProvider: vi.fn(),

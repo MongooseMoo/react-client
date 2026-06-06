@@ -158,3 +158,11 @@ Iterations:
   - Highlights are suppressed for builtins and masked comment/string content.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco selection ranges:
+  - Added `src/editor/moocode/selectionRanges.ts` for smart expand-selection
+    chains: identifier, statement line, enclosing MOO blocks, then document.
+  - Registered a Monaco `SelectionRangeProvider` for `moocode`.
+  - Word-level selection uses the shared source masker so string/comment text
+    does not create fake identifier ranges.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.
