@@ -87,6 +87,16 @@ describe('MOO document links', () => {
         url: 'moo://system/string_utils',
         tooltip: 'Open MOO system reference $string_utils',
       },
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 31,
+          endLineNumber: 1,
+          endColumn: 43,
+        },
+        url: 'moo://verb/system/string_utils/english_list',
+        tooltip: 'Open MOO verb $string_utils:english_list',
+      },
     ]);
   });
 
@@ -120,6 +130,58 @@ describe('MOO document links', () => {
         },
         url: 'moo://builtin/valid',
         tooltip: 'Open ToastStunt builtin valid',
+      },
+    ]);
+  });
+
+  it('links static object and system verb calls to stable MOO verb URIs', () => {
+    const source = [
+      '#123:initialize(player);',
+      '$room:announce("ok");',
+      'player:tell("local receiver");',
+      'player:(verb_name)("dynamic");',
+    ].join('\n');
+
+    expect(getMooDocumentLinks(source)).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 5,
+        },
+        url: 'moo://object/123',
+        tooltip: 'Open MOO object #123',
+      },
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 6,
+          endLineNumber: 1,
+          endColumn: 16,
+        },
+        url: 'moo://verb/object/123/initialize',
+        tooltip: 'Open MOO verb #123:initialize',
+      },
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 6,
+        },
+        url: 'moo://system/room',
+        tooltip: 'Open MOO system reference $room',
+      },
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 7,
+          endLineNumber: 2,
+          endColumn: 15,
+        },
+        url: 'moo://verb/system/room/announce',
+        tooltip: 'Open MOO verb $room:announce',
       },
     ]);
   });
@@ -183,7 +245,7 @@ describe('MOO document links', () => {
   });
 
   it('finds the link target under the cursor for navigation providers', () => {
-    const source = 'owner = #123;\nnotify($player, "ok");';
+    const source = 'owner = #123;\nnotify($player, "ok");\n#123:initialize(player);';
 
     expect(findMooDocumentLinkAtPosition(source, { lineNumber: 1, column: 10 })).toEqual({
       range: {
@@ -204,6 +266,16 @@ describe('MOO document links', () => {
       },
       url: 'moo://system/player',
       tooltip: 'Open MOO system reference $player',
+    });
+    expect(findMooDocumentLinkAtPosition(source, { lineNumber: 3, column: 10 })).toEqual({
+      range: {
+        startLineNumber: 3,
+        startColumn: 6,
+        endLineNumber: 3,
+        endColumn: 16,
+      },
+      url: 'moo://verb/object/123/initialize',
+      tooltip: 'Open MOO verb #123:initialize',
     });
   });
 
@@ -298,6 +370,61 @@ describe('MOO document links', () => {
         },
         url: 'moo://builtin/notify',
         tooltip: 'Open ToastStunt builtin notify',
+      },
+    ]);
+  });
+
+  it('finds same-target static object and system verb call links', () => {
+    const source = [
+      '#123:initialize(player);',
+      '#123:initialize(caller);',
+      '#124:initialize(player);',
+      '$room:announce("one");',
+      '$room:announce("two");',
+    ].join('\n');
+
+    expect(findMooDocumentLinkReferences(source, { lineNumber: 1, column: 8 })).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 6,
+          endLineNumber: 1,
+          endColumn: 16,
+        },
+        url: 'moo://verb/object/123/initialize',
+        tooltip: 'Open MOO verb #123:initialize',
+      },
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 6,
+          endLineNumber: 2,
+          endColumn: 16,
+        },
+        url: 'moo://verb/object/123/initialize',
+        tooltip: 'Open MOO verb #123:initialize',
+      },
+    ]);
+    expect(findMooDocumentLinkReferences(source, { lineNumber: 4, column: 9 })).toEqual([
+      {
+        range: {
+          startLineNumber: 4,
+          startColumn: 7,
+          endLineNumber: 4,
+          endColumn: 15,
+        },
+        url: 'moo://verb/system/room/announce',
+        tooltip: 'Open MOO verb $room:announce',
+      },
+      {
+        range: {
+          startLineNumber: 5,
+          startColumn: 7,
+          endLineNumber: 5,
+          endColumn: 15,
+        },
+        url: 'moo://verb/system/room/announce',
+        tooltip: 'Open MOO verb $room:announce',
       },
     ]);
   });
