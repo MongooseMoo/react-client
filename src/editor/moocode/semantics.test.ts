@@ -6,6 +6,7 @@ import {
   findMooDocumentHighlights,
   findMooReferences,
   getMooLocalCompletions,
+  getMooRenameLocation,
 } from './semantics';
 
 describe('MOO semantic model', () => {
@@ -80,6 +81,21 @@ describe('MOO semantic model', () => {
       rejectReason: 'MOO identifiers must start with a letter or underscore.',
     });
     expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'player'), 'actor')).toEqual({
+      rejectReason: 'No local MOO symbol is available at this position.',
+    });
+  });
+
+  it('resolves rename locations only for local MOO symbols', () => {
+    const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
+
+    expect(getMooRenameLocation(source, positionFor(source, 'total +'))).toEqual({
+      range: wordRange(source, 'total', 3),
+      text: 'total',
+    });
+    expect(getMooRenameLocation(source, positionFor(source, 'player'))).toEqual({
+      rejectReason: 'No local MOO symbol is available at this position.',
+    });
+    expect(getMooRenameLocation('// total = 0;', { lineNumber: 1, column: 4 })).toEqual({
       rejectReason: 'No local MOO symbol is available at this position.',
     });
   });

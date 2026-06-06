@@ -254,6 +254,37 @@ describe('MOO Monaco language support', () => {
         expect.objectContaining({ resource: 'moo://#1:test' }),
       ],
     });
+    expect(
+      renameProvider.resolveRenameLocation?.(
+        model,
+        { lineNumber: 2, column: 10 },
+        {} as never,
+      ),
+    ).toEqual({
+      range: {
+        startLineNumber: 2,
+        startColumn: 9,
+        endLineNumber: 2,
+        endColumn: 14,
+      },
+      text: 'total',
+    });
+    expect(
+      renameProvider.resolveRenameLocation?.(
+        model,
+        { lineNumber: 3, column: 8 },
+        {} as never,
+      ),
+    ).toEqual({
+      range: {
+        startLineNumber: 3,
+        startColumn: 8,
+        endLineNumber: 3,
+        endColumn: 8,
+      },
+      text: '',
+      rejectReason: 'No local MOO symbol is available at this position.',
+    });
   });
 
   it('provides Monaco document highlights for local symbols', () => {

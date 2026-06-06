@@ -166,3 +166,11 @@ Iterations:
     does not create fake identifier ranges.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco rename preparation:
+  - Added semantic rename-location resolution for local MOO symbols.
+  - Monaco now rejects invalid rename positions before opening the inline
+    rename field, while valid local symbols resolve to their exact word range.
+  - Reused the existing local-symbol model so comments, strings, builtins, and
+    unknown globals remain non-renameable.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

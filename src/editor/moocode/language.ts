@@ -34,6 +34,7 @@ import {
   findMooDocumentHighlights,
   findMooReferences,
   getMooLocalCompletions,
+  getMooRenameLocation,
 } from './semantics';
 import { getMooSelectionRanges, type MooSelectionRange } from './selectionRanges';
 import { MOO_SEMANTIC_TOKEN_LEGEND, encodeMooSemanticTokens } from './semanticTokens';
@@ -624,6 +625,23 @@ export function createMooReferenceProvider(): MonacoEditor.languages.ReferencePr
 
 export function createMooRenameProvider(): MonacoEditor.languages.RenameProvider {
   return {
+    resolveRenameLocation: (model, position) => {
+      const location = getMooRenameLocation(model.getValue(), position);
+      if ('rejectReason' in location) {
+        return {
+          range: {
+            startLineNumber: position.lineNumber,
+            startColumn: position.column,
+            endLineNumber: position.lineNumber,
+            endColumn: position.column,
+          },
+          text: '',
+          rejectReason: location.rejectReason,
+        };
+      }
+
+      return location;
+    },
     provideRenameEdits: (model, position, newName) => {
       const rename = createMooRenameWorkspaceEdit(model.getValue(), position, newName);
       if ('rejectReason' in rename) {

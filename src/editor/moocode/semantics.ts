@@ -29,6 +29,13 @@ export type MooDocumentHighlight = {
 
 export type MooRenameWorkspaceEdit = { edits: MooTextEdit[] } | { rejectReason: string };
 
+export type MooRenameLocation =
+  | {
+      range: MonacoRange;
+      text: string;
+    }
+  | { rejectReason: string };
+
 type SymbolRecord = {
   name: string;
   definitions: Occurrence[];
@@ -162,6 +169,23 @@ export function createMooRenameWorkspaceEdit(
       range: occurrence.range,
       text: newName,
     })),
+  };
+}
+
+export function getMooRenameLocation(
+  source: string,
+  position: MooSourcePosition,
+): MooRenameLocation {
+  const lookup = getSymbolAtPosition(source, position);
+  if (!lookup) {
+    return {
+      rejectReason: 'No local MOO symbol is available at this position.',
+    };
+  }
+
+  return {
+    range: lookup.occurrence.range,
+    text: lookup.record.name,
   };
 }
 
