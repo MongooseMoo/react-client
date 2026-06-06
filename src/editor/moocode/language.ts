@@ -20,6 +20,7 @@ import {
   type MooQuickFixDiagnostic,
   type MooQuickFixEdit,
 } from './codeActions';
+import { collectMooDocumentColors, getMooColorPresentations } from './colors';
 import { getMooBuiltinMetadata, getMooBuiltinParameterLabel } from './builtins';
 import { formatMooCode, formatMooCodeRange } from './formatter';
 import {
@@ -302,6 +303,10 @@ export type MonacoLike = {
     registerCodeLensProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.CodeLensProvider,
+    ) => { dispose: () => void };
+    registerColorProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.DocumentColorProvider,
     ) => { dispose: () => void };
     registerCompletionItemProvider: (
       languageId: string,
@@ -938,6 +943,13 @@ function toCodeActionMarker(diagnostic: MooQuickFixDiagnostic): MonacoEditor.edi
   };
 }
 
+export function createMooColorProvider(): MonacoEditor.languages.DocumentColorProvider {
+  return {
+    provideDocumentColors: (model) => collectMooDocumentColors(model.getValue()),
+    provideColorPresentations: (_model, colorInfo) => getMooColorPresentations(colorInfo),
+  };
+}
+
 export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProvider {
   return {
     triggerCharacters: ['.', ':', '$', 'E', '_'],
@@ -1405,6 +1417,7 @@ export function registerMooLanguage(monaco: MonacoLike) {
     ],
   });
   monaco.languages.registerCodeLensProvider?.(MOO_LANGUAGE_ID, createMooCodeLensProvider());
+  monaco.languages.registerColorProvider?.(MOO_LANGUAGE_ID, createMooColorProvider());
   monaco.languages.registerCompletionItemProvider(
     MOO_LANGUAGE_ID,
     createMooCompletionProvider(monaco),

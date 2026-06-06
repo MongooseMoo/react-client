@@ -8,6 +8,7 @@ import {
   MOO_LANGUAGE_ID,
   createMooCodeActionProvider,
   createMooCodeLensProvider,
+  createMooColorProvider,
   createMooCompletionItems,
   createMooCompletionProvider,
   createMooDeclarationProvider,
@@ -695,6 +696,7 @@ describe('MOO Monaco language support', () => {
         register: vi.fn(),
         registerCodeActionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerCodeLensProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerColorProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDeclarationProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -742,6 +744,7 @@ describe('MOO Monaco language support', () => {
       },
     );
     expect(monaco.languages.registerCodeLensProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerColorProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerCompletionItemProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDeclarationProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDefinitionProvider).toHaveBeenCalledTimes(1);
@@ -1186,6 +1189,42 @@ describe('MOO Monaco language support', () => {
         ],
       },
     });
+  });
+
+  it('provides Monaco color swatches and presentations for MOO string colors', () => {
+    const provider = createMooColorProvider();
+    const model = {
+      getValue: () => 'notify(player, "#8040ff");',
+    };
+    const colors = provider.provideDocumentColors(model as never, {} as never);
+
+    expect(colors).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 17,
+          endLineNumber: 1,
+          endColumn: 24,
+        },
+        color: { red: 128 / 255, green: 64 / 255, blue: 1, alpha: 1 },
+      },
+    ]);
+    expect(
+      provider.provideColorPresentations(model as never, colors[0], {} as never),
+    ).toEqual([
+      {
+        label: '#8040ff',
+        textEdit: {
+          range: {
+            startLineNumber: 1,
+            startColumn: 17,
+            endLineNumber: 1,
+            endColumn: 24,
+          },
+          text: '#8040ff',
+        },
+      },
+    ]);
   });
 
   it('provides Monaco CodeLens summaries for MOO loop labels', () => {
