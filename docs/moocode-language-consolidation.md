@@ -103,6 +103,13 @@ Iterations:
     identifiers or positions without a local symbol.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco declaration navigation:
+  - Registered a Monaco `DeclarationProvider` for local MOO symbols so Go to
+    Declaration and Go to Definition share the same local-symbol target.
+  - The provider reuses the browser-side semantic model, keeping declaration
+    behavior aligned with reference, rename, highlight, and CodeLens support.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/language.test.ts`.
 - 2026-06-06 Monaco semantic tokens:
   - Added `src/editor/moocode/semanticTokens.ts` for Monaco document semantic
     tokens layered on top of Monarch tokenization.

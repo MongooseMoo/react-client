@@ -7,6 +7,7 @@ import {
   createMooCodeLensProvider,
   createMooCompletionItems,
   createMooCompletionProvider,
+  createMooDeclarationProvider,
   createMooDocumentFormattingEditProvider,
   createMooDocumentRangeFormattingEditProvider,
   createMooDocumentHighlightProvider,
@@ -258,6 +259,7 @@ describe('MOO Monaco language support', () => {
         registerCodeActionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerCodeLensProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDeclarationProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentHighlightProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -297,6 +299,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerCodeActionProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerCodeLensProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerCompletionItemProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerDeclarationProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDefinitionProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentHighlightProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentSymbolProvider).toHaveBeenCalledTimes(1);
@@ -323,10 +326,20 @@ describe('MOO Monaco language support', () => {
       getValue: () => source,
       uri: 'moo://#1:test',
     };
+    const declarationProvider = createMooDeclarationProvider();
     const definitionProvider = createMooDefinitionProvider();
     const referenceProvider = createMooReferenceProvider();
     const renameProvider = createMooRenameProvider();
 
+    expect(declarationProvider.provideDeclaration(model, { lineNumber: 2, column: 10 })).toEqual({
+      uri: 'moo://#1:test',
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 6,
+      },
+    });
     expect(definitionProvider.provideDefinition(model, { lineNumber: 2, column: 10 })).toEqual({
       uri: 'moo://#1:test',
       range: {

@@ -249,6 +249,10 @@ export type MonacoLike = {
       languageId: string,
       provider: MonacoEditor.languages.DefinitionProvider,
     ) => { dispose: () => void };
+    registerDeclarationProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.DeclarationProvider,
+    ) => { dispose: () => void };
     registerDocumentHighlightProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.DocumentHighlightProvider,
@@ -598,6 +602,15 @@ export function createMooDefinitionProvider(): MonacoEditor.languages.Definition
   };
 }
 
+export function createMooDeclarationProvider(): MonacoEditor.languages.DeclarationProvider {
+  return {
+    provideDeclaration: (model, position) => {
+      const definition = findMooDefinition(model.getValue(), position);
+      return definition ? { uri: model.uri, range: definition.range } : null;
+    },
+  };
+}
+
 export function createMooDocumentHighlightProvider(
   documentHighlightKind: { Read: number; Write: number } = { Read: 1, Write: 2 },
 ): MonacoEditor.languages.DocumentHighlightProvider {
@@ -873,6 +886,7 @@ export function registerMooLanguage(monaco: MonacoLike) {
   );
   monaco.languages.registerCodeLensProvider?.(MOO_LANGUAGE_ID, createMooCodeLensProvider());
   monaco.languages.registerCompletionItemProvider(MOO_LANGUAGE_ID, createMooCompletionProvider(monaco));
+  monaco.languages.registerDeclarationProvider?.(MOO_LANGUAGE_ID, createMooDeclarationProvider());
   monaco.languages.registerDefinitionProvider?.(MOO_LANGUAGE_ID, createMooDefinitionProvider());
   monaco.languages.registerDocumentHighlightProvider?.(
     MOO_LANGUAGE_ID,
