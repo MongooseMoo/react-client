@@ -839,31 +839,47 @@ function markerMissingText(marker: MonacoEditor.editor.IMarkerData): string | un
 export function createMooCodeLensProvider(): MonacoEditor.languages.CodeLensProvider {
   return {
     provideCodeLenses: (model) => {
-      const source = model.getValue();
       return {
-        lenses: getMooCodeLenses(source).map((lens) => ({
+        lenses: getMooCodeLenses(model.getValue()).map((lens) => ({
           range: lens.range,
           command: {
             id: 'editor.action.showReferences',
             title: lens.title,
             tooltip: lens.tooltip,
-            arguments: [
-              model.uri,
-              {
-                lineNumber: lens.range.startLineNumber,
-                column: lens.range.startColumn,
-              },
-              findMooReferences(source, {
-                lineNumber: lens.range.startLineNumber,
-                column: lens.range.startColumn,
-              }).map((reference) => ({
-                uri: model.uri,
-                range: reference.range,
-              })),
-            ],
           },
         })),
         dispose: () => {},
+      };
+    },
+    resolveCodeLens: (model, codeLens) => {
+      if (codeLens.command?.arguments) {
+        return codeLens;
+      }
+
+      const command = codeLens.command ?? {
+        id: 'editor.action.showReferences',
+        title: '',
+      };
+
+      return {
+        ...codeLens,
+        command: {
+          ...command,
+          arguments: [
+            model.uri,
+            {
+              lineNumber: codeLens.range.startLineNumber,
+              column: codeLens.range.startColumn,
+            },
+            findMooReferences(model.getValue(), {
+              lineNumber: codeLens.range.startLineNumber,
+              column: codeLens.range.startColumn,
+            }).map((reference) => ({
+              uri: model.uri,
+              range: reference.range,
+            })),
+          ],
+        },
       };
     },
   };

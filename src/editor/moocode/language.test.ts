@@ -1081,16 +1081,14 @@ describe('MOO Monaco language support', () => {
   it('provides Monaco CodeLens summaries for local MOO symbols', () => {
     const provider = createMooCodeLensProvider();
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
+    const model = {
+      getValue: () => source,
+      uri: 'moo://#1:test',
+    };
 
-    expect(
-      provider.provideCodeLenses(
-        {
-          getValue: () => source,
-          uri: 'moo://#1:test',
-        } as never,
-        {} as never,
-      ),
-    ).toEqual({
+    const lenses = provider.provideCodeLenses(model as never, {} as never);
+
+    expect(lenses).toEqual({
       lenses: [
         {
           range: {
@@ -1103,52 +1101,65 @@ describe('MOO Monaco language support', () => {
             id: 'editor.action.showReferences',
             title: '2 definitions, 2 references',
             tooltip: 'Local total: 2 definitions, 2 references.',
-            arguments: [
-              'moo://#1:test',
-              { lineNumber: 1, column: 1 },
-              [
-                {
-                  uri: 'moo://#1:test',
-                  range: {
-                    startLineNumber: 1,
-                    startColumn: 1,
-                    endLineNumber: 1,
-                    endColumn: 6,
-                  },
-                },
-                {
-                  uri: 'moo://#1:test',
-                  range: {
-                    startLineNumber: 2,
-                    startColumn: 1,
-                    endLineNumber: 2,
-                    endColumn: 6,
-                  },
-                },
-                {
-                  uri: 'moo://#1:test',
-                  range: {
-                    startLineNumber: 2,
-                    startColumn: 9,
-                    endLineNumber: 2,
-                    endColumn: 14,
-                  },
-                },
-                {
-                  uri: 'moo://#1:test',
-                  range: {
-                    startLineNumber: 3,
-                    startColumn: 16,
-                    endLineNumber: 3,
-                    endColumn: 21,
-                  },
-                },
-              ],
-            ],
           },
         },
       ],
       dispose: expect.any(Function),
+    });
+    expect(provider.resolveCodeLens?.(model as never, lenses.lenses[0], {} as never)).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 6,
+      },
+      command: {
+        id: 'editor.action.showReferences',
+        title: '2 definitions, 2 references',
+        tooltip: 'Local total: 2 definitions, 2 references.',
+        arguments: [
+          'moo://#1:test',
+          { lineNumber: 1, column: 1 },
+          [
+            {
+              uri: 'moo://#1:test',
+              range: {
+                startLineNumber: 1,
+                startColumn: 1,
+                endLineNumber: 1,
+                endColumn: 6,
+              },
+            },
+            {
+              uri: 'moo://#1:test',
+              range: {
+                startLineNumber: 2,
+                startColumn: 1,
+                endLineNumber: 2,
+                endColumn: 6,
+              },
+            },
+            {
+              uri: 'moo://#1:test',
+              range: {
+                startLineNumber: 2,
+                startColumn: 9,
+                endLineNumber: 2,
+                endColumn: 14,
+              },
+            },
+            {
+              uri: 'moo://#1:test',
+              range: {
+                startLineNumber: 3,
+                startColumn: 16,
+                endLineNumber: 3,
+                endColumn: 21,
+              },
+            },
+          ],
+        ],
+      },
     });
   });
 
@@ -1160,16 +1171,14 @@ describe('MOO Monaco language support', () => {
       '  break outer;',
       'endwhile',
     ].join('\n');
+    const model = {
+      getValue: () => source,
+      uri: 'moo://#1:test',
+    };
 
-    expect(
-      provider.provideCodeLenses(
-        {
-          getValue: () => source,
-          uri: 'moo://#1:test',
-        } as never,
-        {} as never,
-      ),
-    ).toEqual({
+    const lenses = provider.provideCodeLenses(model as never, {} as never);
+
+    expect(lenses).toEqual({
       lenses: [
         {
           range: {
@@ -1182,43 +1191,56 @@ describe('MOO Monaco language support', () => {
             id: 'editor.action.showReferences',
             title: '1 definition, 2 references',
             tooltip: 'Loop label outer: 1 definition, 2 references.',
-            arguments: [
-              'moo://#1:test',
-              { lineNumber: 1, column: 7 },
-              [
-                {
-                  uri: 'moo://#1:test',
-                  range: {
-                    startLineNumber: 1,
-                    startColumn: 7,
-                    endLineNumber: 1,
-                    endColumn: 12,
-                  },
-                },
-                {
-                  uri: 'moo://#1:test',
-                  range: {
-                    startLineNumber: 2,
-                    startColumn: 12,
-                    endLineNumber: 2,
-                    endColumn: 17,
-                  },
-                },
-                {
-                  uri: 'moo://#1:test',
-                  range: {
-                    startLineNumber: 3,
-                    startColumn: 9,
-                    endLineNumber: 3,
-                    endColumn: 14,
-                  },
-                },
-              ],
-            ],
           },
         },
       ],
       dispose: expect.any(Function),
+    });
+    expect(provider.resolveCodeLens?.(model as never, lenses.lenses[0], {} as never)).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 7,
+        endLineNumber: 1,
+        endColumn: 12,
+      },
+      command: {
+        id: 'editor.action.showReferences',
+        title: '1 definition, 2 references',
+        tooltip: 'Loop label outer: 1 definition, 2 references.',
+        arguments: [
+          'moo://#1:test',
+          { lineNumber: 1, column: 7 },
+          [
+            {
+              uri: 'moo://#1:test',
+              range: {
+                startLineNumber: 1,
+                startColumn: 7,
+                endLineNumber: 1,
+                endColumn: 12,
+              },
+            },
+            {
+              uri: 'moo://#1:test',
+              range: {
+                startLineNumber: 2,
+                startColumn: 12,
+                endLineNumber: 2,
+                endColumn: 17,
+              },
+            },
+            {
+              uri: 'moo://#1:test',
+              range: {
+                startLineNumber: 3,
+                startColumn: 9,
+                endLineNumber: 3,
+                endColumn: 14,
+              },
+            },
+          ],
+        ],
+      },
     });
   });
 
