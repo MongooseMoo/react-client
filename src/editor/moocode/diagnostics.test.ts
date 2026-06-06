@@ -226,6 +226,40 @@ describe('validateMooSyntax', () => {
     expect(diagnostics.filter((diagnostic) => diagnostic.code === 'builtin-arity')).toEqual([]);
   });
 
+  it('reports unknown plain builtin calls with likely ToastStunt builtin targets', () => {
+    const diagnostics = validateMooSyntax(
+      ['notfiy(player, "hello");', 'notify(player, "ok");'].join('\n'),
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unknown-builtin',
+        lineNumber: 1,
+        startColumn: 1,
+        endColumn: 7,
+        message: 'notfiy is not a known ToastStunt builtin. Did you mean notify?',
+      }),
+    );
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-builtin')).toHaveLength(
+      1,
+    );
+  });
+
+  it('does not report unknown builtins for verb, dollar, dynamic, string, or comment calls', () => {
+    const diagnostics = validateMooSyntax(
+      [
+        'player:notfiy("hello");',
+        '$room:notfiy("hello");',
+        '$notfiy("hello");',
+        'object:(verb_name)("hello");',
+        '// notfiy(player, "hello");',
+        '"notfiy(player, text)"',
+      ].join('\n'),
+    );
+
+    expect(diagnostics.filter((diagnostic) => diagnostic.code === 'unknown-builtin')).toEqual([]);
+  });
+
   it('reports likely undefined local references', () => {
     const diagnostics = validateMooSyntax(
       ['total = count + 1;', 'notify(player, total);', '// ghost;'].join('\n'),

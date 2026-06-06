@@ -1,11 +1,14 @@
 import type { Uri } from 'monaco-editor';
 import { formatMooBuiltinArity, getMooBuiltinMetadata, type MooBuiltinMetadata } from './builtins';
 import {
+  BUILTIN_FUNCTIONS,
   MOO_BLOCKS,
   MOO_CLOSE_KEYWORDS,
   MOO_IDENTIFIER_PATTERN_SOURCE,
   MOO_LANGUAGE_ID,
   MOO_MIDDLE_KEYWORDS,
+  OPERATOR_WORDS,
+  STATEMENT_KEYWORDS,
 } from './contract';
 import type { MonacoRange } from './language';
 import { firstMooKeyword, maskMooSource, positionAtMooOffset } from './scanner';
@@ -25,6 +28,7 @@ export type MooDiagnosticCode =
   | 'unterminated-string'
   | 'loop-control-outside-loop'
   | 'unknown-loop-label'
+  | 'unknown-builtin'
   | 'builtin-arity'
   | 'undefined-local'
   | 'unused-local';
@@ -83,6 +87,14 @@ type DelimiterFrame = {
   startColumn: number;
 };
 
+type PlainFunctionCall = {
+  argumentSource: string;
+  closeOffset: number;
+  name: string;
+  openOffset: number;
+  startOffset: number;
+};
+
 type ScanState = {
   inBlockComment: boolean;
 };
@@ -90,6 +102,10 @@ type ScanState = {
 const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
 const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
 const LOOP_CONTROL_KEYWORDS = new Set(['break', 'continue']);
+const NON_FUNCTION_CALL_NAMES = new Set([
+  ...STATEMENT_KEYWORDS.map((keyword) => keyword.toLowerCase()),
+  ...OPERATOR_WORDS.map((word) => word.toLowerCase()),
+]);
 
 const OPEN_DELIMITERS: Record<string, DelimiterFrame['close']> = {
   '(': ')',
@@ -216,6 +232,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
     });
   }
 
+  diagnostics.push(...validateUnknownBuiltinCalls(source));
   diagnostics.push(...validateBuiltinCallArity(source));
   diagnostics.push(...validateUnknownLoopLabels(source));
   diagnostics.push(...validateUndefinedLocals(source));
@@ -379,9 +396,61 @@ function isLoop(kind: BlockKind): boolean {
   return MOO_BLOCKS[kind].isLoop === true;
 }
 
-function validateBuiltinCallArity(source: string): MooDiagnostic[] {
-  const masked = maskMooSource(source);
+function validateUnknownBuiltinCalls(source: string): MooDiagnostic[] {
   const diagnostics: MooDiagnostic[] = [];
+
+  for (const call of collectPlainFunctionCalls(source)) {
+    if (getMooBuiltinMetadata(call.name)) {
+      continue;
+    }
+
+    const start = positionAtMooOffset(source, call.startOffset);
+    const suggestedName = findLikelyBuiltinName(call.name);
+    diagnostics.push({
+      code: 'unknown-builtin',
+      message: suggestedName
+        ? `${call.name} is not a known ToastStunt builtin. Did you mean ${suggestedName}?`
+        : `${call.name} is not a known ToastStunt builtin.`,
+      suggestedName,
+      lineNumber: start.lineNumber,
+      startColumn: start.column,
+      endColumn: start.column + call.name.length,
+    });
+  }
+
+  return diagnostics;
+}
+
+function validateBuiltinCallArity(source: string): MooDiagnostic[] {
+  const diagnostics: MooDiagnostic[] = [];
+
+  for (const call of collectPlainFunctionCalls(source)) {
+    const metadata = getMooBuiltinMetadata(call.name);
+    if (!metadata) {
+      continue;
+    }
+
+    const argumentCount = countCallArguments(call.argumentSource);
+    if (isBuiltinArityValid(argumentCount, metadata)) {
+      continue;
+    }
+
+    const start = positionAtMooOffset(source, call.startOffset);
+    diagnostics.push({
+      code: 'builtin-arity',
+      message: `${call.name.toLowerCase()} expects ${formatMooBuiltinArity(metadata)}, but got ${argumentCount}.`,
+      lineNumber: start.lineNumber,
+      startColumn: start.column,
+      endColumn: start.column + call.name.length,
+    });
+  }
+
+  return diagnostics;
+}
+
+function collectPlainFunctionCalls(source: string): PlainFunctionCall[] {
+  const masked = maskMooSource(source);
+  const calls: PlainFunctionCall[] = [];
 
   for (let index = 0; index < masked.length; index += 1) {
     if (masked[index] !== '(') {
@@ -393,12 +462,11 @@ function validateBuiltinCallArity(source: string): MooDiagnostic[] {
       continue;
     }
 
-    if (!isPlainFunctionCallIdentifier(masked, functionIdentifier.startOffset)) {
+    if (NON_FUNCTION_CALL_NAMES.has(functionIdentifier.name.toLowerCase())) {
       continue;
     }
 
-    const metadata = getMooBuiltinMetadata(functionIdentifier.name);
-    if (!metadata) {
+    if (!isPlainFunctionCallIdentifier(masked, functionIdentifier.startOffset)) {
       continue;
     }
 
@@ -407,24 +475,74 @@ function validateBuiltinCallArity(source: string): MooDiagnostic[] {
       continue;
     }
 
-    const argumentCount = countCallArguments(masked.slice(index + 1, closeOffset));
-    if (isBuiltinArityValid(argumentCount, metadata)) {
-      index = closeOffset;
-      continue;
-    }
-
-    const start = positionAtMooOffset(source, functionIdentifier.startOffset);
-    diagnostics.push({
-      code: 'builtin-arity',
-      message: `${functionIdentifier.name.toLowerCase()} expects ${formatMooBuiltinArity(metadata)}, but got ${argumentCount}.`,
-      lineNumber: start.lineNumber,
-      startColumn: start.column,
-      endColumn: start.column + functionIdentifier.name.length,
+    calls.push({
+      argumentSource: masked.slice(index + 1, closeOffset),
+      closeOffset,
+      name: functionIdentifier.name,
+      openOffset: index,
+      startOffset: functionIdentifier.startOffset,
     });
     index = closeOffset;
   }
 
-  return diagnostics;
+  return calls;
+}
+
+function findLikelyBuiltinName(name: string): string | undefined {
+  const normalizedName = name.toLowerCase();
+  const candidates = BUILTIN_FUNCTIONS.map((builtin) => ({
+    builtin,
+    distance: damerauLevenshteinDistance(normalizedName, builtin.toLowerCase()),
+  }))
+    .filter((candidate) => candidate.distance <= builtinTypoDistanceThreshold(name))
+    .sort(
+      (left, right) => left.distance - right.distance || left.builtin.localeCompare(right.builtin),
+    );
+
+  return candidates[0]?.builtin;
+}
+
+function builtinTypoDistanceThreshold(name: string): number {
+  return name.length <= 4 ? 1 : 2;
+}
+
+function damerauLevenshteinDistance(left: string, right: string): number {
+  const distances: number[][] = Array.from({ length: left.length + 1 }, () =>
+    Array.from({ length: right.length + 1 }, () => 0),
+  );
+
+  for (let row = 0; row <= left.length; row += 1) {
+    distances[row][0] = row;
+  }
+
+  for (let column = 0; column <= right.length; column += 1) {
+    distances[0][column] = column;
+  }
+
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      const substitutionCost = left[row - 1] === right[column - 1] ? 0 : 1;
+      distances[row][column] = Math.min(
+        distances[row - 1][column] + 1,
+        distances[row][column - 1] + 1,
+        distances[row - 1][column - 1] + substitutionCost,
+      );
+
+      if (
+        row > 1 &&
+        column > 1 &&
+        left[row - 1] === right[column - 2] &&
+        left[row - 2] === right[column - 1]
+      ) {
+        distances[row][column] = Math.min(
+          distances[row][column],
+          distances[row - 2][column - 2] + 1,
+        );
+      }
+    }
+  }
+
+  return distances[left.length][right.length];
 }
 
 function validateUndefinedLocals(source: string): MooDiagnostic[] {

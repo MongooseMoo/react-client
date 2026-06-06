@@ -191,6 +191,21 @@ export function getMooQuickFixes(
         }
         break;
       }
+      case 'unknown-builtin': {
+        if (!diagnostic.suggestedName) {
+          break;
+        }
+
+        fixes.push({
+          title: `Replace ${diagnosticText(lines, diagnostic)} with ${diagnostic.suggestedName}`,
+          diagnostics: [diagnostic],
+          edit: {
+            range: diagnosticRange(diagnostic),
+            text: diagnostic.suggestedName,
+          },
+        });
+        break;
+      }
       case 'unknown-loop-label':
         if (diagnostic.suggestedName) {
           fixes.push({

@@ -231,6 +231,24 @@ describe('MOO code actions', () => {
     });
   });
 
+  it('offers a quick fix to replace unknown builtin calls with likely ToastStunt builtin targets', () => {
+    const source = 'notfiy(player, "hello");';
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Replace notfiy with notify',
+      diagnostics: [expect.objectContaining({ code: 'unknown-builtin' })],
+      edit: {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 7,
+        },
+        text: 'notify',
+      },
+    });
+  });
+
   it('offers a quick fix to remove unknown loop labels from loop control statements', () => {
     const source = ['while outer (valid(player))', '  break missing;', 'endwhile'].join('\n');
 
