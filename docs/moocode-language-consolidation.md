@@ -410,3 +410,15 @@ Iterations:
     while syntax and runtime hazards remain errors.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/diagnostics.test.ts src/components/editor/editorWindow.test.tsx`.
+- 2026-06-06 severity-aware editor diagnostics status:
+  - The editor status bar now summarizes MOO diagnostics by severity, e.g.
+    `1 MOO error`, `1 MOO warning`, or `1 MOO error, 1 warning`, instead of
+    flattening every marker into a generic problem count.
+  - Diagnostic click-through now chooses the first error before warnings, then
+    falls back to source order within the same severity, so an earlier semantic
+    warning does not hide the actionable syntax error jump target.
+  - The behavior is shared by immediate scanner/semantic markers and delayed
+    Tree-sitter markers because both paths update the same Monaco marker
+    summary and target helpers.
+  - Focused red-to-green gate:
+    `npm test -- --run src/components/editor/editorWindow.test.tsx`.

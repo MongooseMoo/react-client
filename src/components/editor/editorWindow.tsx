@@ -32,7 +32,13 @@ type MooDiagnosticTarget = {
   column: number;
 };
 
+type MooDiagnosticCounts = {
+  errorCount: number;
+  warningCount: number;
+};
+
 const TREE_SITTER_DIAGNOSTIC_DELAY_MS = 200;
+const MONACO_WARNING_MARKER_SEVERITY = 4;
 
 function EditorWindow() {
   const location = useLocation();
@@ -42,7 +48,10 @@ function EditorWindow() {
   const [code, setCode] = useState<string>('');
   const [originalCode, setOriginalCode] = useState<string>('');
   const [documentState, setDocumentState] = useState<DocumentState>(DocumentState.Unchanged);
-  const [mooDiagnosticCount, setMooDiagnosticCount] = useState(0);
+  const [mooDiagnosticCounts, setMooDiagnosticCounts] = useState<MooDiagnosticCounts>({
+    errorCount: 0,
+    warningCount: 0,
+  });
   const [mooDiagnosticTarget, setMooDiagnosticTarget] = useState<MooDiagnosticTarget | null>(null);
   const [session, setSession] = useState<EditorSession>({
     name: 'none',
@@ -84,7 +93,7 @@ function EditorWindow() {
         : [];
 
     monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
-    setMooDiagnosticCount(markers.length);
+    setMooDiagnosticCounts(getMooDiagnosticCounts(markers));
     setMooDiagnosticTarget(getFirstMooDiagnosticTarget(markers));
 
     if (editorLanguage !== MOO_LANGUAGE_ID) {
@@ -101,7 +110,7 @@ function EditorWindow() {
 
           const allMarkers = [...markers, ...treeSitterMarkers];
           monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, allMarkers);
-          setMooDiagnosticCount(allMarkers.length);
+          setMooDiagnosticCounts(getMooDiagnosticCounts(allMarkers));
           setMooDiagnosticTarget(getFirstMooDiagnosticTarget(allMarkers));
         })
         .catch((error: unknown) => {
@@ -139,7 +148,7 @@ function EditorWindow() {
   }, [documentState]);
   const mooDiagnosticsSummary =
     editorLanguage === MOO_LANGUAGE_ID
-      ? formatMooDiagnosticsSummary(mooDiagnosticCount)
+      ? formatMooDiagnosticsSummary(mooDiagnosticCounts)
       : undefined;
   const showFirstMooDiagnostic = React.useCallback(() => {
     if (!mooDiagnosticTarget) {
@@ -280,14 +289,26 @@ function EditorWindow() {
   );
 }
 
-function formatMooDiagnosticsSummary(count: number): string {
-  return count === 1 ? '1 MOO problem' : `${count} MOO problems`;
+function formatMooDiagnosticsSummary(counts: MooDiagnosticCounts): string | undefined {
+  const parts: string[] = [];
+
+  if (counts.errorCount > 0) {
+    parts.push(`${counts.errorCount} MOO ${pluralize(counts.errorCount, 'error')}`);
+  }
+
+  if (counts.warningCount > 0) {
+    const warningKind = pluralize(counts.warningCount, 'warning');
+    const warningLabel = `${counts.warningCount} ${warningKind}`;
+    parts.push(counts.errorCount > 0 ? warningLabel : `${counts.warningCount} MOO ${warningKind}`);
+  }
+
+  return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
 function getFirstMooDiagnosticTarget(
   markers: MonacoEditor.IMarkerData[],
 ): MooDiagnosticTarget | null {
-  const firstMarker = markers[0];
+  const firstMarker = [...markers].sort(compareMooDiagnosticMarkers)[0];
   if (!firstMarker) {
     return null;
   }
@@ -296,6 +317,46 @@ function getFirstMooDiagnosticTarget(
     lineNumber: firstMarker.startLineNumber,
     column: firstMarker.startColumn,
   };
+}
+
+function getMooDiagnosticCounts(markers: MonacoEditor.IMarkerData[]): MooDiagnosticCounts {
+  return markers.reduce<MooDiagnosticCounts>(
+    (counts, marker) => {
+      if (marker.severity === MONACO_WARNING_MARKER_SEVERITY) {
+        counts.warningCount += 1;
+      } else {
+        counts.errorCount += 1;
+      }
+
+      return counts;
+    },
+    { errorCount: 0, warningCount: 0 },
+  );
+}
+
+function compareMooDiagnosticMarkers(
+  left: MonacoEditor.IMarkerData,
+  right: MonacoEditor.IMarkerData,
+): number {
+  const severityDifference = getMooDiagnosticPriority(right) - getMooDiagnosticPriority(left);
+  if (severityDifference !== 0) {
+    return severityDifference;
+  }
+
+  const lineDifference = left.startLineNumber - right.startLineNumber;
+  if (lineDifference !== 0) {
+    return lineDifference;
+  }
+
+  return left.startColumn - right.startColumn;
+}
+
+function getMooDiagnosticPriority(marker: MonacoEditor.IMarkerData): number {
+  return marker.severity === MONACO_WARNING_MARKER_SEVERITY ? 1 : 2;
+}
+
+function pluralize(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`;
 }
 
 export default EditorWindow;

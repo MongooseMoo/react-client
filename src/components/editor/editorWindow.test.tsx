@@ -213,7 +213,7 @@ describe('EditorWindow language selection', () => {
         [parserMarker],
       ),
     );
-    const diagnosticsButton = await screen.findByRole('button', { name: '1 MOO problem' });
+    const diagnosticsButton = await screen.findByRole('button', { name: '1 MOO error' });
     fireEvent.click(diagnosticsButton);
     expect(editorMock.setPosition).toHaveBeenCalledWith({ lineNumber: 2, column: 17 });
     expect(editorMock.revealPositionInCenter).toHaveBeenCalledWith({ lineNumber: 2, column: 17 });
@@ -247,7 +247,7 @@ describe('EditorWindow language selection', () => {
       MOO_LANGUAGE_ID,
       [],
     );
-    expect(screen.queryByText(/MOO problem/)).toBeNull();
+    expect(screen.queryByText(/MOO (error|warning|problem)/)).toBeNull();
     expect(treeSitterDiagnosticsMock).not.toHaveBeenCalled();
   });
 
@@ -274,7 +274,7 @@ describe('EditorWindow language selection', () => {
       });
     });
 
-    expect(await screen.findByRole('button', { name: '1 MOO problem' })).not.toBeNull();
+    expect(await screen.findByRole('button', { name: '1 MOO error' })).not.toBeNull();
   });
 
   it('surfaces semantic warnings with Monaco warning severity', async () => {
@@ -312,5 +312,38 @@ describe('EditorWindow language selection', () => {
         ],
       ),
     );
+    expect(await screen.findByRole('button', { name: '1 MOO warning' })).not.toBeNull();
+  });
+
+  it('summarizes mixed MOO diagnostics and jumps to the first error before warnings', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['unused = 1;', 'while (1)', '  notify(player, "tick");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    const diagnosticsButton = await screen.findByRole('button', {
+      name: '1 MOO error, 1 warning',
+    });
+    fireEvent.click(diagnosticsButton);
+
+    expect(editorMock.setPosition).toHaveBeenCalledWith({ lineNumber: 2, column: 1 });
+    expect(editorMock.revealPositionInCenter).toHaveBeenCalledWith({ lineNumber: 2, column: 1 });
   });
 });
