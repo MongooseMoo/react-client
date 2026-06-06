@@ -722,7 +722,7 @@ export function createMooCompletionItems(
     case 'system-reference':
       return systemReferences;
     case 'verb':
-      return createMooVerbCompletionItems(range, kind.Function);
+      return [];
     case 'default':
       return [
         ...localVariables,
@@ -1542,7 +1542,6 @@ const VALUE_COMPLETION_COMMIT_CHARACTERS = ['.', ':', '[', ',', ')', ']', ';'];
 const LOOP_LABEL_COMPLETION_COMMIT_CHARACTERS = [';'];
 const ERROR_COMPLETION_COMMIT_CHARACTERS = [',', ')', ';', '|'];
 const EXCEPTION_COMPLETION_COMMIT_CHARACTERS = [',', ')'];
-const VERB_COMPLETION_COMMIT_CHARACTERS = ['('];
 
 function getCompletionContext(
   model: CompletionTextModelLike,
@@ -1873,20 +1872,6 @@ function createMooBlockSnippetItems(
           documentation: snippet.documentation,
         }
       : {}),
-  }));
-}
-
-function createMooVerbCompletionItems(range: MonacoRange, kind: number): CompletionItem[] {
-  return BUILTIN_FUNCTIONS.map((name) => ({
-    label: name,
-    kind,
-    detail: 'MOO verb name',
-    insertText: name,
-    documentation: 'Complete a static MOO verb-call name.',
-    range,
-    sortText: completionSortText('function', name),
-    filterText: completionFilterText('function', name),
-    commitCharacters: VERB_COMPLETION_COMMIT_CHARACTERS,
   }));
 }
 

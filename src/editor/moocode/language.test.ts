@@ -275,7 +275,7 @@ describe('MOO Monaco language support', () => {
     ]);
   });
 
-  it('uses bare verb-name completions inside static MOO verb-call targets', () => {
+  it('does not offer builtin completions inside static MOO verb-call targets', () => {
     const provider = createMooCompletionProvider();
     const completions = provider.provideCompletionItems(
       {
@@ -290,16 +290,24 @@ describe('MOO Monaco language support', () => {
       { lineNumber: 1, column: 10 },
     );
 
-    const notifyCompletion = completionByLabel(completions, 'notify');
+    expect(completions.suggestions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'notify' }),
+        expect.objectContaining({ label: 'file_tell' }),
+      ]),
+    );
+  });
 
-    expect(notifyCompletion).toMatchObject({
-      detail: 'MOO verb name',
-      insertText: 'notify',
-      filterText: 'notify',
-      commitCharacters: ['('],
-    });
-    expect(notifyCompletion).not.toHaveProperty('insertTextRules');
-    expect(notifyCompletion).not.toHaveProperty('command');
+  it('leaves arbitrary static MOO verb names alone', () => {
+    const provider = createMooCompletionProvider();
+
+    expect(labelsForCompletion(provider, 'player:fu', 10)).toEqual([]);
+  });
+
+  it('still offers builtins in ordinary expression call positions', () => {
+    const provider = createMooCompletionProvider();
+
+    expect(labelsForCompletion(provider, 'a = to', 7)).toContain('toobj');
   });
 
   it('uses ToastStunt arity metadata for generic builtin completion snippets', () => {
@@ -574,9 +582,7 @@ describe('MOO Monaco language support', () => {
     expect(systemLabels).not.toContain('notify');
 
     const verbLabels = labelsForCompletion(provider, 'player:no', 10);
-    expect(verbLabels).toContain('notify');
-    expect(verbLabels).not.toContain('if');
-    expect(verbLabels).not.toContain('E_PERM');
+    expect(verbLabels).toEqual([]);
 
     const exceptionLabels = labelsForCompletion(provider, 'except (', 9);
     expect(exceptionLabels).toContain('any');
