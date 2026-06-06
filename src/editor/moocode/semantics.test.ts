@@ -285,6 +285,55 @@ describe('MOO semantic model', () => {
     ]);
   });
 
+  it('does not treat bare exception-code selectors as local references', () => {
+    const source = [
+      'fallback = 1;',
+      'codes = {};',
+      'try',
+      '  raise(custom_error);',
+      'except caught (custom_error, "literal")',
+      '  notify(player, caught);',
+      'except other (@codes)',
+      '  notify(player, other);',
+      'endtry',
+      "handled = `fallback ! custom_error => fallback';",
+    ].join('\n');
+
+    expect(findMooUndefinedLocalReferences(source)).toEqual([
+      {
+        name: 'custom_error',
+        range: wordRange(source, 'custom_error', 1),
+      },
+    ]);
+    expect(analyzeMooSemantics(source).symbols).toEqual([
+      {
+        name: 'caught',
+        definitions: [wordRange(source, 'caught', 1)],
+        references: [wordRange(source, 'caught', 2)],
+      },
+      {
+        name: 'codes',
+        definitions: [wordRange(source, 'codes', 1)],
+        references: [wordRange(source, 'codes', 2)],
+      },
+      {
+        name: 'fallback',
+        definitions: [wordRange(source, 'fallback', 1)],
+        references: [wordRange(source, 'fallback', 2), wordRange(source, 'fallback', 3)],
+      },
+      {
+        name: 'handled',
+        definitions: [wordRange(source, 'handled', 1)],
+        references: [],
+      },
+      {
+        name: 'other',
+        definitions: [wordRange(source, 'other', 1)],
+        references: [wordRange(source, 'other', 2)],
+      },
+    ]);
+  });
+
   it('does not report mixed-case references as undefined or unused', () => {
     const source = ['Total = 0;', 'notify(player, total);'].join('\n');
 

@@ -676,6 +676,10 @@ function sameOccurrence(left: Occurrence, right: Occurrence): boolean {
 }
 
 function isNonVariableIdentifierOccurrence(source: string, occurrence: Occurrence): boolean {
+  if (isBareExceptionSelectorIdentifier(source, occurrence)) {
+    return true;
+  }
+
   const previous = previousNonWhitespaceCharacter(source, occurrence.startOffset);
   if (previous === '.' || previous === ':' || previous === '$') {
     return true;
@@ -683,6 +687,65 @@ function isNonVariableIdentifierOccurrence(source: string, occurrence: Occurrenc
 
   const next = nextNonWhitespaceCharacter(source, occurrence.endOffset);
   return next === '(' || next === '$';
+}
+
+function isBareExceptionSelectorIdentifier(source: string, occurrence: Occurrence): boolean {
+  const line = lineAroundOffset(source, occurrence.startOffset);
+  const localStart = occurrence.startOffset - line.startOffset;
+
+  return isBareExceptClauseSelector(line.text, localStart) || isBareCatchExpressionSelector(line.text, localStart);
+}
+
+function isBareExceptClauseSelector(line: string, localStart: number): boolean {
+  const openIndex = line.lastIndexOf('(', localStart);
+  if (openIndex < 0 || line.slice(0, openIndex).search(/\bexcept\b/i) < 0) {
+    return false;
+  }
+
+  const closeIndex = line.indexOf(')', openIndex + 1);
+  if (closeIndex >= 0 && localStart > closeIndex) {
+    return false;
+  }
+
+  return !isAtExpressionExceptionSelector(line, openIndex + 1, localStart);
+}
+
+function isBareCatchExpressionSelector(line: string, localStart: number): boolean {
+  const catchStart = line.lastIndexOf('`', localStart);
+  const bangIndex = line.lastIndexOf('!', localStart);
+  if (catchStart < 0 || bangIndex < catchStart) {
+    return false;
+  }
+
+  const tailStart = bangIndex + 1;
+  const selectorPrefix = line.slice(tailStart, localStart);
+  if (selectorPrefix.includes("'") || selectorPrefix.includes('=>')) {
+    return false;
+  }
+
+  return !isAtExpressionExceptionSelector(line, tailStart, localStart);
+}
+
+function isAtExpressionExceptionSelector(
+  line: string,
+  selectorListStart: number,
+  localStart: number,
+): boolean {
+  const segmentStart = Math.max(
+    selectorListStart,
+    line.lastIndexOf(',', localStart - 1) + 1,
+  );
+  return line.slice(segmentStart, localStart).trimStart().startsWith('@');
+}
+
+function lineAroundOffset(source: string, offset: number): { text: string; startOffset: number } {
+  const startOffset = Math.max(source.lastIndexOf('\n', offset - 1) + 1, 0);
+  const endOffset = source.indexOf('\n', offset);
+
+  return {
+    text: source.slice(startOffset, endOffset < 0 ? source.length : endOffset),
+    startOffset,
+  };
 }
 
 function validateMooIdentifier(value: string): string | null {
