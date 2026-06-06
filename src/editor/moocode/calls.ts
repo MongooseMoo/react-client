@@ -14,6 +14,10 @@ export type MooCallTarget =
       callKind: 'dynamic-verb';
       receiverName: string;
       functionName: string;
+    }
+  | {
+      callKind: 'dollar-verb';
+      functionName: string;
     };
 
 const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
@@ -23,6 +27,11 @@ export function readMooCallTargetBeforeOpen(
   source: string,
   openParenIndex: number,
 ): MooCallTarget | null {
+  const dollarVerbCall = readDollarVerbCallBeforeOpen(source, openParenIndex);
+  if (dollarVerbCall) {
+    return dollarVerbCall;
+  }
+
   const dynamicVerbCall = readDynamicVerbCallBeforeOpen(source, openParenIndex);
   if (dynamicVerbCall) {
     return dynamicVerbCall;
@@ -44,6 +53,44 @@ export function readMooCallTargetBeforeOpen(
 
   return {
     callKind: 'function',
+    functionName: functionName.name,
+  };
+}
+
+function readDollarVerbCallBeforeOpen(
+  source: string,
+  openParenIndex: number,
+): MooCallTarget | null {
+  const expressionCloseIndex = previousNonWhitespaceIndex(source, openParenIndex - 1);
+  if (expressionCloseIndex !== null && source[expressionCloseIndex] === ')') {
+    const expressionOpenIndex = findMatchingOpenParenBefore(source, expressionCloseIndex);
+    const dollarIndex =
+      expressionOpenIndex === null ? null : previousNonWhitespaceIndex(source, expressionOpenIndex - 1);
+    if (expressionOpenIndex !== null && dollarIndex !== null && source[dollarIndex] === '$') {
+      return {
+        callKind: 'dollar-verb',
+        functionName: source.slice(expressionOpenIndex, expressionCloseIndex + 1),
+      };
+    }
+  }
+
+  const functionName = readIdentifierSpanBefore(source, openParenIndex);
+  if (!functionName) {
+    return null;
+  }
+
+  const dollarIndex = previousNonWhitespaceIndex(source, functionName.startIndex - 1);
+  if (dollarIndex === null || source[dollarIndex] !== '$') {
+    return null;
+  }
+
+  const previousIndex = previousNonWhitespaceIndex(source, dollarIndex - 1);
+  if (previousIndex !== null && IDENTIFIER_CHARACTER_PATTERN.test(source[previousIndex])) {
+    return null;
+  }
+
+  return {
+    callKind: 'dollar-verb',
     functionName: functionName.name,
   };
 }

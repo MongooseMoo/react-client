@@ -119,6 +119,31 @@ describe('MOO signature help analysis', () => {
     });
   });
 
+  it('offers generic signature help for dollar MOO verb calls', () => {
+    expect(findMooCallContext('$notify("hello", caller);', { lineNumber: 1, column: 22 })).toEqual({
+      activeParameter: 1,
+      callKind: 'dollar-verb',
+      functionName: 'notify',
+    });
+    expect(getMooSignatureHelp('$notify("hello", caller);', { lineNumber: 1, column: 22 })).toEqual({
+      activeSignature: 0,
+      activeParameter: 1,
+      signatures: [
+        {
+          label: '$notify(arg1, arg2)',
+          documentation: 'MOO verb call. Arguments are available to the target verb as args.',
+          parameters: [{ label: 'arg1' }, { label: 'arg2' }],
+        },
+      ],
+    });
+    expect(getMooSignatureHelp('$(verb_name)("hello");', { lineNumber: 1, column: 18 })).toMatchObject(
+      {
+        activeParameter: 0,
+        signatures: [{ label: '$(verb_name)(arg1)' }],
+      },
+    );
+  });
+
   it('does not offer signature help for unknown call names', () => {
     expect(getMooSignatureHelp('custom(player, args);', { lineNumber: 1, column: 10 })).toBeNull();
   });

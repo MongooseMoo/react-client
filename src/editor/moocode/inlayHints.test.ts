@@ -136,4 +136,24 @@ describe('MOO inlay hints', () => {
       },
     ]);
   });
+
+  it('adds generic parameter labels for dollar MOO verb call arguments', () => {
+    expect(collectMooInlayHints('$notify("hello", caller);\n$(verb_name)("ok");')).toEqual([
+      {
+        label: 'arg1:',
+        lineNumber: 1,
+        column: 9,
+      },
+      {
+        label: 'arg2:',
+        lineNumber: 1,
+        column: 18,
+      },
+      {
+        label: 'arg1:',
+        lineNumber: 2,
+        column: 14,
+      },
+    ]);
+  });
 });

@@ -27,7 +27,11 @@ export function collectMooInlayHints(source: string): MooInlayHint[] {
 
     if (character === '(') {
       const callTarget = readMooCallTargetBeforeOpen(masked, index);
-      if (callTarget?.callKind === 'verb' || callTarget?.callKind === 'dynamic-verb') {
+      if (
+        callTarget?.callKind === 'verb' ||
+        callTarget?.callKind === 'dynamic-verb' ||
+        callTarget?.callKind === 'dollar-verb'
+      ) {
         frames.push({
           callKind: 'verb',
           functionName: callTarget.functionName.toLowerCase(),

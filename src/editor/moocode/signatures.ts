@@ -9,6 +9,10 @@ type MooBuiltinCallContext = {
 };
 
 type MooVerbCallContext = {
+  callKind: 'dollar-verb';
+  functionName: string;
+  activeParameter: number;
+} | {
   callKind: 'verb' | 'dynamic-verb';
   receiverName: string;
   functionName: string;
@@ -136,10 +140,14 @@ export function findMooCallContext(
         return null;
       }
 
-      if (callTarget.callKind === 'verb' || callTarget.callKind === 'dynamic-verb') {
+      if (
+        callTarget.callKind === 'verb' ||
+        callTarget.callKind === 'dynamic-verb' ||
+        callTarget.callKind === 'dollar-verb'
+      ) {
         return {
           callKind: callTarget.callKind,
-          receiverName: callTarget.receiverName,
+          ...('receiverName' in callTarget ? { receiverName: callTarget.receiverName } : {}),
           functionName: callTarget.functionName,
           activeParameter,
         };
@@ -228,12 +236,20 @@ function getVerbSignatureDefinition(context: MooVerbCallContext): MooSignatureIn
   }));
 
   return {
-    label: `${context.receiverName}:${context.functionName}(${parameters
+    label: `${formatVerbCallPrefix(context)}(${parameters
       .map((parameter) => parameter.label)
       .join(', ')})`,
     documentation: 'MOO verb call. Arguments are available to the target verb as args.',
     parameters,
   };
+}
+
+function formatVerbCallPrefix(context: MooVerbCallContext): string {
+  if (context.callKind === 'dollar-verb') {
+    return `$${context.functionName}`;
+  }
+
+  return `${context.receiverName}:${context.functionName}`;
 }
 
 function getSignatureDefinition(

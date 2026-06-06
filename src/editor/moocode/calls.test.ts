@@ -43,4 +43,15 @@ describe('MOO call target parser', () => {
       functionName: '(verbs[index])',
     });
   });
+
+  it('recognizes dollar MOO verb call targets before an argument list', () => {
+    expect(readMooCallTargetBeforeOpen('$notify("ok")', 7)).toEqual({
+      callKind: 'dollar-verb',
+      functionName: 'notify',
+    });
+    expect(readMooCallTargetBeforeOpen('$(verb_name)("ok")', 12)).toEqual({
+      callKind: 'dollar-verb',
+      functionName: '(verb_name)',
+    });
+  });
 });
