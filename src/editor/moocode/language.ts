@@ -1163,7 +1163,22 @@ function getCompletionContext(
 }
 
 function isExceptionCompletionContext(linePrefix: string): boolean {
-  return EXCEPT_COMPLETION_PATTERN.test(linePrefix) || CATCH_COMPLETION_PATTERN.test(linePrefix);
+  if (EXCEPT_COMPLETION_PATTERN.test(linePrefix)) {
+    return !isAtExpressionExceptionSelectorCompletion(
+      linePrefix,
+      linePrefix.lastIndexOf('(') + 1,
+    );
+  }
+
+  return CATCH_COMPLETION_PATTERN.test(linePrefix);
+}
+
+function isAtExpressionExceptionSelectorCompletion(
+  linePrefix: string,
+  selectorListStart: number,
+): boolean {
+  const segmentStart = Math.max(selectorListStart, linePrefix.lastIndexOf(',') + 1);
+  return linePrefix.slice(segmentStart).trimStart().startsWith('@');
 }
 
 function isCompletionInMaskedSource(source: string, position: CompletionPosition): boolean {

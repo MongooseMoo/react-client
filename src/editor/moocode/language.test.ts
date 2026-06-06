@@ -330,6 +330,45 @@ describe('MOO Monaco language support', () => {
     expect(catchLabels).not.toContain('if');
   });
 
+  it('uses expression completions for @ exception selector expressions', () => {
+    const provider = createMooCompletionProvider();
+    const source = ['codes = {};', 'except caught (@co'].join('\n');
+    const completions = provider.provideCompletionItems(
+      {
+        getValue: () => source,
+        getLineContent: () => 'except caught (@co',
+        getWordUntilPosition: () => ({
+          word: 'co',
+          startColumn: 17,
+          endColumn: 19,
+        }),
+      },
+      { lineNumber: 2, column: 19 },
+    );
+
+    expect(completions.suggestions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'codes',
+          documentation: 'MOO local variable',
+        }),
+        expect.objectContaining({
+          label: 'if',
+          detail: 'MOO statement keyword',
+        }),
+      ]),
+    );
+    expect(completions.suggestions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'any',
+          detail: 'MOO exception selector',
+        }),
+      ]),
+    );
+    expect(labelsForCompletion(provider, '`player:tell() ! @co', 21)).toContain('if');
+  });
+
   it('suppresses completions inside comments and string literals', () => {
     const provider = createMooCompletionProvider();
 
