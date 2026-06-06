@@ -2,6 +2,7 @@ import {
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
   ERROR_CONSTANTS,
+  MOO_IDENTIFIER_PATTERN_SOURCE,
   OPERATOR_WORDS,
   STATEMENT_KEYWORDS,
 } from './contract';
@@ -52,6 +53,8 @@ const OPERATOR_KEYWORDS = new Set<string>(OPERATOR_WORDS.map((operator) => opera
 const ERROR_NAMES = new Set<string>(ERROR_CONSTANTS);
 const BUILTIN_VARIABLE_NAMES = new Set<string>(BUILTIN_VARIABLES);
 const BUILTIN_FUNCTION_NAMES = new Set<string>(BUILTIN_FUNCTIONS);
+const IDENTIFIER_PATTERN = new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE, 'g');
+const SYSTEM_REFERENCE_PATTERN = new RegExp(`\\$${MOO_IDENTIFIER_PATTERN_SOURCE}`, 'g');
 
 export function collectMooSemanticTokens(source: string): MooSemanticToken[] {
   const tokens: MooSemanticToken[] = [];
@@ -68,7 +71,7 @@ export function collectMooSemanticTokens(source: string): MooSemanticToken[] {
   collectPatternTokens(
     source,
     masked,
-    /\$[A-Za-z_][\w$]*/g,
+    SYSTEM_REFERENCE_PATTERN,
     'variable',
     ['defaultLibrary'],
     tokens,
@@ -84,7 +87,7 @@ export function collectMooSemanticTokens(source: string): MooSemanticToken[] {
     occupiedOffsets,
   );
 
-  for (const match of masked.matchAll(/[A-Za-z_][\w$]*/g)) {
+  for (const match of masked.matchAll(IDENTIFIER_PATTERN)) {
     const text = match[0];
     const startOffset = match.index;
     if (occupiedOffsets.has(startOffset) || source[startOffset - 1] === '$') {

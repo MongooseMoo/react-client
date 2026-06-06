@@ -5,6 +5,7 @@ import {
   ERROR_CONSTANTS,
   MOO_BLOCKS,
   MOO_CLOSE_KEYWORDS,
+  MOO_IDENTIFIER_PATTERN_SOURCE,
   MOO_INDENT_OPEN_KEYWORDS,
   MOO_LANGUAGE_ID,
   MOO_SESSION_TYPES,
@@ -25,6 +26,15 @@ describe('MOO language contract', () => {
     expect(ERROR_CONSTANTS).toContain('E_PERM');
     expect(BUILTIN_FUNCTIONS).toContain('notify');
     expect(SYSTEM_REFERENCES).toContain('$string_utils');
+  });
+
+  it('owns the shared MOO identifier shape', () => {
+    const identifier = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
+
+    expect(identifier.test('valid_name9')).toBe(true);
+    expect(identifier.test('_scratch')).toBe(true);
+    expect(identifier.test('9bad')).toBe(false);
+    expect(identifier.test('bad$name')).toBe(false);
   });
 
   it('keeps block ownership in one contract instead of duplicating parser facts', () => {

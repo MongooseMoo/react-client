@@ -1,6 +1,7 @@
 import {
   BUILTIN_VARIABLES,
   ERROR_CONSTANTS,
+  MOO_IDENTIFIER_PATTERN_SOURCE,
   OPERATOR_WORDS,
   STATEMENT_KEYWORDS,
 } from './contract';
@@ -70,9 +71,11 @@ type Occurrence = {
   startOffset: number;
 };
 
-const IDENTIFIER_PATTERN = /[A-Za-z_][\w$]*/g;
-const LINKED_IDENTIFIER_PATTERN = /[A-Za-z_][\w$]*/;
-const VALID_IDENTIFIER_PATTERN = /^[A-Za-z_][\w$]*$/;
+const IDENTIFIER_PATTERN = new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE, 'g');
+const LINKED_IDENTIFIER_PATTERN = new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE);
+const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
+const IDENTIFIER_START_PATTERN = /^[A-Za-z_]/;
+const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
 const NON_LOCAL_NAMES = new Set<string>([
   ...STATEMENT_KEYWORDS.map((keyword) => keyword.toLowerCase()),
   ...OPERATOR_WORDS.map((word) => word.toLowerCase()),
@@ -185,10 +188,9 @@ export function createMooRenameWorkspaceEdit(
   position: MooSourcePosition,
   newName: string,
 ): MooRenameWorkspaceEdit {
-  if (!VALID_IDENTIFIER_PATTERN.test(newName)) {
-    return {
-      rejectReason: 'MOO identifiers must start with a letter or underscore.',
-    };
+  const validationError = validateMooIdentifier(newName);
+  if (validationError) {
+    return { rejectReason: validationError };
   }
 
   const lookup = getSymbolAtPosition(source, position);
@@ -356,7 +358,10 @@ function getSymbolRecords(source: string): Map<string, SymbolRecord> {
       continue;
     }
 
-    if (record.definitions.some((definition) => sameOccurrence(definition, occurrence.occurrence))) {
+    if (
+      isNonVariableIdentifierOccurrence(masked, occurrence.occurrence) ||
+      record.definitions.some((definition) => sameOccurrence(definition, occurrence.occurrence))
+    ) {
       continue;
     }
 
@@ -392,7 +397,10 @@ function collectAssignmentDefinitions(
   lineOffset: number,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
-  const assignmentPattern = /(^|[;\s])([A-Za-z_][\w$]*)\s*=(?!=|>)/g;
+  const assignmentPattern = new RegExp(
+    `(^|[;\\s])(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*=(?!=|>)`,
+    'g',
+  );
   for (const match of line.matchAll(assignmentPattern)) {
     const name = match[2];
     if (!name) {
@@ -413,7 +421,10 @@ function collectForDefinitions(
   lineOffset: number,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
-  const match = /\bfor\s+([A-Za-z_][\w$]*)(?:\s*,\s*([A-Za-z_][\w$]*))?\s+in\b/i.exec(line);
+  const match = new RegExp(
+    `\\bfor\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})(?:\\s*,\\s*(${MOO_IDENTIFIER_PATTERN_SOURCE}))?\\s+in\\b`,
+    'i',
+  ).exec(line);
   if (!match?.[1]) {
     return;
   }
@@ -433,7 +444,9 @@ function collectForkDefinitions(
   lineOffset: number,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
-  const match = /\bfork\s+([A-Za-z_][\w$]*)\s*\(/i.exec(line);
+  const match = new RegExp(`\\bfork\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*\\(`, 'i').exec(
+    line,
+  );
   if (!match?.[1]) {
     return;
   }
@@ -452,7 +465,9 @@ function collectExceptDefinitions(
   lineOffset: number,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
-  const match = /\bexcept\s+([A-Za-z_][\w$]*)\s*\(/i.exec(line);
+  const match = new RegExp(`\\bexcept\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*\\(`, 'i').exec(
+    line,
+  );
   if (!match?.[1]) {
     return;
   }
@@ -476,7 +491,9 @@ function collectScatterDefinitions(
     const targetListOffset = lineOffset + match.index + 1;
 
     for (const target of targetList.split(',')) {
-      const name = /^\s*(?:[?@]\s*)?([A-Za-z_][\w$]*)/.exec(target)?.[1];
+      const name = new RegExp(`^\\s*(?:[?@]\\s*)?(${MOO_IDENTIFIER_PATTERN_SOURCE})`).exec(
+        target,
+      )?.[1];
       if (!name) {
         continue;
       }
@@ -554,7 +571,20 @@ function isNonVariableIdentifierOccurrence(source: string, occurrence: Occurrenc
     return true;
   }
 
-  return nextNonWhitespaceCharacter(source, occurrence.endOffset) === '(';
+  const next = nextNonWhitespaceCharacter(source, occurrence.endOffset);
+  return next === '(' || next === '$';
+}
+
+function validateMooIdentifier(value: string): string | null {
+  if (!IDENTIFIER_START_PATTERN.test(value[0] ?? '')) {
+    return 'MOO identifiers must start with a letter or underscore.';
+  }
+
+  if (!VALID_IDENTIFIER_PATTERN.test(value)) {
+    return 'MOO identifiers may contain only letters, digits, and underscores.';
+  }
+
+  return null;
 }
 
 function previousNonWhitespaceCharacter(source: string, offset: number): string | null {
@@ -613,7 +643,7 @@ function wordAtOffset(source: string, offset: number): { name: string; offset: n
 }
 
 function isIdentifierCharacter(character: string | undefined): boolean {
-  return Boolean(character && /[\w$]/.test(character));
+  return Boolean(character && IDENTIFIER_CHARACTER_PATTERN.test(character));
 }
 
 function occurrenceAt(source: string, startOffset: number, length: number): Occurrence {

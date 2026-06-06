@@ -34,6 +34,21 @@ describe('MOO semantic tokens', () => {
     );
   });
 
+  it('does not include invalid dollar-separated text in MOO identifier tokens', () => {
+    const source = ['$room_extra:announce("ok");', '$room$extra:announce("bad");'].join('\n');
+
+    expect(tokenSummary(source)).toEqual(
+      expect.arrayContaining([
+        '1:1:$room_extra:variable:defaultLibrary',
+        '1:13:announce:function:',
+        '2:1:$room:variable:defaultLibrary',
+      ]),
+    );
+    expect(tokenSummary(source)).not.toEqual(
+      expect.arrayContaining(['2:1:$room$extra:variable:defaultLibrary']),
+    );
+  });
+
   it('encodes Monaco semantic tokens in line-relative order', () => {
     const encoded = encodeMooSemanticTokens('total = 0;\nnotify(player, total);');
 

@@ -579,7 +579,7 @@ describe('MOO Monaco language support', () => {
         expect.objectContaining({ startLineNumber: 2, startColumn: 9 }),
         expect.objectContaining({ startLineNumber: 3, startColumn: 16 }),
       ],
-      wordPattern: /[A-Za-z_][\w$]*/,
+      wordPattern: /[A-Za-z_][A-Za-z0-9_]*/,
     });
   });
 

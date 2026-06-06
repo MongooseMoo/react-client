@@ -3,6 +3,8 @@ export const PLAINTEXT_LANGUAGE_ID = 'plaintext';
 
 export const MOO_SESSION_TYPES = ['moo-code', 'moocode', 'lambdamoo'] as const;
 
+export const MOO_IDENTIFIER_PATTERN_SOURCE = '[A-Za-z_][A-Za-z0-9_]*';
+
 export const STATEMENT_KEYWORDS = [
   'if',
   'else',

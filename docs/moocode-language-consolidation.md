@@ -462,3 +462,16 @@ Iterations:
     usable marker codes and ranges.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/language.test.ts`.
+- 2026-06-06 grammar-aligned local identifiers:
+  - The browser-side semantic model now uses the MOO grammar's identifier shape:
+    a letter or underscore followed by only letters, digits, and underscores.
+  - Monaco rename validation rejects `$` inside local names, and linked editing
+    advertises the same identifier word pattern Monaco should use while editing
+    all occurrences.
+  - Local reference analysis no longer treats identifiers inside system
+    references such as `$room` as reads of similarly named locals.
+  - Semantic tokens and parser-backed block labels now share the same identifier
+    source so UI labels, highlighting, rename, references, and diagnostics stay
+    aligned.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode/semantics.test.ts src/editor/moocode/semanticTokens.test.ts src/editor/moocode/language.test.ts src/editor/moocode/treeSitter.test.ts`.

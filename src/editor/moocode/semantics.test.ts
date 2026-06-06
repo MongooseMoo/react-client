@@ -107,7 +107,7 @@ describe('MOO semantic model', () => {
         wordRange(source, 'total', 3),
         wordRange(source, 'total', 4),
       ],
-      wordPattern: /[A-Za-z_][\w$]*/,
+      wordPattern: /[A-Za-z_][A-Za-z0-9_]*/,
     });
     expect(getMooLinkedEditingRanges(source, positionFor(source, 'player'))).toBeNull();
     expect(getMooLinkedEditingRanges('// total = 0;', { lineNumber: 1, column: 4 })).toBeNull();
@@ -150,6 +150,9 @@ describe('MOO semantic model', () => {
     });
     expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'total +'), '9bad')).toEqual({
       rejectReason: 'MOO identifiers must start with a letter or underscore.',
+    });
+    expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'total +'), 'bad$name')).toEqual({
+      rejectReason: 'MOO identifiers may contain only letters, digits, and underscores.',
     });
     expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'player'), 'actor')).toEqual({
       rejectReason: 'No local MOO symbol is available at this position.',
@@ -256,6 +259,24 @@ describe('MOO semantic model', () => {
 
     expect(findMooUndefinedLocalReferences(source)).toEqual([]);
     expect(findMooUnusedLocalDefinitions(source)).toEqual([]);
+  });
+
+  it('does not treat system-reference names as local references', () => {
+    const source = ['room = player.location;', '$room:announce("ok");'].join('\n');
+
+    expect(analyzeMooSemantics(source).symbols).toEqual([
+      {
+        name: 'room',
+        definitions: [wordRange(source, 'room', 1)],
+        references: [],
+      },
+    ]);
+    expect(findMooUnusedLocalDefinitions(source)).toEqual([
+      {
+        name: 'room',
+        range: wordRange(source, 'room', 1),
+      },
+    ]);
   });
 
   it('finds local definitions that are never read', () => {

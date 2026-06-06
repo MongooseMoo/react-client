@@ -1,4 +1,4 @@
-import { MOO_LANGUAGE_ID } from './contract';
+import { MOO_IDENTIFIER_PATTERN_SOURCE, MOO_LANGUAGE_ID } from './contract';
 import type { MooBlockKind } from './contract';
 import type { MooFoldingRange, MooStructure, MooStructureSymbol } from './structure';
 
@@ -244,6 +244,15 @@ const BLOCK_NODE_KINDS: Partial<Record<string, MooBlockKind>> = {
   try_finally_statement: 'try',
   while_statement: 'while',
 };
+const WHILE_LABEL_PATTERN = new RegExp(
+  `^while(?:\\s+${MOO_IDENTIFIER_PATTERN_SOURCE})?\\s*\\((.*)\\)`,
+  'i',
+);
+const FOR_LABEL_PATTERN = new RegExp(
+  `^for\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE}(?:\\s*,\\s*${MOO_IDENTIFIER_PATTERN_SOURCE})?)`,
+  'i',
+);
+const FORK_LABEL_PATTERN = new RegExp(`^fork(?:\\s+(${MOO_IDENTIFIER_PATTERN_SOURCE}))?`, 'i');
 
 function collectTreeSitterStructure(root: TreeSitterNodeLike): MooStructure {
   const symbols = collectBlockSymbols(root.children);
@@ -333,17 +342,15 @@ function describeParserBlock(kind: MooBlockKind, text: string): string {
       return condition ? `if ${condition}` : 'if';
     }
     case 'while': {
-      const condition = /^while(?:\s+[A-Za-z_][\w$]*)?\s*\((.*)\)/i.exec(firstLine)?.[1]?.trim();
+      const condition = WHILE_LABEL_PATTERN.exec(firstLine)?.[1]?.trim();
       return condition ? `while ${condition}` : 'while';
     }
     case 'for': {
-      const variables = /^for\s+([A-Za-z_][\w$]*(?:\s*,\s*[A-Za-z_][\w$]*)?)/i.exec(
-        firstLine,
-      )?.[1];
+      const variables = FOR_LABEL_PATTERN.exec(firstLine)?.[1];
       return variables ? `for ${variables.replace(/\s*,\s*/, ', ')}` : 'for';
     }
     case 'fork': {
-      const name = /^fork(?:\s+([A-Za-z_][\w$]*))?/i.exec(firstLine)?.[1];
+      const name = FORK_LABEL_PATTERN.exec(firstLine)?.[1];
       return name ? `fork ${name}` : 'fork';
     }
     case 'try':
