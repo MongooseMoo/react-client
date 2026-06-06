@@ -170,6 +170,22 @@ export function getMooSignatureHelp(
   };
 }
 
+export function getMooBuiltinSignature(functionName: string): MooSignatureInformation | null {
+  const normalizedName = functionName.toLowerCase();
+  const definition = BUILTIN_SIGNATURES[normalizedName as keyof typeof BUILTIN_SIGNATURES];
+  if (!definition) {
+    return null;
+  }
+
+  return {
+    label: `${normalizedName}(${definition.parameters
+      .map((parameter) => parameter.label)
+      .join(', ')})`,
+    documentation: definition.documentation,
+    parameters: definition.parameters,
+  };
+}
+
 function readIdentifierBefore(source: string, openParenIndex: number): string | null {
   let endIndex = openParenIndex - 1;
   while (endIndex >= 0 && /\s/.test(source[endIndex])) {

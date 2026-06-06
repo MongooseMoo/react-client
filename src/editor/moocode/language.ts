@@ -12,6 +12,7 @@ export {
 } from './contract';
 import { getMooQuickFixes } from './codeActions';
 import type { MooDiagnostic } from './diagnostics';
+import { collectMooInlayHints } from './inlayHints';
 import {
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
@@ -187,6 +188,9 @@ export type MonacoLike = {
     CodeActionKind?: {
       QuickFix: string;
     };
+    InlayHintKind?: {
+      Parameter: number;
+    };
     CompletionItemInsertTextRule: {
       InsertAsSnippet: number;
     };
@@ -231,6 +235,10 @@ export type MonacoLike = {
       provider: {
         provideHover: (model: TextModelLike, position: unknown) => Hover | null;
       },
+    ) => { dispose: () => void };
+    registerInlayHintsProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.InlayHintsProvider,
     ) => { dispose: () => void };
     registerReferenceProvider?: (
       languageId: string,
@@ -519,6 +527,25 @@ export function createMooFoldingRangeProvider(
   };
 }
 
+export function createMooInlayHintsProvider(
+  inlayHintKind: { Parameter: number } = { Parameter: 2 },
+): MonacoEditor.languages.InlayHintsProvider {
+  return {
+    provideInlayHints: (model) => ({
+      hints: collectMooInlayHints(model.getValue()).map((hint) => ({
+        label: hint.label,
+        position: {
+          lineNumber: hint.lineNumber,
+          column: hint.column,
+        },
+        kind: inlayHintKind.Parameter,
+        paddingRight: true,
+      })),
+      dispose: () => {},
+    }),
+  };
+}
+
 export function createMooReferenceProvider(): MonacoEditor.languages.ReferenceProvider {
   return {
     provideReferences: (model, position) =>
@@ -614,6 +641,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
     createMooSemanticTokensProvider(),
   );
   monaco.languages.registerFoldingRangeProvider?.(MOO_LANGUAGE_ID, createMooFoldingRangeProvider());
+  monaco.languages.registerInlayHintsProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooInlayHintsProvider(monaco.languages.InlayHintKind ?? { Parameter: 2 }),
+  );
   monaco.languages.registerReferenceProvider?.(MOO_LANGUAGE_ID, createMooReferenceProvider());
   monaco.languages.registerRenameProvider?.(MOO_LANGUAGE_ID, createMooRenameProvider());
   monaco.languages.registerSignatureHelpProvider?.(MOO_LANGUAGE_ID, createMooSignatureHelpProvider());

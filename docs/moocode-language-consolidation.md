@@ -122,3 +122,12 @@ Iterations:
     requests efficiently.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco parameter inlay hints:
+  - Added `src/editor/moocode/inlayHints.ts` for browser-side parameter hints
+    derived from the same ToastStunt builtin signatures used by signature help.
+  - Registered a Monaco `InlayHintsProvider` for `moocode`, with parameter
+    labels on builtin function-call arguments.
+  - Inlay hint scanning masks comments and strings, tracks nested calls, and
+    sorts hints by source position so nested builtin calls render deterministically.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

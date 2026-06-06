@@ -9,6 +9,7 @@ import {
   createMooDefinitionProvider,
   createMooDocumentSymbolProvider,
   createMooFoldingRangeProvider,
+  createMooInlayHintsProvider,
   createMooLanguageConfiguration,
   createMooMonarchLanguage,
   createMooReferenceProvider,
@@ -163,6 +164,7 @@ describe('MOO Monaco language support', () => {
         registerDocumentSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -191,6 +193,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerDocumentSemanticTokensProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerFoldingRangeProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerHoverProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerInlayHintsProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerReferenceProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerRenameProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerSignatureHelpProvider).toHaveBeenCalledTimes(1);
@@ -286,6 +289,34 @@ describe('MOO Monaco language support', () => {
       dispose: expect.any(Function),
     });
     expect(actions.dispose()).toBeUndefined();
+  });
+
+  it('provides Monaco parameter inlay hints for builtin calls', () => {
+    const provider = createMooInlayHintsProvider({ Parameter: 2 });
+    const hints = provider.provideInlayHints(
+      { getValue: () => 'notify(player, "hello");' } as never,
+      {} as never,
+      {} as never,
+    );
+
+    expect(hints).toEqual({
+      hints: [
+        {
+          label: 'player:',
+          position: { lineNumber: 1, column: 8 },
+          kind: 2,
+          paddingRight: true,
+        },
+        {
+          label: 'text:',
+          position: { lineNumber: 1, column: 16 },
+          kind: 2,
+          paddingRight: true,
+        },
+      ],
+      dispose: expect.any(Function),
+    });
+    expect(hints.dispose()).toBeUndefined();
   });
 
   it('provides Monaco semantic tokens for MOO source', () => {
@@ -396,6 +427,7 @@ describe('MOO Monaco language support', () => {
         registerDocumentSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
