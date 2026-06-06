@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { MOO_IDENTIFIER_PATTERN_SOURCE, MOO_SYSTEM_REFERENCE_PATTERN_SOURCE } from './contract';
 import {
   BUILTIN_FUNCTIONS,
+  MOO_CODE_ACTION_FIX_ALL_KIND,
+  MOO_CODE_ACTION_QUICKFIX_KIND,
   ERROR_CONSTANTS,
   MOO_LANGUAGE_ID,
   createMooCodeActionProvider,
@@ -626,6 +628,13 @@ describe('MOO Monaco language support', () => {
       expect.any(Object),
     );
     expect(monaco.languages.registerCodeActionProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerCodeActionProvider).toHaveBeenCalledWith(
+      MOO_LANGUAGE_ID,
+      expect.any(Object),
+      {
+        providedCodeActionKinds: [MOO_CODE_ACTION_QUICKFIX_KIND, MOO_CODE_ACTION_FIX_ALL_KIND],
+      },
+    );
     expect(monaco.languages.registerCodeLensProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerCompletionItemProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDeclarationProvider).toHaveBeenCalledTimes(1);
@@ -1560,7 +1569,7 @@ describe('MOO Monaco language support', () => {
 
     expect(actions.actions).toContainEqual({
       title: 'Mark all unused locals as intentionally ignored',
-      kind: 'quickfix',
+      kind: MOO_CODE_ACTION_FIX_ALL_KIND,
       isPreferred: true,
       diagnostics: [
         expect.objectContaining({ code: 'unused-local', severity: 4 }),
@@ -1599,6 +1608,67 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('provides Monaco source fix-all actions for grouped MOO cleanup fixes', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () =>
+        ['used = 1;', 'unused = 2;', 'stale = 3;', 'notify(player, used);'].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      { markers: [], only: MOO_CODE_ACTION_FIX_ALL_KIND, trigger: 1 } as never,
+      {} as never,
+    );
+
+    expect(actions.actions.map((action) => action.title)).toEqual([
+      'Mark all unused locals as intentionally ignored',
+    ]);
+    expect(actions.actions[0]).toMatchObject({
+      kind: MOO_CODE_ACTION_FIX_ALL_KIND,
+      isPreferred: true,
+      edit: {
+        edits: [
+          expect.objectContaining({
+            textEdit: expect.objectContaining({
+              text: '_',
+            }),
+          }),
+          expect.objectContaining({
+            textEdit: expect.objectContaining({
+              text: '_',
+            }),
+          }),
+        ],
+      },
+    });
+  });
+
+  it('filters Monaco MOO code actions by requested action kind', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () =>
+        ['used = 1;', 'unused = 2;', 'stale = 3;', 'notify(player, used);'].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      { markers: [], only: MOO_CODE_ACTION_QUICKFIX_KIND, trigger: 1 } as never,
+      {} as never,
+    );
+
+    expect(actions.actions.map((action) => action.kind)).toEqual(
+      actions.actions.map(() => MOO_CODE_ACTION_QUICKFIX_KIND),
+    );
+    expect(actions.actions.map((action) => action.title)).not.toContain(
+      'Mark all unused locals as intentionally ignored',
+    );
+  });
+
   it('provides Monaco quick fixes with multiple edits for grouped unreachable statements', () => {
     const provider = createMooCodeActionProvider();
     const model = {
@@ -1624,7 +1694,7 @@ describe('MOO Monaco language support', () => {
 
     expect(actions.actions).toContainEqual({
       title: 'Remove all unreachable statements',
-      kind: 'quickfix',
+      kind: MOO_CODE_ACTION_FIX_ALL_KIND,
       isPreferred: true,
       diagnostics: [
         expect.objectContaining({ code: 'unreachable-statement' }),
@@ -1734,7 +1804,7 @@ describe('MOO Monaco language support', () => {
 
     expect(actions.actions).toContainEqual({
       title: 'Initialize all undefined locals before use',
-      kind: 'quickfix',
+      kind: MOO_CODE_ACTION_FIX_ALL_KIND,
       isPreferred: true,
       diagnostics: [
         expect.objectContaining({ code: 'undefined-local' }),

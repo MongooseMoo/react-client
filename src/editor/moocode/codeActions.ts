@@ -1,4 +1,4 @@
-import { MOO_BLOCKS, type MooBlockKind } from './contract';
+import { MOO_BLOCKS, MOO_CODE_ACTION_FIX_ALL_KIND, type MooBlockKind } from './contract';
 import { getMooBuiltinMetadata } from './builtins';
 import { validateMooSyntax, type MooDiagnostic } from './diagnostics';
 import { firstMooKeyword } from './scanner';
@@ -19,6 +19,7 @@ export type MooQuickFix = {
   diagnostics: MooQuickFixDiagnostic[];
   edit: MooQuickFixEdit;
   edits?: MooQuickFixEdit[];
+  kind?: string;
 };
 
 const CLOSE_DELIMITER_BY_OPEN: Record<string, string> = {
@@ -276,6 +277,7 @@ export function getMooQuickFixes(
       diagnostics: unreachableDiagnostics,
       edit: edits[0],
       edits,
+      kind: MOO_CODE_ACTION_FIX_ALL_KIND,
     });
   }
 
@@ -293,6 +295,7 @@ export function getMooQuickFixes(
       diagnostics: unusedLocalDiagnostics,
       edit: edits[0],
       edits,
+      kind: MOO_CODE_ACTION_FIX_ALL_KIND,
     });
   }
 
@@ -361,6 +364,7 @@ function groupedUndefinedLocalInitializerFix(
     diagnostics: distinctDiagnostics.map((entry) => entry.diagnostic),
     edit: edits[0],
     edits,
+    kind: MOO_CODE_ACTION_FIX_ALL_KIND,
   };
 }
 

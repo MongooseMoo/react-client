@@ -1,5 +1,7 @@
 export const MOO_LANGUAGE_ID = 'moocode';
 export const PLAINTEXT_LANGUAGE_ID = 'plaintext';
+export const MOO_CODE_ACTION_QUICKFIX_KIND = 'quickfix';
+export const MOO_CODE_ACTION_FIX_ALL_KIND = 'source.fixAll.moocode';
 
 export const MOO_SESSION_TYPES = ['moo-code', 'moocode', 'lambdamoo'] as const;
 

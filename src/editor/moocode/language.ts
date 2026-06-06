@@ -4,6 +4,8 @@ export {
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
   ERROR_CONSTANTS,
+  MOO_CODE_ACTION_FIX_ALL_KIND,
+  MOO_CODE_ACTION_QUICKFIX_KIND,
   MOO_LANGUAGE_ID,
   MOO_SESSION_TYPES,
   OPERATOR_WORDS,
@@ -38,6 +40,8 @@ import {
   BUILTIN_VARIABLES,
   ERROR_CONSTANTS,
   MOO_BLOCKS,
+  MOO_CODE_ACTION_FIX_ALL_KIND,
+  MOO_CODE_ACTION_QUICKFIX_KIND,
   MOO_IDENTIFIER_PATTERN_SOURCE,
   MOO_INDENT_OPEN_KEYWORDS,
   MOO_LANGUAGE_ID,
@@ -631,15 +635,18 @@ export function createMooCompletionItems(
 export function createMooCodeActionProvider(): MonacoEditor.languages.CodeActionProvider {
   return {
     provideCodeActions: (model, _range, context) => {
-      const fixes = filterMooQuickFixesForMarkers(
-        getMooQuickFixes(model.getValue(), quickFixDiagnosticsFromMarkers(context.markers)),
-        context.markers,
+      const fixes = filterMooQuickFixesForRequestedKind(
+        filterMooQuickFixesForMarkers(
+          getMooQuickFixes(model.getValue(), quickFixDiagnosticsFromMarkers(context.markers)),
+          context.markers,
+        ),
+        context.only,
       );
 
       return {
         actions: fixes.map((fix) => ({
           title: fix.title,
-          kind: 'quickfix',
+          kind: fix.kind ?? MOO_CODE_ACTION_QUICKFIX_KIND,
           isPreferred: true,
           diagnostics: fix.diagnostics.map(toCodeActionMarker),
           edit: {
@@ -657,6 +664,23 @@ export function createMooCodeActionProvider(): MonacoEditor.languages.CodeAction
       };
     },
   };
+}
+
+function filterMooQuickFixesForRequestedKind(
+  fixes: MooQuickFix[],
+  requestedKind: string | undefined,
+): MooQuickFix[] {
+  if (!requestedKind) {
+    return fixes;
+  }
+
+  return fixes.filter((fix) =>
+    codeActionKindMatches((fix.kind ?? MOO_CODE_ACTION_QUICKFIX_KIND), requestedKind),
+  );
+}
+
+function codeActionKindMatches(actionKind: string, requestedKind: string): boolean {
+  return actionKind === requestedKind || actionKind.startsWith(`${requestedKind}.`);
 }
 
 function mooQuickFixEdits(fix: MooQuickFix): MooQuickFixEdit[] {
@@ -1188,7 +1212,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.setMonarchTokensProvider(MOO_LANGUAGE_ID, createMooMonarchLanguage());
   monaco.languages.setLanguageConfiguration(MOO_LANGUAGE_ID, createMooLanguageConfiguration());
   monaco.languages.registerCodeActionProvider?.(MOO_LANGUAGE_ID, createMooCodeActionProvider(), {
-    providedCodeActionKinds: [monaco.languages.CodeActionKind?.QuickFix ?? 'quickfix'],
+    providedCodeActionKinds: [
+      monaco.languages.CodeActionKind?.QuickFix ?? MOO_CODE_ACTION_QUICKFIX_KIND,
+      MOO_CODE_ACTION_FIX_ALL_KIND,
+    ],
   });
   monaco.languages.registerCodeLensProvider?.(MOO_LANGUAGE_ID, createMooCodeLensProvider());
   monaco.languages.registerCompletionItemProvider(

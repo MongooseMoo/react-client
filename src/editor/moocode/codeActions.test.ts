@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getMooQuickFixes } from './codeActions';
+import { MOO_CODE_ACTION_FIX_ALL_KIND } from './contract';
 
 describe('MOO code actions', () => {
   it('offers quick fixes for missing block, delimiter, and string closers', () => {
@@ -197,6 +198,7 @@ describe('MOO code actions', () => {
           text: '_',
         },
       ],
+      kind: MOO_CODE_ACTION_FIX_ALL_KIND,
     });
   });
 
@@ -266,6 +268,7 @@ describe('MOO code actions', () => {
           text: '',
         },
       ],
+      kind: MOO_CODE_ACTION_FIX_ALL_KIND,
     });
   });
 
@@ -316,6 +319,7 @@ describe('MOO code actions', () => {
           text: '  total = 0;\n  count = 0;\n',
         },
       ],
+      kind: MOO_CODE_ACTION_FIX_ALL_KIND,
     });
   });
 
