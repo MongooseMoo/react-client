@@ -111,7 +111,7 @@
 
 .editor-problem-button {
   display: grid;
-  grid-template-columns: 4.25rem 6.5rem minmax(0, 1fr);
+  grid-template-columns: 4.25rem minmax(7rem, 11rem) 6.5rem minmax(0, 1fr);
   width: 100%;
   min-height: 2rem;
   align-items: center;
@@ -146,6 +146,16 @@
 
 .editor-problem-severity-warning {
   color: #996f00;
+}
+
+.editor-problem-code {
+  min-width: 0;
+  overflow: hidden;
+  color: #405167;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.9em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-problem-location {

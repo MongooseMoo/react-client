@@ -354,10 +354,11 @@ function MooProblemsPanel({ id, markers, onProblemClick }: MooProblemsPanelProps
       <ol className="editor-problems-list">
         {markers.map((marker, index) => {
           const severity = formatMooProblemSeverity(marker);
+          const code = formatMooProblemCode(marker);
           const target = getMooDiagnosticTarget(marker);
-          const label = `MOO ${severity.toLowerCase()} on line ${target.lineNumber}, column ${
-            target.column
-          }: ${marker.message}`;
+          const label = `MOO ${severity.toLowerCase()} ${code} on line ${
+            target.lineNumber
+          }, column ${target.column}: ${marker.message}`;
 
           return (
             <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
@@ -372,6 +373,7 @@ function MooProblemsPanel({ id, markers, onProblemClick }: MooProblemsPanelProps
                 >
                   {severity}
                 </span>{' '}
+                <span className="editor-problem-code">{code}</span>{' '}
                 <span className="editor-problem-location">
                   Ln {target.lineNumber}, Col {target.column}
                 </span>{' '}
@@ -524,6 +526,24 @@ function formatMooProblemSeverity(marker: MonacoEditor.IMarkerData): 'Error' | '
   return marker.severity === MONACO_WARNING_MARKER_SEVERITY ? 'Warning' : 'Error';
 }
 
+function formatMooProblemCode(marker: MonacoEditor.IMarkerData): string {
+  if (typeof marker.code === 'string' && marker.code.length > 0) {
+    return marker.code;
+  }
+
+  if (
+    marker.code &&
+    typeof marker.code === 'object' &&
+    'value' in marker.code &&
+    typeof marker.code.value === 'string' &&
+    marker.code.value.length > 0
+  ) {
+    return marker.code.value;
+  }
+
+  return marker.source || 'diagnostic';
+}
+
 function formatMooProblemKey(marker: MonacoEditor.IMarkerData, index: number): string {
   return [
     marker.startLineNumber,
@@ -531,6 +551,7 @@ function formatMooProblemKey(marker: MonacoEditor.IMarkerData, index: number): s
     marker.endLineNumber,
     marker.endColumn,
     marker.severity,
+    formatMooProblemCode(marker),
     marker.message,
     index,
   ].join(':');

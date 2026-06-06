@@ -597,8 +597,8 @@ describe('EditorWindow language selection', () => {
 
     expect(problemsRegion.contains(problemButtons[0])).toBe(true);
     expect(problemButtons.map((button) => button.textContent)).toEqual([
-      'Error Ln 2, Col 1 while is missing a matching endwhile.',
-      'Warning Ln 1, Col 1 unused is defined but never used.',
+      'Error unclosed-block Ln 2, Col 1 while is missing a matching endwhile.',
+      'Warning unused-local Ln 1, Col 1 unused is defined but never used.',
     ]);
 
     fireEvent.click(problemButtons[1]);
