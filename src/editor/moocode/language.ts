@@ -12,6 +12,7 @@ export {
   SYSTEM_REFERENCES,
 } from './contract';
 import { getMooQuickFixes } from './codeActions';
+import { getMooBuiltinMetadata } from './builtins';
 import type { MooDiagnostic } from './diagnostics';
 import { formatMooCode, formatMooCodeRange } from './formatter';
 import {
@@ -501,7 +502,7 @@ export function createMooCompletionItems(
     range,
   }));
   const functions = BUILTIN_FUNCTIONS.map((name) => {
-    const signature = BUILTIN_SNIPPETS[name] ?? `${name}($1)`;
+    const signature = BUILTIN_SNIPPETS[name] ?? createMooBuiltinSnippet(name);
     const builtinSignature = getMooBuiltinSignature(name);
 
     return {
@@ -1188,4 +1189,25 @@ function placeholder(index: number, name: string): string {
 
 function tabstop(index: number): string {
   return `$${index}`;
+}
+
+function createMooBuiltinSnippet(name: string): string {
+  const metadata = getMooBuiltinMetadata(name);
+  if (!metadata) {
+    return `${name}($1)`;
+  }
+
+  const parameterCount = metadata.maxArgs >= 0 ? metadata.maxArgs : metadata.minArgs;
+  if (parameterCount === 0) {
+    return `${name}()`;
+  }
+
+  const parameters = Array.from({ length: parameterCount }, (_, index) => {
+    const type = metadata.parameterTypes[index] ?? `arg${index + 1}`;
+    const optionalMarker = index >= metadata.minArgs ? '?' : '';
+
+    return placeholder(index + 1, `${type}${optionalMarker}`);
+  });
+
+  return `${name}(${parameters.join(', ')})`;
 }

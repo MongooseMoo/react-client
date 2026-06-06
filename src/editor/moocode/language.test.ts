@@ -111,6 +111,29 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('uses ToastStunt arity metadata for generic builtin completion snippets', () => {
+    const items = createMooCompletionItems({
+      startLineNumber: 1,
+      endLineNumber: 1,
+      startColumn: 1,
+      endColumn: 1,
+    });
+
+    expect(items.find((item) => item.label === 'sqlite_query')).toMatchObject({
+      detail: 'sqlite_query(arg1, arg2, arg3?)',
+      insertText: ['sqlite_query(', '$', '{1:int}', ', ', '$', '{2:str}', ', ', '$', '{3:any?}', ')'].join(
+        '',
+      ),
+    });
+    expect(items.find((item) => item.label === 'threads')).toMatchObject({
+      detail: 'threads()',
+      insertText: 'threads()',
+    });
+    expect(items.find((item) => item.label === 'notify')?.insertText).toBe(
+      ['notify(', '$', '{1:player}', ', ', '$', '{2:text}', ')'].join(''),
+    );
+  });
+
   it('offers block snippets with Monaco tab stops for common MOO forms', () => {
     const ifBlockSnippet = ['if (', '$', '{1:condition})\n  $0\nendif'].join('');
     const tryExceptSnippet = ['try\n  $1\nexcept (', '$', '{2:any})\n  $0\nendtry'].join('');

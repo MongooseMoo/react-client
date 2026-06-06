@@ -344,3 +344,13 @@ Iterations:
   - Focused red-to-green gates:
     `npm test -- --run src/editor/moocode/signatures.test.ts src/editor/moocode/diagnostics.test.ts`
     and `npm test -- --run src/editor/moocode`.
+- 2026-06-06 ToastStunt arity-aware completions:
+  - Generic builtin completions now use ToastStunt arity/type metadata instead
+    of falling back to `name($1)`.
+  - Completion snippets insert registered parameter type placeholders, mark
+    optional parameters with `?`, and emit `name()` for zero-argument builtins.
+  - Curated high-value snippets such as `notify(player, text)` still override
+    the generic metadata path.
+  - Focused red-to-green gates:
+    `npm test -- --run src/editor/moocode/language.test.ts` and
+    `npm test -- --run src/editor/moocode`.
