@@ -165,7 +165,7 @@ Iterations:
   - Added `src/editor/moocode/hover.ts` as the browser-side hover service.
   - Replaced the small inline hover table with Monaco hovers backed by builtin
     signatures, builtin variables, MOO error constants, statement/operator
-    keywords, and local symbol analysis.
+    keywords, system references, and local symbol analysis.
   - Hover scanning uses the shared masked source helper so strings and comments
     do not produce language hovers.
   - Focused red-to-green gate:

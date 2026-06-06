@@ -51,4 +51,20 @@ describe('MOO hover service', () => {
     expect(getMooHover('// notify(player, "comment")', { lineNumber: 1, column: 5 })).toBeNull();
     expect(getMooHover('"E_PERM"', { lineNumber: 1, column: 3 })).toBeNull();
   });
+
+  it('describes MOO system references', () => {
+    expect(getMooHover('$string_utils:english_list(names);', { lineNumber: 1, column: 4 })).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 14,
+      },
+      contents: [
+        {
+          value: ['```moocode', '$string_utils', '```', 'MOO string utility object.'].join('\n'),
+        },
+      ],
+    });
+  });
 });

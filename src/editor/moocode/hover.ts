@@ -3,6 +3,7 @@ import type {
   ERROR_CONSTANTS,
   OPERATOR_WORDS,
   STATEMENT_KEYWORDS,
+  SYSTEM_REFERENCES,
 } from './contract';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
 import { analyzeMooSemantics } from './semantics';
@@ -31,6 +32,18 @@ const BUILTIN_VARIABLE_DOCUMENTATION: Record<(typeof BUILTIN_VARIABLES)[number],
   prepstr: 'The preposition text matched by command parsing.',
   iobj: 'The indirect object matched by command parsing.',
   iobjstr: 'The indirect-object text supplied by command parsing.',
+};
+
+const SYSTEM_REFERENCE_DOCUMENTATION: Record<(typeof SYSTEM_REFERENCES)[number], string> = {
+  $login: 'MOO login object.',
+  $local: 'MOO local configuration object.',
+  $network: 'MOO network services object.',
+  $player: 'MOO player utility object.',
+  $room: 'MOO room utility object.',
+  $string_utils: 'MOO string utility object.',
+  $telnet_utils: 'MOO telnet utility object.',
+  $utils: 'MOO general utility object.',
+  $wiz: 'MOO wizard utility object.',
 };
 
 const ERROR_DOCUMENTATION: Record<(typeof ERROR_CONSTANTS)[number], string> = {
@@ -97,6 +110,15 @@ export function getMooErrorDocumentation(name: string): string | null {
   return ERROR_DOCUMENTATION[upperName as keyof typeof ERROR_DOCUMENTATION] ?? null;
 }
 
+export function getMooSystemReferenceDocumentation(name: string): string | null {
+  const normalizedName = name.toLowerCase();
+  return (
+    SYSTEM_REFERENCE_DOCUMENTATION[
+      normalizedName as keyof typeof SYSTEM_REFERENCE_DOCUMENTATION
+    ] ?? null
+  );
+}
+
 export function getMooKeywordDocumentation(name: string): string | null {
   const normalizedName = name.toLowerCase();
   return (
@@ -127,6 +149,11 @@ export function getMooHover(source: string, position: MooSourcePosition): MooHov
   const variableDocumentation = getMooBuiltinVariableDocumentation(normalizedName);
   if (variableDocumentation) {
     return hover(word.range, normalizedName, variableDocumentation);
+  }
+
+  const systemReferenceDocumentation = getMooSystemReferenceDocumentation(normalizedName);
+  if (systemReferenceDocumentation) {
+    return hover(word.range, normalizedName, systemReferenceDocumentation);
   }
 
   const errorDocumentation = getMooErrorDocumentation(upperName);
