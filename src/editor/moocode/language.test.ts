@@ -200,6 +200,84 @@ describe('MOO Monaco language support', () => {
     );
   });
 
+  it('adds Monaco filtering, preselect, and commit metadata to completion items', () => {
+    const range = {
+      startLineNumber: 1,
+      endLineNumber: 1,
+      startColumn: 1,
+      endColumn: 1,
+    };
+    const items = createMooCompletionItems(range, undefined, 'default', [
+      { name: 'total' },
+      { name: 'subtotal' },
+    ]);
+
+    expect(items.find((item) => item.label === 'total')).toMatchObject({
+      filterText: 'total',
+      preselect: true,
+      commitCharacters: ['.', ':', '[', ',', ')', ']', ';'],
+    });
+    expect(items.find((item) => item.label === 'subtotal')).toMatchObject({
+      filterText: 'subtotal',
+      preselect: false,
+    });
+    expect(items.find((item) => item.label === 'E_PERM')).toMatchObject({
+      filterText: 'E_PERM PERM',
+      commitCharacters: [',', ')', ';', '|'],
+    });
+    expect(createMooCompletionItems(range, undefined, 'system-reference')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: '$room',
+          filterText: '$room room',
+          commitCharacters: ['.', ':', '[', ',', ')', ']', ';'],
+        }),
+      ]),
+    );
+    expect(
+      createMooCompletionItems(range, undefined, 'loop-label', [], [
+        { name: 'inner' },
+        { name: 'outer' },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        label: 'inner',
+        preselect: true,
+        commitCharacters: [';'],
+      }),
+      expect.objectContaining({
+        label: 'outer',
+        preselect: false,
+      }),
+    ]);
+  });
+
+  it('uses bare verb-name completions inside static MOO verb-call targets', () => {
+    const provider = createMooCompletionProvider();
+    const completions = provider.provideCompletionItems(
+      {
+        getValue: () => 'player:no',
+        getLineContent: () => 'player:no',
+        getWordUntilPosition: () => ({
+          word: 'no',
+          startColumn: 8,
+          endColumn: 10,
+        }),
+      },
+      { lineNumber: 1, column: 10 },
+    );
+
+    const notifyCompletion = completions.suggestions.find((item) => item.label === 'notify');
+
+    expect(notifyCompletion).toMatchObject({
+      detail: 'MOO verb name',
+      insertText: 'notify',
+      filterText: 'notify',
+      commitCharacters: ['('],
+    });
+    expect(notifyCompletion).not.toHaveProperty('insertTextRules');
+  });
+
   it('uses ToastStunt arity metadata for generic builtin completion snippets', () => {
     const items = createMooCompletionItems({
       startLineNumber: 1,

@@ -121,6 +121,9 @@ type CompletionItem = {
   documentation: string;
   range: MonacoRange;
   sortText?: string;
+  filterText?: string;
+  preselect?: boolean;
+  commitCharacters?: string[];
 };
 
 type CompletionList = {
@@ -501,6 +504,7 @@ export function createMooCompletionItems(
     documentation: getMooKeywordDocumentation(keyword) ?? 'MOO statement keyword',
     range,
     sortText: completionSortText('keyword', keyword),
+    filterText: completionFilterText('keyword', keyword),
   }));
   const variables = BUILTIN_VARIABLES.map((variable) => ({
     label: variable,
@@ -510,6 +514,8 @@ export function createMooCompletionItems(
     documentation: getMooBuiltinVariableDocumentation(variable) ?? 'MOO builtin variable',
     range,
     sortText: completionSortText('variable', variable),
+    filterText: completionFilterText('variable', variable),
+    commitCharacters: completionCommitCharacters('variable'),
   }));
   const errors = ERROR_CONSTANTS.map((error) => ({
     label: error,
@@ -519,6 +525,8 @@ export function createMooCompletionItems(
     documentation: getMooErrorDocumentation(error) ?? 'MOO error constant',
     range,
     sortText: completionSortText('error', error),
+    filterText: completionFilterText('error', error),
+    commitCharacters: completionCommitCharacters('error'),
   }));
   const exceptionCodes = [
     {
@@ -529,6 +537,8 @@ export function createMooCompletionItems(
       documentation: 'Matches any raised MOO exception.',
       range,
       sortText: completionSortText('exception', 'any'),
+      filterText: completionFilterText('exception', 'any'),
+      commitCharacters: completionCommitCharacters('exception'),
     },
     {
       label: 'error',
@@ -538,6 +548,8 @@ export function createMooCompletionItems(
       documentation: 'Matches a generic MOO error value.',
       range,
       sortText: completionSortText('exception', 'error'),
+      filterText: completionFilterText('exception', 'error'),
+      commitCharacters: completionCommitCharacters('exception'),
     },
     ...errors,
   ];
@@ -549,6 +561,8 @@ export function createMooCompletionItems(
     documentation: 'MOO system object reference',
     range,
     sortText: completionSortText('system', reference),
+    filterText: completionFilterText('system', reference),
+    commitCharacters: completionCommitCharacters('system'),
   }));
   const functions = BUILTIN_FUNCTIONS.map((name) => {
     const signature = BUILTIN_SNIPPETS[name] ?? createMooBuiltinSnippet(name);
@@ -563,9 +577,10 @@ export function createMooCompletionItems(
       documentation: builtinSignature?.documentation ?? 'ToastStunt builtin function',
       range,
       sortText: completionSortText('function', name),
+      filterText: completionFilterText('function', name),
     };
   });
-  const localVariables = locals.map((local) => ({
+  const localVariables = locals.map((local, index) => ({
     label: local.name,
     kind: kind.Variable,
     detail: 'Local variable',
@@ -573,8 +588,11 @@ export function createMooCompletionItems(
     documentation: 'MOO local variable',
     range,
     sortText: completionSortText('local', local.name),
+    filterText: completionFilterText('local', local.name),
+    preselect: index === 0,
+    commitCharacters: completionCommitCharacters('local'),
   }));
-  const loopLabelItems = loopLabels.map((label) => ({
+  const loopLabelItems = loopLabels.map((label, index) => ({
     label: label.name,
     kind: kind.Variable,
     detail: 'Loop label',
@@ -582,6 +600,9 @@ export function createMooCompletionItems(
     documentation: 'Enclosing while label',
     range,
     sortText: completionSortText('loop', label.name),
+    filterText: completionFilterText('loop', label.name),
+    preselect: index === 0,
+    commitCharacters: completionCommitCharacters('loop'),
   }));
 
   switch (context) {
@@ -594,7 +615,7 @@ export function createMooCompletionItems(
     case 'system-reference':
       return systemReferences;
     case 'verb':
-      return functions;
+      return createMooVerbCompletionItems(range, kind.Function);
     case 'default':
       return [
         ...localVariables,
@@ -1281,6 +1302,11 @@ const COMPLETION_SORT_PREFIX: Record<CompletionSortTier, string> = {
   error: '05',
   function: '06',
 };
+const VALUE_COMPLETION_COMMIT_CHARACTERS = ['.', ':', '[', ',', ')', ']', ';'];
+const LOOP_LABEL_COMPLETION_COMMIT_CHARACTERS = [';'];
+const ERROR_COMPLETION_COMMIT_CHARACTERS = [',', ')', ';', '|'];
+const EXCEPTION_COMPLETION_COMMIT_CHARACTERS = [',', ')'];
+const VERB_COMPLETION_COMMIT_CHARACTERS = ['('];
 
 function getCompletionContext(
   model: CompletionTextModelLike,
@@ -1492,8 +1518,58 @@ function createMooBlockSnippetItems(
   }));
 }
 
+function createMooVerbCompletionItems(range: MonacoRange, kind: number): CompletionItem[] {
+  return BUILTIN_FUNCTIONS.map((name) => ({
+    label: name,
+    kind,
+    detail: 'MOO verb name',
+    insertText: name,
+    documentation: 'Complete a static MOO verb-call name.',
+    range,
+    sortText: completionSortText('function', name),
+    filterText: completionFilterText('function', name),
+    commitCharacters: VERB_COMPLETION_COMMIT_CHARACTERS,
+  }));
+}
+
 function completionSortText(tier: CompletionSortTier, label: string): string {
   return `${COMPLETION_SORT_PREFIX[tier]}_${tier}_${label.toLowerCase()}`;
+}
+
+function completionFilterText(tier: CompletionSortTier, label: string): string {
+  switch (tier) {
+    case 'error':
+      return `${label} ${label.replace(/^E_/, '')}`;
+    case 'system':
+      return `${label} ${label.slice(1)}`;
+    case 'exception':
+    case 'function':
+    case 'keyword':
+    case 'local':
+    case 'loop':
+    case 'snippet':
+    case 'variable':
+      return label;
+  }
+}
+
+function completionCommitCharacters(tier: CompletionSortTier): string[] | undefined {
+  switch (tier) {
+    case 'local':
+    case 'system':
+    case 'variable':
+      return VALUE_COMPLETION_COMMIT_CHARACTERS;
+    case 'loop':
+      return LOOP_LABEL_COMPLETION_COMMIT_CHARACTERS;
+    case 'error':
+      return ERROR_COMPLETION_COMMIT_CHARACTERS;
+    case 'exception':
+      return EXCEPTION_COMPLETION_COMMIT_CHARACTERS;
+    case 'function':
+    case 'keyword':
+    case 'snippet':
+      return undefined;
+  }
 }
 
 function placeholder(index: number, name: string): string {
