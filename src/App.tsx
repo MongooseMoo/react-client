@@ -1,20 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
-import MudClient from "./client";
+import type MudClient from "./client";
 import { createConfiguredClient } from "./createConfiguredClient";
 import { hapticsService } from "./HapticsService";
 import { GamepadBackend } from "./haptics/GamepadBackend";
 import { ButtplugWasmBackend, createRealWasmDeps } from "./haptics/ButtplugWasmBackend";
 import type { HapticsBackend } from "./haptics/types";
-import { usePreferences } from "./hooks/usePreferences";
+import { usePreferences } from "./stores/preferencesStore";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
 import PreferencesDialog, {
-  PreferencesDialogRef,
+  type PreferencesDialogRef,
 } from "./components/PreferencesDialog";
-import AutoLogDialog, { AutoLogDialogRef } from "./components/AutoLogDialog";
-import Sidebar, { SidebarRef } from "./components/sidebar";
+import AutoLogDialog, { type AutoLogDialogRef } from "./components/AutoLogDialog";
+import Sidebar, { type SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
 import WasmHost from "./components/WasmHost";
@@ -22,7 +22,7 @@ import type { WasmHostState } from "./components/WasmHost";
 import WasmGuest from "./components/WasmGuest";
 import HostPanel from "./components/HostPanel";
 import { useChannelHistory } from "./hooks/useChannelHistory";
-import { FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
+import { type FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
 import { autoLogService, createAutoLogSessionDraft } from "./logging/AutoLogService";
 import { ensurePushSubscription } from "./webpush";
@@ -59,7 +59,7 @@ function App() {
 
   const clientInitialized = useRef(false);
   const wasmBackendLoaded = useRef(false);
-  const [preferences] = usePreferences();
+  const preferences = usePreferences();
 
   const saveLog = () => {
     if (outRef.current) {

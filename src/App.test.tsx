@@ -71,8 +71,8 @@ vi.mock("./haptics/ButtplugWasmBackend", () => ({
   createRealWasmDeps: vi.fn(),
 }));
 
-vi.mock("./hooks/usePreferences", () => ({
-  usePreferences: () => [mockPreferences],
+vi.mock("./stores/preferencesStore", () => ({
+  usePreferences: () => mockPreferences,
 }));
 
 vi.mock("./hooks/useChannelHistory", () => ({

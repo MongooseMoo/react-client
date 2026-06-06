@@ -1,6 +1,6 @@
 import { virtualMidiService } from './VirtualMidiService';
 import JZZ from 'jzz';
-import { PrefActionType, preferencesStore } from './PreferencesStore';
+import { usePreferences } from './stores/preferencesStore';
 
 export interface MidiDevice {
   id: string;
@@ -111,7 +111,9 @@ class MidiService {
       // Set up device change monitoring
       this.deviceWatcher = this.jzz.onChange((info: JzzDeviceChange) => {
         const changeInfo = this.processDeviceChanges(info);
-        this.deviceChangeCallbacks.forEach(callback => callback(changeInfo));
+        this.deviceChangeCallbacks.forEach((callback) => {
+          callback(changeInfo);
+        });
         
         // Check if connected devices were removed
         this.handleDeviceDisconnections(changeInfo);
@@ -133,7 +135,7 @@ class MidiService {
     const devices: MidiDevice[] = [];
     const info = this.jzz.info() as JzzEngineInfo;
     
-    if (info && info.inputs) {
+    if (info?.inputs) {
       info.inputs.forEach((input) => {
         devices.push({
           id: input.id ?? input.name ?? 'unknown-input',
@@ -159,7 +161,7 @@ class MidiService {
     // Add hardware MIDI devices if available
     if (this.jzz) {
       const info = this.jzz.info() as JzzEngineInfo;
-      if (info && info.outputs) {
+      if (info?.outputs) {
         info.outputs.forEach((output) => {
           devices.push({
             id: output.id ?? output.name ?? 'unknown-output',
@@ -249,12 +251,9 @@ class MidiService {
       this.connectionState.inputDeviceName = device?.name || "Unknown Device";
       
       // Save to preferences for auto-reconnect
-      preferencesStore.dispatch({
-        type: PrefActionType.SetMidi,
-        data: { 
-          ...preferencesStore.getState().midi,
-          lastInputDeviceId: deviceId
-        }
+      usePreferences.getState().setMidi({
+        ...usePreferences.getState().midi,
+        lastInputDeviceId: deviceId,
       });
 
       // Clear intentional disconnect flag since user manually connected
@@ -285,12 +284,9 @@ class MidiService {
           this.connectionState.outputDeviceName = virtualMidiService.getPortName();
           
           // Save to preferences for auto-reconnect
-          preferencesStore.dispatch({
-            type: PrefActionType.SetMidi,
-            data: { 
-              ...preferencesStore.getState().midi,
-              lastOutputDeviceId: deviceId
-            }
+          usePreferences.getState().setMidi({
+            ...usePreferences.getState().midi,
+            lastOutputDeviceId: deviceId,
           });
 
           // Clear intentional disconnect flag since user manually connected
@@ -317,12 +313,9 @@ class MidiService {
       this.connectionState.outputDeviceName = device?.name || "Unknown Device";
       
       // Save to preferences for auto-reconnect
-      preferencesStore.dispatch({
-        type: PrefActionType.SetMidi,
-        data: { 
-          ...preferencesStore.getState().midi,
-          lastOutputDeviceId: deviceId
-        }
+      usePreferences.getState().setMidi({
+        ...usePreferences.getState().midi,
+        lastOutputDeviceId: deviceId,
       });
 
       // Clear intentional disconnect flag since user manually connected
@@ -530,7 +523,7 @@ class MidiService {
 
   // Attempt auto-reconnection to last used devices
   private async attemptAutoReconnect(): Promise<void> {
-    const preferences = preferencesStore.getState().midi;
+    const preferences = usePreferences.getState().midi;
     
     // For input devices, we need a callback, so we'll defer this until someone actually tries to connect
     // Just log what we would try to reconnect to
@@ -559,7 +552,7 @@ class MidiService {
 
   // Public method to attempt auto-reconnection when callback is available
   async attemptAutoReconnectInput(callback: MidiInputCallback): Promise<boolean> {
-    const preferences = preferencesStore.getState().midi;
+    const preferences = usePreferences.getState().midi;
     
     if (preferences.lastInputDeviceId && !this.intentionalDisconnectFlags.input) {
       const inputDevices = this.getInputDevices();

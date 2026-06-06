@@ -3,19 +3,19 @@ import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
 import FileTransferUI from "./FileTransfer";
 const AudioChat = React.lazy(() => import("./audioChat"));
 const MidiStatus = React.lazy(() => import("./MidiStatus"));
-import Tabs, { TabProps } from "./tabs";
+import Tabs, { type TabProps } from "./tabs";
 import Userlist from "./userlist";
 // import AfflictionsList from "./AfflictionsList"; // Removed
 // import DefencesList from "./DefencesList"; // Removed
 // import TargetInfoDisplay from "./TargetInfo"; // Removed
 import Inventory from "./inventory"; // Changed from InventoryList to Inventory
 // import SkillsDisplay from "./SkillsDisplay"; // Removed
-import MudClient from "../client";
+import type MudClient from "../client";
 import { useClientEvent } from "../hooks/useClientEvent"; // Import useClientEvent
-import { UserlistPlayer } from "../mcp";
+import type { UserlistPlayer } from "../mcp";
 import RoomInfoDisplay from "./RoomInfoDisplay"; // Import new component
 import HapticsStatus from "./HapticsStatus"; // Import Haptics component
-import { usePreferences } from "../hooks/usePreferences";
+import { usePreferences } from "../stores/preferencesStore";
 import { hapticsService } from "../HapticsService";
 
 // Define the type for the imperative handle
@@ -32,7 +32,7 @@ interface SidebarProps {
 // Wrap component with forwardRef
 const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed, onToggleCollapse }, ref) => {
   const users = useClientEvent(client, "userlist", [] as UserlistPlayer[]);
-  const [preferences] = usePreferences(); // Add preferences hook
+  const preferences = usePreferences(); // Add preferences hook
   const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
 
   // State to track if data has been received for optional tabs
@@ -235,6 +235,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
 
   const collapseButton = (
     <button
+      type="button"
       className="sidebar-collapse-btn"
       onClick={onToggleCollapse}
       title={collapsed ? "Expand sidebar" : "Collapse sidebar"}

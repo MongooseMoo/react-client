@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { preferencesStore, PrefActionType } from "../PreferencesStore";
-import { AutoLogStore } from "./AutoLogStore";
+import { usePreferences } from "../stores/preferencesStore";
+import type { AutoLogStore } from "./AutoLogStore";
 import { AutoLogService, createAutoLogSessionDraft, getAutoLogModeFromLocation, sanitizeLogUrl } from "./AutoLogService";
-import { AutoLogEntry, AutoLogSession, AutoLogSessionDraft } from "./AutoLogTypes";
+import type { AutoLogEntry, AutoLogSession, AutoLogSessionDraft } from "./AutoLogTypes";
 
 class FakeAutoLogStore {
   sessions: AutoLogSession[] = [];
@@ -38,10 +38,7 @@ class FakeAutoLogStore {
 describe("AutoLogService", () => {
   beforeEach(() => {
     vi.useRealTimers();
-    preferencesStore.dispatch({
-      type: PrefActionType.SetAutologging,
-      data: { enabled: false, maxBytes: 1000 },
-    });
+    usePreferences.getState().setAutologging({ enabled: false, maxBytes: 1000 });
   });
 
   it("redacts sensitive URL parameters", () => {
@@ -67,10 +64,7 @@ describe("AutoLogService", () => {
       search: "?password=secret",
     }));
 
-    preferencesStore.dispatch({
-      type: PrefActionType.SetAutologging,
-      data: { enabled: true, maxBytes: 1000 },
-    });
+    usePreferences.getState().setAutologging({ enabled: true, maxBytes: 1000 });
 
     service.recordLine({
       type: "serverMessage",

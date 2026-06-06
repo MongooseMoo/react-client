@@ -1,15 +1,16 @@
-import React, { useEffect, useState } from "react";
-import MudClient from "../client";
+import type React from "react";
+import { useEffect, useState } from "react";
+import type MudClient from "../client";
 import { hapticsService } from "../HapticsService";
-import { usePreferences } from "../hooks/usePreferences";
+import { usePreferences } from "../stores/preferencesStore";
 import type { HapticsCapabilities, HapticsActuator } from "../haptics/types";
 
 interface HapticsStatusProps {
   client: MudClient;
 }
 
-const HapticsStatus: React.FC<HapticsStatusProps> = ({ client }) => {
-  const [preferences] = usePreferences();
+const HapticsStatus: React.FC<HapticsStatusProps> = () => {
+  const preferences = usePreferences();
   const [capabilities, setCapabilities] = useState<HapticsCapabilities>(
     hapticsService.getCapabilities()
   );
@@ -111,6 +112,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = ({ client }) => {
         {typeof navigator !== "undefined" && (navigator as any).bluetooth ? (
           <div>
             <button
+              type="button"
               onClick={handleScan}
               disabled={isScanning}
               style={{
@@ -224,6 +226,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = ({ client }) => {
       {/* Emergency Stop Button */}
       <div style={{ marginBottom: "15px" }}>
         <button
+          type="button"
           onClick={handleEmergencyStop}
           style={{
             padding: "10px 20px",

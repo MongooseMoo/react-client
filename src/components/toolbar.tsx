@@ -12,7 +12,7 @@ import {
   FaHistory,
 } from "react-icons/fa";
 import type MudClient from "../client";
-import { preferencesStore, PrefActionType } from "../PreferencesStore";
+import { usePreferences } from "../stores/preferencesStore";
 import { useClientEvent } from "../hooks/useClientEvent";
 import "./toolbar.css";
 
@@ -40,7 +40,7 @@ const Toolbar = ({
   const connected = useClientEvent(client, 'connectionChange', client.connected);
   const [muted, setMuted] = React.useState(client.cacophony.muted);
   const autosay = useClientEvent(client, 'autosayChanged', client.autosay) || false;
-  const [volume, setVolume] = React.useState(preferencesStore.getState().sound.volume);
+  const [volume, setVolume] = React.useState(usePreferences.getState().sound.volume);
 
   const handleMuteToggle = useCallback(() => {
     const newMutedState = !muted;
@@ -52,12 +52,9 @@ const Toolbar = ({
     const newVolume = Number(e.target.value) / 100;
     setVolume(newVolume);
     client.cacophony.setGlobalVolume(newVolume);
-    preferencesStore.dispatch({
-      type: PrefActionType.SetSound,
-      data: {
-        ...preferencesStore.getState().sound,
-        volume: newVolume
-      }
+    usePreferences.getState().setSound({
+      ...usePreferences.getState().sound,
+      volume: newVolume,
     });
   }, [client]);
 
@@ -77,20 +74,20 @@ const Toolbar = ({
     <div className="toolbar">
       {/* Log buttons group */}
       <div className="toolbar-group">
-        <button onClick={onSaveLog} accessKey="l" aria-label="Save Log" title="Save Log">
+        <button type="button" onClick={onSaveLog} accessKey="l" aria-label="Save Log" title="Save Log">
           <FaSave />
           <span className="toolbar-label">Save Log</span>
         </button>
-        <button onClick={onCopyLog} accessKey="C" aria-label="Copy Log" title="Copy Log">
+        <button type="button" onClick={onCopyLog} accessKey="C" aria-label="Copy Log" title="Copy Log">
           <FaCopy />
           <span className="toolbar-label">Copy Log</span>
         </button>
-        <button onClick={onClearLog} accessKey="E" aria-label="Clear Log" title="Clear Log">
+        <button type="button" onClick={onClearLog} accessKey="E" aria-label="Clear Log" title="Clear Log">
           <FaEraser />
           <span className="toolbar-label">Clear Log</span>
         </button>
         {onOpenLogs && (
-          <button onClick={onOpenLogs} aria-label="Autologs" title="Autologs">
+          <button type="button" onClick={onOpenLogs} aria-label="Autologs" title="Autologs">
             <FaHistory />
             <span className="toolbar-label">Autologs</span>
           </button>
@@ -101,7 +98,7 @@ const Toolbar = ({
 
       {/* Preferences group */}
       <div className="toolbar-group">
-        <button onClick={onOpenPrefs} accessKey="p" aria-label="Preferences" title="Preferences">
+        <button type="button" onClick={onOpenPrefs} accessKey="p" aria-label="Preferences" title="Preferences">
           <FaCog />
           <span className="toolbar-label">Preferences</span>
         </button>
@@ -112,6 +109,7 @@ const Toolbar = ({
       {/* Mute + Volume group */}
       <div className="toolbar-group">
         <button
+          type="button"
           onClick={handleMuteToggle}
           accessKey="M"
           aria-label={muted ? "Unmute" : "Mute"}
@@ -155,6 +153,7 @@ const Toolbar = ({
       {/* Connect/Disconnect group */}
       <div className="toolbar-group toolbar-connection">
         <button
+          type="button"
           className={connected ? 'btn-disconnect' : 'btn-connect'}
           onClick={handleConnectionToggle}
           aria-label={connected ? 'Disconnect' : 'Connect'}
@@ -168,6 +167,7 @@ const Toolbar = ({
 
       {/* Sidebar toggle */}
       <button
+        type="button"
         className="toolbar-sidebar-toggle"
         onClick={onToggleSidebar}
         accessKey="U"

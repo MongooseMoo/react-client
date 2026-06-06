@@ -1,6 +1,6 @@
-import { preferencesStore } from "../PreferencesStore";
-import { AutoLogStore, autoLogStore } from "./AutoLogStore";
-import {
+import { usePreferences } from "../stores/preferencesStore";
+import { type AutoLogStore, autoLogStore } from "./AutoLogStore";
+import type {
   AutoLogEntry,
   AutoLogInputLine,
   AutoLogMode,
@@ -67,8 +67,8 @@ export class AutoLogService {
 
   constructor(store: AutoLogStore = autoLogStore) {
     this.store = store;
-    preferencesStore.subscribe(() => {
-      const preferences = preferencesStore.getState().autologging;
+    usePreferences.subscribe(() => {
+      const preferences = usePreferences.getState().autologging;
       if (!preferences.enabled) {
         this.endSession().catch((error) => {
           console.error("Failed to end autolog session after disabling autologging:", error);
@@ -86,7 +86,7 @@ export class AutoLogService {
   }
 
   async startSession(): Promise<void> {
-    if (this.currentSession || !this.sessionDraft || !preferencesStore.getState().autologging.enabled) {
+    if (this.currentSession || !this.sessionDraft || !usePreferences.getState().autologging.enabled) {
       return;
     }
 
@@ -95,7 +95,7 @@ export class AutoLogService {
   }
 
   recordLine(line: AutoLogInputLine): void {
-    if (!preferencesStore.getState().autologging.enabled) {
+    if (!usePreferences.getState().autologging.enabled) {
       return;
     }
 
@@ -137,7 +137,7 @@ export class AutoLogService {
 
     const entries = this.pendingEntries;
     this.pendingEntries = [];
-    const maxBytes = preferencesStore.getState().autologging.maxBytes;
+    const maxBytes = usePreferences.getState().autologging.maxBytes;
 
     this.flushPromise = this.flushPromise
       .then(() => this.store.appendEntries(entries))

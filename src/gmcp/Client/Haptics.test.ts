@@ -42,10 +42,9 @@ vi.mock("../../HapticsService", () => ({
   hapticsService: mockHapticsService,
 }));
 
-vi.mock("../../PreferencesStore", () => ({
-  preferencesStore: {
+vi.mock("../../stores/preferencesStore", () => ({
+  usePreferences: {
     getState: () => mockPreferencesState,
-    dispatch: vi.fn(),
     subscribe: vi.fn(() => () => {}),
   },
 }));

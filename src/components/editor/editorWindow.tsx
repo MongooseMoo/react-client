@@ -22,7 +22,7 @@ import {
 import { MOO_CODE_ACTION_FIX_ALL_KIND } from '../../editor/moocode/contract';
 import { MOO_EDITOR_THEME_NAME } from '../../editor/moocode/theme';
 import { toMonacoTreeSitterMarkers } from '../../editor/moocode/treeSitter';
-import { usePreferences } from '../../hooks/usePreferences';
+import { usePreferences } from '../../stores/preferencesStore';
 import type { EditorSession } from '../../mcp';
 import EditorToolbar from './toolbar';
 import { EditorStatusBar } from './statusbar';
@@ -82,7 +82,7 @@ function EditorWindow() {
   const handleEditorBeforeMount = (monaco: Monaco) => {
     registerMooLanguage(monaco);
   };
-  const [prefState] = usePreferences();
+  const prefState = usePreferences();
   const accessibilityMode = prefState.editor.accessibilityMode;
   const autocompleteEnabled = prefState.editor.autocompleteEnabled;
   const editorLanguage = getEditorLanguageForSessionType(session.type);

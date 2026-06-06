@@ -7,7 +7,7 @@ import ReactDOMServer from "react-dom/server";
 import DOMPurify from 'dompurify';
 import { useInputStore } from '../stores/inputStore';
 import TurndownService from 'turndown'; // <-- Import TurndownService
-import { preferencesStore } from '../PreferencesStore'; // Import preferences store
+import { usePreferences } from '../stores/preferencesStore'; // Import preferences store
 import BlockquoteWithCopy from './BlockquoteWithCopy';
 import { autoLogService } from '../logging/AutoLogService';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
@@ -87,14 +87,14 @@ class Output extends React.Component<Props, State> {
       liveOutput: this.allLines.slice(-Output.LIVE_WINDOW_SIZE),
       sidebarVisible: false,
       newLinesCount: 0,
-      localEchoActive: preferencesStore.getState().general.localEcho,
+      localEchoActive: usePreferences.getState().general.localEcho,
       focusedLineIndex: null,
     };
   }
 
   handlePreferencesChange = () => {
     this.setState({
-      localEchoActive: preferencesStore.getState().general.localEcho,
+      localEchoActive: usePreferences.getState().general.localEcho,
     });
   };
 
@@ -388,7 +388,7 @@ componentDidUpdate(
     client.on("error", this.addError);
     client.on("command", this.addCommand);
     client.on("userlist", this.handleUserList);
-    this.unsubscribePrefs = preferencesStore.subscribe(this.handlePreferencesChange);
+    this.unsubscribePrefs = usePreferences.subscribe(this.handlePreferencesChange);
 
     // Freeze any loaded output that exceeds the live window
     this.freezeOverflow();

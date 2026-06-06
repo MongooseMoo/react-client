@@ -95,16 +95,13 @@ vi.mock('@react-aria/live-announcer', () => ({
   announce: announceMock,
 }));
 
-vi.mock('../../hooks/usePreferences', () => ({
-  usePreferences: () => [
-    {
-      editor: {
-        accessibilityMode: false,
-        autocompleteEnabled: true,
-      },
+vi.mock('../../stores/preferencesStore', () => ({
+  usePreferences: () => ({
+    editor: {
+      accessibilityMode: false,
+      autocompleteEnabled: true,
     },
-    vi.fn(),
-  ],
+  }),
 }));
 
 vi.mock('../../editor/monacoLoader', () => ({

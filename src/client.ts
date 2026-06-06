@@ -1,5 +1,5 @@
 import {
-  Stream,
+  type Stream,
   TelnetCommand,
   TelnetOption,
   TelnetParser,
@@ -18,8 +18,8 @@ import type {
   KnownGMCPPackageName,
 } from "./gmcp/types";
 import {
-  MCPKeyvals,
-  MCPPackage,
+  type MCPKeyvals,
+  type MCPPackage,
   McpAwnsGetSet,
   McpNegotiate,
   generateTag,
@@ -28,10 +28,10 @@ import {
 } from "./mcp";
 
 import { Cacophony } from "cacophony";
-import { AutoreadMode, preferencesStore } from "./PreferencesStore";
+import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
-import { GMCPMessageRoomInfo, RoomPlayer } from "./gmcp/Room"; // Import RoomPlayer
+import type { GMCPMessageRoomInfo, RoomPlayer } from "./gmcp/Room"; // Import RoomPlayer
 import type {
   SpatialEmitter,
   SpatialEntity,
@@ -53,7 +53,7 @@ export interface WorldData {
 }
 
 function resetMidiIntentionalDisconnectFlags(): void {
-  if (!preferencesStore.getState().midi.enabled) return;
+  if (!usePreferences.getState().midi.enabled) return;
 
   import("./MidiService")
     .then(({ midiService }) => {
@@ -151,7 +151,7 @@ class MudClient extends EventEmitter {
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
     this.gmcp_fileTransfer = this.registerGMCPPackage(GMCPClientFileTransfer);
     this.cacophony = new Cacophony();
-    this.cacophony.setGlobalVolume(preferencesStore.getState().sound.volume);
+    this.cacophony.setGlobalVolume(usePreferences.getState().sound.volume);
     this.editors = new EditorManager(this);
     this.webRTCService = new WebRTCService(this);
     this.fileTransferManager = new FileTransferManager(
@@ -162,7 +162,7 @@ class MudClient extends EventEmitter {
     window.addEventListener("focus", this.handleWindowFocus);
     window.addEventListener("blur", this.handleWindowBlur);
 
-    this.unsubscribePreferences = preferencesStore.subscribe(() => {
+    this.unsubscribePreferences = usePreferences.subscribe(() => {
       this.updateBackgroundMuteState();
     });
   }
@@ -514,7 +514,7 @@ class MudClient extends EventEmitter {
   }
 
   public sendCommand(command: string): void {
-    const localEchoEnabled = preferencesStore.getState().general.localEcho;
+    const localEchoEnabled = usePreferences.getState().general.localEcho;
     if (localEchoEnabled) {
       this.emit("command", command);
     }
@@ -649,7 +649,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string) {
-    const autoreadMode = preferencesStore.getState().speech.autoreadMode;
+    const autoreadMode = usePreferences.getState().speech.autoreadMode;
     if (autoreadMode === AutoreadMode.All) {
       this.speak(dataString);
     }
@@ -744,7 +744,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
     const utterance = new SpeechSynthesisUtterance(stripAnsi(text));
     utterance.lang = "en-US";
-    const { rate, pitch, voice, volume } = preferencesStore.getState().speech;
+    const { rate, pitch, voice, volume } = usePreferences.getState().speech;
     utterance.rate = rate;
     utterance.pitch = pitch;
     utterance.volume = volume;
@@ -765,7 +765,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   updateBackgroundMuteState() {
-    const prefs = preferencesStore.getState();
+    const prefs = usePreferences.getState();
     const shouldMuteInBackground = prefs.sound.muteInBackground && !this.isWindowFocused;
     
     // Apply mute state: global mute OR background mute

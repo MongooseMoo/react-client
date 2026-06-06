@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
-import MudClient from "../client";
-import { midiService, MidiDevice } from "../MidiService";
-import { usePreferences } from "../hooks/usePreferences";
+import type React from "react";
+import { useEffect, useState } from "react";
+import type MudClient from "../client";
+import { midiService, type MidiDevice } from "../MidiService";
+import { usePreferences } from "../stores/preferencesStore";
 import type { GMCPClientMidi } from "../gmcp/Client/Midi";
-import { preferencesStore } from "../PreferencesStore";
 import { virtualMidiService } from "../VirtualMidiService";
 
 interface MidiStatusProps {
@@ -19,7 +19,7 @@ interface DeviceChangeEvent {
 }
 
 const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
-  const [preferences] = usePreferences();
+  const preferences = usePreferences();
   const [midiPackage, setMidiPackage] = useState<GMCPClientMidi | null>(null);
   const [inputDevices, setInputDevices] = useState<MidiDevice[]>([]);
   const [outputDevices, setOutputDevices] = useState<MidiDevice[]>([]);
@@ -79,7 +79,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
 
   // Update reconnectable device suggestions and attempt auto-reconnection
   const updateReconnectableDevices = async () => {
-    const prefs = preferencesStore.getState().midi;
+    const prefs = usePreferences.getState().midi;
     const intentionalFlags = midiService.intentionalDisconnectStatus;
     const newReconnectables: { input?: { id: string, name: string }; output?: { id: string, name: string } } = {};
     
@@ -363,20 +363,6 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     return `${noteName}${octave}`;
   };
 
-  // Helper function to get note number from name
-  const getNoteNumberFromName = (noteName: string): number => {
-    const noteMap: { [key: string]: number } = {
-      'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
-      'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
-    };
-    
-    const match = noteName.match(/^([A-G]#?)(-?\d+)$/);
-    if (!match) return 60; // Default to middle C
-    
-    const [, note, octave] = match;
-    return (parseInt(octave) + 1) * 12 + noteMap[note];
-  };
-
   if (!preferences.midi.enabled) {
     return (
       <div style={{ padding: "10px" }}>
@@ -396,7 +382,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         {connectionState.inputConnected ? (
           <div style={{ marginBottom: "8px" }}>
             <span style={{ color: "green" }}>✓ {connectionState.inputDeviceName}</span>
-            <button 
+            <button
+              type="button"
               onClick={handleDisconnectInput}
               style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "0.8em" }}
             >
@@ -413,7 +400,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                 </div>
                 <div>
                   <span>{reconnectableDevices.input.name}</span>
-                  <button 
+                  <button
+                    type="button"
                     onClick={handleReconnectInput}
                     style={{ 
                       marginLeft: "10px", 
@@ -448,7 +436,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                     </option>
                   ))}
                 </select>
-                <button 
+                <button
+                  type="button"
                   onClick={handleConnectInput}
                   disabled={!selectedInputId}
                   style={{ padding: "2px 8px", fontSize: "0.8em", marginRight: "5px" }}
@@ -468,7 +457,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         {connectionState.outputConnected ? (
           <div style={{ marginBottom: "8px" }}>
             <span style={{ color: "green" }}>✓ {connectionState.outputDeviceName}</span>
-            <button 
+            <button
+              type="button"
               onClick={handleDisconnectOutput}
               style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "0.8em" }}
             >
@@ -485,7 +475,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                 </div>
                 <div>
                   <span>{reconnectableDevices.output.name}</span>
-                  <button 
+                  <button
+                    type="button"
                     onClick={handleReconnectOutput}
                     style={{ 
                       marginLeft: "10px", 
@@ -520,7 +511,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                     </option>
                   ))}
                 </select>
-                <button 
+                <button
+                  type="button"
                   onClick={handleConnectOutput}
                   disabled={!selectedOutputId}
                   style={{ padding: "2px 8px", fontSize: "0.8em", marginRight: "5px" }}
@@ -534,7 +526,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       </div>
       
       <div style={{ marginBottom: "15px" }}>
-        <button 
+        <button
+          type="button"
           onClick={handleRefreshDevices}
           style={{ padding: "4px 12px", fontSize: "0.8em" }}
         >
@@ -543,7 +536,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       </div>
       
       <div style={{ marginBottom: "15px" }}>
-        <button onClick={handleAllNotesOff}>
+        <button type="button" onClick={handleAllNotesOff}>
           All Notes Off
         </button>
       </div>
@@ -560,7 +553,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                 min="0"
                 max="127"
                 value={selectedNote}
-                onChange={(e) => setSelectedNote(parseInt(e.target.value))}
+                onChange={(e) => setSelectedNote(parseInt(e.target.value, 10))}
                 style={{ width: "60px", marginRight: "10px" }}
               />
               <span style={{ fontSize: "0.9em", color: "#666" }}>
@@ -577,7 +570,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                 min="1"
                 max="127"
                 value={selectedVelocity}
-                onChange={(e) => setSelectedVelocity(parseInt(e.target.value))}
+                onChange={(e) => setSelectedVelocity(parseInt(e.target.value, 10))}
                 style={{ width: "100px", marginRight: "10px" }}
               />
               <span style={{ fontSize: "0.9em" }}>{selectedVelocity}</span>
@@ -589,7 +582,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
               <strong>Channel:</strong>{" "}
               <select
                 value={selectedChannel}
-                onChange={(e) => setSelectedChannel(parseInt(e.target.value))}
+                onChange={(e) => setSelectedChannel(parseInt(e.target.value, 10))}
                 style={{ marginRight: "10px" }}
               >
                 {Array.from({ length: 16 }, (_, i) => (
@@ -623,7 +616,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                   max="10000"
                   step="100"
                   value={duration}
-                  onChange={(e) => setDuration(parseInt(e.target.value))}
+                  onChange={(e) => setDuration(parseInt(e.target.value, 10))}
                   style={{ width: "80px", marginRight: "10px" }}
                 />
                 <span style={{ fontSize: "0.9em", color: "#666" }}>ms</span>
@@ -644,7 +637,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           )}
           
           <div style={{ marginBottom: "15px" }}>
-            <button 
+            <button
+              type="button"
               onClick={handleSendNote}
               style={{ 
                 padding: "8px 16px", 

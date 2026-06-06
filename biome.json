@@ -42,7 +42,8 @@
         "noDangerouslySetInnerHtml": "off"
       },
       "correctness": {
-        "useJsxKeyInIterable": "warn"
+        "useJsxKeyInIterable": "warn",
+        "useExhaustiveDependencies": "warn"
       },
       "style": {
         "noNonNullAssertion": "warn"

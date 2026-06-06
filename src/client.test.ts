@@ -53,13 +53,13 @@ vi.mock("cacophony", () => ({
   },
 }));
 
-vi.mock("./PreferencesStore", () => ({
+vi.mock("./stores/preferencesStore", () => ({
   AutoreadMode: {
     All: "all",
     Off: "off",
     Unfocused: "unfocused",
   },
-  preferencesStore: {
+  usePreferences: {
     getState: () => mockPreferencesState,
     subscribe: mockPreferenceSubscribe,
   },
