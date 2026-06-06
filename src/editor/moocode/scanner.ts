@@ -13,7 +13,7 @@ export function maskMooSource(source: string): string {
   let inString = false;
   let inBlockComment = false;
   let escaped = false;
-  const characters = [...source];
+  const characters = source.split('');
 
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];

@@ -131,3 +131,14 @@ Iterations:
     sorts hints by source position so nested builtin calls render deterministically.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco document formatting:
+  - Added `src/editor/moocode/formatter.ts` for browser-side whole-document
+    MOO formatting using the shared block contract.
+  - Registered a Monaco `DocumentFormattingEditProvider` for `moocode`.
+  - Formatting aligns block open/middle/close keywords, respects Monaco spaces
+    versus tabs options, trims trailing whitespace, and masks comments/strings
+    before reading block keywords.
+  - Fixed the shared MOO source masker to preserve Monaco-compatible UTF-16
+    offsets when strings or comments contain non-BMP characters.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

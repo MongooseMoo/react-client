@@ -12,6 +12,7 @@ export {
 } from './contract';
 import { getMooQuickFixes } from './codeActions';
 import type { MooDiagnostic } from './diagnostics';
+import { formatMooCode } from './formatter';
 import { collectMooInlayHints } from './inlayHints';
 import {
   BUILTIN_FUNCTIONS,
@@ -100,6 +101,11 @@ type TextModelLike = {
 type TextModelValueLike = {
   getValue(): string;
   uri?: unknown;
+};
+
+type DocumentFormattingTextModelLike = TextModelValueLike & {
+  getLineCount(): number;
+  getLineMaxColumn(lineNumber: number): number;
 };
 
 type CompletionTextModelLike = {
@@ -225,6 +231,10 @@ export type MonacoLike = {
     registerDocumentSemanticTokensProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.DocumentSemanticTokensProvider,
+    ) => { dispose: () => void };
+    registerDocumentFormattingEditProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.DocumentFormattingEditProvider,
     ) => { dispose: () => void };
     registerFoldingRangeProvider?: (
       languageId: string,
@@ -527,6 +537,29 @@ export function createMooFoldingRangeProvider(
   };
 }
 
+export function createMooDocumentFormattingEditProvider(): MonacoEditor.languages.DocumentFormattingEditProvider {
+  return {
+    provideDocumentFormattingEdits: (model, options) => {
+      const source = model.getValue();
+      const formatted = formatMooCode(source, {
+        tabSize: options.tabSize,
+        insertSpaces: options.insertSpaces,
+      });
+
+      if (formatted === source) {
+        return [];
+      }
+
+      return [
+        {
+          range: fullModelRange(model as DocumentFormattingTextModelLike),
+          text: formatted,
+        },
+      ];
+    },
+  };
+}
+
 export function createMooInlayHintsProvider(
   inlayHintKind: { Parameter: number } = { Parameter: 2 },
 ): MonacoEditor.languages.InlayHintsProvider {
@@ -640,6 +673,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
     MOO_LANGUAGE_ID,
     createMooSemanticTokensProvider(),
   );
+  monaco.languages.registerDocumentFormattingEditProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooDocumentFormattingEditProvider(),
+  );
   monaco.languages.registerFoldingRangeProvider?.(MOO_LANGUAGE_ID, createMooFoldingRangeProvider());
   monaco.languages.registerInlayHintsProvider?.(
     MOO_LANGUAGE_ID,
@@ -727,6 +764,17 @@ function toDocumentSymbol(symbol: MooStructureSymbol, kind: number): DocumentSym
     range: symbol.range,
     selectionRange: symbol.selectionRange,
     children: symbol.children.map((child) => toDocumentSymbol(child, kind)),
+  };
+}
+
+function fullModelRange(model: DocumentFormattingTextModelLike): MonacoRange {
+  const lastLineNumber = model.getLineCount();
+
+  return {
+    startLineNumber: 1,
+    startColumn: 1,
+    endLineNumber: lastLineNumber,
+    endColumn: model.getLineMaxColumn(lastLineNumber),
   };
 }
 
