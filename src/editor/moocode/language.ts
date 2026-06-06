@@ -21,6 +21,7 @@ import {
 } from './hover';
 import { getMooInlineCompletions } from './inlineCompletions';
 import { collectMooInlayHints } from './inlayHints';
+import { getMooDocumentLinks } from './links';
 import {
   BUILTIN_FUNCTIONS,
   BUILTIN_VARIABLES,
@@ -285,6 +286,10 @@ export type MonacoLike = {
     registerLinkedEditingRangeProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.LinkedEditingRangeProvider,
+    ) => { dispose: () => void };
+    registerLinkProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.LinkProvider,
     ) => { dispose: () => void };
     registerOnTypeFormattingEditProvider?: (
       languageId: string,
@@ -725,6 +730,15 @@ export function createMooLinkedEditingRangeProvider(): MonacoEditor.languages.Li
   };
 }
 
+export function createMooLinkProvider(): MonacoEditor.languages.LinkProvider {
+  return {
+    provideLinks: (model) => ({
+      links: getMooDocumentLinks(model.getValue()),
+      dispose: () => {},
+    }),
+  };
+}
+
 export function createMooHoverProvider(): {
   provideHover: (model: TextModelValueLike, position: CompletionPosition) => Hover | null;
 } {
@@ -877,6 +891,7 @@ export function registerMooLanguage(monaco: MonacoLike) {
     MOO_LANGUAGE_ID,
     createMooLinkedEditingRangeProvider(),
   );
+  monaco.languages.registerLinkProvider?.(MOO_LANGUAGE_ID, createMooLinkProvider());
   monaco.languages.registerOnTypeFormattingEditProvider?.(
     MOO_LANGUAGE_ID,
     createMooOnTypeFormattingEditProvider(),

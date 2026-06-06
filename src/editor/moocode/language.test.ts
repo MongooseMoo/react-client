@@ -18,6 +18,7 @@ import {
   createMooInlayHintsProvider,
   createMooLanguageConfiguration,
   createMooLinkedEditingRangeProvider,
+  createMooLinkProvider,
   createMooMonarchLanguage,
   createMooOnTypeFormattingEditProvider,
   createMooReferenceProvider,
@@ -267,6 +268,7 @@ describe('MOO Monaco language support', () => {
         registerInlineCompletionsProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerLinkedEditingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerLinkProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerOnTypeFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -304,6 +306,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerInlineCompletionsProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerInlayHintsProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerLinkedEditingRangeProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerLinkProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerOnTypeFormattingEditProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerReferenceProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerRenameProvider).toHaveBeenCalledTimes(1);
@@ -474,6 +477,33 @@ describe('MOO Monaco language support', () => {
       ],
       wordPattern: /[A-Za-z_][\w$]*/,
     });
+  });
+
+  it('provides Monaco document links for MOO object references', () => {
+    const provider = createMooLinkProvider();
+    const links = provider.provideLinks(
+      {
+        getValue: () => 'owner = #123;',
+      } as never,
+      {} as never,
+    );
+
+    expect(links).toEqual({
+      links: [
+        {
+          range: {
+            startLineNumber: 1,
+            startColumn: 9,
+            endLineNumber: 1,
+            endColumn: 13,
+          },
+          url: 'moo://object/123',
+          tooltip: 'Open MOO object #123',
+        },
+      ],
+      dispose: expect.any(Function),
+    });
+    expect(links.dispose?.()).toBeUndefined();
   });
 
   it('provides Monaco selection ranges for smart expand selection', () => {

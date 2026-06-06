@@ -117,6 +117,25 @@ export function offsetAtMooPosition(source: string, position: MooSourcePosition)
   return source.length;
 }
 
+export function positionAtMooOffset(source: string, offset: number): MooSourcePosition {
+  let lineNumber = 1;
+  let column = 1;
+
+  for (let index = 0; index < offset; index += 1) {
+    if (source[index] === '\n') {
+      lineNumber += 1;
+      column = 1;
+      continue;
+    }
+
+    if (source[index] !== '\r') {
+      column += 1;
+    }
+  }
+
+  return { lineNumber, column };
+}
+
 function maskCharacter(characters: string[], index: number): void {
   if (characters[index] !== '\r' && characters[index] !== '\n') {
     characters[index] = ' ';
