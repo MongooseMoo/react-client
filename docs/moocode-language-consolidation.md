@@ -85,6 +85,9 @@ Iterations:
   - Editor markers now show synchronous scanner diagnostics immediately, then
     merge parser-backed Tree-sitter diagnostics when the parser finishes loading
     for the current MOO model.
+  - Parser-backed diagnostics are debounced in the editor window so rapid edits
+    keep immediate scanner feedback without scheduling a WASM parse for every
+    keystroke.
 - 2026-06-06 parser-backed Monaco structure:
   - Tree-sitter parse results now include editor structure extracted from MOO
     block nodes: document symbols, nested child symbols, and folding ranges.

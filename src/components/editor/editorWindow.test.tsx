@@ -199,20 +199,25 @@ describe('EditorWindow language selection', () => {
     expect(editorMock.props?.beforeMount).toEqual(expect.any(Function));
     expect(editorMock.monaco.languages.register).toHaveBeenCalledWith({ id: MOO_LANGUAGE_ID });
     expect(editorMock.props?.path).toBe('#1:test');
-    expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenLastCalledWith(
-      editorMock.model,
-      MOO_LANGUAGE_ID,
-      [parserMarker],
+    expect(treeSitterDiagnosticsMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(treeSitterDiagnosticsMock).toHaveBeenCalledWith(
+        ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
+        8,
+      ),
+    );
+    await waitFor(() =>
+      expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenLastCalledWith(
+        editorMock.model,
+        MOO_LANGUAGE_ID,
+        [parserMarker],
+      ),
     );
     const diagnosticsButton = await screen.findByRole('button', { name: '1 MOO problem' });
     fireEvent.click(diagnosticsButton);
     expect(editorMock.setPosition).toHaveBeenCalledWith({ lineNumber: 2, column: 17 });
     expect(editorMock.revealPositionInCenter).toHaveBeenCalledWith({ lineNumber: 2, column: 17 });
     expect(editorMock.focus).toHaveBeenCalled();
-    expect(treeSitterDiagnosticsMock).toHaveBeenCalledWith(
-      ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
-      8,
-    );
   });
 
   it('uses plaintext for non-MOO simpleedit sessions', async () => {

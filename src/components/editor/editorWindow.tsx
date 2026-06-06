@@ -32,6 +32,8 @@ type MooDiagnosticTarget = {
   column: number;
 };
 
+const TREE_SITTER_DIAGNOSTIC_DELAY_MS = 200;
+
 function EditorWindow() {
   const location = useLocation();
   const editorInstance = React.useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
@@ -85,23 +87,26 @@ function EditorWindow() {
     }
 
     let cancelled = false;
-    void toMonacoTreeSitterMarkers(code, monaco.MarkerSeverity.Error)
-      .then((treeSitterMarkers) => {
-        if (cancelled || editorInstance.current?.getModel() !== model) {
-          return;
-        }
+    const parserTimer = window.setTimeout(() => {
+      void toMonacoTreeSitterMarkers(code, monaco.MarkerSeverity.Error)
+        .then((treeSitterMarkers) => {
+          if (cancelled || editorInstance.current?.getModel() !== model) {
+            return;
+          }
 
-        const allMarkers = [...markers, ...treeSitterMarkers];
-        monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, allMarkers);
-        setMooDiagnosticCount(allMarkers.length);
-        setMooDiagnosticTarget(getFirstMooDiagnosticTarget(allMarkers));
-      })
-      .catch((error: unknown) => {
-        console.warn('MOO Tree-sitter diagnostics failed', error);
-      });
+          const allMarkers = [...markers, ...treeSitterMarkers];
+          monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, allMarkers);
+          setMooDiagnosticCount(allMarkers.length);
+          setMooDiagnosticTarget(getFirstMooDiagnosticTarget(allMarkers));
+        })
+        .catch((error: unknown) => {
+          console.warn('MOO Tree-sitter diagnostics failed', error);
+        });
+    }, TREE_SITTER_DIAGNOSTIC_DELAY_MS);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(parserTimer);
     };
   }, [code, editorLanguage]);
 
