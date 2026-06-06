@@ -82,6 +82,28 @@ type TextModelLike = {
   getWordAtPosition(position: unknown): { word: string } | null;
 };
 
+type CompletionTextModelLike = {
+  getLineContent(lineNumber: number): string;
+  getWordUntilPosition(position: { lineNumber: number; column: number }): {
+    word: string;
+    startColumn: number;
+    endColumn: number;
+  };
+};
+
+type CompletionPosition = {
+  lineNumber: number;
+  column: number;
+};
+
+type CompletionProvider = {
+  triggerCharacters: string[];
+  provideCompletionItems: (
+    model: CompletionTextModelLike,
+    position: CompletionPosition,
+  ) => CompletionList;
+};
+
 export type MonacoLike = {
   languages: {
     CompletionItemInsertTextRule: {
@@ -97,10 +119,7 @@ export type MonacoLike = {
     register: (language: { id: string }) => void;
     registerCompletionItemProvider: (
       languageId: string,
-      provider: {
-        triggerCharacters?: string[];
-        provideCompletionItems: () => CompletionList;
-      },
+      provider: CompletionProvider,
     ) => { dispose: () => void };
     registerHoverProvider: (
       languageId: string,
@@ -211,6 +230,7 @@ export function createMooLanguageConfiguration(): MooLanguageConfiguration {
 export function createMooCompletionItems(
   range: MonacoRange,
   monaco?: MonacoLike,
+  context: CompletionContext = 'default',
 ): CompletionItem[] {
   const kind = monaco?.languages.CompletionItemKind ?? {
     Constant: 14,
@@ -220,41 +240,76 @@ export function createMooCompletionItems(
   };
   const snippetRule = monaco?.languages.CompletionItemInsertTextRule.InsertAsSnippet;
 
-  return [
-    ...STATEMENT_KEYWORDS.map((keyword) => ({
-      label: keyword,
-      kind: kind.Keyword,
-      insertText: keyword,
-      documentation: 'MOO statement keyword',
+  const statements = STATEMENT_KEYWORDS.map((keyword) => ({
+    label: keyword,
+    kind: kind.Keyword,
+    insertText: keyword,
+    documentation: 'MOO statement keyword',
+    range,
+  }));
+  const variables = BUILTIN_VARIABLES.map((variable) => ({
+    label: variable,
+    kind: kind.Variable,
+    insertText: variable,
+    documentation: 'MOO builtin variable',
+    range,
+  }));
+  const errors = ERROR_CONSTANTS.map((error) => ({
+    label: error,
+    kind: kind.Constant,
+    insertText: error,
+    documentation: 'MOO error constant',
+    range,
+  }));
+  const systemReferences = SYSTEM_REFERENCES.map((reference) => ({
+    label: reference,
+    kind: kind.Variable,
+    insertText: reference,
+    documentation: 'MOO system object reference',
+    range,
+  }));
+  const functions = BUILTIN_FUNCTIONS.map((name) => {
+    const signature = BUILTIN_SNIPPETS[name] ?? `${name}($1)`;
+
+    return {
+      label: name,
+      kind: kind.Function,
+      insertText: signature,
+      insertTextRules: snippetRule,
+      documentation: 'ToastStunt builtin function',
       range,
-    })),
-    ...BUILTIN_VARIABLES.map((variable) => ({
-      label: variable,
-      kind: kind.Variable,
-      insertText: variable,
-      documentation: 'MOO builtin variable',
-      range,
-    })),
-    ...ERROR_CONSTANTS.map((error) => ({
-      label: error,
-      kind: kind.Constant,
-      insertText: error,
-      documentation: 'MOO error constant',
-      range,
-    })),
-    ...BUILTIN_FUNCTIONS.map((name) => {
-      const signature = BUILTIN_SNIPPETS[name] ?? `${name}($1)`;
+    };
+  });
+
+  switch (context) {
+    case 'error':
+      return errors;
+    case 'system-reference':
+      return systemReferences;
+    case 'verb':
+      return functions;
+    case 'default':
+      return [...statements, ...variables, ...errors, ...functions];
+  }
+}
+
+export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProvider {
+  return {
+    triggerCharacters: ['.', ':', '$', 'E', '_'],
+    provideCompletionItems: (model, position) => {
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn,
+      };
 
       return {
-        label: name,
-        kind: kind.Function,
-        insertText: signature,
-        insertTextRules: snippetRule,
-        documentation: 'ToastStunt builtin function',
-        range,
+        suggestions: createMooCompletionItems(range, monaco, getCompletionContext(model, position)),
       };
-    }),
-  ];
+    },
+  };
 }
 
 export function registerMooLanguage(monaco: MonacoLike) {
@@ -273,12 +328,7 @@ export function registerMooLanguage(monaco: MonacoLike) {
 
   monaco.languages.setMonarchTokensProvider(MOO_LANGUAGE_ID, createMooMonarchLanguage());
   monaco.languages.setLanguageConfiguration(MOO_LANGUAGE_ID, createMooLanguageConfiguration());
-  monaco.languages.registerCompletionItemProvider(MOO_LANGUAGE_ID, {
-    triggerCharacters: ['.', ':', '$', 'E', '_'],
-    provideCompletionItems: () => ({
-      suggestions: createMooCompletionItems(DEFAULT_COMPLETION_RANGE, monaco),
-    }),
-  });
+  monaco.languages.registerCompletionItemProvider(MOO_LANGUAGE_ID, createMooCompletionProvider(monaco));
   monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, {
     provideHover: (model, position) => {
       const word = model.getWordAtPosition(position)?.word;
@@ -298,12 +348,41 @@ export function registerMooLanguage(monaco: MonacoLike) {
   });
 }
 
-const DEFAULT_COMPLETION_RANGE: MonacoRange = {
-  startLineNumber: 1,
-  startColumn: 1,
-  endLineNumber: 1,
-  endColumn: 1,
-};
+type CompletionContext = 'default' | 'error' | 'system-reference' | 'verb';
+
+const SYSTEM_REFERENCES = [
+  '$login',
+  '$local',
+  '$network',
+  '$player',
+  '$room',
+  '$string_utils',
+  '$telnet_utils',
+  '$utils',
+  '$wiz',
+] as const;
+
+function getCompletionContext(
+  model: CompletionTextModelLike,
+  position: CompletionPosition,
+): CompletionContext {
+  const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+  const currentWord = model.getWordUntilPosition(position).word;
+
+  if (/\bE_[A-Za-z_]*$/.test(linePrefix)) {
+    return 'error';
+  }
+
+  if (currentWord.startsWith('$') || /\$[A-Za-z_]*$/.test(linePrefix)) {
+    return 'system-reference';
+  }
+
+  if (/:\(?[A-Za-z_]*$/.test(linePrefix)) {
+    return 'verb';
+  }
+
+  return 'default';
+}
 
 const BUILTIN_SNIPPETS: Partial<Record<(typeof BUILTIN_FUNCTIONS)[number], string>> = {
   add_property: `add_property(${placeholder(1, 'object')}, ${placeholder(2, 'property')}, ${placeholder(3, 'value')}, ${placeholder(4, 'info')})`,

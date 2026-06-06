@@ -4,6 +4,7 @@ import {
   ERROR_CONSTANTS,
   MOO_LANGUAGE_ID,
   createMooCompletionItems,
+  createMooCompletionProvider,
   createMooLanguageConfiguration,
   createMooMonarchLanguage,
   getEditorLanguageForSessionType,
@@ -59,6 +60,49 @@ describe('MOO Monaco language support', () => {
     expect(ERROR_CONSTANTS).toContain('E_INVARG');
   });
 
+  it('computes completion replacement ranges from the active model word', () => {
+    const provider = createMooCompletionProvider();
+    const model = {
+      getLineContent: vi.fn(() => '  not'),
+      getWordUntilPosition: vi.fn(() => ({
+        word: 'not',
+        startColumn: 3,
+        endColumn: 6,
+      })),
+    };
+
+    const completions = provider.provideCompletionItems(model, {
+      lineNumber: 1,
+      column: 6,
+    });
+
+    expect(completions.suggestions.find((item) => item.label === 'notify')?.range).toEqual({
+      startLineNumber: 1,
+      endLineNumber: 1,
+      startColumn: 3,
+      endColumn: 6,
+    });
+  });
+
+  it('filters completions for error constants, system references, and verb-call contexts', () => {
+    const provider = createMooCompletionProvider();
+
+    const errorLabels = labelsForCompletion(provider, 'raise(E_', 9);
+    expect(errorLabels).toContain('E_PERM');
+    expect(errorLabels).not.toContain('notify');
+    expect(errorLabels).not.toContain('if');
+
+    const systemLabels = labelsForCompletion(provider, '$lo', 4);
+    expect(systemLabels).toContain('$login');
+    expect(systemLabels).toContain('$local');
+    expect(systemLabels).not.toContain('notify');
+
+    const verbLabels = labelsForCompletion(provider, 'player:no', 10);
+    expect(verbLabels).toContain('notify');
+    expect(verbLabels).not.toContain('if');
+    expect(verbLabels).not.toContain('E_PERM');
+  });
+
   it('registers language features once for Monaco', () => {
     const monaco = {
       languages: {
@@ -95,3 +139,26 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerHoverProvider).toHaveBeenCalledTimes(1);
   });
 });
+
+function labelsForCompletion(
+  provider: ReturnType<typeof createMooCompletionProvider>,
+  line: string,
+  column: number,
+): string[] {
+  const wordMatch = /[A-Za-z_$][\w$]*$/.exec(line.slice(0, column - 1));
+  const word = wordMatch?.[0] ?? '';
+  const startColumn = column - word.length;
+  const completions = provider.provideCompletionItems(
+    {
+      getLineContent: () => line,
+      getWordUntilPosition: () => ({
+        word,
+        startColumn,
+        endColumn: column,
+      }),
+    },
+    { lineNumber: 1, column },
+  );
+
+  return completions.suggestions.map((item) => item.label);
+}
