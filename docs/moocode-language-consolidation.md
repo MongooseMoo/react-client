@@ -151,3 +151,10 @@ Iterations:
     do not produce language hovers.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco document highlights:
+  - Added semantic read/write document highlights for local MOO symbols using
+    the same local-symbol analysis as references and rename.
+  - Registered a Monaco `DocumentHighlightProvider` for `moocode`.
+  - Highlights are suppressed for builtins and masked comment/string content.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

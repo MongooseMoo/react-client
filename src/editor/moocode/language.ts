@@ -31,6 +31,7 @@ import { getMooSignatureHelp } from './signatures';
 import {
   createMooRenameWorkspaceEdit,
   findMooDefinition,
+  findMooDocumentHighlights,
   findMooReferences,
   getMooLocalCompletions,
 } from './semantics';
@@ -195,6 +196,10 @@ export type MonacoLike = {
     InlayHintKind?: {
       Parameter: number;
     };
+    DocumentHighlightKind?: {
+      Read: number;
+      Write: number;
+    };
     CompletionItemInsertTextRule: {
       InsertAsSnippet: number;
     };
@@ -221,6 +226,10 @@ export type MonacoLike = {
     registerDefinitionProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.DefinitionProvider,
+    ) => { dispose: () => void };
+    registerDocumentHighlightProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.DocumentHighlightProvider,
     ) => { dispose: () => void };
     registerDocumentSymbolProvider?: (
       languageId: string,
@@ -503,6 +512,19 @@ export function createMooDefinitionProvider(): MonacoEditor.languages.Definition
   };
 }
 
+export function createMooDocumentHighlightProvider(
+  documentHighlightKind: { Read: number; Write: number } = { Read: 1, Write: 2 },
+): MonacoEditor.languages.DocumentHighlightProvider {
+  return {
+    provideDocumentHighlights: (model, position) =>
+      findMooDocumentHighlights(model.getValue(), position).map((highlight) => ({
+        range: highlight.range,
+        kind:
+          highlight.kind === 'write' ? documentHighlightKind.Write : documentHighlightKind.Read,
+      })),
+  };
+}
+
 type MooParser = (source: string) => Promise<MooTreeSitterParseResult>;
 
 export function createMooDocumentSymbolProvider(
@@ -671,6 +693,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
   );
   monaco.languages.registerCompletionItemProvider(MOO_LANGUAGE_ID, createMooCompletionProvider(monaco));
   monaco.languages.registerDefinitionProvider?.(MOO_LANGUAGE_ID, createMooDefinitionProvider());
+  monaco.languages.registerDocumentHighlightProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooDocumentHighlightProvider(monaco.languages.DocumentHighlightKind ?? { Read: 1, Write: 2 }),
+  );
   monaco.languages.registerDocumentSymbolProvider?.(
     MOO_LANGUAGE_ID,
     createMooDocumentSymbolProvider(monaco),

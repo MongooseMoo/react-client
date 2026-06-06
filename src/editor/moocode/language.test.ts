@@ -7,6 +7,7 @@ import {
   createMooCompletionItems,
   createMooCompletionProvider,
   createMooDocumentFormattingEditProvider,
+  createMooDocumentHighlightProvider,
   createMooDefinitionProvider,
   createMooDocumentSymbolProvider,
   createMooFoldingRangeProvider,
@@ -162,6 +163,7 @@ describe('MOO Monaco language support', () => {
         registerCodeActionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentHighlightProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -192,6 +194,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerCodeActionProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerCompletionItemProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDefinitionProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerDocumentHighlightProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentSymbolProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentSemanticTokensProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerDocumentFormattingEditProvider).toHaveBeenCalledTimes(1);
@@ -248,6 +251,34 @@ describe('MOO Monaco language support', () => {
         expect.objectContaining({ resource: 'moo://#1:test' }),
       ],
     });
+  });
+
+  it('provides Monaco document highlights for local symbols', () => {
+    const provider = createMooDocumentHighlightProvider({ Read: 1, Write: 2 });
+    const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
+
+    expect(
+      provider.provideDocumentHighlights(
+        {
+          getValue: () => source,
+        } as never,
+        { lineNumber: 2, column: 10 },
+        {} as never,
+      ),
+    ).toEqual([
+      {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 6,
+        },
+        kind: 2,
+      },
+      expect.objectContaining({ kind: 2 }),
+      expect.objectContaining({ kind: 1 }),
+      expect.objectContaining({ kind: 1 }),
+    ]);
   });
 
   it('provides Monaco quick fixes for fixable MOO diagnostics', () => {
@@ -475,6 +506,7 @@ describe('MOO Monaco language support', () => {
         registerCodeActionProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentHighlightProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerDocumentFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),

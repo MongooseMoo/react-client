@@ -22,6 +22,11 @@ export type MooTextEdit = {
   text: string;
 };
 
+export type MooDocumentHighlight = {
+  range: MonacoRange;
+  kind: 'read' | 'write';
+};
+
 export type MooRenameWorkspaceEdit = { edits: MooTextEdit[] } | { rejectReason: string };
 
 type SymbolRecord = {
@@ -111,6 +116,27 @@ export function findMooReferences(
   return allSymbolOccurrences(lookup.record).map((occurrence) => ({
     range: occurrence.range,
   }));
+}
+
+export function findMooDocumentHighlights(
+  source: string,
+  position: MooSourcePosition,
+): MooDocumentHighlight[] {
+  const lookup = getSymbolAtPosition(source, position);
+  if (!lookup) {
+    return [];
+  }
+
+  return [
+    ...lookup.record.definitions.map((definition) => ({
+      range: definition.range,
+      kind: 'write' as const,
+    })),
+    ...lookup.record.references.map((reference) => ({
+      range: reference.range,
+      kind: 'read' as const,
+    })),
+  ].sort((left, right) => compareRanges(left.range, right.range));
 }
 
 export function createMooRenameWorkspaceEdit(
@@ -370,6 +396,14 @@ function allSymbolOccurrences(record: SymbolRecord): Occurrence[] {
 
 function sameOccurrence(left: Occurrence, right: Occurrence): boolean {
   return left.startOffset === right.startOffset && left.endOffset === right.endOffset;
+}
+
+function compareRanges(left: MonacoRange, right: MonacoRange): number {
+  if (left.startLineNumber !== right.startLineNumber) {
+    return left.startLineNumber - right.startLineNumber;
+  }
+
+  return left.startColumn - right.startColumn;
 }
 
 function wordAtOffset(source: string, offset: number): { name: string; offset: number } | null {

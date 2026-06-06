@@ -3,6 +3,7 @@ import {
   analyzeMooSemantics,
   createMooRenameWorkspaceEdit,
   findMooDefinition,
+  findMooDocumentHighlights,
   findMooReferences,
   getMooLocalCompletions,
 } from './semantics';
@@ -49,6 +50,19 @@ describe('MOO semantic model', () => {
       { range: wordRange(source, 'total', 3) },
       { range: wordRange(source, 'total', 4) },
     ]);
+  });
+
+  it('finds read and write document highlights for the local name at the cursor', () => {
+    const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
+
+    expect(findMooDocumentHighlights(source, positionFor(source, 'total +'))).toEqual([
+      { range: wordRange(source, 'total', 1), kind: 'write' },
+      { range: wordRange(source, 'total', 2), kind: 'write' },
+      { range: wordRange(source, 'total', 3), kind: 'read' },
+      { range: wordRange(source, 'total', 4), kind: 'read' },
+    ]);
+    expect(findMooDocumentHighlights(source, positionFor(source, 'player'))).toEqual([]);
+    expect(findMooDocumentHighlights('// total = 0;', { lineNumber: 1, column: 4 })).toEqual([]);
   });
 
   it('creates whole-symbol rename edits and rejects invalid rename targets', () => {
