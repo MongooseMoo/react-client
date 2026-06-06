@@ -1,5 +1,5 @@
 import { BUILTIN_FUNCTIONS } from './contract';
-import { getMooBuiltinMetadata } from './builtins';
+import { formatMooBuiltinArity, getMooBuiltinMetadata } from './builtins';
 import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
 
 export type MooCallContext = {
@@ -25,6 +25,7 @@ export type MooSignatureHelp = {
 };
 
 type SignatureDefinition = {
+  label?: string;
   parameters: MooParameterInformation[];
   documentation: string;
 };
@@ -161,9 +162,7 @@ export function getMooSignatureHelp(
   return {
     signatures: [
       {
-        label: `${context.functionName}(${definition.parameters
-          .map((parameter) => parameter.label)
-          .join(', ')})`,
+        label: definition.label ?? formatSignatureLabel(context.functionName, definition.parameters),
         documentation: definition.documentation,
         parameters: definition.parameters,
       },
@@ -187,9 +186,7 @@ export function getMooBuiltinSignature(
   }
 
   return {
-    label: `${normalizedName}(${definition.parameters
-      .map((parameter) => parameter.label)
-      .join(', ')})`,
+    label: definition.label ?? formatSignatureLabel(normalizedName, definition.parameters),
     documentation: definition.documentation,
     parameters: definition.parameters,
   };
@@ -211,13 +208,36 @@ function getSignatureDefinition(
 
   const parameterCount =
     metadata.maxArgs >= 0 ? metadata.maxArgs : Math.max(metadata.minArgs, minimumParameterCount);
+  const parameters = Array.from({ length: parameterCount }, (_, index) => {
+    const type = metadata.parameterTypes[index] ?? 'any';
+    const optional = index >= metadata.minArgs;
+    return {
+      label: `arg${index + 1}${optional ? '?' : ''}`,
+      documentation: `Registered ToastStunt type: ${type}.${optional ? ' Optional.' : ''}`,
+    };
+  });
+  const parameterTypeList = metadata.parameterTypes.length
+    ? metadata.parameterTypes.join(', ')
+    : 'none registered';
 
   return {
-    parameters: Array.from({ length: parameterCount }, (_, index) => ({
-      label: `arg${index + 1}${index >= metadata.minArgs ? '?' : ''}`,
-    })),
-    documentation: GENERIC_BUILTIN_DOCUMENTATION,
+    label: `${normalizedName}(${parameters
+      .map((parameter, index) => `${parameter.label}: ${metadata.parameterTypes[index] ?? 'any'}`)
+      .join(', ')})`,
+    parameters,
+    documentation: [
+      GENERIC_BUILTIN_DOCUMENTATION,
+      `Registered arity: ${formatMooBuiltinArity(metadata)}.`,
+      `Parameter types: ${parameterTypeList}.`,
+    ].join('\n'),
   };
+}
+
+function formatSignatureLabel(
+  functionName: string,
+  parameters: readonly MooParameterInformation[],
+): string {
+  return `${functionName}(${parameters.map((parameter) => parameter.label).join(', ')})`;
 }
 
 function readIdentifierBefore(source: string, openParenIndex: number): string | null {

@@ -258,3 +258,15 @@ export const MOO_BUILTIN_NAMES = Object.keys(MOO_BUILTIN_METADATA).sort() as Moo
 export function getMooBuiltinMetadata(name: string): MooBuiltinMetadata | null {
   return MOO_BUILTIN_METADATA[name.toLowerCase() as MooBuiltinName] ?? null;
 }
+
+export function formatMooBuiltinArity(metadata: MooBuiltinMetadata): string {
+  if (metadata.maxArgs < 0) {
+    return `at least ${metadata.minArgs} ${metadata.minArgs === 1 ? 'argument' : 'arguments'}`;
+  }
+
+  if (metadata.minArgs === metadata.maxArgs) {
+    return `${metadata.minArgs} ${metadata.minArgs === 1 ? 'argument' : 'arguments'}`;
+  }
+
+  return `${metadata.minArgs} to ${metadata.maxArgs} arguments`;
+}

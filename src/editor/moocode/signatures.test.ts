@@ -46,9 +46,17 @@ describe('MOO signature help analysis', () => {
         activeParameter: 2,
         signatures: [
           {
-            label: 'sqlite_query(arg1, arg2, arg3?)',
-            documentation: 'ToastStunt builtin function.',
-            parameters: [{ label: 'arg1' }, { label: 'arg2' }, { label: 'arg3?' }],
+            label: 'sqlite_query(arg1: int, arg2: str, arg3?: any)',
+            documentation: [
+              'ToastStunt builtin function.',
+              'Registered arity: 2 to 3 arguments.',
+              'Parameter types: int, str, any.',
+            ].join('\n'),
+            parameters: [
+              { label: 'arg1', documentation: 'Registered ToastStunt type: int.' },
+              { label: 'arg2', documentation: 'Registered ToastStunt type: str.' },
+              { label: 'arg3?', documentation: 'Registered ToastStunt type: any. Optional.' },
+            ],
           },
         ],
       });

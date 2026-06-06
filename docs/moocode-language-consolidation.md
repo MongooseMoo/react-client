@@ -354,3 +354,14 @@ Iterations:
   - Focused red-to-green gates:
     `npm test -- --run src/editor/moocode/language.test.ts` and
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 ToastStunt type-aware builtin hovers:
+  - Generic builtin signature help now presents registered parameter types
+    inline, e.g. `sqlite_query(arg1: int, arg2: str, arg3?: any)`.
+  - Generic builtin hover and completion detail text now share that type-aware
+    label and include registered arity plus parameter type documentation.
+  - Monaco parameter information now includes registered ToastStunt type docs
+    for generic builtins, while curated signatures keep their hand-written names
+    and descriptions.
+  - Focused red-to-green gates:
+    `npm test -- --run src/editor/moocode/signatures.test.ts src/editor/moocode/hover.test.ts src/editor/moocode/language.test.ts`
+    and `npm test -- --run src/editor/moocode`.

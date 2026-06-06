@@ -22,6 +22,34 @@ describe('MOO hover service', () => {
     });
   });
 
+  it('describes generic ToastStunt builtins with registered arity and types', () => {
+    const hover = getMooHover('sqlite_query(handle, sql, options);', {
+      lineNumber: 1,
+      column: 3,
+    });
+
+    expect(hover).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 13,
+      },
+      contents: [
+        {
+          value: [
+            '```moocode',
+            'sqlite_query(arg1: int, arg2: str, arg3?: any)',
+            '```',
+            'ToastStunt builtin function.',
+            'Registered arity: 2 to 3 arguments.',
+            'Parameter types: int, str, any.',
+          ].join('\n'),
+        },
+      ],
+    });
+  });
+
   it('describes local symbols with definition and reference counts', () => {
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
     const hover = getMooHover(source, { lineNumber: 2, column: 10 });
