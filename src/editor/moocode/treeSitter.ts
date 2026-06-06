@@ -80,6 +80,8 @@ export type MooTreeSitterService = {
   parse(source: string): MooTreeSitterParseResult;
 };
 
+export type MooTreeSitterParser = (source: string) => Promise<MooTreeSitterParseResult>;
+
 const DEFAULT_DEPENDENCIES: MooTreeSitterDependencies = {
   loadRuntime: () => import('web-tree-sitter'),
   loadRuntimeWasmUrl: () =>
@@ -89,6 +91,39 @@ const DEFAULT_DEPENDENCIES: MooTreeSitterDependencies = {
 };
 
 let defaultServicePromise: Promise<MooTreeSitterService> | null = null;
+let defaultCachedParser: MooTreeSitterParser = createCachedMooParser(parseMooCodeWithDefaultTreeSitter);
+
+export function createCachedMooParser(
+  parse: MooTreeSitterParser,
+  maxEntries = 16,
+): MooTreeSitterParser {
+  const cache = new Map<string, Promise<MooTreeSitterParseResult>>();
+
+  return (source) => {
+    const cached = cache.get(source);
+    if (cached) {
+      cache.delete(source);
+      cache.set(source, cached);
+      return cached;
+    }
+
+    const parsePromise = parse(source).catch((error: unknown) => {
+      cache.delete(source);
+      throw error;
+    });
+    cache.set(source, parsePromise);
+
+    while (cache.size > maxEntries) {
+      const oldestSource = cache.keys().next().value;
+      if (oldestSource === undefined) {
+        break;
+      }
+      cache.delete(oldestSource);
+    }
+
+    return parsePromise;
+  };
+}
 
 export async function getMooTreeSitterService(
   dependencies: MooTreeSitterDependencies = DEFAULT_DEPENDENCIES,
@@ -159,6 +194,17 @@ export async function parseMooCodeWithTreeSitter(
   source: string,
   dependencies?: MooTreeSitterDependencies,
 ): Promise<MooTreeSitterParseResult> {
+  if (!dependencies) {
+    return defaultCachedParser(source);
+  }
+
+  return parseMooCodeWithDefaultTreeSitter(source, dependencies);
+}
+
+async function parseMooCodeWithDefaultTreeSitter(
+  source: string,
+  dependencies?: MooTreeSitterDependencies,
+): Promise<MooTreeSitterParseResult> {
   const service = await getMooTreeSitterService(dependencies);
   return service.parse(source);
 }
@@ -181,6 +227,7 @@ export async function toMonacoTreeSitterMarkers(
 
 export function resetMooTreeSitterServiceForTests(): void {
   defaultServicePromise = null;
+  defaultCachedParser = createCachedMooParser(parseMooCodeWithDefaultTreeSitter);
 }
 
 function emptyMooStructure(): MooStructure {

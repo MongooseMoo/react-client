@@ -1,11 +1,62 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  createCachedMooParser,
   createMooTreeSitterService,
   resetMooTreeSitterServiceForTests,
   toMonacoTreeSitterMarkers,
 } from './treeSitter';
 
 describe('MOO Tree-sitter service', () => {
+  it('dedupes in-flight parser requests for the same source', async () => {
+    let resolveParse: (result: ReturnType<typeof parseResult>) => void = () => {};
+    const parse = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof parseResult>>((resolve) => {
+          resolveParse = resolve;
+        }),
+    );
+    const cachedParse = createCachedMooParser(parse);
+
+    const first = cachedParse('notify(player, "ok");');
+    const second = cachedParse('notify(player, "ok");');
+
+    expect(parse).toHaveBeenCalledTimes(1);
+
+    resolveParse(parseResult('source_file'));
+
+    await expect(first).resolves.toMatchObject({ rootType: 'source_file' });
+    await expect(second).resolves.toMatchObject({ rootType: 'source_file' });
+  });
+
+  it('reuses recent parser results and evicts the oldest source', async () => {
+    const parse = vi.fn(async (source: string) => parseResult(source));
+    const cachedParse = createCachedMooParser(parse, 2);
+
+    await cachedParse('first');
+    await cachedParse('second');
+    await cachedParse('first');
+    await cachedParse('third');
+    await cachedParse('second');
+
+    expect(parse.mock.calls.map(([source]) => source)).toEqual([
+      'first',
+      'second',
+      'third',
+      'second',
+    ]);
+  });
+
+  it('does not cache rejected parser results', async () => {
+    const parse = vi
+      .fn(async (_source: string) => parseResult('source_file'))
+      .mockRejectedValueOnce(new Error('parse failed'));
+    const cachedParse = createCachedMooParser(parse);
+
+    await expect(cachedParse('broken')).rejects.toThrow('parse failed');
+    await expect(cachedParse('broken')).resolves.toMatchObject({ rootType: 'source_file' });
+    expect(parse).toHaveBeenCalledTimes(2);
+  });
+
   it('initializes web-tree-sitter lazily with the packaged runtime and language WASM assets', async () => {
     const init = vi.fn(() => Promise.resolve());
     const load = vi.fn(() => Promise.resolve({ name: 'moocode' }));
@@ -385,6 +436,19 @@ describe('MOO Tree-sitter service', () => {
     ]);
   });
 });
+
+function parseResult(rootType: string) {
+  return {
+    diagnostics: [],
+    hasError: false,
+    rootType,
+    structure: {
+      foldingRanges: [],
+      symbols: [],
+    },
+    treeText: `(${rootType})`,
+  };
+}
 
 function blockNode(
   type: string,
