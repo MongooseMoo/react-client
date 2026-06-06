@@ -8,6 +8,7 @@ import EditorWindow from './editorWindow';
 const editorMock = vi.hoisted(() => ({
   props: undefined as Record<string, unknown> | undefined,
   focus: vi.fn(),
+  executeEdits: vi.fn(),
   modelVersion: 1,
   model: {
     getVersionId: vi.fn(() => editorMock.modelVersion),
@@ -73,6 +74,7 @@ vi.mock('@monaco-editor/react', () => ({
       onMount?.(
         {
           focus: editorMock.focus,
+          executeEdits: editorMock.executeEdits,
           getModel: () => editorMock.model,
           revealPositionInCenter: editorMock.revealPositionInCenter,
           setPosition: editorMock.setPosition,
@@ -137,6 +139,7 @@ describe('EditorWindow language selection', () => {
     editorMock.props = undefined;
     editorMock.modelVersion = 1;
     editorMock.model.getVersionId.mockClear();
+    editorMock.executeEdits.mockClear();
     editorMock.focus.mockClear();
     editorMock.revealPositionInCenter.mockClear();
     editorMock.setPosition.mockClear();
@@ -684,6 +687,18 @@ describe('EditorWindow language selection', () => {
         ['while (1)', '  notify(player, "tick");', 'endwhile'].join('\n'),
       ),
     );
+    expect(editorMock.executeEdits).toHaveBeenCalledWith('moo-problems-quick-fix', [
+      {
+        forceMoveMarkers: true,
+        range: {
+          startLineNumber: 2,
+          startColumn: 26,
+          endLineNumber: 2,
+          endColumn: 26,
+        },
+        text: '\nendwhile',
+      },
+    ]);
     expect(screen.getByRole('status').textContent).toContain('Changed');
   });
 

@@ -50,6 +50,7 @@ const TREE_SITTER_DIAGNOSTIC_DELAY_MS = 200;
 const MONACO_WARNING_MARKER_SEVERITY = 4;
 const EDITOR_STATUSBAR_ID = 'editor-statusbar';
 const EDITOR_PROBLEMS_ID = 'editor-moo-problems';
+const MOO_PROBLEMS_QUICK_FIX_EDIT_SOURCE = 'moo-problems-quick-fix';
 
 function EditorWindow() {
   const location = useLocation();
@@ -223,6 +224,10 @@ function EditorWindow() {
     (quickFix: MooQuickFix) => {
       const updatedCode = applyMooQuickFixEdits(code, quickFix);
 
+      editorInstance.current?.executeEdits(
+        MOO_PROBLEMS_QUICK_FIX_EDIT_SOURCE,
+        getMooQuickFixEditOperations(quickFix),
+      );
       setCode(updatedCode);
       setDocumentState(getDocumentStateForCode(updatedCode, originalCode));
       setIsLoaded(true);
@@ -598,6 +603,16 @@ function mooQuickFixDiagnosticMatchesMarker(
 
 function applyMooQuickFixEdits(source: string, quickFix: MooQuickFix): string {
   return applyMooTextEdits(source, quickFix.edits ?? [quickFix.edit]);
+}
+
+function getMooQuickFixEditOperations(
+  quickFix: MooQuickFix,
+): MonacoEditor.IIdentifiedSingleEditOperation[] {
+  return (quickFix.edits ?? [quickFix.edit]).map((edit) => ({
+    forceMoveMarkers: true,
+    range: edit.range,
+    text: edit.text,
+  }));
 }
 
 function applyMooTextEdits(source: string, edits: readonly MooQuickFixEdit[]): string {
