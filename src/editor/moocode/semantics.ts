@@ -40,6 +40,15 @@ export type MooSemanticSymbolRange = {
   range: MonacoRange;
 };
 
+export type MooSemanticDocumentSymbol = {
+  definitions: MonacoRange[];
+  kind: MooSemanticSymbolSummary['kind'];
+  name: string;
+  references: MonacoRange[];
+  range: MonacoRange;
+  selectionRange: MonacoRange;
+};
+
 export type MooUndefinedLocalReference = {
   definitionRange?: MonacoRange;
   name: string;
@@ -143,6 +152,19 @@ export function analyzeMooSemantics(source: string): MooSemanticAnalysis {
         references: record.references.map((reference) => reference.range),
       })),
   };
+}
+
+export function getMooSemanticDocumentSymbols(source: string): MooSemanticDocumentSymbol[] {
+  return [
+    ...[...getSymbolRecords(source).values()].map((record) =>
+      toSemanticDocumentSymbol(record, 'local'),
+    ),
+    ...collectLoopLabelReferences(source).records.map((record) =>
+      toSemanticDocumentSymbol(record, 'loop-label'),
+    ),
+  ]
+    .filter((symbol): symbol is MooSemanticDocumentSymbol => symbol !== null)
+    .sort((left, right) => compareRanges(left.selectionRange, right.selectionRange));
 }
 
 export function findMooDefinition(
@@ -1212,6 +1234,25 @@ function toSemanticSymbolRanges(
       isDeclaration: false,
     })),
   ];
+}
+
+function toSemanticDocumentSymbol(
+  record: SymbolRecord,
+  kind: MooSemanticSymbolSummary['kind'],
+): MooSemanticDocumentSymbol | null {
+  const firstDefinition = record.definitions[0];
+  if (!firstDefinition) {
+    return null;
+  }
+
+  return {
+    kind,
+    name: record.name,
+    definitions: record.definitions.map((definition) => definition.range),
+    references: record.references.map((reference) => reference.range),
+    range: firstDefinition.range,
+    selectionRange: firstDefinition.range,
+  };
 }
 
 function toCodeLens(

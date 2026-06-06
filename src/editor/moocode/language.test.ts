@@ -2835,6 +2835,116 @@ describe('MOO Monaco language support', () => {
     );
   });
 
+  it('adds semantic local and loop-label symbols to the Monaco outline', async () => {
+    const source = [
+      'total = 0;',
+      'while outer (valid(player))',
+      '  for item in (items)',
+      '    total = total + item;',
+      '  endfor',
+      '  break outer;',
+      'endwhile',
+      'notify(player, total);',
+    ].join('\n');
+    const parse = vi.fn(async () => ({
+      diagnostics: [],
+      hasError: false,
+      rootType: 'source_file',
+      structure: {
+        foldingRanges: [
+          { start: 2, end: 7 },
+          { start: 3, end: 5 },
+        ],
+        symbols: [
+          {
+            blockKind: 'while' as const,
+            children: [
+              {
+                blockKind: 'for' as const,
+                children: [],
+                name: 'for item',
+                range: {
+                  startLineNumber: 3,
+                  startColumn: 3,
+                  endLineNumber: 5,
+                  endColumn: 9,
+                },
+                selectionRange: {
+                  startLineNumber: 3,
+                  startColumn: 3,
+                  endLineNumber: 3,
+                  endColumn: 6,
+                },
+              },
+            ],
+            name: 'while outer (valid(player))',
+            range: {
+              startLineNumber: 2,
+              startColumn: 1,
+              endLineNumber: 7,
+              endColumn: 9,
+            },
+            selectionRange: {
+              startLineNumber: 2,
+              startColumn: 1,
+              endLineNumber: 2,
+              endColumn: 6,
+            },
+          },
+        ],
+      },
+      treeText: '(source_file (while_statement (for_statement)))',
+    }));
+    const symbolProvider = createMooDocumentSymbolProvider(
+      {
+        languages: {
+          SymbolKind: {
+            Function: 11,
+            Variable: 12,
+          },
+        },
+      } as never,
+      parse,
+    );
+
+    await expect(
+      symbolProvider.provideDocumentSymbols({ getValue: () => source }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        name: 'total',
+        detail: 'MOO local - 2 definitions, 2 references',
+        kind: 12,
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 6,
+        },
+      }),
+      expect.objectContaining({
+        name: 'while outer (valid(player))',
+        kind: 11,
+        children: [
+          expect.objectContaining({
+            name: 'outer',
+            detail: 'MOO loop label - 1 definition, 1 reference',
+            kind: 12,
+          }),
+          expect.objectContaining({
+            name: 'for item',
+            children: [
+              expect.objectContaining({
+                name: 'item',
+                detail: 'MOO local - 1 definition, 1 reference',
+                kind: 12,
+              }),
+            ],
+          }),
+        ],
+      }),
+    ]);
+  });
+
   it('falls back to scanner document symbols and folding ranges while parser structure is unavailable', async () => {
     const parse = vi.fn(async () => {
       throw new Error('WASM unavailable');

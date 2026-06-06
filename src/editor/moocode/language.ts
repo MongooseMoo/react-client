@@ -59,12 +59,14 @@ import {
   findMooDefinition,
   findMooDocumentHighlights,
   findMooReferences,
+  getMooSemanticDocumentSymbols,
   getMooCodeLenses,
   getMooLinkedEditingRanges,
   getMooLocalCompletions,
   getMooLoopLabelCompletions,
   getMooNewSymbolNameSuggestions,
   getMooRenameLocation,
+  type MooSemanticDocumentSymbol,
 } from './semantics';
 import { getMooSelectionRanges, type MooSelectionRange } from './selectionRanges';
 import {
@@ -288,6 +290,7 @@ export type MonacoLike = {
     };
     SymbolKind?: {
       Function: number;
+      Variable?: number;
     };
     getLanguages: () => Array<{ id: string }>;
     register: (language: { id: string }) => void;
@@ -1068,15 +1071,23 @@ export function createMooDocumentSymbolProvider(
   monaco?: MonacoLike,
   parse: MooParser = parseMooCodeWithTreeSitter,
 ): DocumentSymbolProvider {
-  const symbolKind = monaco?.languages.SymbolKind?.Function ?? 11;
+  const blockSymbolKind = monaco?.languages.SymbolKind?.Function ?? 11;
+  const semanticSymbolKind = monaco?.languages.SymbolKind?.Variable ?? 12;
 
   return {
     provideDocumentSymbols: async (model) => {
       const source = model.getValue();
       const symbols = await getParserStructure(source, parse, 'symbols');
       const structureSymbols = symbols ?? analyzeMooStructure(source).symbols;
+      const documentSymbols = structureSymbols.map((symbol) =>
+        toDocumentSymbol(symbol, blockSymbolKind),
+      );
 
-      return structureSymbols.map((symbol) => toDocumentSymbol(symbol, symbolKind));
+      return withSemanticDocumentSymbols(
+        documentSymbols,
+        getMooSemanticDocumentSymbols(source),
+        semanticSymbolKind,
+      );
     },
   };
 }
@@ -1603,6 +1614,85 @@ function toDocumentSymbol(symbol: MooStructureSymbol, kind: number): DocumentSym
     selectionRange: symbol.selectionRange,
     children: symbol.children.map((child) => toDocumentSymbol(child, kind)),
   };
+}
+
+function withSemanticDocumentSymbols(
+  structureSymbols: DocumentSymbol[],
+  semanticSymbols: MooSemanticDocumentSymbol[],
+  kind: number,
+): DocumentSymbol[] {
+  const roots = [...structureSymbols];
+
+  for (const symbol of semanticSymbols) {
+    const documentSymbol = toSemanticDocumentSymbol(symbol, kind);
+    const parent = findDeepestDocumentSymbolParent(roots, documentSymbol.selectionRange);
+
+    if (parent) {
+      parent.children = sortDocumentSymbols([...parent.children, documentSymbol]);
+    } else {
+      roots.push(documentSymbol);
+    }
+  }
+
+  return sortDocumentSymbols(roots);
+}
+
+function toSemanticDocumentSymbol(symbol: MooSemanticDocumentSymbol, kind: number): DocumentSymbol {
+  return {
+    name: symbol.name,
+    detail: `${formatMooSemanticDocumentSymbolKind(symbol.kind)} - ${countDocumentSymbols(
+      symbol.definitions.length,
+      'definition',
+    )}, ${countDocumentSymbols(symbol.references.length, 'reference')}`,
+    kind,
+    tags: [],
+    range: symbol.range,
+    selectionRange: symbol.selectionRange,
+    children: [],
+  };
+}
+
+function findDeepestDocumentSymbolParent(
+  symbols: DocumentSymbol[],
+  range: MonacoRange,
+): DocumentSymbol | null {
+  for (const symbol of symbols) {
+    if (!containsMooRange(symbol.range, range)) {
+      continue;
+    }
+
+    return findDeepestDocumentSymbolParent(symbol.children, range) ?? symbol;
+  }
+
+  return null;
+}
+
+function sortDocumentSymbols(symbols: DocumentSymbol[]): DocumentSymbol[] {
+  return [...symbols].sort((left, right) => compareMooRanges(left.range, right.range));
+}
+
+function containsMooRange(parent: MonacoRange, child: MonacoRange): boolean {
+  return compareMooPositions(parent, child) <= 0 && compareMooRangeEnds(parent, child) >= 0;
+}
+
+function compareMooRanges(left: MonacoRange, right: MonacoRange): number {
+  return compareMooPositions(left, right) || compareMooRangeEnds(left, right);
+}
+
+function compareMooPositions(left: MonacoRange, right: MonacoRange): number {
+  return left.startLineNumber - right.startLineNumber || left.startColumn - right.startColumn;
+}
+
+function compareMooRangeEnds(left: MonacoRange, right: MonacoRange): number {
+  return left.endLineNumber - right.endLineNumber || left.endColumn - right.endColumn;
+}
+
+function formatMooSemanticDocumentSymbolKind(kind: MooSemanticDocumentSymbol['kind']): string {
+  return kind === 'loop-label' ? 'MOO loop label' : 'MOO local';
+}
+
+function countDocumentSymbols(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 function isMooClauseSymbol(symbol: MooStructureSymbol): boolean {
