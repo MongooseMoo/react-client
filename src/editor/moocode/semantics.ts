@@ -389,11 +389,7 @@ export function createMooRenameWorkspaceEdit(
     };
   }
 
-  const conflictError = validateMooRenameConflict(
-    source,
-    newName,
-    lookup.record.name,
-  );
+  const conflictError = validateMooRenameConflict(source, newName, lookup.record.name);
   if (conflictError) {
     return { rejectReason: conflictError };
   }
@@ -906,8 +902,9 @@ function collectDefinitions(
     collectForDefinitions(source, line, lineOffset, definitions);
     collectForkDefinitions(source, line, lineOffset, definitions);
     collectExceptDefinitions(source, line, lineOffset, definitions);
-    collectScatterDefinitions(source, line, lineOffset, definitions);
   });
+
+  collectScatterDefinitions(source, masked, definitions);
 
   return dedupeDefinitionOccurrences(definitions);
 }
@@ -1001,30 +998,22 @@ function collectExceptDefinitions(
 
 function collectScatterDefinitions(
   source: string,
-  line: string,
-  lineOffset: number,
+  masked: string,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
-  for (let index = 0; index < line.length; index += 1) {
-    if (line[index] !== '{') {
+  for (let index = 0; index < masked.length; index += 1) {
+    if (masked[index] !== '{') {
       continue;
     }
 
-    const closeIndex = findMatchingDelimiter(line, index);
+    const closeIndex = findMatchingDelimiter(masked, index);
     if (closeIndex === null) {
       continue;
     }
 
-    const nextIndex = nextNonWhitespaceIndex(line, closeIndex + 1);
-    if (nextIndex !== null && line[nextIndex] === '=') {
-      collectScatterTargetListDefinitions(
-        source,
-        line,
-        lineOffset,
-        index + 1,
-        closeIndex,
-        definitions,
-      );
+    const nextIndex = nextNonWhitespaceIndex(masked, closeIndex + 1);
+    if (nextIndex !== null && masked[nextIndex] === '=') {
+      collectScatterTargetListDefinitions(source, masked, index + 1, closeIndex, definitions);
       index = closeIndex;
     }
   }
@@ -1032,8 +1021,7 @@ function collectScatterDefinitions(
 
 function collectScatterTargetListDefinitions(
   source: string,
-  line: string,
-  lineOffset: number,
+  masked: string,
   startIndex: number,
   endIndex: number,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
@@ -1042,7 +1030,7 @@ function collectScatterTargetListDefinitions(
   const delimiters: string[] = [];
 
   for (let index = startIndex; index <= endIndex; index += 1) {
-    const character = index === endIndex ? ',' : line[index];
+    const character = index === endIndex ? ',' : masked[index];
 
     if (isOpeningDelimiter(character)) {
       delimiters.push(character);
@@ -1055,14 +1043,7 @@ function collectScatterTargetListDefinitions(
     }
 
     if (character === ',' && delimiters.length === 0) {
-      collectScatterTargetDefinition(
-        source,
-        line,
-        lineOffset,
-        targetStartIndex,
-        index,
-        definitions,
-      );
+      collectScatterTargetDefinition(source, masked, targetStartIndex, index, definitions);
       targetStartIndex = index + 1;
     }
   }
@@ -1070,13 +1051,12 @@ function collectScatterTargetListDefinitions(
 
 function collectScatterTargetDefinition(
   source: string,
-  line: string,
-  lineOffset: number,
+  masked: string,
   startIndex: number,
   endIndex: number,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
-  const target = line.slice(startIndex, endIndex);
+  const target = masked.slice(startIndex, endIndex);
   const name = new RegExp(`^\\s*(?:[?@]\\s*)?(${MOO_IDENTIFIER_PATTERN_SOURCE})\\b`).exec(
     target,
   )?.[1];
@@ -1084,7 +1064,7 @@ function collectScatterTargetDefinition(
     return;
   }
 
-  const nameStart = lineOffset + startIndex + target.indexOf(name);
+  const nameStart = startIndex + target.indexOf(name);
   definitions.push({
     name,
     occurrence: occurrenceAt(source, nameStart, name.length),

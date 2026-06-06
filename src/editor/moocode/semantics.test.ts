@@ -83,6 +83,62 @@ describe('MOO semantic model', () => {
     ]);
   });
 
+  it('parses multiline scatter targets as local definitions', () => {
+    const source = [
+      'fallback = "guest";',
+      '{',
+      '  name,',
+      '  ?value = fallback,',
+      '  @rest',
+      '} = incoming;',
+      'notify(player, name);',
+      'notify(player, value);',
+      'notify(player, rest);',
+    ].join('\n');
+
+    expect(analyzeMooSemantics(source).symbols).toEqual([
+      {
+        name: 'fallback',
+        definitions: [wordRange(source, 'fallback', 1)],
+        references: [wordRange(source, 'fallback', 2)],
+      },
+      {
+        name: 'name',
+        definitions: [wordRange(source, 'name', 1)],
+        references: [wordRange(source, 'name', 2)],
+      },
+      {
+        name: 'rest',
+        definitions: [wordRange(source, 'rest', 1)],
+        references: [wordRange(source, 'rest', 2)],
+      },
+      {
+        name: 'value',
+        definitions: [wordRange(source, 'value', 1)],
+        references: [wordRange(source, 'value', 2)],
+      },
+    ]);
+    expect(findMooUndefinedLocalReferences(source)).toEqual([
+      {
+        name: 'incoming',
+        range: wordRange(source, 'incoming', 1),
+      },
+    ]);
+    expect(findMooUnusedLocalDefinitions(source)).toEqual([]);
+    expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'value);'), 'result')).toEqual({
+      edits: [
+        { range: wordRange(source, 'value', 1), text: 'result' },
+        { range: wordRange(source, 'value', 2), text: 'result' },
+      ],
+    });
+    expect(getMooLocalCompletions(source, { lineNumber: 9, column: 20 })).toEqual([
+      expect.objectContaining({ name: 'rest' }),
+      expect.objectContaining({ name: 'value' }),
+      expect.objectContaining({ name: 'name' }),
+      expect.objectContaining({ name: 'fallback' }),
+    ]);
+  });
+
   it('finds definitions and references for a local name at the cursor', () => {
     const source = ['total = 0;', 'total = total + 1;', 'notify(player, total);'].join('\n');
 
@@ -280,9 +336,7 @@ describe('MOO semantic model', () => {
       'endwhile',
     ].join('\n');
 
-    expect(
-      createMooRenameWorkspaceEdit(source, positionFor(source, 'outer;'), 'inner'),
-    ).toEqual({
+    expect(createMooRenameWorkspaceEdit(source, positionFor(source, 'outer;'), 'inner')).toEqual({
       rejectReason: 'A MOO loop label named inner already exists.',
     });
   });
