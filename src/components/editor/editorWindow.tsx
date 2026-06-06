@@ -18,6 +18,7 @@ import {
   MOO_LANGUAGE_ID,
   registerMooLanguage,
 } from '../../editor/moocode/language';
+import { MOO_CODE_ACTION_FIX_ALL_KIND } from '../../editor/moocode/contract';
 import { toMonacoTreeSitterMarkers } from '../../editor/moocode/treeSitter';
 import { usePreferences } from '../../hooks/usePreferences';
 import type { EditorSession } from '../../mcp';
@@ -385,6 +386,7 @@ function MooProblemsPanel({
 
   const counts = getMooDiagnosticCounts(markers);
   const visibleMarkers = markers.filter((marker) => mooProblemFilterIncludesMarker(filter, marker));
+  const fixAllQuickFixes = quickFixes.filter(isMooFixAllQuickFix);
 
   return (
     <section aria-label="MOO problems" className="editor-problems" id={id}>
@@ -399,6 +401,17 @@ function MooProblemsPanel({
             type="button"
           >
             {option.label}
+          </button>
+        ))}
+        {fixAllQuickFixes.map((quickFix) => (
+          <button
+            aria-label={`Apply MOO fix all: ${quickFix.title}`}
+            className="editor-problems-fix-all-button"
+            key={quickFix.title}
+            onClick={() => onQuickFixClick(quickFix)}
+            type="button"
+          >
+            Fix all
           </button>
         ))}
       </div>
@@ -564,6 +577,10 @@ function findMooQuickFixForMarker(
       ),
     ) ?? null
   );
+}
+
+function isMooFixAllQuickFix(quickFix: MooQuickFix): boolean {
+  return quickFix.kind === MOO_CODE_ACTION_FIX_ALL_KIND;
 }
 
 function mooQuickFixDiagnosticMatchesMarker(

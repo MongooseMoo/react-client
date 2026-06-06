@@ -686,4 +686,41 @@ describe('EditorWindow language selection', () => {
     );
     expect(screen.getByRole('status').textContent).toContain('Changed');
   });
+
+  it('applies grouped MOO fix-all actions from the problems panel toolbar', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['used = 1;', 'unused = 2;', 'stale = 3;', 'notify(player, used);'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Apply MOO fix all: Mark all unused locals as intentionally ignored',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(editorMock.props?.value).toBe(
+        ['used = 1;', '_unused = 2;', '_stale = 3;', 'notify(player, used);'].join('\n'),
+      ),
+    );
+    expect(screen.getByRole('status').textContent).toContain('Changed');
+  });
 });

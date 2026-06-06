@@ -140,6 +140,28 @@
   outline-offset: 2px;
 }
 
+.editor-problems-fix-all-button {
+  min-height: 1.75rem;
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid #c9d5e7;
+  border-radius: 4px;
+  background: #fff;
+  color: #233143;
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.editor-problems-fix-all-button:hover {
+  background: #f1f5fb;
+}
+
+.editor-problems-fix-all-button:focus-visible {
+  outline: 2px solid #4b8bd6;
+  outline-offset: 2px;
+}
+
 .editor-problems-list {
   display: flex;
   flex-direction: column;
