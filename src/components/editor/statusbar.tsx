@@ -8,6 +8,7 @@ interface Session {
 interface EditorStatusBarProps {
   diagnosticsSummary?: string;
   docstate: string;
+  id?: string;
   onDiagnosticsClick?: () => void;
   session: Session;
 }
@@ -15,11 +16,12 @@ interface EditorStatusBarProps {
 export const EditorStatusBar: React.FC<EditorStatusBarProps> = ({
   diagnosticsSummary,
   docstate,
+  id,
   onDiagnosticsClick,
   session,
 }) => {
   return (
-    <div aria-live="polite" className="editor-statusbar">
+    <div aria-live="polite" className="editor-statusbar" id={id} role="status">
       <span>{docstate}</span>
       <span aria-hidden="true">|</span>
       <span>{session.reference}</span>

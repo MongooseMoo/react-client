@@ -39,6 +39,7 @@ type MooDiagnosticCounts = {
 
 const TREE_SITTER_DIAGNOSTIC_DELAY_MS = 200;
 const MONACO_WARNING_MARKER_SEVERITY = 4;
+const EDITOR_STATUSBAR_ID = 'editor-statusbar';
 
 function EditorWindow() {
   const location = useLocation();
@@ -86,10 +87,14 @@ function EditorWindow() {
 
     const markers =
       editorLanguage === MOO_LANGUAGE_ID
-        ? toMonacoMarkers(code, {
-            error: monaco.MarkerSeverity.Error,
-            warning: monaco.MarkerSeverity.Warning,
-          }, model.uri)
+        ? toMonacoMarkers(
+            code,
+            {
+              error: monaco.MarkerSeverity.Error,
+              warning: monaco.MarkerSeverity.Warning,
+            },
+            model.uri,
+          )
         : [];
 
     monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
@@ -150,6 +155,7 @@ function EditorWindow() {
     editorLanguage === MOO_LANGUAGE_ID
       ? formatMooDiagnosticsSummary(mooDiagnosticCounts)
       : undefined;
+  const editorAriaLabel = formatEditorAriaLabel(session.reference, editorLanguage);
   const showFirstMooDiagnostic = React.useCallback(() => {
     if (!mooDiagnosticTarget) {
       return;
@@ -272,14 +278,19 @@ function EditorWindow() {
         onChange={onChanges}
         options={{
           wordWrap: 'on',
+          ariaLabel: editorAriaLabel,
           accessibilitySupport: accessibilityMode ? 'on' : 'off',
           quickSuggestions: autocompleteEnabled,
+        }}
+        wrapperProps={{
+          'aria-describedby': EDITOR_STATUSBAR_ID,
         }}
         beforeMount={handleEditorBeforeMount}
         onMount={handleEditorMount}
         path={session.reference}
       />
       <EditorStatusBar
+        id={EDITOR_STATUSBAR_ID}
         onDiagnosticsClick={mooDiagnosticTarget ? showFirstMooDiagnostic : undefined}
         diagnosticsSummary={mooDiagnosticsSummary}
         docstate={docstate}
@@ -287,6 +298,14 @@ function EditorWindow() {
       />
     </div>
   );
+}
+
+function formatEditorAriaLabel(sessionReference: string, language: string): string {
+  const target = sessionReference || 'current session';
+
+  return language === MOO_LANGUAGE_ID
+    ? `MOO code editor for ${target}`
+    : `Text editor for ${target}`;
 }
 
 function formatMooDiagnosticsSummary(counts: MooDiagnosticCounts): string | undefined {

@@ -277,6 +277,43 @@ describe('EditorWindow language selection', () => {
     expect(await screen.findByRole('button', { name: '1 MOO error' })).not.toBeNull();
   });
 
+  it('labels the Monaco editor and connects it to the live status bar for screen readers', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['while (1)', '  notify(player, "tick");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await screen.findByRole('button', { name: '1 MOO error' });
+    expect(editorMock.props?.options).toEqual(
+      expect.objectContaining({
+        ariaLabel: 'MOO code editor for #1:test',
+      }),
+    );
+    expect(editorMock.props?.wrapperProps).toEqual(
+      expect.objectContaining({
+        'aria-describedby': 'editor-statusbar',
+      }),
+    );
+    expect(screen.getByRole('status').getAttribute('id')).toBe('editor-statusbar');
+  });
+
   it('surfaces semantic warnings with Monaco warning severity', async () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
