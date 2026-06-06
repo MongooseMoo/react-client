@@ -1,0 +1,899 @@
+import type { Uri } from 'monaco-editor';
+import { formatMooBuiltinArity, getMooBuiltinMetadata, type MooBuiltinMetadata } from './builtins';
+import {
+  BUILTIN_FUNCTIONS,
+  MOO_BLOCKS,
+  MOO_CLOSE_KEYWORDS,
+  MOO_IDENTIFIER_PATTERN_SOURCE,
+  MOO_LANGUAGE_ID,
+  MOO_MIDDLE_KEYWORDS,
+  OPERATOR_WORDS,
+  STATEMENT_KEYWORDS,
+} from './contract';
+import type { MonacoRange } from './language';
+import { firstMooKeyword, maskMooSource, positionAtMooOffset } from './scanner';
+import {
+  findMooUndefinedLocalReferences,
+  findMooUnknownLoopLabelReferences,
+  findMooUnusedLocalDefinitions,
+} from './semantics';
+
+export type MooDiagnosticCode =
+  | 'misplaced-middle'
+  | 'mismatched-close'
+  | 'unexpected-close'
+  | 'unclosed-block'
+  | 'unclosed-delimiter'
+  | 'unexpected-delimiter'
+  | 'unterminated-string'
+  | 'loop-control-outside-loop'
+  | 'unknown-loop-label'
+  | 'unknown-builtin'
+  | 'builtin-arity'
+  | 'undefined-local'
+  | 'unused-local'
+  | 'unreachable-statement';
+
+export type MooDiagnosticSeverity = 'error' | 'warning';
+
+export type MooDiagnosticRelatedInformation = {
+  message: string;
+  range: MonacoRange;
+};
+
+export type MooDiagnostic = {
+  code: MooDiagnosticCode;
+  expectedCloseKeyword?: string;
+  message: string;
+  relatedInformation?: MooDiagnosticRelatedInformation[];
+  severity?: MooDiagnosticSeverity;
+  suggestedName?: string;
+  suggestedRange?: MonacoRange;
+  lineNumber: number;
+  startColumn: number;
+  endColumn: number;
+};
+
+export type MonacoMarker = Omit<MooDiagnostic, 'severity' | 'relatedInformation'> & {
+  severity: number;
+  source: string;
+  startLineNumber: number;
+  endLineNumber: number;
+  relatedInformation?: Array<
+    MonacoRange & {
+      message: string;
+      resource: Uri;
+    }
+  >;
+};
+
+export type MonacoMarkerSeverities = {
+  error: number;
+  warning: number;
+};
+
+type BlockKind = keyof typeof MOO_BLOCKS;
+
+type BlockFrame = {
+  branchUnreachableAfter?: Array<UnreachableReason | undefined>;
+  kind: BlockKind;
+  closeKeyword: string;
+  hasFinalBranch?: boolean;
+  hasFinallyBranch?: boolean;
+  inheritedUnreachableAfter?: UnreachableReason;
+  lineNumber: number;
+  startColumn: number;
+  unreachableAfter?: UnreachableReason;
+};
+
+type DelimiterFrame = {
+  open: '(' | '[' | '{';
+  close: ')' | ']' | '}';
+  lineNumber: number;
+  startColumn: number;
+};
+
+type PlainFunctionCall = {
+  argumentSource: string;
+  closeOffset: number;
+  name: string;
+  openOffset: number;
+  startOffset: number;
+};
+
+type ScanState = {
+  inBlockComment: boolean;
+};
+
+type TerminalControlKeyword = 'return' | 'break' | 'continue';
+type UnreachableReason = TerminalControlKeyword | 'if-branches' | 'finally';
+
+const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
+const LABELED_WHILE_PREFIX_PATTERN = new RegExp(
+  `^\\s*while\\s+${MOO_IDENTIFIER_PATTERN_SOURCE}\\s*$`,
+  'i',
+);
+const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
+const LOOP_CONTROL_KEYWORDS = new Set(['break', 'continue']);
+const TERMINAL_CONTROL_KEYWORDS = new Set<TerminalControlKeyword>([
+  'return',
+  'break',
+  'continue',
+]);
+const NON_FUNCTION_CALL_NAMES = new Set([
+  ...STATEMENT_KEYWORDS.map((keyword) => keyword.toLowerCase()),
+  ...OPERATOR_WORDS.map((word) => word.toLowerCase()),
+]);
+
+const OPEN_DELIMITERS: Record<string, DelimiterFrame['close']> = {
+  '(': ')',
+  '[': ']',
+  '{': '}',
+};
+
+const CLOSE_DELIMITERS: Record<string, DelimiterFrame['open']> = {
+  ')': '(',
+  ']': '[',
+  '}': '{',
+};
+
+export function validateMooSyntax(source: string): MooDiagnostic[] {
+  const diagnostics: MooDiagnostic[] = [];
+  const blockStack: BlockFrame[] = [];
+  const delimiterStack: DelimiterFrame[] = [];
+  const scanState: ScanState = { inBlockComment: false };
+  let topLevelUnreachableAfter: UnreachableReason | undefined;
+
+  const lines = source.split(/\r\n|\r|\n/);
+
+  lines.forEach((line, lineIndex) => {
+    const lineNumber = lineIndex + 1;
+    const scan = scanLine(line, lineNumber, delimiterStack, scanState);
+    diagnostics.push(...scan.diagnostics);
+
+    const keyword = firstMooKeyword(scan.code);
+    const normalized = keyword?.word.toLowerCase();
+    const isBlockBoundary = Boolean(
+      normalized && (MOO_MIDDLE_KEYWORDS[normalized] || MOO_CLOSE_KEYWORDS[normalized]),
+    );
+    const unreachableAfter = currentUnreachableAfter(blockStack, topLevelUnreachableAfter);
+    const startColumn = firstNonWhitespaceColumn(scan.code);
+
+    if (unreachableAfter && startColumn && !isBlockBoundary) {
+      diagnostics.push({
+        code: 'unreachable-statement',
+        message: formatUnreachableStatementMessage(unreachableAfter),
+        severity: 'warning',
+        lineNumber,
+        startColumn,
+        endColumn: line.length + 1,
+      });
+    }
+
+    if (!keyword || !normalized) {
+      return;
+    }
+
+    if (LOOP_CONTROL_KEYWORDS.has(normalized) && !blockStack.some((frame) => isLoop(frame.kind))) {
+      diagnostics.push({
+        code: 'loop-control-outside-loop',
+        message: `${normalized} can only be used inside a for or while block.`,
+        lineNumber,
+        startColumn: keyword.startColumn,
+        endColumn: keyword.endColumn,
+      });
+    }
+
+    const middleKind = MOO_MIDDLE_KEYWORDS[normalized];
+    if (middleKind && blockStack.at(-1)?.kind !== middleKind) {
+      diagnostics.push({
+        code: 'misplaced-middle',
+        message: `${normalized} can only appear inside an ${middleKind} block.`,
+        lineNumber,
+        startColumn: keyword.startColumn,
+        endColumn: keyword.endColumn,
+      });
+      return;
+    }
+
+    if (middleKind) {
+      const currentBlock = blockStack.at(-1);
+      if (currentBlock) {
+        recordCurrentBranchTermination(currentBlock);
+        currentBlock.hasFinalBranch ||= normalized === 'else';
+        currentBlock.hasFinallyBranch ||= normalized === 'finally';
+      }
+      clearCurrentUnreachableAfter(blockStack);
+      return;
+    }
+
+    const closeKind = MOO_CLOSE_KEYWORDS[normalized];
+    if (closeKind) {
+      const open = blockStack.pop();
+
+      if (!open) {
+        diagnostics.push({
+          code: 'unexpected-close',
+          message: `Unexpected ${normalized} without a matching ${closeKind}.`,
+          lineNumber,
+          startColumn: keyword.startColumn,
+          endColumn: keyword.endColumn,
+        });
+        return;
+      }
+
+      if (open.kind !== closeKind) {
+        diagnostics.push({
+          code: 'mismatched-close',
+          expectedCloseKeyword: open.closeKeyword,
+          message: `${normalized} closes ${closeKind}, but the open block is ${open.kind}.`,
+          relatedInformation: [
+            {
+              message: `Open ${open.kind} block is here.`,
+              range: {
+                startLineNumber: open.lineNumber,
+                startColumn: open.startColumn,
+                endLineNumber: open.lineNumber,
+                endColumn: open.startColumn + open.kind.length,
+              },
+            },
+          ],
+          lineNumber,
+          startColumn: keyword.startColumn,
+          endColumn: keyword.endColumn,
+        });
+      }
+
+      recordCurrentBranchTermination(open);
+      if (terminatesByClosedIfBlock(open)) {
+        topLevelUnreachableAfter = applyUnreachableReason(
+          blockStack,
+          topLevelUnreachableAfter,
+          'if-branches',
+        );
+      }
+      if (terminatesByClosedTryFinallyBlock(open)) {
+        topLevelUnreachableAfter = applyUnreachableReason(
+          blockStack,
+          topLevelUnreachableAfter,
+          'finally',
+        );
+      }
+
+      return;
+    }
+
+    const openBlock = MOO_BLOCKS[normalized as BlockKind];
+    if (openBlock) {
+      blockStack.push({
+        kind: normalized as BlockKind,
+        closeKeyword: openBlock.close,
+        inheritedUnreachableAfter: unreachableAfter,
+        lineNumber,
+        startColumn: keyword.startColumn,
+      });
+    }
+
+    const terminalKeyword = terminalControlKeywordFor(normalized);
+    if (terminalKeyword && canTerminateCurrentBranch(terminalKeyword, blockStack)) {
+      if (blockStack.length > 0) {
+        blockStack[blockStack.length - 1].unreachableAfter = terminalKeyword;
+      } else {
+        topLevelUnreachableAfter = terminalKeyword;
+      }
+    }
+  });
+
+  for (const delimiter of delimiterStack) {
+    diagnostics.push({
+      code: 'unclosed-delimiter',
+      message: `${delimiter.open} is missing a matching ${delimiter.close}.`,
+      lineNumber: delimiter.lineNumber,
+      startColumn: delimiter.startColumn,
+      endColumn: delimiter.startColumn + 1,
+    });
+  }
+
+  for (const block of blockStack) {
+    diagnostics.push({
+      code: 'unclosed-block',
+      message: `${block.kind} is missing a matching ${block.closeKeyword}.`,
+      lineNumber: block.lineNumber,
+      startColumn: block.startColumn,
+      endColumn: block.startColumn + block.kind.length,
+    });
+  }
+
+  diagnostics.push(...validateUnknownBuiltinCalls(source));
+  diagnostics.push(...validateBuiltinCallArity(source));
+  diagnostics.push(...validateUnknownLoopLabels(source));
+  diagnostics.push(...validateUndefinedLocals(source));
+  diagnostics.push(...validateUnusedLocals(source));
+
+  return diagnostics;
+}
+
+export function toMonacoMarkers(
+  source: string,
+  severity: number | MonacoMarkerSeverities,
+  resource?: Uri,
+): MonacoMarker[] {
+  return validateMooSyntax(source).map((diagnostic) => ({
+    ...diagnostic,
+    relatedInformation: toMonacoRelatedInformation(diagnostic, resource),
+    startLineNumber: diagnostic.lineNumber,
+    endLineNumber: diagnostic.lineNumber,
+    severity: toMarkerSeverity(diagnostic, severity),
+    source: MOO_LANGUAGE_ID,
+  }));
+}
+
+function currentUnreachableAfter(
+  blockStack: BlockFrame[],
+  topLevelUnreachableAfter: UnreachableReason | undefined,
+): UnreachableReason | undefined {
+  const currentBlock = blockStack.at(-1);
+  return (
+    currentBlock?.unreachableAfter ??
+    currentBlock?.inheritedUnreachableAfter ??
+    topLevelUnreachableAfter
+  );
+}
+
+function formatUnreachableStatementMessage(reason: UnreachableReason): string {
+  switch (reason) {
+    case 'if-branches':
+      return 'Statement is unreachable because all if branches terminate.';
+    case 'finally':
+      return 'Statement is unreachable because finally always terminates.';
+    default:
+      return `Statement is unreachable after ${reason}.`;
+  }
+}
+
+function recordCurrentBranchTermination(block: BlockFrame): void {
+  if (block.kind !== 'if') {
+    return;
+  }
+
+  block.branchUnreachableAfter ??= [];
+  block.branchUnreachableAfter.push(block.unreachableAfter);
+}
+
+function terminatesByClosedIfBlock(block: BlockFrame): boolean {
+  return (
+    block.kind === 'if' &&
+    block.hasFinalBranch === true &&
+    (block.branchUnreachableAfter?.length ?? 0) > 0 &&
+    block.branchUnreachableAfter?.every((reason) => reason !== undefined) === true
+  );
+}
+
+function terminatesByClosedTryFinallyBlock(block: BlockFrame): boolean {
+  return (
+    block.kind === 'try' &&
+    block.hasFinallyBranch === true &&
+    block.unreachableAfter !== undefined
+  );
+}
+
+function applyUnreachableReason(
+  blockStack: BlockFrame[],
+  topLevelUnreachableAfter: UnreachableReason | undefined,
+  reason: UnreachableReason,
+): UnreachableReason | undefined {
+  if (blockStack.length > 0) {
+    const currentBlock = blockStack[blockStack.length - 1];
+    currentBlock.unreachableAfter ??= reason;
+    return topLevelUnreachableAfter;
+  }
+
+  return topLevelUnreachableAfter ?? reason;
+}
+
+function clearCurrentUnreachableAfter(blockStack: BlockFrame[]): void {
+  const currentBlock = blockStack.at(-1);
+  if (currentBlock) {
+    currentBlock.unreachableAfter = undefined;
+  }
+}
+
+function firstNonWhitespaceColumn(line: string): number | null {
+  const match = /\S/.exec(line);
+  return match ? match.index + 1 : null;
+}
+
+function terminalControlKeywordFor(keyword: string): TerminalControlKeyword | null {
+  return TERMINAL_CONTROL_KEYWORDS.has(keyword as TerminalControlKeyword)
+    ? (keyword as TerminalControlKeyword)
+    : null;
+}
+
+function canTerminateCurrentBranch(
+  keyword: TerminalControlKeyword,
+  blockStack: BlockFrame[],
+): boolean {
+  return keyword === 'return' || blockStack.some((frame) => isLoop(frame.kind));
+}
+
+function toMonacoRelatedInformation(
+  diagnostic: MooDiagnostic,
+  resource: Uri | undefined,
+): MonacoMarker['relatedInformation'] {
+  if (!resource || !diagnostic.relatedInformation) {
+    return undefined;
+  }
+
+  return diagnostic.relatedInformation.map((related) => ({
+    resource,
+    message: related.message,
+    startLineNumber: related.range.startLineNumber,
+    startColumn: related.range.startColumn,
+    endLineNumber: related.range.endLineNumber,
+    endColumn: related.range.endColumn,
+  }));
+}
+
+function toMarkerSeverity(
+  diagnostic: MooDiagnostic,
+  severity: number | MonacoMarkerSeverities,
+): number {
+  if (typeof severity === 'number') {
+    return severity;
+  }
+
+  return diagnostic.severity === 'warning' ? severity.warning : severity.error;
+}
+
+function scanLine(
+  line: string,
+  lineNumber: number,
+  delimiterStack: DelimiterFrame[],
+  state: ScanState,
+): { code: string; diagnostics: MooDiagnostic[] } {
+  let inString = false;
+  let escaped = false;
+  const codeCharacters = [...line];
+  const diagnostics: MooDiagnostic[] = [];
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    const next = line[index + 1];
+    const column = index + 1;
+
+    if (state.inBlockComment) {
+      codeCharacters[index] = ' ';
+
+      if (character === '*' && next === '/') {
+        codeCharacters[index + 1] = ' ';
+        state.inBlockComment = false;
+        index += 1;
+      }
+
+      continue;
+    }
+
+    if (inString) {
+      codeCharacters[index] = ' ';
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (character === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (character === '"') {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (character === '/' && next === '/') {
+      codeCharacters.fill(' ', index);
+      break;
+    }
+
+    if (character === '/' && next === '*') {
+      codeCharacters[index] = ' ';
+      codeCharacters[index + 1] = ' ';
+      state.inBlockComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === '"') {
+      codeCharacters[index] = ' ';
+      inString = true;
+      continue;
+    }
+
+    const closeDelimiter = OPEN_DELIMITERS[character];
+    if (closeDelimiter) {
+      delimiterStack.push({
+        open: character as DelimiterFrame['open'],
+        close: closeDelimiter,
+        lineNumber,
+        startColumn: column,
+      });
+      continue;
+    }
+
+    const openDelimiter = CLOSE_DELIMITERS[character];
+    if (openDelimiter) {
+      const current = delimiterStack.pop();
+
+      if (!current || current.open !== openDelimiter) {
+        diagnostics.push({
+          code: 'unexpected-delimiter',
+          message: `Unexpected ${character} without a matching ${openDelimiter}.`,
+          lineNumber,
+          startColumn: column,
+          endColumn: column + 1,
+        });
+      }
+    }
+  }
+
+  if (inString) {
+    diagnostics.push({
+      code: 'unterminated-string',
+      message: 'String literal is missing a closing quote.',
+      lineNumber,
+      startColumn: line.length,
+      endColumn: line.length + 1,
+    });
+  }
+
+  return { code: codeCharacters.join(''), diagnostics };
+}
+
+function isLoop(kind: BlockKind): boolean {
+  return MOO_BLOCKS[kind].isLoop === true;
+}
+
+function validateUnknownBuiltinCalls(source: string): MooDiagnostic[] {
+  const diagnostics: MooDiagnostic[] = [];
+
+  for (const call of collectPlainFunctionCalls(source)) {
+    if (getMooBuiltinMetadata(call.name)) {
+      continue;
+    }
+
+    const start = positionAtMooOffset(source, call.startOffset);
+    const suggestedName = findLikelyBuiltinName(call.name);
+    diagnostics.push({
+      code: 'unknown-builtin',
+      message: suggestedName
+        ? `${call.name} is not a known ToastStunt builtin. Did you mean ${suggestedName}?`
+        : `${call.name} is not a known ToastStunt builtin.`,
+      suggestedName,
+      lineNumber: start.lineNumber,
+      startColumn: start.column,
+      endColumn: start.column + call.name.length,
+    });
+  }
+
+  return diagnostics;
+}
+
+function validateBuiltinCallArity(source: string): MooDiagnostic[] {
+  const diagnostics: MooDiagnostic[] = [];
+
+  for (const call of collectPlainFunctionCalls(source)) {
+    const metadata = getMooBuiltinMetadata(call.name);
+    if (!metadata) {
+      continue;
+    }
+
+    const argumentCount = countCallArguments(call.argumentSource);
+    if (isBuiltinArityValid(argumentCount, metadata)) {
+      continue;
+    }
+
+    const start = positionAtMooOffset(source, call.startOffset);
+    diagnostics.push({
+      code: 'builtin-arity',
+      message: `${call.name.toLowerCase()} expects ${formatMooBuiltinArity(metadata)}, but got ${argumentCount}.`,
+      lineNumber: start.lineNumber,
+      startColumn: start.column,
+      endColumn: start.column + call.name.length,
+    });
+  }
+
+  return diagnostics;
+}
+
+function collectPlainFunctionCalls(source: string): PlainFunctionCall[] {
+  const masked = maskMooSource(source);
+  const calls: PlainFunctionCall[] = [];
+
+  for (let index = 0; index < masked.length; index += 1) {
+    if (masked[index] !== '(') {
+      continue;
+    }
+
+    const functionIdentifier = readIdentifierBefore(masked, index);
+    if (!functionIdentifier) {
+      continue;
+    }
+
+    if (NON_FUNCTION_CALL_NAMES.has(functionIdentifier.name.toLowerCase())) {
+      continue;
+    }
+
+    if (!isPlainFunctionCallIdentifier(masked, functionIdentifier.startOffset, index)) {
+      continue;
+    }
+
+    const closeOffset = findMatchingCallClose(masked, index);
+    if (closeOffset === null) {
+      continue;
+    }
+
+    calls.push({
+      argumentSource: masked.slice(index + 1, closeOffset),
+      closeOffset,
+      name: functionIdentifier.name,
+      openOffset: index,
+      startOffset: functionIdentifier.startOffset,
+    });
+    index = closeOffset;
+  }
+
+  return calls;
+}
+
+function findLikelyBuiltinName(name: string): string | undefined {
+  const normalizedName = name.toLowerCase();
+  const candidates = BUILTIN_FUNCTIONS.map((builtin) => ({
+    builtin,
+    distance: damerauLevenshteinDistance(normalizedName, builtin.toLowerCase()),
+  }))
+    .filter((candidate) => candidate.distance <= builtinTypoDistanceThreshold(name))
+    .sort(
+      (left, right) => left.distance - right.distance || left.builtin.localeCompare(right.builtin),
+    );
+
+  return candidates[0]?.builtin;
+}
+
+function builtinTypoDistanceThreshold(name: string): number {
+  return name.length <= 4 ? 1 : 2;
+}
+
+function damerauLevenshteinDistance(left: string, right: string): number {
+  const distances: number[][] = Array.from({ length: left.length + 1 }, () =>
+    Array.from({ length: right.length + 1 }, () => 0),
+  );
+
+  for (let row = 0; row <= left.length; row += 1) {
+    distances[row][0] = row;
+  }
+
+  for (let column = 0; column <= right.length; column += 1) {
+    distances[0][column] = column;
+  }
+
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      const substitutionCost = left[row - 1] === right[column - 1] ? 0 : 1;
+      distances[row][column] = Math.min(
+        distances[row - 1][column] + 1,
+        distances[row][column - 1] + 1,
+        distances[row - 1][column - 1] + substitutionCost,
+      );
+
+      if (
+        row > 1 &&
+        column > 1 &&
+        left[row - 1] === right[column - 2] &&
+        left[row - 2] === right[column - 1]
+      ) {
+        distances[row][column] = Math.min(
+          distances[row][column],
+          distances[row - 2][column - 2] + 1,
+        );
+      }
+    }
+  }
+
+  return distances[left.length][right.length];
+}
+
+function validateUndefinedLocals(source: string): MooDiagnostic[] {
+  return findMooUndefinedLocalReferences(source).map((reference) => ({
+    code: 'undefined-local',
+    message: reference.suggestedName
+      ? `${reference.name} is used before it is defined. Did you mean ${reference.suggestedName}?`
+      : `${reference.name} is used before it is defined.`,
+    relatedInformation: undefinedLocalRelatedInformation(reference),
+    suggestedName: reference.suggestedName,
+    suggestedRange: reference.suggestedRange,
+    lineNumber: reference.range.startLineNumber,
+    startColumn: reference.range.startColumn,
+    endColumn: reference.range.endColumn,
+  }));
+}
+
+function undefinedLocalRelatedInformation(
+  reference: ReturnType<typeof findMooUndefinedLocalReferences>[number],
+): MooDiagnosticRelatedInformation[] | undefined {
+  if (reference.suggestedName && reference.suggestedRange) {
+    return [
+      {
+        message: `Similar local ${reference.suggestedName} is defined here.`,
+        range: reference.suggestedRange,
+      },
+    ];
+  }
+
+  if (reference.definitionRange) {
+    return [
+      {
+        message: `First ${reference.name} definition is here.`,
+        range: reference.definitionRange,
+      },
+    ];
+  }
+
+  return undefined;
+}
+
+function validateUnknownLoopLabels(source: string): MooDiagnostic[] {
+  return findMooUnknownLoopLabelReferences(source).map((reference) => ({
+    code: 'unknown-loop-label',
+    message: reference.suggestedName
+      ? `${reference.name} does not name an enclosing while label. Did you mean ${reference.suggestedName}?`
+      : `${reference.name} does not name an enclosing while label.`,
+    relatedInformation: unknownLoopLabelRelatedInformation(reference),
+    suggestedName: reference.suggestedName,
+    suggestedRange: reference.suggestedRange,
+    lineNumber: reference.range.startLineNumber,
+    startColumn: reference.range.startColumn,
+    endColumn: reference.range.endColumn,
+  }));
+}
+
+function unknownLoopLabelRelatedInformation(
+  reference: ReturnType<typeof findMooUnknownLoopLabelReferences>[number],
+): MooDiagnosticRelatedInformation[] | undefined {
+  if (!reference.suggestedName || !reference.suggestedRange) {
+    return undefined;
+  }
+
+  return [
+    {
+      message: `Enclosing while label ${reference.suggestedName} is defined here.`,
+      range: reference.suggestedRange,
+    },
+  ];
+}
+
+function validateUnusedLocals(source: string): MooDiagnostic[] {
+  return findMooUnusedLocalDefinitions(source).map((definition) => ({
+    code: 'unused-local',
+    message: `${definition.name} is defined but never used.`,
+    severity: 'warning',
+    lineNumber: definition.range.startLineNumber,
+    startColumn: definition.range.startColumn,
+    endColumn: definition.range.endColumn,
+  }));
+}
+
+function readIdentifierBefore(
+  source: string,
+  openParenIndex: number,
+): { name: string; startOffset: number } | null {
+  let endIndex = openParenIndex - 1;
+  while (endIndex >= 0 && /\s/.test(source[endIndex])) {
+    endIndex -= 1;
+  }
+
+  let startIndex = endIndex;
+  while (startIndex >= 0 && IDENTIFIER_CHARACTER_PATTERN.test(source[startIndex])) {
+    startIndex -= 1;
+  }
+
+  const identifier = source.slice(startIndex + 1, endIndex + 1);
+  return VALID_IDENTIFIER_PATTERN.test(identifier)
+    ? { name: identifier, startOffset: startIndex + 1 }
+    : null;
+}
+
+function isPlainFunctionCallIdentifier(
+  source: string,
+  identifierStartOffset: number,
+  openParenIndex: number,
+): boolean {
+  if (isWhileLoopLabel(source, identifierStartOffset, openParenIndex)) {
+    return false;
+  }
+
+  const previous = previousNonWhitespaceCharacter(source, identifierStartOffset);
+  return previous !== ':' && previous !== '.' && previous !== '$';
+}
+
+function isWhileLoopLabel(
+  source: string,
+  identifierStartOffset: number,
+  openParenIndex: number,
+): boolean {
+  const lineStartOffset = source.lastIndexOf('\n', openParenIndex) + 1;
+  if (identifierStartOffset < lineStartOffset) {
+    return false;
+  }
+
+  const linePrefix = source.slice(lineStartOffset, openParenIndex);
+  return LABELED_WHILE_PREFIX_PATTERN.test(linePrefix);
+}
+
+function previousNonWhitespaceCharacter(source: string, offset: number): string | null {
+  for (let index = offset - 1; index >= 0; index -= 1) {
+    if (!/\s/.test(source[index])) {
+      return source[index];
+    }
+  }
+
+  return null;
+}
+
+function findMatchingCallClose(source: string, openOffset: number): number | null {
+  let depth = 0;
+
+  for (let index = openOffset; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === '(' || character === '[' || character === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (character !== ')' && character !== ']' && character !== '}') {
+      continue;
+    }
+
+    depth -= 1;
+    if (depth === 0) {
+      return character === ')' ? index : null;
+    }
+  }
+
+  return null;
+}
+
+function countCallArguments(argumentSource: string): number {
+  if (argumentSource.trim() === '') {
+    return 0;
+  }
+
+  let argumentCount = 1;
+  let depth = 0;
+
+  for (const character of argumentSource) {
+    if (character === '(' || character === '[' || character === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (character === ')' || character === ']' || character === '}') {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+
+    if (character === ',' && depth === 0) {
+      argumentCount += 1;
+    }
+  }
+
+  return argumentCount;
+}
+
+function isBuiltinArityValid(argumentCount: number, metadata: MooBuiltinMetadata): boolean {
+  return (
+    argumentCount >= metadata.minArgs && (metadata.maxArgs < 0 || argumentCount <= metadata.maxArgs)
+  );
+}
