@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   mockClient,
   mockCreateConfiguredClient,
+  mockEnsurePushSubscription,
   mockGamepadBackends,
   mockHapticsService,
   mockPreferences,
@@ -20,6 +21,7 @@ const {
     requestNotificationPermission: vi.fn(),
     sendCommand: vi.fn(),
     sendNotification: vi.fn(),
+    sessionReady: false,
     shutdown: vi.fn(),
     stopAllSounds: vi.fn(),
   };
@@ -27,6 +29,7 @@ const {
   return {
     mockClient,
     mockCreateConfiguredClient: vi.fn(() => mockClient),
+    mockEnsurePushSubscription: vi.fn(async () => {}),
     mockGamepadBackends: [] as Array<{ connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }>,
     mockHapticsService: {
       emergencyStop: vi.fn(),
@@ -78,6 +81,10 @@ vi.mock("./hooks/useChannelHistory", () => ({
 
 vi.mock("./hooks/useClientEvent", () => ({
   useClientEvent: vi.fn((_client: unknown, _event: string, initialValue: unknown) => initialValue),
+}));
+
+vi.mock("./webpush", () => ({
+  ensurePushSubscription: mockEnsurePushSubscription,
 }));
 
 vi.mock("./components/input", () => ({
@@ -159,6 +166,7 @@ describe("App haptics backend lifecycle", () => {
     mockGamepadBackends.length = 0;
     mockPreferences.haptics.enabled = false;
     mockPreferences.midi.enabled = false;
+    mockClient.sessionReady = false;
     window.history.replaceState({}, "", "/");
   });
 
@@ -179,5 +187,29 @@ describe("App haptics backend lifecycle", () => {
     view.unmount();
 
     expect(mockHapticsService.unregisterBackend).toHaveBeenCalledWith(backend);
+  });
+
+  it("waits for sessionReady before ensuring a push subscription", async () => {
+    let sessionReadyHandler: (() => void) | undefined;
+    mockClient.once.mockImplementation((event: string, handler: () => void) => {
+      if (event === "sessionReady") {
+        sessionReadyHandler = handler;
+      }
+      return mockClient;
+    });
+
+    const view = render(<App />);
+
+    await waitFor(() => {
+      expect(mockClient.once).toHaveBeenCalledWith("sessionReady", expect.any(Function));
+    });
+    expect(mockEnsurePushSubscription).not.toHaveBeenCalled();
+
+    sessionReadyHandler?.();
+
+    expect(mockEnsurePushSubscription).toHaveBeenCalledWith(mockClient);
+
+    view.unmount();
+    expect(mockClient.off).toHaveBeenCalledWith("sessionReady", sessionReadyHandler);
   });
 });

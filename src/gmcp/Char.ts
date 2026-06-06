@@ -12,6 +12,7 @@ export class GMCPChar extends GMCPPackage {
     this.client.worldData.playerId = data.name;
     this.client.worldData.playerName = data.fullname;
     this.client.emit("statustext", `Logged in as ${data.fullname}`);
+    this.client.markSessionReady();
   }
   // --- Vitals ---
   handleVitals(data: any): void { // Use 'any' for now, define specific interface later if needed

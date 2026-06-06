@@ -25,6 +25,7 @@ import { useChannelHistory } from "./hooks/useChannelHistory";
 import { FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
 import { autoLogService, createAutoLogSessionDraft } from "./logging/AutoLogService";
+import { ensurePushSubscription } from "./webpush";
 
 const WINDOW_TITLE = "Mongoose Client";
 
@@ -170,6 +171,16 @@ function App() {
     if (!client) return;
 
     client.requestNotificationPermission();
+    const ensurePushSubscriptionForSession = () => {
+      ensurePushSubscription(client).catch((error) => {
+        console.error("Failed to ensure push subscription:", error);
+      });
+    };
+    if (client.sessionReady) {
+      ensurePushSubscriptionForSession();
+    } else {
+      client.once("sessionReady", ensurePushSubscriptionForSession);
+    }
 
     // Auto-login from URL params
     const urlParams = new URLSearchParams(window.location.search);
@@ -217,6 +228,7 @@ function App() {
     document.addEventListener("focus", handleFocus);
 
     return () => {
+      client.off("sessionReady", ensurePushSubscriptionForSession);
       window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
       for (const backend of registeredBackends) {
