@@ -269,7 +269,7 @@ describe('MOO Monaco language support', () => {
       { lineNumber: 1, column: 10 },
     );
 
-    const notifyCompletion = completions.suggestions.find((item) => item.label === 'notify');
+    const notifyCompletion = completionByLabel(completions, 'notify');
 
     expect(notifyCompletion).toMatchObject({
       detail: 'MOO verb name',
@@ -389,6 +389,77 @@ describe('MOO Monaco language support', () => {
       endLineNumber: 1,
       startColumn: 3,
       endColumn: 6,
+    });
+  });
+
+  it('defers rich builtin completion metadata until Monaco resolves the item', () => {
+    const provider = createMooCompletionProvider();
+    const completions = provider.provideCompletionItems(
+      {
+        getValue: () => 'not',
+        getLineContent: () => 'not',
+        getWordUntilPosition: () => ({
+          word: 'not',
+          startColumn: 1,
+          endColumn: 4,
+        }),
+      },
+      { lineNumber: 1, column: 4 },
+    );
+    const notifyCompletion = completionByLabel(completions, 'notify');
+
+    expect(notifyCompletion).toMatchObject({
+      label: 'notify',
+      insertText: ['notify(', '$', '{1:player}', ', ', '$', '{2:text}', ')'].join(''),
+    });
+    expect(notifyCompletion).not.toHaveProperty('detail');
+    expect(notifyCompletion).not.toHaveProperty('documentation');
+
+    expect(provider.resolveCompletionItem?.(notifyCompletion, {})).toMatchObject({
+      label: 'notify',
+      detail: 'notify(player, text)',
+      documentation: 'Sends text to a connected player.',
+    });
+  });
+
+  it('resolves MOO keyword, variable, error, and snippet completion metadata on demand', () => {
+    const provider = createMooCompletionProvider();
+    const completions = provider.provideCompletionItems(
+      {
+        getValue: () => '',
+        getLineContent: () => '',
+        getWordUntilPosition: () => ({
+          word: '',
+          startColumn: 1,
+          endColumn: 1,
+        }),
+      },
+      { lineNumber: 1, column: 1 },
+    );
+
+    expect(
+      provider.resolveCompletionItem?.(completionByLabel(completions, 'if'), {}),
+    ).toMatchObject({
+      detail: 'MOO statement keyword',
+      documentation: 'Begins a conditional block.',
+    });
+    expect(
+      provider.resolveCompletionItem?.(completionByLabel(completions, 'player'), {}),
+    ).toMatchObject({
+      detail: 'Builtin variable',
+      documentation: 'The player whose command started this task.',
+    });
+    expect(
+      provider.resolveCompletionItem?.(completionByLabel(completions, 'E_PERM'), {}),
+    ).toMatchObject({
+      detail: 'MOO error constant',
+      documentation: 'Permission denied.',
+    });
+    expect(
+      provider.resolveCompletionItem?.(completionByLabel(completions, 'if block'), {}),
+    ).toMatchObject({
+      detail: 'MOO block snippet',
+      documentation: 'Insert an if/endif block.',
     });
   });
 
@@ -2679,4 +2750,18 @@ function labelsForCompletion(
   );
 
   return completions.suggestions.map((item) => item.label);
+}
+
+function completionByLabel(
+  completions: ReturnType<ReturnType<typeof createMooCompletionProvider>['provideCompletionItems']>,
+  label: string,
+): ReturnType<
+  ReturnType<typeof createMooCompletionProvider>['provideCompletionItems']
+>['suggestions'][number] {
+  const completion = completions.suggestions.find((item) => item.label === label);
+  if (!completion) {
+    throw new Error(`Expected completion ${label}`);
+  }
+
+  return completion;
 }

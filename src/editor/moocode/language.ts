@@ -122,7 +122,7 @@ type CompletionItem = {
   detail?: string;
   insertText: string;
   insertTextRules?: number;
-  documentation: string;
+  documentation?: string;
   range: MonacoRange;
   sortText?: string;
   filterText?: string;
@@ -170,6 +170,7 @@ type CompletionProvider = {
     model: CompletionTextModelLike,
     position: CompletionPosition,
   ) => CompletionList;
+  resolveCompletionItem?: (item: CompletionItem, token?: unknown) => CompletionItem;
 };
 
 type DocumentSymbol = {
@@ -489,6 +490,7 @@ export function createMooCompletionItems(
   context: CompletionContext = 'default',
   locals: Array<{ name: string }> = [],
   loopLabels: Array<{ name: string }> = [],
+  includeRichMetadata = true,
 ): CompletionItem[] {
   const kind = monaco?.languages.CompletionItemKind ?? {
     Constant: 14,
@@ -570,18 +572,22 @@ export function createMooCompletionItems(
   }));
   const functions = BUILTIN_FUNCTIONS.map((name) => {
     const signature = BUILTIN_SNIPPETS[name] ?? createMooBuiltinSnippet(name);
-    const builtinSignature = getMooBuiltinSignature(name);
+    const builtinSignature = includeRichMetadata ? getMooBuiltinSignature(name) : null;
 
     return {
       label: name,
       kind: kind.Function,
-      detail: builtinSignature?.label ?? 'ToastStunt builtin function',
       insertText: signature,
       insertTextRules: snippetRule,
-      documentation: builtinSignature?.documentation ?? 'ToastStunt builtin function',
       range,
       sortText: completionSortText('function', name),
       filterText: completionFilterText('function', name),
+      ...(builtinSignature
+        ? {
+            detail: builtinSignature.label,
+            documentation: builtinSignature.documentation,
+          }
+        : {}),
     };
   });
   const localVariables = locals.map((local, index) => ({
@@ -847,9 +853,11 @@ export function createMooCompletionProvider(monaco?: MonacoLike): CompletionProv
           getCompletionContext(model, position),
           getMooLocalCompletions(model.getValue(), position),
           getMooLoopLabelCompletions(model.getValue(), position),
+          false,
         ),
       };
     },
+    resolveCompletionItem: (item) => resolveMooCompletionItem(item),
   };
 }
 
@@ -1557,6 +1565,114 @@ function createMooVerbCompletionItems(range: MonacoRange, kind: number): Complet
     filterText: completionFilterText('function', name),
     commitCharacters: VERB_COMPLETION_COMMIT_CHARACTERS,
   }));
+}
+
+function resolveMooCompletionItem(item: CompletionItem): CompletionItem {
+  const builtinDocumentation = resolveMooBuiltinCompletionDocumentation(item.label);
+  if (builtinDocumentation) {
+    return {
+      ...item,
+      detail: item.detail ?? builtinDocumentation.detail,
+      documentation: item.documentation ?? builtinDocumentation.documentation,
+    };
+  }
+
+  const snippetDocumentation = resolveMooSnippetCompletionDocumentation(item.label);
+  if (snippetDocumentation) {
+    return {
+      ...item,
+      detail: item.detail ?? snippetDocumentation.detail,
+      documentation: item.documentation ?? snippetDocumentation.documentation,
+    };
+  }
+
+  const catalogDocumentation = resolveMooCatalogCompletionDocumentation(item.label);
+  if (catalogDocumentation) {
+    return {
+      ...item,
+      detail: item.detail ?? catalogDocumentation.detail,
+      documentation: item.documentation ?? catalogDocumentation.documentation,
+    };
+  }
+
+  return item;
+}
+
+function resolveMooBuiltinCompletionDocumentation(
+  label: string,
+): { detail: string; documentation: string } | null {
+  if (!BUILTIN_FUNCTIONS.includes(label as (typeof BUILTIN_FUNCTIONS)[number])) {
+    return null;
+  }
+
+  const builtinSignature = getMooBuiltinSignature(label);
+
+  return {
+    detail: builtinSignature?.label ?? 'ToastStunt builtin function',
+    documentation: builtinSignature?.documentation ?? 'ToastStunt builtin function',
+  };
+}
+
+function resolveMooSnippetCompletionDocumentation(
+  label: string,
+): { detail: string; documentation: string } | null {
+  const snippet = BLOCK_SNIPPETS.find((candidate) => candidate.label === label);
+  if (!snippet) {
+    return null;
+  }
+
+  return {
+    detail: 'MOO block snippet',
+    documentation: snippet.documentation,
+  };
+}
+
+function resolveMooCatalogCompletionDocumentation(
+  label: string,
+): { detail: string; documentation: string } | null {
+  if (STATEMENT_KEYWORDS.includes(label as (typeof STATEMENT_KEYWORDS)[number])) {
+    return {
+      detail: 'MOO statement keyword',
+      documentation: getMooKeywordDocumentation(label) ?? 'MOO statement keyword',
+    };
+  }
+
+  if (BUILTIN_VARIABLES.includes(label as (typeof BUILTIN_VARIABLES)[number])) {
+    return {
+      detail: 'Builtin variable',
+      documentation: getMooBuiltinVariableDocumentation(label) ?? 'MOO builtin variable',
+    };
+  }
+
+  if (ERROR_CONSTANTS.includes(label as (typeof ERROR_CONSTANTS)[number])) {
+    return {
+      detail: 'MOO error constant',
+      documentation: getMooErrorDocumentation(label) ?? 'MOO error constant',
+    };
+  }
+
+  if (SYSTEM_REFERENCES.includes(label as (typeof SYSTEM_REFERENCES)[number])) {
+    return {
+      detail: 'System object reference',
+      documentation: 'MOO system object reference',
+    };
+  }
+
+  if (label === 'any') {
+    return {
+      detail: 'MOO exception selector',
+      documentation: 'Matches any raised MOO exception.',
+    };
+  }
+
+  if (label === 'error') {
+    return {
+      detail: 'MOO exception selector',
+      documentation: 'Matches a generic MOO error value.',
+    };
+  }
+
+  return null;
 }
 
 function completionSortText(tier: CompletionSortTier, label: string): string {
