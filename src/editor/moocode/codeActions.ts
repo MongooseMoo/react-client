@@ -192,18 +192,35 @@ export function getMooQuickFixes(
         break;
       }
       case 'unknown-builtin': {
+        const name = diagnosticText(lines, diagnostic);
         if (!diagnostic.suggestedName) {
+          const dynamicCallEdit = dynamicBuiltinCallEdit(lines, diagnostic, name);
+          if (dynamicCallEdit) {
+            fixes.push({
+              title: `Call ${name} dynamically`,
+              diagnostics: [diagnostic],
+              edit: dynamicCallEdit,
+            });
+          }
           break;
         }
 
         fixes.push({
-          title: `Replace ${diagnosticText(lines, diagnostic)} with ${diagnostic.suggestedName}`,
+          title: `Replace ${name} with ${diagnostic.suggestedName}`,
           diagnostics: [diagnostic],
           edit: {
             range: diagnosticRange(diagnostic),
             text: diagnostic.suggestedName,
           },
         });
+        const dynamicCallEdit = dynamicBuiltinCallEdit(lines, diagnostic, name);
+        if (dynamicCallEdit) {
+          fixes.push({
+            title: `Call ${name} dynamically`,
+            diagnostics: [diagnostic],
+            edit: dynamicCallEdit,
+          });
+        }
         break;
       }
       case 'unknown-loop-label':
@@ -306,6 +323,29 @@ function diagnosticText(lines: string[], diagnostic: MooQuickFixDiagnostic): str
 
 function leadingWhitespace(line: string): string {
   return /^\s*/.exec(line)?.[0] ?? '';
+}
+
+function dynamicBuiltinCallEdit(
+  lines: string[],
+  diagnostic: MooQuickFixDiagnostic,
+  name: string,
+): MooQuickFix['edit'] | null {
+  const call = findBuiltinCallInLine(lines, diagnostic);
+  if (!call) {
+    return null;
+  }
+
+  const argumentCount = countTopLevelArguments(call.line, call.openIndex + 1, call.closeIndex);
+
+  return {
+    range: {
+      startLineNumber: diagnostic.lineNumber,
+      startColumn: diagnostic.startColumn,
+      endLineNumber: diagnostic.lineNumber,
+      endColumn: call.openIndex + 2,
+    },
+    text: `call_function("${name}"${argumentCount === 0 ? '' : ', '}`,
+  };
 }
 
 function extraBuiltinArgumentsEdit(

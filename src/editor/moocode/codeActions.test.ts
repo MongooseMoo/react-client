@@ -249,6 +249,42 @@ describe('MOO code actions', () => {
     });
   });
 
+  it('offers a quick fix to call unknown plain function names dynamically', () => {
+    const source = 'custom_dispatch(player, "hello");';
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Call custom_dispatch dynamically',
+      diagnostics: [expect.objectContaining({ code: 'unknown-builtin' })],
+      edit: {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 17,
+        },
+        text: 'call_function("custom_dispatch", ',
+      },
+    });
+  });
+
+  it('offers a zero-argument dynamic call quick fix for unknown plain function names', () => {
+    const source = 'custom_dispatch();';
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Call custom_dispatch dynamically',
+      diagnostics: [expect.objectContaining({ code: 'unknown-builtin' })],
+      edit: {
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 17,
+        },
+        text: 'call_function("custom_dispatch"',
+      },
+    });
+  });
+
   it('offers a quick fix to remove unknown loop labels from loop control statements', () => {
     const source = ['while outer (valid(player))', '  break missing;', 'endwhile'].join('\n');
 
