@@ -314,6 +314,82 @@ describe('EditorWindow language selection', () => {
     expect(screen.getByRole('status').getAttribute('id')).toBe('editor-statusbar');
   });
 
+  it('enables the richer Monaco language-service UI for MOO sessions', async () => {
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() => expect(editorMock.props?.language).toBe(MOO_LANGUAGE_ID));
+    expect(editorMock.props?.options).toEqual(
+      expect.objectContaining({
+        'semanticHighlighting.enabled': true,
+        acceptSuggestionOnCommitCharacter: true,
+        codeLens: true,
+        folding: true,
+        foldingStrategy: 'auto',
+        hover: expect.objectContaining({ enabled: true }),
+        inlayHints: expect.objectContaining({ enabled: 'on', padding: true }),
+        inlineSuggest: expect.objectContaining({ enabled: true }),
+        lightbulb: expect.objectContaining({ enabled: 'onCode' }),
+        links: true,
+        occurrencesHighlight: 'singleFile',
+        screenReaderAnnounceInlineSuggestion: true,
+        showFoldingControls: 'always',
+        stickyScroll: expect.objectContaining({ enabled: true, defaultModel: 'foldingProviderModel' }),
+        suggestOnTriggerCharacters: true,
+      }),
+    );
+  });
+
+  it('keeps non-MOO editor sessions on the lightweight Monaco option set', async () => {
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=note']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['plain text'],
+          name: 'note',
+          reference: 'note',
+          type: 'string',
+        },
+      });
+    });
+
+    await waitFor(() => expect(editorMock.props?.language).toBe('plaintext'));
+    expect(editorMock.props?.options).toEqual(
+      expect.objectContaining({
+        wordWrap: 'on',
+        quickSuggestions: true,
+      }),
+    );
+    expect(editorMock.props?.options).not.toHaveProperty('codeLens');
+    expect(editorMock.props?.options).not.toHaveProperty('inlayHints');
+    expect(editorMock.props?.options).not.toHaveProperty('semanticHighlighting.enabled');
+  });
+
   it('surfaces semantic warnings with Monaco warning severity', async () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 

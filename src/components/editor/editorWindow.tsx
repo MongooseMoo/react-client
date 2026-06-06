@@ -156,6 +156,16 @@ function EditorWindow() {
       ? formatMooDiagnosticsSummary(mooDiagnosticCounts)
       : undefined;
   const editorAriaLabel = formatEditorAriaLabel(session.reference, editorLanguage);
+  const editorOptions = useMemo(
+    () =>
+      createEditorOptions({
+        accessibilityMode,
+        autocompleteEnabled,
+        ariaLabel: editorAriaLabel,
+        language: editorLanguage,
+      }),
+    [accessibilityMode, autocompleteEnabled, editorAriaLabel, editorLanguage],
+  );
   const showFirstMooDiagnostic = React.useCallback(() => {
     if (!mooDiagnosticTarget) {
       return;
@@ -276,12 +286,7 @@ function EditorWindow() {
         language={editorLanguage}
         value={code}
         onChange={onChanges}
-        options={{
-          wordWrap: 'on',
-          ariaLabel: editorAriaLabel,
-          accessibilitySupport: accessibilityMode ? 'on' : 'off',
-          quickSuggestions: autocompleteEnabled,
-        }}
+        options={editorOptions}
         wrapperProps={{
           'aria-describedby': EDITOR_STATUSBAR_ID,
         }}
@@ -298,6 +303,63 @@ function EditorWindow() {
       />
     </div>
   );
+}
+
+type EditorOptionInputs = {
+  accessibilityMode: boolean;
+  autocompleteEnabled: boolean;
+  ariaLabel: string;
+  language: string;
+};
+
+function createEditorOptions({
+  accessibilityMode,
+  autocompleteEnabled,
+  ariaLabel,
+  language,
+}: EditorOptionInputs): MonacoEditor.IStandaloneEditorConstructionOptions {
+  const baseOptions: MonacoEditor.IStandaloneEditorConstructionOptions = {
+    wordWrap: 'on',
+    ariaLabel,
+    accessibilitySupport: accessibilityMode ? 'on' : 'off',
+    quickSuggestions: autocompleteEnabled,
+  };
+
+  if (language !== MOO_LANGUAGE_ID) {
+    return baseOptions;
+  }
+
+  return {
+    ...baseOptions,
+    'semanticHighlighting.enabled': true,
+    acceptSuggestionOnCommitCharacter: autocompleteEnabled,
+    codeLens: true,
+    folding: true,
+    foldingStrategy: 'auto',
+    hover: {
+      enabled: true,
+    },
+    inlayHints: {
+      enabled: 'on',
+      padding: true,
+    },
+    inlineSuggest: {
+      enabled: autocompleteEnabled,
+      syntaxHighlightingEnabled: true,
+    },
+    lightbulb: {
+      enabled: 'onCode' as MonacoEditor.ShowLightbulbIconMode,
+    },
+    links: true,
+    occurrencesHighlight: 'singleFile',
+    screenReaderAnnounceInlineSuggestion: true,
+    showFoldingControls: 'always',
+    stickyScroll: {
+      enabled: true,
+      defaultModel: 'foldingProviderModel',
+    },
+    suggestOnTriggerCharacters: autocompleteEnabled,
+  };
 }
 
 function formatEditorAriaLabel(sessionReference: string, language: string): string {
