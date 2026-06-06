@@ -62,4 +62,22 @@ describe('MOO code actions', () => {
       }),
     );
   });
+
+  it('offers a quick fix for mismatched block close keywords', () => {
+    const source = ['if (valid(player))', '  notify(player, "ok");', 'endwhile'].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Replace with endif',
+      diagnostics: [expect.objectContaining({ code: 'mismatched-close' })],
+      edit: {
+        range: {
+          startLineNumber: 3,
+          startColumn: 1,
+          endLineNumber: 3,
+          endColumn: 9,
+        },
+        text: 'endif',
+      },
+    });
+  });
 });

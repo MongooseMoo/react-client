@@ -272,6 +272,9 @@ Iterations:
     async Tree-sitter markers arrive, and stays hidden for plaintext sessions.
   - When diagnostics exist, the status summary is a keyboard-reachable button
     that focuses Monaco on the first MOO problem.
+  - Added a quick fix for mismatched block close keywords, so a bad closer like
+    `endwhile` under an `if` can be replaced with `endif` from Monaco's
+    lightbulb actions.
   - Cleaned up editor toolbar buttons with explicit button types and without
     `accessKey` shortcuts that conflict with assistive-technology keymaps.
   - Focused red-to-green gate:

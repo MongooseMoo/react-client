@@ -13,6 +13,7 @@ export type MooDiagnosticCode =
 
 export type MooDiagnostic = {
   code: MooDiagnosticCode;
+  expectedCloseKeyword?: string;
   message: string;
   lineNumber: number;
   startColumn: number;
@@ -115,6 +116,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
       if (open.kind !== closeKind) {
         diagnostics.push({
           code: 'mismatched-close',
+          expectedCloseKeyword: open.closeKeyword,
           message: `${normalized} closes ${closeKind}, but the open block is ${open.kind}.`,
           lineNumber,
           startColumn: keyword.startColumn,

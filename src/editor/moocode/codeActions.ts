@@ -63,6 +63,20 @@ export function getMooQuickFixes(source: string): MooQuickFix[] {
         });
         break;
       }
+      case 'mismatched-close':
+        if (!diagnostic.expectedCloseKeyword) {
+          break;
+        }
+
+        fixes.push({
+          title: `Replace with ${diagnostic.expectedCloseKeyword}`,
+          diagnostics: [diagnostic],
+          edit: {
+            range: diagnosticRange(diagnostic),
+            text: diagnostic.expectedCloseKeyword,
+          },
+        });
+        break;
       case 'unterminated-string':
         fixes.push({
           title: 'Insert closing quote',
@@ -95,6 +109,15 @@ function rangeAtEndOfLine(lines: string[], lineNumber: number): MonacoRange {
     startColumn: column,
     endLineNumber: lineNumber,
     endColumn: column,
+  };
+}
+
+function diagnosticRange(diagnostic: MooDiagnostic): MonacoRange {
+  return {
+    startLineNumber: diagnostic.lineNumber,
+    startColumn: diagnostic.startColumn,
+    endLineNumber: diagnostic.lineNumber,
+    endColumn: diagnostic.endColumn,
   };
 }
 
