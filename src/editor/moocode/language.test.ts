@@ -437,6 +437,15 @@ describe('MOO Monaco language support', () => {
       { lineNumber: 1, column: 1 },
     );
 
+    expect(completionByLabel(completions, 'if')).not.toHaveProperty('detail');
+    expect(completionByLabel(completions, 'if')).not.toHaveProperty('documentation');
+    expect(completionByLabel(completions, 'player')).not.toHaveProperty('detail');
+    expect(completionByLabel(completions, 'player')).not.toHaveProperty('documentation');
+    expect(completionByLabel(completions, 'E_PERM')).not.toHaveProperty('detail');
+    expect(completionByLabel(completions, 'E_PERM')).not.toHaveProperty('documentation');
+    expect(completionByLabel(completions, 'if block')).not.toHaveProperty('detail');
+    expect(completionByLabel(completions, 'if block')).not.toHaveProperty('documentation');
+
     expect(
       provider.resolveCompletionItem?.(completionByLabel(completions, 'if'), {}),
     ).toMatchObject({
@@ -479,18 +488,21 @@ describe('MOO Monaco language support', () => {
       { lineNumber: 3, column: 5 },
     );
 
-    expect(completions.suggestions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          label: 'item',
-          documentation: 'MOO local variable',
-        }),
-        expect.objectContaining({
-          label: 'total',
-          documentation: 'MOO local variable',
-        }),
-      ]),
-    );
+    const itemCompletion = completionByLabel(completions, 'item');
+    const totalCompletion = completionByLabel(completions, 'total');
+
+    expect(itemCompletion).not.toHaveProperty('detail');
+    expect(itemCompletion).not.toHaveProperty('documentation');
+    expect(totalCompletion).not.toHaveProperty('detail');
+    expect(totalCompletion).not.toHaveProperty('documentation');
+    expect(provider.resolveCompletionItem?.(itemCompletion, {})).toMatchObject({
+      detail: 'Local variable',
+      documentation: 'MOO local variable',
+    });
+    expect(provider.resolveCompletionItem?.(totalCompletion, {})).toMatchObject({
+      detail: 'Local variable',
+      documentation: 'MOO local variable',
+    });
   });
 
   it('uses expression completions inside dynamic MOO verb-name targets', () => {
@@ -509,18 +521,17 @@ describe('MOO Monaco language support', () => {
       { lineNumber: 2, column: 12 },
     );
 
-    expect(completions.suggestions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          label: 'verb_name',
-          documentation: 'MOO local variable',
-        }),
-        expect.objectContaining({
-          label: 'if',
-          detail: 'MOO statement keyword',
-        }),
-      ]),
-    );
+    const verbNameCompletion = completionByLabel(completions, 'verb_name');
+    const keywordCompletion = completionByLabel(completions, 'if');
+
+    expect(verbNameCompletion).not.toHaveProperty('documentation');
+    expect(keywordCompletion).not.toHaveProperty('detail');
+    expect(provider.resolveCompletionItem?.(verbNameCompletion, {})).toMatchObject({
+      documentation: 'MOO local variable',
+    });
+    expect(provider.resolveCompletionItem?.(keywordCompletion, {})).toMatchObject({
+      detail: 'MOO statement keyword',
+    });
   });
 
   it('filters completions for error constants, system references, and verb-call contexts', () => {
@@ -572,18 +583,17 @@ describe('MOO Monaco language support', () => {
       { lineNumber: 2, column: 19 },
     );
 
-    expect(completions.suggestions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          label: 'codes',
-          documentation: 'MOO local variable',
-        }),
-        expect.objectContaining({
-          label: 'if',
-          detail: 'MOO statement keyword',
-        }),
-      ]),
-    );
+    const codesCompletion = completionByLabel(completions, 'codes');
+    const keywordCompletion = completionByLabel(completions, 'if');
+
+    expect(codesCompletion).not.toHaveProperty('documentation');
+    expect(keywordCompletion).not.toHaveProperty('detail');
+    expect(provider.resolveCompletionItem?.(codesCompletion, {})).toMatchObject({
+      documentation: 'MOO local variable',
+    });
+    expect(provider.resolveCompletionItem?.(keywordCompletion, {})).toMatchObject({
+      detail: 'MOO statement keyword',
+    });
     expect(completions.suggestions).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -615,19 +625,19 @@ describe('MOO Monaco language support', () => {
       { lineNumber: 3, column: 13 },
     );
 
-    expect(completions.suggestions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          label: 'outer',
-          detail: 'Loop label',
-          documentation: 'Enclosing while label',
-        }),
-        expect.objectContaining({
-          label: 'inner',
-          detail: 'Loop label',
-        }),
-      ]),
-    );
+    const outerCompletion = completionByLabel(completions, 'outer');
+    const innerCompletion = completionByLabel(completions, 'inner');
+
+    expect(outerCompletion).not.toHaveProperty('detail');
+    expect(outerCompletion).not.toHaveProperty('documentation');
+    expect(innerCompletion).not.toHaveProperty('detail');
+    expect(provider.resolveCompletionItem?.(outerCompletion, {})).toMatchObject({
+      detail: 'Loop label',
+      documentation: 'Enclosing while label',
+    });
+    expect(provider.resolveCompletionItem?.(innerCompletion, {})).toMatchObject({
+      detail: 'Loop label',
+    });
     expect(completions.suggestions).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: 'notify' }),

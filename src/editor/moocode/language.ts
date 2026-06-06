@@ -128,6 +128,9 @@ type CompletionItem = {
   filterText?: string;
   preselect?: boolean;
   commitCharacters?: string[];
+  mooCompletionMetadata?: {
+    kind: 'local' | 'loop';
+  };
 };
 
 type CompletionList = {
@@ -519,70 +522,94 @@ export function createMooCompletionItems(
   const statements = STATEMENT_KEYWORDS.map((keyword) => ({
     label: keyword,
     kind: kind.Keyword,
-    detail: 'MOO statement keyword',
     insertText: keyword,
-    documentation: getMooKeywordDocumentation(keyword) ?? 'MOO statement keyword',
     range,
     sortText: completionSortText('keyword', keyword),
     filterText: completionFilterText('keyword', keyword),
+    ...(includeRichMetadata
+      ? {
+          detail: 'MOO statement keyword',
+          documentation: getMooKeywordDocumentation(keyword) ?? 'MOO statement keyword',
+        }
+      : {}),
   }));
   const variables = BUILTIN_VARIABLES.map((variable) => ({
     label: variable,
     kind: kind.Variable,
-    detail: 'Builtin variable',
     insertText: variable,
-    documentation: getMooBuiltinVariableDocumentation(variable) ?? 'MOO builtin variable',
     range,
     sortText: completionSortText('variable', variable),
     filterText: completionFilterText('variable', variable),
     commitCharacters: completionCommitCharacters('variable'),
+    ...(includeRichMetadata
+      ? {
+          detail: 'Builtin variable',
+          documentation: getMooBuiltinVariableDocumentation(variable) ?? 'MOO builtin variable',
+        }
+      : {}),
   }));
   const errors = ERROR_CONSTANTS.map((error) => ({
     label: error,
     kind: kind.Constant,
-    detail: 'MOO error constant',
     insertText: error,
-    documentation: getMooErrorDocumentation(error) ?? 'MOO error constant',
     range,
     sortText: completionSortText('error', error),
     filterText: completionFilterText('error', error),
     commitCharacters: completionCommitCharacters('error'),
+    ...(includeRichMetadata
+      ? {
+          detail: 'MOO error constant',
+          documentation: getMooErrorDocumentation(error) ?? 'MOO error constant',
+        }
+      : {}),
   }));
   const exceptionCodes = [
     {
       label: 'any',
       kind: kind.Keyword,
-      detail: 'MOO exception selector',
       insertText: 'any',
-      documentation: 'Matches any raised MOO exception.',
       range,
       sortText: completionSortText('exception', 'any'),
       filterText: completionFilterText('exception', 'any'),
       commitCharacters: completionCommitCharacters('exception'),
+      ...(includeRichMetadata
+        ? {
+            detail: 'MOO exception selector',
+            documentation: 'Matches any raised MOO exception.',
+          }
+        : {}),
     },
     {
       label: 'error',
       kind: kind.Keyword,
-      detail: 'MOO exception selector',
       insertText: 'error',
-      documentation: 'Matches a generic MOO error value.',
       range,
       sortText: completionSortText('exception', 'error'),
       filterText: completionFilterText('exception', 'error'),
       commitCharacters: completionCommitCharacters('exception'),
+      ...(includeRichMetadata
+        ? {
+            detail: 'MOO exception selector',
+            documentation: 'Matches a generic MOO error value.',
+          }
+        : {}),
     },
     ...errors,
   ];
   const systemReferences = SYSTEM_REFERENCES.map((reference) => ({
     label: reference,
     kind: kind.Variable,
-    detail: 'System object reference',
     insertText: reference,
-    documentation: 'MOO system object reference',
     range,
     sortText: completionSortText('system', reference),
     filterText: completionFilterText('system', reference),
     commitCharacters: completionCommitCharacters('system'),
+    ...(includeRichMetadata
+      ? {
+          detail: 'System object reference',
+          documentation: 'MOO system object reference',
+        }
+      : {}),
   }));
   const functions = BUILTIN_FUNCTIONS.map((name) => {
     const signature = BUILTIN_SNIPPETS[name] ?? createMooBuiltinSnippet(name);
@@ -607,26 +634,36 @@ export function createMooCompletionItems(
   const localVariables = locals.map((local, index) => ({
     label: local.name,
     kind: kind.Variable,
-    detail: 'Local variable',
     insertText: local.name,
-    documentation: 'MOO local variable',
     range,
     sortText: completionSortText('local', local.name),
     filterText: completionFilterText('local', local.name),
     preselect: index === 0,
     commitCharacters: completionCommitCharacters('local'),
+    mooCompletionMetadata: { kind: 'local' as const },
+    ...(includeRichMetadata
+      ? {
+          detail: 'Local variable',
+          documentation: 'MOO local variable',
+        }
+      : {}),
   }));
   const loopLabelItems = loopLabels.map((label, index) => ({
     label: label.name,
     kind: kind.Variable,
-    detail: 'Loop label',
     insertText: label.name,
-    documentation: 'Enclosing while label',
     range,
     sortText: completionSortText('loop', label.name),
     filterText: completionFilterText('loop', label.name),
     preselect: index === 0,
     commitCharacters: completionCommitCharacters('loop'),
+    mooCompletionMetadata: { kind: 'loop' as const },
+    ...(includeRichMetadata
+      ? {
+          detail: 'Loop label',
+          documentation: 'Enclosing while label',
+        }
+      : {}),
   }));
 
   switch (context) {
@@ -643,7 +680,7 @@ export function createMooCompletionItems(
     case 'default':
       return [
         ...localVariables,
-        ...createMooBlockSnippetItems(range, snippetKind, snippetRule),
+        ...createMooBlockSnippetItems(range, snippetKind, snippetRule, includeRichMetadata),
         ...statements,
         ...variables,
         ...errors,
@@ -1598,16 +1635,21 @@ function createMooBlockSnippetItems(
   range: MonacoRange,
   kind: number,
   insertTextRules: number | undefined,
+  includeRichMetadata = true,
 ): CompletionItem[] {
   return BLOCK_SNIPPETS.map((snippet) => ({
     label: snippet.label,
     kind,
-    detail: 'MOO block snippet',
     insertText: snippet.insertText,
     insertTextRules,
-    documentation: snippet.documentation,
     range,
     sortText: completionSortText('snippet', snippet.label),
+    ...(includeRichMetadata
+      ? {
+          detail: 'MOO block snippet',
+          documentation: snippet.documentation,
+        }
+      : {}),
   }));
 }
 
@@ -1626,6 +1668,15 @@ function createMooVerbCompletionItems(range: MonacoRange, kind: number): Complet
 }
 
 function resolveMooCompletionItem(item: CompletionItem): CompletionItem {
+  const semanticDocumentation = resolveMooSemanticCompletionDocumentation(item);
+  if (semanticDocumentation) {
+    return {
+      ...item,
+      detail: item.detail ?? semanticDocumentation.detail,
+      documentation: item.documentation ?? semanticDocumentation.documentation,
+    };
+  }
+
   const builtinDocumentation = resolveMooBuiltinCompletionDocumentation(item.label);
   if (builtinDocumentation) {
     return {
@@ -1654,6 +1705,25 @@ function resolveMooCompletionItem(item: CompletionItem): CompletionItem {
   }
 
   return item;
+}
+
+function resolveMooSemanticCompletionDocumentation(
+  item: CompletionItem,
+): { detail: string; documentation: string } | null {
+  switch (item.mooCompletionMetadata?.kind) {
+    case 'local':
+      return {
+        detail: 'Local variable',
+        documentation: 'MOO local variable',
+      };
+    case 'loop':
+      return {
+        detail: 'Loop label',
+        documentation: 'Enclosing while label',
+      };
+    case undefined:
+      return null;
+  }
 }
 
 function resolveMooBuiltinCompletionDocumentation(
