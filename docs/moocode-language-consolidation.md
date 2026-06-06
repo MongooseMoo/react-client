@@ -192,3 +192,12 @@ Iterations:
   - Existing labels, snippets, and replacement ranges are unchanged.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco on-type formatting:
+  - Added a Monaco `OnTypeFormattingEditProvider` for MOO line formatting after
+    statement and delimiter trigger characters.
+  - On-type formatting uses full-document formatter context, but returns only a
+    current-line edit so typing inside nested blocks fixes indentation without
+    disturbing surrounding code.
+  - Already formatted current lines return no edits.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

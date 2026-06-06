@@ -16,6 +16,7 @@ import {
   createMooInlayHintsProvider,
   createMooLanguageConfiguration,
   createMooMonarchLanguage,
+  createMooOnTypeFormattingEditProvider,
   createMooReferenceProvider,
   createMooRenameProvider,
   createMooSelectionRangeProvider,
@@ -199,6 +200,7 @@ describe('MOO Monaco language support', () => {
         registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerOnTypeFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
         registerSelectionRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
@@ -232,6 +234,7 @@ describe('MOO Monaco language support', () => {
     expect(monaco.languages.registerFoldingRangeProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerHoverProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerInlayHintsProvider).toHaveBeenCalledTimes(1);
+    expect(monaco.languages.registerOnTypeFormattingEditProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerReferenceProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerRenameProvider).toHaveBeenCalledTimes(1);
     expect(monaco.languages.registerSelectionRangeProvider).toHaveBeenCalledTimes(1);
@@ -555,6 +558,50 @@ describe('MOO Monaco language support', () => {
     expect(edits).toEqual([]);
   });
 
+  it('provides Monaco on-type formatting edits for the current MOO line', () => {
+    const provider = createMooOnTypeFormattingEditProvider();
+    const edits = provider.provideOnTypeFormattingEdits(
+      {
+        getValue: () =>
+          ['if (valid(player))', 'notify(player, "ok");', 'endif'].join('\n'),
+      } as never,
+      { lineNumber: 2, column: 22 } as never,
+      ';',
+      { tabSize: 2, insertSpaces: true } as never,
+      {} as never,
+    );
+
+    expect(provider.autoFormatTriggerCharacters).toContain(';');
+    expect(provider.autoFormatTriggerCharacters).toContain(')');
+    expect(edits).toEqual([
+      {
+        range: {
+          startLineNumber: 2,
+          startColumn: 1,
+          endLineNumber: 2,
+          endColumn: 22,
+        },
+        text: '  notify(player, "ok");',
+      },
+    ]);
+  });
+
+  it('does not emit on-type formatting edits when the current line is already formatted', () => {
+    const provider = createMooOnTypeFormattingEditProvider();
+    const edits = provider.provideOnTypeFormattingEdits(
+      {
+        getValue: () =>
+          ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
+      } as never,
+      { lineNumber: 2, column: 24 } as never,
+      ';',
+      { tabSize: 2, insertSpaces: true } as never,
+      {} as never,
+    );
+
+    expect(edits).toEqual([]);
+  });
+
   it('registers range formatting when Monaco exposes it', () => {
     const monaco = {
       languages: {
@@ -595,6 +642,51 @@ describe('MOO Monaco language support', () => {
       MOO_LANGUAGE_ID,
       expect.objectContaining({
         provideDocumentRangeFormattingEdits: expect.any(Function),
+      }),
+    );
+  });
+
+  it('registers on-type formatting when Monaco exposes it', () => {
+    const monaco = {
+      languages: {
+        CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
+        CompletionItemKind: {
+          Constant: 14,
+          Function: 1,
+          Keyword: 17,
+          Variable: 4,
+        },
+        SymbolKind: {
+          Function: 11,
+        },
+        getLanguages: vi.fn(() => [{ id: MOO_LANGUAGE_ID }]),
+        registerCodeActionProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentHighlightProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerOnTypeFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerSelectionRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        setLanguageConfiguration: vi.fn(),
+        setMonarchTokensProvider: vi.fn(),
+      },
+    };
+
+    registerMooLanguage(monaco);
+
+    expect(monaco.languages.registerOnTypeFormattingEditProvider).toHaveBeenCalledWith(
+      MOO_LANGUAGE_ID,
+      expect.objectContaining({
+        autoFormatTriggerCharacters: expect.arrayContaining([';', ')']),
+        provideOnTypeFormattingEdits: expect.any(Function),
       }),
     );
   });

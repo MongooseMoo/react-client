@@ -269,6 +269,10 @@ export type MonacoLike = {
       languageId: string,
       provider: MonacoEditor.languages.InlayHintsProvider,
     ) => { dispose: () => void };
+    registerOnTypeFormattingEditProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.OnTypeFormattingEditProvider,
+    ) => { dispose: () => void };
     registerReferenceProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.ReferenceProvider,
@@ -616,6 +620,29 @@ export function createMooDocumentRangeFormattingEditProvider(): MonacoEditor.lan
   };
 }
 
+export function createMooOnTypeFormattingEditProvider(): MonacoEditor.languages.OnTypeFormattingEditProvider {
+  return {
+    autoFormatTriggerCharacters: [';', ')', ']', '}'],
+    provideOnTypeFormattingEdits: (model, position, _character, options) => {
+      const edit = formatMooCodeRange(
+        model.getValue(),
+        {
+          startLineNumber: position.lineNumber,
+          startColumn: 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column,
+        },
+        {
+          tabSize: options.tabSize,
+          insertSpaces: options.insertSpaces,
+        },
+      );
+
+      return edit ? [edit] : [];
+    },
+  };
+}
+
 export function createMooInlayHintsProvider(
   inlayHintKind: { Parameter: number } = { Parameter: 2 },
 ): MonacoEditor.languages.InlayHintsProvider {
@@ -777,6 +804,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.registerInlayHintsProvider?.(
     MOO_LANGUAGE_ID,
     createMooInlayHintsProvider(monaco.languages.InlayHintKind ?? { Parameter: 2 }),
+  );
+  monaco.languages.registerOnTypeFormattingEditProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooOnTypeFormattingEditProvider(),
   );
   monaco.languages.registerReferenceProvider?.(MOO_LANGUAGE_ID, createMooReferenceProvider());
   monaco.languages.registerRenameProvider?.(MOO_LANGUAGE_ID, createMooRenameProvider());
