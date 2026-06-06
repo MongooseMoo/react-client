@@ -43,6 +43,10 @@ type DelimiterFrame = {
   startColumn: number;
 };
 
+type ScanState = {
+  inBlockComment: boolean;
+};
+
 const LOOP_CONTROL_KEYWORDS = new Set(['break', 'continue']);
 
 const OPEN_DELIMITERS: Record<string, DelimiterFrame['close']> = {
@@ -61,12 +65,13 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
   const diagnostics: MooDiagnostic[] = [];
   const blockStack: BlockFrame[] = [];
   const delimiterStack: DelimiterFrame[] = [];
+  const scanState: ScanState = { inBlockComment: false };
 
   const lines = source.split(/\r\n|\r|\n/);
 
   lines.forEach((line, lineIndex) => {
     const lineNumber = lineIndex + 1;
-    const scan = scanLine(line, lineNumber, delimiterStack);
+    const scan = scanLine(line, lineNumber, delimiterStack, scanState);
     diagnostics.push(...scan.diagnostics);
 
     const keyword = firstMooKeyword(scan.code);
@@ -175,6 +180,7 @@ function scanLine(
   line: string,
   lineNumber: number,
   delimiterStack: DelimiterFrame[],
+  state: ScanState,
 ): { code: string; diagnostics: MooDiagnostic[] } {
   let inString = false;
   let escaped = false;
@@ -185,6 +191,18 @@ function scanLine(
     const character = line[index];
     const next = line[index + 1];
     const column = index + 1;
+
+    if (state.inBlockComment) {
+      codeCharacters[index] = ' ';
+
+      if (character === '*' && next === '/') {
+        codeCharacters[index + 1] = ' ';
+        state.inBlockComment = false;
+        index += 1;
+      }
+
+      continue;
+    }
 
     if (inString) {
       codeCharacters[index] = ' ';
@@ -209,6 +227,14 @@ function scanLine(
     if (character === '/' && next === '/') {
       codeCharacters.fill(' ', index);
       break;
+    }
+
+    if (character === '/' && next === '*') {
+      codeCharacters[index] = ' ';
+      codeCharacters[index + 1] = ' ';
+      state.inBlockComment = true;
+      index += 1;
+      continue;
     }
 
     if (character === '"') {

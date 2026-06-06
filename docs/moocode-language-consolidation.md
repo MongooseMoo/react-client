@@ -287,5 +287,8 @@ Iterations:
   - Added a Monarch block-comment tokenizer state so block comments are
     highlighted consistently with the scanner, diagnostics, completions, hovers,
     and other masked-source language features.
+  - Brought lightweight diagnostics into parity with block comments so comment
+    contents no longer create false loop-control, block-close, or delimiter
+    markers.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/language.test.ts`.

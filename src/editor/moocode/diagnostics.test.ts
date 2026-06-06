@@ -72,6 +72,21 @@ describe('validateMooSyntax', () => {
     );
   });
 
+  it('ignores block comment contents when validating blocks and delimiters', () => {
+    const diagnostics = validateMooSyntax(
+      [
+        '/*',
+        'break;',
+        'endif',
+        'values = {1, 2;',
+        '*/',
+        'notify(player, "ok");',
+      ].join('\n'),
+    );
+
+    expect(diagnostics).toEqual([]);
+  });
+
   it('reports break and continue outside loops', () => {
     const diagnostics = validateMooSyntax('break;\ncontinue outer;');
 
