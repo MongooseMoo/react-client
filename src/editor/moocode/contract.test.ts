@@ -34,4 +34,28 @@ describe('MOO language contract', () => {
     expect(MOO_CLOSE_KEYWORDS.endtry).toBe('try');
     expect(MOO_INDENT_OPEN_KEYWORDS).toContain('finally');
   });
+
+  it('tracks ToastStunt builtin registrations beyond the classic core set', () => {
+    expect(BUILTIN_FUNCTIONS).toEqual(
+      expect.arrayContaining([
+        'argon2',
+        'buffered_output_length',
+        'call_function',
+        'decode_base64',
+        'encode_binary',
+        'file_open',
+        'generate_json',
+        'mapkeys',
+        'parse_ansi',
+        'pcre_match',
+        'sqlite_query',
+        'task_local',
+        'thread_pool',
+        'url_encode',
+        'waif_stats',
+      ]),
+    );
+    expect(new Set(BUILTIN_FUNCTIONS).size).toBe(BUILTIN_FUNCTIONS.length);
+    expect([...BUILTIN_FUNCTIONS]).toEqual([...BUILTIN_FUNCTIONS].sort());
+  });
 });

@@ -301,3 +301,18 @@ Iterations:
     markers.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode/language.test.ts`.
+- 2026-06-06 ToastStunt builtin inventory:
+  - Compared the editor contract against local ToastStunt authored source at
+    `C:\Users\Q\src\toaststunt\src` by extracting static
+    `register_function` and `register_function_with_read_write` names.
+  - Expanded `BUILTIN_FUNCTIONS` from the classic hand-curated core to all 243
+    ToastStunt registrations, keeping `forked` as a compatibility alias.
+  - Added a contract regression covering representative modern ToastStunt
+    subsystems: Argon2, base64, binary encoding, file I/O, JSON, maps, PCRE,
+    sqlite, task locals, background threads, URL encoding, and waifs.
+  - Because the list is shared, the expanded surface now feeds Monaco builtin
+    completions, predefined highlighting, semantic tokens, fallback hover text,
+    and builtin-call context detection.
+  - Focused red-to-green gates:
+    `npm test -- --run src/editor/moocode/contract.test.ts` and
+    `npm test -- --run src/editor/moocode src/components/editor/editorWindow.test.tsx`.
