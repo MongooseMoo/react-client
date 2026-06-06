@@ -30,7 +30,7 @@
     "react-router-dom": "^6.30.3",
     "react-use": "^17.6.0",
     "strip-ansi": "^7.2.0",
-    "tree-sitter-moocode": "github:ctoth/tree-sitter-moocode#v0.1.0",
+    "tree-sitter-moocode": "^0.1.0",
     "turndown": "^7.2.4",
     "vite-plugin-commit-hash": "^1.0.8",
     "web-tree-sitter": "^0.26.9",
