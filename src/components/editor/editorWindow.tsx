@@ -12,6 +12,7 @@ import {
   MOO_LANGUAGE_ID,
   registerMooLanguage,
 } from '../../editor/moocode/language';
+import { toMonacoTreeSitterMarkers } from '../../editor/moocode/treeSitter';
 import { usePreferences } from '../../hooks/usePreferences';
 import type { EditorSession } from '../../mcp';
 import EditorToolbar from './toolbar';
@@ -69,6 +70,27 @@ function EditorWindow() {
       editorLanguage === MOO_LANGUAGE_ID ? toMonacoMarkers(code, monaco.MarkerSeverity.Error) : [];
 
     monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
+
+    if (editorLanguage !== MOO_LANGUAGE_ID) {
+      return;
+    }
+
+    let cancelled = false;
+    void toMonacoTreeSitterMarkers(code, monaco.MarkerSeverity.Error)
+      .then((treeSitterMarkers) => {
+        if (cancelled || editorInstance.current?.getModel() !== model) {
+          return;
+        }
+
+        monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, [...markers, ...treeSitterMarkers]);
+      })
+      .catch((error: unknown) => {
+        console.warn('MOO Tree-sitter diagnostics failed', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [code, editorLanguage]);
 
   useBeforeunload((event) => {

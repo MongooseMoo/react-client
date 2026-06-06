@@ -41,6 +41,8 @@ const editorMock = vi.hoisted(() => ({
   },
 }));
 
+const treeSitterDiagnosticsMock = vi.hoisted(() => vi.fn(() => Promise.resolve([])));
+
 vi.mock('@monaco-editor/react', () => ({
   default: (props: Record<string, unknown>) => {
     editorMock.props = props;
@@ -69,6 +71,10 @@ vi.mock('../../hooks/usePreferences', () => ({
 
 vi.mock('../../editor/monacoLoader', () => ({
   configureMonacoLoader: vi.fn(),
+}));
+
+vi.mock('../../editor/moocode/treeSitter', () => ({
+  toMonacoTreeSitterMarkers: treeSitterDiagnosticsMock,
 }));
 
 class MockBroadcastChannel {
@@ -111,11 +117,26 @@ describe('EditorWindow language selection', () => {
     editorMock.monaco.languages.registerSignatureHelpProvider.mockClear();
     editorMock.monaco.languages.setLanguageConfiguration.mockClear();
     editorMock.monaco.languages.setMonarchTokensProvider.mockClear();
+    treeSitterDiagnosticsMock.mockClear();
+    treeSitterDiagnosticsMock.mockResolvedValue([]);
     MockBroadcastChannel.instances = [];
     vi.stubGlobal('BroadcastChannel', MockBroadcastChannel);
   });
 
   it('uses the MOO Monaco language for moo-code sessions', async () => {
+    const parserMarker = {
+      code: 'parse-error',
+      endColumn: 18,
+      endLineNumber: 2,
+      lineNumber: 2,
+      message: 'Tree-sitter could not parse this MOO syntax.',
+      severity: 8,
+      source: MOO_LANGUAGE_ID,
+      startColumn: 17,
+      startLineNumber: 2,
+    };
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([parserMarker]);
+
     render(
       <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
@@ -143,7 +164,11 @@ describe('EditorWindow language selection', () => {
     expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenLastCalledWith(
       editorMock.model,
       MOO_LANGUAGE_ID,
-      [],
+      [parserMarker],
+    );
+    expect(treeSitterDiagnosticsMock).toHaveBeenCalledWith(
+      ['if (valid(player))', '  notify(player, "ok");', 'endif'].join('\n'),
+      8,
     );
   });
 
@@ -174,5 +199,6 @@ describe('EditorWindow language selection', () => {
       MOO_LANGUAGE_ID,
       [],
     );
+    expect(treeSitterDiagnosticsMock).not.toHaveBeenCalled();
   });
 });

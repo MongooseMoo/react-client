@@ -72,3 +72,16 @@ Iterations:
     `rg "stripLineForStructure|maskStringsAndComments|function firstKeyword|function offsetAt\\(" src/editor/moocode`.
   - Focused gate passed:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Tree-sitter browser parser:
+  - Created and pushed `https://github.com/ctoth/tree-sitter-moocode` with
+    `tree-sitter-moocode.wasm` packaged and tagged at `v0.1.0`.
+  - `tree-sitter-moocode@0.1.0` npm publish is prepared but waiting on an npm
+    one-time password requirement.
+  - Added `web-tree-sitter` and the tagged `tree-sitter-moocode` package to the
+    React client.
+  - Added `src/editor/moocode/treeSitter.ts` as the lazy browser parser facade;
+    it dynamically imports `web-tree-sitter` plus the runtime and MOO parser
+    WASM assets.
+  - Editor markers now show synchronous scanner diagnostics immediately, then
+    merge parser-backed Tree-sitter diagnostics when the parser finishes loading
+    for the current MOO model.
