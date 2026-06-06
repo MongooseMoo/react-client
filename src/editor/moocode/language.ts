@@ -473,6 +473,25 @@ export function createMooCompletionItems(
     documentation: getMooErrorDocumentation(error) ?? 'MOO error constant',
     range,
   }));
+  const exceptionCodes = [
+    {
+      label: 'any',
+      kind: kind.Keyword,
+      detail: 'MOO exception selector',
+      insertText: 'any',
+      documentation: 'Matches any raised MOO exception.',
+      range,
+    },
+    {
+      label: 'error',
+      kind: kind.Keyword,
+      detail: 'MOO exception selector',
+      insertText: 'error',
+      documentation: 'Matches a generic MOO error value.',
+      range,
+    },
+    ...errors,
+  ];
   const systemReferences = SYSTEM_REFERENCES.map((reference) => ({
     label: reference,
     kind: kind.Variable,
@@ -507,6 +526,8 @@ export function createMooCompletionItems(
   switch (context) {
     case 'error':
       return errors;
+    case 'exception':
+      return exceptionCodes;
     case 'system-reference':
       return systemReferences;
     case 'verb':
@@ -967,7 +988,7 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, createMooHoverProvider());
 }
 
-type CompletionContext = 'default' | 'error' | 'system-reference' | 'verb';
+type CompletionContext = 'default' | 'error' | 'exception' | 'system-reference' | 'verb';
 
 function getCompletionContext(
   model: CompletionTextModelLike,
@@ -980,6 +1001,10 @@ function getCompletionContext(
     return 'error';
   }
 
+  if (isExceptionCompletionContext(linePrefix)) {
+    return 'exception';
+  }
+
   if (currentWord.startsWith('$') || /\$[A-Za-z_]*$/.test(linePrefix)) {
     return 'system-reference';
   }
@@ -989,6 +1014,10 @@ function getCompletionContext(
   }
 
   return 'default';
+}
+
+function isExceptionCompletionContext(linePrefix: string): boolean {
+  return /\bexcept\s+(?:[A-Za-z_][\w$]*\s*)?\([^)]*$/i.test(linePrefix);
 }
 
 function isCompletionInMaskedSource(source: string, position: CompletionPosition): boolean {

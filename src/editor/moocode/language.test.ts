@@ -237,6 +237,13 @@ describe('MOO Monaco language support', () => {
     expect(verbLabels).toContain('notify');
     expect(verbLabels).not.toContain('if');
     expect(verbLabels).not.toContain('E_PERM');
+
+    const exceptionLabels = labelsForCompletion(provider, 'except (', 9);
+    expect(exceptionLabels).toContain('any');
+    expect(exceptionLabels).toContain('error');
+    expect(exceptionLabels).toContain('E_PERM');
+    expect(exceptionLabels).not.toContain('notify');
+    expect(exceptionLabels).not.toContain('if');
   });
 
   it('suppresses completions inside comments and string literals', () => {
