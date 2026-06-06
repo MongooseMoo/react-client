@@ -30,6 +30,7 @@ Make the simpleedit Monaco editor syntax-aware for ToastStunt/LambdaMOO code whi
   - unbalanced delimiters
   - `break`/`continue` outside `for` or `while`
 - Wire diagnostics into Monaco model markers for MOO buffers and clear them for non-MOO buffers.
+- Lazy-load the `/editor` route so the Monaco editor wrapper and MOO editor code are not part of the initial app route module.
 
 ## Source Authority
 
@@ -57,6 +58,7 @@ Focused TDD gates added:
 - `src/editor/moocode/language.test.ts`
 - `src/editor/moocode/diagnostics.test.ts`
 - `src/components/editor/editorWindow.test.tsx`
+- `src/routes.test.tsx`
 
 Acceptance gates:
 
