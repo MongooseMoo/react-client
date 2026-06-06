@@ -217,6 +217,7 @@ export type MonacoLike = {
       Constant: number;
       Function: number;
       Keyword: number;
+      Snippet?: number;
       Variable: number;
     };
     SymbolKind?: {
@@ -409,9 +410,11 @@ export function createMooCompletionItems(
     Constant: 14,
     Function: 1,
     Keyword: 17,
+    Snippet: 27,
     Variable: 4,
   };
   const snippetRule = monaco?.languages.CompletionItemInsertTextRule.InsertAsSnippet;
+  const snippetKind = kind.Snippet ?? kind.Keyword;
 
   const statements = STATEMENT_KEYWORDS.map((keyword) => ({
     label: keyword,
@@ -476,7 +479,14 @@ export function createMooCompletionItems(
     case 'verb':
       return functions;
     case 'default':
-      return [...localVariables, ...statements, ...variables, ...errors, ...functions];
+      return [
+        ...localVariables,
+        ...createMooBlockSnippetItems(range, snippetKind, snippetRule),
+        ...statements,
+        ...variables,
+        ...errors,
+        ...functions,
+      ];
   }
 }
 
@@ -975,6 +985,69 @@ const BUILTIN_SNIPPETS: Partial<Record<(typeof BUILTIN_FUNCTIONS)[number], strin
   verb_info: `verb_info(${placeholder(1, 'object')}, ${placeholder(2, 'verb')})`,
 };
 
+const BLOCK_SNIPPETS = [
+  {
+    label: 'if block',
+    insertText: `if (${placeholder(1, 'condition')})\n  ${tabstop(0)}\nendif`,
+    documentation: 'Insert an if/endif block.',
+  },
+  {
+    label: 'if/else',
+    insertText: `if (${placeholder(1, 'condition')})\n  ${placeholder(2, 'then')}\nelse\n  ${tabstop(0)}\nendif`,
+    documentation: 'Insert an if/else/endif block.',
+  },
+  {
+    label: 'for list',
+    insertText: `for ${placeholder(1, 'item')} in (${placeholder(2, 'list')})\n  ${tabstop(0)}\nendfor`,
+    documentation: 'Insert a for/endfor loop over a list expression.',
+  },
+  {
+    label: 'for range',
+    insertText: `for ${placeholder(1, 'index')} in [${placeholder(2, 'start')}..${placeholder(3, 'end')}]\n  ${tabstop(0)}\nendfor`,
+    documentation: 'Insert a for/endfor loop over an inclusive range.',
+  },
+  {
+    label: 'while block',
+    insertText: `while (${placeholder(1, 'condition')})\n  ${tabstop(0)}\nendwhile`,
+    documentation: 'Insert a while/endwhile loop.',
+  },
+  {
+    label: 'fork block',
+    insertText: `fork ${placeholder(1, 'task')} (${placeholder(2, 'seconds')})\n  ${tabstop(0)}\nendfork`,
+    documentation: 'Insert a fork/endfork task block.',
+  },
+  {
+    label: 'try/except',
+    insertText: `try\n  ${tabstop(1)}\nexcept (${placeholder(2, 'any')})\n  ${tabstop(0)}\nendtry`,
+    documentation: 'Insert a try/except/endtry handler.',
+  },
+  {
+    label: 'try/finally',
+    insertText: `try\n  ${placeholder(1, 'body')}\nfinally\n  ${tabstop(0)}\nendtry`,
+    documentation: 'Insert a try/finally/endtry cleanup block.',
+  },
+] as const;
+
+function createMooBlockSnippetItems(
+  range: MonacoRange,
+  kind: number,
+  insertTextRules: number | undefined,
+): CompletionItem[] {
+  return BLOCK_SNIPPETS.map((snippet) => ({
+    label: snippet.label,
+    kind,
+    detail: 'MOO block snippet',
+    insertText: snippet.insertText,
+    insertTextRules,
+    documentation: snippet.documentation,
+    range,
+  }));
+}
+
 function placeholder(index: number, name: string): string {
   return `\${${index}:${name}}`;
+}
+
+function tabstop(index: number): string {
+  return `$${index}`;
 }

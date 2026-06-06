@@ -217,3 +217,11 @@ Iterations:
     block or when the opener appears inside masked comments/strings.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-06 Monaco block snippets:
+  - Added snippet completions for common MOO block forms: `if`, `if/else`,
+    list/range `for`, `while`, `fork`, `try/except`, and `try/finally`.
+  - Snippets use Monaco tab stops and the installed snippet insertion rule, while
+    staying out of error-constant, system-reference, and verb-call completion
+    contexts.
+  - Focused red-to-green gate:
+    `npm test -- --run src/editor/moocode`.

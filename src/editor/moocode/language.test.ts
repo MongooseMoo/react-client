@@ -102,6 +102,60 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('offers block snippets with Monaco tab stops for common MOO forms', () => {
+    const ifBlockSnippet = ['if (', '$', '{1:condition})\n  $0\nendif'].join('');
+    const tryExceptSnippet = ['try\n  $1\nexcept (', '$', '{2:any})\n  $0\nendtry'].join('');
+    const items = createMooCompletionItems(
+      {
+        startLineNumber: 1,
+        endLineNumber: 1,
+        startColumn: 1,
+        endColumn: 3,
+      },
+      {
+        languages: {
+          CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
+          CompletionItemKind: {
+            Constant: 14,
+            Function: 1,
+            Keyword: 17,
+            Snippet: 27,
+            Variable: 4,
+          },
+          getLanguages: vi.fn(() => []),
+          register: vi.fn(),
+          registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+          registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+          setLanguageConfiguration: vi.fn(),
+          setMonarchTokensProvider: vi.fn(),
+        },
+      },
+    );
+
+    expect(items).toEqual(
+      expect.arrayContaining([
+        {
+          label: 'if block',
+          kind: 27,
+          detail: 'MOO block snippet',
+          insertText: ifBlockSnippet,
+          insertTextRules: 4,
+          documentation: 'Insert an if/endif block.',
+          range: {
+            startLineNumber: 1,
+            endLineNumber: 1,
+            startColumn: 1,
+            endColumn: 3,
+          },
+        },
+        expect.objectContaining({
+          label: 'try/except',
+          insertText: tryExceptSnippet,
+        }),
+      ]),
+    );
+  });
+
   it('computes completion replacement ranges from the active model word', () => {
     const provider = createMooCompletionProvider();
     const model = {
