@@ -197,7 +197,21 @@ function getDocumentLinkHover(source: string, position: MooSourcePosition): MooH
     );
   }
 
+  if (link.url.startsWith('moo://verb/')) {
+    return hover(
+      link.range,
+      getMooVerbLabelFromTooltip(link.tooltip) ?? label,
+      ['MOO verb reference.', `Target: ${link.url}`].join('\n'),
+    );
+  }
+
   return null;
+}
+
+function getMooVerbLabelFromTooltip(tooltip: string): string | null {
+  const prefix = 'Open MOO verb ';
+
+  return tooltip.startsWith(prefix) ? tooltip.slice(prefix.length) : null;
 }
 
 function getLocalSymbolHover(source: string, word: MooWord): MooHover | null {

@@ -2383,6 +2383,32 @@ describe('MOO Monaco language support', () => {
       canIncreaseVerbosity: true,
       canDecreaseVerbosity: false,
     });
+    expect(
+      provider.provideHover({ getValue: () => '#123:initialize(player);' } as never, {
+        lineNumber: 1,
+        column: 8,
+      }),
+    ).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 6,
+        endLineNumber: 1,
+        endColumn: 16,
+      },
+      contents: [
+        {
+          value: [
+            '```moocode',
+            '#123:initialize',
+            '```',
+            'MOO verb reference.',
+            'Target: moo://verb/object/123/initialize',
+          ].join('\n'),
+        },
+      ],
+      canIncreaseVerbosity: true,
+      canDecreaseVerbosity: false,
+    });
   });
 
   it('supports Monaco hover verbosity controls for MOO hovers', () => {

@@ -174,6 +174,47 @@ describe('MOO hover service', () => {
     });
   });
 
+  it('describes link-backed static MOO verb calls', () => {
+    expect(getMooHover('#123:initialize(player);', { lineNumber: 1, column: 8 })).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 6,
+        endLineNumber: 1,
+        endColumn: 16,
+      },
+      contents: [
+        {
+          value: [
+            '```moocode',
+            '#123:initialize',
+            '```',
+            'MOO verb reference.',
+            'Target: moo://verb/object/123/initialize',
+          ].join('\n'),
+        },
+      ],
+    });
+    expect(getMooHover('$room:announce("ok");', { lineNumber: 1, column: 9 })).toEqual({
+      range: {
+        startLineNumber: 1,
+        startColumn: 7,
+        endLineNumber: 1,
+        endColumn: 15,
+      },
+      contents: [
+        {
+          value: [
+            '```moocode',
+            '$room:announce',
+            '```',
+            'MOO verb reference.',
+            'Target: moo://verb/system/room/announce',
+          ].join('\n'),
+        },
+      ],
+    });
+  });
+
   it('does not consume invalid dollar-separated text as one hover word', () => {
     expect(getMooHover('$room$extra:announce("bad");', { lineNumber: 1, column: 3 })).toEqual({
       range: {
@@ -188,5 +229,6 @@ describe('MOO hover service', () => {
         },
       ],
     });
+    expect(getMooHover('$room$extra:announce("bad");', { lineNumber: 1, column: 15 })).toBeNull();
   });
 });
