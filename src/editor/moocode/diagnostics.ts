@@ -1,4 +1,5 @@
 import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_LANGUAGE_ID, MOO_MIDDLE_KEYWORDS } from './contract';
+import { firstMooKeyword } from './scanner';
 
 export type MooDiagnosticCode =
   | 'misplaced-middle'
@@ -67,7 +68,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
     const scan = scanLine(line, lineNumber, delimiterStack);
     diagnostics.push(...scan.diagnostics);
 
-    const keyword = firstKeyword(scan.code);
+    const keyword = firstMooKeyword(scan.code);
     if (!keyword) {
       return;
     }
@@ -252,22 +253,6 @@ function scanLine(
   }
 
   return { code: codeCharacters.join(''), diagnostics };
-}
-
-function firstKeyword(
-  code: string,
-): { word: string; startColumn: number; endColumn: number } | null {
-  const match = /^\s*([A-Za-z_][\w$]*)/.exec(code);
-  if (!match?.[1]) {
-    return null;
-  }
-
-  const startColumn = match.index + match[0].indexOf(match[1]) + 1;
-  return {
-    word: match[1],
-    startColumn,
-    endColumn: startColumn + match[1].length,
-  };
 }
 
 function isLoop(kind: BlockKind): boolean {

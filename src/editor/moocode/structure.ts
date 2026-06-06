@@ -1,4 +1,5 @@
 import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_MIDDLE_KEYWORDS, type MooBlockKind } from './contract';
+import { firstMooKeyword, maskMooSource, type MooKeywordMatch } from './scanner';
 
 export type MooStructureRange = {
   startLineNumber: number;
@@ -29,27 +30,17 @@ type BlockFrame = {
   symbol: MooStructureSymbol;
 };
 
-type ScanState = {
-  inBlockComment: boolean;
-};
-
-type KeywordMatch = {
-  word: string;
-  startColumn: number;
-  endColumn: number;
-};
-
 export function analyzeMooStructure(source: string): MooStructure {
   const symbols: MooStructureSymbol[] = [];
   const foldingRanges: MooFoldingRange[] = [];
   const stack: BlockFrame[] = [];
-  const scanState: ScanState = { inBlockComment: false };
   const lines = source.split(/\r\n|\r|\n/);
+  const maskedLines = maskMooSource(source).split(/\r\n|\r|\n/);
 
   lines.forEach((line, lineIndex) => {
     const lineNumber = lineIndex + 1;
-    const code = stripLineForStructure(line, scanState);
-    const keyword = firstKeyword(code);
+    const code = maskedLines[lineIndex] ?? '';
+    const keyword = firstMooKeyword(code);
     if (!keyword) {
       return;
     }
@@ -119,84 +110,7 @@ export function analyzeMooStructure(source: string): MooStructure {
   };
 }
 
-function stripLineForStructure(line: string, state: ScanState): string {
-  let inString = false;
-  let escaped = false;
-  const codeCharacters = [...line];
-
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index];
-    const next = line[index + 1];
-
-    if (state.inBlockComment) {
-      codeCharacters[index] = ' ';
-
-      if (character === '*' && next === '/') {
-        codeCharacters[index + 1] = ' ';
-        state.inBlockComment = false;
-        index += 1;
-      }
-
-      continue;
-    }
-
-    if (inString) {
-      codeCharacters[index] = ' ';
-
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-
-      if (character === '\\') {
-        escaped = true;
-        continue;
-      }
-
-      if (character === '"') {
-        inString = false;
-      }
-
-      continue;
-    }
-
-    if (character === '/' && next === '/') {
-      codeCharacters.fill(' ', index);
-      break;
-    }
-
-    if (character === '/' && next === '*') {
-      codeCharacters[index] = ' ';
-      codeCharacters[index + 1] = ' ';
-      state.inBlockComment = true;
-      index += 1;
-      continue;
-    }
-
-    if (character === '"') {
-      codeCharacters[index] = ' ';
-      inString = true;
-    }
-  }
-
-  return codeCharacters.join('');
-}
-
-function firstKeyword(code: string): KeywordMatch | null {
-  const match = /^\s*([A-Za-z_][\w$]*)/.exec(code);
-  if (!match?.[1]) {
-    return null;
-  }
-
-  const startColumn = match.index + match[0].indexOf(match[1]) + 1;
-  return {
-    word: match[1],
-    startColumn,
-    endColumn: startColumn + match[1].length,
-  };
-}
-
-function describeBlock(kind: MooBlockKind, code: string, keyword: KeywordMatch): string {
+function describeBlock(kind: MooBlockKind, code: string, keyword: MooKeywordMatch): string {
   const remainder = code.slice(keyword.endColumn - 1).trim();
 
   switch (kind) {

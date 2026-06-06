@@ -1,9 +1,5 @@
 import { BUILTIN_FUNCTIONS } from './contract';
-
-export type MooSourcePosition = {
-  lineNumber: number;
-  column: number;
-};
+import { maskMooSource, offsetAtMooPosition, type MooSourcePosition } from './scanner';
 
 export type MooCallContext = {
   functionName: string;
@@ -102,8 +98,8 @@ export function findMooCallContext(
   source: string,
   position: MooSourcePosition,
 ): MooCallContext | null {
-  const maskedSource = maskStringsAndComments(source);
-  const offset = offsetAt(maskedSource, position);
+  const maskedSource = maskMooSource(source);
+  const offset = offsetAtMooPosition(maskedSource, position);
   let activeParameter = 0;
   let nestedDepth = 0;
 
@@ -172,104 +168,6 @@ export function getMooSignatureHelp(
     activeSignature: 0,
     activeParameter: Math.min(context.activeParameter, definition.parameters.length - 1),
   };
-}
-
-function maskStringsAndComments(source: string): string {
-  let inString = false;
-  let inBlockComment = false;
-  let escaped = false;
-  const characters = [...source];
-
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index];
-    const next = source[index + 1];
-
-    if (inBlockComment) {
-      if (character !== '\r' && character !== '\n') {
-        characters[index] = ' ';
-      }
-
-      if (character === '*' && next === '/') {
-        characters[index + 1] = ' ';
-        inBlockComment = false;
-        index += 1;
-      }
-
-      continue;
-    }
-
-    if (inString) {
-      if (character !== '\r' && character !== '\n') {
-        characters[index] = ' ';
-      }
-
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-
-      if (character === '\\') {
-        escaped = true;
-        continue;
-      }
-
-      if (character === '"') {
-        inString = false;
-      }
-
-      continue;
-    }
-
-    if (character === '/' && next === '/') {
-      for (let commentIndex = index; commentIndex < source.length; commentIndex += 1) {
-        const commentCharacter = source[commentIndex];
-        if (commentCharacter === '\r' || commentCharacter === '\n') {
-          break;
-        }
-        characters[commentIndex] = ' ';
-      }
-      continue;
-    }
-
-    if (character === '/' && next === '*') {
-      characters[index] = ' ';
-      characters[index + 1] = ' ';
-      inBlockComment = true;
-      index += 1;
-      continue;
-    }
-
-    if (character === '"') {
-      characters[index] = ' ';
-      inString = true;
-    }
-  }
-
-  return characters.join('');
-}
-
-function offsetAt(source: string, position: MooSourcePosition): number {
-  let lineNumber = 1;
-  let column = 1;
-
-  for (let index = 0; index < source.length; index += 1) {
-    if (lineNumber === position.lineNumber && column === position.column) {
-      return index;
-    }
-
-    const character = source[index];
-    if (character === '\n') {
-      lineNumber += 1;
-      column = 1;
-      continue;
-    }
-
-    if (character !== '\r') {
-      column += 1;
-    }
-  }
-
-  return source.length;
 }
 
 function readIdentifierBefore(source: string, openParenIndex: number): string | null {

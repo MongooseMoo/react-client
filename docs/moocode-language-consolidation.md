@@ -63,3 +63,12 @@ Iterations:
     call-looking text does not create fake parameter hints.
   - Focused red-to-green gate:
     `npm test -- --run src/editor/moocode`.
+- 2026-06-05 scanner consolidation:
+  - Added `src/editor/moocode/scanner.ts` as the single owner for MOO source
+    masking, first-keyword detection, and Monaco-position offset mapping.
+  - Consolidated structure and signature scanning onto the shared helper, and
+    moved diagnostics first-keyword detection to the same owner.
+  - Cleanup search gate passed with zero hits:
+    `rg "stripLineForStructure|maskStringsAndComments|function firstKeyword|function offsetAt\\(" src/editor/moocode`.
+  - Focused gate passed:
+    `npm test -- --run src/editor/moocode`.
