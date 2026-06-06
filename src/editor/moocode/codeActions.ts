@@ -133,6 +133,16 @@ export function getMooQuickFixes(
           },
         });
         break;
+      case 'unknown-loop-label':
+        fixes.push({
+          title: 'Remove unknown loop label',
+          diagnostics: [diagnostic],
+          edit: {
+            range: loopControlLabelRemovalRange(lines, diagnostic),
+            text: '',
+          },
+        });
+        break;
       default:
         break;
     }
@@ -173,6 +183,25 @@ function insertionRange(diagnostic: MooQuickFixDiagnostic): MonacoRange {
     startColumn: diagnostic.startColumn,
     endLineNumber: diagnostic.lineNumber,
     endColumn: diagnostic.startColumn,
+  };
+}
+
+function loopControlLabelRemovalRange(
+  lines: string[],
+  diagnostic: MooQuickFixDiagnostic,
+): MonacoRange {
+  const line = lines[diagnostic.lineNumber - 1] ?? '';
+  const previousColumn = diagnostic.startColumn - 1;
+  const startColumn =
+    previousColumn > 0 && /\s/.test(line[previousColumn - 1])
+      ? previousColumn
+      : diagnostic.startColumn;
+
+  return {
+    startLineNumber: diagnostic.lineNumber,
+    startColumn,
+    endLineNumber: diagnostic.lineNumber,
+    endColumn: diagnostic.endColumn,
   };
 }
 

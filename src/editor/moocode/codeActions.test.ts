@@ -170,4 +170,22 @@ describe('MOO code actions', () => {
       },
     });
   });
+
+  it('offers a quick fix to remove unknown loop labels from loop control statements', () => {
+    const source = ['while outer (valid(player))', '  break missing;', 'endwhile'].join('\n');
+
+    expect(getMooQuickFixes(source)).toContainEqual({
+      title: 'Remove unknown loop label',
+      diagnostics: [expect.objectContaining({ code: 'unknown-loop-label' })],
+      edit: {
+        range: {
+          startLineNumber: 2,
+          startColumn: 8,
+          endLineNumber: 2,
+          endColumn: 16,
+        },
+        text: '',
+      },
+    });
+  });
 });

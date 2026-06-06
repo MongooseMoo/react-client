@@ -980,6 +980,60 @@ describe('MOO Monaco language support', () => {
     });
   });
 
+  it('provides Monaco quick fixes for unknown loop label diagnostics', () => {
+    const provider = createMooCodeActionProvider();
+    const model = {
+      getValue: () => ['while outer (valid(player))', '  continue missing;', 'endwhile'].join('\n'),
+      uri: 'moo://#1:tick',
+    };
+
+    const actions = provider.provideCodeActions(
+      model as never,
+      {} as never,
+      {
+        markers: [
+          {
+            code: 'unknown-loop-label',
+            lineNumber: 2,
+            startLineNumber: 2,
+            endLineNumber: 2,
+            startColumn: 12,
+            endColumn: 19,
+            message: 'missing does not name an enclosing while label.',
+            severity: 8,
+            source: MOO_LANGUAGE_ID,
+          },
+        ],
+        trigger: 1,
+      } as never,
+      {} as never,
+    );
+
+    expect(actions.actions).toContainEqual({
+      title: 'Remove unknown loop label',
+      kind: 'quickfix',
+      isPreferred: true,
+      diagnostics: [expect.objectContaining({ code: 'unknown-loop-label' })],
+      edit: {
+        edits: [
+          {
+            resource: 'moo://#1:tick',
+            textEdit: {
+              range: {
+                startLineNumber: 2,
+                startColumn: 11,
+                endLineNumber: 2,
+                endColumn: 19,
+              },
+              text: '',
+            },
+            versionId: undefined,
+          },
+        ],
+      },
+    });
+  });
+
   it('provides Monaco parameter inlay hints for builtin and verb calls', () => {
     const provider = createMooInlayHintsProvider({ Parameter: 2 });
     const hints = provider.provideInlayHints(
