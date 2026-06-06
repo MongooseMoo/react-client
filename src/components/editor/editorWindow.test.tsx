@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MOO_LANGUAGE_ID } from '../../editor/moocode/language';
+import { MOO_EDITOR_THEME_NAME } from '../../editor/moocode/theme';
 import EditorWindow from './editorWindow';
 
 const editorMock = vi.hoisted(() => ({
@@ -236,6 +237,30 @@ describe('EditorWindow language selection', () => {
     expect(editorMock.setPosition).toHaveBeenCalledWith({ lineNumber: 2, column: 17 });
     expect(editorMock.revealPositionInCenter).toHaveBeenCalledWith({ lineNumber: 2, column: 17 });
     expect(editorMock.focus).toHaveBeenCalled();
+  });
+
+  it('applies the dark MOO Monaco theme to the editor', async () => {
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() => expect(editorMock.props?.theme).toBe(MOO_EDITOR_THEME_NAME));
   });
 
   it('uses plaintext for non-MOO simpleedit sessions', async () => {
