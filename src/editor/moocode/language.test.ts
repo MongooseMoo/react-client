@@ -610,6 +610,38 @@ describe('MOO Monaco language support', () => {
     expect(parseUri).toHaveBeenCalledWith('moo://system/player');
   });
 
+  it('uses ToastStunt builtin targets for builtin call definitions', () => {
+    const parseUri = vi.fn((uri: string) => ({ parsed: uri }));
+    const source = ['notify(player, "hi");', 'player:notify("verb");'].join('\n');
+    const model = {
+      getValue: () => source,
+      uri: 'moo://#1:test',
+    };
+    const declarationProvider = createMooDeclarationProvider({ Uri: { parse: parseUri } });
+    const definitionProvider = createMooDefinitionProvider({ Uri: { parse: parseUri } });
+
+    expect(definitionProvider.provideDefinition(model, { lineNumber: 1, column: 3 })).toEqual({
+      uri: { parsed: 'moo://builtin/notify' },
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 7,
+      },
+    });
+    expect(declarationProvider.provideDeclaration(model, { lineNumber: 1, column: 3 })).toEqual({
+      uri: { parsed: 'moo://builtin/notify' },
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 7,
+      },
+    });
+    expect(definitionProvider.provideDefinition(model, { lineNumber: 2, column: 10 })).toBeNull();
+    expect(parseUri).toHaveBeenCalledWith('moo://builtin/notify');
+  });
+
   it('uses document link targets for object and system reference searches', () => {
     const source = [
       'owner = #123;',
@@ -660,6 +692,55 @@ describe('MOO Monaco language support', () => {
           startColumn: 19,
           endLineNumber: 3,
           endColumn: 26,
+        },
+      },
+    ]);
+  });
+
+  it('uses ToastStunt builtin targets for builtin reference searches', () => {
+    const source = [
+      'notify(player, "hi");',
+      'if (valid(player))',
+      '  notify(player, "still here");',
+      'endif',
+      'player:notify("verb");',
+      '// notify(player, "comment");',
+      '"notify(player, string)"',
+    ].join('\n');
+    const model = {
+      getValue: () => source,
+      uri: 'moo://#1:test',
+    };
+    const referenceProvider = createMooReferenceProvider();
+
+    expect(referenceProvider.provideReferences(model, { lineNumber: 1, column: 3 })).toEqual([
+      {
+        uri: 'moo://#1:test',
+        range: {
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: 1,
+          endColumn: 7,
+        },
+      },
+      {
+        uri: 'moo://#1:test',
+        range: {
+          startLineNumber: 3,
+          startColumn: 3,
+          endLineNumber: 3,
+          endColumn: 9,
+        },
+      },
+    ]);
+    expect(referenceProvider.provideReferences(model, { lineNumber: 2, column: 6 })).toEqual([
+      {
+        uri: 'moo://#1:test',
+        range: {
+          startLineNumber: 2,
+          startColumn: 5,
+          endLineNumber: 2,
+          endColumn: 10,
         },
       },
     ]);

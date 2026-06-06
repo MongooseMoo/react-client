@@ -11,6 +11,7 @@ export {
   STATEMENT_KEYWORDS,
   SYSTEM_REFERENCES,
 } from './contract';
+import { findMooBuiltinAtPosition, findMooBuiltinReferences } from './builtinNavigation';
 import { getMooQuickFixes, type MooQuickFix, type MooQuickFixDiagnostic } from './codeActions';
 import { getMooBuiltinMetadata, getMooBuiltinParameterLabel } from './builtins';
 import { formatMooCode, formatMooCodeRange } from './formatter';
@@ -788,7 +789,14 @@ export function createMooDefinitionProvider(
       }
 
       const link = findMooDocumentLinkAtPosition(model.getValue(), position);
-      return link ? { uri: toMooDefinitionUri(link.url, uriParser), range: link.range } : null;
+      if (link) {
+        return { uri: toMooDefinitionUri(link.url, uriParser), range: link.range };
+      }
+
+      const builtin = findMooBuiltinAtPosition(model.getValue(), position);
+      return builtin
+        ? { uri: toMooDefinitionUri(builtin.url, uriParser), range: builtin.range }
+        : null;
     },
   };
 }
@@ -804,7 +812,14 @@ export function createMooDeclarationProvider(
       }
 
       const link = findMooDocumentLinkAtPosition(model.getValue(), position);
-      return link ? { uri: toMooDefinitionUri(link.url, uriParser), range: link.range } : null;
+      if (link) {
+        return { uri: toMooDefinitionUri(link.url, uriParser), range: link.range };
+      }
+
+      const builtin = findMooBuiltinAtPosition(model.getValue(), position);
+      return builtin
+        ? { uri: toMooDefinitionUri(builtin.url, uriParser), range: builtin.range }
+        : null;
     },
   };
 }
@@ -996,7 +1011,10 @@ export function createMooReferenceProvider(): MonacoEditor.languages.ReferencePr
       const references =
         semanticReferences.length > 0
           ? semanticReferences
-          : findMooDocumentLinkReferences(source, position);
+          : [
+              ...findMooDocumentLinkReferences(source, position),
+              ...findMooBuiltinReferences(source, position),
+            ];
 
       return references.map((reference) => ({
         uri: model.uri,
