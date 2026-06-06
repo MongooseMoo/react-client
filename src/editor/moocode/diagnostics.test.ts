@@ -127,6 +127,46 @@ describe('validateMooSyntax', () => {
     );
   });
 
+  it('reports statements unreachable after terminal control flow within the same branch', () => {
+    const source = [
+      'if (valid(player))',
+      '  return E_PERM;',
+      '  notify(player, "never");',
+      'else',
+      '  notify(player, "ok");',
+      'endif',
+      'while (valid(player))',
+      '  break;',
+      '  suspend(1);',
+      'endwhile',
+    ].join('\n');
+    const diagnostics = validateMooSyntax(source);
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unreachable-statement',
+        lineNumber: 3,
+        startColumn: 3,
+        endColumn: 27,
+        message: 'Statement is unreachable after return.',
+        severity: 'warning',
+      }),
+    );
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unreachable-statement',
+        lineNumber: 9,
+        startColumn: 3,
+        endColumn: 14,
+        message: 'Statement is unreachable after break.',
+        severity: 'warning',
+      }),
+    );
+    expect(
+      diagnostics.filter((diagnostic) => diagnostic.code === 'unreachable-statement'),
+    ).toHaveLength(2);
+  });
+
   it('reports named break and continue targets that do not match an enclosing while label', () => {
     const diagnostics = validateMooSyntax(
       [

@@ -134,6 +134,16 @@ export function getMooQuickFixes(
           },
         });
         break;
+      case 'unreachable-statement':
+        fixes.push({
+          title: 'Remove unreachable statement',
+          diagnostics: [diagnostic],
+          edit: {
+            range: lineRemovalRange(lines, diagnostic.lineNumber),
+            text: '',
+          },
+        });
+        break;
       case 'undefined-local': {
         const line = lines[diagnostic.lineNumber - 1] ?? '';
         const name = diagnosticText(lines, diagnostic);
@@ -275,6 +285,37 @@ function rangeAtStartOfLine(lineNumber: number): MonacoRange {
     startColumn: 1,
     endLineNumber: lineNumber,
     endColumn: 1,
+  };
+}
+
+function lineRemovalRange(lines: string[], lineNumber: number): MonacoRange {
+  if (lineNumber < lines.length) {
+    return {
+      startLineNumber: lineNumber,
+      startColumn: 1,
+      endLineNumber: lineNumber + 1,
+      endColumn: 1,
+    };
+  }
+
+  if (lineNumber > 1) {
+    const previousLine = lines[lineNumber - 2] ?? '';
+    const line = lines[lineNumber - 1] ?? '';
+
+    return {
+      startLineNumber: lineNumber - 1,
+      startColumn: previousLine.length + 1,
+      endLineNumber: lineNumber,
+      endColumn: line.length + 1,
+    };
+  }
+
+  const line = lines[lineNumber - 1] ?? '';
+  return {
+    startLineNumber: lineNumber,
+    startColumn: 1,
+    endLineNumber: lineNumber,
+    endColumn: line.length + 1,
   };
 }
 

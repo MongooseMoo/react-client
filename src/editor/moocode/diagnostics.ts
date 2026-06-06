@@ -31,7 +31,8 @@ export type MooDiagnosticCode =
   | 'unknown-builtin'
   | 'builtin-arity'
   | 'undefined-local'
-  | 'unused-local';
+  | 'unused-local'
+  | 'unreachable-statement';
 
 export type MooDiagnosticSeverity = 'error' | 'warning';
 
@@ -76,8 +77,10 @@ type BlockKind = keyof typeof MOO_BLOCKS;
 type BlockFrame = {
   kind: BlockKind;
   closeKeyword: string;
+  inheritedUnreachableAfter?: TerminalControlKeyword;
   lineNumber: number;
   startColumn: number;
+  unreachableAfter?: TerminalControlKeyword;
 };
 
 type DelimiterFrame = {
@@ -99,9 +102,16 @@ type ScanState = {
   inBlockComment: boolean;
 };
 
+type TerminalControlKeyword = 'return' | 'break' | 'continue';
+
 const VALID_IDENTIFIER_PATTERN = new RegExp(`^${MOO_IDENTIFIER_PATTERN_SOURCE}$`);
 const IDENTIFIER_CHARACTER_PATTERN = /^[A-Za-z0-9_]$/;
 const LOOP_CONTROL_KEYWORDS = new Set(['break', 'continue']);
+const TERMINAL_CONTROL_KEYWORDS = new Set<TerminalControlKeyword>([
+  'return',
+  'break',
+  'continue',
+]);
 const NON_FUNCTION_CALL_NAMES = new Set([
   ...STATEMENT_KEYWORDS.map((keyword) => keyword.toLowerCase()),
   ...OPERATOR_WORDS.map((word) => word.toLowerCase()),
@@ -124,6 +134,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
   const blockStack: BlockFrame[] = [];
   const delimiterStack: DelimiterFrame[] = [];
   const scanState: ScanState = { inBlockComment: false };
+  let topLevelUnreachableAfter: TerminalControlKeyword | undefined;
 
   const lines = source.split(/\r\n|\r|\n/);
 
@@ -133,11 +144,27 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
     diagnostics.push(...scan.diagnostics);
 
     const keyword = firstMooKeyword(scan.code);
-    if (!keyword) {
-      return;
+    const normalized = keyword?.word.toLowerCase();
+    const isBlockBoundary = Boolean(
+      normalized && (MOO_MIDDLE_KEYWORDS[normalized] || MOO_CLOSE_KEYWORDS[normalized]),
+    );
+    const unreachableAfter = currentUnreachableAfter(blockStack, topLevelUnreachableAfter);
+    const startColumn = firstNonWhitespaceColumn(scan.code);
+
+    if (unreachableAfter && startColumn && !isBlockBoundary) {
+      diagnostics.push({
+        code: 'unreachable-statement',
+        message: `Statement is unreachable after ${unreachableAfter}.`,
+        severity: 'warning',
+        lineNumber,
+        startColumn,
+        endColumn: line.length + 1,
+      });
     }
 
-    const normalized = keyword.word.toLowerCase();
+    if (!keyword || !normalized) {
+      return;
+    }
 
     if (LOOP_CONTROL_KEYWORDS.has(normalized) && !blockStack.some((frame) => isLoop(frame.kind))) {
       diagnostics.push({
@@ -158,6 +185,11 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
         startColumn: keyword.startColumn,
         endColumn: keyword.endColumn,
       });
+      return;
+    }
+
+    if (middleKind) {
+      clearCurrentUnreachableAfter(blockStack);
       return;
     }
 
@@ -206,9 +238,19 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
       blockStack.push({
         kind: normalized as BlockKind,
         closeKeyword: openBlock.close,
+        inheritedUnreachableAfter: unreachableAfter,
         lineNumber,
         startColumn: keyword.startColumn,
       });
+    }
+
+    const terminalKeyword = terminalControlKeywordFor(normalized);
+    if (terminalKeyword && canTerminateCurrentBranch(terminalKeyword, blockStack)) {
+      if (blockStack.length > 0) {
+        blockStack[blockStack.length - 1].unreachableAfter = terminalKeyword;
+      } else {
+        topLevelUnreachableAfter = terminalKeyword;
+      }
     }
   });
 
@@ -254,6 +296,43 @@ export function toMonacoMarkers(
     severity: toMarkerSeverity(diagnostic, severity),
     source: MOO_LANGUAGE_ID,
   }));
+}
+
+function currentUnreachableAfter(
+  blockStack: BlockFrame[],
+  topLevelUnreachableAfter: TerminalControlKeyword | undefined,
+): TerminalControlKeyword | undefined {
+  const currentBlock = blockStack.at(-1);
+  return (
+    currentBlock?.unreachableAfter ??
+    currentBlock?.inheritedUnreachableAfter ??
+    topLevelUnreachableAfter
+  );
+}
+
+function clearCurrentUnreachableAfter(blockStack: BlockFrame[]): void {
+  const currentBlock = blockStack.at(-1);
+  if (currentBlock) {
+    currentBlock.unreachableAfter = undefined;
+  }
+}
+
+function firstNonWhitespaceColumn(line: string): number | null {
+  const match = /\S/.exec(line);
+  return match ? match.index + 1 : null;
+}
+
+function terminalControlKeywordFor(keyword: string): TerminalControlKeyword | null {
+  return TERMINAL_CONTROL_KEYWORDS.has(keyword as TerminalControlKeyword)
+    ? (keyword as TerminalControlKeyword)
+    : null;
+}
+
+function canTerminateCurrentBranch(
+  keyword: TerminalControlKeyword,
+  blockStack: BlockFrame[],
+): boolean {
+  return keyword === 'return' || blockStack.some((frame) => isLoop(frame.kind));
 }
 
 function toMonacoRelatedInformation(
