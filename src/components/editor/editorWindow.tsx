@@ -106,10 +106,15 @@ function EditorWindow() {
     }
 
     let cancelled = false;
+    const parserModelVersion = model.getVersionId();
     const parserTimer = window.setTimeout(() => {
       void toMonacoTreeSitterMarkers(code, monaco.MarkerSeverity.Error)
         .then((treeSitterMarkers) => {
-          if (cancelled || editorInstance.current?.getModel() !== model) {
+          if (
+            cancelled ||
+            editorInstance.current?.getModel() !== model ||
+            model.getVersionId() !== parserModelVersion
+          ) {
             return;
           }
 

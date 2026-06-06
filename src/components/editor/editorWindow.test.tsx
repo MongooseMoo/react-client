@@ -8,7 +8,11 @@ import EditorWindow from './editorWindow';
 const editorMock = vi.hoisted(() => ({
   props: undefined as Record<string, unknown> | undefined,
   focus: vi.fn(),
-  model: { uri: 'moo://editor-model' },
+  modelVersion: 1,
+  model: {
+    getVersionId: vi.fn(() => editorMock.modelVersion),
+    uri: 'moo://editor-model',
+  },
   revealPositionInCenter: vi.fn(),
   setPosition: vi.fn(),
   monaco: {
@@ -131,6 +135,8 @@ class MockBroadcastChannel {
 describe('EditorWindow language selection', () => {
   beforeEach(() => {
     editorMock.props = undefined;
+    editorMock.modelVersion = 1;
+    editorMock.model.getVersionId.mockClear();
     editorMock.focus.mockClear();
     editorMock.revealPositionInCenter.mockClear();
     editorMock.setPosition.mockClear();
@@ -467,6 +473,64 @@ describe('EditorWindow language selection', () => {
           }),
         ],
       ),
+    );
+  });
+
+  it('ignores stale parser diagnostics when the Monaco model version changes before parse resolves', async () => {
+    let resolveParserMarkers: (markers: unknown[]) => void = () => {};
+    const parserMarker = {
+      code: 'parse-error',
+      endColumn: 18,
+      endLineNumber: 1,
+      lineNumber: 1,
+      message: 'Tree-sitter could not parse this MOO syntax.',
+      severity: 8,
+      source: MOO_LANGUAGE_ID,
+      startColumn: 17,
+      startLineNumber: 1,
+    };
+    const controlledParserResult = new Promise((resolve) => {
+      resolveParserMarkers = resolve;
+    });
+    treeSitterDiagnosticsMock.mockImplementation((source: string) =>
+      source === 'notify(player, "ok");' ? controlledParserResult : Promise.resolve([]),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(treeSitterDiagnosticsMock).toHaveBeenCalledWith('notify(player, "ok");', 8),
+    );
+
+    editorMock.modelVersion = 2;
+    await act(async () => {
+      resolveParserMarkers([parserMarker]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(editorMock.monaco.editor.setModelMarkers).not.toHaveBeenCalledWith(
+      editorMock.model,
+      MOO_LANGUAGE_ID,
+      [parserMarker],
     );
   });
 
