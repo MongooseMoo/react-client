@@ -9,6 +9,13 @@ on:
   pull_request:
     branches: [ "master" ]
 
+# Cancel an in-progress run when a newer commit is pushed to the same branch/PR,
+# so superseded runs don't pile up. Master pushes group per-SHA so they never cancel
+# each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   test:
 
