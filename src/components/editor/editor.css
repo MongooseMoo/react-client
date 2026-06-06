@@ -91,3 +91,71 @@
   outline: 2px solid #4b8bd6;
   outline-offset: 2px;
 }
+
+.editor-problems {
+  flex-shrink: 0;
+  max-height: 9.5rem;
+  overflow: auto;
+  border-top: 1px solid #d6dce5;
+  background: #fbfcfe;
+}
+
+.editor-problems-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  list-style: none;
+}
+
+.editor-problem-button {
+  display: grid;
+  grid-template-columns: 4.25rem 6.5rem minmax(0, 1fr);
+  width: 100%;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #233143;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.editor-problem-button:hover {
+  border-color: #c9d5e7;
+  background: #f1f5fb;
+}
+
+.editor-problem-button:focus-visible {
+  outline: 2px solid #4b8bd6;
+  outline-offset: 1px;
+}
+
+.editor-problem-severity {
+  font-weight: 600;
+}
+
+.editor-problem-severity-error {
+  color: #b42318;
+}
+
+.editor-problem-severity-warning {
+  color: #996f00;
+}
+
+.editor-problem-location {
+  color: #5b6472;
+  white-space: nowrap;
+}
+
+.editor-problem-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

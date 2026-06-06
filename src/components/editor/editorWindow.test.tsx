@@ -314,7 +314,7 @@ describe('EditorWindow language selection', () => {
     );
     expect(editorMock.props?.wrapperProps).toEqual(
       expect.objectContaining({
-        'aria-describedby': 'editor-statusbar',
+        'aria-describedby': 'editor-statusbar editor-moo-problems',
       }),
     );
     expect(screen.getByRole('status').getAttribute('id')).toBe('editor-statusbar');
@@ -357,7 +357,10 @@ describe('EditorWindow language selection', () => {
         occurrencesHighlight: 'singleFile',
         screenReaderAnnounceInlineSuggestion: true,
         showFoldingControls: 'always',
-        stickyScroll: expect.objectContaining({ enabled: true, defaultModel: 'foldingProviderModel' }),
+        stickyScroll: expect.objectContaining({
+          enabled: true,
+          defaultModel: 'foldingProviderModel',
+        }),
         suggestOnTriggerCharacters: true,
       }),
     );
@@ -564,5 +567,43 @@ describe('EditorWindow language selection', () => {
 
     expect(editorMock.setPosition).toHaveBeenCalledWith({ lineNumber: 2, column: 1 });
     expect(editorMock.revealPositionInCenter).toHaveBeenCalledWith({ lineNumber: 2, column: 1 });
+  });
+
+  it('shows a navigable MOO problems list sorted by severity and source position', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['unused = 1;', 'while (1)', '  notify(player, "tick");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    const problemsRegion = await screen.findByRole('region', { name: 'MOO problems' });
+    const problemButtons = await screen.findAllByRole('button', { name: /^MOO (error|warning)/ });
+
+    expect(problemsRegion.contains(problemButtons[0])).toBe(true);
+    expect(problemButtons.map((button) => button.textContent)).toEqual([
+      'Error Ln 2, Col 1 while is missing a matching endwhile.',
+      'Warning Ln 1, Col 1 unused is defined but never used.',
+    ]);
+
+    fireEvent.click(problemButtons[1]);
+    expect(editorMock.setPosition).toHaveBeenCalledWith({ lineNumber: 1, column: 1 });
+    expect(editorMock.revealPositionInCenter).toHaveBeenCalledWith({ lineNumber: 1, column: 1 });
+    expect(editorMock.focus).toHaveBeenCalled();
   });
 });

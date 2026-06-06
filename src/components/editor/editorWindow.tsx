@@ -40,6 +40,7 @@ type MooDiagnosticCounts = {
 const TREE_SITTER_DIAGNOSTIC_DELAY_MS = 200;
 const MONACO_WARNING_MARKER_SEVERITY = 4;
 const EDITOR_STATUSBAR_ID = 'editor-statusbar';
+const EDITOR_PROBLEMS_ID = 'editor-moo-problems';
 
 function EditorWindow() {
   const location = useLocation();
@@ -53,6 +54,7 @@ function EditorWindow() {
     errorCount: 0,
     warningCount: 0,
   });
+  const [mooDiagnosticMarkers, setMooDiagnosticMarkers] = useState<MonacoEditor.IMarkerData[]>([]);
   const [mooDiagnosticTarget, setMooDiagnosticTarget] = useState<MooDiagnosticTarget | null>(null);
   const [session, setSession] = useState<EditorSession>({
     name: 'none',
@@ -74,6 +76,11 @@ function EditorWindow() {
   const editorLanguage = getEditorLanguageForSessionType(session.type);
   const focusEditor = React.useCallback(() => {
     editorInstance.current?.focus();
+  }, []);
+  const updateMooDiagnostics = React.useCallback((markers: MonacoEditor.IMarkerData[]) => {
+    setMooDiagnosticMarkers(markers);
+    setMooDiagnosticCounts(getMooDiagnosticCounts(markers));
+    setMooDiagnosticTarget(getFirstMooDiagnosticTarget(markers));
   }, []);
 
   useEffect(() => {
@@ -98,8 +105,7 @@ function EditorWindow() {
         : [];
 
     monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
-    setMooDiagnosticCounts(getMooDiagnosticCounts(markers));
-    setMooDiagnosticTarget(getFirstMooDiagnosticTarget(markers));
+    updateMooDiagnostics(markers);
 
     if (editorLanguage !== MOO_LANGUAGE_ID) {
       return;
@@ -120,8 +126,7 @@ function EditorWindow() {
 
           const allMarkers = [...markers, ...treeSitterMarkers];
           monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, allMarkers);
-          setMooDiagnosticCounts(getMooDiagnosticCounts(allMarkers));
-          setMooDiagnosticTarget(getFirstMooDiagnosticTarget(allMarkers));
+          updateMooDiagnostics(allMarkers);
         })
         .catch((error: unknown) => {
           console.warn('MOO Tree-sitter diagnostics failed', error);
@@ -132,7 +137,7 @@ function EditorWindow() {
       cancelled = true;
       window.clearTimeout(parserTimer);
     };
-  }, [code, editorLanguage]);
+  }, [code, editorLanguage, updateMooDiagnostics]);
 
   useBeforeunload((event) => {
     channel.postMessage({ type: 'close', id });
@@ -160,7 +165,18 @@ function EditorWindow() {
     editorLanguage === MOO_LANGUAGE_ID
       ? formatMooDiagnosticsSummary(mooDiagnosticCounts)
       : undefined;
+  const mooDiagnosticProblems = useMemo(
+    () =>
+      editorLanguage === MOO_LANGUAGE_ID
+        ? [...mooDiagnosticMarkers].sort(compareMooDiagnosticMarkers)
+        : [],
+    [editorLanguage, mooDiagnosticMarkers],
+  );
   const editorAriaLabel = formatEditorAriaLabel(session.reference, editorLanguage);
+  const editorDescribedBy =
+    mooDiagnosticProblems.length > 0
+      ? `${EDITOR_STATUSBAR_ID} ${EDITOR_PROBLEMS_ID}`
+      : EDITOR_STATUSBAR_ID;
   const editorOptions = useMemo(
     () =>
       createEditorOptions({
@@ -180,6 +196,13 @@ function EditorWindow() {
     editorInstance.current?.revealPositionInCenter(mooDiagnosticTarget);
     editorInstance.current?.focus();
   }, [mooDiagnosticTarget]);
+  const showMooDiagnostic = React.useCallback((marker: MonacoEditor.IMarkerData) => {
+    const target = getMooDiagnosticTarget(marker);
+
+    editorInstance.current?.setPosition(target);
+    editorInstance.current?.revealPositionInCenter(target);
+    editorInstance.current?.focus();
+  }, []);
   const channel = useMemo(() => new BroadcastChannel('editor'), []);
   const params = new URLSearchParams(location.search);
   const id = decodeURIComponent(params.get('reference') || '');
@@ -293,11 +316,16 @@ function EditorWindow() {
         onChange={onChanges}
         options={editorOptions}
         wrapperProps={{
-          'aria-describedby': EDITOR_STATUSBAR_ID,
+          'aria-describedby': editorDescribedBy,
         }}
         beforeMount={handleEditorBeforeMount}
         onMount={handleEditorMount}
         path={session.reference}
+      />
+      <MooProblemsPanel
+        id={EDITOR_PROBLEMS_ID}
+        markers={mooDiagnosticProblems}
+        onProblemClick={showMooDiagnostic}
       />
       <EditorStatusBar
         id={EDITOR_STATUSBAR_ID}
@@ -307,6 +335,53 @@ function EditorWindow() {
         session={session}
       />
     </div>
+  );
+}
+
+type MooProblemsPanelProps = {
+  id: string;
+  markers: MonacoEditor.IMarkerData[];
+  onProblemClick: (marker: MonacoEditor.IMarkerData) => void;
+};
+
+function MooProblemsPanel({ id, markers, onProblemClick }: MooProblemsPanelProps) {
+  if (markers.length === 0) {
+    return null;
+  }
+
+  return (
+    <section aria-label="MOO problems" className="editor-problems" id={id}>
+      <ol className="editor-problems-list">
+        {markers.map((marker, index) => {
+          const severity = formatMooProblemSeverity(marker);
+          const target = getMooDiagnosticTarget(marker);
+          const label = `MOO ${severity.toLowerCase()} on line ${target.lineNumber}, column ${
+            target.column
+          }: ${marker.message}`;
+
+          return (
+            <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
+              <button
+                aria-label={label}
+                className="editor-problem-button"
+                onClick={() => onProblemClick(marker)}
+                type="button"
+              >
+                <span
+                  className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
+                >
+                  {severity}
+                </span>{' '}
+                <span className="editor-problem-location">
+                  Ln {target.lineNumber}, Col {target.column}
+                </span>{' '}
+                <span className="editor-problem-message">{marker.message}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 
@@ -399,9 +474,13 @@ function getFirstMooDiagnosticTarget(
     return null;
   }
 
+  return getMooDiagnosticTarget(firstMarker);
+}
+
+function getMooDiagnosticTarget(marker: MonacoEditor.IMarkerData): MooDiagnosticTarget {
   return {
-    lineNumber: firstMarker.startLineNumber,
-    column: firstMarker.startColumn,
+    lineNumber: marker.startLineNumber,
+    column: marker.startColumn,
   };
 }
 
@@ -439,6 +518,22 @@ function compareMooDiagnosticMarkers(
 
 function getMooDiagnosticPriority(marker: MonacoEditor.IMarkerData): number {
   return marker.severity === MONACO_WARNING_MARKER_SEVERITY ? 1 : 2;
+}
+
+function formatMooProblemSeverity(marker: MonacoEditor.IMarkerData): 'Error' | 'Warning' {
+  return marker.severity === MONACO_WARNING_MARKER_SEVERITY ? 'Warning' : 'Error';
+}
+
+function formatMooProblemKey(marker: MonacoEditor.IMarkerData, index: number): string {
+  return [
+    marker.startLineNumber,
+    marker.startColumn,
+    marker.endLineNumber,
+    marker.endColumn,
+    marker.severity,
+    marker.message,
+    index,
+  ].join(':');
 }
 
 function pluralize(count: number, singular: string): string {
