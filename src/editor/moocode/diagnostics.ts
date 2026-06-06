@@ -1,4 +1,4 @@
-import { MOO_LANGUAGE_ID } from './language';
+import { MOO_BLOCKS, MOO_CLOSE_KEYWORDS, MOO_LANGUAGE_ID, MOO_MIDDLE_KEYWORDS } from './contract';
 
 export type MooDiagnosticCode =
   | 'misplaced-middle'
@@ -25,7 +25,7 @@ export type MonacoMarker = MooDiagnostic & {
   endLineNumber: number;
 };
 
-type BlockKind = 'if' | 'for' | 'while' | 'fork' | 'try';
+type BlockKind = keyof typeof MOO_BLOCKS;
 
 type BlockFrame = {
   kind: BlockKind;
@@ -39,29 +39,6 @@ type DelimiterFrame = {
   close: ')' | ']' | '}';
   lineNumber: number;
   startColumn: number;
-};
-
-const OPEN_BLOCKS: Record<string, { kind: BlockKind; closeKeyword: string }> = {
-  if: { kind: 'if', closeKeyword: 'endif' },
-  for: { kind: 'for', closeKeyword: 'endfor' },
-  while: { kind: 'while', closeKeyword: 'endwhile' },
-  fork: { kind: 'fork', closeKeyword: 'endfork' },
-  try: { kind: 'try', closeKeyword: 'endtry' },
-};
-
-const CLOSE_BLOCKS: Record<string, BlockKind> = {
-  endif: 'if',
-  endfor: 'for',
-  endwhile: 'while',
-  endfork: 'fork',
-  endtry: 'try',
-};
-
-const MIDDLE_BLOCKS: Record<string, BlockKind> = {
-  elseif: 'if',
-  else: 'if',
-  except: 'try',
-  finally: 'try',
 };
 
 const LOOP_CONTROL_KEYWORDS = new Set(['break', 'continue']);
@@ -107,7 +84,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
       });
     }
 
-    const middleKind = MIDDLE_BLOCKS[normalized];
+    const middleKind = MOO_MIDDLE_KEYWORDS[normalized];
     if (middleKind && blockStack.at(-1)?.kind !== middleKind) {
       diagnostics.push({
         code: 'misplaced-middle',
@@ -119,7 +96,7 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
       return;
     }
 
-    const closeKind = CLOSE_BLOCKS[normalized];
+    const closeKind = MOO_CLOSE_KEYWORDS[normalized];
     if (closeKind) {
       const open = blockStack.pop();
 
@@ -147,11 +124,11 @@ export function validateMooSyntax(source: string): MooDiagnostic[] {
       return;
     }
 
-    const openBlock = OPEN_BLOCKS[normalized];
+    const openBlock = MOO_BLOCKS[normalized as BlockKind];
     if (openBlock) {
       blockStack.push({
-        kind: openBlock.kind,
-        closeKeyword: openBlock.closeKeyword,
+        kind: normalized as BlockKind,
+        closeKeyword: openBlock.close,
         lineNumber,
         startColumn: keyword.startColumn,
       });
@@ -294,5 +271,5 @@ function firstKeyword(
 }
 
 function isLoop(kind: BlockKind): boolean {
-  return kind === 'for' || kind === 'while';
+  return MOO_BLOCKS[kind].isLoop === true;
 }

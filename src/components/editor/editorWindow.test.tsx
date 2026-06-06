@@ -14,6 +14,9 @@ const editorMock = vi.hoisted(() => ({
       setModelMarkers: vi.fn(),
     },
     MarkerSeverity: { Error: 8 },
+    loader: {
+      config: vi.fn(),
+    },
     languages: {
       CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
       CompletionItemKind: {
@@ -41,6 +44,7 @@ vi.mock('@monaco-editor/react', () => ({
     }, [onMount]);
     return <div data-testid="monaco-editor" />;
   },
+  loader: editorMock.monaco.loader,
 }));
 
 vi.mock('../../hooks/usePreferences', () => ({
@@ -53,6 +57,10 @@ vi.mock('../../hooks/usePreferences', () => ({
     },
     vi.fn(),
   ],
+}));
+
+vi.mock('../../editor/monacoLoader', () => ({
+  configureMonacoLoader: vi.fn(),
 }));
 
 class MockBroadcastChannel {

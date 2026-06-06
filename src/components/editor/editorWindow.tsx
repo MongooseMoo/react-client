@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useBeforeunload } from 'react-beforeunload';
 import { useLocation } from 'react-router-dom';
 import { useTitle } from 'react-use';
+import { configureMonacoLoader } from '../../editor/monacoLoader';
 import { toMonacoMarkers } from '../../editor/moocode/diagnostics';
 import {
   getEditorLanguageForSessionType,
@@ -16,6 +17,8 @@ import type { EditorSession } from '../../mcp';
 import EditorToolbar from './toolbar';
 import { EditorStatusBar } from './statusbar';
 import './editor.css'; // Import the new CSS file
+
+configureMonacoLoader();
 
 export enum DocumentState {
   Unchanged,
