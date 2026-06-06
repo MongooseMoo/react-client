@@ -273,6 +273,10 @@ export type MonacoLike = {
       languageId: string,
       provider: MonacoEditor.languages.DeclarationProvider,
     ) => { dispose: () => void };
+    registerImplementationProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.ImplementationProvider,
+    ) => { dispose: () => void };
     registerDocumentHighlightProvider?: (
       languageId: string,
       provider: MonacoEditor.languages.DocumentHighlightProvider,
@@ -342,6 +346,10 @@ export type MonacoLike = {
     registerSignatureHelpProvider?: (
       languageId: string,
       provider: SignatureHelpProvider,
+    ) => { dispose: () => void };
+    registerTypeDefinitionProvider?: (
+      languageId: string,
+      provider: MonacoEditor.languages.TypeDefinitionProvider,
     ) => { dispose: () => void };
     setLanguageConfiguration: (languageId: string, config: MooLanguageConfiguration) => void;
     setMonarchTokensProvider: (languageId: string, language: MooMonarchLanguage) => void;
@@ -782,22 +790,7 @@ export function createMooDefinitionProvider(
   uriParser?: MooUriParser,
 ): MonacoEditor.languages.DefinitionProvider {
   return {
-    provideDefinition: (model, position) => {
-      const definition = findMooDefinition(model.getValue(), position);
-      if (definition) {
-        return { uri: model.uri, range: definition.range };
-      }
-
-      const link = findMooDocumentLinkAtPosition(model.getValue(), position);
-      if (link) {
-        return { uri: toMooDefinitionUri(link.url, uriParser), range: link.range };
-      }
-
-      const builtin = findMooBuiltinAtPosition(model.getValue(), position);
-      return builtin
-        ? { uri: toMooDefinitionUri(builtin.url, uriParser), range: builtin.range }
-        : null;
-    },
+    provideDefinition: (model, position) => provideMooTargetLocation(model, position, uriParser),
   };
 }
 
@@ -805,23 +798,46 @@ export function createMooDeclarationProvider(
   uriParser?: MooUriParser,
 ): MonacoEditor.languages.DeclarationProvider {
   return {
-    provideDeclaration: (model, position) => {
-      const definition = findMooDefinition(model.getValue(), position);
-      if (definition) {
-        return { uri: model.uri, range: definition.range };
-      }
-
-      const link = findMooDocumentLinkAtPosition(model.getValue(), position);
-      if (link) {
-        return { uri: toMooDefinitionUri(link.url, uriParser), range: link.range };
-      }
-
-      const builtin = findMooBuiltinAtPosition(model.getValue(), position);
-      return builtin
-        ? { uri: toMooDefinitionUri(builtin.url, uriParser), range: builtin.range }
-        : null;
-    },
+    provideDeclaration: (model, position) => provideMooTargetLocation(model, position, uriParser),
   };
+}
+
+export function createMooImplementationProvider(
+  uriParser?: MooUriParser,
+): MonacoEditor.languages.ImplementationProvider {
+  return {
+    provideImplementation: (model, position) =>
+      provideMooTargetLocation(model, position, uriParser),
+  };
+}
+
+export function createMooTypeDefinitionProvider(
+  uriParser?: MooUriParser,
+): MonacoEditor.languages.TypeDefinitionProvider {
+  return {
+    provideTypeDefinition: (model, position) =>
+      provideMooTargetLocation(model, position, uriParser),
+  };
+}
+
+function provideMooTargetLocation(
+  model: TextModelValueLike,
+  position: CompletionPosition,
+  uriParser?: MooUriParser,
+): MonacoEditor.languages.Location | null {
+  const source = model.getValue();
+  const definition = findMooDefinition(source, position);
+  if (definition) {
+    return { uri: model.uri as MonacoEditor.Uri, range: definition.range };
+  }
+
+  const link = findMooDocumentLinkAtPosition(source, position);
+  if (link) {
+    return { uri: toMooDefinitionUri(link.url, uriParser), range: link.range };
+  }
+
+  const builtin = findMooBuiltinAtPosition(source, position);
+  return builtin ? { uri: toMooDefinitionUri(builtin.url, uriParser), range: builtin.range } : null;
 }
 
 function toMooDefinitionUri(uri: string, uriParser?: MooUriParser): MonacoEditor.Uri {
@@ -1142,6 +1158,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
     MOO_LANGUAGE_ID,
     createMooDefinitionProvider(monaco),
   );
+  monaco.languages.registerImplementationProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooImplementationProvider(monaco),
+  );
   monaco.languages.registerDocumentHighlightProvider?.(
     MOO_LANGUAGE_ID,
     createMooDocumentHighlightProvider(
@@ -1195,6 +1215,10 @@ export function registerMooLanguage(monaco: MonacoLike) {
   monaco.languages.registerSignatureHelpProvider?.(
     MOO_LANGUAGE_ID,
     createMooSignatureHelpProvider(),
+  );
+  monaco.languages.registerTypeDefinitionProvider?.(
+    MOO_LANGUAGE_ID,
+    createMooTypeDefinitionProvider(monaco),
   );
   monaco.languages.registerHoverProvider(MOO_LANGUAGE_ID, createMooHoverProvider());
 }

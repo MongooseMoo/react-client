@@ -17,6 +17,7 @@ import {
   createMooDocumentSymbolProvider,
   createMooFoldingRangeProvider,
   createMooHoverProvider,
+  createMooImplementationProvider,
   createMooInlineCompletionsProvider,
   createMooInlayHintsProvider,
   createMooLanguageConfiguration,
@@ -28,6 +29,7 @@ import {
   createMooRenameProvider,
   createMooSelectionRangeProvider,
   createMooSemanticTokensProvider,
+  createMooTypeDefinitionProvider,
   getEditorLanguageForSessionType,
   registerMooLanguage,
 } from './language';
@@ -640,6 +642,51 @@ describe('MOO Monaco language support', () => {
     });
     expect(definitionProvider.provideDefinition(model, { lineNumber: 2, column: 10 })).toBeNull();
     expect(parseUri).toHaveBeenCalledWith('moo://builtin/notify');
+  });
+
+  it('uses the same MOO targets for Monaco implementation and type-definition navigation', () => {
+    const parseUri = vi.fn((uri: string) => ({ parsed: uri }));
+    const source = ['total = 0;', 'notify(player, total);', 'owner = #123;'].join('\n');
+    const model = {
+      getValue: () => source,
+      uri: 'moo://#1:test',
+    };
+    const implementationProvider = createMooImplementationProvider({ Uri: { parse: parseUri } });
+    const typeDefinitionProvider = createMooTypeDefinitionProvider({ Uri: { parse: parseUri } });
+
+    expect(
+      implementationProvider.provideImplementation(model, { lineNumber: 2, column: 18 }),
+    ).toEqual({
+      uri: 'moo://#1:test',
+      range: {
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 6,
+      },
+    });
+    expect(
+      implementationProvider.provideImplementation(model, { lineNumber: 2, column: 3 }),
+    ).toEqual({
+      uri: { parsed: 'moo://builtin/notify' },
+      range: {
+        startLineNumber: 2,
+        startColumn: 1,
+        endLineNumber: 2,
+        endColumn: 7,
+      },
+    });
+    expect(
+      typeDefinitionProvider.provideTypeDefinition(model, { lineNumber: 3, column: 10 }),
+    ).toEqual({
+      uri: { parsed: 'moo://object/123' },
+      range: {
+        startLineNumber: 3,
+        startColumn: 9,
+        endLineNumber: 3,
+        endColumn: 13,
+      },
+    });
   });
 
   it('uses document link targets for object and system reference searches', () => {
@@ -1825,6 +1872,57 @@ describe('MOO Monaco language support', () => {
       expect.objectContaining({
         autoFormatTriggerCharacters: expect.arrayContaining([';', ')']),
         provideOnTypeFormattingEdits: expect.any(Function),
+      }),
+    );
+  });
+
+  it('registers implementation and type-definition navigation when Monaco exposes them', () => {
+    const monaco = {
+      languages: {
+        CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
+        CompletionItemKind: {
+          Constant: 14,
+          Function: 1,
+          Keyword: 17,
+          Variable: 4,
+        },
+        SymbolKind: {
+          Function: 11,
+        },
+        getLanguages: vi.fn(() => [{ id: MOO_LANGUAGE_ID }]),
+        registerCodeActionProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentHighlightProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentSymbolProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentSemanticTokensProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerDocumentFormattingEditProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerFoldingRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerHoverProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerImplementationProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerInlayHintsProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerReferenceProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerRenameProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerSelectionRangeProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerSignatureHelpProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        registerTypeDefinitionProvider: vi.fn(() => ({ dispose: vi.fn() })),
+        setLanguageConfiguration: vi.fn(),
+        setMonarchTokensProvider: vi.fn(),
+      },
+    };
+
+    registerMooLanguage(monaco);
+
+    expect(monaco.languages.registerImplementationProvider).toHaveBeenCalledWith(
+      MOO_LANGUAGE_ID,
+      expect.objectContaining({
+        provideImplementation: expect.any(Function),
+      }),
+    );
+    expect(monaco.languages.registerTypeDefinitionProvider).toHaveBeenCalledWith(
+      MOO_LANGUAGE_ID,
+      expect.objectContaining({
+        provideTypeDefinition: expect.any(Function),
       }),
     );
   });
