@@ -22,7 +22,6 @@ function createMockClient() {
     },
     sendCommand: vi.fn(),
     worldData: {
-      liveKitTokens: [],
       playerId: "codex",
       playerName: "codex",
       roomId: "101",

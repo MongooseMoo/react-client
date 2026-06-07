@@ -16,7 +16,6 @@ function createMockClient() {
     emit: vi.fn(),
     sendGmcp: vi.fn(),
     worldData: {
-      liveKitTokens: [],
       playerId: "",
       playerName: "",
       roomId: "",

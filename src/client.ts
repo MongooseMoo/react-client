@@ -40,7 +40,6 @@ import type {
 } from "./gmcp/Client/Spatial";
 
 export interface WorldData {
-  liveKitTokens: string[];
   playerId: string;
   playerName: string;
   roomId: string;
@@ -103,7 +102,6 @@ class MudClient extends EventEmitter {
     playerId: "",
     playerName: "",
     roomId: "",
-    liveKitTokens: [],
     roomPlayers: [], // Initialized as RoomPlayer[]
     spatialEntities: {},
     spatialEmitters: {},
