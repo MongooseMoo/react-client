@@ -4,6 +4,7 @@ import { RemoteAudioTrack, Track } from "livekit-client";
 import { LiveKitSpatialAudioBridge } from "../audio/LiveKitSpatialAudioBridge";
 import MudClient from "../client";
 import type { SpatialEntity } from "../gmcp/Client/Spatial";
+import { useSpatialStore } from "../stores/spatialStore";
 
 const serverUrl = "wss://mongoose-67t79p35.livekit.cloud";
 
@@ -18,7 +19,7 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
   if (!bridgeRef.current) {
     bridgeRef.current = new LiveKitSpatialAudioBridge(
       client.cacophony,
-      (participantId) => client.worldData.spatialEntities[participantId]?.position,
+      (participantId) => useSpatialStore.getState().spatialEntities[participantId]?.position,
     );
   }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { announce } from "@react-aria/live-announcer";
-import MudClient from "../client";
-import { preferencesStore, NavigationKeyScheme } from "../PreferencesStore";
+import type MudClient from "../client";
+import { usePreferences, type NavigationKeyScheme } from "../stores/preferencesStore";
 
 const navigationKeyMaps: Record<NavigationKeyScheme, { up: string; down: string; left: string; right: string }> = {
   jkli: { up: "i", down: "k", left: "j", right: "l" },
@@ -480,7 +480,7 @@ export const useChannelHistory = (client: MudClient | null) => {
       }
 
       // Alt+letter: change buffers (using configured key scheme)
-      const scheme = preferencesStore.getState().keyboard.navigationKeyScheme;
+      const scheme = usePreferences.getState().keyboard.navigationKeyScheme;
       const navKeys = navigationKeyMaps[scheme];
 
       if (matchesNavKey(e, navKeys.left) && e.altKey && !e.ctrlKey && !e.shiftKey) {

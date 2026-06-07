@@ -1,5 +1,5 @@
 import type { MidiMessage, MidiNote } from "../../MidiService";
-import { preferencesStore } from "../../PreferencesStore";
+import { usePreferences } from "../../stores/preferencesStore";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export class GMCPMessageClientMidiNote extends GMCPMessage {
@@ -50,7 +50,7 @@ export class GMCPClientMidi extends GMCPPackage {
   private hasOutputDeviceConnected = false;
 
   get enabled(): boolean {
-    return preferencesStore.getState().midi.enabled;
+    return usePreferences.getState().midi.enabled;
   }
 
   constructor(client: any) {

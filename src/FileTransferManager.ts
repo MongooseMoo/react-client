@@ -6,6 +6,7 @@ import {
   FileTransferOffer,
 } from "./gmcp/Client/FileTransfer";
 import { FileTransferStore, FileMetadata } from "./FileTransferStore";
+import { useSessionStore } from "./stores/sessionStore";
 
 export class FileTransferError extends Error {
   constructor(public code: string, message: string) {
@@ -661,8 +662,8 @@ export default class FileTransferManager extends EventEmitter {
     }
 
     // Clean up any ongoing transfers
-    [...this.outgoingTransfers.keys()].forEach(hash => this.cancelTransfer(hash));
-    [...this.incomingTransfers.keys()].forEach(hash => this.cancelTransfer(hash));
+    [...this.outgoingTransfers.keys()].forEach((hash) => { this.cancelTransfer(hash); });
+    [...this.incomingTransfers.keys()].forEach((hash) => { this.cancelTransfer(hash); });
 
     // Clear all maps
     this.incomingTransfers.clear();
@@ -693,8 +694,9 @@ export default class FileTransferManager extends EventEmitter {
           console.error("[FileTransferManager] Failed to delete file from store:", err)
         );
       }
-      this.client.onFileTransferCancel(this.client.worldData.playerId, hash);
-      this.gmcpFileTransfer.sendCancel(this.client.worldData.playerId, hash);
+      const playerId = useSessionStore.getState().playerId;
+      this.client.onFileTransferCancel(playerId, hash);
+      this.gmcpFileTransfer.sendCancel(playerId, hash);
     } else {
       console.log(
         `[FileTransferManager] No active transfer found for hash: ${hash}`

@@ -34,7 +34,8 @@
     "turndown": "^7.2.4",
     "vite-plugin-commit-hash": "^1.0.8",
     "web-tree-sitter": "^0.26.9",
-    "web-vitals": "^3.5.2"
+    "web-vitals": "^3.5.2",
+    "zustand": "^5.0.14"
   },
   "scripts": {
     "start": "vite --open",

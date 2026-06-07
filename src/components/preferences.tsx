@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from "react";
-import { PrefActionType, NavigationKeyScheme } from "../PreferencesStore";
-import { usePreferences } from "../hooks/usePreferences";
+import React, { useState } from "react";
+import type { AutoreadMode, NavigationKeyScheme } from "../stores/preferencesStore";
+import { usePreferences } from "../stores/preferencesStore";
 import { useVoices } from "../hooks/useVoices";
-import Tabs, { TabProps } from "./tabs";
-import AutoLogDialog, { AutoLogDialogRef } from "./AutoLogDialog";
+import Tabs, { type TabProps } from "./tabs";
+import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
 
 const GeneralTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
 
   return (
     <label>
@@ -14,10 +14,7 @@ const GeneralTab: React.FC = () => {
         type="checkbox"
         checked={state.general.localEcho}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetGeneral,
-            data: { ...state.general, localEcho: e.target.checked },
-          })
+          state.setGeneral({ ...state.general, localEcho: e.target.checked })
         }
       />
       Local Echo
@@ -26,7 +23,7 @@ const GeneralTab: React.FC = () => {
 };
 
 const AutoRead: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
 
   return (
     <label>
@@ -34,12 +31,9 @@ const AutoRead: React.FC = () => {
       <select
         value={state.speech.autoreadMode}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: {
-              ...state.speech,
-              autoreadMode: e.target.value as any,
-            },
+          state.setSpeech({
+            ...state.speech,
+            autoreadMode: e.target.value as AutoreadMode,
           })
         }
       >
@@ -52,7 +46,7 @@ const AutoRead: React.FC = () => {
 };
 
 const VoiceSelection: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
   const voices = useVoices();
 
   return (
@@ -61,10 +55,7 @@ const VoiceSelection: React.FC = () => {
       <select
         value={state.speech.voice}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: { ...state.speech, voice: e.target.value },
-          })
+          state.setSpeech({ ...state.speech, voice: e.target.value })
         }
       >
         {voices.map((voice) => (
@@ -78,7 +69,7 @@ const VoiceSelection: React.FC = () => {
 };
 
 const RateSelection: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
 
   return (
     <label>
@@ -90,10 +81,7 @@ const RateSelection: React.FC = () => {
         step="0.1"
         value={state.speech.rate}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: { ...state.speech, rate: parseFloat(e.target.value) },
-          })
+          state.setSpeech({ ...state.speech, rate: parseFloat(e.target.value) })
         }
       />
     </label>
@@ -101,7 +89,7 @@ const RateSelection: React.FC = () => {
 };
 
 const PitchSelection: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
 
   return (
     <label>
@@ -113,10 +101,7 @@ const PitchSelection: React.FC = () => {
         step="0.1"
         value={state.speech.pitch}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: { ...state.speech, pitch: parseFloat(e.target.value) },
-          })
+          state.setSpeech({ ...state.speech, pitch: parseFloat(e.target.value) })
         }
       />
     </label>
@@ -124,7 +109,7 @@ const PitchSelection: React.FC = () => {
 };
 
 const VolumeSelection: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
 
   return (
     <label>
@@ -136,10 +121,7 @@ const VolumeSelection: React.FC = () => {
         step="0.1"
         value={state.speech.volume}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: { ...state.speech, volume: parseFloat(e.target.value) },
-          })
+          state.setSpeech({ ...state.speech, volume: parseFloat(e.target.value) })
         }
       />
     </label>
@@ -147,7 +129,7 @@ const VolumeSelection: React.FC = () => {
 };
 
 const PreviewButton: React.FC = () => {
-  const [state] = usePreferences();
+  const state = usePreferences();
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Add a ref to track if component is mounted
@@ -227,22 +209,11 @@ const PreviewButton: React.FC = () => {
 
       // Set up the handler
       speechSynthesis.onvoiceschanged = voicesChangedHandler;
-
-      // Clean up the handler if component unmounts while waiting for voices
-      const cleanup = () => {
-        if (voicesChangedHandler) {
-          speechSynthesis.onvoiceschanged = null;
-          voicesChangedHandler = null;
-        }
-      };
-
-      // Add cleanup to effect
-      React.useEffect(() => cleanup, []);
     }
   };
 
   return (
-    <button onClick={handlePreview} disabled={isPlaying}>
+    <button type="button" onClick={handlePreview} disabled={isPlaying}>
       {isPlaying ? "Playing..." : "Preview Voice"}
     </button>
   );
@@ -268,7 +239,7 @@ const SpeechTab: React.FC = () => {
 
 
 const SoundsTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
 
   return (
     <div>
@@ -277,10 +248,7 @@ const SoundsTab: React.FC = () => {
           type="checkbox"
           checked={state.sound.muteInBackground}
           onChange={(e) =>
-            dispatch({
-              type: PrefActionType.SetSound,
-              data: { ...state.sound, muteInBackground: e.target.checked },
-            })
+            state.setSound({ ...state.sound, muteInBackground: e.target.checked })
           }
         />
         Mute sounds when in background
@@ -290,21 +258,15 @@ const SoundsTab: React.FC = () => {
 };
 
 const EditorTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
   const editor = state.editor;
 
   const handleAutocompleteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    dispatch({
-      type: PrefActionType.SetEditorAutocompleteEnabled,
-      data: e.target.checked,
-    });
+    state.setEditorAutocompleteEnabled(e.target.checked);
   };
 
   const handleAccessibilityModeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    dispatch({
-      type: PrefActionType.SetEditorAccessibilityMode,
-      data: e.target.checked,
-    });
+    state.setEditorAccessibilityMode(e.target.checked);
   };
 
   return (
@@ -324,13 +286,10 @@ const EditorTab: React.FC = () => {
 };
 
 const MidiTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
 
   const handleMidiEnabledChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    dispatch({
-      type: PrefActionType.SetMidi,
-      data: { enabled: e.target.checked },
-    });
+    state.setMidi({ enabled: e.target.checked });
   };
 
   return (
@@ -356,13 +315,10 @@ const MidiTab: React.FC = () => {
 };
 
 const HapticsTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
 
   const handleHapticsEnabledChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    dispatch({
-      type: PrefActionType.SetHaptics,
-      data: { ...state.haptics, enabled: e.target.checked },
-    });
+    state.setHaptics({ ...state.haptics, enabled: e.target.checked });
   };
 
   return (
@@ -388,10 +344,7 @@ const HapticsTab: React.FC = () => {
               step="0.01"
               value={state.haptics.intensityCap}
               onChange={(e) =>
-                dispatch({
-                  type: PrefActionType.SetHaptics,
-                  data: { ...state.haptics, intensityCap: parseFloat(e.target.value) },
-                })
+                state.setHaptics({ ...state.haptics, intensityCap: parseFloat(e.target.value) })
               }
             />
           </label>
@@ -404,10 +357,7 @@ const HapticsTab: React.FC = () => {
               max="60"
               value={state.haptics.autoStopTimeout}
               onChange={(e) =>
-                dispatch({
-                  type: PrefActionType.SetHaptics,
-                  data: { ...state.haptics, autoStopTimeout: parseInt(e.target.value, 10) || 1 },
-                })
+                state.setHaptics({ ...state.haptics, autoStopTimeout: parseInt(e.target.value, 10) || 1 })
               }
             />
           </label>
@@ -422,7 +372,7 @@ const HapticsTab: React.FC = () => {
 };
 
 const KeyboardTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
 
   return (
     <div>
@@ -431,10 +381,7 @@ const KeyboardTab: React.FC = () => {
         <select
           value={state.keyboard.navigationKeyScheme}
           onChange={(e) =>
-            dispatch({
-              type: PrefActionType.SetKeyboard,
-              data: { navigationKeyScheme: e.target.value as NavigationKeyScheme },
-            })
+            state.setKeyboard({ navigationKeyScheme: e.target.value as NavigationKeyScheme })
           }
         >
           <option value="jkli">JKLI (QWERTY right-hand)</option>
@@ -451,7 +398,7 @@ const KeyboardTab: React.FC = () => {
 };
 
 const AutologgingTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const state = usePreferences();
   const dialogRef = React.useRef<AutoLogDialogRef | null>(null);
   const maxMegabytes = Math.round(state.autologging.maxBytes / 1024 / 1024);
 
@@ -462,10 +409,7 @@ const AutologgingTab: React.FC = () => {
           type="checkbox"
           checked={state.autologging.enabled}
           onChange={(e) =>
-            dispatch({
-              type: PrefActionType.SetAutologging,
-              data: { ...state.autologging, enabled: e.target.checked },
-            })
+            state.setAutologging({ ...state.autologging, enabled: e.target.checked })
           }
         />
         Enable Autologging
@@ -479,18 +423,15 @@ const AutologgingTab: React.FC = () => {
           max="2048"
           value={maxMegabytes}
           onChange={(e) =>
-            dispatch({
-              type: PrefActionType.SetAutologging,
-              data: {
-                ...state.autologging,
-                maxBytes: Math.max(1, parseInt(e.target.value, 10) || 1) * 1024 * 1024,
-              },
+            state.setAutologging({
+              ...state.autologging,
+              maxBytes: Math.max(1, parseInt(e.target.value, 10) || 1) * 1024 * 1024,
             })
           }
         />
       </label>
       <br />
-      <button onClick={() => dialogRef.current?.open()}>Manage Autologs</button>
+      <button type="button" onClick={() => dialogRef.current?.open()}>Manage Autologs</button>
       <AutoLogDialog ref={dialogRef} />
     </div>
   );

@@ -1,20 +1,15 @@
 import React from "react";
 import { act, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "eventemitter3";
 
 import RoomInfoDisplay from "./RoomInfoDisplay";
+import { useRoomStore } from "../stores/roomStore";
 
 function createMockClient() {
   const emitter = new EventEmitter();
 
   return Object.assign(emitter, {
-    currentRoomInfo: {
-      num: 101,
-      name: "Codex's Lab",
-      area: "Daystrom Annex",
-      exits: { west: 100, northeast: 102 },
-    },
     gmcpHandlers: {
       "Char.Items": {
         sendRoomRequest: vi.fn(),
@@ -22,16 +17,9 @@ function createMockClient() {
     },
     sendCommand: vi.fn(),
     worldData: {
-      liveKitTokens: [],
       playerId: "codex",
       playerName: "codex",
       roomId: "101",
-      roomPlayers: [
-        {
-          name: "q",
-          fullname: "Q",
-        },
-      ],
       spatialEntities: {
         codex: {
           id: "codex",
@@ -56,8 +44,21 @@ function createMockClient() {
 }
 
 describe("RoomInfoDisplay", () => {
+  beforeEach(() => {
+    useRoomStore.getState().reset();
+  });
+
   it("still renders room, players, and items with spatial scene state present", () => {
     const client = createMockClient();
+    useRoomStore.setState({
+      roomInfo: {
+        num: 101,
+        name: "Codex's Lab",
+        area: "Daystrom Annex",
+        exits: { west: 100, northeast: 102 },
+      },
+      roomPlayers: [{ name: "q", fullname: "Q" }],
+    });
 
     render(<RoomInfoDisplay client={client as any} />);
 

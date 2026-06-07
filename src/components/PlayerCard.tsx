@@ -1,6 +1,6 @@
-import React from 'react';
-import { RoomPlayer } from '../gmcp/Room';
-import { setInputTextAndFocus } from '../InputStore';
+import type React from 'react';
+import type { RoomPlayer } from '../gmcp/Room';
+import { setInputTextAndFocus } from '../inputFocus';
 import './PlayerCard.css';
 
 interface PlayerCardProps {
@@ -41,6 +41,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
       </div>
       <div className="player-actions">
         <button
+          type="button"
           className="player-page-button"
           onClick={handlePageClick}
           aria-label={`Page ${player.fullname}`}
@@ -50,6 +51,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
           Page
         </button>
         <button
+          type="button"
           className="player-sayto-button"
           onClick={handleSayToClick}
           aria-label={`Say to ${player.fullname} (using -${player.name})`}
@@ -60,6 +62,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
           Say To
         </button>
         <button
+          type="button"
           className="player-look-button"
           onClick={handleLookClick}
           aria-label={`Look at ${player.fullname}`}
@@ -69,6 +72,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
           Look
         </button>
         <button
+          type="button"
           className="player-follow-button"
           onClick={handleFollowClick}
           aria-label={`Follow ${player.fullname}`}

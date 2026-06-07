@@ -1,3 +1,5 @@
+import { useSessionStore } from "../../stores/sessionStore";
+import { useSpatialStore } from "../../stores/spatialStore";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export type SpatialVector = [number, number, number];
@@ -109,52 +111,44 @@ export class GMCPClientSpatial extends GMCPPackage {
   }
 
   handleScene(data: GMCPMessageClientSpatialScene): void {
-    this.client.worldData.roomId = data.roomId;
-    this.client.worldData.listenerEntityId = data.listenerId;
-    this.client.worldData.listenerPosition = data.listenerPosition ?? null;
-    this.client.worldData.listenerOrientation =
-      data.listenerOrientation ?? { forward: null, up: null };
-    this.syncCacophonyListenerPosition(this.client.worldData.listenerPosition);
-    this.syncCacophonyListenerOrientation(this.client.worldData.listenerOrientation);
-    this.client.worldData.spatialEntities = indexById(data.entities);
-    this.client.worldData.spatialEmitters = indexById(data.emitters);
+    useSessionStore.getState().setRoomId(data.roomId);
+    const listenerPosition = data.listenerPosition ?? null;
+    const listenerOrientation = data.listenerOrientation ?? {
+      forward: null,
+      up: null,
+    };
+    useSpatialStore.getState().setScene({
+      listenerEntityId: data.listenerId,
+      listenerPosition,
+      listenerOrientation,
+      spatialEntities: indexById(data.entities),
+      spatialEmitters: indexById(data.emitters),
+    });
+    this.syncCacophonyListenerPosition(listenerPosition);
+    this.syncCacophonyListenerOrientation(listenerOrientation);
     this.client.emit("spatialScene", data);
   }
 
   handleEntityEnter(data: GMCPMessageClientSpatialEntityEnter): void {
-    this.client.worldData.spatialEntities[data.entity.id] = data.entity;
+    useSpatialStore.getState().enterEntity(data.entity);
     this.client.emit("spatialEntityEnter", data.entity);
   }
 
   handleEntityLeave(data: GMCPMessageClientSpatialEntityLeave): void {
-    delete this.client.worldData.spatialEntities[data.entityId];
-    for (const emitterId of Object.keys(this.client.worldData.spatialEmitters)) {
-      const emitter = this.client.worldData.spatialEmitters[emitterId];
-      if (emitter.sourceEntity === data.entityId) {
-        delete this.client.worldData.spatialEmitters[emitterId];
-      }
-    }
+    useSpatialStore.getState().leaveEntity(data.entityId);
     this.client.emit("spatialEntityLeave", data.entityId);
   }
 
   handleEntityMove(data: GMCPMessageClientSpatialEntityMove): void {
-    const current = this.client.worldData.spatialEntities[data.entityId];
-    this.client.worldData.spatialEntities[data.entityId] = {
-      ...current,
-      id: data.entityId,
-      position: data.position,
-      velocity: data.velocity ?? current?.velocity,
-      forward: data.forward ?? current?.forward,
-      up: data.up ?? current?.up,
-    };
-    this.client.emit("spatialEntityMove", this.client.worldData.spatialEntities[data.entityId]);
+    useSpatialStore.getState().moveEntity(data);
+    this.client.emit(
+      "spatialEntityMove",
+      useSpatialStore.getState().spatialEntities[data.entityId]
+    );
   }
 
   handleListenerPosition(data: GMCPMessageClientSpatialListenerPosition): void {
-    if (data.listenerId !== undefined) {
-      this.client.worldData.listenerEntityId = data.listenerId;
-    }
-    this.client.worldData.listenerPosition = data.position;
+    useSpatialStore.getState().setListenerPosition(data.position, data.listenerId);
     this.syncCacophonyListenerPosition(data.position);
     this.client.emit("spatialListenerPosition", data);
   }
@@ -162,24 +156,19 @@ export class GMCPClientSpatial extends GMCPPackage {
   handleListenerOrientation(
     data: GMCPMessageClientSpatialListenerOrientation,
   ): void {
-    if (data.listenerId !== undefined) {
-      this.client.worldData.listenerEntityId = data.listenerId;
-    }
-    this.client.worldData.listenerOrientation = {
-      forward: data.forward,
-      up: data.up,
-    };
-    this.syncCacophonyListenerOrientation(this.client.worldData.listenerOrientation);
+    const orientation = { forward: data.forward, up: data.up };
+    useSpatialStore.getState().setListenerOrientation(orientation, data.listenerId);
+    this.syncCacophonyListenerOrientation(orientation);
     this.client.emit("spatialListenerOrientation", data);
   }
 
   handleEmitterStart(data: GMCPMessageClientSpatialEmitterStart): void {
-    this.client.worldData.spatialEmitters[data.emitter.id] = data.emitter;
+    useSpatialStore.getState().startEmitter(data.emitter);
     this.client.emit("spatialEmitterStart", data.emitter);
   }
 
   handleEmitterStop(data: GMCPMessageClientSpatialEmitterStop): void {
-    delete this.client.worldData.spatialEmitters[data.emitterId];
+    useSpatialStore.getState().stopEmitter(data.emitterId);
     this.client.emit("spatialEmitterStop", data.emitterId);
   }
 }

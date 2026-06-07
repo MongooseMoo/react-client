@@ -1,6 +1,6 @@
 import { GMCPPackage } from "../package";
 import { hapticsService } from "../../HapticsService";
-import { preferencesStore } from "../../PreferencesStore";
+import { usePreferences } from "../../stores/preferencesStore";
 import type { HapticsCommand, HapticsSensorReading } from "../../haptics/types";
 
 // ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ export class GMCPClientHaptics extends GMCPPackage {
   private serviceCleanup: Array<() => void> = [];
 
   get enabled(): boolean {
-    return preferencesStore.getState().haptics.enabled;
+    return usePreferences.getState().haptics.enabled;
   }
 
   constructor(client: any) {

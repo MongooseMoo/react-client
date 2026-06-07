@@ -1,3 +1,4 @@
+import { useSessionStore } from "../stores/sessionStore";
 import { GMCPMessage, GMCPPackage } from "./package";
 
 class GmcpMessageCharName extends GMCPMessage {
@@ -9,8 +10,7 @@ export class GMCPChar extends GMCPPackage {
   public packageName: string = "Char";
 
   handleName(data: GmcpMessageCharName): void {
-    this.client.worldData.playerId = data.name;
-    this.client.worldData.playerName = data.fullname;
+    useSessionStore.getState().setPlayer(data.name, data.fullname);
     this.client.emit("statustext", `Logged in as ${data.fullname}`);
     this.client.markSessionReady();
   }

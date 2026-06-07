@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  GMCPClientSpatial,
-  type SpatialEmitter,
-  type SpatialEntity,
-} from "./Spatial";
+import { GMCPClientSpatial } from "./Spatial";
+import { useSpatialStore } from "../../stores/spatialStore";
+import { useSessionStore } from "../../stores/sessionStore";
 
 function createMockClient() {
   return {
@@ -15,18 +13,6 @@ function createMockClient() {
     },
     emit: vi.fn(),
     sendGmcp: vi.fn(),
-    worldData: {
-      liveKitTokens: [],
-      playerId: "",
-      playerName: "",
-      roomId: "",
-      roomPlayers: [],
-      spatialEntities: {} as Record<string, SpatialEntity>,
-      spatialEmitters: {} as Record<string, SpatialEmitter>,
-      listenerEntityId: "",
-      listenerPosition: null,
-      listenerOrientation: { forward: null, up: null },
-    },
   };
 }
 
@@ -36,25 +22,29 @@ describe("GMCPClientSpatial", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useSpatialStore.getState().reset();
+    useSessionStore.getState().reset();
     client = createMockClient();
     handler = new GMCPClientSpatial(client as any);
   });
 
   it("replaces stale scene state on Scene snapshot", () => {
-    client.worldData.roomId = "old-room";
-    client.worldData.listenerEntityId = "old-listener";
-    client.worldData.spatialEntities = {
-      stale: {
-        id: "stale",
-        position: [9, 9, 9],
+    useSessionStore.setState({ roomId: "old-room" });
+    useSpatialStore.setState({
+      listenerEntityId: "old-listener",
+      spatialEntities: {
+        stale: {
+          id: "stale",
+          position: [9, 9, 9],
+        },
       },
-    };
-    client.worldData.spatialEmitters = {
-      "old-emitter": {
-        id: "old-emitter",
-        binding: "world",
+      spatialEmitters: {
+        "old-emitter": {
+          id: "old-emitter",
+          binding: "world",
+        },
       },
-    };
+    });
 
     handler.handleScene({
       roomId: "new-room",
@@ -82,17 +72,18 @@ describe("GMCPClientSpatial", () => {
       ],
     });
 
-    expect(client.worldData.roomId).toBe("new-room");
-    expect(client.worldData.listenerEntityId).toBe("player-1");
-    expect(client.worldData.listenerPosition).toEqual([1, 2, 3]);
-    expect(client.worldData.listenerOrientation).toEqual({
+    const spatial = useSpatialStore.getState();
+    expect(useSessionStore.getState().roomId).toBe("new-room");
+    expect(spatial.listenerEntityId).toBe("player-1");
+    expect(spatial.listenerPosition).toEqual([1, 2, 3]);
+    expect(spatial.listenerOrientation).toEqual({
       forward: [0, 1, 0],
       up: [0, 0, 1],
     });
     expect(client.cacophony.listenerPosition).toEqual([1, 2, 3]);
     expect(client.cacophony.listenerForwardOrientation).toEqual([0, 1, 0]);
     expect(client.cacophony.listenerUpOrientation).toEqual([0, 0, 1]);
-    expect(client.worldData.spatialEntities).toEqual({
+    expect(spatial.spatialEntities).toEqual({
       "player-1": {
         id: "player-1",
         name: "Q",
@@ -100,7 +91,7 @@ describe("GMCPClientSpatial", () => {
         position: [1, 2, 3],
       },
     });
-    expect(client.worldData.spatialEmitters).toEqual({
+    expect(spatial.spatialEmitters).toEqual({
       "radio-1": {
         id: "radio-1",
         binding: "entity",
@@ -123,7 +114,7 @@ describe("GMCPClientSpatial", () => {
       },
     });
 
-    expect(client.worldData.spatialEntities["player-2"]).toEqual({
+    expect(useSpatialStore.getState().spatialEntities["player-2"]).toEqual({
       id: "player-2",
       name: "Daiverd",
       position: [4, 5, 6],
@@ -136,28 +127,30 @@ describe("GMCPClientSpatial", () => {
   });
 
   it("removes an entity and its bound emitters on EntityLeave", () => {
-    client.worldData.spatialEntities = {
-      "player-2": {
-        id: "player-2",
-        position: [4, 5, 6],
+    useSpatialStore.setState({
+      spatialEntities: {
+        "player-2": {
+          id: "player-2",
+          position: [4, 5, 6],
+        },
       },
-    };
-    client.worldData.spatialEmitters = {
-      "radio-1": {
-        id: "radio-1",
-        binding: "entity",
-        sourceEntity: "player-2",
+      spatialEmitters: {
+        "radio-1": {
+          id: "radio-1",
+          binding: "entity",
+          sourceEntity: "player-2",
+        },
+        "drip-1": {
+          id: "drip-1",
+          binding: "world",
+        },
       },
-      "drip-1": {
-        id: "drip-1",
-        binding: "world",
-      },
-    };
+    });
 
     handler.handleEntityLeave({ entityId: "player-2" });
 
-    expect(client.worldData.spatialEntities).toEqual({});
-    expect(client.worldData.spatialEmitters).toEqual({
+    expect(useSpatialStore.getState().spatialEntities).toEqual({});
+    expect(useSpatialStore.getState().spatialEmitters).toEqual({
       "drip-1": {
         id: "drip-1",
         binding: "world",
@@ -167,14 +160,16 @@ describe("GMCPClientSpatial", () => {
   });
 
   it("updates stored coordinates and velocity on EntityMove", () => {
-    client.worldData.spatialEntities = {
-      "player-1": {
-        id: "player-1",
-        name: "Q",
-        kind: "player",
-        position: [1, 1, 1],
+    useSpatialStore.setState({
+      spatialEntities: {
+        "player-1": {
+          id: "player-1",
+          name: "Q",
+          kind: "player",
+          position: [1, 1, 1],
+        },
       },
-    };
+    });
 
     handler.handleEntityMove({
       entityId: "player-1",
@@ -184,7 +179,7 @@ describe("GMCPClientSpatial", () => {
       up: [0, 0, 1],
     });
 
-    expect(client.worldData.spatialEntities["player-1"]).toEqual({
+    expect(useSpatialStore.getState().spatialEntities["player-1"]).toEqual({
       id: "player-1",
       name: "Q",
       kind: "player",
@@ -215,9 +210,10 @@ describe("GMCPClientSpatial", () => {
       up: [0, 0, 1],
     });
 
-    expect(client.worldData.listenerEntityId).toBe("player-1");
-    expect(client.worldData.listenerPosition).toEqual([7, 8, 9]);
-    expect(client.worldData.listenerOrientation).toEqual({
+    const spatial = useSpatialStore.getState();
+    expect(spatial.listenerEntityId).toBe("player-1");
+    expect(spatial.listenerPosition).toEqual([7, 8, 9]);
+    expect(spatial.listenerOrientation).toEqual({
       forward: [0, 1, 0],
       up: [0, 0, 1],
     });
@@ -243,8 +239,8 @@ describe("GMCPClientSpatial", () => {
       emitters: [],
     });
 
-    expect(client.worldData.listenerPosition).toBeNull();
-    expect(client.worldData.listenerOrientation).toEqual({
+    expect(useSpatialStore.getState().listenerPosition).toBeNull();
+    expect(useSpatialStore.getState().listenerOrientation).toEqual({
       forward: null,
       up: null,
     });
