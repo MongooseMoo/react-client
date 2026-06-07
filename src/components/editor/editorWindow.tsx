@@ -379,13 +379,15 @@ function EditorWindow() {
         onMount={handleEditorMount}
         path={session.reference}
       />
-      <MooProblemsPanel
-        id={EDITOR_PROBLEMS_ID}
-        markers={mooDiagnosticProblems}
-        onProblemClick={showMooDiagnostic}
-        onQuickFixClick={applyMooQuickFix}
-        quickFixes={mooQuickFixes}
-      />
+      {editorLanguage === MOO_LANGUAGE_ID ? (
+        <MooProblemsPanel
+          id={EDITOR_PROBLEMS_ID}
+          markers={mooDiagnosticProblems}
+          onProblemClick={showMooDiagnostic}
+          onQuickFixClick={applyMooQuickFix}
+          quickFixes={mooQuickFixes}
+        />
+      ) : null}
       <EditorStatusBar
         id={EDITOR_STATUSBAR_ID}
         onDiagnosticsClick={mooDiagnosticTarget ? showFirstMooDiagnostic : undefined}
@@ -414,89 +416,91 @@ function MooProblemsPanel({
 }: MooProblemsPanelProps) {
   const [filter, setFilter] = useState<MooProblemFilter>('all');
 
-  if (markers.length === 0) {
-    return null;
-  }
-
   const counts = getMooDiagnosticCounts(markers);
   const visibleMarkers = markers.filter((marker) => mooProblemFilterIncludesMarker(filter, marker));
   const fixAllQuickFixes = quickFixes.filter(isMooFixAllQuickFix);
 
   return (
     <section aria-label="MOO problems" className="editor-problems" id={id}>
-      <div aria-label="MOO problem filters" className="editor-problems-filters" role="toolbar">
-        {mooProblemFilterOptions(markers.length, counts).map((option) => (
-          <button
-            aria-label={option.ariaLabel}
-            aria-pressed={filter === option.filter}
-            className="editor-problems-filter"
-            key={option.filter}
-            onClick={() => setFilter(option.filter)}
-            type="button"
-          >
-            {option.label}
-          </button>
-        ))}
-        {fixAllQuickFixes.map((quickFix) => (
-          <button
-            aria-label={`Apply MOO fix all: ${quickFix.title}`}
-            className="editor-problems-fix-all-button"
-            key={quickFix.title}
-            onClick={() => onQuickFixClick(quickFix)}
-            type="button"
-          >
-            Fix all
-          </button>
-        ))}
-      </div>
-      {visibleMarkers.length > 0 ? (
-        <ol className="editor-problems-list">
-          {visibleMarkers.map((marker, index) => {
-            const severity = formatMooProblemSeverity(marker);
-            const code = formatMooProblemCode(marker);
-            const target = getMooDiagnosticTarget(marker);
-            const label = `MOO ${severity.toLowerCase()} ${code} on line ${
-              target.lineNumber
-            }, column ${target.column}: ${marker.message}`;
-            const quickFix = findMooQuickFixForMarker(quickFixes, marker);
-
-            return (
-              <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
-                <div className="editor-problem-row">
-                  <button
-                    aria-label={label}
-                    className="editor-problem-button"
-                    onClick={() => onProblemClick(marker)}
-                    type="button"
-                  >
-                    <span
-                      className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
-                    >
-                      {severity}
-                    </span>{' '}
-                    <span className="editor-problem-code">{code}</span>{' '}
-                    <span className="editor-problem-location">
-                      Ln {target.lineNumber}, Col {target.column}
-                    </span>{' '}
-                    <span className="editor-problem-message">{marker.message}</span>
-                  </button>
-                  {quickFix ? (
-                    <button
-                      aria-label={`Apply quick fix: ${quickFix.title}`}
-                      className="editor-problem-fix-button"
-                      onClick={() => onQuickFixClick(quickFix)}
-                      type="button"
-                    >
-                      Fix
-                    </button>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+      {markers.length === 0 ? (
+        <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage('all')}</p>
       ) : (
-        <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage(filter)}</p>
+        <>
+          <div aria-label="MOO problem filters" className="editor-problems-filters" role="toolbar">
+            {mooProblemFilterOptions(markers.length, counts).map((option) => (
+              <button
+                aria-label={option.ariaLabel}
+                aria-pressed={filter === option.filter}
+                className="editor-problems-filter"
+                key={option.filter}
+                onClick={() => setFilter(option.filter)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+            {fixAllQuickFixes.map((quickFix) => (
+              <button
+                aria-label={`Apply MOO fix all: ${quickFix.title}`}
+                className="editor-problems-fix-all-button"
+                key={quickFix.title}
+                onClick={() => onQuickFixClick(quickFix)}
+                type="button"
+              >
+                Fix all
+              </button>
+            ))}
+          </div>
+          {visibleMarkers.length > 0 ? (
+            <ol className="editor-problems-list">
+              {visibleMarkers.map((marker, index) => {
+                const severity = formatMooProblemSeverity(marker);
+                const code = formatMooProblemCode(marker);
+                const target = getMooDiagnosticTarget(marker);
+                const label = `MOO ${severity.toLowerCase()} ${code} on line ${
+                  target.lineNumber
+                }, column ${target.column}: ${marker.message}`;
+                const quickFix = findMooQuickFixForMarker(quickFixes, marker);
+
+                return (
+                  <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
+                    <div className="editor-problem-row">
+                      <button
+                        aria-label={label}
+                        className="editor-problem-button"
+                        onClick={() => onProblemClick(marker)}
+                        type="button"
+                      >
+                        <span
+                          className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
+                        >
+                          {severity}
+                        </span>{' '}
+                        <span className="editor-problem-code">{code}</span>{' '}
+                        <span className="editor-problem-location">
+                          Ln {target.lineNumber}, Col {target.column}
+                        </span>{' '}
+                        <span className="editor-problem-message">{marker.message}</span>
+                      </button>
+                      {quickFix ? (
+                        <button
+                          aria-label={`Apply quick fix: ${quickFix.title}`}
+                          className="editor-problem-fix-button"
+                          onClick={() => onQuickFixClick(quickFix)}
+                          type="button"
+                        >
+                          Fix
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage(filter)}</p>
+          )}
+        </>
       )}
     </section>
   );

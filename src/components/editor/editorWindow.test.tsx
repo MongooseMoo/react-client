@@ -702,6 +702,114 @@ describe('EditorWindow language selection', () => {
     expect(editorMock.focus).toHaveBeenCalled();
   });
 
+  it('keeps the MOO problems region mounted with an empty state when there are no diagnostics', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    const problemsRegion = await screen.findByRole('region', { name: 'MOO problems' });
+    expect(screen.getByText('No MOO problems.')).not.toBeNull();
+    expect(problemsRegion.contains(screen.getByText('No MOO problems.'))).toBe(true);
+    expect(screen.queryByRole('button', { name: /^MOO (error|warning)/ })).toBeNull();
+  });
+
+  it('keeps the same MOO problems region across the empty and non-empty boundary', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    const emptyRegion = await screen.findByRole('region', { name: 'MOO problems' });
+    expect(screen.getByText('No MOO problems.')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /^MOO (error|warning)/ })).toBeNull();
+
+    // Typing diagnostics into the same session must reuse the region (no remount).
+    const onChange = editorMock.props?.onChange as (value: string) => void;
+    act(() => {
+      onChange('unused = 1;\nwhile (1)\n  notify(player, "tick");');
+    });
+
+    const populatedRegion = await screen.findByRole('region', { name: 'MOO problems' });
+    const problemButtons = await screen.findAllByRole('button', { name: /^MOO (error|warning)/ });
+
+    expect(populatedRegion).toBe(emptyRegion);
+    expect(problemButtons.length).toBeGreaterThan(0);
+    expect(populatedRegion.contains(problemButtons[0])).toBe(true);
+
+    // And back to clean code: same region node persists with the empty state.
+    act(() => {
+      onChange('notify(player, "ok");');
+    });
+
+    const clearedRegion = await screen.findByRole('region', { name: 'MOO problems' });
+    expect(clearedRegion).toBe(emptyRegion);
+    expect(screen.getByText('No MOO problems.')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /^MOO (error|warning)/ })).toBeNull();
+  });
+
+  it('does not add aria-live to the MOO problems region (counts stay on the statusbar)', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['unused = 1;', 'while (1)', '  notify(player, "tick");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    const problemsRegion = await screen.findByRole('region', { name: 'MOO problems' });
+    expect(problemsRegion.getAttribute('aria-live')).toBeNull();
+    expect(screen.getByRole('status').getAttribute('id')).toBe('editor-statusbar');
+  });
+
   it('filters the MOO problems list by severity without hiding filter state from assistive tech', async () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
