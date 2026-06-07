@@ -522,6 +522,11 @@ function createEditorOptions({
     // screen-reader textarea and overrides ariaLabel with an error string.
     // 'auto' is the safe floor; 'on' forces full screen-reader optimization.
     accessibilitySupport: accessibilityMode ? 'on' : 'auto',
+    // Monaco's SR-optimized default; pages a full MOO verb (~hundreds of lines)
+    // into the hidden screen-reader element instead of the ~10-line default window.
+    // Set unconditionally: at 500 there is no perf cost beyond Monaco's own SR
+    // default, and it does not depend on runtime SR detection.
+    accessibilityPageSize: 500,
     quickSuggestions: autocompleteEnabled,
   };
 

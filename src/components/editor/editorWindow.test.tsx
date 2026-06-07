@@ -385,6 +385,36 @@ describe('EditorWindow language selection', () => {
     expect(options.accessibilitySupport).not.toBe('off');
   });
 
+  it('pages a full verb into the screen-reader element via accessibilityPageSize', async () => {
+    // accessibilityPageSize controls how many lines Monaco pages into the hidden
+    // screen-reader element. Set unconditionally to 500 so a full MOO verb is
+    // navigable. The mock has accessibilityMode: false, so this passing also
+    // proves the option is ungated.
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() => expect(editorMock.props?.language).toBe(MOO_LANGUAGE_ID));
+    const options = editorMock.props?.options as Record<string, unknown>;
+    expect(options.accessibilityPageSize).toBe(500);
+  });
+
   it('enables the richer Monaco language-service UI for MOO sessions', async () => {
     render(
       <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
