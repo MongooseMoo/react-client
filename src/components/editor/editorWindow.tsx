@@ -58,6 +58,11 @@ function EditorWindow() {
   const location = useLocation();
   const editorInstance = React.useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const monacoInstance = React.useRef<Monaco | null>(null);
+  // Set when a document is loaded; consumed exactly once to focus the editor as
+  // soon as the editor instance is ready (deterministic, no timer). Focus may be
+  // requested before the editor has mounted (load arrives first) or after (editor
+  // mounts first); whichever happens second performs the focus.
+  const pendingFocusOnReady = React.useRef<boolean>(false);
   const [clientId, setClientId] = useState<string>('');
   const [code, setCode] = useState<string>('');
   const [originalCode, setOriginalCode] = useState<string>('');
@@ -75,9 +80,27 @@ function EditorWindow() {
     type: '',
   });
 
+  // Focus the editor once, when both the editor instance is ready and a document
+  // has been loaded. Safe to call from either the load handler or the editor's
+  // mount callback; it no-ops unless a focus is pending and the instance exists,
+  // and it clears the pending flag so focus fires exactly once.
+  const focusEditorOnReady = React.useCallback(() => {
+    if (!pendingFocusOnReady.current) {
+      return;
+    }
+    const editor = editorInstance.current;
+    if (!editor) {
+      return;
+    }
+    pendingFocusOnReady.current = false;
+    editor.focus();
+  }, []);
+
   const handleEditorMount: OnMount = (editor, monaco) => {
     editorInstance.current = editor;
     monacoInstance.current = monaco;
+    // If a document already loaded before the editor mounted, focus it now.
+    focusEditorOnReady();
   };
   const handleEditorBeforeMount = (monaco: Monaco) => {
     registerMooLanguage(monaco);
@@ -86,9 +109,6 @@ function EditorWindow() {
   const accessibilityMode = prefState.editor.accessibilityMode;
   const autocompleteEnabled = prefState.editor.autocompleteEnabled;
   const editorLanguage = getEditorLanguageForSessionType(session.type);
-  const focusEditor = React.useCallback(() => {
-    editorInstance.current?.focus();
-  }, []);
   const updateMooDiagnostics = React.useCallback((markers: MonacoEditor.IMarkerData[]) => {
     setMooDiagnosticMarkers(markers);
     setMooDiagnosticCounts(getMooDiagnosticCounts(markers));
@@ -263,7 +283,11 @@ function EditorWindow() {
           setDocumentState(DocumentState.Unchanged);
           setClientId(event.data.clientId);
           setIsLoaded(true); // Add this line to set isLoaded to true when content is loaded
-          setTimeout(focusEditor, 100);
+          // Focus the code editor on open, deterministically and exactly once.
+          // If the editor instance is already mounted, this focuses now; if the
+          // editor mounts later, handleEditorMount performs the focus. No timer.
+          pendingFocusOnReady.current = true;
+          focusEditorOnReady();
           break;
         }
         case 'shutdown':
@@ -288,7 +312,7 @@ function EditorWindow() {
       channel.removeEventListener('message', handleMessage);
       channel.postMessage({ type: 'close', id });
     };
-  }, [channel, clientId, id, documentState, focusEditor]);
+  }, [channel, clientId, id, documentState, focusEditorOnReady]);
 
   const revert = () => {
     setCode(originalCode);
@@ -301,7 +325,6 @@ function EditorWindow() {
     const sessionData = { ...session, contents };
     channel.postMessage({ type: 'save', session: sessionData, id });
     setDocumentState(DocumentState.Saved);
-    focusEditor();
     event.preventDefault();
   };
 

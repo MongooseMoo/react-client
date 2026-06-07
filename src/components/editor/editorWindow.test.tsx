@@ -812,4 +812,64 @@ describe('EditorWindow language selection', () => {
     );
     expect(screen.getByRole('status').textContent).toContain('Changed');
   });
+
+  it('focuses the code editor exactly once when a document loads, without a timer', async () => {
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    // The editor instance mounts on render; loading a document must move focus
+    // into the code deterministically, with no fake-timer advance required.
+    expect(editorMock.focus).not.toHaveBeenCalled();
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Unchanged'));
+    expect(editorMock.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not move focus when the user saves', async () => {
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Unchanged'));
+    // Ignore the deterministic focus-on-open; we only care that Save adds none.
+    editorMock.focus.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(editorMock.focus).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toContain('Saved');
+  });
 });
