@@ -3,6 +3,7 @@ import { useRef, useEffect, useCallback } from "react";
 import { CommandHistory } from "../CommandHistory";
 import "./input.css";
 import { useInputStore } from "../stores/inputStore";
+import { useRoomStore } from "../stores/roomStore";
 import { registerCommandInput } from "../inputFocus";
 import type MudClient from "../client"; // Import MudClient
 import type { RoomPlayer } from "../gmcp/Room"; // Import RoomPlayer type
@@ -169,7 +170,7 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
           return;
         }
         
-        const roomPlayersData: RoomPlayer[] = client.worldData.roomPlayers || [];
+        const roomPlayersData: RoomPlayer[] = useRoomStore.getState().roomPlayers;
         const candidatePlayers = roomPlayersData
           .filter(p => {
             const nameMatch = typeof p.name === 'string' && p.name.toLowerCase().startsWith(initialNamePart.toLowerCase());

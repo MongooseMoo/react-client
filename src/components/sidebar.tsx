@@ -16,6 +16,7 @@ import type { UserlistPlayer } from "../mcp";
 import RoomInfoDisplay from "./RoomInfoDisplay"; // Import new component
 import HapticsStatus from "./HapticsStatus"; // Import Haptics component
 import { usePreferences } from "../stores/preferencesStore";
+import { useRoomStore } from "../stores/roomStore";
 import { hapticsService } from "../HapticsService";
 
 // Define the type for the imperative handle
@@ -41,8 +42,8 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
   // const [hasDefencesData, setHasDefencesData] = useState(false); // Removed
   const [hasInventoryData, setHasInventoryData] = useState(false); // Keep state for inventory as example
   // const [hasSkillsData, setHasSkillsData] = useState(false); // Removed
-  // Initial check for room data directly from client
-  const [hasRoomData, setHasRoomData] = useState(!!client.currentRoomInfo);
+  // Show the Room tab once room info has arrived (from the room store).
+  const hasRoomData = useRoomStore((state) => state.roomInfo !== null);
 
   // Handle MIDI support advertisement based on preferences
   useEffect(() => {
@@ -87,20 +88,6 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client, collapsed,
       client.off("itemsList", handleInventoryData);
     };
   }, [client]);
-
-  // Effect to update room data state if it arrives *after* initial render
-  useEffect(() => {
-    const handleRoomData = () => {
-      if (!hasRoomData) {
-        // Only update state if it wasn't already true
-        setHasRoomData(true);
-      }
-    };
-    client.on("roomInfo", handleRoomData);
-    return () => {
-      client.off("roomInfo", handleRoomData);
-    };
-  }, [client, hasRoomData]); // Add hasRoomData dependency
 
   // Define all possible tabs
   const allTabs: TabProps[] = [

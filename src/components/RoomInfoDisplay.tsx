@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState, useMemo } from "react";
 import MudClient from "../client";
-import type { GMCPMessageRoomInfo, RoomPlayer } from "../gmcp/Room";
+import type { RoomPlayer } from "../gmcp/Room";
+import { useRoomStore } from "../stores/roomStore";
 import type { Item, ItemLocation } from "../gmcp/Char/Items";
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
 import ItemCard from "./ItemCard"; // Import ItemCard
@@ -12,13 +13,11 @@ interface RoomInfoDisplayProps {
 }
 
 const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
-  // Initialize state directly from the client's stored info
-  const [roomInfo, setRoomInfo] = useState<GMCPMessageRoomInfo | null>(
-    client.currentRoomInfo
-  );
+  // Room info and players come from the room store (single source of truth).
+  const roomInfo = useRoomStore((state) => state.roomInfo);
+  const roomPlayers = useRoomStore((state) => state.roomPlayers);
   const [roomItems, setRoomItems] = useState<Item[]>([]);
   const [selectedRoomItem, setSelectedRoomItem] = useState<Item | null>(null);
-  const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>(client.worldData.roomPlayers || []);
   const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
 
   const charItemsHandler = client.gmcpHandlers['Char.Items'];
@@ -35,19 +34,13 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     return roomItems.filter(item => !isPlayerItem(item, roomPlayers));
   }, [roomItems, roomPlayers, isPlayerItem]);
 
-  const handleRoomInfo = useCallback((data: GMCPMessageRoomInfo) => {
-    setRoomInfo(data);
-  }, []);
-
+  // Request the room's item list once on mount. Room info/players are now
+  // subscribed from the room store above rather than fed by client events.
   useEffect(() => {
-    client.on("roomInfo", handleRoomInfo);
     if (charItemsHandler?.sendRoomRequest) {
       charItemsHandler.sendRoomRequest();
     }
-    return () => {
-      client.off("roomInfo", handleRoomInfo);
-    };
-  }, [client, charItemsHandler, handleRoomInfo]);
+  }, [charItemsHandler]);
 
 
   const updateRoomItemsList = useCallback((location: ItemLocation, newItems: Item[]) => {
@@ -90,36 +83,12 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     };
   }, [client, updateRoomItemsList, addRoomItem, removeRoomItem]);
 
-  // Player event handlers
-  const handleRoomPlayers = useCallback((players: RoomPlayer[]) => {
-    setRoomPlayers(players);
-    if (selectedPlayer && !players.find(p => p.name === selectedPlayer.name)) {
-      setSelectedPlayer(null);
-    }
-  }, [selectedPlayer]);
-
-  const handleAddPlayer = useCallback((player: RoomPlayer) => {
-    setRoomPlayers(prev => prev.some(p => p.name === player.name) ? prev : [...prev, player]);
-  }, []);
-
-  const handleRemovePlayer = useCallback((playerName: string) => {
-    setRoomPlayers(prev => prev.filter(p => p.name !== playerName));
-    if (selectedPlayer?.name === playerName) {
-      setSelectedPlayer(null);
-    }
-  }, [selectedPlayer]);
-
+  // Clear the player selection if the selected player has left the room.
   useEffect(() => {
-    client.on('roomPlayers', handleRoomPlayers);
-    client.on('roomAddPlayer', handleAddPlayer);
-    client.on('roomRemovePlayer', handleRemovePlayer);
-
-    return () => {
-      client.off('roomPlayers', handleRoomPlayers);
-      client.off('roomAddPlayer', handleAddPlayer);
-      client.off('roomRemovePlayer', handleRemovePlayer);
-    };
-  }, [client, handleRoomPlayers, handleAddPlayer, handleRemovePlayer]);
+    if (selectedPlayer && !roomPlayers.some((p) => p.name === selectedPlayer.name)) {
+      setSelectedPlayer(null);
+    }
+  }, [roomPlayers, selectedPlayer]);
 
   const handleExitClick = (direction: string) => {
     client.sendCommand(direction); 
@@ -192,6 +161,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
                 {exits.map(([direction, roomId]) => (
                   <li key={direction}>
                     <button
+                      type="button"
                       onClick={() => handleExitClick(direction)}
                       title={`Go ${direction} (to room ${roomId})`}
                       aria-label={`Go ${direction}`}

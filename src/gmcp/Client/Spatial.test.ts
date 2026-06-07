@@ -19,7 +19,6 @@ function createMockClient() {
       playerId: "",
       playerName: "",
       roomId: "",
-      roomPlayers: [],
       spatialEntities: {} as Record<string, SpatialEntity>,
       spatialEmitters: {} as Record<string, SpatialEmitter>,
       listenerEntityId: "",

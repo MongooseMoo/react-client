@@ -24,6 +24,7 @@ import HostPanel from "./components/HostPanel";
 import { useChannelHistory } from "./hooks/useChannelHistory";
 import { type FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
+import { useRoomStore } from "./stores/roomStore";
 import { autoLogService, createAutoLogSessionDraft } from "./logging/AutoLogService";
 import { ensurePushSubscription } from "./webpush";
 
@@ -263,34 +264,19 @@ function App() {
     };
   }, [preferences.midi.enabled]);
 
+  // Window subtitle tracks the current room from the room store. On disconnect
+  // the client resets the store, which clears roomInfo and so clears the subtitle.
+  const roomInfo = useRoomStore((state) => state.roomInfo);
   useEffect(() => {
     if (!client) {
       setWindowSubtitle();
       return;
     }
-
-    const handleRoomInfo = (roomInfo: GMCPMessageRoomInfo) => {
-      setWindowSubtitle(getRoomSubtitle(roomInfo));
-    };
-    const handleDisconnect = () => {
-      setWindowSubtitle();
-    };
-
-    if (client.currentRoomInfo) {
-      handleRoomInfo(client.currentRoomInfo);
-    } else {
-      setWindowSubtitle();
-    }
-
-    client.on("roomInfo", handleRoomInfo);
-    client.on("disconnect", handleDisconnect);
-
+    setWindowSubtitle(roomInfo ? getRoomSubtitle(roomInfo) : undefined);
     return () => {
-      client.off("roomInfo", handleRoomInfo);
-      client.off("disconnect", handleDisconnect);
       setWindowSubtitle();
     };
-  }, [client]);
+  }, [client, roomInfo]);
 
   // Load WASM buttplug backend when haptics is enabled (lazy — avoids 5MB download when disabled)
   useEffect(() => {

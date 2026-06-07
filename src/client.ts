@@ -31,19 +31,18 @@ import { Cacophony } from "cacophony";
 import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
-import type { GMCPMessageRoomInfo, RoomPlayer } from "./gmcp/Room"; // Import RoomPlayer
 import type {
   SpatialEmitter,
   SpatialEntity,
   SpatialListenerOrientation,
   SpatialVector,
 } from "./gmcp/Client/Spatial";
+import { useRoomStore } from "./stores/roomStore";
 
 export interface WorldData {
   playerId: string;
   playerName: string;
   roomId: string;
-  roomPlayers: RoomPlayer[]; // Changed from string[]
   spatialEntities: Record<string, SpatialEntity>;
   spatialEmitters: Record<string, SpatialEmitter>;
   listenerEntityId: string;
@@ -102,7 +101,6 @@ class MudClient extends EventEmitter {
     playerId: "",
     playerName: "",
     roomId: "",
-    roomPlayers: [], // Initialized as RoomPlayer[]
     spatialEntities: {},
     spatialEmitters: {},
     listenerEntityId: "",
@@ -113,7 +111,6 @@ class MudClient extends EventEmitter {
   public editors: EditorManager;
   public webRTCService: WebRTCService;
   public fileTransferManager: FileTransferManager;
-  public currentRoomInfo: GMCPMessageRoomInfo | null = null; // Add property to store room info
   private _autosay: boolean = false;
   private globalMuted: boolean = false;
   private isWindowFocused: boolean = true;
@@ -481,7 +478,7 @@ class MudClient extends EventEmitter {
     this.mcpAuthKey = null;
     this.telnetBuffer = "";
     this.telnetNegotiation = false;
-    this.currentRoomInfo = null; // Reset room info on cleanup
+    useRoomStore.getState().reset(); // Reset room info on cleanup
     this.worldData.spatialEntities = {};
     this.worldData.spatialEmitters = {};
     this.worldData.listenerEntityId = "";
