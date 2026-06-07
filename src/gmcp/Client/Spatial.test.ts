@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GMCPClientSpatial } from "./Spatial";
 import { useSpatialStore } from "../../stores/spatialStore";
+import { useSessionStore } from "../../stores/sessionStore";
 
 function createMockClient() {
   return {
@@ -12,11 +13,6 @@ function createMockClient() {
     },
     emit: vi.fn(),
     sendGmcp: vi.fn(),
-    worldData: {
-      playerId: "",
-      playerName: "",
-      roomId: "",
-    },
   };
 }
 
@@ -27,12 +23,13 @@ describe("GMCPClientSpatial", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useSpatialStore.getState().reset();
+    useSessionStore.getState().reset();
     client = createMockClient();
     handler = new GMCPClientSpatial(client as any);
   });
 
   it("replaces stale scene state on Scene snapshot", () => {
-    client.worldData.roomId = "old-room";
+    useSessionStore.setState({ roomId: "old-room" });
     useSpatialStore.setState({
       listenerEntityId: "old-listener",
       spatialEntities: {
@@ -76,7 +73,7 @@ describe("GMCPClientSpatial", () => {
     });
 
     const spatial = useSpatialStore.getState();
-    expect(client.worldData.roomId).toBe("new-room");
+    expect(useSessionStore.getState().roomId).toBe("new-room");
     expect(spatial.listenerEntityId).toBe("player-1");
     expect(spatial.listenerPosition).toEqual([1, 2, 3]);
     expect(spatial.listenerOrientation).toEqual({

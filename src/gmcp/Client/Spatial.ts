@@ -1,3 +1,4 @@
+import { useSessionStore } from "../../stores/sessionStore";
 import { useSpatialStore } from "../../stores/spatialStore";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -110,8 +111,7 @@ export class GMCPClientSpatial extends GMCPPackage {
   }
 
   handleScene(data: GMCPMessageClientSpatialScene): void {
-    // roomId still lives on worldData (moves to the session store in a later slice).
-    this.client.worldData.roomId = data.roomId;
+    useSessionStore.getState().setRoomId(data.roomId);
     const listenerPosition = data.listenerPosition ?? null;
     const listenerOrientation = data.listenerOrientation ?? {
       forward: null,

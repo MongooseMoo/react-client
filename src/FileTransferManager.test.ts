@@ -2,6 +2,7 @@ import EventEmitter from "eventemitter3";
 import { describe, expect, it, vi } from "vitest";
 
 import FileTransferManager from "./FileTransferManager";
+import { useSessionStore } from "./stores/sessionStore";
 
 vi.mock("./FileTransferStore", () => ({
   FileTransferStore: vi.fn().mockImplementation(() => ({
@@ -12,13 +13,13 @@ vi.mock("./FileTransferStore", () => ({
 }));
 
 function createManager() {
+  useSessionStore.setState({ playerId: "player" });
   const webRTCService = Object.assign(new EventEmitter(), {
     cleanup: vi.fn(),
     isDataChannelOpen: vi.fn().mockReturnValue(false),
   });
   const client = Object.assign(new EventEmitter(), {
     webRTCService,
-    worldData: { playerId: "player" },
     onFileTransferCancel: vi.fn(),
     onFileTransferError: vi.fn(),
     onRecoveryFailed: vi.fn(),

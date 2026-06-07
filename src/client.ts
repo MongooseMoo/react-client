@@ -34,12 +34,6 @@ import FileTransferManager from "./FileTransferManager.js";
 import { useRoomStore } from "./stores/roomStore";
 import { useSpatialStore } from "./stores/spatialStore";
 
-export interface WorldData {
-  playerId: string;
-  playerName: string;
-  roomId: string;
-}
-
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
 
@@ -87,11 +81,6 @@ class MudClient extends EventEmitter {
   public mcp_getset: McpAwnsGetSet;
   public gmcp_char: GMCPChar;
   public gmcp_fileTransfer: GMCPClientFileTransfer;
-  public worldData: WorldData = {
-    playerId: "",
-    playerName: "",
-    roomId: "",
-  };
   public cacophony: Cacophony;
   public editors: EditorManager;
   public webRTCService: WebRTCService;

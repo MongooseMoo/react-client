@@ -1,4 +1,5 @@
 import { useRoomStore } from "../stores/roomStore";
+import { useSessionStore } from "../stores/sessionStore";
 import { GMCPMessage, GMCPPackage } from "./package";
 
 // More detailed Room.Info structure based on IRE docs
@@ -28,7 +29,7 @@ export class GMCPRoom extends GMCPPackage {
   handleInfo(data: GMCPMessageRoomInfo): void {
     this.name = data.name;
     this.id = data.num.toString(); // Store as string if needed elsewhere
-    this.client.worldData.roomId = this.id;
+    useSessionStore.getState().setRoomId(this.id);
     // setRoomInfo replaces the room and clears the player list for the new room.
     useRoomStore.getState().setRoomInfo(data);
     // TODO: Update other room properties (exits, area, etc.) based on data
