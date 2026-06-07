@@ -31,23 +31,13 @@ import { Cacophony } from "cacophony";
 import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
-import type {
-  SpatialEmitter,
-  SpatialEntity,
-  SpatialListenerOrientation,
-  SpatialVector,
-} from "./gmcp/Client/Spatial";
 import { useRoomStore } from "./stores/roomStore";
+import { useSpatialStore } from "./stores/spatialStore";
 
 export interface WorldData {
   playerId: string;
   playerName: string;
   roomId: string;
-  spatialEntities: Record<string, SpatialEntity>;
-  spatialEmitters: Record<string, SpatialEmitter>;
-  listenerEntityId: string;
-  listenerPosition: SpatialVector | null;
-  listenerOrientation: SpatialListenerOrientation;
 }
 
 function resetMidiIntentionalDisconnectFlags(): void {
@@ -101,11 +91,6 @@ class MudClient extends EventEmitter {
     playerId: "",
     playerName: "",
     roomId: "",
-    spatialEntities: {},
-    spatialEmitters: {},
-    listenerEntityId: "",
-    listenerPosition: null,
-    listenerOrientation: { forward: null, up: null },
   };
   public cacophony: Cacophony;
   public editors: EditorManager;
@@ -479,11 +464,7 @@ class MudClient extends EventEmitter {
     this.telnetBuffer = "";
     this.telnetNegotiation = false;
     useRoomStore.getState().reset(); // Reset room info on cleanup
-    this.worldData.spatialEntities = {};
-    this.worldData.spatialEmitters = {};
-    this.worldData.listenerEntityId = "";
-    this.worldData.listenerPosition = null;
-    this.worldData.listenerOrientation = { forward: null, up: null };
+    useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
     this.webRTCService.cleanup();
     this.fileTransferManager.cleanup();
     
