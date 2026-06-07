@@ -34,12 +34,13 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage {
   public readonly fadein?: number = 0; // Volume increases, or fades in, ranged across a linear pattern from one to the volume set with the "volume" key.
   public readonly fadeout?: number = 0; // Volume decreases, or fades out, ranged across a linear pattern from the volume set with the "volume" key to one.
   public readonly start: number = 0;
+  public readonly finish?: number; // MCMP playback end position in ms.
   public readonly loops?: number = 0; // Number of iterations that the media plays.  A value of -1 allows the sound or music to loop indefinitely.
   public readonly priority?: number = 0; // Halts the play of current or future played media files with a lower priority while this media plays.
   public continue?: boolean = true;
   public key?: string; // Uniquely identifies media files with a "key" that is bound to their "name" or "url".  Halts the play of current media files with the same "key" that have a different "name" or "url" while this media plays.
   // Custom Mongoose extensions
-  public readonly end?: number = 0; // The end time of the media in ms.
+  public readonly end?: number = 0; // Deprecated alias for a local stop delay in ms. Prefer MCMP `finish`.
   public is3d: boolean = false; // If true, the media is 3D and should be played in the 3D space.
   public pan: number = 0; // -1 to 1
   public position: number[] = [0, 0, 0]; // x, y, z
@@ -527,6 +528,22 @@ export class GMCPClientMedia extends GMCPPackage {
     }
   }
 
+  private stopDelayMs(
+    data: Pick<GMCPMessageClientMediaPlay, 'finish' | 'start' | 'end'>,
+  ): number | undefined {
+    if (typeof data.finish === 'number' && Number.isFinite(data.finish)) {
+      const start =
+        typeof data.start === 'number' && Number.isFinite(data.start) ? Math.max(0, data.start) : 0;
+      return Math.max(0, data.finish - start);
+    }
+
+    if (typeof data.end === 'number' && Number.isFinite(data.end) && data.end > 0) {
+      return data.end;
+    }
+
+    return undefined;
+  }
+
   handleDefault(url: string) {
     this.defaultUrl = url;
   }
@@ -574,13 +591,14 @@ export class GMCPClientMedia extends GMCPPackage {
     this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
 
-    if (data.end) {
+    const stopDelay = this.stopDelayMs(data);
+    if (stopDelay !== undefined) {
       const endKey = soundKey;
       setTimeout(() => {
         if (this.sounds[endKey] === sound) {
           this.releaseSound(sound, endKey);
         }
-      }, data.end);
+      }, stopDelay);
     }
 
     // Playback control

@@ -413,7 +413,30 @@ describe('GMCPClientMedia', () => {
     expect(handler.sounds.effect).toBe(newSound);
   });
 
-  it('cleans up a sound when its explicit end timer fires', async () => {
+  it('cleans up a sound when its MCMP finish endpoint is reached', async () => {
+    vi.useFakeTimers();
+    const sound = createMockSound('bell.ogg');
+    mockCreateSound.mockResolvedValue(sound);
+
+    await handler.handlePlay({
+      finish: 250,
+      key: 'bell',
+      name: 'bell.ogg',
+      start: 100,
+      type: 'sound',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    vi.advanceTimersByTime(149);
+    expect(sound.cleanup).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+
+    expect(sound.cleanup).toHaveBeenCalledOnce();
+    expect(handler.sounds).toEqual({});
+  });
+
+  it('keeps end as a compatibility stop delay alias', async () => {
     vi.useFakeTimers();
     const sound = createMockSound('bell.ogg');
     mockCreateSound.mockResolvedValue(sound);
