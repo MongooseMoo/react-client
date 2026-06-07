@@ -1,0 +1,142 @@
+[
+  {
+    "url": "https://mudstandards.org/mud/gmcp/",
+    "file": "mudstandards/mud-gmcp.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/beip/",
+    "file": "mudstandards/gmcp-beip.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/char/",
+    "file": "mudstandards/gmcp-char.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/char_affliction/",
+    "file": "mudstandards/gmcp-char_affliction.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/char_defences/",
+    "file": "mudstandards/gmcp-char_defences.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/char_items/",
+    "file": "mudstandards/gmcp-char_items.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/char_login/",
+    "file": "mudstandards/gmcp-char_login.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/char_skills/",
+    "file": "mudstandards/gmcp-char_skills.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/client/",
+    "file": "mudstandards/gmcp-client.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/client_media/",
+    "file": "mudstandards/gmcp-client_media.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/comm/",
+    "file": "mudstandards/gmcp-comm.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/config/",
+    "file": "mudstandards/gmcp-config.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/core/",
+    "file": "mudstandards/gmcp-core.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/core_hello/",
+    "file": "mudstandards/gmcp-core_hello.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/discord/",
+    "file": "mudstandards/gmcp-discord.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/gmcp_overland/",
+    "file": "mudstandards/gmcp-gmcp_overland.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/group/",
+    "file": "mudstandards/gmcp-group.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/loci_hotkey/",
+    "file": "mudstandards/gmcp-loci_hotkey.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/loci_menu/",
+    "file": "mudstandards/gmcp-loci_menu.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/msdp/",
+    "file": "mudstandards/gmcp-msdp.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/mudstandards_channel/",
+    "file": "mudstandards/gmcp-mudstandards_channel.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/mudstandards_char/",
+    "file": "mudstandards/gmcp-mudstandards_char.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/mudstandards_frame/",
+    "file": "mudstandards/gmcp-mudstandards_frame.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/mudstandards_resources/",
+    "file": "mudstandards/gmcp-mudstandards_resources.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/mudstandards_room/",
+    "file": "mudstandards/gmcp-mudstandards_room.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/mudstandards_tilemap/",
+    "file": "mudstandards/gmcp-mudstandards_tilemap.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/room/",
+    "file": "mudstandards/gmcp-room.html",
+    "status": 200
+  },
+  {
+    "url": "https://mudstandards.org/gmcp/webview/",
+    "file": "mudstandards/gmcp-webview.html",
+    "status": 200
+  }
+]

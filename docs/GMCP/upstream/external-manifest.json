@@ -1,0 +1,12 @@
+[
+  {
+    "url": "https://www.achaea.com/local/Achaea_GMCP_Spec_20140311.pdf",
+    "file": "ire/Achaea_GMCP_Spec_20140311.pdf",
+    "source": "Achaea/IRE GMCP specification PDF"
+  },
+  {
+    "url": "https://wiki.mudlet.org/w/Special:MyLanguage/Standards:MUD_Client_Media_Protocol",
+    "file": "mudlet/MUD_Client_Media_Protocol.html",
+    "source": "Mudlet MCMP specification page"
+  }
+]

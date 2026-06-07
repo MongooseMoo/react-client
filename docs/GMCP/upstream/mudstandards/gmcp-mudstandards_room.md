@@ -1,0 +1,104 @@
+# The `ms.room` package
+
+![](data:image/svg+xml;base64,PHN2ZyB2aWV3Ym94PSIwIDAgMTYgMTYiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTguODkzIDEuNWMtLjE4My0uMzEtLjUyLS41LS44ODctLjVzLS43MDMuMTktLjg4Ni41TC4xMzggMTMuNDk5YS45OC45OCAwIDAgMCAwIDEuMDAxYy4xOTMuMzEuNTMuNTAxLjg4Ni41MDFoMTMuOTY0Yy4zNjcgMCAuNzA0LS4xOS44NzctLjVhMS4wMyAxLjAzIDAgMCAwIC4wMS0xLjAwMkw4Ljg5MyAxLjV6bS4xMzMgMTEuNDk3SDYuOTg3di0yLjAwM2gyLjAzOXYyLjAwM3ptMC0zLjAwNEg2Ljk4N1Y1Ljk4N2gyLjAzOXY0LjAwNnoiIC8+PC9zdmc+)warning
+
+This is a proposal and request for comments only.
+
+Why this package when there is a `room` package already? GMCP originally was meant to be used for interactions with a specific game and take only into account the needs of that game. Some commands still were generic enough to be used for other games as well and `room.info` did work for a lot games ... but not for all.
+
+- It requires games have numeric room identifiers, which is not the case for everyone.
+- The way how the terrain/environment is declared, varies. Some servers use `terrain` as a field in `room.info`, others use `environment`.
+- The terrain type is just an identifier - a client trying to e.g. use suitable colors or tiles in a mapper, has no way of knowing *how* to represent it.
+- There is no concise definition if and how exists need to be presented. It is often a map abbreviated direction names and a VNum, but some servers decide not to send the VNum and give just a list of directions. In addition to the same numeric identifier problem for some servers, a client can not rely on servers formatting because there is no definition.
+
+So, this package tries to be more precise which parameters are mandatory and which are optional. It also tries to come up with more enhanced features for mappers or other ways to display room content.
+
+### ms.room.terrain
+
+Expected to be sent only once - either on connect or at most once per zone/area change.
+
+``` json
+ms.room.terrain {
+    {
+        "id": "city",
+        "label": "City",
+        "color": "C0C0C0",
+        "tile_url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAgAAZABkAAD"
+    },  {
+        "id": "forest",
+        "label": "Forest",
+        "color": "0000FF",
+        "tile_url": "htts://myserver/tiles/forest.jpg"
+    }
+}
+```
+
+- **id** (*Mandatory*) Internal name to refer to from Room.Info. It should consist of ASCII letters only.
+- **label** (*Mandatory*) A human readable name
+- **tile_url** (*Optional*) An HTTP(S) or [RFC 2397](https://datatracker.ietf.org/doc/html/rfc2397) URL that points to a small image (suggested 32x32 pixel) that represents the terrain.
+- **color** (*Optional*) Hexadecimal RGB code of a color to use for this terrain
+
+### ms.room.info
+
+``` json
+ms.room.info {
+    "id": "1/1/12",
+    "name": "On a hill",
+    "description": "The view from this hill is spectacular ... at least that is what you will tell anyone if asked.",
+    "terrain": "forest",
+    "exits": {
+        "E": {
+            "id": "1/1/13",
+            "inverse": "N",
+        }
+    }
+}
+```
+
+- **id** (Mandatory) An internal identifier that can be non-numeric. The identifier should be serverwide unique.
+- **name** (*Mandatory*) The name of the room
+- **description** (*Optional*) The full room description
+- **terrain** (*Optional*) A reference to a terrain definition. See `ms.room.terrain`
+- **exits** (*Mandatory*) A map of exists, identified by the direction. Each entry consists of a map of exit object. The direction (mostly N,S,E,W,U,D,NE,NW,SE,SW,IN,OUT but other strings (e.g. "clockwise") might be used as well) serves as a key. Valid attributes of an exit are:
+  - **id** (*Mandatory*) Identifier (possible non-numeric) of the target room.
+  - **inverse** (*Optional*) Direction in which you can return from the target room back to this room. Useful for mappers in maps where exit directions are not simple inverse.
+
+### ms.room.entities
+
+This command sends a list of NPCs/mobiles/players and items that are in the room (or near surrounding) to interact with.
+
+``` json
+ms.room.entities {
+    "name": "<display name for the entity",
+    "type": "[mobile|item|player]",
+    "icon_url": "optional url to a small 32x32 pixel image",
+    "actions": [
+        {
+            "name": "<display name of the command>",
+            "command": "<string to send>",
+            "emoji": "<optional emoji to prepend>",
+            "color": "[normal|danger]"
+        }
+    ]
+}
+```
+
+- **type** (Mandatory) What kind of entity this is. Valid values are `mobile`, `item` and `player`.
+
+- **name** (*Mandatory*) A short display name for the entity. It should not contain ANSI color codes.
+
+- **nameANSI** (*Optional*) A short display name for the entity. It may contain ANSI color codes.
+
+- **icon_url** (*Optional*) Either an HTTP(S) or [RFC 2397](https://datatracker.ietf.org/doc/html/rfc2397) URL that points to a small image (suggested 32x32 pixel) that represents the entity.
+
+- **actions** (*Optional*) A short list of actions the client may offer to the user to interact with this entity. If the action is selected/clicked, the given command string is sent to the MUD as if the user had typed it. Valid attributes of an action are:
+
+  - **name** (*Mandatory*) A very short (suggestion: one word olny) display name, e.g. to use for a button below the name, of the action
+
+  - **command** (*Mandatory*) A command string that the client sends when the action is selected by the user
+
+  - **emoji** (*Optional*) A emoji that can be prepended to the *name*. Gets an extra attribute, because some clients may not be able to use Emojis.
+
+  - **color** (Optional) Not a color code, but a way to express potentially aggressive actions (like "kill", "steal"). How exactly a client renders this, is up to the client. Defaults to "normal".
+
+
