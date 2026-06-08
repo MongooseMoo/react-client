@@ -14,11 +14,10 @@ import WasmGuest from './components/WasmGuest';
 import type { WasmHostState } from './components/WasmHost';
 import WasmHost from './components/WasmHost';
 import { createConfiguredClient } from './createConfiguredClient';
-import type { FileTransferOffer } from './gmcp/Client/FileTransfer';
 import type { GMCPMessageRoomInfo } from './gmcp/Room';
+import { useFileTransferNotifications } from './components/FileTransfer/useFileTransferNotifications';
 import { createHapticsRuntime, type HapticsRuntime } from './haptics/runtime';
 import { useChannelHistory } from './hooks/useChannelHistory';
-import { useClientEvent } from './hooks/useClientEvent';
 import { autoLogService, createAutoLogSessionDraft } from './logging/AutoLogService';
 import { usePreferences } from './stores/preferencesStore';
 import { useRoomStore } from './stores/roomStore';
@@ -38,16 +37,25 @@ function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
   return roomInfo.name || roomInfo.area || undefined;
 }
 
+function getSidebarShortcutIndex(event: KeyboardEvent): number | null {
+  if (!event.ctrlKey) {
+    return null;
+  }
+
+  const digit = Number.parseInt(event.key, 10);
+  if (Number.isNaN(digit) || digit < 1 || digit > 9) {
+    return null;
+  }
+
+  return digit - 1;
+}
+
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
-  const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
-  const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
   const [hostState, setHostState] = useState<WasmHostState>({ roomId: null, guestCount: 0 });
   const { clearAllBuffers } = useChannelHistory(client);
-  const players = useClientEvent<'userlist'>(client, 'userlist', []) || [];
-  const [fileTransferOffer, setFileTransferOffer] = useState<FileTransferOffer | null>(null);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
@@ -57,6 +65,7 @@ function App() {
   const clientInitialized = useRef(false);
   const hapticsRuntimeRef = useRef<HapticsRuntime | null>(null);
   const preferences = usePreferences();
+  useFileTransferNotifications(client);
 
   const saveLog = () => {
     if (outRef.current) {
@@ -76,6 +85,37 @@ function App() {
       outRef.current.copyLog();
     }
   };
+
+  const handleAppKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (!client) {
+        return;
+      }
+
+      if (event.key === 'Control') {
+        client.cancelSpeech();
+      }
+
+      if (event.key === 'Escape') {
+        client.stopAllSounds();
+        const midiPackage = client.gmcpHandlers['Client.Midi'];
+        if (midiPackage) {
+          midiPackage.sendAllNotesOff();
+        }
+        hapticsRuntimeRef.current?.emergencyStop();
+      }
+
+      if (showSidebar) {
+        const targetIndex = getSidebarShortcutIndex(event);
+        if (targetIndex !== null) {
+          event.preventDefault();
+          console.log(`App: Detected CTRL+${targetIndex + 1}, calling switchToTab(${targetIndex})`);
+          sidebarRef.current?.switchToTab(targetIndex);
+        }
+      }
+    },
+    [client, showSidebar],
+  );
 
   // are we on mobile?
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -166,7 +206,7 @@ function App() {
     };
   }, [client]);
 
-  // Common client setup: notifications, auto-login, MIDI, haptics, keyboard handlers
+  // Common client setup: notifications, auto-login, MIDI, haptics, focus handlers
   useEffect(() => {
     if (!client) return;
 
@@ -202,23 +242,6 @@ function App() {
     hapticsRuntimeRef.current = hapticsRuntime;
     hapticsRuntime.setEnabled(usePreferences.getState().haptics.enabled);
 
-    // Listen to 'keydown' event
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Control') {
-        client.cancelSpeech();
-      }
-      if (event.key === 'Escape') {
-        client.stopAllSounds();
-        const midiPackage = client.gmcpHandlers['Client.Midi'];
-        if (midiPackage) {
-          midiPackage.sendAllNotesOff();
-        }
-        hapticsRuntime.emergencyStop();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-
     // on focus, focus the input
     const handleFocus = () => {
       inRef.current?.focus();
@@ -227,7 +250,6 @@ function App() {
 
     return () => {
       client.off('sessionReady', ensurePushSubscriptionForSession);
-      window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('focus', handleFocus);
       if (hapticsRuntimeRef.current === hapticsRuntime) {
         hapticsRuntimeRef.current = null;
@@ -237,6 +259,13 @@ function App() {
       });
     };
   }, [client]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleAppKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', handleAppKeyDown, true);
+    };
+  }, [handleAppKeyDown]);
 
   useEffect(() => {
     if (!preferences.midi.enabled) return;
@@ -280,40 +309,6 @@ function App() {
     hapticsRuntimeRef.current?.setEnabled(preferences.haptics.enabled);
   }, [preferences.haptics.enabled]);
 
-  // Effect for CTRL + Number shortcut
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!showSidebar || !event.ctrlKey) {
-        return;
-      }
-      const digit = parseInt(event.key, 10);
-      if (!isNaN(digit) && digit >= 1 && digit <= 9) {
-        const targetIndex = digit - 1;
-        event.preventDefault();
-        console.log(`App: Detected CTRL+${digit}, calling switchToTab(${targetIndex})`);
-        sidebarRef.current?.switchToTab(targetIndex);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown, true);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown, true);
-    };
-  }, [showSidebar]);
-
-  useEffect(() => {
-    if (!client) return () => {};
-
-    const handleFileTransferOffer = (offer: FileTransferOffer) => {
-      setFileTransferOffer(offer);
-    };
-
-    client.fileTransferManager.on('fileTransferOffer', handleFileTransferOffer);
-    return () => {
-      client.fileTransferManager.off('fileTransferOffer', handleFileTransferOffer);
-    };
-  }, [client]);
-
   const handleCommand = useCallback(
     (text: string) => {
       if (client) {
@@ -326,19 +321,6 @@ function App() {
   const focusInput = useCallback(() => {
     inRef.current?.focus();
   }, []);
-
-  useEffect(() => {
-    if (fileTransferOffer !== null) {
-      setFileTransferExpanded(true);
-      setShowFileTransfer(true);
-      client?.sendNotification(
-        'File Transfer Offer',
-        `${fileTransferOffer.sender} wants to send you ${
-          fileTransferOffer.filename
-        } (${Math.round(fileTransferOffer.filesize / 1024)} KB)`,
-      );
-    }
-  }, [fileTransferOffer, client]);
 
   useBeforeunload((event) => {
     if (client) {

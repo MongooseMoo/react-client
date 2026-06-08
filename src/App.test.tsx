@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -7,6 +7,7 @@ const {
   mockEnsurePushSubscription,
   mockHapticsRuntimes,
   mockPreferences,
+  mockSwitchToTab,
 } = vi.hoisted(() => {
   const mockClient = {
     cancelSpeech: vi.fn(),
@@ -41,6 +42,7 @@ const {
       haptics: { enabled: false },
       midi: { enabled: false },
     },
+    mockSwitchToTab: vi.fn(),
   };
 });
 
@@ -117,7 +119,7 @@ vi.mock('./components/sidebar', async () => {
   const ReactModule = await vi.importActual<typeof import('react')>('react');
   return {
     default: ReactModule.forwardRef((_props, ref) => {
-      ReactModule.useImperativeHandle(ref, () => ({ switchToTab: vi.fn() }));
+      ReactModule.useImperativeHandle(ref, () => ({ switchToTab: mockSwitchToTab }));
       return null;
     }),
   };
@@ -206,5 +208,23 @@ describe('App haptics backend lifecycle', () => {
 
     view.unmount();
     expect(mockClient.off).toHaveBeenCalledWith('sessionReady', sessionReadyHandler);
+  });
+
+  it('handles app keyboard shortcuts from one keydown path', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(mockHapticsRuntimes).toHaveLength(1);
+    });
+
+    fireEvent.keyDown(document, { key: 'Control' });
+    expect(mockClient.cancelSpeech).toHaveBeenCalledOnce();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(mockClient.stopAllSounds).toHaveBeenCalledOnce();
+    expect(mockHapticsRuntimes[0].emergencyStop).toHaveBeenCalledOnce();
+
+    fireEvent.keyDown(document, { ctrlKey: true, key: '1' });
+    expect(mockSwitchToTab).toHaveBeenCalledWith(0);
   });
 });
