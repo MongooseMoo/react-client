@@ -5,8 +5,7 @@ const {
   mockClient,
   mockCreateConfiguredClient,
   mockEnsurePushSubscription,
-  mockGamepadBackends,
-  mockHapticsService,
+  mockHapticsRuntimes,
   mockPreferences,
 } = vi.hoisted(() => {
   const mockClient = {
@@ -33,15 +32,11 @@ const {
     mockClient,
     mockCreateConfiguredClient: vi.fn(() => mockClient),
     mockEnsurePushSubscription: vi.fn(async () => {}),
-    mockGamepadBackends: [] as Array<{
-      connect: ReturnType<typeof vi.fn>;
-      disconnect: ReturnType<typeof vi.fn>;
+    mockHapticsRuntimes: [] as Array<{
+      dispose: ReturnType<typeof vi.fn>;
+      emergencyStop: ReturnType<typeof vi.fn>;
+      setEnabled: ReturnType<typeof vi.fn>;
     }>,
-    mockHapticsService: {
-      emergencyStop: vi.fn(),
-      registerBackend: vi.fn(),
-      unregisterBackend: vi.fn(async () => {}),
-    },
     mockPreferences: {
       haptics: { enabled: false },
       midi: { enabled: false },
@@ -57,29 +52,23 @@ vi.mock('./createConfiguredClient', () => ({
   createConfiguredClient: mockCreateConfiguredClient,
 }));
 
-vi.mock('./HapticsService', () => ({
-  hapticsService: mockHapticsService,
+vi.mock('./haptics/runtime', () => ({
+  createHapticsRuntime: vi.fn(() => {
+    const runtime = {
+      dispose: vi.fn(async () => {}),
+      emergencyStop: vi.fn(),
+      setEnabled: vi.fn(),
+    };
+    mockHapticsRuntimes.push(runtime);
+    return runtime;
+  }),
 }));
 
-vi.mock('./haptics/GamepadBackend', () => ({
-  GamepadBackend: class {
-    connect = vi.fn();
-    disconnect = vi.fn();
-
-    constructor() {
-      mockGamepadBackends.push(this);
-    }
-  },
-}));
-
-vi.mock('./haptics/ButtplugWasmBackend', () => ({
-  ButtplugWasmBackend: class {},
-  createRealWasmDeps: vi.fn(),
-}));
-
-vi.mock('./stores/preferencesStore', () => ({
-  usePreferences: () => mockPreferences,
-}));
+vi.mock('./stores/preferencesStore', () => {
+  const usePreferences = () => mockPreferences;
+  usePreferences.getState = () => mockPreferences;
+  return { usePreferences };
+});
 
 vi.mock('./hooks/useChannelHistory', () => ({
   useChannelHistory: () => ({ clearAllBuffers: vi.fn() }),
@@ -169,7 +158,7 @@ import App from './App';
 describe('App haptics backend lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGamepadBackends.length = 0;
+    mockHapticsRuntimes.length = 0;
     mockPreferences.haptics.enabled = false;
     mockPreferences.midi.enabled = false;
     mockClient.sessionReady = false;
@@ -180,19 +169,19 @@ describe('App haptics backend lifecycle', () => {
     cleanup();
   });
 
-  it('unregisters the gamepad backend created during client setup on cleanup', async () => {
+  it('disposes the haptics runtime created during client setup on cleanup', async () => {
     const view = render(<App />);
 
     await waitFor(() => {
-      expect(mockHapticsService.registerBackend).toHaveBeenCalledOnce();
+      expect(mockHapticsRuntimes).toHaveLength(1);
     });
 
-    const backend = mockGamepadBackends[0];
-    expect(mockHapticsService.registerBackend).toHaveBeenCalledWith(backend);
+    const runtime = mockHapticsRuntimes[0];
+    expect(runtime.setEnabled).toHaveBeenCalledWith(false);
 
     view.unmount();
 
-    expect(mockHapticsService.unregisterBackend).toHaveBeenCalledWith(backend);
+    expect(runtime.dispose).toHaveBeenCalledOnce();
   });
 
   it('waits for sessionReady before ensuring a push subscription', async () => {

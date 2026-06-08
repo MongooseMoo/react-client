@@ -2,29 +2,26 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useBeforeunload } from 'react-beforeunload';
 import './App.css';
 import type MudClient from './client';
-import { createConfiguredClient } from './createConfiguredClient';
-import { hapticsService } from './HapticsService';
-import { GamepadBackend } from './haptics/GamepadBackend';
-import { ButtplugWasmBackend, createRealWasmDeps } from './haptics/ButtplugWasmBackend';
-import type { HapticsBackend } from './haptics/types';
-import { usePreferences } from './stores/preferencesStore';
+import AutoLogDialog, { type AutoLogDialogRef } from './components/AutoLogDialog';
+import HostPanel from './components/HostPanel';
 import CommandInput from './components/input';
 import OutputWindow from './components/output';
 import PreferencesDialog, { type PreferencesDialogRef } from './components/PreferencesDialog';
-import AutoLogDialog, { type AutoLogDialogRef } from './components/AutoLogDialog';
 import Sidebar, { type SidebarRef } from './components/sidebar';
 import Statusbar from './components/statusbar';
 import Toolbar from './components/toolbar';
-import WasmHost from './components/WasmHost';
-import type { WasmHostState } from './components/WasmHost';
 import WasmGuest from './components/WasmGuest';
-import HostPanel from './components/HostPanel';
-import { useChannelHistory } from './hooks/useChannelHistory';
-import { useClientEvent } from './hooks/useClientEvent';
+import type { WasmHostState } from './components/WasmHost';
+import WasmHost from './components/WasmHost';
+import { createConfiguredClient } from './createConfiguredClient';
 import type { FileTransferOffer } from './gmcp/Client/FileTransfer';
 import type { GMCPMessageRoomInfo } from './gmcp/Room';
-import { useRoomStore } from './stores/roomStore';
+import { createHapticsRuntime, type HapticsRuntime } from './haptics/runtime';
+import { useChannelHistory } from './hooks/useChannelHistory';
+import { useClientEvent } from './hooks/useClientEvent';
 import { autoLogService, createAutoLogSessionDraft } from './logging/AutoLogService';
+import { usePreferences } from './stores/preferencesStore';
+import { useRoomStore } from './stores/roomStore';
 import { ensurePushSubscription } from './webpush';
 
 const WINDOW_TITLE = 'Mongoose Client';
@@ -58,7 +55,7 @@ function App() {
   const sidebarRef = React.useRef<SidebarRef | null>(null);
 
   const clientInitialized = useRef(false);
-  const wasmBackendLoaded = useRef(false);
+  const hapticsRuntimeRef = useRef<HapticsRuntime | null>(null);
   const preferences = usePreferences();
 
   const saveLog = () => {
@@ -201,11 +198,9 @@ function App() {
       });
     }
 
-    // Register gamepad backend (always available, zero config)
-    const gamepadBackend = new GamepadBackend();
-    hapticsService.registerBackend(gamepadBackend);
-    const registeredBackends: HapticsBackend[] = [gamepadBackend];
-    gamepadBackend.connect();
+    const hapticsRuntime = createHapticsRuntime();
+    hapticsRuntimeRef.current = hapticsRuntime;
+    hapticsRuntime.setEnabled(usePreferences.getState().haptics.enabled);
 
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -218,7 +213,7 @@ function App() {
         if (midiPackage) {
           midiPackage.sendAllNotesOff();
         }
-        hapticsService.emergencyStop();
+        hapticsRuntime.emergencyStop();
       }
     };
 
@@ -234,11 +229,12 @@ function App() {
       client.off('sessionReady', ensurePushSubscriptionForSession);
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('focus', handleFocus);
-      for (const backend of registeredBackends) {
-        hapticsService.unregisterBackend(backend).catch((error) => {
-          console.error('Failed to unregister haptics backend:', error);
-        });
+      if (hapticsRuntimeRef.current === hapticsRuntime) {
+        hapticsRuntimeRef.current = null;
       }
+      hapticsRuntime.dispose().catch((error) => {
+        console.error('Failed to dispose haptics runtime:', error);
+      });
     };
   }, [client]);
 
@@ -280,36 +276,8 @@ function App() {
     };
   }, [client, roomInfo]);
 
-  // Load WASM buttplug backend when haptics is enabled (lazy — avoids 5MB download when disabled)
   useEffect(() => {
-    if (!preferences.haptics.enabled) return;
-    if (wasmBackendLoaded.current) return;
-    wasmBackendLoaded.current = true;
-
-    let cancelled = false;
-    let buttplugBackend: ButtplugWasmBackend | null = null;
-    createRealWasmDeps()
-      .then((deps) => {
-        if (cancelled) return;
-        buttplugBackend = new ButtplugWasmBackend(deps);
-        hapticsService.registerBackend(buttplugBackend);
-        console.log('ButtplugWasmBackend registered (WASM loaded)');
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.warn('Failed to load buttplug WASM backend:', err);
-        wasmBackendLoaded.current = false;
-      });
-
-    return () => {
-      cancelled = true;
-      wasmBackendLoaded.current = false;
-      if (buttplugBackend) {
-        hapticsService.unregisterBackend(buttplugBackend).catch((error) => {
-          console.error('Failed to unregister WASM haptics backend:', error);
-        });
-      }
-    };
+    hapticsRuntimeRef.current?.setEnabled(preferences.haptics.enabled);
   }, [preferences.haptics.enabled]);
 
   // Effect for CTRL + Number shortcut
