@@ -10,6 +10,7 @@ vi.mock('../../audio/AmbisonicRenderer', () => ({
 }));
 
 import { GMCPClientMedia, type GMCPMessageClientMediaPlay } from './Media';
+import { MediaService } from '../../audio/MediaService';
 
 type ActionHandlers = Record<string, MediaSessionActionHandler>;
 
@@ -92,13 +93,19 @@ function createMockMusicSound(url: string) {
 
 function createMockClient() {
   const master = { destroy: vi.fn(), input: {}, destroyed: false };
+  const cacophony = {
+    context: { currentTime: 0, sampleRate: 48000 },
+    createSound: mockCreateSound,
+    getBus: vi.fn((name: string) => (name === 'master' ? master : undefined)),
+    listenerForwardOrientation: [0, 0, -1],
+    listenerPosition: [0, 0, 0],
+    listenerUpOrientation: [0, 1, 0],
+    muted: false,
+    setGlobalVolume: vi.fn(),
+  };
+
   return {
-    cacophony: {
-      context: { currentTime: 0, sampleRate: 48000 },
-      createSound: mockCreateSound,
-      getBus: vi.fn((name: string) => (name === 'master' ? master : undefined)),
-      listenerForwardOrientation: [0, 0, -1],
-    },
+    media: new MediaService(cacophony as never, { manageFocus: false }),
     off: vi.fn(),
     on: vi.fn(),
     sendGmcp: vi.fn(),
@@ -116,13 +123,15 @@ async function playMusic(handler: GMCPClientMedia, overrides: Partial<GMCPMessag
 
 describe('GMCPClientMedia ↔ Media Session', () => {
   let handler: GMCPClientMedia;
+  let mockClient: ReturnType<typeof createMockClient>;
   let session: ReturnType<typeof installMockSession>['session'];
   let handlers: ActionHandlers;
 
   beforeEach(() => {
     vi.clearAllMocks();
     ({ session, handlers } = installMockSession());
-    handler = new GMCPClientMedia(createMockClient() as never);
+    mockClient = createMockClient();
+    handler = new GMCPClientMedia(mockClient as never);
   });
 
   afterEach(() => {
@@ -217,11 +226,11 @@ describe('GMCPClientMedia ↔ Media Session', () => {
     expect(session.playbackState).toBe('none');
   });
 
-  it('clears the session on package shutdown (disconnect)', async () => {
+  it('clears the session on media service shutdown (disconnect)', async () => {
     mockCreateSound.mockResolvedValue(createMockMusicSound('proxy/theme.ogg'));
     await playMusic(handler, {});
 
-    handler.shutdown();
+    mockClient.media.shutdown();
     expect(session.metadata).toBeNull();
     expect(session.playbackState).toBe('none');
   });

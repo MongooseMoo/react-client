@@ -1,224 +1,144 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorManager } from './EditorManager';
-import MudClient from './client';
+import type MudClient from './client';
+import type { EditorSession } from './mcp';
 
-// Mock MudClient
-vi.mock('./client', () => {
+type MockBroadcastChannel = {
+  close: ReturnType<typeof vi.fn>;
+  onmessage: ((event: MessageEvent) => void) | null;
+  postMessage: ReturnType<typeof vi.fn>;
+};
+
+type MockEditorWindow = {
+  close: ReturnType<typeof vi.fn>;
+  closed: boolean;
+  focus: ReturnType<typeof vi.fn>;
+};
+
+function createSession(overrides: Partial<EditorSession> = {}): EditorSession {
   return {
-    default: vi.fn().mockImplementation(() => ({
-      sendMCPMultiline: vi.fn(),
-    })),
+    reference: 'test-ref',
+    type: 'text/plain',
+    contents: ['Test content'],
+    name: 'test.txt',
+    ...overrides,
   };
-});
+}
+
+function dispatchEditorMessage(channel: MockBroadcastChannel, data: unknown): void {
+  channel.onmessage?.({ data } as MessageEvent);
+}
 
 describe('EditorManager', () => {
   let editorManager: EditorManager;
   let mockClient: MudClient;
-  let originalWindow: any;
-  let mockBroadcastChannel: any;
-  let mockWindow: any;
-  
+  let mockBroadcastChannel: MockBroadcastChannel;
+  let mockWindow: MockEditorWindow;
+
   beforeEach(() => {
-    // Mock the client
-    mockClient = new MudClient() as any;
-    
-    // Create mock window
+    mockClient = {
+      mcpSession: {
+        sendMultiline: vi.fn(),
+      },
+    } as unknown as MudClient;
+
     mockWindow = {
       focus: vi.fn(),
       close: vi.fn(),
       closed: false,
     };
-    
-    // Save original window and create mock
-    originalWindow = global.window;
-    global.window = {
-      ...originalWindow,
-      open: vi.fn().mockReturnValue(mockWindow),
-    };
-    
-    // Mock BroadcastChannel
+    vi.spyOn(window, 'open').mockReturnValue(mockWindow as unknown as Window);
+
     mockBroadcastChannel = {
       postMessage: vi.fn(),
       onmessage: null,
       close: vi.fn(),
     };
-    
-    global.BroadcastChannel = vi.fn().mockImplementation(() => mockBroadcastChannel);
-    
-    // Create the editor manager
+    vi.stubGlobal(
+      'BroadcastChannel',
+      vi.fn().mockImplementation(() => mockBroadcastChannel),
+    );
+
     editorManager = new EditorManager(mockClient);
   });
-  
+
   afterEach(() => {
-    global.window = originalWindow;
-    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
-  
-  it('should open a new editor window', () => {
-    // Test data
-    const editorSession = {
-      reference: 'test-ref',
-      type: 'text/plain',
-      contents: 'Test content',
-      name: 'test.txt',
-    };
-    
-    // Call the method
-    editorManager.openEditorWindow(editorSession);
-    
-    // Verify window.open was called with expected URL
-    expect(window.open).toHaveBeenCalledWith(
-      '/editor?reference=test-ref',
-      '_blank'
-    );
-  });
-  
-  it('should focus an existing window if already open', () => {
-    // Override the window.open mock for this specific test to make existing windows work
-    // This is needed because our implementation of openEditorWindow
-    // uses the editors Map to store existing window references
-    const lookupMap = new Map();
-    
-    // Patch the editor manager to use our mock data
-    editorManager['editors'] = lookupMap as any;
-    
-    // Test data
-    const editorSession = {
-      reference: 'test-ref',
-      type: 'text/plain',
-      contents: 'Test content',
-      name: 'test.txt',
-    };
-    
-    // Store a mock window in the editors map
-    lookupMap.set('test-ref', {
-      ...editorSession,
-      window: mockWindow,
-      state: 1, // EditorState.Open
-    });
-    
-    // Call the method
-    editorManager.openEditorWindow(editorSession);
-    
-    // Verify window.open was not called
-    expect(window.open).not.toHaveBeenCalled();
-    
-    // Verify focus was called on the existing window
+
+  it('opens a new editor window', () => {
+    editorManager.openEditorWindow(createSession());
+
+    expect(window.open).toHaveBeenCalledWith('/editor?reference=test-ref', '_blank');
     expect(mockWindow.focus).toHaveBeenCalled();
   });
-  
-  it('should save editor window content', () => {
-    // Test data
-    const editorSession = {
-      reference: 'test-ref',
-      type: 'text/plain',
-      contents: 'Updated content',
-      name: 'test.txt',
-    };
-    
-    // Call the save method
-    editorManager.saveEditorWindow(editorSession);
-    
-    // Verify sendMCPMultiline was called with expected arguments
-    expect(mockClient.sendMCPMultiline).toHaveBeenCalledWith(
+
+  it('focuses an existing open window', () => {
+    editorManager.openEditorWindow(createSession());
+    dispatchEditorMessage(mockBroadcastChannel, { type: 'ready', id: 'test-ref' });
+    mockWindow.focus.mockClear();
+
+    editorManager.openEditorWindow(createSession());
+
+    expect(window.open).toHaveBeenCalledTimes(1);
+    expect(mockWindow.focus).toHaveBeenCalledOnce();
+  });
+
+  it('saves editor window content through the MCP session', () => {
+    editorManager.saveEditorWindow(
+      createSession({
+        contents: ['Updated content'],
+      }),
+    );
+
+    expect(mockClient.mcpSession.sendMultiline).toHaveBeenCalledWith(
       'dns-org-mud-moo-simpleedit-set',
       {
         reference: 'test-ref',
         type: 'text/plain',
         'content*': '',
       },
-      'Updated content'
+      ['Updated content'],
     );
   });
-  
-  it('should handle editor window ready message', () => {
-    // Test data
-    const editorSession = {
-      reference: 'test-ref',
-      type: 'text/plain',
-      contents: 'Test content',
-      name: 'test.txt',
-    };
-    
-    // Open an editor window
-    editorManager.openEditorWindow(editorSession);
-    
-    // Simulate 'ready' message from editor window
-    const readyMessage = {
-      data: {
-        type: 'ready',
-        id: 'test-ref',
-      }
-    };
-    
-    mockBroadcastChannel.onmessage(readyMessage);
-    
-    // Verify that the channel posted a message with the session data
+
+  it('loads a session after an editor window announces readiness', () => {
+    editorManager.openEditorWindow(createSession());
+
+    dispatchEditorMessage(mockBroadcastChannel, { type: 'ready', id: 'test-ref' });
+
     expect(mockBroadcastChannel.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'load',
-        session: expect.objectContaining({
-          reference: 'test-ref',
-          type: 'text/plain',
-          contents: 'Test content',
-          name: 'test.txt',
-        }),
-      })
+        session: expect.objectContaining(createSession()),
+      }),
     );
   });
-  
-  it('should handle editor window save message', () => {
-    // Spy on saveEditorWindow
+
+  it('handles editor window save messages', () => {
     const saveEditorWindowSpy = vi.spyOn(editorManager, 'saveEditorWindow');
-    
-    // Test session data
-    const sessionData = {
-      reference: 'test-ref',
-      type: 'text/plain',
-      contents: 'Updated content',
-      name: 'test.txt',
-    };
-    
-    // Simulate 'save' message from editor window
-    const saveMessage = {
-      data: {
-        type: 'save',
-        session: sessionData,
-      }
-    };
-    
-    mockBroadcastChannel.onmessage(saveMessage);
-    
-    // Verify saveEditorWindow was called with the session data
-    expect(saveEditorWindowSpy).toHaveBeenCalledWith(sessionData);
+    const session = createSession({ contents: ['Updated content'] });
+
+    dispatchEditorMessage(mockBroadcastChannel, {
+      type: 'save',
+      session,
+    });
+
+    expect(saveEditorWindowSpy).toHaveBeenCalledWith(session);
   });
-  
-  it('should shutdown properly', () => {
-    // Override the editors map for this test
-    editorManager['editors'] = new Map([
-      ['test-ref', {
-        reference: 'test-ref',
-        type: 'text/plain',
-        contents: 'Test content',
-        name: 'test.txt',
-        window: mockWindow,
-        state: 1, // EditorState.Open
-      }]
-    ]) as any;
-    
-    // Call shutdown
+
+  it('closes open editor windows on shutdown', () => {
+    editorManager.openEditorWindow(createSession());
+    dispatchEditorMessage(mockBroadcastChannel, { type: 'ready', id: 'test-ref' });
+
     editorManager.shutdown();
-    
-    // Verify close was called on the window
+
     expect(mockWindow.close).toHaveBeenCalled();
-    
-    // Verify shutdown message was posted to the channel
     expect(mockBroadcastChannel.postMessage).toHaveBeenCalledWith({
       type: 'shutdown',
       id: 'test-ref',
     });
-    
-    // Verify channel was closed
     expect(mockBroadcastChannel.close).toHaveBeenCalled();
   });
 });

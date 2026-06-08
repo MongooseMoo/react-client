@@ -30,7 +30,7 @@ import {
   GMCPRedirect,
   GMCPRoom,
 } from './gmcp';
-import { McpAwnsPing, McpAwnsStatus, McpSimpleEdit, McpVmooUserlist } from './mcp';
+import { DEFAULT_MCP_PACKAGES } from './mcp';
 
 /**
  * Create a MudClient with all GMCP and MCP packages registered.
@@ -68,10 +68,10 @@ export function createConfiguredClient(): MudClient {
   client.registerGMCPPackage(GMCPRedirect);
   client.registerGMCPPackage(GMCPRoom);
   client.registerGMCPPackage(GMCPClientHaptics);
+
   // MCP packages
-  client.registerMcpPackage(McpAwnsStatus);
-  client.registerMcpPackage(McpSimpleEdit);
-  client.registerMcpPackage(McpVmooUserlist);
-  client.registerMcpPackage(McpAwnsPing);
+  for (const PackageConstructor of DEFAULT_MCP_PACKAGES) {
+    client.registerMcpPackage(PackageConstructor);
+  }
   return client;
 }
