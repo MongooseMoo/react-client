@@ -1,25 +1,31 @@
-import EventEmitter from "eventemitter3";
-import { WebRTCService } from "./WebRTCService";
-import MudClient from "./client";
-import {
+import EventEmitter from 'eventemitter3';
+import type { WebRTCService } from './WebRTCService';
+import type {
+  FileTransferAccept,
+  FileTransferCancel,
+  FileTransferCandidate,
   GMCPClientFileTransfer,
   FileTransferOffer,
-} from "./gmcp/Client/FileTransfer";
-import { FileTransferStore, FileMetadata } from "./FileTransferStore";
-import { useSessionStore } from "./stores/sessionStore";
+  FileTransferReject,
+} from './gmcp/Client/FileTransfer';
+import { FileTransferStore } from './FileTransferStore';
+import { useSessionStore } from './stores/sessionStore';
 
 export class FileTransferError extends Error {
-  constructor(public code: string, message: string) {
+  constructor(
+    public code: string,
+    message: string,
+  ) {
     super(message);
-    this.name = "FileTransferError";
+    this.name = 'FileTransferError';
   }
 }
 
 export const FileTransferErrorCodes = {
-  CONNECTION_FAILED: "CONNECTION_FAILED",
-  TRANSFER_TIMEOUT: "TRANSFER_TIMEOUT",
-  INVALID_FILE: "INVALID_FILE",
-  DATA_CHANNEL_ERROR: "DATA_CHANNEL_ERROR",
+  CONNECTION_FAILED: 'CONNECTION_FAILED',
+  TRANSFER_TIMEOUT: 'TRANSFER_TIMEOUT',
+  INVALID_FILE: 'INVALID_FILE',
+  DATA_CHANNEL_ERROR: 'DATA_CHANNEL_ERROR',
 };
 
 interface FileTransferProgress {
@@ -32,23 +38,16 @@ interface FileTransferProgress {
   sender: string;
 }
 
-interface FileTransferRequest {
-  sender: string;
-  hash: string;
-  filename: string;
-  answerSdp: string;
-}
-
 interface FileTransferTask {
   file: File;
   filename: string;
   hash: string;
   lastActivityTimestamp: number;
+  recipient: string;
 }
 
 export default class FileTransferManager extends EventEmitter {
   private webRTCService: WebRTCService;
-  private client: MudClient;
   private gmcpFileTransfer: GMCPClientFileTransfer;
   private chunkSize: number = 16384; // 16 KB chunks
   private transferTimeoutInterval?: number;
@@ -56,24 +55,45 @@ export default class FileTransferManager extends EventEmitter {
   private outgoingTransfers: Map<string, FileTransferTask> = new Map(); // keyed by hash
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
-  public pendingOffers: Map<string, FileTransferOffer> =
-    new Map(); // keyed by hash
+  public pendingOffers: Map<string, FileTransferOffer> = new Map(); // keyed by hash
   private store: FileTransferStore;
   private storeInitialized: boolean = false;
   private readonly handleDataChannelMessage = (data: ArrayBuffer): void => {
     void this.handleIncomingChunk(data);
   };
-  private readonly handleFileTransferAccepted = (
-    transfer: FileTransferRequest
-  ): void => {
+  private readonly handleFileTransferAccepted = (transfer: FileTransferAccept): void => {
     void this.handleAcceptedTransfer(transfer);
   };
+  private readonly handleFileTransferOffer = (offer: FileTransferOffer): void => {
+    this.pendingOffers.set(offer.hash, offer);
+    this.emit('fileTransferOffer', offer);
+  };
+  private readonly handleFileTransferRejected = (transfer: FileTransferReject): void => {
+    const activeTransfer = this.outgoingTransfers.get(transfer.hash);
+    const filename = activeTransfer?.filename ?? 'unknown';
+    this.cleanupTransfer(transfer.hash);
+    this.emit('fileTransferRejected', {
+      sender: transfer.sender,
+      hash: transfer.hash,
+      filename,
+    });
+  };
+  private readonly handleFileTransferCancelled = (transfer: FileTransferCancel): void => {
+    this.emitCancellation(transfer.sender, transfer.hash);
+  };
+  private readonly handleRemoteIceCandidate = (data: FileTransferCandidate): void => {
+    void this.webRTCService.handleIceCandidate(JSON.parse(data.candidate));
+  };
+  private readonly handleLocalIceCandidate = (candidate: RTCIceCandidate): void => {
+    if (this.webRTCService.recipient) {
+      this.gmcpFileTransfer.sendCandidate(this.webRTCService.recipient, candidate);
+    }
+  };
 
-  constructor(client: MudClient, gmcpFileTransfer: GMCPClientFileTransfer) {
+  constructor(webRTCService: WebRTCService, gmcpFileTransfer: GMCPClientFileTransfer) {
     super();
-    this.client = client;
     this.gmcpFileTransfer = gmcpFileTransfer;
-    this.webRTCService = client.webRTCService;
+    this.webRTCService = webRTCService;
     this.store = new FileTransferStore();
     this.initializeStore();
     this.setupListeners();
@@ -83,9 +103,9 @@ export default class FileTransferManager extends EventEmitter {
     try {
       await this.store.initialize();
       this.storeInitialized = true;
-      console.log("[FileTransferManager] Store initialized successfully");
+      console.log('[FileTransferManager] Store initialized successfully');
     } catch (error) {
-      console.error("[FileTransferManager] Failed to initialize store:", error);
+      console.error('[FileTransferManager] Failed to initialize store:', error);
     }
   }
 
@@ -94,14 +114,13 @@ export default class FileTransferManager extends EventEmitter {
   }
 
   private setupListeners(): void {
-    this.webRTCService.on(
-      "dataChannelMessage",
-      this.handleDataChannelMessage
-    );
-    this.client.on(
-      "fileTransferAccepted",
-      this.handleFileTransferAccepted
-    );
+    this.webRTCService.on('dataChannelMessage', this.handleDataChannelMessage);
+    this.webRTCService.on('iceCandidate', this.handleLocalIceCandidate);
+    this.gmcpFileTransfer.on('offer', this.handleFileTransferOffer);
+    this.gmcpFileTransfer.on('accept', this.handleFileTransferAccepted);
+    this.gmcpFileTransfer.on('reject', this.handleFileTransferRejected);
+    this.gmcpFileTransfer.on('cancel', this.handleFileTransferCancelled);
+    this.gmcpFileTransfer.on('candidate', this.handleRemoteIceCandidate);
     this.transferTimeoutInterval = window.setInterval(() => this.checkTransferTimeouts(), 5000);
   }
 
@@ -115,27 +134,22 @@ export default class FileTransferManager extends EventEmitter {
     if (file.size > this.maxFileSize) {
       throw new FileTransferError(
         FileTransferErrorCodes.INVALID_FILE,
-        `File size exceeds the maximum allowed size of ${
-          this.maxFileSize / (1024 * 1024)
-        } MB`
+        `File size exceeds the maximum allowed size of ${this.maxFileSize / (1024 * 1024)} MB`,
       );
     }
 
     // Compute file hash before starting transfer
     const fileHash = await this.computeFileHash(file);
-    console.log(
-      `[FileTransferManager] Computed hash for ${file.name}: ${fileHash}`
-    );
+    console.log(`[FileTransferManager] Computed hash for ${file.name}: ${fileHash}`);
 
     // Register the outgoing transfer before initiating WebRTC
-    console.log(
-      `[FileTransferManager] Registering outgoing transfer for file: ${file.name}`
-    );
+    console.log(`[FileTransferManager] Registering outgoing transfer for file: ${file.name}`);
     this.outgoingTransfers.set(fileHash, {
       file,
       filename: file.name,
       hash: fileHash,
       lastActivityTimestamp: Date.now(),
+      recipient,
     });
 
     try {
@@ -149,26 +163,23 @@ export default class FileTransferManager extends EventEmitter {
         file.name,
         file.size,
         JSON.stringify(offer),
-        fileHash
+        fileHash,
       );
 
       // Wait for connection to be established
       await this.webRTCService.waitForConnection();
     } catch (error) {
-      console.error(
-        `[FileTransferManager] Failed to send file ${file.name}:`,
-        error
-      );
+      console.error(`[FileTransferManager] Failed to send file ${file.name}:`, error);
       this.handleTransferError(
         fileHash,
         file.name,
-        "send",
+        'send',
         error instanceof FileTransferError
           ? error
           : new FileTransferError(
               FileTransferErrorCodes.CONNECTION_FAILED,
-              "Failed to establish connection"
-            )
+              'Failed to establish connection',
+            ),
       );
       this.cleanupTransfer(fileHash);
     }
@@ -176,10 +187,10 @@ export default class FileTransferManager extends EventEmitter {
 
   private async computeFileHash(file: File): Promise<string> {
     const fileBytes = await file.arrayBuffer();
-    const hashBytes = await crypto.subtle.digest("SHA-256", fileBytes);
+    const hashBytes = await crypto.subtle.digest('SHA-256', fileBytes);
     return Array.from(new Uint8Array(hashBytes))
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
   }
 
   private async startFileTransfer(file: File, hash: string): Promise<void> {
@@ -197,18 +208,13 @@ export default class FileTransferManager extends EventEmitter {
             reject(
               new FileTransferError(
                 FileTransferErrorCodes.INVALID_FILE,
-                "Failed to read file chunk"
-              )
+                'Failed to read file chunk',
+              ),
             );
           }
         };
         fileReader.onerror = () =>
-          reject(
-            new FileTransferError(
-              FileTransferErrorCodes.INVALID_FILE,
-              "Error reading file"
-            )
-          );
+          reject(new FileTransferError(FileTransferErrorCodes.INVALID_FILE, 'Error reading file'));
         fileReader.readAsArrayBuffer(slice);
       });
 
@@ -223,7 +229,7 @@ export default class FileTransferManager extends EventEmitter {
         totalBytes: file.size,
       };
 
-      this.emit("fileSendProgress", fileTransferProgress);
+      this.emit('fileSendProgress', fileTransferProgress);
     }
   }
 
@@ -232,7 +238,7 @@ export default class FileTransferManager extends EventEmitter {
     hash: string,
     chunk: ArrayBuffer,
     offset: number,
-    totalSize: number
+    totalSize: number,
   ): Promise<void> {
     try {
       const header = {
@@ -247,15 +253,9 @@ export default class FileTransferManager extends EventEmitter {
       const headerStr = JSON.stringify(header);
       const headerBuffer = new TextEncoder().encode(headerStr);
       const headerSizeBuffer = new ArrayBuffer(4);
-      new DataView(headerSizeBuffer).setUint32(
-        0,
-        headerBuffer.byteLength,
-        true
-      ); // Little-endian
+      new DataView(headerSizeBuffer).setUint32(0, headerBuffer.byteLength, true); // Little-endian
 
-      const dataBuffer = new Uint8Array(
-        4 + headerBuffer.byteLength + chunk.byteLength
-      );
+      const dataBuffer = new Uint8Array(4 + headerBuffer.byteLength + chunk.byteLength);
       dataBuffer.set(new Uint8Array(headerSizeBuffer), 0);
       dataBuffer.set(headerBuffer, 4);
       dataBuffer.set(new Uint8Array(chunk), 4 + headerBuffer.byteLength);
@@ -264,64 +264,50 @@ export default class FileTransferManager extends EventEmitter {
     } catch (error) {
       throw new FileTransferError(
         FileTransferErrorCodes.DATA_CHANNEL_ERROR,
-        "Failed to send chunk"
+        'Failed to send chunk',
       );
     }
   }
 
-  async handleAcceptedTransfer(transfer: FileTransferRequest): Promise<void> {
+  async handleAcceptedTransfer(transfer: FileTransferAccept): Promise<void> {
     console.log(
-      "[FileTransferManager] Handling accepted transfer for file transfer request ",
-      transfer
+      '[FileTransferManager] Handling accepted transfer for file transfer request ',
+      transfer,
     );
-    const { sender, hash, filename, answerSdp } = transfer;
+    const { hash, filename, answerSdp } = transfer;
     const outgoingTransfer = this.outgoingTransfers.get(hash);
     if (!outgoingTransfer) {
       const error = `No outgoing transfer found for hash: ${hash} (${filename}). Active transfers: ${Array.from(
-        this.outgoingTransfers.keys()
-      ).join(", ")}`;
+        this.outgoingTransfers.keys(),
+      ).join(', ')}`;
       console.error(`[FileTransferManager] ${error}`);
-      this.client.onFileTransferError(hash, filename, "send", error);
+      this.emit('fileTransferError', {
+        hash,
+        filename,
+        direction: 'send',
+        error,
+      });
       return;
     }
 
     try {
-      console.log(
-        `[FileTransferManager] Processing WebRTC answer for file: ${filename}`
-      );
+      console.log(`[FileTransferManager] Processing WebRTC answer for file: ${filename}`);
       const answerObj = JSON.parse(answerSdp);
-      console.log(
-        `[FileTransferManager] Answer object for file: ${filename}`,
-        answerObj
-      );
+      console.log(`[FileTransferManager] Answer object for file: ${filename}`, answerObj);
       await this.webRTCService.handleAnswer(answerObj);
 
-      console.log(
-        `[FileTransferManager] Waiting for data channel to open for file: ${filename}`
-      );
+      console.log(`[FileTransferManager] Waiting for data channel to open for file: ${filename}`);
       await this.waitForDataChannel(hash);
-      console.log(
-        `[FileTransferManager] Data channel ready for outgoing transfer of: ${filename}`
-      );
+      console.log(`[FileTransferManager] Data channel ready for outgoing transfer of: ${filename}`);
 
-      await this.startFileTransfer(
-        outgoingTransfer.file,
-        outgoingTransfer.hash
-      );
-      console.log(
-        `[FileTransferManager] File transfer completed successfully: ${filename}`
-      );
-      this.client.onFileSendComplete(hash, filename);
+      await this.startFileTransfer(outgoingTransfer.file, outgoingTransfer.hash);
+      console.log(`[FileTransferManager] File transfer completed successfully: ${filename}`);
+      this.emit('fileSendComplete', { hash, filename });
     } catch (error) {
-      console.error(
-        `[FileTransferManager] Error in accepted transfer for ${filename}:`,
-        error
-      );
-      this.handleTransferError(hash, filename, "send", error);
+      console.error(`[FileTransferManager] Error in accepted transfer for ${filename}:`, error);
+      this.handleTransferError(hash, filename, 'send', error);
     } finally {
-      console.log(
-        `[FileTransferManager] Cleaning up successful transfer: ${filename} (${hash})`
-      );
+      console.log(`[FileTransferManager] Cleaning up successful transfer: ${filename} (${hash})`);
       this.outgoingTransfers.delete(hash);
     }
   }
@@ -345,8 +331,8 @@ export default class FileTransferManager extends EventEmitter {
           reject(
             new FileTransferError(
               FileTransferErrorCodes.CONNECTION_FAILED,
-              `Data channel failed to open for transfer ${hash} after ${attempts} attempts`
-            )
+              `Data channel failed to open for transfer ${hash} after ${attempts} attempts`,
+            ),
           );
         }
       }, 100);
@@ -357,62 +343,54 @@ export default class FileTransferManager extends EventEmitter {
     let hash: string | undefined;
     try {
       if (data.byteLength < 4) {
-        throw new Error("Received data is too short to contain header size");
+        throw new Error('Received data is too short to contain header size');
       }
 
       const headerSizeArray = new Uint8Array(data.slice(0, 4));
-      const headerSize = new DataView(headerSizeArray.buffer).getUint32(
-        0,
-        true
-      );
+      const headerSize = new DataView(headerSizeArray.buffer).getUint32(0, true);
 
       if (data.byteLength < 4 + headerSize) {
-        throw new Error("Received data is too short to contain header");
+        throw new Error('Received data is too short to contain header');
       }
 
-      const headerData = new TextDecoder().decode(
-        data.slice(4, 4 + headerSize)
-      );
+      const headerData = new TextDecoder().decode(data.slice(4, 4 + headerSize));
       const header = JSON.parse(headerData);
       hash = header.hash; // Capture hash for error handling
 
       if (data.byteLength < 4 + headerSize + header.chunkSize) {
-        throw new Error("Received data is too short to contain chunk data");
+        throw new Error('Received data is too short to contain chunk data');
       }
 
       // Get sender from the pending offer using hash
       const offer = this.pendingOffers.get(header.hash);
-      const sender = offer?.sender || "unknown";
+      const sender = offer?.sender || 'unknown';
 
       // Validate header fields
       if (
-        typeof header.chunkIndex !== "number" ||
+        typeof header.chunkIndex !== 'number' ||
         header.chunkIndex < 0 ||
         header.chunkIndex >= header.totalChunks
       ) {
-        throw new Error("Invalid chunk index in header");
+        throw new Error('Invalid chunk index in header');
       }
 
-      if (typeof header.totalChunks !== "number" || header.totalChunks <= 0) {
-        throw new Error("Invalid total chunks in header");
+      if (typeof header.totalChunks !== 'number' || header.totalChunks <= 0) {
+        throw new Error('Invalid total chunks in header');
       }
 
-      const chunkData = data.slice(
-        4 + headerSize,
-        4 + headerSize + header.chunkSize
-      );
+      const chunkData = data.slice(4 + headerSize, 4 + headerSize + header.chunkSize);
 
       let transfer = this.incomingTransfers.get(header.hash);
       if (!transfer) {
         if (header.totalSize > this.maxFileSize) {
-          this.client.onFileTransferError(
-            header.hash,
-            header.filename,
-            "receive",
-            `Incoming file size exceeds the maximum allowed size of ${
+          this.emit('fileTransferError', {
+            hash: header.hash,
+            filename: header.filename,
+            direction: 'receive',
+            error: `Incoming file size exceeds the maximum allowed size of ${
               this.maxFileSize / (1024 * 1024)
-            } MB`
-          );
+            } MB`,
+          });
           return;
         }
         transfer = {
@@ -459,7 +437,7 @@ export default class FileTransferManager extends EventEmitter {
         receivedBytes: transfer.receivedSize,
         totalBytes: transfer.totalSize,
       };
-      this.emit("fileReceiveProgress", fileTransferProgress);
+      this.emit('fileReceiveProgress', fileTransferProgress);
 
       if (transfer.receivedSize === transfer.totalSize) {
         if (transfer.chunks.every((chunk) => chunk)) {
@@ -471,12 +449,12 @@ export default class FileTransferManager extends EventEmitter {
           });
           const computedHash = await this.computeFileHash(file);
           if (computedHash !== transfer.hash) {
-            this.client.onFileTransferError(
-              transfer.hash,
-              header.filename,
-              "receive",
-              "File integrity check failed - hash mismatch"
-            );
+            this.emit('fileTransferError', {
+              hash: transfer.hash,
+              filename: header.filename,
+              direction: 'receive',
+              error: 'File integrity check failed - hash mismatch',
+            });
             this.incomingTransfers.delete(transfer.hash);
             // Clean up persisted data on hash mismatch
             if (this.storeInitialized) {
@@ -487,7 +465,7 @@ export default class FileTransferManager extends EventEmitter {
 
           // Create a URL for the blob and trigger download
           const downloadUrl = window.URL.createObjectURL(completeFile);
-          const downloadLink = document.createElement("a");
+          const downloadLink = document.createElement('a');
           downloadLink.href = downloadUrl;
           downloadLink.download = header.filename;
           document.body.appendChild(downloadLink);
@@ -500,32 +478,32 @@ export default class FileTransferManager extends EventEmitter {
             filename: header.filename,
             file: completeFile,
           };
-          this.emit("fileReceiveComplete", completedFileData);
+          this.emit('fileReceiveComplete', completedFileData);
           this.incomingTransfers.delete(transfer.hash);
           // Clean up persisted data after successful transfer
           if (this.storeInitialized) {
             await this.store.deleteFile(transfer.hash);
           }
         } else {
-          this.client.onFileTransferError(
-            transfer.hash,
-            header.filename,
-            "receive",
-            "Missing chunks in received file"
-          );
+          this.emit('fileTransferError', {
+            hash: transfer.hash,
+            filename: header.filename,
+            direction: 'receive',
+            error: 'Missing chunks in received file',
+          });
         }
       }
     } catch (error) {
       // Use hash from parsed header if available, otherwise use error message
-      const errorHash = hash || "unknown";
+      const errorHash = hash || 'unknown';
       this.handleTransferError(
         errorHash,
-        "unknown_file",
-        "receive",
+        'unknown_file',
+        'receive',
         new FileTransferError(
-          "UNKNOWN_ERROR",
-          error instanceof Error ? error.message : "Unknown error"
-        )
+          'UNKNOWN_ERROR',
+          error instanceof Error ? error.message : 'Unknown error',
+        ),
       );
     }
   }
@@ -533,13 +511,12 @@ export default class FileTransferManager extends EventEmitter {
   private handleTransferError(
     hash: string,
     filename: string,
-    direction: "send" | "receive",
-    error: FileTransferError | Error | unknown
+    direction: 'send' | 'receive',
+    error: FileTransferError | Error | unknown,
   ): void {
     console.error(`Error ${direction}ing file ${filename} (${hash}):`, error);
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    this.client.onFileTransferError(hash, filename, direction, errorMessage);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    this.emit('fileTransferError', { hash, filename, direction, error: errorMessage });
 
     // Save transfer data BEFORE cleanup so recovery can use it
     const outgoingTransfer = this.outgoingTransfers.get(hash);
@@ -556,7 +533,7 @@ export default class FileTransferManager extends EventEmitter {
     const outgoingTransfer = this.outgoingTransfers.get(hash);
     if (outgoingTransfer) {
       console.log(
-        `[FileTransferManager] Cleaning up outgoing transfer for: ${outgoingTransfer.filename} (${hash})`
+        `[FileTransferManager] Cleaning up outgoing transfer for: ${outgoingTransfer.filename} (${hash})`,
       );
       this.outgoingTransfers.delete(hash);
     }
@@ -565,7 +542,7 @@ export default class FileTransferManager extends EventEmitter {
     const incomingTransfer = this.incomingTransfers.get(hash);
     if (incomingTransfer) {
       console.log(
-        `[FileTransferManager] Cleaning up incoming transfer for: ${incomingTransfer.filename} (${hash})`
+        `[FileTransferManager] Cleaning up incoming transfer for: ${incomingTransfer.filename} (${hash})`,
       );
       this.incomingTransfers.delete(hash);
     }
@@ -573,9 +550,7 @@ export default class FileTransferManager extends EventEmitter {
     // Cleanup pending offers
     if (this.pendingOffers.has(hash)) {
       const offer = this.pendingOffers.get(hash);
-      console.log(
-        `[FileTransferManager] Removing pending offer for: ${offer?.filename} (${hash})`
-      );
+      console.log(`[FileTransferManager] Removing pending offer for: ${offer?.filename} (${hash})`);
       this.pendingOffers.delete(hash);
     }
 
@@ -585,28 +560,28 @@ export default class FileTransferManager extends EventEmitter {
   private async attemptRecovery(
     hash: string,
     filename: string,
-    direction: "send" | "receive",
+    direction: 'send' | 'receive',
     savedOutgoingTransfer?: FileTransferTask,
-    savedIncomingTransfer?: FileTransferProgress
+    savedIncomingTransfer?: FileTransferProgress,
   ): Promise<void> {
     try {
       await this.webRTCService.createPeerConnection();
-      this.client.onConnectionRecovered({ hash, filename, direction });
+      this.emit('connectionRecovered', { hash, filename, direction });
 
-      if (direction === "send" && savedOutgoingTransfer) {
+      if (direction === 'send' && savedOutgoingTransfer) {
         // Re-register the transfer and restart
         this.outgoingTransfers.set(hash, savedOutgoingTransfer);
         await this.startFileTransfer(savedOutgoingTransfer.file, savedOutgoingTransfer.hash);
-      } else if (direction === "receive" && savedIncomingTransfer) {
+      } else if (direction === 'receive' && savedIncomingTransfer) {
         // Notify the sender to resend the offer
         this.gmcpFileTransfer.sendRequestResend(savedIncomingTransfer.sender, hash);
       }
     } catch (error) {
-      console.error("Failed to recover connection:", error);
-      this.client.onRecoveryFailed({
+      console.error('Failed to recover connection:', error);
+      this.emit('recoveryFailed', {
         filename,
         direction,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
@@ -620,11 +595,11 @@ export default class FileTransferManager extends EventEmitter {
         this.handleTransferError(
           hash,
           transfer.filename,
-          "receive",
+          'receive',
           new FileTransferError(
             FileTransferErrorCodes.TRANSFER_TIMEOUT,
-            "Transfer timeout - no data received"
-          )
+            'Transfer timeout - no data received',
+          ),
         );
       }
     });
@@ -635,25 +610,24 @@ export default class FileTransferManager extends EventEmitter {
         this.handleTransferError(
           hash,
           transfer.filename,
-          "send",
+          'send',
           new FileTransferError(
             FileTransferErrorCodes.TRANSFER_TIMEOUT,
-            "Transfer timeout - no activity"
-          )
+            'Transfer timeout - no activity',
+          ),
         );
       }
     });
   }
 
   cleanup(): void {
-    this.webRTCService.off(
-      "dataChannelMessage",
-      this.handleDataChannelMessage
-    );
-    this.client.off(
-      "fileTransferAccepted",
-      this.handleFileTransferAccepted
-    );
+    this.webRTCService.off('dataChannelMessage', this.handleDataChannelMessage);
+    this.webRTCService.off('iceCandidate', this.handleLocalIceCandidate);
+    this.gmcpFileTransfer.off('offer', this.handleFileTransferOffer);
+    this.gmcpFileTransfer.off('accept', this.handleFileTransferAccepted);
+    this.gmcpFileTransfer.off('reject', this.handleFileTransferRejected);
+    this.gmcpFileTransfer.off('cancel', this.handleFileTransferCancelled);
+    this.gmcpFileTransfer.off('candidate', this.handleRemoteIceCandidate);
 
     // Clear the interval
     if (this.transferTimeoutInterval) {
@@ -662,8 +636,12 @@ export default class FileTransferManager extends EventEmitter {
     }
 
     // Clean up any ongoing transfers
-    [...this.outgoingTransfers.keys()].forEach((hash) => { this.cancelTransfer(hash); });
-    [...this.incomingTransfers.keys()].forEach((hash) => { this.cancelTransfer(hash); });
+    [...this.outgoingTransfers.keys()].forEach((hash) => {
+      this.cancelTransfer(hash);
+    });
+    [...this.incomingTransfers.keys()].forEach((hash) => {
+      this.cancelTransfer(hash);
+    });
 
     // Clear all maps
     this.incomingTransfers.clear();
@@ -682,49 +660,50 @@ export default class FileTransferManager extends EventEmitter {
 
   cancelTransfer(hash: string): void {
     const transfer =
-      this.outgoingTransfers.get(hash) || this.incomingTransfers.get(hash);
+      this.outgoingTransfers.get(hash) ||
+      this.incomingTransfers.get(hash) ||
+      this.pendingOffers.get(hash);
     if (transfer) {
       console.log(
-        `[FileTransferManager] Cancelling transfer for hash: ${hash} (${transfer.filename})`
+        `[FileTransferManager] Cancelling transfer for hash: ${hash} (${transfer.filename})`,
       );
-      this.cleanupTransfer(hash);
+      const recipient = this.getCancelRecipient(hash);
       // Clean up persisted data on user cancellation
       if (this.storeInitialized) {
-        this.store.deleteFile(hash).catch(err =>
-          console.error("[FileTransferManager] Failed to delete file from store:", err)
-        );
+        this.store
+          .deleteFile(hash)
+          .catch((err) =>
+            console.error('[FileTransferManager] Failed to delete file from store:', err),
+          );
       }
-      const playerId = useSessionStore.getState().playerId;
-      this.client.onFileTransferCancel(playerId, hash);
-      this.gmcpFileTransfer.sendCancel(playerId, hash);
+      this.emitCancellation(useSessionStore.getState().playerId, hash);
+      this.gmcpFileTransfer.sendCancel(recipient, hash);
     } else {
-      console.log(
-        `[FileTransferManager] No active transfer found for hash: ${hash}`
-      );
+      console.log(`[FileTransferManager] No active transfer found for hash: ${hash}`);
     }
   }
 
   async acceptTransfer(sender: string, hash: string): Promise<void> {
-    console.log("[FileTransferManager] Accepting transfer", sender, hash);
+    console.log('[FileTransferManager] Accepting transfer', sender, hash);
 
     // Check if we're already handling this transfer
     if (this.incomingTransfers.has(hash)) {
-      throw new Error("Already receiving this file");
+      throw new Error('Already receiving this file');
     }
 
     // Check if we have a valid offer
     const offer = this.pendingOffers.get(hash);
     console.log(
-      "[FileTransferManager] Checking pending offers:",
-      Array.from(this.pendingOffers.entries())
+      '[FileTransferManager] Checking pending offers:',
+      Array.from(this.pendingOffers.entries()),
     );
     if (!offer) {
       throw new FileTransferError(
         FileTransferErrorCodes.INVALID_FILE,
-        `No pending offer found for transfer with hash: ${hash}`
+        `No pending offer found for transfer with hash: ${hash}`,
       );
     }
-    console.log("[FileTransferManager] Found pending offer for transfer:", {
+    console.log('[FileTransferManager] Found pending offer for transfer:', {
       sender,
       hash,
       filename: offer.filename,
@@ -735,14 +714,12 @@ export default class FileTransferManager extends EventEmitter {
       await this.initializeWebRTC();
       this.webRTCService.recipient = sender;
 
-      console.log(
-        "[FileTransferManager] Setting remote description with offer"
-      );
+      console.log('[FileTransferManager] Setting remote description with offer');
       await this.webRTCService.handleOffer(JSON.parse(offer.offerSdp));
 
-      console.log("[FileTransferManager] Creating WebRTC answer");
+      console.log('[FileTransferManager] Creating WebRTC answer');
       const answer = await this.webRTCService.createAnswer();
-      console.log("[FileTransferManager] WebRTC answer created successfully");
+      console.log('[FileTransferManager] WebRTC answer created successfully');
 
       // Send accept only if we're still in a valid state
       if (this.pendingOffers.has(hash)) {
@@ -750,28 +727,55 @@ export default class FileTransferManager extends EventEmitter {
           sender,
           hash,
           offer.filename,
-          JSON.stringify(answer)
+          JSON.stringify(answer),
         );
 
         // Wait for the data channel to open
         await this.waitForDataChannel(hash);
-        console.log(
-          "[FileTransferManager] Data channel ready for incoming transfer"
-        );
+        console.log('[FileTransferManager] Data channel ready for incoming transfer');
 
         this.pendingOffers.delete(hash);
       } else {
-        throw new Error("Transfer was cancelled during setup");
+        throw new Error('Transfer was cancelled during setup');
       }
     } catch (error) {
-      console.error("Failed to accept transfer:", error);
+      console.error('Failed to accept transfer:', error);
       this.cleanupTransfer(hash);
       throw new FileTransferError(
         FileTransferErrorCodes.CONNECTION_FAILED,
-        `Failed to accept transfer: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
+        `Failed to accept transfer: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
+  }
+
+  rejectTransfer(sender: string, hash: string): void {
+    this.pendingOffers.delete(hash);
+    this.gmcpFileTransfer.sendReject(sender, hash);
+  }
+
+  private getCancelRecipient(hash: string): string {
+    const outgoingTransfer = this.outgoingTransfers.get(hash);
+    if (outgoingTransfer) return outgoingTransfer.recipient;
+
+    const incomingTransfer = this.incomingTransfers.get(hash);
+    if (incomingTransfer) return incomingTransfer.sender;
+
+    const pendingOffer = this.pendingOffers.get(hash);
+    return pendingOffer?.sender ?? useSessionStore.getState().playerId;
+  }
+
+  private emitCancellation(sender: string, hash: string): void {
+    const outgoingTransfer = this.outgoingTransfers.get(hash);
+    const incomingTransfer = this.incomingTransfers.get(hash);
+    const pendingOffer = this.pendingOffers.get(hash);
+    const filename =
+      outgoingTransfer?.filename ??
+      incomingTransfer?.filename ??
+      pendingOffer?.filename ??
+      'unknown';
+    const direction: 'send' | 'receive' = outgoingTransfer ? 'send' : 'receive';
+
+    this.cleanupTransfer(hash);
+    this.emit('fileTransferCancelled', { sender, hash, filename, direction });
   }
 }

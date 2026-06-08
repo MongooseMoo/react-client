@@ -1,34 +1,33 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useBeforeunload } from "react-beforeunload";
-import "./App.css";
-import type MudClient from "./client";
-import { createConfiguredClient } from "./createConfiguredClient";
-import { hapticsService } from "./HapticsService";
-import { GamepadBackend } from "./haptics/GamepadBackend";
-import { ButtplugWasmBackend, createRealWasmDeps } from "./haptics/ButtplugWasmBackend";
-import type { HapticsBackend } from "./haptics/types";
-import { usePreferences } from "./stores/preferencesStore";
-import CommandInput from "./components/input";
-import OutputWindow from "./components/output";
-import PreferencesDialog, {
-  type PreferencesDialogRef,
-} from "./components/PreferencesDialog";
-import AutoLogDialog, { type AutoLogDialogRef } from "./components/AutoLogDialog";
-import Sidebar, { type SidebarRef } from "./components/sidebar";
-import Statusbar from "./components/statusbar";
-import Toolbar from "./components/toolbar";
-import WasmHost from "./components/WasmHost";
-import type { WasmHostState } from "./components/WasmHost";
-import WasmGuest from "./components/WasmGuest";
-import HostPanel from "./components/HostPanel";
-import { useChannelHistory } from "./hooks/useChannelHistory";
-import { type FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
-import type { GMCPMessageRoomInfo } from "./gmcp/Room";
-import { useRoomStore } from "./stores/roomStore";
-import { autoLogService, createAutoLogSessionDraft } from "./logging/AutoLogService";
-import { ensurePushSubscription } from "./webpush";
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useBeforeunload } from 'react-beforeunload';
+import './App.css';
+import type MudClient from './client';
+import { createConfiguredClient } from './createConfiguredClient';
+import { hapticsService } from './HapticsService';
+import { GamepadBackend } from './haptics/GamepadBackend';
+import { ButtplugWasmBackend, createRealWasmDeps } from './haptics/ButtplugWasmBackend';
+import type { HapticsBackend } from './haptics/types';
+import { usePreferences } from './stores/preferencesStore';
+import CommandInput from './components/input';
+import OutputWindow from './components/output';
+import PreferencesDialog, { type PreferencesDialogRef } from './components/PreferencesDialog';
+import AutoLogDialog, { type AutoLogDialogRef } from './components/AutoLogDialog';
+import Sidebar, { type SidebarRef } from './components/sidebar';
+import Statusbar from './components/statusbar';
+import Toolbar from './components/toolbar';
+import WasmHost from './components/WasmHost';
+import type { WasmHostState } from './components/WasmHost';
+import WasmGuest from './components/WasmGuest';
+import HostPanel from './components/HostPanel';
+import { useChannelHistory } from './hooks/useChannelHistory';
+import { useClientEvent } from './hooks/useClientEvent';
+import type { FileTransferOffer } from './gmcp/Client/FileTransfer';
+import type { GMCPMessageRoomInfo } from './gmcp/Room';
+import { useRoomStore } from './stores/roomStore';
+import { autoLogService, createAutoLogSessionDraft } from './logging/AutoLogService';
+import { ensurePushSubscription } from './webpush';
 
-const WINDOW_TITLE = "Mongoose Client";
+const WINDOW_TITLE = 'Mongoose Client';
 
 function setWindowSubtitle(subtitle?: string) {
   document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
@@ -47,11 +46,11 @@ function App() {
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
-  const [fileTransferExpanded, setFileTransferExpanded] =
-    useState<boolean>(false);
+  const [fileTransferExpanded, setFileTransferExpanded] = useState<boolean>(false);
   const [hostState, setHostState] = useState<WasmHostState>({ roomId: null, guestCount: 0 });
   const { clearAllBuffers } = useChannelHistory(client);
-  const players = useClientEvent<"userlist">(client, "userlist", []) || [];
+  const players = useClientEvent<'userlist'>(client, 'userlist', []) || [];
+  const [fileTransferOffer, setFileTransferOffer] = useState<FileTransferOffer | null>(null);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
@@ -101,11 +100,14 @@ function App() {
   const isDefaultMode = !isWasmMode && !isGuestMode;
 
   // Callback for WASM components to deliver their client
-  const handleClientReady = useCallback((newClient: MudClient) => {
-    setClient(newClient);
-    setShowSidebar(!isMobile);
-    window.mudClient = newClient;
-  }, [isMobile]);
+  const handleClientReady = useCallback(
+    (newClient: MudClient) => {
+      setClient(newClient);
+      setShowSidebar(!isMobile);
+      window.mudClient = newClient;
+    },
+    [isMobile],
+  );
 
   // Default telnet mode: create client and connect via WebSocket
   useEffect(() => {
@@ -140,12 +142,12 @@ function App() {
     const handleConnect = () => {
       configureAutologSession();
       autoLogService.startSession().catch((error) => {
-        console.error("Failed to start autolog session:", error);
+        console.error('Failed to start autolog session:', error);
       });
     };
     const handleDisconnect = () => {
       autoLogService.endSession().catch((error) => {
-        console.error("Failed to end autolog session:", error);
+        console.error('Failed to end autolog session:', error);
       });
     };
 
@@ -154,14 +156,14 @@ function App() {
       handleConnect();
     }
 
-    client.on("connect", handleConnect);
-    client.on("disconnect", handleDisconnect);
+    client.on('connect', handleConnect);
+    client.on('disconnect', handleDisconnect);
 
     return () => {
-      client.off("connect", handleConnect);
-      client.off("disconnect", handleDisconnect);
+      client.off('connect', handleConnect);
+      client.off('disconnect', handleDisconnect);
       autoLogService.endSession().catch((error) => {
-        console.error("Failed to end autolog session during cleanup:", error);
+        console.error('Failed to end autolog session during cleanup:', error);
       });
       autoLogService.configureSession(null);
     };
@@ -174,13 +176,13 @@ function App() {
     client.requestNotificationPermission();
     const ensurePushSubscriptionForSession = () => {
       ensurePushSubscription(client).catch((error) => {
-        console.error("Failed to ensure push subscription:", error);
+        console.error('Failed to ensure push subscription:', error);
       });
     };
     if (client.sessionReady) {
       ensurePushSubscriptionForSession();
     } else {
-      client.once("sessionReady", ensurePushSubscriptionForSession);
+      client.once('sessionReady', ensurePushSubscriptionForSession);
     }
 
     // Auto-login from URL params
@@ -207,12 +209,12 @@ function App() {
 
     // Listen to 'keydown' event
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Control") {
+      if (event.key === 'Control') {
         client.cancelSpeech();
       }
-      if (event.key === "Escape") {
+      if (event.key === 'Escape') {
         client.stopAllSounds();
-        const midiPackage = client.gmcpHandlers["Client.Midi"];
+        const midiPackage = client.gmcpHandlers['Client.Midi'];
         if (midiPackage) {
           midiPackage.sendAllNotesOff();
         }
@@ -220,21 +222,21 @@ function App() {
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown);
 
     // on focus, focus the input
     const handleFocus = () => {
       inRef.current?.focus();
     };
-    document.addEventListener("focus", handleFocus);
+    document.addEventListener('focus', handleFocus);
 
     return () => {
-      client.off("sessionReady", ensurePushSubscriptionForSession);
-      window.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("focus", handleFocus);
+      client.off('sessionReady', ensurePushSubscriptionForSession);
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('focus', handleFocus);
       for (const backend of registeredBackends) {
         hapticsService.unregisterBackend(backend).catch((error) => {
-          console.error("Failed to unregister haptics backend:", error);
+          console.error('Failed to unregister haptics backend:', error);
         });
       }
     };
@@ -244,19 +246,19 @@ function App() {
     if (!preferences.midi.enabled) return;
 
     let cancelled = false;
-    import("./VirtualMidiService")
+    import('./VirtualMidiService')
       .then(({ virtualMidiService }) => virtualMidiService.initialize())
       .then((success) => {
         if (cancelled) return;
         if (success) {
-          console.log("Virtual MIDI synthesizer initialized");
+          console.log('Virtual MIDI synthesizer initialized');
         } else {
-          console.log("Failed to initialize virtual MIDI synthesizer");
+          console.log('Failed to initialize virtual MIDI synthesizer');
         }
       })
       .catch((error) => {
         if (cancelled) return;
-        console.error("Error initializing virtual MIDI synthesizer:", error);
+        console.error('Error initializing virtual MIDI synthesizer:', error);
       });
 
     return () => {
@@ -291,11 +293,11 @@ function App() {
         if (cancelled) return;
         buttplugBackend = new ButtplugWasmBackend(deps);
         hapticsService.registerBackend(buttplugBackend);
-        console.log("ButtplugWasmBackend registered (WASM loaded)");
+        console.log('ButtplugWasmBackend registered (WASM loaded)');
       })
       .catch((err) => {
         if (cancelled) return;
-        console.warn("Failed to load buttplug WASM backend:", err);
+        console.warn('Failed to load buttplug WASM backend:', err);
         wasmBackendLoaded.current = false;
       });
 
@@ -304,7 +306,7 @@ function App() {
       wasmBackendLoaded.current = false;
       if (buttplugBackend) {
         hapticsService.unregisterBackend(buttplugBackend).catch((error) => {
-          console.error("Failed to unregister WASM haptics backend:", error);
+          console.error('Failed to unregister WASM haptics backend:', error);
         });
       }
     };
@@ -320,24 +322,29 @@ function App() {
       if (!isNaN(digit) && digit >= 1 && digit <= 9) {
         const targetIndex = digit - 1;
         event.preventDefault();
-        console.log(
-          `App: Detected CTRL+${digit}, calling switchToTab(${targetIndex})`
-        );
+        console.log(`App: Detected CTRL+${digit}, calling switchToTab(${targetIndex})`);
         sidebarRef.current?.switchToTab(targetIndex);
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown, true);
+    document.addEventListener('keydown', handleKeyDown, true);
     return () => {
-      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener('keydown', handleKeyDown, true);
     };
   }, [showSidebar]);
 
-  const fileTransferOffer = useClientEvent<"fileTransferOffer">(
-    client,
-    "fileTransferOffer",
-    null as unknown as FileTransferOffer
-  );
+  useEffect(() => {
+    if (!client) return () => {};
+
+    const handleFileTransferOffer = (offer: FileTransferOffer) => {
+      setFileTransferOffer(offer);
+    };
+
+    client.fileTransferManager.on('fileTransferOffer', handleFileTransferOffer);
+    return () => {
+      client.fileTransferManager.off('fileTransferOffer', handleFileTransferOffer);
+    };
+  }, [client]);
 
   const handleCommand = useCallback(
     (text: string) => {
@@ -345,7 +352,7 @@ function App() {
         client.sendCommand(text);
       }
     },
-    [client]
+    [client],
   );
 
   const focusInput = useCallback(() => {
@@ -357,10 +364,10 @@ function App() {
       setFileTransferExpanded(true);
       setShowFileTransfer(true);
       client?.sendNotification(
-        "File Transfer Offer",
+        'File Transfer Offer',
         `${fileTransferOffer.sender} wants to send you ${
           fileTransferOffer.filename
-        } (${Math.round(fileTransferOffer.filesize / 1024)} KB)`
+        } (${Math.round(fileTransferOffer.filesize / 1024)} KB)`,
       );
     }
   }, [fileTransferOffer, client]);
@@ -370,12 +377,12 @@ function App() {
       client.shutdown();
     }
     autoLogService.flush().catch((error) => {
-      console.error("Failed to flush autolog entries before unload:", error);
+      console.error('Failed to flush autolog entries before unload:', error);
     });
     // Best-effort checkpoint on tab close
     const wasmWorker = (window as any).wasmWorker;
     if (wasmWorker) {
-      wasmWorker.postMessage({ type: "save" });
+      wasmWorker.postMessage({ type: 'save' });
     }
   });
 
@@ -402,15 +409,14 @@ function App() {
         />
       )}
       {isGuestMode && !client && (
-        <WasmGuest
-          roomId={urlModeParams.roomParam}
-          onClientReady={handleClientReady}
-        />
+        <WasmGuest roomId={urlModeParams.roomParam} onClientReady={handleClientReady} />
       )}
       {/* UI shell — only renders when client is ready */}
       {client && (
-        <div className={`App ${showSidebar ? (sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-shown') : ''}`}>
-          <header style={{ gridArea: "header" }}>
+        <div
+          className={`App ${showSidebar ? (sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-shown') : ''}`}
+        >
+          <header style={{ gridArea: 'header' }}>
             <Toolbar
               client={client}
               onSaveLog={saveLog}
@@ -422,21 +428,17 @@ function App() {
               showSidebar={showSidebar}
             />
           </header>
-          {urlModeParams.isHostMode && <HostPanel roomId={hostState.roomId} guestCount={hostState.guestCount} />}
-          <main style={{ gridArea: "main" }}>
+          {urlModeParams.isHostMode && (
+            <HostPanel roomId={hostState.roomId} guestCount={hostState.guestCount} />
+          )}
+          <main style={{ gridArea: 'main' }}>
             <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
           </main>
-          <section
-            aria-label="Command input"
-            style={{ gridArea: "input" }}
-          >
+          <section aria-label="Command input" style={{ gridArea: 'input' }}>
             <CommandInput onSend={handleCommand} inputRef={inRef} client={client} />
           </section>
           {showSidebar && (
-            <aside
-              aria-roledescription="Sidebar"
-              style={{ gridArea: "sidebar" }}
-            >
+            <aside aria-roledescription="Sidebar" style={{ gridArea: 'sidebar' }}>
               <Sidebar
                 ref={sidebarRef}
                 client={client}
@@ -445,7 +447,7 @@ function App() {
               />
             </aside>
           )}
-          <footer style={{ gridArea: "status" }}>
+          <footer style={{ gridArea: 'status' }}>
             <Statusbar client={client} />
           </footer>
           <PreferencesDialog ref={prefsDialogRef} />
