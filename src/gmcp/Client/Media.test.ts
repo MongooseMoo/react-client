@@ -13,10 +13,15 @@ vi.mock('../../audio/AmbisonicRenderer', () => ({
 
 import {
   GMCPClientMedia,
+  type GMCPMessageClientMediaListenerOrientation,
+  type GMCPMessageClientMediaListenerPosition,
   type GMCPMessageClientMediaPlay,
   type GMCPMessageClientMediaStop,
   type GMCPMessageClientMediaUpdate,
 } from './Media';
+import { MediaService } from '../../audio/MediaService';
+
+type MockCacophony = ConstructorParameters<typeof MediaService>[0];
 
 type MockPlayback = {
   connect: ReturnType<typeof vi.fn>;
@@ -64,7 +69,7 @@ function createMockSound(url: string): MockSound {
       if (!soundListeners.has(event)) {
         soundListeners.set(event, new Set());
       }
-      soundListeners.get(event)!.add(listener);
+      soundListeners.get(event)?.add(listener);
       return () => soundListeners.get(event)?.delete(listener);
     }),
     play: vi.fn(() => {
@@ -115,43 +120,46 @@ function createMockClient() {
   const created: Record<string, ReturnType<typeof makeEffectBus>> = {};
   const anon: Array<ReturnType<typeof makeEffectBus>> = [];
   const effectFactory = () => vi.fn((opts: unknown) => ({ __effect: opts }));
+  const cacophony = {
+    context: {
+      currentTime: 100,
+      sampleRate: 48000,
+    },
+    createSound: mockCreateSound,
+    createBus: vi.fn((name?: string) => {
+      const bus = makeEffectBus(name ?? null);
+      if (name) {
+        created[name] = bus;
+      } else {
+        anon.push(bus);
+      }
+      return bus;
+    }),
+    getBus: vi.fn((name: string) => (name === 'master' ? master : created[name])),
+    createFdnReverb: effectFactory(),
+    createReverb: effectFactory(),
+    createDelay: effectFactory(),
+    createChorus: effectFactory(),
+    createFlanger: effectFactory(),
+    createVibrato: effectFactory(),
+    createDoubling: effectFactory(),
+    createPhaser: effectFactory(),
+    createTremolo: effectFactory(),
+    createAutoPan: effectFactory(),
+    createDistortion: effectFactory(),
+    createCompressor: effectFactory(),
+    createLimiter: effectFactory(),
+    createGate: effectFactory(),
+    createBiquadFilter: vi.fn((opts: unknown) => ({ __biquad: opts })),
+    listenerForwardOrientation: [0, 0, -1],
+    listenerUpOrientation: [0, 1, 0],
+    listenerPosition: [0, 0, 0],
+    muted: false,
+    setGlobalVolume: vi.fn(),
+  };
   return {
     effectBuses: { master, created, anon },
-    cacophony: {
-      context: {
-        currentTime: 100,
-        sampleRate: 48000,
-      },
-      createSound: mockCreateSound,
-      createBus: vi.fn((name?: string) => {
-        const bus = makeEffectBus(name ?? null);
-        if (name) {
-          created[name] = bus;
-        } else {
-          anon.push(bus);
-        }
-        return bus;
-      }),
-      getBus: vi.fn((name: string) => (name === 'master' ? master : created[name])),
-      createFdnReverb: effectFactory(),
-      createReverb: effectFactory(),
-      createDelay: effectFactory(),
-      createChorus: effectFactory(),
-      createFlanger: effectFactory(),
-      createVibrato: effectFactory(),
-      createDoubling: effectFactory(),
-      createPhaser: effectFactory(),
-      createTremolo: effectFactory(),
-      createAutoPan: effectFactory(),
-      createDistortion: effectFactory(),
-      createCompressor: effectFactory(),
-      createLimiter: effectFactory(),
-      createGate: effectFactory(),
-      createBiquadFilter: vi.fn((opts: unknown) => ({ __biquad: opts })),
-      listenerForwardOrientation: [0, 0, -1],
-      listenerUpOrientation: [0, 1, 0],
-      listenerPosition: [0, 0, 0],
-    },
+    media: new MediaService(cacophony as unknown as MockCacophony, { manageFocus: false }),
     emit: vi.fn(),
     off: vi.fn((event: string, handler: (data: unknown) => void) => {
       listeners.get(event)?.delete(handler);
@@ -160,7 +168,7 @@ function createMockClient() {
       if (!listeners.has(event)) {
         listeners.set(event, new Set());
       }
-      listeners.get(event)!.add(handler);
+      listeners.get(event)?.add(handler);
     }),
     sendGmcp: vi.fn(),
     trigger(event: string, data: unknown) {
@@ -183,7 +191,7 @@ describe('GMCPClientMedia', () => {
       setRotationMatrixFromYaw: vi.fn(),
     });
     client = createMockClient();
-    handler = new GMCPClientMedia(client as any);
+    handler = new GMCPClientMedia(client as never);
   });
 
   afterEach(() => {
@@ -537,18 +545,39 @@ describe('GMCPClientMedia', () => {
     } as GMCPMessageClientMediaPlay);
 
     const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
-    expect(mockAmbisonicRendererCreate).toHaveBeenCalledWith(client.cacophony, 2);
+    expect(mockAmbisonicRendererCreate).toHaveBeenCalledWith(client.media.cacophony, 2);
     expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0], undefined);
     expect(renderer.setRotationMatrixFromYaw).toHaveBeenCalledWith(0);
 
     handler.handleListenerOrientation({
       forward: [1, 0, 0],
-    } as any);
+    } as GMCPMessageClientMediaListenerOrientation);
 
     expect(renderer.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(Math.PI / 2);
 
     handler.handleStop({ key: 'show-1' } as GMCPMessageClientMediaStop);
     expect(renderer.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('preserves omitted listener position and orientation fields', () => {
+    client.media.cacophony.listenerPosition = [9, 8, 7];
+    client.media.cacophony.listenerForwardOrientation = [0, 0, -1];
+    client.media.cacophony.listenerUpOrientation = [0, 0, 1];
+
+    handler.handleListenerPosition({} as GMCPMessageClientMediaListenerPosition);
+    expect(client.media.cacophony.listenerPosition).toEqual([9, 8, 7]);
+
+    handler.handleListenerOrientation({
+      forward: [1, 0, 0],
+    } as GMCPMessageClientMediaListenerOrientation);
+    expect(client.media.cacophony.listenerForwardOrientation).toEqual([1, 0, 0]);
+    expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 0, 1]);
+
+    handler.handleListenerOrientation({
+      up: [0, 1, 0],
+    } as GMCPMessageClientMediaListenerOrientation);
+    expect(client.media.cacophony.listenerForwardOrientation).toEqual([1, 0, 0]);
+    expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 1, 0]);
   });
 
   it('routes declared four-channel ambisonic playback through FOA passthrough', async () => {
@@ -565,7 +594,7 @@ describe('GMCPClientMedia', () => {
     } as GMCPMessageClientMediaPlay);
 
     const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
-    expect(mockAmbisonicRendererCreate).toHaveBeenCalledWith(client.cacophony, 4);
+    expect(mockAmbisonicRendererCreate).toHaveBeenCalledWith(client.media.cacophony, 4);
     expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0], undefined);
     expect(sound.inputChannels).toBe(4);
   });
@@ -584,7 +613,7 @@ describe('GMCPClientMedia', () => {
 
     const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
 
-    client.cacophony.listenerForwardOrientation = [-1, 0, 0];
+    client.media.cacophony.listenerForwardOrientation = [-1, 0, 0];
     client.trigger('spatialListenerOrientation', {
       listenerId: 'player-1',
       forward: [-1, 0, 0],

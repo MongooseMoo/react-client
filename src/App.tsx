@@ -1,34 +1,29 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useBeforeunload } from "react-beforeunload";
-import "./App.css";
-import type MudClient from "./client";
-import { createConfiguredClient } from "./createConfiguredClient";
-import { hapticsService } from "./HapticsService";
-import { GamepadBackend } from "./haptics/GamepadBackend";
-import { ButtplugWasmBackend, createRealWasmDeps } from "./haptics/ButtplugWasmBackend";
-import type { HapticsBackend } from "./haptics/types";
-import { usePreferences } from "./stores/preferencesStore";
-import CommandInput from "./components/input";
-import OutputWindow from "./components/output";
-import PreferencesDialog, {
-  type PreferencesDialogRef,
-} from "./components/PreferencesDialog";
-import AutoLogDialog, { type AutoLogDialogRef } from "./components/AutoLogDialog";
-import Sidebar, { type SidebarRef } from "./components/sidebar";
-import Statusbar from "./components/statusbar";
-import Toolbar from "./components/toolbar";
-import WasmHost from "./components/WasmHost";
-import type { WasmHostState } from "./components/WasmHost";
-import WasmGuest from "./components/WasmGuest";
-import HostPanel from "./components/HostPanel";
-import { useChannelHistory } from "./hooks/useChannelHistory";
-import { type FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
-import type { GMCPMessageRoomInfo } from "./gmcp/Room";
-import { useRoomStore } from "./stores/roomStore";
-import { autoLogService, createAutoLogSessionDraft } from "./logging/AutoLogService";
-import { ensurePushSubscription } from "./webpush";
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useBeforeunload } from 'react-beforeunload';
+import './App.css';
+import type MudClient from './client';
+import AutoLogDialog, { type AutoLogDialogRef } from './components/AutoLogDialog';
+import HostPanel from './components/HostPanel';
+import CommandInput from './components/input';
+import OutputWindow from './components/output';
+import PreferencesDialog, { type PreferencesDialogRef } from './components/PreferencesDialog';
+import Sidebar, { type SidebarRef } from './components/sidebar';
+import Statusbar from './components/statusbar';
+import Toolbar from './components/toolbar';
+import WasmGuest from './components/WasmGuest';
+import type { WasmHostState } from './components/WasmHost';
+import WasmHost from './components/WasmHost';
+import { createConfiguredClient } from './createConfiguredClient';
+import type { GMCPMessageRoomInfo } from './gmcp/Room';
+import { useFileTransferNotifications } from './components/FileTransfer/useFileTransferNotifications';
+import { createHapticsRuntime, type HapticsRuntime } from './haptics/runtime';
+import { useChannelHistory } from './hooks/useChannelHistory';
+import { autoLogService, createAutoLogSessionDraft } from './logging/AutoLogService';
+import { usePreferences } from './stores/preferencesStore';
+import { useRoomStore } from './stores/roomStore';
+import { ensurePushSubscription } from './webpush';
 
-const WINDOW_TITLE = "Mongoose Client";
+const WINDOW_TITLE = 'Mongoose Client';
 
 function setWindowSubtitle(subtitle?: string) {
   document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
@@ -42,16 +37,25 @@ function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
   return roomInfo.name || roomInfo.area || undefined;
 }
 
+function getSidebarShortcutIndex(event: KeyboardEvent): number | null {
+  if (!event.ctrlKey) {
+    return null;
+  }
+
+  const digit = Number.parseInt(event.key, 10);
+  if (Number.isNaN(digit) || digit < 1 || digit > 9) {
+    return null;
+  }
+
+  return digit - 1;
+}
+
 function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
-  const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
-  const [fileTransferExpanded, setFileTransferExpanded] =
-    useState<boolean>(false);
   const [hostState, setHostState] = useState<WasmHostState>({ roomId: null, guestCount: 0 });
   const { clearAllBuffers } = useChannelHistory(client);
-  const players = useClientEvent<"userlist">(client, "userlist", []) || [];
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
@@ -59,8 +63,9 @@ function App() {
   const sidebarRef = React.useRef<SidebarRef | null>(null);
 
   const clientInitialized = useRef(false);
-  const wasmBackendLoaded = useRef(false);
+  const hapticsRuntimeRef = useRef<HapticsRuntime | null>(null);
   const preferences = usePreferences();
+  useFileTransferNotifications(client);
 
   const saveLog = () => {
     if (outRef.current) {
@@ -80,6 +85,37 @@ function App() {
       outRef.current.copyLog();
     }
   };
+
+  const handleAppKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (!client) {
+        return;
+      }
+
+      if (event.key === 'Control') {
+        client.cancelSpeech();
+      }
+
+      if (event.key === 'Escape') {
+        client.stopAllSounds();
+        const midiPackage = client.gmcpHandlers['Client.Midi'];
+        if (midiPackage) {
+          midiPackage.sendAllNotesOff();
+        }
+        hapticsRuntimeRef.current?.emergencyStop();
+      }
+
+      if (showSidebar) {
+        const targetIndex = getSidebarShortcutIndex(event);
+        if (targetIndex !== null) {
+          event.preventDefault();
+          console.log(`App: Detected CTRL+${targetIndex + 1}, calling switchToTab(${targetIndex})`);
+          sidebarRef.current?.switchToTab(targetIndex);
+        }
+      }
+    },
+    [client, showSidebar],
+  );
 
   // are we on mobile?
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -101,11 +137,14 @@ function App() {
   const isDefaultMode = !isWasmMode && !isGuestMode;
 
   // Callback for WASM components to deliver their client
-  const handleClientReady = useCallback((newClient: MudClient) => {
-    setClient(newClient);
-    setShowSidebar(!isMobile);
-    window.mudClient = newClient;
-  }, [isMobile]);
+  const handleClientReady = useCallback(
+    (newClient: MudClient) => {
+      setClient(newClient);
+      setShowSidebar(!isMobile);
+      window.mudClient = newClient;
+    },
+    [isMobile],
+  );
 
   // Default telnet mode: create client and connect via WebSocket
   useEffect(() => {
@@ -140,12 +179,12 @@ function App() {
     const handleConnect = () => {
       configureAutologSession();
       autoLogService.startSession().catch((error) => {
-        console.error("Failed to start autolog session:", error);
+        console.error('Failed to start autolog session:', error);
       });
     };
     const handleDisconnect = () => {
       autoLogService.endSession().catch((error) => {
-        console.error("Failed to end autolog session:", error);
+        console.error('Failed to end autolog session:', error);
       });
     };
 
@@ -154,33 +193,33 @@ function App() {
       handleConnect();
     }
 
-    client.on("connect", handleConnect);
-    client.on("disconnect", handleDisconnect);
+    client.on('connect', handleConnect);
+    client.on('disconnect', handleDisconnect);
 
     return () => {
-      client.off("connect", handleConnect);
-      client.off("disconnect", handleDisconnect);
+      client.off('connect', handleConnect);
+      client.off('disconnect', handleDisconnect);
       autoLogService.endSession().catch((error) => {
-        console.error("Failed to end autolog session during cleanup:", error);
+        console.error('Failed to end autolog session during cleanup:', error);
       });
       autoLogService.configureSession(null);
     };
   }, [client]);
 
-  // Common client setup: notifications, auto-login, MIDI, haptics, keyboard handlers
+  // Common client setup: notifications, auto-login, MIDI, haptics, focus handlers
   useEffect(() => {
     if (!client) return;
 
     client.requestNotificationPermission();
     const ensurePushSubscriptionForSession = () => {
       ensurePushSubscription(client).catch((error) => {
-        console.error("Failed to ensure push subscription:", error);
+        console.error('Failed to ensure push subscription:', error);
       });
     };
     if (client.sessionReady) {
       ensurePushSubscriptionForSession();
     } else {
-      client.once("sessionReady", ensurePushSubscriptionForSession);
+      client.once('sessionReady', ensurePushSubscriptionForSession);
     }
 
     // Auto-login from URL params
@@ -199,64 +238,52 @@ function App() {
       });
     }
 
-    // Register gamepad backend (always available, zero config)
-    const gamepadBackend = new GamepadBackend();
-    hapticsService.registerBackend(gamepadBackend);
-    const registeredBackends: HapticsBackend[] = [gamepadBackend];
-    gamepadBackend.connect();
-
-    // Listen to 'keydown' event
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Control") {
-        client.cancelSpeech();
-      }
-      if (event.key === "Escape") {
-        client.stopAllSounds();
-        const midiPackage = client.gmcpHandlers["Client.Midi"];
-        if (midiPackage) {
-          midiPackage.sendAllNotesOff();
-        }
-        hapticsService.emergencyStop();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
+    const hapticsRuntime = createHapticsRuntime();
+    hapticsRuntimeRef.current = hapticsRuntime;
+    hapticsRuntime.setEnabled(usePreferences.getState().haptics.enabled);
 
     // on focus, focus the input
     const handleFocus = () => {
       inRef.current?.focus();
     };
-    document.addEventListener("focus", handleFocus);
+    document.addEventListener('focus', handleFocus);
 
     return () => {
-      client.off("sessionReady", ensurePushSubscriptionForSession);
-      window.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("focus", handleFocus);
-      for (const backend of registeredBackends) {
-        hapticsService.unregisterBackend(backend).catch((error) => {
-          console.error("Failed to unregister haptics backend:", error);
-        });
+      client.off('sessionReady', ensurePushSubscriptionForSession);
+      document.removeEventListener('focus', handleFocus);
+      if (hapticsRuntimeRef.current === hapticsRuntime) {
+        hapticsRuntimeRef.current = null;
       }
+      hapticsRuntime.dispose().catch((error) => {
+        console.error('Failed to dispose haptics runtime:', error);
+      });
     };
   }, [client]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleAppKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', handleAppKeyDown, true);
+    };
+  }, [handleAppKeyDown]);
 
   useEffect(() => {
     if (!preferences.midi.enabled) return;
 
     let cancelled = false;
-    import("./VirtualMidiService")
+    import('./VirtualMidiService')
       .then(({ virtualMidiService }) => virtualMidiService.initialize())
       .then((success) => {
         if (cancelled) return;
         if (success) {
-          console.log("Virtual MIDI synthesizer initialized");
+          console.log('Virtual MIDI synthesizer initialized');
         } else {
-          console.log("Failed to initialize virtual MIDI synthesizer");
+          console.log('Failed to initialize virtual MIDI synthesizer');
         }
       })
       .catch((error) => {
         if (cancelled) return;
-        console.error("Error initializing virtual MIDI synthesizer:", error);
+        console.error('Error initializing virtual MIDI synthesizer:', error);
       });
 
     return () => {
@@ -278,66 +305,9 @@ function App() {
     };
   }, [client, roomInfo]);
 
-  // Load WASM buttplug backend when haptics is enabled (lazy — avoids 5MB download when disabled)
   useEffect(() => {
-    if (!preferences.haptics.enabled) return;
-    if (wasmBackendLoaded.current) return;
-    wasmBackendLoaded.current = true;
-
-    let cancelled = false;
-    let buttplugBackend: ButtplugWasmBackend | null = null;
-    createRealWasmDeps()
-      .then((deps) => {
-        if (cancelled) return;
-        buttplugBackend = new ButtplugWasmBackend(deps);
-        hapticsService.registerBackend(buttplugBackend);
-        console.log("ButtplugWasmBackend registered (WASM loaded)");
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.warn("Failed to load buttplug WASM backend:", err);
-        wasmBackendLoaded.current = false;
-      });
-
-    return () => {
-      cancelled = true;
-      wasmBackendLoaded.current = false;
-      if (buttplugBackend) {
-        hapticsService.unregisterBackend(buttplugBackend).catch((error) => {
-          console.error("Failed to unregister WASM haptics backend:", error);
-        });
-      }
-    };
+    hapticsRuntimeRef.current?.setEnabled(preferences.haptics.enabled);
   }, [preferences.haptics.enabled]);
-
-  // Effect for CTRL + Number shortcut
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!showSidebar || !event.ctrlKey) {
-        return;
-      }
-      const digit = parseInt(event.key, 10);
-      if (!isNaN(digit) && digit >= 1 && digit <= 9) {
-        const targetIndex = digit - 1;
-        event.preventDefault();
-        console.log(
-          `App: Detected CTRL+${digit}, calling switchToTab(${targetIndex})`
-        );
-        sidebarRef.current?.switchToTab(targetIndex);
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [showSidebar]);
-
-  const fileTransferOffer = useClientEvent<"fileTransferOffer">(
-    client,
-    "fileTransferOffer",
-    null as unknown as FileTransferOffer
-  );
 
   const handleCommand = useCallback(
     (text: string) => {
@@ -345,37 +315,24 @@ function App() {
         client.sendCommand(text);
       }
     },
-    [client]
+    [client],
   );
 
   const focusInput = useCallback(() => {
     inRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    if (fileTransferOffer !== null) {
-      setFileTransferExpanded(true);
-      setShowFileTransfer(true);
-      client?.sendNotification(
-        "File Transfer Offer",
-        `${fileTransferOffer.sender} wants to send you ${
-          fileTransferOffer.filename
-        } (${Math.round(fileTransferOffer.filesize / 1024)} KB)`
-      );
-    }
-  }, [fileTransferOffer, client]);
-
   useBeforeunload((event) => {
     if (client) {
       client.shutdown();
     }
     autoLogService.flush().catch((error) => {
-      console.error("Failed to flush autolog entries before unload:", error);
+      console.error('Failed to flush autolog entries before unload:', error);
     });
     // Best-effort checkpoint on tab close
     const wasmWorker = (window as any).wasmWorker;
     if (wasmWorker) {
-      wasmWorker.postMessage({ type: "save" });
+      wasmWorker.postMessage({ type: 'save' });
     }
   });
 
@@ -402,15 +359,14 @@ function App() {
         />
       )}
       {isGuestMode && !client && (
-        <WasmGuest
-          roomId={urlModeParams.roomParam}
-          onClientReady={handleClientReady}
-        />
+        <WasmGuest roomId={urlModeParams.roomParam} onClientReady={handleClientReady} />
       )}
       {/* UI shell — only renders when client is ready */}
       {client && (
-        <div className={`App ${showSidebar ? (sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-shown') : ''}`}>
-          <header style={{ gridArea: "header" }}>
+        <div
+          className={`App ${showSidebar ? (sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-shown') : ''}`}
+        >
+          <header style={{ gridArea: 'header' }}>
             <Toolbar
               client={client}
               onSaveLog={saveLog}
@@ -422,21 +378,17 @@ function App() {
               showSidebar={showSidebar}
             />
           </header>
-          {urlModeParams.isHostMode && <HostPanel roomId={hostState.roomId} guestCount={hostState.guestCount} />}
-          <main style={{ gridArea: "main" }}>
+          {urlModeParams.isHostMode && (
+            <HostPanel roomId={hostState.roomId} guestCount={hostState.guestCount} />
+          )}
+          <main style={{ gridArea: 'main' }}>
             <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
           </main>
-          <section
-            aria-label="Command input"
-            style={{ gridArea: "input" }}
-          >
+          <section aria-label="Command input" style={{ gridArea: 'input' }}>
             <CommandInput onSend={handleCommand} inputRef={inRef} client={client} />
           </section>
           {showSidebar && (
-            <aside
-              aria-roledescription="Sidebar"
-              style={{ gridArea: "sidebar" }}
-            >
+            <aside aria-roledescription="Sidebar" style={{ gridArea: 'sidebar' }}>
               <Sidebar
                 ref={sidebarRef}
                 client={client}
@@ -445,7 +397,7 @@ function App() {
               />
             </aside>
           )}
-          <footer style={{ gridArea: "status" }}>
+          <footer style={{ gridArea: 'status' }}>
             <Statusbar client={client} />
           </footer>
           <PreferencesDialog ref={prefsDialogRef} />

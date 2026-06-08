@@ -1,54 +1,42 @@
-import {
-  type Stream,
-  TelnetCommand,
-  TelnetOption,
-  TelnetParser,
-  WebSocketStream,
-} from "./telnet";
+import { type Stream, TelnetCommand, TelnetOption, TelnetParser, WebSocketStream } from './telnet';
 
-import { Buffer } from "buffer";
-import { EventEmitter } from "eventemitter3";
-import stripAnsi from "strip-ansi";
-import { EditorManager } from "./EditorManager";
-import { GMCPChar, GMCPClientFileTransfer } from "./gmcp";
-import type { GMCPPackage } from "./gmcp/package";
-import type {
-  GMCPHandlerMap,
-  KnownGMCPPackageMap,
-  KnownGMCPPackageName,
-} from "./gmcp/types";
+import { Buffer } from 'buffer';
+import { EventEmitter } from 'eventemitter3';
+import stripAnsi from 'strip-ansi';
+import { EditorManager } from './EditorManager';
+import { GMCPChar, GMCPClientFileTransfer } from './gmcp';
 import {
-  type MCPKeyvals,
-  type MCPPackage,
-  McpAwnsGetSet,
-  McpNegotiate,
-  generateTag,
-  parseMcpMessage,
-  parseMcpMultiline,
-} from "./mcp";
+  encodeGmcpPayload,
+  parseGmcpMessageAddress,
+  parseGmcpPayload,
+  resolveGmcpMessageHandler,
+} from './gmcp/codec';
+import type { GMCPPackage } from './gmcp/package';
+import type { GMCPHandlerMap, KnownGMCPPackageMap, KnownGMCPPackageName } from './gmcp/types';
+import { type MCPPackage, type McpPackageContext, McpSession } from './mcp';
 
-import { Cacophony } from "cacophony";
-import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
-import { WebRTCService } from "./WebRTCService";
-import FileTransferManager from "./FileTransferManager.js";
-import { useRoomStore } from "./stores/roomStore";
-import { useSpatialStore } from "./stores/spatialStore";
+import { MediaService } from './audio/MediaService';
+import { AutoreadMode, usePreferences } from './stores/preferencesStore';
+import { WebRTCService } from './WebRTCService';
+import FileTransferManager from './FileTransferManager.js';
+import { useRoomStore } from './stores/roomStore';
+import { useSpatialStore } from './stores/spatialStore';
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
 
-  import("./MidiService")
+  import('./MidiService')
     .then(({ midiService }) => {
       midiService.resetIntentionalDisconnectFlags();
     })
     .catch((error) => {
-      console.error("Failed to reset MIDI disconnect flags:", error);
+      console.error('Failed to reset MIDI disconnect flags:', error);
     });
 }
 
 class MudClient extends EventEmitter {
   private ws!: WebSocket;
-  private decoder = new TextDecoder("utf8");
+  private decoder = new TextDecoder('utf8');
   private telnet!: TelnetParser;
   private _connected: boolean = false;
   private _gmcpReady: boolean = false;
@@ -71,36 +59,18 @@ class MudClient extends EventEmitter {
 
   private host: string;
   private port: number;
-  private telnetNegotiation: boolean = false;
-  private telnetBuffer: string = "";
+  private telnetBuffer: string = '';
   public gmcpHandlers: GMCPHandlerMap = {};
-  public mcpHandlers: { [key: string]: MCPPackage } = {};
-  public mcpMultilines: { [key: string]: MCPPackage } = {};
-  private mcpAuthKey: string | null = null;
-  mcp_negotiate: McpNegotiate;
-  public mcp_getset: McpAwnsGetSet;
+  public readonly mcpSession: McpSession;
   public gmcp_char: GMCPChar;
   public gmcp_fileTransfer: GMCPClientFileTransfer;
-  public cacophony: Cacophony;
+  public media: MediaService;
   public editors: EditorManager;
   public webRTCService: WebRTCService;
   public fileTransferManager: FileTransferManager;
   private _autosay: boolean = false;
-  private globalMuted: boolean = false;
-  private isWindowFocused: boolean = true;
-  private unsubscribePreferences: (() => void) | null = null;
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
-
-  private handleWindowFocus = (): void => {
-    this.isWindowFocused = true;
-    this.updateBackgroundMuteState();
-  };
-
-  private handleWindowBlur = (): void => {
-    this.isWindowFocused = false;
-    this.updateBackgroundMuteState();
-  };
 
   get autosay(): boolean {
     return this._autosay;
@@ -115,171 +85,36 @@ class MudClient extends EventEmitter {
     super();
     this.host = host;
     this.port = port;
-    this.mcp_negotiate = this.registerMcpPackage(McpNegotiate);
-    this.mcp_getset = this.registerMcpPackage(McpAwnsGetSet);
+    this.mcpSession = new McpSession({
+      emit: (event, ...args) => this.emit(event, ...args),
+      openEditorSession: (session) => this.editors.openEditorWindow(session),
+      sendLine: (line) => this.send(`${line}\r\n`),
+    });
     this.gmcp_char = this.registerGMCPPackage(GMCPChar);
     this.gmcp_fileTransfer = this.registerGMCPPackage(GMCPClientFileTransfer);
-    this.cacophony = new Cacophony();
-    this.cacophony.setGlobalVolume(usePreferences.getState().sound.volume);
+    this.media = new MediaService();
     this.editors = new EditorManager(this);
-    this.webRTCService = new WebRTCService(this);
-    this.fileTransferManager = new FileTransferManager(
-      this,
-      this.gmcp_fileTransfer
-    );
-    
-    window.addEventListener("focus", this.handleWindowFocus);
-    window.addEventListener("blur", this.handleWindowBlur);
-
-    this.unsubscribePreferences = usePreferences.subscribe(() => {
-      this.updateBackgroundMuteState();
-    });
-  }
-  // File Transfer related methods
-  async sendFile(file: File, recipient: string): Promise<void> {
-    await this.fileTransferManager.sendFile(file, recipient);
-  }
-
-  cancelTransfer(hash: string): void {
-    this.fileTransferManager.cancelTransfer(hash);
-  }
-
-  acceptTransfer(sender: string, hash: string): void {
-    this.fileTransferManager.acceptTransfer(sender, hash).catch(error => {
-      console.error("[MudClient] Failed to accept transfer:", error);
-      this.onFileTransferError(hash, "unknown", "receive", error.message);
-    });
-  }
-
-  rejectTransfer(sender: string, hash: string): void {
-    this.gmcp_fileTransfer.sendReject(sender, hash);
-  }
-
-  // File Transfer event handlers
-  onFileTransferOffer(
-    sender: string,
-    hash: string,
-    filename: string,
-    filesize: number,
-    offerSdp: string
-  ): void {
-    console.log("[MudClient] Emitting fileTransferOffer event:", {
-      sender,
-      hash,
-      filename,
-      filesize,
-      offerSdp,
-    });
-    this.emit("fileTransferOffer", {
-      sender,
-      hash,
-      filename,
-      filesize,
-      offerSdp,
-    });
-  }
-
-  onFileTransferAccept(
-    sender: string,
-    hash: string,
-    filename: string,
-    answerSdp: string
-  ): void {
-    console.log("[MudClient] Emitting fileTransferAccepted event:", {
-      sender,
-      hash,
-      filename,
-      answerSdp,
-    });
-    this.emit("fileTransferAccepted", { sender, hash, filename, answerSdp });
-  }
-
-  onFileTransferReject(sender: string, hash: string): void {
-    this.emit("fileTransferRejected", { sender, hash });
-  }
-
-  onFileTransferCancel(sender: string, hash: string): void {
-    this.emit("fileTransferCancelled", { sender, hash });
-  }
-
-  onFileSendComplete(hash: string, filename: string): void {
-    this.emit("fileSendComplete", { hash, filename });
-  }
-
-  onFileTransferError(
-    hash: string,
-    filename: string,
-    direction: "send" | "receive",
-    error: string
-  ): void {
-    this.emit("fileTransferError", { hash, filename, direction, error });
-  }
-
-  onConnectionRecovered(data: {
-    filename: string;
-    direction: "send" | "receive";
-    hash: string;
-  }): void {
-    this.emit("connectionRecovered", data);
-  }
-
-  onRecoveryFailed(data: {
-    filename: string;
-    direction: "send" | "receive";
-    error: string;
-  }): void {
-    this.emit("recoveryFailed", data);
-  }
-
-  // GMCP methods for file transfer
-  sendFileTransferOffer(
-    recipient: string,
-    filename: string,
-    hash: string,
-    filesize: number,
-    offerSdp: string
-  ): void {
-    this.gmcp_fileTransfer.sendOffer(
-      recipient,
-      filename,
-      filesize,
-      offerSdp,
-      hash
-    );
-  }
-
-  sendFileTransferAccept(
-    sender: string,
-    filename: string,
-    hash: string,
-    answerSdp: string
-  ): void {
-    this.gmcp_fileTransfer.sendAccept(sender, hash, filename, answerSdp);
+    this.webRTCService = new WebRTCService();
+    this.fileTransferManager = new FileTransferManager(this.webRTCService, this.gmcp_fileTransfer);
   }
 
   registerGMCPPackage<P extends GMCPPackage>(p: new (_: MudClient) => P): P {
     const gmcpPackage = new p(this);
     this.gmcpHandlers[gmcpPackage.packageName] = gmcpPackage;
-    console.log("Registered GMCP Package:", gmcpPackage.packageName);
+    console.log('Registered GMCP Package:', gmcpPackage.packageName);
     return gmcpPackage;
   }
 
-  requireGMCPPackage<K extends KnownGMCPPackageName>(
-    packageName: K
-  ): KnownGMCPPackageMap[K] {
-    const gmcpPackage = this.gmcpHandlers[packageName] as
-      | KnownGMCPPackageMap[K]
-      | undefined;
+  requireGMCPPackage<K extends KnownGMCPPackageName>(packageName: K): KnownGMCPPackageMap[K] {
+    const gmcpPackage = this.gmcpHandlers[packageName] as KnownGMCPPackageMap[K] | undefined;
     if (!gmcpPackage) {
       throw new Error(`Required GMCP package is not registered: ${packageName}`);
     }
     return gmcpPackage;
   }
 
-  registerMcpPackage<P extends MCPPackage>(p: new (_: MudClient) => P): P {
-    const mcpPackage = new p(this);
-    this.mcpHandlers[mcpPackage.packageName] = mcpPackage;
-    return mcpPackage;
+  registerMcpPackage<P extends MCPPackage>(p: new (_: McpPackageContext) => P): P {
+    return this.mcpSession.registerPackage(p);
   }
 
   public connect() {
@@ -288,54 +123,48 @@ class MudClient extends EventEmitter {
     this._gmcpReady = false;
     this._sessionReady = false;
     this.ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
-    this.ws.binaryType = "arraybuffer";
+    this.ws.binaryType = 'arraybuffer';
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
     this.ws.onopen = () => {
       this._connected = true;
-      
+
       // Reset MIDI intentional disconnect flags when successfully reconnecting to server
       resetMidiIntentionalDisconnectFlags();
-      
-      this.emit("connect");
-      this.emit("connectionChange", true);
+
+      this.emit('connect');
+      this.emit('connectionChange', true);
     };
 
-    this.telnet.on("data", (data: ArrayBuffer) => {
+    this.telnet.on('data', (data: ArrayBuffer) => {
       this.handleData(data);
     });
 
-    this.telnet.on("negotiation", (command, option) => {
+    this.telnet.on('negotiation', (command, option) => {
       // Negotiation that we support GMCP
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
-        console.log("GMCP Negotiation");
+        console.log('GMCP Negotiation');
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        this.requireGMCPPackage("Core").sendHello();
-        this.requireGMCPPackage("Core.Supports").sendSet();
-        this.requireGMCPPackage("Auth.Autologin").sendLogin();
+        this.requireGMCPPackage('Core').sendHello();
+        this.requireGMCPPackage('Core.Supports').sendSet();
+        this.requireGMCPPackage('Auth.Autologin').sendLogin();
         // Advertise MCMP effect support so the server only sends what we can render.
-        this.requireGMCPPackage("Client.Media").sendEffectsSupport();
+        this.requireGMCPPackage('Client.Media').sendEffectsSupport();
         this.markGmcpReady();
-      } else if (
-        command === TelnetCommand.DO &&
-        option === TelnetOption.TERMINAL_TYPE
-      ) {
-        console.log("TTYPE Negotiation");
-        this.telnet.sendNegotiation(
-          TelnetCommand.WILL,
-          TelnetOption.TERMINAL_TYPE
-        );
-        this.telnet.sendTerminalType("Mongoose Client");
-        this.telnet.sendTerminalType("ANSI");
-        this.telnet.sendTerminalType("PROXY");
+      } else if (command === TelnetCommand.DO && option === TelnetOption.TERMINAL_TYPE) {
+        console.log('TTYPE Negotiation');
+        this.telnet.sendNegotiation(TelnetCommand.WILL, TelnetOption.TERMINAL_TYPE);
+        this.telnet.sendTerminalType('Mongoose Client');
+        this.telnet.sendTerminalType('ANSI');
+        this.telnet.sendTerminalType('PROXY');
       }
     });
 
-    this.telnet.on("gmcp", (packageName, data) => {
-      console.log("GMCP Package:", packageName, data);
+    this.telnet.on('gmcp', (packageName, data) => {
+      console.log('GMCP Package:', packageName, data);
       try {
         this.handleGmcpData(packageName, data);
       } catch (e) {
-        console.error("Calling GMCP:", e);
+        console.error('Calling GMCP:', e);
       }
     });
 
@@ -350,7 +179,7 @@ class MudClient extends EventEmitter {
     };
 
     this.ws.onerror = (error: Event) => {
-      this.emit("error", error);
+      this.emit('error', error);
     };
   }
 
@@ -368,48 +197,42 @@ class MudClient extends EventEmitter {
     this._sessionReady = false;
     this.telnet = new TelnetParser(stream);
 
-    this.telnet.on("data", (data: ArrayBuffer) => {
+    this.telnet.on('data', (data: ArrayBuffer) => {
       this.handleData(data);
     });
 
     // The WASM server does not send telnet negotiation (no IAC sequences),
     // so these handlers are unlikely to fire — but wire them up anyway
     // for correctness.
-    this.telnet.on("negotiation", (command, option) => {
+    this.telnet.on('negotiation', (command, option) => {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
-        console.log("GMCP Negotiation (local)");
+        console.log('GMCP Negotiation (local)');
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        this.requireGMCPPackage("Core").sendHello();
-        this.requireGMCPPackage("Core.Supports").sendSet();
-        this.requireGMCPPackage("Auth.Autologin").sendLogin();
+        this.requireGMCPPackage('Core').sendHello();
+        this.requireGMCPPackage('Core.Supports').sendSet();
+        this.requireGMCPPackage('Auth.Autologin').sendLogin();
         // Advertise MCMP effect support so the server only sends what we can render.
-        this.requireGMCPPackage("Client.Media").sendEffectsSupport();
+        this.requireGMCPPackage('Client.Media').sendEffectsSupport();
         this.markGmcpReady();
-      } else if (
-        command === TelnetCommand.DO &&
-        option === TelnetOption.TERMINAL_TYPE
-      ) {
-        console.log("TTYPE Negotiation (local)");
-        this.telnet.sendNegotiation(
-          TelnetCommand.WILL,
-          TelnetOption.TERMINAL_TYPE
-        );
-        this.telnet.sendTerminalType("Mongoose Client");
-        this.telnet.sendTerminalType("ANSI");
-        this.telnet.sendTerminalType("PROXY");
+      } else if (command === TelnetCommand.DO && option === TelnetOption.TERMINAL_TYPE) {
+        console.log('TTYPE Negotiation (local)');
+        this.telnet.sendNegotiation(TelnetCommand.WILL, TelnetOption.TERMINAL_TYPE);
+        this.telnet.sendTerminalType('Mongoose Client');
+        this.telnet.sendTerminalType('ANSI');
+        this.telnet.sendTerminalType('PROXY');
       }
     });
 
-    this.telnet.on("gmcp", (packageName, data) => {
-      console.log("GMCP Package (local):", packageName, data);
+    this.telnet.on('gmcp', (packageName, data) => {
+      console.log('GMCP Package (local):', packageName, data);
       try {
         this.handleGmcpData(packageName, data);
       } catch (e) {
-        console.error("Calling GMCP:", e);
+        console.error('Calling GMCP:', e);
       }
     });
 
-    stream.on("close", () => {
+    stream.on('close', () => {
       this.cleanupConnection();
     });
 
@@ -417,21 +240,21 @@ class MudClient extends EventEmitter {
     // message once the virtual connection is created.
     this._connected = true;
     resetMidiIntentionalDisconnectFlags();
-    this.emit("connect");
-    this.emit("connectionChange", true);
+    this.emit('connect');
+    this.emit('connectionChange', true);
     this.markGmcpReady();
   }
 
   public markGmcpReady(): void {
     if (this._gmcpReady) return;
     this._gmcpReady = true;
-    this.emit("gmcpReady");
+    this.emit('gmcpReady');
   }
 
   public markSessionReady(): void {
     if (this._sessionReady) return;
     this._sessionReady = true;
-    this.emit("sessionReady");
+    this.emit('sessionReady');
   }
 
   public send(data: string) {
@@ -449,24 +272,21 @@ class MudClient extends EventEmitter {
     this._connected = false;
     this._gmcpReady = false;
     this._sessionReady = false;
-    this.mcpAuthKey = null;
-    this.telnetBuffer = "";
-    this.telnetNegotiation = false;
+    this.mcpSession.reset();
+    this.telnetBuffer = '';
     useRoomStore.getState().reset(); // Reset room info on cleanup
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
-    this.webRTCService.cleanup();
     this.fileTransferManager.cleanup();
-    
-    this.emit("disconnect");
-    this.emit("connectionChange", false);
+
+    this.emit('disconnect');
+    this.emit('connectionChange', false);
   }
 
   public close(): void {
     this.intentionalDisconnect = true;
     if (
       this.ws &&
-      (this.ws.readyState === WebSocket.CONNECTING ||
-        this.ws.readyState === WebSocket.OPEN)
+      (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)
     ) {
       this.ws.close();
     }
@@ -481,13 +301,13 @@ class MudClient extends EventEmitter {
   public sendCommand(command: string): void {
     const localEchoEnabled = usePreferences.getState().general.localEcho;
     if (localEchoEnabled) {
-      this.emit("command", command);
+      this.emit('command', command);
     }
-    if (this.autosay && !command.startsWith("-") && !command.startsWith("'")) {
-      command = "say " + command;
+    if (this.autosay && !command.startsWith('-') && !command.startsWith("'")) {
+      command = `say ${command}`;
     }
-    this.send(command + "\r\n");
-    console.log("> " + command);
+    this.send(`${command}\r\n`);
+    console.log(`> ${command}`);
   }
 
   /*
@@ -499,117 +319,60 @@ An MCP message consists of three parts: the name of the message, the authenticat
 */
 
   private handleData(data: ArrayBuffer) {
-    const decoded = this.decoder.decode(data).trimEnd();
-    for (const line of decoded.split("\n")) {
-      if (line && line.startsWith("#$#")) {
-        // MCP
-        this.handleMcp(line);
-      } else {
-        this.emitMessage(line);
-      }
+    this.telnetBuffer += this.decoder.decode(data);
+    const lines = this.telnetBuffer.split('\n');
+    this.telnetBuffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      this.handleTextLine(line.replace(/\r$/, ''));
     }
+
+    if (this.telnetBuffer && !this.telnetBuffer.startsWith('#$#')) {
+      this.emitMessage(this.telnetBuffer);
+      this.telnetBuffer = '';
+    }
+  }
+
+  private handleTextLine(line: string): void {
+    if (line?.startsWith('#$#')) {
+      this.handleMcp(line);
+      return;
+    }
+
+    this.emitMessage(line);
   }
 
   private handleMcp(decoded: string) {
-    if (decoded.startsWith("#$#*")) {
-      // multiline
-      const continuation = parseMcpMultiline(decoded.trimEnd());
-      if (continuation)
-        if (continuation.name in this.mcpMultilines)
-          this.mcpMultilines[continuation.name].handleMultiline(continuation);
-        else
-          console.warn(
-            "Received continuation for unknown multiline",
-            continuation
-          );
-      return;
-    }
-    if (decoded.startsWith("#$#:")) {
-      const closure = parseMcpMultiline(decoded.trimEnd());
-      if (closure) {
-        this.mcpMultilines[closure.name].closeMultiline(closure);
-        delete this.mcpMultilines[closure.name];
-      }
-      return;
-    }
-    const mcpMessage = parseMcpMessage(decoded.trimEnd());
-    console.log("MCP Message:", mcpMessage);
-    if (
-      mcpMessage?.name.toLowerCase() === "mcp" &&
-      mcpMessage.authKey == null &&
-      this.mcpAuthKey == null
-    ) {
-      // Authenticate
-      this.mcpAuthKey = generateTag();
-      this.sendCommand(
-        `#$#mcp authentication-key: ${this.mcpAuthKey} version: 2.1 to: 2.1`
-      );
-      this.mcp_negotiate.sendNegotiate();
-    } else if (mcpMessage?.name === "mcp-negotiate-end") {
-      // spec says to refuse additional negotiations after this, but it's not really needed
-    } else if (mcpMessage?.authKey === this.mcpAuthKey) {
-      let name = mcpMessage.name;
-      do {
-        if (name in this.mcpHandlers) {
-          this.mcpHandlers[name].handle(mcpMessage);
-          if ("_data-tag" in mcpMessage.keyvals) {
-            console.log("new multiline " + mcpMessage.keyvals["_data-tag"]);
-            this.mcpMultilines[mcpMessage.keyvals["_data-tag"]] =
-              this.mcpHandlers[name];
-          }
-          return;
-        }
-        name = name.substring(0, name.lastIndexOf("-"));
-      } while (name);
-      console.log(`No handler for ${mcpMessage.name}`);
-    } else {
-      console.log(
-        `Unexpected authkey "${mcpMessage?.authKey}", probably a spoofed message.`
-      );
-    }
+    this.mcpSession.receiveLine(decoded);
   }
 
   private handleGmcpData(gmcpPackage: string, gmcpMessage: string) {
-    //split to packageName and message type. the message name is after the last period of the gmcp package. the package can hav emultiple dots.
-    const lastDot = gmcpPackage.lastIndexOf(".");
-    const packageName = gmcpPackage.substring(0, lastDot);
-    const messageType = gmcpPackage.substring(lastDot + 1);
-
-    console.log("GMCP Message:", packageName, messageType, gmcpMessage);
-    const handler = this.gmcpHandlers[packageName];
-    if (!handler) {
-      console.log("No handler for GMCP package:", packageName);
+    const address = parseGmcpMessageAddress(gmcpPackage);
+    if (!address) {
+      console.log('Invalid GMCP package:', gmcpPackage);
       return;
     }
-    // Look for the handler using the exact messageType from the package string
-    const messageHandler = (handler as any)["handle" + messageType];
 
-    if (messageHandler) {
-      console.log("Calling handler for:", messageType, messageHandler); // Log original type
+    console.log('GMCP Message:', address.packageName, address.messageType, gmcpMessage);
+    const handler = this.gmcpHandlers[address.packageName];
+    if (!handler) {
+      console.log('No handler for GMCP package:', address.packageName);
+      return;
+    }
 
-      let jsonStringToParse: string;
-      // Check if gmcpMessage is a valid, non-empty string
-      if (typeof gmcpMessage === 'string' && gmcpMessage.trim() !== '') {
-        jsonStringToParse = gmcpMessage;
-      } else {
-        // Log a warning and default to an empty JSON object string
-        console.warn(`GMCP message data for ${packageName}.${messageType} is missing or empty. Defaulting to {}. Original data:`, gmcpMessage);
-        jsonStringToParse = '{}';
-      }
+    const messageHandler = resolveGmcpMessageHandler(handler, address.messageType);
+    if (!messageHandler) {
+      console.log('No handler on package:', address.packageName, address.messageType);
+      return;
+    }
 
-      try {
-        const parsedData = JSON.parse(jsonStringToParse);
-        messageHandler.call(handler, parsedData);
-      } catch (e) {
-        // Add specific error handling for JSON parsing failure
-        console.error(`Error parsing GMCP JSON for ${packageName}.${messageType}:`, e);
-        console.error("Attempted to parse:", jsonStringToParse); // Log the string we tried to parse
-        // Optionally, you could decide whether to still call the handler with null/undefined/default data
-        // messageHandler.call(handler, {}); // Example: Call with empty object on parse failure
-      }
-    } else {
-      // Use original messageType in the error message
-      console.log("No handler on package:", packageName, messageType);
+    try {
+      messageHandler.call(handler, parseGmcpPayload(gmcpMessage));
+    } catch (error) {
+      console.error(
+        `Error dispatching GMCP message for ${address.packageName}.${address.messageType}:`,
+        error,
+      );
     }
   }
 
@@ -621,60 +384,23 @@ An MCP message consists of three parts: the name of the message, the authenticat
     if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
       this.speak(dataString);
     }
-    this.emit("message", dataString);
+    this.emit('message', dataString);
   }
 
-  sendGmcp(packageName: string, data?: any) {
-    console.log("Sending GMCP:", packageName, data);
-    this.telnet.sendGmcp(packageName, data);
-  }
-
-  sendMcp(command: string, data?: any) {
-    if (typeof data === "object") {
-      let str = "";
-      for (const [key, value] of Object.entries(data)) {
-        str += ` ${key}: ${value || '""'}`;
-      }
-      data = str;
-    }
-    const toSend = `#$#${command} ${this.mcpAuthKey} ${data}\r\n`;
-    this.send(toSend);
-  }
-
-  sendMcpMLLine(MLTag: string, key: string, val: string) {
-    this.send(`#$#* ${MLTag} ${key}: ${val}\r\n`);
-  }
-
-  closeMcpML(MLTag: string) {
-    this.send(`#$#: ${MLTag}\r\n`);
-  }
-
-  sendMCPMultiline(mcpMessage: string, keyvals: MCPKeyvals, lines: string[]) {
-    const MLTag = generateTag();
-    keyvals["_data-tag"] = MLTag;
-
-    this.sendMcp(mcpMessage, keyvals);
-    for (const line of lines) {
-      this.sendMcpMLLine(MLTag, "content", line);
-    }
-    this.closeMcpML(MLTag);
+  sendGmcp(packageName: string, data?: unknown) {
+    console.log('Sending GMCP:', packageName, data);
+    this.telnet.sendGmcp(packageName, encodeGmcpPayload(data));
   }
 
   shutdown() {
     if (this.shutdownComplete) return;
     this.shutdownComplete = true;
 
-    window.removeEventListener("focus", this.handleWindowFocus);
-    window.removeEventListener("blur", this.handleWindowBlur);
-    this.unsubscribePreferences?.();
-    this.unsubscribePreferences = null;
-
-    Object.values(this.mcpHandlers).forEach((handler) => {
-      handler.shutdown();
-    });
+    this.mcpSession.shutdown();
     Object.values(this.gmcpHandlers).forEach((handler) => {
       handler?.shutdown();
     });
+    this.media.shutdown();
     this.editors.shutdown();
     this.close();
   }
@@ -682,33 +408,33 @@ An MCP message consists of three parts: the name of the message, the authenticat
   requestNotificationPermission() {
     // handle notifications
     // may not be available in all browsers
-    if (!("Notification" in window)) {
-      console.log("This browser does not support desktop notification");
+    if (!('Notification' in window)) {
+      console.log('This browser does not support desktop notification');
       return;
     }
-    if (Notification.permission === "default") {
+    if (Notification.permission === 'default') {
       Notification.requestPermission();
     }
   }
 
   sendNotification(title: string, body: string) {
-    if (!("Notification" in window)) {
-      console.log("This browser does not support desktop notification");
+    if (!('Notification' in window)) {
+      console.log('This browser does not support desktop notification');
       return;
     }
 
-    if (Notification.permission === "granted") {
+    if (Notification.permission === 'granted') {
       new Notification(title, { body });
     }
   }
 
   speak(text: string) {
-    if (!("speechSynthesis" in window)) {
-      console.log("This browser does not support speech synthesis");
+    if (!('speechSynthesis' in window)) {
+      console.log('This browser does not support speech synthesis');
       return;
     }
     const utterance = new SpeechSynthesisUtterance(stripAnsi(text));
-    utterance.lang = "en-US";
+    utterance.lang = 'en-US';
     const { rate, pitch, voice, volume } = usePreferences.getState().speech;
     utterance.rate = rate;
     utterance.pitch = pitch;
@@ -726,20 +452,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   stopAllSounds() {
-    this.requireGMCPPackage("Client.Media").stopAllSounds();
-  }
-
-  updateBackgroundMuteState() {
-    const prefs = usePreferences.getState();
-    const shouldMuteInBackground = prefs.sound.muteInBackground && !this.isWindowFocused;
-    
-    // Apply mute state: global mute OR background mute
-    this.cacophony.muted = this.globalMuted || shouldMuteInBackground;
-  }
-
-  setGlobalMute(muted: boolean) {
-    this.globalMuted = muted;
-    this.updateBackgroundMuteState();
+    this.media.stopAllSounds();
   }
 }
 

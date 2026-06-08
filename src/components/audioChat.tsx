@@ -1,12 +1,12 @@
-import React, { useEffect, useRef, useState } from "react";
-import { ControlBar, LiveKitRoom, useTracks } from "@livekit/components-react";
-import { RemoteAudioTrack, Track } from "livekit-client";
-import { LiveKitSpatialAudioBridge } from "../audio/LiveKitSpatialAudioBridge";
-import MudClient from "../client";
-import type { SpatialEntity } from "../gmcp/Client/Spatial";
-import { useSpatialStore } from "../stores/spatialStore";
+import React, { useEffect, useRef, useState } from 'react';
+import { ControlBar, LiveKitRoom, useTracks } from '@livekit/components-react';
+import { RemoteAudioTrack, Track } from 'livekit-client';
+import { LiveKitSpatialAudioBridge } from '../audio/LiveKitSpatialAudioBridge';
+import MudClient from '../client';
+import type { SpatialEntity } from '../gmcp/Client/Spatial';
+import { useSpatialStore } from '../stores/spatialStore';
 
-const serverUrl = "wss://mongoose-67t79p35.livekit.cloud";
+const serverUrl = 'wss://mongoose-67t79p35.livekit.cloud';
 
 interface AudioChatProps {
   client: MudClient;
@@ -18,7 +18,7 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
 
   if (!bridgeRef.current) {
     bridgeRef.current = new LiveKitSpatialAudioBridge(
-      client.cacophony,
+      client.media.cacophony,
       (participantId) => useSpatialStore.getState().spatialEntities[participantId]?.position,
     );
   }
@@ -44,16 +44,16 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
     const syncEntity = (entity: SpatialEntity) => bridge.syncParticipant(entity.id);
     const syncEntityId = (entityId: string) => bridge.syncParticipant(entityId);
 
-    client.on("spatialScene", syncAll);
-    client.on("spatialEntityEnter", syncEntity);
-    client.on("spatialEntityMove", syncEntity);
-    client.on("spatialEntityLeave", syncEntityId);
+    client.on('spatialScene', syncAll);
+    client.on('spatialEntityEnter', syncEntity);
+    client.on('spatialEntityMove', syncEntity);
+    client.on('spatialEntityLeave', syncEntityId);
 
     return () => {
-      client.off("spatialScene", syncAll);
-      client.off("spatialEntityEnter", syncEntity);
-      client.off("spatialEntityMove", syncEntity);
-      client.off("spatialEntityLeave", syncEntityId);
+      client.off('spatialScene', syncAll);
+      client.off('spatialEntityEnter', syncEntity);
+      client.off('spatialEntityMove', syncEntity);
+      client.off('spatialEntityLeave', syncEntityId);
       bridge.cleanup();
     };
   }, [client]);
@@ -67,14 +67,13 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
 
   useEffect(() => {
     const handleLiveKitToken = (token: string) => {
-
-      setTokens(prevTokens => [...prevTokens, token]);
+      setTokens((prevTokens) => [...prevTokens, token]);
       setConnected(true);
     };
 
     const handleLiveKitLeave = (token: string) => {
-      setTokens(prevTokens => {
-        const updatedTokens = prevTokens.filter(prevToken => prevToken !== token);
+      setTokens((prevTokens) => {
+        const updatedTokens = prevTokens.filter((prevToken) => prevToken !== token);
         if (updatedTokens.length === 0) {
           setConnected(false);
         }
@@ -82,12 +81,12 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
       });
     };
 
-    client.on("livekitToken", handleLiveKitToken);
-    client.on("livekitLeave", handleLiveKitLeave);
+    client.on('livekitToken', handleLiveKitToken);
+    client.on('livekitLeave', handleLiveKitLeave);
 
     return () => {
-      client.off("livekitToken", handleLiveKitToken);
-      client.off("livekitLeave", handleLiveKitLeave);
+      client.off('livekitToken', handleLiveKitToken);
+      client.off('livekitLeave', handleLiveKitLeave);
     };
   }, [client]);
 
@@ -105,7 +104,7 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
           token={token}
           serverUrl={serverUrl}
           connect={true}
-          onDisconnected={() => client.emit("livekitLeave", token)}
+          onDisconnected={() => client.emit('livekitLeave', token)}
         >
           <SpatialLiveKitAudio client={client} />
           <ControlBar

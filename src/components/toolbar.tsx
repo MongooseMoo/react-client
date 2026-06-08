@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback } from 'react';
 import {
   FaCog,
   FaCommentDots,
@@ -10,11 +10,11 @@ import {
   FaChevronRight,
   FaChevronLeft,
   FaHistory,
-} from "react-icons/fa";
-import type MudClient from "../client";
-import { usePreferences } from "../stores/preferencesStore";
-import { useClientEvent } from "../hooks/useClientEvent";
-import "./toolbar.css";
+} from 'react-icons/fa';
+import type MudClient from '../client';
+import { usePreferences } from '../stores/preferencesStore';
+import { useClientEvent } from '../hooks/useClientEvent';
+import './toolbar.css';
 
 export interface ToolbarProps {
   client: MudClient;
@@ -38,29 +38,35 @@ const Toolbar = ({
   showSidebar,
 }: ToolbarProps) => {
   const connected = useClientEvent(client, 'connectionChange', client.connected);
-  const [muted, setMuted] = React.useState(client.cacophony.muted);
+  const [muted, setMuted] = React.useState(client.media.muted);
   const autosay = useClientEvent(client, 'autosayChanged', client.autosay) || false;
   const [volume, setVolume] = React.useState(usePreferences.getState().sound.volume);
 
   const handleMuteToggle = useCallback(() => {
     const newMutedState = !muted;
     setMuted(newMutedState);
-    client.setGlobalMute(newMutedState);
+    client.media.setGlobalMute(newMutedState);
   }, [muted, client]);
 
-  const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVolume = Number(e.target.value) / 100;
-    setVolume(newVolume);
-    client.cacophony.setGlobalVolume(newVolume);
-    usePreferences.getState().setSound({
-      ...usePreferences.getState().sound,
-      volume: newVolume,
-    });
-  }, [client]);
+  const handleVolumeChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newVolume = Number(e.target.value) / 100;
+      setVolume(newVolume);
+      client.media.setGlobalVolume(newVolume);
+      usePreferences.getState().setSound({
+        ...usePreferences.getState().sound,
+        volume: newVolume,
+      });
+    },
+    [client],
+  );
 
-  const handleAutosayChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    client.autosay = e.target.checked;
-  }, [client]);
+  const handleAutosayChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      client.autosay = e.target.checked;
+    },
+    [client],
+  );
 
   const handleConnectionToggle = useCallback(() => {
     if (connected) {
@@ -74,15 +80,33 @@ const Toolbar = ({
     <div className="toolbar">
       {/* Log buttons group */}
       <div className="toolbar-group">
-        <button type="button" onClick={onSaveLog} accessKey="l" aria-label="Save Log" title="Save Log">
+        <button
+          type="button"
+          onClick={onSaveLog}
+          accessKey="l"
+          aria-label="Save Log"
+          title="Save Log"
+        >
           <FaSave />
           <span className="toolbar-label">Save Log</span>
         </button>
-        <button type="button" onClick={onCopyLog} accessKey="C" aria-label="Copy Log" title="Copy Log">
+        <button
+          type="button"
+          onClick={onCopyLog}
+          accessKey="C"
+          aria-label="Copy Log"
+          title="Copy Log"
+        >
           <FaCopy />
           <span className="toolbar-label">Copy Log</span>
         </button>
-        <button type="button" onClick={onClearLog} accessKey="E" aria-label="Clear Log" title="Clear Log">
+        <button
+          type="button"
+          onClick={onClearLog}
+          accessKey="E"
+          aria-label="Clear Log"
+          title="Clear Log"
+        >
           <FaEraser />
           <span className="toolbar-label">Clear Log</span>
         </button>
@@ -98,7 +122,13 @@ const Toolbar = ({
 
       {/* Preferences group */}
       <div className="toolbar-group">
-        <button type="button" onClick={onOpenPrefs} accessKey="p" aria-label="Preferences" title="Preferences">
+        <button
+          type="button"
+          onClick={onOpenPrefs}
+          accessKey="p"
+          aria-label="Preferences"
+          title="Preferences"
+        >
           <FaCog />
           <span className="toolbar-label">Preferences</span>
         </button>
@@ -112,11 +142,11 @@ const Toolbar = ({
           type="button"
           onClick={handleMuteToggle}
           accessKey="M"
-          aria-label={muted ? "Unmute" : "Mute"}
-          title={muted ? "Unmute" : "Mute"}
+          aria-label={muted ? 'Unmute' : 'Mute'}
+          title={muted ? 'Unmute' : 'Mute'}
         >
           {muted ? <FaVolumeUp /> : <FaVolumeMute />}
-          <span className="toolbar-label">{muted ? "Unmute" : "Mute"}</span>
+          <span className="toolbar-label">{muted ? 'Unmute' : 'Mute'}</span>
         </button>
         <label className="toolbar-volume">
           <span className="toolbar-label">Volume</span>
@@ -171,12 +201,12 @@ const Toolbar = ({
         className="toolbar-sidebar-toggle"
         onClick={onToggleSidebar}
         accessKey="U"
-        title={showSidebar ? "Hide Sidebar (Alt+U)" : "Show Sidebar (Alt+U)"}
-        aria-label={showSidebar ? "Hide Sidebar" : "Show Sidebar"}
+        title={showSidebar ? 'Hide Sidebar (Alt+U)' : 'Show Sidebar (Alt+U)'}
+        aria-label={showSidebar ? 'Hide Sidebar' : 'Show Sidebar'}
         aria-expanded={showSidebar}
       >
         {showSidebar ? <FaChevronRight /> : <FaChevronLeft />}
-        <span className="toolbar-label">{showSidebar ? "Hide" : "Show"}</span>
+        <span className="toolbar-label">{showSidebar ? 'Hide' : 'Show'}</span>
       </button>
     </div>
   );
