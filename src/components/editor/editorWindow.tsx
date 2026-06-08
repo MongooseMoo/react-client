@@ -58,6 +58,11 @@ function EditorWindow() {
   const location = useLocation();
   const editorInstance = React.useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const monacoInstance = React.useRef<Monaco | null>(null);
+  // Set when a document is loaded; consumed exactly once to focus the editor as
+  // soon as the editor instance is ready (deterministic, no timer). Focus may be
+  // requested before the editor has mounted (load arrives first) or after (editor
+  // mounts first); whichever happens second performs the focus.
+  const pendingFocusOnReady = React.useRef<boolean>(false);
   const [clientId, setClientId] = useState<string>('');
   const [code, setCode] = useState<string>('');
   const [originalCode, setOriginalCode] = useState<string>('');
@@ -75,9 +80,27 @@ function EditorWindow() {
     type: '',
   });
 
+  // Focus the editor once, when both the editor instance is ready and a document
+  // has been loaded. Safe to call from either the load handler or the editor's
+  // mount callback; it no-ops unless a focus is pending and the instance exists,
+  // and it clears the pending flag so focus fires exactly once.
+  const focusEditorOnReady = React.useCallback(() => {
+    if (!pendingFocusOnReady.current) {
+      return;
+    }
+    const editor = editorInstance.current;
+    if (!editor) {
+      return;
+    }
+    pendingFocusOnReady.current = false;
+    editor.focus();
+  }, []);
+
   const handleEditorMount: OnMount = (editor, monaco) => {
     editorInstance.current = editor;
     monacoInstance.current = monaco;
+    // If a document already loaded before the editor mounted, focus it now.
+    focusEditorOnReady();
   };
   const handleEditorBeforeMount = (monaco: Monaco) => {
     registerMooLanguage(monaco);
@@ -86,9 +109,6 @@ function EditorWindow() {
   const accessibilityMode = prefState.editor.accessibilityMode;
   const autocompleteEnabled = prefState.editor.autocompleteEnabled;
   const editorLanguage = getEditorLanguageForSessionType(session.type);
-  const focusEditor = React.useCallback(() => {
-    editorInstance.current?.focus();
-  }, []);
   const updateMooDiagnostics = React.useCallback((markers: MonacoEditor.IMarkerData[]) => {
     setMooDiagnosticMarkers(markers);
     setMooDiagnosticCounts(getMooDiagnosticCounts(markers));
@@ -263,7 +283,11 @@ function EditorWindow() {
           setDocumentState(DocumentState.Unchanged);
           setClientId(event.data.clientId);
           setIsLoaded(true); // Add this line to set isLoaded to true when content is loaded
-          setTimeout(focusEditor, 100);
+          // Focus the code editor on open, deterministically and exactly once.
+          // If the editor instance is already mounted, this focuses now; if the
+          // editor mounts later, handleEditorMount performs the focus. No timer.
+          pendingFocusOnReady.current = true;
+          focusEditorOnReady();
           break;
         }
         case 'shutdown':
@@ -288,7 +312,7 @@ function EditorWindow() {
       channel.removeEventListener('message', handleMessage);
       channel.postMessage({ type: 'close', id });
     };
-  }, [channel, clientId, id, documentState, focusEditor]);
+  }, [channel, clientId, id, documentState, focusEditorOnReady]);
 
   const revert = () => {
     setCode(originalCode);
@@ -301,7 +325,6 @@ function EditorWindow() {
     const sessionData = { ...session, contents };
     channel.postMessage({ type: 'save', session: sessionData, id });
     setDocumentState(DocumentState.Saved);
-    focusEditor();
     event.preventDefault();
   };
 
@@ -356,13 +379,15 @@ function EditorWindow() {
         onMount={handleEditorMount}
         path={session.reference}
       />
-      <MooProblemsPanel
-        id={EDITOR_PROBLEMS_ID}
-        markers={mooDiagnosticProblems}
-        onProblemClick={showMooDiagnostic}
-        onQuickFixClick={applyMooQuickFix}
-        quickFixes={mooQuickFixes}
-      />
+      {editorLanguage === MOO_LANGUAGE_ID ? (
+        <MooProblemsPanel
+          id={EDITOR_PROBLEMS_ID}
+          markers={mooDiagnosticProblems}
+          onProblemClick={showMooDiagnostic}
+          onQuickFixClick={applyMooQuickFix}
+          quickFixes={mooQuickFixes}
+        />
+      ) : null}
       <EditorStatusBar
         id={EDITOR_STATUSBAR_ID}
         onDiagnosticsClick={mooDiagnosticTarget ? showFirstMooDiagnostic : undefined}
@@ -391,89 +416,91 @@ function MooProblemsPanel({
 }: MooProblemsPanelProps) {
   const [filter, setFilter] = useState<MooProblemFilter>('all');
 
-  if (markers.length === 0) {
-    return null;
-  }
-
   const counts = getMooDiagnosticCounts(markers);
   const visibleMarkers = markers.filter((marker) => mooProblemFilterIncludesMarker(filter, marker));
   const fixAllQuickFixes = quickFixes.filter(isMooFixAllQuickFix);
 
   return (
     <section aria-label="MOO problems" className="editor-problems" id={id}>
-      <div aria-label="MOO problem filters" className="editor-problems-filters" role="toolbar">
-        {mooProblemFilterOptions(markers.length, counts).map((option) => (
-          <button
-            aria-label={option.ariaLabel}
-            aria-pressed={filter === option.filter}
-            className="editor-problems-filter"
-            key={option.filter}
-            onClick={() => setFilter(option.filter)}
-            type="button"
-          >
-            {option.label}
-          </button>
-        ))}
-        {fixAllQuickFixes.map((quickFix) => (
-          <button
-            aria-label={`Apply MOO fix all: ${quickFix.title}`}
-            className="editor-problems-fix-all-button"
-            key={quickFix.title}
-            onClick={() => onQuickFixClick(quickFix)}
-            type="button"
-          >
-            Fix all
-          </button>
-        ))}
-      </div>
-      {visibleMarkers.length > 0 ? (
-        <ol className="editor-problems-list">
-          {visibleMarkers.map((marker, index) => {
-            const severity = formatMooProblemSeverity(marker);
-            const code = formatMooProblemCode(marker);
-            const target = getMooDiagnosticTarget(marker);
-            const label = `MOO ${severity.toLowerCase()} ${code} on line ${
-              target.lineNumber
-            }, column ${target.column}: ${marker.message}`;
-            const quickFix = findMooQuickFixForMarker(quickFixes, marker);
-
-            return (
-              <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
-                <div className="editor-problem-row">
-                  <button
-                    aria-label={label}
-                    className="editor-problem-button"
-                    onClick={() => onProblemClick(marker)}
-                    type="button"
-                  >
-                    <span
-                      className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
-                    >
-                      {severity}
-                    </span>{' '}
-                    <span className="editor-problem-code">{code}</span>{' '}
-                    <span className="editor-problem-location">
-                      Ln {target.lineNumber}, Col {target.column}
-                    </span>{' '}
-                    <span className="editor-problem-message">{marker.message}</span>
-                  </button>
-                  {quickFix ? (
-                    <button
-                      aria-label={`Apply quick fix: ${quickFix.title}`}
-                      className="editor-problem-fix-button"
-                      onClick={() => onQuickFixClick(quickFix)}
-                      type="button"
-                    >
-                      Fix
-                    </button>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+      {markers.length === 0 ? (
+        <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage('all')}</p>
       ) : (
-        <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage(filter)}</p>
+        <>
+          <div aria-label="MOO problem filters" className="editor-problems-filters" role="toolbar">
+            {mooProblemFilterOptions(markers.length, counts).map((option) => (
+              <button
+                aria-label={option.ariaLabel}
+                aria-pressed={filter === option.filter}
+                className="editor-problems-filter"
+                key={option.filter}
+                onClick={() => setFilter(option.filter)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+            {fixAllQuickFixes.map((quickFix) => (
+              <button
+                aria-label={`Apply MOO fix all: ${quickFix.title}`}
+                className="editor-problems-fix-all-button"
+                key={quickFix.title}
+                onClick={() => onQuickFixClick(quickFix)}
+                type="button"
+              >
+                Fix all
+              </button>
+            ))}
+          </div>
+          {visibleMarkers.length > 0 ? (
+            <ol className="editor-problems-list">
+              {visibleMarkers.map((marker, index) => {
+                const severity = formatMooProblemSeverity(marker);
+                const code = formatMooProblemCode(marker);
+                const target = getMooDiagnosticTarget(marker);
+                const label = `MOO ${severity.toLowerCase()} ${code} on line ${
+                  target.lineNumber
+                }, column ${target.column}: ${marker.message}`;
+                const quickFix = findMooQuickFixForMarker(quickFixes, marker);
+
+                return (
+                  <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
+                    <div className="editor-problem-row">
+                      <button
+                        aria-label={label}
+                        className="editor-problem-button"
+                        onClick={() => onProblemClick(marker)}
+                        type="button"
+                      >
+                        <span
+                          className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
+                        >
+                          {severity}
+                        </span>{' '}
+                        <span className="editor-problem-code">{code}</span>{' '}
+                        <span className="editor-problem-location">
+                          Ln {target.lineNumber}, Col {target.column}
+                        </span>{' '}
+                        <span className="editor-problem-message">{marker.message}</span>
+                      </button>
+                      {quickFix ? (
+                        <button
+                          aria-label={`Apply quick fix: ${quickFix.title}`}
+                          className="editor-problem-fix-button"
+                          onClick={() => onQuickFixClick(quickFix)}
+                          type="button"
+                        >
+                          Fix
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage(filter)}</p>
+          )}
+        </>
       )}
     </section>
   );
@@ -499,6 +526,11 @@ function createEditorOptions({
     // screen-reader textarea and overrides ariaLabel with an error string.
     // 'auto' is the safe floor; 'on' forces full screen-reader optimization.
     accessibilitySupport: accessibilityMode ? 'on' : 'auto',
+    // Monaco's SR-optimized default; pages a full MOO verb (~hundreds of lines)
+    // into the hidden screen-reader element instead of the ~10-line default window.
+    // Set unconditionally: at 500 there is no perf cost beyond Monaco's own SR
+    // default, and it does not depend on runtime SR detection.
+    accessibilityPageSize: 500,
     quickSuggestions: autocompleteEnabled,
   };
 
