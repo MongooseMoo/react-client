@@ -22,7 +22,9 @@ function createMockClient() {
       }),
     },
     emit: vi.fn(),
-    sendGmcp: vi.fn(),
+    gmcp: {
+      send: vi.fn(),
+    },
   };
 }
 

@@ -16,9 +16,9 @@ export class GMCPPackage {
         return true;
     }
 
-    sendData(messageName: string, data?: any): void {
-        this.client.sendGmcp(
-            this.packageName + "." + messageName,
+    sendData(messageName: string, data?: unknown): void {
+        this.client.gmcp.send(
+            `${this.packageName}.${messageName}`,
             JSON.stringify(data)
         );
     }
@@ -27,5 +27,4 @@ export class GMCPPackage {
         // Do nothing
     }
 }
-
 

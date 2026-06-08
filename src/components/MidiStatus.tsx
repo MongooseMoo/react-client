@@ -50,7 +50,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
 
   useEffect(() => {
     // Get MIDI package reference
-    const midi = client.gmcpHandlers["Client.Midi"];
+    const midi = client.gmcp.handlers["Client.Midi"];
     if (midi) {
       setMidiPackage(midi);
     }

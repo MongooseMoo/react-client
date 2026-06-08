@@ -20,7 +20,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   const [selectedRoomItem, setSelectedRoomItem] = useState<Item | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
 
-  const charItemsHandler = client.gmcpHandlers['Char.Items'];
+  const charItemsHandler = client.gmcp.handlers['Char.Items'];
 
   // Helper function to check if an item name matches a player name
   const isPlayerItem = useCallback((item: Item, players: RoomPlayer[]): boolean => {

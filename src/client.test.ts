@@ -89,17 +89,21 @@ vi.mock('./WebRTCService', () => ({
   },
 }));
 
-vi.mock('./gmcp', () => ({
-  GMCPChar: class {
-    packageName = 'Char';
-    shutdown = vi.fn();
-  },
-  GMCPClientFileTransfer: class {
-    packageName = 'Client.FileTransfer';
-    sendReject = vi.fn();
-    shutdown = vi.fn();
-  },
-}));
+vi.mock('./gmcp', async () => {
+  const actual = await vi.importActual<typeof import('./gmcp')>('./gmcp');
+  return {
+    ...actual,
+    GMCPChar: class {
+      packageName = 'Char';
+      shutdown = vi.fn();
+    },
+    GMCPClientFileTransfer: class {
+      packageName = 'Client.FileTransfer';
+      sendReject = vi.fn();
+      shutdown = vi.fn();
+    },
+  };
+});
 
 vi.mock('./mcp', () => ({
   McpAwnsGetSet: class {
@@ -229,10 +233,10 @@ describe('MudClient lifecycle cleanup', () => {
 
   it('emits gmcpReady after GMCP negotiation startup messages are sent', () => {
     const client = new MudClient('example.test', 443);
-    client.registerGMCPPackage(MockCorePackage);
-    client.registerGMCPPackage(MockCoreSupportsPackage);
-    client.registerGMCPPackage(MockAutoLoginPackage);
-    client.registerGMCPPackage(MockClientMediaPackage);
+    client.gmcp.register(MockCorePackage as never);
+    client.gmcp.register(MockCoreSupportsPackage as never);
+    client.gmcp.register(MockAutoLoginPackage as never);
+    client.gmcp.register(MockClientMediaPackage as never);
     const handleGmcpReady = vi.fn();
     client.on('gmcpReady', handleGmcpReady);
 
@@ -241,7 +245,7 @@ describe('MudClient lifecycle cleanup', () => {
       data: new Uint8Array([255, 251, 201]).buffer,
     } as MessageEvent);
 
-    expect(client.gmcpReady).toBe(true);
+    expect(client.gmcp.ready).toBe(true);
     expect(handleGmcpReady).toHaveBeenCalledOnce();
   });
 
@@ -250,10 +254,10 @@ describe('MudClient lifecycle cleanup', () => {
     const handleSessionReady = vi.fn();
     client.on('sessionReady', handleSessionReady);
 
-    client.markSessionReady();
-    client.markSessionReady();
+    client.gmcp.markSessionReady();
+    client.gmcp.markSessionReady();
 
-    expect(client.sessionReady).toBe(true);
+    expect(client.gmcp.sessionReady).toBe(true);
     expect(handleSessionReady).toHaveBeenCalledOnce();
   });
 

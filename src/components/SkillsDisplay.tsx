@@ -16,7 +16,7 @@ const SkillsDisplay: React.FC<SkillsDisplayProps> = ({ client }) => {
     const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
     const [skillsData, setSkillsData] = useState<{ [groupName: string]: SkillDetails }>({});
 
-    const charSkillsHandler = client.gmcpHandlers['Char.Skills'];
+    const charSkillsHandler = client.gmcp.handlers['Char.Skills'];
 
     // --- Handlers for GMCP Messages ---
     const handleGroups = useCallback((groupList: SkillGroupInfo[]) => {

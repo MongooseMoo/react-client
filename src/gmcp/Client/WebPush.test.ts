@@ -5,9 +5,11 @@ import { GMCPClientWebPush } from "./WebPush";
 function createMockClient() {
   return {
     emit: vi.fn(),
+    gmcp: {
+      send: vi.fn(),
+    },
     off: vi.fn(),
     on: vi.fn(),
-    sendGmcp: vi.fn(),
   };
 }
 
@@ -34,7 +36,7 @@ describe("GMCPClientWebPush", () => {
     handler.handleToken({ token: "token-a" });
 
     await expect(handler.requestToken()).resolves.toBe("token-a");
-    expect(client.sendGmcp).not.toHaveBeenCalled();
+    expect(client.gmcp.send).not.toHaveBeenCalled();
   });
 
   it("requests a token over GMCP when none is cached", async () => {
@@ -48,7 +50,7 @@ describe("GMCPClientWebPush", () => {
 
     const tokenPromise = handler.requestToken();
 
-    expect(client.sendGmcp).toHaveBeenCalledWith("Client.WebPush.Request", "{}");
+    expect(client.gmcp.send).toHaveBeenCalledWith("Client.WebPush.Request", "{}");
     listeners.get("webpushToken")?.({ token: "token-b" });
 
     await expect(tokenPromise).resolves.toBe("token-b");

@@ -12,7 +12,7 @@ export class GMCPChar extends GMCPPackage {
   handleName(data: GmcpMessageCharName): void {
     useSessionStore.getState().setPlayer(data.name, data.fullname);
     this.client.emit("statustext", `Logged in as ${data.fullname}`);
-    this.client.markSessionReady();
+    this.client.gmcp.markSessionReady();
   }
   // --- Vitals ---
   handleVitals(data: any): void { // Use 'any' for now, define specific interface later if needed
@@ -37,9 +37,6 @@ export class GMCPChar extends GMCPPackage {
 
   // --- Login ---
   sendLogin(name: string, password: string): void {
-    this.client.sendGmcp(
-      "Char.Login",
-      JSON.stringify({ name: name, password: password })
-    );
+    this.sendData("Login", { name, password });
   }
 }

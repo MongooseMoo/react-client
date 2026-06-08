@@ -93,7 +93,7 @@ async function deleteSubscription(token: string, endpoint: string): Promise<void
 }
 
 async function requestWebPushToken(client: MudClient): Promise<string | null> {
-  const webPush = client.requireGMCPPackage("Client.WebPush");
+  const webPush = client.gmcp.require("Client.WebPush");
   return webPush.requestToken();
 }
 

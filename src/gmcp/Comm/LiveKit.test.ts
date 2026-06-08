@@ -5,7 +5,9 @@ import { GMCPCommLiveKit } from "./LiveKit";
 function createMockClient() {
   return {
     emit: vi.fn(),
-    sendGmcp: vi.fn(),
+    gmcp: {
+      send: vi.fn(),
+    },
   };
 }
 

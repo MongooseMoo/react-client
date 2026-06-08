@@ -193,7 +193,7 @@ export class GMCPClientHaptics extends GMCPPackage {
 
   advertiseHapticsSupport(): void {
     if (!this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcp.handlers["Core.Supports"];
       if (coreSupports) {
         coreSupports.sendAdd([
           { name: "Client.Haptics", version: this.packageVersion || 1 },
@@ -205,7 +205,7 @@ export class GMCPClientHaptics extends GMCPPackage {
 
   unadvertiseHapticsSupport(): void {
     if (this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcp.handlers["Core.Supports"];
       if (coreSupports) {
         coreSupports.sendRemove(["Client.Haptics"]);
         this.isAdvertised = false;

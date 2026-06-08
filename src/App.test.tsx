@@ -17,14 +17,16 @@ const {
       off: vi.fn(),
       on: vi.fn(),
     },
-    gmcpHandlers: {},
+    gmcp: {
+      handlers: {},
+      sessionReady: false,
+    },
     off: vi.fn(),
     on: vi.fn(),
     once: vi.fn(),
     requestNotificationPermission: vi.fn(),
     sendCommand: vi.fn(),
     sendNotification: vi.fn(),
-    sessionReady: false,
     shutdown: vi.fn(),
     stopAllSounds: vi.fn(),
   };
@@ -163,7 +165,7 @@ describe('App haptics backend lifecycle', () => {
     mockHapticsRuntimes.length = 0;
     mockPreferences.haptics.enabled = false;
     mockPreferences.midi.enabled = false;
-    mockClient.sessionReady = false;
+    mockClient.gmcp.sessionReady = false;
     window.history.replaceState({}, '', '/');
   });
 
