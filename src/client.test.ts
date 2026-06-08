@@ -179,6 +179,12 @@ class MockClientMediaPackage {
   sendEffectsSupport = vi.fn();
 }
 
+function sendSocketText(socket: MockWebSocket, text: string): void {
+  socket.onmessage?.({
+    data: new TextEncoder().encode(text).buffer,
+  } as MessageEvent);
+}
+
 describe('MudClient lifecycle cleanup', () => {
   beforeEach(() => {
     mockCacophonyInstances.length = 0;
@@ -249,5 +255,29 @@ describe('MudClient lifecycle cleanup', () => {
 
     expect(client.sessionReady).toBe(true);
     expect(handleSessionReady).toHaveBeenCalledOnce();
+  });
+
+  it('buffers partial MCP frames until the line is complete', () => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+    const socket = mockWebSocketInstances[0];
+    const receiveLine = vi.mocked(client.mcpSession.receiveLine);
+
+    sendSocketText(socket, '#$#MCP version: 2.1');
+    expect(receiveLine).not.toHaveBeenCalled();
+
+    sendSocketText(socket, ' to: 2.1\r\n');
+    expect(receiveLine).toHaveBeenCalledWith('#$#MCP version: 2.1 to: 2.1');
+  });
+
+  it('emits non-MCP prompt text without waiting for a newline', () => {
+    const client = new MudClient('example.test', 443);
+    const handleMessage = vi.fn();
+    client.on('message', handleMessage);
+
+    client.connect();
+    sendSocketText(mockWebSocketInstances[0], 'look');
+
+    expect(handleMessage).toHaveBeenCalledWith('look');
   });
 });

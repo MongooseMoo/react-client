@@ -125,7 +125,7 @@ export class GMCPMessageClientMediaListenerPosition
   extends GMCPMessage
   implements ClientMediaListenerPositionPayload
 {
-  public readonly position: Position = [0, 0, 0];
+  public readonly position?: Position;
 }
 
 export class GMCPClientMedia extends GMCPPackage {

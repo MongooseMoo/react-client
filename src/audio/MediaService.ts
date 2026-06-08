@@ -114,7 +114,7 @@ export interface ClientMediaListenerOrientationPayload {
 }
 
 export interface ClientMediaListenerPositionPayload {
-  readonly position: Position;
+  readonly position?: Position;
 }
 
 export interface ExtendedSound extends Sound {
@@ -184,14 +184,20 @@ export class MediaService {
   }
 
   setListenerPosition(position: Position | null | undefined): void {
-    this.cacophony.listenerPosition = position ?? [0, 0, 0];
+    if (position?.length) {
+      this.cacophony.listenerPosition = position;
+    }
   }
 
   setListenerOrientation(
     orientation: { forward?: Position | null; up?: Position | null } | null | undefined,
   ): void {
-    this.cacophony.listenerForwardOrientation = orientation?.forward ?? [0, 0, -1];
-    this.cacophony.listenerUpOrientation = orientation?.up ?? [0, 1, 0];
+    if (orientation?.forward?.length) {
+      this.cacophony.listenerForwardOrientation = orientation.forward;
+    }
+    if (orientation?.up?.length) {
+      this.cacophony.listenerUpOrientation = orientation.up;
+    }
     this.syncAmbisonicRendererYaw();
   }
 

@@ -4,6 +4,9 @@ import { GMCPMessage, GMCPPackage } from '../package';
 
 export type SpatialVector = [number, number, number];
 
+const DEFAULT_LISTENER_FORWARD: SpatialVector = [0, 0, -1];
+const DEFAULT_LISTENER_UP: SpatialVector = [0, 1, 0];
+
 export interface SpatialEntity {
   id: string;
   position: SpatialVector;
@@ -105,7 +108,10 @@ export class GMCPClientSpatial extends GMCPPackage {
   private syncCacophonyListenerOrientation(
     orientation: SpatialListenerOrientation | null | undefined,
   ): void {
-    this.client.media.setListenerOrientation(orientation);
+    this.client.media.setListenerOrientation({
+      forward: orientation?.forward ?? DEFAULT_LISTENER_FORWARD,
+      up: orientation?.up ?? DEFAULT_LISTENER_UP,
+    });
   }
 
   handleScene(data: GMCPMessageClientSpatialScene): void {

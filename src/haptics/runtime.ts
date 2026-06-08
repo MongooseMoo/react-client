@@ -81,6 +81,21 @@ export function createHapticsRuntime(options: HapticsRuntimeOptions = {}): Hapti
       });
   };
 
+  const unloadWasmBackend = (): void => {
+    wasmLoadVersion++;
+    wasmLoadStarted = false;
+
+    const backend = wasmBackend;
+    wasmBackend = null;
+    if (!backend) return;
+
+    if (registeredBackends.delete(backend)) {
+      service.unregisterBackend(backend).catch((error) => {
+        logger.error('Failed to unregister haptics backend:', error);
+      });
+    }
+  };
+
   registerBackend(gamepadBackend);
   gamepadBackend.connect().catch((error) => {
     logger.error('Failed to connect gamepad haptics backend:', error);
@@ -88,7 +103,10 @@ export function createHapticsRuntime(options: HapticsRuntimeOptions = {}): Hapti
 
   return {
     setEnabled(enabled: boolean): void {
-      if (!enabled) return;
+      if (!enabled) {
+        unloadWasmBackend();
+        return;
+      }
       loadWasmBackend();
     },
 

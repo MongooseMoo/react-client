@@ -98,6 +98,38 @@ describe('createHapticsRuntime', () => {
     expect(createWasmBackend).toHaveBeenCalledOnce();
   });
 
+  it('unregisters the WASM backend when disabled and rebuilds it when re-enabled', async () => {
+    const gamepadBackend = new FakeBackend('gamepad', 'gaming');
+    const firstWasmBackend = new FakeBackend('buttplug-wasm-1', 'intimate');
+    const secondWasmBackend = new FakeBackend('buttplug-wasm-2', 'intimate');
+    const createWasmBackend = vi
+      .fn<[], Promise<HapticsBackend>>()
+      .mockResolvedValueOnce(firstWasmBackend)
+      .mockResolvedValueOnce(secondWasmBackend);
+    const runtime = createHapticsRuntime({
+      service,
+      createGamepadBackend: () => gamepadBackend,
+      createWasmBackend,
+      logger,
+    });
+
+    runtime.setEnabled(true);
+    await vi.waitFor(() => {
+      expect(service.registerBackend).toHaveBeenCalledWith(firstWasmBackend);
+    });
+
+    runtime.setEnabled(false);
+    await vi.waitFor(() => {
+      expect(service.unregisterBackend).toHaveBeenCalledWith(firstWasmBackend);
+    });
+
+    runtime.setEnabled(true);
+    await vi.waitFor(() => {
+      expect(createWasmBackend).toHaveBeenCalledTimes(2);
+      expect(service.registerBackend).toHaveBeenCalledWith(secondWasmBackend);
+    });
+  });
+
   it('retries WASM loading after a failed load', async () => {
     const gamepadBackend = new FakeBackend('gamepad', 'gaming');
     const wasmBackend = new FakeBackend('buttplug-wasm', 'intimate');

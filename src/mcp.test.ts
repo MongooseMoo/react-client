@@ -3,6 +3,7 @@ import {
   MCPPackage,
   McpSession,
   McpSimpleEdit,
+  McpVmooUserlist,
   encodeMcpMessage,
   parseMcpLine,
   parseMcpMessage,
@@ -215,6 +216,38 @@ describe('McpSession', () => {
       '#$#* mltag1 content: line one',
       '#$#* mltag1 content: line two',
       '#$#: mltag1',
+    ]);
+  });
+
+  it('removes userlist players whose MOO object ids parse as numbers', () => {
+    const userlists: unknown[][] = [];
+    const session = new McpSession(
+      {
+        emit: (_event, players) => {
+          userlists.push(players as unknown[]);
+          return true;
+        },
+        openEditorSession: vi.fn(),
+        sendLine: vi.fn(),
+      },
+      () => 'auth01',
+    );
+    session.registerPackage(McpVmooUserlist);
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    session.receiveLine('#$#dns-com-vmoo-userlist-content auth01 _data-tag: users');
+    session.receiveLine('#$#* users fields: {"Object","Name","Icon"}');
+    session.receiveLine('#$#* users d: ={{1234,"Alice",4},{5678,"Bob",5}}');
+    session.receiveLine('#$#* users d: -{1234}');
+
+    expect(userlists.at(-1)).toEqual([
+      {
+        Object: '5678',
+        Name: 'Bob',
+        Icon: 5,
+        away: false,
+        idle: false,
+      },
     ]);
   });
 });

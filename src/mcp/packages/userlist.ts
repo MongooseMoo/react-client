@@ -66,8 +66,8 @@ export class McpVmooUserlist extends MCPPackage {
         this.players.push(this.playerFromArray(mooListToArray(delta.slice(1))));
         break;
       case '-': {
-        const ids = mooListToArray(delta.slice(1));
-        this.players = this.players.filter((player) => !ids.includes(player.Object));
+        const idSet = new Set(mooListToArray(delta.slice(1)).map(String));
+        this.players = this.players.filter((player) => !idSet.has(player.Object));
         break;
       }
       case '*':

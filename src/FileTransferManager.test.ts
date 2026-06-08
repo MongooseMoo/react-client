@@ -2,7 +2,7 @@ import EventEmitter from 'eventemitter3';
 import { describe, expect, it, vi } from 'vitest';
 
 import FileTransferManager from './FileTransferManager';
-import type { GMCPClientFileTransfer } from './gmcp/Client/FileTransfer';
+import type { FileTransferAccept, GMCPClientFileTransfer } from './gmcp/Client/FileTransfer';
 import { useSessionStore } from './stores/sessionStore';
 import type { WebRTCService } from './WebRTCService';
 
@@ -18,7 +18,9 @@ function createManager() {
   useSessionStore.setState({ playerId: 'player' });
   const webRTCService = Object.assign(new EventEmitter(), {
     cleanup: vi.fn(),
+    handleAnswer: vi.fn(async () => {}),
     isDataChannelOpen: vi.fn().mockReturnValue(false),
+    sendData: vi.fn(async () => {}),
   });
   const gmcpFileTransfer = Object.assign(new EventEmitter(), {
     sendCancel: vi.fn(),
@@ -60,5 +62,44 @@ describe('FileTransferManager lifecycle', () => {
       gmcpOn.mock.calls.find(([event]) => event === 'accept')?.[1],
     );
     expect(webRTCService.cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits fileTransferAccepted when an outgoing transfer is accepted', async () => {
+    const { manager, webRTCService } = createManager();
+    webRTCService.isDataChannelOpen.mockReturnValue(true);
+    const handleAccepted = vi.fn();
+    manager.on('fileTransferAccepted', handleAccepted);
+    const transfers = manager as unknown as {
+      outgoingTransfers: Map<
+        string,
+        {
+          file: File;
+          filename: string;
+          hash: string;
+          lastActivityTimestamp: number;
+          recipient: string;
+        }
+      >;
+    };
+    transfers.outgoingTransfers.set('file-hash', {
+      file: new File(['hello'], 'hello.txt'),
+      filename: 'hello.txt',
+      hash: 'file-hash',
+      lastActivityTimestamp: Date.now(),
+      recipient: 'Bob',
+    });
+
+    await manager.handleAcceptedTransfer({
+      sender: 'Bob',
+      hash: 'file-hash',
+      filename: 'hello.txt',
+      answerSdp: '{}',
+    } as FileTransferAccept);
+
+    expect(handleAccepted).toHaveBeenCalledWith({
+      sender: 'Bob',
+      hash: 'file-hash',
+      filename: 'hello.txt',
+    });
   });
 });

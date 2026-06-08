@@ -14,6 +14,7 @@ vi.mock('../../audio/AmbisonicRenderer', () => ({
 import {
   GMCPClientMedia,
   type GMCPMessageClientMediaListenerOrientation,
+  type GMCPMessageClientMediaListenerPosition,
   type GMCPMessageClientMediaPlay,
   type GMCPMessageClientMediaStop,
   type GMCPMessageClientMediaUpdate,
@@ -556,6 +557,27 @@ describe('GMCPClientMedia', () => {
 
     handler.handleStop({ key: 'show-1' } as GMCPMessageClientMediaStop);
     expect(renderer.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('preserves omitted listener position and orientation fields', () => {
+    client.media.cacophony.listenerPosition = [9, 8, 7];
+    client.media.cacophony.listenerForwardOrientation = [0, 0, -1];
+    client.media.cacophony.listenerUpOrientation = [0, 0, 1];
+
+    handler.handleListenerPosition({} as GMCPMessageClientMediaListenerPosition);
+    expect(client.media.cacophony.listenerPosition).toEqual([9, 8, 7]);
+
+    handler.handleListenerOrientation({
+      forward: [1, 0, 0],
+    } as GMCPMessageClientMediaListenerOrientation);
+    expect(client.media.cacophony.listenerForwardOrientation).toEqual([1, 0, 0]);
+    expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 0, 1]);
+
+    handler.handleListenerOrientation({
+      up: [0, 1, 0],
+    } as GMCPMessageClientMediaListenerOrientation);
+    expect(client.media.cacophony.listenerForwardOrientation).toEqual([1, 0, 0]);
+    expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 1, 0]);
   });
 
   it('routes declared four-channel ambisonic playback through FOA passthrough', async () => {

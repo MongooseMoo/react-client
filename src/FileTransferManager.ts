@@ -261,7 +261,7 @@ export default class FileTransferManager extends EventEmitter {
       dataBuffer.set(new Uint8Array(chunk), 4 + headerBuffer.byteLength);
 
       await this.webRTCService.sendData(dataBuffer.buffer);
-    } catch (error) {
+    } catch {
       throw new FileTransferError(
         FileTransferErrorCodes.DATA_CHANNEL_ERROR,
         'Failed to send chunk',
@@ -289,6 +289,12 @@ export default class FileTransferManager extends EventEmitter {
       });
       return;
     }
+
+    this.emit('fileTransferAccepted', {
+      sender: transfer.sender,
+      hash,
+      filename,
+    });
 
     try {
       console.log(`[FileTransferManager] Processing WebRTC answer for file: ${filename}`);
