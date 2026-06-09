@@ -216,12 +216,12 @@ class MudClient extends EventEmitter {
     if (this.connectionCleanupComplete) return;
     this.connectionCleanupComplete = true;
     this._connected = false;
-    this.gmcp.reset();
     this.mcpSession.reset();
     this.telnetBuffer = '';
     useRoomStore.getState().reset(); // Reset room info on cleanup
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
     this.fileTransferManager.cleanup();
+    this.gmcp.reset();
 
     this.emit('disconnect');
     this.emit('connectionChange', false);

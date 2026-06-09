@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   mockCacophonyInstances,
+  mockFileTransferManagerInstances,
   mockPreferenceListeners,
   mockPreferenceSubscribe,
   mockPreferencesState,
@@ -11,6 +12,12 @@ const {
     mockCacophonyInstances: [] as Array<{
       muted: boolean;
       setGlobalVolume: ReturnType<typeof vi.fn>;
+    }>,
+    mockFileTransferManagerInstances: [] as Array<{
+      acceptTransfer: ReturnType<typeof vi.fn>;
+      cancelTransfer: ReturnType<typeof vi.fn>;
+      cleanup: ReturnType<typeof vi.fn>;
+      sendFile: ReturnType<typeof vi.fn>;
     }>,
     mockPreferenceListeners: new Set<() => void>(),
     mockPreferenceSubscribe: vi.fn((listener: () => void) => {
@@ -80,6 +87,10 @@ vi.mock('./FileTransferManager.js', () => ({
     cancelTransfer = vi.fn();
     cleanup = vi.fn();
     sendFile = vi.fn(async () => {});
+
+    constructor() {
+      mockFileTransferManagerInstances.push(this);
+    }
   },
 }));
 
@@ -192,6 +203,7 @@ function sendSocketText(socket: MockWebSocket, text: string): void {
 describe('MudClient lifecycle cleanup', () => {
   beforeEach(() => {
     mockCacophonyInstances.length = 0;
+    mockFileTransferManagerInstances.length = 0;
     mockPreferenceListeners.clear();
     mockPreferenceSubscribe.mockClear();
     mockPreferencesState.sound.muteInBackground = false;
@@ -259,6 +271,23 @@ describe('MudClient lifecycle cleanup', () => {
 
     expect(client.gmcp.sessionReady).toBe(true);
     expect(handleSessionReady).toHaveBeenCalledOnce();
+  });
+
+  it('preserves GMCP transport until file transfer cleanup completes', () => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+    const cleanupOrder: string[] = [];
+    const fileTransferManager = mockFileTransferManagerInstances[0];
+    fileTransferManager.cleanup.mockImplementation(() => {
+      cleanupOrder.push('fileTransferManager.cleanup');
+    });
+    vi.spyOn(client.gmcp, 'reset').mockImplementation(() => {
+      cleanupOrder.push('gmcp.reset');
+    });
+
+    client.close();
+
+    expect(cleanupOrder).toEqual(['fileTransferManager.cleanup', 'gmcp.reset']);
   });
 
   it('buffers partial MCP frames until the line is complete', () => {
