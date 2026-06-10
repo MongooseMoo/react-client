@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import type React from 'react';
+import { useEffect, useRef } from 'react';
 import { ControlBar, LiveKitRoom, useTracks } from '@livekit/components-react';
 import { RemoteAudioTrack, Track } from 'livekit-client';
 import { LiveKitSpatialAudioBridge } from '../audio/LiveKitSpatialAudioBridge';
-import MudClient from '../client';
+import type MudClient from '../client';
 import type { SpatialEntity } from '../gmcp/Client/Spatial';
+import { useLiveKitStore } from '../stores/liveKitStore';
 import { useSpatialStore } from '../stores/spatialStore';
 
 const serverUrl = 'wss://mongoose-67t79p35.livekit.cloud';
@@ -24,7 +26,9 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
   }
 
   useEffect(() => {
-    const bridge = bridgeRef.current!;
+    const bridge = bridgeRef.current;
+    if (!bridge) return;
+
     const activeParticipantIds = new Set<string>();
 
     tracks.forEach((trackRef) => {
@@ -39,7 +43,9 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
   }, [tracks]);
 
   useEffect(() => {
-    const bridge = bridgeRef.current!;
+    const bridge = bridgeRef.current;
+    if (!bridge) return;
+
     const syncAll = () => bridge.syncAll();
     const syncEntity = (entity: SpatialEntity) => bridge.syncParticipant(entity.id);
     const syncEntityId = (entityId: string) => bridge.syncParticipant(entityId);
@@ -62,33 +68,8 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
 };
 
 const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
-  const [tokens, setTokens] = useState<string[]>([]);
-  const [connected, setConnected] = useState(false);
-
-  useEffect(() => {
-    const handleLiveKitToken = (token: string) => {
-      setTokens((prevTokens) => [...prevTokens, token]);
-      setConnected(true);
-    };
-
-    const handleLiveKitLeave = (token: string) => {
-      setTokens((prevTokens) => {
-        const updatedTokens = prevTokens.filter((prevToken) => prevToken !== token);
-        if (updatedTokens.length === 0) {
-          setConnected(false);
-        }
-        return updatedTokens;
-      });
-    };
-
-    client.on('livekitToken', handleLiveKitToken);
-    client.on('livekitLeave', handleLiveKitLeave);
-
-    return () => {
-      client.off('livekitToken', handleLiveKitToken);
-      client.off('livekitLeave', handleLiveKitLeave);
-    };
-  }, [client]);
+  const tokens = useLiveKitStore((state) => state.tokens);
+  const removeToken = useLiveKitStore((state) => state.removeToken);
 
   if (!tokens.length) {
     return null;
@@ -96,15 +77,18 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
 
   return (
     <div data-lk-theme="default">
-      {tokens.map((token, index) => (
+      {tokens.map((token) => (
         <LiveKitRoom
-          key={index}
+          key={token}
           video={false}
           audio={true}
           token={token}
           serverUrl={serverUrl}
           connect={true}
-          onDisconnected={() => client.emit('livekitLeave', token)}
+          onDisconnected={() => {
+            removeToken(token);
+            client.emit('livekitLeave', token);
+          }}
         >
           <SpatialLiveKitAudio client={client} />
           <ControlBar

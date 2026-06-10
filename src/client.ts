@@ -13,6 +13,7 @@ import { WebRTCService } from './WebRTCService';
 import FileTransferManager from './FileTransferManager.js';
 import { useRoomStore } from './stores/roomStore';
 import { useSpatialStore } from './stores/spatialStore';
+import { useLiveKitStore } from './stores/liveKitStore';
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
@@ -222,6 +223,7 @@ class MudClient extends EventEmitter {
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
     this.fileTransferManager.cleanup();
     this.gmcp.reset();
+    useLiveKitStore.getState().reset();
 
     this.emit('disconnect');
     this.emit('connectionChange', false);

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type MudClient from "../../client";
+import { useLiveKitStore } from "../../stores/liveKitStore";
 import { GMCPCommLiveKit } from "./LiveKit";
 
 function createMockClient() {
@@ -17,19 +19,24 @@ describe("GMCPCommLiveKit", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useLiveKitStore.getState().reset();
     client = createMockClient();
-    handler = new GMCPCommLiveKit(client as any);
+    handler = new GMCPCommLiveKit(client as unknown as MudClient);
   });
 
-  it("emits livekitToken when room_token arrives", () => {
+  it("stores and emits livekitToken when room_token arrives", () => {
     handler.handleroom_token({ token: "token-a" });
 
+    expect(useLiveKitStore.getState().tokens).toEqual(["token-a"]);
     expect(client.emit).toHaveBeenCalledWith("livekitToken", "token-a");
   });
 
-  it("emits livekitLeave when room_leave arrives", () => {
+  it("removes and emits livekitLeave when room_leave arrives", () => {
+    useLiveKitStore.getState().addToken("token-a");
+
     handler.handleroom_leave({ token: "token-a" });
 
+    expect(useLiveKitStore.getState().tokens).toEqual([]);
     expect(client.emit).toHaveBeenCalledWith("livekitLeave", "token-a");
   });
 });
