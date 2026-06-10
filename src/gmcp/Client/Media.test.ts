@@ -161,6 +161,9 @@ function createMockClient() {
     effectBuses: { master, created, anon },
     media: new MediaService(cacophony as unknown as MockCacophony, { manageFocus: false }),
     emit: vi.fn(),
+    gmcp: {
+      send: vi.fn(),
+    },
     off: vi.fn((event: string, handler: (data: unknown) => void) => {
       listeners.get(event)?.delete(handler);
     }),
@@ -170,7 +173,6 @@ function createMockClient() {
       }
       listeners.get(event)?.add(handler);
     }),
-    sendGmcp: vi.fn(),
     trigger(event: string, data: unknown) {
       for (const handler of listeners.get(event) ?? []) {
         handler(data);
@@ -292,7 +294,7 @@ describe('GMCPClientMedia', () => {
 
     it('advertises EffectsSupport to the server', () => {
       handler.sendEffectsSupport();
-      expect(client.sendGmcp).toHaveBeenCalledWith(
+      expect(client.gmcp.send).toHaveBeenCalledWith(
         'Client.Media.EffectsSupport',
         expect.stringContaining('reverb'),
       );

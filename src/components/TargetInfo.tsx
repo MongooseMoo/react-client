@@ -21,7 +21,7 @@ const TargetInfoDisplay: React.FC<TargetInfoProps> = ({ client }) => {
     // Clear detailed info if only ID is set, or request new info
     setTarget((prev) => (prev?.id === id ? prev : null));
     // Optionally request full info when target is set via ID only
-    // client.gmcpHandlers['IRE.Target']?.sendRequestInfo?.();
+    // client.gmcp.handlers['IRE.Target']?.sendRequestInfo?.();
   }, []);
 
   useEffect(() => {
@@ -30,8 +30,8 @@ const TargetInfoDisplay: React.FC<TargetInfoProps> = ({ client }) => {
 
     // Request initial info if supported and target exists?
     // This depends on game logic - maybe only request when explicitly set.
-    // if (client.gmcpHandlers['IRE.Target']) {
-    //     client.gmcpHandlers['IRE.Target'].sendRequestInfo?.();
+    // if (client.gmcp.handlers['IRE.Target']) {
+    //     client.gmcp.handlers['IRE.Target'].sendRequestInfo?.();
     // }
 
     return () => {
@@ -43,7 +43,7 @@ const TargetInfoDisplay: React.FC<TargetInfoProps> = ({ client }) => {
   const handleSetTarget = (id: string) => {
     // Allow manual setting via UI if needed (e.g., clicking a name)
     // This would likely come from another component, but demonstrates sending
-    const targetHandler = client.gmcpHandlers["IRE.Target"];
+    const targetHandler = client.gmcp.handlers["IRE.Target"];
     if (targetHandler) {
       targetHandler.sendSet(id);
       setTargetId(id);

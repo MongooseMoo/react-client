@@ -62,11 +62,13 @@ import type {
 function createMockClient() {
   return {
     emit: vi.fn(),
-    sendGmcp: vi.fn(),
-    gmcpHandlers: {
-      "Core.Supports": {
-        sendAdd: vi.fn(),
-        sendRemove: vi.fn(),
+    gmcp: {
+      send: vi.fn(),
+      handlers: {
+        "Core.Supports": {
+          sendAdd: vi.fn(),
+          sendRemove: vi.fn(),
+        },
       },
     },
   };
@@ -338,7 +340,7 @@ describe("GMCPClientHaptics", () => {
     handler.sendCapabilities();
 
     expect(mockHapticsService.getCapabilities).toHaveBeenCalledOnce();
-    expect(mockClient.sendGmcp).toHaveBeenCalledWith(
+    expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Capabilities",
       JSON.stringify({
         available: true,
@@ -357,7 +359,7 @@ describe("GMCPClientHaptics", () => {
   it("sends correct GMCP stopped message", () => {
     handler.sendStopped("user_stop");
 
-    expect(mockClient.sendGmcp).toHaveBeenCalledWith(
+    expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Stopped",
       JSON.stringify({ reason: "user_stop" })
     );
@@ -366,7 +368,7 @@ describe("GMCPClientHaptics", () => {
   it("sends correct GMCP stopped message for auto_stop", () => {
     handler.sendStopped("auto_stop");
 
-    expect(mockClient.sendGmcp).toHaveBeenCalledWith(
+    expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Stopped",
       JSON.stringify({ reason: "auto_stop" })
     );
@@ -379,7 +381,7 @@ describe("GMCPClientHaptics", () => {
   it("sends correct GMCP sensor message", () => {
     handler.sendSensor({ sensor: 0, type: "Pressure", value: 0.75 });
 
-    expect(mockClient.sendGmcp).toHaveBeenCalledWith(
+    expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Sensor",
       JSON.stringify({
         readings: [{ sensor: 0, type: "Pressure", value: 0.75 }],
@@ -394,7 +396,7 @@ describe("GMCPClientHaptics", () => {
   it("advertises haptics support via Core.Supports.sendAdd", () => {
     handler.advertiseHapticsSupport();
 
-    const coreSupports = mockClient.gmcpHandlers["Core.Supports"];
+    const coreSupports = mockClient.gmcp.handlers["Core.Supports"];
     expect(coreSupports.sendAdd).toHaveBeenCalledWith([
       { name: "Client.Haptics", version: 1 },
     ]);
@@ -404,7 +406,7 @@ describe("GMCPClientHaptics", () => {
     handler.advertiseHapticsSupport();
     handler.advertiseHapticsSupport();
 
-    const coreSupports = mockClient.gmcpHandlers["Core.Supports"];
+    const coreSupports = mockClient.gmcp.handlers["Core.Supports"];
     expect(coreSupports.sendAdd).toHaveBeenCalledTimes(1);
   });
 
@@ -412,14 +414,14 @@ describe("GMCPClientHaptics", () => {
     handler.advertiseHapticsSupport(); // must advertise first
     handler.unadvertiseHapticsSupport();
 
-    const coreSupports = mockClient.gmcpHandlers["Core.Supports"];
+    const coreSupports = mockClient.gmcp.handlers["Core.Supports"];
     expect(coreSupports.sendRemove).toHaveBeenCalledWith(["Client.Haptics"]);
   });
 
   it("does not unadvertise if not advertised", () => {
     handler.unadvertiseHapticsSupport();
 
-    const coreSupports = mockClient.gmcpHandlers["Core.Supports"];
+    const coreSupports = mockClient.gmcp.handlers["Core.Supports"];
     expect(coreSupports.sendRemove).not.toHaveBeenCalled();
   });
 
@@ -499,7 +501,7 @@ describe("GMCPClientHaptics", () => {
     capabilitiesChangedCallback();
 
     expect(mockHapticsService.getCapabilities).toHaveBeenCalled();
-    expect(mockClient.sendGmcp).toHaveBeenCalledWith(
+    expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Capabilities",
       expect.any(String)
     );
@@ -518,7 +520,7 @@ describe("GMCPClientHaptics", () => {
     // Fire without advertising first
     capabilitiesChangedCallback();
 
-    expect(mockClient.sendGmcp).not.toHaveBeenCalled();
+    expect(mockClient.gmcp.send).not.toHaveBeenCalled();
   });
 
   // -----------------------------------------------------------------
@@ -533,7 +535,7 @@ describe("GMCPClientHaptics", () => {
 
     stoppedCallback("auto_stop");
 
-    expect(mockClient.sendGmcp).toHaveBeenCalledWith(
+    expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Stopped",
       JSON.stringify({ reason: "auto_stop" })
     );
@@ -551,7 +553,7 @@ describe("GMCPClientHaptics", () => {
 
     sensorReadingCallback({ sensor: 1, type: "Battery", value: 0.85 });
 
-    expect(mockClient.sendGmcp).toHaveBeenCalledWith(
+    expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Sensor",
       JSON.stringify({
         readings: [{ sensor: 1, type: "Battery", value: 0.85 }],

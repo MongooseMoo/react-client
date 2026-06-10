@@ -10,7 +10,9 @@ function createMockClient() {
       play: vi.fn(async () => {}),
       stop: vi.fn(),
     },
-    sendGmcp: vi.fn(),
+    gmcp: {
+      send: vi.fn(),
+    },
   };
 }
 

@@ -261,7 +261,7 @@ export class GMCPClientMidi extends GMCPPackage {
 
   advertiseMidiSupport(): void {
     if (!this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcp.handlers["Core.Supports"];
       if (coreSupports) {
         coreSupports.sendAdd([{ name: "Client.Midi", version: this.packageVersion || 1 }]);
         this.isAdvertised = true;
@@ -272,7 +272,7 @@ export class GMCPClientMidi extends GMCPPackage {
 
   unadvertiseMidiSupport(): void {
     if (this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcp.handlers["Core.Supports"];
       if (coreSupports) {
         coreSupports.sendRemove(["Client.Midi"]);
         this.isAdvertised = false;

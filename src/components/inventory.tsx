@@ -80,7 +80,7 @@ const Inventory: React.FC<InventoryProps> = ({ client }) => {
     client.on('itemRemove', handleRemove);
     client.on('itemUpdate', handleUpdate);
 
-    client.gmcpHandlers['Char.Items']?.sendInventoryRequest();
+    client.gmcp.handlers['Char.Items']?.sendInventoryRequest();
 
     return () => {
       client.off('itemsList', handleList);

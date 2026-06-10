@@ -106,9 +106,11 @@ function createMockClient() {
 
   return {
     media: new MediaService(cacophony as never, { manageFocus: false }),
+    gmcp: {
+      send: vi.fn(),
+    },
     off: vi.fn(),
     on: vi.fn(),
-    sendGmcp: vi.fn(),
   };
 }
 

@@ -10,9 +10,11 @@ function createMockClient() {
   const emitter = new EventEmitter();
 
   return Object.assign(emitter, {
-    gmcpHandlers: {
-      "Char.Items": {
-        sendRoomRequest: vi.fn(),
+    gmcp: {
+      handlers: {
+        "Char.Items": {
+          sendRoomRequest: vi.fn(),
+        },
       },
     },
     sendCommand: vi.fn(),

@@ -98,7 +98,7 @@ function App() {
 
       if (event.key === 'Escape') {
         client.stopAllSounds();
-        const midiPackage = client.gmcpHandlers['Client.Midi'];
+        const midiPackage = client.gmcp.handlers['Client.Midi'];
         if (midiPackage) {
           midiPackage.sendAllNotesOff();
         }
@@ -216,7 +216,7 @@ function App() {
         console.error('Failed to ensure push subscription:', error);
       });
     };
-    if (client.sessionReady) {
+    if (client.gmcp.sessionReady) {
       ensurePushSubscriptionForSession();
     } else {
       client.once('sessionReady', ensurePushSubscriptionForSession);

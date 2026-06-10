@@ -48,7 +48,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
 
     // Handle MIDI support advertisement based on preferences
     useEffect(() => {
-      const midiPackage = client.gmcpHandlers['Client.Midi'];
+      const midiPackage = client.gmcp.handlers['Client.Midi'];
       if (!midiPackage) return;
 
       // Only handle runtime preference changes - initial advertisement handled by Core.Supports
@@ -63,7 +63,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
 
     // Handle Haptics support advertisement based on preferences
     useEffect(() => {
-      const hapticsPackage = client.gmcpHandlers['Client.Haptics'];
+      const hapticsPackage = client.gmcp.handlers['Client.Haptics'];
       if (!hapticsPackage) return;
       if (client.connected) {
         if (preferences.haptics.enabled) {

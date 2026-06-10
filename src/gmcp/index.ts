@@ -28,3 +28,4 @@ export { GMCPGroup } from "./Group";
 export { GMCPLogging } from "./Logging";
 export { GMCPRedirect } from "./Redirect";
 export { GMCPRoom } from "./Room";
+export { GmcpSession, type GMCPPackageConstructor } from "./session";
