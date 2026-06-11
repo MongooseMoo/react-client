@@ -1,35 +1,41 @@
-import { type Stream, TelnetCommand, TelnetOption, TelnetParser, WebSocketStream } from './telnet';
+import {
+  type Stream,
+  TelnetCommand,
+  TelnetOption,
+  TelnetParser,
+  WebSocketStream,
+} from "./telnet";
 
-import { Buffer } from 'buffer';
-import { EventEmitter } from 'eventemitter3';
-import stripAnsi from 'strip-ansi';
-import { EditorManager } from './EditorManager';
-import { GMCPChar, GMCPClientFileTransfer, GmcpSession } from './gmcp';
-import { type MCPPackage, type McpPackageContext, McpSession } from './mcp';
+import { Buffer } from "buffer";
+import { EventEmitter } from "eventemitter3";
+import stripAnsi from "strip-ansi";
+import { EditorManager } from "./EditorManager";
+import { GMCPChar, GMCPClientFileTransfer, GmcpSession } from "./gmcp";
+import { type MCPPackage, type McpPackageContext, McpSession } from "./mcp";
 
-import { MediaService } from './audio/MediaService';
-import { AutoreadMode, usePreferences } from './stores/preferencesStore';
-import { WebRTCService } from './WebRTCService';
-import FileTransferManager from './FileTransferManager.js';
-import { useRoomStore } from './stores/roomStore';
-import { useSpatialStore } from './stores/spatialStore';
-import { useLiveKitStore } from './stores/liveKitStore';
+import { MediaService } from "./audio/MediaService";
+import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
+import { WebRTCService } from "./WebRTCService";
+import FileTransferManager from "./FileTransferManager.js";
+import { useRoomStore } from "./stores/roomStore";
+import { useSpatialStore } from "./stores/spatialStore";
+import { useLiveKitStore } from "./stores/liveKitStore";
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
 
-  import('./MidiService')
+  import("./MidiService")
     .then(({ midiService }) => {
       midiService.resetIntentionalDisconnectFlags();
     })
     .catch((error) => {
-      console.error('Failed to reset MIDI disconnect flags:', error);
+      console.error("Failed to reset MIDI disconnect flags:", error);
     });
 }
 
 class MudClient extends EventEmitter {
   private ws!: WebSocket;
-  private decoder = new TextDecoder('utf8');
+  private decoder = new TextDecoder("utf8");
   private telnet!: TelnetParser;
   private _connected: boolean = false;
   private intentionalDisconnect: boolean = false;
@@ -42,7 +48,7 @@ class MudClient extends EventEmitter {
 
   private host: string;
   private port: number;
-  private telnetBuffer: string = '';
+  private telnetBuffer: string = "";
   public readonly gmcp: GmcpSession;
   public readonly mcpSession: McpSession;
   public gmcp_char: GMCPChar;
@@ -61,7 +67,7 @@ class MudClient extends EventEmitter {
 
   set autosay(value: boolean) {
     this._autosay = value;
-    this.emit('autosayChanged', value);
+    this.emit("autosayChanged", value);
   }
 
   constructor(host: string, port: number) {
@@ -79,10 +85,15 @@ class MudClient extends EventEmitter {
     this.media = new MediaService();
     this.editors = new EditorManager(this);
     this.webRTCService = new WebRTCService();
-    this.fileTransferManager = new FileTransferManager(this.webRTCService, this.gmcp_fileTransfer);
+    this.fileTransferManager = new FileTransferManager(
+      this.webRTCService,
+      this.gmcp_fileTransfer,
+    );
   }
 
-  registerMcpPackage<P extends MCPPackage>(p: new (_: McpPackageContext) => P): P {
+  registerMcpPackage<P extends MCPPackage>(
+    p: new (_: McpPackageContext) => P,
+  ): P {
     return this.mcpSession.registerPackage(p);
   }
 
@@ -91,7 +102,7 @@ class MudClient extends EventEmitter {
     this.connectionCleanupComplete = false;
     this.gmcp.reset();
     this.ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
-    this.ws.binaryType = 'arraybuffer';
+    this.ws.binaryType = "arraybuffer";
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
     this.gmcp.attachTransport(this.telnet);
     this.ws.onopen = () => {
@@ -100,35 +111,41 @@ class MudClient extends EventEmitter {
       // Reset MIDI intentional disconnect flags when successfully reconnecting to server
       resetMidiIntentionalDisconnectFlags();
 
-      this.emit('connect');
-      this.emit('connectionChange', true);
+      this.emit("connect");
+      this.emit("connectionChange", true);
     };
 
-    this.telnet.on('data', (data: ArrayBuffer) => {
+    this.telnet.on("data", (data: ArrayBuffer) => {
       this.handleData(data);
     });
 
-    this.telnet.on('negotiation', (command, option) => {
+    this.telnet.on("negotiation", (command, option) => {
       // Negotiation that we support GMCP
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
-        console.log('GMCP Negotiation');
+        console.log("GMCP Negotiation");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
         this.gmcp.start();
-      } else if (command === TelnetCommand.DO && option === TelnetOption.TERMINAL_TYPE) {
-        console.log('TTYPE Negotiation');
-        this.telnet.sendNegotiation(TelnetCommand.WILL, TelnetOption.TERMINAL_TYPE);
-        this.telnet.sendTerminalType('Mongoose Client');
-        this.telnet.sendTerminalType('ANSI');
-        this.telnet.sendTerminalType('PROXY');
+      } else if (
+        command === TelnetCommand.DO &&
+        option === TelnetOption.TERMINAL_TYPE
+      ) {
+        console.log("TTYPE Negotiation");
+        this.telnet.sendNegotiation(
+          TelnetCommand.WILL,
+          TelnetOption.TERMINAL_TYPE,
+        );
+        this.telnet.sendTerminalType("Mongoose Client");
+        this.telnet.sendTerminalType("ANSI");
+        this.telnet.sendTerminalType("PROXY");
       }
     });
 
-    this.telnet.on('gmcp', (packageName, data) => {
-      console.log('GMCP Package:', packageName, data);
+    this.telnet.on("gmcp", (packageName, data) => {
+      console.log("GMCP Package:", packageName, data);
       try {
         this.gmcp.receive(packageName, data);
       } catch (e) {
-        console.error('Calling GMCP:', e);
+        console.error("Calling GMCP:", e);
       }
     });
 
@@ -143,7 +160,7 @@ class MudClient extends EventEmitter {
     };
 
     this.ws.onerror = (error: Event) => {
-      this.emit('error', error);
+      this.emit("error", error);
     };
   }
 
@@ -161,37 +178,43 @@ class MudClient extends EventEmitter {
     this.telnet = new TelnetParser(stream);
     this.gmcp.attachTransport(this.telnet);
 
-    this.telnet.on('data', (data: ArrayBuffer) => {
+    this.telnet.on("data", (data: ArrayBuffer) => {
       this.handleData(data);
     });
 
     // The WASM server does not send telnet negotiation (no IAC sequences),
     // so these handlers are unlikely to fire — but wire them up anyway
     // for correctness.
-    this.telnet.on('negotiation', (command, option) => {
+    this.telnet.on("negotiation", (command, option) => {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
-        console.log('GMCP Negotiation (local)');
+        console.log("GMCP Negotiation (local)");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
         this.gmcp.start();
-      } else if (command === TelnetCommand.DO && option === TelnetOption.TERMINAL_TYPE) {
-        console.log('TTYPE Negotiation (local)');
-        this.telnet.sendNegotiation(TelnetCommand.WILL, TelnetOption.TERMINAL_TYPE);
-        this.telnet.sendTerminalType('Mongoose Client');
-        this.telnet.sendTerminalType('ANSI');
-        this.telnet.sendTerminalType('PROXY');
+      } else if (
+        command === TelnetCommand.DO &&
+        option === TelnetOption.TERMINAL_TYPE
+      ) {
+        console.log("TTYPE Negotiation (local)");
+        this.telnet.sendNegotiation(
+          TelnetCommand.WILL,
+          TelnetOption.TERMINAL_TYPE,
+        );
+        this.telnet.sendTerminalType("Mongoose Client");
+        this.telnet.sendTerminalType("ANSI");
+        this.telnet.sendTerminalType("PROXY");
       }
     });
 
-    this.telnet.on('gmcp', (packageName, data) => {
-      console.log('GMCP Package (local):', packageName, data);
+    this.telnet.on("gmcp", (packageName, data) => {
+      console.log("GMCP Package (local):", packageName, data);
       try {
         this.gmcp.receive(packageName, data);
       } catch (e) {
-        console.error('Calling GMCP:', e);
+        console.error("Calling GMCP:", e);
       }
     });
 
-    stream.on('close', () => {
+    stream.on("close", () => {
       this.cleanupConnection();
     });
 
@@ -199,8 +222,8 @@ class MudClient extends EventEmitter {
     // message once the virtual connection is created.
     this._connected = true;
     resetMidiIntentionalDisconnectFlags();
-    this.emit('connect');
-    this.emit('connectionChange', true);
+    this.emit("connect");
+    this.emit("connectionChange", true);
     this.gmcp.markReady();
   }
 
@@ -218,22 +241,23 @@ class MudClient extends EventEmitter {
     this.connectionCleanupComplete = true;
     this._connected = false;
     this.mcpSession.reset();
-    this.telnetBuffer = '';
+    this.telnetBuffer = "";
     useRoomStore.getState().reset(); // Reset room info on cleanup
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
     this.fileTransferManager.cleanup();
     this.gmcp.reset();
     useLiveKitStore.getState().reset();
 
-    this.emit('disconnect');
-    this.emit('connectionChange', false);
+    this.emit("disconnect");
+    this.emit("connectionChange", false);
   }
 
   public close(): void {
     this.intentionalDisconnect = true;
     if (
       this.ws &&
-      (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)
+      (this.ws.readyState === WebSocket.CONNECTING ||
+        this.ws.readyState === WebSocket.OPEN)
     ) {
       this.ws.close();
     }
@@ -248,9 +272,9 @@ class MudClient extends EventEmitter {
   public sendCommand(command: string): void {
     const localEchoEnabled = usePreferences.getState().general.localEcho;
     if (localEchoEnabled) {
-      this.emit('command', command);
+      this.emit("command", command);
     }
-    if (this.autosay && !command.startsWith('-') && !command.startsWith("'")) {
+    if (this.autosay && !command.startsWith("-") && !command.startsWith("'")) {
       command = `say ${command}`;
     }
     this.send(`${command}\r\n`);
@@ -267,21 +291,21 @@ An MCP message consists of three parts: the name of the message, the authenticat
 
   private handleData(data: ArrayBuffer) {
     this.telnetBuffer += this.decoder.decode(data);
-    const lines = this.telnetBuffer.split('\n');
-    this.telnetBuffer = lines.pop() ?? '';
+    const lines = this.telnetBuffer.split("\n");
+    this.telnetBuffer = lines.pop() ?? "";
 
     for (const line of lines) {
-      this.handleTextLine(line.replace(/\r$/, ''));
+      this.handleTextLine(line.replace(/\r$/, ""));
     }
 
-    if (this.telnetBuffer && !this.telnetBuffer.startsWith('#$#')) {
+    if (this.telnetBuffer && !this.telnetBuffer.startsWith("#$#")) {
       this.emitMessage(this.telnetBuffer);
-      this.telnetBuffer = '';
+      this.telnetBuffer = "";
     }
   }
 
   private handleTextLine(line: string): void {
-    if (line?.startsWith('#$#')) {
+    if (line?.startsWith("#$#")) {
       this.handleMcp(line);
       return;
     }
@@ -301,7 +325,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
       this.speak(dataString);
     }
-    this.emit('message', dataString);
+    this.emit("message", dataString);
   }
 
   shutdown() {
@@ -318,33 +342,33 @@ An MCP message consists of three parts: the name of the message, the authenticat
   requestNotificationPermission() {
     // handle notifications
     // may not be available in all browsers
-    if (!('Notification' in window)) {
-      console.log('This browser does not support desktop notification');
+    if (!("Notification" in window)) {
+      console.log("This browser does not support desktop notification");
       return;
     }
-    if (Notification.permission === 'default') {
+    if (Notification.permission === "default") {
       Notification.requestPermission();
     }
   }
 
   sendNotification(title: string, body: string) {
-    if (!('Notification' in window)) {
-      console.log('This browser does not support desktop notification');
+    if (!("Notification" in window)) {
+      console.log("This browser does not support desktop notification");
       return;
     }
 
-    if (Notification.permission === 'granted') {
+    if (Notification.permission === "granted") {
       new Notification(title, { body });
     }
   }
 
   speak(text: string) {
-    if (!('speechSynthesis' in window)) {
-      console.log('This browser does not support speech synthesis');
+    if (!("speechSynthesis" in window)) {
+      console.log("This browser does not support speech synthesis");
       return;
     }
     const utterance = new SpeechSynthesisUtterance(stripAnsi(text));
-    utterance.lang = 'en-US';
+    utterance.lang = "en-US";
     const { rate, pitch, voice, volume } = usePreferences.getState().speech;
     utterance.rate = rate;
     utterance.pitch = pitch;

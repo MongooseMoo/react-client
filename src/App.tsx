@@ -1,29 +1,36 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useBeforeunload } from 'react-beforeunload';
-import './App.css';
-import type MudClient from './client';
-import AutoLogDialog, { type AutoLogDialogRef } from './components/AutoLogDialog';
-import HostPanel from './components/HostPanel';
-import CommandInput from './components/input';
-import OutputWindow from './components/output';
-import PreferencesDialog, { type PreferencesDialogRef } from './components/PreferencesDialog';
-import Sidebar, { type SidebarRef } from './components/sidebar';
-import Statusbar from './components/statusbar';
-import Toolbar from './components/toolbar';
-import WasmGuest from './components/WasmGuest';
-import type { WasmHostState } from './components/WasmHost';
-import WasmHost from './components/WasmHost';
-import { createConfiguredClient } from './createConfiguredClient';
-import type { GMCPMessageRoomInfo } from './gmcp/Room';
-import { useFileTransferNotifications } from './components/FileTransfer/useFileTransferNotifications';
-import { createHapticsRuntime, type HapticsRuntime } from './haptics/runtime';
-import { useChannelHistory } from './hooks/useChannelHistory';
-import { autoLogService, createAutoLogSessionDraft } from './logging/AutoLogService';
-import { usePreferences } from './stores/preferencesStore';
-import { useRoomStore } from './stores/roomStore';
-import { ensurePushSubscription } from './webpush';
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useBeforeunload } from "react-beforeunload";
+import "./App.css";
+import type MudClient from "./client";
+import AutoLogDialog, {
+  type AutoLogDialogRef,
+} from "./components/AutoLogDialog";
+import { useFileTransferNotifications } from "./components/FileTransfer/useFileTransferNotifications";
+import HostPanel from "./components/HostPanel";
+import CommandInput from "./components/input";
+import OutputWindow from "./components/output";
+import PreferencesDialog, {
+  type PreferencesDialogRef,
+} from "./components/PreferencesDialog";
+import Sidebar, { type SidebarRef } from "./components/sidebar";
+import Statusbar from "./components/statusbar";
+import Toolbar from "./components/toolbar";
+import WasmGuest from "./components/WasmGuest";
+import type { WasmHostState } from "./components/WasmHost";
+import WasmHost from "./components/WasmHost";
+import { createConfiguredClient } from "./createConfiguredClient";
+import type { GMCPMessageRoomInfo } from "./gmcp/Room";
+import { createHapticsRuntime, type HapticsRuntime } from "./haptics/runtime";
+import { useChannelHistory } from "./hooks/useChannelHistory";
+import {
+  autoLogService,
+  createAutoLogSessionDraft,
+} from "./logging/AutoLogService";
+import { usePreferences } from "./stores/preferencesStore";
+import { useRoomStore } from "./stores/roomStore";
+import { ensurePushSubscription } from "./webpush";
 
-const WINDOW_TITLE = 'Mongoose Client';
+const WINDOW_TITLE = "Mongoose Client";
 
 function setWindowSubtitle(subtitle?: string) {
   document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
@@ -54,7 +61,10 @@ function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
-  const [hostState, setHostState] = useState<WasmHostState>({ roomId: null, guestCount: 0 });
+  const [hostState, setHostState] = useState<WasmHostState>({
+    roomId: null,
+    guestCount: 0,
+  });
   const { clearAllBuffers } = useChannelHistory(client);
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -92,13 +102,13 @@ function App() {
         return;
       }
 
-      if (event.key === 'Control') {
+      if (event.key === "Control") {
         client.cancelSpeech();
       }
 
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         client.stopAllSounds();
-        const midiPackage = client.gmcp.handlers['Client.Midi'];
+        const midiPackage = client.gmcp.handlers["Client.Midi"];
         if (midiPackage) {
           midiPackage.sendAllNotesOff();
         }
@@ -109,7 +119,9 @@ function App() {
         const targetIndex = getSidebarShortcutIndex(event);
         if (targetIndex !== null) {
           event.preventDefault();
-          console.log(`App: Detected CTRL+${targetIndex + 1}, calling switchToTab(${targetIndex})`);
+          console.log(
+            `App: Detected CTRL+${targetIndex + 1}, calling switchToTab(${targetIndex})`,
+          );
           sidebarRef.current?.switchToTab(targetIndex);
         }
       }
@@ -123,12 +135,13 @@ function App() {
   // Determine mode from URL params (available to both effect and JSX)
   const urlModeParams = React.useMemo(() => {
     const params = new URLSearchParams(window.location.search);
-    const mode = params.get('mode');
-    const dbUrl = params.get('db');
-    const roomParam = params.get('room');
-    const isHostMode = mode === 'host';
-    const isJoinMode = mode === 'join';
-    const isLocalMode = mode === 'local' || (dbUrl !== null && !isHostMode && !isJoinMode);
+    const mode = params.get("mode");
+    const dbUrl = params.get("db");
+    const roomParam = params.get("room");
+    const isHostMode = mode === "host";
+    const isJoinMode = mode === "join";
+    const isLocalMode =
+      mode === "local" || (dbUrl !== null && !isHostMode && !isJoinMode);
     return { mode, dbUrl, roomParam, isHostMode, isJoinMode, isLocalMode };
   }, []);
 
@@ -174,17 +187,19 @@ function App() {
     }
 
     const configureAutologSession = () => {
-      autoLogService.configureSession(createAutoLogSessionDraft(document.title || WINDOW_TITLE));
+      autoLogService.configureSession(
+        createAutoLogSessionDraft(document.title || WINDOW_TITLE),
+      );
     };
     const handleConnect = () => {
       configureAutologSession();
       autoLogService.startSession().catch((error) => {
-        console.error('Failed to start autolog session:', error);
+        console.error("Failed to start autolog session:", error);
       });
     };
     const handleDisconnect = () => {
       autoLogService.endSession().catch((error) => {
-        console.error('Failed to end autolog session:', error);
+        console.error("Failed to end autolog session:", error);
       });
     };
 
@@ -193,14 +208,14 @@ function App() {
       handleConnect();
     }
 
-    client.on('connect', handleConnect);
-    client.on('disconnect', handleDisconnect);
+    client.on("connect", handleConnect);
+    client.on("disconnect", handleDisconnect);
 
     return () => {
-      client.off('connect', handleConnect);
-      client.off('disconnect', handleDisconnect);
+      client.off("connect", handleConnect);
+      client.off("disconnect", handleDisconnect);
       autoLogService.endSession().catch((error) => {
-        console.error('Failed to end autolog session during cleanup:', error);
+        console.error("Failed to end autolog session during cleanup:", error);
       });
       autoLogService.configureSession(null);
     };
@@ -213,22 +228,22 @@ function App() {
     client.requestNotificationPermission();
     const ensurePushSubscriptionForSession = () => {
       ensurePushSubscription(client).catch((error) => {
-        console.error('Failed to ensure push subscription:', error);
+        console.error("Failed to ensure push subscription:", error);
       });
     };
     if (client.gmcp.sessionReady) {
       ensurePushSubscriptionForSession();
     } else {
-      client.once('sessionReady', ensurePushSubscriptionForSession);
+      client.once("sessionReady", ensurePushSubscriptionForSession);
     }
 
     // Auto-login from URL params
     const urlParams = new URLSearchParams(window.location.search);
-    const username = urlParams.get('username');
-    const password = urlParams.get('password');
+    const username = urlParams.get("username");
+    const password = urlParams.get("password");
     if (username && password) {
-      client.once('connect', () => {
-        console.log('Auto-logging in with URL params...');
+      client.once("connect", () => {
+        console.log("Auto-logging in with URL params...");
         setTimeout(() => {
           client.sendCommand(username);
           setTimeout(() => {
@@ -246,24 +261,24 @@ function App() {
     const handleFocus = () => {
       inRef.current?.focus();
     };
-    document.addEventListener('focus', handleFocus);
+    document.addEventListener("focus", handleFocus);
 
     return () => {
-      client.off('sessionReady', ensurePushSubscriptionForSession);
-      document.removeEventListener('focus', handleFocus);
+      client.off("sessionReady", ensurePushSubscriptionForSession);
+      document.removeEventListener("focus", handleFocus);
       if (hapticsRuntimeRef.current === hapticsRuntime) {
         hapticsRuntimeRef.current = null;
       }
       hapticsRuntime.dispose().catch((error) => {
-        console.error('Failed to dispose haptics runtime:', error);
+        console.error("Failed to dispose haptics runtime:", error);
       });
     };
   }, [client]);
 
   useEffect(() => {
-    document.addEventListener('keydown', handleAppKeyDown, true);
+    document.addEventListener("keydown", handleAppKeyDown, true);
     return () => {
-      document.removeEventListener('keydown', handleAppKeyDown, true);
+      document.removeEventListener("keydown", handleAppKeyDown, true);
     };
   }, [handleAppKeyDown]);
 
@@ -271,19 +286,19 @@ function App() {
     if (!preferences.midi.enabled) return;
 
     let cancelled = false;
-    import('./VirtualMidiService')
+    import("./VirtualMidiService")
       .then(({ virtualMidiService }) => virtualMidiService.initialize())
       .then((success) => {
         if (cancelled) return;
         if (success) {
-          console.log('Virtual MIDI synthesizer initialized');
+          console.log("Virtual MIDI synthesizer initialized");
         } else {
-          console.log('Failed to initialize virtual MIDI synthesizer');
+          console.log("Failed to initialize virtual MIDI synthesizer");
         }
       })
       .catch((error) => {
         if (cancelled) return;
-        console.error('Error initializing virtual MIDI synthesizer:', error);
+        console.error("Error initializing virtual MIDI synthesizer:", error);
       });
 
     return () => {
@@ -327,12 +342,12 @@ function App() {
       client.shutdown();
     }
     autoLogService.flush().catch((error) => {
-      console.error('Failed to flush autolog entries before unload:', error);
+      console.error("Failed to flush autolog entries before unload:", error);
     });
     // Best-effort checkpoint on tab close
     const wasmWorker = (window as any).wasmWorker;
     if (wasmWorker) {
-      wasmWorker.postMessage({ type: 'save' });
+      wasmWorker.postMessage({ type: "save" });
     }
   });
 
@@ -359,14 +374,17 @@ function App() {
         />
       )}
       {isGuestMode && !client && (
-        <WasmGuest roomId={urlModeParams.roomParam} onClientReady={handleClientReady} />
+        <WasmGuest
+          roomId={urlModeParams.roomParam}
+          onClientReady={handleClientReady}
+        />
       )}
       {/* UI shell — only renders when client is ready */}
       {client && (
         <div
-          className={`App ${showSidebar ? (sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-shown') : ''}`}
+          className={`App ${showSidebar ? (sidebarCollapsed ? "sidebar-collapsed" : "sidebar-shown") : ""}`}
         >
-          <header style={{ gridArea: 'header' }}>
+          <header style={{ gridArea: "header" }}>
             <Toolbar
               client={client}
               onSaveLog={saveLog}
@@ -379,16 +397,30 @@ function App() {
             />
           </header>
           {urlModeParams.isHostMode && (
-            <HostPanel roomId={hostState.roomId} guestCount={hostState.guestCount} />
+            <HostPanel
+              roomId={hostState.roomId}
+              guestCount={hostState.guestCount}
+            />
           )}
-          <main style={{ gridArea: 'main' }}>
-            <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
+          <main style={{ gridArea: "main" }}>
+            <OutputWindow
+              client={client}
+              ref={outRef}
+              focusInput={focusInput}
+            />
           </main>
-          <section aria-label="Command input" style={{ gridArea: 'input' }}>
-            <CommandInput onSend={handleCommand} inputRef={inRef} client={client} />
+          <section aria-label="Command input" style={{ gridArea: "input" }}>
+            <CommandInput
+              onSend={handleCommand}
+              inputRef={inRef}
+              client={client}
+            />
           </section>
           {showSidebar && (
-            <aside aria-roledescription="Sidebar" style={{ gridArea: 'sidebar' }}>
+            <aside
+              aria-roledescription="Sidebar"
+              style={{ gridArea: "sidebar" }}
+            >
               <Sidebar
                 ref={sidebarRef}
                 client={client}
@@ -397,7 +429,7 @@ function App() {
               />
             </aside>
           )}
-          <footer style={{ gridArea: 'status' }}>
+          <footer style={{ gridArea: "status" }}>
             <Statusbar client={client} />
           </footer>
           <PreferencesDialog ref={prefsDialogRef} />

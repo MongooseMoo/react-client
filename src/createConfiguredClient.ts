@@ -1,4 +1,4 @@
-import MudClient from './client';
+import MudClient from "./client";
 import {
   GMCPAutoLogin,
   GMCPChar,
@@ -29,15 +29,15 @@ import {
   GMCPLogging,
   GMCPRedirect,
   GMCPRoom,
-} from './gmcp';
-import { DEFAULT_MCP_PACKAGES } from './mcp';
+} from "./gmcp";
+import { DEFAULT_MCP_PACKAGES } from "./mcp/index";
 
 /**
  * Create a MudClient with all GMCP and MCP packages registered.
  * Shared across all modes (telnet, WASM local, WASM host, guest).
  */
 export function createConfiguredClient(): MudClient {
-  const client = new MudClient('mongoose.moo.mud.org', 8765);
+  const client = new MudClient("mongoose.moo.mud.org", 8765);
   // GMCP packages
   client.gmcp.register(GMCPCore);
   client.gmcp.register(GMCPClientMedia);

@@ -18,7 +18,11 @@ export class GuestStream implements Stream {
   constructor(private conn: DataConnection) {
     this.conn.on("data", (raw: unknown) => {
       const msg = raw as { type: string; data?: string };
-      if (msg.type === "output" && msg.data !== undefined && this.dataCallback) {
+      if (
+        msg.type === "output" &&
+        msg.data !== undefined &&
+        this.dataCallback
+      ) {
         this.dataCallback(Buffer.from(msg.data + "\r\n"));
       }
     });

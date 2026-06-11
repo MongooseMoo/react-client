@@ -23,3 +23,4 @@ export const useSessionStore = create<SessionState>((set) => ({
   setRoomId: (roomId) => set({ roomId }),
   reset: () => set({ playerId: "", playerName: "", roomId: "" }),
 }));
+
