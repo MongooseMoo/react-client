@@ -697,6 +697,9 @@ export class MediaService {
         coneOuterAngle: 0,
         panningModel: 'HRTF',
         distanceModel: 'inverse',
+        refDistance: 4,
+        rolloffFactor: 0.5,
+        maxDistance: 200,
       };
     }
 
