@@ -1,7 +1,17 @@
 import type React from 'react';
 import { useEffect, useRef } from 'react';
-import { ControlBar, LiveKitRoom, useTracks } from '@livekit/components-react';
-import { RemoteAudioTrack, Track } from 'livekit-client';
+import {
+  BarVisualizer,
+  ConnectionQualityIndicator,
+  ControlBar,
+  LayoutContextProvider,
+  LiveKitRoom,
+  ParticipantAudioTile,
+  ParticipantName,
+  TrackLoop,
+  useTracks,
+} from '@livekit/components-react';
+import { Track } from 'livekit-client';
 import { LiveKitSpatialAudioBridge } from '../audio/LiveKitSpatialAudioBridge';
 import type MudClient from '../client';
 import type { SpatialEntity } from '../gmcp/Client/Spatial';
@@ -12,6 +22,19 @@ const serverUrl = 'wss://mongoose-67t79p35.livekit.cloud';
 
 interface AudioChatProps {
   client: MudClient;
+}
+
+function liveKitRemoteMediaStreamTrack(track: unknown): MediaStreamTrack | null {
+  if (
+    track &&
+    typeof track === 'object' &&
+    'mediaStreamTrack' in track &&
+    typeof (track as { mediaStreamTrack?: unknown }).mediaStreamTrack === 'object' &&
+    (track as { mediaStreamTrack?: unknown }).mediaStreamTrack !== null
+  ) {
+    return (track as { mediaStreamTrack: MediaStreamTrack }).mediaStreamTrack;
+  }
+  return null;
 }
 
 const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
@@ -33,9 +56,10 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
 
     tracks.forEach((trackRef) => {
       const track = trackRef.publication.track;
-      if (track instanceof RemoteAudioTrack) {
+      const mediaStreamTrack = liveKitRemoteMediaStreamTrack(track);
+      if (mediaStreamTrack && !trackRef.participant.isLocal) {
         activeParticipantIds.add(trackRef.participant.identity);
-        bridge.attachParticipantTrack(trackRef.participant.identity, track.mediaStreamTrack);
+        bridge.attachParticipantTrack(trackRef.participant.identity, mediaStreamTrack);
       }
     });
 
@@ -67,6 +91,33 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
   return null;
 };
 
+const CacophonyAudioConference: React.FC = () => {
+  const audioTracks = useTracks([Track.Source.Microphone]);
+
+  return (
+    <LayoutContextProvider>
+      <div className="lk-audio-conference">
+        <div className="lk-audio-conference-stage">
+          <TrackLoop tracks={audioTracks}>
+            <ParticipantAudioTile>
+              <BarVisualizer barCount={7} options={{ minHeight: 8 }} />
+              <div className="lk-participant-metadata">
+                <div className="lk-participant-metadata-item">
+                  <ParticipantName />
+                </div>
+                <ConnectionQualityIndicator className="lk-participant-metadata-item" />
+              </div>
+            </ParticipantAudioTile>
+          </TrackLoop>
+        </div>
+        <ControlBar
+          controls={{ microphone: true, screenShare: false, camera: false, chat: false }}
+        />
+      </div>
+    </LayoutContextProvider>
+  );
+};
+
 const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
   const tokens = useLiveKitStore((state) => state.tokens);
   const removeToken = useLiveKitStore((state) => state.removeToken);
@@ -91,9 +142,7 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
           }}
         >
           <SpatialLiveKitAudio client={client} />
-          <ControlBar
-            controls={{ microphone: true, screenShare: false, camera: false, chat: false }}
-          />
+          <CacophonyAudioConference />
         </LiveKitRoom>
       ))}
       <div className="audio-status" aria-live="polite"></div>
