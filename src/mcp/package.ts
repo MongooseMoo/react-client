@@ -9,10 +9,6 @@ import type {
   McpOutboundKeyvals,
 } from './types';
 
-export interface McpPackageContext {
-  emit(event: string, ...args: unknown[]): boolean;
-}
-
 export interface McpMultilineOutboundPayload {
   kind: 'mcp-multiline';
   keyvals: McpOutboundKeyvals;
@@ -30,7 +26,6 @@ export class MCPPackage {
   public readonly minVersion?: number = 1.0;
   public readonly maxVersion?: number = 1.0;
   public readonly packageVersion?: number = 0.0;
-  protected readonly context: McpPackageContext;
   private sendMessage?: (command: string, data?: McpOutboundData) => void;
   private sendMultilineMessage?: (
     command: string,
@@ -39,18 +34,14 @@ export class MCPPackage {
     lines: string[],
   ) => void;
 
-  constructor(context: McpPackageContext) {
-    this.context = context;
-  }
-
   static with<const Messages extends readonly AnyDirectedProtocolMessage[]>(
     config: McpPackageConfig<Messages>,
-  ): new (context: McpPackageContext) => MCPPackage & ProtocolIO<Messages> {
+  ): new () => MCPPackage & ProtocolIO<Messages> {
     const RegisteredMCPPackage = class extends MCPPackage {
       public readonly packageName = config.packageName;
 
-      constructor(context: McpPackageContext) {
-        super(context);
+      constructor() {
+        super();
         createProtocolIO(
           config.messages,
           (wireName, payload) => this.sendRegisteredMessage(wireName, payload),
@@ -59,9 +50,8 @@ export class MCPPackage {
       }
     };
 
-    return RegisteredMCPPackage as unknown as new (
-      context: McpPackageContext,
-    ) => MCPPackage & ProtocolIO<Messages>;
+    return RegisteredMCPPackage as unknown as new () => MCPPackage &
+      ProtocolIO<Messages>;
   }
 
   attachProtocolTransport(

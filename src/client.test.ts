@@ -135,11 +135,7 @@ vi.mock('./mcp', () => ({
     shutdown = vi.fn();
 
     registerPackage = vi.fn((PackageConstructor) => {
-      const mcpPackage = new PackageConstructor({
-        emit: vi.fn(),
-        openEditorSession: vi.fn(),
-        sendMcp: vi.fn(),
-      });
+      const mcpPackage = new PackageConstructor();
       this.packageHandlers[mcpPackage.packageName] = mcpPackage;
       return mcpPackage;
     });

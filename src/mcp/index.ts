@@ -7,7 +7,7 @@ export {
   parseMcpMultiline,
 } from './codec';
 export { mooListToArray, type MooListValue } from './mooList';
-export { MCPPackage, type McpPackageContext } from './package';
+export { MCPPackage } from './package';
 export { DEFAULT_MCP_PACKAGES, type McpPackageConstructor } from './packages';
 export { McpAwnsGetSet } from './packages/getSet';
 export { McpNegotiate } from './packages/negotiate';

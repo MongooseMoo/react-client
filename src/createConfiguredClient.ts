@@ -30,7 +30,13 @@ import {
   GMCPRedirect,
   GMCPRoom,
 } from "./gmcp";
-import { DEFAULT_MCP_PACKAGES, McpSimpleEdit } from "./mcp/index";
+import {
+  DEFAULT_MCP_PACKAGES,
+  McpAwnsGetSet,
+  McpAwnsStatus,
+  McpSimpleEdit,
+  McpVmooUserlist,
+} from "./mcp/index";
 
 /**
  * Create a MudClient with all GMCP and MCP packages registered.
@@ -74,6 +80,17 @@ export function createConfiguredClient(): MudClient {
     const mcpPackage = client.registerMcpPackage(PackageConstructor);
     if (mcpPackage instanceof McpSimpleEdit) {
       client.configureEditors(mcpPackage);
+    }
+    if (mcpPackage instanceof McpAwnsStatus) {
+      mcpPackage.on("statustext", (text) => client.emit("statustext", text));
+    }
+    if (mcpPackage instanceof McpAwnsGetSet) {
+      mcpPackage.on("getset", ({ key, value }) =>
+        client.emit("getset", key, value),
+      );
+    }
+    if (mcpPackage instanceof McpVmooUserlist) {
+      mcpPackage.on("userlist", (players) => client.emit("userlist", players));
     }
   }
   return client;

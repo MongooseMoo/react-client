@@ -4,11 +4,10 @@ import {
   encodeMcpMultilineLine,
   parseMcpLine,
 } from "./codec";
-import type { MCPPackage, McpPackageContext } from "./package";
+import type { MCPPackage } from "./package";
 import type { MCPKeyvals, McpMessage, McpOutboundData, McpOutboundKeyvals } from "./types";
 
 export interface McpSessionHost {
-  emit(event: string, ...args: unknown[]): boolean;
   sendLine(line: string): void;
 }
 
@@ -16,16 +15,11 @@ export class McpSession {
   private authKey: string | null = null;
   private readonly handlers: Record<string, MCPPackage> = {};
   private readonly multilines: Record<string, MCPPackage> = {};
-  private readonly packageContext: McpPackageContext;
 
   constructor(
     private readonly host: McpSessionHost,
     private readonly tagGenerator: () => string = generateTag,
-  ) {
-    this.packageContext = {
-      emit: (event, ...args) => this.host.emit(event, ...args),
-    };
-  }
+  ) {}
 
   get packageHandlers(): Record<string, MCPPackage> {
     return this.handlers;
@@ -35,10 +29,8 @@ export class McpSession {
     return this.multilines;
   }
 
-  registerPackage<P extends MCPPackage>(
-    PackageConstructor: new (_: McpPackageContext) => P,
-  ): P {
-    const mcpPackage = new PackageConstructor(this.packageContext);
+  registerPackage<P extends MCPPackage>(PackageConstructor: new () => P): P {
+    const mcpPackage = new PackageConstructor();
     mcpPackage.attachProtocolTransport(
       (command, data) => this.sendMessage(command, data),
       (command, keyvals, lineKey, lines) =>

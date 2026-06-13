@@ -13,7 +13,6 @@ import { EditorManager } from "./EditorManager";
 import { GMCPChar, GMCPClientFileTransfer, GmcpSession } from "./gmcp";
 import {
   type MCPPackage,
-  type McpPackageContext,
   type McpSimpleEdit,
   McpSession,
 } from "./mcp";
@@ -80,7 +79,6 @@ class MudClient extends EventEmitter {
     this.host = host;
     this.port = port;
     this.mcpSession = new McpSession({
-      emit: (event, ...args) => this.emit(event, ...args),
       sendLine: (line) => this.send(`${line}\r\n`),
     });
     this.gmcp = new GmcpSession(this);
@@ -94,9 +92,7 @@ class MudClient extends EventEmitter {
     );
   }
 
-  registerMcpPackage<P extends MCPPackage>(
-    p: new (_: McpPackageContext) => P,
-  ): P {
+  registerMcpPackage(p: new () => MCPPackage): MCPPackage {
     return this.mcpSession.registerPackage(p);
   }
 
