@@ -1,5 +1,7 @@
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSpatialStore } from '../../stores/spatialStore';
+import { inbound } from '../../protocol/messages';
+import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
 
 export type SpatialVector = [number, number, number];
@@ -91,6 +93,50 @@ export class GMCPMessageClientSpatialEmitterStop extends GMCPMessage {
   emitterId: string = '';
 }
 
+const spatialScene = gmcpJsonMessage<'Scene', GMCPMessageClientSpatialScene>('Scene');
+const spatialEntityEnter = gmcpJsonMessage<
+  'EntityEnter',
+  GMCPMessageClientSpatialEntityEnter
+>('EntityEnter');
+const spatialEntityLeave = gmcpJsonMessage<
+  'EntityLeave',
+  GMCPMessageClientSpatialEntityLeave
+>('EntityLeave');
+const spatialEntityMove = gmcpJsonMessage<
+  'EntityMove',
+  GMCPMessageClientSpatialEntityMove
+>('EntityMove');
+const spatialListenerPosition = gmcpJsonMessage<
+  'ListenerPosition',
+  GMCPMessageClientSpatialListenerPosition
+>('ListenerPosition');
+const spatialListenerOrientation = gmcpJsonMessage<
+  'ListenerOrientation',
+  GMCPMessageClientSpatialListenerOrientation
+>('ListenerOrientation');
+const spatialEmitterStart = gmcpJsonMessage<
+  'EmitterStart',
+  GMCPMessageClientSpatialEmitterStart
+>('EmitterStart');
+const spatialEmitterStop = gmcpJsonMessage<
+  'EmitterStop',
+  GMCPMessageClientSpatialEmitterStop
+>('EmitterStop');
+
+const GMCPClientSpatialBase = GMCPPackage.with({
+  packageName: 'Client.Spatial',
+  messages: [
+    inbound(spatialScene),
+    inbound(spatialEntityEnter),
+    inbound(spatialEntityLeave),
+    inbound(spatialEntityMove),
+    inbound(spatialListenerPosition),
+    inbound(spatialListenerOrientation),
+    inbound(spatialEmitterStart),
+    inbound(spatialEmitterStop),
+  ] as const,
+});
+
 function indexById<T extends { id: string }>(items: T[]): Record<string, T> {
   return items.reduce<Record<string, T>>((acc, item) => {
     acc[item.id] = item;
@@ -98,8 +144,18 @@ function indexById<T extends { id: string }>(items: T[]): Record<string, T> {
   }, {});
 }
 
-export class GMCPClientSpatial extends GMCPPackage {
-  public packageName: string = 'Client.Spatial';
+export class GMCPClientSpatial extends GMCPClientSpatialBase {
+  constructor(client: ConstructorParameters<typeof GMCPClientSpatialBase>[0]) {
+    super(client);
+    this.on('scene', (data) => this.handleScene(data));
+    this.on('entityEnter', (data) => this.handleEntityEnter(data));
+    this.on('entityLeave', (data) => this.handleEntityLeave(data));
+    this.on('entityMove', (data) => this.handleEntityMove(data));
+    this.on('listenerPosition', (data) => this.handleListenerPosition(data));
+    this.on('listenerOrientation', (data) => this.handleListenerOrientation(data));
+    this.on('emitterStart', (data) => this.handleEmitterStart(data));
+    this.on('emitterStop', (data) => this.handleEmitterStop(data));
+  }
 
   private syncCacophonyListenerPosition(position: SpatialVector | null | undefined): void {
     this.client.media.setListenerPosition(position ?? [0, 0, 0]);

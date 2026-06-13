@@ -1,3 +1,5 @@
+import { inbound, outbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 const DEFAULT_TOKEN_TTL_MS = 5 * 60 * 1000;
@@ -7,11 +9,33 @@ export class GMCPMessageClientWebPushToken extends GMCPMessage {
   expires_at?: number;
 }
 
-export class GMCPClientWebPush extends GMCPPackage {
-  public packageName: string = "Client.WebPush";
+const webPushToken = gmcpJsonMessage<"Token", GMCPMessageClientWebPushToken>("Token");
+const webPushRequest = gmcpJsonMessage<"Request", never, void>("Request", {
+  encode(): unknown {
+    return {};
+  },
+  decode(payload: unknown): never {
+    return payload as never;
+  },
+});
+
+const GMCPClientWebPushBase = GMCPPackage.with({
+  packageName: "Client.WebPush",
+  messages: [
+    inbound(webPushToken),
+    outbound(webPushRequest),
+  ] as const,
+});
+
+export class GMCPClientWebPush extends GMCPClientWebPushBase {
 
   private token: string | null = null;
   private expiresAt: number | null = null;
+
+  constructor(client: ConstructorParameters<typeof GMCPClientWebPushBase>[0]) {
+    super(client);
+    this.on("token", (data) => this.handleToken(data));
+  }
 
   handleToken(data: GMCPMessageClientWebPushToken): void {
     this.token = data.token || null;
@@ -20,10 +44,6 @@ export class GMCPClientWebPush extends GMCPPackage {
       expiresAt: this.expiresAt,
       token: this.token,
     });
-  }
-
-  sendRequest(): void {
-    this.sendData("Request", {});
   }
 
   async requestToken(): Promise<string | null> {
