@@ -30,7 +30,7 @@ import {
   GMCPRedirect,
   GMCPRoom,
 } from "./gmcp";
-import { DEFAULT_MCP_PACKAGES } from "./mcp/index";
+import { DEFAULT_MCP_PACKAGES, McpSimpleEdit } from "./mcp/index";
 
 /**
  * Create a MudClient with all GMCP and MCP packages registered.
@@ -71,7 +71,10 @@ export function createConfiguredClient(): MudClient {
 
   // MCP packages
   for (const PackageConstructor of DEFAULT_MCP_PACKAGES) {
-    client.registerMcpPackage(PackageConstructor);
+    const mcpPackage = client.registerMcpPackage(PackageConstructor);
+    if (mcpPackage instanceof McpSimpleEdit) {
+      client.configureEditors(mcpPackage);
+    }
   }
   return client;
 }

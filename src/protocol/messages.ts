@@ -23,7 +23,7 @@ export interface DirectedProtocolMessage<
   ): DirectedProtocolMessage<Name, Payload, Direction, Alias>;
 }
 
-type AnyDirectedProtocolMessage = DirectedProtocolMessage<
+export type AnyDirectedProtocolMessage = DirectedProtocolMessage<
   string,
   unknown,
   ProtocolDirection,

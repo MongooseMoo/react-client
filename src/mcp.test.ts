@@ -98,7 +98,6 @@ describe('McpSession', () => {
     const session = new McpSession(
       {
         emit: vi.fn(),
-        openEditorSession: vi.fn(),
         sendLine: (line) => sent.push(line),
       },
       () => 'auth01',
@@ -118,7 +117,6 @@ describe('McpSession', () => {
     const session = new McpSession(
       {
         emit: vi.fn(),
-        openEditorSession: vi.fn(),
         sendLine: vi.fn(),
       },
       () => 'auth01',
@@ -150,12 +148,12 @@ describe('McpSession', () => {
     const session = new McpSession(
       {
         emit: vi.fn(),
-        openEditorSession: (editorSession) => opened.push(editorSession),
         sendLine: vi.fn(),
       },
       () => 'auth01',
     );
-    session.registerPackage(McpSimpleEdit);
+    const simpleEdit = session.registerPackage(McpSimpleEdit);
+    simpleEdit.on('openSession', (editorSession) => opened.push(editorSession));
 
     session.receiveLine('#$#MCP version: 2.1 to: 2.1');
     session.receiveLine(
@@ -191,7 +189,6 @@ describe('McpSession', () => {
     const session = new McpSession(
       {
         emit: vi.fn(),
-        openEditorSession: vi.fn(),
         sendLine: (line) => sent.push(line),
       },
       () => tags.shift() ?? 'fallback',
@@ -204,7 +201,13 @@ describe('McpSession', () => {
 
     session.receiveLine('#$#MCP version: 2.1 to: 2.1');
     sent.length = 0;
-    session.sendMultiline('dns-org-mud-moo-simpleedit-set', keyvals, ['line one', 'line two']);
+    const simpleEdit = session.registerPackage(McpSimpleEdit);
+    simpleEdit.sendSet({
+      reference: keyvals.reference,
+      type: keyvals.type,
+      contents: ['line one', 'line two'],
+      name: 'obj 1',
+    });
 
     expect(keyvals).toEqual({
       reference: 'obj 1',
@@ -227,7 +230,6 @@ describe('McpSession', () => {
           userlists.push(players as unknown[]);
           return true;
         },
-        openEditorSession: vi.fn(),
         sendLine: vi.fn(),
       },
       () => 'auth01',

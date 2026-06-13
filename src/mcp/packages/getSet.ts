@@ -32,14 +32,14 @@ export class McpAwnsGetSet extends MCPPackage {
   sendGet(property: string): void {
     const id = (this.id++).toString();
     this.cache.set(id, property);
-    this.context.sendMcp('dns-com-awns-getset-get', {
+    this.send('get', {
       id,
       property,
     });
   }
 
   sendSet(property: string, value: string): void {
-    this.context.sendMcp('dns-com-awns-getset-set', {
+    this.send('set', {
       id: this.id++,
       property,
       value,
@@ -47,7 +47,7 @@ export class McpAwnsGetSet extends MCPPackage {
   }
 
   sendDrop(property: string): void {
-    this.context.sendMcp('dns-com-awns-getset-drop', {
+    this.send('drop', {
       id: this.id++,
       property,
     });

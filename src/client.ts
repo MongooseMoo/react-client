@@ -11,7 +11,12 @@ import { EventEmitter } from "eventemitter3";
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
 import { GMCPChar, GMCPClientFileTransfer, GmcpSession } from "./gmcp";
-import { type MCPPackage, type McpPackageContext, McpSession } from "./mcp";
+import {
+  type MCPPackage,
+  type McpPackageContext,
+  type McpSimpleEdit,
+  McpSession,
+} from "./mcp";
 
 import { MediaService } from "./audio/MediaService";
 import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
@@ -54,7 +59,7 @@ class MudClient extends EventEmitter {
   public gmcp_char: GMCPChar;
   public gmcp_fileTransfer: GMCPClientFileTransfer;
   public media: MediaService;
-  public editors: EditorManager;
+  public editors?: EditorManager;
   public webRTCService: WebRTCService;
   public fileTransferManager: FileTransferManager;
   private _autosay: boolean = false;
@@ -76,14 +81,12 @@ class MudClient extends EventEmitter {
     this.port = port;
     this.mcpSession = new McpSession({
       emit: (event, ...args) => this.emit(event, ...args),
-      openEditorSession: (session) => this.editors.openEditorWindow(session),
       sendLine: (line) => this.send(`${line}\r\n`),
     });
     this.gmcp = new GmcpSession(this);
     this.gmcp_char = this.gmcp.register(GMCPChar);
     this.gmcp_fileTransfer = this.gmcp.register(GMCPClientFileTransfer);
     this.media = new MediaService();
-    this.editors = new EditorManager(this);
     this.webRTCService = new WebRTCService();
     this.fileTransferManager = new FileTransferManager(
       this.webRTCService,
@@ -95,6 +98,13 @@ class MudClient extends EventEmitter {
     p: new (_: McpPackageContext) => P,
   ): P {
     return this.mcpSession.registerPackage(p);
+  }
+
+  configureEditors(simpleEdit: McpSimpleEdit): void {
+    this.editors = new EditorManager(simpleEdit);
+    simpleEdit.on("openSession", (session) => {
+      this.editors?.openEditorWindow(session);
+    });
   }
 
   public connect() {
@@ -335,7 +345,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     this.mcpSession.shutdown();
     this.gmcp.shutdown();
     this.media.shutdown();
-    this.editors.shutdown();
+    this.editors?.shutdown();
     this.close();
   }
 
