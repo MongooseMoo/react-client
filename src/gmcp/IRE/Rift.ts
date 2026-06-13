@@ -1,4 +1,6 @@
-import { GMCPMessage, GMCPPackage } from "../package";
+import { inbound, outbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
+import { GMCPPackage } from "../package";
 
 export interface RiftItem {
     name: string;
@@ -6,8 +8,25 @@ export interface RiftItem {
     desc: string;
 }
 
-export class GmcPIRERift extends GMCPPackage {
-    public packageName: string = "IRE.Rift";
+const riftList = gmcpJsonMessage<"List", RiftItem[]>("List");
+const riftChange = gmcpJsonMessage<"Change", RiftItem>("Change");
+const riftRequest = gmcpJsonMessage<"Request", never, void>("Request");
+
+const GmcPIRERiftBase = GMCPPackage.with({
+    packageName: "IRE.Rift",
+    messages: [
+        inbound(riftList),
+        inbound(riftChange),
+        outbound(riftRequest),
+    ] as const,
+});
+
+export class GmcPIRERift extends GmcPIRERiftBase {
+    constructor(client: ConstructorParameters<typeof GmcPIRERiftBase>[0]) {
+        super(client);
+        this.on("list", (data) => this.handleList(data));
+        this.on("change", (data) => this.handleChange(data));
+    }
 
     // --- Server Messages ---
     handleList(items: RiftItem[]): void {
@@ -20,10 +39,5 @@ export class GmcPIRERift extends GMCPPackage {
         console.log("Received IRE.Rift.Change:", item);
         // TODO: Update specific item amount/info in rift display
         this.client.emit("riftChange", item);
-    }
-
-    // --- Client Messages ---
-    sendRequest(): void {
-        this.sendData("Request"); // No body needed
     }
 }

@@ -1,3 +1,5 @@
+import { inbound, outbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export class GMCPMessageIREComposerEdit extends GMCPMessage {
@@ -9,21 +11,28 @@ export class GMCPMessageIREComposerSetBuffer extends GMCPMessage {
     buffer: string = "";
 }
 
-export class GmcPIREComposer extends GMCPPackage {
-    public packageName: string = "IRE.Composer";
+const composerEdit = gmcpJsonMessage<"Edit", GMCPMessageIREComposerEdit>("Edit");
+const composerSetBuffer = gmcpJsonMessage<"SetBuffer", never, string>("SetBuffer");
+
+const GmcPIREComposerBase = GMCPPackage.with({
+    packageName: "IRE.Composer",
+    messages: [
+        inbound(composerEdit),
+        outbound(composerSetBuffer),
+    ] as const,
+});
+
+export class GmcPIREComposer extends GmcPIREComposerBase {
+    constructor(client: ConstructorParameters<typeof GmcPIREComposerBase>[0]) {
+        super(client);
+        this.on("edit", (data) => this.handleEdit(data));
+    }
 
     // --- Server Messages ---
     handleEdit(data: GMCPMessageIREComposerEdit): void {
         console.log(`Received IRE.Composer.Edit (Title: ${data.title}):`, data.text);
         // TODO: Open an editor interface with the provided title and text
         this.client.emit("composerEdit", data);
-    }
-
-    // --- Client Messages ---
-    sendSetBuffer(text: string): void {
-        // Note: IRE docs example shows just the string, not an object.
-        // Let's follow the example.
-        this.sendData("SetBuffer", text);
     }
 
     // Helper for IRE-specific commands (***save, ***quit)

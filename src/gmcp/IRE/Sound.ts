@@ -1,3 +1,5 @@
+import { inbound } from '../../protocol/messages';
+import { gmcpJsonMessage } from '../messages';
 import { GMCPPackage } from '../package';
 
 // Interfaces based on IRE.Sound documentation keys
@@ -25,8 +27,29 @@ export interface IREPreloadPayload {
 
 // This package handles IRE-specific sound messages and translates them into the
 // shared media service payloads used by the MCMP Client.Media adapter.
-export class GmcPIRESound extends GMCPPackage {
-  public packageName: string = 'IRE.Sound';
+const soundPlay = gmcpJsonMessage<'Play', IREPlayPayload>('Play');
+const soundStop = gmcpJsonMessage<'Stop', IREStopPayload>('Stop');
+const soundStopall = gmcpJsonMessage<'Stopall', IREStopAllPayload>('Stopall');
+const soundPreload = gmcpJsonMessage<'Preload', IREPreloadPayload>('Preload');
+
+const GmcPIRESoundBase = GMCPPackage.with({
+  packageName: 'IRE.Sound',
+  messages: [
+    inbound(soundPlay),
+    inbound(soundStop),
+    inbound(soundStopall),
+    inbound(soundPreload),
+  ] as const,
+});
+
+export class GmcPIRESound extends GmcPIRESoundBase {
+  constructor(client: ConstructorParameters<typeof GmcPIRESoundBase>[0]) {
+    super(client);
+    this.on('play', (data) => this.handlePlay(data));
+    this.on('stop', (data) => this.handleStop(data));
+    this.on('stopall', (data) => this.handleStopall(data));
+    this.on('preload', (data) => this.handlePreload(data));
+  }
 
   // --- Server Messages ---
 
