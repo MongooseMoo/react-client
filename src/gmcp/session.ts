@@ -4,7 +4,6 @@ import {
   encodeGmcpPayload,
   parseGmcpMessageAddress,
   parseGmcpPayload,
-  resolveGmcpMessageHandler,
 } from './codec';
 import type { GMCPPackage } from './package';
 import type { GMCPHandlerMap, KnownGMCPPackageMap, KnownGMCPPackageName } from './types';
@@ -89,20 +88,7 @@ export class GmcpSession {
       return;
     }
 
-    const messageHandler = resolveGmcpMessageHandler(handler, address.messageType);
-    if (!messageHandler) {
-      console.log('No handler on package:', address.packageName, address.messageType);
-      return;
-    }
-
-    try {
-      messageHandler.call(handler, payload);
-    } catch (error) {
-      console.error(
-        `Error dispatching GMCP message for ${address.packageName}.${address.messageType}:`,
-        error,
-      );
-    }
+    console.log('No registered GMCP message:', address.packageName, address.messageType);
   }
 
   send(packageName: string, data?: unknown): void {
