@@ -57,9 +57,13 @@ export class GMCPPackage {
         // Do nothing
     }
 
-    protected emitRegisteredMessage(wireName: string, payload: unknown): boolean {
+    receiveRegisteredMessage(wireName: string, payload: unknown): boolean {
         const receiver = (this as { receive?: (name: string, data: unknown) => boolean })
             .receive;
         return receiver?.call(this, wireName, payload) ?? false;
+    }
+
+    protected emitRegisteredMessage(wireName: string, payload: unknown): boolean {
+        return this.receiveRegisteredMessage(wireName, payload);
     }
 }

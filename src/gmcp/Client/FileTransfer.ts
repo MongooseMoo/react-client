@@ -102,25 +102,4 @@ const GMCPClientFileTransferBase = GMCPPackage.with({
   ] as const,
 });
 
-export class GMCPClientFileTransfer extends GMCPClientFileTransferBase {
-  handleCandidate(data: FileTransferCandidate): void {
-    this.emitRegisteredMessage(fileTransferCandidate.wireName, data);
-  }
-
-  handleOffer(data: FileTransferOffer): void {
-    console.log('[GMCPClientFileTransfer] Received offer:', data);
-    this.emitRegisteredMessage(fileTransferOffer.wireName, data);
-  }
-
-  handleAccept(data: FileTransferAccept): void {
-    this.emitRegisteredMessage(fileTransferAccept.wireName, data);
-  }
-
-  handleReject(data: FileTransferReject): void {
-    this.emitRegisteredMessage(fileTransferReject.wireName, data);
-  }
-
-  handleCancel(data: FileTransferCancel): void {
-    this.emitRegisteredMessage(fileTransferCancel.wireName, data);
-  }
-}
+export class GMCPClientFileTransfer extends GMCPClientFileTransferBase {}

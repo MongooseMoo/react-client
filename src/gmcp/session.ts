@@ -84,6 +84,11 @@ export class GmcpSession {
       return;
     }
 
+    const payload = parseGmcpPayload(gmcpMessage);
+    if (handler.receiveRegisteredMessage(address.messageType, payload)) {
+      return;
+    }
+
     const messageHandler = resolveGmcpMessageHandler(handler, address.messageType);
     if (!messageHandler) {
       console.log('No handler on package:', address.packageName, address.messageType);
@@ -91,7 +96,7 @@ export class GmcpSession {
     }
 
     try {
-      messageHandler.call(handler, parseGmcpPayload(gmcpMessage));
+      messageHandler.call(handler, payload);
     } catch (error) {
       console.error(
         `Error dispatching GMCP message for ${address.packageName}.${address.messageType}:`,

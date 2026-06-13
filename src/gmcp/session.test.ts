@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type MudClient from '../client';
+import { identityCodec, inbound, messageEnvelope } from '../protocol/messages';
 import type { TelnetParser } from '../telnet';
 import { GMCPPackage } from './package';
 import { GmcpSession } from './session';
@@ -9,6 +10,15 @@ class RecordingPackage extends GMCPPackage {
   packageName = 'Test';
   handleThing = vi.fn();
 }
+
+const registryThing = messageEnvelope('Thing', identityCodec<{ ok: boolean }>());
+
+const RegistryPackageBase = GMCPPackage.with({
+  packageName: 'Registry',
+  messages: [inbound(registryThing)] as const,
+});
+
+class RegistryPackage extends RegistryPackageBase {}
 
 class MockCorePackage extends GMCPPackage {
   packageName = 'Core';
@@ -50,6 +60,17 @@ describe('GmcpSession', () => {
     session.receive('Test.Thing', '{"ok":true}');
 
     expect(handler.handleThing).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('dispatches registered GMCP messages without reflection handlers', () => {
+    const { session } = createSession();
+    const handler = session.register(RegistryPackage);
+    const listener = vi.fn();
+    handler.on('thing', listener);
+
+    session.receive('Registry.Thing', '{"ok":true}');
+
+    expect(listener).toHaveBeenCalledWith({ ok: true });
   });
 
   it('encodes outbound messages through the attached telnet transport', () => {
