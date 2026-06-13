@@ -1,3 +1,5 @@
+import { inbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export interface Affliction {
@@ -21,8 +23,26 @@ export class GMCPMessageCharAfflictionsRemove extends GMCPMessage {
 }
 
 
-export class GMCPCharAfflictions extends GMCPPackage {
-    public packageName: string = "Char.Afflictions";
+const afflictionsList = gmcpJsonMessage<"List", Affliction[]>("List");
+const afflictionsAdd = gmcpJsonMessage<"Add", Affliction>("Add");
+const afflictionsRemove = gmcpJsonMessage<"Remove", string[]>("Remove");
+
+const GMCPCharAfflictionsBase = GMCPPackage.with({
+    packageName: "Char.Afflictions",
+    messages: [
+        inbound(afflictionsList),
+        inbound(afflictionsAdd),
+        inbound(afflictionsRemove),
+    ] as const,
+});
+
+export class GMCPCharAfflictions extends GMCPCharAfflictionsBase {
+    constructor(client: ConstructorParameters<typeof GMCPCharAfflictionsBase>[0]) {
+        super(client);
+        this.on("list", (data) => this.handleList(data));
+        this.on("add", (data) => this.handleAdd(data));
+        this.on("remove", (data) => this.handleRemove(data));
+    }
 
     // Handler for the full list of afflictions
     handleList(data: Affliction[]): void {

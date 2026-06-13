@@ -1,3 +1,5 @@
+import { inbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 // Basic structure based on documentation
@@ -14,8 +16,18 @@ export class GMCPMessageCharOffer extends GMCPMessage {
     total_rent: number = 0;
 }
 
-export class GMCPCharOffer extends GMCPPackage {
-    public packageName: string = "Char.Offer";
+const charOffer = gmcpJsonMessage<"Offer", GMCPMessageCharOffer>("Offer");
+
+const GMCPCharOfferBase = GMCPPackage.with({
+    packageName: "Char.Offer",
+    messages: [inbound(charOffer)] as const,
+});
+
+export class GMCPCharOffer extends GMCPCharOfferBase {
+    constructor(client: ConstructorParameters<typeof GMCPCharOfferBase>[0]) {
+        super(client);
+        this.on("offer", (data) => this.handleOffer(data));
+    }
 
     // Handler for response messages
     handleOffer(data: GMCPMessageCharOffer): void {

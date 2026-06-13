@@ -1,4 +1,6 @@
 import { useSessionStore } from "../stores/sessionStore";
+import { inbound } from "../protocol/messages";
+import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
 
 class GmcpMessageCharName extends GMCPMessage {
@@ -6,8 +8,29 @@ class GmcpMessageCharName extends GMCPMessage {
   public fullname: string = "";
 }
 
-export class GMCPChar extends GMCPPackage {
-  public packageName: string = "Char";
+const charName = gmcpJsonMessage<"Name", GmcpMessageCharName>("Name");
+const charVitals = gmcpJsonMessage<"Vitals", Record<string, unknown>>("Vitals");
+const charStatusVars = gmcpJsonMessage<"StatusVars", Record<string, string>>("StatusVars");
+const charStatus = gmcpJsonMessage<"Status", Record<string, string>>("Status");
+
+const GMCPCharBase = GMCPPackage.with({
+  packageName: "Char",
+  messages: [
+    inbound(charName),
+    inbound(charVitals),
+    inbound(charStatusVars),
+    inbound(charStatus),
+  ] as const,
+});
+
+export class GMCPChar extends GMCPCharBase {
+  constructor(client: ConstructorParameters<typeof GMCPCharBase>[0]) {
+    super(client);
+    this.on("name", (data) => this.handleName(data));
+    this.on("vitals", (data) => this.handleVitals(data));
+    this.on("statusVars", (data) => this.handleStatusVars(data));
+    this.on("status", (data) => this.handleStatus(data));
+  }
 
   handleName(data: GmcpMessageCharName): void {
     useSessionStore.getState().setPlayer(data.name, data.fullname);
@@ -15,7 +38,7 @@ export class GMCPChar extends GMCPPackage {
     this.client.gmcp.markSessionReady();
   }
   // --- Vitals ---
-  handleVitals(data: any): void { // Use 'any' for now, define specific interface later if needed
+  handleVitals(data: Record<string, unknown>): void {
     console.log("Received Char.Vitals:", data);
     // TODO: Parse and update character vitals state (HP, MP, etc.)
     this.client.emit("vitals", data);

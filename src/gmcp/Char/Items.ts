@@ -1,3 +1,5 @@
+import { inbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export interface Item {
@@ -34,8 +36,29 @@ export class GMCPMessageCharItemsUpdate extends GMCPMessage {
 }
 
 
-export class GMCPCharItems extends GMCPPackage {
-  public packageName: string = "Char.Items";
+const itemsList = gmcpJsonMessage<"List", GMCPMessageCharItemsList>("List");
+const itemsAdd = gmcpJsonMessage<"Add", GMCPMessageCharItemsAdd>("Add");
+const itemsRemove = gmcpJsonMessage<"Remove", GMCPMessageCharItemsRemove>("Remove");
+const itemsUpdate = gmcpJsonMessage<"Update", GMCPMessageCharItemsUpdate>("Update");
+
+const GMCPCharItemsBase = GMCPPackage.with({
+  packageName: "Char.Items",
+  messages: [
+    inbound(itemsList),
+    inbound(itemsAdd),
+    inbound(itemsRemove),
+    inbound(itemsUpdate),
+  ] as const,
+});
+
+export class GMCPCharItems extends GMCPCharItemsBase {
+  constructor(client: ConstructorParameters<typeof GMCPCharItemsBase>[0]) {
+    super(client);
+    this.on("list", (data) => this.handleList(data));
+    this.on("add", (data) => this.handleAdd(data));
+    this.on("remove", (data) => this.handleRemove(data));
+    this.on("update", (data) => this.handleUpdate(data));
+  }
 
   // --- Server Messages ---
 

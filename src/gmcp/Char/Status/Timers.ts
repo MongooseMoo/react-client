@@ -1,12 +1,24 @@
+import { inbound } from "../../../protocol/messages";
+import { gmcpJsonMessage } from "../../messages";
 import { GMCPMessage, GMCPPackage } from "../../package";
 
 // Data structure is not defined in the provided docs, using 'any' for now.
 export class GMCPMessageCharStatusTimers extends GMCPMessage {
-    [key: string]: any; // Represents timers
+    [key: string]: unknown; // Represents timers
 }
 
-export class GMCPCharStatusTimers extends GMCPPackage {
-    public packageName: string = "Char.Status.Timers";
+const timers = gmcpJsonMessage<"Timers", GMCPMessageCharStatusTimers>("Timers");
+
+const GMCPCharStatusTimersBase = GMCPPackage.with({
+    packageName: "Char.Status.Timers",
+    messages: [inbound(timers)] as const,
+});
+
+export class GMCPCharStatusTimers extends GMCPCharStatusTimersBase {
+    constructor(client: ConstructorParameters<typeof GMCPCharStatusTimersBase>[0]) {
+        super(client);
+        this.on("timers", (data) => this.handleTimers(data));
+    }
 
     // Handler for response messages
     handleTimers(data: GMCPMessageCharStatusTimers): void {

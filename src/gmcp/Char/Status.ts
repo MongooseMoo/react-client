@@ -1,13 +1,25 @@
+import { inbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 // Data structure is not defined in the provided docs, using 'any' for now.
 // Should contain conditions, affects, timers.
 export class GMCPMessageCharStatus extends GMCPMessage {
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
-export class GMCPCharStatus extends GMCPPackage {
-    public packageName: string = "Char.Status";
+const charStatus = gmcpJsonMessage<"Status", GMCPMessageCharStatus>("Status");
+
+const GMCPCharStatusBase = GMCPPackage.with({
+    packageName: "Char.Status",
+    messages: [inbound(charStatus)] as const,
+});
+
+export class GMCPCharStatus extends GMCPCharStatusBase {
+    constructor(client: ConstructorParameters<typeof GMCPCharStatusBase>[0]) {
+        super(client);
+        this.on("status", (data) => this.handleStatus(data));
+    }
 
     // Handler for response messages
     handleStatus(data: GMCPMessageCharStatus): void {

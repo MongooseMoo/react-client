@@ -1,3 +1,5 @@
+import { inbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export interface Defence {
@@ -18,8 +20,26 @@ export class GMCPMessageCharDefencesRemove extends GMCPMessage {
     names: string[] = [];
 }
 
-export class GMCPCharDefences extends GMCPPackage {
-    public packageName: string = "Char.Defences";
+const defencesList = gmcpJsonMessage<"List", Defence[]>("List");
+const defencesAdd = gmcpJsonMessage<"Add", Defence>("Add");
+const defencesRemove = gmcpJsonMessage<"Remove", string[]>("Remove");
+
+const GMCPCharDefencesBase = GMCPPackage.with({
+    packageName: "Char.Defences",
+    messages: [
+        inbound(defencesList),
+        inbound(defencesAdd),
+        inbound(defencesRemove),
+    ] as const,
+});
+
+export class GMCPCharDefences extends GMCPCharDefencesBase {
+    constructor(client: ConstructorParameters<typeof GMCPCharDefencesBase>[0]) {
+        super(client);
+        this.on("list", (data) => this.handleList(data));
+        this.on("add", (data) => this.handleAdd(data));
+        this.on("remove", (data) => this.handleRemove(data));
+    }
 
     // Handler for the full list of defences
     handleList(data: Defence[]): void {

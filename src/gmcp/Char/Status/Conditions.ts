@@ -1,13 +1,24 @@
+import { inbound } from "../../../protocol/messages";
+import { gmcpJsonMessage } from "../../messages";
 import { GMCPMessage, GMCPPackage } from "../../package";
 
 // Data structure is not defined in the provided docs, using 'any' for now.
 export class GMCPMessageCharStatusConditions extends GMCPMessage {
-    [key: string]: any; // Represents conditions
+    [key: string]: unknown; // Represents conditions
 }
 
-export class GMCPCharStatusConditions extends GMCPPackage {
-    // Note: Package name includes the parent structure
-    public packageName: string = "Char.Status.Conditions";
+const conditions = gmcpJsonMessage<"Conditions", GMCPMessageCharStatusConditions>("Conditions");
+
+const GMCPCharStatusConditionsBase = GMCPPackage.with({
+    packageName: "Char.Status.Conditions",
+    messages: [inbound(conditions)] as const,
+});
+
+export class GMCPCharStatusConditions extends GMCPCharStatusConditionsBase {
+    constructor(client: ConstructorParameters<typeof GMCPCharStatusConditionsBase>[0]) {
+        super(client);
+        this.on("conditions", (data) => this.handleConditions(data));
+    }
 
     // Handler for response messages
     handleConditions(data: GMCPMessageCharStatusConditions): void {

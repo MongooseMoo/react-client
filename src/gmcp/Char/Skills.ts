@@ -1,3 +1,5 @@
+import { inbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export interface SkillGroupInfo {
@@ -21,8 +23,26 @@ export class GMCPMessageCharSkillsInfo extends GMCPMessage {
     info: string = "";
 }
 
-export class GMCPCharSkills extends GMCPPackage {
-    public packageName: string = "Char.Skills";
+const skillsGroups = gmcpJsonMessage<"Groups", SkillGroupInfo[]>("Groups");
+const skillsList = gmcpJsonMessage<"List", GMCPMessageCharSkillsList>("List");
+const skillsInfo = gmcpJsonMessage<"Info", GMCPMessageCharSkillsInfo>("Info");
+
+const GMCPCharSkillsBase = GMCPPackage.with({
+    packageName: "Char.Skills",
+    messages: [
+        inbound(skillsGroups),
+        inbound(skillsList),
+        inbound(skillsInfo),
+    ] as const,
+});
+
+export class GMCPCharSkills extends GMCPCharSkillsBase {
+    constructor(client: ConstructorParameters<typeof GMCPCharSkillsBase>[0]) {
+        super(client);
+        this.on("groups", (data) => this.handleGroups(data));
+        this.on("list", (data) => this.handleList(data));
+        this.on("info", (data) => this.handleInfo(data));
+    }
 
     // --- Server Messages ---
 
