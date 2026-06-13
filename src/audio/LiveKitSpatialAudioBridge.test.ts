@@ -4,6 +4,17 @@ import { LiveKitSpatialAudioBridge } from "./LiveKitSpatialAudioBridge";
 const MockMediaStream = vi.fn();
 
 vi.stubGlobal("MediaStream", MockMediaStream);
+// jsdom does not implement HTMLMediaElement.play(); replace Audio with a quiet
+// mock so the priming element does not spew "Not implemented" to stderr.
+vi.stubGlobal(
+  "Audio",
+  vi.fn(() => ({
+    muted: false,
+    srcObject: null,
+    play: vi.fn().mockResolvedValue(undefined),
+    pause: vi.fn(),
+  })),
+);
 
 type BridgeCacophony = ConstructorParameters<typeof LiveKitSpatialAudioBridge>[0];
 
@@ -133,6 +144,9 @@ describe("LiveKitSpatialAudioBridge", () => {
         channelCountMode: "explicit",
         channelInterpretation: "speakers",
         panningModel: "HRTF",
+        refDistance: 4,
+        rolloffFactor: 0.5,
+        maxDistance: 200,
       }),
     );
     expect(panner.positionX.setValueAtTime).toHaveBeenCalledWith(1, 7);
@@ -156,6 +170,48 @@ describe("LiveKitSpatialAudioBridge", () => {
     expect(panner.positionX.setValueAtTime).toHaveBeenLastCalledWith(4, 7);
     expect(panner.positionY.setValueAtTime).toHaveBeenLastCalledWith(5, 7);
     expect(panner.positionZ.setValueAtTime).toHaveBeenLastCalledWith(6, 7);
+  });
+
+  it("primes Chromium decode with a muted media element and tears it down on detach", () => {
+    const createdElements: Array<{
+      muted: boolean;
+      srcObject: unknown;
+      play: ReturnType<typeof vi.fn>;
+      pause: ReturnType<typeof vi.fn>;
+    }> = [];
+    const MockAudio = vi.fn(() => {
+      const element = {
+        muted: false,
+        srcObject: null as unknown,
+        play: vi.fn().mockResolvedValue(undefined),
+        pause: vi.fn(),
+      };
+      createdElements.push(element);
+      return element;
+    });
+    const originalAudio = (globalThis as { Audio?: unknown }).Audio;
+    (globalThis as { Audio?: unknown }).Audio = MockAudio;
+
+    try {
+      const remoteTrack = track(1);
+      const { cacophony } = createCacophony();
+      const bridge = new LiveKitSpatialAudioBridge(cacophony, () => [0, 0, 0]);
+
+      bridge.attachParticipantTrack("player-2", remoteTrack);
+
+      expect(createdElements).toHaveLength(1);
+      const element = createdElements[0];
+      expect(element.muted).toBe(true);
+      expect(element.srcObject).toBeInstanceOf(MockMediaStream);
+      expect(element.play).toHaveBeenCalledOnce();
+
+      bridge.detachParticipant("player-2");
+
+      expect(element.pause).toHaveBeenCalledOnce();
+      expect(element.srcObject).toBeNull();
+    } finally {
+      (globalThis as { Audio?: unknown }).Audio = originalAudio;
+    }
   });
 
   it("cleans up stale participant graph nodes without stopping the underlying track", () => {

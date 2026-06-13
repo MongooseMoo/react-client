@@ -18,6 +18,7 @@ interface SpatialAudioEntry {
   panner: CacophonyPannerNode;
   outputGain: CacophonyGainNode;
   downmixNodes: CacophonyAudioNode[];
+  primeElement?: HTMLAudioElement;
 }
 
 export class LiveKitSpatialAudioBridge {
@@ -51,6 +52,11 @@ export class LiveKitSpatialAudioBridge {
       channelInterpretation: "speakers",
       distanceModel: "inverse",
       panningModel: "HRTF",
+      // Match MediaService's meter-scale tuning so a distant speaker stays
+      // audible: full volume within ~4m, gentle falloff, ~200m hearing range.
+      refDistance: 4,
+      rolloffFactor: 0.5,
+      maxDistance: 200,
     });
     const outputGain = this.cacophony.context.createGain();
 
@@ -63,6 +69,7 @@ export class LiveKitSpatialAudioBridge {
       downmixNodes: nodes,
       outputGain,
       panner,
+      primeElement: this.createPrimeElement(stream),
       source,
       stream,
       track,
@@ -115,6 +122,28 @@ export class LiveKitSpatialAudioBridge {
     return this.lookupPosition(participantId) ?? [0, 0, 0];
   }
 
+  private createPrimeElement(stream: MediaStream): HTMLAudioElement | undefined {
+    // Chromium will not decode a remote WebRTC track that is only wired into
+    // the Web Audio graph: packets arrive but no samples are produced, so the
+    // panner taps silence. Pulling the same stream through a muted media
+    // element primes the decode pipeline; the element stays muted so it does
+    // not double-play over the spatialised Web Audio output. Firefox does not
+    // need this, but the element is harmless there.
+    if (typeof Audio === "undefined") {
+      return undefined;
+    }
+    try {
+      const element = new Audio();
+      element.muted = true;
+      element.srcObject = stream;
+      // Muted autoplay needs no user gesture; a rejection only loses priming.
+      void element.play().catch(() => {});
+      return element;
+    } catch {
+      return undefined;
+    }
+  }
+
   private downmixToMono(
     source: MediaStreamAudioSourceNode,
     track: MediaStreamTrack,
@@ -156,6 +185,14 @@ export class LiveKitSpatialAudioBridge {
   }
 
   private disconnectEntry(entry: SpatialAudioEntry): void {
+    if (entry.primeElement) {
+      try {
+        entry.primeElement.pause();
+        entry.primeElement.srcObject = null;
+      } catch {
+        // Element may already be torn down by the browser during teardown.
+      }
+    }
     const nodes: CacophonyAudioNode[] = [
       entry.source,
       ...entry.downmixNodes,
