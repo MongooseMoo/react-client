@@ -51,18 +51,15 @@ export class GMCPCharSkills extends GMCPCharSkillsBase {
     handleGroups(data: SkillGroupInfo[]): void {
         console.log("Received Char.Skills.Groups:", data);
         // TODO: Update skill groups list
-        this.client.emit("skillGroups", data);
     }
 
     handleList(data: GMCPMessageCharSkillsList): void {
         console.log(`Received Char.Skills.List for ${data.group}:`, data);
         // TODO: Update skill list for the specified group
-        this.client.emit("skillList", data);
     }
 
     handleInfo(data: GMCPMessageCharSkillsInfo): void {
         console.log(`Received Char.Skills.Info for ${data.group}.${data.skill}:`, data.info);
         // TODO: Store/display detailed skill info
-        this.client.emit("skillInfo", data);
     }
 }

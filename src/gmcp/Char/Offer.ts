@@ -33,6 +33,5 @@ export class GMCPCharOffer extends GMCPCharOfferBase {
     handleOffer(data: GMCPMessageCharOffer): void {
         console.log("Received Char.Offer:", data);
         // TODO: Implement logic to handle offer data (e.g., display in UI)
-        this.client.emit("offer", data); // Example: emit an event
     }
 }

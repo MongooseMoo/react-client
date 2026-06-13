@@ -24,6 +24,5 @@ export class GMCPCharPrompt extends GMCPCharPromptBase {
     handlePrompt(data: GMCPMessageCharPrompt): void {
         console.log("Received Char.Prompt:", data);
         // TODO: Implement logic to handle prompt data (e.g., update UI)
-        this.client.emit("prompt", data); // Example: emit an event
     }
 }

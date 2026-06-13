@@ -28,6 +28,5 @@ export class GMCPCharStatusAffectedBy extends GMCPCharStatusAffectedByBase {
     handleAffectedBy(data: GMCPMessageCharStatusAffectedBy): void {
         console.log("Received Char.Status.AffectedBy:", data);
         // TODO: Implement logic to handle affected by data
-        this.client.emit("statusAffectedBy", data); // Example: emit an event
     }
 }

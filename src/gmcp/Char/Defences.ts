@@ -45,21 +45,18 @@ export class GMCPCharDefences extends GMCPCharDefencesBase {
     handleList(data: Defence[]): void {
         console.log("Received Char.Defences.List:", data);
         // TODO: Replace current defences list with this data
-        this.client.emit("defencesList", data);
     }
 
     // Handler for adding a single defence
     handleAdd(data: Defence): void {
         console.log("Received Char.Defences.Add:", data);
         // TODO: Add this defence to the list
-        this.client.emit("defenceAdd", data);
     }
 
     // Handler for removing defences (by name)
     handleRemove(data: string[]): void {
         console.log("Received Char.Defences.Remove:", data);
         // TODO: Remove these defences from the list
-        this.client.emit("defenceRemove", data);
     }
 
     // No client-side messages defined in the docs for this package

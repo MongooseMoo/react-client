@@ -70,25 +70,17 @@ export class GMCPCharItems extends GMCPCharItemsBase {
 
   handleList(data: GMCPMessageCharItemsList): void {
     console.log(`Received Char.Items.List for ${data.location}:`, data.items);
-    const itemsWithLocation = data.items.map(item => ({ ...item, location: data.location }));
-    this.client.emit("itemsList", { ...data, items: itemsWithLocation });
   }
 
   handleAdd(data: GMCPMessageCharItemsAdd): void {
     console.log(`Received Char.Items.Add for ${data.location}:`, data.item);
-    const itemWithLocation = { ...data.item, location: data.location };
-    this.client.emit("itemAdd", { ...data, item: itemWithLocation });
   }
 
   handleRemove(data: GMCPMessageCharItemsRemove): void {
     console.log(`Received Char.Items.Remove for ${data.location}:`, data.item);
-    const itemWithLocationDetails = { ...data.item, location: data.location };
-    this.client.emit("itemRemove", { ...data, item: itemWithLocationDetails });
   }
 
   handleUpdate(data: GMCPMessageCharItemsUpdate): void {
     console.log(`Received Char.Items.Update for ${data.location}:`, data.item);
-    const itemWithLocation = { ...data.item, location: data.location };
-    this.client.emit("itemUpdate", { ...data, item: itemWithLocation });
   }
 }

@@ -36,27 +36,23 @@ export class GMCPChar extends GMCPCharBase {
 
   handleName(data: GmcpMessageCharName): void {
     useSessionStore.getState().setPlayer(data.name, data.fullname);
-    this.client.emit("statustext", `Logged in as ${data.fullname}`);
     this.client.gmcp.markSessionReady();
   }
   // --- Vitals ---
   handleVitals(data: Record<string, unknown>): void {
     console.log("Received Char.Vitals:", data);
     // TODO: Parse and update character vitals state (HP, MP, etc.)
-    this.client.emit("vitals", data);
   }
 
   // --- StatusVars ---
   handleStatusVars(data: { [key: string]: string }): void {
     console.log("Received Char.StatusVars:", data);
     // TODO: Store the definitions of status variables
-    this.client.emit("statusVars", data);
   }
 
   // --- Status ---
   handleStatus(data: { [key: string]: string }): void {
     console.log("Received Char.Status:", data);
     // TODO: Update character status based on received values
-    this.client.emit("statusUpdate", data);
   }
 }

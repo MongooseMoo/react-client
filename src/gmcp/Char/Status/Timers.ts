@@ -28,6 +28,5 @@ export class GMCPCharStatusTimers extends GMCPCharStatusTimersBase {
     handleTimers(data: GMCPMessageCharStatusTimers): void {
         console.log("Received Char.Status.Timers:", data);
         // TODO: Implement logic to handle timers data
-        this.client.emit("statusTimers", data); // Example: emit an event
     }
 }

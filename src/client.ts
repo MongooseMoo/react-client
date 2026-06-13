@@ -83,6 +83,14 @@ class MudClient extends EventEmitter {
     });
     this.gmcp = new GmcpSession(this);
     this.gmcp_char = this.gmcp.register(GMCPChar);
+    this.gmcp_char.on("name", (data) =>
+      this.emit("statustext", `Logged in as ${data.fullname}`),
+    );
+    this.gmcp_char.on("vitals", (data) => this.emit("vitals", data));
+    this.gmcp_char.on("statusVars", (data) =>
+      this.emit("statusVars", data),
+    );
+    this.gmcp_char.on("status", (data) => this.emit("statusUpdate", data));
     this.gmcp_fileTransfer = this.gmcp.register(GMCPClientFileTransfer);
     this.media = new MediaService();
     this.webRTCService = new WebRTCService();

@@ -28,6 +28,5 @@ export class GMCPCharStatusConditions extends GMCPCharStatusConditionsBase {
     handleConditions(data: GMCPMessageCharStatusConditions): void {
         console.log("Received Char.Status.Conditions:", data);
         // TODO: Implement logic to handle conditions data
-        this.client.emit("statusConditions", data); // Example: emit an event
     }
 }

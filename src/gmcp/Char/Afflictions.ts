@@ -48,21 +48,18 @@ export class GMCPCharAfflictions extends GMCPCharAfflictionsBase {
     handleList(data: Affliction[]): void {
         console.log("Received Char.Afflictions.List:", data);
         // TODO: Replace current afflictions list with this data
-        this.client.emit("afflictionsList", data);
     }
 
     // Handler for adding a single affliction
     handleAdd(data: Affliction): void {
         console.log("Received Char.Afflictions.Add:", data);
         // TODO: Add this affliction to the list
-        this.client.emit("afflictionAdd", data);
     }
 
     // Handler for removing afflictions (by name)
     handleRemove(data: string[]): void {
         console.log("Received Char.Afflictions.Remove:", data);
         // TODO: Remove these afflictions from the list
-        this.client.emit("afflictionRemove", data);
     }
 
     // No client-side messages defined in the docs for this package

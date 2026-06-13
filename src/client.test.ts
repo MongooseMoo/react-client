@@ -106,6 +106,7 @@ vi.mock('./gmcp', async () => {
     ...actual,
     GMCPChar: class {
       packageName = 'Char';
+      on = vi.fn();
       shutdown = vi.fn();
     },
     GMCPClientFileTransfer: class {

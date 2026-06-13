@@ -25,6 +25,5 @@ export class GMCPCharStatus extends GMCPCharStatusBase {
     handleStatus(data: GMCPMessageCharStatus): void {
         console.log("Received Char.Status:", data);
         // TODO: Implement logic to handle status data
-        this.client.emit("status", data); // Example: emit an event
     }
 }
