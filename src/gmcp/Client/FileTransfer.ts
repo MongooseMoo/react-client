@@ -1,4 +1,5 @@
-import { duplex, identityCodec, messageEnvelope, outbound } from '../../protocol/messages';
+import { duplex, identityCodec, outbound } from '../../protocol/messages';
+import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
 
 export class FileTransferOffer extends GMCPMessage {
@@ -54,38 +55,36 @@ export interface FileTransferRequestResend {
   hash: string;
 }
 
-function gmcpJson<InboundPayload, OutboundPayload = InboundPayload>() {
-  return {
-    encode(payload: OutboundPayload): unknown {
-      return payload;
-    },
-    decode(payload: unknown): InboundPayload {
-      return payload as InboundPayload;
-    },
-  };
-}
-
-const fileTransferOffer = messageEnvelope(
+const fileTransferOffer = gmcpJsonMessage<
   'Offer',
-  gmcpJson<FileTransferOffer, FileTransferOfferRequest>(),
+  FileTransferOffer,
+  FileTransferOfferRequest
+>(
+  'Offer',
 );
-const fileTransferAccept = messageEnvelope(
+const fileTransferAccept = gmcpJsonMessage(
   'Accept',
   identityCodec<FileTransferAccept>(),
 );
-const fileTransferReject = messageEnvelope(
+const fileTransferReject = gmcpJsonMessage(
   'Reject',
   identityCodec<FileTransferReject>(),
 );
-const fileTransferCancel = messageEnvelope(
+const fileTransferCancel = gmcpJsonMessage<
   'Cancel',
-  gmcpJson<FileTransferCancel, FileTransferCancelRequest>(),
+  FileTransferCancel,
+  FileTransferCancelRequest
+>(
+  'Cancel',
 );
-const fileTransferCandidate = messageEnvelope(
+const fileTransferCandidate = gmcpJsonMessage<
   'Candidate',
-  gmcpJson<FileTransferCandidate, FileTransferCandidateRequest>(),
+  FileTransferCandidate,
+  FileTransferCandidateRequest
+>(
+  'Candidate',
 );
-const fileTransferRequestResend = messageEnvelope(
+const fileTransferRequestResend = gmcpJsonMessage(
   'RequestResend',
   identityCodec<FileTransferRequestResend>(),
 );

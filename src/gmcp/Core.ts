@@ -1,3 +1,5 @@
+import { inbound } from "../protocol/messages";
+import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
 
 
@@ -13,8 +15,27 @@ export class GMCPMessageCoreClient extends GMCPMessage {
 }
 
 
-export class GMCPCore extends GMCPPackage {
-  public packageName: string = "Core";
+const corePing = gmcpJsonMessage<"Ping", undefined>("Ping", {
+  encode(payload: undefined): unknown {
+    return payload;
+  },
+  decode(): undefined {
+    return undefined;
+  },
+});
+const coreGoodbye = gmcpJsonMessage<"Goodbye", string>("Goodbye");
+
+const GMCPCoreBase = GMCPPackage.with({
+  packageName: "Core",
+  messages: [inbound(corePing), inbound(coreGoodbye)] as const,
+});
+
+export class GMCPCore extends GMCPCoreBase {
+  constructor(client: ConstructorParameters<typeof GMCPCoreBase>[0]) {
+    super(client);
+    this.on("ping", () => this.handlePing());
+    this.on("goodbye", (reason) => this.handleGoodbye(reason));
+  }
 
   sendHello(): void {
     this.sendData("Hello", { client: "Mongoose Client", version: "0.1" });
@@ -47,14 +68,16 @@ export interface GMCPMessageCoreSupportsSet extends GMCPMessage {
   modules: string[];
 }
 
+type AdvertisedGMCPPackage = GMCPPackage & { packageVersion: number };
+
 export class GMCPCoreSupports extends GMCPPackage {
   packageName = "Core.Supports";
 
   // Sends the initial list of supported packages
   sendSet(): void {
     const packages = Object.values(this.client.gmcp.handlers)
-      .filter((p): p is GMCPPackage => Boolean(p?.packageName && p.packageVersion && p.enabled))
-      .map(p => `${p.packageName} ${p.packageVersion!.toString()}`);
+      .filter(isAdvertisedGMCPPackage)
+      .map(p => `${p.packageName} ${p.packageVersion.toString()}`);
     this.sendData("Set", packages);
   }
 
@@ -70,4 +93,14 @@ export class GMCPCoreSupports extends GMCPPackage {
   }
 
   // Note: Server doesn't send Core.Supports messages to the client according to IRE docs.
+}
+
+function isAdvertisedGMCPPackage(
+  gmcpPackage: GMCPPackage | undefined,
+): gmcpPackage is AdvertisedGMCPPackage {
+  return Boolean(
+    gmcpPackage?.packageName &&
+      gmcpPackage.packageVersion !== undefined &&
+      gmcpPackage.enabled,
+  );
 }

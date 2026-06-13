@@ -1,8 +1,19 @@
+import { inbound } from "../protocol/messages";
+import { gmcpJsonMessage } from "./messages";
 import { GMCPPackage } from "./package";
 
+const authToken = gmcpJsonMessage<"Token", string>("Token");
 
-export class GMCPAutoLogin extends GMCPPackage {
-    public packageName: string = "Auth.Autologin";
+const GMCPAutoLoginBase = GMCPPackage.with({
+    packageName: "Auth.Autologin",
+    messages: [inbound(authToken)] as const,
+});
+
+export class GMCPAutoLogin extends GMCPAutoLoginBase {
+    constructor(client: ConstructorParameters<typeof GMCPAutoLoginBase>[0]) {
+        super(client);
+        this.on("token", (data) => this.handleToken(data));
+    }
 
     handleToken(data: string): void {
         localStorage.setItem("LoginRefreshToken", data);

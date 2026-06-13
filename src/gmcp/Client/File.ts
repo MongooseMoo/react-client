@@ -1,15 +1,23 @@
 import type MudClient from "../../client";
+import { inbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export class FileDownload extends GMCPMessage {
   url: string = "";
 }
 
-export class GMCPClientFile extends GMCPPackage {
-  public packageName: string = "Client.File";
+const fileDownload = gmcpJsonMessage<"Download", FileDownload>("Download");
 
+const GMCPClientFileBase = GMCPPackage.with({
+  packageName: "Client.File",
+  messages: [inbound(fileDownload)] as const,
+});
+
+export class GMCPClientFile extends GMCPClientFileBase {
   constructor(client: MudClient) {
     super(client);
+    this.on("download", (data) => this.handleDownload(data));
   }
 
   handleDownload(data: FileDownload): void {
