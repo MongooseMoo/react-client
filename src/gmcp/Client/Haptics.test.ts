@@ -74,6 +74,17 @@ function createMockClient() {
   };
 }
 
+function serviceCallback(eventName: string): (...args: unknown[]) => void {
+  const calls = mockHapticsService.on.mock.calls as Array<
+    [string, (...args: unknown[]) => void]
+  >;
+  const call = calls.find(([event]) => event === eventName);
+  if (!call) {
+    throw new Error(`Expected haptics service listener: ${eventName}`);
+  }
+  return call[1];
+}
+
 describe("GMCPClientHaptics", () => {
   let handler: GMCPClientHaptics;
   let mockClient: ReturnType<typeof createMockClient>;
@@ -333,11 +344,11 @@ describe("GMCPClientHaptics", () => {
   });
 
   // -----------------------------------------------------------------
-  // sendCapabilities
+  // publishCapabilities
   // -----------------------------------------------------------------
 
   it("sends correct GMCP capabilities message", () => {
-    handler.sendCapabilities();
+    handler.publishCapabilities();
 
     expect(mockHapticsService.getCapabilities).toHaveBeenCalledOnce();
     expect(mockClient.gmcp.send).toHaveBeenCalledWith(
@@ -353,11 +364,11 @@ describe("GMCPClientHaptics", () => {
   });
 
   // -----------------------------------------------------------------
-  // sendStopped
+  // publishStopped
   // -----------------------------------------------------------------
 
   it("sends correct GMCP stopped message", () => {
-    handler.sendStopped("user_stop");
+    handler.publishStopped("user_stop");
 
     expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Stopped",
@@ -366,7 +377,7 @@ describe("GMCPClientHaptics", () => {
   });
 
   it("sends correct GMCP stopped message for auto_stop", () => {
-    handler.sendStopped("auto_stop");
+    handler.publishStopped("auto_stop");
 
     expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Stopped",
@@ -375,11 +386,11 @@ describe("GMCPClientHaptics", () => {
   });
 
   // -----------------------------------------------------------------
-  // sendSensor
+  // publishSensorReading
   // -----------------------------------------------------------------
 
   it("sends correct GMCP sensor message", () => {
-    handler.sendSensor({ sensor: 0, type: "Pressure", value: 0.75 });
+    handler.publishSensorReading({ sensor: 0, type: "Pressure", value: 0.75 });
 
     expect(mockClient.gmcp.send).toHaveBeenCalledWith(
       "Client.Haptics.Sensor",
@@ -397,9 +408,7 @@ describe("GMCPClientHaptics", () => {
     handler.advertiseHapticsSupport();
 
     const coreSupports = mockClient.gmcp.handlers["Core.Supports"];
-    expect(coreSupports.sendAdd).toHaveBeenCalledWith([
-      { name: "Client.Haptics", version: 1 },
-    ]);
+    expect(coreSupports.sendAdd).toHaveBeenCalledWith(["Client.Haptics 1"]);
   });
 
   it("does not double-advertise", () => {
@@ -486,12 +495,7 @@ describe("GMCPClientHaptics", () => {
   it("sends capabilities on capabilitieschanged when enabled and advertised", () => {
     mockPreferencesState.haptics.enabled = true;
 
-    // Get the capabilitieschanged callback that was registered
-    const onCall = mockHapticsService.on.mock.calls.find(
-      (c: any[]) => c[0] === "capabilitieschanged"
-    );
-    expect(onCall).toBeDefined();
-    const capabilitiesChangedCallback = onCall![1];
+    const capabilitiesChangedCallback = serviceCallback("capabilitieschanged");
 
     // Advertise first
     handler.advertiseHapticsSupport();
@@ -510,10 +514,7 @@ describe("GMCPClientHaptics", () => {
   it("does not send capabilities on capabilitieschanged when not advertised", () => {
     mockPreferencesState.haptics.enabled = true;
 
-    const onCall = mockHapticsService.on.mock.calls.find(
-      (c: any[]) => c[0] === "capabilitieschanged"
-    );
-    const capabilitiesChangedCallback = onCall![1];
+    const capabilitiesChangedCallback = serviceCallback("capabilitieschanged");
 
     vi.clearAllMocks();
 
@@ -528,10 +529,7 @@ describe("GMCPClientHaptics", () => {
   // -----------------------------------------------------------------
 
   it("sends Stopped to server when service emits stopped", () => {
-    const onCall = mockHapticsService.on.mock.calls.find(
-      (c: any[]) => c[0] === "stopped"
-    );
-    const stoppedCallback = onCall![1];
+    const stoppedCallback = serviceCallback("stopped");
 
     stoppedCallback("auto_stop");
 
@@ -546,10 +544,7 @@ describe("GMCPClientHaptics", () => {
   // -----------------------------------------------------------------
 
   it("sends Sensor to server when service emits sensorreading", () => {
-    const onCall = mockHapticsService.on.mock.calls.find(
-      (c: any[]) => c[0] === "sensorreading"
-    );
-    const sensorReadingCallback = onCall![1];
+    const sensorReadingCallback = serviceCallback("sensorreading");
 
     sensorReadingCallback({ sensor: 1, type: "Battery", value: 0.85 });
 

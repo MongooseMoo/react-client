@@ -22,6 +22,7 @@ class MockCorePackage extends GMCPPackage {
 
 class MockCoreSupportsPackage extends GMCPPackage {
   packageName = 'Core.Supports';
+  advertisedModules = vi.fn(() => ['Core 1', 'Core.Supports 1']);
   sendSet = vi.fn();
 }
 
@@ -32,7 +33,7 @@ class MockAutoLoginPackage extends GMCPPackage {
 
 class MockClientMediaPackage extends GMCPPackage {
   packageName = 'Client.Media';
-  sendEffectsSupport = vi.fn();
+  publishEffectsSupport = vi.fn();
 }
 
 function createSession() {
@@ -83,8 +84,9 @@ describe('GmcpSession', () => {
 
     expect(core.sendHello).toHaveBeenCalledTimes(2);
     expect(supports.sendSet).toHaveBeenCalledTimes(2);
+    expect(supports.sendSet).toHaveBeenCalledWith(['Core 1', 'Core.Supports 1']);
     expect(autoLogin.sendLogin).toHaveBeenCalledTimes(2);
-    expect(media.sendEffectsSupport).toHaveBeenCalledTimes(2);
+    expect(media.publishEffectsSupport).toHaveBeenCalledTimes(2);
     expect(session.ready).toBe(true);
     expect(client.emit).toHaveBeenCalledWith('gmcpReady');
     expect(client.emit).toHaveBeenCalledTimes(1);

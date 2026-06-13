@@ -1,7 +1,10 @@
+import type MudClient from "../../client";
+import { inbound, outbound } from "../../protocol/messages";
 import { GMCPPackage } from "../package";
 import { hapticsService } from "../../HapticsService";
 import { usePreferences } from "../../stores/preferencesStore";
 import type { HapticsCommand, HapticsSensorReading } from "../../haptics/types";
+import { gmcpJsonMessage } from "../messages";
 
 // ---------------------------------------------------------------------------
 // Server -> Client message types
@@ -39,12 +42,52 @@ export interface HapticsSensorUnsubscribeData {
   sensors: number[];
 }
 
+interface HapticsSensorPayload {
+  readings: HapticsSensorReading[];
+}
+
+interface HapticsStoppedPayload {
+  reason: string;
+}
+
+const hapticsActuate = gmcpJsonMessage<"Actuate", HapticsActuateData>("Actuate");
+const hapticsStop = gmcpJsonMessage<"Stop", HapticsStopData>("Stop");
+const hapticsStatus = gmcpJsonMessage<"Status", HapticsStatusData>("Status");
+const hapticsSensorSubscribe = gmcpJsonMessage<
+  "SensorSubscribe",
+  HapticsSensorSubscribeData
+>("SensorSubscribe");
+const hapticsSensorUnsubscribe = gmcpJsonMessage<
+  "SensorUnsubscribe",
+  HapticsSensorUnsubscribeData
+>("SensorUnsubscribe");
+const hapticsCapabilities = gmcpJsonMessage<
+  "Capabilities",
+  never,
+  ReturnType<typeof hapticsService.getCapabilities>
+>("Capabilities");
+const hapticsSensor = gmcpJsonMessage<"Sensor", never, HapticsSensorPayload>("Sensor");
+const hapticsStopped = gmcpJsonMessage<"Stopped", never, HapticsStoppedPayload>("Stopped");
+
+const GMCPClientHapticsBase = GMCPPackage.with({
+  packageName: "Client.Haptics",
+  messages: [
+    inbound(hapticsActuate),
+    inbound(hapticsStop),
+    inbound(hapticsStatus),
+    inbound(hapticsSensorSubscribe),
+    inbound(hapticsSensorUnsubscribe),
+    outbound(hapticsCapabilities),
+    outbound(hapticsSensor),
+    outbound(hapticsStopped),
+  ] as const,
+});
+
 // ---------------------------------------------------------------------------
 // GMCPClientHaptics
 // ---------------------------------------------------------------------------
 
-export class GMCPClientHaptics extends GMCPPackage {
-  public packageName: string = "Client.Haptics";
+export class GMCPClientHaptics extends GMCPClientHapticsBase {
   public packageVersion?: number = 1;
 
   private isAdvertised: boolean = false;
@@ -65,8 +108,13 @@ export class GMCPClientHaptics extends GMCPPackage {
     return usePreferences.getState().haptics.enabled;
   }
 
-  constructor(client: any) {
+  constructor(client: MudClient) {
     super(client);
+    this.on("actuate", (data) => this.handleActuate(data));
+    this.on("stop", (data) => this.handleStop(data));
+    this.on("status", (data) => this.handleStatus(data));
+    this.on("sensorSubscribe", (data) => this.handleSensorSubscribe(data));
+    this.on("sensorUnsubscribe", (data) => this.handleSensorUnsubscribe(data));
     this.setupServiceListeners();
   }
 
@@ -77,7 +125,7 @@ export class GMCPClientHaptics extends GMCPPackage {
   private setupServiceListeners(): void {
     const onCapabilitiesChanged = (): void => {
       if (this.enabled && this.isAdvertised) {
-        this.sendCapabilities();
+        this.publishCapabilities();
       }
     };
     hapticsService.on("capabilitieschanged", onCapabilitiesChanged);
@@ -86,7 +134,7 @@ export class GMCPClientHaptics extends GMCPPackage {
     );
 
     const onStopped = (reason: string): void => {
-      this.sendStopped(reason);
+      this.publishStopped(reason);
     };
     hapticsService.on("stopped", onStopped);
     this.serviceCleanup.push(() =>
@@ -94,7 +142,7 @@ export class GMCPClientHaptics extends GMCPPackage {
     );
 
     const onSensorReading = (reading: HapticsSensorReading): void => {
-      this.sendSensor(reading);
+      this.publishSensorReading(reading);
     };
     hapticsService.on("sensorreading", onSensorReading);
     this.serviceCleanup.push(() =>
@@ -174,17 +222,17 @@ export class GMCPClientHaptics extends GMCPPackage {
   // Client -> Server senders
   // -------------------------------------------------------------------
 
-  sendCapabilities(): void {
+  publishCapabilities(): void {
     const capabilities = hapticsService.getCapabilities();
-    this.sendData("Capabilities", capabilities);
+    this.sendCapabilities(capabilities);
   }
 
-  sendSensor(reading: HapticsSensorReading): void {
-    this.sendData("Sensor", { readings: [reading] });
+  publishSensorReading(reading: HapticsSensorReading): void {
+    this.sendSensor({ readings: [reading] });
   }
 
-  sendStopped(reason: string): void {
-    this.sendData("Stopped", { reason });
+  publishStopped(reason: string): void {
+    this.sendStopped({ reason });
   }
 
   // -------------------------------------------------------------------
@@ -195,9 +243,7 @@ export class GMCPClientHaptics extends GMCPPackage {
     if (!this.isAdvertised) {
       const coreSupports = this.client.gmcp.handlers["Core.Supports"];
       if (coreSupports) {
-        coreSupports.sendAdd([
-          { name: "Client.Haptics", version: this.packageVersion || 1 },
-        ]);
+        coreSupports.sendAdd([`Client.Haptics ${this.packageVersion || 1}`]);
         this.isAdvertised = true;
       }
     }

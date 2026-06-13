@@ -1,4 +1,4 @@
-import { inbound } from "../protocol/messages";
+import { duplex, inbound, outbound } from "../protocol/messages";
 import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
 
@@ -15,8 +15,14 @@ export class GMCPMessageCoreClient extends GMCPMessage {
 }
 
 
-const corePing = gmcpJsonMessage<"Ping", undefined>("Ping", {
-  encode(payload: undefined): unknown {
+const coreHello = gmcpJsonMessage<
+  "Hello",
+  never,
+  { client: string; version: string }
+>("Hello");
+const coreKeepAlive = gmcpJsonMessage<"KeepAlive", never, void>("KeepAlive");
+const corePing = gmcpJsonMessage<"Ping", undefined, number | undefined>("Ping", {
+  encode(payload: number | undefined): unknown {
     return payload;
   },
   decode(): undefined {
@@ -27,7 +33,12 @@ const coreGoodbye = gmcpJsonMessage<"Goodbye", string>("Goodbye");
 
 const GMCPCoreBase = GMCPPackage.with({
   packageName: "Core",
-  messages: [inbound(corePing), inbound(coreGoodbye)] as const,
+  messages: [
+    outbound(coreHello),
+    outbound(coreKeepAlive),
+    duplex(corePing),
+    inbound(coreGoodbye),
+  ] as const,
 });
 
 export class GMCPCore extends GMCPCoreBase {
@@ -35,18 +46,6 @@ export class GMCPCore extends GMCPCoreBase {
     super(client);
     this.on("ping", () => this.handlePing());
     this.on("goodbye", (reason) => this.handleGoodbye(reason));
-  }
-
-  sendHello(): void {
-    this.sendData("Hello", { client: "Mongoose Client", version: "0.1" });
-  }
-
-  sendKeepAlive(): void {
-    this.sendData("KeepAlive");
-  }
-
-  sendPing(avgPing?: number): void {
-    this.sendData("Ping", avgPing);
   }
 
   handlePing(): void {
@@ -70,26 +69,24 @@ export interface GMCPMessageCoreSupportsSet extends GMCPMessage {
 
 type AdvertisedGMCPPackage = GMCPPackage & { packageVersion: number };
 
-export class GMCPCoreSupports extends GMCPPackage {
-  packageName = "Core.Supports";
+const supportsSet = gmcpJsonMessage<"Set", never, string[]>("Set");
+const supportsAdd = gmcpJsonMessage<"Add", never, string[]>("Add");
+const supportsRemove = gmcpJsonMessage<"Remove", never, string[]>("Remove");
 
-  // Sends the initial list of supported packages
-  sendSet(): void {
-    const packages = Object.values(this.client.gmcp.handlers)
+const GMCPCoreSupportsBase = GMCPPackage.with({
+  packageName: "Core.Supports",
+  messages: [
+    outbound(supportsSet),
+    outbound(supportsAdd),
+    outbound(supportsRemove),
+  ] as const,
+});
+
+export class GMCPCoreSupports extends GMCPCoreSupportsBase {
+  advertisedModules(): string[] {
+    return Object.values(this.client.gmcp.handlers)
       .filter(isAdvertisedGMCPPackage)
       .map(p => `${p.packageName} ${p.packageVersion.toString()}`);
-    this.sendData("Set", packages);
-  }
-
-  // Adds packages to the supported list
-  sendAdd(packagesToAdd: { name: string; version: number }[]): void {
-    const packageStrings = packagesToAdd.map(p => `${p.name} ${p.version}`);
-    this.sendData("Add", packageStrings);
-  }
-
-  // Removes packages from the supported list
-  sendRemove(packagesToRemove: string[]): void {
-    this.sendData("Remove", packagesToRemove); // Version number is optional/ignored
   }
 
   // Note: Server doesn't send Core.Supports messages to the client according to IRE docs.

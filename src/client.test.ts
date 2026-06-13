@@ -175,6 +175,7 @@ class MockCorePackage {
 class MockCoreSupportsPackage {
   packageName = 'Core.Supports';
   packageVersion = 1;
+  advertisedModules = vi.fn(() => ['Core 1', 'Core.Supports 1']);
   sendSet = vi.fn();
 }
 
@@ -187,7 +188,7 @@ class MockAutoLoginPackage {
 class MockClientMediaPackage {
   packageName = 'Client.Media';
   packageVersion = 1;
-  sendEffectsSupport = vi.fn();
+  publishEffectsSupport = vi.fn();
 }
 
 function sendSocketText(socket: MockWebSocket, text: string): void {

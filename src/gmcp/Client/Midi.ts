@@ -1,5 +1,7 @@
 import type { MidiMessage, MidiNote } from "../../MidiService";
 import { usePreferences } from "../../stores/preferencesStore";
+import { duplex } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export class GMCPMessageClientMidiNote extends GMCPMessage {
@@ -38,8 +40,35 @@ export class GMCPMessageClientMidiEnable extends GMCPMessage {
 
 type MidiService = typeof import("../../MidiService").midiService;
 
-export class GMCPClientMidi extends GMCPPackage {
-  public packageName: string = "Client.Midi";
+const midiNote = gmcpJsonMessage<"Note", GMCPMessageClientMidiNote>("Note");
+const midiControlChange = gmcpJsonMessage<
+  "ControlChange",
+  GMCPMessageClientMidiControlChange
+>("ControlChange");
+const midiProgramChange = gmcpJsonMessage<
+  "ProgramChange",
+  GMCPMessageClientMidiProgramChange
+>("ProgramChange");
+const midiSystemMessage = gmcpJsonMessage<
+  "SystemMessage",
+  GMCPMessageClientMidiSystemMessage
+>("SystemMessage");
+const midiRawMessage = gmcpJsonMessage<"RawMessage", GMCPMessageClientMidiRawMessage>("RawMessage");
+const midiEnable = gmcpJsonMessage<"Enable", GMCPMessageClientMidiEnable>("Enable");
+
+const GMCPClientMidiBase = GMCPPackage.with({
+  packageName: "Client.Midi",
+  messages: [
+    duplex(midiNote),
+    duplex(midiControlChange),
+    duplex(midiProgramChange),
+    duplex(midiSystemMessage),
+    duplex(midiRawMessage),
+    duplex(midiEnable),
+  ] as const,
+});
+
+export class GMCPClientMidi extends GMCPClientMidiBase {
   public packageVersion?: number = 1;
   private activeNotes: Map<string, NodeJS.Timeout> = new Map();
   private isAdvertised: boolean = false;
@@ -53,8 +82,14 @@ export class GMCPClientMidi extends GMCPPackage {
     return usePreferences.getState().midi.enabled;
   }
 
-  constructor(client: any) {
+  constructor(client: ConstructorParameters<typeof GMCPClientMidiBase>[0]) {
     super(client);
+    this.on("note", (data) => this.handleNote(data));
+    this.on("controlChange", (data) => this.handleControlChange(data));
+    this.on("programChange", (data) => this.handleProgramChange(data));
+    this.on("systemMessage", (data) => this.handleSystemMessage(data));
+    this.on("rawMessage", (data) => this.handleRawMessage(data));
+    this.on("enable", (data) => this.handleEnable(data));
   }
 
   private loadMidiService(): Promise<MidiService> {
@@ -137,7 +172,7 @@ export class GMCPClientMidi extends GMCPPackage {
         on: message.note.on,
         channel: message.note.channel,
       };
-      this.sendData("Note", noteData);
+      this.sendNote(noteData);
       gmcpMessage = `Client.Midi.Note ${JSON.stringify(noteData)}`;
     } else if (message.controlChange) {
       const ccData = {
@@ -145,21 +180,21 @@ export class GMCPClientMidi extends GMCPPackage {
         value: message.controlChange.value,
         channel: message.controlChange.channel,
       };
-      this.sendData("ControlChange", ccData);
+      this.sendControlChange(ccData);
       gmcpMessage = `Client.Midi.ControlChange ${JSON.stringify(ccData)}`;
     } else if (message.programChange) {
       const pcData = {
         program: message.programChange.program,
         channel: message.programChange.channel,
       };
-      this.sendData("ProgramChange", pcData);
+      this.sendProgramChange(pcData);
       gmcpMessage = `Client.Midi.ProgramChange ${JSON.stringify(pcData)}`;
     } else if (message.systemMessage) {
       const sysData = {
         type: message.systemMessage.type,
         data: message.systemMessage.data,
       };
-      this.sendData("SystemMessage", sysData);
+      this.sendSystemMessage(sysData);
       gmcpMessage = `Client.Midi.SystemMessage ${JSON.stringify(sysData)}`;
     } else if (message.raw) {
       const rawData = {
@@ -167,7 +202,7 @@ export class GMCPClientMidi extends GMCPPackage {
         data: Array.from(message.raw.data),
         type: message.raw.type,
       };
-      this.sendData("RawMessage", rawData);
+      this.sendRawMessage(rawData);
       gmcpMessage = `Client.Midi.RawMessage ${JSON.stringify(rawData)}`;
     }
 
@@ -177,18 +212,15 @@ export class GMCPClientMidi extends GMCPPackage {
   }
 
   private sendNoteToServer(note: MidiNote, duration?: number): void {
-    const noteData: any = {
+    const noteData: GMCPMessageClientMidiNote = {
       note: note.note,
       velocity: note.velocity,
       on: note.on,
       channel: note.channel,
+      ...(duration === undefined ? {} : { duration }),
     };
 
-    if (duration !== undefined) {
-      noteData.duration = duration;
-    }
-
-    this.sendData("Note", noteData);
+    this.sendNote(noteData);
   }
 
   handleNote(data: GMCPMessageClientMidiNote): void {
@@ -206,8 +238,9 @@ export class GMCPClientMidi extends GMCPPackage {
     };
 
     const noteKey = `${data.note}_${data.channel || 0}`;
-    if (this.activeNotes.has(noteKey)) {
-      clearTimeout(this.activeNotes.get(noteKey)!);
+    const activeNoteTimeout = this.activeNotes.get(noteKey);
+    if (activeNoteTimeout) {
+      clearTimeout(activeNoteTimeout);
       this.activeNotes.delete(noteKey);
     }
 
@@ -263,7 +296,7 @@ export class GMCPClientMidi extends GMCPPackage {
     if (!this.isAdvertised) {
       const coreSupports = this.client.gmcp.handlers["Core.Supports"];
       if (coreSupports) {
-        coreSupports.sendAdd([{ name: "Client.Midi", version: this.packageVersion || 1 }]);
+        coreSupports.sendAdd([`Client.Midi ${this.packageVersion || 1}`]);
         this.isAdvertised = true;
         console.log("Advertised MIDI support to server");
       }
@@ -283,12 +316,12 @@ export class GMCPClientMidi extends GMCPPackage {
 
   sendMidiCapability(): void {
     if (!this.enabled) {
-      this.sendData("Enable", { enabled: false });
+      this.sendEnable({ enabled: false });
       return;
     }
 
     void this.loadMidiService().then((midiService) => {
-      this.sendData("Enable", {
+      this.sendEnable({
         enabled: midiService.isSupported && midiService.isInitialized,
       });
     });
