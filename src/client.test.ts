@@ -182,7 +182,7 @@ class MockCoreSupportsPackage {
 class MockAutoLoginPackage {
   packageName = 'Auth.Autologin';
   packageVersion = 1;
-  sendLogin = vi.fn();
+  sendStoredLogin = vi.fn();
 }
 
 class MockClientMediaPackage {

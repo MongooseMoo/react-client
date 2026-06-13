@@ -1,4 +1,4 @@
-import { inbound } from "../protocol/messages";
+import { duplex } from "../protocol/messages";
 import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
 
@@ -8,11 +8,11 @@ export class GMCPMessageGroupInfo extends GMCPMessage {
     [key: string]: unknown;
 }
 
-const groupInfo = gmcpJsonMessage<"Info", GMCPMessageGroupInfo>("Info");
+const groupInfo = gmcpJsonMessage<"Info", GMCPMessageGroupInfo, Record<string, never>>("Info");
 
 const GMCPGroupBase = GMCPPackage.with({
     packageName: "Group",
-    messages: [inbound(groupInfo)] as const,
+    messages: [duplex(groupInfo)] as const,
 });
 
 export class GMCPGroup extends GMCPGroupBase {
@@ -26,10 +26,5 @@ export class GMCPGroup extends GMCPGroupBase {
         console.log("Received Group.Info:", data);
         // TODO: Implement logic to handle group info data
         this.client.emit("groupInfo", data); // Example: emit an event
-    }
-
-    // Method to request group info data
-    sendInfoRequest(): void {
-        this.sendData("Info", {}); // Send empty object as per docs
     }
 }

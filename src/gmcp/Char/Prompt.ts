@@ -1,4 +1,4 @@
-import { inbound } from "../../protocol/messages";
+import { duplex } from "../../protocol/messages";
 import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -7,11 +7,11 @@ export class GMCPMessageCharPrompt extends GMCPMessage {
     [key: string]: unknown; // Allows arbitrary prompt values
 }
 
-const charPrompt = gmcpJsonMessage<"Prompt", GMCPMessageCharPrompt>("Prompt");
+const charPrompt = gmcpJsonMessage<"Prompt", GMCPMessageCharPrompt, Record<string, never>>("Prompt");
 
 const GMCPCharPromptBase = GMCPPackage.with({
     packageName: "Char.Prompt",
-    messages: [inbound(charPrompt)] as const,
+    messages: [duplex(charPrompt)] as const,
 });
 
 export class GMCPCharPrompt extends GMCPCharPromptBase {
@@ -25,10 +25,5 @@ export class GMCPCharPrompt extends GMCPCharPromptBase {
         console.log("Received Char.Prompt:", data);
         // TODO: Implement logic to handle prompt data (e.g., update UI)
         this.client.emit("prompt", data); // Example: emit an event
-    }
-
-    // Method to request prompt data
-    sendPromptRequest(): void {
-        this.sendData("Prompt", {}); // Send empty object as per docs
     }
 }

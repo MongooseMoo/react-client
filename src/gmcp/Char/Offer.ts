@@ -1,4 +1,4 @@
-import { inbound } from "../../protocol/messages";
+import { duplex } from "../../protocol/messages";
 import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -16,11 +16,11 @@ export class GMCPMessageCharOffer extends GMCPMessage {
     total_rent: number = 0;
 }
 
-const charOffer = gmcpJsonMessage<"Offer", GMCPMessageCharOffer>("Offer");
+const charOffer = gmcpJsonMessage<"Offer", GMCPMessageCharOffer, Record<string, never>>("Offer");
 
 const GMCPCharOfferBase = GMCPPackage.with({
     packageName: "Char.Offer",
-    messages: [inbound(charOffer)] as const,
+    messages: [duplex(charOffer)] as const,
 });
 
 export class GMCPCharOffer extends GMCPCharOfferBase {
@@ -34,10 +34,5 @@ export class GMCPCharOffer extends GMCPCharOfferBase {
         console.log("Received Char.Offer:", data);
         // TODO: Implement logic to handle offer data (e.g., display in UI)
         this.client.emit("offer", data); // Example: emit an event
-    }
-
-    // Method to request offer data
-    sendOfferRequest(): void {
-        this.sendData("Offer", {}); // Send empty object as per docs
     }
 }

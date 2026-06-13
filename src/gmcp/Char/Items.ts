@@ -1,4 +1,4 @@
-import { inbound } from "../../protocol/messages";
+import { inbound, outbound } from "../../protocol/messages";
 import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -40,6 +40,9 @@ const itemsList = gmcpJsonMessage<"List", GMCPMessageCharItemsList>("List");
 const itemsAdd = gmcpJsonMessage<"Add", GMCPMessageCharItemsAdd>("Add");
 const itemsRemove = gmcpJsonMessage<"Remove", GMCPMessageCharItemsRemove>("Remove");
 const itemsUpdate = gmcpJsonMessage<"Update", GMCPMessageCharItemsUpdate>("Update");
+const itemsContents = gmcpJsonMessage<"Contents", never, string>("Contents");
+const itemsInv = gmcpJsonMessage<"Inv", never, string>("Inv");
+const itemsRoom = gmcpJsonMessage<"Room", never, string>("Room");
 
 const GMCPCharItemsBase = GMCPPackage.with({
   packageName: "Char.Items",
@@ -48,6 +51,9 @@ const GMCPCharItemsBase = GMCPPackage.with({
     inbound(itemsAdd),
     inbound(itemsRemove),
     inbound(itemsUpdate),
+    outbound(itemsContents),
+    outbound(itemsInv),
+    outbound(itemsRoom),
   ] as const,
 });
 
@@ -84,20 +90,5 @@ export class GMCPCharItems extends GMCPCharItemsBase {
     console.log(`Received Char.Items.Update for ${data.location}:`, data.item);
     const itemWithLocation = { ...data.item, location: data.location };
     this.client.emit("itemUpdate", { ...data, item: itemWithLocation });
-  }
-
-  // --- Client Messages ---
-
-  sendContentsRequest(itemId: string): void {
-    // Docs say number, but let's use string for consistency if IDs can be non-numeric
-    this.sendData("Contents", itemId);
-  }
-
-  sendInventoryRequest(): void {
-    this.sendData("Inv", ""); // Empty body as per docs
-  }
-
-  sendRoomRequest(): void {
-    this.sendData("Room", ""); // Empty body as per docs
   }
 }

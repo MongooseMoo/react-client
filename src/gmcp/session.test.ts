@@ -28,7 +28,7 @@ class MockCoreSupportsPackage extends GMCPPackage {
 
 class MockAutoLoginPackage extends GMCPPackage {
   packageName = 'Auth.Autologin';
-  sendLogin = vi.fn();
+  sendStoredLogin = vi.fn();
 }
 
 class MockClientMediaPackage extends GMCPPackage {
@@ -85,7 +85,7 @@ describe('GmcpSession', () => {
     expect(core.sendHello).toHaveBeenCalledTimes(2);
     expect(supports.sendSet).toHaveBeenCalledTimes(2);
     expect(supports.sendSet).toHaveBeenCalledWith(['Core 1', 'Core.Supports 1']);
-    expect(autoLogin.sendLogin).toHaveBeenCalledTimes(2);
+    expect(autoLogin.sendStoredLogin).toHaveBeenCalledTimes(2);
     expect(media.publishEffectsSupport).toHaveBeenCalledTimes(2);
     expect(session.ready).toBe(true);
     expect(client.emit).toHaveBeenCalledWith('gmcpReady');

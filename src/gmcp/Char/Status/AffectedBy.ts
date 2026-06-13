@@ -1,4 +1,4 @@
-import { inbound } from "../../../protocol/messages";
+import { duplex } from "../../../protocol/messages";
 import { gmcpJsonMessage } from "../../messages";
 import { GMCPMessage, GMCPPackage } from "../../package";
 
@@ -7,11 +7,15 @@ export class GMCPMessageCharStatusAffectedBy extends GMCPMessage {
     [key: string]: unknown; // Represents affects
 }
 
-const affectedBy = gmcpJsonMessage<"AffectedBy", GMCPMessageCharStatusAffectedBy>("AffectedBy");
+const affectedBy = gmcpJsonMessage<
+    "AffectedBy",
+    GMCPMessageCharStatusAffectedBy,
+    Record<string, never>
+>("AffectedBy");
 
 const GMCPCharStatusAffectedByBase = GMCPPackage.with({
     packageName: "Char.Status.AffectedBy",
-    messages: [inbound(affectedBy)] as const,
+    messages: [duplex(affectedBy)] as const,
 });
 
 export class GMCPCharStatusAffectedBy extends GMCPCharStatusAffectedByBase {
@@ -25,10 +29,5 @@ export class GMCPCharStatusAffectedBy extends GMCPCharStatusAffectedByBase {
         console.log("Received Char.Status.AffectedBy:", data);
         // TODO: Implement logic to handle affected by data
         this.client.emit("statusAffectedBy", data); // Example: emit an event
-    }
-
-    // Method to request affected by data
-    sendAffectedByRequest(): void {
-        this.sendData("AffectedBy", {}); // Send empty object as per docs
     }
 }

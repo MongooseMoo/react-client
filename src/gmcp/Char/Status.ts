@@ -1,4 +1,4 @@
-import { inbound } from "../../protocol/messages";
+import { duplex } from "../../protocol/messages";
 import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -8,11 +8,11 @@ export class GMCPMessageCharStatus extends GMCPMessage {
     [key: string]: unknown;
 }
 
-const charStatus = gmcpJsonMessage<"Status", GMCPMessageCharStatus>("Status");
+const charStatus = gmcpJsonMessage<"Status", GMCPMessageCharStatus, Record<string, never>>("Status");
 
 const GMCPCharStatusBase = GMCPPackage.with({
     packageName: "Char.Status",
-    messages: [inbound(charStatus)] as const,
+    messages: [duplex(charStatus)] as const,
 });
 
 export class GMCPCharStatus extends GMCPCharStatusBase {
@@ -26,10 +26,5 @@ export class GMCPCharStatus extends GMCPCharStatusBase {
         console.log("Received Char.Status:", data);
         // TODO: Implement logic to handle status data
         this.client.emit("status", data); // Example: emit an event
-    }
-
-    // Method to request status data
-    sendStatusRequest(): void {
-        this.sendData("Status", {}); // Send empty object as per docs
     }
 }

@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState, useMemo } from "react";
-import MudClient from "../client";
+import type React from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
+import type MudClient from "../client";
 import type { RoomPlayer } from "../gmcp/Room";
 import { useRoomStore } from "../stores/roomStore";
 import type { Item, ItemLocation } from "../gmcp/Char/Items";
@@ -37,8 +38,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   // Request the room's item list once on mount. Room info/players are now
   // subscribed from the room store above rather than fed by client events.
   useEffect(() => {
-    if (charItemsHandler?.sendRoomRequest) {
-      charItemsHandler.sendRoomRequest();
+    if (charItemsHandler) {
+      charItemsHandler.sendRoom("");
     }
   }, [charItemsHandler]);
 

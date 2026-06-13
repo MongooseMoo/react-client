@@ -1,4 +1,4 @@
-import { inbound } from "../../../protocol/messages";
+import { duplex } from "../../../protocol/messages";
 import { gmcpJsonMessage } from "../../messages";
 import { GMCPMessage, GMCPPackage } from "../../package";
 
@@ -7,11 +7,15 @@ export class GMCPMessageCharStatusTimers extends GMCPMessage {
     [key: string]: unknown; // Represents timers
 }
 
-const timers = gmcpJsonMessage<"Timers", GMCPMessageCharStatusTimers>("Timers");
+const timers = gmcpJsonMessage<
+    "Timers",
+    GMCPMessageCharStatusTimers,
+    Record<string, never>
+>("Timers");
 
 const GMCPCharStatusTimersBase = GMCPPackage.with({
     packageName: "Char.Status.Timers",
-    messages: [inbound(timers)] as const,
+    messages: [duplex(timers)] as const,
 });
 
 export class GMCPCharStatusTimers extends GMCPCharStatusTimersBase {
@@ -25,10 +29,5 @@ export class GMCPCharStatusTimers extends GMCPCharStatusTimersBase {
         console.log("Received Char.Status.Timers:", data);
         // TODO: Implement logic to handle timers data
         this.client.emit("statusTimers", data); // Example: emit an event
-    }
-
-    // Method to request timers data
-    sendTimersRequest(): void {
-        this.sendData("Timers", {}); // Send empty object as per docs
     }
 }

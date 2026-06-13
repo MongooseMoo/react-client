@@ -53,7 +53,7 @@ export class GmcpSession {
     this.require('Core').sendHello({ client: 'Mongoose Client', version: '0.1' });
     const coreSupports = this.require('Core.Supports');
     coreSupports.sendSet(coreSupports.advertisedModules());
-    this.require('Auth.Autologin').sendLogin();
+    this.require('Auth.Autologin').sendStoredLogin();
     this.require('Client.Media').publishEffectsSupport();
     this.markReady();
   }

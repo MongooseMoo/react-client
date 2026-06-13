@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import type React from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type MudClient from '../client';
-import { Item, ItemLocation } from '../gmcp/Char/Items';
+import type { Item, ItemLocation } from '../gmcp/Char/Items';
 import InventoryList from './InventoryList';
 import './InventoryList.css'; // Styles for inventory tab, list, and card container
 import ItemCard from './ItemCard';
@@ -80,7 +81,7 @@ const Inventory: React.FC<InventoryProps> = ({ client }) => {
     client.on('itemRemove', handleRemove);
     client.on('itemUpdate', handleUpdate);
 
-    client.gmcp.handlers['Char.Items']?.sendInventoryRequest();
+    client.gmcp.handlers['Char.Items']?.sendInv("");
 
     return () => {
       client.off('itemsList', handleList);

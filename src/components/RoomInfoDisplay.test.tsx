@@ -1,8 +1,8 @@
-import React from "react";
 import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "eventemitter3";
 
+import type MudClient from "../client";
 import RoomInfoDisplay from "./RoomInfoDisplay";
 import { useRoomStore } from "../stores/roomStore";
 
@@ -13,7 +13,7 @@ function createMockClient() {
     gmcp: {
       handlers: {
         "Char.Items": {
-          sendRoomRequest: vi.fn(),
+          sendRoom: vi.fn(),
         },
       },
     },
@@ -62,7 +62,7 @@ describe("RoomInfoDisplay", () => {
       roomPlayers: [{ name: "q", fullname: "Q" }],
     });
 
-    render(<RoomInfoDisplay client={client as any} />);
+    render(<RoomInfoDisplay client={client as unknown as MudClient} />);
 
     act(() => {
       client.emit("itemsList", {

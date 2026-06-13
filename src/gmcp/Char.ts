@@ -1,5 +1,5 @@
 import { useSessionStore } from "../stores/sessionStore";
-import { inbound } from "../protocol/messages";
+import { inbound, outbound } from "../protocol/messages";
 import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
 
@@ -12,6 +12,7 @@ const charName = gmcpJsonMessage<"Name", GmcpMessageCharName>("Name");
 const charVitals = gmcpJsonMessage<"Vitals", Record<string, unknown>>("Vitals");
 const charStatusVars = gmcpJsonMessage<"StatusVars", Record<string, string>>("StatusVars");
 const charStatus = gmcpJsonMessage<"Status", Record<string, string>>("Status");
+const charLogin = gmcpJsonMessage<"Login", never, { name: string; password: string }>("Login");
 
 const GMCPCharBase = GMCPPackage.with({
   packageName: "Char",
@@ -20,6 +21,7 @@ const GMCPCharBase = GMCPPackage.with({
     inbound(charVitals),
     inbound(charStatusVars),
     inbound(charStatus),
+    outbound(charLogin),
   ] as const,
 });
 
@@ -56,10 +58,5 @@ export class GMCPChar extends GMCPCharBase {
     console.log("Received Char.Status:", data);
     // TODO: Update character status based on received values
     this.client.emit("statusUpdate", data);
-  }
-
-  // --- Login ---
-  sendLogin(name: string, password: string): void {
-    this.sendData("Login", { name, password });
   }
 }
