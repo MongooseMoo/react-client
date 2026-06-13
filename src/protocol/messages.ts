@@ -1,37 +1,56 @@
 export type ProtocolDirection = 'inbound' | 'outbound' | 'duplex';
 
-export interface ProtocolCodec<Payload> {
-  encode(payload: Payload): unknown;
-  decode(payload: unknown): Payload;
+export interface ProtocolCodec<InboundPayload, OutboundPayload = InboundPayload> {
+  encode(payload: OutboundPayload): unknown;
+  decode(payload: unknown): InboundPayload;
 }
 
-export interface ProtocolMessageEnvelope<Name extends string, Payload> {
+export interface ProtocolMessageEnvelope<
+  Name extends string,
+  InboundPayload,
+  OutboundPayload = InboundPayload,
+> {
   readonly wireName: Name;
-  readonly codec: ProtocolCodec<Payload>;
+  readonly codec: ProtocolCodec<InboundPayload, OutboundPayload>;
 }
 
 export interface DirectedProtocolMessage<
   Name extends string,
-  Payload,
+  InboundPayload,
+  OutboundPayload,
   Direction extends ProtocolDirection,
   EventName extends string | undefined = undefined,
-> extends ProtocolMessageEnvelope<Name, Payload> {
+> extends ProtocolMessageEnvelope<Name, InboundPayload, OutboundPayload> {
   readonly direction: Direction;
   readonly eventName?: EventName;
   asEvent<Alias extends string>(
     eventName: Alias,
-  ): DirectedProtocolMessage<Name, Payload, Direction, Alias>;
+  ): DirectedProtocolMessage<
+    Name,
+    InboundPayload,
+    OutboundPayload,
+    Direction,
+    Alias
+  >;
 }
 
 export type AnyDirectedProtocolMessage = DirectedProtocolMessage<
   string,
   unknown,
+  unknown,
   ProtocolDirection,
   string | undefined
 >;
 
-type MessagePayload<Message> =
-  Message extends ProtocolMessageEnvelope<string, infer Payload> ? Payload : never;
+type InboundPayload<Message> =
+  Message extends ProtocolMessageEnvelope<string, infer Payload, unknown>
+    ? Payload
+    : never;
+
+type OutboundPayload<Message> =
+  Message extends ProtocolMessageEnvelope<string, unknown, infer Payload>
+    ? Payload
+    : never;
 
 type CamelFromSnake<Name extends string> =
   Name extends `${infer Head}_${infer Tail}`
@@ -62,6 +81,7 @@ type InboundMessage<Message> =
   Message extends DirectedProtocolMessage<
     string,
     unknown,
+    unknown,
     infer Direction,
     string | undefined
   >
@@ -74,6 +94,7 @@ type OutboundMessage<Message> =
   Message extends DirectedProtocolMessage<
     string,
     unknown,
+    unknown,
     infer Direction,
     string | undefined
   >
@@ -83,7 +104,7 @@ type OutboundMessage<Message> =
     : never;
 
 type EventPayloads<Messages extends readonly AnyDirectedProtocolMessage[]> = {
-  [Message in InboundMessage<Messages[number]> as EventNameForMessage<Message>]: MessagePayload<Message>;
+  [Message in InboundMessage<Messages[number]> as EventNameForMessage<Message>]: InboundPayload<Message>;
 };
 
 type SendMethods<Messages extends readonly AnyDirectedProtocolMessage[]> = {
@@ -91,7 +112,7 @@ type SendMethods<Messages extends readonly AnyDirectedProtocolMessage[]> = {
     readonly wireName: infer Name extends string;
   }
     ? SendMethodName<Name>
-    : never]: (payload: MessagePayload<Message>) => void;
+    : never]: (payload: OutboundPayload<Message>) => void;
 };
 
 export type ProtocolIO<Messages extends readonly AnyDirectedProtocolMessage[]> =
@@ -100,6 +121,10 @@ export type ProtocolIO<Messages extends readonly AnyDirectedProtocolMessage[]> =
       eventName: EventName,
       listener: (payload: EventPayloads<Messages>[EventName]) => void,
     ): () => void;
+    off<EventName extends keyof EventPayloads<Messages> & string>(
+      eventName: EventName,
+      listener: (payload: EventPayloads<Messages>[EventName]) => void,
+    ): void;
     receive(wireName: string, payload: unknown): boolean;
   };
 
@@ -117,28 +142,47 @@ export function identityCodec<Payload>(): ProtocolCodec<Payload> {
   };
 }
 
-export function messageEnvelope<Name extends string, Payload>(
+export function messageEnvelope<
+  Name extends string,
+  InboundPayload,
+  OutboundPayload = InboundPayload,
+>(
   wireName: Name,
-  codec: ProtocolCodec<Payload>,
-): ProtocolMessageEnvelope<Name, Payload> {
+  codec: ProtocolCodec<InboundPayload, OutboundPayload>,
+): ProtocolMessageEnvelope<Name, InboundPayload, OutboundPayload> {
   return { wireName, codec };
 }
 
-export function inbound<Name extends string, Payload>(
-  envelope: ProtocolMessageEnvelope<Name, Payload>,
-): DirectedProtocolMessage<Name, Payload, 'inbound'> {
+export function inbound<Name extends string, InboundPayload, OutboundPayload>(
+  envelope: ProtocolMessageEnvelope<Name, InboundPayload, OutboundPayload>,
+): DirectedProtocolMessage<
+  Name,
+  InboundPayload,
+  OutboundPayload,
+  'inbound'
+> {
   return directedMessage(envelope, 'inbound');
 }
 
-export function outbound<Name extends string, Payload>(
-  envelope: ProtocolMessageEnvelope<Name, Payload>,
-): DirectedProtocolMessage<Name, Payload, 'outbound'> {
+export function outbound<Name extends string, InboundPayload, OutboundPayload>(
+  envelope: ProtocolMessageEnvelope<Name, InboundPayload, OutboundPayload>,
+): DirectedProtocolMessage<
+  Name,
+  InboundPayload,
+  OutboundPayload,
+  'outbound'
+> {
   return directedMessage(envelope, 'outbound');
 }
 
-export function duplex<Name extends string, Payload>(
-  envelope: ProtocolMessageEnvelope<Name, Payload>,
-): DirectedProtocolMessage<Name, Payload, 'duplex'> {
+export function duplex<Name extends string, InboundPayload, OutboundPayload>(
+  envelope: ProtocolMessageEnvelope<Name, InboundPayload, OutboundPayload>,
+): DirectedProtocolMessage<
+  Name,
+  InboundPayload,
+  OutboundPayload,
+  'duplex'
+> {
   return directedMessage(envelope, 'duplex');
 }
 
@@ -241,17 +285,26 @@ export function createProtocolIO<
     },
   });
 
+  Object.defineProperty(protocolTarget, 'off', {
+    configurable: true,
+    enumerable: false,
+    value: (eventName: string, listener: ProtocolListener): void => {
+      listeners.get(eventName)?.delete(listener);
+    },
+  });
+
   return protocolTarget as ProtocolIO<Messages>;
 }
 
 function directedMessage<
   Name extends string,
-  Payload,
+  InboundPayload,
+  OutboundPayload,
   Direction extends ProtocolDirection,
 >(
-  envelope: ProtocolMessageEnvelope<Name, Payload>,
+  envelope: ProtocolMessageEnvelope<Name, InboundPayload, OutboundPayload>,
   direction: Direction,
-): DirectedProtocolMessage<Name, Payload, Direction> {
+): DirectedProtocolMessage<Name, InboundPayload, OutboundPayload, Direction> {
   return {
     ...envelope,
     direction,
