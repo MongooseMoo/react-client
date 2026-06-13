@@ -1,3 +1,5 @@
+import { duplex, inbound, outbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export class GMCPMessageCommChannelText extends GMCPMessage {
@@ -5,17 +7,45 @@ export class GMCPMessageCommChannelText extends GMCPMessage {
   public readonly talker!: string;
   public readonly text!: string;
 }
-export class GMCPCommChannel extends GMCPPackage {
-  public packageName: string = "Comm.Channel";
+
+const channelList = gmcpJsonMessage<"List", string[], void>("List");
+const channelText = gmcpJsonMessage<"Text", GMCPMessageCommChannelText>("Text");
+const channelPlayers = gmcpJsonMessage<
+  "Players",
+  { name: string; channels?: string[] }[],
+  string
+>("Players");
+const channelEnable = gmcpJsonMessage<"Enable", never, string>("Enable");
+const channelStart = gmcpJsonMessage<"Start", string>("Start");
+const channelEnd = gmcpJsonMessage<"End", string>("End");
+
+const GMCPCommChannelBase = GMCPPackage.with({
+  packageName: "Comm.Channel",
+  messages: [
+    duplex(channelList),
+    inbound(channelText),
+    duplex(channelPlayers),
+    outbound(channelEnable),
+    inbound(channelStart),
+    inbound(channelEnd),
+  ] as const,
+});
+
+export class GMCPCommChannel extends GMCPCommChannelBase {
   public channels: string[] = [];
+
+  constructor(client: ConstructorParameters<typeof GMCPCommChannelBase>[0]) {
+    super(client);
+    this.on("list", (data) => this.handleList(data));
+    this.on("text", (data) => this.handleText(data));
+    this.on("players", (data) => this.handlePlayers(data));
+    this.on("start", (data) => this.handleStart(data));
+    this.on("end", (data) => this.handleEnd(data));
+  }
 
   handleList(data: string[]): void {
     this.channels = data;
 
-  }
-
-  sendList(): void {
-    this.sendData("List");
   }
 
   handleText(data: GMCPMessageCommChannelText): void {
@@ -33,15 +63,6 @@ export class GMCPCommChannel extends GMCPPackage {
     console.log("Received Comm.Channel.Players:", data);
     // TODO: Update shared channel/player info
     this.client.emit("channelPlayers", data);
-  }
-
-  sendPlayersRequest(): void {
-    this.sendData("Players", ""); // Empty body as per docs
-  }
-
-  // --- Enable ---
-  sendEnable(channelName: string): void {
-    this.sendData("Enable", channelName);
   }
 
   // --- Start/End/Text ---
