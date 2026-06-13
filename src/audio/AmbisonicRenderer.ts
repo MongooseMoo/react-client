@@ -6,6 +6,8 @@ type AmbisonicInputMode = 'stereo-upmix' | 'foa-passthrough';
 
 export class AmbisonicRenderer {
   private attachedPlayback?: Playback;
+  /** Pre-encoder gain that attenuates the source by listener distance (ambisonic has no panner). */
+  private distanceGain?: GainNode;
 
   private constructor(
     private readonly cacophony: Cacophony,
@@ -39,22 +41,41 @@ export class AmbisonicRenderer {
   attachPlayback(playback: Playback, outputTarget?: CacophonyAudioNode): void {
     this.attachedPlayback = playback;
     playback.disconnect();
+    const distanceGain = (this.cacophony.context as unknown as BaseAudioContext).createGain();
+    this.distanceGain = distanceGain;
+    const distanceNode = distanceGain as unknown as CacophonyAudioNode;
+    playback.connect(distanceNode);
     if (this.mode === 'stereo-upmix') {
       if (!this.encoder) {
         throw new Error('Stereo ambisonic upmix requires an encoder node');
       }
-      playback.connect(this.encoder);
+      distanceNode.connect(this.encoder);
       this.encoder.connect(this.renderer.input as unknown as CacophonyAudioNode);
     } else {
-      playback.connect(this.renderer.input as unknown as CacophonyAudioNode);
+      distanceNode.connect(this.renderer.input as unknown as CacophonyAudioNode);
     }
     (this.renderer.output as unknown as CacophonyAudioNode).connect(
       outputTarget ?? this.cacophony.globalGainNode,
     );
   }
 
+  /**
+   * Set the pre-encoder distance attenuation (0..1). Lets a positioned ambisonic
+   * source fall off with listener distance the way an HRTF-panned source does,
+   * while the renderer still rotates the soundfield with head yaw.
+   */
+  setDistanceGain(gain: number): void {
+    if (!this.distanceGain) {
+      return;
+    }
+    const clamped = Number.isFinite(gain) ? Math.min(1, Math.max(0, gain)) : 1;
+    this.distanceGain.gain.value = clamped;
+  }
+
   cleanup(): void {
     this.renderer.output.disconnect();
+    this.distanceGain?.disconnect();
+    this.distanceGain = undefined;
     if (!this.attachedPlayback) {
       this.encoder?.disconnect();
       return;

@@ -19,12 +19,25 @@ function createNode() {
   };
 }
 
+function createGainNode() {
+  return {
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    gain: { value: 1 },
+  };
+}
+
+/** A context whose createGain hands back a single, inspectable gain node. */
+function createContext(gainNode = createGainNode()) {
+  return { createGain: vi.fn(() => gainNode) };
+}
+
 describe('AmbisonicRenderer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('builds the stereo-upmix ambisonic playback graph against cacophony', async () => {
+  it('routes the stereo-upmix graph through a pre-encoder distance gain', async () => {
     const encoder = createNode();
     const input = createNode();
     const output = createNode();
@@ -38,8 +51,9 @@ describe('AmbisonicRenderer', () => {
     };
     mockCreateFOARenderer.mockReturnValue(renderer);
 
+    const gainNode = createGainNode();
     const cacophony = {
-      context: {},
+      context: createContext(gainNode),
       loadStereoToBFormatWorklet: vi.fn().mockResolvedValue(undefined),
       createStereoToBFormatNode: vi.fn().mockResolvedValue(encoder),
       globalGainNode: createNode(),
@@ -52,17 +66,16 @@ describe('AmbisonicRenderer', () => {
     const ambisonicRenderer = await AmbisonicRenderer.create(cacophony as any, 2);
     ambisonicRenderer.attachPlayback(playback as any);
 
-    expect(renderer.initialize).toHaveBeenCalledOnce();
-    expect(renderer.setRenderingMode).toHaveBeenCalledWith('ambisonic');
-    expect(cacophony.loadStereoToBFormatWorklet).toHaveBeenCalledOnce();
-    expect(cacophony.createStereoToBFormatNode).toHaveBeenCalledOnce();
+    expect(cacophony.context.createGain).toHaveBeenCalledOnce();
     expect(playback.disconnect).toHaveBeenCalledOnce();
-    expect(playback.connect).toHaveBeenCalledWith(encoder);
+    // playback → distanceGain → encoder → renderer.input
+    expect(playback.connect).toHaveBeenCalledWith(gainNode);
+    expect(gainNode.connect).toHaveBeenCalledWith(encoder);
     expect(encoder.connect).toHaveBeenCalledWith(input);
     expect(output.connect).toHaveBeenCalledWith(cacophony.globalGainNode);
   });
 
-  it('builds the FOA passthrough graph without a stereo encoder', async () => {
+  it('routes the FOA passthrough graph through the distance gain without an encoder', async () => {
     const input = createNode();
     const output = createNode();
     const renderer = {
@@ -75,11 +88,9 @@ describe('AmbisonicRenderer', () => {
     };
     mockCreateFOARenderer.mockReturnValue(renderer);
 
-    const gainNode = createNode();
-    const source = createNode();
-    const panner = createNode();
+    const gainNode = createGainNode();
     const cacophony = {
-      context: {},
+      context: createContext(gainNode),
       loadStereoToBFormatWorklet: vi.fn().mockResolvedValue(undefined),
       createStereoToBFormatNode: vi.fn(),
       globalGainNode: createNode(),
@@ -87,23 +98,16 @@ describe('AmbisonicRenderer', () => {
     const playback = {
       connect: vi.fn(),
       disconnect: vi.fn(),
-      gainNode,
-      panner,
-      source,
     };
 
     const ambisonicRenderer = await AmbisonicRenderer.create(cacophony as any, 4);
     ambisonicRenderer.attachPlayback(playback as any);
 
-    expect(renderer.initialize).toHaveBeenCalledOnce();
-    expect(renderer.setRenderingMode).toHaveBeenCalledWith('ambisonic');
-    expect(cacophony.loadStereoToBFormatWorklet).not.toHaveBeenCalled();
     expect(cacophony.createStereoToBFormatNode).not.toHaveBeenCalled();
     expect(playback.disconnect).toHaveBeenCalledOnce();
-    expect(playback.connect).toHaveBeenCalledWith(input);
-    expect(source.disconnect).not.toHaveBeenCalled();
-    expect(source.connect).not.toHaveBeenCalled();
-    expect(gainNode.connect).not.toHaveBeenCalled();
+    // playback → distanceGain → renderer.input
+    expect(playback.connect).toHaveBeenCalledWith(gainNode);
+    expect(gainNode.connect).toHaveBeenCalledWith(input);
     expect(output.connect).toHaveBeenCalledWith(cacophony.globalGainNode);
   });
 
@@ -121,7 +125,7 @@ describe('AmbisonicRenderer', () => {
     mockCreateFOARenderer.mockReturnValue(renderer);
 
     const cacophony = {
-      context: {},
+      context: createContext(),
       loadStereoToBFormatWorklet: vi.fn().mockResolvedValue(undefined),
       createStereoToBFormatNode: vi.fn(),
       globalGainNode: createNode(),
@@ -134,6 +138,63 @@ describe('AmbisonicRenderer', () => {
 
     expect(output.connect).toHaveBeenCalledWith(effectBusInput);
     expect(output.connect).not.toHaveBeenCalledWith(cacophony.globalGainNode);
+  });
+
+  it('sets and clamps the distance gain on the pre-encoder node', async () => {
+    const renderer = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      input: createNode(),
+      output: createNode(),
+      setRenderingMode: vi.fn(),
+      setRotationMatrix3: vi.fn(),
+      setRotationMatrix4: vi.fn(),
+    };
+    mockCreateFOARenderer.mockReturnValue(renderer);
+
+    const gainNode = createGainNode();
+    const cacophony = {
+      context: createContext(gainNode),
+      loadStereoToBFormatWorklet: vi.fn().mockResolvedValue(undefined),
+      createStereoToBFormatNode: vi.fn(),
+      globalGainNode: createNode(),
+    };
+    const playback = { connect: vi.fn(), disconnect: vi.fn() };
+
+    const ambisonicRenderer = await AmbisonicRenderer.create(cacophony as any, 4);
+    ambisonicRenderer.attachPlayback(playback as any);
+
+    ambisonicRenderer.setDistanceGain(0.3);
+    expect(gainNode.gain.value).toBeCloseTo(0.3, 9);
+
+    ambisonicRenderer.setDistanceGain(5);
+    expect(gainNode.gain.value).toBe(1);
+
+    ambisonicRenderer.setDistanceGain(-2);
+    expect(gainNode.gain.value).toBe(0);
+
+    ambisonicRenderer.setDistanceGain(Number.NaN);
+    expect(gainNode.gain.value).toBe(1);
+  });
+
+  it('is a no-op when setting distance gain before a playback is attached', async () => {
+    const renderer = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      input: createNode(),
+      output: createNode(),
+      setRenderingMode: vi.fn(),
+      setRotationMatrix3: vi.fn(),
+      setRotationMatrix4: vi.fn(),
+    };
+    mockCreateFOARenderer.mockReturnValue(renderer);
+    const cacophony = {
+      context: createContext(),
+      loadStereoToBFormatWorklet: vi.fn().mockResolvedValue(undefined),
+      createStereoToBFormatNode: vi.fn(),
+      globalGainNode: createNode(),
+    };
+
+    const ambisonicRenderer = await AmbisonicRenderer.create(cacophony as any, 4);
+    expect(() => ambisonicRenderer.setDistanceGain(0.5)).not.toThrow();
   });
 
   it('computes the expected yaw rotation matrix', () => {

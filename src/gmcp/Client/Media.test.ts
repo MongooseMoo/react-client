@@ -11,6 +11,7 @@ vi.mock('../../audio/AmbisonicRenderer', () => ({
   },
 }));
 
+import { MediaService } from '../../audio/MediaService';
 import {
   GMCPClientMedia,
   type GMCPMessageClientMediaListenerOrientation,
@@ -19,7 +20,6 @@ import {
   type GMCPMessageClientMediaStop,
   type GMCPMessageClientMediaUpdate,
 } from './Media';
-import { MediaService } from '../../audio/MediaService';
 
 type MockCacophony = ConstructorParameters<typeof MediaService>[0];
 
@@ -191,6 +191,7 @@ describe('GMCPClientMedia', () => {
       attachPlayback: vi.fn(),
       cleanup: vi.fn(),
       setRotationMatrixFromYaw: vi.fn(),
+      setDistanceGain: vi.fn(),
     });
     client = createMockClient();
     handler = new GMCPClientMedia(client as never);
@@ -357,6 +358,7 @@ describe('GMCPClientMedia', () => {
         attachPlayback: vi.fn(),
         cleanup: vi.fn(),
         setRotationMatrixFromYaw: vi.fn(),
+        setDistanceGain: vi.fn(),
       };
       mockAmbisonicRendererCreate.mockResolvedValue(renderer);
       const sound = createMockSound('https://media.example/amb.ogg');
