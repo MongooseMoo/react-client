@@ -58,6 +58,36 @@ describe('GmcpSession', () => {
     expect(listener).toHaveBeenCalledWith({ ok: true });
   });
 
+  it('logs malformed registered GMCP messages without throwing', () => {
+    const { session } = createSession();
+    session.register(RegistryPackage);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => session.receive('Registry.Thing', '{bad')).not.toThrow();
+
+    expect(consoleError).toHaveBeenCalledWith(
+      'Error dispatching GMCP message for Registry.Thing:',
+      expect.any(SyntaxError),
+    );
+  });
+
+  it('logs registered GMCP listener errors without throwing', () => {
+    const { session } = createSession();
+    const handler = session.register(RegistryPackage);
+    const error = new Error('listener failed');
+    handler.on('thing', () => {
+      throw error;
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => session.receive('Registry.Thing', '{"ok":true}')).not.toThrow();
+
+    expect(consoleError).toHaveBeenCalledWith(
+      'Error dispatching GMCP message for Registry.Thing:',
+      error,
+    );
+  });
+
   it('encodes outbound messages through the attached telnet transport', () => {
     const { session } = createSession();
     const telnet = {

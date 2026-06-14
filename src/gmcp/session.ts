@@ -84,8 +84,19 @@ export class GmcpSession {
       return;
     }
 
-    const payload = parseGmcpPayload(gmcpMessage);
-    if (handler.receiveRegisteredMessage(address.messageType, payload)) {
+    let handled: boolean;
+    try {
+      const payload = parseGmcpPayload(gmcpMessage);
+      handled = handler.receiveRegisteredMessage(address.messageType, payload);
+    } catch (error) {
+      console.error(
+        `Error dispatching GMCP message for ${address.packageName}.${address.messageType}:`,
+        error,
+      );
+      return;
+    }
+
+    if (handled) {
       return;
     }
 
