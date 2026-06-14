@@ -45,7 +45,7 @@ import {
 export function createConfiguredClient(): MudClient {
   const client = new MudClient("mongoose.moo.mud.org", 8765);
   // GMCP packages
-  client.gmcp.register(GMCPCore);
+  const core = client.gmcp.register(GMCPCore);
   client.gmcp.register(GMCPClientMedia);
   client.gmcp.register(GMCPClientSpatial);
   client.gmcp.register(GMCPClientMidi);
@@ -53,8 +53,8 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPClientWebPush);
   client.gmcp.register(GMCPClientKeystrokes);
   client.gmcp.register(GMCPCoreSupports);
-  client.gmcp.register(GMCPCommChannel);
-  client.gmcp.register(GMCPCommLiveKit);
+  const commChannel = client.gmcp.register(GMCPCommChannel);
+  const commLiveKit = client.gmcp.register(GMCPCommLiveKit);
   client.gmcp.register(GMCPAutoLogin);
   client.gmcp.register(GMCPClientHtml);
   client.gmcp.register(GMCPClientFile);
@@ -69,10 +69,10 @@ export function createConfiguredClient(): MudClient {
   const charAfflictions = client.gmcp.register(GMCPCharAfflictions);
   const charDefences = client.gmcp.register(GMCPCharDefences);
   const charSkills = client.gmcp.register(GMCPCharSkills);
-  client.gmcp.register(GMCPGroup);
-  client.gmcp.register(GMCPLogging);
-  client.gmcp.register(GMCPRedirect);
-  client.gmcp.register(GMCPRoom);
+  const group = client.gmcp.register(GMCPGroup);
+  const logging = client.gmcp.register(GMCPLogging);
+  const redirect = client.gmcp.register(GMCPRedirect);
+  const room = client.gmcp.register(GMCPRoom);
   client.gmcp.register(GMCPClientHaptics);
 
   char.on("name", (data) => client.emit("statustext", `Logged in as ${data.fullname}`));
@@ -107,6 +107,27 @@ export function createConfiguredClient(): MudClient {
   charItems.on("update", (data) => {
     client.emit("itemUpdate", { ...data, item: { ...data.item, location: data.location } });
   });
+  core.on("ping", () => client.emit("corePing"));
+  core.on("goodbye", (reason) => client.emit("coreGoodbye", reason));
+  commChannel.on("text", (data) => {
+    client.emit("channelText", data);
+    if (data.channel === "say_to_you" && !document.hasFocus()) {
+      client.sendNotification(`Message from ${data.talker}`, data.text);
+    }
+  });
+  commChannel.on("players", (data) => client.emit("channelPlayers", data));
+  commChannel.on("start", (channelName) =>
+    client.emit("channelStart", channelName),
+  );
+  commChannel.on("end", (channelName) => client.emit("channelEnd", channelName));
+  commLiveKit.on("roomToken", (data) => client.emit("livekitToken", data.token));
+  commLiveKit.on("roomLeave", (data) => client.emit("livekitLeave", data.token));
+  group.on("info", (data) => client.emit("groupInfo", data));
+  logging.on("error", (data) => client.emit("gmcpError", data));
+  redirect.on("window", (targetWindow) =>
+    client.emit("redirectWindow", targetWindow || "main"),
+  );
+  room.on("wrongDir", (direction) => client.emit("roomWrongDir", direction));
 
   // MCP packages
   for (const PackageConstructor of DEFAULT_MCP_PACKAGES) {

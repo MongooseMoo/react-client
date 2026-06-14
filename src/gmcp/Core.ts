@@ -51,12 +51,10 @@ export class GMCPCore extends GMCPCoreBase {
   handlePing(): void {
     // Server replied to our ping, potentially update latency metrics
     console.log("Received Core.Ping response from server.");
-    this.client.emit("corePing"); // Example event
   }
 
   handleGoodbye(reason: string): void {
     console.log(`Server sent Core.Goodbye: ${reason}`);
-    this.client.emit("coreGoodbye", reason);
     // Optionally trigger disconnect logic here or let the main client handle it
   }
 }

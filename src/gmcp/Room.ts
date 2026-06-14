@@ -66,7 +66,6 @@ export class GMCPRoom extends GMCPRoomBase {
   handleWrongDir(direction: string): void {
     console.log(`Received Room.WrongDir: ${direction}`);
     // TODO: Indicate failed movement attempt in UI?
-    this.client.emit("roomWrongDir", direction);
   }
 
   handlePlayers(players: RoomPlayer[]): void {

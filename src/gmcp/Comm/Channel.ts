@@ -50,31 +50,22 @@ export class GMCPCommChannel extends GMCPCommChannelBase {
 
   handleText(data: GMCPMessageCommChannelText): void {
     console.log(`Received Comm.Channel.Text on ${data.channel} from ${data.talker}: ${data.text}`);
-    this.client.emit("channelText", data); // Emit the structured data
-    if (data.channel === "say_to_you") {
-      if (!document.hasFocus()) {
-        this.client.sendNotification(`Message from ${data.talker}`, `${data.text}`);
-      }
-    }
   }
 
   // --- Players ---
   handlePlayers(data: { name: string; channels?: string[] }[]): void {
     console.log("Received Comm.Channel.Players:", data);
     // TODO: Update shared channel/player info
-    this.client.emit("channelPlayers", data);
   }
 
   // --- Start/End/Text ---
   handleStart(channelName: string): void {
     console.log(`Received Comm.Channel.Start for ${channelName}`);
     // TODO: Potentially set a flag indicating channel text is incoming
-    this.client.emit("channelStart", channelName);
   }
 
   handleEnd(channelName: string): void {
     console.log(`Received Comm.Channel.End for ${channelName}`);
     // TODO: Clear the flag set by handleStart
-    this.client.emit("channelEnd", channelName);
   }
 }

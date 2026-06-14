@@ -25,6 +25,5 @@ export class GMCPGroup extends GMCPGroupBase {
     handleInfo(data: GMCPMessageGroupInfo): void {
         console.log("Received Group.Info:", data);
         // TODO: Implement logic to handle group info data
-        this.client.emit("groupInfo", data); // Example: emit an event
     }
 }

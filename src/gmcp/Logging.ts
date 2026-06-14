@@ -24,7 +24,6 @@ export class GMCPLogging extends GMCPLoggingBase {
     handleError(data: GMCPMessageLoggingError): void {
         console.error("Received Logging.Error from server:", data);
         // TODO: Implement logic to display or handle the error
-        this.client.emit("gmcpError", data); // Example: emit an event
     }
 
     // No request method as it's broadcast only
