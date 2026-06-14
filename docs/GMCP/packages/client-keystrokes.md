@@ -62,8 +62,8 @@ Removes bindings with the same key and exact modifier set.
 
 ### `Client.Keystrokes.Bind_all`
 
-Replaces the complete binding list. The wire suffix is `Bind_all` because the
-handler is `handleBind_all`.
+Replaces the complete binding list. The registry keeps the wire suffix as
+`Bind_all` and derives the package-local event name `bindAll`.
 
 ```json
 {
@@ -129,4 +129,3 @@ field text and waits for the user.
 The live implementation listens to `document` `keydown`, prevents default
 browser behavior when a binding matches, and removes the event listener on
 package shutdown.
-

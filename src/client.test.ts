@@ -139,6 +139,7 @@ vi.mock('./mcp', () => ({
 }));
 
 import MudClient from './client';
+import { GMCPClientFileTransfer } from './gmcp';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -256,6 +257,9 @@ describe('MudClient lifecycle cleanup', () => {
 
   it('preserves GMCP transport until file transfer cleanup completes', () => {
     const client = new MudClient('example.test', 443);
+    client.configureFileTransfer(
+      client.gmcp.register(GMCPClientFileTransfer as never),
+    );
     client.connect();
     const cleanupOrder: string[] = [];
     const fileTransferManager = mockFileTransferManagerInstances[0];

@@ -1,7 +1,8 @@
 # Package Inventory
 
 This inventory is based on `src/createConfiguredClient.ts`, `src/gmcp/index.ts`,
-and `src/gmcp/types.ts`.
+and `src/gmcp/types.ts`. `createConfiguredClient()` is the default runtime
+registration path and wires package-local events to application events.
 
 ## Registered Packages
 
@@ -64,4 +65,3 @@ The upstream archive also contains package families that this client does not
 currently implement, including `beip`, `config`, `external.discord`,
 `gmcp.overland`, `loci.hotkey`, `loci.menu`, `MSDP`, `mudstandards.*`,
 `tilemap`, and `webview`.
-

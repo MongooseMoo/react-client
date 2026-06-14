@@ -10,7 +10,7 @@ import { Buffer } from "buffer";
 import { EventEmitter } from "eventemitter3";
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
-import { GMCPClientFileTransfer, GmcpSession } from "./gmcp";
+import { type GMCPClientFileTransfer, GmcpSession } from "./gmcp";
 import {
   type MCPPackage,
   type McpSimpleEdit,
@@ -55,11 +55,11 @@ class MudClient extends EventEmitter {
   private telnetBuffer: string = "";
   public readonly gmcp: GmcpSession;
   public readonly mcpSession: McpSession;
-  public gmcp_fileTransfer: GMCPClientFileTransfer;
+  public gmcp_fileTransfer!: GMCPClientFileTransfer;
   public media: MediaService;
   public editors?: EditorManager;
   public webRTCService: WebRTCService;
-  public fileTransferManager: FileTransferManager;
+  public fileTransferManager!: FileTransferManager;
   private _autosay: boolean = false;
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
@@ -81,9 +81,12 @@ class MudClient extends EventEmitter {
       sendLine: (line) => this.send(`${line}\r\n`),
     });
     this.gmcp = new GmcpSession(this);
-    this.gmcp_fileTransfer = this.gmcp.register(GMCPClientFileTransfer);
     this.media = new MediaService();
     this.webRTCService = new WebRTCService();
+  }
+
+  configureFileTransfer(fileTransfer: GMCPClientFileTransfer): void {
+    this.gmcp_fileTransfer = fileTransfer;
     this.fileTransferManager = new FileTransferManager(
       this.webRTCService,
       this.gmcp_fileTransfer,
@@ -254,7 +257,7 @@ class MudClient extends EventEmitter {
     this.telnetBuffer = "";
     useRoomStore.getState().reset(); // Reset room info on cleanup
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
-    this.fileTransferManager.cleanup();
+    this.fileTransferManager?.cleanup();
     this.gmcp.reset();
     useLiveKitStore.getState().reset();
 
