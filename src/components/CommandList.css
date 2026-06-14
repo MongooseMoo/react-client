@@ -1,0 +1,60 @@
+.command-list-panel {
+  font-size: 0.9em;
+}
+
+.command-list-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.command-list-panel h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.command-list-panel button {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.command-list-panel button:hover:not(:disabled),
+.command-list-panel button:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.command-list-panel button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.command-list-panel ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.command-list-panel li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+}
+
+.command-list-panel p {
+  color: var(--color-text-muted);
+  font-style: italic;
+}

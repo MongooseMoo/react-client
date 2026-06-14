@@ -18,6 +18,7 @@ import HapticsStatus from './HapticsStatus'; // Import Haptics component
 import { usePreferences } from '../stores/preferencesStore';
 import { useRoomStore } from '../stores/roomStore';
 import { hapticsService } from '../HapticsService';
+import ServerFeaturesPanel from './ServerFeaturesPanel';
 
 // Define the type for the imperative handle
 export type SidebarRef = {
@@ -111,6 +112,12 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         condition: true,
       },
       {
+        id: 'server-tab',
+        label: 'Server',
+        content: <ServerFeaturesPanel client={client} />,
+        condition: true,
+      },
+      {
         id: 'midi-tab',
         label: 'MIDI',
         content: (
@@ -169,17 +176,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       },
     ];
 
-    // Memoize visibleTabs to prevent unnecessary effect re-runs if conditions don't change
-    // Note: If tab conditions become more dynamic, add them to the dependency array.
-    const visibleTabs = React.useMemo(() => {
-      return allTabs.filter((tab) => tab.condition ?? true); // Default condition to true
-    }, [
-      hasRoomData,
-      hasInventoryData,
-      preferences.midi.enabled,
-      preferences.haptics.enabled,
-      users,
-    ]); // Add dependencies based on actual conditions used
+    const visibleTabs = allTabs.filter((tab) => tab.condition ?? true);
 
     // Expose switchToTab function via useImperativeHandle
     React.useImperativeHandle(

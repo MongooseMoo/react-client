@@ -24,6 +24,9 @@ import FileTransferManager from "./FileTransferManager.js";
 import { useRoomStore } from "./stores/roomStore";
 import { useSpatialStore } from "./stores/spatialStore";
 import { useLiveKitStore } from "./stores/liveKitStore";
+import { useInputStore } from "./stores/inputStore";
+import { useServerLinksStore } from "./stores/serverLinksStore";
+import { useWorldMapStore } from "./stores/worldMapStore";
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
@@ -257,6 +260,9 @@ class MudClient extends EventEmitter {
     this.telnetBuffer = "";
     useRoomStore.getState().reset(); // Reset room info on cleanup
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
+    useWorldMapStore.getState().reset();
+    useServerLinksStore.getState().reset();
+    useInputStore.getState().resetCommands();
     this.fileTransferManager?.cleanup();
     this.gmcp.reset();
     useLiveKitStore.getState().reset();

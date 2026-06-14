@@ -13,7 +13,7 @@ type SendFunction = (text: string) => void;
 type Props = {
   onSend: SendFunction;
   inputRef: React.RefObject<HTMLTextAreaElement>;
-  client: MudClient; // Added client prop
+  client?: MudClient;
 };
 
 const STORAGE_KEY = 'command_history';
@@ -47,12 +47,12 @@ const parseWordForCompletion = (word: string): { leadingPunctuation: string, nam
   }
 };
 
-const CommandInput = ({ onSend, inputRef, client }: Props) => {
+const CommandInput = ({ onSend, inputRef }: Props) => {
   const commandHistoryRef = useRef(new CommandHistory());
   const text = useInputStore((s) => s.text);
 
   // Refs for tab completion state
-  const completionCandidatesRef = useRef<RoomPlayer[]>([]); // Store RoomPlayer objects
+  const completionCandidatesRef = useRef<string[]>([]);
   const completionIndexRef = useRef<number>(0);
   // Stores the full word (e.g., "-Da", "David") that initiated the current completion sequence
   const completionActiveOriginalWordRef = useRef<string | null>(null); 
@@ -139,21 +139,13 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
 
       let isCycling = false;
       if (completionActiveOriginalWordRef.current !== null && completionCandidatesRef.current.length > 0) {
-        const activeCyclePlayer = completionCandidatesRef.current[completionIndexRef.current];
-        // Parse the original word that started this completion sequence to get its leading punctuation
-        const { leadingPunctuation: activeOriginalLeadingPunctuation } = parseWordForCompletion(completionActiveOriginalWordRef.current);
-        const expectedCompletedWord = activeOriginalLeadingPunctuation + quoteNameIfNeeded(activeCyclePlayer.name);
-        isCycling = currentWord === expectedCompletedWord;
+        const activeCompletion = completionCandidatesRef.current[completionIndexRef.current];
+        isCycling = currentWord === activeCompletion;
       }
 
       if (isCycling) { // We are cycling
         completionIndexRef.current = (completionIndexRef.current + 1) % completionCandidatesRef.current.length;
-        const nextCandidatePlayer = completionCandidatesRef.current[completionIndexRef.current];
-        
-        // Re-parse the original word to get its leading punctuation for consistency
-        const { leadingPunctuation: activeOriginalLeadingPunctuation } = parseWordForCompletion(completionActiveOriginalWordRef.current!);
-        const baseCompletedName = quoteNameIfNeeded(nextCandidatePlayer.name);
-        const completedName = activeOriginalLeadingPunctuation + baseCompletedName;
+        const completedName = completionCandidatesRef.current[completionIndexRef.current];
 
         const newText = currentInputText.substring(0, wordStartIndex) + completedName + currentInputText.substring(cursorPos);
         useInputStore.getState().setText(newText);
@@ -170,8 +162,17 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
           return;
         }
         
+        const visibleCommandCandidates =
+          wordStartIndex === 0 && initialLeadingPunctuation === "" && !currentWord.startsWith('"')
+            ? useInputStore
+                .getState()
+                .visibleCommands.filter((command) =>
+                  command.toLowerCase().startsWith(initialNamePart.toLowerCase()),
+                )
+            : [];
+
         const roomPlayersData: RoomPlayer[] = useRoomStore.getState().roomPlayers;
-        const candidatePlayers = roomPlayersData
+        const playerCandidates = roomPlayersData
           .filter(p => {
             const nameMatch = typeof p.name === 'string' && p.name.toLowerCase().startsWith(initialNamePart.toLowerCase());
             const fullnameWords = typeof p.fullname === 'string' ? p.fullname.toLowerCase().split(' ') : [];
@@ -182,16 +183,17 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
             const nameCompare = a.name.localeCompare(b.name);
             if (nameCompare !== 0) return nameCompare;
             return a.fullname.localeCompare(b.fullname);
-          });
+          })
+          .map((player) => initialLeadingPunctuation + quoteNameIfNeeded(player.name));
+        const completionCandidates = [
+          ...new Set([...visibleCommandCandidates, ...playerCandidates]),
+        ];
 
-        if (candidatePlayers.length > 0) {
+        if (completionCandidates.length > 0) {
           completionActiveOriginalWordRef.current = currentWord; // Store the word that initiated this sequence
-          completionCandidatesRef.current = candidatePlayers;
+          completionCandidatesRef.current = completionCandidates;
           completionIndexRef.current = 0;
-          
-          const firstCandidatePlayer = candidatePlayers[0];
-          const baseCompletedName = quoteNameIfNeeded(firstCandidatePlayer.name);
-          const completedName = initialLeadingPunctuation + baseCompletedName;
+          const completedName = completionCandidates[0];
           
           const newText = currentInputText.substring(0, wordStartIndex) + completedName + currentInputText.substring(cursorPos);
           useInputStore.getState().setText(newText);
@@ -230,7 +232,7 @@ const CommandInput = ({ onSend, inputRef, client }: Props) => {
         resetCompletionState();
       }
     }
-  }, [text, client, inputRef, resetCompletionState, handleSend]); // Added handleSend and resetCompletionState
+  }, [text, inputRef, resetCompletionState, handleSend]); // Added handleSend and resetCompletionState
 
   return (
     <div className="command-input-container">
