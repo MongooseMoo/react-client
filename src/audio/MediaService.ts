@@ -121,6 +121,7 @@ export interface ClientMediaListenerPositionPayload {
 export interface ExtendedSound extends Sound {
   ambisonicRenderer?: AmbisonicRenderer;
   inputChannels?: number;
+  mediaPosition?: Position;
   priority?: number;
   tag?: string;
   key?: string;
@@ -203,7 +204,7 @@ export class MediaService {
     if (!sound.ambisonicRenderer) {
       return;
     }
-    const distance = distanceBetween(this.cacophony.listenerPosition, sound.position);
+    const distance = distanceBetween(this.cacophony.listenerPosition, sound.mediaPosition);
     sound.ambisonicRenderer.setDistanceGain(inverseDistanceGain(distance));
   }
 
@@ -723,7 +724,8 @@ export class MediaService {
     }
 
     if (data.position?.length) {
-      sound.position = [data.position[0], data.position[1], data.position[2]];
+      sound.mediaPosition = [data.position[0], data.position[1], data.position[2]];
+      sound.position = sound.mediaPosition;
       this.updateAmbisonicDistance(sound as ExtendedSound);
     }
 
