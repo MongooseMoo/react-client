@@ -8,6 +8,7 @@ import {
 
 import { usePreferences } from '../stores/preferencesStore';
 import { AmbisonicRenderer } from './AmbisonicRenderer';
+import { distanceBetween, inverseDistanceGain, SPATIAL_DISTANCE_MODEL } from './distanceModel';
 import { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
 import type { EffectSpec } from './effects/types';
@@ -120,6 +121,7 @@ export interface ClientMediaListenerPositionPayload {
 export interface ExtendedSound extends Sound {
   ambisonicRenderer?: AmbisonicRenderer;
   inputChannels?: number;
+  mediaPosition?: Position;
   priority?: number;
   tag?: string;
   key?: string;
@@ -186,7 +188,24 @@ export class MediaService {
   setListenerPosition(position: Position | null | undefined): void {
     if (position?.length) {
       this.cacophony.listenerPosition = position;
+      for (const sound of this.allSounds) {
+        this.updateAmbisonicDistance(sound);
+      }
     }
+  }
+
+  /**
+   * Recompute an ambisonic source's distance attenuation from the current
+   * listener position. The HRTF panner gets distance from the Web Audio
+   * PannerNode for free; the ambisonic route has no panner, so we drive its
+   * pre-encoder gain with the same falloff curve ({@link inverseDistanceGain}).
+   */
+  private updateAmbisonicDistance(sound: ExtendedSound): void {
+    if (!sound.ambisonicRenderer) {
+      return;
+    }
+    const distance = distanceBetween(this.cacophony.listenerPosition, sound.mediaPosition);
+    sound.ambisonicRenderer.setDistanceGain(inverseDistanceGain(distance));
   }
 
   setListenerOrientation(
@@ -652,6 +671,7 @@ export class MediaService {
     renderer.attachPlayback(playback, outputTarget);
     renderer.setRotationMatrixFromYaw(this.currentListenerYaw());
     sound.ambisonicRenderer = renderer;
+    this.updateAmbisonicDistance(sound);
   }
 
   private async resolveAmbisonicTarget(
@@ -697,14 +717,16 @@ export class MediaService {
         coneOuterAngle: 0,
         panningModel: 'HRTF',
         distanceModel: 'inverse',
-        refDistance: 4,
-        rolloffFactor: 0.5,
-        maxDistance: 200,
+        refDistance: SPATIAL_DISTANCE_MODEL.refDistance,
+        rolloffFactor: SPATIAL_DISTANCE_MODEL.rolloffFactor,
+        maxDistance: SPATIAL_DISTANCE_MODEL.maxDistance,
       };
     }
 
     if (data.position?.length) {
-      sound.position = [data.position[0], data.position[1], data.position[2]];
+      sound.mediaPosition = [data.position[0], data.position[1], data.position[2]];
+      sound.position = sound.mediaPosition;
+      this.updateAmbisonicDistance(sound as ExtendedSound);
     }
 
     if (data.start !== undefined) {

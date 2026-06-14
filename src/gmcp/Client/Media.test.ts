@@ -11,6 +11,7 @@ vi.mock('../../audio/AmbisonicRenderer', () => ({
   },
 }));
 
+import { MediaService } from '../../audio/MediaService';
 import {
   GMCPClientMedia,
   type GMCPMessageClientMediaListenerOrientation,
@@ -19,7 +20,6 @@ import {
   type GMCPMessageClientMediaStop,
   type GMCPMessageClientMediaUpdate,
 } from './Media';
-import { MediaService } from '../../audio/MediaService';
 
 type MockCacophony = ConstructorParameters<typeof MediaService>[0];
 
@@ -191,6 +191,7 @@ describe('GMCPClientMedia', () => {
       attachPlayback: vi.fn(),
       cleanup: vi.fn(),
       setRotationMatrixFromYaw: vi.fn(),
+      setDistanceGain: vi.fn(),
     });
     client = createMockClient();
     handler = new GMCPClientMedia(client as never);
@@ -357,6 +358,7 @@ describe('GMCPClientMedia', () => {
         attachPlayback: vi.fn(),
         cleanup: vi.fn(),
         setRotationMatrixFromYaw: vi.fn(),
+        setDistanceGain: vi.fn(),
       };
       mockAmbisonicRendererCreate.mockResolvedValue(renderer);
       const sound = createMockSound('https://media.example/amb.ogg');
@@ -559,6 +561,37 @@ describe('GMCPClientMedia', () => {
 
     handler.handleStop({ key: 'show-1' } as GMCPMessageClientMediaStop);
     expect(renderer.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('attenuates positioned ambisonic playback when Cacophony stores no stereo position', async () => {
+    const renderer = {
+      attachPlayback: vi.fn(),
+      cleanup: vi.fn(),
+      setRotationMatrixFromYaw: vi.fn(),
+      setDistanceGain: vi.fn(),
+    };
+    mockAmbisonicRendererCreate.mockResolvedValue(renderer);
+    const sound = createMockSound('https://media.example/show.ogg');
+    const setPosition = vi.fn();
+    Object.defineProperty(sound, 'position', {
+      configurable: true,
+      get: () => [0, 0, 0],
+      set: setPosition,
+    });
+    mockCreateSound.mockResolvedValue(sound);
+
+    await handler.handlePlay({
+      key: 'show-1',
+      name: 'show.ogg',
+      position: [0, 0, 10],
+      type: 'sound',
+      upmix: 'ambisonic',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    expect(setPosition).toHaveBeenCalledWith([0, 0, 10]);
+    expect(renderer.setDistanceGain).toHaveBeenCalledOnce();
+    expect(renderer.setDistanceGain.mock.calls[0][0]).toBeCloseTo(4 / 7);
   });
 
   it('preserves omitted listener position and orientation fields', () => {
