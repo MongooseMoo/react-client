@@ -4,7 +4,6 @@ import { GmcPIRESound } from './Sound';
 
 function createMockClient() {
   return {
-    emit: vi.fn(),
     media: {
       load: vi.fn(async () => {}),
       play: vi.fn(async () => {}),
@@ -37,12 +36,6 @@ describe('GmcPIRESound', () => {
       type: 'sound',
       volume: 65,
     });
-    expect(client.emit).toHaveBeenCalledWith(
-      'ireSoundPlay',
-      expect.objectContaining({
-        name: 'attack.ogg',
-      }),
-    );
   });
 
   it('routes IRE stop and preload through the shared media service', () => {

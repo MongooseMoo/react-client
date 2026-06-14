@@ -32,7 +32,6 @@ export class GmcPIREComposer extends GmcPIREComposerBase {
     handleEdit(data: GMCPMessageIREComposerEdit): void {
         console.log(`Received IRE.Composer.Edit (Title: ${data.title}):`, data.text);
         // TODO: Open an editor interface with the provided title and text
-        this.client.emit("composerEdit", data);
     }
 
     // Helper for IRE-specific commands (***save, ***quit)

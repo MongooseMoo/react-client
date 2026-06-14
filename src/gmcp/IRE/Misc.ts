@@ -42,24 +42,20 @@ export class GmcPIREMisc extends GmcPIREMiscBase {
     handleRemindVote(url: string): void {
         console.log(`Received IRE.Misc.RemindVote: ${url}`);
         // TODO: Display a reminder to vote, possibly with the URL
-        this.client.emit("miscRemindVote", url);
     }
 
     handleAchievement(achievements: Achievement[]): void {
         console.log("Received IRE.Misc.Achievement:", achievements);
         // TODO: Update achievement status
-        this.client.emit("miscAchievement", achievements);
     }
 
     handleURL(urls: UrlInfo[]): void {
         console.log("Received IRE.Misc.URL:", urls);
         // TODO: Provide clickable URLs, potentially opening in specific windows/tabs
-        this.client.emit("miscURL", urls);
     }
 
     handleTip(tip: string): void {
         console.log(`Received IRE.Misc.Tip: ${tip}`);
         // TODO: Display the tip to the user
-        this.client.emit("miscTip", tip);
     }
 }

@@ -35,13 +35,11 @@ export class GmcPIRETime extends GmcPIRETimeBase {
     handleList(timeInfo: TimeInfo): void {
         console.log("Received IRE.Time.List:", timeInfo);
         // TODO: Update time/date/day-night display
-        this.client.emit("timeList", timeInfo);
     }
 
     handleUpdate(timeUpdate: Partial<TimeInfo>): void {
         // Assuming Update sends only changed values
         console.log("Received IRE.Time.Update:", timeUpdate);
         // TODO: Update specific time elements
-        this.client.emit("timeUpdate", timeUpdate);
     }
 }

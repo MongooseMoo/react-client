@@ -32,12 +32,10 @@ export class GmcPIRERift extends GmcPIRERiftBase {
     handleList(items: RiftItem[]): void {
         console.log("Received IRE.Rift.List:", items);
         // TODO: Update rift item list display
-        this.client.emit("riftList", items);
     }
 
     handleChange(item: RiftItem): void {
         console.log("Received IRE.Rift.Change:", item);
         // TODO: Update specific item amount/info in rift display
-        this.client.emit("riftChange", item);
     }
 }

@@ -39,20 +39,17 @@ export class GmcPIRETasks extends GmcPIRETasksBase {
     handleList(tasks: TaskItem[]): void {
         console.log("Received IRE.Tasks.List:", tasks);
         // TODO: Update tasks/quests/achievements display
-        this.client.emit("tasksList", tasks);
     }
 
     handleUpdate(task: TaskItem): void {
         // Assuming Update sends a single item like other similar packages
         console.log("Received IRE.Tasks.Update:", task);
         // TODO: Update a specific task/quest/achievement in the display
-        this.client.emit("taskUpdate", task);
     }
 
     handleCompleted(task: TaskItem): void {
         // Assuming Completed sends a single item
         console.log("Received IRE.Tasks.Completed:", task);
         // TODO: Mark a task/quest/achievement as completed
-        this.client.emit("taskCompleted", task);
     }
 }

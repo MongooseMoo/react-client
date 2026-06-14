@@ -25,7 +25,6 @@ export class GmcPIRECombatMessage extends GmcPIRECombatMessageBase {
     handleSkillAttack(skillName: string, data: CombatMessageData): void {
         console.log(`Received IRE.CombatMessage for ${skillName}:`, data);
         // TODO: Process combat message (e.g., display, trigger reflexes)
-        this.client.emit("combatMessage", { skill: skillName, ...data });
     }
 
     // Override handleGmcp to dynamically handle skill names if needed

@@ -67,19 +67,16 @@ export class GmcPIRESound extends GmcPIRESoundBase {
       .catch((error) => {
         console.error('IRE.Sound.Play failed:', error);
       });
-    this.client.emit('ireSoundPlay', data);
   }
 
   handleStop(data: IREStopPayload): void {
     console.log('Received IRE.Sound.Stop:', data);
     this.client.media.stop({ name: data.name });
-    this.client.emit('ireSoundStop', data);
   }
 
   handleStopall(data: IREStopAllPayload): void {
     console.log('Received IRE.Sound.Stopall:', data);
     this.client.media.stop({});
-    this.client.emit('ireSoundStopall', data);
   }
 
   handlePreload(data: IREPreloadPayload): void {
@@ -87,7 +84,6 @@ export class GmcPIRESound extends GmcPIRESoundBase {
     void this.client.media.load({ name: data.name }).catch((error) => {
       console.error('IRE.Sound.Preload failed:', error);
     });
-    this.client.emit('ireSoundPreload', data);
   }
 
   // No client messages defined

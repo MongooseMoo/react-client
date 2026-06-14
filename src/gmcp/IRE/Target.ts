@@ -33,12 +33,10 @@ export class GmcPIRETarget extends GmcPIRETargetBase {
         // Server informs client of target set via cycling (e.g., tab)
         console.log(`Received IRE.Target.Set (from server): ${targetId}`);
         // TODO: Update client-side target display/state
-        this.client.emit("targetSet", targetId);
     }
 
     handleInfo(data: TargetInfo): void {
         console.log("Received IRE.Target.Info:", data);
         // TODO: Update detailed target information display
-        this.client.emit("targetInfo", data);
     }
 }
