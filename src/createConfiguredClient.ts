@@ -34,17 +34,34 @@ import {
 } from "./gmcp";
 import {
   DEFAULT_MCP_PACKAGES,
+  McpAwnsDisplayUrl,
   McpAwnsGetSet,
+  McpAwnsRehash,
+  McpAwnsServerInfo,
   McpAwnsStatus,
+  McpAwnsTimezone,
+  McpAwnsVisual,
+  McpNegotiate,
   McpSimpleEdit,
   McpVmooUserlist,
 } from "./mcp/index";
+import { useInputStore } from "./stores/inputStore";
+import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useSpatialStore } from "./stores/spatialStore";
+import { useWorldMapStore } from "./stores/worldMapStore";
 
 marked.setOptions({
   breaks: true,
   gfm: true,
 });
+
+function getLocalTimezoneAbbreviation(): string {
+  const timeZoneName =
+    new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+      .formatToParts(new Date())
+      .find((part) => part.type === "timeZoneName")?.value ?? "";
+  return timeZoneName || "UTC";
+}
 
 /**
  * Create a MudClient with all GMCP and MCP packages registered.
@@ -190,10 +207,83 @@ export function createConfiguredClient(): MudClient {
   );
 
   // MCP packages
+  let negotiatePackage: McpNegotiate | undefined;
+  let serverInfoPackage: McpAwnsServerInfo | undefined;
+  let visualPackage: McpAwnsVisual | undefined;
+  let rehashPackage: McpAwnsRehash | undefined;
+  let timezonePackage: McpAwnsTimezone | undefined;
+
   for (const PackageConstructor of DEFAULT_MCP_PACKAGES) {
     const mcpPackage = client.registerMcpPackage(PackageConstructor);
+    if (mcpPackage instanceof McpNegotiate) {
+      negotiatePackage = mcpPackage;
+    }
     if (mcpPackage instanceof McpSimpleEdit) {
       client.configureEditors(mcpPackage);
+    }
+    if (mcpPackage instanceof McpAwnsDisplayUrl) {
+      mcpPackage.on("displayUrl", (url) => {
+        useServerLinksStore.getState().addRecentUrl(url);
+        client.emit("displayUrl", url);
+        client.emit("statustext", `Server sent URL: ${url}`);
+      });
+    }
+    if (mcpPackage instanceof McpAwnsServerInfo) {
+      serverInfoPackage = mcpPackage;
+      mcpPackage.on("serverInfo", (info) => {
+        useServerLinksStore.getState().setServerInfo(info);
+        client.emit("serverInfo", info);
+      });
+    }
+    if (mcpPackage instanceof McpAwnsVisual) {
+      visualPackage = mcpPackage;
+      mcpPackage.on("location", ({ id }) => {
+        useWorldMapStore.getState().setLocation(id);
+        client.emit("worldLocation", id);
+      });
+      mcpPackage.on("self", ({ id }) => {
+        useWorldMapStore.getState().setSelf(id);
+        client.emit("worldSelf", id);
+      });
+      mcpPackage.on("users", (users) => {
+        useWorldMapStore.getState().setUsers(
+          users.map((user) => ({
+            id: user.id,
+            name: user.name,
+            locationId: user.location,
+            idleSeconds: Number.isFinite(Number(user.idle)) ? Number(user.idle) : null,
+          })),
+        );
+        client.emit("worldUsers", users);
+      });
+      mcpPackage.on("topology", (rooms) => {
+        useWorldMapStore.getState().setRooms(
+          rooms.map((room) => ({
+            id: room.id,
+            name: room.name,
+            exits: room.exit,
+          })),
+        );
+        client.emit("worldTopology", rooms);
+      });
+    }
+    if (mcpPackage instanceof McpAwnsRehash) {
+      rehashPackage = mcpPackage;
+      mcpPackage.on("commands", ({ commands }) => {
+        useInputStore.getState().setVisibleCommands(commands);
+        client.emit("visibleCommands", commands);
+      });
+      mcpPackage.on("add", ({ commands }) => {
+        useInputStore.getState().addVisibleCommands(commands);
+        client.emit("visibleCommands", useInputStore.getState().visibleCommands);
+      });
+      mcpPackage.on("remove", ({ commands }) => {
+        useInputStore.getState().removeVisibleCommands(commands);
+        client.emit("visibleCommands", useInputStore.getState().visibleCommands);
+      });
+    }
+    if (mcpPackage instanceof McpAwnsTimezone) {
+      timezonePackage = mcpPackage;
     }
     if (mcpPackage instanceof McpAwnsStatus) {
       mcpPackage.on("statustext", (text) => client.emit("statustext", text));
@@ -207,5 +297,15 @@ export function createConfiguredClient(): MudClient {
       mcpPackage.on("userlist", (players) => client.emit("userlist", players));
     }
   }
+
+  negotiatePackage?.on("end", () => {
+    timezonePackage?.sendTimezone({ timezone: getLocalTimezoneAbbreviation() });
+    serverInfoPackage?.requestServerInfo();
+    rehashPackage?.requestCommands();
+    visualPackage?.requestSelf();
+    visualPackage?.requestLocation();
+    visualPackage?.requestUsers();
+  });
+
   return client;
 }

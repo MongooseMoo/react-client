@@ -4,6 +4,7 @@ import { useInputStore } from "./inputStore";
 describe("inputStore", () => {
   beforeEach(() => {
     useInputStore.getState().clear();
+    useInputStore.getState().resetCommands();
   });
 
   it("starts empty", () => {
@@ -29,5 +30,19 @@ describe("inputStore", () => {
     useInputStore.getState().setText("x");
     unsub();
     expect(notified).toBe(1);
+  });
+
+  it("stores visible commands as a sorted unique list", () => {
+    useInputStore.getState().setVisibleCommands(["look", "open", "look"]);
+    useInputStore.getState().addVisibleCommands(["close", "open"]);
+
+    expect(useInputStore.getState().visibleCommands).toEqual(["close", "look", "open"]);
+  });
+
+  it("removes visible commands", () => {
+    useInputStore.getState().setVisibleCommands(["close", "look", "open"]);
+    useInputStore.getState().removeVisibleCommands(["look"]);
+
+    expect(useInputStore.getState().visibleCommands).toEqual(["close", "open"]);
   });
 });

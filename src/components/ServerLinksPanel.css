@@ -1,0 +1,98 @@
+.server-links-panel {
+  font-size: 0.9em;
+}
+
+.panel-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.server-links-panel h4,
+.server-links-panel h5 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.server-link-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.server-links-panel button {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.server-links-panel button:hover:not(:disabled),
+.server-links-panel button:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.server-links-panel button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.server-links-section {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.jtext-form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.jtext-form label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.jtext-form label span {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.jtext-form input {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-deep);
+  color: var(--color-text);
+  padding: var(--space-1) var(--space-2);
+}
+
+.server-links-section ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.server-links-section li {
+  margin-bottom: var(--space-2);
+}
+
+.server-links-section li button {
+  width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.server-links-section p {
+  color: var(--color-text-muted);
+  font-style: italic;
+}

@@ -127,10 +127,6 @@ export class McpSession {
       return;
     }
 
-    if (message.name === "mcp-negotiate-end") {
-      return;
-    }
-
     if (message.authKey !== this.authKey) {
       console.log(
         `Unexpected authkey "${message.authKey}", probably a spoofed message.`,

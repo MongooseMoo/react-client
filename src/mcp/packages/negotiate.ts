@@ -1,15 +1,24 @@
+import { duplex, identityCodec, messageEnvelope } from '../../protocol/messages';
 import { MCPPackage } from '../package';
 import type { McpMessage } from '../types';
 
-export class McpNegotiate extends MCPPackage {
-  public packageName = 'mcp-negotiate';
+const negotiateEnd = messageEnvelope('end', identityCodec<undefined>());
+
+const McpNegotiateBase = MCPPackage.with({
+  packageName: 'mcp-negotiate',
+  messages: [duplex(negotiateEnd).asEvent('end')] as const,
+});
+
+export class McpNegotiate extends McpNegotiateBase {
   public minVersion = 2.0;
   public maxVersion = 2.0;
 
   handle(message: McpMessage): void {
     switch (message.name) {
       case 'mcp-negotiate-can':
+        break;
       case 'mcp-negotiate-end':
+        this.emitRegisteredMessage(negotiateEnd.wireName, undefined);
         break;
       default:
         break;
@@ -17,6 +26,6 @@ export class McpNegotiate extends MCPPackage {
   }
 
   sendNegotiate(): void {
-    this.send('end');
+    this.sendEnd(undefined);
   }
 }

@@ -1,0 +1,9 @@
+.server-features-panel {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.server-features-panel > section:not(:first-child) {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-4);
+}
