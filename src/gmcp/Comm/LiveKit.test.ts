@@ -6,7 +6,6 @@ import { GMCPCommLiveKit } from "./LiveKit";
 
 function createMockClient() {
   return {
-    emit: vi.fn(),
     gmcp: {
       send: vi.fn(),
     },
@@ -24,19 +23,24 @@ describe("GMCPCommLiveKit", () => {
     handler = new GMCPCommLiveKit(client as unknown as MudClient);
   });
 
-  it("stores and emits livekitToken when room_token arrives", () => {
-    handler.handleroom_token({ token: "token-a" });
+  it("stores and emits roomToken when room_token arrives", () => {
+    const listener = vi.fn();
+    handler.on("roomToken", listener);
+
+    handler.receiveRegisteredMessage("room_token", { token: "token-a" });
 
     expect(useLiveKitStore.getState().tokens).toEqual(["token-a"]);
-    expect(client.emit).toHaveBeenCalledWith("livekitToken", "token-a");
+    expect(listener).toHaveBeenCalledWith({ token: "token-a" });
   });
 
-  it("removes and emits livekitLeave when room_leave arrives", () => {
+  it("removes and emits roomLeave when room_leave arrives", () => {
+    const listener = vi.fn();
+    handler.on("roomLeave", listener);
     useLiveKitStore.getState().addToken("token-a");
 
-    handler.handleroom_leave({ token: "token-a" });
+    handler.receiveRegisteredMessage("room_leave", { token: "token-a" });
 
     expect(useLiveKitStore.getState().tokens).toEqual([]);
-    expect(client.emit).toHaveBeenCalledWith("livekitLeave", "token-a");
+    expect(listener).toHaveBeenCalledWith({ token: "token-a" });
   });
 });

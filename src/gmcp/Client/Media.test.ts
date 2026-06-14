@@ -293,7 +293,7 @@ describe('GMCPClientMedia', () => {
     });
 
     it('advertises EffectsSupport to the server', () => {
-      handler.sendEffectsSupport();
+      handler.publishEffectsSupport();
       expect(client.gmcp.send).toHaveBeenCalledWith(
         'Client.Media.EffectsSupport',
         expect.stringContaining('reverb'),

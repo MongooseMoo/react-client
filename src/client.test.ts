@@ -104,10 +104,6 @@ vi.mock('./gmcp', async () => {
   const actual = await vi.importActual<typeof import('./gmcp')>('./gmcp');
   return {
     ...actual,
-    GMCPChar: class {
-      packageName = 'Char';
-      shutdown = vi.fn();
-    },
     GMCPClientFileTransfer: class {
       packageName = 'Client.FileTransfer';
       sendReject = vi.fn();
@@ -135,11 +131,7 @@ vi.mock('./mcp', () => ({
     shutdown = vi.fn();
 
     registerPackage = vi.fn((PackageConstructor) => {
-      const mcpPackage = new PackageConstructor({
-        emit: vi.fn(),
-        openEditorSession: vi.fn(),
-        sendMcp: vi.fn(),
-      });
+      const mcpPackage = new PackageConstructor();
       this.packageHandlers[mcpPackage.packageName] = mcpPackage;
       return mcpPackage;
     });
@@ -147,6 +139,7 @@ vi.mock('./mcp', () => ({
 }));
 
 import MudClient from './client';
+import { GMCPClientFileTransfer } from './gmcp';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -179,19 +172,20 @@ class MockCorePackage {
 class MockCoreSupportsPackage {
   packageName = 'Core.Supports';
   packageVersion = 1;
+  advertisedModules = vi.fn(() => ['Core 1', 'Core.Supports 1']);
   sendSet = vi.fn();
 }
 
 class MockAutoLoginPackage {
   packageName = 'Auth.Autologin';
   packageVersion = 1;
-  sendLogin = vi.fn();
+  sendStoredLogin = vi.fn();
 }
 
 class MockClientMediaPackage {
   packageName = 'Client.Media';
   packageVersion = 1;
-  sendEffectsSupport = vi.fn();
+  publishEffectsSupport = vi.fn();
 }
 
 function sendSocketText(socket: MockWebSocket, text: string): void {
@@ -261,20 +255,11 @@ describe('MudClient lifecycle cleanup', () => {
     expect(handleGmcpReady).toHaveBeenCalledOnce();
   });
 
-  it('emits sessionReady only once', () => {
-    const client = new MudClient('example.test', 443);
-    const handleSessionReady = vi.fn();
-    client.on('sessionReady', handleSessionReady);
-
-    client.gmcp.markSessionReady();
-    client.gmcp.markSessionReady();
-
-    expect(client.gmcp.sessionReady).toBe(true);
-    expect(handleSessionReady).toHaveBeenCalledOnce();
-  });
-
   it('preserves GMCP transport until file transfer cleanup completes', () => {
     const client = new MudClient('example.test', 443);
+    client.configureFileTransfer(
+      client.gmcp.register(GMCPClientFileTransfer as never),
+    );
     client.connect();
     const cleanupOrder: string[] = [];
     const fileTransferManager = mockFileTransferManagerInstances[0];

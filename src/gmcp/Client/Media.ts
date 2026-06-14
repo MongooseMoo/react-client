@@ -15,6 +15,8 @@ import type {
 } from '../../audio/MediaService';
 import { buildEffectsSupport } from '../../audio/effects/MediaEffects';
 import type { EffectSpec } from '../../audio/effects/types';
+import { inbound, outbound } from '../../protocol/messages';
+import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage implements ClientMediaLoadPayload {
@@ -128,11 +130,69 @@ export class GMCPMessageClientMediaListenerPosition
   public readonly position?: Position;
 }
 
-export class GMCPClientMedia extends GMCPPackage {
-  public packageName = 'Client.Media';
+const mediaChain = gmcpJsonMessage<'Chain', GMCPMessageClientMediaChain>('Chain');
+const mediaChainStop = gmcpJsonMessage<
+  'ChainStop',
+  GMCPMessageClientMediaChainStop
+>('ChainStop');
+const mediaAutomate = gmcpJsonMessage<
+  'Automate',
+  GMCPMessageClientMediaAutomate
+>('Automate');
+const mediaDefault = gmcpJsonMessage<'Default', string>('Default');
+const mediaLoad = gmcpJsonMessage<'Load', GMCPMessageClientMediaLoad>('Load');
+const mediaPlay = gmcpJsonMessage<'Play', GMCPMessageClientMediaPlay>('Play');
+const mediaUpdate = gmcpJsonMessage<'Update', GMCPMessageClientMediaUpdate>('Update');
+const mediaStop = gmcpJsonMessage<'Stop', GMCPMessageClientMediaStop>('Stop');
+const mediaListenerPosition = gmcpJsonMessage<
+  'ListenerPosition',
+  GMCPMessageClientMediaListenerPosition
+>('ListenerPosition');
+const mediaListenerOrientation = gmcpJsonMessage<
+  'ListenerOrientation',
+  GMCPMessageClientMediaListenerOrientation
+>('ListenerOrientation');
+const mediaEffectsSupport = gmcpJsonMessage<
+  'EffectsSupport',
+  never,
+  ReturnType<typeof buildEffectsSupport>
+>('EffectsSupport');
 
-  constructor(client: GMCPPackage['client']) {
+const GMCPClientMediaBase = GMCPPackage.with({
+  packageName: 'Client.Media',
+  messages: [
+    inbound(mediaChain),
+    inbound(mediaChainStop),
+    inbound(mediaAutomate),
+    inbound(mediaDefault),
+    inbound(mediaLoad),
+    inbound(mediaPlay),
+    inbound(mediaUpdate),
+    inbound(mediaStop),
+    inbound(mediaListenerPosition),
+    inbound(mediaListenerOrientation),
+    outbound(mediaEffectsSupport),
+  ] as const,
+});
+
+export class GMCPClientMedia extends GMCPClientMediaBase {
+
+  constructor(client: ConstructorParameters<typeof GMCPClientMediaBase>[0]) {
     super(client);
+    this.on('chain', (data) => this.handleChain(data));
+    this.on('chainStop', (data) => this.handleChainStop(data));
+    this.on('automate', (data) => this.handleAutomate(data));
+    this.on('default', (data) => this.handleDefault(data));
+    this.on('load', (data) => {
+      void this.handleLoad(data);
+    });
+    this.on('play', (data) => {
+      void this.handlePlay(data);
+    });
+    this.on('update', (data) => this.handleUpdate(data));
+    this.on('stop', (data) => this.handleStop(data));
+    this.on('listenerPosition', (data) => this.handleListenerPosition(data));
+    this.on('listenerOrientation', (data) => this.handleListenerOrientation(data));
     this.client.on('spatialListenerOrientation', this.handleSpatialListenerOrientation);
     this.client.on('spatialScene', this.handleSpatialScene);
   }
@@ -141,8 +201,8 @@ export class GMCPClientMedia extends GMCPPackage {
     return this.client.media.sounds;
   }
 
-  sendEffectsSupport(): void {
-    this.sendData('EffectsSupport', buildEffectsSupport());
+  publishEffectsSupport(): void {
+    this.sendEffectsSupport(buildEffectsSupport());
   }
 
   handleChain(data: GMCPMessageClientMediaChain): void {

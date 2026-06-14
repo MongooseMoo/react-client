@@ -1,9 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   encodeGmcpPayload,
   parseGmcpMessageAddress,
   parseGmcpPayload,
-  resolveGmcpMessageHandler,
 } from './codec';
 
 describe('GMCP codec', () => {
@@ -24,13 +23,6 @@ describe('GMCP codec', () => {
     expect(parseGmcpPayload(undefined)).toEqual({});
     expect(parseGmcpPayload('')).toEqual({});
     expect(parseGmcpPayload('{"name":"rain"}')).toEqual({ name: 'rain' });
-  });
-
-  it('resolves handlers without exposing dynamic any at the call site', () => {
-    const handlePlay = vi.fn();
-
-    expect(resolveGmcpMessageHandler({ handlePlay }, 'Play')).toBe(handlePlay);
-    expect(resolveGmcpMessageHandler({ handlePlay: 'nope' }, 'Play')).toBeUndefined();
   });
 
   it('does not double encode already serialized payloads', () => {

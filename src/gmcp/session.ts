@@ -4,7 +4,6 @@ import {
   encodeGmcpPayload,
   parseGmcpMessageAddress,
   parseGmcpPayload,
-  resolveGmcpMessageHandler,
 } from './codec';
 import type { GMCPPackage } from './package';
 import type { GMCPHandlerMap, KnownGMCPPackageMap, KnownGMCPPackageName } from './types';
@@ -50,24 +49,25 @@ export class GmcpSession {
     return gmcpPackage;
   }
 
-  start(): void {
-    this.require('Core').sendHello();
-    this.require('Core.Supports').sendSet();
-    this.require('Auth.Autologin').sendLogin();
-    this.require('Client.Media').sendEffectsSupport();
-    this.markReady();
+  start(): boolean {
+    this.require('Core').sendHello({ client: 'Mongoose Client', version: '0.1' });
+    const coreSupports = this.require('Core.Supports');
+    coreSupports.sendSet(coreSupports.advertisedModules());
+    this.require('Auth.Autologin').sendStoredLogin();
+    this.require('Client.Media').publishEffectsSupport();
+    return this.markReady();
   }
 
-  markReady(): void {
-    if (this._ready) return;
+  markReady(): boolean {
+    if (this._ready) return false;
     this._ready = true;
-    this.client.emit('gmcpReady');
+    return true;
   }
 
-  markSessionReady(): void {
-    if (this._sessionReady) return;
+  markSessionReady(): boolean {
+    if (this._sessionReady) return false;
     this._sessionReady = true;
-    this.client.emit('sessionReady');
+    return true;
   }
 
   receive(gmcpPackage: string, gmcpMessage: string | undefined): void {
@@ -84,20 +84,23 @@ export class GmcpSession {
       return;
     }
 
-    const messageHandler = resolveGmcpMessageHandler(handler, address.messageType);
-    if (!messageHandler) {
-      console.log('No handler on package:', address.packageName, address.messageType);
-      return;
-    }
-
+    let handled: boolean;
     try {
-      messageHandler.call(handler, parseGmcpPayload(gmcpMessage));
+      const payload = parseGmcpPayload(gmcpMessage);
+      handled = handler.receiveRegisteredMessage(address.messageType, payload);
     } catch (error) {
       console.error(
         `Error dispatching GMCP message for ${address.packageName}.${address.messageType}:`,
         error,
       );
+      return;
     }
+
+    if (handled) {
+      return;
+    }
+
+    console.log('No registered GMCP message:', address.packageName, address.messageType);
   }
 
   send(packageName: string, data?: unknown): void {

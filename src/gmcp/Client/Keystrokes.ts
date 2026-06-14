@@ -1,6 +1,7 @@
-import type MudClient from "../../client";
+import { inbound, outbound } from "../../protocol/messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 import { useInputStore } from "../../stores/inputStore";
+import { gmcpJsonMessage } from "../messages";
 
 interface KeyBinding {
     key: string;
@@ -34,14 +35,37 @@ class GMCPMessageClientKeystrokesListBindings extends GMCPMessage {
     // No specific properties needed for this message
 }
 
-export class GMCPClientKeystrokes extends GMCPPackage {
-    public packageName: string = "Client.Keystrokes";
+const keystrokesBind = gmcpJsonMessage<"Bind", GMCPMessageClientKeystrokesBind>("Bind");
+const keystrokesUnbind = gmcpJsonMessage<"Unbind", GMCPMessageClientKeystrokesUnbind>("Unbind");
+const keystrokesBindAll = gmcpJsonMessage<"Bind_all", GMCPMessageClientKeystrokesBindAll>("Bind_all");
+const keystrokesUnbindAll = gmcpJsonMessage<"UnbindAll", GMCPMessageClientKeystrokesUnbindAll>("UnbindAll");
+const keystrokesListBindings = gmcpJsonMessage<"ListBindings", GMCPMessageClientKeystrokesListBindings>("ListBindings");
+const keystrokesBindingsList = gmcpJsonMessage<"BindingsList", never, KeyBinding[]>("BindingsList");
+
+const GMCPClientKeystrokesBase = GMCPPackage.with({
+    packageName: "Client.Keystrokes",
+    messages: [
+        inbound(keystrokesBind),
+        inbound(keystrokesUnbind),
+        inbound(keystrokesBindAll),
+        inbound(keystrokesUnbindAll),
+        inbound(keystrokesListBindings),
+        outbound(keystrokesBindingsList),
+    ] as const,
+});
+
+export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
     private bindings: KeyBinding[] = [];
     // Store the bound handler function
     private boundKeyDownHandler: (event: KeyboardEvent) => void;
 
-    constructor(client: MudClient) {
+    constructor(client: ConstructorParameters<typeof GMCPClientKeystrokesBase>[0]) {
         super(client);
+        this.on("bind", (data) => this.handleBind(data));
+        this.on("unbind", (data) => this.handleUnbind(data));
+        this.on("bindAll", (data) => this.handleBindAll(data));
+        this.on("unbindAll", (data) => this.handleUnbindAll(data));
+        this.on("listBindings", (data) => this.handleListBindings(data));
         // Bind the handler once and store it
         this.boundKeyDownHandler = this.handleKeydown.bind(this);
         document.addEventListener('keydown', this.boundKeyDownHandler);
@@ -162,24 +186,20 @@ export class GMCPClientKeystrokes extends GMCPPackage {
         this.unbindKey(data);
     }
 
-    public handleBind_all(data: GMCPMessageClientKeystrokesBindAll): void {
+    public handleBindAll(data: GMCPMessageClientKeystrokesBindAll): void {
         this.bindings = data.bindings.map(binding => ({ ...binding }));
     }
 
-    public handleUnbindAll(data: GMCPMessageClientKeystrokesUnbindAll): void {
-        // The data parameter isn't strictly needed here, but included for consistency
-        // with how handleGmcpData calls handlers.
+    public handleUnbindAll(_data: GMCPMessageClientKeystrokesUnbindAll): void {
         console.log("Received Client.Keystrokes.UnbindAll, clearing all bindings."); // Optional logging
         this.unbindAll();
     }
 
     // Handler for the server's request to list bindings
-    public handleListBindings(data: GMCPMessageClientKeystrokesListBindings): void {
-        // data parameter is unused but kept for consistency
+    public handleListBindings(_data: GMCPMessageClientKeystrokesListBindings): void {
         console.log("Received Client.Keystrokes.ListBindings request, sending current bindings."); // Optional logging
         const bindingsArray = this.listBindings();
-        // Send the list back using the "BindingsList" message name
-        this.sendData("BindingsList", bindingsArray);
+        this.sendBindingsList(bindingsArray);
     }
 
     public listBindings(): KeyBinding[] {

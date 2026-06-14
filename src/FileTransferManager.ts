@@ -86,7 +86,10 @@ export default class FileTransferManager extends EventEmitter {
   };
   private readonly handleLocalIceCandidate = (candidate: RTCIceCandidate): void => {
     if (this.webRTCService.recipient) {
-      this.gmcpFileTransfer.sendCandidate(this.webRTCService.recipient, candidate);
+      this.gmcpFileTransfer.sendCandidate({
+        recipient: this.webRTCService.recipient,
+        candidate: JSON.stringify(candidate),
+      });
     }
   };
 
@@ -158,13 +161,13 @@ export default class FileTransferManager extends EventEmitter {
       const offer = await this.webRTCService.createOffer();
 
       console.log(`[FileTransferManager] Sending offer for file: ${file.name}`);
-      await this.gmcpFileTransfer.sendOffer(
+      await this.gmcpFileTransfer.sendOffer({
         recipient,
-        file.name,
-        file.size,
-        JSON.stringify(offer),
-        fileHash,
-      );
+        filename: file.name,
+        filesize: file.size,
+        offerSdp: JSON.stringify(offer),
+        hash: fileHash,
+      });
 
       // Wait for connection to be established
       await this.webRTCService.waitForConnection();
@@ -580,7 +583,10 @@ export default class FileTransferManager extends EventEmitter {
         await this.startFileTransfer(savedOutgoingTransfer.file, savedOutgoingTransfer.hash);
       } else if (direction === 'receive' && savedIncomingTransfer) {
         // Notify the sender to resend the offer
-        this.gmcpFileTransfer.sendRequestResend(savedIncomingTransfer.sender, hash);
+        this.gmcpFileTransfer.sendRequestResend({
+          sender: savedIncomingTransfer.sender,
+          hash,
+        });
       }
     } catch (error) {
       console.error('Failed to recover connection:', error);
@@ -683,7 +689,7 @@ export default class FileTransferManager extends EventEmitter {
           );
       }
       this.emitCancellation(useSessionStore.getState().playerId, hash);
-      this.gmcpFileTransfer.sendCancel(recipient, hash);
+      this.gmcpFileTransfer.sendCancel({ recipient, hash });
     } else {
       console.log(`[FileTransferManager] No active transfer found for hash: ${hash}`);
     }
@@ -729,12 +735,12 @@ export default class FileTransferManager extends EventEmitter {
 
       // Send accept only if we're still in a valid state
       if (this.pendingOffers.has(hash)) {
-        await this.gmcpFileTransfer.sendAccept(
+        await this.gmcpFileTransfer.sendAccept({
           sender,
           hash,
-          offer.filename,
-          JSON.stringify(answer),
-        );
+          filename: offer.filename,
+          answerSdp: JSON.stringify(answer),
+        });
 
         // Wait for the data channel to open
         await this.waitForDataChannel(hash);
@@ -756,7 +762,7 @@ export default class FileTransferManager extends EventEmitter {
 
   rejectTransfer(sender: string, hash: string): void {
     this.pendingOffers.delete(hash);
-    this.gmcpFileTransfer.sendReject(sender, hash);
+    this.gmcpFileTransfer.sendReject({ sender, hash });
   }
 
   private getCancelRecipient(hash: string): string {

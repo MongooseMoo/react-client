@@ -1,3 +1,5 @@
+import { inbound, outbound } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export interface SkillGroupInfo {
@@ -21,35 +23,43 @@ export class GMCPMessageCharSkillsInfo extends GMCPMessage {
     info: string = "";
 }
 
-export class GMCPCharSkills extends GMCPPackage {
-    public packageName: string = "Char.Skills";
+const skillsGroups = gmcpJsonMessage<"Groups", SkillGroupInfo[]>("Groups");
+const skillsList = gmcpJsonMessage<"List", GMCPMessageCharSkillsList>("List");
+const skillsInfo = gmcpJsonMessage<"Info", GMCPMessageCharSkillsInfo>("Info");
+const skillsGet = gmcpJsonMessage<"Get", never, { group?: string; name?: string }>("Get");
+
+const GMCPCharSkillsBase = GMCPPackage.with({
+    packageName: "Char.Skills",
+    messages: [
+        inbound(skillsGroups),
+        inbound(skillsList),
+        inbound(skillsInfo),
+        outbound(skillsGet),
+    ] as const,
+});
+
+export class GMCPCharSkills extends GMCPCharSkillsBase {
+    constructor(client: ConstructorParameters<typeof GMCPCharSkillsBase>[0]) {
+        super(client);
+        this.on("groups", (data) => this.handleGroups(data));
+        this.on("list", (data) => this.handleList(data));
+        this.on("info", (data) => this.handleInfo(data));
+    }
 
     // --- Server Messages ---
 
     handleGroups(data: SkillGroupInfo[]): void {
         console.log("Received Char.Skills.Groups:", data);
         // TODO: Update skill groups list
-        this.client.emit("skillGroups", data);
     }
 
     handleList(data: GMCPMessageCharSkillsList): void {
         console.log(`Received Char.Skills.List for ${data.group}:`, data);
         // TODO: Update skill list for the specified group
-        this.client.emit("skillList", data);
     }
 
     handleInfo(data: GMCPMessageCharSkillsInfo): void {
         console.log(`Received Char.Skills.Info for ${data.group}.${data.skill}:`, data.info);
         // TODO: Store/display detailed skill info
-        this.client.emit("skillInfo", data);
-    }
-
-    // --- Client Messages ---
-
-    sendGetRequest(group?: string, name?: string): void {
-        const requestData: { group?: string; name?: string } = {};
-        if (group) requestData.group = group;
-        if (name) requestData.name = name;
-        this.sendData("Get", requestData);
     }
 }

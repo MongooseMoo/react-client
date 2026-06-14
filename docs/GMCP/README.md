@@ -33,13 +33,13 @@ server may use.
 
 ## Source of Truth
 
-The implementation source is `src/gmcp/`. The runtime registration list is
-`src/createConfiguredClient.ts`, and the dispatch path is `src/client.ts` plus
-`src/telnet.ts`.
+The implementation source is `src/gmcp/`. Default runtime registration and
+application event wiring live in `src/createConfiguredClient.ts`; telnet GMCP
+framing is parsed by `src/telnet.ts` and dispatched by `src/gmcp/session.ts`.
 
 GMCP message names are matched by splitting the incoming package string at the
-last dot. For example, `Client.Media.Play` dispatches to the `Client.Media`
-package and calls `handlePlay(data)`. Multi-word wire names are therefore
-implemented exactly as handler suffixes, such as `handleBind_all` for
-`Client.Keystrokes.Bind_all` and `handleroom_token` for
-`Comm.LiveKit.room_token`.
+last dot. For example, `Client.Media.Play` dispatches to the registered
+`Client.Media` package and then to that package's class-local message registry.
+The registry entry owns the wire suffix, direction, payload codec, default
+package-local event name, and generated outbound `sendX` method. Application
+events are wired from those package-local events outside the protocol package.

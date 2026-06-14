@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import MudClient from '../client';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import type MudClient from '../client';
 import type { SkillGroupInfo, GMCPMessageCharSkillsList } from '../gmcp/Char/Skills';
 import './SkillsDisplay.css'; // We'll create this CSS file next
 
@@ -38,11 +39,11 @@ const SkillsDisplay: React.FC<SkillsDisplayProps> = ({ client }) => {
 
         // Fetch skills for the group if it's being expanded and not already loaded/loading
         if (newExpandedGroup === groupName && !skillsData[groupName]?.list && !skillsData[groupName]?.isLoading) {
-            if (charSkillsHandler?.sendGetRequest) {
+            if (charSkillsHandler) {
                 setSkillsData(prev => ({ ...prev, [groupName]: { group: groupName, list: [], isLoading: true } }));
-                charSkillsHandler.sendGetRequest(groupName);
+                charSkillsHandler.sendGet({ group: groupName });
             } else {
-                console.warn("Char.Skills handler or sendGetRequest method not found.");
+                console.warn("Char.Skills handler not found.");
             }
         }
     };
@@ -52,11 +53,11 @@ const SkillsDisplay: React.FC<SkillsDisplayProps> = ({ client }) => {
         client.on('skillList', handleList);
 
         // Request initial skill groups when component mounts
-        if (charSkillsHandler?.sendGetRequest) {
+        if (charSkillsHandler) {
             console.log("Requesting initial skill groups...");
-            charSkillsHandler.sendGetRequest(); // Request groups (no args)
+            charSkillsHandler.sendGet({});
         } else {
-            console.warn("Char.Skills handler or sendGetRequest method not found.");
+            console.warn("Char.Skills handler not found.");
         }
 
         return () => {

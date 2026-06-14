@@ -1,5 +1,4 @@
-import type MudClient from './client';
-import type { EditorSession } from './mcp';
+import type { EditorSession, McpSimpleEdit } from './mcp';
 
 enum EditorState {
   Pending,
@@ -16,7 +15,7 @@ export class EditorManager {
   private editors: Map<string, WindowedSession>;
   private channel: BroadcastChannel;
 
-  constructor(private client: MudClient) {
+  constructor(private simpleEdit: McpSimpleEdit) {
     this.editors = new Map();
     this.channel = new BroadcastChannel('editor');
     this.setupChannelListeners();
@@ -50,16 +49,7 @@ export class EditorManager {
   }
 
   saveEditorWindow(editorSession: EditorSession) {
-    const keyvals = {
-      reference: editorSession.reference,
-      type: editorSession.type,
-      'content*': '',
-    };
-    this.client.mcpSession.sendMultiline(
-      'dns-org-mud-moo-simpleedit-set',
-      keyvals,
-      editorSession.contents,
-    );
+    this.simpleEdit.sendSet(editorSession);
   }
 
   private setupChannelListeners() {

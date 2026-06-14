@@ -4,17 +4,10 @@ import {
   encodeMcpMultilineLine,
   parseMcpLine,
 } from "./codec";
-import type { MCPPackage, McpPackageContext } from "./package";
-import type {
-  EditorSession,
-  MCPKeyvals,
-  McpMessage,
-  McpOutboundData,
-} from "./types";
+import type { MCPPackage } from "./package";
+import type { MCPKeyvals, McpMessage, McpOutboundData, McpOutboundKeyvals } from "./types";
 
 export interface McpSessionHost {
-  emit(event: string, ...args: unknown[]): boolean;
-  openEditorSession(session: EditorSession): void;
   sendLine(line: string): void;
 }
 
@@ -22,18 +15,11 @@ export class McpSession {
   private authKey: string | null = null;
   private readonly handlers: Record<string, MCPPackage> = {};
   private readonly multilines: Record<string, MCPPackage> = {};
-  private readonly packageContext: McpPackageContext;
 
   constructor(
     private readonly host: McpSessionHost,
     private readonly tagGenerator: () => string = generateTag,
-  ) {
-    this.packageContext = {
-      emit: (event, ...args) => this.host.emit(event, ...args),
-      openEditorSession: (session) => this.host.openEditorSession(session),
-      sendMcp: (command, data) => this.sendMessage(command, data),
-    };
-  }
+  ) {}
 
   get packageHandlers(): Record<string, MCPPackage> {
     return this.handlers;
@@ -43,10 +29,13 @@ export class McpSession {
     return this.multilines;
   }
 
-  registerPackage<P extends MCPPackage>(
-    PackageConstructor: new (_: McpPackageContext) => P,
-  ): P {
-    const mcpPackage = new PackageConstructor(this.packageContext);
+  registerPackage<P extends MCPPackage>(PackageConstructor: new () => P): P {
+    const mcpPackage = new PackageConstructor();
+    mcpPackage.attachProtocolTransport(
+      (command, data) => this.sendMessage(command, data),
+      (command, keyvals, lineKey, lines) =>
+        this.sendMultiline(command, keyvals, lineKey, lines),
+    );
     this.handlers[mcpPackage.packageName] = mcpPackage;
     return mcpPackage;
   }
@@ -91,7 +80,8 @@ export class McpSession {
 
   sendMultiline(
     messageName: string,
-    keyvals: MCPKeyvals,
+    keyvals: McpOutboundKeyvals,
+    lineKey: string,
     lines: string[],
   ): void {
     const multilineTag = this.tagGenerator();
@@ -100,7 +90,7 @@ export class McpSession {
       "_data-tag": multilineTag,
     });
     for (const line of lines) {
-      this.sendMultilineLine(multilineTag, "content", line);
+      this.sendMultilineLine(multilineTag, lineKey, line);
     }
     this.closeMultiline(multilineTag);
   }

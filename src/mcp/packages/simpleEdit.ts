@@ -1,9 +1,47 @@
-import { MCPPackage } from '../package';
+import {
+  identityCodec,
+  inbound,
+  messageEnvelope,
+  outbound,
+} from '../../protocol/messages';
+import {
+  MCPPackage,
+  type McpMultilineOutboundPayload,
+} from '../package';
 import type { EditorSession, McpMessage } from '../types';
 
-export class McpSimpleEdit extends MCPPackage {
-  public packageName = 'dns-org-mud-moo-simpleedit';
+const simpleEditContent = messageEnvelope(
+  'content',
+  identityCodec<EditorSession>(),
+);
 
+const simpleEditSet = messageEnvelope('set', {
+  encode(session: EditorSession): McpMultilineOutboundPayload {
+    return {
+      kind: 'mcp-multiline',
+      keyvals: {
+        reference: session.reference,
+        type: session.type,
+        'content*': '',
+      },
+      lineKey: 'content',
+      lines: session.contents,
+    };
+  },
+  decode(payload: unknown): EditorSession {
+    return payload as EditorSession;
+  },
+});
+
+const McpSimpleEditBase = MCPPackage.with({
+  packageName: 'dns-org-mud-moo-simpleedit',
+  messages: [
+    inbound(simpleEditContent).asEvent('openSession'),
+    outbound(simpleEditSet),
+  ] as const,
+});
+
+export class McpSimpleEdit extends McpSimpleEditBase {
   private sessionsByTag = new Map<string, EditorSession>();
 
   handle(message: McpMessage): void {
@@ -42,7 +80,7 @@ export class McpSimpleEdit extends MCPPackage {
       return;
     }
 
-    this.context.openEditorSession(session);
+    this.emitRegisteredMessage(simpleEditContent.wireName, session);
     this.sessionsByTag.delete(closure.name);
   }
 }

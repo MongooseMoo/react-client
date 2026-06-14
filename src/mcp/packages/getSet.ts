@@ -1,9 +1,43 @@
 import { LRUCache } from 'lru-cache';
+import {
+  identityCodec,
+  inbound,
+  messageEnvelope,
+  outbound,
+} from '../../protocol/messages';
 import { MCPPackage } from '../package';
 import type { McpMessage } from '../types';
 
-export class McpAwnsGetSet extends MCPPackage {
-  public packageName = 'dns-com-awns-getset';
+interface GetSetAck {
+  key: string;
+  value: string;
+}
+
+interface GetSetGetRequest {
+  id: string;
+  property: string;
+}
+
+interface GetSetSetRequest extends GetSetGetRequest {
+  value: string;
+}
+
+const getSetAck = messageEnvelope('ack', identityCodec<GetSetAck>());
+const getSetGet = messageEnvelope('get', identityCodec<GetSetGetRequest>());
+const getSetSet = messageEnvelope('set', identityCodec<GetSetSetRequest>());
+const getSetDrop = messageEnvelope('drop', identityCodec<GetSetGetRequest>());
+
+const McpAwnsGetSetBase = MCPPackage.with({
+  packageName: 'dns-com-awns-getset',
+  messages: [
+    inbound(getSetAck).asEvent('getset'),
+    outbound(getSetGet),
+    outbound(getSetSet),
+    outbound(getSetDrop),
+  ] as const,
+});
+
+export class McpAwnsGetSet extends McpAwnsGetSetBase {
   private id = 1;
   private cache = new LRUCache<string, string>({ max: 10 });
 
@@ -20,7 +54,7 @@ export class McpAwnsGetSet extends MCPPackage {
         const value = message.keyvals.value;
         console.log(`Got ${key} = ${value}`);
         this.LocalCache[key] = value;
-        this.context.emit('getset', key, value);
+        this.emitRegisteredMessage(getSetAck.wireName, { key, value });
         break;
       }
 
@@ -29,26 +63,26 @@ export class McpAwnsGetSet extends MCPPackage {
     }
   }
 
-  sendGet(property: string): void {
+  requestGet(property: string): void {
     const id = (this.id++).toString();
     this.cache.set(id, property);
-    this.context.sendMcp('dns-com-awns-getset-get', {
+    this.sendGet({
       id,
       property,
     });
   }
 
-  sendSet(property: string, value: string): void {
-    this.context.sendMcp('dns-com-awns-getset-set', {
-      id: this.id++,
+  setProperty(property: string, value: string): void {
+    this.sendSet({
+      id: (this.id++).toString(),
       property,
       value,
     });
   }
 
-  sendDrop(property: string): void {
-    this.context.sendMcp('dns-com-awns-getset-drop', {
-      id: this.id++,
+  dropProperty(property: string): void {
+    this.sendDrop({
+      id: (this.id++).toString(),
       property,
     });
   }

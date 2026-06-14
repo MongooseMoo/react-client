@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   MCPPackage,
+  McpAwnsGetSet,
+  McpAwnsStatus,
   McpSession,
   McpSimpleEdit,
   McpVmooUserlist,
@@ -97,8 +99,6 @@ describe('McpSession', () => {
     const sent: string[] = [];
     const session = new McpSession(
       {
-        emit: vi.fn(),
-        openEditorSession: vi.fn(),
         sendLine: (line) => sent.push(line),
       },
       () => 'auth01',
@@ -117,8 +117,6 @@ describe('McpSession', () => {
   it('routes authenticated messages by longest package prefix and tracks multiline tags', () => {
     const session = new McpSession(
       {
-        emit: vi.fn(),
-        openEditorSession: vi.fn(),
         sendLine: vi.fn(),
       },
       () => 'auth01',
@@ -149,13 +147,12 @@ describe('McpSession', () => {
     const opened: EditorSession[] = [];
     const session = new McpSession(
       {
-        emit: vi.fn(),
-        openEditorSession: (editorSession) => opened.push(editorSession),
         sendLine: vi.fn(),
       },
       () => 'auth01',
     );
-    session.registerPackage(McpSimpleEdit);
+    const simpleEdit = session.registerPackage(McpSimpleEdit);
+    simpleEdit.on('openSession', (editorSession) => opened.push(editorSession));
 
     session.receiveLine('#$#MCP version: 2.1 to: 2.1');
     session.receiveLine(
@@ -190,8 +187,6 @@ describe('McpSession', () => {
     const tags = ['auth01', 'mltag1'];
     const session = new McpSession(
       {
-        emit: vi.fn(),
-        openEditorSession: vi.fn(),
         sendLine: (line) => sent.push(line),
       },
       () => tags.shift() ?? 'fallback',
@@ -204,7 +199,13 @@ describe('McpSession', () => {
 
     session.receiveLine('#$#MCP version: 2.1 to: 2.1');
     sent.length = 0;
-    session.sendMultiline('dns-org-mud-moo-simpleedit-set', keyvals, ['line one', 'line two']);
+    const simpleEdit = session.registerPackage(McpSimpleEdit);
+    simpleEdit.sendSet({
+      reference: keyvals.reference,
+      type: keyvals.type,
+      contents: ['line one', 'line two'],
+      name: 'obj 1',
+    });
 
     expect(keyvals).toEqual({
       reference: 'obj 1',
@@ -219,20 +220,56 @@ describe('McpSession', () => {
     ]);
   });
 
-  it('removes userlist players whose MOO object ids parse as numbers', () => {
-    const userlists: unknown[][] = [];
+  it('emits AWNS status text through the status package', () => {
+    const statusTexts: string[] = [];
     const session = new McpSession(
       {
-        emit: (_event, players) => {
-          userlists.push(players as unknown[]);
-          return true;
-        },
-        openEditorSession: vi.fn(),
         sendLine: vi.fn(),
       },
       () => 'auth01',
     );
-    session.registerPackage(McpVmooUserlist);
+    const status = session.registerPackage(McpAwnsStatus);
+    status.on('statustext', (text) => statusTexts.push(text));
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    session.receiveLine('#$#dns-com-awns-status auth01 text: "Standing by"');
+
+    expect(statusTexts).toEqual(['Standing by']);
+  });
+
+  it('emits AWNS get/set acknowledgements through the getset package', () => {
+    const values: Array<{ key: string; value: string }> = [];
+    const sent: string[] = [];
+    const session = new McpSession(
+      {
+        sendLine: (line) => sent.push(line),
+      },
+      () => 'auth01',
+    );
+    const getSet = session.registerPackage(McpAwnsGetSet);
+    getSet.on('getset', (payload) => values.push(payload));
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    sent.length = 0;
+    getSet.requestGet('theme');
+    session.receiveLine('#$#dns-com-awns-getset-ack auth01 id: 1 value: dark');
+
+    expect(sent).toEqual([
+      '#$#dns-com-awns-getset-get auth01 id: 1 property: theme',
+    ]);
+    expect(values).toEqual([{ key: 'theme', value: 'dark' }]);
+  });
+
+  it('removes userlist players whose MOO object ids parse as numbers', () => {
+    const userlists: unknown[][] = [];
+    const session = new McpSession(
+      {
+        sendLine: vi.fn(),
+      },
+      () => 'auth01',
+    );
+    const userlist = session.registerPackage(McpVmooUserlist);
+    userlist.on('userlist', (players) => userlists.push(players));
 
     session.receiveLine('#$#MCP version: 2.1 to: 2.1');
     session.receiveLine('#$#dns-com-vmoo-userlist-content auth01 _data-tag: users');

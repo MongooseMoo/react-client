@@ -1,3 +1,8 @@
+import {
+  identityCodec,
+  inbound,
+  messageEnvelope,
+} from '../../protocol/messages';
 import { mooListToArray, type MooListValue } from '../mooList';
 import { MCPPackage } from '../package';
 import type { McpMessage } from '../types';
@@ -10,8 +15,14 @@ export interface UserlistPlayer {
   idle: boolean;
 }
 
-export class McpVmooUserlist extends MCPPackage {
-  public packageName = 'dns-com-vmoo-userlist';
+const userlist = messageEnvelope('userlist', identityCodec<UserlistPlayer[]>());
+
+const McpVmooUserlistBase = MCPPackage.with({
+  packageName: 'dns-com-vmoo-userlist',
+  messages: [inbound(userlist)] as const,
+});
+
+export class McpVmooUserlist extends McpVmooUserlistBase {
   public maxVersion = 1.1;
   public player: string | undefined;
   public fields: string[] = ['Object', 'Name', 'Icon'];
@@ -116,7 +127,7 @@ export class McpVmooUserlist extends MCPPackage {
 
   private update(): void {
     this.players.sort((left, right) => sortScore(right) - sortScore(left));
-    this.context.emit('userlist', this.players);
+    this.emitRegisteredMessage(userlist.wireName, this.players);
 
     function sortScore(player: UserlistPlayer): number {
       return player.Icon - (player.idle ? 10 : 0) - (player.away ? 20 : 0);

@@ -5,10 +5,6 @@ export interface GmcpMessageAddress {
 
 export type GmcpPayload = unknown;
 
-export type GmcpMessageHandler = (payload: GmcpPayload) => void;
-
-type HandlerContainer = Record<string, unknown>;
-
 export function parseGmcpMessageAddress(gmcpPackage: string): GmcpMessageAddress | null {
   const lastDot = gmcpPackage.lastIndexOf('.');
   if (lastDot <= 0 || lastDot === gmcpPackage.length - 1) {
@@ -27,14 +23,6 @@ export function parseGmcpPayload(gmcpMessage: string | undefined): GmcpPayload {
   }
 
   return JSON.parse(gmcpMessage) as GmcpPayload;
-}
-
-export function resolveGmcpMessageHandler(
-  handler: object,
-  messageType: string,
-): GmcpMessageHandler | undefined {
-  const candidate = (handler as HandlerContainer)[`handle${messageType}`];
-  return typeof candidate === 'function' ? (candidate as GmcpMessageHandler) : undefined;
 }
 
 export function encodeGmcpPayload(data?: unknown): string {

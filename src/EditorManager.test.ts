@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorManager } from './EditorManager';
-import type MudClient from './client';
-import type { EditorSession } from './mcp';
+import type { EditorSession, McpSimpleEdit } from './mcp';
 
 type MockBroadcastChannel = {
   close: ReturnType<typeof vi.fn>;
@@ -31,16 +30,14 @@ function dispatchEditorMessage(channel: MockBroadcastChannel, data: unknown): vo
 
 describe('EditorManager', () => {
   let editorManager: EditorManager;
-  let mockClient: MudClient;
+  let mockSimpleEdit: McpSimpleEdit;
   let mockBroadcastChannel: MockBroadcastChannel;
   let mockWindow: MockEditorWindow;
 
   beforeEach(() => {
-    mockClient = {
-      mcpSession: {
-        sendMultiline: vi.fn(),
-      },
-    } as unknown as MudClient;
+    mockSimpleEdit = {
+      sendSet: vi.fn(),
+    } as unknown as McpSimpleEdit;
 
     mockWindow = {
       focus: vi.fn(),
@@ -59,7 +56,7 @@ describe('EditorManager', () => {
       vi.fn().mockImplementation(() => mockBroadcastChannel),
     );
 
-    editorManager = new EditorManager(mockClient);
+    editorManager = new EditorManager(mockSimpleEdit);
   });
 
   afterEach(() => {
@@ -85,22 +82,19 @@ describe('EditorManager', () => {
     expect(mockWindow.focus).toHaveBeenCalledOnce();
   });
 
-  it('saves editor window content through the MCP session', () => {
+  it('saves editor window content through SimpleEdit', () => {
     editorManager.saveEditorWindow(
       createSession({
         contents: ['Updated content'],
       }),
     );
 
-    expect(mockClient.mcpSession.sendMultiline).toHaveBeenCalledWith(
-      'dns-org-mud-moo-simpleedit-set',
-      {
-        reference: 'test-ref',
-        type: 'text/plain',
-        'content*': '',
-      },
-      ['Updated content'],
-    );
+    expect(mockSimpleEdit.sendSet).toHaveBeenCalledWith({
+      reference: 'test-ref',
+      type: 'text/plain',
+      contents: ['Updated content'],
+      name: 'test.txt',
+    });
   });
 
   it('loads a session after an editor window announces readiness', () => {

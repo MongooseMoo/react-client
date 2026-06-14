@@ -21,7 +21,6 @@ function createMockClient() {
         cacophony.listenerPosition = position ?? [0, 0, 0];
       }),
     },
-    emit: vi.fn(),
     gmcp: {
       send: vi.fn(),
     },
@@ -37,7 +36,9 @@ describe('GMCPClientSpatial', () => {
     useSpatialStore.getState().reset();
     useSessionStore.getState().reset();
     client = createMockClient();
-    handler = new GMCPClientSpatial(client as any);
+    handler = new GMCPClientSpatial(
+      client as unknown as ConstructorParameters<typeof GMCPClientSpatial>[0],
+    );
   });
 
   it('replaces stale scene state on Scene snapshot', () => {
@@ -111,10 +112,6 @@ describe('GMCPClientSpatial', () => {
         mediaKey: 'radio-1',
       },
     });
-    expect(client.emit).toHaveBeenCalledWith(
-      'spatialScene',
-      expect.objectContaining({ roomId: 'new-room', listenerId: 'player-1' }),
-    );
   });
 
   it('adds one entity on EntityEnter', () => {
@@ -127,11 +124,6 @@ describe('GMCPClientSpatial', () => {
     });
 
     expect(useSpatialStore.getState().spatialEntities['player-2']).toEqual({
-      id: 'player-2',
-      name: 'Daiverd',
-      position: [4, 5, 6],
-    });
-    expect(client.emit).toHaveBeenCalledWith('spatialEntityEnter', {
       id: 'player-2',
       name: 'Daiverd',
       position: [4, 5, 6],
@@ -168,7 +160,6 @@ describe('GMCPClientSpatial', () => {
         binding: 'world',
       },
     });
-    expect(client.emit).toHaveBeenCalledWith('spatialEntityLeave', 'player-2');
   });
 
   it('updates stored coordinates and velocity on EntityMove', () => {
@@ -200,15 +191,6 @@ describe('GMCPClientSpatial', () => {
       forward: [1, 0, 0],
       up: [0, 0, 1],
     });
-    expect(client.emit).toHaveBeenCalledWith('spatialEntityMove', {
-      id: 'player-1',
-      name: 'Q',
-      kind: 'player',
-      position: [2, 3, 4],
-      velocity: [0.5, 0, 0],
-      forward: [1, 0, 0],
-      up: [0, 0, 1],
-    });
   });
 
   it('updates listener position and orientation messages', () => {
@@ -232,15 +214,6 @@ describe('GMCPClientSpatial', () => {
     expect(client.media.cacophony.listenerPosition).toEqual([7, 8, 9]);
     expect(client.media.cacophony.listenerForwardOrientation).toEqual([0, 1, 0]);
     expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 0, 1]);
-    expect(client.emit).toHaveBeenCalledWith('spatialListenerPosition', {
-      listenerId: 'player-1',
-      position: [7, 8, 9],
-    });
-    expect(client.emit).toHaveBeenCalledWith('spatialListenerOrientation', {
-      listenerId: 'player-1',
-      forward: [0, 1, 0],
-      up: [0, 0, 1],
-    });
   });
 
   it('resets cacophony listener state to defaults when a Scene omits listener vectors', () => {

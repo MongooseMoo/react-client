@@ -10,8 +10,12 @@ import { Buffer } from "buffer";
 import { EventEmitter } from "eventemitter3";
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
-import { GMCPChar, GMCPClientFileTransfer, GmcpSession } from "./gmcp";
-import { type MCPPackage, type McpPackageContext, McpSession } from "./mcp";
+import { type GMCPClientFileTransfer, GmcpSession } from "./gmcp";
+import {
+  type MCPPackage,
+  type McpSimpleEdit,
+  McpSession,
+} from "./mcp";
 
 import { MediaService } from "./audio/MediaService";
 import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
@@ -51,12 +55,11 @@ class MudClient extends EventEmitter {
   private telnetBuffer: string = "";
   public readonly gmcp: GmcpSession;
   public readonly mcpSession: McpSession;
-  public gmcp_char: GMCPChar;
-  public gmcp_fileTransfer: GMCPClientFileTransfer;
+  public gmcp_fileTransfer!: GMCPClientFileTransfer;
   public media: MediaService;
-  public editors: EditorManager;
+  public editors?: EditorManager;
   public webRTCService: WebRTCService;
-  public fileTransferManager: FileTransferManager;
+  public fileTransferManager!: FileTransferManager;
   private _autosay: boolean = false;
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
@@ -75,26 +78,30 @@ class MudClient extends EventEmitter {
     this.host = host;
     this.port = port;
     this.mcpSession = new McpSession({
-      emit: (event, ...args) => this.emit(event, ...args),
-      openEditorSession: (session) => this.editors.openEditorWindow(session),
       sendLine: (line) => this.send(`${line}\r\n`),
     });
     this.gmcp = new GmcpSession(this);
-    this.gmcp_char = this.gmcp.register(GMCPChar);
-    this.gmcp_fileTransfer = this.gmcp.register(GMCPClientFileTransfer);
     this.media = new MediaService();
-    this.editors = new EditorManager(this);
     this.webRTCService = new WebRTCService();
+  }
+
+  configureFileTransfer(fileTransfer: GMCPClientFileTransfer): void {
+    this.gmcp_fileTransfer = fileTransfer;
     this.fileTransferManager = new FileTransferManager(
       this.webRTCService,
       this.gmcp_fileTransfer,
     );
   }
 
-  registerMcpPackage<P extends MCPPackage>(
-    p: new (_: McpPackageContext) => P,
-  ): P {
+  registerMcpPackage(p: new () => MCPPackage): MCPPackage {
     return this.mcpSession.registerPackage(p);
+  }
+
+  configureEditors(simpleEdit: McpSimpleEdit): void {
+    this.editors = new EditorManager(simpleEdit);
+    simpleEdit.on("openSession", (session) => {
+      this.editors?.openEditorWindow(session);
+    });
   }
 
   public connect() {
@@ -124,7 +131,9 @@ class MudClient extends EventEmitter {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        this.gmcp.start();
+        if (this.gmcp.start()) {
+          this.emit("gmcpReady");
+        }
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -189,7 +198,9 @@ class MudClient extends EventEmitter {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation (local)");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        this.gmcp.start();
+        if (this.gmcp.start()) {
+          this.emit("gmcpReady");
+        }
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -224,7 +235,9 @@ class MudClient extends EventEmitter {
     resetMidiIntentionalDisconnectFlags();
     this.emit("connect");
     this.emit("connectionChange", true);
-    this.gmcp.markReady();
+    if (this.gmcp.markReady()) {
+      this.emit("gmcpReady");
+    }
   }
 
   public send(data: string) {
@@ -244,7 +257,7 @@ class MudClient extends EventEmitter {
     this.telnetBuffer = "";
     useRoomStore.getState().reset(); // Reset room info on cleanup
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
-    this.fileTransferManager.cleanup();
+    this.fileTransferManager?.cleanup();
     this.gmcp.reset();
     useLiveKitStore.getState().reset();
 
@@ -335,7 +348,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     this.mcpSession.shutdown();
     this.gmcp.shutdown();
     this.media.shutdown();
-    this.editors.shutdown();
+    this.editors?.shutdown();
     this.close();
   }
 
