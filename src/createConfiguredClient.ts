@@ -1,4 +1,5 @@
 import MudClient from "./client";
+import { marked } from "marked";
 import {
   GMCPAutoLogin,
   GMCPChar,
@@ -37,6 +38,12 @@ import {
   McpSimpleEdit,
   McpVmooUserlist,
 } from "./mcp/index";
+import { useSpatialStore } from "./stores/spatialStore";
+
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
 
 /**
  * Create a MudClient with all GMCP and MCP packages registered.
@@ -47,16 +54,16 @@ export function createConfiguredClient(): MudClient {
   // GMCP packages
   const core = client.gmcp.register(GMCPCore);
   client.gmcp.register(GMCPClientMedia);
-  client.gmcp.register(GMCPClientSpatial);
+  const clientSpatial = client.gmcp.register(GMCPClientSpatial);
   client.gmcp.register(GMCPClientMidi);
   client.gmcp.register(GMCPClientSpeech);
-  client.gmcp.register(GMCPClientWebPush);
+  const clientWebPush = client.gmcp.register(GMCPClientWebPush);
   client.gmcp.register(GMCPClientKeystrokes);
   client.gmcp.register(GMCPCoreSupports);
   const commChannel = client.gmcp.register(GMCPCommChannel);
   const commLiveKit = client.gmcp.register(GMCPCommLiveKit);
   client.gmcp.register(GMCPAutoLogin);
-  client.gmcp.register(GMCPClientHtml);
+  const clientHtml = client.gmcp.register(GMCPClientHtml);
   client.gmcp.register(GMCPClientFile);
   const charItems = client.gmcp.register(GMCPCharItems);
   const charStatus = client.gmcp.register(GMCPCharStatus);
@@ -73,7 +80,7 @@ export function createConfiguredClient(): MudClient {
   const logging = client.gmcp.register(GMCPLogging);
   const redirect = client.gmcp.register(GMCPRedirect);
   const room = client.gmcp.register(GMCPRoom);
-  client.gmcp.register(GMCPClientHaptics);
+  const clientHaptics = client.gmcp.register(GMCPClientHaptics);
 
   char.on("name", (data) => client.emit("statustext", `Logged in as ${data.fullname}`));
   char.on("vitals", (data) => client.emit("vitals", data));
@@ -128,6 +135,51 @@ export function createConfiguredClient(): MudClient {
     client.emit("redirectWindow", targetWindow || "main"),
   );
   room.on("wrongDir", (direction) => client.emit("roomWrongDir", direction));
+  clientHtml.on("addHtml", (data) => client.emit("html", data.data.join("\n")));
+  clientHtml.on("addMarkdown", (data) => {
+    const html = marked(data.data.join("\n"));
+    client.emit("html", typeof html === "string" ? html.trimEnd() : html);
+  });
+  clientWebPush.on("token", (data) =>
+    client.emit("webpushToken", {
+      expiresAt: typeof data.expires_at === "number" ? data.expires_at : null,
+      token: data.token || null,
+    }),
+  );
+  clientHaptics.on("actuate", (data) => client.emit("hapticsActuate", data));
+  clientHaptics.on("stop", (data) => client.emit("hapticsStop", data));
+  clientHaptics.on("status", (data) => client.emit("hapticsStatus", data));
+  clientHaptics.on("sensorSubscribe", (data) =>
+    client.emit("hapticsSensorSubscribe", data),
+  );
+  clientHaptics.on("sensorUnsubscribe", (data) =>
+    client.emit("hapticsSensorUnsubscribe", data),
+  );
+  clientSpatial.on("scene", (data) => client.emit("spatialScene", data));
+  clientSpatial.on("entityEnter", (data) =>
+    client.emit("spatialEntityEnter", data.entity),
+  );
+  clientSpatial.on("entityLeave", (data) =>
+    client.emit("spatialEntityLeave", data.entityId),
+  );
+  clientSpatial.on("entityMove", (data) =>
+    client.emit(
+      "spatialEntityMove",
+      useSpatialStore.getState().spatialEntities[data.entityId],
+    ),
+  );
+  clientSpatial.on("listenerPosition", (data) =>
+    client.emit("spatialListenerPosition", data),
+  );
+  clientSpatial.on("listenerOrientation", (data) =>
+    client.emit("spatialListenerOrientation", data),
+  );
+  clientSpatial.on("emitterStart", (data) =>
+    client.emit("spatialEmitterStart", data.emitter),
+  );
+  clientSpatial.on("emitterStop", (data) =>
+    client.emit("spatialEmitterStop", data.emitterId),
+  );
 
   // MCP packages
   for (const PackageConstructor of DEFAULT_MCP_PACKAGES) {

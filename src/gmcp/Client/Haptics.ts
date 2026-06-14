@@ -163,7 +163,6 @@ export class GMCPClientHaptics extends GMCPClientHapticsBase {
       clockwise: cmd.clockwise,
     }));
     hapticsService.actuate(commands);
-    this.client.emit("hapticsActuate", data);
   }
 
   handleStop(data: HapticsStopData): void {
@@ -172,7 +171,6 @@ export class GMCPClientHaptics extends GMCPClientHapticsBase {
     } else {
       hapticsService.stop();
     }
-    this.client.emit("hapticsStop", data);
   }
 
   handleStatus(data: HapticsStatusData): void {
@@ -190,8 +188,6 @@ export class GMCPClientHaptics extends GMCPClientHapticsBase {
     if (!data.enabled) {
       hapticsService.stop();
     }
-
-    this.client.emit("hapticsStatus", data);
   }
 
   handleSensorSubscribe(data: HapticsSensorSubscribeData): void {
@@ -202,7 +198,6 @@ export class GMCPClientHaptics extends GMCPClientHapticsBase {
         hapticsService.unsubscribeSensor(sensorId);
       });
     }
-    this.client.emit("hapticsSensorSubscribe", data);
   }
 
   handleSensorUnsubscribe(data: HapticsSensorUnsubscribeData): void {
@@ -215,7 +210,6 @@ export class GMCPClientHaptics extends GMCPClientHapticsBase {
         hapticsService.unsubscribeSensor(sensorId);
       }
     }
-    this.client.emit("hapticsSensorUnsubscribe", data);
   }
 
   // -------------------------------------------------------------------

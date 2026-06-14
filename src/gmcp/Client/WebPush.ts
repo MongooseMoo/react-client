@@ -40,10 +40,6 @@ export class GMCPClientWebPush extends GMCPClientWebPushBase {
   handleToken(data: GMCPMessageClientWebPushToken): void {
     this.token = data.token || null;
     this.expiresAt = typeof data.expires_at === "number" ? data.expires_at : null;
-    this.client.emit("webpushToken", {
-      expiresAt: this.expiresAt,
-      token: this.token,
-    });
   }
 
   async requestToken(): Promise<string | null> {
@@ -58,17 +54,17 @@ export class GMCPClientWebPush extends GMCPClientWebPushBase {
         resolve(null);
       }, 5_000);
 
-      const handleToken = (payload: { token: string | null }) => {
+      const handleToken = (payload: GMCPMessageClientWebPushToken) => {
         cleanup();
-        resolve(payload.token);
+        resolve(payload.token || null);
       };
 
       const cleanup = () => {
         window.clearTimeout(timeout);
-        this.client.off("webpushToken", handleToken);
+        this.off("token", handleToken);
       };
 
-      this.client.on("webpushToken", handleToken);
+      this.on("token", handleToken);
       this.sendRequest();
     });
   }
