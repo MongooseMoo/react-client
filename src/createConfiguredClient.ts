@@ -82,7 +82,12 @@ export function createConfiguredClient(): MudClient {
   const room = client.gmcp.register(GMCPRoom);
   const clientHaptics = client.gmcp.register(GMCPClientHaptics);
 
-  char.on("name", (data) => client.emit("statustext", `Logged in as ${data.fullname}`));
+  char.on("name", (data) => {
+    client.emit("statustext", `Logged in as ${data.fullname}`);
+    if (client.gmcp.markSessionReady()) {
+      client.emit("sessionReady");
+    }
+  });
   char.on("vitals", (data) => client.emit("vitals", data));
   char.on("statusVars", (data) => client.emit("statusVars", data));
   char.on("status", (data) => client.emit("statusUpdate", data));

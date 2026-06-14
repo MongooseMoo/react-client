@@ -36,7 +36,6 @@ export class GMCPChar extends GMCPCharBase {
 
   handleName(data: GmcpMessageCharName): void {
     useSessionStore.getState().setPlayer(data.name, data.fullname);
-    this.client.gmcp.markSessionReady();
   }
   // --- Vitals ---
   handleVitals(data: Record<string, unknown>): void {

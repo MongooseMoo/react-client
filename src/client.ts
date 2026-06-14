@@ -83,9 +83,12 @@ class MudClient extends EventEmitter {
     });
     this.gmcp = new GmcpSession(this);
     this.gmcp_char = this.gmcp.register(GMCPChar);
-    this.gmcp_char.on("name", (data) =>
-      this.emit("statustext", `Logged in as ${data.fullname}`),
-    );
+    this.gmcp_char.on("name", (data) => {
+      this.emit("statustext", `Logged in as ${data.fullname}`);
+      if (this.gmcp.markSessionReady()) {
+        this.emit("sessionReady");
+      }
+    });
     this.gmcp_char.on("vitals", (data) => this.emit("vitals", data));
     this.gmcp_char.on("statusVars", (data) =>
       this.emit("statusVars", data),
@@ -138,7 +141,9 @@ class MudClient extends EventEmitter {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        this.gmcp.start();
+        if (this.gmcp.start()) {
+          this.emit("gmcpReady");
+        }
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -203,7 +208,9 @@ class MudClient extends EventEmitter {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation (local)");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        this.gmcp.start();
+        if (this.gmcp.start()) {
+          this.emit("gmcpReady");
+        }
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -238,7 +245,9 @@ class MudClient extends EventEmitter {
     resetMidiIntentionalDisconnectFlags();
     this.emit("connect");
     this.emit("connectionChange", true);
-    this.gmcp.markReady();
+    if (this.gmcp.markReady()) {
+      this.emit("gmcpReady");
+    }
   }
 
   public send(data: string) {

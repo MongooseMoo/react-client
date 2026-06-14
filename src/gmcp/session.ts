@@ -49,25 +49,25 @@ export class GmcpSession {
     return gmcpPackage;
   }
 
-  start(): void {
+  start(): boolean {
     this.require('Core').sendHello({ client: 'Mongoose Client', version: '0.1' });
     const coreSupports = this.require('Core.Supports');
     coreSupports.sendSet(coreSupports.advertisedModules());
     this.require('Auth.Autologin').sendStoredLogin();
     this.require('Client.Media').publishEffectsSupport();
-    this.markReady();
+    return this.markReady();
   }
 
-  markReady(): void {
-    if (this._ready) return;
+  markReady(): boolean {
+    if (this._ready) return false;
     this._ready = true;
-    this.client.emit('gmcpReady');
+    return true;
   }
 
-  markSessionReady(): void {
-    if (this._sessionReady) return;
+  markSessionReady(): boolean {
+    if (this._sessionReady) return false;
     this._sessionReady = true;
-    this.client.emit('sessionReady');
+    return true;
   }
 
   receive(gmcpPackage: string, gmcpMessage: string | undefined): void {

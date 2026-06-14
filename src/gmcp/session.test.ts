@@ -37,11 +37,9 @@ class MockClientMediaPackage extends GMCPPackage {
 }
 
 function createSession() {
-  const client = {
-    emit: vi.fn(),
-  } as unknown as MudClient;
+  const client = {} as unknown as MudClient;
   const session = new GmcpSession(client);
-  return { client, session };
+  return { session };
 }
 
 describe('GmcpSession', () => {
@@ -73,14 +71,14 @@ describe('GmcpSession', () => {
   });
 
   it('runs GMCP startup packages and marks GMCP ready once', () => {
-    const { client, session } = createSession();
+    const { session } = createSession();
     const core = session.register(MockCorePackage);
     const supports = session.register(MockCoreSupportsPackage);
     const autoLogin = session.register(MockAutoLoginPackage);
     const media = session.register(MockClientMediaPackage);
 
-    session.start();
-    session.start();
+    expect(session.start()).toBe(true);
+    expect(session.start()).toBe(false);
 
     expect(core.sendHello).toHaveBeenCalledTimes(2);
     expect(supports.sendSet).toHaveBeenCalledTimes(2);
@@ -88,22 +86,18 @@ describe('GmcpSession', () => {
     expect(autoLogin.sendStoredLogin).toHaveBeenCalledTimes(2);
     expect(media.publishEffectsSupport).toHaveBeenCalledTimes(2);
     expect(session.ready).toBe(true);
-    expect(client.emit).toHaveBeenCalledWith('gmcpReady');
-    expect(client.emit).toHaveBeenCalledTimes(1);
   });
 
   it('owns session readiness and reset state', () => {
-    const { client, session } = createSession();
+    const { session } = createSession();
 
-    session.markReady();
-    session.markSessionReady();
-    session.markSessionReady();
+    expect(session.markReady()).toBe(true);
+    expect(session.markReady()).toBe(false);
+    expect(session.markSessionReady()).toBe(true);
+    expect(session.markSessionReady()).toBe(false);
 
     expect(session.ready).toBe(true);
     expect(session.sessionReady).toBe(true);
-    expect(client.emit).toHaveBeenCalledWith('gmcpReady');
-    expect(client.emit).toHaveBeenCalledWith('sessionReady');
-    expect(client.emit).toHaveBeenCalledTimes(2);
 
     session.reset();
 

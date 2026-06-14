@@ -263,9 +263,11 @@ describe('MudClient lifecycle cleanup', () => {
     const client = new MudClient('example.test', 443);
     const handleSessionReady = vi.fn();
     client.on('sessionReady', handleSessionReady);
+    const onMock = vi.mocked(client.gmcp_char.on);
+    const nameListener = onMock.mock.calls.find(([event]) => event === "name")?.[1];
 
-    client.gmcp.markSessionReady();
-    client.gmcp.markSessionReady();
+    nameListener?.({ fullname: "Q", name: "q" });
+    nameListener?.({ fullname: "Q", name: "q" });
 
     expect(client.gmcp.sessionReady).toBe(true);
     expect(handleSessionReady).toHaveBeenCalledOnce();
