@@ -55,6 +55,23 @@ Package constructors may listen to their own package-local events for protocol
 translation or local state updates. Application events and UI/service wiring
 are attached outside protocol packages, primarily in `createConfiguredClient`.
 
+## Service Integration Boundary
+
+Protocol packages do not emit global application events. Some packages still
+call concrete client-owned services because package-local I/O is not sufficient
+for those behaviors:
+
+- `GMCPPackage.sendData` uses the GMCP session transport to write outbound wire
+  messages.
+- `Core`, `Client.Midi`, and `Client.Haptics` inspect `Core.Supports` for
+  support advertisement.
+- `Client.Media`, `Client.Spatial`, and `IRE.Sound` drive the shared media
+  service.
+- `Client.Keystrokes` and `IRE.Composer` send ordinary text commands.
+
+Those are service integrations, not package output events. Moving them behind
+smaller service-specific dependencies is a separate service-boundary refactor.
+
 ## Startup Negotiation
 
 When GMCP becomes ready, `MudClient` sends:
