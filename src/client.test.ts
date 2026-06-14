@@ -104,11 +104,6 @@ vi.mock('./gmcp', async () => {
   const actual = await vi.importActual<typeof import('./gmcp')>('./gmcp');
   return {
     ...actual,
-    GMCPChar: class {
-      packageName = 'Char';
-      on = vi.fn();
-      shutdown = vi.fn();
-    },
     GMCPClientFileTransfer: class {
       packageName = 'Client.FileTransfer';
       sendReject = vi.fn();
@@ -257,20 +252,6 @@ describe('MudClient lifecycle cleanup', () => {
 
     expect(client.gmcp.ready).toBe(true);
     expect(handleGmcpReady).toHaveBeenCalledOnce();
-  });
-
-  it('emits sessionReady only once', () => {
-    const client = new MudClient('example.test', 443);
-    const handleSessionReady = vi.fn();
-    client.on('sessionReady', handleSessionReady);
-    const onMock = vi.mocked(client.gmcp_char.on);
-    const nameListener = onMock.mock.calls.find(([event]) => event === "name")?.[1];
-
-    nameListener?.({ fullname: "Q", name: "q" });
-    nameListener?.({ fullname: "Q", name: "q" });
-
-    expect(client.gmcp.sessionReady).toBe(true);
-    expect(handleSessionReady).toHaveBeenCalledOnce();
   });
 
   it('preserves GMCP transport until file transfer cleanup completes', () => {

@@ -10,7 +10,7 @@ import { Buffer } from "buffer";
 import { EventEmitter } from "eventemitter3";
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
-import { GMCPChar, GMCPClientFileTransfer, GmcpSession } from "./gmcp";
+import { GMCPClientFileTransfer, GmcpSession } from "./gmcp";
 import {
   type MCPPackage,
   type McpSimpleEdit,
@@ -55,7 +55,6 @@ class MudClient extends EventEmitter {
   private telnetBuffer: string = "";
   public readonly gmcp: GmcpSession;
   public readonly mcpSession: McpSession;
-  public gmcp_char: GMCPChar;
   public gmcp_fileTransfer: GMCPClientFileTransfer;
   public media: MediaService;
   public editors?: EditorManager;
@@ -82,18 +81,6 @@ class MudClient extends EventEmitter {
       sendLine: (line) => this.send(`${line}\r\n`),
     });
     this.gmcp = new GmcpSession(this);
-    this.gmcp_char = this.gmcp.register(GMCPChar);
-    this.gmcp_char.on("name", (data) => {
-      this.emit("statustext", `Logged in as ${data.fullname}`);
-      if (this.gmcp.markSessionReady()) {
-        this.emit("sessionReady");
-      }
-    });
-    this.gmcp_char.on("vitals", (data) => this.emit("vitals", data));
-    this.gmcp_char.on("statusVars", (data) =>
-      this.emit("statusVars", data),
-    );
-    this.gmcp_char.on("status", (data) => this.emit("statusUpdate", data));
     this.gmcp_fileTransfer = this.gmcp.register(GMCPClientFileTransfer);
     this.media = new MediaService();
     this.webRTCService = new WebRTCService();
