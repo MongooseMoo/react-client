@@ -749,6 +749,25 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     announce(textContent, 'polite');
   };
 
+  reviewRecentOutputLine = (lineNumber: number) => {
+    const visibleOutput = this.allLines.filter(
+      line => this.state.localEchoActive || line.type !== OutputType.Command
+    );
+
+    if (visibleOutput.length === 0) {
+      announce("No output", "polite");
+      return;
+    }
+
+    const line = visibleOutput[visibleOutput.length - lineNumber];
+    if (!line) {
+      announce("No line", "polite");
+      return;
+    }
+
+    this.announceOutputLine(line);
+  };
+
   /**
    * Handle focus on output area
    */

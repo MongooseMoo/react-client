@@ -2,7 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import type React from "react";
 
 import type MudClient from "../client";
-import Output from "./output";
+import Output, { type OutputLine, OutputType } from "./output";
+
+const { mockAnnounce } = vi.hoisted(() => ({
+  mockAnnounce: vi.fn(),
+}));
+
+vi.mock("@react-aria/live-announcer", () => ({
+  announce: mockAnnounce,
+}));
 
 const makeKeyboardEvent = (
   init: Pick<React.KeyboardEvent<HTMLDivElement>, "altKey" | "code" | "key"> &
@@ -18,6 +26,35 @@ const makeKeyboardEvent = (
 } as unknown as React.KeyboardEvent<HTMLDivElement>);
 
 describe("Output keyboard handling", () => {
+  it("reviews recent output lines from the end", () => {
+    const output = new Output({ client: {} as MudClient });
+    const lines: OutputLine[] = [
+      {
+        content: <div>first line</div>,
+        id: 1,
+        sourceContent: "first line",
+        sourceType: "test",
+        type: OutputType.ServerMessage,
+      },
+      {
+        content: <div>second line</div>,
+        id: 2,
+        sourceContent: "second line",
+        sourceType: "test",
+        type: OutputType.ServerMessage,
+      },
+    ];
+    Object.defineProperty(output, "allLines", { value: lines });
+
+    output.reviewRecentOutputLine(1);
+    output.reviewRecentOutputLine(2);
+    output.reviewRecentOutputLine(3);
+
+    expect(mockAnnounce).toHaveBeenNthCalledWith(1, "second line", "polite");
+    expect(mockAnnounce).toHaveBeenNthCalledWith(2, "first line", "polite");
+    expect(mockAnnounce).toHaveBeenNthCalledWith(3, "No line", "polite");
+  });
+
   it("only suppresses plain Alt navigation keys", () => {
     const output = new Output({ client: {} as MudClient });
     const plainAltArrow = makeKeyboardEvent({

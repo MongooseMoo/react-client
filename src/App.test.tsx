@@ -7,6 +7,7 @@ const {
   mockEnsurePushSubscription,
   mockHapticsRuntimes,
   mockPreferences,
+  mockReviewRecentOutputLine,
   mockSwitchToTab,
 } = vi.hoisted(() => {
   const mockClient = {
@@ -44,6 +45,7 @@ const {
       haptics: { enabled: false },
       midi: { enabled: false },
     },
+    mockReviewRecentOutputLine: vi.fn(),
     mockSwitchToTab: vi.fn(),
   };
 });
@@ -93,7 +95,12 @@ vi.mock('./components/input', () => ({
 vi.mock('./components/output', async () => {
   const ReactModule = await vi.importActual<typeof import('react')>('react');
   return {
-    default: ReactModule.forwardRef(() => <div data-testid="output" />),
+    default: ReactModule.forwardRef((_props, ref) => {
+      ReactModule.useImperativeHandle(ref, () => ({
+        reviewRecentOutputLine: mockReviewRecentOutputLine,
+      }));
+      return <div data-testid="output" />;
+    }),
   };
 });
 
@@ -227,6 +234,13 @@ describe('App haptics backend lifecycle', () => {
     expect(mockHapticsRuntimes[0].emergencyStop).toHaveBeenCalledOnce();
 
     fireEvent.keyDown(document, { ctrlKey: true, key: '1' });
+    expect(mockReviewRecentOutputLine).toHaveBeenCalledWith(1);
+    expect(mockSwitchToTab).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { ctrlKey: true, key: '0' });
+    expect(mockReviewRecentOutputLine).toHaveBeenCalledWith(10);
+
+    fireEvent.keyDown(document, { ctrlKey: true, key: '1', shiftKey: true });
     expect(mockSwitchToTab).toHaveBeenCalledWith(0);
   });
 });
