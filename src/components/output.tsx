@@ -667,9 +667,11 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
    * Handle keyboard navigation through output lines
    */
   handleOutputKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+
     // Suppress Alt+Arrow and Alt+letter so browser defaults
     // don't interfere with app-level keybindings
-    if (e.altKey && (
+    if (isPlainAlt && (
       e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
       'ijklwasdchtnoe,'.includes(e.key.toLowerCase()) ||
       'IJKLWASDCHTNOE'.split('').some(c => e.code === `Key${c}`) || e.code === 'Comma'
@@ -677,7 +679,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       e.preventDefault();
       return;
     }
-    if (e.altKey && e.code === 'Space') {
+    if (isPlainAlt && e.code === 'Space') {
       e.preventDefault();
       return;
     }

@@ -109,6 +109,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     const commandHistory = commandHistoryRef.current;
     const currentInputText = text;
     const textArea = inputRef.current;
+    const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
 
     if (e.key === "Tab") {
       // e.preventDefault(); // Remove from here
@@ -206,13 +207,13 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
-    } else if (e.altKey && (
+    } else if (isPlainAlt && (
       e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight" ||
       "ijklwasdchtnoe,".includes(e.key.toLowerCase()) ||
       "IJKLWASDCHTNOE".split("").some(c => e.code === `Key${c}`) || e.code === "Comma"
     )) {
       e.preventDefault();
-    } else if (e.altKey && e.code === "Space") {
+    } else if (isPlainAlt && e.code === "Space") {
       e.preventDefault();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();

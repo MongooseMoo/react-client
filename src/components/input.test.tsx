@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent, screen, createEvent } from '@testing-library/react';
 import CommandInput from './input';
 import { CommandHistory } from '../CommandHistory';
 
@@ -120,6 +120,29 @@ describe('CommandInput Component', () => {
       fireEvent.keyDown(textarea, { key: 'ArrowUp' });
       fireEvent.keyDown(textarea, { key: 'ArrowDown' });
     }).not.toThrow();
+  });
+
+  it('only suppresses plain Alt navigation keys', () => {
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+
+    const textarea = screen.getByRole('textbox');
+    const plainAltArrow = createEvent.keyDown(textarea, {
+      altKey: true,
+      code: 'ArrowLeft',
+      key: 'ArrowLeft',
+    });
+    const metaAltArrow = createEvent.keyDown(textarea, {
+      altKey: true,
+      code: 'ArrowLeft',
+      key: 'ArrowLeft',
+      metaKey: true,
+    });
+
+    fireEvent(textarea, plainAltArrow);
+    fireEvent(textarea, metaAltArrow);
+
+    expect(plainAltArrow.defaultPrevented).toBe(true);
+    expect(metaAltArrow.defaultPrevented).toBe(false);
   });
   
   it('loads command history from localStorage on mount', () => {
