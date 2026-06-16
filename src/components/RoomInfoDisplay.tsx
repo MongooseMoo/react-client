@@ -14,11 +14,13 @@ interface RoomInfoDisplayProps {
   client: MudClient;
 }
 
+const EMPTY_ITEMS: Item[] = [];
+
 const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   // Room info and players come from the room store (single source of truth).
   const roomInfo = useRoomStore((state) => state.roomInfo);
   const roomPlayers = useRoomStore((state) => state.roomPlayers);
-  const roomItems = useItemsStore((state) => state.itemsByLocation.room ?? []);
+  const roomItems = useItemsStore((state) => state.itemsByLocation.room ?? EMPTY_ITEMS);
   const [selectedRoomItem, setSelectedRoomItem] = useState<Item | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
 

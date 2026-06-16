@@ -11,8 +11,10 @@ interface InventoryProps {
   client: MudClient;
 }
 
+const EMPTY_ITEMS: Item[] = [];
+
 const Inventory: React.FC<InventoryProps> = ({ client }) => {
-  const items = useItemsStore((state) => state.itemsByLocation.inv ?? []);
+  const items = useItemsStore((state) => state.itemsByLocation.inv ?? EMPTY_ITEMS);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
 
   useEffect(() => {

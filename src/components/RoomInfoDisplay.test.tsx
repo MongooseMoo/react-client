@@ -1,15 +1,13 @@
-import { act, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EventEmitter } from "eventemitter3";
 
 import type MudClient from "../client";
 import RoomInfoDisplay from "./RoomInfoDisplay";
+import { useItemsStore } from "../stores/itemsStore";
 import { useRoomStore } from "../stores/roomStore";
 
 function createMockClient() {
-  const emitter = new EventEmitter();
-
-  return Object.assign(emitter, {
+  return {
     gmcp: {
       handlers: {
         "Char.Items": {
@@ -42,11 +40,12 @@ function createMockClient() {
         up: [0, 0, 1],
       },
     },
-  });
+  };
 }
 
 describe("RoomInfoDisplay", () => {
   beforeEach(() => {
+    useItemsStore.getState().reset();
     useRoomStore.getState().reset();
   });
 
@@ -61,16 +60,11 @@ describe("RoomInfoDisplay", () => {
       },
       roomPlayers: [{ name: "q", fullname: "Q" }],
     });
+    useItemsStore.getState().setLocationItems("room", [
+      { id: "lantern", name: "Lantern", location: "room" },
+    ]);
 
     render(<RoomInfoDisplay client={client as unknown as MudClient} />);
-
-    act(() => {
-      client.emit("itemsList", {
-        location: "room",
-        items: [{ id: "lantern", name: "Lantern", location: "room" }],
-      });
-    });
-
     expect(screen.getByText("Codex's Lab")).toBeTruthy();
     expect(screen.getByText("Area: Daystrom Annex")).toBeTruthy();
     expect(screen.getByText("Q")).toBeTruthy();

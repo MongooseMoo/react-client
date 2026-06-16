@@ -553,7 +553,51 @@ Gate results:
 - Pass: `git diff --check`
 
 Commit:
-- pending
+- `edae3d8 Remove MudClient event emitter surface`
 
 Next slice:
 - Final full verification and hard-rule audit.
+
+### Iteration 11 - final verification and test convergence
+
+Slice read:
+- `src/App.test.tsx`
+- `src/client.test.ts`
+- `src/components/RoomInfoDisplay.test.tsx`
+- `src/components/WasmHost.test.tsx`
+- `src/gmcp/Client/Media.test.ts`
+- `src/hooks/useChannelHistory.test.tsx`
+- `src/components/inventory.tsx`
+- `src/components/RoomInfoDisplay.tsx`
+
+Surfaces:
+- stale test fixtures that still modeled `MudClient` as an emitter.
+  - Disposition: rewrite
+  - Owner after cleanup: `useConnectionStore`, `useOutputStore`,
+    `useChannelHistoryStore`, `useItemsStore`, and `useSpatialStore`.
+  - Action: updated tests to drive the store owners directly instead of
+    `client.on(...)`, `client.once(...)`, `client.emit(...)`, fake client
+    emitters, or `removeAllListeners()`.
+- unstable empty item selector fallbacks in room/inventory components.
+  - Disposition: rewrite
+  - Owner after cleanup: `useItemsStore` remains the item owner; React
+    selectors use stable empty fallbacks when no location list exists yet.
+  - Action: added stable `EMPTY_ITEMS` constants so missing item lists do not
+    create fresh arrays on every selector call.
+
+Gate results:
+- Pass: `npm test -- --run src/App.test.tsx src/client.test.ts src/components/RoomInfoDisplay.test.tsx src/components/WasmHost.test.tsx src/hooks/useChannelHistory.test.tsx src/gmcp/Client/Media.test.ts`
+- Pass: `npm test -- --run src`
+- Pass: `npm run typecheck`
+- Pass: `git diff --check`
+- Pass: `rg -n "\bclient\.(on|off|once|emit|removeListener|removeAllListeners)\(|useClientEvent\(|class MudClient extends EventEmitter|this\.emit\(" src\client.ts src\createConfiguredClient.ts src\App.tsx src\components src\hooks src\gmcp\Client\Media.ts --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+
+Commit:
+- `Finish client event bus verification`
+
+Next slice:
+- None for this requested scope. The hard-rule production search is zero-hit:
+  `MudClient` is not an emitter, `useClientEvent` is deleted, and current
+  production UI/configured-client/client paths no longer use `client` as an
+  event bus. Remaining broad `emit/on` search hits are non-client emitters
+  outside this workstream: file transfer, WebRTC, haptics, and telnet.

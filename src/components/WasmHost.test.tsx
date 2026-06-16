@@ -1,4 +1,3 @@
-import React from "react";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,7 +31,9 @@ class MockWasmWorker {
   dispatchMessage(data: unknown): void {
     this.listeners
       .get("message")
-      ?.forEach((listener) => listener({ data } as MessageEvent));
+      ?.forEach((listener) => {
+        listener({ data } as MessageEvent);
+      });
   }
 }
 
@@ -61,7 +62,6 @@ function createClient() {
     fileTransferManager: {
       cleanup: vi.fn(),
     },
-    removeAllListeners: vi.fn(),
     webRTCService: {
       cleanup: vi.fn(),
     },
@@ -122,7 +122,6 @@ describe("WasmHost lifecycle", () => {
     expect(clearIntervalSpy).toHaveBeenCalledWith(interval);
     expect(client.fileTransferManager.cleanup).toHaveBeenCalledTimes(1);
     expect(client.webRTCService.cleanup).toHaveBeenCalledTimes(1);
-    expect(client.removeAllListeners).toHaveBeenCalledTimes(1);
     expect(mocks.workerStreamDispose).toHaveBeenCalledTimes(1);
     expect(worker.removeEventListener).toHaveBeenCalledWith(
       "message",
