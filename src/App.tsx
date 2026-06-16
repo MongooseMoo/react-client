@@ -28,6 +28,7 @@ import {
 } from "./logging/AutoLogService";
 import { usePreferences } from "./stores/preferencesStore";
 import { useRoomStore } from "./stores/roomStore";
+import { useConnectionStore } from "./stores/connectionStore";
 import { ensurePushSubscription } from "./webpush";
 
 const WINDOW_TITLE = "Mongoose Client";
@@ -93,10 +94,13 @@ function App() {
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
   const autoLogDialogRef = React.useRef<AutoLogDialogRef | null>(null);
   const sidebarRef = React.useRef<SidebarRef | null>(null);
+  const autoLoginAttempted = useRef(false);
 
   const clientInitialized = useRef(false);
   const hapticsRuntimeRef = useRef<HapticsRuntime | null>(null);
   const preferences = usePreferences();
+  const connected = useConnectionStore((state) => state.connected);
+  const sessionReady = useConnectionStore((state) => state.sessionReady);
   useFileTransferNotifications(client);
 
   const saveLog = () => {
@@ -220,67 +224,63 @@ function App() {
         createAutoLogSessionDraft(document.title || WINDOW_TITLE),
       );
     };
-    const handleConnect = () => {
+    const startAutologSession = () => {
       configureAutologSession();
       autoLogService.startSession().catch((error) => {
         console.error("Failed to start autolog session:", error);
       });
     };
-    const handleDisconnect = () => {
+    const endAutologSession = () => {
       autoLogService.endSession().catch((error) => {
         console.error("Failed to end autolog session:", error);
       });
     };
 
     configureAutologSession();
-    if (client.connected) {
-      handleConnect();
+    if (connected) {
+      startAutologSession();
+    } else {
+      endAutologSession();
     }
 
-    client.on("connect", handleConnect);
-    client.on("disconnect", handleDisconnect);
-
     return () => {
-      client.off("connect", handleConnect);
-      client.off("disconnect", handleDisconnect);
       autoLogService.endSession().catch((error) => {
         console.error("Failed to end autolog session during cleanup:", error);
       });
       autoLogService.configureSession(null);
     };
-  }, [client]);
+  }, [client, connected]);
+
+  useEffect(() => {
+    if (!client || !sessionReady) return;
+    ensurePushSubscription(client).catch((error) => {
+      console.error("Failed to ensure push subscription:", error);
+    });
+  }, [client, sessionReady]);
+
+  useEffect(() => {
+    if (!client || !connected || autoLoginAttempted.current) return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const username = urlParams.get("username");
+    const password = urlParams.get("password");
+    if (!username || !password) return;
+
+    autoLoginAttempted.current = true;
+    console.log("Auto-logging in with URL params...");
+    setTimeout(() => {
+      client.sendCommand(username);
+      setTimeout(() => {
+        client.sendCommand(password);
+      }, 500);
+    }, 1000);
+  }, [client, connected]);
 
   // Common client setup: notifications, auto-login, MIDI, haptics, focus handlers
   useEffect(() => {
     if (!client) return;
 
     client.requestNotificationPermission();
-    const ensurePushSubscriptionForSession = () => {
-      ensurePushSubscription(client).catch((error) => {
-        console.error("Failed to ensure push subscription:", error);
-      });
-    };
-    if (client.gmcp.sessionReady) {
-      ensurePushSubscriptionForSession();
-    } else {
-      client.once("sessionReady", ensurePushSubscriptionForSession);
-    }
-
-    // Auto-login from URL params
-    const urlParams = new URLSearchParams(window.location.search);
-    const username = urlParams.get("username");
-    const password = urlParams.get("password");
-    if (username && password) {
-      client.once("connect", () => {
-        console.log("Auto-logging in with URL params...");
-        setTimeout(() => {
-          client.sendCommand(username);
-          setTimeout(() => {
-            client.sendCommand(password);
-          }, 500);
-        }, 1000);
-      });
-    }
 
     const hapticsRuntime = createHapticsRuntime();
     hapticsRuntimeRef.current = hapticsRuntime;
@@ -293,7 +293,6 @@ function App() {
     document.addEventListener("focus", handleFocus);
 
     return () => {
-      client.off("sessionReady", ensurePushSubscriptionForSession);
       document.removeEventListener("focus", handleFocus);
       if (hapticsRuntimeRef.current === hapticsRuntime) {
         hapticsRuntimeRef.current = null;
@@ -459,7 +458,7 @@ function App() {
             </aside>
           )}
           <footer style={{ gridArea: "status" }}>
-            <Statusbar client={client} />
+            <Statusbar />
           </footer>
           <PreferencesDialog ref={prefsDialogRef} />
           <AutoLogDialog ref={autoLogDialogRef} />

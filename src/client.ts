@@ -27,6 +27,8 @@ import { useLiveKitStore } from "./stores/liveKitStore";
 import { useInputStore } from "./stores/inputStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
+import { useConnectionStore } from "./stores/connectionStore";
+import { useCharacterStatusStore } from "./stores/characterStatusStore";
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
@@ -73,7 +75,7 @@ class MudClient extends EventEmitter {
 
   set autosay(value: boolean) {
     this._autosay = value;
-    this.emit("autosayChanged", value);
+    useInputStore.getState().setAutosay(value);
   }
 
   constructor(host: string, port: number) {
@@ -86,6 +88,7 @@ class MudClient extends EventEmitter {
     this.gmcp = new GmcpSession(this);
     this.media = new MediaService();
     this.webRTCService = new WebRTCService();
+    useInputStore.getState().setAutosay(this._autosay);
   }
 
   configureFileTransfer(fileTransfer: GMCPClientFileTransfer): void {
@@ -121,8 +124,7 @@ class MudClient extends EventEmitter {
       // Reset MIDI intentional disconnect flags when successfully reconnecting to server
       resetMidiIntentionalDisconnectFlags();
 
-      this.emit("connect");
-      this.emit("connectionChange", true);
+      useConnectionStore.getState().setConnected(true);
     };
 
     this.telnet.on("data", (data: ArrayBuffer) => {
@@ -134,9 +136,7 @@ class MudClient extends EventEmitter {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        if (this.gmcp.start()) {
-          this.emit("gmcpReady");
-        }
+        this.gmcp.start();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -201,9 +201,7 @@ class MudClient extends EventEmitter {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation (local)");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        if (this.gmcp.start()) {
-          this.emit("gmcpReady");
-        }
+        this.gmcp.start();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -236,11 +234,8 @@ class MudClient extends EventEmitter {
     // message once the virtual connection is created.
     this._connected = true;
     resetMidiIntentionalDisconnectFlags();
-    this.emit("connect");
-    this.emit("connectionChange", true);
-    if (this.gmcp.markReady()) {
-      this.emit("gmcpReady");
-    }
+    useConnectionStore.getState().setConnected(true);
+    this.gmcp.markReady();
   }
 
   public send(data: string) {
@@ -263,12 +258,11 @@ class MudClient extends EventEmitter {
     useWorldMapStore.getState().reset();
     useServerLinksStore.getState().reset();
     useInputStore.getState().resetCommands();
+    useCharacterStatusStore.getState().reset();
     this.fileTransferManager?.cleanup();
     this.gmcp.reset();
     useLiveKitStore.getState().reset();
-
-    this.emit("disconnect");
-    this.emit("connectionChange", false);
+    useConnectionStore.getState().setConnected(false);
   }
 
   public close(): void {

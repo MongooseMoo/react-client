@@ -9,6 +9,7 @@ import { useInputStore } from '../stores/inputStore';
 import TurndownService from 'turndown'; // <-- Import TurndownService
 import { usePreferences } from '../stores/preferencesStore'; // Import preferences store
 import { useUserlistStore } from '../stores/userlistStore';
+import { useConnectionStore } from '../stores/connectionStore';
 import BlockquoteWithCopy from './BlockquoteWithCopy';
 import { autoLogService } from '../logging/AutoLogService';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
@@ -69,6 +70,8 @@ class Output extends React.Component<Props, State> {
   messageKey: number = 0;
   private unsubscribePrefs: (() => void) | undefined;
   private unsubscribeUserlist: (() => void) | undefined;
+  private unsubscribeConnection: (() => void) | undefined;
+  private previousConnected = useConnectionStore.getState().connected;
   // Add a TurndownService instance (can be reused)
   turndownService = new TurndownService({headingStyle: 'atx', emDelimiter: '*'});
 
@@ -280,6 +283,17 @@ class Output extends React.Component<Props, State> {
   handleUserlistVisibility = () =>
     this.setState({ sidebarVisible: useUserlistStore.getState().hasReceivedList });
 
+  handleConnectionStateChange = () => {
+    const connected = useConnectionStore.getState().connected;
+    if (connected === this.previousConnected) return;
+    this.previousConnected = connected;
+    if (connected) {
+      this.handleConnected();
+    } else {
+      this.handleDisconnected();
+    }
+  };
+
 getSnapshotBeforeUpdate(prevProps: Props, prevState: State) {
     // Check if the user is scrolled to the bottom before the update
 
@@ -385,13 +399,13 @@ componentDidUpdate(
     const { client } = this.props;
     client.on("message", this.handleMessage);
     client.on("html", this.handleHtml);
-    client.on("connect", this.handleConnected);
-    client.on("disconnect", this.handleDisconnected);
     client.on("error", this.addError);
     client.on("command", this.addCommand);
     this.unsubscribePrefs = usePreferences.subscribe(this.handlePreferencesChange);
     this.unsubscribeUserlist = useUserlistStore.subscribe(this.handleUserlistVisibility);
+    this.unsubscribeConnection = useConnectionStore.subscribe(this.handleConnectionStateChange);
     this.handleUserlistVisibility();
+    this.handleConnectionStateChange();
 
     // Freeze any loaded output that exceeds the live window
     this.freezeOverflow();
@@ -404,12 +418,13 @@ componentDidUpdate(
     }
     client.removeListener("message", this.handleMessage);
     client.removeListener("html", this.handleHtml);
-    client.removeListener("connect", this.handleConnected);
-    client.removeListener("disconnect", this.handleDisconnected);
     client.removeListener("error", this.addError);
     client.removeListener("command", this.addCommand);
     if (this.unsubscribeUserlist) {
       this.unsubscribeUserlist();
+    }
+    if (this.unsubscribeConnection) {
+      this.unsubscribeConnection();
     }
   }
 

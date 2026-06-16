@@ -8,6 +8,8 @@ import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useSkillsStore } from "./stores/skillsStore";
 import { useUserlistStore } from "./stores/userlistStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
+import { useConnectionStore } from "./stores/connectionStore";
+import { useCharacterStatusStore } from "./stores/characterStatusStore";
 
 vi.mock("cacophony", () => ({
   Cacophony: class {
@@ -22,6 +24,8 @@ describe("createConfiguredClient", () => {
   afterEach(() => {
     client?.shutdown();
     client = undefined;
+    useCharacterStatusStore.getState().reset();
+    useConnectionStore.getState().reset();
     useInputStore.getState().clear();
     useInputStore.getState().resetCommands();
     useItemsStore.getState().reset();
@@ -31,20 +35,25 @@ describe("createConfiguredClient", () => {
     useWorldMapStore.getState().reset();
   });
 
-  it("wires Char.Name to sessionReady once", () => {
+  it("wires Char.Name to connection session state", () => {
     client = createConfiguredClient();
-    const handleSessionReady = vi.fn();
-    const handleStatusText = vi.fn();
-    client.on("sessionReady", handleSessionReady);
-    client.on("statustext", handleStatusText);
 
     const char = client.gmcp.require("Char");
     char.receiveRegisteredMessage("Name", { fullname: "Q", name: "q" });
     char.receiveRegisteredMessage("Name", { fullname: "Q", name: "q" });
 
     expect(client.gmcp.sessionReady).toBe(true);
-    expect(handleSessionReady).toHaveBeenCalledOnce();
-    expect(handleStatusText).toHaveBeenCalledTimes(2);
+    expect(useConnectionStore.getState().sessionReady).toBe(true);
+    expect(useConnectionStore.getState().statusText).toBe("Logged in as Q");
+  });
+
+  it("wires Char.Vitals to the character status store", () => {
+    client = createConfiguredClient();
+
+    const char = client.gmcp.require("Char");
+    char.receiveRegisteredMessage("Vitals", { hp: "10", maxhp: "20" });
+
+    expect(useCharacterStatusStore.getState().vitals).toEqual({ hp: "10", maxhp: "20" });
   });
 
   it("wires AWNS MCP packages to semantic stores", () => {

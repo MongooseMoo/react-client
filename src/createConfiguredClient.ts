@@ -47,6 +47,8 @@ import { useInputStore } from "./stores/inputStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useSpatialStore } from "./stores/spatialStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
+import { useConnectionStore } from "./stores/connectionStore";
+import { useCharacterStatusStore } from "./stores/characterStatusStore";
 
 marked.setOptions({
   breaks: true,
@@ -101,12 +103,12 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPClientHaptics);
 
   char.on("name", (data) => {
-    client.emit("statustext", `Logged in as ${data.fullname}`);
+    useConnectionStore.getState().setStatusText(`Logged in as ${data.fullname}`);
     if (client.gmcp.markSessionReady()) {
-      client.emit("sessionReady");
+      useConnectionStore.getState().setSessionReady(true);
     }
   });
-  char.on("vitals", (data) => client.emit("vitals", data));
+  char.on("vitals", (data) => useCharacterStatusStore.getState().setVitals(data));
   commChannel.on("text", (data) => {
     client.emit("channelText", data);
     if (data.channel === "say_to_you" && !document.hasFocus()) {
@@ -162,7 +164,7 @@ export function createConfiguredClient(): MudClient {
     if (mcpPackage instanceof McpAwnsDisplayUrl) {
       mcpPackage.on("displayUrl", (url) => {
         useServerLinksStore.getState().addRecentUrl(url);
-        client.emit("statustext", `Server sent URL: ${url}`);
+        useConnectionStore.getState().setStatusText(`Server sent URL: ${url}`);
       });
     }
     if (mcpPackage instanceof McpAwnsServerInfo) {
@@ -215,7 +217,9 @@ export function createConfiguredClient(): MudClient {
       timezonePackage = mcpPackage;
     }
     if (mcpPackage instanceof McpAwnsStatus) {
-      mcpPackage.on("statustext", (text) => client.emit("statustext", text));
+      mcpPackage.on("statustext", (text) =>
+        useConnectionStore.getState().setStatusText(text),
+      );
     }
   }
 

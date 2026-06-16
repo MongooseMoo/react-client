@@ -176,20 +176,20 @@ emitter and no code uses `client` as an event bus.
 ### `src/client.ts`
 
 - [ ] Remove `MudClient extends EventEmitter` at `src/client.ts:43`.
-- [ ] Replace `autosayChanged` emit at `src/client.ts:76` with the chosen preferences/input owner.
-- [ ] Replace `connect` emits at `src/client.ts:124` and `src/client.ts:239` with lifecycle owner writes/callbacks.
-- [ ] Replace `connectionChange` emits at `src/client.ts:125`, `src/client.ts:240`, and `src/client.ts:271` with lifecycle owner writes.
-- [ ] Delete or replace `gmcpReady` emits at `src/client.ts:138`, `src/client.ts:205`, and `src/client.ts:242`.
+- [x] Replace `autosayChanged` emit at original `src/client.ts:76` with the input owner.
+- [x] Replace `connect` emits at original `src/client.ts:124` and `src/client.ts:239` with lifecycle owner writes.
+- [x] Replace `connectionChange` emits at original `src/client.ts:125`, `src/client.ts:240`, and `src/client.ts:271` with lifecycle owner writes.
+- [x] Delete `gmcpReady` emits at original `src/client.ts:138`, `src/client.ts:205`, and `src/client.ts:242`.
 - [ ] Route connection `error` at `src/client.ts:175` to output/logging owner.
-- [ ] Replace `disconnect` emit at `src/client.ts:270` with lifecycle owner writes/callbacks.
+- [x] Replace `disconnect` emit at original `src/client.ts:270` with lifecycle owner writes.
 - [ ] Route command echo at `src/client.ts:294` to output/logging owner.
 - [ ] Route server text at `src/client.ts:347` to output/logging owner.
 
 ### `src/createConfiguredClient.ts`
 
-- [ ] Replace `statustext` relays at `src/createConfiguredClient.ts:106`, `src/createConfiguredClient.ts:228`, and `src/createConfiguredClient.ts:289`.
-- [ ] Replace `sessionReady` relay at `src/createConfiguredClient.ts:108`.
-- [ ] Replace `vitals` relay at `src/createConfiguredClient.ts:111`.
+- [x] Replace `statustext` relays at original `src/createConfiguredClient.ts:106`, `src/createConfiguredClient.ts:228`, and `src/createConfiguredClient.ts:289`.
+- [x] Replace `sessionReady` relay at original `src/createConfiguredClient.ts:108`.
+- [x] Replace `vitals` relay at original `src/createConfiguredClient.ts:111`.
 - [x] Delete unused character/status relays at original `src/createConfiguredClient.ts:112`-`src/createConfiguredClient.ts:119`.
 - [x] Delete unused affliction/defence relays at original `src/createConfiguredClient.ts:120`-`src/createConfiguredClient.ts:125`.
 - [x] Move `skillGroups` / `skillList` relays at original `src/createConfiguredClient.ts:126`-`src/createConfiguredClient.ts:127` to the skills owner.
@@ -213,9 +213,9 @@ emitter and no code uses `client` as an event bus.
 
 ### Current Consumers And Component-Originated Emits
 
-- [ ] Replace `App` lifecycle listeners at `src/App.tsx:240`-`src/App.tsx:245`.
-- [ ] Replace `App` `sessionReady` listener cleanup at `src/App.tsx:266` and `src/App.tsx:296`.
-- [ ] Replace `App` auto-login `connect` listener at `src/App.tsx:274`.
+- [x] Replace `App` lifecycle listeners at original `src/App.tsx:240`-`src/App.tsx:245`.
+- [x] Replace `App` `sessionReady` listener cleanup at original `src/App.tsx:266` and `src/App.tsx:296`.
+- [x] Replace `App` auto-login `connect` listener at original `src/App.tsx:274`.
 - [ ] Replace `useChannelHistory` `channelText` subscription at `src/hooks/useChannelHistory.tsx:215` and cleanup at `src/hooks/useChannelHistory.tsx:218`.
 - [ ] Delete `src/hooks/useClientEvent.ts` after replacing all `useClientEvent(client, ...)` callers.
 - [ ] Replace `GMCPClientMedia` spatial client listeners at `src/gmcp/Client/Media.ts:196`-`src/gmcp/Client/Media.ts:197` and cleanup at `src/gmcp/Client/Media.ts:281`-`src/gmcp/Client/Media.ts:282`.
@@ -224,16 +224,17 @@ emitter and no code uses `client` as an event bus.
 - [x] Delete `inventoryDataReceived` emits at original `src/components/inventory.tsx:33`, `src/components/inventory.tsx:42`, `src/components/inventory.tsx:53`, and `src/components/inventory.tsx:69`.
 - [x] Replace `inventory` item subscriptions at original `src/components/inventory.tsx:79`-`src/components/inventory.tsx:90`.
 - [x] Replace `RoomInfoDisplay` item subscriptions at original `src/components/RoomInfoDisplay.tsx:76`-`src/components/RoomInfoDisplay.tsx:83`.
-- [ ] Replace `Output` output/logging subscriptions for `message`, `html`, `connect`, `disconnect`, `error`, and `command` at original `src/components/output.tsx:384`-`src/components/output.tsx:389` and cleanup at original `src/components/output.tsx:402`-`src/components/output.tsx:407`.
+- [ ] Replace `Output` output/logging subscriptions for `message`, `html`, `error`, and `command` at original `src/components/output.tsx:384`-`src/components/output.tsx:389` and cleanup at original `src/components/output.tsx:402`-`src/components/output.tsx:407`.
+- [x] Replace `Output` `connect` / `disconnect` subscriptions at original `src/components/output.tsx:386`-`src/components/output.tsx:387` and cleanup at original `src/components/output.tsx:404`-`src/components/output.tsx:405`.
 - [x] Replace `Output` `userlist` subscription at original `src/components/output.tsx:390` and cleanup at original `src/components/output.tsx:408`.
 - [x] Replace `sidebar` `userlist` `useClientEvent` at original `src/components/sidebar.tsx:37`.
 - [x] Replace `sidebar` inventory activity subscription at original `src/components/sidebar.tsx:88`-`src/components/sidebar.tsx:90`.
 - [x] Delete `skillsDataReceived` emit at original `src/components/SkillsDisplay.tsx:25`.
 - [x] Replace `SkillsDisplay` subscriptions at original `src/components/SkillsDisplay.tsx:52`-`src/components/SkillsDisplay.tsx:65`.
-- [ ] Replace `statusbar` subscriptions at `src/components/statusbar.tsx:42`-`src/components/statusbar.tsx:55`.
-- [ ] Remove stale commented `statusbar` client event references at `src/components/statusbar.tsx:46`-`src/components/statusbar.tsx:57`.
+- [x] Replace `statusbar` subscriptions at original `src/components/statusbar.tsx:42`-`src/components/statusbar.tsx:55`.
+- [x] Remove stale commented `statusbar` client event references at original `src/components/statusbar.tsx:46`-`src/components/statusbar.tsx:57`.
 - [x] Delete orphan `TargetInfo` listeners at original `src/components/TargetInfo.tsx:28`-`src/components/TargetInfo.tsx:39`.
-- [ ] Replace `toolbar` `useClientEvent` calls at `src/components/toolbar.tsx:40` and `src/components/toolbar.tsx:42`.
+- [x] Replace `toolbar` `useClientEvent` calls at original `src/components/toolbar.tsx:40` and `src/components/toolbar.tsx:42`.
 
 ## Fixed-Point Log
 
@@ -422,7 +423,42 @@ Gate results:
 - Pass: `git diff --check`
 
 Commit:
-- pending
+- `8e74d90 Delete orphan target client listeners`
 
 Next slice:
 - Add/move the next missing state owner for current production consumers.
+
+### Iteration 7 - lifecycle, session readiness, status text, vitals, autosay
+
+Slice read:
+- `src/client.ts`
+- `src/createConfiguredClient.ts`
+- `src/App.tsx`
+- `src/components/statusbar.tsx`
+- `src/components/toolbar.tsx`
+- `src/components/output.tsx`
+- `src/stores/inputStore.ts`
+- `src/createConfiguredClient.test.ts`
+- `src/stores/inputStore.test.ts`
+
+Surfaces:
+- `connect`, `disconnect`, `connectionChange`, `sessionReady`, `statustext`,
+  `vitals`, `gmcpReady`, and `autosayChanged` client events.
+  - Disposition: move/delete
+  - Owner after cleanup: `useConnectionStore` owns connection/session/status
+    text; `useCharacterStatusStore` owns vitals; `useInputStore` owns autosay.
+  - Action: added focused stores, moved client/configured-client writes to
+    stores, moved App/statusbar/toolbar/Output connection consumers to stores,
+    and deleted no-consumer `gmcpReady`.
+
+Gate results:
+- Pass: `rg -n "useClientEvent\(client, '(connectionChange|autosayChanged)'|client\.(on|off|once|removeListener)\(\"(connect|disconnect|sessionReady|statustext|vitals)|client\.emit\(\"(connect|disconnect|connectionChange|sessionReady|statustext|vitals)|this\.emit\(\"(connect|disconnect|connectionChange|gmcpReady|autosayChanged)" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+- Pass: `npm run typecheck`
+- Pass: `npm test -- src/createConfiguredClient.test.ts src/stores/inputStore.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- pending
+
+Next slice:
+- Move output/logging events or channel history, then spatial/audio sync.
