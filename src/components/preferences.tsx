@@ -449,7 +449,7 @@ const Preferences: React.FC = () => {
     { id: "preferences-autologging-tab", label: "Logging", content: <AutologgingTab /> },
   ];
 
-  return <Tabs tabs={tabs} />;
+  return <Tabs tabs={tabs} ariaLabel="Preferences sections" />;
 };
 
 export default Preferences;

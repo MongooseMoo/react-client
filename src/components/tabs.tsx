@@ -12,9 +12,10 @@ export interface TabProps {
 export interface TabsProps {
   tabs: TabProps[]; // Expecting already filtered tabs
   trailingElement?: React.ReactNode; // Optional element rendered at end of tab bar
+  ariaLabel?: string; // Optional accessible name for the tablist (ARIA APG requirement)
 }
 
-const Tabs: React.FC<TabsProps> = ({ tabs, trailingElement }) => {
+const Tabs: React.FC<TabsProps> = ({ tabs, trailingElement, ariaLabel }) => {
   const [selectedTab, setSelectedTab] = useState(0);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
   const userInteractedRef = useRef(false);
@@ -69,10 +70,11 @@ const Tabs: React.FC<TabsProps> = ({ tabs, trailingElement }) => {
     // Add the tabs-container class here
     <div className="tabs-container">
       <div className="tab-bar-row">
-        <div role="tablist">
+        <div role="tablist" aria-label={ariaLabel}>
           {tabs.map((tab, index) => (
             <button
               key={index}
+              type="button"
               ref={(el) => (tabsRef.current[index] = el)}
               role="tab"
               aria-selected={selectedTab === index}
