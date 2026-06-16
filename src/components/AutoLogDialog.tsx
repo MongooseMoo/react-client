@@ -1,5 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import FocusLock from "react-focus-lock";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   autoLogEntriesToHtml,
   autoLogEntriesToText,
@@ -8,7 +7,7 @@ import {
   downloadAutoLog,
 } from "../logging/AutoLogExport";
 import { autoLogStore } from "../logging/AutoLogStore";
-import { AutoLogEntry, AutoLogSession } from "../logging/AutoLogTypes";
+import type { AutoLogEntry, AutoLogSession } from "../logging/AutoLogTypes";
 import "./AutoLogDialog.css";
 
 export type AutoLogDialogRef = {
@@ -37,13 +36,22 @@ function getSessionDuration(session: AutoLogSession): string {
   return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;
 }
 
+// A pending destructive action awaiting confirmation: either deleting a single
+// session, or deleting every session.
+type PendingDelete =
+  | { kind: "session"; session: AutoLogSession }
+  | { kind: "all"; count: number };
+
 const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
   const [isOpen, setIsOpen] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const confirmDialogRef = useRef<HTMLDialogElement | null>(null);
   const [sessions, setSessions] = useState<AutoLogSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<AutoLogSession | null>(null);
   const [entries, setEntries] = useState<AutoLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
   const refreshSessions = useCallback(async () => {
     setIsLoading(true);
@@ -107,6 +115,33 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
     }
   }, [refreshSessions]);
 
+  // Destructive triggers open the confirmation alertdialog instead of deleting
+  // immediately, gating handleDelete / handleDeleteAll behind a confirm step.
+  const requestDelete = useCallback((session: AutoLogSession) => {
+    setPendingDelete({ kind: "session", session });
+  }, []);
+
+  const requestDeleteAll = useCallback(() => {
+    setPendingDelete({ kind: "all", count: sessions.length });
+  }, [sessions.length]);
+
+  const cancelDelete = useCallback(() => {
+    setPendingDelete(null);
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    const pending = pendingDelete;
+    setPendingDelete(null);
+    if (!pending) {
+      return;
+    }
+    if (pending.kind === "session") {
+      await handleDelete(pending.session);
+    } else {
+      await handleDeleteAll();
+    }
+  }, [pendingDelete, handleDelete, handleDeleteAll]);
+
   const handleDownload = useCallback(async (session: AutoLogSession, format: "text" | "html") => {
     setIsLoading(true);
     setError(null);
@@ -138,93 +173,174 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
     }
   }, [isOpen, refreshSessions]);
 
+  // Drive the native modal dialog from React state. showModal() puts the dialog
+  // in the top layer, traps focus, makes the background inert, renders a
+  // ::backdrop, closes on Escape, and restores focus to the previously-focused
+  // element on close — so the react-focus-lock wrapper is no longer needed.
   useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsOpen(false);
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    if (isOpen) {
+      // showModal() throws if the dialog is already open.
+      if (!dialog.open) {
+        dialog.showModal();
       }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    } else if (dialog.open) {
+      dialog.close();
+    }
   }, [isOpen]);
+
+  // Sync React state when the dialog closes natively (e.g. Escape), so isOpen
+  // stays in step with the dialog's real open state.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    const handleClose = () => {
+      setIsOpen(false);
+    };
+    dialog.addEventListener("close", handleClose);
+    return () => {
+      dialog.removeEventListener("close", handleClose);
+    };
+  }, []);
+
+  // Drive the confirmation alertdialog from pendingDelete, same showModal()
+  // approach as the main dialog. showModal() traps focus and closes on Escape;
+  // the dialog's "close" event (Escape or Cancel) clears pendingDelete without
+  // deleting.
+  useEffect(() => {
+    const dialog = confirmDialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    if (pendingDelete) {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [pendingDelete]);
+
+  useEffect(() => {
+    const dialog = confirmDialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    const handleClose = () => {
+      setPendingDelete(null);
+    };
+    dialog.addEventListener("close", handleClose);
+    return () => {
+      dialog.removeEventListener("close", handleClose);
+    };
+  }, []);
 
   const totalBytes = useMemo(
     () => sessions.reduce((total, session) => total + session.byteEstimate, 0),
     [sessions]
   );
 
-  if (!isOpen) {
-    return null;
-  }
+  const confirmMessage = pendingDelete
+    ? pendingDelete.kind === "session"
+      ? `Delete the autolog "${pendingDelete.session.title}"? This permanently removes the session and cannot be undone.`
+      : `Delete all ${pendingDelete.count} autolog sessions? This permanently removes them and cannot be undone.`
+    : "";
 
   return (
-    <FocusLock>
-      <dialog className="autolog-dialog" open aria-label="Autologs">
-        <div className="autolog-dialog-header">
-          <h1>Autologs</h1>
-          <button onClick={() => setIsOpen(false)}>Close</button>
-        </div>
+    <>
+    <dialog className="autolog-dialog" ref={dialogRef} aria-label="Autologs">
+      {isOpen && (
+        <>
+          <div className="autolog-dialog-header">
+            <h2>Autologs</h2>
+            <button type="button" onClick={() => setIsOpen(false)}>Close</button>
+          </div>
 
-        <div className="autolog-dialog-toolbar">
-          <span>{sessions.length} sessions, {formatBytes(totalBytes)}</span>
-          <button onClick={refreshSessions} disabled={isLoading}>Refresh</button>
-          <button onClick={handleDeleteAll} disabled={isLoading || sessions.length === 0}>Delete All</button>
-        </div>
+          <div className="autolog-dialog-toolbar">
+            <span>{sessions.length} sessions, {formatBytes(totalBytes)}</span>
+            <button type="button" onClick={refreshSessions} disabled={isLoading}>Refresh</button>
+            <button type="button" onClick={requestDeleteAll} disabled={isLoading || sessions.length === 0}>Delete All</button>
+          </div>
 
-        {error && <div className="autolog-dialog-error" role="alert">{error}</div>}
+          {error && <div className="autolog-dialog-error" role="alert">{error}</div>}
 
-        <div className="autolog-dialog-body">
-          <section className="autolog-session-list" aria-label="Autolog sessions">
-            {sessions.length === 0 && !isLoading && (
-              <p className="autolog-empty">No autolog sessions have been saved.</p>
-            )}
-            {sessions.map((session) => (
-              <article
-                key={session.id}
-                className={`autolog-session-row ${selectedSession?.id === session.id ? "selected" : ""}`}
-              >
-                <button className="autolog-session-main" onClick={() => loadSessionEntries(session)}>
-                  <span className="autolog-session-title">{session.title}</span>
-                  <span className="autolog-session-meta">
-                    {formatSessionDate(session.startedAt)} · {getSessionDuration(session)} · {session.lineCount} lines · {formatBytes(session.byteEstimate)}
-                  </span>
-                </button>
-                <div className="autolog-session-actions">
-                  <button onClick={() => handleDownload(session, "text")}>TXT</button>
-                  <button onClick={() => handleDownload(session, "html")}>HTML</button>
-                  <button onClick={() => handleDelete(session)}>Delete</button>
-                </div>
-              </article>
-            ))}
-          </section>
+          <div className="autolog-dialog-body" aria-busy={isLoading}>
+            <section className="autolog-session-list" aria-label="Autolog sessions">
+              {sessions.length === 0 && !isLoading && (
+                <p className="autolog-empty">No autolog sessions have been saved.</p>
+              )}
+              {sessions.map((session) => (
+                <article
+                  key={session.id}
+                  className={`autolog-session-row ${selectedSession?.id === session.id ? "selected" : ""}`}
+                >
+                  <button type="button" className="autolog-session-main" aria-current={selectedSession?.id === session.id ? "true" : undefined} onClick={() => loadSessionEntries(session)}>
+                    <span className="autolog-session-title">{session.title}</span>
+                    <span className="autolog-session-meta">
+                      {formatSessionDate(session.startedAt)} · {getSessionDuration(session)} · {session.lineCount} lines · {formatBytes(session.byteEstimate)}
+                    </span>
+                  </button>
+                  <div className="autolog-session-actions">
+                    <button type="button" aria-label={`Download "${session.title}" as plain text`} onClick={() => handleDownload(session, "text")}>TXT</button>
+                    <button type="button" aria-label={`Download "${session.title}" as HTML`} onClick={() => handleDownload(session, "html")}>HTML</button>
+                    <button type="button" aria-label={`Delete log "${session.title}"`} onClick={() => requestDelete(session)}>Delete</button>
+                  </div>
+                </article>
+              ))}
+            </section>
 
-          <section className="autolog-entry-viewer" aria-label="Autolog entries">
-            {selectedSession ? (
-              <>
-                <h2>{selectedSession.title}</h2>
-                <div className="autolog-entry-meta">
-                  {formatSessionDate(selectedSession.startedAt)} · {selectedSession.sanitizedUrl}
-                </div>
-                <div className="autolog-entry-list">
-                  {entries.map((entry) => (
-                    <pre key={`${entry.sessionId}-${entry.sequence}`} className={`autolog-entry autolog-entry-${entry.type}`}>
-                      <span className="autolog-entry-time">{new Date(entry.timestamp).toLocaleTimeString()}</span>
-                      {autoLogEntryToPlainText(entry)}
-                    </pre>
-                  ))}
-                  {entries.length === 0 && !isLoading && <p className="autolog-empty">No entries in this session.</p>}
-                </div>
-              </>
-            ) : (
-              <p className="autolog-empty">Select a session to view its entries.</p>
-            )}
-          </section>
-        </div>
-      </dialog>
-    </FocusLock>
+            <section className="autolog-entry-viewer" aria-label="Autolog entries">
+              {selectedSession ? (
+                <>
+                  <h3>{selectedSession.title}</h3>
+                  <div className="autolog-entry-meta">
+                    {formatSessionDate(selectedSession.startedAt)} · {selectedSession.sanitizedUrl}
+                  </div>
+                  <div className="autolog-entry-list">
+                    {entries.map((entry) => (
+                      <pre key={`${entry.sessionId}-${entry.sequence}`} className={`autolog-entry autolog-entry-${entry.type}`}>
+                        <span className="autolog-entry-time">{new Date(entry.timestamp).toLocaleTimeString()}</span>
+                        {autoLogEntryToPlainText(entry)}
+                      </pre>
+                    ))}
+                    {entries.length === 0 && !isLoading && <p className="autolog-empty">No entries in this session.</p>}
+                  </div>
+                </>
+              ) : (
+                <p className="autolog-empty">Select a session to view its entries.</p>
+              )}
+            </section>
+          </div>
+        </>
+      )}
+    </dialog>
+
+    <dialog
+      className="autolog-confirm-dialog"
+      ref={confirmDialogRef}
+      role="alertdialog"
+      aria-labelledby="autolog-confirm-title"
+      aria-describedby="autolog-confirm-message"
+    >
+      {pendingDelete && (
+        <>
+          <h2 id="autolog-confirm-title">
+            {pendingDelete.kind === "session" ? "Delete autolog" : "Delete all autologs"}
+          </h2>
+          <p id="autolog-confirm-message">{confirmMessage}</p>
+          <div className="autolog-confirm-actions">
+            <button type="button" autoFocus onClick={cancelDelete}>Cancel</button>
+            <button type="button" onClick={confirmDelete}>Delete</button>
+          </div>
+        </>
+      )}
+    </dialog>
+    </>
   );
 });
 

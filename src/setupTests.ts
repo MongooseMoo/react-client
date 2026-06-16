@@ -7,6 +7,33 @@ import 'fake-indexeddb/auto';
 // learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';
 
+const dialogPrototype = window.HTMLDialogElement?.prototype;
+if (dialogPrototype) {
+  if (typeof dialogPrototype.showModal !== 'function') {
+    Object.defineProperty(dialogPrototype, 'showModal', {
+      configurable: true,
+      writable: true,
+      value: function showModal(this: HTMLDialogElement) {
+        this.setAttribute('open', '');
+      },
+    });
+  }
+
+  if (typeof dialogPrototype.close !== 'function') {
+    Object.defineProperty(dialogPrototype, 'close', {
+      configurable: true,
+      writable: true,
+      value: function close(this: HTMLDialogElement, returnValue?: string) {
+        if (returnValue !== undefined) {
+          this.returnValue = returnValue;
+        }
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      },
+    });
+  }
+}
+
 // Mock BroadcastChannel
 global.BroadcastChannel = vi.fn().mockImplementation(() => ({
   postMessage: vi.fn(),

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { announce } from "@react-aria/live-announcer";
 import type { AutoreadMode, NavigationKeyScheme } from "../stores/preferencesStore";
 import { usePreferences } from "../stores/preferencesStore";
 import { useVoices } from "../hooks/useVoices";
@@ -103,7 +104,7 @@ const RateSelection: React.FC = () => {
 
   return (
     <label>
-      Rate (0.1 - 10.0):
+      Rate ({state.speech.rate.toFixed(1)}, range 0.1 - 10.0):
       <input
         type="range"
         min="0.1"
@@ -123,7 +124,7 @@ const PitchSelection: React.FC = () => {
 
   return (
     <label>
-      Pitch (0 - 2):
+      Pitch ({state.speech.pitch.toFixed(1)}, range 0 - 2):
       <input
         type="range"
         min="0"
@@ -143,10 +144,10 @@ const VolumeSelection: React.FC = () => {
 
   return (
     <label>
-      Volume (0 - 1):
+      Volume ({state.speech.volume.toFixed(2)}, range 0 - 1):
       <input
         type="range"
-        min="0.1"
+        min="0"
         max="1"
         step="0.1"
         value={state.speech.volume}
@@ -176,7 +177,7 @@ const PreviewButton: React.FC = () => {
   const handlePreview = () => {
     if (isPlaying) return; // Extra guard against concurrent calls
     setIsPlaying(true);
-    console.log("Preview button clicked");
+    announce("Playing voice preview", "polite");
 
     const speakText = () => {
       if (!isMounted.current) return; // Don't proceed if unmounted
@@ -185,32 +186,24 @@ const PreviewButton: React.FC = () => {
 
       // Find the selected voice
       const voices = speechSynthesis.getVoices();
-      console.log("Available voices:", voices.map(v => v.name));
       const selectedVoice = voices.find(voice => voice.name === state.speech.voice);
-      console.log("Selected voice:", selectedVoice ? selectedVoice.name : "Not found");
       utterance.voice = selectedVoice || null;
 
       utterance.rate = state.speech.rate;
       utterance.pitch = state.speech.pitch;
       utterance.volume = state.speech.volume;
 
-      console.log("Utterance settings:", {
-        voice: utterance.voice ? utterance.voice.name : "Default",
-        rate: utterance.rate,
-        pitch: utterance.pitch,
-        volume: utterance.volume
-      });
-
       utterance.onend = () => {
         if (isMounted.current) {
-          console.log("Speech ended");
           setIsPlaying(false);
+          announce("Voice preview finished", "polite");
         }
       };
       utterance.onerror = (event) => {
         if (isMounted.current) {
           console.error('Speech synthesis error:', event);
           setIsPlaying(false);
+          announce("Voice preview finished", "polite");
         }
       };
 
@@ -219,7 +212,6 @@ const PreviewButton: React.FC = () => {
 
       // Speak the new utterance
       speechSynthesis.speak(utterance);
-      console.log("Speech started");
     };
 
     // Check if voices are loaded
@@ -243,7 +235,7 @@ const PreviewButton: React.FC = () => {
   };
 
   return (
-    <button type="button" onClick={handlePreview} disabled={isPlaying}>
+    <button type="button" onClick={handlePreview}>
       {isPlaying ? "Playing..." : "Preview Voice"}
     </button>
   );
@@ -329,6 +321,7 @@ const MidiTab: React.FC = () => {
           type="checkbox"
           checked={state.midi.enabled}
           onChange={handleMidiEnabledChange}
+          aria-describedby="midi-help"
         />
         Enable MIDI
       </label>
@@ -336,7 +329,7 @@ const MidiTab: React.FC = () => {
       <br />
 
       {state.midi.enabled && (
-        <p style={{ color: "#666", fontSize: "0.9em" }}>
+        <p id="midi-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
           Device selection and management is available in the MIDI tab when connected to a server.
         </p>
       )}
@@ -358,6 +351,7 @@ const HapticsTab: React.FC = () => {
           type="checkbox"
           checked={state.haptics.enabled}
           onChange={handleHapticsEnabledChange}
+          aria-describedby="haptics-bluetooth-help"
         />
         Enable Haptics
       </label>
@@ -392,7 +386,7 @@ const HapticsTab: React.FC = () => {
             />
           </label>
           <br />
-          <p style={{ color: "#666", fontSize: "0.9em", marginTop: "8px" }}>
+          <p id="haptics-bluetooth-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "8px" }}>
             Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
           </p>
         </div>
@@ -413,6 +407,7 @@ const KeyboardTab: React.FC = () => {
           onChange={(e) =>
             state.setKeyboard({ navigationKeyScheme: e.target.value as NavigationKeyScheme })
           }
+          aria-describedby="keyboard-nav-help"
         >
           <option value="jkli">JKLI (QWERTY right-hand)</option>
           <option value="wasd">WASD (QWERTY left-hand)</option>
@@ -420,7 +415,7 @@ const KeyboardTab: React.FC = () => {
           <option value="dvorak-lh">,OAE (Dvorak left-hand)</option>
         </select>
       </label>
-      <p style={{ color: "#666", fontSize: "0.9em", marginTop: "0.5em" }}>
+      <p id="keyboard-nav-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "0.5em" }}>
         Arrow keys always work in addition to the selected scheme.
       </p>
     </div>
@@ -479,7 +474,7 @@ const Preferences: React.FC = () => {
     { id: "preferences-autologging-tab", label: "Logging", content: <AutologgingTab /> },
   ];
 
-  return <Tabs tabs={tabs} />;
+  return <Tabs tabs={tabs} ariaLabel="Preferences sections" />;
 };
 
 export default Preferences;
