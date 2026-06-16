@@ -232,7 +232,7 @@ emitter and no code uses `client` as an event bus.
 - [x] Replace `SkillsDisplay` subscriptions at original `src/components/SkillsDisplay.tsx:52`-`src/components/SkillsDisplay.tsx:65`.
 - [ ] Replace `statusbar` subscriptions at `src/components/statusbar.tsx:42`-`src/components/statusbar.tsx:55`.
 - [ ] Remove stale commented `statusbar` client event references at `src/components/statusbar.tsx:46`-`src/components/statusbar.tsx:57`.
-- [ ] Replace or delete orphan `TargetInfo` listeners at `src/components/TargetInfo.tsx:28`-`src/components/TargetInfo.tsx:39`.
+- [x] Delete orphan `TargetInfo` listeners at original `src/components/TargetInfo.tsx:28`-`src/components/TargetInfo.tsx:39`.
 - [ ] Replace `toolbar` `useClientEvent` calls at `src/components/toolbar.tsx:40` and `src/components/toolbar.tsx:42`.
 
 ## Fixed-Point Log
@@ -391,6 +391,34 @@ Gate results:
 - Pass: `rg -n "useClientEvent\(client, 'userlist'|client\.emit\(\"userlist|client\.(on|removeListener)\(\"userlist" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
 - Pass: `npm run typecheck`
 - Pass: `npm test -- src/createConfiguredClient.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- `b8b55c1 Move userlist events to store`
+
+Next slice:
+- Add/move the next missing state owner for current production consumers.
+
+### Iteration 6 - orphan target UI
+
+Slice read:
+- `src/components/TargetInfo.tsx`
+- `src/components/TargetInfo.css`
+- `src/components/sidebar.tsx`
+- `src/gmcp/IRE/Target.ts`
+
+Surfaces:
+- `TargetInfoDisplay` client listeners for `targetInfo` and `targetSet`.
+  - Disposition: delete
+  - Owner after cleanup: none in UI; `IRE.Target` typed package remains as the
+    protocol owner.
+  - Action: deleted the unused component and stylesheet, and removed stale
+    commented sidebar references. No replacement store was added because no
+    production UI renders the component and no client-bus producer exists.
+
+Gate results:
+- Pass: `rg -n "TargetInfo|TargetInfoDisplay|targetInfo|targetSet|TargetInfo.css|client\.(on|off)\(\"target" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+- Pass: `npm run typecheck`
 - Pass: `git diff --check`
 
 Commit:

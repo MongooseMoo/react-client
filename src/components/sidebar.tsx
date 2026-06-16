@@ -7,7 +7,6 @@ import Tabs, { type TabProps } from './tabs';
 import Userlist from './userlist';
 // import AfflictionsList from "./AfflictionsList"; // Removed
 // import DefencesList from "./DefencesList"; // Removed
-// import TargetInfoDisplay from "./TargetInfo"; // Removed
 import Inventory from './inventory'; // Changed from InventoryList to Inventory
 // import SkillsDisplay from "./SkillsDisplay"; // Removed
 import type MudClient from '../client';
@@ -39,7 +38,6 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
     const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
 
     // State to track if data has been received for optional tabs
-    // const [hasTargetData, setHasTargetData] = useState(false); // Removed
     // const [hasAfflictionsData, setHasAfflictionsData] = useState(false); // Removed
     // const [hasDefencesData, setHasDefencesData] = useState(false); // Removed
     const hasInventoryData = useItemsStore((state) => state.hasReceivedList);
@@ -129,12 +127,6 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       //   label: "Skills",
       //   content: <SkillsDisplay client={client} />,
       //   condition: hasSkillsData,
-      // },
-      // { // Removed Target Tab
-      //   id: "target-tab",
-      //   label: "Target",
-      //   content: <TargetInfoDisplay client={client} />,
-      //   condition: hasTargetData,
       // },
       // { // Removed Afflictions Tab
       //   id: "afflictions-tab",
