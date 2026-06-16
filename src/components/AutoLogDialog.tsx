@@ -36,14 +36,22 @@ function getSessionDuration(session: AutoLogSession): string {
   return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;
 }
 
+// A pending destructive action awaiting confirmation: either deleting a single
+// session, or deleting every session.
+type PendingDelete =
+  | { kind: "session"; session: AutoLogSession }
+  | { kind: "all"; count: number };
+
 const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const confirmDialogRef = useRef<HTMLDialogElement | null>(null);
   const [sessions, setSessions] = useState<AutoLogSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<AutoLogSession | null>(null);
   const [entries, setEntries] = useState<AutoLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
   const refreshSessions = useCallback(async () => {
     setIsLoading(true);
@@ -106,6 +114,33 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
       setIsLoading(false);
     }
   }, [refreshSessions]);
+
+  // Destructive triggers open the confirmation alertdialog instead of deleting
+  // immediately, gating handleDelete / handleDeleteAll behind a confirm step.
+  const requestDelete = useCallback((session: AutoLogSession) => {
+    setPendingDelete({ kind: "session", session });
+  }, []);
+
+  const requestDeleteAll = useCallback(() => {
+    setPendingDelete({ kind: "all", count: sessions.length });
+  }, [sessions.length]);
+
+  const cancelDelete = useCallback(() => {
+    setPendingDelete(null);
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    const pending = pendingDelete;
+    setPendingDelete(null);
+    if (!pending) {
+      return;
+    }
+    if (pending.kind === "session") {
+      await handleDelete(pending.session);
+    } else {
+      await handleDeleteAll();
+    }
+  }, [pendingDelete, handleDelete, handleDeleteAll]);
 
   const handleDownload = useCallback(async (session: AutoLogSession, format: "text" | "html") => {
     setIsLoading(true);
@@ -186,12 +221,51 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen]);
 
+  // Drive the confirmation alertdialog from pendingDelete, same showModal()
+  // approach as the main dialog. showModal() traps focus and closes on Escape;
+  // the dialog's "close" event (Escape or Cancel) clears pendingDelete without
+  // deleting.
+  useEffect(() => {
+    const dialog = confirmDialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    if (pendingDelete) {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [pendingDelete]);
+
+  useEffect(() => {
+    const dialog = confirmDialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    const handleClose = () => {
+      setPendingDelete(null);
+    };
+    dialog.addEventListener("close", handleClose);
+    return () => {
+      dialog.removeEventListener("close", handleClose);
+    };
+  }, []);
+
   const totalBytes = useMemo(
     () => sessions.reduce((total, session) => total + session.byteEstimate, 0),
     [sessions]
   );
 
+  const confirmMessage = pendingDelete
+    ? pendingDelete.kind === "session"
+      ? `Delete the autolog "${pendingDelete.session.title}"? This permanently removes the session and cannot be undone.`
+      : `Delete all ${pendingDelete.count} autolog sessions? This permanently removes them and cannot be undone.`
+    : "";
+
   return (
+    <>
     <dialog className="autolog-dialog" ref={dialogRef} aria-label="Autologs">
       {isOpen && (
         <>
@@ -203,7 +277,7 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
           <div className="autolog-dialog-toolbar">
             <span>{sessions.length} sessions, {formatBytes(totalBytes)}</span>
             <button type="button" onClick={refreshSessions} disabled={isLoading}>Refresh</button>
-            <button type="button" onClick={handleDeleteAll} disabled={isLoading || sessions.length === 0}>Delete All</button>
+            <button type="button" onClick={requestDeleteAll} disabled={isLoading || sessions.length === 0}>Delete All</button>
           </div>
 
           {error && <div className="autolog-dialog-error" role="alert">{error}</div>}
@@ -227,7 +301,7 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
                   <div className="autolog-session-actions">
                     <button type="button" aria-label={`Download "${session.title}" as plain text`} onClick={() => handleDownload(session, "text")}>TXT</button>
                     <button type="button" aria-label={`Download "${session.title}" as HTML`} onClick={() => handleDownload(session, "html")}>HTML</button>
-                    <button type="button" aria-label={`Delete log "${session.title}"`} onClick={() => handleDelete(session)}>Delete</button>
+                    <button type="button" aria-label={`Delete log "${session.title}"`} onClick={() => requestDelete(session)}>Delete</button>
                   </div>
                 </article>
               ))}
@@ -258,6 +332,28 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
         </>
       )}
     </dialog>
+
+    <dialog
+      className="autolog-confirm-dialog"
+      ref={confirmDialogRef}
+      role="alertdialog"
+      aria-labelledby="autolog-confirm-title"
+      aria-describedby="autolog-confirm-message"
+    >
+      {pendingDelete && (
+        <>
+          <h2 id="autolog-confirm-title">
+            {pendingDelete.kind === "session" ? "Delete autolog" : "Delete all autologs"}
+          </h2>
+          <p id="autolog-confirm-message">{confirmMessage}</p>
+          <div className="autolog-confirm-actions">
+            <button type="button" autoFocus onClick={cancelDelete}>Cancel</button>
+            <button type="button" onClick={confirmDelete}>Delete</button>
+          </div>
+        </>
+      )}
+    </dialog>
+    </>
   );
 });
 
