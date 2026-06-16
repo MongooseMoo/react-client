@@ -196,7 +196,7 @@ emitter and no code uses `client` as an event bus.
 - [x] Delete unused `skillInfo` relay at original `src/createConfiguredClient.ts:128`.
 - [x] Move item relays at original `src/createConfiguredClient.ts:131`, `src/createConfiguredClient.ts:134`, `src/createConfiguredClient.ts:137`, and `src/createConfiguredClient.ts:140` to the item/inventory owner.
 - [x] Delete unused core relays at original `src/createConfiguredClient.ts:142`-`src/createConfiguredClient.ts:143`.
-- [ ] Move `channelText` relay at `src/createConfiguredClient.ts:145` to the channel/history owner.
+- [x] Move `channelText` relay at original `src/createConfiguredClient.ts:145` to the channel/history owner.
 - [x] Delete unused channel metadata relays at original `src/createConfiguredClient.ts:150`, `src/createConfiguredClient.ts:152`, and `src/createConfiguredClient.ts:154`.
 - [x] Delete duplicate LiveKit relays at original `src/createConfiguredClient.ts:155`-`src/createConfiguredClient.ts:156`.
 - [x] Delete unused `groupInfo`, `gmcpError`, `redirectWindow`, and `roomWrongDir` relays at original `src/createConfiguredClient.ts:157`-`src/createConfiguredClient.ts:162`.
@@ -216,7 +216,7 @@ emitter and no code uses `client` as an event bus.
 - [x] Replace `App` lifecycle listeners at original `src/App.tsx:240`-`src/App.tsx:245`.
 - [x] Replace `App` `sessionReady` listener cleanup at original `src/App.tsx:266` and `src/App.tsx:296`.
 - [x] Replace `App` auto-login `connect` listener at original `src/App.tsx:274`.
-- [ ] Replace `useChannelHistory` `channelText` subscription at `src/hooks/useChannelHistory.tsx:215` and cleanup at `src/hooks/useChannelHistory.tsx:218`.
+- [x] Replace `useChannelHistory` `channelText` subscription at original `src/hooks/useChannelHistory.tsx:215` and cleanup at original `src/hooks/useChannelHistory.tsx:218`.
 - [ ] Delete `src/hooks/useClientEvent.ts` after replacing all `useClientEvent(client, ...)` callers.
 - [ ] Replace `GMCPClientMedia` spatial client listeners at `src/gmcp/Client/Media.ts:196`-`src/gmcp/Client/Media.ts:197` and cleanup at `src/gmcp/Client/Media.ts:281`-`src/gmcp/Client/Media.ts:282`.
 - [ ] Replace `audioChat` spatial client listeners at `src/components/audioChat.tsx:77`-`src/components/audioChat.tsx:86`.
@@ -486,7 +486,38 @@ Gate results:
 - Pass: `git diff --check`
 
 Commit:
-- pending
+- `c9b32be Move output events to store`
 
 Next slice:
 - Move channel history, then spatial/audio sync.
+
+### Iteration 9 - channel history owner
+
+Slice read:
+- `src/gmcp/Comm/Channel.ts`
+- `src/hooks/useChannelHistory.tsx`
+- `src/createConfiguredClient.ts`
+- `src/App.tsx`
+- `src/createConfiguredClient.test.ts`
+
+Surfaces:
+- `channelText` client relay and `useChannelHistory` client subscription.
+  - Disposition: move
+  - Owner after cleanup: `GMCPCommChannel` writes `useChannelHistoryStore`;
+    `useChannelHistory` consumes that store and keeps its buffer/navigation
+    behavior.
+  - Action: added `useChannelHistoryStore`, moved channel text and notification
+    behavior into the package handler, removed the configured-client relay, and
+    removed the hook's client subscription.
+
+Gate results:
+- Pass: `rg -n "client\.emit\(\"channelText|client\.(on|removeListener)\(\"channelText" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+- Pass: `npm run typecheck`
+- Pass: `npm test -- src/createConfiguredClient.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- pending
+
+Next slice:
+- Move spatial/audio sync.

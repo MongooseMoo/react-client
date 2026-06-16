@@ -81,7 +81,7 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPClientWebPush);
   client.gmcp.register(GMCPClientKeystrokes);
   client.gmcp.register(GMCPCoreSupports);
-  const commChannel = client.gmcp.register(GMCPCommChannel);
+  client.gmcp.register(GMCPCommChannel);
   client.gmcp.register(GMCPCommLiveKit);
   client.gmcp.register(GMCPAutoLogin);
   const clientHtml = client.gmcp.register(GMCPClientHtml);
@@ -110,12 +110,6 @@ export function createConfiguredClient(): MudClient {
     }
   });
   char.on("vitals", (data) => useCharacterStatusStore.getState().setVitals(data));
-  commChannel.on("text", (data) => {
-    client.emit("channelText", data);
-    if (data.channel === "say_to_you" && !document.hasFocus()) {
-      client.sendNotification(`Message from ${data.talker}`, data.text);
-    }
-  });
   clientHtml.on("addHtml", (data) => useOutputStore.getState().addHtml(data.data.join("\n")));
   clientHtml.on("addMarkdown", (data) => {
     const html = marked(data.data.join("\n"));

@@ -10,6 +10,7 @@ import { useUserlistStore } from "./stores/userlistStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
+import { useChannelHistoryStore } from "./stores/channelHistoryStore";
 
 vi.mock("cacophony", () => ({
   Cacophony: class {
@@ -25,6 +26,7 @@ describe("createConfiguredClient", () => {
     client?.shutdown();
     client = undefined;
     useCharacterStatusStore.getState().reset();
+    useChannelHistoryStore.getState().reset();
     useConnectionStore.getState().reset();
     useInputStore.getState().clear();
     useInputStore.getState().resetCommands();
@@ -138,6 +140,21 @@ describe("createConfiguredClient", () => {
       { id: "key", name: "a polished brass key", location: "inv" },
     ]);
     expect(useItemsStore.getState().hasReceivedList).toBe(true);
+  });
+
+  it("wires Comm.Channel.Text GMCP messages to the channel history store", () => {
+    client = createConfiguredClient();
+
+    const channel = client.gmcp.require("Comm.Channel");
+    channel.receiveRegisteredMessage("Text", {
+      channel: "chat",
+      talker: "Alice",
+      text: "Hello",
+    });
+
+    expect(useChannelHistoryStore.getState().entries).toEqual([
+      { id: 1, channel: "chat", talker: "Alice", text: "Hello" },
+    ]);
   });
 
   it("wires VMOO userlist MCP messages to the userlist store", () => {

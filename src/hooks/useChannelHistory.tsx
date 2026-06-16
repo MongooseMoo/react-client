@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { announce } from "@react-aria/live-announcer";
-import type MudClient from "../client";
+import { useChannelHistoryStore, type ChannelTextEntry } from "../stores/channelHistoryStore";
 import { usePreferences, type NavigationKeyScheme } from "../stores/preferencesStore";
 
 const navigationKeyMaps: Record<NavigationKeyScheme, { up: string; down: string; left: string; right: string }> = {
@@ -128,7 +128,8 @@ export function formatAnnouncementMessage(message: Message): string {
   return `${message.talker}. ${plainText}`;
 }
 
-export const useChannelHistory = (client: MudClient | null) => {
+export const useChannelHistory = () => {
+  const channelEntries = useChannelHistoryStore((state) => state.entries);
   const [buffers, setBuffers] = useState<Map<string, Buffer>>(
     new Map([["all", { name: "all", messages: [], currentIndex: 0 }]])
   );
@@ -136,7 +137,7 @@ export const useChannelHistory = (client: MudClient | null) => {
   const [currentBufferIndex, setCurrentBufferIndex] = useState(0);
   const [timestampsEnabled, setTimestampsEnabled] = useState(true);
   const lastKeyPress = useRef<{ key: string; time: number; count: number } | null>(null);
-  const messageIdCounter = useRef(0);
+  const lastProcessedChannelEntryId = useRef(0);
 
   // Load state from localStorage on mount
   useEffect(() => {
@@ -186,10 +187,10 @@ export const useChannelHistory = (client: MudClient | null) => {
   // channel, so each channel message is appended both to its own channel
   // buffer and to "all". Non-channel traffic (the generic "message" event) is
   // shown in the main output terminal and deliberately does NOT enter "all".
-  const handleChannelText = useCallback((data: { channel: string; talker: string; text: string }) => {
+  const handleChannelText = useCallback((data: ChannelTextEntry) => {
     const { channel, talker, text } = data;
     const newMessage: Message = {
-      id: messageIdCounter.current++,
+      id: data.id,
       message: text,
       timestamp: Date.now(),
       channel,
@@ -208,16 +209,13 @@ export const useChannelHistory = (client: MudClient | null) => {
     setBufferOrder(prev => prev.includes(channel) ? prev : [...prev, channel]);
   }, []);
 
-  // Set up client event listeners
   useEffect(() => {
-    if (!client) return;
-
-    client.on("channelText", handleChannelText);
-
-    return () => {
-      client.removeListener("channelText", handleChannelText);
-    };
-  }, [client, handleChannelText]);
+    for (const entry of channelEntries) {
+      if (entry.id <= lastProcessedChannelEntryId.current) continue;
+      handleChannelText(entry);
+      lastProcessedChannelEntryId.current = entry.id;
+    }
+  }, [channelEntries, handleChannelText]);
 
   const getCurrentBuffer = (): Buffer | undefined => {
     return buffers.get(bufferOrder[currentBufferIndex]);

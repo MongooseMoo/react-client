@@ -88,7 +88,7 @@ function App() {
     roomId: null,
     guestCount: 0,
   });
-  const { clearAllBuffers } = useChannelHistory(client);
+  const { clearAllBuffers } = useChannelHistory();
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);

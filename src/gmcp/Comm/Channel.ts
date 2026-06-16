@@ -1,4 +1,5 @@
 import { duplex, inbound, outbound } from "../../protocol/messages";
+import { useChannelHistoryStore } from "../../stores/channelHistoryStore";
 import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -50,6 +51,10 @@ export class GMCPCommChannel extends GMCPCommChannelBase {
 
   handleText(data: GMCPMessageCommChannelText): void {
     console.log(`Received Comm.Channel.Text on ${data.channel} from ${data.talker}: ${data.text}`);
+    useChannelHistoryStore.getState().addChannelText(data);
+    if (data.channel === "say_to_you" && !document.hasFocus()) {
+      this.client.sendNotification(`Message from ${data.talker}`, data.text);
+    }
   }
 
   // --- Players ---
