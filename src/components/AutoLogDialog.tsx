@@ -270,7 +270,7 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
       {isOpen && (
         <>
           <div className="autolog-dialog-header">
-            <h1>Autologs</h1>
+            <h2>Autologs</h2>
             <button type="button" onClick={() => setIsOpen(false)}>Close</button>
           </div>
 
@@ -310,7 +310,7 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
             <section className="autolog-entry-viewer" aria-label="Autolog entries">
               {selectedSession ? (
                 <>
-                  <h2>{selectedSession.title}</h2>
+                  <h3>{selectedSession.title}</h3>
                   <div className="autolog-entry-meta">
                     {formatSessionDate(selectedSession.startedAt)} · {selectedSession.sanitizedUrl}
                   </div>

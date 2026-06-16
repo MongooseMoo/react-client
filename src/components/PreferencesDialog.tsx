@@ -80,7 +80,7 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
       tabIndex={-1}
       aria-labelledby="preferences-dialog-title"
     >
-      <h1 id="preferences-dialog-title" style={{
+      <h2 id="preferences-dialog-title" style={{
         color: "white",
         textAlign: "center",
         fontSize: "1.5em",
@@ -90,7 +90,7 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
         borderRadius: "0.5em",
         backgroundColor: "black"
       }
-      }  >Preferences</h1>
+      }  >Preferences</h2>
       {isOpen && <Preferences />}
       <button type="button" onClick={() => setIsOpen(false)}>Close</button>
       <br />
