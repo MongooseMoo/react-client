@@ -4,6 +4,7 @@ import type MudClient from "./client";
 import { createConfiguredClient } from "./createConfiguredClient";
 import { useInputStore } from "./stores/inputStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
+import { useSkillsStore } from "./stores/skillsStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
 
 vi.mock("cacophony", () => ({
@@ -22,6 +23,7 @@ describe("createConfiguredClient", () => {
     useInputStore.getState().clear();
     useInputStore.getState().resetCommands();
     useServerLinksStore.getState().reset();
+    useSkillsStore.getState().reset();
     useWorldMapStore.getState().reset();
   });
 
@@ -76,6 +78,26 @@ describe("createConfiguredClient", () => {
     expect(useInputStore.getState().visibleCommands).toEqual(["open", "r", "re", "rea", "read"]);
     expect(useWorldMapStore.getState().locationId).toBe("#100");
     expect(useWorldMapStore.getState().selfId).toBe("#42");
+  });
+
+  it("wires Char.Skills GMCP messages to the skills store", () => {
+    client = createConfiguredClient();
+
+    const skills = client.gmcp.require("Char.Skills");
+    skills.receiveRegisteredMessage("Groups", [{ name: "Combat", rank: "Novice" }]);
+    skills.receiveRegisteredMessage("List", {
+      group: "Combat",
+      list: ["Punch"],
+      descs: ["Hit the target."],
+    });
+
+    expect(useSkillsStore.getState().groups).toEqual([{ name: "Combat", rank: "Novice" }]);
+    expect(useSkillsStore.getState().skillsByGroup.Combat).toEqual({
+      group: "Combat",
+      list: ["Punch"],
+      descs: ["Hit the target."],
+      isLoading: false,
+    });
   });
 
   it("requests AWNS MCP data after MCP negotiation ends", () => {

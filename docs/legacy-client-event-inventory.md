@@ -192,7 +192,7 @@ emitter and no code uses `client` as an event bus.
 - [ ] Replace `vitals` relay at `src/createConfiguredClient.ts:111`.
 - [x] Delete unused character/status relays at original `src/createConfiguredClient.ts:112`-`src/createConfiguredClient.ts:119`.
 - [x] Delete unused affliction/defence relays at original `src/createConfiguredClient.ts:120`-`src/createConfiguredClient.ts:125`.
-- [ ] Move `skillGroups` / `skillList` relays at original `src/createConfiguredClient.ts:126`-`src/createConfiguredClient.ts:127` to the skills owner.
+- [x] Move `skillGroups` / `skillList` relays at original `src/createConfiguredClient.ts:126`-`src/createConfiguredClient.ts:127` to the skills owner.
 - [x] Delete unused `skillInfo` relay at original `src/createConfiguredClient.ts:128`.
 - [ ] Move item relays at `src/createConfiguredClient.ts:131`, `src/createConfiguredClient.ts:134`, `src/createConfiguredClient.ts:137`, and `src/createConfiguredClient.ts:140` to the item/inventory owner.
 - [x] Delete unused core relays at original `src/createConfiguredClient.ts:142`-`src/createConfiguredClient.ts:143`.
@@ -227,8 +227,8 @@ emitter and no code uses `client` as an event bus.
 - [ ] Replace `Output` subscriptions at `src/components/output.tsx:384`-`src/components/output.tsx:390` and cleanup at `src/components/output.tsx:402`-`src/components/output.tsx:408`.
 - [ ] Replace `sidebar` `userlist` `useClientEvent` at `src/components/sidebar.tsx:37`.
 - [ ] Replace `sidebar` inventory activity subscription at `src/components/sidebar.tsx:88`-`src/components/sidebar.tsx:90`.
-- [ ] Delete `skillsDataReceived` emit at `src/components/SkillsDisplay.tsx:25`.
-- [ ] Replace `SkillsDisplay` subscriptions at `src/components/SkillsDisplay.tsx:52`-`src/components/SkillsDisplay.tsx:65`.
+- [x] Delete `skillsDataReceived` emit at original `src/components/SkillsDisplay.tsx:25`.
+- [x] Replace `SkillsDisplay` subscriptions at original `src/components/SkillsDisplay.tsx:52`-`src/components/SkillsDisplay.tsx:65`.
 - [ ] Replace `statusbar` subscriptions at `src/components/statusbar.tsx:42`-`src/components/statusbar.tsx:55`.
 - [ ] Remove stale commented `statusbar` client event references at `src/components/statusbar.tsx:46`-`src/components/statusbar.tsx:57`.
 - [ ] Replace or delete orphan `TargetInfo` listeners at `src/components/TargetInfo.tsx:28`-`src/components/TargetInfo.tsx:39`.
@@ -292,7 +292,41 @@ Gate results:
 - Pass: `git diff --check`
 
 Commit:
-- pending
+- `c3fb49f Remove duplicate LiveKit leave emit`
 
 Next slice:
 - Add/move the first missing state owner for current production consumers.
+
+### Iteration 3 - skills owner
+
+Slice read:
+- `src/gmcp/Char/Skills.ts`
+- `src/components/SkillsDisplay.tsx`
+- `src/createConfiguredClient.ts`
+- `src/createConfiguredClient.test.ts`
+
+Surfaces:
+- `skillGroups` / `skillList` client relays and `SkillsDisplay` client
+  subscriptions.
+  - Disposition: move
+  - Owner after cleanup: `GMCPCharSkills` writes `useSkillsStore`;
+    `SkillsDisplay` reads `useSkillsStore` and uses `Char.Skills` only to send
+    `Get` requests.
+  - Action: added `useSkillsStore`, moved package handlers into the store,
+    removed the client relays, and removed component client subscriptions.
+- `skillsDataReceived` component-originated emit.
+  - Disposition: delete
+  - Owner after cleanup: none; no current production consumer.
+  - Action: removed the emit without adding a replacement signal.
+
+Gate results:
+- Pass: `rg -n "skillGroups|skillList|skillsDataReceived|client\.emit\('skills|client\.(on|off)\('skill" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+- Pass: `npm run typecheck`
+- Pass: `npm test -- src/createConfiguredClient.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- pending
+
+Next slice:
+- Add/move the next missing state owner for current production consumers.

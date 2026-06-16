@@ -94,7 +94,7 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPCharStatusTimers);
   client.gmcp.register(GMCPCharAfflictions);
   client.gmcp.register(GMCPCharDefences);
-  const charSkills = client.gmcp.register(GMCPCharSkills);
+  client.gmcp.register(GMCPCharSkills);
   client.gmcp.register(GMCPGroup);
   client.gmcp.register(GMCPLogging);
   client.gmcp.register(GMCPRedirect);
@@ -108,8 +108,6 @@ export function createConfiguredClient(): MudClient {
     }
   });
   char.on("vitals", (data) => client.emit("vitals", data));
-  charSkills.on("groups", (data) => client.emit("skillGroups", data));
-  charSkills.on("list", (data) => client.emit("skillList", data));
   charItems.on("list", (data) => {
     const items = data.items.map((item) => ({ ...item, location: data.location }));
     client.emit("itemsList", { ...data, items });
