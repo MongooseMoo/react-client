@@ -3,7 +3,6 @@ import CommitHash from 'virtual:commit-hash';
 import React, { useEffect, useRef, useState } from "react";
 import Preferences from "./preferences";
 import "./PreferencesDialog.css";
-import FocusLock from "react-focus-lock";
 
 export type PreferencesDialogRef = {
   open: () => void;
@@ -23,12 +22,43 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
     },
   }));
 
+  // Drive the native modal dialog from React state. showModal() puts the dialog
+  // in the top layer, traps focus, makes the background inert, renders a
+  // ::backdrop, closes on Escape, and restores focus to the previously-focused
+  // element on close — so the react-focus-lock wrapper is no longer needed.
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
     if (isOpen) {
-      dialogRef.current?.focus();
+      // showModal() throws if the dialog is already open.
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+    } else if (dialog.open) {
+      dialog.close();
     }
   }, [isOpen]);
 
+  // Sync React state when the dialog closes natively (e.g. Escape), so isOpen
+  // stays in step with the dialog's real open state.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    const handleClose = () => {
+      setIsOpen(false);
+    };
+    dialog.addEventListener("close", handleClose);
+    return () => {
+      dialog.removeEventListener("close", handleClose);
+    };
+  }, []);
+
+  // Redundant once the native modal handles Escape, but left in place on purpose
+  // (its removal is tracked as a separate finding). setIsOpen(false) twice is harmless.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -44,34 +74,31 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
   }, []);
 
   return (
-    <FocusLock disabled={!isOpen}>
-      <dialog
-        className="preferences-dialog"
-        open={isOpen}
-        ref={dialogRef}
-        tabIndex={-1}
-        aria-label="Preferences"
-      >
-        <h1 style={{
-          color: "white",
-          textAlign: "center",
-          fontSize: "1.5em",
-          padding: "0.5em",
-          margin: "0.5em",
-          border: "1px solid black",
-          borderRadius: "0.5em",
-          backgroundColor: "black"
-        }
-        }  >Preferences</h1>
-        {isOpen && <Preferences />}
-        <button onClick={() => setIsOpen(false)}>Close</button>
-        <br />
-        <span id="commit-hash">
-          Version: {CommitHash}
-        </span>
+    <dialog
+      className="preferences-dialog"
+      ref={dialogRef}
+      tabIndex={-1}
+      aria-label="Preferences"
+    >
+      <h1 style={{
+        color: "white",
+        textAlign: "center",
+        fontSize: "1.5em",
+        padding: "0.5em",
+        margin: "0.5em",
+        border: "1px solid black",
+        borderRadius: "0.5em",
+        backgroundColor: "black"
+      }
+      }  >Preferences</h1>
+      {isOpen && <Preferences />}
+      <button type="button" onClick={() => setIsOpen(false)}>Close</button>
+      <br />
+      <span id="commit-hash">
+        Version: {CommitHash}
+      </span>
 
-      </dialog>
-    </FocusLock >
+    </dialog>
   );
 });
 
