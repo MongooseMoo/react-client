@@ -1,4 +1,5 @@
 import { inbound, outbound } from "../../protocol/messages";
+import { useSkillsStore } from "../../stores/skillsStore";
 import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -50,16 +51,16 @@ export class GMCPCharSkills extends GMCPCharSkillsBase {
 
     handleGroups(data: SkillGroupInfo[]): void {
         console.log("Received Char.Skills.Groups:", data);
-        // TODO: Update skill groups list
+        useSkillsStore.getState().setGroups(data);
     }
 
     handleList(data: GMCPMessageCharSkillsList): void {
         console.log(`Received Char.Skills.List for ${data.group}:`, data);
-        // TODO: Update skill list for the specified group
+        useSkillsStore.getState().setList(data);
     }
 
     handleInfo(data: GMCPMessageCharSkillsInfo): void {
         console.log(`Received Char.Skills.Info for ${data.group}.${data.skill}:`, data.info);
-        // TODO: Store/display detailed skill info
+        useSkillsStore.getState().setInfo(data);
     }
 }

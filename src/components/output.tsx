@@ -8,6 +8,9 @@ import DOMPurify from 'dompurify';
 import { useInputStore } from '../stores/inputStore';
 import TurndownService from 'turndown'; // <-- Import TurndownService
 import { usePreferences } from '../stores/preferencesStore'; // Import preferences store
+import { useUserlistStore } from '../stores/userlistStore';
+import { useConnectionStore } from '../stores/connectionStore';
+import { useOutputStore, type OutputEntry } from '../stores/outputStore';
 import BlockquoteWithCopy from './BlockquoteWithCopy';
 import { autoLogService } from '../logging/AutoLogService';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
@@ -67,6 +70,11 @@ class Output extends React.Component<Props, State> {
   static LOCAL_STORAGE_KEY = "outputLog"; // Key for saving output in LocalStorage
   messageKey: number = 0;
   private unsubscribePrefs: (() => void) | undefined;
+  private unsubscribeUserlist: (() => void) | undefined;
+  private unsubscribeConnection: (() => void) | undefined;
+  private unsubscribeOutputStore: (() => void) | undefined;
+  private previousConnected = useConnectionStore.getState().connected;
+  private lastOutputEntryId = 0;
   // Add a TurndownService instance (can be reused)
   turndownService = new TurndownService({headingStyle: 'atx', emDelimiter: '*'});
 
@@ -275,8 +283,47 @@ class Output extends React.Component<Props, State> {
     this.setState({ sidebarVisible: false });
   };
 
-  handleUserList = (players: any) =>
-    this.setState({ sidebarVisible: !!players });
+  handleUserlistVisibility = () =>
+    this.setState({ sidebarVisible: useUserlistStore.getState().hasReceivedList });
+
+  handleConnectionStateChange = () => {
+    const connected = useConnectionStore.getState().connected;
+    if (connected === this.previousConnected) return;
+    this.previousConnected = connected;
+    if (connected) {
+      this.handleConnected();
+    } else {
+      this.handleDisconnected();
+    }
+  };
+
+  handleOutputStoreEntries = () => {
+    const entries = useOutputStore
+      .getState()
+      .entries.filter((entry) => entry.id > this.lastOutputEntryId);
+
+    for (const entry of entries) {
+      this.handleOutputEntry(entry);
+      this.lastOutputEntryId = entry.id;
+    }
+  };
+
+  handleOutputEntry = (entry: OutputEntry) => {
+    switch (entry.type) {
+      case "message":
+        this.handleMessage(entry.message);
+        break;
+      case "html":
+        this.handleHtml(entry.html);
+        break;
+      case "error":
+        this.addError(entry.error);
+        break;
+      case "command":
+        this.addCommand(entry.command);
+        break;
+    }
+  };
 
 getSnapshotBeforeUpdate(prevProps: Props, prevState: State) {
     // Check if the user is scrolled to the bottom before the update
@@ -380,32 +427,31 @@ componentDidUpdate(
   };
 
   componentDidMount() {
-    const { client } = this.props;
-    client.on("message", this.handleMessage);
-    client.on("html", this.handleHtml);
-    client.on("connect", this.handleConnected);
-    client.on("disconnect", this.handleDisconnected);
-    client.on("error", this.addError);
-    client.on("command", this.addCommand);
-    client.on("userlist", this.handleUserList);
     this.unsubscribePrefs = usePreferences.subscribe(this.handlePreferencesChange);
+    this.unsubscribeUserlist = useUserlistStore.subscribe(this.handleUserlistVisibility);
+    this.unsubscribeConnection = useConnectionStore.subscribe(this.handleConnectionStateChange);
+    this.unsubscribeOutputStore = useOutputStore.subscribe(this.handleOutputStoreEntries);
+    this.handleUserlistVisibility();
+    this.handleConnectionStateChange();
+    this.handleOutputStoreEntries();
 
     // Freeze any loaded output that exceeds the live window
     this.freezeOverflow();
   }
 
   componentWillUnmount() {
-    const { client } = this.props;
     if (this.unsubscribePrefs) {
       this.unsubscribePrefs();
     }
-    client.removeListener("message", this.handleMessage);
-    client.removeListener("html", this.handleHtml);
-    client.removeListener("connect", this.handleConnected);
-    client.removeListener("disconnect", this.handleDisconnected);
-    client.removeListener("error", this.addError);
-    client.removeListener("command", this.addCommand);
-    client.removeListener("userlist", this.handleUserList);
+    if (this.unsubscribeUserlist) {
+      this.unsubscribeUserlist();
+    }
+    if (this.unsubscribeConnection) {
+      this.unsubscribeConnection();
+    }
+    if (this.unsubscribeOutputStore) {
+      this.unsubscribeOutputStore();
+    }
   }
 
   sanitizeHtml(html: string): string {

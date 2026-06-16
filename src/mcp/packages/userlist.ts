@@ -3,6 +3,7 @@ import {
   inbound,
   messageEnvelope,
 } from '../../protocol/messages';
+import { useUserlistStore } from '../../stores/userlistStore';
 import { mooListToArray, type MooListValue } from '../mooList';
 import { MCPPackage } from '../package';
 import type { McpMessage } from '../types';
@@ -127,6 +128,7 @@ export class McpVmooUserlist extends McpVmooUserlistBase {
 
   private update(): void {
     this.players.sort((left, right) => sortScore(right) - sortScore(left));
+    useUserlistStore.getState().setPlayers(this.players);
     this.emitRegisteredMessage(userlist.wireName, this.players);
 
     function sortScore(player: UserlistPlayer): number {

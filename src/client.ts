@@ -7,7 +7,6 @@ import {
 } from "./telnet";
 
 import { Buffer } from "buffer";
-import { EventEmitter } from "eventemitter3";
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
 import { type GMCPClientFileTransfer, GmcpSession } from "./gmcp";
@@ -25,8 +24,12 @@ import { useRoomStore } from "./stores/roomStore";
 import { useSpatialStore } from "./stores/spatialStore";
 import { useLiveKitStore } from "./stores/liveKitStore";
 import { useInputStore } from "./stores/inputStore";
+import { useItemsStore } from "./stores/itemsStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
+import { useConnectionStore } from "./stores/connectionStore";
+import { useCharacterStatusStore } from "./stores/characterStatusStore";
+import { useOutputStore } from "./stores/outputStore";
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
@@ -40,7 +43,7 @@ function resetMidiIntentionalDisconnectFlags(): void {
     });
 }
 
-class MudClient extends EventEmitter {
+class MudClient {
   private ws!: WebSocket;
   private decoder = new TextDecoder("utf8");
   private telnet!: TelnetParser;
@@ -73,11 +76,10 @@ class MudClient extends EventEmitter {
 
   set autosay(value: boolean) {
     this._autosay = value;
-    this.emit("autosayChanged", value);
+    useInputStore.getState().setAutosay(value);
   }
 
   constructor(host: string, port: number) {
-    super();
     this.host = host;
     this.port = port;
     this.mcpSession = new McpSession({
@@ -86,6 +88,7 @@ class MudClient extends EventEmitter {
     this.gmcp = new GmcpSession(this);
     this.media = new MediaService();
     this.webRTCService = new WebRTCService();
+    useInputStore.getState().setAutosay(this._autosay);
   }
 
   configureFileTransfer(fileTransfer: GMCPClientFileTransfer): void {
@@ -121,8 +124,7 @@ class MudClient extends EventEmitter {
       // Reset MIDI intentional disconnect flags when successfully reconnecting to server
       resetMidiIntentionalDisconnectFlags();
 
-      this.emit("connect");
-      this.emit("connectionChange", true);
+      useConnectionStore.getState().setConnected(true);
     };
 
     this.telnet.on("data", (data: ArrayBuffer) => {
@@ -134,9 +136,7 @@ class MudClient extends EventEmitter {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        if (this.gmcp.start()) {
-          this.emit("gmcpReady");
-        }
+        this.gmcp.start();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -172,7 +172,7 @@ class MudClient extends EventEmitter {
     };
 
     this.ws.onerror = (error: Event) => {
-      this.emit("error", error);
+      useOutputStore.getState().addError(connectionErrorFromEvent(error));
     };
   }
 
@@ -201,9 +201,7 @@ class MudClient extends EventEmitter {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation (local)");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        if (this.gmcp.start()) {
-          this.emit("gmcpReady");
-        }
+        this.gmcp.start();
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -236,11 +234,8 @@ class MudClient extends EventEmitter {
     // message once the virtual connection is created.
     this._connected = true;
     resetMidiIntentionalDisconnectFlags();
-    this.emit("connect");
-    this.emit("connectionChange", true);
-    if (this.gmcp.markReady()) {
-      this.emit("gmcpReady");
-    }
+    useConnectionStore.getState().setConnected(true);
+    this.gmcp.markReady();
   }
 
   public send(data: string) {
@@ -260,15 +255,15 @@ class MudClient extends EventEmitter {
     this.telnetBuffer = "";
     useRoomStore.getState().reset(); // Reset room info on cleanup
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
+    useItemsStore.getState().reset();
     useWorldMapStore.getState().reset();
     useServerLinksStore.getState().reset();
     useInputStore.getState().resetCommands();
+    useCharacterStatusStore.getState().reset();
     this.fileTransferManager?.cleanup();
     this.gmcp.reset();
     useLiveKitStore.getState().reset();
-
-    this.emit("disconnect");
-    this.emit("connectionChange", false);
+    useConnectionStore.getState().setConnected(false);
   }
 
   public close(): void {
@@ -291,7 +286,7 @@ class MudClient extends EventEmitter {
   public sendCommand(command: string): void {
     const localEchoEnabled = usePreferences.getState().general.localEcho;
     if (localEchoEnabled) {
-      this.emit("command", command);
+      useOutputStore.getState().addCommand(command);
     }
     if (this.autosay && !command.startsWith("-") && !command.startsWith("'")) {
       command = `say ${command}`;
@@ -344,7 +339,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
       this.speak(dataString);
     }
-    this.emit("message", dataString);
+    useOutputStore.getState().addMessage(dataString);
   }
 
   shutdown() {
@@ -407,6 +402,13 @@ An MCP message consists of three parts: the name of the message, the authenticat
   stopAllSounds() {
     this.media.stopAllSounds();
   }
+}
+
+function connectionErrorFromEvent(error: Event): Error {
+  if (error instanceof ErrorEvent && error.error instanceof Error) {
+    return error.error;
+  }
+  return new Error("Connection error");
 }
 
 export default MudClient;

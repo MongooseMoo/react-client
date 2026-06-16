@@ -140,6 +140,8 @@ vi.mock('./mcp', () => ({
 
 import MudClient from './client';
 import { GMCPClientFileTransfer } from './gmcp';
+import { useItemsStore } from './stores/itemsStore';
+import { useOutputStore } from './stores/outputStore';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -202,6 +204,8 @@ describe('MudClient lifecycle cleanup', () => {
     mockPreferenceSubscribe.mockClear();
     mockPreferencesState.sound.muteInBackground = false;
     mockWebSocketInstances.length = 0;
+    useItemsStore.getState().reset();
+    useOutputStore.getState().reset();
     vi.stubGlobal('WebSocket', MockWebSocket);
     Object.defineProperty(window, 'WebSocket', {
       configurable: true,
@@ -237,14 +241,12 @@ describe('MudClient lifecycle cleanup', () => {
     expect(mockWebSocketInstances).toHaveLength(1);
   });
 
-  it('emits gmcpReady after GMCP negotiation startup messages are sent', () => {
+  it('marks GMCP ready after GMCP negotiation startup messages are sent', () => {
     const client = new MudClient('example.test', 443);
     client.gmcp.register(MockCorePackage as never);
     client.gmcp.register(MockCoreSupportsPackage as never);
     client.gmcp.register(MockAutoLoginPackage as never);
     client.gmcp.register(MockClientMediaPackage as never);
-    const handleGmcpReady = vi.fn();
-    client.on('gmcpReady', handleGmcpReady);
 
     client.connect();
     mockWebSocketInstances[0].onmessage?.({
@@ -252,7 +254,6 @@ describe('MudClient lifecycle cleanup', () => {
     } as MessageEvent);
 
     expect(client.gmcp.ready).toBe(true);
-    expect(handleGmcpReady).toHaveBeenCalledOnce();
   });
 
   it('preserves GMCP transport until file transfer cleanup completes', () => {
@@ -275,6 +276,22 @@ describe('MudClient lifecycle cleanup', () => {
     expect(cleanupOrder).toEqual(['fileTransferManager.cleanup', 'gmcp.reset']);
   });
 
+  it('clears item state during connection cleanup', () => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+    useItemsStore.getState().setLocationItems('room', [
+      { id: 'lantern', name: 'Lantern' },
+    ]);
+    useItemsStore.getState().setLocationItems('inv', [
+      { id: 'coin', name: 'Coin' },
+    ]);
+
+    client.close();
+
+    expect(useItemsStore.getState().itemsByLocation).toEqual({});
+    expect(useItemsStore.getState().hasReceivedList).toBe(false);
+  });
+
   it('buffers partial MCP frames until the line is complete', () => {
     const client = new MudClient('example.test', 443);
     client.connect();
@@ -288,14 +305,16 @@ describe('MudClient lifecycle cleanup', () => {
     expect(receiveLine).toHaveBeenCalledWith('#$#MCP version: 2.1 to: 2.1');
   });
 
-  it('emits non-MCP prompt text without waiting for a newline', () => {
+  it('records non-MCP prompt text without waiting for a newline', () => {
     const client = new MudClient('example.test', 443);
-    const handleMessage = vi.fn();
-    client.on('message', handleMessage);
 
     client.connect();
     sendSocketText(mockWebSocketInstances[0], 'look');
 
-    expect(handleMessage).toHaveBeenCalledWith('look');
+    expect(useOutputStore.getState().entries).toContainEqual({
+      id: 1,
+      type: 'message',
+      message: 'look',
+    });
   });
 });

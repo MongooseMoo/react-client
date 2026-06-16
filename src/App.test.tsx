@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -22,9 +22,6 @@ const {
       handlers: {},
       sessionReady: false,
     },
-    off: vi.fn(),
-    on: vi.fn(),
-    once: vi.fn(),
     requestNotificationPermission: vi.fn(),
     sendCommand: vi.fn(),
     sendNotification: vi.fn(),
@@ -78,10 +75,6 @@ vi.mock('./stores/preferencesStore', () => {
 
 vi.mock('./hooks/useChannelHistory', () => ({
   useChannelHistory: () => ({ clearAllBuffers: vi.fn() }),
-}));
-
-vi.mock('./hooks/useClientEvent', () => ({
-  useClientEvent: vi.fn((_client: unknown, _event: string, initialValue: unknown) => initialValue),
 }));
 
 vi.mock('./webpush', () => ({
@@ -165,6 +158,7 @@ vi.mock('./logging/AutoLogService', () => ({
 }));
 
 import App from './App';
+import { useConnectionStore } from './stores/connectionStore';
 
 describe('App haptics backend lifecycle', () => {
   beforeEach(() => {
@@ -173,6 +167,7 @@ describe('App haptics backend lifecycle', () => {
     mockPreferences.haptics.enabled = false;
     mockPreferences.midi.enabled = false;
     mockClient.gmcp.sessionReady = false;
+    useConnectionStore.getState().reset();
     window.history.replaceState({}, '', '/');
   });
 
@@ -196,27 +191,22 @@ describe('App haptics backend lifecycle', () => {
   });
 
   it('waits for sessionReady before ensuring a push subscription', async () => {
-    let sessionReadyHandler: (() => void) | undefined;
-    mockClient.once.mockImplementation((event: string, handler: () => void) => {
-      if (event === 'sessionReady') {
-        sessionReadyHandler = handler;
-      }
-      return mockClient;
-    });
-
     const view = render(<App />);
 
     await waitFor(() => {
-      expect(mockClient.once).toHaveBeenCalledWith('sessionReady', expect.any(Function));
+      expect(mockHapticsRuntimes).toHaveLength(1);
     });
     expect(mockEnsurePushSubscription).not.toHaveBeenCalled();
 
-    sessionReadyHandler?.();
+    act(() => {
+      useConnectionStore.getState().setSessionReady(true);
+    });
 
-    expect(mockEnsurePushSubscription).toHaveBeenCalledWith(mockClient);
+    await waitFor(() => {
+      expect(mockEnsurePushSubscription).toHaveBeenCalledWith(mockClient);
+    });
 
     view.unmount();
-    expect(mockClient.off).toHaveBeenCalledWith('sessionReady', sessionReadyHandler);
   });
 
   it('handles app keyboard shortcuts from one keydown path', async () => {

@@ -7,16 +7,15 @@ import Tabs, { type TabProps } from './tabs';
 import Userlist from './userlist';
 // import AfflictionsList from "./AfflictionsList"; // Removed
 // import DefencesList from "./DefencesList"; // Removed
-// import TargetInfoDisplay from "./TargetInfo"; // Removed
 import Inventory from './inventory'; // Changed from InventoryList to Inventory
 // import SkillsDisplay from "./SkillsDisplay"; // Removed
 import type MudClient from '../client';
-import { useClientEvent } from '../hooks/useClientEvent'; // Import useClientEvent
-import type { UserlistPlayer } from '../mcp';
 import RoomInfoDisplay from './RoomInfoDisplay'; // Import new component
 import HapticsStatus from './HapticsStatus'; // Import Haptics component
 import { usePreferences } from '../stores/preferencesStore';
 import { useRoomStore } from '../stores/roomStore';
+import { useItemsStore } from '../stores/itemsStore';
+import { useUserlistStore } from '../stores/userlistStore';
 import { hapticsService } from '../HapticsService';
 import ServerFeaturesPanel from './ServerFeaturesPanel';
 
@@ -34,15 +33,14 @@ interface SidebarProps {
 // Wrap component with forwardRef
 const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
   ({ client, collapsed, onToggleCollapse }, ref) => {
-    const users = useClientEvent(client, 'userlist', [] as UserlistPlayer[]);
+    const users = useUserlistStore((state) => state.players);
     const preferences = usePreferences(); // Add preferences hook
     const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
 
     // State to track if data has been received for optional tabs
-    // const [hasTargetData, setHasTargetData] = useState(false); // Removed
     // const [hasAfflictionsData, setHasAfflictionsData] = useState(false); // Removed
     // const [hasDefencesData, setHasDefencesData] = useState(false); // Removed
-    const [hasInventoryData, setHasInventoryData] = useState(false); // Keep state for inventory as example
+    const hasInventoryData = useItemsStore((state) => state.hasReceivedList);
     // const [hasSkillsData, setHasSkillsData] = useState(false); // Removed
     // Show the Room tab once room info has arrived (from the room store).
     const hasRoomData = useRoomStore((state) => state.roomInfo !== null);
@@ -80,16 +78,6 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       hapticsService.intensityCap = preferences.haptics.intensityCap;
       hapticsService.autoStopTimeoutSecs = preferences.haptics.autoStopTimeout;
     }, [preferences.haptics.intensityCap, preferences.haptics.autoStopTimeout]);
-
-    // Effect to check for inventory data
-    useEffect(() => {
-      // Listen for the custom event emitted by InventoryList when data arrives
-      const handleInventoryData = () => setHasInventoryData(true);
-      client.on('itemsList', handleInventoryData);
-      return () => {
-        client.off('itemsList', handleInventoryData);
-      };
-    }, [client]);
 
     // Define all possible tabs
     const allTabs: TabProps[] = [
@@ -139,12 +127,6 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       //   label: "Skills",
       //   content: <SkillsDisplay client={client} />,
       //   condition: hasSkillsData,
-      // },
-      // { // Removed Target Tab
-      //   id: "target-tab",
-      //   label: "Target",
-      //   content: <TargetInfoDisplay client={client} />,
-      //   condition: hasTargetData,
       // },
       // { // Removed Afflictions Tab
       //   id: "afflictions-tab",

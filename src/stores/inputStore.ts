@@ -3,9 +3,12 @@ import { create } from "zustand";
 interface InputStoreState {
   /** Current text in the command input. */
   text: string;
+  /** Whether outgoing plain commands are rewritten as say commands. */
+  autosay: boolean;
   /** Commands currently visible to the player, used by command input completion. */
   visibleCommands: string[];
   setText: (text: string) => void;
+  setAutosay: (autosay: boolean) => void;
   setVisibleCommands: (commands: string[]) => void;
   addVisibleCommands: (commands: string[]) => void;
   removeVisibleCommands: (commands: string[]) => void;
@@ -19,8 +22,10 @@ interface InputStoreState {
  */
 export const useInputStore = create<InputStoreState>((set) => ({
   text: "",
+  autosay: false,
   visibleCommands: [],
   setText: (text) => set({ text }),
+  setAutosay: (autosay) => set({ autosay }),
   setVisibleCommands: (commands) => set({ visibleCommands: sortedUnique(commands) }),
   addVisibleCommands: (commands) =>
     set((state) => ({

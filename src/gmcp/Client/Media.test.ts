@@ -12,6 +12,7 @@ vi.mock('../../audio/AmbisonicRenderer', () => ({
 }));
 
 import { MediaService } from '../../audio/MediaService';
+import { useSpatialStore } from '../../stores/spatialStore';
 import {
   GMCPClientMedia,
   type GMCPMessageClientMediaListenerOrientation,
@@ -115,7 +116,6 @@ function makeEffectBus(name: string | null) {
 }
 
 function createMockClient() {
-  const listeners = new Map<string, Set<(data: unknown) => void>>();
   const master = makeEffectBus('master');
   const created: Record<string, ReturnType<typeof makeEffectBus>> = {};
   const anon: Array<ReturnType<typeof makeEffectBus>> = [];
@@ -160,23 +160,8 @@ function createMockClient() {
   return {
     effectBuses: { master, created, anon },
     media: new MediaService(cacophony as unknown as MockCacophony, { manageFocus: false }),
-    emit: vi.fn(),
     gmcp: {
       send: vi.fn(),
-    },
-    off: vi.fn((event: string, handler: (data: unknown) => void) => {
-      listeners.get(event)?.delete(handler);
-    }),
-    on: vi.fn((event: string, handler: (data: unknown) => void) => {
-      if (!listeners.has(event)) {
-        listeners.set(event, new Set());
-      }
-      listeners.get(event)?.add(handler);
-    }),
-    trigger(event: string, data: unknown) {
-      for (const handler of listeners.get(event) ?? []) {
-        handler(data);
-      }
     },
   };
 }
@@ -187,6 +172,7 @@ describe('GMCPClientMedia', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useSpatialStore.getState().reset();
     mockAmbisonicRendererCreate.mockResolvedValue({
       attachPlayback: vi.fn(),
       cleanup: vi.fn(),
@@ -198,6 +184,8 @@ describe('GMCPClientMedia', () => {
   });
 
   afterEach(() => {
+    handler.shutdown();
+    useSpatialStore.getState().reset();
     vi.useRealTimers();
   });
 
@@ -649,11 +637,13 @@ describe('GMCPClientMedia', () => {
     const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
 
     client.media.cacophony.listenerForwardOrientation = [-1, 0, 0];
-    client.trigger('spatialListenerOrientation', {
-      listenerId: 'player-1',
-      forward: [-1, 0, 0],
-      up: [0, 1, 0],
-    });
+    useSpatialStore.getState().setListenerOrientation(
+      {
+        forward: [-1, 0, 0],
+        up: [0, 1, 0],
+      },
+      'player-1',
+    );
 
     expect(renderer.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(-Math.PI / 2);
   });

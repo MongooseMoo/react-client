@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type MudClient from "../client";
+import { useChannelHistoryStore } from "../stores/channelHistoryStore";
 import {
   formatAnnouncementMessage,
   MAX_ALL_BUFFER_MESSAGES,
@@ -10,36 +10,6 @@ import {
   MAX_PERSISTED_CHANNEL_MESSAGES,
   useChannelHistory,
 } from "./useChannelHistory";
-
-type Listener = (payload: unknown) => void;
-
-class FakeClient {
-  private listeners = new Map<string, Set<Listener>>();
-
-  on(eventName: string, listener: Listener): this {
-    const listeners = this.listeners.get(eventName) || new Set<Listener>();
-    listeners.add(listener);
-    this.listeners.set(eventName, listeners);
-    return this;
-  }
-
-  removeListener(eventName: string, listener: Listener): this {
-    this.listeners.get(eventName)?.delete(listener);
-    return this;
-  }
-
-  emit(eventName: string, payload: unknown): void {
-    this.listeners.get(eventName)?.forEach(listener => {
-      listener(payload);
-    });
-  }
-
-  listenerCount(eventName: string): number {
-    return this.listeners.get(eventName)?.size || 0;
-  }
-}
-
-const asMudClient = (client: FakeClient): MudClient => client as unknown as MudClient;
 
 const makeMessages = (count: number) =>
   Array.from({ length: count }, (_, index) => ({
@@ -84,7 +54,12 @@ Object.defineProperty(window, "localStorage", {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  useChannelHistoryStore.getState().reset();
 });
+
+const addChannelText = (channel: string, talker: string, text: string): void => {
+  useChannelHistoryStore.getState().addChannelText({ channel, talker, text });
+};
 
 describe("formatAnnouncementMessage", () => {
   it("always prefixes talker when talker metadata is present", () => {
@@ -125,49 +100,39 @@ describe("formatAnnouncementMessage", () => {
 });
 
 describe("useChannelHistory", () => {
-  it("keeps the channelText listener stable while messages update hook state, and registers no message listener", () => {
-    const client = new FakeClient();
-    const { rerender, unmount } = renderHook(
-      ({ currentClient }) => useChannelHistory(asMudClient(currentClient)),
-      { initialProps: { currentClient: client } }
-    );
-
-    // The all buffer is the aggregate of channels, so the hook subscribes only
-    // to channelText. Generic "message" traffic is not consumed here.
-    expect(client.listenerCount("message")).toBe(0);
-    expect(client.listenerCount("channelText")).toBe(1);
+  it("consumes channel text from the store without a client listener", async () => {
+    const { result, rerender } = renderHook(() => useChannelHistory());
 
     act(() => {
-      client.emit("channelText", {
-        channel: "gossip",
-        talker: "Reader",
-        text: "channel message",
-      });
+      addChannelText("gossip", "Reader", "channel message");
     });
 
-    rerender({ currentClient: client });
+    await waitFor(() => {
+      expect(result.current.buffers.get("all")?.messages).toHaveLength(1);
+    });
 
-    expect(client.listenerCount("channelText")).toBe(1);
+    rerender();
 
-    unmount();
-
-    expect(client.listenerCount("channelText")).toBe(0);
+    expect(result.current.buffers.get("gossip")?.messages[0]?.message).toBe(
+      "channel message"
+    );
   });
 
-  it("caps the all buffer and per-channel buffers in memory", () => {
-    const client = new FakeClient();
-    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+  it("caps the all buffer and per-channel buffers in memory", async () => {
+    const { result } = renderHook(() => useChannelHistory());
 
     act(() => {
       // Drive enough channel traffic to overflow the (larger) all-buffer cap;
       // the gossip channel buffer overflows its own (smaller) cap along the way.
       for (let index = 0; index < MAX_ALL_BUFFER_MESSAGES + 5; index += 1) {
-        client.emit("channelText", {
-          channel: "gossip",
-          talker: "Reader",
-          text: `gossip ${index}`,
-        });
+        addChannelText("gossip", "Reader", `gossip ${index}`);
       }
+    });
+
+    await waitFor(() => {
+      expect(result.current.buffers.get("all")?.messages).toHaveLength(
+        MAX_ALL_BUFFER_MESSAGES
+      );
     });
 
     const allBuffer = result.current.buffers.get("all");
@@ -182,17 +147,12 @@ describe("useChannelHistory", () => {
   });
 
   it("writes bounded channel history payloads to localStorage", async () => {
-    const client = new FakeClient();
-    renderHook(() => useChannelHistory(asMudClient(client)));
+    renderHook(() => useChannelHistory());
 
     act(() => {
       // One channel stream fills both its own buffer and the all aggregate.
       for (let index = 0; index < MAX_ALL_BUFFER_MESSAGES; index += 1) {
-        client.emit("channelText", {
-          channel: "gossip",
-          talker: "Reader",
-          text: `gossip ${index}`,
-        });
+        addChannelText("gossip", "Reader", `gossip ${index}`);
       }
     });
 
@@ -225,7 +185,7 @@ describe("useChannelHistory", () => {
       timestampsEnabled: true,
     }));
 
-    const { result } = renderHook(() => useChannelHistory(null));
+    const { result } = renderHook(() => useChannelHistory());
 
     expect(result.current.buffers.get("all")?.messages).toHaveLength(MAX_ALL_BUFFER_MESSAGES);
     expect(result.current.buffers.get("all")?.messages[0]?.message).toBe("message 10");
@@ -233,12 +193,15 @@ describe("useChannelHistory", () => {
     expect(result.current.buffers.get("gossip")?.messages[0]?.message).toBe("message 10");
   });
 
-  it("handles plain Alt+Arrow buffer navigation", () => {
-    const client = new FakeClient();
-    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+  it("handles plain Alt+Arrow buffer navigation", async () => {
+    const { result } = renderHook(() => useChannelHistory());
 
     act(() => {
-      client.emit("channelText", { channel: "gossip", talker: "Reader", text: "one" });
+      addChannelText("gossip", "Reader", "one");
+    });
+
+    await waitFor(() => {
+      expect(result.current.bufferOrder).toEqual(["all", "gossip"]);
     });
 
     expect(result.current.bufferOrder).toEqual(["all", "gossip"]);
@@ -253,12 +216,15 @@ describe("useChannelHistory", () => {
     expect(result.current.currentBufferIndex).toBe(1);
   });
 
-  it("does not handle Alt+Arrow when another modifier is also pressed", () => {
-    const client = new FakeClient();
-    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+  it("does not handle Alt+Arrow when another modifier is also pressed", async () => {
+    const { result } = renderHook(() => useChannelHistory());
 
     act(() => {
-      client.emit("channelText", { channel: "gossip", talker: "Reader", text: "one" });
+      addChannelText("gossip", "Reader", "one");
+    });
+
+    await waitFor(() => {
+      expect(result.current.bufferOrder).toEqual(["all", "gossip"]);
     });
 
     let event = dispatchKeyboardEvent({});
@@ -270,13 +236,16 @@ describe("useChannelHistory", () => {
     expect(result.current.currentBufferIndex).toBe(0);
   });
 
-  it("handles plain Alt+Arrow message navigation", () => {
-    const client = new FakeClient();
-    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+  it("handles plain Alt+Arrow message navigation", async () => {
+    const { result } = renderHook(() => useChannelHistory());
 
     act(() => {
-      client.emit("channelText", { channel: "gossip", talker: "Reader", text: "one" });
-      client.emit("channelText", { channel: "gossip", talker: "Reader", text: "two" });
+      addChannelText("gossip", "Reader", "one");
+      addChannelText("gossip", "Reader", "two");
+    });
+
+    await waitFor(() => {
+      expect(result.current.buffers.get("all")?.messages).toHaveLength(2);
     });
 
     let event = dispatchKeyboardEvent({});
@@ -290,13 +259,18 @@ describe("useChannelHistory", () => {
 });
 
 describe("the all buffer holds the contents of all channels", () => {
-  it("aggregates every channel's messages into the all buffer in arrival order", () => {
-    const client = new FakeClient();
-    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+  it("aggregates every channel's messages into the all buffer in arrival order", async () => {
+    const { result } = renderHook(() => useChannelHistory());
 
     act(() => {
-      client.emit("channelText", { channel: "chat", talker: "Q", text: "hello" });
-      client.emit("channelText", { channel: "newbie", talker: "claude", text: "hi" });
+      addChannelText("chat", "Q", "hello");
+      addChannelText("newbie", "claude", "hi");
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.buffers.get("all")?.messages.map(m => m.message)
+      ).toEqual(["hello", "hi"]);
     });
 
     expect(
@@ -312,12 +286,15 @@ describe("the all buffer holds the contents of all channels", () => {
     ).toEqual(["hi"]);
   });
 
-  it("preserves channel and talker metadata on the aggregated copies", () => {
-    const client = new FakeClient();
-    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+  it("preserves channel and talker metadata on the aggregated copies", async () => {
+    const { result } = renderHook(() => useChannelHistory());
 
     act(() => {
-      client.emit("channelText", { channel: "chat", talker: "Q", text: "yo" });
+      addChannelText("chat", "Q", "yo");
+    });
+
+    await waitFor(() => {
+      expect(result.current.buffers.get("all")?.messages).toHaveLength(1);
     });
 
     const msg = result.current.buffers.get("all")?.messages[0];
@@ -326,12 +303,7 @@ describe("the all buffer holds the contents of all channels", () => {
   });
 
   it("does not put generic non-channel messages into the all buffer", () => {
-    const client = new FakeClient();
-    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
-
-    act(() => {
-      client.emit("message", "The sky is blue.");
-    });
+    const { result } = renderHook(() => useChannelHistory());
 
     expect(result.current.buffers.get("all")?.messages ?? []).toEqual([]);
   });

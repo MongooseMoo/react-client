@@ -13,7 +13,8 @@ import {
 } from 'react-icons/fa';
 import type MudClient from '../client';
 import { usePreferences } from '../stores/preferencesStore';
-import { useClientEvent } from '../hooks/useClientEvent';
+import { useConnectionStore } from '../stores/connectionStore';
+import { useInputStore } from '../stores/inputStore';
 import './toolbar.css';
 
 export interface ToolbarProps {
@@ -37,9 +38,9 @@ const Toolbar = ({
   onOpenLogs,
   showSidebar,
 }: ToolbarProps) => {
-  const connected = useClientEvent(client, 'connectionChange', client.connected);
+  const connected = useConnectionStore((state) => state.connected);
   const [muted, setMuted] = React.useState(client.media.muted);
-  const autosay = useClientEvent(client, 'autosayChanged', client.autosay) || false;
+  const autosay = useInputStore((state) => state.autosay);
   const [volume, setVolume] = React.useState(usePreferences.getState().sound.volume);
 
   const handleMuteToggle = useCallback(() => {

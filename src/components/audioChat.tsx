@@ -14,7 +14,6 @@ import {
 import { Track } from 'livekit-client';
 import { LiveKitSpatialAudioBridge } from '../audio/LiveKitSpatialAudioBridge';
 import type MudClient from '../client';
-import type { SpatialEntity } from '../gmcp/Client/Spatial';
 import { useLiveKitStore } from '../stores/liveKitStore';
 import { useSpatialStore } from '../stores/spatialStore';
 
@@ -71,22 +70,14 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
     if (!bridge) return;
 
     const syncAll = () => bridge.syncAll();
-    const syncEntity = (entity: SpatialEntity) => bridge.syncParticipant(entity.id);
-    const syncEntityId = (entityId: string) => bridge.syncParticipant(entityId);
-
-    client.on('spatialScene', syncAll);
-    client.on('spatialEntityEnter', syncEntity);
-    client.on('spatialEntityMove', syncEntity);
-    client.on('spatialEntityLeave', syncEntityId);
+    const unsubscribeSpatialStore = useSpatialStore.subscribe(syncAll);
+    syncAll();
 
     return () => {
-      client.off('spatialScene', syncAll);
-      client.off('spatialEntityEnter', syncEntity);
-      client.off('spatialEntityMove', syncEntity);
-      client.off('spatialEntityLeave', syncEntityId);
+      unsubscribeSpatialStore();
       bridge.cleanup();
     };
-  }, [client]);
+  }, []);
 
   return null;
 };
@@ -138,7 +129,6 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
           connect={true}
           onDisconnected={() => {
             removeToken(token);
-            client.emit('livekitLeave', token);
           }}
         >
           <SpatialLiveKitAudio client={client} />

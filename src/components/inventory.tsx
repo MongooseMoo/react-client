@@ -1,7 +1,8 @@
 import type React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import type MudClient from '../client';
-import type { Item, ItemLocation } from '../gmcp/Char/Items';
+import type { Item } from '../gmcp/Char/Items';
+import { useItemsStore } from '../stores/itemsStore';
 import InventoryList from './InventoryList';
 import './InventoryList.css'; // Styles for inventory tab, list, and card container
 import ItemCard from './ItemCard';
@@ -10,86 +11,20 @@ interface InventoryProps {
   client: MudClient;
 }
 
-type ItemListEvent = {
-  location: ItemLocation;
-  items: Item[];
-};
-
-type ItemChangeEvent = {
-  location: ItemLocation;
-  item: Item;
-};
+const EMPTY_ITEMS: Item[] = [];
 
 const Inventory: React.FC<InventoryProps> = ({ client }) => {
-  const [items, setItems] = useState<Item[]>([]);
+  const items = useItemsStore((state) => state.itemsByLocation.inv ?? EMPTY_ITEMS);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
 
-  const updateInventory = useCallback((location: ItemLocation, newItems: Item[]) => {
-    if (location === 'inv') {
-      setItems(newItems);
-      if (newItems.length === 0 || !newItems.find(item => item.id === selectedItem?.id)) {
-        setSelectedItem(null);
-      }
-      client.emit('inventoryDataReceived'); // Signal for sidebar tab condition
-    }
-  }, [client, selectedItem?.id]);
-
-  const addItemToInventory = useCallback((location: ItemLocation, item: Item) => {
-    if (location === 'inv') {
-      setItems(prev => {
-        if (prev.some(i => i.id === item.id)) return prev; // Avoid duplicates
-        const newItems = [...prev, item];
-        client.emit('inventoryDataReceived');
-        return newItems;
-      });
-    }
+  useEffect(() => {
+    client.gmcp.handlers['Char.Items']?.sendInv("");
   }, [client]);
 
-  const removeItemFromInventory = useCallback((location: ItemLocation, itemToRemove: Item) => {
-    if (location === 'inv') {
-      setItems(prev => {
-        const newItems = prev.filter(item => item.id !== itemToRemove.id);
-        if (newItems.length < prev.length) {
-          client.emit('inventoryDataReceived');
-        }
-        if (selectedItem?.id === itemToRemove.id) {
-          setSelectedItem(null);
-        }
-        return newItems;
-      });
-    }
-  }, [client, selectedItem?.id]);
-
-  const updateItemInInventory = useCallback((location: ItemLocation, updatedItem: Item) => {
-    if (location === 'inv') {
-      setItems(prev => prev.map(item => item.id === updatedItem.id ? { ...item, ...updatedItem } : item));
-      if (selectedItem?.id === updatedItem.id) {
-        setSelectedItem(prevSelectedItem => prevSelectedItem ? { ...prevSelectedItem, ...updatedItem } : null);
-      }
-      client.emit('inventoryDataReceived');
-    }
-  }, [client, selectedItem?.id]);
-
   useEffect(() => {
-    const handleList = (data: ItemListEvent) => updateInventory(data.location, data.items);
-    const handleAdd = (data: ItemChangeEvent) => addItemToInventory(data.location, data.item);
-    const handleRemove = (data: ItemChangeEvent) => removeItemFromInventory(data.location, data.item);
-    const handleUpdate = (data: ItemChangeEvent) => updateItemInInventory(data.location, data.item);
-
-    client.on('itemsList', handleList);
-    client.on('itemAdd', handleAdd);
-    client.on('itemRemove', handleRemove);
-    client.on('itemUpdate', handleUpdate);
-
-    client.gmcp.handlers['Char.Items']?.sendInv("");
-
-    return () => {
-      client.off('itemsList', handleList);
-      client.off('itemAdd', handleAdd);
-      client.off('itemRemove', handleRemove);
-      client.off('itemUpdate', handleUpdate);
-    };
-  }, [client, updateInventory, addItemToInventory, removeItemFromInventory, updateItemInInventory]);
+    if (!selectedItem) return;
+    setSelectedItem(items.find((item) => item.id === selectedItem.id) ?? null);
+  }, [items, selectedItem]);
 
   const handleItemSelected = (item: Item | null) => {
     setSelectedItem(item);

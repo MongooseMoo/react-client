@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState, useMemo } from "react";
 import type MudClient from "../client";
 import type { RoomPlayer } from "../gmcp/Room";
 import { useRoomStore } from "../stores/roomStore";
-import type { Item, ItemLocation } from "../gmcp/Char/Items";
+import type { Item } from "../gmcp/Char/Items";
+import { useItemsStore } from "../stores/itemsStore";
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
 import ItemCard from "./ItemCard"; // Import ItemCard
 import PlayerCard from "./PlayerCard"; // Import PlayerCard
@@ -13,11 +14,13 @@ interface RoomInfoDisplayProps {
   client: MudClient;
 }
 
+const EMPTY_ITEMS: Item[] = [];
+
 const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   // Room info and players come from the room store (single source of truth).
   const roomInfo = useRoomStore((state) => state.roomInfo);
   const roomPlayers = useRoomStore((state) => state.roomPlayers);
-  const [roomItems, setRoomItems] = useState<Item[]>([]);
+  const roomItems = useItemsStore((state) => state.itemsByLocation.room ?? EMPTY_ITEMS);
   const [selectedRoomItem, setSelectedRoomItem] = useState<Item | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
 
@@ -44,45 +47,10 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   }, [charItemsHandler]);
 
 
-  const updateRoomItemsList = useCallback((location: ItemLocation, newItems: Item[]) => {
-    if (location === 'room') {
-      setRoomItems(newItems);
-      if (selectedRoomItem && !newItems.find(item => item.id === selectedRoomItem.id)) {
-        setSelectedRoomItem(null);
-      }
-    }
-  }, [selectedRoomItem]);
-
-  const addRoomItem = useCallback((location: ItemLocation, item: Item) => {
-    if (location === 'room') {
-      setRoomItems(prev => prev.some(i => i.id === item.id) ? prev : [...prev, item]);
-    }
-  }, []);
-
-  const removeRoomItem = useCallback((location: ItemLocation, itemToRemove: Item) => {
-    if (location === 'room') {
-      setRoomItems(prev => prev.filter(item => item.id !== itemToRemove.id));
-      if (selectedRoomItem?.id === itemToRemove.id) {
-        setSelectedRoomItem(null);
-      }
-    }
-  }, [selectedRoomItem]);
-
   useEffect(() => {
-    const handleList = (data: { location: ItemLocation, items: Item[] }) => updateRoomItemsList(data.location, data.items);
-    const handleAdd = (data: { location: ItemLocation, item: Item }) => addRoomItem(data.location, data.item);
-    const handleRemove = (data: { location: ItemLocation, item: Item }) => removeRoomItem(data.location, data.item);
-
-    client.on('itemsList', handleList);
-    client.on('itemAdd', handleAdd);
-    client.on('itemRemove', handleRemove);
-
-    return () => {
-      client.off('itemsList', handleList);
-      client.off('itemAdd', handleAdd);
-      client.off('itemRemove', handleRemove);
-    };
-  }, [client, updateRoomItemsList, addRoomItem, removeRoomItem]);
+    if (!selectedRoomItem) return;
+    setSelectedRoomItem(roomItems.find((item) => item.id === selectedRoomItem.id) ?? null);
+  }, [roomItems, selectedRoomItem]);
 
   // Clear the player selection if the selected player has left the room.
   useEffect(() => {
