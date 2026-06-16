@@ -49,6 +49,7 @@ import { useSpatialStore } from "./stores/spatialStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
+import { useOutputStore } from "./stores/outputStore";
 
 marked.setOptions({
   breaks: true,
@@ -115,10 +116,16 @@ export function createConfiguredClient(): MudClient {
       client.sendNotification(`Message from ${data.talker}`, data.text);
     }
   });
-  clientHtml.on("addHtml", (data) => client.emit("html", data.data.join("\n")));
+  clientHtml.on("addHtml", (data) => useOutputStore.getState().addHtml(data.data.join("\n")));
   clientHtml.on("addMarkdown", (data) => {
     const html = marked(data.data.join("\n"));
-    client.emit("html", typeof html === "string" ? html.trimEnd() : html);
+    if (typeof html === "string") {
+      useOutputStore.getState().addHtml(html.trimEnd());
+      return;
+    }
+    html.then((renderedHtml) => {
+      useOutputStore.getState().addHtml(renderedHtml.trimEnd());
+    });
   });
   clientSpatial.on("scene", (data) => client.emit("spatialScene", data));
   clientSpatial.on("entityEnter", (data) =>

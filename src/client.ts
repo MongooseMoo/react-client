@@ -29,6 +29,7 @@ import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
+import { useOutputStore } from "./stores/outputStore";
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
@@ -172,7 +173,7 @@ class MudClient extends EventEmitter {
     };
 
     this.ws.onerror = (error: Event) => {
-      this.emit("error", error);
+      useOutputStore.getState().addError(connectionErrorFromEvent(error));
     };
   }
 
@@ -285,7 +286,7 @@ class MudClient extends EventEmitter {
   public sendCommand(command: string): void {
     const localEchoEnabled = usePreferences.getState().general.localEcho;
     if (localEchoEnabled) {
-      this.emit("command", command);
+      useOutputStore.getState().addCommand(command);
     }
     if (this.autosay && !command.startsWith("-") && !command.startsWith("'")) {
       command = `say ${command}`;
@@ -338,7 +339,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
       this.speak(dataString);
     }
-    this.emit("message", dataString);
+    useOutputStore.getState().addMessage(dataString);
   }
 
   shutdown() {
@@ -401,6 +402,13 @@ An MCP message consists of three parts: the name of the message, the authenticat
   stopAllSounds() {
     this.media.stopAllSounds();
   }
+}
+
+function connectionErrorFromEvent(error: Event): Error {
+  if (error instanceof ErrorEvent && error.error instanceof Error) {
+    return error.error;
+  }
+  return new Error("Connection error");
 }
 
 export default MudClient;

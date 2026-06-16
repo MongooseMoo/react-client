@@ -180,10 +180,10 @@ emitter and no code uses `client` as an event bus.
 - [x] Replace `connect` emits at original `src/client.ts:124` and `src/client.ts:239` with lifecycle owner writes.
 - [x] Replace `connectionChange` emits at original `src/client.ts:125`, `src/client.ts:240`, and `src/client.ts:271` with lifecycle owner writes.
 - [x] Delete `gmcpReady` emits at original `src/client.ts:138`, `src/client.ts:205`, and `src/client.ts:242`.
-- [ ] Route connection `error` at `src/client.ts:175` to output/logging owner.
+- [x] Route connection `error` at original `src/client.ts:175` to output/logging owner.
 - [x] Replace `disconnect` emit at original `src/client.ts:270` with lifecycle owner writes.
-- [ ] Route command echo at `src/client.ts:294` to output/logging owner.
-- [ ] Route server text at `src/client.ts:347` to output/logging owner.
+- [x] Route command echo at original `src/client.ts:294` to output/logging owner.
+- [x] Route server text at original `src/client.ts:347` to output/logging owner.
 
 ### `src/createConfiguredClient.ts`
 
@@ -200,7 +200,7 @@ emitter and no code uses `client` as an event bus.
 - [x] Delete unused channel metadata relays at original `src/createConfiguredClient.ts:150`, `src/createConfiguredClient.ts:152`, and `src/createConfiguredClient.ts:154`.
 - [x] Delete duplicate LiveKit relays at original `src/createConfiguredClient.ts:155`-`src/createConfiguredClient.ts:156`.
 - [x] Delete unused `groupInfo`, `gmcpError`, `redirectWindow`, and `roomWrongDir` relays at original `src/createConfiguredClient.ts:157`-`src/createConfiguredClient.ts:162`.
-- [ ] Route `html` relays at `src/createConfiguredClient.ts:163` and `src/createConfiguredClient.ts:166` to the output/logging owner.
+- [x] Route `html` relays at original `src/createConfiguredClient.ts:163` and `src/createConfiguredClient.ts:166` to the output/logging owner.
 - [x] Delete unused `webpushToken` relay at original `src/createConfiguredClient.ts:169`.
 - [x] Delete unused haptics relays at original `src/createConfiguredClient.ts:174`-`src/createConfiguredClient.ts:181`.
 - [ ] Move spatial relays at `src/createConfiguredClient.ts:183`-`src/createConfiguredClient.ts:206` to `spatialStore` plus the non-client spatial/audio sync owner.
@@ -224,7 +224,7 @@ emitter and no code uses `client` as an event bus.
 - [x] Delete `inventoryDataReceived` emits at original `src/components/inventory.tsx:33`, `src/components/inventory.tsx:42`, `src/components/inventory.tsx:53`, and `src/components/inventory.tsx:69`.
 - [x] Replace `inventory` item subscriptions at original `src/components/inventory.tsx:79`-`src/components/inventory.tsx:90`.
 - [x] Replace `RoomInfoDisplay` item subscriptions at original `src/components/RoomInfoDisplay.tsx:76`-`src/components/RoomInfoDisplay.tsx:83`.
-- [ ] Replace `Output` output/logging subscriptions for `message`, `html`, `error`, and `command` at original `src/components/output.tsx:384`-`src/components/output.tsx:389` and cleanup at original `src/components/output.tsx:402`-`src/components/output.tsx:407`.
+- [x] Replace `Output` output/logging subscriptions for `message`, `html`, `error`, and `command` at original `src/components/output.tsx:384`-`src/components/output.tsx:389` and cleanup at original `src/components/output.tsx:402`-`src/components/output.tsx:407`.
 - [x] Replace `Output` `connect` / `disconnect` subscriptions at original `src/components/output.tsx:386`-`src/components/output.tsx:387` and cleanup at original `src/components/output.tsx:404`-`src/components/output.tsx:405`.
 - [x] Replace `Output` `userlist` subscription at original `src/components/output.tsx:390` and cleanup at original `src/components/output.tsx:408`.
 - [x] Replace `sidebar` `userlist` `useClientEvent` at original `src/components/sidebar.tsx:37`.
@@ -458,7 +458,35 @@ Gate results:
 - Pass: `git diff --check`
 
 Commit:
-- pending
+- `fc66534 Move lifecycle status events to stores`
 
 Next slice:
 - Move output/logging events or channel history, then spatial/audio sync.
+
+### Iteration 8 - output/logging owner
+
+Slice read:
+- `src/client.ts`
+- `src/createConfiguredClient.ts`
+- `src/components/output.tsx`
+
+Surfaces:
+- `message`, `html`, `error`, and `command` client events.
+  - Disposition: move
+  - Owner after cleanup: `useOutputStore` receives output entries; `Output`
+    subscribes to that store and keeps its existing rendering, persistence, and
+    log management behavior.
+  - Action: added `useOutputStore`, moved server text, HTML, command echo, and
+    connection error writes to it, and removed Output's client subscriptions.
+
+Gate results:
+- Pass: `rg -n "client\.(on|removeListener)\(\"(message|html|error|command)|client\.emit\(\"html|this\.emit\(\"(message|error|command)" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+- Pass: `npm run typecheck`
+- Pass: `npm test -- src/createConfiguredClient.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- pending
+
+Next slice:
+- Move channel history, then spatial/audio sync.
