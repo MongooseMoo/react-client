@@ -175,7 +175,7 @@ emitter and no code uses `client` as an event bus.
 
 ### `src/client.ts`
 
-- [ ] Remove `MudClient extends EventEmitter` at `src/client.ts:43`.
+- [x] Remove `MudClient extends EventEmitter` at original `src/client.ts:43`.
 - [x] Replace `autosayChanged` emit at original `src/client.ts:76` with the input owner.
 - [x] Replace `connect` emits at original `src/client.ts:124` and `src/client.ts:239` with lifecycle owner writes.
 - [x] Replace `connectionChange` emits at original `src/client.ts:125`, `src/client.ts:240`, and `src/client.ts:271` with lifecycle owner writes.
@@ -203,7 +203,7 @@ emitter and no code uses `client` as an event bus.
 - [x] Route `html` relays at original `src/createConfiguredClient.ts:163` and `src/createConfiguredClient.ts:166` to the output/logging owner.
 - [x] Delete unused `webpushToken` relay at original `src/createConfiguredClient.ts:169`.
 - [x] Delete unused haptics relays at original `src/createConfiguredClient.ts:174`-`src/createConfiguredClient.ts:181`.
-- [ ] Move spatial relays at `src/createConfiguredClient.ts:183`-`src/createConfiguredClient.ts:206` to `spatialStore` plus the non-client spatial/audio sync owner.
+- [x] Move spatial relays at original `src/createConfiguredClient.ts:183`-`src/createConfiguredClient.ts:206` to `spatialStore` plus the non-client spatial/audio sync owner.
 - [x] Delete `displayUrl` relay at original `src/createConfiguredClient.ts:227` after keeping `serverLinksStore.addRecentUrl()`.
 - [x] Delete `serverInfo` relay at original `src/createConfiguredClient.ts:235` after keeping `serverLinksStore.setServerInfo()`.
 - [x] Delete AWNS visual relays at original `src/createConfiguredClient.ts:242`, `src/createConfiguredClient.ts:246`, `src/createConfiguredClient.ts:257`, and `src/createConfiguredClient.ts:267` after keeping `worldMapStore` writes.
@@ -217,9 +217,9 @@ emitter and no code uses `client` as an event bus.
 - [x] Replace `App` `sessionReady` listener cleanup at original `src/App.tsx:266` and `src/App.tsx:296`.
 - [x] Replace `App` auto-login `connect` listener at original `src/App.tsx:274`.
 - [x] Replace `useChannelHistory` `channelText` subscription at original `src/hooks/useChannelHistory.tsx:215` and cleanup at original `src/hooks/useChannelHistory.tsx:218`.
-- [ ] Delete `src/hooks/useClientEvent.ts` after replacing all `useClientEvent(client, ...)` callers.
-- [ ] Replace `GMCPClientMedia` spatial client listeners at `src/gmcp/Client/Media.ts:196`-`src/gmcp/Client/Media.ts:197` and cleanup at `src/gmcp/Client/Media.ts:281`-`src/gmcp/Client/Media.ts:282`.
-- [ ] Replace `audioChat` spatial client listeners at `src/components/audioChat.tsx:77`-`src/components/audioChat.tsx:86`.
+- [x] Delete `src/hooks/useClientEvent.ts` after replacing all `useClientEvent(client, ...)` callers.
+- [x] Replace `GMCPClientMedia` spatial client listeners at original `src/gmcp/Client/Media.ts:196`-`src/gmcp/Client/Media.ts:197` and cleanup at original `src/gmcp/Client/Media.ts:281`-`src/gmcp/Client/Media.ts:282`.
+- [x] Replace `audioChat` spatial client listeners at original `src/components/audioChat.tsx:77`-`src/components/audioChat.tsx:86`.
 - [x] Delete `audioChat` component-originated `livekitLeave` emit at original `src/components/audioChat.tsx:141`.
 - [x] Delete `inventoryDataReceived` emits at original `src/components/inventory.tsx:33`, `src/components/inventory.tsx:42`, `src/components/inventory.tsx:53`, and `src/components/inventory.tsx:69`.
 - [x] Replace `inventory` item subscriptions at original `src/components/inventory.tsx:79`-`src/components/inventory.tsx:90`.
@@ -517,7 +517,43 @@ Gate results:
 - Pass: `git diff --check`
 
 Commit:
-- pending
+- `78242a9 Move channel text events to store`
 
 Next slice:
 - Move spatial/audio sync.
+
+### Iteration 10 - spatial sync and MudClient EventEmitter removal
+
+Slice read:
+- `src/createConfiguredClient.ts`
+- `src/gmcp/Client/Media.ts`
+- `src/components/audioChat.tsx`
+- `src/client.ts`
+- `src/components/WasmHost.tsx`
+- `src/hooks/useClientEvent.ts`
+
+Surfaces:
+- spatial client relays and client spatial listeners.
+  - Disposition: move
+  - Owner after cleanup: `useSpatialStore` plus direct spatial-store
+    subscriptions for imperative audio resync.
+  - Action: removed configured-client spatial relays, moved
+    `GMCPClientMedia` yaw sync and `audioChat` LiveKit bridge sync to
+    `useSpatialStore.subscribe()`.
+- `MudClient` EventEmitter surface and dead `useClientEvent` helper.
+  - Disposition: delete
+  - Owner after cleanup: none; `MudClient` no longer exposes event-bus methods.
+  - Action: removed `EventEmitter` inheritance/import/super call, deleted the
+    dead hook, and removed the obsolete `removeAllListeners()` WASM cleanup.
+
+Gate results:
+- Pass: `rg -n "\bclient\.(on|off|once|emit|removeListener|removeAllListeners)\(|useClientEvent\(client|class MudClient extends EventEmitter|this\.emit\(" src\client.ts src\createConfiguredClient.ts src\App.tsx src\components src\hooks src\gmcp\Client\Media.ts --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+- Pass: `npm run typecheck`
+- Pass: `npm test -- src/createConfiguredClient.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- pending
+
+Next slice:
+- Final full verification and hard-rule audit.

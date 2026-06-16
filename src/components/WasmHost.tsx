@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import MudClient from '../client';
+import type MudClient from '../client';
 import { createConfiguredClient } from '../createConfiguredClient';
 import { WorkerStream } from '../WorkerStream';
 import { saveCheckpoint, loadCheckpoint, deleteCheckpoint, hashDbBytes } from '../dbStorage';
@@ -55,7 +55,6 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
 
         clientRef.current?.fileTransferManager?.cleanup();
         clientRef.current?.webRTCService?.cleanup();
-        clientRef.current?.removeAllListeners();
         clientRef.current = null;
 
         streamRef.current?.dispose();

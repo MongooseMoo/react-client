@@ -7,7 +7,6 @@ import {
 } from "./telnet";
 
 import { Buffer } from "buffer";
-import { EventEmitter } from "eventemitter3";
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
 import { type GMCPClientFileTransfer, GmcpSession } from "./gmcp";
@@ -43,7 +42,7 @@ function resetMidiIntentionalDisconnectFlags(): void {
     });
 }
 
-class MudClient extends EventEmitter {
+class MudClient {
   private ws!: WebSocket;
   private decoder = new TextDecoder("utf8");
   private telnet!: TelnetParser;
@@ -80,7 +79,6 @@ class MudClient extends EventEmitter {
   }
 
   constructor(host: string, port: number) {
-    super();
     this.host = host;
     this.port = port;
     this.mcpSession = new McpSession({

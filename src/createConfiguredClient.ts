@@ -45,7 +45,6 @@ import {
 } from "./mcp/index";
 import { useInputStore } from "./stores/inputStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
-import { useSpatialStore } from "./stores/spatialStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
@@ -75,7 +74,7 @@ export function createConfiguredClient(): MudClient {
   client.configureFileTransfer(clientFileTransfer);
   client.gmcp.register(GMCPCore);
   client.gmcp.register(GMCPClientMedia);
-  const clientSpatial = client.gmcp.register(GMCPClientSpatial);
+  client.gmcp.register(GMCPClientSpatial);
   client.gmcp.register(GMCPClientMidi);
   client.gmcp.register(GMCPClientSpeech);
   client.gmcp.register(GMCPClientWebPush);
@@ -121,32 +120,6 @@ export function createConfiguredClient(): MudClient {
       useOutputStore.getState().addHtml(renderedHtml.trimEnd());
     });
   });
-  clientSpatial.on("scene", (data) => client.emit("spatialScene", data));
-  clientSpatial.on("entityEnter", (data) =>
-    client.emit("spatialEntityEnter", data.entity),
-  );
-  clientSpatial.on("entityLeave", (data) =>
-    client.emit("spatialEntityLeave", data.entityId),
-  );
-  clientSpatial.on("entityMove", (data) =>
-    client.emit(
-      "spatialEntityMove",
-      useSpatialStore.getState().spatialEntities[data.entityId],
-    ),
-  );
-  clientSpatial.on("listenerPosition", (data) =>
-    client.emit("spatialListenerPosition", data),
-  );
-  clientSpatial.on("listenerOrientation", (data) =>
-    client.emit("spatialListenerOrientation", data),
-  );
-  clientSpatial.on("emitterStart", (data) =>
-    client.emit("spatialEmitterStart", data.emitter),
-  );
-  clientSpatial.on("emitterStop", (data) =>
-    client.emit("spatialEmitterStop", data.emitterId),
-  );
-
   // MCP packages
   let negotiatePackage: McpNegotiate | undefined;
   let serverInfoPackage: McpAwnsServerInfo | undefined;

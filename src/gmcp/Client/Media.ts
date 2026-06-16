@@ -16,6 +16,7 @@ import type {
 import { buildEffectsSupport } from '../../audio/effects/MediaEffects';
 import type { EffectSpec } from '../../audio/effects/types';
 import { inbound, outbound } from '../../protocol/messages';
+import { useSpatialStore } from '../../stores/spatialStore';
 import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
 
@@ -176,6 +177,7 @@ const GMCPClientMediaBase = GMCPPackage.with({
 });
 
 export class GMCPClientMedia extends GMCPClientMediaBase {
+  private unsubscribeSpatialStore: (() => void) | undefined;
 
   constructor(client: ConstructorParameters<typeof GMCPClientMediaBase>[0]) {
     super(client);
@@ -193,8 +195,7 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.on('stop', (data) => this.handleStop(data));
     this.on('listenerPosition', (data) => this.handleListenerPosition(data));
     this.on('listenerOrientation', (data) => this.handleListenerOrientation(data));
-    this.client.on('spatialListenerOrientation', this.handleSpatialListenerOrientation);
-    this.client.on('spatialScene', this.handleSpatialScene);
+    this.unsubscribeSpatialStore = useSpatialStore.subscribe(this.handleSpatialStoreChange);
   }
 
   get sounds(): Record<string, ExtendedSound> {
@@ -278,15 +279,10 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   }
 
   override shutdown(): void {
-    this.client.off('spatialListenerOrientation', this.handleSpatialListenerOrientation);
-    this.client.off('spatialScene', this.handleSpatialScene);
+    this.unsubscribeSpatialStore?.();
   }
 
-  private readonly handleSpatialListenerOrientation = (): void => {
-    this.client.media.syncAmbisonicRendererYaw();
-  };
-
-  private readonly handleSpatialScene = (): void => {
+  private readonly handleSpatialStoreChange = (): void => {
     this.client.media.syncAmbisonicRendererYaw();
   };
 }
