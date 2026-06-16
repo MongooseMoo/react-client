@@ -117,7 +117,7 @@ const VolumeSelection: React.FC = () => {
       Volume (0 - 1):
       <input
         type="range"
-        min="0.1"
+        min="0"
         max="1"
         step="0.1"
         value={state.speech.volume}
