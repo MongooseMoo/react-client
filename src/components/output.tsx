@@ -8,6 +8,7 @@ import DOMPurify from 'dompurify';
 import { useInputStore } from '../stores/inputStore';
 import TurndownService from 'turndown'; // <-- Import TurndownService
 import { usePreferences } from '../stores/preferencesStore'; // Import preferences store
+import { useUserlistStore } from '../stores/userlistStore';
 import BlockquoteWithCopy from './BlockquoteWithCopy';
 import { autoLogService } from '../logging/AutoLogService';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
@@ -67,6 +68,7 @@ class Output extends React.Component<Props, State> {
   static LOCAL_STORAGE_KEY = "outputLog"; // Key for saving output in LocalStorage
   messageKey: number = 0;
   private unsubscribePrefs: (() => void) | undefined;
+  private unsubscribeUserlist: (() => void) | undefined;
   // Add a TurndownService instance (can be reused)
   turndownService = new TurndownService({headingStyle: 'atx', emDelimiter: '*'});
 
@@ -275,8 +277,8 @@ class Output extends React.Component<Props, State> {
     this.setState({ sidebarVisible: false });
   };
 
-  handleUserList = (players: any) =>
-    this.setState({ sidebarVisible: !!players });
+  handleUserlistVisibility = () =>
+    this.setState({ sidebarVisible: useUserlistStore.getState().hasReceivedList });
 
 getSnapshotBeforeUpdate(prevProps: Props, prevState: State) {
     // Check if the user is scrolled to the bottom before the update
@@ -387,8 +389,9 @@ componentDidUpdate(
     client.on("disconnect", this.handleDisconnected);
     client.on("error", this.addError);
     client.on("command", this.addCommand);
-    client.on("userlist", this.handleUserList);
     this.unsubscribePrefs = usePreferences.subscribe(this.handlePreferencesChange);
+    this.unsubscribeUserlist = useUserlistStore.subscribe(this.handleUserlistVisibility);
+    this.handleUserlistVisibility();
 
     // Freeze any loaded output that exceeds the live window
     this.freezeOverflow();
@@ -405,7 +408,9 @@ componentDidUpdate(
     client.removeListener("disconnect", this.handleDisconnected);
     client.removeListener("error", this.addError);
     client.removeListener("command", this.addCommand);
-    client.removeListener("userlist", this.handleUserList);
+    if (this.unsubscribeUserlist) {
+      this.unsubscribeUserlist();
+    }
   }
 
   sanitizeHtml(html: string): string {

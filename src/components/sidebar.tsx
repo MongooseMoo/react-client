@@ -11,13 +11,12 @@ import Userlist from './userlist';
 import Inventory from './inventory'; // Changed from InventoryList to Inventory
 // import SkillsDisplay from "./SkillsDisplay"; // Removed
 import type MudClient from '../client';
-import { useClientEvent } from '../hooks/useClientEvent'; // Import useClientEvent
-import type { UserlistPlayer } from '../mcp';
 import RoomInfoDisplay from './RoomInfoDisplay'; // Import new component
 import HapticsStatus from './HapticsStatus'; // Import Haptics component
 import { usePreferences } from '../stores/preferencesStore';
 import { useRoomStore } from '../stores/roomStore';
 import { useItemsStore } from '../stores/itemsStore';
+import { useUserlistStore } from '../stores/userlistStore';
 import { hapticsService } from '../HapticsService';
 import ServerFeaturesPanel from './ServerFeaturesPanel';
 
@@ -35,7 +34,7 @@ interface SidebarProps {
 // Wrap component with forwardRef
 const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
   ({ client, collapsed, onToggleCollapse }, ref) => {
-    const users = useClientEvent(client, 'userlist', [] as UserlistPlayer[]);
+    const users = useUserlistStore((state) => state.players);
     const preferences = usePreferences(); // Add preferences hook
     const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
 

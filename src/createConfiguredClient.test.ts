@@ -6,6 +6,7 @@ import { useInputStore } from "./stores/inputStore";
 import { useItemsStore } from "./stores/itemsStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useSkillsStore } from "./stores/skillsStore";
+import { useUserlistStore } from "./stores/userlistStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
 
 vi.mock("cacophony", () => ({
@@ -26,6 +27,7 @@ describe("createConfiguredClient", () => {
     useItemsStore.getState().reset();
     useServerLinksStore.getState().reset();
     useSkillsStore.getState().reset();
+    useUserlistStore.getState().reset();
     useWorldMapStore.getState().reset();
   });
 
@@ -127,6 +129,33 @@ describe("createConfiguredClient", () => {
       { id: "key", name: "a polished brass key", location: "inv" },
     ]);
     expect(useItemsStore.getState().hasReceivedList).toBe(true);
+  });
+
+  it("wires VMOO userlist MCP messages to the userlist store", () => {
+    client = createConfiguredClient();
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+
+    client.mcpSession.receiveLine(`#$#dns-com-vmoo-userlist-content ${authKey} _data-tag: users`);
+    client.mcpSession.receiveLine('#$#* users fields: {"Object","Name","Icon"}');
+    client.mcpSession.receiveLine('#$#* users d: ={{1234,"Alice",4}}');
+
+    expect(useUserlistStore.getState().players).toEqual([
+      {
+        Object: "1234",
+        Name: "Alice",
+        Icon: 4,
+        away: false,
+        idle: false,
+      },
+    ]);
+    expect(useUserlistStore.getState().hasReceivedList).toBe(true);
   });
 
   it("requests AWNS MCP data after MCP negotiation ends", () => {

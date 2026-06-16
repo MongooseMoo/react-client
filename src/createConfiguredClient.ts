@@ -42,7 +42,6 @@ import {
   McpAwnsVisual,
   McpNegotiate,
   McpSimpleEdit,
-  McpVmooUserlist,
 } from "./mcp/index";
 import { useInputStore } from "./stores/inputStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
@@ -217,9 +216,6 @@ export function createConfiguredClient(): MudClient {
     }
     if (mcpPackage instanceof McpAwnsStatus) {
       mcpPackage.on("statustext", (text) => client.emit("statustext", text));
-    }
-    if (mcpPackage instanceof McpVmooUserlist) {
-      mcpPackage.on("userlist", (players) => client.emit("userlist", players));
     }
   }
 

@@ -209,7 +209,7 @@ emitter and no code uses `client` as an event bus.
 - [x] Delete AWNS visual relays at original `src/createConfiguredClient.ts:242`, `src/createConfiguredClient.ts:246`, `src/createConfiguredClient.ts:257`, and `src/createConfiguredClient.ts:267` after keeping `worldMapStore` writes.
 - [x] Delete `visibleCommands` relays at original `src/createConfiguredClient.ts:274`, `src/createConfiguredClient.ts:278`, and `src/createConfiguredClient.ts:282` after keeping `inputStore` writes.
 - [x] Delete unused `getset` relay at original `src/createConfiguredClient.ts:293`.
-- [ ] Move `userlist` relay at `src/createConfiguredClient.ts:297` to the userlist/people owner.
+- [x] Move `userlist` relay at original `src/createConfiguredClient.ts:297` to the userlist/people owner.
 
 ### Current Consumers And Component-Originated Emits
 
@@ -224,8 +224,9 @@ emitter and no code uses `client` as an event bus.
 - [x] Delete `inventoryDataReceived` emits at original `src/components/inventory.tsx:33`, `src/components/inventory.tsx:42`, `src/components/inventory.tsx:53`, and `src/components/inventory.tsx:69`.
 - [x] Replace `inventory` item subscriptions at original `src/components/inventory.tsx:79`-`src/components/inventory.tsx:90`.
 - [x] Replace `RoomInfoDisplay` item subscriptions at original `src/components/RoomInfoDisplay.tsx:76`-`src/components/RoomInfoDisplay.tsx:83`.
-- [ ] Replace `Output` subscriptions at `src/components/output.tsx:384`-`src/components/output.tsx:390` and cleanup at `src/components/output.tsx:402`-`src/components/output.tsx:408`.
-- [ ] Replace `sidebar` `userlist` `useClientEvent` at `src/components/sidebar.tsx:37`.
+- [ ] Replace `Output` output/logging subscriptions for `message`, `html`, `connect`, `disconnect`, `error`, and `command` at original `src/components/output.tsx:384`-`src/components/output.tsx:389` and cleanup at original `src/components/output.tsx:402`-`src/components/output.tsx:407`.
+- [x] Replace `Output` `userlist` subscription at original `src/components/output.tsx:390` and cleanup at original `src/components/output.tsx:408`.
+- [x] Replace `sidebar` `userlist` `useClientEvent` at original `src/components/sidebar.tsx:37`.
 - [x] Replace `sidebar` inventory activity subscription at original `src/components/sidebar.tsx:88`-`src/components/sidebar.tsx:90`.
 - [x] Delete `skillsDataReceived` emit at original `src/components/SkillsDisplay.tsx:25`.
 - [x] Replace `SkillsDisplay` subscriptions at original `src/components/SkillsDisplay.tsx:52`-`src/components/SkillsDisplay.tsx:65`.
@@ -357,6 +358,37 @@ Surfaces:
 
 Gate results:
 - Pass: `rg -n "client\.(on|off)\('item|client\.emit\(\"items|client\.emit\(\"item|client\.emit\('inventory|inventoryDataReceived" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+- Pass: `npm run typecheck`
+- Pass: `npm test -- src/createConfiguredClient.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- `87e6f85 Move item events to store`
+
+Next slice:
+- Add/move the next missing state owner for current production consumers.
+
+### Iteration 5 - userlist/people owner
+
+Slice read:
+- `src/mcp/packages/userlist.ts`
+- `src/components/sidebar.tsx`
+- `src/components/output.tsx`
+- `src/createConfiguredClient.ts`
+- `src/createConfiguredClient.test.ts`
+
+Surfaces:
+- `userlist` client relay and `sidebar` / `Output` client subscriptions.
+  - Disposition: move
+  - Owner after cleanup: `McpVmooUserlist` writes `useUserlistStore`;
+    sidebar reads players from the store; `Output` subscribes to the store's
+    received-list flag for sidebar visibility.
+  - Action: added `useUserlistStore`, moved MCP package updates into the store,
+    removed the configured-client relay, and removed userlist client
+    subscriptions.
+
+Gate results:
+- Pass: `rg -n "useClientEvent\(client, 'userlist'|client\.emit\(\"userlist|client\.(on|removeListener)\(\"userlist" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
 - Pass: `npm run typecheck`
 - Pass: `npm test -- src/createConfiguredClient.test.ts`
 - Pass: `git diff --check`
