@@ -140,6 +140,7 @@ vi.mock('./mcp', () => ({
 
 import MudClient from './client';
 import { GMCPClientFileTransfer } from './gmcp';
+import { useItemsStore } from './stores/itemsStore';
 import { useOutputStore } from './stores/outputStore';
 
 class MockWebSocket {
@@ -203,6 +204,7 @@ describe('MudClient lifecycle cleanup', () => {
     mockPreferenceSubscribe.mockClear();
     mockPreferencesState.sound.muteInBackground = false;
     mockWebSocketInstances.length = 0;
+    useItemsStore.getState().reset();
     useOutputStore.getState().reset();
     vi.stubGlobal('WebSocket', MockWebSocket);
     Object.defineProperty(window, 'WebSocket', {
@@ -272,6 +274,22 @@ describe('MudClient lifecycle cleanup', () => {
     client.close();
 
     expect(cleanupOrder).toEqual(['fileTransferManager.cleanup', 'gmcp.reset']);
+  });
+
+  it('clears item state during connection cleanup', () => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+    useItemsStore.getState().setLocationItems('room', [
+      { id: 'lantern', name: 'Lantern' },
+    ]);
+    useItemsStore.getState().setLocationItems('inv', [
+      { id: 'coin', name: 'Coin' },
+    ]);
+
+    client.close();
+
+    expect(useItemsStore.getState().itemsByLocation).toEqual({});
+    expect(useItemsStore.getState().hasReceivedList).toBe(false);
   });
 
   it('buffers partial MCP frames until the line is complete', () => {

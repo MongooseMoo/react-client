@@ -24,6 +24,7 @@ import { useRoomStore } from "./stores/roomStore";
 import { useSpatialStore } from "./stores/spatialStore";
 import { useLiveKitStore } from "./stores/liveKitStore";
 import { useInputStore } from "./stores/inputStore";
+import { useItemsStore } from "./stores/itemsStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
@@ -254,6 +255,7 @@ class MudClient {
     this.telnetBuffer = "";
     useRoomStore.getState().reset(); // Reset room info on cleanup
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
+    useItemsStore.getState().reset();
     useWorldMapStore.getState().reset();
     useServerLinksStore.getState().reset();
     useInputStore.getState().resetCommands();
