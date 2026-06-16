@@ -29,7 +29,9 @@ class FakeClient {
   }
 
   emit(eventName: string, payload: unknown): void {
-    this.listeners.get(eventName)?.forEach(listener => listener(payload));
+    this.listeners.get(eventName)?.forEach(listener => {
+      listener(payload);
+    });
   }
 
   listenerCount(eventName: string): number {
@@ -45,6 +47,17 @@ const makeMessages = (count: number) =>
     message: `message ${index}`,
     timestamp: index,
   }));
+
+const dispatchKeyboardEvent = (init: KeyboardEventInit): KeyboardEvent => {
+  const event = new KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+
+  document.dispatchEvent(event);
+  return event;
+};
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -218,6 +231,61 @@ describe("useChannelHistory", () => {
     expect(result.current.buffers.get("all")?.messages[0]?.message).toBe("message 10");
     expect(result.current.buffers.get("gossip")?.messages).toHaveLength(MAX_CHANNEL_BUFFER_MESSAGES);
     expect(result.current.buffers.get("gossip")?.messages[0]?.message).toBe("message 10");
+  });
+
+  it("handles plain Alt+Arrow buffer navigation", () => {
+    const client = new FakeClient();
+    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+
+    act(() => {
+      client.emit("channelText", { channel: "gossip", talker: "Reader", text: "one" });
+    });
+
+    expect(result.current.bufferOrder).toEqual(["all", "gossip"]);
+    expect(result.current.currentBufferIndex).toBe(0);
+
+    let event = dispatchKeyboardEvent({});
+    act(() => {
+      event = dispatchKeyboardEvent({ altKey: true, key: "ArrowRight" });
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(result.current.currentBufferIndex).toBe(1);
+  });
+
+  it("does not handle Alt+Arrow when another modifier is also pressed", () => {
+    const client = new FakeClient();
+    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+
+    act(() => {
+      client.emit("channelText", { channel: "gossip", talker: "Reader", text: "one" });
+    });
+
+    let event = dispatchKeyboardEvent({});
+    act(() => {
+      event = dispatchKeyboardEvent({ altKey: true, key: "ArrowRight", metaKey: true });
+    });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(result.current.currentBufferIndex).toBe(0);
+  });
+
+  it("handles plain Alt+Arrow message navigation", () => {
+    const client = new FakeClient();
+    const { result } = renderHook(() => useChannelHistory(asMudClient(client)));
+
+    act(() => {
+      client.emit("channelText", { channel: "gossip", talker: "Reader", text: "one" });
+      client.emit("channelText", { channel: "gossip", talker: "Reader", text: "two" });
+    });
+
+    let event = dispatchKeyboardEvent({});
+    act(() => {
+      event = dispatchKeyboardEvent({ altKey: true, key: "ArrowUp" });
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(result.current.buffers.get("all")?.currentIndex).toBe(2);
   });
 });
 

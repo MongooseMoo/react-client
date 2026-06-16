@@ -446,6 +446,7 @@ export const useChannelHistory = (client: MudClient | null) => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const now = Date.now();
       const key = `${e.altKey ? "alt+" : ""}${e.ctrlKey ? "ctrl+" : ""}${e.shiftKey ? "shift+" : ""}${e.key}`;
+      const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
 
       let pressCount = 1;
       if (lastKeyPress.current && lastKeyPress.current.key === key && now - lastKeyPress.current.time < 500) {
@@ -455,25 +456,25 @@ export const useChannelHistory = (client: MudClient | null) => {
       lastKeyPress.current = { key, time: now, count: pressCount };
 
       // Alt+Arrow keys: always work regardless of scheme
-      if (e.key === "ArrowLeft" && e.altKey && !e.ctrlKey && !e.shiftKey) {
+      if (e.key === "ArrowLeft" && isPlainAlt) {
         e.preventDefault();
         changeBuffer(-1);
         return;
       }
 
-      if (e.key === "ArrowRight" && e.altKey && !e.ctrlKey && !e.shiftKey) {
+      if (e.key === "ArrowRight" && isPlainAlt) {
         e.preventDefault();
         changeBuffer(1);
         return;
       }
 
-      if (e.altKey && !e.ctrlKey && !e.shiftKey && e.key === "ArrowUp") {
+      if (isPlainAlt && e.key === "ArrowUp") {
         e.preventDefault();
         navigateMessage(-1);
         return;
       }
 
-      if (e.altKey && !e.ctrlKey && !e.shiftKey && e.key === "ArrowDown") {
+      if (isPlainAlt && e.key === "ArrowDown") {
         e.preventDefault();
         navigateMessage(1);
         return;
@@ -483,20 +484,20 @@ export const useChannelHistory = (client: MudClient | null) => {
       const scheme = usePreferences.getState().keyboard.navigationKeyScheme;
       const navKeys = navigationKeyMaps[scheme];
 
-      if (matchesNavKey(e, navKeys.left) && e.altKey && !e.ctrlKey && !e.shiftKey) {
+      if (matchesNavKey(e, navKeys.left) && isPlainAlt) {
         e.preventDefault();
         changeBuffer(-1);
         return;
       }
 
-      if (matchesNavKey(e, navKeys.right) && e.altKey && !e.ctrlKey && !e.shiftKey) {
+      if (matchesNavKey(e, navKeys.right) && isPlainAlt) {
         e.preventDefault();
         changeBuffer(1);
         return;
       }
 
       // Alt+1-0: Read from current buffer
-      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      if (isPlainAlt) {
         const digit = getDigit(e);
         if (digit !== null) {
           e.preventDefault();
@@ -537,13 +538,13 @@ export const useChannelHistory = (client: MudClient | null) => {
       }
 
       // Alt+letter: Navigate within buffer (using configured key scheme)
-      if (e.altKey && !e.ctrlKey && !e.shiftKey && matchesNavKey(e, navKeys.up)) {
+      if (isPlainAlt && matchesNavKey(e, navKeys.up)) {
         e.preventDefault();
         navigateMessage(-1);
         return;
       }
 
-      if (e.altKey && !e.ctrlKey && !e.shiftKey && matchesNavKey(e, navKeys.down)) {
+      if (isPlainAlt && matchesNavKey(e, navKeys.down)) {
         e.preventDefault();
         navigateMessage(1);
         return;
@@ -576,7 +577,7 @@ export const useChannelHistory = (client: MudClient | null) => {
       }
 
       // Alt+Space: Repeat current message
-      if (e.altKey && !e.shiftKey && e.key === " ") {
+      if (isPlainAlt && e.key === " ") {
         e.preventDefault();
         navigateMessage(0);
         return;

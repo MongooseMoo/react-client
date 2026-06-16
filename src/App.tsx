@@ -44,17 +44,39 @@ function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
   return roomInfo.name || roomInfo.area || undefined;
 }
 
-function getSidebarShortcutIndex(event: KeyboardEvent): number | null {
-  if (!event.ctrlKey) {
-    return null;
-  }
-
+function getShortcutDigit(event: KeyboardEvent): number | null {
   const digit = Number.parseInt(event.key, 10);
-  if (Number.isNaN(digit) || digit < 1 || digit > 9) {
+  if (Number.isNaN(digit) || digit < 0 || digit > 9) {
     return null;
   }
 
-  return digit - 1;
+  return digit;
+}
+
+function getOutputReviewLineNumber(event: KeyboardEvent): number | null {
+  if (!event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) {
+    return null;
+  }
+
+  const digit = getShortcutDigit(event);
+  if (digit === null) {
+    return null;
+  }
+
+  return digit === 0 ? 10 : digit;
+}
+
+function getSidebarShortcutIndex(event: KeyboardEvent): number | null {
+  if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) {
+    return null;
+  }
+
+  const digit = getShortcutDigit(event);
+  if (digit === null) {
+    return null;
+  }
+
+  return (digit === 0 ? 10 : digit) - 1;
 }
 
 function App() {
@@ -115,12 +137,19 @@ function App() {
         hapticsRuntimeRef.current?.emergencyStop();
       }
 
+      const outputReviewLineNumber = getOutputReviewLineNumber(event);
+      if (outputReviewLineNumber !== null) {
+        event.preventDefault();
+        outRef.current?.reviewRecentOutputLine(outputReviewLineNumber);
+        return;
+      }
+
       if (showSidebar) {
         const targetIndex = getSidebarShortcutIndex(event);
         if (targetIndex !== null) {
           event.preventDefault();
           console.log(
-            `App: Detected CTRL+${targetIndex + 1}, calling switchToTab(${targetIndex})`,
+            `App: Detected CTRL+SHIFT+${targetIndex + 1}, calling switchToTab(${targetIndex})`,
           );
           sidebarRef.current?.switchToTab(targetIndex);
         }

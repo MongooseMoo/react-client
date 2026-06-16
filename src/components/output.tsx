@@ -667,9 +667,11 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
    * Handle keyboard navigation through output lines
    */
   handleOutputKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+
     // Suppress Alt+Arrow and Alt+letter so browser defaults
     // don't interfere with app-level keybindings
-    if (e.altKey && (
+    if (isPlainAlt && (
       e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
       'ijklwasdchtnoe,'.includes(e.key.toLowerCase()) ||
       'IJKLWASDCHTNOE'.split('').some(c => e.code === `Key${c}`) || e.code === 'Comma'
@@ -677,7 +679,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       e.preventDefault();
       return;
     }
-    if (e.altKey && e.code === 'Space') {
+    if (isPlainAlt && e.code === 'Space') {
       e.preventDefault();
       return;
     }
@@ -745,6 +747,25 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
     // Announce to screen reader
     announce(textContent, 'polite');
+  };
+
+  reviewRecentOutputLine = (lineNumber: number) => {
+    const visibleOutput = this.allLines.filter(
+      line => this.state.localEchoActive || line.type !== OutputType.Command
+    );
+
+    if (visibleOutput.length === 0) {
+      announce("No output", "polite");
+      return;
+    }
+
+    const line = visibleOutput[visibleOutput.length - lineNumber];
+    if (!line) {
+      announce("No line", "polite");
+      return;
+    }
+
+    this.announceOutputLine(line);
   };
 
   /**
