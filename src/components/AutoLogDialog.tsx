@@ -225,9 +225,9 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
                     </span>
                   </button>
                   <div className="autolog-session-actions">
-                    <button type="button" onClick={() => handleDownload(session, "text")}>TXT</button>
-                    <button type="button" onClick={() => handleDownload(session, "html")}>HTML</button>
-                    <button type="button" onClick={() => handleDelete(session)}>Delete</button>
+                    <button type="button" aria-label={`Download "${session.title}" as plain text`} onClick={() => handleDownload(session, "text")}>TXT</button>
+                    <button type="button" aria-label={`Download "${session.title}" as HTML`} onClick={() => handleDownload(session, "html")}>HTML</button>
+                    <button type="button" aria-label={`Delete log "${session.title}"`} onClick={() => handleDelete(session)}>Delete</button>
                   </div>
                 </article>
               ))}
