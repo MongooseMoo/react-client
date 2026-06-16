@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { announce } from "@react-aria/live-announcer";
 import type { AutoreadMode, NavigationKeyScheme } from "../stores/preferencesStore";
 import { usePreferences } from "../stores/preferencesStore";
 import { useVoices } from "../hooks/useVoices";
@@ -146,6 +147,7 @@ const PreviewButton: React.FC = () => {
   const handlePreview = () => {
     if (isPlaying) return; // Extra guard against concurrent calls
     setIsPlaying(true);
+    announce("Playing voice preview", "polite");
     console.log("Preview button clicked");
 
     const speakText = () => {
@@ -175,12 +177,14 @@ const PreviewButton: React.FC = () => {
         if (isMounted.current) {
           console.log("Speech ended");
           setIsPlaying(false);
+          announce("Voice preview finished", "polite");
         }
       };
       utterance.onerror = (event) => {
         if (isMounted.current) {
           console.error('Speech synthesis error:', event);
           setIsPlaying(false);
+          announce("Voice preview finished", "polite");
         }
       };
 
@@ -213,7 +217,7 @@ const PreviewButton: React.FC = () => {
   };
 
   return (
-    <button type="button" onClick={handlePreview} disabled={isPlaying}>
+    <button type="button" onClick={handlePreview}>
       {isPlaying ? "Playing..." : "Preview Voice"}
     </button>
   );
