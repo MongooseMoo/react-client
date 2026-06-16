@@ -71,7 +71,7 @@ function syncTimezoneToServer(timezonePackage?: McpAwnsTimezone): void {
   timezonePackage.sendTimezone({ timezone: getLocalTimezoneIdentifier() });
 }
 
-function syncLocationToServer(locationPackage?: McpWorldMongooseLocation): void {
+function syncLocationToServer(client: MudClient, locationPackage?: McpWorldMongooseLocation): void {
   if (!locationPackage) {
     return;
   }
@@ -84,6 +84,12 @@ function syncLocationToServer(locationPackage?: McpWorldMongooseLocation): void 
   }
   geolocation.getCurrentPosition(
     (position) => {
+      if (!usePreferences.getState().general.syncLocationToServer) {
+        return;
+      }
+      if (!client.connected) {
+        return;
+      }
       locationPackage.sendLocation({
         lat: position.coords.latitude,
         lon: position.coords.longitude,
@@ -255,7 +261,7 @@ export function createConfiguredClient(): MudClient {
       nextGeneralPreferences.syncLocationToServer &&
       client.connected
     ) {
-      syncLocationToServer(locationPackage);
+      syncLocationToServer(client, locationPackage);
     }
     lastGeneralPreferences = nextGeneralPreferences;
   });
@@ -263,7 +269,7 @@ export function createConfiguredClient(): MudClient {
 
   negotiatePackage?.on("end", () => {
     syncTimezoneToServer(timezonePackage);
-    syncLocationToServer(locationPackage);
+    syncLocationToServer(client, locationPackage);
     serverInfoPackage?.requestServerInfo();
     rehashPackage?.requestCommands();
     visualPackage?.requestSelf();
