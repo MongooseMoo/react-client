@@ -306,7 +306,7 @@ const MidiTab: React.FC = () => {
       <br />
 
       {state.midi.enabled && (
-        <p style={{ color: "#666", fontSize: "0.9em" }}>
+        <p style={{ color: "var(--color-text-tertiary)", fontSize: "0.9em" }}>
           Device selection and management is available in the MIDI tab when connected to a server.
         </p>
       )}
@@ -362,7 +362,7 @@ const HapticsTab: React.FC = () => {
             />
           </label>
           <br />
-          <p style={{ color: "#666", fontSize: "0.9em", marginTop: "8px" }}>
+          <p style={{ color: "var(--color-text-tertiary)", fontSize: "0.9em", marginTop: "8px" }}>
             Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
           </p>
         </div>
@@ -390,7 +390,7 @@ const KeyboardTab: React.FC = () => {
           <option value="dvorak-lh">,OAE (Dvorak left-hand)</option>
         </select>
       </label>
-      <p style={{ color: "#666", fontSize: "0.9em", marginTop: "0.5em" }}>
+      <p style={{ color: "var(--color-text-tertiary)", fontSize: "0.9em", marginTop: "0.5em" }}>
         Arrow keys always work in addition to the selected scheme.
       </p>
     </div>
