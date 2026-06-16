@@ -208,19 +208,6 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen]);
-
   // Drive the confirmation alertdialog from pendingDelete, same showModal()
   // approach as the main dialog. showModal() traps focus and closes on Escape;
   // the dialog's "close" event (Escape or Cancel) clears pendingDelete without

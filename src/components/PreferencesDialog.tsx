@@ -57,22 +57,6 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
     };
   }, []);
 
-  // Redundant once the native modal handles Escape, but left in place on purpose
-  // (its removal is tracked as a separate finding). setIsOpen(false) twice is harmless.
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
   return (
     <dialog
       className="preferences-dialog"
