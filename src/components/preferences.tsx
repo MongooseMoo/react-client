@@ -74,7 +74,7 @@ const RateSelection: React.FC = () => {
 
   return (
     <label>
-      Rate (0.1 - 10.0):
+      Rate ({state.speech.rate.toFixed(1)}, range 0.1 - 10.0):
       <input
         type="range"
         min="0.1"
@@ -94,7 +94,7 @@ const PitchSelection: React.FC = () => {
 
   return (
     <label>
-      Pitch (0 - 2):
+      Pitch ({state.speech.pitch.toFixed(1)}, range 0 - 2):
       <input
         type="range"
         min="0"
@@ -114,7 +114,7 @@ const VolumeSelection: React.FC = () => {
 
   return (
     <label>
-      Volume (0 - 1):
+      Volume ({state.speech.volume.toFixed(2)}, range 0 - 1):
       <input
         type="range"
         min="0"
