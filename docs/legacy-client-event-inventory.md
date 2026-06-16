@@ -194,7 +194,7 @@ emitter and no code uses `client` as an event bus.
 - [x] Delete unused affliction/defence relays at original `src/createConfiguredClient.ts:120`-`src/createConfiguredClient.ts:125`.
 - [x] Move `skillGroups` / `skillList` relays at original `src/createConfiguredClient.ts:126`-`src/createConfiguredClient.ts:127` to the skills owner.
 - [x] Delete unused `skillInfo` relay at original `src/createConfiguredClient.ts:128`.
-- [ ] Move item relays at `src/createConfiguredClient.ts:131`, `src/createConfiguredClient.ts:134`, `src/createConfiguredClient.ts:137`, and `src/createConfiguredClient.ts:140` to the item/inventory owner.
+- [x] Move item relays at original `src/createConfiguredClient.ts:131`, `src/createConfiguredClient.ts:134`, `src/createConfiguredClient.ts:137`, and `src/createConfiguredClient.ts:140` to the item/inventory owner.
 - [x] Delete unused core relays at original `src/createConfiguredClient.ts:142`-`src/createConfiguredClient.ts:143`.
 - [ ] Move `channelText` relay at `src/createConfiguredClient.ts:145` to the channel/history owner.
 - [x] Delete unused channel metadata relays at original `src/createConfiguredClient.ts:150`, `src/createConfiguredClient.ts:152`, and `src/createConfiguredClient.ts:154`.
@@ -221,12 +221,12 @@ emitter and no code uses `client` as an event bus.
 - [ ] Replace `GMCPClientMedia` spatial client listeners at `src/gmcp/Client/Media.ts:196`-`src/gmcp/Client/Media.ts:197` and cleanup at `src/gmcp/Client/Media.ts:281`-`src/gmcp/Client/Media.ts:282`.
 - [ ] Replace `audioChat` spatial client listeners at `src/components/audioChat.tsx:77`-`src/components/audioChat.tsx:86`.
 - [x] Delete `audioChat` component-originated `livekitLeave` emit at original `src/components/audioChat.tsx:141`.
-- [ ] Delete `inventoryDataReceived` emits at `src/components/inventory.tsx:33`, `src/components/inventory.tsx:42`, `src/components/inventory.tsx:53`, and `src/components/inventory.tsx:69`.
-- [ ] Replace `inventory` item subscriptions at `src/components/inventory.tsx:79`-`src/components/inventory.tsx:90`.
-- [ ] Replace `RoomInfoDisplay` item subscriptions at `src/components/RoomInfoDisplay.tsx:76`-`src/components/RoomInfoDisplay.tsx:83`.
+- [x] Delete `inventoryDataReceived` emits at original `src/components/inventory.tsx:33`, `src/components/inventory.tsx:42`, `src/components/inventory.tsx:53`, and `src/components/inventory.tsx:69`.
+- [x] Replace `inventory` item subscriptions at original `src/components/inventory.tsx:79`-`src/components/inventory.tsx:90`.
+- [x] Replace `RoomInfoDisplay` item subscriptions at original `src/components/RoomInfoDisplay.tsx:76`-`src/components/RoomInfoDisplay.tsx:83`.
 - [ ] Replace `Output` subscriptions at `src/components/output.tsx:384`-`src/components/output.tsx:390` and cleanup at `src/components/output.tsx:402`-`src/components/output.tsx:408`.
 - [ ] Replace `sidebar` `userlist` `useClientEvent` at `src/components/sidebar.tsx:37`.
-- [ ] Replace `sidebar` inventory activity subscription at `src/components/sidebar.tsx:88`-`src/components/sidebar.tsx:90`.
+- [x] Replace `sidebar` inventory activity subscription at original `src/components/sidebar.tsx:88`-`src/components/sidebar.tsx:90`.
 - [x] Delete `skillsDataReceived` emit at original `src/components/SkillsDisplay.tsx:25`.
 - [x] Replace `SkillsDisplay` subscriptions at original `src/components/SkillsDisplay.tsx:52`-`src/components/SkillsDisplay.tsx:65`.
 - [ ] Replace `statusbar` subscriptions at `src/components/statusbar.tsx:42`-`src/components/statusbar.tsx:55`.
@@ -321,6 +321,42 @@ Surfaces:
 
 Gate results:
 - Pass: `rg -n "skillGroups|skillList|skillsDataReceived|client\.emit\('skills|client\.(on|off)\('skill" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+- Pass: `npm run typecheck`
+- Pass: `npm test -- src/createConfiguredClient.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- `6a3b4b3 Move skills events to store`
+
+Next slice:
+- Add/move the next missing state owner for current production consumers.
+
+### Iteration 4 - item/inventory owner
+
+Slice read:
+- `src/gmcp/Char/Items.ts`
+- `src/components/inventory.tsx`
+- `src/components/RoomInfoDisplay.tsx`
+- `src/components/sidebar.tsx`
+- `src/createConfiguredClient.ts`
+- `src/createConfiguredClient.test.ts`
+
+Surfaces:
+- `itemsList` / `itemAdd` / `itemRemove` / `itemUpdate` client relays and
+  component subscriptions.
+  - Disposition: move
+  - Owner after cleanup: `GMCPCharItems` writes `useItemsStore`;
+    inventory and room components read location-indexed item state.
+  - Action: added `useItemsStore`, kept item `location` normalization in the
+    store, removed relays, and removed component client subscriptions.
+- `inventoryDataReceived` component-originated emits and sidebar inventory
+  activity listener.
+  - Disposition: delete/move
+  - Owner after cleanup: `useItemsStore.hasReceivedList`.
+  - Action: sidebar reads the item store instead of listening to `itemsList`.
+
+Gate results:
+- Pass: `rg -n "client\.(on|off)\('item|client\.emit\(\"items|client\.emit\(\"item|client\.emit\('inventory|inventoryDataReceived" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
 - Pass: `npm run typecheck`
 - Pass: `npm test -- src/createConfiguredClient.test.ts`
 - Pass: `git diff --check`

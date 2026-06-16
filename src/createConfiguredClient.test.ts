@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type MudClient from "./client";
 import { createConfiguredClient } from "./createConfiguredClient";
 import { useInputStore } from "./stores/inputStore";
+import { useItemsStore } from "./stores/itemsStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useSkillsStore } from "./stores/skillsStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
@@ -22,6 +23,7 @@ describe("createConfiguredClient", () => {
     client = undefined;
     useInputStore.getState().clear();
     useInputStore.getState().resetCommands();
+    useItemsStore.getState().reset();
     useServerLinksStore.getState().reset();
     useSkillsStore.getState().reset();
     useWorldMapStore.getState().reset();
@@ -98,6 +100,33 @@ describe("createConfiguredClient", () => {
       descs: ["Hit the target."],
       isLoading: false,
     });
+  });
+
+  it("wires Char.Items GMCP messages to the items store", () => {
+    client = createConfiguredClient();
+
+    const items = client.gmcp.require("Char.Items");
+    items.receiveRegisteredMessage("List", {
+      location: "inv",
+      items: [{ id: "coin", name: "a coin" }],
+    });
+    items.receiveRegisteredMessage("Add", {
+      location: "inv",
+      item: { id: "key", name: "a brass key" },
+    });
+    items.receiveRegisteredMessage("Update", {
+      location: "inv",
+      item: { id: "key", name: "a polished brass key" },
+    });
+    items.receiveRegisteredMessage("Remove", {
+      location: "inv",
+      item: { id: "coin", name: "a coin" },
+    });
+
+    expect(useItemsStore.getState().itemsByLocation.inv).toEqual([
+      { id: "key", name: "a polished brass key", location: "inv" },
+    ]);
+    expect(useItemsStore.getState().hasReceivedList).toBe(true);
   });
 
   it("requests AWNS MCP data after MCP negotiation ends", () => {

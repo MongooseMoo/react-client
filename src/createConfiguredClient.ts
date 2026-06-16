@@ -84,7 +84,7 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPAutoLogin);
   const clientHtml = client.gmcp.register(GMCPClientHtml);
   client.gmcp.register(GMCPClientFile);
-  const charItems = client.gmcp.register(GMCPCharItems);
+  client.gmcp.register(GMCPCharItems);
   client.gmcp.register(GMCPCharStatus);
   const char = client.gmcp.register(GMCPChar);
   client.gmcp.register(GMCPCharOffer);
@@ -108,19 +108,6 @@ export function createConfiguredClient(): MudClient {
     }
   });
   char.on("vitals", (data) => client.emit("vitals", data));
-  charItems.on("list", (data) => {
-    const items = data.items.map((item) => ({ ...item, location: data.location }));
-    client.emit("itemsList", { ...data, items });
-  });
-  charItems.on("add", (data) => {
-    client.emit("itemAdd", { ...data, item: { ...data.item, location: data.location } });
-  });
-  charItems.on("remove", (data) => {
-    client.emit("itemRemove", { ...data, item: { ...data.item, location: data.location } });
-  });
-  charItems.on("update", (data) => {
-    client.emit("itemUpdate", { ...data, item: { ...data.item, location: data.location } });
-  });
   commChannel.on("text", (data) => {
     client.emit("channelText", data);
     if (data.channel === "say_to_you" && !document.hasFocus()) {

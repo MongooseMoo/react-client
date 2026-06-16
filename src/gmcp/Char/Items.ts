@@ -1,4 +1,5 @@
 import { inbound, outbound } from "../../protocol/messages";
+import { useItemsStore } from "../../stores/itemsStore";
 import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -70,17 +71,21 @@ export class GMCPCharItems extends GMCPCharItemsBase {
 
   handleList(data: GMCPMessageCharItemsList): void {
     console.log(`Received Char.Items.List for ${data.location}:`, data.items);
+    useItemsStore.getState().setLocationItems(data.location, data.items);
   }
 
   handleAdd(data: GMCPMessageCharItemsAdd): void {
     console.log(`Received Char.Items.Add for ${data.location}:`, data.item);
+    useItemsStore.getState().addItem(data.location, data.item);
   }
 
   handleRemove(data: GMCPMessageCharItemsRemove): void {
     console.log(`Received Char.Items.Remove for ${data.location}:`, data.item);
+    useItemsStore.getState().removeItem(data.location, data.item);
   }
 
   handleUpdate(data: GMCPMessageCharItemsUpdate): void {
     console.log(`Received Char.Items.Update for ${data.location}:`, data.item);
+    useItemsStore.getState().updateItem(data.location, data.item);
   }
 }

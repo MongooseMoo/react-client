@@ -17,6 +17,7 @@ import RoomInfoDisplay from './RoomInfoDisplay'; // Import new component
 import HapticsStatus from './HapticsStatus'; // Import Haptics component
 import { usePreferences } from '../stores/preferencesStore';
 import { useRoomStore } from '../stores/roomStore';
+import { useItemsStore } from '../stores/itemsStore';
 import { hapticsService } from '../HapticsService';
 import ServerFeaturesPanel from './ServerFeaturesPanel';
 
@@ -42,7 +43,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
     // const [hasTargetData, setHasTargetData] = useState(false); // Removed
     // const [hasAfflictionsData, setHasAfflictionsData] = useState(false); // Removed
     // const [hasDefencesData, setHasDefencesData] = useState(false); // Removed
-    const [hasInventoryData, setHasInventoryData] = useState(false); // Keep state for inventory as example
+    const hasInventoryData = useItemsStore((state) => state.hasReceivedList);
     // const [hasSkillsData, setHasSkillsData] = useState(false); // Removed
     // Show the Room tab once room info has arrived (from the room store).
     const hasRoomData = useRoomStore((state) => state.roomInfo !== null);
@@ -80,16 +81,6 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       hapticsService.intensityCap = preferences.haptics.intensityCap;
       hapticsService.autoStopTimeoutSecs = preferences.haptics.autoStopTimeout;
     }, [preferences.haptics.intensityCap, preferences.haptics.autoStopTimeout]);
-
-    // Effect to check for inventory data
-    useEffect(() => {
-      // Listen for the custom event emitted by InventoryList when data arrives
-      const handleInventoryData = () => setHasInventoryData(true);
-      client.on('itemsList', handleInventoryData);
-      return () => {
-        client.off('itemsList', handleInventoryData);
-      };
-    }, [client]);
 
     // Define all possible tabs
     const allTabs: TabProps[] = [
