@@ -2,6 +2,7 @@ import type { MCPPackage } from '../package';
 import { McpAwnsDisplayUrl } from './displayUrl';
 import { McpAwnsGetSet } from './getSet';
 import { McpAwnsJtext } from './jtext';
+import { McpWorldMongooseLocation } from './location';
 import { McpNegotiate } from './negotiate';
 import { McpAwnsPing } from './ping';
 import { McpAwnsRehash } from './rehash';
@@ -23,6 +24,7 @@ export const DEFAULT_MCP_PACKAGES = [
   McpAwnsVisual,
   McpAwnsRehash,
   McpAwnsTimezone,
+  McpWorldMongooseLocation,
   McpAwnsStatus,
   McpSimpleEdit,
   McpVmooUserlist,

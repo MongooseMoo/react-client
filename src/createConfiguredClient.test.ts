@@ -4,6 +4,7 @@ import type MudClient from "./client";
 import { createConfiguredClient } from "./createConfiguredClient";
 import { useInputStore } from "./stores/inputStore";
 import { useItemsStore } from "./stores/itemsStore";
+import { usePreferences } from "./stores/preferencesStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useSkillsStore } from "./stores/skillsStore";
 import { useUserlistStore } from "./stores/userlistStore";
@@ -21,6 +22,7 @@ vi.mock("cacophony", () => ({
 
 describe("createConfiguredClient", () => {
   let client: MudClient | undefined;
+  const originalGeolocation = globalThis.navigator.geolocation;
 
   afterEach(() => {
     client?.shutdown();
@@ -28,6 +30,15 @@ describe("createConfiguredClient", () => {
     useCharacterStatusStore.getState().reset();
     useChannelHistoryStore.getState().reset();
     useConnectionStore.getState().reset();
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: originalGeolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
     useInputStore.getState().clear();
     useInputStore.getState().resetCommands();
     useItemsStore.getState().reset();
@@ -198,7 +209,13 @@ describe("createConfiguredClient", () => {
 
     client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
 
-    expect(sent.some((line) => line.includes("#$#dns-com-awns-timezone"))).toBe(true);
+    expect(
+      sent.some((line) =>
+        line.includes(
+          `#$#dns-com-awns-timezone ${authKey} timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"}`,
+        ),
+      ),
+    ).toBe(true);
     expect(sent.some((line) => line.includes(`#$#dns-com-awns-serverinfo-get ${authKey}`))).toBe(
       true,
     );
@@ -214,5 +231,197 @@ describe("createConfiguredClient", () => {
     expect(sent.some((line) => line.includes(`#$#dns-com-awns-visual-getusers ${authKey}`))).toBe(
       true,
     );
+  });
+
+  it("does not send timezone when syncTimezoneToServer is disabled", () => {
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: false,
+      syncLocationToServer: false,
+    });
+    client = createConfiguredClient();
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+
+    expect(sent.some((line) => line.includes("#$#dns-com-awns-timezone"))).toBe(false);
+    expect(sent.some((line) => line.includes(`#$#dns-com-awns-serverinfo-get ${authKey}`))).toBe(
+      true,
+    );
+  });
+
+  it("sends browser location when syncLocationToServer is enabled", () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          latitude: 39.7392,
+          longitude: -104.9903,
+        },
+      } as GeolocationPosition);
+    });
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: true,
+    });
+    client = createConfiguredClient();
+    vi.spyOn(client, "connected", "get").mockReturnValue(true);
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+
+    expect(getCurrentPosition).toHaveBeenCalledOnce();
+    expect(
+      sent.some(
+        (line) =>
+          line.startsWith(`#$#world.mongoose.location ${authKey} `) &&
+          line.includes("lat: 39.7392") &&
+          line.includes("lon: -104.9903"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not send browser location if syncLocationToServer is disabled before geolocation resolves", () => {
+    let resolvePosition: PositionCallback | undefined;
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      resolvePosition = success;
+    });
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: true,
+    });
+    client = createConfiguredClient();
+    vi.spyOn(client, "connected", "get").mockReturnValue(true);
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    if (!resolvePosition) {
+      throw new Error("Expected browser geolocation to be requested");
+    }
+    resolvePosition({
+      coords: {
+        latitude: 39.7392,
+        longitude: -104.9903,
+      },
+    } as GeolocationPosition);
+
+    expect(getCurrentPosition).toHaveBeenCalledOnce();
+    expect(sent.some((line) => line.includes("#$#world.mongoose.location"))).toBe(false);
+  });
+
+  it("does not send browser location if the client disconnects before geolocation resolves", () => {
+    let resolvePosition: PositionCallback | undefined;
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      resolvePosition = success;
+    });
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: true,
+    });
+    client = createConfiguredClient();
+    const connected = vi.spyOn(client, "connected", "get").mockReturnValue(true);
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+    connected.mockReturnValue(false);
+    if (!resolvePosition) {
+      throw new Error("Expected browser geolocation to be requested");
+    }
+    resolvePosition({
+      coords: {
+        latitude: 39.7392,
+        longitude: -104.9903,
+      },
+    } as GeolocationPosition);
+
+    expect(getCurrentPosition).toHaveBeenCalledOnce();
+    expect(sent.some((line) => line.includes("#$#world.mongoose.location"))).toBe(false);
+  });
+
+  it("does not request browser location when syncLocationToServer is disabled", () => {
+    const getCurrentPosition = vi.fn();
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    client = createConfiguredClient();
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    expect(sent.some((line) => line.includes("#$#world.mongoose.location"))).toBe(false);
   });
 });

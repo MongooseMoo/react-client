@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { McpSession } from '../session';
 import { McpAwnsDisplayUrl } from './displayUrl';
 import { McpAwnsJtext } from './jtext';
+import { McpWorldMongooseLocation } from './location';
 import { McpAwnsRehash } from './rehash';
 import { McpAwnsServerInfo } from './serverInfo';
 import { McpAwnsTimezone } from './timezone';
@@ -85,6 +86,23 @@ describe('AWNS MCP packages', () => {
     timezone.sendTimezone({ timezone: 'MST' });
 
     expect(sent).toEqual(['#$#dns-com-awns-timezone auth01 timezone: MST']);
+  });
+
+  it('sends browser location updates as package-root messages', () => {
+    const sent: string[] = [];
+    const session = new McpSession(
+      {
+        sendLine: (line) => sent.push(line),
+      },
+      () => 'auth01',
+    );
+    const location = session.registerPackage(McpWorldMongooseLocation);
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    sent.length = 0;
+    location.sendLocation({ lat: 39.7392, lon: -104.9903 });
+
+    expect(sent).toEqual(['#$#world.mongoose.location auth01 lat: 39.7392 lon: -104.9903']);
   });
 
   it('tracks rehash command lists and abbreviation expansions', () => {

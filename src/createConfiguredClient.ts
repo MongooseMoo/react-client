@@ -40,9 +40,11 @@ import {
   McpAwnsStatus,
   McpAwnsTimezone,
   McpAwnsVisual,
+  McpWorldMongooseLocation,
   McpNegotiate,
   McpSimpleEdit,
 } from "./mcp/index";
+import { usePreferences } from "./stores/preferencesStore";
 import { useInputStore } from "./stores/inputStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
@@ -55,12 +57,53 @@ marked.setOptions({
   gfm: true,
 });
 
-function getLocalTimezoneAbbreviation(): string {
-  const timeZoneName =
-    new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
-      .formatToParts(new Date())
-      .find((part) => part.type === "timeZoneName")?.value ?? "";
-  return timeZoneName || "UTC";
+function getLocalTimezoneIdentifier(): string {
+  return new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function syncTimezoneToServer(timezonePackage?: McpAwnsTimezone): void {
+  if (!timezonePackage) {
+    return;
+  }
+  if (!usePreferences.getState().general.syncTimezoneToServer) {
+    return;
+  }
+  timezonePackage.sendTimezone({ timezone: getLocalTimezoneIdentifier() });
+}
+
+function syncLocationToServer(client: MudClient, locationPackage?: McpWorldMongooseLocation): void {
+  if (!locationPackage) {
+    return;
+  }
+  if (!usePreferences.getState().general.syncLocationToServer) {
+    return;
+  }
+  const geolocation = globalThis.navigator?.geolocation;
+  if (!geolocation?.getCurrentPosition) {
+    return;
+  }
+  geolocation.getCurrentPosition(
+    (position) => {
+      if (!usePreferences.getState().general.syncLocationToServer) {
+        return;
+      }
+      if (!client.connected) {
+        return;
+      }
+      locationPackage.sendLocation({
+        lat: position.coords.latitude,
+        lon: position.coords.longitude,
+      });
+    },
+    (error) => {
+      console.warn("Unable to read browser geolocation for MCP sync", error);
+    },
+    {
+      enableHighAccuracy: false,
+      maximumAge: 300000,
+      timeout: 10000,
+    },
+  );
 }
 
 /**
@@ -126,6 +169,7 @@ export function createConfiguredClient(): MudClient {
   let visualPackage: McpAwnsVisual | undefined;
   let rehashPackage: McpAwnsRehash | undefined;
   let timezonePackage: McpAwnsTimezone | undefined;
+  let locationPackage: McpWorldMongooseLocation | undefined;
 
   for (const PackageConstructor of DEFAULT_MCP_PACKAGES) {
     const mcpPackage = client.registerMcpPackage(PackageConstructor);
@@ -190,6 +234,9 @@ export function createConfiguredClient(): MudClient {
     if (mcpPackage instanceof McpAwnsTimezone) {
       timezonePackage = mcpPackage;
     }
+    if (mcpPackage instanceof McpWorldMongooseLocation) {
+      locationPackage = mcpPackage;
+    }
     if (mcpPackage instanceof McpAwnsStatus) {
       mcpPackage.on("statustext", (text) =>
         useConnectionStore.getState().setStatusText(text),
@@ -197,8 +244,32 @@ export function createConfiguredClient(): MudClient {
     }
   }
 
+  let lastGeneralPreferences = usePreferences.getState().general;
+  const unsubscribeGeneralPreferences = usePreferences.subscribe((state) => {
+    const nextGeneralPreferences = state.general;
+    if (
+      nextGeneralPreferences.syncTimezoneToServer !==
+        lastGeneralPreferences.syncTimezoneToServer &&
+      nextGeneralPreferences.syncTimezoneToServer &&
+      client.connected
+    ) {
+      syncTimezoneToServer(timezonePackage);
+    }
+    if (
+      nextGeneralPreferences.syncLocationToServer !==
+        lastGeneralPreferences.syncLocationToServer &&
+      nextGeneralPreferences.syncLocationToServer &&
+      client.connected
+    ) {
+      syncLocationToServer(client, locationPackage);
+    }
+    lastGeneralPreferences = nextGeneralPreferences;
+  });
+  client.registerCleanup(unsubscribeGeneralPreferences);
+
   negotiatePackage?.on("end", () => {
-    timezonePackage?.sendTimezone({ timezone: getLocalTimezoneAbbreviation() });
+    syncTimezoneToServer(timezonePackage);
+    syncLocationToServer(client, locationPackage);
     serverInfoPackage?.requestServerInfo();
     rehashPackage?.requestCommands();
     visualPackage?.requestSelf();

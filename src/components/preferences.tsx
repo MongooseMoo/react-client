@@ -9,16 +9,46 @@ const GeneralTab: React.FC = () => {
   const state = usePreferences();
 
   return (
-    <label>
-      <input
-        type="checkbox"
-        checked={state.general.localEcho}
-        onChange={(e) =>
-          state.setGeneral({ ...state.general, localEcho: e.target.checked })
-        }
-      />
-      Local Echo
-    </label>
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={state.general.localEcho}
+          onChange={(e) =>
+            state.setGeneral({ ...state.general, localEcho: e.target.checked })
+          }
+        />
+        Local Echo
+      </label>
+      <br />
+      <label>
+        <input
+          type="checkbox"
+          checked={state.general.syncTimezoneToServer}
+          onChange={(e) =>
+            state.setGeneral({
+              ...state.general,
+              syncTimezoneToServer: e.target.checked,
+            })
+          }
+        />
+        Sync timezone to server
+      </label>
+      <br />
+      <label>
+        <input
+          type="checkbox"
+          checked={state.general.syncLocationToServer}
+          onChange={(e) =>
+            state.setGeneral({
+              ...state.general,
+              syncLocationToServer: e.target.checked,
+            })
+          }
+        />
+        Sync browser location to server
+      </label>
+    </div>
   );
 };
 

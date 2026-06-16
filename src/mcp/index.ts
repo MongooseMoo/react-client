@@ -12,6 +12,7 @@ export { DEFAULT_MCP_PACKAGES, type McpPackageConstructor } from './packages';
 export { McpAwnsDisplayUrl } from './packages/displayUrl';
 export { McpAwnsGetSet } from './packages/getSet';
 export { McpAwnsJtext } from './packages/jtext';
+export { type WorldMongooseLocation, McpWorldMongooseLocation } from './packages/location';
 export { McpNegotiate } from './packages/negotiate';
 export { McpAwnsPing } from './packages/ping';
 export { McpAwnsRehash } from './packages/rehash';

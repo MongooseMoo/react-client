@@ -8,6 +8,8 @@ export enum AutoreadMode {
 
 export type GeneralPreferences = {
   localEcho: boolean;
+  syncTimezoneToServer: boolean;
+  syncLocationToServer: boolean;
 };
 
 export type SpeechPreferences = {
@@ -85,7 +87,11 @@ const STORAGE_KEY = "preferences";
 
 function getInitialPreferences(): PrefState {
   return {
-    general: { localEcho: false },
+    general: {
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    },
     speech: {
       autoreadMode: AutoreadMode.Off,
       voice: "",
