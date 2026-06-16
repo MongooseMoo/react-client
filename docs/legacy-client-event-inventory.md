@@ -190,24 +190,25 @@ emitter and no code uses `client` as an event bus.
 - [ ] Replace `statustext` relays at `src/createConfiguredClient.ts:106`, `src/createConfiguredClient.ts:228`, and `src/createConfiguredClient.ts:289`.
 - [ ] Replace `sessionReady` relay at `src/createConfiguredClient.ts:108`.
 - [ ] Replace `vitals` relay at `src/createConfiguredClient.ts:111`.
-- [ ] Delete or move unused character/status relays at `src/createConfiguredClient.ts:112`-`src/createConfiguredClient.ts:119`.
-- [ ] Delete or move unused affliction/defence relays at `src/createConfiguredClient.ts:120`-`src/createConfiguredClient.ts:125`.
-- [ ] Move skills relays at `src/createConfiguredClient.ts:126`-`src/createConfiguredClient.ts:128` to the skills owner.
+- [x] Delete unused character/status relays at original `src/createConfiguredClient.ts:112`-`src/createConfiguredClient.ts:119`.
+- [x] Delete unused affliction/defence relays at original `src/createConfiguredClient.ts:120`-`src/createConfiguredClient.ts:125`.
+- [ ] Move `skillGroups` / `skillList` relays at original `src/createConfiguredClient.ts:126`-`src/createConfiguredClient.ts:127` to the skills owner.
+- [x] Delete unused `skillInfo` relay at original `src/createConfiguredClient.ts:128`.
 - [ ] Move item relays at `src/createConfiguredClient.ts:131`, `src/createConfiguredClient.ts:134`, `src/createConfiguredClient.ts:137`, and `src/createConfiguredClient.ts:140` to the item/inventory owner.
-- [ ] Delete unused core relays at `src/createConfiguredClient.ts:142`-`src/createConfiguredClient.ts:143`.
+- [x] Delete unused core relays at original `src/createConfiguredClient.ts:142`-`src/createConfiguredClient.ts:143`.
 - [ ] Move `channelText` relay at `src/createConfiguredClient.ts:145` to the channel/history owner.
-- [ ] Delete or move channel metadata relays at `src/createConfiguredClient.ts:150`, `src/createConfiguredClient.ts:152`, and `src/createConfiguredClient.ts:154`.
-- [ ] Delete duplicate LiveKit relays at `src/createConfiguredClient.ts:155`-`src/createConfiguredClient.ts:156`.
-- [ ] Delete or move `groupInfo`, `gmcpError`, `redirectWindow`, and `roomWrongDir` relays at `src/createConfiguredClient.ts:157`-`src/createConfiguredClient.ts:162`.
+- [x] Delete unused channel metadata relays at original `src/createConfiguredClient.ts:150`, `src/createConfiguredClient.ts:152`, and `src/createConfiguredClient.ts:154`.
+- [x] Delete duplicate LiveKit relays at original `src/createConfiguredClient.ts:155`-`src/createConfiguredClient.ts:156`.
+- [x] Delete unused `groupInfo`, `gmcpError`, `redirectWindow`, and `roomWrongDir` relays at original `src/createConfiguredClient.ts:157`-`src/createConfiguredClient.ts:162`.
 - [ ] Route `html` relays at `src/createConfiguredClient.ts:163` and `src/createConfiguredClient.ts:166` to the output/logging owner.
-- [ ] Delete or move `webpushToken` relay at `src/createConfiguredClient.ts:169`.
-- [ ] Delete unused haptics relays at `src/createConfiguredClient.ts:174`-`src/createConfiguredClient.ts:181`.
+- [x] Delete unused `webpushToken` relay at original `src/createConfiguredClient.ts:169`.
+- [x] Delete unused haptics relays at original `src/createConfiguredClient.ts:174`-`src/createConfiguredClient.ts:181`.
 - [ ] Move spatial relays at `src/createConfiguredClient.ts:183`-`src/createConfiguredClient.ts:206` to `spatialStore` plus the non-client spatial/audio sync owner.
-- [ ] Delete `displayUrl` relay at `src/createConfiguredClient.ts:227` after keeping `serverLinksStore.addRecentUrl()`.
-- [ ] Delete `serverInfo` relay at `src/createConfiguredClient.ts:235` after keeping `serverLinksStore.setServerInfo()`.
-- [ ] Delete AWNS visual relays at `src/createConfiguredClient.ts:242`, `src/createConfiguredClient.ts:246`, `src/createConfiguredClient.ts:257`, and `src/createConfiguredClient.ts:267` after keeping `worldMapStore` writes.
-- [ ] Delete `visibleCommands` relays at `src/createConfiguredClient.ts:274`, `src/createConfiguredClient.ts:278`, and `src/createConfiguredClient.ts:282` after keeping `inputStore` writes.
-- [ ] Delete or replace `getset` relay at `src/createConfiguredClient.ts:293`.
+- [x] Delete `displayUrl` relay at original `src/createConfiguredClient.ts:227` after keeping `serverLinksStore.addRecentUrl()`.
+- [x] Delete `serverInfo` relay at original `src/createConfiguredClient.ts:235` after keeping `serverLinksStore.setServerInfo()`.
+- [x] Delete AWNS visual relays at original `src/createConfiguredClient.ts:242`, `src/createConfiguredClient.ts:246`, `src/createConfiguredClient.ts:257`, and `src/createConfiguredClient.ts:267` after keeping `worldMapStore` writes.
+- [x] Delete `visibleCommands` relays at original `src/createConfiguredClient.ts:274`, `src/createConfiguredClient.ts:278`, and `src/createConfiguredClient.ts:282` after keeping `inputStore` writes.
+- [x] Delete unused `getset` relay at original `src/createConfiguredClient.ts:293`.
 - [ ] Move `userlist` relay at `src/createConfiguredClient.ts:297` to the userlist/people owner.
 
 ### Current Consumers And Component-Originated Emits
@@ -232,3 +233,40 @@ emitter and no code uses `client` as an event bus.
 - [ ] Remove stale commented `statusbar` client event references at `src/components/statusbar.tsx:46`-`src/components/statusbar.tsx:57`.
 - [ ] Replace or delete orphan `TargetInfo` listeners at `src/components/TargetInfo.tsx:28`-`src/components/TargetInfo.tsx:39`.
 - [ ] Replace `toolbar` `useClientEvent` calls at `src/components/toolbar.tsx:40` and `src/components/toolbar.tsx:42`.
+
+## Fixed-Point Log
+
+### Iteration 1 - `createConfiguredClient` no-consumer and store-owned relays
+
+Slice read:
+- `src/createConfiguredClient.ts`
+- `src/createConfiguredClient.test.ts`
+
+Surfaces:
+- no-consumer GMCP/MCP compatibility relays for unused character/status,
+  afflictions/defences, skill info, core, channel metadata, LiveKit, group,
+  GMCP logging, redirect, room wrong-direction, web push, haptics, and get/set
+  payloads.
+  - Disposition: delete
+  - Owner after cleanup: typed GMCP/MCP package registration remains; no client
+    event bridge remains for these names.
+  - Action: removed only legacy `client.emit(...)` listeners while retaining
+    package registration.
+- store-owned AWNS/server/input relays for display URL, server info, visual map
+  data, and visible commands.
+  - Disposition: delete bridge
+  - Owner after cleanup: `useServerLinksStore`, `useWorldMapStore`, and
+    `useInputStore`.
+  - Action: kept existing store writes and removed duplicate client-bus emits.
+
+Gate results:
+- Pass: `rg -n "McpAwnsGetSet|client\.emit\(\"(statusVars|statusUpdate|status|offer|prompt|statusAffectedBy|statusConditions|statusTimers|afflictionsList|afflictionAdd|afflictionRemove|defencesList|defenceAdd|defenceRemove|skillInfo|corePing|coreGoodbye|channelPlayers|channelStart|channelEnd|livekitToken|livekitLeave|groupInfo|gmcpError|redirectWindow|roomWrongDir|webpushToken|hapticsActuate|hapticsStop|hapticsStatus|hapticsSensorSubscribe|hapticsSensorUnsubscribe|displayUrl|serverInfo|worldLocation|worldSelf|worldUsers|worldTopology|visibleCommands|getset)" src\createConfiguredClient.ts`
+- Pass: `npm run typecheck`
+- Pass: `npm test -- src/createConfiguredClient.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- pending
+
+Next slice:
+- Add/move the first missing state owner for current production consumers.
