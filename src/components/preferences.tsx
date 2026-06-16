@@ -303,6 +303,7 @@ const MidiTab: React.FC = () => {
           type="checkbox"
           checked={state.midi.enabled}
           onChange={handleMidiEnabledChange}
+          aria-describedby="midi-help"
         />
         Enable MIDI
       </label>
@@ -310,7 +311,7 @@ const MidiTab: React.FC = () => {
       <br />
 
       {state.midi.enabled && (
-        <p style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
+        <p id="midi-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
           Device selection and management is available in the MIDI tab when connected to a server.
         </p>
       )}
@@ -332,6 +333,7 @@ const HapticsTab: React.FC = () => {
           type="checkbox"
           checked={state.haptics.enabled}
           onChange={handleHapticsEnabledChange}
+          aria-describedby="haptics-bluetooth-help"
         />
         Enable Haptics
       </label>
@@ -366,7 +368,7 @@ const HapticsTab: React.FC = () => {
             />
           </label>
           <br />
-          <p style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "8px" }}>
+          <p id="haptics-bluetooth-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "8px" }}>
             Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
           </p>
         </div>
@@ -387,6 +389,7 @@ const KeyboardTab: React.FC = () => {
           onChange={(e) =>
             state.setKeyboard({ navigationKeyScheme: e.target.value as NavigationKeyScheme })
           }
+          aria-describedby="keyboard-nav-help"
         >
           <option value="jkli">JKLI (QWERTY right-hand)</option>
           <option value="wasd">WASD (QWERTY left-hand)</option>
@@ -394,7 +397,7 @@ const KeyboardTab: React.FC = () => {
           <option value="dvorak-lh">,OAE (Dvorak left-hand)</option>
         </select>
       </label>
-      <p style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "0.5em" }}>
+      <p id="keyboard-nav-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "0.5em" }}>
         Arrow keys always work in addition to the selected scheme.
       </p>
     </div>
