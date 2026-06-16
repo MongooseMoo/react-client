@@ -292,7 +292,7 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
                   key={session.id}
                   className={`autolog-session-row ${selectedSession?.id === session.id ? "selected" : ""}`}
                 >
-                  <button type="button" className="autolog-session-main" onClick={() => loadSessionEntries(session)}>
+                  <button type="button" className="autolog-session-main" aria-current={selectedSession?.id === session.id ? "true" : undefined} onClick={() => loadSessionEntries(session)}>
                     <span className="autolog-session-title">{session.title}</span>
                     <span className="autolog-session-meta">
                       {formatSessionDate(session.startedAt)} · {getSessionDuration(session)} · {session.lineCount} lines · {formatBytes(session.byteEstimate)}
