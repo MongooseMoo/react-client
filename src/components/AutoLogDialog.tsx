@@ -269,7 +269,7 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
 
           {error && <div className="autolog-dialog-error" role="alert">{error}</div>}
 
-          <div className="autolog-dialog-body">
+          <div className="autolog-dialog-body" aria-busy={isLoading}>
             <section className="autolog-session-list" aria-label="Autolog sessions">
               {sessions.length === 0 && !isLoading && (
                 <p className="autolog-empty">No autolog sessions have been saved.</p>

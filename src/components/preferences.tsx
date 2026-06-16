@@ -148,7 +148,6 @@ const PreviewButton: React.FC = () => {
     if (isPlaying) return; // Extra guard against concurrent calls
     setIsPlaying(true);
     announce("Playing voice preview", "polite");
-    console.log("Preview button clicked");
 
     const speakText = () => {
       if (!isMounted.current) return; // Don't proceed if unmounted
@@ -157,25 +156,15 @@ const PreviewButton: React.FC = () => {
 
       // Find the selected voice
       const voices = speechSynthesis.getVoices();
-      console.log("Available voices:", voices.map(v => v.name));
       const selectedVoice = voices.find(voice => voice.name === state.speech.voice);
-      console.log("Selected voice:", selectedVoice ? selectedVoice.name : "Not found");
       utterance.voice = selectedVoice || null;
 
       utterance.rate = state.speech.rate;
       utterance.pitch = state.speech.pitch;
       utterance.volume = state.speech.volume;
 
-      console.log("Utterance settings:", {
-        voice: utterance.voice ? utterance.voice.name : "Default",
-        rate: utterance.rate,
-        pitch: utterance.pitch,
-        volume: utterance.volume
-      });
-
       utterance.onend = () => {
         if (isMounted.current) {
-          console.log("Speech ended");
           setIsPlaying(false);
           announce("Voice preview finished", "polite");
         }
@@ -193,7 +182,6 @@ const PreviewButton: React.FC = () => {
 
       // Speak the new utterance
       speechSynthesis.speak(utterance);
-      console.log("Speech started");
     };
 
     // Check if voices are loaded
