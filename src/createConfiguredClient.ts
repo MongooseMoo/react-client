@@ -40,6 +40,7 @@ import {
   McpAwnsStatus,
   McpAwnsTimezone,
   McpAwnsVisual,
+  McpWorldMongooseLocation,
   McpNegotiate,
   McpSimpleEdit,
 } from "./mcp/index";
@@ -68,6 +69,35 @@ function syncTimezoneToServer(timezonePackage?: McpAwnsTimezone): void {
     return;
   }
   timezonePackage.sendTimezone({ timezone: getLocalTimezoneIdentifier() });
+}
+
+function syncLocationToServer(locationPackage?: McpWorldMongooseLocation): void {
+  if (!locationPackage) {
+    return;
+  }
+  if (!usePreferences.getState().general.syncLocationToServer) {
+    return;
+  }
+  const geolocation = globalThis.navigator?.geolocation;
+  if (!geolocation?.getCurrentPosition) {
+    return;
+  }
+  geolocation.getCurrentPosition(
+    (position) => {
+      locationPackage.sendLocation({
+        lat: position.coords.latitude,
+        lon: position.coords.longitude,
+      });
+    },
+    (error) => {
+      console.warn("Unable to read browser geolocation for MCP sync", error);
+    },
+    {
+      enableHighAccuracy: false,
+      maximumAge: 300000,
+      timeout: 10000,
+    },
+  );
 }
 
 /**
@@ -133,6 +163,7 @@ export function createConfiguredClient(): MudClient {
   let visualPackage: McpAwnsVisual | undefined;
   let rehashPackage: McpAwnsRehash | undefined;
   let timezonePackage: McpAwnsTimezone | undefined;
+  let locationPackage: McpWorldMongooseLocation | undefined;
 
   for (const PackageConstructor of DEFAULT_MCP_PACKAGES) {
     const mcpPackage = client.registerMcpPackage(PackageConstructor);
@@ -197,6 +228,9 @@ export function createConfiguredClient(): MudClient {
     if (mcpPackage instanceof McpAwnsTimezone) {
       timezonePackage = mcpPackage;
     }
+    if (mcpPackage instanceof McpWorldMongooseLocation) {
+      locationPackage = mcpPackage;
+    }
     if (mcpPackage instanceof McpAwnsStatus) {
       mcpPackage.on("statustext", (text) =>
         useConnectionStore.getState().setStatusText(text),
@@ -204,21 +238,32 @@ export function createConfiguredClient(): MudClient {
     }
   }
 
-  let lastSyncTimezonePreference = usePreferences.getState().general.syncTimezoneToServer;
-  const unsubscribeTimezonePreference = usePreferences.subscribe((state) => {
-    const nextSyncTimezonePreference = state.general.syncTimezoneToServer;
-    if (nextSyncTimezonePreference === lastSyncTimezonePreference) {
-      return;
-    }
-    lastSyncTimezonePreference = nextSyncTimezonePreference;
-    if (nextSyncTimezonePreference && client.connected) {
+  let lastGeneralPreferences = usePreferences.getState().general;
+  const unsubscribeGeneralPreferences = usePreferences.subscribe((state) => {
+    const nextGeneralPreferences = state.general;
+    if (
+      nextGeneralPreferences.syncTimezoneToServer !==
+        lastGeneralPreferences.syncTimezoneToServer &&
+      nextGeneralPreferences.syncTimezoneToServer &&
+      client.connected
+    ) {
       syncTimezoneToServer(timezonePackage);
     }
+    if (
+      nextGeneralPreferences.syncLocationToServer !==
+        lastGeneralPreferences.syncLocationToServer &&
+      nextGeneralPreferences.syncLocationToServer &&
+      client.connected
+    ) {
+      syncLocationToServer(locationPackage);
+    }
+    lastGeneralPreferences = nextGeneralPreferences;
   });
-  client.registerCleanup(unsubscribeTimezonePreference);
+  client.registerCleanup(unsubscribeGeneralPreferences);
 
   negotiatePackage?.on("end", () => {
     syncTimezoneToServer(timezonePackage);
+    syncLocationToServer(locationPackage);
     serverInfoPackage?.requestServerInfo();
     rehashPackage?.requestCommands();
     visualPackage?.requestSelf();

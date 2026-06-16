@@ -27,7 +27,11 @@ const {
       };
     }),
     mockPreferencesState: {
-      general: { localEcho: false, syncTimezoneToServer: true },
+      general: {
+        localEcho: false,
+        syncTimezoneToServer: true,
+        syncLocationToServer: false,
+      },
       midi: { enabled: false },
       sound: { muteInBackground: false, volume: 1 },
       speech: {

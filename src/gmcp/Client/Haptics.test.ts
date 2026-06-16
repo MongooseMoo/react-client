@@ -29,7 +29,11 @@ const { mockHapticsService, mockPreferencesState } = vi.hoisted(() => {
       autoConnect: false,
     },
     midi: { enabled: false },
-    general: { localEcho: false },
+    general: {
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    },
     speech: { autoreadMode: "off", voice: "", rate: 1, pitch: 1, volume: 1 },
     sound: { muteInBackground: false, volume: 1 },
     editor: { autocompleteEnabled: true, accessibilityMode: true },

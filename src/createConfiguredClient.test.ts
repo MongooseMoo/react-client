@@ -22,6 +22,7 @@ vi.mock("cacophony", () => ({
 
 describe("createConfiguredClient", () => {
   let client: MudClient | undefined;
+  const originalGeolocation = globalThis.navigator.geolocation;
 
   afterEach(() => {
     client?.shutdown();
@@ -29,7 +30,15 @@ describe("createConfiguredClient", () => {
     useCharacterStatusStore.getState().reset();
     useChannelHistoryStore.getState().reset();
     useConnectionStore.getState().reset();
-    usePreferences.getState().setGeneral({ localEcho: false, syncTimezoneToServer: true });
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: originalGeolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
     useInputStore.getState().clear();
     useInputStore.getState().resetCommands();
     useItemsStore.getState().reset();
@@ -225,7 +234,11 @@ describe("createConfiguredClient", () => {
   });
 
   it("does not send timezone when syncTimezoneToServer is disabled", () => {
-    usePreferences.getState().setGeneral({ localEcho: false, syncTimezoneToServer: false });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: false,
+      syncLocationToServer: false,
+    });
     client = createConfiguredClient();
     const sent: string[] = [];
     vi.spyOn(client, "send").mockImplementation((line: string) => {
@@ -243,5 +256,79 @@ describe("createConfiguredClient", () => {
     expect(sent.some((line) => line.includes(`#$#dns-com-awns-serverinfo-get ${authKey}`))).toBe(
       true,
     );
+  });
+
+  it("sends browser location when syncLocationToServer is enabled", () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          latitude: 39.7392,
+          longitude: -104.9903,
+        },
+      } as GeolocationPosition);
+    });
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: true,
+    });
+    client = createConfiguredClient();
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+
+    expect(getCurrentPosition).toHaveBeenCalledOnce();
+    expect(
+      sent.some(
+        (line) =>
+          line.startsWith(`#$#world.mongoose.location ${authKey} `) &&
+          line.includes("lat: 39.7392") &&
+          line.includes("lon: -104.9903"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not request browser location when syncLocationToServer is disabled", () => {
+    const getCurrentPosition = vi.fn();
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    client = createConfiguredClient();
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    expect(sent.some((line) => line.includes("#$#world.mongoose.location"))).toBe(false);
   });
 });

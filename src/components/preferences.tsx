@@ -34,6 +34,20 @@ const GeneralTab: React.FC = () => {
         />
         Sync timezone to server
       </label>
+      <br />
+      <label>
+        <input
+          type="checkbox"
+          checked={state.general.syncLocationToServer}
+          onChange={(e) =>
+            state.setGeneral({
+              ...state.general,
+              syncLocationToServer: e.target.checked,
+            })
+          }
+        />
+        Sync browser location to server
+      </label>
     </div>
   );
 };
