@@ -138,7 +138,6 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
           connect={true}
           onDisconnected={() => {
             removeToken(token);
-            client.emit('livekitLeave', token);
           }}
         >
           <SpatialLiveKitAudio client={client} />

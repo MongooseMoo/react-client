@@ -220,7 +220,7 @@ emitter and no code uses `client` as an event bus.
 - [ ] Delete `src/hooks/useClientEvent.ts` after replacing all `useClientEvent(client, ...)` callers.
 - [ ] Replace `GMCPClientMedia` spatial client listeners at `src/gmcp/Client/Media.ts:196`-`src/gmcp/Client/Media.ts:197` and cleanup at `src/gmcp/Client/Media.ts:281`-`src/gmcp/Client/Media.ts:282`.
 - [ ] Replace `audioChat` spatial client listeners at `src/components/audioChat.tsx:77`-`src/components/audioChat.tsx:86`.
-- [ ] Delete `audioChat` component-originated `livekitLeave` emit at `src/components/audioChat.tsx:141`.
+- [x] Delete `audioChat` component-originated `livekitLeave` emit at original `src/components/audioChat.tsx:141`.
 - [ ] Delete `inventoryDataReceived` emits at `src/components/inventory.tsx:33`, `src/components/inventory.tsx:42`, `src/components/inventory.tsx:53`, and `src/components/inventory.tsx:69`.
 - [ ] Replace `inventory` item subscriptions at `src/components/inventory.tsx:79`-`src/components/inventory.tsx:90`.
 - [ ] Replace `RoomInfoDisplay` item subscriptions at `src/components/RoomInfoDisplay.tsx:76`-`src/components/RoomInfoDisplay.tsx:83`.
@@ -263,6 +263,32 @@ Gate results:
 - Pass: `rg -n "McpAwnsGetSet|client\.emit\(\"(statusVars|statusUpdate|status|offer|prompt|statusAffectedBy|statusConditions|statusTimers|afflictionsList|afflictionAdd|afflictionRemove|defencesList|defenceAdd|defenceRemove|skillInfo|corePing|coreGoodbye|channelPlayers|channelStart|channelEnd|livekitToken|livekitLeave|groupInfo|gmcpError|redirectWindow|roomWrongDir|webpushToken|hapticsActuate|hapticsStop|hapticsStatus|hapticsSensorSubscribe|hapticsSensorUnsubscribe|displayUrl|serverInfo|worldLocation|worldSelf|worldUsers|worldTopology|visibleCommands|getset)" src\createConfiguredClient.ts`
 - Pass: `npm run typecheck`
 - Pass: `npm test -- src/createConfiguredClient.test.ts`
+- Pass: `git diff --check`
+
+Commit:
+- `a863e47 Remove unused client event relays`
+
+Next slice:
+- Add/move the first missing state owner for current production consumers.
+
+### Iteration 2 - `audioChat` duplicate LiveKit leave emit
+
+Slice read:
+- `src/components/audioChat.tsx`
+- `src/stores/liveKitStore.ts`
+- `src/gmcp/Comm/LiveKit.ts`
+
+Surfaces:
+- `client.emit('livekitLeave', token)` from the LiveKit disconnect callback.
+  - Disposition: delete
+  - Owner after cleanup: `useLiveKitStore.removeToken()` for local disconnects;
+    `GMCPCommLiveKit` for protocol room-leave messages.
+  - Action: removed the duplicate component-originated client-bus emit after
+    confirming the callback already removes the token from the store.
+
+Gate results:
+- Pass: `rg -n "livekitLeave" src --glob "!src/**/*.test.ts" --glob "!src/**/*.test.tsx"`
+- Pass: `npm run typecheck`
 - Pass: `git diff --check`
 
 Commit:
