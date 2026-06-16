@@ -78,9 +78,9 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
       className="preferences-dialog"
       ref={dialogRef}
       tabIndex={-1}
-      aria-label="Preferences"
+      aria-labelledby="preferences-dialog-title"
     >
-      <h1 style={{
+      <h1 id="preferences-dialog-title" style={{
         color: "white",
         textAlign: "center",
         fontSize: "1.5em",
