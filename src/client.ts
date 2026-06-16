@@ -69,6 +69,7 @@ class MudClient {
   private _autosay: boolean = false;
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
+  private cleanupCallbacks: Array<() => void> = [];
 
   get autosay(): boolean {
     return this._autosay;
@@ -247,6 +248,10 @@ class MudClient {
     }
   }
 
+  registerCleanup(callback: () => void): void {
+    this.cleanupCallbacks.push(callback);
+  }
+
   private cleanupConnection(): void {
     if (this.connectionCleanupComplete) return;
     this.connectionCleanupComplete = true;
@@ -345,6 +350,9 @@ An MCP message consists of three parts: the name of the message, the authenticat
   shutdown() {
     if (this.shutdownComplete) return;
     this.shutdownComplete = true;
+    for (const callback of this.cleanupCallbacks.splice(0)) {
+      callback();
+    }
 
     this.mcpSession.shutdown();
     this.gmcp.shutdown();

@@ -4,7 +4,7 @@ import { AutoreadMode, usePreferences } from "./preferencesStore";
 describe("preferencesStore", () => {
   beforeEach(() => {
     // Reset to known defaults between tests.
-    usePreferences.getState().setGeneral({ localEcho: false });
+    usePreferences.getState().setGeneral({ localEcho: false, syncTimezoneToServer: true });
     usePreferences.getState().setSound({ muteInBackground: false, volume: 1.0 });
     usePreferences.getState().setMidi({ enabled: false });
     localStorage.removeItem("preferences");
@@ -12,6 +12,7 @@ describe("preferencesStore", () => {
 
   it("exposes default preferences", () => {
     expect(usePreferences.getState().general.localEcho).toBe(false);
+    expect(usePreferences.getState().general.syncTimezoneToServer).toBe(true);
     expect(usePreferences.getState().speech.autoreadMode).toBe(AutoreadMode.Off);
   });
 
@@ -35,11 +36,12 @@ describe("preferencesStore", () => {
     // localStorage is a no-op mock in the test setup, so assert on the write.
     const setItem = vi.mocked(localStorage.setItem);
     setItem.mockClear();
-    usePreferences.getState().setGeneral({ localEcho: true });
+    usePreferences.getState().setGeneral({ localEcho: true, syncTimezoneToServer: false });
     expect(setItem).toHaveBeenCalledWith("preferences", expect.any(String));
     const lastCall = setItem.mock.calls.at(-1);
     const stored = JSON.parse(lastCall?.[1] as string);
     expect(stored.general.localEcho).toBe(true);
+    expect(stored.general.syncTimezoneToServer).toBe(false);
     // action functions are not serialized by JSON.stringify
     expect(stored.setGeneral).toBeUndefined();
   });

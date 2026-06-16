@@ -43,6 +43,7 @@ import {
   McpNegotiate,
   McpSimpleEdit,
 } from "./mcp/index";
+import { usePreferences } from "./stores/preferencesStore";
 import { useInputStore } from "./stores/inputStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
@@ -55,12 +56,18 @@ marked.setOptions({
   gfm: true,
 });
 
-function getLocalTimezoneAbbreviation(): string {
-  const timeZoneName =
-    new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
-      .formatToParts(new Date())
-      .find((part) => part.type === "timeZoneName")?.value ?? "";
-  return timeZoneName || "UTC";
+function getLocalTimezoneIdentifier(): string {
+  return new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function syncTimezoneToServer(timezonePackage?: McpAwnsTimezone): void {
+  if (!timezonePackage) {
+    return;
+  }
+  if (!usePreferences.getState().general.syncTimezoneToServer) {
+    return;
+  }
+  timezonePackage.sendTimezone({ timezone: getLocalTimezoneIdentifier() });
 }
 
 /**
@@ -197,8 +204,21 @@ export function createConfiguredClient(): MudClient {
     }
   }
 
+  let lastSyncTimezonePreference = usePreferences.getState().general.syncTimezoneToServer;
+  const unsubscribeTimezonePreference = usePreferences.subscribe((state) => {
+    const nextSyncTimezonePreference = state.general.syncTimezoneToServer;
+    if (nextSyncTimezonePreference === lastSyncTimezonePreference) {
+      return;
+    }
+    lastSyncTimezonePreference = nextSyncTimezonePreference;
+    if (nextSyncTimezonePreference && client.connected) {
+      syncTimezoneToServer(timezonePackage);
+    }
+  });
+  client.registerCleanup(unsubscribeTimezonePreference);
+
   negotiatePackage?.on("end", () => {
-    timezonePackage?.sendTimezone({ timezone: getLocalTimezoneAbbreviation() });
+    syncTimezoneToServer(timezonePackage);
     serverInfoPackage?.requestServerInfo();
     rehashPackage?.requestCommands();
     visualPackage?.requestSelf();
