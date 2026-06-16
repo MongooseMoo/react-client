@@ -53,8 +53,9 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
         peerServiceRef.current?.destroy();
         peerServiceRef.current = null;
 
-        clientRef.current?.fileTransferManager?.cleanup();
-        clientRef.current?.webRTCService?.cleanup();
+        const client = clientRef.current;
+        client?.shutdown();
+        client?.webRTCService?.cleanup();
         clientRef.current = null;
 
         streamRef.current?.dispose();
