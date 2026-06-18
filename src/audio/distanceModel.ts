@@ -16,7 +16,11 @@ export type DistanceModel = {
 };
 
 export const SPATIAL_DISTANCE_MODEL: DistanceModel = {
-  refDistance: 4,
+  // refDistance is the radius of full volume. MOO rooms are ~10m across (centred
+  // ±5m), and players move ~1m per `move <dir>` step, so a 4m reference radius left
+  // almost the whole room at full volume (no audible falloff when walking). 1m makes
+  // a single step across the room clearly change the level. (2026-06-18)
+  refDistance: 1,
   rolloffFactor: 0.5,
   maxDistance: 200,
 };

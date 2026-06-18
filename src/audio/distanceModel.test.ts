@@ -10,10 +10,10 @@ describe('inverseDistanceGain', () => {
   });
 
   it('matches the Web Audio inverse model beyond the reference distance', () => {
-    // refDistance 4, rolloff 0.5 → 4 / (4 + 0.5 * (58 - 4)) = 4 / 31 ≈ 0.129 (~ -18 dB),
-    // the value the panner-tuning commit cites for a ~58 m source.
-    expect(inverseDistanceGain(58)).toBeCloseTo(4 / 31, 6);
-    expect(inverseDistanceGain(8)).toBeCloseTo(4 / 6, 6);
+    // refDistance 1, rolloff 0.5 → 1 / (1 + 0.5 * (58 - 1)) = 1 / 29.5 ≈ 0.034 (~ -29 dB)
+    // for a far source; 1 / (1 + 0.5 * (8 - 1)) = 1 / 4.5 ≈ 0.222 a few metres out.
+    expect(inverseDistanceGain(58)).toBeCloseTo(1 / 29.5, 6);
+    expect(inverseDistanceGain(8)).toBeCloseTo(1 / 4.5, 6);
   });
 
   it('falls off monotonically with distance', () => {
