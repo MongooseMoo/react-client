@@ -579,7 +579,8 @@ describe('GMCPClientMedia', () => {
 
     expect(setPosition).toHaveBeenCalledWith([0, 0, 10]);
     expect(renderer.setDistanceGain).toHaveBeenCalledOnce();
-    expect(renderer.setDistanceGain.mock.calls[0][0]).toBeCloseTo(4 / 7);
+    // refDistance 1, rolloff 0.5 → 1 / (1 + 0.5 * (10 - 1)) = 1 / 5.5 = 2 / 11.
+    expect(renderer.setDistanceGain.mock.calls[0][0]).toBeCloseTo(2 / 11);
   });
 
   it('preserves omitted listener position and orientation fields', () => {
