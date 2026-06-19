@@ -3,31 +3,42 @@ import { encodeMonoToFoaSN3D, type FoaDecoder } from 'cacophony';
 
 import { sourceBearing, type Vec3 } from './foaBearing';
 
+/** One encoder bank: four ACN [W,Y,Z,X] gains fed by one signal, aimed at the
+ *  source bearing plus a fixed azimuth offset (0 for mono; ±half-width for the
+ *  two stereo channels). */
+interface EncoderBank {
+  readonly gains: GainNode[];
+  readonly azOffset: number;
+}
+
 /**
  * Positional first-order-ambisonic renderer — the physically-correct,
  * constant-gain path cacophony's own docs prescribe:
  *
- *   playback → mono downmix → [gW,gY,gZ,gX] encode gains → merge(4) →
- *   FoaDecoder (SN3D/ACN → binaural) → level gain → output
+ *   playback → [mono downmix | L/R split] → per-channel [W,Y,Z,X] encode gains
+ *            → merge(4) → FoaDecoder (SN3D/ACN → binaural) → level → output
  *
- * The encode gains come from {@link encodeMonoToFoaSN3D} (W=1,
- * Y=cosφ·sinθ, Z=sinφ, X=cosφ·cosθ) for the source's bearing **relative to the
- * listener's head**, so the source sits at a real spot: turn and it swings
- * around you, walk and it changes bearing + level. This replaces the dormant
- * perceptual `StereoToFoaUpmixer` (`createStereoToBFormatNode`), whose
- * frequency-banded, coherence-gated, non-constant-gain mix is the documented
- * source of the level loss + crackle on a plain stereo stream.
+ * The encode gains come from {@link encodeMonoToFoaSN3D} (W=1, Y=cosφ·sinθ,
+ * Z=sinφ, X=cosφ·cosθ) for the source's bearing **relative to the listener's
+ * head**, so the source sits at a real spot: turn and it swings around you, walk
+ * and it changes bearing + level. This replaces the dormant perceptual
+ * `StereoToFoaUpmixer`, whose non-constant-gain mix is the documented source of
+ * the level loss + crackle on a plain stereo stream.
  *
- * v1 collapses a stereo source to mono — a positioned object is a point emitter,
- * and a point has one direction. Preserving stereo *width* (encode L/R at
- * azimuth ± a spread) is a clean later extension over this same graph.
+ * Two modes, selected by `stereoWidthRad`:
+ *  - **0 (mono point):** the stream is downmixed to one signal encoded at the
+ *    bearing — a crisp point source.
+ *  - **>0 (stereo field):** the stream's left/right channels are encoded as two
+ *    sources at `bearing ± stereoWidthRad/2`, so the program's stereo width
+ *    survives *and* the whole image is anchored at a spot in the world (the
+ *    "stereo signal in the 3D HRTF world" goal). Ambisonics is linear, so the
+ *    two encoded fields sum cleanly at the FOA merger.
  */
 export class PositionalFoaRenderer {
   private attachedPlayback?: Playback;
-  /** Mono downmix feeding the four encode gains. */
-  private monoGain?: GainNode;
-  /** Encode gains in ACN order [W, Y, Z, X]. */
-  private encodeGains: GainNode[] = [];
+  /** Mono downmix gain or stereo channel splitter feeding the encoder banks. */
+  private inputNode?: AudioNode;
+  private banks: EncoderBank[] = [];
   /** Post-decode level = makeup × distance attenuation. */
   private levelGain?: GainNode;
   private makeup = 1;
@@ -36,11 +47,17 @@ export class PositionalFoaRenderer {
   private constructor(
     private readonly cacophony: Cacophony,
     private readonly decoder: FoaDecoder,
+    private readonly stereoWidthRad: number,
   ) {}
 
-  static async create(cacophony: Cacophony, makeup = 1): Promise<PositionalFoaRenderer> {
+  static async create(
+    cacophony: Cacophony,
+    makeup = 1,
+    stereoWidthRad = 0,
+  ): Promise<PositionalFoaRenderer> {
     const decoder = await cacophony.createFoaDecoder();
-    const renderer = new PositionalFoaRenderer(cacophony, decoder);
+    const width = Number.isFinite(stereoWidthRad) && stereoWidthRad > 0 ? stereoWidthRad : 0;
+    const renderer = new PositionalFoaRenderer(cacophony, decoder, width);
     renderer.makeup = Number.isFinite(makeup) && makeup > 0 ? makeup : 1;
     return renderer;
   }
@@ -49,50 +66,78 @@ export class PositionalFoaRenderer {
     return this.cacophony.context as unknown as BaseAudioContext;
   }
 
+  private node(n: unknown): CacophonyAudioNode {
+    return n as unknown as CacophonyAudioNode;
+  }
+
+  /** Create one bank of four encode gains feeding `merger` at ACN indices 0..3. */
+  private buildBank(ctx: BaseAudioContext, merger: ChannelMergerNode, azOffset: number): EncoderBank {
+    const gains: GainNode[] = [];
+    for (let i = 0; i < 4; i++) {
+      const g = ctx.createGain();
+      g.gain.value = i === 0 ? 1 : 0; // W=1 until setBearing runs
+      this.node(g).connect(this.node(merger), 0, i);
+      gains.push(g);
+    }
+    return { gains, azOffset };
+  }
+
   /**
    * Wire the playback through the encode → decode graph, routing binaural output
    * to `outputTarget` (an effect bus input) or master when omitted. Mirrors
-   * AmbisonicRenderer.attachPlayback's contract so the two are interchangeable
-   * in MediaService.
+   * AmbisonicRenderer.attachPlayback's contract.
    */
   attachPlayback(playback: Playback, outputTarget?: CacophonyAudioNode): void {
     this.attachedPlayback = playback;
     playback.disconnect();
 
     const ctx = this.context;
-
-    // Force a mono downmix: a positioned point source has a single direction.
-    const monoGain = ctx.createGain();
-    monoGain.channelCount = 1;
-    monoGain.channelCountMode = 'explicit';
-    monoGain.channelInterpretation = 'speakers';
-    this.monoGain = monoGain;
-
     const merger = ctx.createChannelMerger(4);
-    this.encodeGains = [];
-    for (let i = 0; i < 4; i++) {
-      const g = ctx.createGain();
-      g.gain.value = i === 0 ? 1 : 0; // start front-ish (W=1), updated by setBearing
-      (monoGain as unknown as CacophonyAudioNode).connect(g as unknown as CacophonyAudioNode);
-      (g as unknown as CacophonyAudioNode).connect(merger as unknown as CacophonyAudioNode, 0, i);
-      this.encodeGains.push(g);
+    this.banks = [];
+
+    if (this.stereoWidthRad > 0) {
+      // Stereo field: split L/R, encode each at ± half the angular width.
+      const splitter = ctx.createChannelSplitter(2);
+      this.node(playback).connect(this.node(splitter));
+      const half = this.stereoWidthRad / 2;
+      for (const [channel, sign] of [
+        [0, 1],
+        [1, -1],
+      ] as const) {
+        const bank = this.buildBank(ctx, merger, sign * half);
+        for (const g of bank.gains) {
+          this.node(splitter).connect(this.node(g), channel);
+        }
+        this.banks.push(bank);
+      }
+      this.inputNode = splitter;
+    } else {
+      // Mono point: force a single-channel downmix, encode at the bearing.
+      const monoGain = ctx.createGain();
+      monoGain.channelCount = 1;
+      monoGain.channelCountMode = 'explicit';
+      monoGain.channelInterpretation = 'speakers';
+      this.node(playback).connect(this.node(monoGain));
+      const bank = this.buildBank(ctx, merger, 0);
+      for (const g of bank.gains) {
+        this.node(monoGain).connect(this.node(g));
+      }
+      this.banks.push(bank);
+      this.inputNode = monoGain;
     }
 
     const levelGain = ctx.createGain();
     levelGain.gain.value = this.makeup;
     this.levelGain = levelGain;
 
-    playback.connect(monoGain as unknown as CacophonyAudioNode);
-    (merger as unknown as CacophonyAudioNode).connect(this.decoder.input);
-    this.decoder.output.connect(levelGain as unknown as CacophonyAudioNode);
-    (levelGain as unknown as CacophonyAudioNode).connect(
-      outputTarget ?? this.cacophony.globalGainNode,
-    );
+    this.node(merger).connect(this.decoder.input);
+    this.decoder.output.connect(this.node(levelGain));
+    this.node(levelGain).connect(outputTarget ?? this.cacophony.globalGainNode);
   }
 
   /**
    * Aim the source from the listener at `listenerPos`/`listenerForward` toward
-   * `sourcePos`, updating the four encode gains. Safe before attach (no-op).
+   * `sourcePos`, updating every encoder bank. Safe before attach (no-op).
    */
   setBearingFromPositions(
     listenerPos: Vec3 | null | undefined,
@@ -103,15 +148,14 @@ export class PositionalFoaRenderer {
     this.setBearing(azimuth, elevation);
   }
 
-  /** Set the encode gains directly from an azimuth (CCW, +left) and elevation (+up). */
+  /** Set every bank's encode gains from an azimuth (CCW, +left) and elevation (+up). */
   setBearing(azimuthRad: number, elevationRad: number): void {
-    if (this.encodeGains.length !== 4) {
-      return;
-    }
-    const coeffs = encodeMonoToFoaSN3D(1, azimuthRad, elevationRad); // [W, Y, Z, X]
-    for (let i = 0; i < 4; i++) {
-      const v = coeffs[i];
-      this.encodeGains[i].gain.value = Number.isFinite(v) ? v : i === 0 ? 1 : 0;
+    for (const bank of this.banks) {
+      const coeffs = encodeMonoToFoaSN3D(1, azimuthRad + bank.azOffset, elevationRad); // [W,Y,Z,X]
+      for (let i = 0; i < 4; i++) {
+        const v = coeffs[i];
+        bank.gains[i].gain.value = Number.isFinite(v) ? v : i === 0 ? 1 : 0;
+      }
     }
   }
 
@@ -137,12 +181,14 @@ export class PositionalFoaRenderer {
     this.decoder.output.disconnect();
     this.decoder.input.disconnect();
     this.levelGain?.disconnect();
-    for (const g of this.encodeGains) {
-      g.disconnect();
+    for (const bank of this.banks) {
+      for (const g of bank.gains) {
+        g.disconnect();
+      }
     }
-    this.monoGain?.disconnect();
-    this.encodeGains = [];
-    this.monoGain = undefined;
+    this.inputNode?.disconnect();
+    this.banks = [];
+    this.inputNode = undefined;
     this.levelGain = undefined;
     if (this.attachedPlayback) {
       this.attachedPlayback.disconnect();

@@ -1,13 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockAmbisonicRendererCreate, mockCreateSound } = vi.hoisted(() => ({
-  mockAmbisonicRendererCreate: vi.fn(),
-  mockCreateSound: vi.fn(),
-}));
+const { mockAmbisonicRendererCreate, mockPositionalFoaRendererCreate, mockCreateSound } =
+  vi.hoisted(() => ({
+    mockAmbisonicRendererCreate: vi.fn(),
+    mockPositionalFoaRendererCreate: vi.fn(),
+    mockCreateSound: vi.fn(),
+  }));
 
 vi.mock('../../audio/AmbisonicRenderer', () => ({
   AmbisonicRenderer: {
     create: mockAmbisonicRendererCreate,
+  },
+}));
+
+vi.mock('../../audio/PositionalFoaRenderer', () => ({
+  PositionalFoaRenderer: {
+    create: mockPositionalFoaRendererCreate,
   },
 }));
 
@@ -178,6 +186,13 @@ describe('GMCPClientMedia', () => {
       cleanup: vi.fn(),
       setRotationMatrixFromYaw: vi.fn(),
       setDistanceGain: vi.fn(),
+    });
+    mockPositionalFoaRendererCreate.mockResolvedValue({
+      attachPlayback: vi.fn(),
+      cleanup: vi.fn(),
+      setBearingFromPositions: vi.fn(),
+      setDistanceGain: vi.fn(),
+      setMakeup: vi.fn(),
     });
     client = createMockClient();
     handler = new GMCPClientMedia(client as never);
@@ -468,6 +483,10 @@ describe('GMCPClientMedia', () => {
 
     sound.trigger('ended');
 
+    // Cleanup is deferred one macrotask so cacophony's own end-of-playback
+    // teardown runs before we free the sound; let that tick elapse.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     expect(sound.cleanup).toHaveBeenCalledOnce();
     expect(handler.sounds).toEqual({});
   });
@@ -524,7 +543,7 @@ describe('GMCPClientMedia', () => {
     });
   });
 
-  it('routes ambisonic upmix playback through the renderer and follows listener yaw', async () => {
+  it('routes 2-channel ambisonic upmix through the positional FOA renderer', async () => {
     const sound = createMockSound('https://media.example/show.ogg');
     mockCreateSound.mockResolvedValue(sound);
 
@@ -536,29 +555,35 @@ describe('GMCPClientMedia', () => {
       volume: 50,
     } as GMCPMessageClientMediaPlay);
 
-    const renderer = await mockAmbisonicRendererCreate.mock.results[0].value;
-    expect(mockAmbisonicRendererCreate).toHaveBeenCalledWith(client.media.cacophony, 2);
+    // 2 channels (default) -> positional FOA path (makeup 3, stereo width 0.6),
+    // NOT the AmbisonicRenderer stereo-upmix path.
+    const renderer = await mockPositionalFoaRendererCreate.mock.results[0].value;
+    expect(mockPositionalFoaRendererCreate).toHaveBeenCalledWith(client.media.cacophony, 3, 0.6);
+    expect(mockAmbisonicRendererCreate).not.toHaveBeenCalled();
     expect(renderer.attachPlayback).toHaveBeenCalledWith(sound.playbacks[0], undefined);
-    expect(renderer.setRotationMatrixFromYaw).toHaveBeenCalledWith(0);
+    expect(renderer.setBearingFromPositions).toHaveBeenCalled();
 
+    const bearingCalls = renderer.setBearingFromPositions.mock.calls.length;
     handler.handleListenerOrientation({
       forward: [1, 0, 0],
     } as GMCPMessageClientMediaListenerOrientation);
 
-    expect(renderer.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(Math.PI / 2);
+    // Orientation re-aims the source — positional FOA bakes head-rotation into the bearing.
+    expect(renderer.setBearingFromPositions.mock.calls.length).toBeGreaterThan(bearingCalls);
 
     handler.handleStop({ key: 'show-1' } as GMCPMessageClientMediaStop);
     expect(renderer.cleanup).toHaveBeenCalledOnce();
   });
 
-  it('attenuates positioned ambisonic playback when Cacophony stores no stereo position', async () => {
+  it('attenuates a positioned 2-channel ambisonic source via the positional renderer', async () => {
     const renderer = {
       attachPlayback: vi.fn(),
       cleanup: vi.fn(),
-      setRotationMatrixFromYaw: vi.fn(),
+      setBearingFromPositions: vi.fn(),
       setDistanceGain: vi.fn(),
+      setMakeup: vi.fn(),
     };
-    mockAmbisonicRendererCreate.mockResolvedValue(renderer);
+    mockPositionalFoaRendererCreate.mockResolvedValue(renderer);
     const sound = createMockSound('https://media.example/show.ogg');
     const setPosition = vi.fn();
     Object.defineProperty(sound, 'position', {
@@ -578,7 +603,7 @@ describe('GMCPClientMedia', () => {
     } as GMCPMessageClientMediaPlay);
 
     expect(setPosition).toHaveBeenCalledWith([0, 0, 10]);
-    expect(renderer.setDistanceGain).toHaveBeenCalledOnce();
+    expect(renderer.setDistanceGain).toHaveBeenCalled();
     // refDistance 1, rolloff 0.5 → 1 / (1 + 0.5 * (10 - 1)) = 1 / 5.5 = 2 / 11.
     expect(renderer.setDistanceGain.mock.calls[0][0]).toBeCloseTo(2 / 11);
   });
@@ -628,6 +653,7 @@ describe('GMCPClientMedia', () => {
     mockCreateSound.mockResolvedValue(sound);
 
     await handler.handlePlay({
+      channels: 4,
       key: 'show-1',
       name: 'show.ogg',
       type: 'music',

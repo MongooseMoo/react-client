@@ -33,6 +33,7 @@ function plainNode() {
 function makeHarness() {
   const gains: ReturnType<typeof gainNode>[] = [];
   const merger = plainNode();
+  const splitter = plainNode();
   const decoder = { input: plainNode(), output: plainNode() };
   const globalGainNode = plainNode();
   const context = {
@@ -42,6 +43,7 @@ function makeHarness() {
       return g;
     }),
     createChannelMerger: vi.fn(() => merger),
+    createChannelSplitter: vi.fn(() => splitter),
   };
   const cacophony = {
     context,
@@ -49,7 +51,7 @@ function makeHarness() {
     createFoaDecoder: vi.fn().mockResolvedValue(decoder),
   };
   const playback = plainNode();
-  return { gains, merger, decoder, globalGainNode, context, cacophony, playback };
+  return { gains, merger, splitter, decoder, globalGainNode, context, cacophony, playback };
 }
 
 describe('PositionalFoaRenderer', () => {
@@ -151,5 +153,59 @@ describe('PositionalFoaRenderer', () => {
     const r = await PositionalFoaRenderer.create(h.cacophony as any);
     expect(() => r.setBearing(1, 0.2)).not.toThrow();
     expect(() => r.setDistanceGain(0.5)).not.toThrow();
+  });
+
+  describe('stereo-field mode (stereoWidthRad > 0)', () => {
+    it('splits L/R into two encoder banks feeding the merger', async () => {
+      const h = makeHarness();
+      const r = await PositionalFoaRenderer.create(h.cacophony as any, 1, Math.PI / 2);
+      r.attachPlayback(h.playback as any);
+
+      expect(h.context.createChannelSplitter).toHaveBeenCalledWith(2);
+      // No mono downmix gain: gains are 4 (L) + 4 (R) + 1 (level) = 9.
+      expect(h.gains).toHaveLength(9);
+      expect(h.playback.connect).toHaveBeenCalledWith(h.splitter);
+
+      const left = h.gains.slice(0, 4);
+      const right = h.gains.slice(4, 8);
+      // L bank reads splitter channel 0, R bank channel 1; each into merger ACN index.
+      for (const [i, g] of left.entries()) {
+        expect(h.splitter.connect).toHaveBeenCalledWith(g, 0);
+        expect(g.connect).toHaveBeenCalledWith(h.merger, 0, i);
+      }
+      for (const [i, g] of right.entries()) {
+        expect(h.splitter.connect).toHaveBeenCalledWith(g, 1);
+        expect(g.connect).toHaveBeenCalledWith(h.merger, 0, i);
+      }
+      const level = h.gains[8];
+      expect(h.decoder.output.connect).toHaveBeenCalledWith(level);
+      expect(level.connect).toHaveBeenCalledWith(h.globalGainNode);
+    });
+
+    it('encodes L to the left and R to the right of the bearing', async () => {
+      const h = makeHarness();
+      // width = π/2 → half = π/4; L at +π/4 (left), R at −π/4 (right).
+      const r = await PositionalFoaRenderer.create(h.cacophony as any, 1, Math.PI / 2);
+      r.attachPlayback(h.playback as any);
+
+      r.setBearing(0, 0);
+      const SQRT_HALF = Math.SQRT1_2; // cos(π/4) = sin(π/4)
+      // L bank [W,Y,Z,X] = [1, +sin(π/4), 0, cos(π/4)]
+      expect(h.gains[0].gain.value).toBeCloseTo(1, 9); // W
+      expect(h.gains[1].gain.value).toBeCloseTo(SQRT_HALF, 9); // Y > 0 → left
+      expect(h.gains[2].gain.value).toBeCloseTo(0, 9); // Z
+      expect(h.gains[3].gain.value).toBeCloseTo(SQRT_HALF, 9); // X
+      // R bank [W,Y,Z,X] = [1, −sin(π/4), 0, cos(π/4)]
+      expect(h.gains[4].gain.value).toBeCloseTo(1, 9); // W
+      expect(h.gains[5].gain.value).toBeCloseTo(-SQRT_HALF, 9); // Y < 0 → right
+      expect(h.gains[7].gain.value).toBeCloseTo(SQRT_HALF, 9); // X
+    });
+
+    it('does not create a channel splitter in mono mode', async () => {
+      const h = makeHarness();
+      const r = await PositionalFoaRenderer.create(h.cacophony as any); // width 0
+      r.attachPlayback(h.playback as any);
+      expect(h.context.createChannelSplitter).not.toHaveBeenCalled();
+    });
   });
 });

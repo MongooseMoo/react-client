@@ -20,8 +20,13 @@ type CacophonySoundKind = NonNullable<Parameters<Cacophony['createSound']>[1]>;
 const CACOPHONY_BUFFER = 'buffer' satisfies CacophonySoundKind;
 const CACOPHONY_HTML = 'html' satisfies CacophonySoundKind;
 
-/** Constant makeup gain restoring the clean positional FOA decode to a useful level. Tune by ear. */
-const POSITIONAL_FOA_MAKEUP = 1;
+/** Constant makeup gain restoring the clean positional FOA decode to a useful level. Tune by ear.
+ *  The SN3D encode + SH-HRIR binaural decode lands well below unity, so a positioned source is
+ *  noticeably quiet even at distance 0 (live: peak ~30% at makeup 1), so ~3 (~+9.5 dB) targets a
+ *  near-unity peak. Tune down if it clips; the master bus limiter should catch occasional peaks. */
+const POSITIONAL_FOA_MAKEUP = 3;
+/** Angular width (radians) of a stereo world source: L/R are encoded at ±half this around the bearing. */
+const POSITIONAL_FOA_STEREO_WIDTH_RAD = 0.6;
 
 export interface ClientMediaLoadPayload {
   readonly url?: string;
@@ -332,7 +337,9 @@ export class MediaService {
           await this.configureAmbisonicPlayback(sound, playback, inputChannels, target);
         } else {
           // Mono/stereo world object: physically-correct positional encode (clean path).
-          await this.configurePositionalFoa(sound, playback, target);
+          // Stereo content keeps its width (L/R spread); mono stays a point.
+          const width = inputChannels >= 2 ? POSITIONAL_FOA_STEREO_WIDTH_RAD : 0;
+          await this.configurePositionalFoa(sound, playback, width, target);
         }
       }
     }
@@ -369,7 +376,8 @@ export class MediaService {
         if (inputChannels === 4) {
           this.configureAmbisonicPlayback(sound, playback, inputChannels).catch(console.error);
         } else {
-          this.configurePositionalFoa(sound, playback).catch(console.error);
+          const width = inputChannels >= 2 ? POSITIONAL_FOA_STEREO_WIDTH_RAD : 0;
+          this.configurePositionalFoa(sound, playback, width).catch(console.error);
         }
       } else if (data.upmix && data.upmix !== 'ambisonic') {
         this.cleanupUpmix(sound);
@@ -630,9 +638,16 @@ export class MediaService {
     let unsubscribe: (() => void) | undefined;
     unsubscribe = sound.on('ended', () => {
       unsubscribe?.();
-      if (this.sounds[key] === sound) {
-        this.releaseSound(sound, key);
-      }
+      // Defer cleanup one macrotask. Cacophony's own end-of-playback teardown
+      // (AudioBufferSourceNode.onended -> _runLoopEnded -> stop()) runs in the
+      // same 'ended' turn; if we cleanup() synchronously here, the sound is
+      // marked cleaned and that internal stop() throws "Cannot stop a sound that
+      // has been cleaned up". Letting cacophony finish first avoids the race.
+      setTimeout(() => {
+        if (this.sounds[key] === sound) {
+          this.releaseSound(sound, key);
+        }
+      }, 0);
     });
   }
 
@@ -705,12 +720,17 @@ export class MediaService {
   private async configurePositionalFoa(
     sound: ExtendedSound,
     playback: Playback,
+    stereoWidthRad: number,
     outputTarget?: CacophonyAudioNode,
   ): Promise<void> {
     this.cleanupUpmix(sound);
     let renderer: PositionalFoaRenderer;
     try {
-      renderer = await PositionalFoaRenderer.create(this.cacophony, POSITIONAL_FOA_MAKEUP);
+      renderer = await PositionalFoaRenderer.create(
+        this.cacophony,
+        POSITIONAL_FOA_MAKEUP,
+        stereoWidthRad,
+      );
     } catch (error) {
       console.warn('Positional FOA renderer unavailable', {
         error,
