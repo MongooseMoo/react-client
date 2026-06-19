@@ -8,6 +8,7 @@ import {
 
 import { usePreferences } from '../stores/preferencesStore';
 import { AmbisonicRenderer } from './AmbisonicRenderer';
+import { PositionalFoaRenderer } from './PositionalFoaRenderer';
 import { distanceBetween, inverseDistanceGain, SPATIAL_DISTANCE_MODEL } from './distanceModel';
 import { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
@@ -18,6 +19,9 @@ const CORS_PROXY = 'https://mongoose.world:9080/?url=';
 type CacophonySoundKind = NonNullable<Parameters<Cacophony['createSound']>[1]>;
 const CACOPHONY_BUFFER = 'buffer' satisfies CacophonySoundKind;
 const CACOPHONY_HTML = 'html' satisfies CacophonySoundKind;
+
+/** Constant makeup gain restoring the clean positional FOA decode to a useful level. Tune by ear. */
+const POSITIONAL_FOA_MAKEUP = 1;
 
 export interface ClientMediaLoadPayload {
   readonly url?: string;
@@ -120,6 +124,7 @@ export interface ClientMediaListenerPositionPayload {
 
 export interface ExtendedSound extends Sound {
   ambisonicRenderer?: AmbisonicRenderer;
+  positionalFoa?: PositionalFoaRenderer;
   inputChannels?: number;
   mediaPosition?: Position;
   priority?: number;
@@ -190,6 +195,7 @@ export class MediaService {
       this.cacophony.listenerPosition = position;
       for (const sound of this.allSounds) {
         this.updateAmbisonicDistance(sound);
+        this.updatePositionalSpatial(sound);
       }
     }
   }
@@ -218,6 +224,9 @@ export class MediaService {
       this.cacophony.listenerUpOrientation = orientation.up;
     }
     this.syncAmbisonicRendererYaw();
+    for (const sound of this.allSounds) {
+      this.updatePositionalSpatial(sound);
+    }
   }
 
   setChain(data: ClientMediaChainPayload): Promise<void> {
@@ -318,7 +327,13 @@ export class MediaService {
       if (data.upmix === 'ambisonic') {
         const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
         const target = await this.resolveAmbisonicTarget(sound, soundKey, data);
-        await this.configureAmbisonicPlayback(sound, playback, inputChannels, target);
+        if (inputChannels === 4) {
+          // True 4-channel FOA content: decode + head-rotate the recorded field.
+          await this.configureAmbisonicPlayback(sound, playback, inputChannels, target);
+        } else {
+          // Mono/stereo world object: physically-correct positional encode (clean path).
+          await this.configurePositionalFoa(sound, playback, target);
+        }
       }
     }
 
@@ -351,7 +366,11 @@ export class MediaService {
       const [playback] = sound.playbacks;
       if (data.upmix === 'ambisonic' && playback) {
         const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
-        this.configureAmbisonicPlayback(sound, playback, inputChannels).catch(console.error);
+        if (inputChannels === 4) {
+          this.configureAmbisonicPlayback(sound, playback, inputChannels).catch(console.error);
+        } else {
+          this.configurePositionalFoa(sound, playback).catch(console.error);
+        }
       } else if (data.upmix && data.upmix !== 'ambisonic') {
         this.cleanupUpmix(sound);
       }
@@ -563,6 +582,8 @@ export class MediaService {
   private cleanupUpmix(sound: ExtendedSound): void {
     sound.ambisonicRenderer?.cleanup();
     delete sound.ambisonicRenderer;
+    sound.positionalFoa?.cleanup();
+    delete sound.positionalFoa;
   }
 
   private releaseSound(sound: ExtendedSound, key?: string): void {
@@ -674,6 +695,50 @@ export class MediaService {
     this.updateAmbisonicDistance(sound);
   }
 
+  /**
+   * Wire a mono/stereo world object through the physically-correct positional
+   * FOA path (`encodeMonoToFoaSN3D` → `FoaDecoder`). Replaces the perceptual
+   * stereo→B-format upmix for non-FOA sources: the source gets a real bearing,
+   * so it sits at a spot, swings around the head on turn, and falls off with
+   * distance — none of which the dormant upmixer did.
+   */
+  private async configurePositionalFoa(
+    sound: ExtendedSound,
+    playback: Playback,
+    outputTarget?: CacophonyAudioNode,
+  ): Promise<void> {
+    this.cleanupUpmix(sound);
+    let renderer: PositionalFoaRenderer;
+    try {
+      renderer = await PositionalFoaRenderer.create(this.cacophony, POSITIONAL_FOA_MAKEUP);
+    } catch (error) {
+      console.warn('Positional FOA renderer unavailable', {
+        error,
+        sound: sound.key ?? sound.url,
+      });
+      return;
+    }
+    renderer.attachPlayback(playback, outputTarget);
+    sound.positionalFoa = renderer;
+    this.updatePositionalSpatial(sound);
+  }
+
+  /**
+   * Recompute a positional-FOA source's bearing (azimuth/elevation relative to
+   * the listener's head) and distance attenuation from the current listener
+   * pose. Driven on listener move, listener turn, and source move.
+   */
+  private updatePositionalSpatial(sound: ExtendedSound): void {
+    const renderer = sound.positionalFoa;
+    if (!renderer) {
+      return;
+    }
+    const listenerPos = this.cacophony.listenerPosition;
+    const listenerForward = this.cacophony.listenerForwardOrientation;
+    renderer.setBearingFromPositions(listenerPos, listenerForward, sound.mediaPosition);
+    renderer.setDistanceGain(inverseDistanceGain(distanceBetween(listenerPos, sound.mediaPosition)));
+  }
+
   private async resolveAmbisonicTarget(
     sound: ExtendedSound,
     soundKey: string,
@@ -727,6 +792,7 @@ export class MediaService {
       sound.mediaPosition = [data.position[0], data.position[1], data.position[2]];
       sound.position = sound.mediaPosition;
       this.updateAmbisonicDistance(sound as ExtendedSound);
+      this.updatePositionalSpatial(sound as ExtendedSound);
     }
 
     if (data.start !== undefined) {
