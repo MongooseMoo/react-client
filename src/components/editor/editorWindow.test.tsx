@@ -282,10 +282,12 @@ describe('EditorWindow language selection', () => {
     });
 
     await waitFor(() => expect(editorMock.props?.language).toBe('plaintext'));
-    expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenLastCalledWith(
-      editorMock.model,
-      MOO_LANGUAGE_ID,
-      [],
+    await waitFor(() =>
+      expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenLastCalledWith(
+        editorMock.model,
+        MOO_LANGUAGE_ID,
+        [],
+      ),
     );
     expect(screen.queryByText(/MOO (error|warning|problem)/)).toBeNull();
     expect(treeSitterDiagnosticsMock).not.toHaveBeenCalled();
@@ -778,8 +780,60 @@ describe('EditorWindow language selection', () => {
 
     const clearedRegion = await screen.findByRole('region', { name: 'MOO problems' });
     expect(clearedRegion).toBe(emptyRegion);
-    expect(screen.getByText('No MOO problems.')).not.toBeNull();
+    // Diagnostics are debounced, so the list clears once typing settles.
+    await waitFor(() => expect(screen.getByText('No MOO problems.')).not.toBeNull());
     expect(screen.queryByRole('button', { name: /^MOO (error|warning)/ })).toBeNull();
+  });
+
+  it('does not recompute diagnostics on every keystroke (debounced so the screen reader is not yanked out of the editor)', async () => {
+    treeSitterDiagnosticsMock.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    // Let the initial load's diagnostics settle, then start counting fresh.
+    await waitFor(() => expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenCalled());
+    editorMock.monaco.editor.setModelMarkers.mockClear();
+    treeSitterDiagnosticsMock.mockClear();
+
+    const onChange = editorMock.props?.onChange as (value: string) => void;
+
+    // Simulate a burst of keystrokes building up an unclosed block.
+    act(() => {
+      onChange('while (1)');
+      onChange('while (1)\n');
+      onChange('while (1)\n  notify(player, "tick");');
+    });
+
+    // The whole point: no marker/live-region/describedby update fires while the
+    // user is still typing. A per-keystroke recompute would have called these.
+    expect(editorMock.monaco.editor.setModelMarkers).not.toHaveBeenCalled();
+    expect(treeSitterDiagnosticsMock).not.toHaveBeenCalled();
+
+    // After the user pauses, diagnostics arrive exactly once for the final text.
+    await waitFor(() => expect(treeSitterDiagnosticsMock).toHaveBeenCalledTimes(1));
+    expect(treeSitterDiagnosticsMock).toHaveBeenCalledWith(
+      'while (1)\n  notify(player, "tick");',
+      8,
+    );
+    expect(editorMock.monaco.editor.setModelMarkers).toHaveBeenCalled();
   });
 
   it('does not add aria-live to the MOO problems region (counts stay on the statusbar)', async () => {

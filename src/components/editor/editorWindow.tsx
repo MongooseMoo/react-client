@@ -48,7 +48,12 @@ type MooDiagnosticCounts = {
 
 type MooProblemFilter = 'all' | 'error' | 'warning';
 
-const TREE_SITTER_DIAGNOSTIC_DELAY_MS = 200;
+// Debounce the entire diagnostics pipeline. While the user is typing we must not
+// touch model markers, the role="status" live region, or the aria-describedby
+// problems panel — every such mutation interrupts the screen reader and yanks it
+// out of the editor textarea. Diagnostics recompute (and announce) only once the
+// user pauses, which is how an accessible editor is supposed to behave.
+const MOO_DIAGNOSTIC_DEBOUNCE_MS = 400;
 const MONACO_WARNING_MARKER_SEVERITY = 4;
 const EDITOR_STATUSBAR_ID = 'editor-statusbar';
 const EDITOR_PROBLEMS_ID = 'editor-moo-problems';
@@ -116,36 +121,42 @@ function EditorWindow() {
   }, []);
 
   useEffect(() => {
-    const editor = editorInstance.current;
     const monaco = monacoInstance.current;
-    const model = editor?.getModel();
-
-    if (!monaco || !model) {
-      return;
-    }
-
-    const markers =
-      editorLanguage === MOO_LANGUAGE_ID
-        ? toMonacoMarkers(
-            code,
-            {
-              error: monaco.MarkerSeverity.Error,
-              warning: monaco.MarkerSeverity.Warning,
-            },
-            model.uri,
-          )
-        : [];
-
-    monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
-    updateMooDiagnostics(markers);
-
-    if (editorLanguage !== MOO_LANGUAGE_ID) {
+    if (!monaco || !editorInstance.current?.getModel()) {
       return;
     }
 
     let cancelled = false;
-    const parserModelVersion = model.getVersionId();
-    const parserTimer = window.setTimeout(() => {
+
+    // Recompute lexical + tree-sitter diagnostics together, once. Run only after
+    // the debounce fires so a burst of keystrokes produces a single update rather
+    // than one marker/live-region/describedby churn per character.
+    const computeDiagnostics = () => {
+      const model = editorInstance.current?.getModel();
+      if (cancelled || !model) {
+        return;
+      }
+
+      const markers =
+        editorLanguage === MOO_LANGUAGE_ID
+          ? toMonacoMarkers(
+              code,
+              {
+                error: monaco.MarkerSeverity.Error,
+                warning: monaco.MarkerSeverity.Warning,
+              },
+              model.uri,
+            )
+          : [];
+
+      monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
+      updateMooDiagnostics(markers);
+
+      if (editorLanguage !== MOO_LANGUAGE_ID) {
+        return;
+      }
+
+      const parserModelVersion = model.getVersionId();
       void toMonacoTreeSitterMarkers(code, monaco.MarkerSeverity.Error)
         .then((treeSitterMarkers) => {
           if (
@@ -163,11 +174,13 @@ function EditorWindow() {
         .catch((error: unknown) => {
           console.warn('MOO Tree-sitter diagnostics failed', error);
         });
-    }, TREE_SITTER_DIAGNOSTIC_DELAY_MS);
+    };
+
+    const debounceTimer = window.setTimeout(computeDiagnostics, MOO_DIAGNOSTIC_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
-      window.clearTimeout(parserTimer);
+      window.clearTimeout(debounceTimer);
     };
   }, [code, editorLanguage, updateMooDiagnostics]);
 
