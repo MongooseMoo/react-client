@@ -193,15 +193,10 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
   handleScene(data: GMCPMessageClientSpatialScene): void {
     useSessionStore.getState().setRoomId(data.roomId);
     const listenerPosition = mongooseToWebAudioVector(data.listenerPosition);
-    const listenerOrientation = data.listenerOrientation
-      ? {
-          forward: mongooseToWebAudioVector(data.listenerOrientation.forward),
-          up: mongooseToWebAudioVector(data.listenerOrientation.up),
-        }
-      : {
-          forward: null,
-          up: null,
-        };
+    const listenerOrientation = data.listenerOrientation ?? {
+      forward: null,
+      up: null,
+    };
     useSpatialStore.getState().setScene({
       listenerEntityId: data.listenerId,
       listenerPosition,
@@ -241,10 +236,7 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
   }
 
   handleListenerOrientation(data: GMCPMessageClientSpatialListenerOrientation): void {
-    const orientation = {
-      forward: mongooseToWebAudioVector(data.forward),
-      up: mongooseToWebAudioVector(data.up),
-    };
+    const orientation = { forward: data.forward, up: data.up };
     useSpatialStore.getState().setListenerOrientation(orientation, data.listenerId);
     this.syncCacophonyListenerOrientation(orientation);
   }

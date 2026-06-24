@@ -14,10 +14,7 @@ import type {
   MediaType,
 } from '../../audio/MediaService';
 import { buildEffectsSupport } from '../../audio/effects/MediaEffects';
-import {
-  mongooseToWebAudioOrientation,
-  mongooseToWebAudioVector,
-} from '../../audio/mongooseCoordinates';
+import { mongooseToWebAudioVector } from '../../audio/mongooseCoordinates';
 import type { EffectSpec } from '../../audio/effects/types';
 import { inbound, outbound } from '../../protocol/messages';
 import { useSpatialStore } from '../../stores/spatialStore';
@@ -255,7 +252,7 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   }
 
   handleListenerOrientation(data: GMCPMessageClientMediaListenerOrientation): void {
-    this.client.media.setListenerOrientation(mongooseToWebAudioOrientation(data));
+    this.client.media.setListenerOrientation(data);
   }
 
   soundsByName(name: string): ExtendedSound[] {

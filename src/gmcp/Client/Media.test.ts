@@ -626,7 +626,7 @@ describe('GMCPClientMedia', () => {
       up: [0, 1, 0],
     } as GMCPMessageClientMediaListenerOrientation);
     expect(client.media.cacophony.listenerForwardOrientation).toEqual([1, 0, 0]);
-    expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 0, -1]);
+    expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 1, 0]);
   });
 
   it('routes declared four-channel ambisonic playback through FOA passthrough', async () => {
