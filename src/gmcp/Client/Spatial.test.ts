@@ -88,12 +88,12 @@ describe('GMCPClientSpatial', () => {
     const spatial = useSpatialStore.getState();
     expect(useSessionStore.getState().roomId).toBe('new-room');
     expect(spatial.listenerEntityId).toBe('player-1');
-    expect(spatial.listenerPosition).toEqual([1, 3, 2]);
+    expect(spatial.listenerPosition).toEqual([-1, 3, 2]);
     expect(spatial.listenerOrientation).toEqual({
       forward: [0, 1, 0],
       up: [0, 0, 1],
     });
-    expect(client.media.cacophony.listenerPosition).toEqual([1, 3, 2]);
+    expect(client.media.cacophony.listenerPosition).toEqual([-1, 3, 2]);
     expect(client.media.cacophony.listenerForwardOrientation).toEqual([0, 1, 0]);
     expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 0, 1]);
     expect(spatial.spatialEntities).toEqual({
@@ -101,7 +101,7 @@ describe('GMCPClientSpatial', () => {
         id: 'player-1',
         name: 'Q',
         kind: 'player',
-        position: [1, 3, 2],
+        position: [-1, 3, 2],
       },
     });
     expect(spatial.spatialEmitters).toEqual({
@@ -126,7 +126,7 @@ describe('GMCPClientSpatial', () => {
     expect(useSpatialStore.getState().spatialEntities['player-2']).toEqual({
       id: 'player-2',
       name: 'Daiverd',
-      position: [4, 6, 5],
+      position: [-4, 6, 5],
     });
   });
 
@@ -186,9 +186,9 @@ describe('GMCPClientSpatial', () => {
       id: 'player-1',
       name: 'Q',
       kind: 'player',
-      position: [2, 4, 3],
-      velocity: [0.5, 0, 0],
-      forward: [1, 0, 0],
+      position: [-2, 4, 3],
+      velocity: [-0.5, 0, 0],
+      forward: [-1, 0, 0],
       up: [0, 1, 0],
     });
   });
@@ -206,12 +206,12 @@ describe('GMCPClientSpatial', () => {
 
     const spatial = useSpatialStore.getState();
     expect(spatial.listenerEntityId).toBe('player-1');
-    expect(spatial.listenerPosition).toEqual([7, 9, 8]);
+    expect(spatial.listenerPosition).toEqual([-7, 9, 8]);
     expect(spatial.listenerOrientation).toEqual({
       forward: [0, 1, 0],
       up: [0, 0, 1],
     });
-    expect(client.media.cacophony.listenerPosition).toEqual([7, 9, 8]);
+    expect(client.media.cacophony.listenerPosition).toEqual([-7, 9, 8]);
     expect(client.media.cacophony.listenerForwardOrientation).toEqual([0, 1, 0]);
     expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 0, 1]);
   });

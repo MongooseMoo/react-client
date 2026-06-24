@@ -16,7 +16,7 @@ export function mongooseToWebAudioVector(
     return null;
   }
   const [east, north, up] = vector;
-  return [east, up, north];
+  return [0 - east, up, north];
 }
 
 export function mongooseToWebAudioOrientation<T extends CoordinateOrientation | null | undefined>(

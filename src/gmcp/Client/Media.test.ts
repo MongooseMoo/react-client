@@ -535,7 +535,7 @@ describe('GMCPClientMedia', () => {
     expect(sound.play).toHaveBeenCalledTimes(1);
     expect(sound.volume).toBe(0.25);
     expect(sound.stereoPan).toBe(0.5);
-    expect(sound.position).toEqual([4, 6, 5]);
+    expect(sound.position).toEqual([-4, 6, 5]);
     expect(sound.seek).toHaveBeenCalledWith(2);
     expect(sound.threeDOptions).toMatchObject({
       distanceModel: 'inverse',
