@@ -638,6 +638,14 @@ export class MediaService {
     let unsubscribe: (() => void) | undefined;
     unsubscribe = sound.on('ended', () => {
       unsubscribe?.();
+      // The OS now-playing surface tracks live playback, so tear it down the
+      // instant the track ends — synchronously, not on the deferred cleanup
+      // below. Resource teardown can wait a macrotask; the session can't, or
+      // the OS keeps showing a finished track as "playing".
+      if (sound === this.currentMusic) {
+        this.currentMusic = undefined;
+        this.mediaSession.clear();
+      }
       // Defer cleanup one macrotask. Cacophony's own end-of-playback teardown
       // (AudioBufferSourceNode.onended -> _runLoopEnded -> stop()) runs in the
       // same 'ended' turn; if we cleanup() synchronously here, the sound is
