@@ -19,7 +19,7 @@ With support for a variety of MUD protocols, including GMCP, MCMP, and MCP, the 
 
 ## Official Build
 
-The official build of the Mongoose React Client can be found at [https://client.rustytelephone.net.](https://client.rustytelephone.net)
+The official build of the Mongoose React Client can be found at [https://client.mongoose.world.](https://client.mongoose.world)
 This instance of the client updates automatically any time code is committed to the master branch.
 
 ## Installation for Local Development
@@ -46,7 +46,7 @@ npm start
 
 ## Usage
 
-To use the Mongoose React Client, visit the official build at [https://client.rustytelephone.net](https://client.rustytelephone.net) or run the app on your local machine following the installation steps. Connect to the Project Mongoose server and enjoy an unparalleled gaming experience with advanced features like ANSI color, 3D audio, and desktop notifications. Additionally, you can save session logs for future reference or analysis.
+To use the Mongoose React Client, visit the official build at [https://client.mongoose.world](https://client.mongoose.world) or run the app on your local machine following the installation steps. Connect to the Project Mongoose server and enjoy an unparalleled gaming experience with advanced features like ANSI color, 3D audio, and desktop notifications. Additionally, you can save session logs for future reference or analysis.
 
 ## Contributing
 

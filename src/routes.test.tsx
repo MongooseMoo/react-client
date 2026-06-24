@@ -16,7 +16,7 @@ describe('editor route error handling', () => {
     expect(
       isDynamicImportError(
         new TypeError(
-          'Failed to fetch dynamically imported module: https://client.rustytelephone.net/assets/editorWindow-old.js',
+          'Failed to fetch dynamically imported module: https://client.mongoose.world/assets/editorWindow-old.js',
         ),
       ),
     ).toBe(true);
