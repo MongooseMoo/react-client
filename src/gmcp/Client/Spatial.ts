@@ -1,5 +1,6 @@
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSpatialStore } from '../../stores/spatialStore';
+import { mongooseToWebAudioVector } from '../../audio/mongooseCoordinates';
 import { inbound } from '../../protocol/messages';
 import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
@@ -144,6 +145,25 @@ function indexById<T extends { id: string }>(items: T[]): Record<string, T> {
   }, {});
 }
 
+function transformEntity(entity: SpatialEntity): SpatialEntity {
+  return {
+    ...entity,
+    position: mongooseToWebAudioVector(entity.position) ?? [0, 0, 0],
+    velocity: mongooseToWebAudioVector(entity.velocity) ?? undefined,
+    forward: mongooseToWebAudioVector(entity.forward) ?? undefined,
+    up: mongooseToWebAudioVector(entity.up) ?? undefined,
+  };
+}
+
+function transformEmitter(emitter: SpatialEmitter): SpatialEmitter {
+  return {
+    ...emitter,
+    position: mongooseToWebAudioVector(emitter.position) ?? undefined,
+    velocity: mongooseToWebAudioVector(emitter.velocity) ?? undefined,
+    offset: mongooseToWebAudioVector(emitter.offset) ?? undefined,
+  };
+}
+
 export class GMCPClientSpatial extends GMCPClientSpatialBase {
   constructor(client: ConstructorParameters<typeof GMCPClientSpatialBase>[0]) {
     super(client);
@@ -172,24 +192,29 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
 
   handleScene(data: GMCPMessageClientSpatialScene): void {
     useSessionStore.getState().setRoomId(data.roomId);
-    const listenerPosition = data.listenerPosition ?? null;
-    const listenerOrientation = data.listenerOrientation ?? {
-      forward: null,
-      up: null,
-    };
+    const listenerPosition = mongooseToWebAudioVector(data.listenerPosition);
+    const listenerOrientation = data.listenerOrientation
+      ? {
+          forward: mongooseToWebAudioVector(data.listenerOrientation.forward),
+          up: mongooseToWebAudioVector(data.listenerOrientation.up),
+        }
+      : {
+          forward: null,
+          up: null,
+        };
     useSpatialStore.getState().setScene({
       listenerEntityId: data.listenerId,
       listenerPosition,
       listenerOrientation,
-      spatialEntities: indexById(data.entities),
-      spatialEmitters: indexById(data.emitters),
+      spatialEntities: indexById(data.entities.map(transformEntity)),
+      spatialEmitters: indexById(data.emitters.map(transformEmitter)),
     });
     this.syncCacophonyListenerPosition(listenerPosition);
     this.syncCacophonyListenerOrientation(listenerOrientation);
   }
 
   handleEntityEnter(data: GMCPMessageClientSpatialEntityEnter): void {
-    useSpatialStore.getState().enterEntity(data.entity);
+    useSpatialStore.getState().enterEntity(transformEntity(data.entity));
   }
 
   handleEntityLeave(data: GMCPMessageClientSpatialEntityLeave): void {
@@ -197,22 +222,35 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
   }
 
   handleEntityMove(data: GMCPMessageClientSpatialEntityMove): void {
-    useSpatialStore.getState().moveEntity(data);
+    useSpatialStore.getState().moveEntity({
+      ...data,
+      position: mongooseToWebAudioVector(data.position) ?? [0, 0, 0],
+      velocity: mongooseToWebAudioVector(data.velocity) ?? undefined,
+      forward: mongooseToWebAudioVector(data.forward) ?? undefined,
+      up: mongooseToWebAudioVector(data.up) ?? undefined,
+    });
   }
 
   handleListenerPosition(data: GMCPMessageClientSpatialListenerPosition): void {
-    useSpatialStore.getState().setListenerPosition(data.position, data.listenerId);
-    this.syncCacophonyListenerPosition(data.position);
+    const position = mongooseToWebAudioVector(data.position);
+    if (!position) {
+      return;
+    }
+    useSpatialStore.getState().setListenerPosition(position, data.listenerId);
+    this.syncCacophonyListenerPosition(position);
   }
 
   handleListenerOrientation(data: GMCPMessageClientSpatialListenerOrientation): void {
-    const orientation = { forward: data.forward, up: data.up };
+    const orientation = {
+      forward: mongooseToWebAudioVector(data.forward),
+      up: mongooseToWebAudioVector(data.up),
+    };
     useSpatialStore.getState().setListenerOrientation(orientation, data.listenerId);
     this.syncCacophonyListenerOrientation(orientation);
   }
 
   handleEmitterStart(data: GMCPMessageClientSpatialEmitterStart): void {
-    useSpatialStore.getState().startEmitter(data.emitter);
+    useSpatialStore.getState().startEmitter(transformEmitter(data.emitter));
   }
 
   handleEmitterStop(data: GMCPMessageClientSpatialEmitterStop): void {

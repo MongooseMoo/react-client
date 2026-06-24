@@ -535,7 +535,7 @@ describe('GMCPClientMedia', () => {
     expect(sound.play).toHaveBeenCalledTimes(1);
     expect(sound.volume).toBe(0.25);
     expect(sound.stereoPan).toBe(0.5);
-    expect(sound.position).toEqual([4, 5, 6]);
+    expect(sound.position).toEqual([4, 6, -5]);
     expect(sound.seek).toHaveBeenCalledWith(2);
     expect(sound.threeDOptions).toMatchObject({
       distanceModel: 'inverse',
@@ -602,7 +602,7 @@ describe('GMCPClientMedia', () => {
       volume: 50,
     } as GMCPMessageClientMediaPlay);
 
-    expect(setPosition).toHaveBeenCalledWith([0, 0, 10]);
+    expect(setPosition).toHaveBeenCalledWith([0, 10, 0]);
     expect(renderer.setDistanceGain).toHaveBeenCalled();
     // refDistance 1, rolloff 0.5 → 1 / (1 + 0.5 * (10 - 1)) = 1 / 5.5 = 2 / 11.
     expect(renderer.setDistanceGain.mock.calls[0][0]).toBeCloseTo(2 / 11);
@@ -626,7 +626,7 @@ describe('GMCPClientMedia', () => {
       up: [0, 1, 0],
     } as GMCPMessageClientMediaListenerOrientation);
     expect(client.media.cacophony.listenerForwardOrientation).toEqual([1, 0, 0]);
-    expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 1, 0]);
+    expect(client.media.cacophony.listenerUpOrientation).toEqual([0, 0, -1]);
   });
 
   it('routes declared four-channel ambisonic playback through FOA passthrough', async () => {

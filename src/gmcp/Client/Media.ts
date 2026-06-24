@@ -14,6 +14,10 @@ import type {
   MediaType,
 } from '../../audio/MediaService';
 import { buildEffectsSupport } from '../../audio/effects/MediaEffects';
+import {
+  mongooseToWebAudioOrientation,
+  mongooseToWebAudioVector,
+} from '../../audio/mongooseCoordinates';
 import type { EffectSpec } from '../../audio/effects/types';
 import { inbound, outbound } from '../../protocol/messages';
 import { useSpatialStore } from '../../stores/spatialStore';
@@ -235,11 +239,11 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   }
 
   handlePlay(data: GMCPMessageClientMediaPlay): Promise<void> {
-    return this.client.media.play(data);
+    return this.client.media.play(this.transformSpatialPayload(data));
   }
 
   handleUpdate(data: GMCPMessageClientMediaUpdate): void {
-    this.client.media.update(data);
+    this.client.media.update(this.transformSpatialPayload(data));
   }
 
   handleStop(data: GMCPMessageClientMediaStop): void {
@@ -247,11 +251,11 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   }
 
   handleListenerPosition(data: GMCPMessageClientMediaListenerPosition): void {
-    this.client.media.setListenerPosition(data.position);
+    this.client.media.setListenerPosition(mongooseToWebAudioVector(data.position));
   }
 
   handleListenerOrientation(data: GMCPMessageClientMediaListenerOrientation): void {
-    this.client.media.setListenerOrientation(data);
+    this.client.media.setListenerOrientation(mongooseToWebAudioOrientation(data));
   }
 
   soundsByName(name: string): ExtendedSound[] {
@@ -285,4 +289,20 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   private readonly handleSpatialStoreChange = (): void => {
     this.client.media.syncAmbisonicRendererYaw();
   };
+
+  private transformSpatialPayload<
+    T extends { position?: number[] | Position; is3d?: boolean; upmix?: string },
+  >(data: T): T {
+    if (!data.position?.length) {
+      return data;
+    }
+    const { position } = data;
+    if (position.length < 3) {
+      return data;
+    }
+    return {
+      ...data,
+      position: mongooseToWebAudioVector([position[0], position[1], position[2]]) ?? undefined,
+    };
+  }
 }
