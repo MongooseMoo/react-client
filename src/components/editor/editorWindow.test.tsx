@@ -1034,7 +1034,7 @@ describe('EditorWindow language selection', () => {
     expect(editorMock.focus).toHaveBeenCalledTimes(1);
   });
 
-  it('does not move focus when the user saves', async () => {
+  it('returns focus to the editor when the user saves', async () => {
     render(
       <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
@@ -1056,12 +1056,14 @@ describe('EditorWindow language selection', () => {
     });
 
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Unchanged'));
-    // Ignore the deterministic focus-on-open; we only care that Save adds none.
+    // Ignore the deterministic focus-on-open; we only care about Save's focus move.
     editorMock.focus.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(editorMock.focus).not.toHaveBeenCalled();
+    // Saving must hand focus back to the editor so the user keeps typing instead
+    // of being stranded on the Save button.
+    expect(editorMock.focus).toHaveBeenCalled();
     expect(screen.getByRole('status').textContent).toContain('Saved');
   });
 });

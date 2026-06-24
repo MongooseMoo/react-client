@@ -339,6 +339,11 @@ function EditorWindow() {
     channel.postMessage({ type: 'save', session: sessionData, id });
     setDocumentState(DocumentState.Saved);
     event.preventDefault();
+    // Saving from the toolbar (button click or Alt+S) leaves focus on the Save
+    // button, stranding a screen-reader user away from their code. Put focus back
+    // in the editor so typing continues immediately. The MOO plays its own save
+    // sound, so we don't rely on a "Saved" live-region announcement here.
+    editorInstance.current?.focus();
   };
 
   const onChanges = (value: string | undefined) => {
@@ -532,6 +537,15 @@ function createEditorOptions({
   ariaLabel,
   language,
 }: EditorOptionInputs): MonacoEditor.IStandaloneEditorConstructionOptions {
+  // Auto-popping the suggest widget on every keystroke is hostile to a screen
+  // reader: Monaco moves aria-activedescendant onto a suggestion per character, so
+  // the SR is yanked off the user's text onto "try", "this", "if block"... on each
+  // letter (verified live with a focus/activedescendant trace). In accessibility
+  // mode we therefore only offer suggestions on explicit request (Ctrl+Space, which
+  // is unaffected by these flags); autocomplete stays fully available, it just stops
+  // shouting while you type.
+  const autoSuggestWhileTyping = autocompleteEnabled && !accessibilityMode;
+
   const baseOptions: MonacoEditor.IStandaloneEditorConstructionOptions = {
     wordWrap: 'on',
     ariaLabel,
@@ -544,7 +558,7 @@ function createEditorOptions({
     // Set unconditionally: at 500 there is no perf cost beyond Monaco's own SR
     // default, and it does not depend on runtime SR detection.
     accessibilityPageSize: 500,
-    quickSuggestions: autocompleteEnabled,
+    quickSuggestions: autoSuggestWhileTyping,
   };
 
   if (language !== MOO_LANGUAGE_ID) {
@@ -580,7 +594,7 @@ function createEditorOptions({
       enabled: true,
       defaultModel: 'foldingProviderModel',
     },
-    suggestOnTriggerCharacters: autocompleteEnabled,
+    suggestOnTriggerCharacters: autoSuggestWhileTyping,
   };
 }
 
