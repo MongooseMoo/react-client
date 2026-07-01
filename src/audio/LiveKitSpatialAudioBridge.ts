@@ -7,6 +7,8 @@ import type {
   Position,
 } from "cacophony";
 
+import { SPATIAL_DISTANCE_MODEL } from "./distanceModel";
+
 export type SpatialPositionLookup = (participantId: string) => Position | null | undefined;
 
 type LiveKitCacophony = Pick<Cacophony, "context" | "createPanner" | "globalGainNode" | "resume">;
@@ -52,11 +54,9 @@ export class LiveKitSpatialAudioBridge {
       channelInterpretation: "speakers",
       distanceModel: "inverse",
       panningModel: "HRTF",
-      // Match MediaService's meter-scale tuning so a distant speaker stays
-      // audible: full volume within ~4m, gentle falloff, ~200m hearing range.
-      refDistance: 4,
-      rolloffFactor: 0.5,
-      maxDistance: 200,
+      refDistance: SPATIAL_DISTANCE_MODEL.refDistance,
+      rolloffFactor: SPATIAL_DISTANCE_MODEL.rolloffFactor,
+      maxDistance: SPATIAL_DISTANCE_MODEL.maxDistance,
     });
     const outputGain = this.cacophony.context.createGain();
 

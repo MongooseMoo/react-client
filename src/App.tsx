@@ -444,19 +444,18 @@ function App() {
               client={client}
             />
           </section>
-          {showSidebar && (
-            <aside
-              aria-roledescription="Sidebar"
-              style={{ gridArea: "sidebar" }}
-            >
-              <Sidebar
-                ref={sidebarRef}
-                client={client}
-                collapsed={sidebarCollapsed}
-                onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-              />
-            </aside>
-          )}
+          <aside
+            aria-roledescription="Sidebar"
+            hidden={!showSidebar}
+            style={{ gridArea: "sidebar" }}
+          >
+            <Sidebar
+              ref={sidebarRef}
+              client={client}
+              collapsed={sidebarCollapsed}
+              onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            />
+          </aside>
           <footer style={{ gridArea: "status" }}>
             <Statusbar />
           </footer>

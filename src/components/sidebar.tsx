@@ -223,13 +223,10 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
 
     return (
       <div className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-        {collapsed ? (
-          collapseButton
-        ) : (
-          <div className="sidebar-content">
-            <Tabs tabs={visibleTabs} trailingElement={collapseButton} />
-          </div>
-        )}
+        {collapsed && collapseButton}
+        <div className="sidebar-content" hidden={collapsed}>
+          <Tabs tabs={visibleTabs} trailingElement={!collapsed ? collapseButton : undefined} />
+        </div>
       </div>
     );
   },

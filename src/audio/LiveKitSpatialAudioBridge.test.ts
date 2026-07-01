@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveKitSpatialAudioBridge } from "./LiveKitSpatialAudioBridge";
+import { SPATIAL_DISTANCE_MODEL } from "./distanceModel";
 
 const MockMediaStream = vi.fn();
 
@@ -144,9 +145,9 @@ describe("LiveKitSpatialAudioBridge", () => {
         channelCountMode: "explicit",
         channelInterpretation: "speakers",
         panningModel: "HRTF",
-        refDistance: 4,
-        rolloffFactor: 0.5,
-        maxDistance: 200,
+        refDistance: SPATIAL_DISTANCE_MODEL.refDistance,
+        rolloffFactor: SPATIAL_DISTANCE_MODEL.rolloffFactor,
+        maxDistance: SPATIAL_DISTANCE_MODEL.maxDistance,
       }),
     );
     expect(panner.positionX.setValueAtTime).toHaveBeenCalledWith(1, 7);
