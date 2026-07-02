@@ -285,7 +285,8 @@ export class MediaService {
     const soundKey = data.key;
     let sound = this.sounds[soundKey] as ExtendedSound;
     const panType = data.is3d ? 'HRTF' : 'stereo';
-    if (!sound || sound.url !== mediaUrl) {
+    const isNewSound = !sound || sound.url !== mediaUrl;
+    if (isNewSound) {
       if (sound) {
         this.releaseSound(sound, soundKey);
       }
@@ -302,6 +303,15 @@ export class MediaService {
           panType,
         )) as ExtendedSound;
       }
+    }
+
+    // A concurrent play() for this key read the slot as empty before our await
+    // and already claimed it with a different sound; this call lost the create
+    // race. Release the sound we just minted and bail before playing an orphan
+    // that no key points at (mirrors buildInlineChain's post-await staleness guard).
+    if (isNewSound && this.sounds[soundKey] && this.sounds[soundKey] !== sound) {
+      this.releaseSound(sound);
+      return;
     }
 
     sound.key = soundKey;
@@ -334,12 +344,12 @@ export class MediaService {
         const target = await this.resolveAmbisonicTarget(sound, soundKey, data);
         if (inputChannels === 4) {
           // True 4-channel FOA content: decode + head-rotate the recorded field.
-          await this.configureAmbisonicPlayback(sound, playback, inputChannels, target);
+          await this.configureAmbisonicPlayback(sound, playback, inputChannels, target, soundKey);
         } else {
           // Mono/stereo world object: physically-correct positional encode (clean path).
           // Stereo content keeps its width (L/R spread); mono stays a point.
           const width = inputChannels >= 2 ? POSITIONAL_FOA_STEREO_WIDTH_RAD : 0;
-          await this.configurePositionalFoa(sound, playback, width, target);
+          await this.configurePositionalFoa(sound, playback, width, target, soundKey);
         }
       }
     }
@@ -594,6 +604,17 @@ export class MediaService {
     delete sound.positionalFoa;
   }
 
+  // A sound is stale if it was released/cleaned during an await, or replaced
+  // under its key. buildInlineChain OR-s an additional generation check on top
+  // of this; the create and FOA-attach paths only need these two conditions.
+  // soundKey is optional because the update() FOA callers have no key in scope.
+  private isSoundStale(sound: ExtendedSound, soundKey?: string): boolean {
+    if (this.cleanedSounds.has(sound)) {
+      return true;
+    }
+    return soundKey !== undefined && this.sounds[soundKey] !== sound;
+  }
+
   private releaseSound(sound: ExtendedSound, key?: string): void {
     if (sound === this.currentMusic) {
       this.currentMusic = undefined;
@@ -699,6 +720,7 @@ export class MediaService {
     playback: Playback,
     inputChannels: number,
     outputTarget?: CacophonyAudioNode,
+    soundKey?: string,
   ): Promise<void> {
     this.cleanupUpmix(sound);
     let renderer: AmbisonicRenderer;
@@ -710,6 +732,10 @@ export class MediaService {
         inputChannels,
         sound: sound.key ?? sound.url,
       });
+      return;
+    }
+    if (this.isSoundStale(sound, soundKey)) {
+      renderer.cleanup();
       return;
     }
     renderer.attachPlayback(playback, outputTarget);
@@ -730,6 +756,7 @@ export class MediaService {
     playback: Playback,
     stereoWidthRad: number,
     outputTarget?: CacophonyAudioNode,
+    soundKey?: string,
   ): Promise<void> {
     this.cleanupUpmix(sound);
     let renderer: PositionalFoaRenderer;
@@ -744,6 +771,10 @@ export class MediaService {
         error,
         sound: sound.key ?? sound.url,
       });
+      return;
+    }
+    if (this.isSoundStale(sound, soundKey)) {
+      renderer.cleanup();
       return;
     }
     renderer.attachPlayback(playback, outputTarget);

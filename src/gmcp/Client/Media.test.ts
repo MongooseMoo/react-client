@@ -648,6 +648,117 @@ describe('GMCPClientMedia', () => {
     expect(sound.inputChannels).toBe(4);
   });
 
+  describe('async staleness races (H1/H2)', () => {
+    it('plays exactly one sound when two rapid plays race for the same key (H1)', async () => {
+      const soundA = createMockSound('https://media.example/race.ogg');
+      const soundB = createMockSound('https://media.example/race.ogg');
+      mockCreateSound.mockResolvedValueOnce(soundA).mockResolvedValueOnce(soundB);
+
+      const p1 = handler.handlePlay({
+        key: 'race',
+        name: 'race.ogg',
+        type: 'sound',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+      const p2 = handler.handlePlay({
+        key: 'race',
+        name: 'race.ogg',
+        type: 'sound',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+      await Promise.all([p1, p2]);
+
+      // The first play to resolve createSound claims the slot and plays; the
+      // loser is released before it can play, so no orphaned overlapping audio.
+      expect(handler.sounds.race).toBe(soundA);
+      expect(soundA.play).toHaveBeenCalledOnce();
+      expect(soundB.play).not.toHaveBeenCalled();
+      expect(soundB.cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('does not attach the positional FOA renderer to a sound released mid-create (H2)', async () => {
+      const sound = createMockSound('https://media.example/show.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+
+      const renderer = {
+        attachPlayback: vi.fn(),
+        cleanup: vi.fn(),
+        setBearingFromPositions: vi.fn(),
+        setDistanceGain: vi.fn(),
+        setMakeup: vi.fn(),
+      };
+      let resolveRenderer!: (value: typeof renderer) => void;
+      let signalCreateStarted!: () => void;
+      const createStarted = new Promise<void>((res) => {
+        signalCreateStarted = res;
+      });
+      mockPositionalFoaRendererCreate.mockImplementation(() => {
+        signalCreateStarted();
+        return new Promise((res) => {
+          resolveRenderer = res;
+        });
+      });
+
+      const play = handler.handlePlay({
+        key: 'race',
+        name: 'show.ogg',
+        type: 'sound',
+        upmix: 'ambisonic',
+        volume: 50,
+      } as unknown as GMCPMessageClientMediaPlay);
+
+      // Wait until play() is parked awaiting the renderer worklet init (the sound
+      // is registered by now), then release it before the renderer resolves.
+      await createStarted;
+      handler.handleStop({ key: 'race' } as GMCPMessageClientMediaStop);
+      resolveRenderer(renderer);
+      await play;
+
+      expect(renderer.attachPlayback).not.toHaveBeenCalled();
+      expect(renderer.cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('does not attach the ambisonic renderer to a sound released mid-create (H2)', async () => {
+      const sound = createMockSound('https://media.example/foa.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+
+      const renderer = {
+        attachPlayback: vi.fn(),
+        cleanup: vi.fn(),
+        setRotationMatrixFromYaw: vi.fn(),
+        setDistanceGain: vi.fn(),
+      };
+      let resolveRenderer!: (value: typeof renderer) => void;
+      let signalCreateStarted!: () => void;
+      const createStarted = new Promise<void>((res) => {
+        signalCreateStarted = res;
+      });
+      mockAmbisonicRendererCreate.mockImplementation(() => {
+        signalCreateStarted();
+        return new Promise((res) => {
+          resolveRenderer = res;
+        });
+      });
+
+      const play = handler.handlePlay({
+        channels: 4,
+        key: 'race',
+        name: 'foa.ogg',
+        type: 'sound',
+        upmix: 'ambisonic',
+        volume: 50,
+      } as unknown as GMCPMessageClientMediaPlay);
+
+      await createStarted;
+      handler.handleStop({ key: 'race' } as GMCPMessageClientMediaStop);
+      resolveRenderer(renderer);
+      await play;
+
+      expect(renderer.attachPlayback).not.toHaveBeenCalled();
+      expect(renderer.cleanup).toHaveBeenCalledOnce();
+    });
+  });
+
   it('updates ambisonic renderer rotation on Client.Spatial orientation events', async () => {
     const sound = createMockSound('https://media.example/show.ogg');
     mockCreateSound.mockResolvedValue(sound);
