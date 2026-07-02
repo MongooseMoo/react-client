@@ -24,6 +24,7 @@ export { GMCPCharAfflictions } from "./Char/Afflictions";
 export { GMCPCharDefences } from "./Char/Defences";
 export { GMCPCharItems } from "./Char/Items";
 export { GMCPCharSkills } from "./Char/Skills";
+export { GmcPIRESound } from "./IRE/Sound";
 export { GMCPGroup } from "./Group";
 export { GMCPLogging } from "./Logging";
 export { GMCPRedirect } from "./Redirect";

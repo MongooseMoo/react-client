@@ -27,6 +27,7 @@ import {
   GMCPCommLiveKit,
   GMCPCore,
   GMCPCoreSupports,
+  GmcPIRESound,
   GMCPGroup,
   GMCPLogging,
   GMCPRedirect,
@@ -117,6 +118,7 @@ export function createConfiguredClient(): MudClient {
   client.configureFileTransfer(clientFileTransfer);
   client.gmcp.register(GMCPCore);
   client.gmcp.register(GMCPClientMedia);
+  client.gmcp.register(GmcPIRESound);
   client.gmcp.register(GMCPClientSpatial);
   client.gmcp.register(GMCPClientMidi);
   client.gmcp.register(GMCPClientSpeech);

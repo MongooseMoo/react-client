@@ -60,6 +60,22 @@ describe("createConfiguredClient", () => {
     expect(useConnectionStore.getState().statusText).toBe("Logged in as Q");
   });
 
+  it("registers IRE.Sound so server sound events reach the media service", () => {
+    client = createConfiguredClient();
+    const play = vi.spyOn(client.media, "play").mockResolvedValue(undefined);
+
+    client.gmcp.receive("IRE.Sound.Play", JSON.stringify({ name: "attack.ogg", volume: 65 }));
+
+    expect(play).toHaveBeenCalledWith({
+      name: "attack.ogg",
+      type: "sound",
+      volume: 65,
+      fadein: 0,
+      fadeout: 0,
+      loops: 0,
+    });
+  });
+
   it("wires Char.Vitals to the character status store", () => {
     client = createConfiguredClient();
 
