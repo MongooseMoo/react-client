@@ -134,7 +134,8 @@ describe("GMCPClientHaptics", () => {
   // handleActuate
   // -----------------------------------------------------------------
 
-  it("forwards actuate commands to hapticsService", () => {
+  it("forwards actuate commands to hapticsService when locally enabled", () => {
+    mockPreferencesState.haptics.enabled = true;
     const data: HapticsActuateData = {
       source: "test_object",
       commands: [
@@ -162,6 +163,18 @@ describe("GMCPClientHaptics", () => {
       duration: undefined,
       clockwise: true,
     });
+  });
+
+  it("does not actuate hapticsService when local pref is disabled", () => {
+    mockPreferencesState.haptics.enabled = false;
+    const data: HapticsActuateData = {
+      source: "untrusted_server",
+      commands: [{ actuator: 0, type: "Vibrate", intensity: 1.0 }],
+    };
+
+    handler.handleActuate(data);
+
+    expect(mockHapticsService.actuate).not.toHaveBeenCalled();
   });
 
   it("emits actuate package event", () => {
@@ -201,6 +214,18 @@ describe("GMCPClientHaptics", () => {
     handler.handleStop(data);
 
     expect(mockHapticsService.stop).toHaveBeenCalledWith();
+  });
+
+  it("forwards stop to hapticsService regardless of local pref", () => {
+    const data: HapticsStopData = { source: "test", actuator: null };
+
+    mockPreferencesState.haptics.enabled = false;
+    handler.handleStop(data);
+    expect(mockHapticsService.stop).toHaveBeenCalledTimes(1);
+
+    mockPreferencesState.haptics.enabled = true;
+    handler.handleStop(data);
+    expect(mockHapticsService.stop).toHaveBeenCalledTimes(2);
   });
 
   it("emits stop package event", () => {

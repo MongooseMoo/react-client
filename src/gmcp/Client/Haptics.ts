@@ -155,6 +155,7 @@ export class GMCPClientHaptics extends GMCPClientHapticsBase {
   // -------------------------------------------------------------------
 
   handleActuate(data: HapticsActuateData): void {
+    if (!this.enabled) return;
     const commands: HapticsCommand[] = data.commands.map((cmd) => ({
       actuator: cmd.actuator,
       type: cmd.type as HapticsCommand["type"],
