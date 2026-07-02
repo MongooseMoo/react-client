@@ -56,6 +56,11 @@ export default class FileTransferManager extends EventEmitter {
   private maxFileSize: number = 100 * 1024 * 1024; // 100 MB
   private transferTimeout: number = 30000; // 30 seconds
   public pendingOffers: Map<string, FileTransferOffer> = new Map(); // keyed by hash
+  // Durable record of offers the user explicitly accepted, keyed by hash. This is the
+  // consent record the byte path gates on: pendingOffers is deleted on accept (before
+  // bytes arrive), so it cannot be used to authorize incoming chunks.
+  private acceptedOffers: Map<string, { filename: string; hash: string; sender: string; filesize: number }> =
+    new Map();
   private store: FileTransferStore;
   private storeInitialized: boolean = false;
   private readonly handleDataChannelMessage = (data: ArrayBuffer): void => {
@@ -194,6 +199,26 @@ export default class FileTransferManager extends EventEmitter {
     return Array.from(new Uint8Array(hashBytes))
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('');
+  }
+
+  private sanitizeFilename(filename: string): string {
+    // Use the basename only: strip any directory components (/ or \) and leading dots so a
+    // malicious offer or chunk header can neither traverse paths nor disguise the real name.
+    const basename = filename.split(/[\\/]/).pop() ?? '';
+    const cleaned = basename.replace(/^\.+/, '');
+    return cleaned.length > 0 ? cleaned : 'download';
+  }
+
+  private discardAcceptedTransfer(hash: string): void {
+    this.acceptedOffers.delete(hash);
+    this.incomingTransfers.delete(hash);
+    if (this.storeInitialized) {
+      void this.store
+        .deleteFile(hash)
+        .catch((err) =>
+          console.error('[FileTransferManager] Failed to delete file from store:', err),
+        );
+    }
   }
 
   private async startFileTransfer(file: File, hash: string): Promise<void> {
@@ -370,10 +395,6 @@ export default class FileTransferManager extends EventEmitter {
         throw new Error('Received data is too short to contain chunk data');
       }
 
-      // Get sender from the pending offer using hash
-      const offer = this.pendingOffers.get(header.hash);
-      const sender = offer?.sender || 'unknown';
-
       // Validate header fields
       if (
         typeof header.chunkIndex !== 'number' ||
@@ -387,6 +408,34 @@ export default class FileTransferManager extends EventEmitter {
         throw new Error('Invalid total chunks in header');
       }
 
+      // Consent gate (C1): only process bytes for an offer the user explicitly accepted.
+      // Any other data-channel bytes are an unsolicited push and must be dropped.
+      const accepted = this.acceptedOffers.get(header.hash);
+      if (!accepted) {
+        this.emit('fileTransferError', {
+          hash: header.hash,
+          filename: this.sanitizeFilename(header.filename ?? ''),
+          direction: 'receive',
+          error: 'Received data for a file transfer that was not accepted (unsolicited transfer rejected)',
+        });
+        return;
+      }
+
+      // The declared size must match what the user agreed to in the offer.
+      if (header.totalSize !== accepted.filesize) {
+        this.emit('fileTransferError', {
+          hash: header.hash,
+          filename: this.sanitizeFilename(accepted.filename),
+          direction: 'receive',
+          error: 'Incoming file size does not match the accepted offer',
+        });
+        this.discardAcceptedTransfer(header.hash);
+        return;
+      }
+
+      // Trusted filename comes from the accepted offer, not the attacker-controlled header.
+      const safeFilename = this.sanitizeFilename(accepted.filename);
+
       const chunkData = data.slice(4 + headerSize, 4 + headerSize + header.chunkSize);
 
       let transfer = this.incomingTransfers.get(header.hash);
@@ -394,22 +443,23 @@ export default class FileTransferManager extends EventEmitter {
         if (header.totalSize > this.maxFileSize) {
           this.emit('fileTransferError', {
             hash: header.hash,
-            filename: header.filename,
+            filename: safeFilename,
             direction: 'receive',
             error: `Incoming file size exceeds the maximum allowed size of ${
               this.maxFileSize / (1024 * 1024)
             } MB`,
           });
+          this.discardAcceptedTransfer(header.hash);
           return;
         }
         transfer = {
           hash: header.hash,
-          filename: header.filename,
+          filename: safeFilename,
           totalSize: header.totalSize,
           receivedSize: 0,
           chunks: new Array(header.totalChunks),
           lastActivityTimestamp: Date.now(),
-          sender: sender,
+          sender: accepted.sender,
         };
         this.incomingTransfers.set(header.hash, transfer);
 
@@ -417,12 +467,12 @@ export default class FileTransferManager extends EventEmitter {
         if (this.storeInitialized) {
           await this.store.saveFileMetadata({
             hash: header.hash,
-            filename: header.filename,
+            filename: safeFilename,
             totalSize: header.totalSize,
             totalChunks: header.totalChunks,
             receivedChunks: [],
             direction: 'incoming',
-            sender: sender,
+            sender: accepted.sender,
             lastActivityTimestamp: Date.now(),
           });
         }
@@ -442,7 +492,7 @@ export default class FileTransferManager extends EventEmitter {
       }
       const fileTransferProgress = {
         hash: header.hash,
-        filename: header.filename,
+        filename: safeFilename,
         receivedBytes: transfer.receivedSize,
         totalBytes: transfer.totalSize,
       };
@@ -457,18 +507,16 @@ export default class FileTransferManager extends EventEmitter {
             type: completeFile.type,
           });
           const computedHash = await this.computeFileHash(file);
-          if (computedHash !== transfer.hash) {
+          // Integrity (C2): compare against the hash the user AGREED to (the accepted
+          // offer), not the sender's self-declared header/transfer hash.
+          if (computedHash !== accepted.hash) {
             this.emit('fileTransferError', {
               hash: transfer.hash,
-              filename: header.filename,
+              filename: safeFilename,
               direction: 'receive',
               error: 'File integrity check failed - hash mismatch',
             });
-            this.incomingTransfers.delete(transfer.hash);
-            // Clean up persisted data on hash mismatch
-            if (this.storeInitialized) {
-              await this.store.deleteFile(transfer.hash);
-            }
+            this.discardAcceptedTransfer(transfer.hash);
             return;
           }
 
@@ -476,7 +524,7 @@ export default class FileTransferManager extends EventEmitter {
           const downloadUrl = window.URL.createObjectURL(completeFile);
           const downloadLink = document.createElement('a');
           downloadLink.href = downloadUrl;
-          downloadLink.download = header.filename;
+          downloadLink.download = safeFilename;
           document.body.appendChild(downloadLink);
           downloadLink.click();
           document.body.removeChild(downloadLink);
@@ -484,11 +532,12 @@ export default class FileTransferManager extends EventEmitter {
 
           const completedFileData = {
             hash: transfer.hash,
-            filename: header.filename,
+            filename: safeFilename,
             file: completeFile,
           };
           this.emit('fileReceiveComplete', completedFileData);
           this.incomingTransfers.delete(transfer.hash);
+          this.acceptedOffers.delete(transfer.hash);
           // Clean up persisted data after successful transfer
           if (this.storeInitialized) {
             await this.store.deleteFile(transfer.hash);
@@ -496,7 +545,7 @@ export default class FileTransferManager extends EventEmitter {
         } else {
           this.emit('fileTransferError', {
             hash: transfer.hash,
-            filename: header.filename,
+            filename: safeFilename,
             direction: 'receive',
             error: 'Missing chunks in received file',
           });
@@ -562,6 +611,9 @@ export default class FileTransferManager extends EventEmitter {
       console.log(`[FileTransferManager] Removing pending offer for: ${offer?.filename} (${hash})`);
       this.pendingOffers.delete(hash);
     }
+
+    // Cleanup the accepted-offer consent record so it does not outlive the transfer.
+    this.acceptedOffers.delete(hash);
 
     console.log(`[FileTransferManager] Cleanup complete for hash: ${hash}`);
   }
@@ -659,6 +711,7 @@ export default class FileTransferManager extends EventEmitter {
     this.incomingTransfers.clear();
     this.outgoingTransfers.clear();
     this.pendingOffers.clear();
+    this.acceptedOffers.clear();
 
     // Clean up WebRTC service
     this.webRTCService.cleanup();
@@ -746,6 +799,14 @@ export default class FileTransferManager extends EventEmitter {
         await this.waitForDataChannel(hash);
         console.log('[FileTransferManager] Data channel ready for incoming transfer');
 
+        // Record consent BEFORE deleting the offer: this is the only durable marker the
+        // byte path can consult to know the user agreed to receive this exact file.
+        this.acceptedOffers.set(hash, {
+          filename: offer.filename,
+          hash: offer.hash,
+          sender: offer.sender,
+          filesize: offer.filesize,
+        });
         this.pendingOffers.delete(hash);
       } else {
         throw new Error('Transfer was cancelled during setup');
@@ -762,6 +823,7 @@ export default class FileTransferManager extends EventEmitter {
 
   rejectTransfer(sender: string, hash: string): void {
     this.pendingOffers.delete(hash);
+    this.acceptedOffers.delete(hash);
     this.gmcpFileTransfer.sendReject({ sender, hash });
   }
 
