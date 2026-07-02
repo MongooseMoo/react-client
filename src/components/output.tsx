@@ -46,6 +46,18 @@ interface StoredOutputLog {
 
 const OUTPUT_LOG_VERSION = 2;
 
+// localStorage quota errors surface as a DOMException whose name/code differs
+// across browsers (QuotaExceededError / NS_ERROR_DOM_QUOTA_REACHED).
+function isQuotaExceededError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      error.code === 22 ||
+      error.code === 1014)
+  );
+}
+
 interface Props {
   client: MudClient;
   focusInput?: () => void; // Add optional prop to focus the input
@@ -68,7 +80,9 @@ class Output extends React.Component<Props, State> {
   static MAX_OUTPUT_LENGTH = 3000; // Maximum number of messages to keep
   static LIVE_WINDOW_SIZE = 200; // Number of lines React manages (rest are frozen HTML)
   static LOCAL_STORAGE_KEY = "outputLog"; // Key for saving output in LocalStorage
+  static SAVE_DEBOUNCE_MS = 500; // Coalesce bursts of server lines into one write
   messageKey: number = 0;
+  private saveTimer: number | undefined;
   private unsubscribePrefs: (() => void) | undefined;
   private unsubscribeUserlist: (() => void) | undefined;
   private unsubscribeConnection: (() => void) | undefined;
@@ -116,11 +130,51 @@ class Output extends React.Component<Props, State> {
       };
     }).filter(savedLine => savedLine.sourceContent !== ""); // Filter out lines that ended up empty
 
-    const storedLog: StoredOutputLog = {
-      version: OUTPUT_LOG_VERSION,
-      lines: linesToSave,
+    const writeLines = (lines: SavedOutputLine[]) => {
+      const storedLog: StoredOutputLog = {
+        version: OUTPUT_LOG_VERSION,
+        lines,
+      };
+      localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify(storedLog));
     };
-    localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify(storedLog));
+
+    // Saving is best-effort — a failed write (e.g. QuotaExceededError) must never
+    // propagate out of componentDidUpdate and crash the output view.
+    try {
+      writeLines(linesToSave);
+    } catch (error) {
+      if (isQuotaExceededError(error)) {
+        // One recovery attempt: drop the oldest half of the persisted set and retry.
+        const trimmed = linesToSave.slice(Math.floor(linesToSave.length / 2));
+        try {
+          writeLines(trimmed);
+          return;
+        } catch (retryError) {
+          console.warn("Failed to persist output log after trimming:", retryError);
+          return;
+        }
+      }
+      console.warn("Failed to persist output log:", error);
+    }
+  };
+
+  // Schedule a trailing debounced save so a burst of server lines coalesces into
+  // one write instead of re-serializing the whole history on every update.
+  private scheduleSave = () => {
+    if (this.saveTimer !== undefined) {
+      window.clearTimeout(this.saveTimer);
+    }
+    this.saveTimer = window.setTimeout(() => {
+      this.saveTimer = undefined;
+      this.saveOutput();
+    }, Output.SAVE_DEBOUNCE_MS);
+  };
+
+  private cancelScheduledSave = () => {
+    if (this.saveTimer !== undefined) {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = undefined;
+    }
   };
 
   // Helper method to re-create content from source data
@@ -367,7 +421,7 @@ componentDidUpdate(
       }
     }
 
-    this.saveOutput(); // Save output to LocalStorage whenever it updates
+    this.scheduleSave(); // Debounced save so a burst of lines coalesces into one write
   }
 
   /**
@@ -452,6 +506,9 @@ componentDidUpdate(
     if (this.unsubscribeOutputStore) {
       this.unsubscribeOutputStore();
     }
+    // Flush any pending debounced save so the latest output isn't lost on unmount.
+    this.cancelScheduledSave();
+    this.saveOutput();
   }
 
   sanitizeHtml(html: string): string {
@@ -662,6 +719,8 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   }
 
   clearLog() {
+    // Cancel any pending debounced save so it can't fire after the clear and re-persist stale data.
+    this.cancelScheduledSave();
     this.allLines = [];
     this.frozenCount = 0;
     this.totalLinesAdded = 0;

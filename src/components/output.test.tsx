@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type React from "react";
 
 import type MudClient from "../client";
@@ -74,5 +74,116 @@ describe("Output keyboard handling", () => {
 
     expect(plainAltArrow.preventDefault).toHaveBeenCalled();
     expect(metaAltArrow.preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe("Output persistence", () => {
+  const makeLines = (count: number): OutputLine[] =>
+    Array.from({ length: count }, (_, i) => ({
+      content: <div>{`line ${i}`}</div>,
+      id: i,
+      sourceContent: `line ${i}`,
+      sourceType: "test",
+      type: OutputType.ServerMessage,
+    }));
+
+  // Instantiate an Output with a known set of history lines, bypassing the
+  // constructor's localStorage load so tests control exactly what is persisted.
+  const makeOutput = (lines: OutputLine[]): Output => {
+    const output = new Output({ client: {} as MudClient });
+    Object.defineProperty(output, "allLines", { value: lines, writable: true });
+    return output;
+  };
+
+  const parsePayload = (raw: unknown) =>
+    JSON.parse(raw as string) as { version: number; lines: unknown[] };
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does not throw when setItem hits a quota error; trims and retries once", () => {
+    const output = makeOutput(makeLines(10));
+    const setItemSpy = vi
+      .spyOn(window.localStorage, "setItem")
+      .mockImplementationOnce(() => {
+        throw new DOMException("quota", "QuotaExceededError");
+      });
+
+    expect(() => output.saveOutput()).not.toThrow();
+
+    // First (failed) attempt writes all 10 lines; the retry writes the recent half.
+    expect(setItemSpy).toHaveBeenCalledTimes(2);
+    expect(parsePayload(setItemSpy.mock.calls[0][1]).lines).toHaveLength(10);
+    expect(parsePayload(setItemSpy.mock.calls[1][1]).lines).toHaveLength(5);
+
+    // Component still functions: a subsequent save succeeds without throwing.
+    expect(() => output.saveOutput()).not.toThrow();
+  });
+
+  it("warns without throwing when the trimmed retry also fails", () => {
+    const output = makeOutput(makeLines(10));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+
+    expect(() => output.saveOutput()).not.toThrow();
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("debounces rapid updates into a single write reflecting the latest lines", () => {
+    vi.useFakeTimers();
+    const output = makeOutput(makeLines(1));
+    const setItemSpy = vi.spyOn(window.localStorage, "setItem");
+
+    // Three rapid updates while totals stay equal (no setState side effects).
+    output.componentDidUpdate(output.props, output.state, false);
+    output.componentDidUpdate(output.props, output.state, false);
+    Object.defineProperty(output, "allLines", { value: makeLines(3), writable: true });
+    output.componentDidUpdate(output.props, output.state, false);
+
+    expect(setItemSpy).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(500);
+
+    expect(setItemSpy).toHaveBeenCalledTimes(1);
+    expect(parsePayload(setItemSpy.mock.calls[0][1]).lines).toHaveLength(3);
+  });
+
+  it("flushes the pending save synchronously on unmount", () => {
+    vi.useFakeTimers();
+    const output = makeOutput(makeLines(2));
+    const setItemSpy = vi.spyOn(window.localStorage, "setItem");
+
+    output.componentDidUpdate(output.props, output.state, false);
+    expect(setItemSpy).not.toHaveBeenCalled();
+
+    output.componentWillUnmount();
+
+    // Written synchronously, before any timer advances.
+    expect(setItemSpy).toHaveBeenCalledTimes(1);
+    expect(parsePayload(setItemSpy.mock.calls[0][1]).lines).toHaveLength(2);
+  });
+
+  it("cancels a pending save on clearLog so stale data is not re-persisted", () => {
+    vi.useFakeTimers();
+    const output = makeOutput(makeLines(5));
+    vi.spyOn(output, "setState").mockImplementation(() => {});
+    const setItemSpy = vi.spyOn(window.localStorage, "setItem");
+    const removeItemSpy = vi.spyOn(window.localStorage, "removeItem");
+
+    output.componentDidUpdate(output.props, output.state, false);
+    output.clearLog();
+
+    vi.advanceTimersByTime(500);
+
+    expect(removeItemSpy).toHaveBeenCalled();
+    expect(setItemSpy).not.toHaveBeenCalled();
   });
 });
