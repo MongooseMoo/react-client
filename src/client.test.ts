@@ -146,6 +146,9 @@ import MudClient from './client';
 import { GMCPClientFileTransfer } from './gmcp';
 import { useItemsStore } from './stores/itemsStore';
 import { useOutputStore } from './stores/outputStore';
+import { useSessionStore } from './stores/sessionStore';
+import { useSkillsStore } from './stores/skillsStore';
+import { useUserlistStore } from './stores/userlistStore';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -210,6 +213,9 @@ describe('MudClient lifecycle cleanup', () => {
     mockWebSocketInstances.length = 0;
     useItemsStore.getState().reset();
     useOutputStore.getState().reset();
+    useSessionStore.getState().reset();
+    useSkillsStore.getState().reset();
+    useUserlistStore.getState().reset();
     vi.stubGlobal('WebSocket', MockWebSocket);
     Object.defineProperty(window, 'WebSocket', {
       configurable: true,
@@ -294,6 +300,29 @@ describe('MudClient lifecycle cleanup', () => {
 
     expect(useItemsStore.getState().itemsByLocation).toEqual({});
     expect(useItemsStore.getState().hasReceivedList).toBe(false);
+  });
+
+  it('clears session, skills, and userlist state during connection cleanup', () => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+    useSessionStore.getState().setPlayer('q', 'Q the Mongoose');
+    useSessionStore.getState().setRoomId('101');
+    useSkillsStore.getState().setGroups([{ name: 'Combat', rank: 'Adept' }]);
+    useSkillsStore.getState().setList({ group: 'combat', list: ['slash'] });
+    useUserlistStore.getState().setPlayers([
+      { Object: 'q', Name: 'Q', Icon: 0, away: false, idle: false },
+    ]);
+
+    client.close();
+
+    expect(useSessionStore.getState().playerId).toBe('');
+    expect(useSessionStore.getState().playerName).toBe('');
+    expect(useSessionStore.getState().roomId).toBe('');
+    expect(useSkillsStore.getState().groups).toEqual([]);
+    expect(useSkillsStore.getState().skillsByGroup).toEqual({});
+    expect(useSkillsStore.getState().infoBySkill).toEqual({});
+    expect(useUserlistStore.getState().players).toEqual([]);
+    expect(useUserlistStore.getState().hasReceivedList).toBe(false);
   });
 
   it('buffers partial MCP frames until the line is complete', () => {

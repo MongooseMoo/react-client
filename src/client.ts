@@ -30,6 +30,9 @@ import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
 import { useOutputStore } from "./stores/outputStore";
+import { useSessionStore } from "./stores/sessionStore";
+import { useSkillsStore } from "./stores/skillsStore";
+import { useUserlistStore } from "./stores/userlistStore";
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
@@ -265,6 +268,9 @@ class MudClient {
     useServerLinksStore.getState().reset();
     useInputStore.getState().resetCommands();
     useCharacterStatusStore.getState().reset();
+    useSessionStore.getState().reset();
+    useSkillsStore.getState().reset();
+    useUserlistStore.getState().reset();
     this.fileTransferManager?.cleanup();
     this.gmcp.reset();
     useLiveKitStore.getState().reset();
