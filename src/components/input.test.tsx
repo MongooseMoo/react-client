@@ -4,13 +4,16 @@ import { render, fireEvent, screen, createEvent } from '@testing-library/react';
 import CommandInput from './input';
 import { CommandHistory } from '../CommandHistory';
 
+// Shared spy so tests can assert which commands were replayed into history
+const { addCommandMock } = vi.hoisted(() => ({ addCommandMock: vi.fn() }));
+
 // Mock CommandHistory
 vi.mock('../CommandHistory', () => ({
   CommandHistory: class MockCommandHistory {
     private history: string[] = [];
     private index: number = -1;
-    
-    addCommand = vi.fn();
+
+    addCommand = addCommandMock;
     navigateUp = vi.fn();
     navigateDown = vi.fn();
     getHistory = vi.fn(() => []);
@@ -24,6 +27,9 @@ const localStorageMock = (() => {
     getItem: vi.fn((key: string) => store[key] || null),
     setItem: vi.fn((key: string, value: string) => {
       store[key] = value.toString();
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key];
     }),
     clear: vi.fn(() => {
       store = {};
@@ -153,6 +159,39 @@ describe('CommandInput Component', () => {
     
     // Check that localStorage was accessed with the correct key
     expect(localStorageMock.getItem).toHaveBeenCalledWith('command_history');
+  });
+
+  it('replays a valid JSON array from localStorage into history on mount', () => {
+    localStorageMock.getItem.mockReturnValueOnce(JSON.stringify(['command1', 'command2']));
+
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+
+    expect(addCommandMock).toHaveBeenCalledWith('command1');
+    expect(addCommandMock).toHaveBeenCalledWith('command2');
+    expect(localStorageMock.removeItem).not.toHaveBeenCalled();
+  });
+
+  it('recovers from corrupt (non-JSON) command_history without throwing and clears the bad key', () => {
+    localStorageMock.getItem.mockReturnValueOnce('this is not json {[');
+
+    expect(() =>
+      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />)
+    ).not.toThrow();
+
+    // History stays empty and the corrupt key is removed.
+    expect(addCommandMock).not.toHaveBeenCalled();
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith('command_history');
+  });
+
+  it('treats a valid non-array JSON value as empty history without throwing', () => {
+    localStorageMock.getItem.mockReturnValueOnce(JSON.stringify({ not: 'an array' }));
+
+    expect(() =>
+      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />)
+    ).not.toThrow();
+
+    expect(addCommandMock).not.toHaveBeenCalled();
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith('command_history');
   });
   
   it('saves command history to localStorage', () => {

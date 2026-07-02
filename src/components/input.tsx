@@ -60,12 +60,21 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
   // Load saved history on component mount
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    if (!saved) return;
+    try {
       const savedHistory = JSON.parse(saved);
-      // Replay the commands into CommandHistory
-      savedHistory.forEach((cmd: string) => {
-        commandHistoryRef.current.addCommand(cmd);
+      if (!Array.isArray(savedHistory)) {
+        throw new Error('command history is not an array');
+      }
+      // Replay the commands into CommandHistory (skip non-string entries defensively)
+      savedHistory.forEach((cmd: unknown) => {
+        if (typeof cmd === 'string') {
+          commandHistoryRef.current.addCommand(cmd);
+        }
       });
+    } catch (e) {
+      console.warn('Failed to load command history:', e);
+      localStorage.removeItem(STORAGE_KEY);
     }
   }, []);
 
