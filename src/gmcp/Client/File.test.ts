@@ -19,15 +19,21 @@ describe('GMCPClientFile', () => {
   });
 
   describe('handleDownload', () => {
-    it('should open the URL in a new tab', () => {
+    it('should open the URL in a new tab with noopener,noreferrer', () => {
       const testUrl = 'https://example.com/download.zip';
       gmcpClientFile.handleDownload({ url: testUrl });
 
-      expect(global.open).toHaveBeenCalledWith(testUrl, '_blank');
+      expect(global.open).toHaveBeenCalledWith(testUrl, '_blank', 'noopener,noreferrer');
     });
 
     it('should not open a URL when the URL is empty', () => {
       gmcpClientFile.handleDownload({ url: '' });
+
+      expect(global.open).not.toHaveBeenCalled();
+    });
+
+    it('should not open a javascript: URL', () => {
+      gmcpClientFile.handleDownload({ url: 'javascript:alert(1)' });
 
       expect(global.open).not.toHaveBeenCalled();
     });

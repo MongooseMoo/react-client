@@ -1,5 +1,6 @@
 import React from "react";
 import Anser, { AnserJsonEntry } from "anser";
+import { isSafeUrl } from "./isSafeUrl";
 
 export function parseToElements(
     text: string,
@@ -38,20 +39,26 @@ function convertBundleIntoReact(
         regex: RegExp,
         process: (match: RegExpExecArray) => React.ReactNode
     ): void {
-        let match: RegExpExecArray | null;
-        while ((match = regex.exec(bundle.content)) !== null) {
+        let match: RegExpExecArray | null = regex.exec(bundle.content);
+        while (match !== null) {
             const startIndex = match.index;
             if (startIndex > index) {
                 content.push(bundle.content.substring(index, startIndex));
             }
             content.push(process(match));
             index = regex.lastIndex;
+            match = regex.exec(bundle.content);
         }
     }
 
     function processUrlMatch(match: RegExpExecArray): React.ReactNode {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const [, pre, url] = match;
+        // Server-controlled URL: only link it if the scheme is allowlisted.
+        // URL_REGEX matches javascript://... etc., so unlinked text is the safe fallback.
+        if (!isSafeUrl(url)) {
+            return <>{pre}{url}</>;
+        }
         const href = url;
         return (
             <>{pre}<a href={href} target="_blank" rel="noreferrer">
@@ -78,6 +85,7 @@ function convertBundleIntoReact(
         const [, exitType, exitName] = match;
         return (
             // eslint-disable-next-line jsx-a11y/anchor-is-valid
+            // biome-ignore lint/a11y/useValidAnchor: exit links are click-handled via data-exit; pre-existing pattern, out of scope for the URL-safety change
             <a data-exit={exitType} className="exit" href="#">
                 {exitName}
             </a>

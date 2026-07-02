@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type MudClient from '../client';
 import { McpAwnsJtext, McpAwnsServerInfo } from '../mcp';
 import { useServerLinksStore } from '../stores/serverLinksStore';
+import { isSafeUrl } from '../isSafeUrl';
 import './ServerLinksPanel.css';
 
 interface ServerLinksPanelProps {
@@ -10,6 +11,11 @@ interface ServerLinksPanelProps {
 }
 
 function openUrl(url: string): void {
+  // Server-controlled URL: refuse non-http(s)/mailto schemes (javascript:, data:, ...).
+  if (!isSafeUrl(url)) {
+    console.warn('[ServerLinksPanel] Blocked unsafe URL:', url);
+    return;
+  }
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
