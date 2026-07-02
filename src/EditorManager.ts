@@ -66,6 +66,7 @@ export class EditorManager {
             const { window, ...sessionWithoutWindow } = editorSession;
             this.channel.postMessage({
               type: 'load',
+              id,
               session: sessionWithoutWindow,
             });
           } else {

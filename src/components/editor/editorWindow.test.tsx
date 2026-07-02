@@ -202,6 +202,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['if (valid(player))', '  notify(player, "ok");', 'endif'],
           name: '#1:test',
@@ -248,6 +249,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',
@@ -272,6 +274,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: 'note',
         session: {
           contents: ['plain text'],
           name: 'note',
@@ -307,6 +310,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['while (1)', '  notify(player, "tick");'],
           name: '#1:test',
@@ -333,6 +337,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['while (1)', '  notify(player, "tick");'],
           name: '#1:test',
@@ -372,6 +377,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',
@@ -403,6 +409,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',
@@ -429,6 +436,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',
@@ -475,6 +483,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: 'note',
         session: {
           contents: ['plain text'],
           name: 'note',
@@ -510,6 +519,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['used = 1;', 'unused = 2;', 'notify(player, used);'],
           name: '#1:test',
@@ -548,6 +558,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, total);', 'total = 1;'],
           name: '#1:test',
@@ -607,6 +618,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',
@@ -648,6 +660,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['unused = 1;', 'while (1)', '  notify(player, "tick");'],
           name: '#1:test',
@@ -680,6 +693,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['unused = 1;', 'while (1)', '  notify(player, "tick");'],
           name: '#1:test',
@@ -718,6 +732,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',
@@ -747,6 +762,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',
@@ -799,6 +815,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',
@@ -850,6 +867,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['unused = 1;', 'while (1)', '  notify(player, "tick");'],
           name: '#1:test',
@@ -878,6 +896,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['unused = 1;', 'while (1)', '  notify(player, "tick");'],
           name: '#1:test',
@@ -923,6 +942,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['while (1)', '  notify(player, "tick");'],
           name: '#1:test',
@@ -982,6 +1002,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['used = 1;', 'unused = 2;', 'stale = 3;', 'notify(player, used);'],
           name: '#1:test',
@@ -1021,6 +1042,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',
@@ -1031,6 +1053,65 @@ describe('EditorWindow language selection', () => {
     });
 
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Unchanged'));
+    expect(editorMock.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a load addressed to a different window id (does not adopt another verb session)', async () => {
+    // All editor windows share one BroadcastChannel. A load carrying an id that
+    // does not match this window's reference belongs to another verb's window and
+    // must be ignored — otherwise a not-yet-loaded window would swallow it and
+    // could later save over that verb's code.
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        id: '#2:other',
+        session: {
+          contents: ['notify(player, "other verb");'],
+          name: '#2:other',
+          reference: '#2:other',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    // The mismatched load is dropped: nothing loads, no content, no focus move.
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.postMessage).toHaveBeenCalled());
+    expect(editorMock.props?.value).toBe('');
+    expect(editorMock.focus).not.toHaveBeenCalled();
+    expect(document.title).toBe('Mongoose Editor');
+  });
+
+  it('accepts a load addressed to this window id (existing behavior preserved)', async () => {
+    render(
+      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+        <EditorWindow />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+
+    act(() => {
+      MockBroadcastChannel.instances[0].emit({
+        type: 'load',
+        id: '#1:test',
+        session: {
+          contents: ['notify(player, "ok");'],
+          name: '#1:test',
+          reference: '#1:test',
+          type: 'moo-code',
+        },
+      });
+    });
+
+    await waitFor(() => expect(editorMock.props?.value).toBe('notify(player, "ok");'));
     expect(editorMock.focus).toHaveBeenCalledTimes(1);
   });
 
@@ -1046,6 +1127,7 @@ describe('EditorWindow language selection', () => {
     act(() => {
       MockBroadcastChannel.instances[0].emit({
         type: 'load',
+        id: '#1:test',
         session: {
           contents: ['notify(player, "ok");'],
           name: '#1:test',

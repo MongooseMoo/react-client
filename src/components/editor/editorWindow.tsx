@@ -286,6 +286,9 @@ function EditorWindow() {
     const handleMessage = (event: MessageEvent) => {
       switch (event.data.type) {
         case 'load': {
+          if (event.data.id !== id) {
+            return; // This load is addressed to a different window
+          }
           if (clientId !== '') {
             return; // We already have a session
           }

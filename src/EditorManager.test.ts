@@ -105,6 +105,7 @@ describe('EditorManager', () => {
     expect(mockBroadcastChannel.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'load',
+        id: 'test-ref',
         session: expect.objectContaining(createSession()),
       }),
     );
