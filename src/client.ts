@@ -49,6 +49,7 @@ function resetMidiIntentionalDisconnectFlags(): void {
 class MudClient {
   private ws!: WebSocket;
   private decoder = new TextDecoder("utf8");
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
   private telnet!: TelnetParser;
   private _connected: boolean = false;
   private intentionalDisconnect: boolean = false;
@@ -115,6 +116,8 @@ class MudClient {
   }
 
   public connect() {
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     this.intentionalDisconnect = false;
     this.connectionCleanupComplete = false;
     this.gmcp.reset();
@@ -169,7 +172,7 @@ class MudClient {
       this.cleanupConnection();
       // Only auto reconnect if it wasn't an intentional disconnect
       if (!this.intentionalDisconnect) {
-        setTimeout(() => {
+        this.reconnectTimer = setTimeout(() => {
           this.connect();
         }, 10000);
       }
@@ -260,6 +263,7 @@ class MudClient {
     this.connectionCleanupComplete = true;
     this._connected = false;
     this.mcpSession.reset();
+    this.decoder = new TextDecoder("utf8");
     this.telnetBuffer = "";
     useRoomStore.getState().reset(); // Reset room info on cleanup
     useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
@@ -279,6 +283,8 @@ class MudClient {
 
   public close(): void {
     this.intentionalDisconnect = true;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     if (
       this.ws &&
       (this.ws.readyState === WebSocket.CONNECTING ||
@@ -315,7 +321,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
 */
 
   private handleData(data: ArrayBuffer) {
-    this.telnetBuffer += this.decoder.decode(data);
+    this.telnetBuffer += this.decoder.decode(data, { stream: true });
     const lines = this.telnetBuffer.split("\n");
     this.telnetBuffer = lines.pop() ?? "";
 

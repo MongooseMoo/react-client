@@ -203,6 +203,12 @@ function sendSocketText(socket: MockWebSocket, text: string): void {
   } as MessageEvent);
 }
 
+function sendSocketBytes(socket: MockWebSocket, bytes: number[]): void {
+  socket.onmessage?.({
+    data: new Uint8Array(bytes).buffer,
+  } as MessageEvent);
+}
+
 describe('MudClient lifecycle cleanup', () => {
   beforeEach(() => {
     mockCacophonyInstances.length = 0;
@@ -349,5 +355,86 @@ describe('MudClient lifecycle cleanup', () => {
       type: 'message',
       message: 'look',
     });
+  });
+
+  it('cancels a pending auto-reconnect when the user disconnects within the window', () => {
+    vi.useFakeTimers();
+    try {
+      const client = new MudClient('example.test', 443);
+      client.connect();
+      expect(mockWebSocketInstances).toHaveLength(1);
+
+      // Unexpected drop: onclose fires while intentionalDisconnect is still false,
+      // scheduling a reconnect 10s out.
+      mockWebSocketInstances[0].onclose?.(new Event('close'));
+
+      // The user then intentionally disconnects inside that 10s window.
+      client.close();
+      vi.advanceTimersByTime(10000);
+
+      // No reconnect: connect() never ran again, so no second socket was created.
+      expect(mockWebSocketInstances).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('auto-reconnects after an unexpected drop when no disconnect intervenes', () => {
+    vi.useFakeTimers();
+    try {
+      const client = new MudClient('example.test', 443);
+      client.connect();
+      expect(mockWebSocketInstances).toHaveLength(1);
+
+      mockWebSocketInstances[0].onclose?.(new Event('close'));
+      vi.advanceTimersByTime(10000);
+
+      // Reconnect fired: connect() created a second socket.
+      expect(mockWebSocketInstances).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reassembles a multibyte character split across two frames', () => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+    const socket = mockWebSocketInstances[0];
+
+    // "é" (U+00E9) is 0xC3 0xA9 in UTF-8; deliver each byte in its own frame.
+    sendSocketBytes(socket, [0xc3]);
+    sendSocketBytes(socket, [0xa9]);
+
+    expect(useOutputStore.getState().entries).toContainEqual(
+      expect.objectContaining({ type: 'message', message: 'é' }),
+    );
+    expect(useOutputStore.getState().entries).not.toContainEqual(
+      expect.objectContaining({ type: 'message', message: '�' }),
+    );
+  });
+
+  it('resets the streaming decoder on cleanup so a partial does not bleed into the next connection', () => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+
+    // First connection receives only the lead byte of "é", held by the streaming decoder.
+    sendSocketBytes(mockWebSocketInstances[0], [0xc3]);
+
+    // Intentional disconnect tears the connection down (and must reset the decoder).
+    client.close();
+    useOutputStore.getState().reset();
+
+    // A fresh connection delivers the orphaned continuation byte alone.
+    client.connect();
+    sendSocketBytes(mockWebSocketInstances[1], [0xa9]);
+
+    // Without a reset the retained 0xC3 + 0xA9 would decode to "é"; after reset the
+    // orphan continuation byte is an invalid sequence -> U+FFFD, never "é".
+    expect(useOutputStore.getState().entries).not.toContainEqual(
+      expect.objectContaining({ type: 'message', message: 'é' }),
+    );
+    expect(useOutputStore.getState().entries).toContainEqual(
+      expect.objectContaining({ type: 'message', message: '�' }),
+    );
   });
 });
