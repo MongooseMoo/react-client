@@ -4,8 +4,9 @@ import type React from "react";
 import type MudClient from "../client";
 import Output, { type OutputLine, OutputType } from "./output";
 
-const { mockAnnounce } = vi.hoisted(() => ({
+const { mockAnnounce, mockClipboardWriteText } = vi.hoisted(() => ({
   mockAnnounce: vi.fn(),
+  mockClipboardWriteText: vi.fn(),
 }));
 
 vi.mock("@react-aria/live-announcer", () => ({
@@ -26,6 +27,15 @@ const makeKeyboardEvent = (
 } as unknown as React.KeyboardEvent<HTMLDivElement>);
 
 describe("Output keyboard handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockClipboardWriteText.mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: mockClipboardWriteText },
+    });
+  });
+
   it("reviews recent output lines from the end", () => {
     const output = new Output({ client: {} as MudClient });
     const lines: OutputLine[] = [
@@ -53,6 +63,25 @@ describe("Output keyboard handling", () => {
     expect(mockAnnounce).toHaveBeenNthCalledWith(1, "second line", "polite");
     expect(mockAnnounce).toHaveBeenNthCalledWith(2, "first line", "polite");
     expect(mockAnnounce).toHaveBeenNthCalledWith(3, "No line", "polite");
+  });
+
+  it("copies the rendered text of a recent output line", async () => {
+    const output = new Output({ client: {} as MudClient });
+    const lines: OutputLine[] = [
+      {
+        content: <div>copy this text</div>,
+        id: 1,
+        sourceContent: "<p>copy this text</p>",
+        sourceType: "html",
+        type: OutputType.ServerMessage,
+      },
+    ];
+    Object.defineProperty(output, "allLines", { value: lines });
+
+    await output.copyRecentOutputLine(1);
+
+    expect(mockClipboardWriteText).toHaveBeenCalledWith("copy this text");
+    expect(mockAnnounce).toHaveBeenCalledWith("Copied", "polite");
   });
 
   it("only suppresses plain Alt navigation keys", () => {

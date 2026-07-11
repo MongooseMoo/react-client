@@ -32,6 +32,7 @@ import { useConnectionStore } from "./stores/connectionStore";
 import { ensurePushSubscription } from "./webpush";
 
 const WINDOW_TITLE = "Mongoose Client";
+const DOUBLE_PRESS_WINDOW_MS = 500;
 
 function setWindowSubtitle(subtitle?: string) {
   document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
@@ -95,6 +96,10 @@ function App() {
   const autoLogDialogRef = React.useRef<AutoLogDialogRef | null>(null);
   const sidebarRef = React.useRef<SidebarRef | null>(null);
   const autoLoginAttempted = useRef(false);
+  const lastOutputReviewShortcut = useRef<{
+    lineNumber: number;
+    time: number;
+  } | null>(null);
 
   const clientInitialized = useRef(false);
   const hapticsRuntimeRef = useRef<HapticsRuntime | null>(null);
@@ -144,7 +149,18 @@ function App() {
       const outputReviewLineNumber = getOutputReviewLineNumber(event);
       if (outputReviewLineNumber !== null) {
         event.preventDefault();
+        const now = Date.now();
+        const isDoublePress =
+          lastOutputReviewShortcut.current?.lineNumber === outputReviewLineNumber &&
+          now - lastOutputReviewShortcut.current.time < DOUBLE_PRESS_WINDOW_MS;
+        lastOutputReviewShortcut.current = {
+          lineNumber: outputReviewLineNumber,
+          time: now,
+        };
         outRef.current?.reviewRecentOutputLine(outputReviewLineNumber);
+        if (isDoublePress) {
+          void outRef.current?.copyRecentOutputLine(outputReviewLineNumber);
+        }
         return;
       }
 

@@ -7,6 +7,7 @@ const {
   mockEnsurePushSubscription,
   mockHapticsRuntimes,
   mockPreferences,
+  mockCopyRecentOutputLine,
   mockReviewRecentOutputLine,
   mockSwitchToTab,
 } = vi.hoisted(() => {
@@ -42,6 +43,7 @@ const {
       haptics: { enabled: false },
       midi: { enabled: false },
     },
+    mockCopyRecentOutputLine: vi.fn(),
     mockReviewRecentOutputLine: vi.fn(),
     mockSwitchToTab: vi.fn(),
   };
@@ -90,6 +92,7 @@ vi.mock('./components/output', async () => {
   return {
     default: ReactModule.forwardRef((_props, ref) => {
       ReactModule.useImperativeHandle(ref, () => ({
+        copyRecentOutputLine: mockCopyRecentOutputLine,
         reviewRecentOutputLine: mockReviewRecentOutputLine,
       }));
       return <div data-testid="output" />;
@@ -172,6 +175,7 @@ describe('App haptics backend lifecycle', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
   });
 
@@ -230,7 +234,30 @@ describe('App haptics backend lifecycle', () => {
     fireEvent.keyDown(document, { ctrlKey: true, key: '0' });
     expect(mockReviewRecentOutputLine).toHaveBeenCalledWith(10);
 
+    fireEvent.keyDown(document, { ctrlKey: true, key: '1' });
+    expect(mockCopyRecentOutputLine).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { ctrlKey: true, key: '1' });
+    expect(mockCopyRecentOutputLine).toHaveBeenCalledWith(1);
+
     fireEvent.keyDown(document, { ctrlKey: true, key: '1', shiftKey: true });
     expect(mockSwitchToTab).toHaveBeenCalledWith(0);
+  });
+
+  it('does not copy output when the repeated Ctrl+number press is too late', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(mockHapticsRuntimes).toHaveLength(1);
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    fireEvent.keyDown(document, { ctrlKey: true, key: '1' });
+
+    vi.advanceTimersByTime(501);
+    fireEvent.keyDown(document, { ctrlKey: true, key: '1' });
+
+    expect(mockCopyRecentOutputLine).not.toHaveBeenCalled();
   });
 });

@@ -873,6 +873,30 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     this.announceOutputLine(line);
   };
 
+  copyRecentOutputLine = (lineNumber: number) => {
+    const visibleOutput = this.allLines.filter(
+      line => this.state.localEchoActive || line.type !== OutputType.Command
+    );
+    const line = visibleOutput[visibleOutput.length - lineNumber];
+
+    if (!line) {
+      announce(visibleOutput.length === 0 ? "No output" : "No line", "polite");
+      return;
+    }
+
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = ReactDOMServer.renderToStaticMarkup(line.content);
+    const textContent = tempDiv.textContent || tempDiv.innerText || "";
+
+    return navigator.clipboard.writeText(textContent).then(
+      () => announce("Copied", "polite"),
+      (error: unknown) => {
+        console.error("Failed to copy output line:", error);
+        announce("Could not copy", "polite");
+      },
+    );
+  };
+
   /**
    * Handle focus on output area
    */
