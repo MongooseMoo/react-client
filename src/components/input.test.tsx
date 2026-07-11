@@ -5,7 +5,11 @@ import CommandInput from './input';
 import { CommandHistory } from '../CommandHistory';
 
 // Shared spy so tests can assert which commands were replayed into history
-const { addCommandMock } = vi.hoisted(() => ({ addCommandMock: vi.fn() }));
+const { addCommandMock, navigateDownMock, navigateUpMock } = vi.hoisted(() => ({
+  addCommandMock: vi.fn(),
+  navigateDownMock: vi.fn(),
+  navigateUpMock: vi.fn(),
+}));
 
 // Mock CommandHistory
 vi.mock('../CommandHistory', () => ({
@@ -14,8 +18,8 @@ vi.mock('../CommandHistory', () => ({
     private index: number = -1;
 
     addCommand = addCommandMock;
-    navigateUp = vi.fn();
-    navigateDown = vi.fn();
+    navigateUp = navigateUpMock;
+    navigateDown = navigateDownMock;
     getHistory = vi.fn(() => []);
   }
 }));
@@ -149,6 +153,17 @@ describe('CommandInput Component', () => {
 
     expect(plainAltArrow.defaultPrevented).toBe(true);
     expect(metaAltArrow.defaultPrevented).toBe(false);
+  });
+
+  it('never routes Alt+Arrow to command history', () => {
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+
+    const textarea = screen.getByRole('textbox');
+    fireEvent.keyDown(textarea, { altKey: true, key: 'ArrowUp' });
+    fireEvent.keyDown(textarea, { altKey: true, ctrlKey: true, key: 'ArrowDown' });
+
+    expect(navigateUpMock).not.toHaveBeenCalled();
+    expect(navigateDownMock).not.toHaveBeenCalled();
   });
   
   it('loads command history from localStorage on mount', () => {

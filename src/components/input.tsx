@@ -224,12 +224,12 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       e.preventDefault();
     } else if (isPlainAlt && e.code === "Space") {
       e.preventDefault();
-    } else if (e.key === "ArrowUp") {
+    } else if (e.key === "ArrowUp" && !e.altKey) {
       e.preventDefault();
       const prevCommand = commandHistory.navigateUp(currentInputText);
       useInputStore.getState().setText(prevCommand);
       resetCompletionState();
-    } else if (e.key === "ArrowDown") {
+    } else if (e.key === "ArrowDown" && !e.altKey) {
       e.preventDefault();
       const nextCommand = commandHistory.navigateDown(currentInputText);
       useInputStore.getState().setText(nextCommand);
