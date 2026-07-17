@@ -85,6 +85,26 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     registerCommandInput(inputRef);
   }, [inputRef]);
 
+  // Ctrl+R opens history search from anywhere in the app. Listen on the
+  // document in the capture phase (like App's Ctrl+digit shortcuts) so the
+  // browser's reload shortcut is preempted regardless of where focus sits.
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() === "r" &&
+        event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.shiftKey
+      ) {
+        event.preventDefault();
+        setHistorySearchOpen(true);
+      }
+    };
+    document.addEventListener("keydown", handleGlobalKeyDown, true);
+    return () => document.removeEventListener("keydown", handleGlobalKeyDown, true);
+  }, []);
+
   // Save history when commands are added
   const saveHistory = useCallback(() => {
     try {
@@ -143,12 +163,6 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     const currentInputText = text;
     const textArea = inputRef.current;
     const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
-
-    if (e.key.toLowerCase() === "r" && e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
-      e.preventDefault();
-      setHistorySearchOpen(true);
-      return;
-    }
 
     if (e.key === "Tab") {
       // e.preventDefault(); // Remove from here

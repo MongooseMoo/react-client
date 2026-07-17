@@ -279,6 +279,16 @@ describe('CommandInput Component', () => {
       expect(onSendMock).not.toHaveBeenCalled();
     });
 
+    it('opens the search and consumes Ctrl+R even when focus is outside the input', () => {
+      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+
+      const event = createEvent.keyDown(document, { key: 'r', ctrlKey: true });
+      fireEvent(document, event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(screen.getByRole('combobox', { name: 'Search command history' })).toBeTruthy();
+    });
+
     it('does not open the search when Ctrl+Shift+R is pressed', () => {
       render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
 
