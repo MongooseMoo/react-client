@@ -30,8 +30,8 @@ describe('CommandHistory', () => {
 
   it('should return to unsent input after navigating down from the most recent command', () => {
     commandHistory.addCommand('command');
-    expect(commandHistory.navigateUp('unsent')).toBe('command');
-    expect(commandHistory.navigateDown('command')).toBe('unsent');
+    expect(commandHistory.navigateUp('com')).toBe('command');
+    expect(commandHistory.navigateDown('command')).toBe('com');
   });
 
   it('should remain at the oldest command when navigating up at history boundary', () => {
@@ -45,8 +45,8 @@ describe('CommandHistory', () => {
     expect(commandHistory.navigateDown('unsent')).toBe('unsent');
   });
   
-  it('should handle navigation in empty history', () => {
-    expect(commandHistory.navigateUp('unsent')).toBe('');
+  it('should keep the typed text when navigating in empty history', () => {
+    expect(commandHistory.navigateUp('unsent')).toBe('unsent');
     expect(commandHistory.navigateDown('unsent')).toBe('unsent');
   });
 
@@ -77,52 +77,53 @@ describe('CommandHistory', () => {
     expect(commandHistory.navigateDown('second')).toBe(blank);
   });
 
-  describe('search', () => {
-    it('returns matches most recent first', () => {
+  describe('prefix-filtered navigation', () => {
+    beforeEach(() => {
       commandHistory.addCommand('look north');
       commandHistory.addCommand('say hello');
       commandHistory.addCommand('look south');
-
-      expect(commandHistory.search('look')).toEqual(['look south', 'look north']);
     });
 
-    it('matches case-insensitively on substrings', () => {
-      commandHistory.addCommand('Say Hello There');
-
-      expect(commandHistory.search('hello')).toEqual(['Say Hello There']);
+    it('walks only commands starting with the typed text, most recent first', () => {
+      expect(commandHistory.navigateUp('look')).toBe('look south');
+      expect(commandHistory.navigateUp('look south')).toBe('look north');
     });
 
-    it('deduplicates repeated commands', () => {
-      commandHistory.addCommand('look');
-      commandHistory.addCommand('say hi');
-      commandHistory.addCommand('look');
-
-      expect(commandHistory.search('look')).toEqual(['look']);
+    it('matches the prefix case-insensitively', () => {
+      expect(commandHistory.navigateUp('LOOK')).toBe('look south');
     });
 
-    it('returns recent commands for an empty query', () => {
-      commandHistory.addCommand('first');
-      commandHistory.addCommand('second');
-
-      expect(commandHistory.search('')).toEqual(['second', 'first']);
+    it('skips commands that do not start with the typed text', () => {
+      expect(commandHistory.navigateUp('say')).toBe('say hello');
+      // Only one match: stays there rather than falling through to others
+      expect(commandHistory.navigateUp('say hello')).toBe('say hello');
     });
 
-    it('returns an empty array when nothing matches', () => {
-      commandHistory.addCommand('look');
-
-      expect(commandHistory.search('zzz')).toEqual([]);
+    it('keeps the typed text when nothing matches', () => {
+      expect(commandHistory.navigateUp('zzz')).toBe('zzz');
+      expect(commandHistory.getCurrentInput()).toBe('zzz');
     });
 
-    it('respects the limit', () => {
-      for (let i = 0; i < 10; i++) {
-        commandHistory.addCommand(`command ${i}`);
-      }
+    it('returns to the typed text when navigating back down', () => {
+      expect(commandHistory.navigateUp('look')).toBe('look south');
+      expect(commandHistory.navigateUp('look south')).toBe('look north');
+      expect(commandHistory.navigateDown('look north')).toBe('look south');
+      expect(commandHistory.navigateDown('look south')).toBe('look');
+    });
 
-      expect(commandHistory.search('command', 3)).toEqual([
-        'command 9',
-        'command 8',
-        'command 7',
-      ]);
+    it('restarts the walk with the new prefix when the text is edited mid-walk', () => {
+      expect(commandHistory.navigateUp('look')).toBe('look south');
+      // User edits the recalled command; next Up filters on the edited text
+      expect(commandHistory.navigateUp('say')).toBe('say hello');
+      expect(commandHistory.navigateDown('say hello')).toBe('say');
+    });
+
+    it('deduplicates repeated commands during the walk, keeping the most recent', () => {
+      commandHistory.addCommand('look north');
+
+      expect(commandHistory.navigateUp('look')).toBe('look north');
+      expect(commandHistory.navigateUp('look north')).toBe('look south');
+      expect(commandHistory.navigateUp('look south')).toBe('look south');
     });
   });
 });

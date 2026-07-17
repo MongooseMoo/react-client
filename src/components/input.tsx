@@ -1,7 +1,6 @@
 import type React from "react";
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { CommandHistory } from "../CommandHistory";
-import HistorySearch from "./HistorySearch";
 import "./input.css";
 import { useInputStore } from "../stores/inputStore";
 import { useRoomStore } from "../stores/roomStore";
@@ -51,7 +50,6 @@ const parseWordForCompletion = (word: string): { leadingPunctuation: string, nam
 const CommandInput = ({ onSend, inputRef }: Props) => {
   const commandHistoryRef = useRef(new CommandHistory());
   const text = useInputStore((s) => s.text);
-  const [historySearchOpen, setHistorySearchOpen] = useState(false);
 
   // Refs for tab completion state
   const completionCandidatesRef = useRef<string[]>([]);
@@ -85,26 +83,6 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     registerCommandInput(inputRef);
   }, [inputRef]);
 
-  // Ctrl+R opens history search from anywhere in the app. Listen on the
-  // document in the capture phase (like App's Ctrl+digit shortcuts) so the
-  // browser's reload shortcut is preempted regardless of where focus sits.
-  useEffect(() => {
-    const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() === "r" &&
-        event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey &&
-        !event.shiftKey
-      ) {
-        event.preventDefault();
-        setHistorySearchOpen(true);
-      }
-    };
-    document.addEventListener("keydown", handleGlobalKeyDown, true);
-    return () => document.removeEventListener("keydown", handleGlobalKeyDown, true);
-  }, []);
-
   // Save history when commands are added
   const saveHistory = useCallback(() => {
     try {
@@ -135,28 +113,6 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     inputRef.current?.focus();
     resetCompletionState();
   }, [text, onSend, inputRef, resetCompletionState, saveHistory]);
-
-  const searchHistory = useCallback(
-    (query: string) => commandHistoryRef.current.search(query),
-    [],
-  );
-
-  const closeHistorySearch = useCallback(() => {
-    setHistorySearchOpen(false);
-    inputRef.current?.focus();
-  }, [inputRef]);
-
-  const acceptHistorySearch = useCallback((command: string) => {
-    useInputStore.getState().setText(command);
-    setHistorySearchOpen(false);
-    const textArea = inputRef.current;
-    if (textArea) {
-      textArea.focus();
-      requestAnimationFrame(() =>
-        textArea.setSelectionRange(command.length, command.length),
-      );
-    }
-  }, [inputRef]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const commandHistory = commandHistoryRef.current;
@@ -290,13 +246,6 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
 
   return (
     <div className="command-input-container">
-      {historySearchOpen && (
-        <HistorySearch
-          search={searchHistory}
-          onAccept={acceptHistorySearch}
-          onCancel={closeHistorySearch}
-        />
-      )}
       <textarea
         value={text}
         onChange={(e) => {

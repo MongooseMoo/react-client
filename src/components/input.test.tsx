@@ -5,11 +5,10 @@ import CommandInput from './input';
 import { CommandHistory } from '../CommandHistory';
 
 // Shared spy so tests can assert which commands were replayed into history
-const { addCommandMock, navigateDownMock, navigateUpMock, searchMock } = vi.hoisted(() => ({
+const { addCommandMock, navigateDownMock, navigateUpMock } = vi.hoisted(() => ({
   addCommandMock: vi.fn(),
   navigateDownMock: vi.fn(),
   navigateUpMock: vi.fn(),
-  searchMock: vi.fn(() => [] as string[]),
 }));
 
 // Mock CommandHistory
@@ -22,7 +21,6 @@ vi.mock('../CommandHistory', () => ({
     navigateUp = navigateUpMock;
     navigateDown = navigateDownMock;
     getHistory = vi.fn(() => []);
-    search = searchMock;
   }
 }));
 
@@ -239,62 +237,4 @@ describe('CommandInput Component', () => {
     expect(savedValue.length).toBeLessThanOrEqual(1000);
   });
 
-  describe('history search (Ctrl+R)', () => {
-    it('opens the search combobox on Ctrl+R and focuses it', () => {
-      searchMock.mockReturnValue(['look north']);
-      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
-
-      const textarea = screen.getByRole('textbox');
-      fireEvent.keyDown(textarea, { key: 'r', ctrlKey: true });
-
-      const combobox = screen.getByRole('combobox', { name: 'Search command history' });
-      expect(document.activeElement).toBe(combobox);
-    });
-
-    it('closes on Escape and returns focus to the input without changing text', () => {
-      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
-
-      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
-      fireEvent.change(textarea, { target: { value: 'half-typed' } });
-      fireEvent.keyDown(textarea, { key: 'r', ctrlKey: true });
-
-      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
-
-      expect(screen.queryByRole('combobox')).toBeNull();
-      expect(document.activeElement).toBe(textarea);
-      expect(textarea.value).toBe('half-typed');
-    });
-
-    it('puts the accepted command into the input and refocuses it without sending', () => {
-      searchMock.mockReturnValue(['look north']);
-      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
-
-      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
-      fireEvent.keyDown(textarea, { key: 'r', ctrlKey: true });
-      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-
-      expect(screen.queryByRole('combobox')).toBeNull();
-      expect(textarea.value).toBe('look north');
-      expect(document.activeElement).toBe(textarea);
-      expect(onSendMock).not.toHaveBeenCalled();
-    });
-
-    it('opens the search and consumes Ctrl+R even when focus is outside the input', () => {
-      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
-
-      const event = createEvent.keyDown(document, { key: 'r', ctrlKey: true });
-      fireEvent(document, event);
-
-      expect(event.defaultPrevented).toBe(true);
-      expect(screen.getByRole('combobox', { name: 'Search command history' })).toBeTruthy();
-    });
-
-    it('does not open the search when Ctrl+Shift+R is pressed', () => {
-      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
-
-      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'R', ctrlKey: true, shiftKey: true });
-
-      expect(screen.queryByRole('combobox')).toBeNull();
-    });
-  });
 });
