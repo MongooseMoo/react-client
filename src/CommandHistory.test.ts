@@ -76,4 +76,53 @@ describe('CommandHistory', () => {
     expect(commandHistory.navigateDown('first')).toBe('second');
     expect(commandHistory.navigateDown('second')).toBe(blank);
   });
+
+  describe('search', () => {
+    it('returns matches most recent first', () => {
+      commandHistory.addCommand('look north');
+      commandHistory.addCommand('say hello');
+      commandHistory.addCommand('look south');
+
+      expect(commandHistory.search('look')).toEqual(['look south', 'look north']);
+    });
+
+    it('matches case-insensitively on substrings', () => {
+      commandHistory.addCommand('Say Hello There');
+
+      expect(commandHistory.search('hello')).toEqual(['Say Hello There']);
+    });
+
+    it('deduplicates repeated commands', () => {
+      commandHistory.addCommand('look');
+      commandHistory.addCommand('say hi');
+      commandHistory.addCommand('look');
+
+      expect(commandHistory.search('look')).toEqual(['look']);
+    });
+
+    it('returns recent commands for an empty query', () => {
+      commandHistory.addCommand('first');
+      commandHistory.addCommand('second');
+
+      expect(commandHistory.search('')).toEqual(['second', 'first']);
+    });
+
+    it('returns an empty array when nothing matches', () => {
+      commandHistory.addCommand('look');
+
+      expect(commandHistory.search('zzz')).toEqual([]);
+    });
+
+    it('respects the limit', () => {
+      for (let i = 0; i < 10; i++) {
+        commandHistory.addCommand(`command ${i}`);
+      }
+
+      expect(commandHistory.search('command', 3)).toEqual([
+        'command 9',
+        'command 8',
+        'command 7',
+      ]);
+    });
+  });
 });

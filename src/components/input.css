@@ -1,4 +1,5 @@
 .command-input-container {
+  position: relative;
   display: flex;
   align-items: stretch;
   width: 100%;

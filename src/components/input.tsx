@@ -1,6 +1,7 @@
 import type React from "react";
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import { CommandHistory } from "../CommandHistory";
+import HistorySearch from "./HistorySearch";
 import "./input.css";
 import { useInputStore } from "../stores/inputStore";
 import { useRoomStore } from "../stores/roomStore";
@@ -50,6 +51,7 @@ const parseWordForCompletion = (word: string): { leadingPunctuation: string, nam
 const CommandInput = ({ onSend, inputRef }: Props) => {
   const commandHistoryRef = useRef(new CommandHistory());
   const text = useInputStore((s) => s.text);
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
 
   // Refs for tab completion state
   const completionCandidatesRef = useRef<string[]>([]);
@@ -114,11 +116,39 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     resetCompletionState();
   }, [text, onSend, inputRef, resetCompletionState, saveHistory]);
 
+  const searchHistory = useCallback(
+    (query: string) => commandHistoryRef.current.search(query),
+    [],
+  );
+
+  const closeHistorySearch = useCallback(() => {
+    setHistorySearchOpen(false);
+    inputRef.current?.focus();
+  }, [inputRef]);
+
+  const acceptHistorySearch = useCallback((command: string) => {
+    useInputStore.getState().setText(command);
+    setHistorySearchOpen(false);
+    const textArea = inputRef.current;
+    if (textArea) {
+      textArea.focus();
+      requestAnimationFrame(() =>
+        textArea.setSelectionRange(command.length, command.length),
+      );
+    }
+  }, [inputRef]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const commandHistory = commandHistoryRef.current;
     const currentInputText = text;
     const textArea = inputRef.current;
     const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+
+    if (e.key.toLowerCase() === "r" && e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      setHistorySearchOpen(true);
+      return;
+    }
 
     if (e.key === "Tab") {
       // e.preventDefault(); // Remove from here
@@ -246,6 +276,13 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
 
   return (
     <div className="command-input-container">
+      {historySearchOpen && (
+        <HistorySearch
+          search={searchHistory}
+          onAccept={acceptHistorySearch}
+          onCancel={closeHistorySearch}
+        />
+      )}
       <textarea
         value={text}
         onChange={(e) => {

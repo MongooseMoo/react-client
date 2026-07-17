@@ -47,4 +47,23 @@ export class CommandHistory {
   getHistory(): string[] {
     return [...this.history]; // Return a copy to prevent external modification
   }
+
+  /**
+   * Search history for commands containing the query (case-insensitive),
+   * most recent first, deduplicated. An empty query returns recent commands.
+   */
+  search(query: string, limit: number = 50): string[] {
+    const needle = query.toLowerCase();
+    const results: string[] = [];
+    const seen = new Set<string>();
+    for (let i = this.history.length - 1; i >= 0 && results.length < limit; i--) {
+      const command = this.history[i];
+      if (seen.has(command)) continue;
+      if (needle === "" || command.toLowerCase().includes(needle)) {
+        results.push(command);
+        seen.add(command);
+      }
+    }
+    return results;
+  }
 }
