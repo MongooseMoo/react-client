@@ -91,13 +91,15 @@ const HistorySearch = ({ search, onAccept, onCancel }: Props) => {
         onKeyDown={handleKeyDown}
         className="history-search-input"
       />
-      <div id={listboxId} role="listbox" aria-label="Matching commands" className="history-search-list">
+      {/* biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: APG combobox pattern uses ul/li for the listbox popup */}
+      <ul id={listboxId} role="listbox" aria-label="Matching commands" className="history-search-list">
         {matches.map((command, index) => (
-          <div
+          // biome-ignore lint/a11y/useFocusableInteractive: options are conveyed via aria-activedescendant; DOM focus stays on the combobox input per APG
+          <li
             key={optionId(index)}
             id={optionId(index)}
+            // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: APG option inside listbox
             role="option"
-            tabIndex={-1}
             aria-selected={index === activeIndex}
             className={
               index === activeIndex
@@ -111,9 +113,9 @@ const HistorySearch = ({ search, onAccept, onCancel }: Props) => {
             }}
           >
             {command}
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
       <div aria-live="polite" className="sr-only">
         {matches.length === 0
           ? "No matching commands"
