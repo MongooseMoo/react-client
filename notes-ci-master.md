@@ -30,4 +30,14 @@
 
 ## Next action
 
-- None. The source fix is pushed and the previously failing workflow is green.
+- Commit the two workflow updates and this record, push `master`, and watch both triggered workflows to completion.
+
+## GitHub action updates
+
+- The user explicitly requested updating the GitHub actions after the successful CI repair.
+- Both `.github/workflows/build-test.yml` and `.github/workflows/deploy.yml` use `actions/checkout@v3`, `actions/cache@v3`, and `actions/setup-node@v3`.
+- The official action repositories currently document major `v6` for all three actions. GitHub-hosted `ubuntu-latest` runners satisfy their minimum runner requirements.
+- Scope is limited to those six official action references; existing action inputs, explicit cache behavior, Node versions, and third-party actions remain unchanged.
+- Both workflow files now use v6 for checkout, cache, and setup-node; the diff contains only those six reference changes.
+- `git diff --check` passes. `actionlint` is not installed locally, so GitHub's workflow parser and the triggered runs remain the decisive validation.
+- No blocker is currently known.
