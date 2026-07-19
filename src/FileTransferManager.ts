@@ -194,7 +194,7 @@ export default class FileTransferManager extends EventEmitter {
   }
 
   private async computeFileHash(file: File): Promise<string> {
-    const fileBytes = await file.arrayBuffer();
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
     const hashBytes = await crypto.subtle.digest('SHA-256', fileBytes);
     return Array.from(new Uint8Array(hashBytes))
       .map((byte) => byte.toString(16).padStart(2, '0'))
