@@ -258,6 +258,95 @@ describe("useChannelHistory", () => {
   });
 });
 
+describe("Alt+Enter link activation", () => {
+  it("opens the sole link immediately without showing the picker", async () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const { result } = renderHook(() => useChannelHistory());
+
+    act(() => {
+      addChannelText("gossip", "Reader", "see http://example.com/one");
+    });
+
+    await waitFor(() => {
+      expect(result.current.buffers.get("all")?.messages).toHaveLength(1);
+    });
+
+    // Review the message so currentIndex points at it, then activate.
+    act(() => {
+      dispatchKeyboardEvent({ altKey: true, key: "ArrowUp" });
+    });
+    let event: KeyboardEvent = dispatchKeyboardEvent({});
+    act(() => {
+      event = dispatchKeyboardEvent({ altKey: true, key: "Enter" });
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(openSpy).toHaveBeenCalledWith(
+      "http://example.com/one",
+      "_blank",
+      "noopener,noreferrer"
+    );
+    expect(result.current.linkPickerLinks).toBeNull();
+    openSpy.mockRestore();
+  });
+
+  it("opens the picker when the reviewed message has multiple links", async () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const { result } = renderHook(() => useChannelHistory());
+
+    act(() => {
+      addChannelText("gossip", "Reader", "http://a.com and http://b.com");
+    });
+
+    await waitFor(() => {
+      expect(result.current.buffers.get("all")?.messages).toHaveLength(1);
+    });
+
+    act(() => {
+      dispatchKeyboardEvent({ altKey: true, key: "ArrowUp" });
+    });
+    act(() => {
+      dispatchKeyboardEvent({ altKey: true, key: "Enter" });
+    });
+
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(result.current.linkPickerLinks).toEqual([
+      { label: "http://a.com", href: "http://a.com" },
+      { label: "http://b.com", href: "http://b.com" },
+    ]);
+
+    act(() => {
+      result.current.closeLinkPicker();
+    });
+    expect(result.current.linkPickerLinks).toBeNull();
+    openSpy.mockRestore();
+  });
+
+  it("does nothing but announce when the reviewed message has no links", async () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const { result } = renderHook(() => useChannelHistory());
+
+    act(() => {
+      addChannelText("gossip", "Reader", "plain text with no links");
+    });
+
+    await waitFor(() => {
+      expect(result.current.buffers.get("all")?.messages).toHaveLength(1);
+    });
+
+    act(() => {
+      dispatchKeyboardEvent({ altKey: true, key: "ArrowUp" });
+    });
+    act(() => {
+      dispatchKeyboardEvent({ altKey: true, key: "Enter" });
+    });
+
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(result.current.linkPickerLinks).toBeNull();
+    openSpy.mockRestore();
+  });
+});
+
 describe("the all buffer holds the contents of all channels", () => {
   it("aggregates every channel's messages into the all buffer in arrival order", async () => {
     const { result } = renderHook(() => useChannelHistory());
