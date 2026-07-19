@@ -24,13 +24,19 @@ const WasmGuest: React.FC<WasmGuestProps> = ({ roomId, onClientReady }) => {
                 import('../GuestStream')
             ]);
             const peerSvc = new PeerService();
-            const conn = await peerSvc.joinSession(targetRoomId);
-            const guestStream = new GuestStream(conn);
+            try {
+                const conn = await peerSvc.joinSession(targetRoomId);
+                const guestStream = new GuestStream(conn);
 
-            const newClient = createConfiguredClient();
-            newClient.connectLocal(guestStream);
-            console.log('[WebRTC] Connected to host');
-            onClientReady(newClient);
+                const newClient = createConfiguredClient();
+                newClient.registerCleanup(() => peerSvc.destroy());
+                newClient.connectLocal(guestStream);
+                console.log('[WebRTC] Connected to host');
+                onClientReady(newClient);
+            } catch (err) {
+                peerSvc.destroy();
+                throw err;
+            }
         } catch (err) {
             console.error('[WebRTC] Failed to join session:', err);
             connectedRef.current = false;
