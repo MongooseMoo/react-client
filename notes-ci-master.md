@@ -30,7 +30,7 @@
 
 ## Next action
 
-- Commit the two workflow updates and this record, push `master`, and watch both triggered workflows to completion.
+- None. The official action update is pushed and both affected workflows are green.
 
 ## GitHub action updates
 
@@ -40,4 +40,7 @@
 - Scope is limited to those six official action references; existing action inputs, explicit cache behavior, Node versions, and third-party actions remain unchanged.
 - Both workflow files now use v6 for checkout, cache, and setup-node; the diff contains only those six reference changes.
 - `git diff --check` passes. `actionlint` is not installed locally, so GitHub's workflow parser and the triggered runs remain the decisive validation.
-- No blocker is currently known.
+- Update commit `fe57bb8b61ef666220a31d0b4ef1a04484f16326` was pushed to `master`.
+- `Node.js CI` run `29671793856` passed with the v6 actions and no Node-runtime deprecation annotation.
+- `Deploy` run `29671793853` passed with the v6 actions.
+- There is no remaining blocker.
