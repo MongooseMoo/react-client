@@ -24,7 +24,10 @@
 - The exact CI runtime is Node `20.20.2` on Linux.
 - Post-change targeted gate on Windows Node `20.16.0`: 1 file passed, 9 tests passed.
 - Post-change full gate on Windows Node `20.16.0`: 99 files passed, 1,014 tests passed.
+- Fix commit `6a947f2bc84df925dfb22b1a5029cb9585986ab7` was pushed to `master`.
+- Decisive Linux Node `20.20.2` verification: `Node.js CI` run `29671515740` passed, including `npm test`.
+- There is no remaining CI blocker for this task.
 
 ## Next action
 
-- Commit only `src/FileTransferManager.ts` and this task note, push `master`, and watch the resulting `Node.js CI` run to completion. The remote Linux Node `20.20.2` run remains the decisive verification.
+- None. The source fix is pushed and the previously failing workflow is green.
