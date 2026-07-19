@@ -48,4 +48,8 @@ export class GuestStream implements Stream {
     const text = data.toString("utf-8").replace(/\r?\n$/, "");
     this.conn.send({ type: "input", data: text });
   }
+
+  close(): void {
+    this.conn.close();
+  }
 }
