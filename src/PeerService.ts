@@ -43,9 +43,10 @@ export class PeerService {
    */
   joinSession(roomId: string): Promise<DataConnection> {
     return new Promise((resolve, reject) => {
-      this.peer = new Peer();
-      this.peer.on("open", () => {
-        const conn = this.peer!.connect(roomId, { reliable: true });
+      const peer = new Peer();
+      this.peer = peer;
+      peer.on("open", () => {
+        const conn = peer.connect(roomId, { reliable: true });
         conn.on("open", () => {
           this.connections.push(conn);
           resolve(conn);
@@ -54,7 +55,7 @@ export class PeerService {
           reject(err);
         });
       });
-      this.peer.on("error", (err: Error) => {
+      peer.on("error", (err: Error) => {
         reject(err);
       });
     });
