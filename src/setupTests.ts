@@ -34,6 +34,12 @@ if (dialogPrototype) {
   }
 }
 
+// jsdom does not implement scrollIntoView; AccessibleList calls it when the
+// active option changes, so stub it to a no-op for any listbox-based test.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = vi.fn();
+}
+
 // Mock BroadcastChannel
 global.BroadcastChannel = vi.fn().mockImplementation(() => ({
   postMessage: vi.fn(),

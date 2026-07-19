@@ -21,6 +21,7 @@ interface AccessibleListProps<T extends AccessibleListItem> {
     itemClassName?: (item: T, index: number, isSelected: boolean) => string; // Optional function for item classes
     getItemTextValue?: (item: T) => string; // Function to get text value for typeahead
     onSelectedIndexChange?: (index: number) => void; // Callback for when selected index changes
+    onActivate?: (index: number) => void; // Callback when an item is activated (Enter or click)
 }
 
 const AccessibleList = <T extends AccessibleListItem>({
@@ -32,6 +33,7 @@ const AccessibleList = <T extends AccessibleListItem>({
     itemClassName,
     getItemTextValue = (item) => (item.name || item.id || '').toString().toLowerCase(), // Default text value getter
     onSelectedIndexChange,
+    onActivate,
 }: AccessibleListProps<T>) => {
     const [selectedIndex, setSelectedIndexState] = useState<number>(-1);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -83,6 +85,11 @@ const AccessibleList = <T extends AccessibleListItem>({
             case "End":
                 newIndex = items.length - 1;
                 break;
+            case "Enter":
+                if (onActivate && selectedIndex > -1) {
+                    onActivate(selectedIndex);
+                }
+                break;
             case "PageUp":
                 // Implement PageUp logic if needed, e.g., jump 5 items
                 newIndex = Math.max(selectedIndex - 5, 0);
@@ -123,7 +130,7 @@ const AccessibleList = <T extends AccessibleListItem>({
         if (preventDefault) {
             e.preventDefault();
         }
-    }, [selectedIndex, items, getItemTextValue]);
+    }, [selectedIndex, items, getItemTextValue, onActivate]);
 
     return (
         <div
@@ -145,15 +152,18 @@ const AccessibleList = <T extends AccessibleListItem>({
                     const itemContent = renderItem(item, index, isSelected);
                     const classes = itemClassName ? itemClassName(item, index, isSelected) : '';
                     return (
-                        <li
+                        // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: role="option" on <li> is the standard APG listbox markup; activation is handled at the listbox container.
+                        <li role="option"
                             key={item.id}
                             id={`${listId}-item-${item.id}`}
                             className={`${classes} ${isSelected ? 'selected' : ''}`}
-                            role="option"
                             aria-selected={isSelected}
                             // aria-labelledby removed as item content will label it
-                            // Optional: Add onClick handler if items should be selectable by mouse
-                            onClick={() => setSelectedIndex(index)} // Uses the new setSelectedIndex
+                            // Click selects, and activates when an onActivate handler is provided.
+                            onClick={() => {
+                                setSelectedIndex(index);
+                                onActivate?.(index);
+                            }}
                         >
                             {itemContent}
                         </li>

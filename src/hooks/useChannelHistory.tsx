@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { announce } from "@react-aria/live-announcer";
 import { useChannelHistoryStore, type ChannelTextEntry } from "../stores/channelHistoryStore";
 import { usePreferences, type NavigationKeyScheme } from "../stores/preferencesStore";
+import { extractLinks, openLink, type ExtractedLink } from "../messageLinks";
 
 const navigationKeyMaps: Record<NavigationKeyScheme, { up: string; down: string; left: string; right: string }> = {
   jkli: { up: "i", down: "k", left: "j", right: "l" },
@@ -136,6 +137,8 @@ export const useChannelHistory = () => {
   const [bufferOrder, setBufferOrder] = useState<string[]>(["all"]);
   const [currentBufferIndex, setCurrentBufferIndex] = useState(0);
   const [timestampsEnabled, setTimestampsEnabled] = useState(true);
+  // Non-null while the link picker modal is open (only opened for 2+ links).
+  const [linkPickerLinks, setLinkPickerLinks] = useState<ExtractedLink[] | null>(null);
   const lastKeyPress = useRef<{ key: string; time: number; count: number } | null>(null);
   const lastProcessedChannelEntryId = useRef(0);
 
@@ -371,6 +374,37 @@ export const useChannelHistory = () => {
     }
   };
 
+  // Alt+Enter: activate the link(s) in the currently-reviewed message. Messages
+  // are plain text, so only URLs and emails are recoverable. One link opens
+  // immediately; several open the picker modal so the user can choose.
+  const activateLinksInCurrentMessage = () => {
+    const buffer = getCurrentBuffer();
+    if (!buffer || buffer.currentIndex === 0) {
+      announce("No message selected", "assertive", 2000);
+      return;
+    }
+
+    const message = buffer.messages[buffer.currentIndex - 1];
+    if (!message) {
+      announce("No message selected", "assertive", 2000);
+      return;
+    }
+
+    const links = extractLinks(message.message);
+    if (links.length === 0) {
+      announce("No links in this message", "assertive", 2000);
+      return;
+    }
+
+    if (links.length === 1) {
+      openLink(links[0]);
+      return;
+    }
+
+    announce(`${links.length} links. Choose one.`, "assertive", 2000);
+    setLinkPickerLinks(links);
+  };
+
   const toggleTimestamps = () => {
     setTimestampsEnabled(prev => {
       const enabled = !prev;
@@ -581,6 +615,13 @@ export const useChannelHistory = () => {
         return;
       }
 
+      // Alt+Enter: Activate link(s) in current message
+      if (isPlainAlt && e.key === "Enter") {
+        e.preventDefault();
+        activateLinksInCurrentMessage();
+        return;
+      }
+
       // Alt+Shift+Space: Copy current message
       if (e.altKey && e.shiftKey && e.key === " ") {
         e.preventDefault();
@@ -615,5 +656,7 @@ export const useChannelHistory = () => {
     bufferOrder,
     getCurrentBuffer,
     clearAllBuffers,
+    linkPickerLinks,
+    closeLinkPicker: () => setLinkPickerLinks(null),
   };
 };

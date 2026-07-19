@@ -20,9 +20,11 @@ export function parseToElements(
     return elements;
 }
 
-const URL_REGEX =
+// Exported so the message-link extractor (messageLinks.ts) can harvest the same
+// URLs/emails the renderer links, keeping detection consistent in one spelling.
+export const URL_REGEX =
     /(\s|^)((\w+):\/\/(?:www\.|(?!www))[^\s.]+\.[^\s]{2,}|www\.[^\s]+\.[^\s]{2,})/g;
-const EMAIL_REGEX =
+export const EMAIL_REGEX =
     /(?<slorp1>\s|^)(?<name>[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+[a-zA-Z])(?<slorp2>\s|$|\.)/g;
 const exitRegex = /@\[exit:([a-zA-Z]+)\]([a-zA-Z]+)@\[\/\]/g;
 

@@ -12,6 +12,7 @@ import OutputWindow from "./components/output";
 import PreferencesDialog, {
   type PreferencesDialogRef,
 } from "./components/PreferencesDialog";
+import LinkPickerDialog from "./components/LinkPickerDialog";
 import Sidebar, { type SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
@@ -89,7 +90,7 @@ function App() {
     roomId: null,
     guestCount: 0,
   });
-  const { clearAllBuffers } = useChannelHistory();
+  const { clearAllBuffers, linkPickerLinks, closeLinkPicker } = useChannelHistory();
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
@@ -479,6 +480,11 @@ function App() {
           <AutoLogDialog ref={autoLogDialogRef} />
         </div>
       )}
+      {/* Link picker for Alt+Enter over an Alt+Arrow-reviewed message with 2+ links */}
+      <LinkPickerDialog
+        links={linkPickerLinks ?? null}
+        onClose={closeLinkPicker ?? (() => {})}
+      />
       {/* Default mode with no client yet — blank */}
       {isDefaultMode && !client && null}
     </>
