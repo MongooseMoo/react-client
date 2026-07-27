@@ -5,6 +5,7 @@ import type { RoomPlayer } from "../gmcp/Room";
 import { useRoomStore } from "../stores/roomStore";
 import type { Item } from "../gmcp/Char/Items";
 import { useItemsStore } from "../stores/itemsStore";
+import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
 import ItemCard from "./ItemCard"; // Import ItemCard
 import PlayerCard from "./PlayerCard"; // Import PlayerCard
@@ -121,8 +122,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     >
       {roomInfo && (
         <>
-          <h4 id={headingId}>{roomInfo.name || "Current Room"}</h4>
-          {roomInfo.area && <p className="room-area">Area: {roomInfo.area}</p>}
+          <h4 id={headingId}>{roomInfo.name ? stripMudAnsiTags(roomInfo.name) : "Current Room"}</h4>
+          {roomInfo.area && <p className="room-area">Area: {stripMudAnsiTags(roomInfo.area)}</p>}
           {exits.length > 0 && (
             <div className="room-exits">
               <h5>Exits</h5>

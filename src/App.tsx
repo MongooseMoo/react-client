@@ -30,13 +30,15 @@ import {
 import { usePreferences } from "./stores/preferencesStore";
 import { useRoomStore } from "./stores/roomStore";
 import { useConnectionStore } from "./stores/connectionStore";
+import { stripMudAnsiTags } from "./stripMudAnsiTags";
 import { ensurePushSubscription } from "./webpush";
 
 const WINDOW_TITLE = "Mongoose Client";
 const DOUBLE_PRESS_WINDOW_MS = 500;
 
 function setWindowSubtitle(subtitle?: string) {
-  document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
+  const cleanSubtitle = subtitle ? stripMudAnsiTags(subtitle) : subtitle;
+  document.title = cleanSubtitle ? `${WINDOW_TITLE} - ${cleanSubtitle}` : WINDOW_TITLE;
 }
 
 function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
