@@ -37,16 +37,20 @@ const WINDOW_TITLE = "Mongoose Client";
 const DOUBLE_PRESS_WINDOW_MS = 500;
 
 function setWindowSubtitle(subtitle?: string) {
-  const cleanSubtitle = subtitle ? stripMudAnsiTags(subtitle) : subtitle;
-  document.title = cleanSubtitle ? `${WINDOW_TITLE} - ${cleanSubtitle}` : WINDOW_TITLE;
+  document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
 }
 
 function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
-  if (roomInfo.area && roomInfo.name) {
-    return `${roomInfo.area}: ${roomInfo.name}`;
+  // Strip before composing: a field that is nothing but markup has to read as
+  // empty here, or it drags an orphaned separator into the title.
+  const area = roomInfo.area ? stripMudAnsiTags(roomInfo.area) : "";
+  const name = roomInfo.name ? stripMudAnsiTags(roomInfo.name) : "";
+
+  if (area && name) {
+    return `${area}: ${name}`;
   }
 
-  return roomInfo.name || roomInfo.area || undefined;
+  return name || area || undefined;
 }
 
 function getShortcutDigit(event: KeyboardEvent): number | null {

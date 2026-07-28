@@ -7,6 +7,10 @@ import stripAnsi from "strip-ansi";
 // Contexts that render GMCP text as plain text (document.title, sidebar
 // headings) need both forms stripped; stripAnsi handles real escapes too, as
 // defense-in-depth against a server that does send them.
+//
+// The result is trimmed: markup often brackets the whole value ("[red]Outer
+// Rim[normal]") but sometimes sits outside the padding, and callers treat an
+// empty result as "no value" so they can fall back.
 const MUD_ANSI_TAGS = [
   "red", "green", "yellow", "blue", "purple", "cyan", "gray", "white",
   "magenta", "grey",
@@ -19,5 +23,5 @@ const MUD_ANSI_TAGS = [
 const MUD_ANSI_TAG_REGEX = new RegExp(`\\[(?:${MUD_ANSI_TAGS.join("|")})\\]`, "gi");
 
 export function stripMudAnsiTags(text: string): string {
-  return stripAnsi(text).replace(MUD_ANSI_TAG_REGEX, "");
+  return stripAnsi(text).replace(MUD_ANSI_TAG_REGEX, "").trim();
 }

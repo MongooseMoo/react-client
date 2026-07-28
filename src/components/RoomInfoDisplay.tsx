@@ -113,6 +113,10 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   }
 
   const exits = roomInfo?.exits ? Object.entries(roomInfo.exits).sort(([dirA], [dirB]) => dirA.localeCompare(dirB)) : [];
+  // Strip before the fallback checks so a name that is only markup still
+  // renders the placeholder rather than an empty heading.
+  const roomName = roomInfo?.name ? stripMudAnsiTags(roomInfo.name) : "";
+  const roomArea = roomInfo?.area ? stripMudAnsiTags(roomInfo.area) : "";
 
   return (
     <div
@@ -122,8 +126,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     >
       {roomInfo && (
         <>
-          <h4 id={headingId}>{roomInfo.name ? stripMudAnsiTags(roomInfo.name) : "Current Room"}</h4>
-          {roomInfo.area && <p className="room-area">Area: {stripMudAnsiTags(roomInfo.area)}</p>}
+          <h4 id={headingId}>{roomName || "Current Room"}</h4>
+          {roomArea && <p className="room-area">Area: {roomArea}</p>}
           {exits.length > 0 && (
             <div className="room-exits">
               <h5>Exits</h5>
