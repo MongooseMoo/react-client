@@ -30,6 +30,7 @@ import {
 import { usePreferences } from "./stores/preferencesStore";
 import { useRoomStore } from "./stores/roomStore";
 import { useConnectionStore } from "./stores/connectionStore";
+import { stripMudAnsiTags } from "./stripMudAnsiTags";
 import { ensurePushSubscription } from "./webpush";
 
 const WINDOW_TITLE = "Mongoose Client";
@@ -40,11 +41,16 @@ function setWindowSubtitle(subtitle?: string) {
 }
 
 function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
-  if (roomInfo.area && roomInfo.name) {
-    return `${roomInfo.area}: ${roomInfo.name}`;
+  // Strip before composing: a field that is nothing but markup has to read as
+  // empty here, or it drags an orphaned separator into the title.
+  const area = roomInfo.area ? stripMudAnsiTags(roomInfo.area) : "";
+  const name = roomInfo.name ? stripMudAnsiTags(roomInfo.name) : "";
+
+  if (area && name) {
+    return `${area}: ${name}`;
   }
 
-  return roomInfo.name || roomInfo.area || undefined;
+  return name || area || undefined;
 }
 
 function getShortcutDigit(event: KeyboardEvent): number | null {
