@@ -561,6 +561,59 @@ describe('GMCPClientMedia', () => {
     expect(handler.sounds).toEqual({});
   });
 
+  it('stops only the sound whose name exactly matches', async () => {
+    const exactSound = createMockSound('https://media.example/beep.mp3');
+    const suffixSound = createMockSound('https://media.example/loudbeep.mp3');
+    mockCreateSound.mockResolvedValueOnce(exactSound).mockResolvedValueOnce(suffixSound);
+
+    await handler.handlePlay({
+      key: 'beep',
+      name: 'beep.mp3',
+      type: 'sound',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+    await handler.handlePlay({
+      key: 'loud-beep',
+      name: 'loudbeep.mp3',
+      type: 'sound',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    handler.handleStop({ name: 'beep.mp3' } as GMCPMessageClientMediaStop);
+
+    expect(exactSound.cleanup).toHaveBeenCalledOnce();
+    expect(suffixSound.cleanup).not.toHaveBeenCalled();
+    expect(handler.sounds.beep).toBeUndefined();
+    expect(handler.sounds['loud-beep']).toBe(suffixSound);
+  });
+
+  it('updates only the sound whose name exactly matches', async () => {
+    const exactSound = createMockSound('https://media.example/beep.mp3');
+    const suffixSound = createMockSound('https://media.example/loudbeep.mp3');
+    mockCreateSound.mockResolvedValueOnce(exactSound).mockResolvedValueOnce(suffixSound);
+
+    await handler.handlePlay({
+      key: 'beep',
+      name: 'beep.mp3',
+      type: 'sound',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+    await handler.handlePlay({
+      key: 'loud-beep',
+      name: 'loudbeep.mp3',
+      type: 'sound',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    handler.handleUpdate({
+      name: 'beep.mp3',
+      volume: 25,
+    } as GMCPMessageClientMediaUpdate);
+
+    expect(exactSound.volume).toBe(0.25);
+    expect(suffixSound.volume).toBe(0.5);
+  });
+
   it('updates an existing sound in place without replaying it', async () => {
     const sound = createMockSound('https://media.example/radio.ogg');
     mockCreateSound.mockResolvedValue(sound);

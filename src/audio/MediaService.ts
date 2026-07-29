@@ -131,6 +131,7 @@ export interface ExtendedSound extends Sound {
   ambisonicRenderer?: AmbisonicRenderer;
   positionalFoa?: PositionalFoaRenderer;
   inputChannels?: number;
+  mediaName?: string;
   mediaPosition?: Position;
   priority?: number;
   tag?: string;
@@ -267,6 +268,7 @@ export class MediaService {
     if (!this.sounds[key]) {
       const sound = (await this.cacophony.createSound(url)) as ExtendedSound;
       sound.key = key;
+      sound.mediaName = data.name;
       this.sounds[key] = sound;
     }
   }
@@ -315,6 +317,7 @@ export class MediaService {
     }
 
     sound.key = soundKey;
+    sound.mediaName = data.name;
     this.assignSoundMetadata(sound, data);
     this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
@@ -427,9 +430,7 @@ export class MediaService {
   }
 
   soundsByName(name: string): ExtendedSound[] {
-    return Object.values(this.sounds).filter((sound) => {
-      return typeof sound.url === 'string' && sound.url.endsWith(name);
-    });
+    return Object.values(this.sounds).filter((sound) => sound.mediaName === name);
   }
 
   soundsByKey(key: string): ExtendedSound[] {
