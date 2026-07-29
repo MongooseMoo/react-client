@@ -138,6 +138,16 @@ class MudClient {
       this.handleData(data);
     });
 
+    this.telnet.on("command", (command) => {
+      if (
+        (command === TelnetCommand.GA || command === TelnetCommand.EOR) &&
+        this.telnetBuffer
+      ) {
+        this.handleTextLine(this.telnetBuffer.replace(/\r$/, ""));
+        this.telnetBuffer = "";
+      }
+    });
+
     this.telnet.on("negotiation", (command, option) => {
       // Negotiation that we support GMCP
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
@@ -199,6 +209,16 @@ class MudClient {
 
     this.telnet.on("data", (data: ArrayBuffer) => {
       this.handleData(data);
+    });
+
+    this.telnet.on("command", (command) => {
+      if (
+        (command === TelnetCommand.GA || command === TelnetCommand.EOR) &&
+        this.telnetBuffer
+      ) {
+        this.handleTextLine(this.telnetBuffer.replace(/\r$/, ""));
+        this.telnetBuffer = "";
+      }
     });
 
     // The WASM server does not send telnet negotiation (no IAC sequences),
@@ -327,11 +347,6 @@ An MCP message consists of three parts: the name of the message, the authenticat
 
     for (const line of lines) {
       this.handleTextLine(line.replace(/\r$/, ""));
-    }
-
-    if (this.telnetBuffer && !this.telnetBuffer.startsWith("#$#")) {
-      this.emitMessage(this.telnetBuffer);
-      this.telnetBuffer = "";
     }
   }
 
