@@ -1,4 +1,5 @@
 import { identityCodec, inbound, messageEnvelope, outbound } from '../../protocol/messages';
+import { useInputStore } from '../../stores/inputStore';
 import { MCPPackage } from '../package';
 import type { McpMessage } from '../types';
 
@@ -62,6 +63,11 @@ export class McpAwnsRehash extends McpAwnsRehashBase {
 
   requestCommands(): void {
     this.sendGetcommands(undefined);
+  }
+
+  override reset(): void {
+    this.commands = [];
+    useInputStore.getState().resetCommands();
   }
 }
 

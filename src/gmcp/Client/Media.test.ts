@@ -272,6 +272,19 @@ describe('GMCPClientMedia', () => {
     expect(handler.sounds['https://media.example/sound-32.ogg']).toBe(sounds[32]);
   });
 
+  it('clears media session state without disposing lifetime ownership', async () => {
+    handler.handleDefault('https://media.example/');
+    const sound = createMockSound('https://media.example/chime.ogg');
+    mockCreateSound.mockResolvedValue(sound);
+    await handler.handleLoad({ name: 'chime.ogg' });
+
+    handler.reset();
+
+    expect(sound.cleanup).toHaveBeenCalledOnce();
+    expect(handler.sounds).toEqual({});
+    expect(client.media.defaultUrl).toBe('');
+  });
+
   it('passes string sound types to Cacophony', async () => {
     mockCreateSound.mockResolvedValue(createMockSound('https://media.example/theme.ogg'));
 

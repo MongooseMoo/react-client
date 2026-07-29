@@ -57,9 +57,13 @@ export class GMCPClientSpeech extends GMCPClientSpeechBase {
         speechSynthesis.speak(utterance);
     }
 
-    // Stop any pending or looping server speech when the client tears down.
-    override shutdown(): void {
+    override reset(): void {
         if (!("speechSynthesis" in window)) return;
         speechSynthesis.cancel();
+    }
+
+    // Stop any pending or looping server speech when the client tears down.
+    override shutdown(): void {
+        this.reset();
     }
 }

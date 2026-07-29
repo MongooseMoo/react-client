@@ -88,4 +88,8 @@ export class GMCPCharItems extends GMCPCharItemsBase {
     console.log(`Received Char.Items.Update for ${data.location}:`, data.item);
     useItemsStore.getState().updateItem(data.location, data.item);
   }
+
+  override reset(): void {
+    useItemsStore.getState().reset();
+  }
 }

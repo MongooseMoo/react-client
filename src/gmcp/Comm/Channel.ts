@@ -73,4 +73,8 @@ export class GMCPCommChannel extends GMCPCommChannelBase {
     console.log(`Received Comm.Channel.End for ${channelName}`);
     // TODO: Clear the flag set by handleStart
   }
+
+  override reset(): void {
+    this.channels = [];
+  }
 }

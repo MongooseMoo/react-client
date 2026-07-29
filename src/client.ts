@@ -20,19 +20,9 @@ import { MediaService } from "./audio/MediaService";
 import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
-import { useRoomStore } from "./stores/roomStore";
-import { useSpatialStore } from "./stores/spatialStore";
-import { useLiveKitStore } from "./stores/liveKitStore";
 import { useInputStore } from "./stores/inputStore";
-import { useItemsStore } from "./stores/itemsStore";
-import { useServerLinksStore } from "./stores/serverLinksStore";
-import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
-import { useCharacterStatusStore } from "./stores/characterStatusStore";
 import { useOutputStore } from "./stores/outputStore";
-import { useSessionStore } from "./stores/sessionStore";
-import { useSkillsStore } from "./stores/skillsStore";
-import { useUserlistStore } from "./stores/userlistStore";
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
@@ -103,6 +93,7 @@ class MudClient {
       this.webRTCService,
       this.gmcp_fileTransfer,
     );
+    this.registerDisconnectReset(() => this.fileTransferManager.cleanup());
   }
 
   registerMcpPackage(p: new () => MCPPackage): MCPPackage {
@@ -299,19 +290,7 @@ class MudClient {
     this.mcpSession.reset();
     this.decoder = new TextDecoder("utf8");
     this.telnetBuffer = "";
-    useRoomStore.getState().reset(); // Reset room info on cleanup
-    useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
-    useItemsStore.getState().reset();
-    useWorldMapStore.getState().reset();
-    useServerLinksStore.getState().reset();
-    useInputStore.getState().resetCommands();
-    useCharacterStatusStore.getState().reset();
-    useSessionStore.getState().reset();
-    useSkillsStore.getState().reset();
-    useUserlistStore.getState().reset();
-    this.fileTransferManager?.cleanup();
     this.gmcp.reset();
-    useLiveKitStore.getState().reset();
     useConnectionStore.getState().setConnected(false);
   }
 
