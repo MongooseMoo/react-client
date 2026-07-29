@@ -66,6 +66,7 @@ export class VirtualMidiService {
     }
 
     try {
+      this.close();
       // Get the virtual port through JZZ
       this.virtualPort = await JZZ().openMidiOut(this.portName);
       return this.virtualPort;
