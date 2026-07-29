@@ -110,6 +110,7 @@ vi.mock('./gmcp', async () => {
     ...actual,
     GMCPClientFileTransfer: class {
       packageName = 'Client.FileTransfer';
+      reset = vi.fn();
       sendReject = vi.fn();
       shutdown = vi.fn();
     },
@@ -290,6 +291,58 @@ describe('MudClient lifecycle cleanup', () => {
     client.close();
 
     expect(cleanupOrder).toEqual(['fileTransferManager.cleanup', 'gmcp.reset']);
+  });
+
+  it('runs disconnect resets in registration order and isolates failures', () => {
+    const client = new MudClient('example.test', 443);
+    const resetOrder: string[] = [];
+    const resetError = new Error('reset failed');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    client.registerDisconnectReset(() => resetOrder.push('first'));
+    client.registerDisconnectReset(() => {
+      resetOrder.push('second');
+      throw resetError;
+    });
+    client.registerDisconnectReset(() => resetOrder.push('third'));
+    client.connect();
+
+    client.close();
+
+    expect(resetOrder).toEqual(['first', 'second', 'third']);
+    expect(consoleError).toHaveBeenCalledWith('Disconnect reset failed:', resetError);
+  });
+
+  it('runs disconnect resets once per disconnect and again after reconnect', () => {
+    const client = new MudClient('example.test', 443);
+    const reset = vi.fn();
+    client.registerDisconnectReset(reset);
+    client.connect();
+    const firstSocket = mockWebSocketInstances[0];
+
+    client.close();
+    firstSocket.onclose?.(new Event('close'));
+
+    expect(reset).toHaveBeenCalledTimes(1);
+
+    client.connect();
+    client.close();
+
+    expect(reset).toHaveBeenCalledTimes(2);
+  });
+
+  it('automatically registers MCP package disconnect resets', () => {
+    const client = new MudClient('example.test', 443);
+    const mcpPackage = client.registerMcpPackage(
+      class {
+        packageName = 'test-package';
+        reset = vi.fn();
+      } as never,
+    ) as unknown as { reset: ReturnType<typeof vi.fn> };
+    client.connect();
+
+    client.close();
+
+    expect(mcpPackage.reset).toHaveBeenCalledOnce();
   });
 
   it('clears item state during connection cleanup', () => {

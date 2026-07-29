@@ -83,6 +83,10 @@ export class MCPPackage {
     // Do nothing
   }
 
+  reset(): void {
+    // Do nothing
+  }
+
   send(command: string, data?: McpOutboundData): void {
     if (!this.sendMessage) {
       throw new Error(`MCP package ${this.packageName} is not registered`);

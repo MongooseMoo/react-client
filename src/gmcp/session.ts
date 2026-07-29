@@ -37,6 +37,7 @@ export class GmcpSession {
   register<P extends GMCPPackage>(PackageConstructor: GMCPPackageConstructor<P>): P {
     const gmcpPackage = new PackageConstructor(this.client);
     this.packageHandlers[gmcpPackage.packageName] = gmcpPackage;
+    this.client.registerDisconnectReset(() => gmcpPackage.reset());
     console.log('Registered GMCP Package:', gmcpPackage.packageName);
     return gmcpPackage;
   }

@@ -73,6 +73,7 @@ class MudClient {
   private _autosay: boolean = false;
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
+  private disconnectResetCallbacks: Array<() => void> = [];
   private cleanupCallbacks: Array<() => void> = [];
 
   get autosay(): boolean {
@@ -105,7 +106,9 @@ class MudClient {
   }
 
   registerMcpPackage(p: new () => MCPPackage): MCPPackage {
-    return this.mcpSession.registerPackage(p);
+    const mcpPackage = this.mcpSession.registerPackage(p);
+    this.registerDisconnectReset(() => mcpPackage.reset());
+    return mcpPackage;
   }
 
   configureEditors(simpleEdit: McpSimpleEdit): void {
@@ -278,10 +281,21 @@ class MudClient {
     this.cleanupCallbacks.push(callback);
   }
 
+  registerDisconnectReset(callback: () => void): void {
+    this.disconnectResetCallbacks.push(callback);
+  }
+
   private cleanupConnection(): void {
     if (this.connectionCleanupComplete) return;
     this.connectionCleanupComplete = true;
     this._connected = false;
+    for (const callback of this.disconnectResetCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        console.error("Disconnect reset failed:", error);
+      }
+    }
     this.mcpSession.reset();
     this.decoder = new TextDecoder("utf8");
     this.telnetBuffer = "";
