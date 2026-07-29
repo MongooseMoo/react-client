@@ -3,8 +3,9 @@
 // (AmbisonicRenderer's pre-encoder distance gain). One source of truth so the two
 // spatialization routes fall off identically for the same meter-scale world.
 //
-// Mirrors the Web Audio 'inverse' distance model with the tuned parameters from
-// `fix(audio): tune 3D panner distance falloff for meter-scale world`.
+// Mirrors the Web Audio 'inverse' distance model with free-field attenuation:
+// pressure amplitude falls as 1 / distance, so acoustic intensity falls as
+// 1 / distance².
 
 export type DistanceModel = {
   /** Full volume within this radius (metres). */
@@ -16,13 +17,11 @@ export type DistanceModel = {
 };
 
 export const SPATIAL_DISTANCE_MODEL: DistanceModel = {
-  // refDistance is the radius of full volume. MOO rooms are ~10m across (centred
-  // ±5m), and players move ~1m per `move <dir>` step, so a 4m reference radius left
-  // almost the whole room at full volume (no audible falloff when walking). 1m makes
-  // a single step across the room clearly change the level. (2026-06-18)
+  // Web Audio's inverse model with these values is exactly 1 / distance beyond
+  // the 1 m near-field clamp. The distant clamp matches the Web Audio default.
   refDistance: 1,
-  rolloffFactor: 0.5,
-  maxDistance: 200,
+  rolloffFactor: 1,
+  maxDistance: 10000,
 };
 
 /**

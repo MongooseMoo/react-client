@@ -10,10 +10,10 @@ describe('inverseDistanceGain', () => {
   });
 
   it('matches the Web Audio inverse model beyond the reference distance', () => {
-    // refDistance 1, rolloff 0.5 → 1 / (1 + 0.5 * (58 - 1)) = 1 / 29.5 ≈ 0.034 (~ -29 dB)
-    // for a far source; 1 / (1 + 0.5 * (8 - 1)) = 1 / 4.5 ≈ 0.222 a few metres out.
-    expect(inverseDistanceGain(58)).toBeCloseTo(1 / 29.5, 6);
-    expect(inverseDistanceGain(8)).toBeCloseTo(1 / 4.5, 6);
+    // refDistance 1, rolloff 1 → pressure amplitude falls as 1 / distance:
+    // -6 dB for each doubling of distance, corresponding to inverse-square intensity.
+    expect(inverseDistanceGain(58)).toBeCloseTo(1 / 58, 6);
+    expect(inverseDistanceGain(8)).toBeCloseTo(1 / 8, 6);
   });
 
   it('falls off monotonically with distance', () => {

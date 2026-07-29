@@ -838,7 +838,8 @@ export class MediaService {
     if (data.is3d) {
       sound.threeDOptions = {
         coneInnerAngle: 360,
-        coneOuterAngle: 0,
+        coneOuterAngle: 360,
+        coneOuterGain: 0,
         panningModel: 'HRTF',
         distanceModel: 'inverse',
         refDistance: SPATIAL_DISTANCE_MODEL.refDistance,

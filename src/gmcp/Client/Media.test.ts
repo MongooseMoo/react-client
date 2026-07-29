@@ -538,8 +538,14 @@ describe('GMCPClientMedia', () => {
     expect(sound.position).toEqual([-4, 6, 5]);
     expect(sound.seek).toHaveBeenCalledWith(2);
     expect(sound.threeDOptions).toMatchObject({
+      coneInnerAngle: 360,
+      coneOuterAngle: 360,
+      coneOuterGain: 0,
       distanceModel: 'inverse',
+      maxDistance: 10000,
       panningModel: 'HRTF',
+      refDistance: 1,
+      rolloffFactor: 1,
     });
   });
 
@@ -604,8 +610,8 @@ describe('GMCPClientMedia', () => {
 
     expect(setPosition).toHaveBeenCalledWith([0, 10, 0]);
     expect(renderer.setDistanceGain).toHaveBeenCalled();
-    // refDistance 1, rolloff 0.5 → 1 / (1 + 0.5 * (10 - 1)) = 1 / 5.5 = 2 / 11.
-    expect(renderer.setDistanceGain.mock.calls[0][0]).toBeCloseTo(2 / 11);
+    // Free-field inverse attenuation: pressure amplitude is 1 / distance.
+    expect(renderer.setDistanceGain.mock.calls[0][0]).toBeCloseTo(1 / 10);
   });
 
   it('preserves omitted listener position and orientation fields', () => {
