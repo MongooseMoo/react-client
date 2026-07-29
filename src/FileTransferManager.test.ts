@@ -110,14 +110,17 @@ function createManager() {
   const webRTCService = Object.assign(new EventEmitter(), {
     cleanup: vi.fn(),
     createPeerConnection: vi.fn(async () => {}),
+    createOffer: vi.fn(async () => ({ type: 'offer', sdp: 'mock' })),
     handleOffer: vi.fn(async () => {}),
     createAnswer: vi.fn(async () => ({ type: 'answer', sdp: 'mock' })),
     handleAnswer: vi.fn(async () => {}),
     isDataChannelOpen: vi.fn().mockReturnValue(false),
     sendData: vi.fn(async () => {}),
+    waitForConnection: vi.fn(async () => {}),
   });
   const gmcpFileTransfer = Object.assign(new EventEmitter(), {
     sendAccept: vi.fn(async () => {}),
+    sendOffer: vi.fn(async () => {}),
     sendReject: vi.fn(),
     sendCancel: vi.fn(),
     sendRequestResend: vi.fn(),
@@ -198,6 +201,80 @@ describe('FileTransferManager lifecycle', () => {
       hash: 'file-hash',
       filename: 'hello.txt',
     });
+  });
+
+  it('does not start the outgoing timeout clock while waiting for acceptance', async () => {
+    const { manager, webRTCService } = createManager();
+    webRTCService.isDataChannelOpen.mockReturnValue(true);
+    const onError = vi.fn();
+    manager.on('fileTransferError', onError);
+
+    await manager.sendFile(new File(['hello'], 'hello.txt'), 'Bob');
+
+    const transfers = manager as unknown as {
+      checkTransferTimeouts(): void;
+      outgoingTransfers: Map<string, { lastActivityTimestamp?: number }>;
+    };
+    const transfer = Array.from(transfers.outgoingTransfers.values())[0];
+    expect(transfer.lastActivityTimestamp).toBeUndefined();
+
+    vi.spyOn(Date, 'now').mockReturnValue(Number.MAX_SAFE_INTEGER);
+    transfers.checkTransferTimeouts();
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('starts the outgoing timeout clock after the data channel opens', async () => {
+    const { manager, webRTCService } = createManager();
+    webRTCService.isDataChannelOpen.mockReturnValue(true);
+    const transfer = {
+      file: new File([], 'empty.txt'),
+      filename: 'empty.txt',
+      hash: 'file-hash',
+      lastActivityTimestamp: undefined as number | undefined,
+      recipient: 'Bob',
+    };
+    const transfers = manager as unknown as {
+      outgoingTransfers: Map<string, typeof transfer>;
+    };
+    transfers.outgoingTransfers.set(transfer.hash, transfer);
+
+    vi.spyOn(Date, 'now').mockReturnValue(1234);
+    await manager.handleAcceptedTransfer({
+      sender: 'Bob',
+      hash: transfer.hash,
+      filename: transfer.filename,
+      answerSdp: '{}',
+    } as FileTransferAccept);
+
+    expect(transfer.lastActivityTimestamp).toBe(1234);
+  });
+
+  it('refreshes outgoing activity after a chunk is sent', async () => {
+    const { manager } = createManager();
+    const transfer = {
+      file: new File(['hello'], 'hello.txt'),
+      filename: 'hello.txt',
+      hash: 'file-hash',
+      lastActivityTimestamp: 1,
+      recipient: 'Bob',
+    };
+    const transfers = manager as unknown as {
+      outgoingTransfers: Map<string, typeof transfer>;
+      sendChunk(
+        filename: string,
+        hash: string,
+        chunk: ArrayBuffer,
+        offset: number,
+        totalSize: number,
+      ): Promise<void>;
+    };
+    transfers.outgoingTransfers.set(transfer.hash, transfer);
+
+    vi.spyOn(Date, 'now').mockReturnValue(5678);
+    await transfers.sendChunk(transfer.filename, transfer.hash, new ArrayBuffer(5), 0, 5);
+
+    expect(transfer.lastActivityTimestamp).toBe(5678);
   });
 });
 
