@@ -25,11 +25,14 @@ Sets the default media URL prefix used by `Load` and `Play`.
 ```json
 {
   "name": "weather/rain.ogg",
-  "url": "https://example.invalid/media/"
+  "url": "https://example.invalid/media/",
+  "type": "music"
 }
 ```
 
-Preloads a sound at `(url || defaultUrl) + name`.
+Preloads media at `(url || defaultUrl) + name`. Set `type` to `"music"` to use
+the same proxied URL as music playback. The client retains at most 32 preloaded
+entries and evicts the oldest preload when the limit is reached.
 
 ### `Client.Media.Play`
 

@@ -27,6 +27,7 @@ import { GMCPMessage, GMCPPackage } from '../package';
 export class GMCPMessageClientMediaLoad extends GMCPMessage implements ClientMediaLoadPayload {
   public readonly url?: string;
   public readonly name!: string;
+  public readonly type?: MediaType = 'sound';
 }
 
 export type { ExtendedSound, MediaType };
