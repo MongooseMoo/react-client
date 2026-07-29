@@ -463,6 +463,7 @@ export class MediaService {
   }
 
   shutdown(): void {
+    this.stopAllSounds();
     if (this.shutdownComplete) {
       return;
     }
