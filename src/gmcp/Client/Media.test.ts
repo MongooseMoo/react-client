@@ -405,6 +405,34 @@ describe('GMCPClientMedia', () => {
     expect(handler.sounds).toEqual({});
   });
 
+  it('preserves existing metadata when a repeated play omits optional fields', async () => {
+    const sound = createMockSound('rain.ogg');
+    mockCreateSound.mockResolvedValue(sound);
+
+    await handler.handlePlay({
+      key: 'rain-loop',
+      name: 'rain.ogg',
+      tag: 'weather',
+      type: 'sound',
+      upmix: 'ambisonic',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    await handler.handlePlay({
+      key: 'rain-loop',
+      name: 'rain.ogg',
+      volume: 25,
+    } as GMCPMessageClientMediaPlay);
+
+    expect(sound.key).toBe('rain-loop');
+    expect(sound.tag).toBe('weather');
+    expect(sound.mediaType).toBe('sound');
+    expect(sound.upmix).toBe('ambisonic');
+
+    handler.handleStop({ tag: 'weather' } as GMCPMessageClientMediaStop);
+    expect(sound.cleanup).toHaveBeenCalledOnce();
+  });
+
   it('cleans up the replaced sound and stores only the replacement', async () => {
     const oldSound = createMockSound('one.ogg');
     const newSound = createMockSound('two.ogg');

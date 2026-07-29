@@ -587,10 +587,10 @@ export class MediaService {
     sound: ExtendedSound,
     data: Pick<ClientMediaPlayPayload, 'key' | 'tag' | 'type' | 'upmix' | 'channels'>,
   ): void {
-    sound.key = data.key;
-    sound.tag = data.tag;
-    sound.mediaType = data.type;
-    sound.upmix = data.upmix;
+    sound.key = data.key ?? sound.key;
+    sound.tag = data.tag ?? sound.tag;
+    sound.mediaType = data.type ?? sound.mediaType;
+    sound.upmix = data.upmix ?? sound.upmix;
     const channels = this.normalizeInputChannels(data.channels);
     if (channels !== undefined) {
       sound.inputChannels = channels;
