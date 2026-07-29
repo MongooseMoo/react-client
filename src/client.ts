@@ -260,12 +260,20 @@ class MudClient {
   }
 
   public send(data: string) {
-    if (this.localMode && this.localStream) {
+    if (this._connected && this.localMode && this.localStream) {
       // In local mode, write through the stream (WorkerStream -> Worker)
       this.localStream.write(Buffer.from(data));
-    } else {
-      this.ws.send(data);
+      return;
     }
+    if (
+      this._connected &&
+      this.ws &&
+      this.ws.readyState === WebSocket.OPEN
+    ) {
+      this.ws.send(data);
+      return;
+    }
+    throw new Error("Cannot send while disconnected");
   }
 
   registerCleanup(callback: () => void): void {
@@ -291,6 +299,8 @@ class MudClient {
     this.decoder = new TextDecoder("utf8");
     this.telnetBuffer = "";
     this.gmcp.reset();
+    this.localMode = false;
+    this.localStream = undefined;
     useConnectionStore.getState().setConnected(false);
   }
 
@@ -314,14 +324,20 @@ class MudClient {
   }
 
   public sendCommand(command: string): void {
-    const localEchoEnabled = usePreferences.getState().general.localEcho;
-    if (localEchoEnabled) {
-      useOutputStore.getState().addCommand(command);
-    }
     if (this.autosay && !command.startsWith("-") && !command.startsWith("'")) {
       command = `say ${command}`;
     }
-    this.send(`${command}\r\n`);
+    try {
+      this.send(`${command}\r\n`);
+    } catch (error) {
+      useOutputStore
+        .getState()
+        .addError(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+    if (usePreferences.getState().general.localEcho) {
+      useOutputStore.getState().addCommand(command);
+    }
     console.log(`> ${command}`);
   }
 
