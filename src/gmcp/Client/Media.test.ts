@@ -456,6 +456,31 @@ describe('GMCPClientMedia', () => {
     expect(handler.sounds.effect).toBe(newSound);
   });
 
+  it('stops and releases all sounds when the media service shuts down', async () => {
+    const firstSound = createMockSound('one.ogg');
+    const secondSound = createMockSound('two.ogg');
+    mockCreateSound.mockResolvedValueOnce(firstSound).mockResolvedValueOnce(secondSound);
+
+    await handler.handlePlay({
+      key: 'first',
+      name: 'one.ogg',
+      type: 'sound',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+    await handler.handlePlay({
+      key: 'second',
+      name: 'two.ogg',
+      type: 'sound',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    client.media.shutdown();
+
+    expect(firstSound.cleanup).toHaveBeenCalledOnce();
+    expect(secondSound.cleanup).toHaveBeenCalledOnce();
+    expect(handler.sounds).toEqual({});
+  });
+
   it('cleans up a sound when its MCMP finish endpoint is reached', async () => {
     vi.useFakeTimers();
     const sound = createMockSound('bell.ogg');
