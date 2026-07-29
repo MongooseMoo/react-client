@@ -15,14 +15,14 @@ const MCP_MULTILINE_CLOSE_PREFIX = '#$#:';
 type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export function parseMcpLine(rawLine: string): ParsedMcpLine {
-  const line = rawLine.trimEnd();
-
-  if (line.startsWith(MCP_MULTILINE_PREFIX)) {
-    const continuation = parseMcpMultilineContinuation(line);
+  if (rawLine.startsWith(MCP_MULTILINE_PREFIX)) {
+    const continuation = parseMcpMultilineContinuation(rawLine);
     return continuation.ok
       ? { type: 'multiline-continuation', continuation: continuation.value }
       : { type: 'invalid', raw: rawLine, error: continuation.error };
   }
+
+  const line = rawLine.trimEnd();
 
   if (line.startsWith(MCP_MULTILINE_CLOSE_PREFIX)) {
     const closure = parseMcpMultilineClose(line);
@@ -47,10 +47,8 @@ export function parseMcpMessage(message: string): McpMessage | null {
 }
 
 export function parseMcpMultiline(message: string): McpMessage | null {
-  const line = message.trimEnd();
-
-  if (line.startsWith(MCP_MULTILINE_CLOSE_PREFIX)) {
-    const parsed = parseMcpMultilineClose(line);
+  if (message.startsWith(MCP_MULTILINE_CLOSE_PREFIX)) {
+    const parsed = parseMcpMultilineClose(message.trimEnd());
     if (!parsed.ok) {
       console.log(parsed.error);
       return null;
@@ -58,7 +56,7 @@ export function parseMcpMultiline(message: string): McpMessage | null {
     return { name: parsed.value.tag, keyvals: {} };
   }
 
-  const parsed = parseMcpMultilineContinuation(line);
+  const parsed = parseMcpMultilineContinuation(message);
   if (!parsed.ok) {
     console.log(parsed.error);
     return null;
@@ -125,7 +123,7 @@ function parseMcpMessageResult(message: string): ParseResult<McpMessage> {
 }
 
 function parseMcpMultilineContinuation(message: string): ParseResult<McpMultilineContinuation> {
-  const match = message.match(/^#\$#\*\s+(\S+)\s+([^:\s]+)\s*:\s*(.*)$/);
+  const match = message.match(/^#\$#\*\s+(\S+)\s+([^:\s]+)\s*: ?(.*)$/);
   if (!match) {
     return {
       ok: false,

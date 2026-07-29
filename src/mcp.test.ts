@@ -72,6 +72,24 @@ describe('MCP codec', () => {
     });
   });
 
+  it('preserves multiline continuation indentation and trailing whitespace', () => {
+    const line = '#$#* 9b76 content:     if (x > 1)  ';
+
+    expect(parseMcpLine(line)).toEqual({
+      type: 'multiline-continuation',
+      continuation: {
+        tag: '9b76',
+        key: 'content',
+        value: '    if (x > 1)  ',
+        keyvals: { content: '    if (x > 1)  ' },
+      },
+    });
+    expect(parseMcpMultiline(line)).toEqual({
+      name: '9b76',
+      keyvals: { content: '    if (x > 1)  ' },
+    });
+  });
+
   it('encodes outbound values without dropping falsy data', () => {
     expect(
       encodeMcpMessage('package-message', 'auth01', {
