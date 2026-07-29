@@ -42,7 +42,7 @@ interface FileTransferTask {
   file: File;
   filename: string;
   hash: string;
-  lastActivityTimestamp: number;
+  lastActivityTimestamp?: number;
   recipient: string;
 }
 
@@ -156,7 +156,6 @@ export default class FileTransferManager extends EventEmitter {
       file,
       filename: file.name,
       hash: fileHash,
-      lastActivityTimestamp: Date.now(),
       recipient,
     });
 
@@ -289,6 +288,10 @@ export default class FileTransferManager extends EventEmitter {
       dataBuffer.set(new Uint8Array(chunk), 4 + headerBuffer.byteLength);
 
       await this.webRTCService.sendData(dataBuffer.buffer);
+      const transfer = this.outgoingTransfers.get(hash);
+      if (transfer) {
+        transfer.lastActivityTimestamp = Date.now();
+      }
     } catch {
       throw new FileTransferError(
         FileTransferErrorCodes.DATA_CHANNEL_ERROR,
@@ -334,6 +337,7 @@ export default class FileTransferManager extends EventEmitter {
       await this.waitForDataChannel(hash);
       console.log(`[FileTransferManager] Data channel ready for outgoing transfer of: ${filename}`);
 
+      outgoingTransfer.lastActivityTimestamp = Date.now();
       await this.startFileTransfer(outgoingTransfer.file, outgoingTransfer.hash);
       console.log(`[FileTransferManager] File transfer completed successfully: ${filename}`);
       this.emit('fileSendComplete', { hash, filename });
@@ -631,6 +635,7 @@ export default class FileTransferManager extends EventEmitter {
 
       if (direction === 'send' && savedOutgoingTransfer) {
         // Re-register the transfer and restart
+        savedOutgoingTransfer.lastActivityTimestamp = undefined;
         this.outgoingTransfers.set(hash, savedOutgoingTransfer);
         await this.startFileTransfer(savedOutgoingTransfer.file, savedOutgoingTransfer.hash);
       } else if (direction === 'receive' && savedIncomingTransfer) {
@@ -670,7 +675,10 @@ export default class FileTransferManager extends EventEmitter {
 
     // Check outgoing transfers
     this.outgoingTransfers.forEach((transfer, hash) => {
-      if (now - transfer.lastActivityTimestamp > this.transferTimeout) {
+      if (
+        transfer.lastActivityTimestamp !== undefined &&
+        now - transfer.lastActivityTimestamp > this.transferTimeout
+      ) {
         this.handleTransferError(
           hash,
           transfer.filename,
