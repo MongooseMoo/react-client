@@ -23,6 +23,7 @@ import { MediaService } from '../../audio/MediaService';
 import { useSpatialStore } from '../../stores/spatialStore';
 import {
   GMCPClientMedia,
+  type GMCPMessageClientMediaLoad,
   type GMCPMessageClientMediaListenerOrientation,
   type GMCPMessageClientMediaListenerPosition,
   type GMCPMessageClientMediaPlay,
@@ -224,6 +225,51 @@ describe('GMCPClientMedia', () => {
     expect(mockCreateSound).toHaveBeenCalledTimes(1);
     expect(sound.play).toHaveBeenCalledOnce();
     expect(handler.sounds['https://media.example/chime.ogg']).toBe(sound);
+  });
+
+  it('reuses a preloaded music sound under the proxied playback key', async () => {
+    const mediaUrl = 'https://media.example/theme.ogg';
+    const proxiedUrl = `https://mongoose.world:9080/?url=${encodeURIComponent(mediaUrl)}`;
+    const sound = createMockSound(proxiedUrl);
+    mockCreateSound.mockResolvedValue(sound);
+
+    await handler.handleLoad({
+      name: 'theme.ogg',
+      url: 'https://media.example/',
+      type: 'music',
+    } as GMCPMessageClientMediaLoad);
+
+    expect(handler.sounds[proxiedUrl]).toBe(sound);
+
+    await handler.handlePlay({
+      name: 'theme.ogg',
+      url: 'https://media.example/',
+      type: 'music',
+      volume: 50,
+    } as GMCPMessageClientMediaPlay);
+
+    expect(mockCreateSound).toHaveBeenCalledTimes(1);
+    expect(sound.play).toHaveBeenCalledOnce();
+    expect(handler.sounds[proxiedUrl]).toBe(sound);
+  });
+
+  it('evicts the oldest preload when the preload cache reaches its limit', async () => {
+    const sounds = Array.from({ length: 33 }, (_, index) =>
+      createMockSound(`https://media.example/sound-${index}.ogg`),
+    );
+    mockCreateSound.mockImplementation(async () => sounds[mockCreateSound.mock.calls.length - 1]);
+
+    for (let index = 0; index < sounds.length; index += 1) {
+      await handler.handleLoad({
+        name: `sound-${index}.ogg`,
+        url: 'https://media.example/',
+      });
+    }
+
+    expect(Object.keys(handler.sounds)).toHaveLength(32);
+    expect(handler.sounds['https://media.example/sound-0.ogg']).toBeUndefined();
+    expect(sounds[0].cleanup).toHaveBeenCalledOnce();
+    expect(handler.sounds['https://media.example/sound-32.ogg']).toBe(sounds[32]);
   });
 
   it('passes string sound types to Cacophony', async () => {

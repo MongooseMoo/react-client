@@ -19,6 +19,7 @@ const CORS_PROXY = 'https://mongoose.world:9080/?url=';
 type CacophonySoundKind = NonNullable<Parameters<Cacophony['createSound']>[1]>;
 const CACOPHONY_BUFFER = 'buffer' satisfies CacophonySoundKind;
 const CACOPHONY_HTML = 'html' satisfies CacophonySoundKind;
+const MAX_PRELOADED_SOUNDS = 32;
 
 /** Constant makeup gain restoring the clean positional FOA decode to a useful level. Tune by ear.
  *  The SN3D encode + SH-HRIR binaural decode lands well below unity, so a positioned source is
@@ -31,6 +32,7 @@ const POSITIONAL_FOA_STEREO_WIDTH_RAD = 0.6;
 export interface ClientMediaLoadPayload {
   readonly url?: string;
   readonly name: string;
+  readonly type?: MediaType;
 }
 
 export type MediaType = 'sound' | 'music' | 'video';
@@ -154,6 +156,7 @@ export class MediaService {
   private readonly cleanedSounds = new WeakSet<ExtendedSound>();
   private readonly effects: MediaEffects;
   private readonly mediaSession = new MediaSessionController();
+  private readonly preloadedSoundKeys = new Set<string>();
   private currentMusic?: ExtendedSound;
   private globalMuted = false;
   private isWindowFocused = true;
@@ -263,13 +266,27 @@ export class MediaService {
   }
 
   async load(data: ClientMediaLoadPayload): Promise<void> {
-    const url = this.resolvedUrl(data);
+    const url = this.mediaUrl(data);
     const key = url;
     if (!this.sounds[key]) {
       const sound = (await this.cacophony.createSound(url)) as ExtendedSound;
+
+      while (this.preloadedSoundKeys.size >= MAX_PRELOADED_SOUNDS) {
+        const oldestKey = this.preloadedSoundKeys.values().next().value;
+        if (oldestKey === undefined) {
+          break;
+        }
+        this.preloadedSoundKeys.delete(oldestKey);
+        const oldestSound = this.sounds[oldestKey];
+        if (oldestSound) {
+          this.releaseSound(oldestSound, oldestKey);
+        }
+      }
+
       sound.key = key;
       sound.mediaName = data.name;
       this.sounds[key] = sound;
+      this.preloadedSoundKeys.add(key);
     }
   }
 
@@ -286,6 +303,7 @@ export class MediaService {
     data.key = data.key || mediaUrl;
     const soundKey = data.key;
     let sound = this.sounds[soundKey] as ExtendedSound;
+    this.preloadedSoundKeys.delete(soundKey);
     const panType = data.is3d ? 'HRTF' : 'stereo';
     const isNewSound = !sound || sound.url !== mediaUrl;
     if (isNewSound) {
@@ -625,11 +643,13 @@ export class MediaService {
 
     if (key !== undefined && this.sounds[key] === sound) {
       delete this.sounds[key];
+      this.preloadedSoundKeys.delete(key);
     }
 
     for (const soundKey of Object.keys(this.sounds)) {
       if (this.sounds[soundKey] === sound) {
         delete this.sounds[soundKey];
+        this.preloadedSoundKeys.delete(soundKey);
       }
     }
 
