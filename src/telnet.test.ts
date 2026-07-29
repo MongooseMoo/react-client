@@ -88,6 +88,17 @@ describe('Telnet', () => {
     );
   });
 
+  it.each([TelnetCommand.GA, TelnetCommand.EOR])(
+    'should pass prompt boundary command %i',
+    async (command) => {
+      await testEvent(
+        'command',
+        Buffer.from([TelnetCommand.IAC, command]),
+        [command],
+      );
+    },
+  );
+
   it('should pass subnegotiations', async () => {
     await testEvent(
       'subnegotiation',

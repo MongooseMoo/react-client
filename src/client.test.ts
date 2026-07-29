@@ -331,24 +331,48 @@ describe('MudClient lifecycle cleanup', () => {
     expect(useUserlistStore.getState().hasReceivedList).toBe(false);
   });
 
+  it('buffers text split across frames until the line is complete', () => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+    const socket = mockWebSocketInstances[0];
+
+    sendSocketText(socket, 'Hello ');
+    expect(useOutputStore.getState().entries).toEqual([]);
+
+    sendSocketText(socket, 'world\r\n');
+    expect(useOutputStore.getState().entries).toEqual([
+      {
+        id: 1,
+        type: 'message',
+        message: 'Hello world',
+      },
+    ]);
+  });
+
   it('buffers partial MCP frames until the line is complete', () => {
     const client = new MudClient('example.test', 443);
     client.connect();
     const socket = mockWebSocketInstances[0];
     const receiveLine = vi.mocked(client.mcpSession.receiveLine);
 
-    sendSocketText(socket, '#$#MCP version: 2.1');
+    sendSocketText(socket, '#');
     expect(receiveLine).not.toHaveBeenCalled();
+    expect(useOutputStore.getState().entries).toEqual([]);
 
-    sendSocketText(socket, ' to: 2.1\r\n');
+    sendSocketText(socket, '$#MCP version: 2.1 to: 2.1\r\n');
     expect(receiveLine).toHaveBeenCalledWith('#$#MCP version: 2.1 to: 2.1');
+    expect(useOutputStore.getState().entries).toEqual([]);
   });
 
-  it('records non-MCP prompt text without waiting for a newline', () => {
+  it('records non-MCP prompt text at a Telnet GA boundary', () => {
     const client = new MudClient('example.test', 443);
 
     client.connect();
-    sendSocketText(mockWebSocketInstances[0], 'look');
+    const socket = mockWebSocketInstances[0];
+    sendSocketText(socket, 'look');
+    expect(useOutputStore.getState().entries).toEqual([]);
+
+    sendSocketBytes(socket, [255, 249]);
 
     expect(useOutputStore.getState().entries).toContainEqual({
       id: 1,
@@ -404,6 +428,9 @@ describe('MudClient lifecycle cleanup', () => {
     // "é" (U+00E9) is 0xC3 0xA9 in UTF-8; deliver each byte in its own frame.
     sendSocketBytes(socket, [0xc3]);
     sendSocketBytes(socket, [0xa9]);
+    expect(useOutputStore.getState().entries).toEqual([]);
+
+    sendSocketText(socket, '\n');
 
     expect(useOutputStore.getState().entries).toContainEqual(
       expect.objectContaining({ type: 'message', message: 'é' }),
@@ -427,6 +454,7 @@ describe('MudClient lifecycle cleanup', () => {
     // A fresh connection delivers the orphaned continuation byte alone.
     client.connect();
     sendSocketBytes(mockWebSocketInstances[1], [0xa9]);
+    sendSocketText(mockWebSocketInstances[1], '\n');
 
     // Without a reset the retained 0xC3 + 0xA9 would decode to "é"; after reset the
     // orphan continuation byte is an invalid sequence -> U+FFFD, never "é".

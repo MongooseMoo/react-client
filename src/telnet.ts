@@ -58,6 +58,7 @@ export enum TelnetOption {
 }
 
 export enum TelnetCommand {
+  EOR = 239, // End of record.
   SE = 240, //  End of subnegotiation parameters.
   NOP = 241, //   No operation.
   DM = 242, //  Data mark. The data stream portion of a Synch.
@@ -136,7 +137,7 @@ export class TelnetParser extends EventEmitter {
     this.buffer = Buffer.concat([this.buffer, Buffer.from(data)]);
 
     while (this.buffer.length > 0) {
-      let done;
+      let done: boolean | undefined;
       switch (this.state) {
         case TelnetState.DATA:
           this.handleData();
@@ -185,7 +186,9 @@ export class TelnetParser extends EventEmitter {
 
     switch (command) {
       case TelnetCommand.NOP:
-        this.emit("command", TelnetCommand.NOP);
+      case TelnetCommand.GA:
+      case TelnetCommand.EOR:
+        this.emit("command", command);
         this.state = TelnetState.DATA;
         break;
       case TelnetCommand.SB:
