@@ -201,18 +201,34 @@ export class WebRTCService extends EventEmitter {
     try {
       // Implement flow control - wait if buffer is getting full
       const maxBufferSize = 1048576; // 1MB threshold
-      while (this.dataChannel.bufferedAmount > maxBufferSize) {
-        await new Promise<void>((resolve) => {
+      const dataChannel = this.dataChannel;
+      while (dataChannel.bufferedAmount > maxBufferSize) {
+        await new Promise<void>((resolve, reject) => {
+          const cleanup = () => {
+            dataChannel.removeEventListener('bufferedamountlow', onBufferedAmountLow);
+            dataChannel.removeEventListener('close', onClose);
+            dataChannel.removeEventListener('error', onError);
+          };
           const onBufferedAmountLow = () => {
-            this.dataChannel?.removeEventListener('bufferedamountlow', onBufferedAmountLow);
+            cleanup();
             resolve();
           };
-          this.dataChannel?.addEventListener('bufferedamountlow', onBufferedAmountLow);
-          this.dataChannel!.bufferedAmountLowThreshold = maxBufferSize / 2;
+          const onClose = () => {
+            cleanup();
+            reject(new Error('Data channel closed while waiting to send data'));
+          };
+          const onError = () => {
+            cleanup();
+            reject(new Error('Data channel error while waiting to send data'));
+          };
+          dataChannel.addEventListener('bufferedamountlow', onBufferedAmountLow);
+          dataChannel.addEventListener('close', onClose);
+          dataChannel.addEventListener('error', onError);
+          dataChannel.bufferedAmountLowThreshold = maxBufferSize / 2;
         });
       }
 
-      this.dataChannel.send(data);
+      dataChannel.send(data);
     } catch (error) {
       console.error('[WebRTCService] Error sending data:', error);
       throw error;

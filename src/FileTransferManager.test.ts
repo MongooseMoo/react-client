@@ -360,6 +360,106 @@ describe('FileTransferManager receive consent + integrity', () => {
     return (manager as unknown as { incomingTransfers: Map<string, unknown> }).incomingTransfers;
   }
 
+  it('records accepted consent before waiting for the data channel to open', async () => {
+    vi.useFakeTimers();
+    const { manager, gmcpFileTransfer, webRTCService } = createManager();
+    webRTCService.isDataChannelOpen.mockReturnValue(false);
+    const offer = {
+      sender: 'Bob',
+      hash: 'accepted-hash',
+      filename: 'accepted.txt',
+      filesize: 12,
+      offerSdp: '{}',
+    };
+    gmcpFileTransfer.emit('offer', offer);
+    const acceptPromise = manager.acceptTransfer(offer.sender, offer.hash);
+
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(gmcpFileTransfer.sendAccept).toHaveBeenCalledTimes(1);
+      const acceptedOffers = (
+        manager as unknown as {
+          acceptedOffers: Map<
+            string,
+            { filename: string; hash: string; sender: string; filesize: number }
+          >;
+        }
+      ).acceptedOffers;
+      expect(acceptedOffers.get(offer.hash)).toEqual({
+        filename: offer.filename,
+        hash: offer.hash,
+        sender: offer.sender,
+        filesize: offer.filesize,
+      });
+    } finally {
+      webRTCService.isDataChannelOpen.mockReturnValue(true);
+      await vi.advanceTimersByTimeAsync(100);
+      await acceptPromise.catch(() => undefined);
+      manager.cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not double-count a duplicated chunk and completes after all unique chunks arrive', async () => {
+    const { manager, gmcpFileTransfer, webRTCService } = createManager();
+    webRTCService.isDataChannelOpen.mockReturnValue(true);
+    const capture = installDownloadCapture();
+    try {
+      const bytes = new TextEncoder().encode('abcd');
+      const hash = await sha256Hex(bytes);
+      await acceptOffer(manager, gmcpFileTransfer, {
+        sender: 'Bob',
+        hash,
+        filename: 'duplicate-safe.txt',
+        filesize: bytes.byteLength,
+      });
+      const onComplete = vi.fn();
+      const onError = vi.fn();
+      manager.on('fileReceiveComplete', onComplete);
+      manager.on('fileTransferError', onError);
+
+      const firstChunk = bytes.slice(0, 2);
+      const secondChunk = bytes.slice(2);
+      const firstFrame = frameChunk(
+        {
+          hash,
+          filename: 'duplicate-safe.txt',
+          chunkIndex: 0,
+          totalChunks: 2,
+          chunkSize: firstChunk.byteLength,
+          totalSize: bytes.byteLength,
+        },
+        firstChunk,
+      );
+      const secondFrame = frameChunk(
+        {
+          hash,
+          filename: 'duplicate-safe.txt',
+          chunkIndex: 1,
+          totalChunks: 2,
+          chunkSize: secondChunk.byteLength,
+          totalSize: bytes.byteLength,
+        },
+        secondChunk,
+      );
+
+      webRTCService.emit('dataChannelMessage', firstFrame);
+      await flush();
+      webRTCService.emit('dataChannelMessage', firstFrame);
+      await flush();
+      webRTCService.emit('dataChannelMessage', secondFrame);
+      await flush();
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(capture.downloads).toEqual(['duplicate-safe.txt']);
+    } finally {
+      capture.restore();
+      manager.cleanup();
+    }
+  });
+
   it('C1: drops chunks for a hash that was never accepted (no download, no completion)', async () => {
     const { manager, webRTCService } = createManager();
     webRTCService.isDataChannelOpen.mockReturnValue(true);

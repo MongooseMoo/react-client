@@ -43,17 +43,21 @@ export class FileTransferStore {
 
   async saveChunk(chunk: FileChunk): Promise<void> {
     if (!this.db) await this.initialize();
-    await this.db!.put('chunks', chunk);
-    
-    // Update metadata to track received chunks
-    const metadata = await this.getFileMetadata(chunk.hash);
+
+    const tx = this.db!.transaction(['chunks', 'metadata'], 'readwrite');
+    await tx.objectStore('chunks').put(chunk);
+
+    const metadata = await tx.objectStore('metadata').get(chunk.hash);
     if (metadata) {
       if (!metadata.receivedChunks.includes(chunk.index)) {
-        metadata.receivedChunks.push(chunk.index);
-        metadata.lastActivityTimestamp = Date.now();
-        await this.updateFileMetadata(metadata);
+        await tx.objectStore('metadata').put({
+          ...metadata,
+          receivedChunks: [...metadata.receivedChunks, chunk.index],
+          lastActivityTimestamp: Date.now(),
+        });
       }
     }
+    await tx.done;
   }
 
   async getChunk(hash: string, index: number): Promise<FileChunk | undefined> {

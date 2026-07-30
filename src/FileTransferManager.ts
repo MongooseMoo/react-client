@@ -515,12 +515,15 @@ export default class FileTransferManager extends EventEmitter {
         }
       }
 
-      transfer.chunks[header.chunkIndex] = chunkData;
-      transfer.receivedSize += chunkData.byteLength;
+      const isNewChunk = transfer.chunks[header.chunkIndex] === undefined;
+      if (isNewChunk) {
+        transfer.chunks[header.chunkIndex] = chunkData;
+        transfer.receivedSize += chunkData.byteLength;
+      }
       transfer.lastActivityTimestamp = Date.now();
 
       // Persist chunk to IndexedDB for resumable transfers
-      if (this.storeInitialized) {
+      if (isNewChunk && this.storeInitialized) {
         await this.store.saveChunk({
           hash: header.hash,
           index: header.chunkIndex,
@@ -830,6 +833,16 @@ export default class FileTransferManager extends EventEmitter {
 
       // Send accept only if we're still in a valid state
       if (this.pendingOffers.has(hash)) {
+        // Record consent before notifying the sender, so bytes arriving as soon as the
+        // data channel opens cannot be mistaken for an unsolicited transfer.
+        this.acceptedOffers.set(hash, {
+          filename: offer.filename,
+          hash: offer.hash,
+          sender: offer.sender,
+          filesize: offer.filesize,
+        });
+        this.pendingOffers.delete(hash);
+
         await this.gmcpFileTransfer.sendAccept({
           sender,
           hash,
@@ -840,16 +853,6 @@ export default class FileTransferManager extends EventEmitter {
         // Wait for the data channel to open
         await this.waitForDataChannel(hash);
         console.log('[FileTransferManager] Data channel ready for incoming transfer');
-
-        // Record consent BEFORE deleting the offer: this is the only durable marker the
-        // byte path can consult to know the user agreed to receive this exact file.
-        this.acceptedOffers.set(hash, {
-          filename: offer.filename,
-          hash: offer.hash,
-          sender: offer.sender,
-          filesize: offer.filesize,
-        });
-        this.pendingOffers.delete(hash);
       } else {
         throw new Error('Transfer was cancelled during setup');
       }
