@@ -97,6 +97,38 @@ export default class FileTransferManager extends EventEmitter {
       });
     }
   };
+  private readonly handleWebRTCReconnecting = async (): Promise<void> => {
+    const recipient = this.webRTCService.recipient;
+    const outgoingTransfer = Array.from(this.outgoingTransfers.values()).find(
+      (transfer) => transfer.recipient === recipient,
+    );
+
+    try {
+      if (outgoingTransfer) {
+        const offer = await this.webRTCService.createOffer();
+        await this.gmcpFileTransfer.sendOffer({
+          recipient: outgoingTransfer.recipient,
+          filename: outgoingTransfer.filename,
+          filesize: outgoingTransfer.file.size,
+          offerSdp: JSON.stringify(offer),
+          hash: outgoingTransfer.hash,
+        });
+        return;
+      }
+
+      const acceptedOffer = Array.from(this.acceptedOffers.values()).find(
+        (offer) => offer.sender === recipient,
+      );
+      if (acceptedOffer) {
+        await this.gmcpFileTransfer.sendRequestResend({
+          sender: acceptedOffer.sender,
+          hash: acceptedOffer.hash,
+        });
+      }
+    } catch (error) {
+      console.error('[FileTransferManager] Failed to re-signal recovered connection:', error);
+    }
+  };
 
   constructor(webRTCService: WebRTCService, gmcpFileTransfer: GMCPClientFileTransfer) {
     super();
@@ -124,6 +156,7 @@ export default class FileTransferManager extends EventEmitter {
   private setupListeners(): void {
     this.webRTCService.on('dataChannelMessage', this.handleDataChannelMessage);
     this.webRTCService.on('iceCandidate', this.handleLocalIceCandidate);
+    this.webRTCService.on('webRTCReconnecting', this.handleWebRTCReconnecting);
     this.gmcpFileTransfer.on('offer', this.handleFileTransferOffer);
     this.gmcpFileTransfer.on('accept', this.handleFileTransferAccepted);
     this.gmcpFileTransfer.on('reject', this.handleFileTransferRejected);
@@ -695,6 +728,7 @@ export default class FileTransferManager extends EventEmitter {
   cleanup(): void {
     this.webRTCService.off('dataChannelMessage', this.handleDataChannelMessage);
     this.webRTCService.off('iceCandidate', this.handleLocalIceCandidate);
+    this.webRTCService.off('webRTCReconnecting', this.handleWebRTCReconnecting);
     this.gmcpFileTransfer.off('offer', this.handleFileTransferOffer);
     this.gmcpFileTransfer.off('accept', this.handleFileTransferAccepted);
     this.gmcpFileTransfer.off('reject', this.handleFileTransferRejected);

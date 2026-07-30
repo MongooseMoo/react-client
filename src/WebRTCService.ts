@@ -5,6 +5,7 @@ export class WebRTCService extends EventEmitter {
   private dataChannel: RTCDataChannel | null = null;
   private connectionTimeout: number = 300000; // 5 minutes timeout
   private connectionTimeoutId?: number;
+  private recoveryAttempt: Promise<void> | null = null;
   public recipient: string = '';
   public pendingCandidates: RTCIceCandidateInit[] = [];
 
@@ -160,22 +161,28 @@ export class WebRTCService extends EventEmitter {
     };
   }
 
-  private async attemptRecovery(): Promise<void> {
-    try {
+  private attemptRecovery(): Promise<void> {
+    if (!this.recoveryAttempt) {
       console.log('[WebRTCService] Attempting connection recovery');
-      // Close existing connection
-      this.close();
-
-      // Wait a moment before reconnecting
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Try to establish a new connection
-      await this.createPeerConnection();
-
-      console.log('[WebRTCService] Recovery attempt completed');
-    } catch (error) {
-      console.error('[WebRTCService] Recovery attempt failed:', error);
+      this.recoveryAttempt = Promise.resolve()
+        .then(async () => {
+          this.close();
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          await this.createPeerConnection();
+          this.emit('webRTCReconnecting');
+        })
+        .then(() => {
+          console.log('[WebRTCService] Recovery attempt completed');
+        })
+        .catch((error) => {
+          console.error('[WebRTCService] Recovery attempt failed:', error);
+        })
+        .finally(() => {
+          this.recoveryAttempt = null;
+        });
     }
+
+    return this.recoveryAttempt;
   }
 
   private async attemptChannelRecovery(): Promise<void> {

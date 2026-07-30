@@ -838,6 +838,18 @@ describe('WebRTCService', () => {
   });
 
   describe('attemptRecovery', () => {
+    it('coalesces concurrent recovery attempts', async () => {
+      await webRTCService.createPeerConnection();
+      const createPeerConnectionSpy = vi.spyOn(webRTCService, 'createPeerConnection');
+
+      await Promise.all([
+        (webRTCService as any).attemptRecovery(),
+        (webRTCService as any).attemptRecovery(),
+      ]);
+
+      expect(createPeerConnectionSpy).toHaveBeenCalledTimes(1);
+    });
+
     it('should close existing connection and create new one', async () => {
       await webRTCService.createPeerConnection();
 
