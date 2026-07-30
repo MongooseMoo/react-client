@@ -7,6 +7,11 @@ import { useRoomStore } from "../stores/roomStore";
 import { registerCommandInput } from "../inputFocus";
 import type MudClient from "../client"; // Import MudClient
 import type { RoomPlayer } from "../gmcp/Room"; // Import RoomPlayer type
+import {
+  loadStoredValue,
+  saveStoredValue,
+  type LocalStorageSchema,
+} from "../persistence";
 
 type SendFunction = (text: string) => void;
 
@@ -17,7 +22,19 @@ type Props = {
 };
 
 const STORAGE_KEY = 'command_history';
+const STORAGE_VERSION = 1;
 const MAX_HISTORY = 1000;
+
+const commandHistorySchema: LocalStorageSchema<string[]> = {
+  key: STORAGE_KEY,
+  version: STORAGE_VERSION,
+  migrate: (data, storedVersion) => {
+    if (storedVersion > STORAGE_VERSION || !Array.isArray(data)) {
+      return undefined;
+    }
+    return data.filter((command): command is string => typeof command === "string");
+  },
+};
 
 // Helper function to quote name if needed
 const quoteNameIfNeeded = (name: string): string => {
@@ -59,23 +76,10 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
 
   // Load saved history on component mount
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const savedHistory = JSON.parse(saved);
-      if (!Array.isArray(savedHistory)) {
-        throw new Error('command history is not an array');
-      }
-      // Replay the commands into CommandHistory (skip non-string entries defensively)
-      savedHistory.forEach((cmd: unknown) => {
-        if (typeof cmd === 'string') {
-          commandHistoryRef.current.addCommand(cmd);
-        }
-      });
-    } catch (e) {
-      console.warn('Failed to load command history:', e);
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    const savedHistory = loadStoredValue(commandHistorySchema, []);
+    savedHistory.forEach((command) => {
+      commandHistoryRef.current.addCommand(command);
+    });
   }, []);
 
   // Register input ref with InputStore for focus functionality
@@ -90,7 +94,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       const history = commandHistoryRef.current.getHistory();
       // Save only up to MAX_HISTORY commands
       const trimmedHistory = history.slice(-MAX_HISTORY);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmedHistory));
+      saveStoredValue(commandHistorySchema, trimmedHistory);
     } catch (e) {
       console.warn('Failed to save command history:', e);
     }

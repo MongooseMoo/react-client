@@ -1,45 +1,60 @@
+import {
+    openIndexedDatabase,
+    requestToPromise,
+    transactionDone,
+    type IndexedDatabaseSchema,
+} from "./persistence";
+
 const DB_NAME = 'toaststunt-saves';
 const STORE_NAME = 'checkpoints';
 
-function openDB(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, 1);
-        req.onupgradeneeded = () => {
-            req.result.createObjectStore(STORE_NAME);
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
-}
+const checkpointDatabaseSchema: IndexedDatabaseSchema = {
+    name: DB_NAME,
+    version: 1,
+    upgrade: (database) => {
+        if (!database.objectStoreNames.contains(STORE_NAME)) {
+            database.createObjectStore(STORE_NAME);
+        }
+    },
+};
 
 export async function saveCheckpoint(dbKey: string, data: Uint8Array): Promise<void> {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
+    const db = await openIndexedDatabase(checkpointDatabaseSchema);
+    try {
         const tx = db.transaction(STORE_NAME, 'readwrite');
+        const done = transactionDone(tx);
         tx.objectStore(STORE_NAME).put(data, dbKey);
-        tx.oncomplete = () => { db.close(); resolve(); };
-        tx.onerror = () => { db.close(); reject(tx.error); };
-    });
+        await done;
+    } finally {
+        db.close();
+    }
 }
 
 export async function loadCheckpoint(dbKey: string): Promise<Uint8Array | null> {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
+    const db = await openIndexedDatabase(checkpointDatabaseSchema);
+    try {
         const tx = db.transaction(STORE_NAME, 'readonly');
-        const req = tx.objectStore(STORE_NAME).get(dbKey);
-        req.onsuccess = () => { db.close(); resolve(req.result || null); };
-        req.onerror = () => { db.close(); reject(req.error); };
-    });
+        const done = transactionDone(tx);
+        const result = await requestToPromise<Uint8Array | undefined>(
+            tx.objectStore(STORE_NAME).get(dbKey),
+        );
+        await done;
+        return result ?? null;
+    } finally {
+        db.close();
+    }
 }
 
 export async function deleteCheckpoint(dbKey: string): Promise<void> {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
+    const db = await openIndexedDatabase(checkpointDatabaseSchema);
+    try {
         const tx = db.transaction(STORE_NAME, 'readwrite');
+        const done = transactionDone(tx);
         tx.objectStore(STORE_NAME).delete(dbKey);
-        tx.oncomplete = () => { db.close(); resolve(); };
-        tx.onerror = () => { db.close(); reject(tx.error); };
-    });
+        await done;
+    } finally {
+        db.close();
+    }
 }
 
 export async function hashDbBytes(data: ArrayBuffer): Promise<string> {

@@ -161,8 +161,9 @@ describe("useChannelHistory", () => {
       expect(saved).not.toBeNull();
 
       const parsed = JSON.parse(saved || "{}");
-      expect(parsed.buffers.all.messages).toHaveLength(MAX_PERSISTED_ALL_MESSAGES);
-      expect(parsed.buffers.gossip.messages).toHaveLength(MAX_PERSISTED_CHANNEL_MESSAGES);
+      expect(parsed.version).toBe(1);
+      expect(parsed.data.buffers.all.messages).toHaveLength(MAX_PERSISTED_ALL_MESSAGES);
+      expect(parsed.data.buffers.gossip.messages).toHaveLength(MAX_PERSISTED_CHANNEL_MESSAGES);
     });
   });
 

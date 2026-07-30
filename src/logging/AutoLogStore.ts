@@ -7,24 +7,31 @@ import {
   AutoLogSession,
   AutoLogSessionDraft,
 } from "./AutoLogTypes";
+import {
+  openIndexedDatabase,
+  requestToPromise,
+  transactionDone,
+  type IndexedDatabaseSchema,
+} from "../persistence";
 
 const SESSION_INDEX_STARTED_AT = "startedAt";
 const ENTRY_INDEX_SESSION_ID = "sessionId";
 
-function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
+const autoLogDatabaseSchema: IndexedDatabaseSchema = {
+  name: AUTOLOG_DB_NAME,
+  version: AUTOLOG_DB_VERSION,
+  upgrade: (database) => {
+    if (!database.objectStoreNames.contains(AUTOLOG_SESSIONS_STORE)) {
+      const sessions = database.createObjectStore(AUTOLOG_SESSIONS_STORE, { keyPath: "id" });
+      sessions.createIndex(SESSION_INDEX_STARTED_AT, "startedAt", { unique: false });
+    }
 
-function transactionDone(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
-  });
-}
+    if (!database.objectStoreNames.contains(AUTOLOG_ENTRIES_STORE)) {
+      const entries = database.createObjectStore(AUTOLOG_ENTRIES_STORE, { keyPath: ["sessionId", "sequence"] });
+      entries.createIndex(ENTRY_INDEX_SESSION_ID, "sessionId", { unique: false });
+    }
+  },
+};
 
 function createSessionId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -47,26 +54,7 @@ export class AutoLogStore {
       return this.db;
     }
 
-    this.db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open(AUTOLOG_DB_NAME, AUTOLOG_DB_VERSION);
-
-      request.onupgradeneeded = () => {
-        const db = request.result;
-
-        if (!db.objectStoreNames.contains(AUTOLOG_SESSIONS_STORE)) {
-          const sessions = db.createObjectStore(AUTOLOG_SESSIONS_STORE, { keyPath: "id" });
-          sessions.createIndex(SESSION_INDEX_STARTED_AT, "startedAt", { unique: false });
-        }
-
-        if (!db.objectStoreNames.contains(AUTOLOG_ENTRIES_STORE)) {
-          const entries = db.createObjectStore(AUTOLOG_ENTRIES_STORE, { keyPath: ["sessionId", "sequence"] });
-          entries.createIndex(ENTRY_INDEX_SESSION_ID, "sessionId", { unique: false });
-        }
-      };
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+    this.db = await openIndexedDatabase(autoLogDatabaseSchema);
 
     this.db.onversionchange = () => {
       this.close();

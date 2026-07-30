@@ -1,3 +1,10 @@
+import {
+  openIndexedDatabase,
+  requestToPromise,
+  transactionDone,
+  type IndexedDatabaseSchema,
+} from "./persistence";
+
 export interface SessionEvent {
   timestamp: number;
   type: 'websocket-send' | 'websocket-receive' | 'user-input' | 'connection' | 'gmcp' | 'mcp' | 'file-transfer' | 'error';
@@ -24,6 +31,20 @@ export interface SessionLog {
   metadata: SessionMetadata;
   events: SessionEvent[];
 }
+
+const sessionDatabaseSchema: IndexedDatabaseSchema = {
+  name: "SessionLogs",
+  version: 1,
+  upgrade: (database) => {
+    if (!database.objectStoreNames.contains("sessions")) {
+      const store = database.createObjectStore("sessions", {
+        keyPath: "metadata.sessionId",
+      });
+      store.createIndex("startTime", "metadata.startTime");
+      store.createIndex("url", "metadata.url");
+    }
+  },
+};
 
 export class SessionRecorder {
   private events: SessionEvent[] = [];
@@ -184,69 +205,45 @@ export class SessionRecorder {
 
   async saveSessionToIndexedDB(): Promise<void> {
     const sessionLog = this.getSessionLog();
-    
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open('SessionLogs', 1);
-      
-      request.onerror = () => reject(request.error);
-      
-      request.onsuccess = () => {
-        const db = request.result;
-        const transaction = db.transaction(['sessions'], 'readwrite');
-        const store = transaction.objectStore('sessions');
-        
-        const addRequest = store.put(sessionLog);
-        addRequest.onsuccess = () => resolve();
-        addRequest.onerror = () => reject(addRequest.error);
-      };
-      
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains('sessions')) {
-          const store = db.createObjectStore('sessions', { keyPath: 'metadata.sessionId' });
-          store.createIndex('startTime', 'metadata.startTime');
-          store.createIndex('url', 'metadata.url');
-        }
-      };
-    });
+
+    const database = await openIndexedDatabase(sessionDatabaseSchema);
+    try {
+      const transaction = database.transaction("sessions", "readwrite");
+      const done = transactionDone(transaction);
+      transaction.objectStore("sessions").put(sessionLog);
+      await done;
+    } finally {
+      database.close();
+    }
   }
 
   static async loadSessionFromIndexedDB(sessionId: string): Promise<SessionLog | null> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open('SessionLogs', 1);
-      
-      request.onerror = () => reject(request.error);
-      
-      request.onsuccess = () => {
-        const db = request.result;
-        const transaction = db.transaction(['sessions'], 'readonly');
-        const store = transaction.objectStore('sessions');
-        
-        const getRequest = store.get(sessionId);
-        getRequest.onsuccess = () => resolve(getRequest.result || null);
-        getRequest.onerror = () => reject(getRequest.error);
-      };
-    });
+    const database = await openIndexedDatabase(sessionDatabaseSchema);
+    try {
+      const transaction = database.transaction("sessions", "readonly");
+      const done = transactionDone(transaction);
+      const session = await requestToPromise<SessionLog | undefined>(
+        transaction.objectStore("sessions").get(sessionId),
+      );
+      await done;
+      return session ?? null;
+    } finally {
+      database.close();
+    }
   }
 
   static async listSessions(): Promise<SessionMetadata[]> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open('SessionLogs', 1);
-      
-      request.onerror = () => reject(request.error);
-      
-      request.onsuccess = () => {
-        const db = request.result;
-        const transaction = db.transaction(['sessions'], 'readonly');
-        const store = transaction.objectStore('sessions');
-        
-        const getAllRequest = store.getAll();
-        getAllRequest.onsuccess = () => {
-          const sessions = getAllRequest.result.map((log: SessionLog) => log.metadata);
-          resolve(sessions);
-        };
-        getAllRequest.onerror = () => reject(getAllRequest.error);
-      };
-    });
+    const database = await openIndexedDatabase(sessionDatabaseSchema);
+    try {
+      const transaction = database.transaction("sessions", "readonly");
+      const done = transactionDone(transaction);
+      const sessions = await requestToPromise<SessionLog[]>(
+        transaction.objectStore("sessions").getAll(),
+      );
+      await done;
+      return sessions.map((log) => log.metadata);
+    } finally {
+      database.close();
+    }
   }
 }

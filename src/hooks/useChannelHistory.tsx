@@ -3,6 +3,11 @@ import { announce } from "@react-aria/live-announcer";
 import { useChannelHistoryStore, type ChannelTextEntry } from "../stores/channelHistoryStore";
 import { usePreferences, type NavigationKeyScheme } from "../stores/preferencesStore";
 import { extractLinks, openLink, type ExtractedLink } from "../messageLinks";
+import {
+  loadStoredValue,
+  saveStoredValue,
+  type LocalStorageSchema,
+} from "../persistence";
 
 const navigationKeyMaps: Record<NavigationKeyScheme, { up: string; down: string; left: string; right: string }> = {
   jkli: { up: "i", down: "k", left: "j", right: "l" },
@@ -44,7 +49,30 @@ interface Buffer {
 }
 
 const CHANNEL_HISTORY_STORAGE_KEY = "channelHistory";
+const CHANNEL_HISTORY_STORAGE_VERSION = 1;
 const ALL_BUFFER_NAME = "all";
+
+type StoredChannelHistory = {
+  buffers?: Record<string, Partial<Buffer>>;
+  bufferOrder?: unknown[];
+  currentBufferIndex?: number;
+  timestampsEnabled?: boolean;
+};
+
+const channelHistorySchema: LocalStorageSchema<StoredChannelHistory> = {
+  key: CHANNEL_HISTORY_STORAGE_KEY,
+  version: CHANNEL_HISTORY_STORAGE_VERSION,
+  migrate: (data, storedVersion) => {
+    if (
+      storedVersion > CHANNEL_HISTORY_STORAGE_VERSION ||
+      typeof data !== "object" ||
+      data === null
+    ) {
+      return undefined;
+    }
+    return data as StoredChannelHistory;
+  },
+};
 
 export const MAX_ALL_BUFFER_MESSAGES = 1000;
 export const MAX_CHANNEL_BUFFER_MESSAGES = 500;
@@ -142,48 +170,40 @@ export const useChannelHistory = () => {
   const lastKeyPress = useRef<{ key: string; time: number; count: number } | null>(null);
   const lastProcessedChannelEntryId = useRef(0);
 
-  // Load state from localStorage on mount
+  // Load state through the shared versioned persistence owner on mount.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(CHANNEL_HISTORY_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const storedOrder = Array.isArray(parsed.bufferOrder) ? parsed.bufferOrder : [];
-        const loadedOrder = [
-          ALL_BUFFER_NAME,
-          ...storedOrder.filter((name: unknown): name is string => typeof name === "string" && name !== ALL_BUFFER_NAME),
-        ];
-        const storedBuffers = parsed.buffers && typeof parsed.buffers === "object" ? parsed.buffers : {};
-        const loadedBuffers = new Map<string, Buffer>(
-          loadedOrder.map((name: string): [string, Buffer] => [
-            name,
-            normalizeLoadedBuffer(name, storedBuffers[name])
-          ])
-        );
-        setBuffers(loadedBuffers);
-        setBufferOrder(loadedOrder);
-        setCurrentBufferIndex(
-          Math.min(Math.max(parsed.currentBufferIndex || 0, 0), loadedOrder.length - 1)
-        );
-        setTimestampsEnabled(parsed.timestampsEnabled ?? true);
-      }
-    } catch (error) {
-      console.error("Failed to load channel history:", error);
-    }
+    const parsed = loadStoredValue<StoredChannelHistory>(
+      channelHistorySchema,
+      {},
+    );
+    const storedOrder = Array.isArray(parsed.bufferOrder) ? parsed.bufferOrder : [];
+    const loadedOrder = [
+      ALL_BUFFER_NAME,
+      ...storedOrder.filter((name: unknown): name is string => typeof name === "string" && name !== ALL_BUFFER_NAME),
+    ];
+    const storedBuffers = parsed.buffers && typeof parsed.buffers === "object" ? parsed.buffers : {};
+    const loadedBuffers = new Map<string, Buffer>(
+      loadedOrder.map((name: string): [string, Buffer] => [
+        name,
+        normalizeLoadedBuffer(name, storedBuffers[name])
+      ])
+    );
+    setBuffers(loadedBuffers);
+    setBufferOrder(loadedOrder);
+    setCurrentBufferIndex(
+      Math.min(Math.max(parsed.currentBufferIndex || 0, 0), loadedOrder.length - 1)
+    );
+    setTimestampsEnabled(parsed.timestampsEnabled ?? true);
   }, []);
 
-  // Save state to localStorage whenever it changes
+  // Save state through the same schema whenever it changes.
   useEffect(() => {
-    try {
-      localStorage.setItem(CHANNEL_HISTORY_STORAGE_KEY, JSON.stringify({
+    saveStoredValue(channelHistorySchema, {
         buffers: serializeBuffersForStorage(buffers),
         bufferOrder,
         currentBufferIndex,
         timestampsEnabled,
-      }));
-    } catch (error) {
-      console.error("Failed to save channel history:", error);
-    }
+    });
   }, [buffers, bufferOrder, currentBufferIndex, timestampsEnabled]);
 
   // Handle channel messages. The "all" buffer is the aggregate of every

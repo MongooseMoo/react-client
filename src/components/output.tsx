@@ -14,6 +14,12 @@ import { useOutputStore, type OutputEntry } from '../stores/outputStore';
 import BlockquoteWithCopy from './BlockquoteWithCopy';
 import { autoLogService } from '../logging/AutoLogService';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
+import {
+  loadStoredValue,
+  removeStoredValue,
+  saveStoredValue,
+  type LocalStorageSchema,
+} from "../persistence";
 
 export enum OutputType {
   Command = 'command',
@@ -39,24 +45,33 @@ interface SavedOutputLine {
   metadata?: Record<string, any>; // Optional additional data
 }
 
-interface StoredOutputLog {
-  version: number;
-  lines: SavedOutputLine[];
-}
-
 const OUTPUT_LOG_VERSION = 2;
+const outputLogSchema: LocalStorageSchema<SavedOutputLine[]> = {
+  key: "outputLog",
+  version: OUTPUT_LOG_VERSION,
+  migrate: (data, storedVersion) => {
+    if (storedVersion > OUTPUT_LOG_VERSION) {
+      return undefined;
+    }
 
-// localStorage quota errors surface as a DOMException whose name/code differs
-// across browsers (QuotaExceededError / NS_ERROR_DOM_QUOTA_REACHED).
-function isQuotaExceededError(error: unknown): boolean {
-  return (
-    error instanceof DOMException &&
-    (error.name === "QuotaExceededError" ||
-      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
-      error.code === 22 ||
-      error.code === 1014)
-  );
-}
+    if (Array.isArray(data)) {
+      return data as SavedOutputLine[];
+    }
+
+    // The pre-shared-persistence shape carried its domain version beside lines.
+    if (
+      storedVersion === 0 &&
+      typeof data === "object" &&
+      data !== null &&
+      (data as { version?: unknown }).version === OUTPUT_LOG_VERSION &&
+      Array.isArray((data as { lines?: unknown }).lines)
+    ) {
+      return (data as { lines: SavedOutputLine[] }).lines;
+    }
+
+    return undefined;
+  },
+};
 
 interface Props {
   client: MudClient;
@@ -128,31 +143,13 @@ class Output extends React.Component<Props, State> {
       };
     }).filter(savedLine => savedLine.sourceContent !== ""); // Filter out lines that ended up empty
 
-    const writeLines = (lines: SavedOutputLine[]) => {
-      const storedLog: StoredOutputLog = {
-        version: OUTPUT_LOG_VERSION,
-        lines,
-      };
-      localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify(storedLog));
-    };
-
     // Saving is best-effort — a failed write (e.g. QuotaExceededError) must never
     // propagate out of componentDidUpdate and crash the output view.
-    try {
-      writeLines(linesToSave);
-    } catch (error) {
-      if (isQuotaExceededError(error)) {
-        // One recovery attempt: drop the oldest half of the persisted set and retry.
-        const trimmed = linesToSave.slice(Math.floor(linesToSave.length / 2));
-        try {
-          writeLines(trimmed);
-          return;
-        } catch (retryError) {
-          console.warn("Failed to persist output log after trimming:", retryError);
-          return;
-        }
-      }
-      console.warn("Failed to persist output log:", error);
+    const result = saveStoredValue(outputLogSchema, linesToSave);
+    if (result === "quota-exceeded") {
+      // One recovery attempt: drop the oldest half of the persisted set and retry.
+      const trimmed = linesToSave.slice(Math.floor(linesToSave.length / 2));
+      saveStoredValue(outputLogSchema, trimmed);
     }
   };
 
@@ -262,53 +259,25 @@ class Output extends React.Component<Props, State> {
   };
 
   loadOutput = (): OutputLine[] => {
-    const savedOutputString = localStorage.getItem(Output.LOCAL_STORAGE_KEY);
-    if (savedOutputString) {
-      try {
-        const parsedData = JSON.parse(savedOutputString);
+    const savedLines = loadStoredValue(outputLogSchema, []);
+    // Re-process source data through handlers to recreate proper React components.
+    return savedLines.map((savedLine: SavedOutputLine): OutputLine => {
+      const currentKey = this.messageKey++;
+      const recreatedElements = this.recreateContentFromSource(savedLine);
 
-        // Check for new versioned format
-        if (parsedData && typeof parsedData === 'object' && 'version' in parsedData && 'lines' in parsedData) {
-          const storedLog = parsedData as StoredOutputLog;
-          if (storedLog.version === OUTPUT_LOG_VERSION) {
-            // Re-process source data through handlers to recreate proper React components
-            return storedLog.lines.map((savedLine: SavedOutputLine): OutputLine => {
-              const currentKey = this.messageKey++;
-              const recreatedElements = this.recreateContentFromSource(savedLine);
+      const wrappedContent = recreatedElements.length === 1 ?
+        recreatedElements[0] :
+        <>{recreatedElements}</>;
 
-              // Create the wrapper div with the recreated content
-              const wrappedContent = recreatedElements.length === 1 ?
-                recreatedElements[0] :
-                <>{recreatedElements}</>;
-
-              return {
-                id: currentKey,
-                type: savedLine.type,
-                content: <div key={currentKey} className={`output-line output-line-${savedLine.type}`}>{wrappedContent}</div>,
-                sourceType: savedLine.sourceType,
-                sourceContent: savedLine.sourceContent,
-                metadata: savedLine.metadata
-              };
-            });
-          } else {
-            // Clear old incompatible data
-            console.warn(`Unsupported log version: ${storedLog.version}. Clearing old data.`);
-            localStorage.removeItem(Output.LOCAL_STORAGE_KEY);
-            return [];
-          }
-        } else {
-          // Clear old format data
-          console.log("Clearing old format output log.");
-          localStorage.removeItem(Output.LOCAL_STORAGE_KEY);
-          return [];
-        }
-      } catch (error) {
-        console.error("Failed to parse saved output log:", error);
-        localStorage.removeItem(Output.LOCAL_STORAGE_KEY); // Clear corrupted data
-        return []; // Return empty array on error
-      }
-    }
-    return [];
+      return {
+        id: currentKey,
+        type: savedLine.type,
+        content: <div key={currentKey} className={`output-line output-line-${savedLine.type}`}>{wrappedContent}</div>,
+        sourceType: savedLine.sourceType,
+        sourceContent: savedLine.sourceContent,
+        metadata: savedLine.metadata
+      };
+    });
   };
 
   addCommand = (command: string) => {
@@ -729,7 +698,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     const frozenDiv = this.frozenRef.current;
     if (frozenDiv) frozenDiv.innerHTML = '';
     this.setState({ liveOutput: [] });
-    localStorage.removeItem(Output.LOCAL_STORAGE_KEY); // Also clear from local storage
+    removeStoredValue(Output.LOCAL_STORAGE_KEY);
   }
 
   copyLog() {
