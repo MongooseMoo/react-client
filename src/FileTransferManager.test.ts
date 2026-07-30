@@ -164,6 +164,71 @@ describe('FileTransferManager lifecycle', () => {
     expect(webRTCService.cleanup).toHaveBeenCalledTimes(1);
   });
 
+  it('re-signals an active outgoing transfer after WebRTC reconnects', async () => {
+    const { gmcpFileTransfer, manager, webRTCService } = createManager();
+    const file = new File(['hello'], 'hello.txt');
+    const transfers = manager as unknown as {
+      outgoingTransfers: Map<
+        string,
+        {
+          file: File;
+          filename: string;
+          hash: string;
+          recipient: string;
+        }
+      >;
+    };
+    transfers.outgoingTransfers.set('file-hash', {
+      file,
+      filename: file.name,
+      hash: 'file-hash',
+      recipient: 'Bob',
+    });
+    webRTCService.recipient = 'Bob';
+
+    webRTCService.emit('webRTCReconnecting');
+    await flush();
+
+    expect(webRTCService.createOffer).toHaveBeenCalledTimes(1);
+    expect(gmcpFileTransfer.sendOffer).toHaveBeenCalledWith({
+      recipient: 'Bob',
+      filename: 'hello.txt',
+      filesize: file.size,
+      offerSdp: JSON.stringify({ type: 'offer', sdp: 'mock' }),
+      hash: 'file-hash',
+    });
+  });
+
+  it('requests a fresh offer for an accepted incoming transfer after WebRTC reconnects', async () => {
+    const { gmcpFileTransfer, manager, webRTCService } = createManager();
+    const transfers = manager as unknown as {
+      acceptedOffers: Map<
+        string,
+        {
+          filename: string;
+          hash: string;
+          sender: string;
+          filesize: number;
+        }
+      >;
+    };
+    transfers.acceptedOffers.set('file-hash', {
+      filename: 'hello.txt',
+      hash: 'file-hash',
+      sender: 'Bob',
+      filesize: 5,
+    });
+    webRTCService.recipient = 'Bob';
+
+    webRTCService.emit('webRTCReconnecting');
+    await flush();
+
+    expect(gmcpFileTransfer.sendRequestResend).toHaveBeenCalledWith({
+      sender: 'Bob',
+      hash: 'file-hash',
+    });
+  });
+
   it('emits fileTransferAccepted when an outgoing transfer is accepted', async () => {
     const { manager, webRTCService } = createManager();
     webRTCService.isDataChannelOpen.mockReturnValue(true);
