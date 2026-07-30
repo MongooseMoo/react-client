@@ -209,8 +209,8 @@ export class AutoLogStore {
     return sessions.reduce((total, session) => total + session.byteEstimate, 0);
   }
 
-  async pruneToMaxBytes(maxBytes: number): Promise<void> {
-    if (maxBytes <= 0) {
+  async pruneToMaxBytes(maxBytes: number, protectedSessionId?: string): Promise<void> {
+    if (maxBytes <= 0 && !protectedSessionId) {
       await this.deleteAll();
       return;
     }
@@ -222,6 +222,9 @@ export class AutoLogStore {
     for (const session of oldestFirst) {
       if (total <= maxBytes) {
         return;
+      }
+      if (session.id === protectedSessionId) {
+        continue;
       }
 
       await this.deleteSession(session.id);

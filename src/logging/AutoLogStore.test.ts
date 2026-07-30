@@ -82,4 +82,23 @@ describe("AutoLogStore", () => {
 
     store.close();
   });
+
+  it("preserves the active session while pruning and keeps later entries reachable", async () => {
+    const store = new AutoLogStore();
+    const activeSession = await store.createSession({ ...draft, title: "Active" }, 100);
+    const completedSession = await store.createSession({ ...draft, title: "Completed" }, 200);
+    await store.appendEntries([makeEntry(activeSession.id, 0, "active ".repeat(100))]);
+    await store.appendEntries([makeEntry(completedSession.id, 0, "completed")]);
+
+    await store.pruneToMaxBytes(1, activeSession.id);
+    await store.appendEntries([makeEntry(activeSession.id, 1, "still active")]);
+
+    const sessions = await store.listSessions();
+    expect(sessions.map((session) => session.title)).toEqual(["Active"]);
+    expect(sessions[0].lineCount).toBe(2);
+    expect(await store.getEntries(activeSession.id)).toHaveLength(2);
+    expect(await store.getEntries(completedSession.id)).toEqual([]);
+
+    store.close();
+  });
 });
