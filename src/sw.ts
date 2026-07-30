@@ -15,6 +15,7 @@ type PushPayload = {
   url?: string;
 };
 
+self.skipWaiting();
 clientsClaim();
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
