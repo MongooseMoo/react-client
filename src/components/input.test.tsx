@@ -234,7 +234,8 @@ describe('CommandInput Component', () => {
     
     // Should have saved only the last 1000 commands
     const savedValue = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
-    expect(savedValue.length).toBeLessThanOrEqual(1000);
+    expect(savedValue.version).toBe(1);
+    expect(savedValue.data.length).toBeLessThanOrEqual(1000);
   });
 
 });

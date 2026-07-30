@@ -125,7 +125,7 @@ describe("Output persistence", () => {
   };
 
   const parsePayload = (raw: unknown) =>
-    JSON.parse(raw as string) as { version: number; lines: unknown[] };
+    JSON.parse(raw as string) as { version: number; data: unknown[] };
 
   beforeEach(() => {
     localStorage.clear();
@@ -148,8 +148,8 @@ describe("Output persistence", () => {
 
     // First (failed) attempt writes all 10 lines; the retry writes the recent half.
     expect(setItemSpy).toHaveBeenCalledTimes(2);
-    expect(parsePayload(setItemSpy.mock.calls[0][1]).lines).toHaveLength(10);
-    expect(parsePayload(setItemSpy.mock.calls[1][1]).lines).toHaveLength(5);
+    expect(parsePayload(setItemSpy.mock.calls[0][1]).data).toHaveLength(10);
+    expect(parsePayload(setItemSpy.mock.calls[1][1]).data).toHaveLength(5);
 
     // Component still functions: a subsequent save succeeds without throwing.
     expect(() => output.saveOutput()).not.toThrow();
@@ -182,7 +182,7 @@ describe("Output persistence", () => {
     vi.advanceTimersByTime(500);
 
     expect(setItemSpy).toHaveBeenCalledTimes(1);
-    expect(parsePayload(setItemSpy.mock.calls[0][1]).lines).toHaveLength(3);
+    expect(parsePayload(setItemSpy.mock.calls[0][1]).data).toHaveLength(3);
   });
 
   it("flushes the pending save synchronously on unmount", () => {
@@ -197,7 +197,7 @@ describe("Output persistence", () => {
 
     // Written synchronously, before any timer advances.
     expect(setItemSpy).toHaveBeenCalledTimes(1);
-    expect(parsePayload(setItemSpy.mock.calls[0][1]).lines).toHaveLength(2);
+    expect(parsePayload(setItemSpy.mock.calls[0][1]).data).toHaveLength(2);
   });
 
   it("cancels a pending save on clearLog so stale data is not re-persisted", () => {

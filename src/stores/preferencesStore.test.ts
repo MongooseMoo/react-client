@@ -47,7 +47,7 @@ describe("preferencesStore", () => {
     expect(usePreferences.getState().editor.accessibilityMode).toBe(before);
   });
 
-  it("persists changes to localStorage in the raw PrefState shape", () => {
+  it("persists changes in the shared versioned envelope", () => {
     // localStorage is a no-op mock in the test setup, so assert on the write.
     const setItem = vi.mocked(localStorage.setItem);
     setItem.mockClear();
@@ -61,11 +61,12 @@ describe("preferencesStore", () => {
     expect(setItem).toHaveBeenCalledWith("preferences", expect.any(String));
     const lastCall = setItem.mock.calls.at(-1);
     const stored = JSON.parse(lastCall?.[1] as string);
-    expect(stored.general.localEcho).toBe(true);
-    expect(stored.general.syncTimezoneToServer).toBe(false);
-    expect(stored.general.syncLocationToServer).toBe(true);
+    expect(stored.version).toBe(1);
+    expect(stored.data.general.localEcho).toBe(true);
+    expect(stored.data.general.syncTimezoneToServer).toBe(false);
+    expect(stored.data.general.syncLocationToServer).toBe(true);
     // action functions are not serialized by JSON.stringify
-    expect(stored.setGeneral).toBeUndefined();
+    expect(stored.data.setGeneral).toBeUndefined();
   });
 
   it("notifies subscribers on change", () => {
@@ -125,7 +126,7 @@ describe("preferencesStore", () => {
     expect(setItem).toHaveBeenCalledOnce();
 
     const stored = JSON.parse(setItem.mock.calls[0][1]);
-    expect(stored.speech.rate).toBe(1.3);
+    expect(stored.data.speech.rate).toBe(1.3);
   });
 
   it("flushes pending preference persistence before the page is discarded", () => {
@@ -142,9 +143,19 @@ describe("preferencesStore", () => {
     expect(setItem).toHaveBeenCalledOnce();
 
     const stored = JSON.parse(setItem.mock.calls[0][1]);
-    expect(stored.sound).toEqual({
+    expect(stored.data.sound).toEqual({
       muteInBackground: true,
       volume: 0.5,
     });
+  });
+
+  it("does not throw when preference storage is blocked", () => {
+    vi.mocked(localStorage.setItem).mockImplementationOnce(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+
+    usePreferences.getState().setMidi({ enabled: true });
+
+    expect(() => vi.runAllTimers()).not.toThrow();
   });
 });

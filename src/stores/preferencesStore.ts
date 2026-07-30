@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
+import {
+  loadStoredValue,
+  saveStoredValue,
+  type LocalStorageSchema,
+} from "../persistence";
 
 export enum AutoreadMode {
   Off = "off",
@@ -85,6 +90,7 @@ type PrefActions = {
 };
 
 const STORAGE_KEY = "preferences";
+const STORAGE_VERSION = 1;
 const PERSIST_DEBOUNCE_MS = 250;
 
 function getInitialPreferences(): PrefState {
@@ -134,28 +140,36 @@ function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
   };
 }
 
+const preferencesSchema: LocalStorageSchema<PrefState> = {
+  key: STORAGE_KEY,
+  version: STORAGE_VERSION,
+  migrate: (data, storedVersion) => {
+    if (
+      storedVersion > STORAGE_VERSION ||
+      typeof data !== "object" ||
+      data === null
+    ) {
+      return undefined;
+    }
+
+    const parsed = data as PrefState & { general?: { volume?: number } };
+
+    // Version 0 stored the raw preference object. Move the old general volume
+    // into sound before normalizing every version against current defaults.
+    if (storedVersion === 0 && parsed.general?.volume !== undefined && parsed.sound) {
+      if (!parsed.sound.volume) {
+        parsed.sound.volume = parsed.general.volume;
+      }
+      delete parsed.general.volume;
+    }
+
+    return mergePreferences(getInitialPreferences(), parsed);
+  },
+};
+
 function loadPreferences(): PrefState {
   const initial = getInitialPreferences();
-  const storedData = localStorage.getItem(STORAGE_KEY);
-  if (!storedData) return initial;
-
-  let parsed: (PrefState & { general?: { volume?: number } }) | null = null;
-  try {
-    parsed = JSON.parse(storedData);
-  } catch {
-    return initial;
-  }
-  if (!parsed) return initial;
-
-  // Migration: move volume from general to sound if it exists.
-  if (parsed.general?.volume !== undefined && parsed.sound) {
-    if (!parsed.sound.volume) {
-      parsed.sound.volume = parsed.general.volume;
-    }
-    delete parsed.general.volume;
-  }
-
-  return mergePreferences(initial, parsed);
+  return loadStoredValue(preferencesSchema, initial);
 }
 
 /**
@@ -193,10 +207,11 @@ function flushPendingPreferences(): void {
     persistTimer = undefined;
   }
 
-  // JSON.stringify drops the action functions, leaving exactly the PrefState
-  // shape the previous store wrote.
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingPersistState));
-  pendingPersistState = undefined;
+  // JSON.stringify drops the action functions, leaving the PrefState data
+  // inside the shared versioned persistence envelope.
+  if (saveStoredValue(preferencesSchema, pendingPersistState) === "saved") {
+    pendingPersistState = undefined;
+  }
 }
 
 usePreferences.subscribe((state) => {
