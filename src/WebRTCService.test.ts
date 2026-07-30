@@ -90,7 +90,9 @@ describe('WebRTCService', () => {
   });
 
   afterEach(() => {
-    timeoutIds.forEach((id) => originalClearTimeout(id));
+    timeoutIds.forEach((id) => {
+      originalClearTimeout(id);
+    });
     timeoutIds = [];
   });
 
@@ -160,6 +162,21 @@ describe('WebRTCService', () => {
 
       expect(mockCreateDataChannelFn).toHaveBeenCalledWith('fileTransfer', expect.any(Object));
       expect((webRTCService as any).dataChannel).not.toBeNull();
+    });
+
+    it('should close existing connections before creating replacements', async () => {
+      await webRTCService.createPeerConnection();
+      const existingPeerConnection = (webRTCService as any).peerConnection;
+      const existingDataChannel = (webRTCService as any).dataChannel;
+      const peerConnectionCloseSpy = vi.spyOn(existingPeerConnection, 'close');
+      const dataChannelCloseSpy = vi.spyOn(existingDataChannel, 'close');
+
+      await webRTCService.createPeerConnection();
+
+      expect(dataChannelCloseSpy).toHaveBeenCalledOnce();
+      expect(peerConnectionCloseSpy).toHaveBeenCalledOnce();
+      expect((webRTCService as any).dataChannel).not.toBe(existingDataChannel);
+      expect((webRTCService as any).peerConnection).not.toBe(existingPeerConnection);
     });
 
     it('should handle errors when creating peer connection', async () => {

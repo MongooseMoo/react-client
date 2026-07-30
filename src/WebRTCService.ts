@@ -13,6 +13,10 @@ export class WebRTCService extends EventEmitter {
   }
 
   async createPeerConnection(): Promise<void> {
+    if (this.peerConnection || this.dataChannel) {
+      this.close();
+    }
+
     try {
       const configuration: RTCConfiguration = {
         iceServers: [
