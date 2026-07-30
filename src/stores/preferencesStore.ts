@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { subscribeWithSelector } from "zustand/middleware";
 
 export enum AutoreadMode {
   Off = "off",
@@ -84,6 +85,7 @@ type PrefActions = {
 };
 
 const STORAGE_KEY = "preferences";
+const PERSIST_DEBOUNCE_MS = 250;
 
 function getInitialPreferences(): PrefState {
   return {
@@ -162,24 +164,50 @@ function loadPreferences(): PrefState {
  * (`usePreferences.getState()`). Persisted to localStorage in the same raw
  * shape used before the Zustand migration, so existing saved preferences load.
  */
-export const usePreferences = create<PrefState & PrefActions>((set) => ({
-  ...loadPreferences(),
-  setGeneral: (data) => set({ general: data }),
-  setSpeech: (data) => set({ speech: data }),
-  setSound: (data) => set({ sound: data }),
-  setChannels: (data) => set({ channels: data }),
-  setEditorAutocompleteEnabled: (value) =>
-    set((s) => ({ editor: { ...s.editor, autocompleteEnabled: value } })),
-  setEditorAccessibilityMode: (value) =>
-    set((s) => ({ editor: { ...s.editor, accessibilityMode: value } })),
-  setKeyboard: (data) => set({ keyboard: data }),
-  setMidi: (data) => set({ midi: data }),
-  setHaptics: (data) => set({ haptics: data }),
-  setAutologging: (data) => set({ autologging: data }),
-}));
+export const usePreferences = create<PrefState & PrefActions>()(
+  subscribeWithSelector((set) => ({
+    ...loadPreferences(),
+    setGeneral: (data) => set({ general: data }),
+    setSpeech: (data) => set({ speech: data }),
+    setSound: (data) => set({ sound: data }),
+    setChannels: (data) => set({ channels: data }),
+    setEditorAutocompleteEnabled: (value) =>
+      set((s) => ({ editor: { ...s.editor, autocompleteEnabled: value } })),
+    setEditorAccessibilityMode: (value) =>
+      set((s) => ({ editor: { ...s.editor, accessibilityMode: value } })),
+    setKeyboard: (data) => set({ keyboard: data }),
+    setMidi: (data) => set({ midi: data }),
+    setHaptics: (data) => set({ haptics: data }),
+    setAutologging: (data) => set({ autologging: data }),
+  })),
+);
 
-// Persist on every change. JSON.stringify drops the action functions, leaving
-// exactly the PrefState shape the previous store wrote.
+let pendingPersistState: PrefState & PrefActions | undefined;
+let persistTimer: number | undefined;
+
+function flushPendingPreferences(): void {
+  if (!pendingPersistState) return;
+
+  if (persistTimer !== undefined) {
+    window.clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+
+  // JSON.stringify drops the action functions, leaving exactly the PrefState
+  // shape the previous store wrote.
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingPersistState));
+  pendingPersistState = undefined;
+}
+
 usePreferences.subscribe((state) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  pendingPersistState = state;
+  if (persistTimer !== undefined) {
+    window.clearTimeout(persistTimer);
+  }
+  persistTimer = window.setTimeout(
+    flushPendingPreferences,
+    PERSIST_DEBOUNCE_MS,
+  );
 });
+
+window.addEventListener("pagehide", flushPendingPreferences);

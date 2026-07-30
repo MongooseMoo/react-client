@@ -64,21 +64,24 @@ export class AutoLogService {
   private sequence = 0;
   private flushTimer: number | null = null;
   private flushPromise: Promise<void> = Promise.resolve();
+  private unsubscribePreferences: (() => void) | null = null;
 
   constructor(store: AutoLogStore = autoLogStore) {
     this.store = store;
-    usePreferences.subscribe(() => {
-      const preferences = usePreferences.getState().autologging;
-      if (!preferences.enabled) {
-        this.endSession().catch((error) => {
-          console.error("Failed to end autolog session after disabling autologging:", error);
-        });
-      } else {
-        this.store.pruneToMaxBytes(preferences.maxBytes).catch((error) => {
-          console.error("Failed to prune autolog sessions:", error);
-        });
-      }
-    });
+    this.unsubscribePreferences = usePreferences.subscribe(
+      (state) => state.autologging,
+      (preferences) => {
+        if (!preferences.enabled) {
+          this.endSession().catch((error) => {
+            console.error("Failed to end autolog session after disabling autologging:", error);
+          });
+        } else {
+          this.store.pruneToMaxBytes(preferences.maxBytes).catch((error) => {
+            console.error("Failed to prune autolog sessions:", error);
+          });
+        }
+      },
+    );
   }
 
   configureSession(draft: AutoLogSessionDraft | null): void {
@@ -163,6 +166,8 @@ export class AutoLogService {
       window.clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
+    this.unsubscribePreferences?.();
+    this.unsubscribePreferences = null;
   }
 
   private async ensureSession(): Promise<void> {

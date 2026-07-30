@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoreadMode, usePreferences } from "./preferencesStore";
 
 describe("preferencesStore", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     // Reset to known defaults between tests.
     usePreferences.getState().setGeneral({
       localEcho: false,
@@ -11,7 +12,16 @@ describe("preferencesStore", () => {
     });
     usePreferences.getState().setSound({ muteInBackground: false, volume: 1.0 });
     usePreferences.getState().setMidi({ enabled: false });
+    usePreferences.getState().setAutologging({
+      enabled: false,
+      maxBytes: 100 * 1024 * 1024,
+    });
     localStorage.removeItem("preferences");
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
   });
 
   it("exposes default preferences", () => {
@@ -46,6 +56,8 @@ describe("preferencesStore", () => {
       syncTimezoneToServer: false,
       syncLocationToServer: true,
     });
+    expect(setItem).not.toHaveBeenCalled();
+    vi.runAllTimers();
     expect(setItem).toHaveBeenCalledWith("preferences", expect.any(String));
     const lastCall = setItem.mock.calls.at(-1);
     const stored = JSON.parse(lastCall?.[1] as string);
@@ -64,5 +76,75 @@ describe("preferencesStore", () => {
     usePreferences.getState().setMidi({ enabled: true });
     unsub();
     expect(calls).toBe(1);
+  });
+
+  it("notifies selector subscribers only when their preference domain changes", () => {
+    const listener = vi.fn();
+    const unsub = usePreferences.subscribe(
+      (state) => state.autologging,
+      listener,
+    );
+
+    usePreferences.getState().setGeneral({
+      localEcho: true,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    expect(listener).not.toHaveBeenCalled();
+
+    const autologging = { enabled: true, maxBytes: 2048 };
+    usePreferences.getState().setAutologging(autologging);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith(
+      autologging,
+      expect.objectContaining({ enabled: false }),
+    );
+
+    unsub();
+  });
+
+  it("debounces a burst of preference persistence writes", () => {
+    const setItem = vi.mocked(localStorage.setItem);
+    setItem.mockClear();
+
+    usePreferences.getState().setSpeech({
+      ...usePreferences.getState().speech,
+      rate: 1.1,
+    });
+    usePreferences.getState().setSpeech({
+      ...usePreferences.getState().speech,
+      rate: 1.2,
+    });
+    usePreferences.getState().setSpeech({
+      ...usePreferences.getState().speech,
+      rate: 1.3,
+    });
+
+    expect(setItem).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(setItem).toHaveBeenCalledOnce();
+
+    const stored = JSON.parse(setItem.mock.calls[0][1]);
+    expect(stored.speech.rate).toBe(1.3);
+  });
+
+  it("flushes pending preference persistence before the page is discarded", () => {
+    const setItem = vi.mocked(localStorage.setItem);
+    setItem.mockClear();
+
+    usePreferences.getState().setSound({
+      muteInBackground: true,
+      volume: 0.5,
+    });
+    expect(setItem).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event("pagehide"));
+    expect(setItem).toHaveBeenCalledOnce();
+
+    const stored = JSON.parse(setItem.mock.calls[0][1]);
+    expect(stored.sound).toEqual({
+      muteInBackground: true,
+      volume: 0.5,
+    });
   });
 });
