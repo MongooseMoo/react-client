@@ -7,8 +7,9 @@ import type { AutoLogEntry, AutoLogSession, AutoLogSessionDraft } from "./AutoLo
 class FakeAutoLogStore {
   sessions: AutoLogSession[] = [];
   entries: AutoLogEntry[] = [];
-  prunedTo: number[] = [];
+  prunedTo: Array<{ maxBytes: number; protectedSessionId?: string }> = [];
   ended: string[] = [];
+  failNextAppend = false;
 
   async createSession(draft: AutoLogSessionDraft): Promise<AutoLogSession> {
     const session: AutoLogSession = {
@@ -23,11 +24,16 @@ class FakeAutoLogStore {
   }
 
   async appendEntries(entries: AutoLogEntry[]): Promise<void> {
+    if (this.failNextAppend) {
+      this.failNextAppend = false;
+      throw new Error("IndexedDB write failed");
+    }
+
     this.entries.push(...entries);
   }
 
-  async pruneToMaxBytes(maxBytes: number): Promise<void> {
-    this.prunedTo.push(maxBytes);
+  async pruneToMaxBytes(maxBytes: number, protectedSessionId?: string): Promise<void> {
+    this.prunedTo.push({ maxBytes, protectedSessionId });
   }
 
   async endSession(sessionId: string): Promise<void> {
@@ -83,7 +89,10 @@ describe("AutoLogService", () => {
       sequence: 0,
       sourceContent: "hello",
     });
-    expect(store.prunedTo).toContain(1000);
+    expect(store.prunedTo).toContainEqual({
+      maxBytes: 1000,
+      protectedSessionId: "session-0",
+    });
 
     service.dispose();
   });
@@ -121,6 +130,64 @@ describe("AutoLogService", () => {
     await Promise.resolve();
 
     expect(store.prunedTo).toEqual([]);
+    service.dispose();
+  });
+
+  it("recovers the flush queue after an IndexedDB write fails", async () => {
+    const store = new FakeAutoLogStore();
+    const service = new AutoLogService(store as unknown as AutoLogStore);
+    service.configureSession({
+      title: "Test",
+      mode: "default",
+      sanitizedUrl: "https://example.test/",
+    });
+    usePreferences.getState().setAutologging({ enabled: true, maxBytes: 1000 });
+
+    service.recordLine({
+      type: "serverMessage",
+      sourceType: "ansi",
+      sourceContent: "failed",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    store.failNextAppend = true;
+
+    await expect(service.flush()).rejects.toThrow("IndexedDB write failed");
+
+    service.recordLine({
+      type: "serverMessage",
+      sourceType: "ansi",
+      sourceContent: "recovered",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await service.flush();
+
+    expect(store.entries.map((entry) => entry.sourceContent)).toEqual(["recovered"]);
+    service.dispose();
+  });
+
+  it("releases the current session when its final flush fails", async () => {
+    const store = new FakeAutoLogStore();
+    const service = new AutoLogService(store as unknown as AutoLogStore);
+    service.configureSession({
+      title: "Test",
+      mode: "default",
+      sanitizedUrl: "https://example.test/",
+    });
+    usePreferences.getState().setAutologging({ enabled: true, maxBytes: 1000 });
+    await service.startSession();
+
+    service.recordLine({
+      type: "serverMessage",
+      sourceType: "ansi",
+      sourceContent: "failed",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    store.failNextAppend = true;
+
+    await expect(service.endSession()).rejects.toThrow("IndexedDB write failed");
+    await service.startSession();
+
+    expect(store.sessions).toHaveLength(2);
     service.dispose();
   });
 });

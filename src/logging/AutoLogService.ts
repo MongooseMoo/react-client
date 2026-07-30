@@ -76,7 +76,7 @@ export class AutoLogService {
             console.error("Failed to end autolog session after disabling autologging:", error);
           });
         } else {
-          this.store.pruneToMaxBytes(preferences.maxBytes).catch((error) => {
+          this.store.pruneToMaxBytes(preferences.maxBytes, this.currentSession?.id).catch((error) => {
             console.error("Failed to prune autolog sessions:", error);
           });
         }
@@ -142,23 +142,26 @@ export class AutoLogService {
     this.pendingEntries = [];
     const maxBytes = usePreferences.getState().autologging.maxBytes;
 
-    this.flushPromise = this.flushPromise
+    const flushPromise = this.flushPromise
       .then(() => this.store.appendEntries(entries))
-      .then(() => this.store.pruneToMaxBytes(maxBytes));
+      .then(() => this.store.pruneToMaxBytes(maxBytes, this.currentSession?.id));
 
-    return this.flushPromise;
+    this.flushPromise = flushPromise.catch(() => {});
+    return flushPromise;
   }
 
   async endSession(): Promise<void> {
     const session = this.currentSession;
-    await this.flush();
+    try {
+      await this.flush();
 
-    if (session) {
-      await this.store.endSession(session.id);
+      if (session) {
+        await this.store.endSession(session.id);
+      }
+    } finally {
+      this.currentSession = null;
+      this.sequence = 0;
     }
-
-    this.currentSession = null;
-    this.sequence = 0;
   }
 
   dispose(): void {
