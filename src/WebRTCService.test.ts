@@ -295,6 +295,30 @@ describe('WebRTCService', () => {
       expect((webRTCService as any).dataChannel.send).toHaveBeenCalledWith(data);
     });
 
+    it.each([
+      ['close', 'closed'],
+      ['error', 'error'],
+    ])(
+      'should reject a buffered send when the data channel emits %s',
+      async (eventName, expectedError) => {
+        await webRTCService.createPeerConnection();
+        const dataChannel = (webRTCService as any).dataChannel;
+        dataChannel.readyState = 'open';
+        dataChannel.bufferedAmount = 2000000;
+        const addEventListener = vi.spyOn(dataChannel, 'addEventListener');
+
+        const sendPromise = webRTCService.sendData(new ArrayBuffer(10));
+        const eventHandler = addEventListener.mock.calls.find(
+          ([registeredEvent]) => registeredEvent === eventName,
+        )?.[1] as EventListener | undefined;
+
+        expect(eventHandler).toBeDefined();
+        eventHandler?.(new Event(eventName));
+        await expect(sendPromise).rejects.toThrow(expectedError);
+        expect(dataChannel.send).not.toHaveBeenCalled();
+      },
+    );
+
     it('should handle errors in send operation', async () => {
       await webRTCService.createPeerConnection();
       (webRTCService as any).dataChannel.readyState = 'open';
