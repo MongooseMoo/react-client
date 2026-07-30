@@ -110,7 +110,8 @@ function App() {
 
   const clientInitialized = useRef(false);
   const hapticsRuntimeRef = useRef<HapticsRuntime | null>(null);
-  const preferences = usePreferences();
+  const midiEnabled = usePreferences((state) => state.midi.enabled);
+  const hapticsEnabled = usePreferences((state) => state.haptics.enabled);
   const connected = useConnectionStore((state) => state.connected);
   const sessionReady = useConnectionStore((state) => state.sessionReady);
   useFileTransferNotifications(client);
@@ -334,7 +335,7 @@ function App() {
   }, [handleAppKeyDown]);
 
   useEffect(() => {
-    if (!preferences.midi.enabled) return;
+    if (!midiEnabled) return;
 
     let cancelled = false;
     import("./VirtualMidiService")
@@ -355,7 +356,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [preferences.midi.enabled]);
+  }, [midiEnabled]);
 
   // Window subtitle tracks the current room from the room store. On disconnect
   // the client resets the store, which clears roomInfo and so clears the subtitle.
@@ -372,8 +373,8 @@ function App() {
   }, [client, roomInfo]);
 
   useEffect(() => {
-    hapticsRuntimeRef.current?.setEnabled(preferences.haptics.enabled);
-  }, [preferences.haptics.enabled]);
+    hapticsRuntimeRef.current?.setEnabled(hapticsEnabled);
+  }, [hapticsEnabled]);
 
   const handleCommand = useCallback(
     (text: string) => {

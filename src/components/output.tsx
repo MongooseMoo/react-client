@@ -114,10 +114,8 @@ class Output extends React.Component<Props, State> {
     };
   }
 
-  handlePreferencesChange = () => {
-    this.setState({
-      localEchoActive: usePreferences.getState().general.localEcho,
-    });
+  handlePreferencesChange = (localEchoActive: boolean) => {
+    this.setState({ localEchoActive });
   };
 
   saveOutput = () => {
@@ -481,7 +479,10 @@ componentDidUpdate(
   };
 
   componentDidMount() {
-    this.unsubscribePrefs = usePreferences.subscribe(this.handlePreferencesChange);
+    this.unsubscribePrefs = usePreferences.subscribe(
+      (state) => state.general.localEcho,
+      this.handlePreferencesChange,
+    );
     this.unsubscribeUserlist = useUserlistStore.subscribe(this.handleUserlistVisibility);
     this.unsubscribeConnection = useConnectionStore.subscribe(this.handleConnectionStateChange);
     this.unsubscribeOutputStore = useOutputStore.subscribe(this.handleOutputStoreEntries);

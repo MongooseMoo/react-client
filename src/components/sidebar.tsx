@@ -34,7 +34,8 @@ interface SidebarProps {
 const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
   ({ client, collapsed, onToggleCollapse }, ref) => {
     const users = useUserlistStore((state) => state.players);
-    const preferences = usePreferences(); // Add preferences hook
+    const midiPreferences = usePreferences((state) => state.midi);
+    const hapticsPreferences = usePreferences((state) => state.haptics);
     const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
 
     // State to track if data has been received for optional tabs
@@ -52,32 +53,32 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
 
       // Only handle runtime preference changes - initial advertisement handled by Core.Supports
       if (client.connected) {
-        if (preferences.midi.enabled) {
+        if (midiPreferences.enabled) {
           midiPackage.advertiseMidiSupport();
         } else {
           midiPackage.unadvertiseMidiSupport();
         }
       }
-    }, [preferences.midi.enabled, client]);
+    }, [midiPreferences.enabled, client]);
 
     // Handle Haptics support advertisement based on preferences
     useEffect(() => {
       const hapticsPackage = client.gmcp.handlers['Client.Haptics'];
       if (!hapticsPackage) return;
       if (client.connected) {
-        if (preferences.haptics.enabled) {
+        if (hapticsPreferences.enabled) {
           hapticsPackage.advertiseHapticsSupport();
         } else {
           hapticsPackage.unadvertiseHapticsSupport();
         }
       }
-    }, [preferences.haptics.enabled, client]);
+    }, [hapticsPreferences.enabled, client]);
 
     // Wire haptics preferences to the service
     useEffect(() => {
-      hapticsService.intensityCap = preferences.haptics.intensityCap;
-      hapticsService.autoStopTimeoutSecs = preferences.haptics.autoStopTimeout;
-    }, [preferences.haptics.intensityCap, preferences.haptics.autoStopTimeout]);
+      hapticsService.intensityCap = hapticsPreferences.intensityCap;
+      hapticsService.autoStopTimeoutSecs = hapticsPreferences.autoStopTimeout;
+    }, [hapticsPreferences.intensityCap, hapticsPreferences.autoStopTimeout]);
 
     // Define all possible tabs
     const allTabs: TabProps[] = [
@@ -113,13 +114,13 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
             <MidiStatus client={client} />
           </Suspense>
         ),
-        condition: preferences.midi.enabled,
+        condition: midiPreferences.enabled,
       },
       {
         id: 'haptics-tab',
         label: 'Haptics',
         content: <HapticsStatus client={client} />,
-        condition: preferences.haptics.enabled,
+        condition: hapticsPreferences.enabled,
       },
 
       // { // Removed Skills Tab

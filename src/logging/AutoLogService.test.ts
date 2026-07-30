@@ -107,4 +107,20 @@ describe("AutoLogService", () => {
 
     service.dispose();
   });
+
+  it("does not prune sessions when an unrelated preference domain changes", async () => {
+    usePreferences.getState().setAutologging({ enabled: true, maxBytes: 1000 });
+    const store = new FakeAutoLogStore();
+    const service = new AutoLogService(store as unknown as AutoLogStore);
+
+    usePreferences.getState().setGeneral({
+      localEcho: true,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    await Promise.resolve();
+
+    expect(store.prunedTo).toEqual([]);
+    service.dispose();
+  });
 });

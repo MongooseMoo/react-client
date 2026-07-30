@@ -19,7 +19,7 @@ interface DeviceChangeEvent {
 }
 
 const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
-  const preferences = usePreferences();
+  const midiPreferences = usePreferences((state) => state.midi);
   const [midiPackage, setMidiPackage] = useState<GMCPClientMidi | null>(null);
   const [inputDevices, setInputDevices] = useState<MidiDevice[]>([]);
   const [outputDevices, setOutputDevices] = useState<MidiDevice[]>([]);
@@ -58,7 +58,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
 
   // Load devices when MIDI is enabled
   const loadDevices = async () => {
-    if (!preferences.midi.enabled) return;
+    if (!midiPreferences.enabled) return;
     
     // Ensure virtual synthesizer is initialized
     if (!virtualMidiService.initialized) {
@@ -146,7 +146,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   };
 
   useEffect(() => {
-    if (preferences.midi.enabled) {
+    if (midiPreferences.enabled) {
       // Initialize MIDI if not already done
       if (!midiService.isInitialized && midiPackage) {
         midiPackage.ensureInitialized().then(() => {
@@ -227,7 +227,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       });
       setReconnectableDevices({});
     }
-  }, [preferences.midi.enabled, midiService.isInitialized]);
+  }, [midiPreferences.enabled, midiService.isInitialized]);
 
   // Update reconnectable devices when connection state or device lists change
   useEffect(() => {
@@ -363,7 +363,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     return `${noteName}${octave}`;
   };
 
-  if (!preferences.midi.enabled) {
+  if (!midiPreferences.enabled) {
     return (
       <div style={{ padding: "10px" }}>
         <p>MIDI is disabled. Enable it in preferences to use MIDI features.</p>

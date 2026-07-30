@@ -110,9 +110,9 @@ function EditorWindow() {
   const handleEditorBeforeMount = (monaco: Monaco) => {
     registerMooLanguage(monaco);
   };
-  const prefState = usePreferences();
-  const accessibilityMode = prefState.editor.accessibilityMode;
-  const autocompleteEnabled = prefState.editor.autocompleteEnabled;
+  const editorPreferences = usePreferences((state) => state.editor);
+  const accessibilityMode = editorPreferences.accessibilityMode;
+  const autocompleteEnabled = editorPreferences.autocompleteEnabled;
   const editorLanguage = getEditorLanguageForSessionType(session.type);
   const updateMooDiagnostics = React.useCallback((markers: MonacoEditor.IMarkerData[]) => {
     setMooDiagnosticMarkers(markers);

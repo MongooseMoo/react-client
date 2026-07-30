@@ -10,7 +10,7 @@ interface HapticsStatusProps {
 }
 
 const HapticsStatus: React.FC<HapticsStatusProps> = () => {
-  const preferences = usePreferences();
+  const hapticsPreferences = usePreferences((state) => state.haptics);
   const [capabilities, setCapabilities] = useState<HapticsCapabilities>(
     hapticsService.getCapabilities()
   );
@@ -61,7 +61,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
     }
   };
 
-  if (!preferences.haptics.enabled) {
+  if (!hapticsPreferences.enabled) {
     return (
       <div style={{ padding: "10px" }}>
         <p>Haptics is disabled. Enable it in preferences to use haptics features.</p>
@@ -252,7 +252,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
           <p>Bluetooth devices are discovered via in-browser WebBluetooth (Chromium browsers only).</p>
           <p>The server can send haptic commands when the Client.Haptics GMCP package is active.</p>
           <p>Press Escape or use the Emergency Stop button to immediately halt all haptic output.</p>
-          <p>Intensity cap: {(preferences.haptics.intensityCap * 100).toFixed(0)}% | Auto-stop: {preferences.haptics.autoStopTimeout}s</p>
+          <p>Intensity cap: {(hapticsPreferences.intensityCap * 100).toFixed(0)}% | Auto-stop: {hapticsPreferences.autoStopTimeout}s</p>
         </div>
       </details>
     </div>

@@ -175,9 +175,12 @@ export class MediaService {
       window.addEventListener('blur', this.handleWindowBlur);
     }
 
-    this.unsubscribePreferences = usePreferences.subscribe(() => {
-      this.updateBackgroundMuteState();
-    });
+    this.unsubscribePreferences = usePreferences.subscribe(
+      (state) => state.sound.muteInBackground,
+      () => {
+        this.updateBackgroundMuteState();
+      },
+    );
   }
 
   get muted(): boolean {

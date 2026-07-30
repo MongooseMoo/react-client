@@ -246,27 +246,27 @@ export function createConfiguredClient(): MudClient {
     }
   }
 
-  let lastGeneralPreferences = usePreferences.getState().general;
-  const unsubscribeGeneralPreferences = usePreferences.subscribe((state) => {
-    const nextGeneralPreferences = state.general;
-    if (
-      nextGeneralPreferences.syncTimezoneToServer !==
-        lastGeneralPreferences.syncTimezoneToServer &&
-      nextGeneralPreferences.syncTimezoneToServer &&
-      client.connected
-    ) {
-      syncTimezoneToServer(timezonePackage);
-    }
-    if (
-      nextGeneralPreferences.syncLocationToServer !==
-        lastGeneralPreferences.syncLocationToServer &&
-      nextGeneralPreferences.syncLocationToServer &&
-      client.connected
-    ) {
-      syncLocationToServer(client, locationPackage);
-    }
-    lastGeneralPreferences = nextGeneralPreferences;
-  });
+  const unsubscribeGeneralPreferences = usePreferences.subscribe(
+    (state) => state.general,
+    (nextGeneralPreferences, previousGeneralPreferences) => {
+      if (
+        nextGeneralPreferences.syncTimezoneToServer !==
+          previousGeneralPreferences.syncTimezoneToServer &&
+        nextGeneralPreferences.syncTimezoneToServer &&
+        client.connected
+      ) {
+        syncTimezoneToServer(timezonePackage);
+      }
+      if (
+        nextGeneralPreferences.syncLocationToServer !==
+          previousGeneralPreferences.syncLocationToServer &&
+        nextGeneralPreferences.syncLocationToServer &&
+        client.connected
+      ) {
+        syncLocationToServer(client, locationPackage);
+      }
+    },
+  );
   client.registerCleanup(unsubscribeGeneralPreferences);
 
   negotiatePackage?.on("end", () => {
