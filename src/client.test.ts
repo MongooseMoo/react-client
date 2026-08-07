@@ -110,6 +110,7 @@ vi.mock('./gmcp', async () => {
     ...actual,
     GMCPClientFileTransfer: class {
       packageName = 'Client.FileTransfer';
+      reset = vi.fn();
       sendReject = vi.fn();
       shutdown = vi.fn();
     },
@@ -144,11 +145,8 @@ vi.mock('./mcp', () => ({
 
 import MudClient from './client';
 import { GMCPClientFileTransfer } from './gmcp';
-import { useItemsStore } from './stores/itemsStore';
 import { useOutputStore } from './stores/outputStore';
-import { useSessionStore } from './stores/sessionStore';
-import { useSkillsStore } from './stores/skillsStore';
-import { useUserlistStore } from './stores/userlistStore';
+import type { Stream } from './telnet';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -215,13 +213,10 @@ describe('MudClient lifecycle cleanup', () => {
     mockFileTransferManagerInstances.length = 0;
     mockPreferenceListeners.clear();
     mockPreferenceSubscribe.mockClear();
+    mockPreferencesState.general.localEcho = false;
     mockPreferencesState.sound.muteInBackground = false;
     mockWebSocketInstances.length = 0;
-    useItemsStore.getState().reset();
     useOutputStore.getState().reset();
-    useSessionStore.getState().reset();
-    useSkillsStore.getState().reset();
-    useUserlistStore.getState().reset();
     vi.stubGlobal('WebSocket', MockWebSocket);
     Object.defineProperty(window, 'WebSocket', {
       configurable: true,
@@ -292,43 +287,136 @@ describe('MudClient lifecycle cleanup', () => {
     expect(cleanupOrder).toEqual(['fileTransferManager.cleanup', 'gmcp.reset']);
   });
 
-  it('clears item state during connection cleanup', () => {
+  it('runs disconnect resets in registration order and isolates failures', () => {
     const client = new MudClient('example.test', 443);
+    const resetOrder: string[] = [];
+    const resetError = new Error('reset failed');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    client.registerDisconnectReset(() => resetOrder.push('first'));
+    client.registerDisconnectReset(() => {
+      resetOrder.push('second');
+      throw resetError;
+    });
+    client.registerDisconnectReset(() => resetOrder.push('third'));
     client.connect();
-    useItemsStore.getState().setLocationItems('room', [
-      { id: 'lantern', name: 'Lantern' },
-    ]);
-    useItemsStore.getState().setLocationItems('inv', [
-      { id: 'coin', name: 'Coin' },
-    ]);
 
     client.close();
 
-    expect(useItemsStore.getState().itemsByLocation).toEqual({});
-    expect(useItemsStore.getState().hasReceivedList).toBe(false);
+    expect(resetOrder).toEqual(['first', 'second', 'third']);
+    expect(consoleError).toHaveBeenCalledWith('Disconnect reset failed:', resetError);
   });
 
-  it('clears session, skills, and userlist state during connection cleanup', () => {
+  it('runs disconnect resets once per disconnect and again after reconnect', () => {
     const client = new MudClient('example.test', 443);
+    const reset = vi.fn();
+    client.registerDisconnectReset(reset);
     client.connect();
-    useSessionStore.getState().setPlayer('q', 'Q the Mongoose');
-    useSessionStore.getState().setRoomId('101');
-    useSkillsStore.getState().setGroups([{ name: 'Combat', rank: 'Adept' }]);
-    useSkillsStore.getState().setList({ group: 'combat', list: ['slash'] });
-    useUserlistStore.getState().setPlayers([
-      { Object: 'q', Name: 'Q', Icon: 0, away: false, idle: false },
-    ]);
+    const firstSocket = mockWebSocketInstances[0];
+
+    client.close();
+    firstSocket.onclose?.(new Event('close'));
+
+    expect(reset).toHaveBeenCalledTimes(1);
+
+    client.connect();
+    client.close();
+
+    expect(reset).toHaveBeenCalledTimes(2);
+  });
+
+  it('automatically registers MCP package disconnect resets', () => {
+    const client = new MudClient('example.test', 443);
+    const mcpPackage = client.registerMcpPackage(
+      class {
+        packageName = 'test-package';
+        reset = vi.fn();
+      } as never,
+    ) as unknown as { reset: ReturnType<typeof vi.fn> };
+    client.connect();
 
     client.close();
 
-    expect(useSessionStore.getState().playerId).toBe('');
-    expect(useSessionStore.getState().playerName).toBe('');
-    expect(useSessionStore.getState().roomId).toBe('');
-    expect(useSkillsStore.getState().groups).toEqual([]);
-    expect(useSkillsStore.getState().skillsByGroup).toEqual({});
-    expect(useSkillsStore.getState().infoBySkill).toEqual({});
-    expect(useUserlistStore.getState().players).toEqual([]);
-    expect(useUserlistStore.getState().hasReceivedList).toBe(false);
+    expect(mcpPackage.reset).toHaveBeenCalledOnce();
+  });
+
+  it('clears a closed local transport and rejects later sends', () => {
+    const client = new MudClient('example.test', 443);
+    const closeListeners: Array<() => void> = [];
+    const stream = {
+      close: vi.fn(() => {
+        closeListeners.forEach((listener) => {
+          listener();
+        });
+      }),
+      on: vi.fn((event: string, callback: () => void) => {
+        if (event === 'close') closeListeners.push(callback);
+      }),
+      write: vi.fn(),
+    } as unknown as Stream & { close(): void };
+    client.connectLocal(stream);
+
+    client.send('look\r\n');
+    expect(stream.write).toHaveBeenCalledOnce();
+
+    client.close();
+
+    expect(stream.close).toHaveBeenCalledOnce();
+    expect(client.connected).toBe(false);
+    expect(
+      client as unknown as { localMode: boolean; localStream?: Stream },
+    ).toMatchObject({
+      localMode: false,
+      localStream: undefined,
+    });
+    expect(() => client.send('look\r\n')).toThrow(
+      new Error('Cannot send while disconnected'),
+    );
+    expect(stream.write).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['CONNECTING', MockWebSocket.CONNECTING],
+    ['CLOSING', MockWebSocket.CLOSING],
+    ['CLOSED', MockWebSocket.CLOSED],
+  ])('rejects sends while the WebSocket is %s', (_label, readyState) => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+    const socket = mockWebSocketInstances[0];
+    socket.onopen?.(new Event('open'));
+    socket.readyState = readyState;
+
+    expect(() => client.send('look\r\n')).toThrow(
+      new Error('Cannot send while disconnected'),
+    );
+    expect(socket.send).not.toHaveBeenCalled();
+    client.close();
+  });
+
+  it('sends through a connected open WebSocket', () => {
+    const client = new MudClient('example.test', 443);
+    client.connect();
+    const socket = mockWebSocketInstances[0];
+    socket.onopen?.(new Event('open'));
+
+    client.send('look\r\n');
+
+    expect(socket.send).toHaveBeenCalledWith('look\r\n');
+  });
+
+  it('reports a disconnected command without adding local echo', () => {
+    mockPreferencesState.general.localEcho = true;
+    const client = new MudClient('example.test', 443);
+
+    expect(() => client.sendCommand('look')).not.toThrow();
+
+    expect(useOutputStore.getState().entries).toEqual([
+      {
+        id: 1,
+        type: 'error',
+        error: new Error('Cannot send while disconnected'),
+      },
+    ]);
+    expect(mockWebSocketInstances).toEqual([]);
   });
 
   it('buffers text split across frames until the line is complete', () => {

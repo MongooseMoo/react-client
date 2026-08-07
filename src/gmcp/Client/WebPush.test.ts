@@ -44,4 +44,15 @@ describe("GMCPClientWebPush", () => {
 
     await expect(tokenPromise).resolves.toBe("token-b");
   });
+
+  it("requests a fresh token after disconnect reset", async () => {
+    handler.handleToken({ token: "token-a" });
+    handler.reset();
+
+    const tokenPromise = handler.requestToken();
+
+    expect(client.gmcp.send).toHaveBeenCalledWith("Client.WebPush.Request", "{}");
+    handler.receiveRegisteredMessage("Token", { token: "token-b" });
+    await expect(tokenPromise).resolves.toBe("token-b");
+  });
 });

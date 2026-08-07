@@ -1,4 +1,5 @@
 import { identityCodec, inbound, messageEnvelope, outbound } from '../../protocol/messages';
+import { useWorldMapStore } from '../../stores/worldMapStore';
 import { MCPPackage } from '../package';
 import type { McpMessage } from '../types';
 
@@ -198,6 +199,15 @@ export class McpAwnsVisual extends McpAwnsVisualBase {
 
   requestSelf(): void {
     this.sendGetself(undefined);
+  }
+
+  override reset(): void {
+    this.location = undefined;
+    this.self = undefined;
+    this.users = [];
+    this.topology = [];
+    this.pendingMessages.clear();
+    useWorldMapStore.getState().reset();
   }
 
   private beginUsers(message: McpMessage): void {

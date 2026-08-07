@@ -37,9 +37,12 @@ class MockClientMediaPackage extends GMCPPackage {
 }
 
 function createSession() {
-  const client = {} as unknown as MudClient;
+  const disconnectResets: Array<() => void> = [];
+  const client = {
+    registerDisconnectReset: (reset: () => void) => disconnectResets.push(reset),
+  } as unknown as MudClient;
   const session = new GmcpSession(client);
-  return { session };
+  return { disconnectResets, session };
 }
 
 describe('GmcpSession', () => {
@@ -56,6 +59,18 @@ describe('GmcpSession', () => {
     session.receive('Registry.Thing', '{"ok":true}');
 
     expect(listener).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('automatically registers package disconnect resets', () => {
+    const { disconnectResets, session } = createSession();
+    const handler = session.register(RegistryPackage);
+    const reset = vi.spyOn(handler, 'reset');
+
+    expect(disconnectResets).toHaveLength(1);
+
+    disconnectResets[0]();
+
+    expect(reset).toHaveBeenCalledOnce();
   });
 
   it('logs malformed registered GMCP messages without throwing', () => {

@@ -503,6 +503,34 @@ describe("GMCPClientHaptics", () => {
     );
   });
 
+  it("resets server session state without removing service listeners", () => {
+    handler.handleStatus({
+      enabled: true,
+      maxCommandRate: 30,
+      maxSensorRate: 20,
+      serverVersion: 1,
+    });
+    handler.handleSensorSubscribe({ sensors: [0, 3], rate: 10 });
+    mockHapticsService.unsubscribeSensor.mockClear();
+    mockHapticsService.stop.mockClear();
+    mockHapticsService.off.mockClear();
+
+    handler.reset();
+
+    expect(handler.getServerStatus()).toEqual({
+      enabled: false,
+      maxCommandRate: 0,
+      maxSensorRate: 0,
+      serverVersion: 0,
+    });
+    expect(mockHapticsService.maxCommandRateHz).toBe(0);
+    expect(mockHapticsService.unsubscribeSensor).toHaveBeenCalledTimes(2);
+    expect(mockHapticsService.unsubscribeSensor).toHaveBeenCalledWith(0);
+    expect(mockHapticsService.unsubscribeSensor).toHaveBeenCalledWith(3);
+    expect(mockHapticsService.stop).toHaveBeenCalledWith();
+    expect(mockHapticsService.off).not.toHaveBeenCalled();
+  });
+
   it("shutdown stops all devices", () => {
     handler.shutdown();
 

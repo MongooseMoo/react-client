@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type MudClient from "./client";
 import { createConfiguredClient } from "./createConfiguredClient";
+import type { Stream } from "./telnet";
 import { useInputStore } from "./stores/inputStore";
 import { useItemsStore } from "./stores/itemsStore";
 import { usePreferences } from "./stores/preferencesStore";
@@ -12,6 +13,11 @@ import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
 import { useChannelHistoryStore } from "./stores/channelHistoryStore";
+import { useLiveKitStore } from "./stores/liveKitStore";
+import { useOutputStore } from "./stores/outputStore";
+import { useRoomStore } from "./stores/roomStore";
+import { useSessionStore } from "./stores/sessionStore";
+import { useSpatialStore } from "./stores/spatialStore";
 
 vi.mock("cacophony", () => ({
   Cacophony: class {
@@ -30,6 +36,11 @@ describe("createConfiguredClient", () => {
     useCharacterStatusStore.getState().reset();
     useChannelHistoryStore.getState().reset();
     useConnectionStore.getState().reset();
+    useLiveKitStore.getState().reset();
+    useOutputStore.getState().reset();
+    useRoomStore.getState().reset();
+    useSessionStore.getState().reset();
+    useSpatialStore.getState().reset();
     Object.defineProperty(globalThis.navigator, "geolocation", {
       configurable: true,
       value: originalGeolocation,
@@ -209,6 +220,112 @@ describe("createConfiguredClient", () => {
       },
     ]);
     expect(useUserlistStore.getState().hasReceivedList).toBe(true);
+  });
+
+  it("resets session-owned feature state while preserving user history and input", () => {
+    client = createConfiguredClient();
+    const closeListeners: Array<() => void> = [];
+    const stream = {
+      close: vi.fn(() => {
+        closeListeners.forEach((listener) => {
+          listener();
+        });
+      }),
+      on: vi.fn((event: string, callback: () => void) => {
+        if (event === "close") closeListeners.push(callback);
+      }),
+      write: vi.fn(),
+    } as unknown as Stream & { close(): void };
+    client.connectLocal(stream);
+
+    client.gmcp.require("Char").receiveRegisteredMessage("Name", {
+      fullname: "Q",
+      name: "q",
+    });
+    client.gmcp.require("Char").receiveRegisteredMessage("Vitals", { hp: "10" });
+    client.gmcp.require("Room").receiveRegisteredMessage("Info", {
+      num: 101,
+      name: "The Test Chamber",
+    });
+    client.gmcp.require("Char.Items").receiveRegisteredMessage("List", {
+      location: "inv",
+      items: [{ id: "coin", name: "a coin" }],
+    });
+    client.gmcp.require("Char.Skills").receiveRegisteredMessage("Groups", [
+      { name: "Combat", rank: "Novice" },
+    ]);
+    client.gmcp.require("Comm.LiveKit").receiveRegisteredMessage("room_token", {
+      token: "token-a",
+    });
+    const channel = client.gmcp.require("Comm.Channel");
+    channel.receiveRegisteredMessage("List", ["chat"]);
+    channel.receiveRegisteredMessage("Text", {
+      channel: "chat",
+      talker: "Alice",
+      text: "Remember me",
+    });
+    const keystrokes = client.gmcp.require("Client.Keystrokes");
+    keystrokes.receiveRegisteredMessage("Bind", {
+      key: "F1",
+      modifiers: [],
+      command: "look",
+      autosend: true,
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-displayurl"].handle({
+      name: "dns-com-awns-displayurl",
+      keyvals: { url: "https://example.test/help" },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-serverinfo"].handle({
+      name: "dns-com-awns-serverinfo",
+      keyvals: {
+        home_url: "https://example.test/",
+        help_url: "https://example.test/help",
+      },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-rehash"].handle({
+      name: "dns-com-awns-rehash-commands",
+      keyvals: { list: "look" },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-visual"].handle({
+      name: "dns-com-awns-visual-location",
+      keyvals: { id: "#100" },
+    });
+    useInputStore.getState().setText("unfinished command");
+    client.autosay = true;
+    useOutputStore.getState().addMessage("connection history");
+
+    client.close();
+
+    expect(useCharacterStatusStore.getState().vitals).toBeNull();
+    expect(useItemsStore.getState().itemsByLocation).toEqual({});
+    expect(useLiveKitStore.getState().tokens).toEqual([]);
+    expect(useRoomStore.getState().roomInfo).toBeNull();
+    expect(useSessionStore.getState()).toMatchObject({
+      playerId: "",
+      playerName: "",
+      roomId: "",
+    });
+    expect(useSkillsStore.getState().groups).toEqual([]);
+    expect(useSpatialStore.getState().spatialEntities).toEqual({});
+    expect(useServerLinksStore.getState()).toMatchObject({
+      homeUrl: "",
+      helpUrl: "",
+      recentUrls: [],
+    });
+    expect(useInputStore.getState().visibleCommands).toEqual([]);
+    expect(useWorldMapStore.getState().locationId).toBe("");
+    expect(useUserlistStore.getState().players).toEqual([]);
+    expect(channel.channels).toEqual([]);
+    expect(keystrokes.listBindings()).toEqual([]);
+
+    expect(useChannelHistoryStore.getState().entries).toEqual([
+      { id: 1, channel: "chat", talker: "Alice", text: "Remember me" },
+    ]);
+    expect(useInputStore.getState().text).toBe("unfinished command");
+    expect(useInputStore.getState().autosay).toBe(true);
+    expect(useOutputStore.getState().entries).toEqual([
+      { id: 1, type: "message", message: "connection history" },
+    ]);
   });
 
   it("requests AWNS MCP data after MCP negotiation ends", () => {

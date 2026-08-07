@@ -200,6 +200,29 @@ describe('McpSession', () => {
     ]);
   });
 
+  it('drops partial simpleedit sessions on disconnect reset', () => {
+    const opened: EditorSession[] = [];
+    const session = new McpSession(
+      {
+        sendLine: vi.fn(),
+      },
+      () => 'auth01',
+    );
+    const simpleEdit = session.registerPackage(McpSimpleEdit);
+    simpleEdit.on('openSession', (editorSession) => opened.push(editorSession));
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    session.receiveLine(
+      '#$#dns-org-mud-moo-simpleedit-content auth01 _data-tag: one name: first reference: ref1 type: moo-code',
+    );
+    session.receiveLine('#$#* one content: partial line');
+
+    simpleEdit.reset();
+    session.receiveLine('#$#: one');
+
+    expect(opened).toEqual([]);
+  });
+
   it('sends multiline payloads without mutating caller keyvals', () => {
     const sent: string[] = [];
     const tags = ['auth01', 'mltag1'];
@@ -276,6 +299,15 @@ describe('McpSession', () => {
       '#$#dns-com-awns-getset-get auth01 id: 1 property: theme',
     ]);
     expect(values).toEqual([{ key: 'theme', value: 'dark' }]);
+
+    getSet.reset();
+    sent.length = 0;
+    getSet.requestGet('font');
+
+    expect(getSet.LocalCache).toEqual({});
+    expect(sent).toEqual([
+      '#$#dns-com-awns-getset-get auth01 id: 1 property: font',
+    ]);
   });
 
   it('removes userlist players whose MOO object ids parse as numbers', () => {
@@ -304,5 +336,11 @@ describe('McpSession', () => {
         idle: false,
       },
     ]);
+
+    userlist.reset();
+
+    expect(userlist.player).toBeUndefined();
+    expect(userlist.fields).toEqual(['Object', 'Name', 'Icon']);
+    expect(userlist.players).toEqual([]);
   });
 });
