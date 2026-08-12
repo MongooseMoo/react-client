@@ -156,6 +156,8 @@ describe("useChannelHistory", () => {
       }
     });
 
+    // The save effect debounces writes by SAVE_DEBOUNCE_MS (500ms), so give
+    // waitFor enough real time to let the trailing timer fire.
     await waitFor(() => {
       const saved = localStorage.getItem("channelHistory");
       expect(saved).not.toBeNull();
@@ -164,7 +166,7 @@ describe("useChannelHistory", () => {
       expect(parsed.version).toBe(1);
       expect(parsed.data.buffers.all.messages).toHaveLength(MAX_PERSISTED_ALL_MESSAGES);
       expect(parsed.data.buffers.gossip.messages).toHaveLength(MAX_PERSISTED_CHANNEL_MESSAGES);
-    });
+    }, { timeout: 2000 });
   });
 
   it("caps older localStorage history when loading it", () => {
