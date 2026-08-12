@@ -16,6 +16,10 @@ describe("preferencesStore", () => {
       enabled: false,
       maxBytes: 100 * 1024 * 1024,
     });
+    usePreferences.getState().setDiagnostics({
+      enabled: false,
+      redactMessageText: false,
+    });
     localStorage.removeItem("preferences");
   });
 
@@ -29,6 +33,21 @@ describe("preferencesStore", () => {
     expect(usePreferences.getState().general.syncTimezoneToServer).toBe(true);
     expect(usePreferences.getState().general.syncLocationToServer).toBe(false);
     expect(usePreferences.getState().speech.autoreadMode).toBe(AutoreadMode.Off);
+  });
+
+  it("defaults diagnostics capture to off", () => {
+    expect(usePreferences.getState().diagnostics).toEqual({
+      enabled: false,
+      redactMessageText: false,
+    });
+  });
+
+  it("setDiagnostics replaces the diagnostics section", () => {
+    usePreferences.getState().setDiagnostics({ enabled: true, redactMessageText: true });
+    expect(usePreferences.getState().diagnostics).toEqual({
+      enabled: true,
+      redactMessageText: true,
+    });
   });
 
   it("setSound replaces the sound section", () => {

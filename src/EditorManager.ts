@@ -21,6 +21,17 @@ export class EditorManager {
     this.setupChannelListeners();
   }
 
+  /** Number of editor windows not yet closed, for diagnostics/status reporting. */
+  get openEditorCount(): number {
+    let count = 0;
+    for (const session of this.editors.values()) {
+      if (session.state !== EditorState.Closed) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   openEditorWindow(editorSession: EditorSession) {
     console.log('Opening editor window for session:', editorSession);
     const id = editorSession.reference;

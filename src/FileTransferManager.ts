@@ -63,6 +63,12 @@ export default class FileTransferManager extends EventEmitter {
     new Map();
   private store: FileTransferStore;
   private storeInitialized: boolean = false;
+
+  /** Count of transfers in flight or awaiting a response, for diagnostics/status reporting. */
+  get activeTransferCount(): number {
+    return this.incomingTransfers.size + this.outgoingTransfers.size + this.pendingOffers.size;
+  }
+
   private readonly handleDataChannelMessage = (data: ArrayBuffer): void => {
     void this.handleIncomingChunk(data);
   };

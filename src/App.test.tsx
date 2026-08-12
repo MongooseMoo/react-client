@@ -160,6 +160,11 @@ vi.mock('./logging/AutoLogService', () => ({
   createAutoLogSessionDraft: vi.fn(() => ({})),
 }));
 
+// Diagnostics wires itself up against the real preferences store shape
+// (state.diagnostics.enabled); this test's mockPreferences doesn't model
+// every preference domain, so stub the whole side-effecting module out.
+vi.mock('./diagnostics', () => ({}));
+
 import App from './App';
 import { useConnectionStore } from './stores/connectionStore';
 
