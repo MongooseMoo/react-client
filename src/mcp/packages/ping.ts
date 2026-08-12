@@ -20,4 +20,8 @@ export class McpAwnsPing extends MCPPackage {
   ping(): void {
     this.send('dns-com-awns-ping', { id: this.id++ });
   }
+
+  override reset(): void {
+    this.id = 1;
+  }
 }

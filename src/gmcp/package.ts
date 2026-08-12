@@ -57,6 +57,10 @@ export class GMCPPackage {
         // Do nothing
     }
 
+    reset(): void {
+        // Do nothing
+    }
+
     receiveRegisteredMessage(wireName: string, payload: unknown): boolean {
         const receiver = (this as { receive?: (name: string, data: unknown) => boolean })
             .receive;

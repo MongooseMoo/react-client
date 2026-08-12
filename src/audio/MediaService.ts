@@ -484,8 +484,16 @@ export class MediaService {
     }
   }
 
-  shutdown(): void {
+  reset(): void {
     this.stopAllSounds();
+    this.defaultUrl = '';
+    this.currentMusic = undefined;
+    this.mediaSession.clear();
+    this.effects.shutdown();
+  }
+
+  shutdown(): void {
+    this.reset();
     if (this.shutdownComplete) {
       return;
     }
@@ -496,9 +504,6 @@ export class MediaService {
     }
     this.unsubscribePreferences?.();
     this.unsubscribePreferences = null;
-    this.currentMusic = undefined;
-    this.mediaSession.clear();
-    this.effects.shutdown();
   }
 
   private readonly handleWindowFocus = (): void => {

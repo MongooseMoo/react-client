@@ -87,8 +87,13 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
     }
 
     shutdown() {
+        this.reset();
         // Use the stored handler reference for removal
         document.removeEventListener('keydown', this.boundKeyDownHandler);
+    }
+
+    override reset(): void {
+        this.unbindAll();
     }
 
     private findBinding(event: KeyboardEvent): KeyBinding | undefined {

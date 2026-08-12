@@ -1,4 +1,5 @@
 import { useSessionStore } from "../stores/sessionStore";
+import { useCharacterStatusStore } from "../stores/characterStatusStore";
 import { inbound, outbound } from "../protocol/messages";
 import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
@@ -53,5 +54,10 @@ export class GMCPChar extends GMCPCharBase {
   handleStatus(data: { [key: string]: string }): void {
     console.log("Received Char.Status:", data);
     // TODO: Update character status based on received values
+  }
+
+  override reset(): void {
+    useCharacterStatusStore.getState().reset();
+    useSessionStore.getState().reset();
   }
 }

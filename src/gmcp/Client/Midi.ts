@@ -379,16 +379,18 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     this.debugCallback = callback;
   }
 
+  override reset(): void {
+    this.sendAllNotesOff();
+    this.isAdvertised = false;
+  }
+
   shutdown(): void {
+    this.reset();
     if (this.midiServicePromise) {
       void this.midiServicePromise.then((midiService) => {
         midiService.disconnect();
         this.syncConnectionState(midiService);
       });
     }
-    this.activeNotes.forEach((timeout) => {
-      clearTimeout(timeout);
-    });
-    this.activeNotes.clear();
   }
 }

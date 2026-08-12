@@ -251,4 +251,10 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
   handleEmitterStop(data: GMCPMessageClientSpatialEmitterStop): void {
     useSpatialStore.getState().stopEmitter(data.emitterId);
   }
+
+  override reset(): void {
+    useSpatialStore.getState().reset();
+    this.syncCacophonyListenerPosition(null);
+    this.syncCacophonyListenerOrientation(null);
+  }
 }

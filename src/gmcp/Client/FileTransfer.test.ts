@@ -8,6 +8,7 @@ import { GMCPClientFileTransfer } from './FileTransfer';
 function createFileTransferPackage() {
   const client = {
     emit: vi.fn(),
+    registerDisconnectReset: vi.fn(),
   } as unknown as MudClient;
   const session = new GmcpSession(client);
   (client as MudClient).gmcp = session;

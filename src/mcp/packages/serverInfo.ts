@@ -1,4 +1,5 @@
 import { identityCodec, inbound, messageEnvelope, outbound } from '../../protocol/messages';
+import { useServerLinksStore } from '../../stores/serverLinksStore';
 import { MCPPackage } from '../package';
 import type { McpMessage } from '../types';
 
@@ -29,5 +30,9 @@ export class McpAwnsServerInfo extends McpAwnsServerInfoBase {
 
   requestServerInfo(): void {
     this.sendGet({});
+  }
+
+  override reset(): void {
+    useServerLinksStore.getState().reset();
   }
 }

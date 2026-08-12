@@ -20,19 +20,9 @@ import { MediaService } from "./audio/MediaService";
 import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
 import { WebRTCService } from "./WebRTCService";
 import FileTransferManager from "./FileTransferManager.js";
-import { useRoomStore } from "./stores/roomStore";
-import { useSpatialStore } from "./stores/spatialStore";
-import { useLiveKitStore } from "./stores/liveKitStore";
 import { useInputStore } from "./stores/inputStore";
-import { useItemsStore } from "./stores/itemsStore";
-import { useServerLinksStore } from "./stores/serverLinksStore";
-import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
-import { useCharacterStatusStore } from "./stores/characterStatusStore";
 import { useOutputStore } from "./stores/outputStore";
-import { useSessionStore } from "./stores/sessionStore";
-import { useSkillsStore } from "./stores/skillsStore";
-import { useUserlistStore } from "./stores/userlistStore";
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
@@ -73,6 +63,7 @@ class MudClient {
   private _autosay: boolean = false;
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
+  private disconnectResetCallbacks: Array<() => void> = [];
   private cleanupCallbacks: Array<() => void> = [];
 
   get autosay(): boolean {
@@ -102,10 +93,13 @@ class MudClient {
       this.webRTCService,
       this.gmcp_fileTransfer,
     );
+    this.registerDisconnectReset(() => this.fileTransferManager.cleanup());
   }
 
   registerMcpPackage(p: new () => MCPPackage): MCPPackage {
-    return this.mcpSession.registerPackage(p);
+    const mcpPackage = this.mcpSession.registerPackage(p);
+    this.registerDisconnectReset(() => mcpPackage.reset());
+    return mcpPackage;
   }
 
   configureEditors(simpleEdit: McpSimpleEdit): void {
@@ -266,38 +260,47 @@ class MudClient {
   }
 
   public send(data: string) {
-    if (this.localMode && this.localStream) {
+    if (this._connected && this.localMode && this.localStream) {
       // In local mode, write through the stream (WorkerStream -> Worker)
       this.localStream.write(Buffer.from(data));
-    } else {
-      this.ws.send(data);
+      return;
     }
+    if (
+      this._connected &&
+      this.ws &&
+      this.ws.readyState === WebSocket.OPEN
+    ) {
+      this.ws.send(data);
+      return;
+    }
+    throw new Error("Cannot send while disconnected");
   }
 
   registerCleanup(callback: () => void): void {
     this.cleanupCallbacks.push(callback);
   }
 
+  registerDisconnectReset(callback: () => void): void {
+    this.disconnectResetCallbacks.push(callback);
+  }
+
   private cleanupConnection(): void {
     if (this.connectionCleanupComplete) return;
     this.connectionCleanupComplete = true;
     this._connected = false;
+    for (const callback of this.disconnectResetCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        console.error("Disconnect reset failed:", error);
+      }
+    }
     this.mcpSession.reset();
     this.decoder = new TextDecoder("utf8");
     this.telnetBuffer = "";
-    useRoomStore.getState().reset(); // Reset room info on cleanup
-    useSpatialStore.getState().reset(); // Reset spatial scene on cleanup
-    useItemsStore.getState().reset();
-    useWorldMapStore.getState().reset();
-    useServerLinksStore.getState().reset();
-    useInputStore.getState().resetCommands();
-    useCharacterStatusStore.getState().reset();
-    useSessionStore.getState().reset();
-    useSkillsStore.getState().reset();
-    useUserlistStore.getState().reset();
-    this.fileTransferManager?.cleanup();
     this.gmcp.reset();
-    useLiveKitStore.getState().reset();
+    this.localMode = false;
+    this.localStream = undefined;
     useConnectionStore.getState().setConnected(false);
   }
 
@@ -321,14 +324,20 @@ class MudClient {
   }
 
   public sendCommand(command: string): void {
-    const localEchoEnabled = usePreferences.getState().general.localEcho;
-    if (localEchoEnabled) {
-      useOutputStore.getState().addCommand(command);
-    }
     if (this.autosay && !command.startsWith("-") && !command.startsWith("'")) {
       command = `say ${command}`;
     }
-    this.send(`${command}\r\n`);
+    try {
+      this.send(`${command}\r\n`);
+    } catch (error) {
+      useOutputStore
+        .getState()
+        .addError(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+    if (usePreferences.getState().general.localEcho) {
+      useOutputStore.getState().addCommand(command);
+    }
     console.log(`> ${command}`);
   }
 

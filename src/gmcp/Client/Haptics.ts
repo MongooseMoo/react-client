@@ -276,20 +276,26 @@ export class GMCPClientHaptics extends GMCPClientHapticsBase {
   // Shutdown
   // -------------------------------------------------------------------
 
+  override reset(): void {
+    for (const cleanup of this.sensorSubscriptions.values()) {
+      cleanup();
+    }
+    this.sensorSubscriptions.clear();
+    this.isAdvertised = false;
+    this.serverEnabled = false;
+    this.serverMaxCommandRate = 0;
+    this.serverMaxSensorRate = 0;
+    this.serverVersion = 0;
+    hapticsService.maxCommandRateHz = 0;
+    hapticsService.stop();
+  }
+
   shutdown(): void {
+    this.reset();
     // Clean up service event listeners
     for (const cleanup of this.serviceCleanup) {
       cleanup();
     }
     this.serviceCleanup = [];
-
-    // Clean up sensor subscriptions
-    for (const cleanup of this.sensorSubscriptions.values()) {
-      cleanup();
-    }
-    this.sensorSubscriptions.clear();
-
-    // Stop all devices
-    hapticsService.stop();
   }
 }

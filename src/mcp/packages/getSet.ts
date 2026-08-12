@@ -86,4 +86,10 @@ export class McpAwnsGetSet extends McpAwnsGetSetBase {
       property,
     });
   }
+
+  override reset(): void {
+    this.id = 1;
+    this.cache.clear();
+    this.LocalCache = {};
+  }
 }

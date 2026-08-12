@@ -29,4 +29,8 @@ export class GMCPCommLiveKit extends GMCPCommLiveKitBase {
     handleroom_leave(data: GMCPMessageCommLiveKitToken): void {
         useLiveKitStore.getState().removeToken(data.token);
     }
+
+    override reset(): void {
+        useLiveKitStore.getState().reset();
+    }
 }

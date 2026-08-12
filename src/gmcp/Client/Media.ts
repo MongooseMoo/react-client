@@ -283,7 +283,12 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.client.media.stopAllSounds();
   }
 
+  override reset(): void {
+    this.client.media.reset();
+  }
+
   override shutdown(): void {
+    this.reset();
     this.unsubscribeSpatialStore?.();
   }
 

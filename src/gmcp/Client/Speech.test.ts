@@ -102,4 +102,9 @@ describe("GMCPClientSpeech", () => {
     handler.shutdown();
     expect(cancel).toHaveBeenCalledTimes(1);
   });
+
+  it("cancels pending speech on disconnect reset", () => {
+    handler.reset();
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
 });

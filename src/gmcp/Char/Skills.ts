@@ -63,4 +63,8 @@ export class GMCPCharSkills extends GMCPCharSkillsBase {
         console.log(`Received Char.Skills.Info for ${data.group}.${data.skill}:`, data.info);
         useSkillsStore.getState().setInfo(data);
     }
+
+    override reset(): void {
+        useSkillsStore.getState().reset();
+    }
 }

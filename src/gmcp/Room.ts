@@ -84,4 +84,12 @@ export class GMCPRoom extends GMCPRoomBase {
     console.log("Received Room.RemovePlayer:", playerName);
     useRoomStore.getState().removePlayer(playerName);
   }
+
+  override reset(): void {
+    this.name = "";
+    this.id = "";
+    this.exits = [];
+    this.people = [];
+    useRoomStore.getState().reset();
+  }
 }

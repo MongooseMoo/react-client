@@ -16,6 +16,21 @@ export interface UserlistPlayer {
   idle: boolean;
 }
 
+const DEFAULT_FIELDS = ['Object', 'Name', 'Icon'];
+const DEFAULT_ICONS = [
+  'Idle',
+  'Away',
+  'Idle+Away',
+  'Friend',
+  'Newbie',
+  'Inhabitant',
+  'Inhabitant+',
+  'Schooled',
+  'Wizard',
+  'Key',
+  'Star',
+];
+
 const userlist = messageEnvelope('userlist', identityCodec<UserlistPlayer[]>());
 
 const McpVmooUserlistBase = MCPPackage.with({
@@ -26,20 +41,8 @@ const McpVmooUserlistBase = MCPPackage.with({
 export class McpVmooUserlist extends McpVmooUserlistBase {
   public maxVersion = 1.1;
   public player: string | undefined;
-  public fields: string[] = ['Object', 'Name', 'Icon'];
-  public icons: string[] = [
-    'Idle',
-    'Away',
-    'Idle+Away',
-    'Friend',
-    'Newbie',
-    'Inhabitant',
-    'Inhabitant+',
-    'Schooled',
-    'Wizard',
-    'Key',
-    'Star',
-  ];
+  public fields: string[] = [...DEFAULT_FIELDS];
+  public icons: string[] = [...DEFAULT_ICONS];
   public players: UserlistPlayer[] = [];
 
   handle(message: McpMessage): void {
@@ -134,6 +137,14 @@ export class McpVmooUserlist extends McpVmooUserlistBase {
     function sortScore(player: UserlistPlayer): number {
       return player.Icon - (player.idle ? 10 : 0) - (player.away ? 20 : 0);
     }
+  }
+
+  override reset(): void {
+    this.player = undefined;
+    this.fields = [...DEFAULT_FIELDS];
+    this.icons = [...DEFAULT_ICONS];
+    this.players = [];
+    useUserlistStore.getState().reset();
   }
 
   private playerFromArray(values: MooListValue[]): UserlistPlayer {

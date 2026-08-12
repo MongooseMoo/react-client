@@ -83,4 +83,8 @@ export class McpSimpleEdit extends McpSimpleEditBase {
     this.emitRegisteredMessage(simpleEditContent.wireName, session);
     this.sessionsByTag.delete(closure.name);
   }
+
+  override reset(): void {
+    this.sessionsByTag.clear();
+  }
 }

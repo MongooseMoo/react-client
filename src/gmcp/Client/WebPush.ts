@@ -69,9 +69,13 @@ export class GMCPClientWebPush extends GMCPClientWebPushBase {
     });
   }
 
-  shutdown(): void {
+  override reset(): void {
     this.token = null;
     this.expiresAt = null;
+  }
+
+  shutdown(): void {
+    this.reset();
   }
 
   private hasUsableToken(): boolean {
