@@ -22,8 +22,8 @@ export class EditorManager {
   }
 
   /**
-   * Editor windows that are still open. Read by the performance watchdog when
-   * attributing sustained main-thread work.
+   * Editor windows that are still open. Read by the diagnostics and
+   * performance tooling when attributing main-thread work.
    */
   get openEditorCount(): number {
     let count = 0;
