@@ -224,7 +224,7 @@ describe("createConfiguredClient", () => {
     expect(useUserlistStore.getState().hasReceivedList).toBe(true);
   });
 
-  it("resets session-owned feature state while preserving user history and input", () => {
+  it("resets session-owned feature state while preserving user history and input", async () => {
     client = createConfiguredClient();
     const closeListeners: Array<() => void> = [];
     const stream = {
@@ -297,6 +297,8 @@ describe("createConfiguredClient", () => {
     useOutputStore.getState().addMessage("connection history");
 
     client.close();
+    // History stores batch appends into a microtask flush; let them run.
+    await Promise.resolve();
 
     expect(useCharacterStatusStore.getState().vitals).toBeNull();
     expect(useItemsStore.getState().itemsByLocation).toEqual({});

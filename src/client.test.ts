@@ -403,12 +403,14 @@ describe('MudClient lifecycle cleanup', () => {
     expect(socket.send).toHaveBeenCalledWith('look\r\n');
   });
 
-  it('reports a disconnected command without adding local echo', () => {
+  it('reports a disconnected command without adding local echo', async () => {
     mockPreferencesState.general.localEcho = true;
     const client = new MudClient('example.test', 443);
 
     expect(() => client.sendCommand('look')).not.toThrow();
 
+    // outputStore batches appends into a microtask flush; let it run.
+    await Promise.resolve();
     expect(useOutputStore.getState().entries).toEqual([
       {
         id: 1,
