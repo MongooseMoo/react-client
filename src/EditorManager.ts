@@ -21,11 +21,14 @@ export class EditorManager {
     this.setupChannelListeners();
   }
 
-  /** Number of editor windows not yet closed, for diagnostics/status reporting. */
+  /**
+   * Editor windows that are still open. Read by the diagnostics and
+   * performance tooling when attributing main-thread work.
+   */
   get openEditorCount(): number {
     let count = 0;
     for (const session of this.editors.values()) {
-      if (session.state !== EditorState.Closed) {
+      if (session.state !== EditorState.Closed && session.window && !session.window.closed) {
         count += 1;
       }
     }
