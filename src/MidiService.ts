@@ -111,12 +111,14 @@ class MidiService {
       // Set up device change monitoring
       this.deviceWatcher = this.jzz.onChange((info: JzzDeviceChange) => {
         const changeInfo = this.processDeviceChanges(info);
+
+        // Update connection state before notifying consumers so callbacks
+        // observe the completed device-removal mutation.
+        this.handleDeviceDisconnections(changeInfo);
+
         this.deviceChangeCallbacks.forEach((callback) => {
           callback(changeInfo);
         });
-        
-        // Check if connected devices were removed
-        this.handleDeviceDisconnections(changeInfo);
       });
       
       // Try to auto-reconnect to last used devices

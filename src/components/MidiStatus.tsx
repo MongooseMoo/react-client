@@ -193,11 +193,11 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       // times out) the interval stops permanently instead of running forever.
       const pollStartedAt = Date.now();
       const connectionStateInterval = setInterval(() => {
-        if (document.hidden) return; // Skip work while the tab is backgrounded
-
         if (virtualMidiService.initialized) {
           clearInterval(connectionStateInterval);
-          loadDevices(); // Final refresh to pick up the virtual synth
+          if (!document.hidden) {
+            loadDevices(); // Final refresh to pick up the virtual synth
+          }
           return;
         }
 
@@ -205,6 +205,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           clearInterval(connectionStateInterval); // Give up; events still cover hardware changes
           return;
         }
+
+        if (document.hidden) return; // Skip refresh work while backgrounded
 
         loadDevices();
       }, VIRTUAL_SYNTH_POLL_INTERVAL_MS);
