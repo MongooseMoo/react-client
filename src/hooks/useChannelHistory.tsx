@@ -74,6 +74,11 @@ const channelHistorySchema: LocalStorageSchema<StoredChannelHistory> = {
   },
 };
 
+// Coalesce bursts of channel messages into one write instead of
+// re-serializing + persisting the whole history on every message. Mirrors
+// output.tsx's SAVE_DEBOUNCE_MS.
+const SAVE_DEBOUNCE_MS = 500;
+
 export const MAX_ALL_BUFFER_MESSAGES = 1000;
 export const MAX_CHANNEL_BUFFER_MESSAGES = 500;
 export const MAX_PERSISTED_ALL_MESSAGES = 200;
@@ -168,6 +173,43 @@ export const useChannelHistory = () => {
   const [linkPickerLinks, setLinkPickerLinks] = useState<ExtractedLink[] | null>(null);
   const lastKeyPress = useRef<{ key: string; time: number; count: number } | null>(null);
   const lastProcessedChannelEntryId = useRef(0);
+  const saveTimerRef = useRef<number | undefined>(undefined);
+  // Always holds the latest live state so the debounced timer callback and
+  // the unmount flush never persist stale values. Serialization happens in
+  // flushSave, not per change — that's the expensive half of the work.
+  const latestStateRef = useRef<{
+    buffers: Map<string, Buffer>;
+    bufferOrder: string[];
+    currentBufferIndex: number;
+    timestampsEnabled: boolean;
+  } | null>(null);
+
+  const cancelScheduledSave = useCallback(() => {
+    if (saveTimerRef.current !== undefined) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = undefined;
+    }
+  }, []);
+
+  const flushSave = useCallback(() => {
+    const latest = latestStateRef.current;
+    if (!latest) {
+      return;
+    }
+    saveStoredValue(channelHistorySchema, {
+      buffers: serializeBuffersForStorage(latest.buffers),
+      bufferOrder: latest.bufferOrder,
+      currentBufferIndex: latest.currentBufferIndex,
+      timestampsEnabled: latest.timestampsEnabled,
+    });
+  }, []);
+
+  const flushPendingSave = useCallback(() => {
+    if (saveTimerRef.current !== undefined) {
+      cancelScheduledSave();
+      flushSave();
+    }
+  }, [cancelScheduledSave, flushSave]);
 
   // Load state through the shared versioned persistence owner on mount.
   useEffect(() => {
@@ -195,15 +237,38 @@ export const useChannelHistory = () => {
     setTimestampsEnabled(parsed.timestampsEnabled ?? true);
   }, []);
 
-  // Save state through the same schema whenever it changes.
+  // Save state through the same schema whenever it changes, debounced so a
+  // burst of channel messages coalesces into one write instead of
+  // re-serializing the whole history on every message.
   useEffect(() => {
-    saveStoredValue(channelHistorySchema, {
-        buffers: serializeBuffersForStorage(buffers),
-        bufferOrder,
-        currentBufferIndex,
-        timestampsEnabled,
-    });
-  }, [buffers, bufferOrder, currentBufferIndex, timestampsEnabled]);
+    latestStateRef.current = {
+      buffers,
+      bufferOrder,
+      currentBufferIndex,
+      timestampsEnabled,
+    };
+
+    cancelScheduledSave();
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = undefined;
+      flushSave();
+    }, SAVE_DEBOUNCE_MS);
+  }, [buffers, bufferOrder, currentBufferIndex, timestampsEnabled, cancelScheduledSave, flushSave]);
+
+  // React root cleanup is not guaranteed during a reload or tab close, so
+  // synchronously flush pending history from the browser lifecycle as well as
+  // on unmount. The pending-timer check keeps consecutive lifecycle events
+  // (for example, beforeunload followed by pagehide) idempotent.
+  useEffect(() => {
+    window.addEventListener("pagehide", flushPendingSave);
+    window.addEventListener("beforeunload", flushPendingSave);
+
+    return () => {
+      window.removeEventListener("pagehide", flushPendingSave);
+      window.removeEventListener("beforeunload", flushPendingSave);
+      flushPendingSave();
+    };
+  }, [flushPendingSave]);
 
   // Handle channel messages. The "all" buffer is the aggregate of every
   // channel, so each channel message is appended both to its own channel
