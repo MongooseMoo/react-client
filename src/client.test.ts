@@ -331,7 +331,7 @@ describe('MudClient lifecycle cleanup', () => {
     expect(useUserlistStore.getState().hasReceivedList).toBe(false);
   });
 
-  it('buffers text split across frames until the line is complete', () => {
+  it('buffers text split across frames until the line is complete', async () => {
     const client = new MudClient('example.test', 443);
     client.connect();
     const socket = mockWebSocketInstances[0];
@@ -340,6 +340,8 @@ describe('MudClient lifecycle cleanup', () => {
     expect(useOutputStore.getState().entries).toEqual([]);
 
     sendSocketText(socket, 'world\r\n');
+    // outputStore batches appends into a microtask flush; let it run.
+    await Promise.resolve();
     expect(useOutputStore.getState().entries).toEqual([
       {
         id: 1,
@@ -349,7 +351,7 @@ describe('MudClient lifecycle cleanup', () => {
     ]);
   });
 
-  it('buffers partial MCP frames until the line is complete', () => {
+  it('buffers partial MCP frames until the line is complete', async () => {
     const client = new MudClient('example.test', 443);
     client.connect();
     const socket = mockWebSocketInstances[0];
@@ -361,10 +363,11 @@ describe('MudClient lifecycle cleanup', () => {
 
     sendSocketText(socket, '$#MCP version: 2.1 to: 2.1\r\n');
     expect(receiveLine).toHaveBeenCalledWith('#$#MCP version: 2.1 to: 2.1');
+    await Promise.resolve();
     expect(useOutputStore.getState().entries).toEqual([]);
   });
 
-  it('records non-MCP prompt text at a Telnet GA boundary', () => {
+  it('records non-MCP prompt text at a Telnet GA boundary', async () => {
     const client = new MudClient('example.test', 443);
 
     client.connect();
@@ -374,6 +377,8 @@ describe('MudClient lifecycle cleanup', () => {
 
     sendSocketBytes(socket, [255, 249]);
 
+    // outputStore batches appends into a microtask flush; let it run.
+    await Promise.resolve();
     expect(useOutputStore.getState().entries).toContainEqual({
       id: 1,
       type: 'message',
@@ -420,7 +425,7 @@ describe('MudClient lifecycle cleanup', () => {
     }
   });
 
-  it('reassembles a multibyte character split across two frames', () => {
+  it('reassembles a multibyte character split across two frames', async () => {
     const client = new MudClient('example.test', 443);
     client.connect();
     const socket = mockWebSocketInstances[0];
@@ -432,6 +437,8 @@ describe('MudClient lifecycle cleanup', () => {
 
     sendSocketText(socket, '\n');
 
+    // outputStore batches appends into a microtask flush; let it run.
+    await Promise.resolve();
     expect(useOutputStore.getState().entries).toContainEqual(
       expect.objectContaining({ type: 'message', message: 'é' }),
     );
@@ -440,7 +447,7 @@ describe('MudClient lifecycle cleanup', () => {
     );
   });
 
-  it('resets the streaming decoder on cleanup so a partial does not bleed into the next connection', () => {
+  it('resets the streaming decoder on cleanup so a partial does not bleed into the next connection', async () => {
     const client = new MudClient('example.test', 443);
     client.connect();
 
@@ -456,6 +463,8 @@ describe('MudClient lifecycle cleanup', () => {
     sendSocketBytes(mockWebSocketInstances[1], [0xa9]);
     sendSocketText(mockWebSocketInstances[1], '\n');
 
+    // outputStore batches appends into a microtask flush; let it run.
+    await Promise.resolve();
     // Without a reset the retained 0xC3 + 0xA9 would decode to "é"; after reset the
     // orphan continuation byte is an invalid sequence -> U+FFFD, never "é".
     expect(useOutputStore.getState().entries).not.toContainEqual(

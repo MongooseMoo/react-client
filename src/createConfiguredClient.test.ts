@@ -169,7 +169,7 @@ describe("createConfiguredClient", () => {
     expect(useItemsStore.getState().hasReceivedList).toBe(true);
   });
 
-  it("wires Comm.Channel.Text GMCP messages to the channel history store", () => {
+  it("wires Comm.Channel.Text GMCP messages to the channel history store", async () => {
     client = createConfiguredClient();
 
     const channel = client.gmcp.require("Comm.Channel");
@@ -179,6 +179,8 @@ describe("createConfiguredClient", () => {
       text: "Hello",
     });
 
+    // channelHistoryStore batches appends into a microtask flush; let it run.
+    await Promise.resolve();
     expect(useChannelHistoryStore.getState().entries).toEqual([
       { id: 1, channel: "chat", talker: "Alice", text: "Hello" },
     ]);

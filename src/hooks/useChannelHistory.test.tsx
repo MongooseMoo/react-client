@@ -146,6 +146,38 @@ describe("useChannelHistory", () => {
     );
   });
 
+  it("preserves each channel across an oversized multi-channel same-tick burst", async () => {
+    const { result } = renderHook(() => useChannelHistory());
+
+    act(() => {
+      for (let index = 0; index < MAX_CHANNEL_BUFFER_MESSAGES; index += 1) {
+        addChannelText("alpha", "Reader", `alpha ${index}`);
+      }
+      for (let index = 0; index < MAX_ALL_BUFFER_MESSAGES; index += 1) {
+        addChannelText("beta", "Reader", `beta ${index}`);
+      }
+    });
+
+    await waitFor(() => {
+      expect(result.current.buffers.get("beta")?.messages).toHaveLength(
+        MAX_CHANNEL_BUFFER_MESSAGES
+      );
+    });
+
+    expect(result.current.buffers.get("alpha")?.messages).toHaveLength(
+      MAX_CHANNEL_BUFFER_MESSAGES
+    );
+    expect(result.current.buffers.get("alpha")?.messages[0]?.message).toBe(
+      "alpha 0"
+    );
+    expect(result.current.buffers.get("all")?.messages).toHaveLength(
+      MAX_ALL_BUFFER_MESSAGES
+    );
+    expect(useChannelHistoryStore.getState().entries).toHaveLength(
+      MAX_ALL_BUFFER_MESSAGES
+    );
+  });
+
   it("writes bounded channel history payloads to localStorage", async () => {
     renderHook(() => useChannelHistory());
 
