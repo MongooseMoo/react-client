@@ -18,6 +18,26 @@ interface DeviceChangeEvent {
   type: DeviceChangeEventType;
 }
 
+// How long to keep polling for virtual synth availability before giving up.
+// JZZ has no onChange event for the virtual synth, so a short bounded poll
+// is the only way to catch it; hardware changes are handled by onDeviceChange.
+const VIRTUAL_SYNTH_POLL_TIMEOUT_MS = 60000;
+const VIRTUAL_SYNTH_POLL_INTERVAL_MS = 2000;
+
+type MidiConnectionState = typeof midiService.connectionStatus;
+
+// Shallow field-by-field compare, avoiding JSON.stringify allocations.
+function connectionStatesEqual(a: MidiConnectionState, b: MidiConnectionState): boolean {
+  return (
+    a.inputConnected === b.inputConnected &&
+    a.outputConnected === b.outputConnected &&
+    a.inputDeviceId === b.inputDeviceId &&
+    a.outputDeviceId === b.outputDeviceId &&
+    a.inputDeviceName === b.inputDeviceName &&
+    a.outputDeviceName === b.outputDeviceName
+  );
+}
+
 const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const midiPreferences = usePreferences((state) => state.midi);
   const [midiPackage, setMidiPackage] = useState<GMCPClientMidi | null>(null);
@@ -56,23 +76,33 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     }
   }, [client]);
 
+  // Refresh connection state from midiService, only triggering a re-render
+  // when a field actually changed (avoids stale-closure issues by always
+  // comparing against the latest state via the functional setState form).
+  const refreshConnectionState = () => {
+    setConnectionState(prev => {
+      const next = midiService.connectionStatus;
+      return connectionStatesEqual(prev, next) ? prev : next;
+    });
+  };
+
   // Load devices when MIDI is enabled
   const loadDevices = async () => {
     if (!midiPreferences.enabled) return;
-    
+
     // Ensure virtual synthesizer is initialized
     if (!virtualMidiService.initialized) {
       await virtualMidiService.initialize();
     }
-    
+
     const inputs = midiService.getInputDevices();
     const outputs = midiService.getOutputDevices();
     setInputDevices(inputs);
     setOutputDevices(outputs);
-    
+
     // Update connection state
-    setConnectionState(midiService.connectionStatus);
-    
+    refreshConnectionState();
+
     // Check for reconnectable devices and attempt auto-reconnection
     await updateReconnectableDevices();
   };
@@ -96,7 +126,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           try {
             const success = await midiPackage.connectInputDevice(prefs.lastInputDeviceId);
             if (success) {
-              setConnectionState(midiService.connectionStatus);
+              refreshConnectionState();
               setDeviceChangeEvents(prev => [{
                 timestamp: new Date().toLocaleTimeString(),
                 message: `Auto-reconnected to input: ${device.name}`,
@@ -125,7 +155,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           try {
             const success = await midiPackage.connectOutputDevice(prefs.lastOutputDeviceId);
             if (success) {
-              setConnectionState(midiService.connectionStatus);
+              refreshConnectionState();
               setDeviceChangeEvents(prev => [{
                 timestamp: new Date().toLocaleTimeString(),
                 message: `Auto-reconnected to output: ${device.name}`,
@@ -156,16 +186,38 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         loadDevices();
       }
       
-      // Set up connection state monitoring (poll every 2 seconds to catch auto-reconnections and virtual synth)
+      // Poll briefly to catch virtual synth availability, since JZZ has no
+      // onChange event for it. Hardware device arrival/removal and
+      // auto-reconnect status are handled event-driven via onDeviceChange
+      // below, so once the virtual synth has been observed (or the poll
+      // times out) the interval stops permanently instead of running forever.
+      const pollStartedAt = Date.now();
       const connectionStateInterval = setInterval(() => {
-        loadDevices(); // Always refresh devices to catch virtual synth initialization
-        
-        const currentState = midiService.connectionStatus;
-        if (JSON.stringify(currentState) !== JSON.stringify(connectionState)) {
-          setConnectionState(currentState);
+        if (document.hidden) return; // Skip work while the tab is backgrounded
+
+        if (virtualMidiService.initialized) {
+          clearInterval(connectionStateInterval);
+          loadDevices(); // Final refresh to pick up the virtual synth
+          return;
         }
-      }, 2000);
-      
+
+        if (Date.now() - pollStartedAt >= VIRTUAL_SYNTH_POLL_TIMEOUT_MS) {
+          clearInterval(connectionStateInterval); // Give up; events still cover hardware changes
+          return;
+        }
+
+        loadDevices();
+      }, VIRTUAL_SYNTH_POLL_INTERVAL_MS);
+
+      // The interval above skips work while hidden, so catch up with a
+      // single refresh when the tab becomes visible again.
+      const handleVisibilityChange = () => {
+        if (!document.hidden) {
+          loadDevices();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+
       // Set up device change monitoring
       const unsubscribe = midiService.onDeviceChange((info) => {
         const timestamp = new Date().toLocaleTimeString();
@@ -208,13 +260,16 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         if (events.length > 0) {
           setDeviceChangeEvents(prev => [...events, ...prev].slice(0, 10)); // Keep last 10 events
         }
-        
-        // Refresh devices and connection state
+
+        // Refresh connection state right away (e.g. auto-reconnect status),
+        // then refresh devices and reconnectable-device suggestions.
+        refreshConnectionState();
         loadDevices();
       });
-      
+
       return () => {
         clearInterval(connectionStateInterval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
         unsubscribe();
       };
     } else {
@@ -239,7 +294,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     if (!midiPackage || !selectedInputId) return;
     const success = await midiPackage.connectInputDevice(selectedInputId);
     if (success) {
-      setConnectionState(midiService.connectionStatus);
+      refreshConnectionState();
       setSelectedInputId("");
       loadDevices(); // Refresh to update reconnectable devices
     }
@@ -247,7 +302,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   
   const handleDisconnectInput = () => {
     midiService.disconnectWithIntent('input');
-    setConnectionState(midiService.connectionStatus);
+    refreshConnectionState();
     loadDevices(); // Refresh to update reconnectable devices
   };
   
@@ -255,7 +310,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     if (!midiPackage || !selectedOutputId) return;
     const success = await midiPackage.connectOutputDevice(selectedOutputId);
     if (success) {
-      setConnectionState(midiService.connectionStatus);
+      refreshConnectionState();
       setSelectedOutputId("");
       loadDevices(); // Refresh to update reconnectable devices
     }
@@ -263,7 +318,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   
   const handleDisconnectOutput = () => {
     midiService.disconnectWithIntent('output');
-    setConnectionState(midiService.connectionStatus);
+    refreshConnectionState();
     loadDevices(); // Refresh to update reconnectable devices
   };
 
@@ -278,7 +333,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     
     // Load devices and update connection state
     loadDevices();
-    setConnectionState(midiService.connectionStatus);
+    refreshConnectionState();
     
   };
 
@@ -287,7 +342,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     if (!reconnectableDevices.input || !midiPackage) return;
     const success = await midiService.attemptReconnect(reconnectableDevices.input.id, 'input');
     if (success) {
-      setConnectionState(midiService.connectionStatus);
+      refreshConnectionState();
       loadDevices();
       setDeviceChangeEvents(prev => [{
         timestamp: new Date().toLocaleTimeString(),
@@ -301,7 +356,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     if (!reconnectableDevices.output || !midiPackage) return;
     const success = await midiService.attemptReconnect(reconnectableDevices.output.id, 'output');
     if (success) {
-      setConnectionState(midiService.connectionStatus);
+      refreshConnectionState();
       loadDevices();
       setDeviceChangeEvents(prev => [{
         timestamp: new Date().toLocaleTimeString(),
