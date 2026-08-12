@@ -158,7 +158,6 @@ export function formatAnnouncementMessage(message: Message): string {
 }
 
 export const useChannelHistory = () => {
-  const channelEntries = useChannelHistoryStore((state) => state.entries);
   const [buffers, setBuffers] = useState<Map<string, Buffer>>(
     new Map([["all", { name: "all", messages: [], currentIndex: 0 }]])
   );
@@ -233,12 +232,17 @@ export const useChannelHistory = () => {
   }, []);
 
   useEffect(() => {
-    for (const entry of channelEntries) {
-      if (entry.id <= lastProcessedChannelEntryId.current) continue;
-      handleChannelText(entry);
-      lastProcessedChannelEntryId.current = entry.id;
-    }
-  }, [channelEntries, handleChannelText]);
+    const processChannelEntries = () => {
+      for (const entry of useChannelHistoryStore.getState().entries) {
+        if (entry.id <= lastProcessedChannelEntryId.current) continue;
+        handleChannelText(entry);
+        lastProcessedChannelEntryId.current = entry.id;
+      }
+    };
+
+    processChannelEntries();
+    return useChannelHistoryStore.subscribe(processChannelEntries);
+  }, [handleChannelText]);
 
   const getCurrentBuffer = (): Buffer | undefined => {
     return buffers.get(bufferOrder[currentBufferIndex]);

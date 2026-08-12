@@ -49,10 +49,13 @@ function flushPendingEntries(set: typeof useChannelHistoryStore.setState): void 
   const toFlush = pendingEntries;
   pendingEntries = [];
 
-  set((state) => {
-    const merged = state.entries.concat(toFlush);
-    return {
-      entries: merged.length > MAX_ENTRIES ? merged.slice(-MAX_ENTRIES) : merged,
-    };
-  });
+  // Notify subscribers with the complete burst before reducing the retained
+  // snapshot. Consumers use entry ids, so the cap notification does not
+  // reprocess entries they already received.
+  set((state) => ({ entries: state.entries.concat(toFlush) }));
+
+  const deliveredEntries = useChannelHistoryStore.getState().entries;
+  if (deliveredEntries.length > MAX_ENTRIES) {
+    set({ entries: deliveredEntries.slice(-MAX_ENTRIES) });
+  }
 }

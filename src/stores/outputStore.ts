@@ -53,12 +53,15 @@ function flushPendingEntries(set: typeof useOutputStore.setState): void {
   const toFlush = pendingEntries;
   pendingEntries = [];
 
-  set((state) => {
-    const merged = state.entries.concat(toFlush);
-    return {
-      entries: merged.length > MAX_ENTRIES ? merged.slice(-MAX_ENTRIES) : merged,
-    };
-  });
+  // Notify subscribers with the complete burst before reducing the retained
+  // snapshot. Imperative consumers use entry ids, so the cap notification does
+  // not reprocess entries they already received.
+  set((state) => ({ entries: state.entries.concat(toFlush) }));
+
+  const deliveredEntries = useOutputStore.getState().entries;
+  if (deliveredEntries.length > MAX_ENTRIES) {
+    set({ entries: deliveredEntries.slice(-MAX_ENTRIES) });
+  }
 }
 
 function addOutputEntry(

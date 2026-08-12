@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type React from "react";
 
 import type MudClient from "../client";
+import { useOutputStore } from "../stores/outputStore";
 import Output, { type OutputLine, OutputType } from "./output";
 
 const { mockAnnounce, mockClipboardWriteText } = vi.hoisted(() => ({
@@ -103,6 +104,37 @@ describe("Output keyboard handling", () => {
 
     expect(plainAltArrow.preventDefault).toHaveBeenCalled();
     expect(metaAltArrow.preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe("Output store delivery", () => {
+  beforeEach(() => {
+    useOutputStore.getState().reset();
+  });
+
+  afterEach(() => {
+    useOutputStore.getState().reset();
+  });
+
+  it("processes an oversized same-tick burst before the retained snapshot is capped", async () => {
+    const output = new Output({ client: {} as MudClient });
+    const handleOutputEntry = vi
+      .spyOn(output, "handleOutputEntry")
+      .mockImplementation(() => undefined);
+    const unsubscribe = useOutputStore.subscribe(output.handleOutputStoreEntries);
+
+    for (let index = 0; index < 501; index += 1) {
+      useOutputStore.getState().addMessage(`line ${index}`);
+    }
+    await Promise.resolve();
+
+    unsubscribe();
+    expect(handleOutputEntry).toHaveBeenCalledTimes(501);
+    expect(useOutputStore.getState().entries).toHaveLength(500);
+    expect(useOutputStore.getState().entries[0]).toMatchObject({
+      id: 2,
+      message: "line 1",
+    });
   });
 });
 
