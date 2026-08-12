@@ -18,6 +18,8 @@ import { useLiveKitStore } from '../stores/liveKitStore';
 import { useSpatialStore } from '../stores/spatialStore';
 
 const serverUrl = 'wss://mongoose-67t79p35.livekit.cloud';
+/** Wake-hold id keeping MediaService's idle suspend off while voice chat is live. */
+const VOICE_WAKE_HOLD = 'livekit-voice';
 
 interface AudioChatProps {
   client: MudClient;
@@ -69,6 +71,10 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
     const bridge = bridgeRef.current;
     if (!bridge) return;
 
+    // Voice runs through the shared cacophony context, and MediaService cannot see LiveKit's
+    // streams in its sound registry, so hold the context awake for the room's lifetime.
+    client.media.acquireWakeHold(VOICE_WAKE_HOLD);
+
     const syncAll = () => bridge.syncAll();
     const unsubscribeSpatialStore = useSpatialStore.subscribe(syncAll);
     syncAll();
@@ -76,8 +82,9 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
     return () => {
       unsubscribeSpatialStore();
       bridge.cleanup();
+      client.media.releaseWakeHold(VOICE_WAKE_HOLD);
     };
-  }, []);
+  }, [client]);
 
   return null;
 };
