@@ -205,6 +205,13 @@ export const useChannelHistory = () => {
     });
   }, []);
 
+  const flushPendingSave = useCallback(() => {
+    if (saveTimerRef.current !== undefined) {
+      cancelScheduledSave();
+      flushSave();
+    }
+  }, [cancelScheduledSave, flushSave]);
+
   // Load state through the shared versioned persistence owner on mount.
   useEffect(() => {
     const parsed = loadStoredValue<StoredChannelHistory>(
@@ -249,16 +256,20 @@ export const useChannelHistory = () => {
     }, SAVE_DEBOUNCE_MS);
   }, [buffers, bufferOrder, currentBufferIndex, timestampsEnabled, cancelScheduledSave, flushSave]);
 
-  // Flush any pending debounced save on unmount so the latest state isn't
-  // lost. If no save is pending, the latest state was already written.
+  // React root cleanup is not guaranteed during a reload or tab close, so
+  // synchronously flush pending history from the browser lifecycle as well as
+  // on unmount. The pending-timer check keeps consecutive lifecycle events
+  // (for example, beforeunload followed by pagehide) idempotent.
   useEffect(() => {
+    window.addEventListener("pagehide", flushPendingSave);
+    window.addEventListener("beforeunload", flushPendingSave);
+
     return () => {
-      if (saveTimerRef.current !== undefined) {
-        cancelScheduledSave();
-        flushSave();
-      }
+      window.removeEventListener("pagehide", flushPendingSave);
+      window.removeEventListener("beforeunload", flushPendingSave);
+      flushPendingSave();
     };
-  }, [cancelScheduledSave, flushSave]);
+  }, [flushPendingSave]);
 
   // Handle channel messages. The "all" buffer is the aggregate of every
   // channel, so each channel message is appended both to its own channel

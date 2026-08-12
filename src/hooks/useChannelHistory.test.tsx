@@ -169,6 +169,32 @@ describe("useChannelHistory", () => {
     }, { timeout: 2000 });
   });
 
+  it.each(["pagehide", "beforeunload"])(
+    "flushes pending channel history on %s before the debounce expires",
+    async (eventName) => {
+      const { result } = renderHook(() => useChannelHistory());
+
+      act(() => {
+        addChannelText("gossip", "Reader", "last-second message");
+      });
+
+      await waitFor(() => {
+        expect(result.current.buffers.get("all")?.messages).toHaveLength(1);
+      });
+      expect(localStorage.getItem("channelHistory")).toBeNull();
+
+      act(() => {
+        window.dispatchEvent(new Event(eventName));
+      });
+
+      const saved = localStorage.getItem("channelHistory");
+      expect(saved).not.toBeNull();
+      expect(JSON.parse(saved || "{}").data.buffers.all.messages[0].message).toBe(
+        "last-second message"
+      );
+    }
+  );
+
   it("caps older localStorage history when loading it", () => {
     localStorage.setItem("channelHistory", JSON.stringify({
       buffers: {
