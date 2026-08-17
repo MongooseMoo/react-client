@@ -111,7 +111,7 @@ describe('VectorTweener', () => {
     tweener.tween('fwd', [1, 0, 0], [0, 0, 1], apply, { durationMs: 100, normalize: true });
 
     step(50);
-    const [value, done] = apply.mock.lastCall!;
+    const [value, done] = apply.mock.lastCall ?? [[0, 0, 0], true];
     expect(done).toBe(false);
     expect(Math.hypot(value[0], value[1], value[2])).toBeCloseTo(1, 10);
     expect(value[0]).toBeCloseTo(Math.SQRT1_2, 10);
