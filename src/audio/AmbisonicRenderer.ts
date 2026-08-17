@@ -1,6 +1,8 @@
 import type { Cacophony, AudioNode as CacophonyAudioNode, Playback } from 'cacophony';
 import Omnitone, { type FOARenderer } from 'omnitone/build/omnitone.min.esm.js';
 
+import { smoothParamTo } from './audioParamSmoothing';
+
 const IDENTITY_ROTATION = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 type AmbisonicInputMode = 'stereo-upmix' | 'foa-passthrough';
 
@@ -69,7 +71,8 @@ export class AmbisonicRenderer {
       return;
     }
     const clamped = Number.isFinite(gain) ? Math.min(1, Math.max(0, gain)) : 1;
-    this.distanceGain.gain.value = clamped;
+    const currentTime = (this.cacophony.context as unknown as BaseAudioContext).currentTime;
+    smoothParamTo(this.distanceGain.gain, clamped, currentTime);
   }
 
   cleanup(): void {

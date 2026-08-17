@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveKitSpatialAudioBridge } from "./LiveKitSpatialAudioBridge";
+import { SPATIAL_PARAM_TAU_S } from "./audioParamSmoothing";
 import { SPATIAL_DISTANCE_MODEL } from "./distanceModel";
 
 const MockMediaStream = vi.fn();
@@ -23,6 +24,10 @@ function createAudioParam(value = 0) {
   return {
     value,
     setValueAtTime: vi.fn((nextValue: number) => {
+      value = nextValue;
+      return undefined as never;
+    }),
+    setTargetAtTime: vi.fn((nextValue: number) => {
       value = nextValue;
       return undefined as never;
     }),
@@ -160,7 +165,7 @@ describe("LiveKitSpatialAudioBridge", () => {
     expect(cacophony.resume).toHaveBeenCalledOnce();
   });
 
-  it("updates an existing panner position from the spatial lookup", () => {
+  it("snaps the initial panner position, then ramps position updates from the spatial lookup", () => {
     const remoteTrack = track(1);
     const { cacophony, panner } = createCacophony();
     const positions: Record<string, [number, number, number]> = {
@@ -169,12 +174,16 @@ describe("LiveKitSpatialAudioBridge", () => {
     const bridge = new LiveKitSpatialAudioBridge(cacophony, (participantId) => positions[participantId]);
 
     bridge.attachParticipantTrack("player-2", remoteTrack);
+
+    expect(panner.positionX.setValueAtTime).toHaveBeenCalledWith(1, 7);
+    expect(panner.positionX.setTargetAtTime).not.toHaveBeenCalled();
+
     positions["player-2"] = [4, 5, 6];
     bridge.syncParticipant("player-2");
 
-    expect(panner.positionX.setValueAtTime).toHaveBeenLastCalledWith(4, 7);
-    expect(panner.positionY.setValueAtTime).toHaveBeenLastCalledWith(5, 7);
-    expect(panner.positionZ.setValueAtTime).toHaveBeenLastCalledWith(6, 7);
+    expect(panner.positionX.setTargetAtTime).toHaveBeenLastCalledWith(4, 7, SPATIAL_PARAM_TAU_S);
+    expect(panner.positionY.setTargetAtTime).toHaveBeenLastCalledWith(5, 7, SPATIAL_PARAM_TAU_S);
+    expect(panner.positionZ.setTargetAtTime).toHaveBeenLastCalledWith(6, 7, SPATIAL_PARAM_TAU_S);
   });
 
   it("primes Chromium decode with a muted media element and tears it down on detach", () => {

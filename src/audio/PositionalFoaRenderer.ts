@@ -1,6 +1,7 @@
 import type { Cacophony, AudioNode as CacophonyAudioNode, Playback } from 'cacophony';
 import { encodeMonoToFoaSN3D, type FoaDecoder } from 'cacophony';
 
+import { smoothParamTo } from './audioParamSmoothing';
 import { sourceBearing, type Vec3 } from './foaBearing';
 
 /** One encoder bank: four ACN [W,Y,Z,X] gains fed by one signal, aimed at the
@@ -148,13 +149,17 @@ export class PositionalFoaRenderer {
     this.setBearing(azimuth, elevation);
   }
 
-  /** Set every bank's encode gains from an azimuth (CCW, +left) and elevation (+up). */
+  /** Set every bank's encode gains from an azimuth (CCW, +left) and elevation (+up).
+   *  Writes are smoothed (short exponential ramps) so a bearing change glides
+   *  instead of clicking — encode gains are pure crossfade weights, so ramping
+   *  them is safe. */
   setBearing(azimuthRad: number, elevationRad: number): void {
+    const currentTime = this.context.currentTime;
     for (const bank of this.banks) {
       const coeffs = encodeMonoToFoaSN3D(1, azimuthRad + bank.azOffset, elevationRad); // [W,Y,Z,X]
       for (let i = 0; i < 4; i++) {
         const v = coeffs[i];
-        bank.gains[i].gain.value = Number.isFinite(v) ? v : i === 0 ? 1 : 0;
+        smoothParamTo(bank.gains[i].gain, Number.isFinite(v) ? v : i === 0 ? 1 : 0, currentTime);
       }
     }
   }
@@ -173,7 +178,7 @@ export class PositionalFoaRenderer {
 
   private applyLevel(): void {
     if (this.levelGain) {
-      this.levelGain.gain.value = this.makeup * this.distanceAttenuation;
+      smoothParamTo(this.levelGain.gain, this.makeup * this.distanceAttenuation, this.context.currentTime);
     }
   }
 

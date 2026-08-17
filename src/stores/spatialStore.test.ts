@@ -78,6 +78,32 @@ describe("spatialStore", () => {
     });
   });
 
+  it("patchEntity merges a partial update onto the existing entity", () => {
+    useSpatialStore.setState({
+      spatialEntities: {
+        p1: { id: "p1", name: "Q", position: [1, 1, 1], velocity: [0.5, 0, 0] },
+      },
+    });
+    useSpatialStore.getState().patchEntity("p1", { position: [2, 2, 2] });
+
+    expect(useSpatialStore.getState().spatialEntities.p1).toEqual({
+      id: "p1",
+      name: "Q",
+      position: [2, 2, 2],
+      velocity: [0.5, 0, 0],
+    });
+  });
+
+  it("patchEntity creates a placeholder entity when the id is unknown", () => {
+    useSpatialStore.getState().patchEntity("p9", { forward: [1, 0, 0] });
+
+    expect(useSpatialStore.getState().spatialEntities.p9).toEqual({
+      id: "p9",
+      position: [0, 0, 0],
+      forward: [1, 0, 0],
+    });
+  });
+
   it("setListenerPosition keeps the existing entity id when none is given", () => {
     useSpatialStore.setState({ listenerEntityId: "p1" });
     useSpatialStore.getState().setListenerPosition([7, 8, 9]);

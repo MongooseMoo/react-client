@@ -39,6 +39,7 @@ interface SpatialState {
   enterEntity: (entity: SpatialEntity) => void;
   leaveEntity: (entityId: string) => void;
   moveEntity: (data: MovedEntity) => void;
+  patchEntity: (entityId: string, patch: Partial<Omit<SpatialEntity, "id">>) => void;
   setListenerPosition: (position: SpatialVector, listenerId?: string) => void;
   setListenerOrientation: (
     orientation: SpatialListenerOrientation,
@@ -89,6 +90,19 @@ export const useSpatialStore = create<SpatialState>((set) => ({
             forward: data.forward ?? current?.forward,
             up: data.up ?? current?.up,
           },
+        },
+      };
+    }),
+  patchEntity: (entityId, patch) =>
+    set((state) => {
+      const current = state.spatialEntities[entityId] ?? {
+        id: entityId,
+        position: [0, 0, 0] as SpatialVector,
+      };
+      return {
+        spatialEntities: {
+          ...state.spatialEntities,
+          [entityId]: { ...current, ...patch, id: entityId },
         },
       };
     }),

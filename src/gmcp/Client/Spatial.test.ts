@@ -1,8 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GMCPClientSpatial } from './Spatial';
+import { VectorTweener, type TweenScheduler } from '../../audio/vectorTween';
 import { useSpatialStore } from '../../stores/spatialStore';
 import { useSessionStore } from '../../stores/sessionStore';
+
+/** Manual clock + frame queue driving the handler's motion tweener. */
+function createMotionHarness() {
+  let now = 0;
+  let queued: (() => void) | null = null;
+  const scheduler: TweenScheduler = {
+    schedule: (callback) => {
+      queued = callback;
+      return callback;
+    },
+    cancel: (handle) => {
+      if (queued === handle) {
+        queued = null;
+      }
+    },
+  };
+  const motion = new VectorTweener({ scheduler, now: () => now });
+  const step = (ms: number) => {
+    now += ms;
+    const frame = queued;
+    queued = null;
+    frame?.();
+  };
+  return { motion, step };
+}
 
 function createMockClient() {
   const cacophony = {
@@ -30,14 +56,18 @@ function createMockClient() {
 describe('GMCPClientSpatial', () => {
   let client: ReturnType<typeof createMockClient>;
   let handler: GMCPClientSpatial;
+  let step: (ms: number) => void;
 
   beforeEach(() => {
     vi.clearAllMocks();
     useSpatialStore.getState().reset();
     useSessionStore.getState().reset();
     client = createMockClient();
+    const harness = createMotionHarness();
+    step = harness.step;
     handler = new GMCPClientSpatial(
       client as unknown as ConstructorParameters<typeof GMCPClientSpatial>[0],
+      harness.motion,
     );
   });
 
@@ -162,7 +192,7 @@ describe('GMCPClientSpatial', () => {
     });
   });
 
-  it('updates stored coordinates and velocity on EntityMove', () => {
+  it('glides EntityMove position and forward to the target coordinates', () => {
     useSpatialStore.setState({
       spatialEntities: {
         'player-1': {
@@ -182,6 +212,18 @@ describe('GMCPClientSpatial', () => {
       up: [0, 0, 1],
     });
 
+    // Velocity and up land immediately; position stays put until frames run.
+    const beforeFrames = useSpatialStore.getState().spatialEntities['player-1'];
+    expect(beforeFrames.position).toEqual([1, 1, 1]);
+    expect(beforeFrames.velocity).toEqual([-0.5, 0, 0]);
+    expect(beforeFrames.up).toEqual([0, 1, 0]);
+
+    // Halfway through the (clamped 600ms) glide the position is interpolated.
+    step(300);
+    const midway = useSpatialStore.getState().spatialEntities['player-1'];
+    expect(midway.position).toEqual([-0.5, 2.5, 2]);
+
+    step(300);
     expect(useSpatialStore.getState().spatialEntities['player-1']).toEqual({
       id: 'player-1',
       name: 'Q',
@@ -191,6 +233,52 @@ describe('GMCPClientSpatial', () => {
       forward: [-1, 0, 0],
       up: [0, 1, 0],
     });
+  });
+
+  it('snaps EntityMove for an entity with no known prior position', () => {
+    handler.handleEntityMove({
+      entityId: 'player-9',
+      position: [2, 3, 4],
+    });
+
+    expect(useSpatialStore.getState().spatialEntities['player-9'].position).toEqual([-2, 4, 3]);
+  });
+
+  it('glides the listener between known positions and syncs cacophony per frame', () => {
+    useSpatialStore.setState({ listenerPosition: [0, 0, 0] });
+
+    handler.handleListenerPosition({
+      listenerId: 'player-1',
+      position: [1, 0, 0],
+    });
+
+    // 1m at the 2 m/s default speed = 500ms.
+    step(250);
+    expect(useSpatialStore.getState().listenerPosition).toEqual([-0.5, 0, 0]);
+    expect(client.media.cacophony.listenerPosition).toEqual([-0.5, 0, 0]);
+
+    step(250);
+    expect(useSpatialStore.getState().listenerPosition).toEqual([-1, 0, 0]);
+    expect(client.media.cacophony.listenerPosition).toEqual([-1, 0, 0]);
+  });
+
+  it('drops in-flight glides on a Scene snapshot', () => {
+    useSpatialStore.setState({
+      spatialEntities: {
+        'player-1': { id: 'player-1', position: [0, 0, 0] },
+      },
+    });
+    handler.handleEntityMove({ entityId: 'player-1', position: [10, 0, 0] });
+
+    handler.handleScene({
+      roomId: 'next-room',
+      listenerId: 'player-1',
+      entities: [{ id: 'player-1', position: [5, 5, 5] }],
+      emitters: [],
+    });
+    step(600);
+
+    expect(useSpatialStore.getState().spatialEntities['player-1'].position).toEqual([-5, 5, 5]);
   });
 
   it('updates listener position and orientation messages', () => {

@@ -20,6 +20,7 @@ vi.mock('../../audio/PositionalFoaRenderer', () => ({
 }));
 
 import { MediaService } from '../../audio/MediaService';
+import { VectorTweener } from '../../audio/vectorTween';
 import { useSpatialStore } from '../../stores/spatialStore';
 import {
   GMCPClientMedia,
@@ -166,9 +167,34 @@ function createMockClient() {
     muted: false,
     setGlobalVolume: vi.fn(),
   };
+  // Manually-clocked tweener so tests can step sound-position glides.
+  let motionNow = 0;
+  let motionFrame: (() => void) | null = null;
+  const motion = new VectorTweener({
+    now: () => motionNow,
+    scheduler: {
+      schedule: (callback) => {
+        motionFrame = callback;
+        return callback;
+      },
+      cancel: (handle) => {
+        if (motionFrame === handle) {
+          motionFrame = null;
+        }
+      },
+    },
+  });
+  const stepMotion = (ms: number) => {
+    motionNow += ms;
+    const frame = motionFrame;
+    motionFrame = null;
+    frame?.();
+  };
+
   return {
     effectBuses: { master, created, anon },
-    media: new MediaService(cacophony as unknown as MockCacophony, { manageFocus: false }),
+    media: new MediaService(cacophony as unknown as MockCacophony, { manageFocus: false, motion }),
+    stepMotion,
     gmcp: {
       send: vi.fn(),
     },
@@ -700,6 +726,9 @@ describe('GMCPClientMedia', () => {
     expect(sound.play).toHaveBeenCalledTimes(1);
     expect(sound.volume).toBe(0.25);
     expect(sound.stereoPan).toBe(0.5);
+    // The move glides rather than snapping; run the tween to completion.
+    expect(sound.position).toEqual([0, 0, 0]);
+    client.stepMotion(600);
     expect(sound.position).toEqual([-4, 6, 5]);
     expect(sound.seek).toHaveBeenCalledWith(2);
     expect(sound.threeDOptions).toMatchObject({

@@ -10,6 +10,7 @@ import { usePreferences } from '../stores/preferencesStore';
 import { AmbisonicRenderer } from './AmbisonicRenderer';
 import { PositionalFoaRenderer } from './PositionalFoaRenderer';
 import { distanceBetween, inverseDistanceGain, SPATIAL_DISTANCE_MODEL } from './distanceModel';
+import { VectorTweener } from './vectorTween';
 import { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
 import type { EffectSpec } from './effects/types';
@@ -146,6 +147,8 @@ export interface ExtendedSound extends Sound {
 
 interface MediaServiceOptions {
   manageFocus?: boolean;
+  /** Override the sound-position tweener (tests inject a manually-clocked one). */
+  motion?: VectorTweener;
 }
 
 export class MediaService {
@@ -154,6 +157,8 @@ export class MediaService {
   defaultUrl = '';
 
   private readonly cleanedSounds = new WeakSet<ExtendedSound>();
+  /** Glides server-sent sound positions (keyed by sound) instead of snapping. */
+  private readonly motion: VectorTweener;
   private readonly effects: MediaEffects;
   private readonly mediaSession = new MediaSessionController();
   private readonly preloadedSoundKeys = new Set<string>();
@@ -168,6 +173,7 @@ export class MediaService {
     this.cacophony = cacophony;
     this.effects = new MediaEffects(this.cacophony);
     this.manageFocus = options.manageFocus ?? true;
+    this.motion = options.motion ?? new VectorTweener();
 
     this.setGlobalVolume(usePreferences.getState().sound.volume);
     if (this.manageFocus && typeof window !== 'undefined') {
@@ -644,6 +650,7 @@ export class MediaService {
   }
 
   private releaseSound(sound: ExtendedSound, key?: string): void {
+    this.motion.cancel(sound);
     if (sound === this.currentMusic) {
       this.currentMusic = undefined;
       this.mediaSession.clear();
@@ -879,10 +886,14 @@ export class MediaService {
     }
 
     if (data.position?.length) {
-      sound.mediaPosition = [data.position[0], data.position[1], data.position[2]];
-      sound.position = sound.mediaPosition;
-      this.updateAmbisonicDistance(sound as ExtendedSound);
-      this.updatePositionalSpatial(sound as ExtendedSound);
+      const target: Position = [data.position[0], data.position[1], data.position[2]];
+      // First placement snaps; later updates glide from the current position.
+      this.motion.tween(sound, sound.mediaPosition, target, (value) => {
+        sound.mediaPosition = [value[0], value[1], value[2]];
+        sound.position = sound.mediaPosition;
+        this.updateAmbisonicDistance(sound);
+        this.updatePositionalSpatial(sound);
+      });
     }
 
     if (data.start !== undefined) {

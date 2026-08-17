@@ -7,6 +7,7 @@ import type {
   Position,
 } from "cacophony";
 
+import { smoothParamTo } from "./audioParamSmoothing";
 import { SPATIAL_DISTANCE_MODEL } from "./distanceModel";
 
 export type SpatialPositionLookup = (participantId: string) => Position | null | undefined;
@@ -67,7 +68,7 @@ export class LiveKitSpatialAudioBridge {
     panner.connect(outputGain);
     outputGain.connect(this.cacophony.globalGainNode);
 
-    this.applyPosition(panner, this.positionFor(participantId));
+    this.applyPosition(panner, this.positionFor(participantId), { snap: true });
     this.entries.set(participantId, {
       downmixNodes: nodes,
       outputGain,
@@ -180,11 +181,30 @@ export class LiveKitSpatialAudioBridge {
     return 2;
   }
 
-  private applyPosition(panner: CacophonyPannerNode, [x, y, z]: Position): void {
+  /**
+   * Aim the participant's panner. The first placement (attach) snaps so a new
+   * voice does not audibly fly in from the origin; subsequent syncs ramp with a
+   * short time constant to de-zipper the per-frame steps the position tweener
+   * delivers through the spatial store.
+   */
+  private applyPosition(
+    panner: CacophonyPannerNode,
+    [x, y, z]: Position,
+    options?: { snap?: boolean },
+  ): void {
     const time = this.cacophony.context.currentTime;
-    panner.positionX.setValueAtTime(x, time);
-    panner.positionY.setValueAtTime(y, time);
-    panner.positionZ.setValueAtTime(z, time);
+    const axes = [
+      [panner.positionX, x],
+      [panner.positionY, y],
+      [panner.positionZ, z],
+    ] as const;
+    for (const [param, value] of axes) {
+      if (options?.snap) {
+        param.setValueAtTime(value, time);
+      } else {
+        smoothParamTo(param, value, time);
+      }
+    }
   }
 
   private disconnectEntry(entry: SpatialAudioEntry): void {
