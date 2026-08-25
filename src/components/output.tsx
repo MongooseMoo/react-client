@@ -513,6 +513,7 @@ componentDidUpdate(
 
     // Freeze any loaded output that exceeds the live window
     this.freezeOverflow();
+    this.scrollToBottom();
   }
 
   componentWillUnmount() {
