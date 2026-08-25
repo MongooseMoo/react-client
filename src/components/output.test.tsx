@@ -248,3 +248,156 @@ describe("Output persistence", () => {
     expect(setItemSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("Output accessibility-tree exposure cap", () => {
+  const makeLines = (count: number): OutputLine[] =>
+    Array.from({ length: count }, (_, i) => ({
+      content: <div>{`line ${i}`}</div>,
+      id: i,
+      sourceContent: `line ${i}`,
+      sourceType: "test",
+      type: OutputType.ServerMessage,
+    }));
+
+  // Instantiate an Output with history and a real frozen container so
+  // freezeOverflow/trimFrozen operate on actual DOM.
+  const makeOutput = (lines: OutputLine[]): Output => {
+    const output = new Output({ client: {} as MudClient });
+    Object.defineProperty(output, "allLines", { value: lines, writable: true });
+    const frozenDiv = document.createElement("div");
+    Object.defineProperty(output, "frozenRef", { value: { current: frozenDiv } });
+    return output;
+  };
+
+  const frozen = (output: Output): HTMLDivElement =>
+    (output as unknown as { frozenRef: { current: HTMLDivElement } }).frozenRef.current;
+
+  const freeze = (output: Output) =>
+    (output as unknown as { freezeOverflow: () => void }).freezeOverflow();
+
+  const hiddenCount = (output: Output): number =>
+    frozen(output).querySelectorAll('[aria-hidden="true"]').length;
+
+  it("hides frozen lines beyond the exposure cap, oldest first", () => {
+    const total = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES + 50;
+    const output = makeOutput(makeLines(total));
+
+    freeze(output);
+
+    const frozenDiv = frozen(output);
+    expect(frozenDiv.children.length).toBe(total - Output.LIVE_WINDOW_SIZE);
+    expect(hiddenCount(output)).toBe(50);
+    // The oldest lines are hidden; the most recent frozen lines are exposed.
+    expect(frozenDiv.children[0].getAttribute("aria-hidden")).toBe("true");
+    expect(frozenDiv.children[49].getAttribute("aria-hidden")).toBe("true");
+    expect(frozenDiv.children[50].hasAttribute("aria-hidden")).toBe(false);
+    expect(
+      frozenDiv.children[frozenDiv.children.length - 1].hasAttribute("aria-hidden")
+    ).toBe(false);
+  });
+
+  it("exposes everything while under the cap", () => {
+    const output = makeOutput(
+      makeLines(Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES)
+    );
+
+    freeze(output);
+
+    expect(frozen(output).children.length).toBe(Output.A11Y_EXPOSED_FROZEN_LINES);
+    expect(hiddenCount(output)).toBe(0);
+  });
+
+  it("hides incrementally as more lines freeze", () => {
+    const start = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES;
+    const output = makeOutput(makeLines(start));
+    freeze(output);
+    expect(hiddenCount(output)).toBe(0);
+
+    (output as unknown as { allLines: OutputLine[] }).allLines = makeLines(start + 10);
+    freeze(output);
+
+    expect(hiddenCount(output)).toBe(10);
+  });
+
+  it("keeps the hidden count consistent across trims from the front", () => {
+    const total = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES + 30;
+    const output = makeOutput(makeLines(total));
+    freeze(output);
+    expect(hiddenCount(output)).toBe(30);
+
+    (output as unknown as { trimFrozen: (n: number) => void }).trimFrozen(30);
+
+    // The 30 hidden (oldest) lines were removed; nothing exposed got hidden.
+    expect(hiddenCount(output)).toBe(0);
+    expect(frozen(output).children.length).toBe(Output.A11Y_EXPOSED_FROZEN_LINES);
+
+    // Freezing more lines re-hides from the new front, incrementally.
+    (output as unknown as { allLines: OutputLine[] }).allLines = makeLines(total - 30 + 5);
+    freeze(output);
+    expect(hiddenCount(output)).toBe(5);
+  });
+});
+
+describe("Output history exposure toggle", () => {
+  const makeLines = (count: number): OutputLine[] =>
+    Array.from({ length: count }, (_, i) => ({
+      content: <div>{`line ${i}`}</div>,
+      id: i,
+      sourceContent: `line ${i}`,
+      sourceType: "test",
+      type: OutputType.ServerMessage,
+    }));
+
+  const makeOutput = (lines: OutputLine[]): Output => {
+    const output = new Output({ client: {} as MudClient });
+    Object.defineProperty(output, "allLines", { value: lines, writable: true });
+    const frozenDiv = document.createElement("div");
+    Object.defineProperty(output, "frozenRef", { value: { current: frozenDiv } });
+    return output;
+  };
+
+  const frozen = (output: Output): HTMLDivElement =>
+    (output as unknown as { frozenRef: { current: HTMLDivElement } }).frozenRef.current;
+
+  const freeze = (output: Output) =>
+    (output as unknown as { freezeOverflow: () => void }).freezeOverflow();
+
+  const hiddenCount = (output: Output): number =>
+    frozen(output).querySelectorAll('[aria-hidden="true"]').length;
+
+  const setRevealed = (output: Output, historyRevealed: boolean) => {
+    Object.assign(output.state, { historyRevealed });
+  };
+
+  it("exposes all frozen lines while revealed, including new arrivals", () => {
+    const total = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES + 40;
+    const output = makeOutput(makeLines(total));
+    freeze(output);
+    expect(hiddenCount(output)).toBe(40);
+
+    setRevealed(output, true);
+    freeze(output);
+    expect(hiddenCount(output)).toBe(0);
+
+    // New lines freezing while revealed stay exposed too.
+    (output as unknown as { allLines: OutputLine[] }).allLines = makeLines(total + 10);
+    freeze(output);
+    expect(hiddenCount(output)).toBe(0);
+  });
+
+  it("re-hides everything beyond the cap when revealed is switched off", () => {
+    const total = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES + 40;
+    const output = makeOutput(makeLines(total));
+    setRevealed(output, true);
+    freeze(output);
+    expect(hiddenCount(output)).toBe(0);
+
+    setRevealed(output, false);
+    freeze(output);
+
+    const frozenDiv = frozen(output);
+    expect(hiddenCount(output)).toBe(40);
+    expect(frozenDiv.children[0].getAttribute("aria-hidden")).toBe("true");
+    expect(frozenDiv.children[40].hasAttribute("aria-hidden")).toBe(false);
+  });
+});

@@ -84,6 +84,7 @@ interface State {
   newLinesCount: number; // Added to track the count of new lines
   localEchoActive: boolean; // To store the current local echo preference
   focusedLineIndex: number | null; // Index of currently focused line for keyboard navigation
+  historyRevealed: boolean; // Expose beyond-cap history to the accessibility tree
 }
 
 // Add a small threshold for scroll calculations to handle browser differences
@@ -94,6 +95,15 @@ class Output extends React.Component<Props, State> {
   private frozenRef: React.RefObject<HTMLDivElement> = React.createRef();
   static MAX_OUTPUT_LENGTH = 3000; // Maximum number of messages to keep
   static LIVE_WINDOW_SIZE = 200; // Number of lines React manages (rest are frozen HTML)
+  // Frozen lines beyond this stay visible but are removed from the
+  // accessibility tree (aria-hidden). Screen readers pay a per-announcement
+  // cost that scales with the document's accessibility-tree size: with a full
+  // 3000-line buffer exposed, NVDA took multiple seconds to speak each new
+  // message; capping exposure at ~1000 total lines (~50KB) restored instant
+  // announcements (measured live with NVDA + Chrome, 2026-08).
+  // Review commands (reviewRecentOutputLine etc.) read allLines directly and
+  // are unaffected. See investigations/output-large-burst-perf.md.
+  static A11Y_EXPOSED_FROZEN_LINES = 800;
   static LOCAL_STORAGE_KEY = "outputLog"; // Key for saving output in LocalStorage
   static SAVE_DEBOUNCE_MS = 500; // Coalesce bursts of server lines into one write
   messageKey: number = 0;
@@ -111,6 +121,8 @@ class Output extends React.Component<Props, State> {
   private allLines: OutputLine[] = [];
   // How many lines have been rendered into the frozen container
   private frozenCount: number = 0;
+  // How many frozen lines (from the front) carry aria-hidden
+  private frozenHiddenCount: number = 0;
   // Total lines ever added (monotonically increasing, survives trimming)
   private totalLinesAdded: number = 0;
   private prevTotalLinesAdded: number = 0;
@@ -126,6 +138,7 @@ class Output extends React.Component<Props, State> {
       newLinesCount: 0,
       localEchoActive: usePreferences.getState().general.localEcho,
       focusedLineIndex: null,
+      historyRevealed: false,
     };
   }
 
@@ -411,7 +424,44 @@ componentDidUpdate(
       frozenDiv.appendChild(wrapper);
       this.frozenCount++;
     }
+
+    // Hide frozen lines that crossed the exposure boundary from the
+    // accessibility tree (or expose everything while historyRevealed).
+    // Incremental: only lines whose state changes are touched.
+    const shouldBeHidden = this.state.historyRevealed
+      ? 0
+      : Math.max(0, frozenDiv.children.length - Output.A11Y_EXPOSED_FROZEN_LINES);
+    while (this.frozenHiddenCount < shouldBeHidden) {
+      frozenDiv.children[this.frozenHiddenCount].setAttribute('aria-hidden', 'true');
+      this.frozenHiddenCount++;
+    }
+    while (this.frozenHiddenCount > shouldBeHidden) {
+      this.frozenHiddenCount--;
+      frozenDiv.children[this.frozenHiddenCount].removeAttribute('aria-hidden');
+    }
   }
+
+  /** Lines currently (or potentially) excluded from the accessibility tree. */
+  private beyondCapLineCount(): number {
+    return Math.max(
+      0,
+      this.allLines.length - Output.LIVE_WINDOW_SIZE - Output.A11Y_EXPOSED_FROZEN_LINES
+    );
+  }
+
+  toggleHistoryExposure = () => {
+    const revealing = !this.state.historyRevealed;
+    const count = this.beyondCapLineCount();
+    // freezeOverflow applies the new exposure in componentDidUpdate.
+    this.setState({ historyRevealed: revealing }, () => {
+      announce(
+        revealing
+          ? `${count} earlier messages shown to screen reader`
+          : 'Earlier messages hidden from screen reader',
+        'polite'
+      );
+    });
+  };
 
   /**
    * Remove old lines from the front of the frozen container.
@@ -426,6 +476,8 @@ componentDidUpdate(
       }
     }
     this.frozenCount = Math.max(0, this.frozenCount - count);
+    // Trimmed lines come off the front, which is where the hidden ones are.
+    this.frozenHiddenCount = Math.max(0, this.frozenHiddenCount - count);
   }
 
 
@@ -693,6 +745,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     this.cancelScheduledSave();
     this.allLines = [];
     this.frozenCount = 0;
+    this.frozenHiddenCount = 0;
     this.totalLinesAdded = 0;
     this.prevTotalLinesAdded = 0;
     const frozenDiv = this.frozenRef.current;
@@ -920,6 +973,17 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         tabIndex={0}
         aria-label="Game output log - use arrow keys to navigate"
       >
+        {this.beyondCapLineCount() > 0 && (
+          <button
+            type="button"
+            className="history-exposure-toggle"
+            onClick={this.toggleHistoryExposure}
+          >
+            {this.state.historyRevealed
+              ? "Hide earlier history from screen reader"
+              : `Show ${this.beyondCapLineCount()} earlier messages to screen reader`}
+          </button>
+        )}
         <div ref={this.frozenRef} />
         {visibleLiveOutput.map((line, index) => (
           <div

@@ -228,3 +228,16 @@ a.exit {
 .output .output-line.focused-line {
   scroll-margin: 20px;
 }
+
+.history-exposure-toggle {
+  display: block;
+  font-family: inherit;
+  font-size: 0.85em;
+  color: var(--color-bg-deepest, #000);
+  background-color: #c0c0c0;
+  border: 1px solid #808080;
+  border-radius: 3px;
+  padding: var(--space-1, 2px) var(--space-2, 6px);
+  margin-bottom: var(--space-2, 6px);
+  cursor: pointer;
+}
