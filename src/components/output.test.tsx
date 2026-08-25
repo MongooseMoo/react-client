@@ -138,6 +138,48 @@ describe("Output store delivery", () => {
   });
 });
 
+describe("Output initial scroll position", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    vi.unstubAllGlobals();
+  });
+
+  it("starts at the bottom when mounting persisted output history", () => {
+    localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      data: [{
+        type: OutputType.ServerMessage,
+        sourceType: "ansi",
+        sourceContent: "previous session line",
+      }],
+    }));
+    const output = new Output({ client: {} as MudClient });
+    vi.spyOn(output, "setState").mockImplementation(() => undefined);
+    const outputElement = document.createElement("div");
+    Object.defineProperties(outputElement, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 1_000 },
+      scrollTop: { configurable: true, value: 350, writable: true },
+    });
+    Object.defineProperty(output.outputRef, "current", { value: outputElement });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+
+    output.componentDidMount();
+
+    expect(outputElement.scrollTop).toBe(outputElement.scrollHeight);
+    output.componentWillUnmount();
+  });
+});
+
 describe("Output persistence", () => {
   const makeLines = (count: number): OutputLine[] =>
     Array.from({ length: count }, (_, i) => ({
