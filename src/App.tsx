@@ -13,7 +13,7 @@ import PreferencesDialog, {
   type PreferencesDialogRef,
 } from "./components/PreferencesDialog";
 import LinkPickerDialog from "./components/LinkPickerDialog";
-import Sidebar, { type SidebarRef } from "./components/sidebar";
+import Sidebar, { clampSidebarWidth, type SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
 import WasmGuest from "./components/WasmGuest";
@@ -27,6 +27,11 @@ import {
   autoLogService,
   createAutoLogSessionDraft,
 } from "./logging/AutoLogService";
+import {
+  loadStoredValue,
+  saveStoredValue,
+  type LocalStorageSchema,
+} from "./persistence";
 import { usePreferences } from "./stores/preferencesStore";
 import { useRoomStore } from "./stores/roomStore";
 import { useConnectionStore } from "./stores/connectionStore";
@@ -35,6 +40,19 @@ import { ensurePushSubscription } from "./webpush";
 
 const WINDOW_TITLE = "Mongoose Client";
 const DOUBLE_PRESS_WINDOW_MS = 500;
+
+// User-chosen sidebar width in px; absent until the user first resizes.
+const sidebarWidthSchema: LocalStorageSchema<number> = {
+  key: "sidebarWidth",
+  version: 1,
+  migrate: (data) =>
+    typeof data === "number" && Number.isFinite(data) ? data : undefined,
+};
+
+function loadSidebarWidth(): number | null {
+  const stored = loadStoredValue<number | null>(sidebarWidthSchema, null);
+  return stored === null ? null : clampSidebarWidth(stored);
+}
 
 function setWindowSubtitle(subtitle?: string) {
   document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
@@ -92,6 +110,18 @@ function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [sidebarWidth, setSidebarWidth] = useState<number | null>(loadSidebarWidth);
+
+  // Persist the user-chosen sidebar width, debounced so drags don't
+  // write localStorage on every pointer move
+  useEffect(() => {
+    if (sidebarWidth === null) return;
+    const timer = window.setTimeout(
+      () => saveStoredValue(sidebarWidthSchema, sidebarWidth),
+      250,
+    );
+    return () => window.clearTimeout(timer);
+  }, [sidebarWidth]);
   const [hostState, setHostState] = useState<WasmHostState>({
     roomId: null,
     guestCount: 0,
@@ -435,6 +465,11 @@ function App() {
       {client && (
         <div
           className={`App ${showSidebar ? (sidebarCollapsed ? "sidebar-collapsed" : "sidebar-shown") : ""}`}
+          style={
+            sidebarWidth !== null
+              ? ({ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties)
+              : undefined
+          }
         >
           <header style={{ gridArea: "header" }}>
             <Toolbar
@@ -478,6 +513,8 @@ function App() {
               client={client}
               collapsed={sidebarCollapsed}
               onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+              width={sidebarWidth}
+              onWidthChange={setSidebarWidth}
             />
           </aside>
           <footer style={{ gridArea: "status" }}>

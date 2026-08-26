@@ -1,5 +1,6 @@
 /* Main sidebar container */
 .sidebar {
+  position: relative;
   height: 100%;
   width: var(--sidebar-width);
   display: flex;
@@ -7,6 +8,61 @@
   background: var(--color-bg-elevated);
   border-left: 1px solid var(--color-border);
   transition: width var(--duration-slow) var(--ease-default);
+}
+
+/* Instant tracking while the user drags the resize handle */
+.sidebar[data-resizing] {
+  transition: none;
+}
+
+/* Resize handle along the sidebar's left edge (ARIA window splitter) */
+.sidebar-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  margin-left: -4px; /* straddle the border so it's easier to grab */
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.sidebar-resize-handle:hover,
+.sidebar[data-resizing] .sidebar-resize-handle {
+  background: var(--color-primary);
+  opacity: 0.4;
+}
+
+.sidebar-resize-handle:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: -3px;
+}
+
+/* Mobile: sidebar is a full-width stacked row; no horizontal resizing */
+@media (max-width: 768px) {
+  .sidebar-resize-handle {
+    display: none;
+  }
+
+  .sidebar {
+    height: auto;
+    border-left: none;
+  }
+
+  /* Cap the tab panel itself so long content scrolls top-to-bottom.
+     (max-height on the auto-height aside can't shrink flex children, so
+     the scroll cap has to live on the overflow container.) Panel cap +
+     tab bar stays within the aside's 40vh/30vh max-height. */
+  .sidebar div[role="tabpanel"] {
+    max-height: 32vh;
+  }
+}
+
+@media (max-width: 768px) and (max-height: 700px) {
+  .sidebar div[role="tabpanel"] {
+    max-height: 22vh;
+  }
 }
 
 /* Collapsed sidebar styles */
@@ -77,8 +133,13 @@
   overflow: hidden;
 }
 
-/* Individual tab panel content area (inside the tabpanel) */
+/* Keep the hidden attribute working despite the display: flex above */
+.sidebar-content[hidden] {
+  display: none;
+}
+
+/* Individual tab panel content area (inside the tabpanel).
+   Padding comes from the tabpanel itself (tabs.css). */
 .sidebar-tab-content {
-  padding: var(--space-5);
   line-height: var(--line-height-base);
 }
