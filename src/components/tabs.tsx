@@ -5,6 +5,7 @@ import './tabs.css'; // Ensure CSS is imported
 export interface TabProps {
   id: string; // Unique ID for the tab and panel
   label: string;
+  icon?: React.ReactNode; // Optional icon; label collapses to icon-only when the bar is squished
   content: JSX.Element;
   condition?: boolean; // Condition is now handled in parent, but keep for potential future use
 }
@@ -87,8 +88,16 @@ const Tabs: React.FC<TabsProps> = ({ tabs, trailingElement, ariaLabel }) => {
                 setSelectedTab(index);
               }}
               tabIndex={selectedTab === index ? undefined : -1}
+              title={tab.icon ? tab.label : undefined}
             >
-              {tab.label}
+              {tab.icon && (
+                <span className="tab-icon" aria-hidden="true">
+                  {tab.icon}
+                </span>
+              )}
+              <span className={tab.icon ? "tab-label" : undefined}>
+                {tab.label}
+              </span>
             </button>
           ))}
         </div>

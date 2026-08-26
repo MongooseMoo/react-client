@@ -1,9 +1,21 @@
-import React, { Suspense, useEffect, useState } from 'react'; // Import useState, useEffect
-import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import React, { Suspense, useEffect, useRef, useState } from 'react'; // Import useState, useEffect
+import {
+  FaBoxOpen,
+  FaChevronLeft,
+  FaChevronRight,
+  FaFolderOpen,
+  FaGamepad,
+  FaHeadphones,
+  FaMapMarkerAlt,
+  FaMusic,
+  FaServer,
+  FaUsers,
+} from 'react-icons/fa';
 import FileTransferUI from './FileTransfer';
 const AudioChat = React.lazy(() => import('./audioChat'));
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
 import Tabs, { type TabProps } from './tabs';
+import './sidebar.css';
 import Userlist from './userlist';
 // import AfflictionsList from "./AfflictionsList"; // Removed
 // import DefencesList from "./DefencesList"; // Removed
@@ -24,16 +36,34 @@ export type SidebarRef = {
   switchToTab: (index: number) => void;
 };
 
+export const MIN_SIDEBAR_WIDTH = 180;
+const KEYBOARD_RESIZE_STEP = 24;
+
+function maxSidebarWidth(): number {
+  return Math.max(MIN_SIDEBAR_WIDTH, Math.round(window.innerWidth * 0.6));
+}
+
+export function clampSidebarWidth(width: number): number {
+  return Math.min(Math.max(Math.round(width), MIN_SIDEBAR_WIDTH), maxSidebarWidth());
+}
+
 interface SidebarProps {
   client: MudClient;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  /** Custom width in px (null = default CSS width). */
+  width?: number | null;
+  /** Called with the new width as the user drags or arrow-keys the resize handle. */
+  onWidthChange?: (width: number) => void;
 }
 
 // Wrap component with forwardRef
 const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
-  ({ client, collapsed, onToggleCollapse }, ref) => {
+  ({ client, collapsed, onToggleCollapse, width = null, onWidthChange }, ref) => {
     const users = useUserlistStore((state) => state.players);
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const [isResizing, setIsResizing] = useState(false);
+    const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
     const midiPreferences = usePreferences((state) => state.midi);
     const hapticsPreferences = usePreferences((state) => state.haptics);
     const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
@@ -80,35 +110,93 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       hapticsService.autoStopTimeoutSecs = hapticsPreferences.autoStopTimeout;
     }, [hapticsPreferences.intensityCap, hapticsPreferences.autoStopTimeout]);
 
+    // Resize handle behavior: pointer drag plus arrow keys (ARIA window
+    // splitter). The sidebar sits on the right, so ArrowLeft grows it.
+    const currentWidth = width ?? measuredWidth;
+
+    useEffect(() => {
+      if (collapsed) return;
+      setMeasuredWidth(containerRef.current?.offsetWidth ?? null);
+    }, [collapsed, width]);
+
+    const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!onWidthChange) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsResizing(true);
+    };
+
+    const handleResizePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!isResizing || !onWidthChange) return;
+      const right = containerRef.current?.getBoundingClientRect().right;
+      if (right === undefined) return;
+      onWidthChange(clampSidebarWidth(right - event.clientX));
+    };
+
+    const handleResizePointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      setIsResizing(false);
+    };
+
+    const handleResizeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!onWidthChange || currentWidth === null) return;
+      let next: number | null = null;
+      switch (event.key) {
+        case 'ArrowLeft':
+          next = currentWidth + KEYBOARD_RESIZE_STEP;
+          break;
+        case 'ArrowRight':
+          next = currentWidth - KEYBOARD_RESIZE_STEP;
+          break;
+        case 'Home':
+          next = MIN_SIDEBAR_WIDTH;
+          break;
+        case 'End':
+          next = maxSidebarWidth();
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+      onWidthChange(clampSidebarWidth(next));
+    };
+
     // Define all possible tabs
     const allTabs: TabProps[] = [
       {
         id: 'room-tab',
         label: 'Room',
+        icon: <FaMapMarkerAlt />,
         content: <RoomInfoDisplay client={client} />,
         condition: hasRoomData, // Condition to show tab
       },
       {
         id: 'inventory-tab',
         label: 'Inventory',
+        icon: <FaBoxOpen />,
         content: <Inventory client={client} />, // Changed to use Inventory component
         condition: hasInventoryData,
       },
       {
         id: 'users-tab', // Add unique IDs
         label: 'Users',
+        icon: <FaUsers />,
         content: <Userlist users={users} />,
         condition: true,
       },
       {
         id: 'server-tab',
         label: 'Server',
+        icon: <FaServer />,
         content: <ServerFeaturesPanel client={client} />,
         condition: true,
       },
       {
         id: 'midi-tab',
         label: 'MIDI',
+        icon: <FaMusic />,
         content: (
           <Suspense fallback={null}>
             <MidiStatus client={client} />
@@ -119,6 +207,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       {
         id: 'haptics-tab',
         label: 'Haptics',
+        icon: <FaGamepad />,
         content: <HapticsStatus client={client} />,
         condition: hapticsPreferences.enabled,
       },
@@ -144,12 +233,14 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       {
         id: 'files-tab',
         label: 'Files',
+        icon: <FaFolderOpen />,
         content: <FileTransferUI client={client} expanded={fileTransferExpanded} users={users} />,
         condition: true, // Always show Files tab
       },
       {
         id: 'audio-tab',
         label: 'Audio',
+        icon: <FaHeadphones />,
         content: (
           <Suspense fallback={null}>
             <AudioChat client={client} />
@@ -223,7 +314,28 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
     );
 
     return (
-      <div className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      <div
+        ref={containerRef}
+        className={`sidebar ${collapsed ? 'collapsed' : ''}`}
+        data-resizing={isResizing || undefined}
+      >
+        {!collapsed && onWidthChange && (
+          <div
+            className="sidebar-resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuemin={MIN_SIDEBAR_WIDTH}
+            aria-valuemax={maxSidebarWidth()}
+            aria-valuenow={currentWidth ?? undefined}
+            tabIndex={0}
+            onPointerDown={handleResizePointerDown}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={handleResizePointerEnd}
+            onPointerCancel={handleResizePointerEnd}
+            onKeyDown={handleResizeKeyDown}
+          />
+        )}
         {collapsed && collapseButton}
         <div className="sidebar-content" hidden={collapsed}>
           <Tabs tabs={visibleTabs} trailingElement={!collapsed ? collapseButton : undefined} />

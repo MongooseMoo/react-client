@@ -8,6 +8,7 @@
 
 /* Tab list container */
 div[role="tablist"] {
+    container-type: inline-size;
     display: flex;
     justify-content: flex-start;
     flex: 1;
@@ -38,6 +39,43 @@ button[role="tab"] {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+}
+
+.tab-icon {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    font-size: var(--font-size-sm);
+}
+
+.tab-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* When the tab bar is squished, drop to icon-only tabs. The label stays in
+   the accessibility tree (clip pattern) so tab names still announce. */
+@container (max-width: 519px) {
+    button[role="tab"] .tab-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    button[role="tab"] {
+        flex: 1 1 0;
+        padding: var(--space-1);
+    }
 }
 
 /* Selected tab state */
