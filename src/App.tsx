@@ -20,6 +20,9 @@ import WasmGuest from "./components/WasmGuest";
 import type { WasmHostState } from "./components/WasmHost";
 import WasmHost from "./components/WasmHost";
 import { createConfiguredClient } from "./createConfiguredClient";
+// Side-effect import: wires diagnostics capture up to the "Capture
+// diagnostics" preference as soon as the app loads.
+import "./diagnostics";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
 import { createHapticsRuntime, type HapticsRuntime } from "./haptics/runtime";
 import { useChannelHistory } from "./hooks/useChannelHistory";

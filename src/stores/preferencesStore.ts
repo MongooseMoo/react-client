@@ -64,6 +64,11 @@ export type AutologgingPreferences = {
   maxBytes: number;
 };
 
+export type DiagnosticsPreferences = {
+  enabled: boolean;
+  redactMessageText: boolean;
+};
+
 export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
@@ -74,6 +79,7 @@ export type PrefState = {
   midi: MidiPreferences;
   haptics: HapticsPreferences;
   autologging: AutologgingPreferences;
+  diagnostics: DiagnosticsPreferences;
 };
 
 type PrefActions = {
@@ -87,6 +93,7 @@ type PrefActions = {
   setMidi: (data: MidiPreferences) => void;
   setHaptics: (data: HapticsPreferences) => void;
   setAutologging: (data: AutologgingPreferences) => void;
+  setDiagnostics: (data: DiagnosticsPreferences) => void;
 };
 
 const STORAGE_KEY = "preferences";
@@ -116,6 +123,7 @@ function getInitialPreferences(): PrefState {
     midi: { enabled: false },
     haptics: { enabled: false, intensityCap: 1.0, autoStopTimeout: 5 },
     autologging: { enabled: false, maxBytes: 100 * 1024 * 1024 },
+    diagnostics: { enabled: false, redactMessageText: false },
   };
 }
 
@@ -137,6 +145,7 @@ function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
     midi: { ...initial.midi, ...stored.midi },
     haptics: { ...initial.haptics, ...cleanHaptics },
     autologging: { ...initial.autologging, ...stored.autologging },
+    diagnostics: { ...initial.diagnostics, ...stored.diagnostics },
   };
 }
 
@@ -193,6 +202,7 @@ export const usePreferences = create<PrefState & PrefActions>()(
     setMidi: (data) => set({ midi: data }),
     setHaptics: (data) => set({ haptics: data }),
     setAutologging: (data) => set({ autologging: data }),
+    setDiagnostics: (data) => set({ diagnostics: data }),
   })),
 );
 

@@ -3,6 +3,7 @@ import { announce } from "@react-aria/live-announcer";
 import type { AutoreadMode, NavigationKeyScheme } from "../stores/preferencesStore";
 import { usePreferences } from "../stores/preferencesStore";
 import { useVoices } from "../hooks/useVoices";
+import { copyDiagnosticsToClipboard } from "../diagnostics";
 import Tabs, { type TabProps } from "./tabs";
 import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
 
@@ -478,6 +479,81 @@ const AutologgingTab: React.FC = () => {
   );
 };
 
+const CopyDiagnosticsButton: React.FC<{ redactMessageText: boolean }> = ({
+  redactMessageText,
+}) => {
+  const [state, setState] = useState<"default" | "copied" | "error">("default");
+
+  const handleClick = async () => {
+    try {
+      await copyDiagnosticsToClipboard(redactMessageText);
+      setState("copied");
+      announce("Diagnostics copied to clipboard", "polite");
+    } catch (error) {
+      console.error("Failed to copy diagnostics:", error);
+      setState("error");
+      announce("Failed to copy diagnostics", "assertive");
+    } finally {
+      setTimeout(() => setState("default"), 1500);
+    }
+  };
+
+  const label = state === "copied" ? "Copied!" : state === "error" ? "Error" : "Copy diagnostics";
+
+  return (
+    <button type="button" onClick={handleClick}>
+      {label}
+    </button>
+  );
+};
+
+const DiagnosticsTab: React.FC = () => {
+  const diagnostics = usePreferences((state) => state.diagnostics);
+  const setDiagnostics = usePreferences((state) => state.setDiagnostics);
+
+  return (
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={diagnostics.enabled}
+          onChange={(e) =>
+            setDiagnostics({ ...diagnostics, enabled: e.target.checked })
+          }
+          aria-describedby="diagnostics-help"
+        />
+        Capture diagnostics
+      </label>
+      <br />
+      <br />
+      <p id="diagnostics-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
+        While enabled, the client keeps a small in-memory log of connection events,
+        console warnings/errors, and performance counters, to help diagnose problems.
+        Nothing is saved to disk; it disappears when the tab closes.
+      </p>
+      <p style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
+        <strong>Before you copy:</strong> the exported report includes your character
+        name, room names, and other session details, and — unless redacted below —
+        may include the text of recent messages. It never includes passwords, tokens,
+        or credentials. Review it before pasting into a public GitHub issue.
+      </p>
+      <label>
+        <input
+          type="checkbox"
+          checked={diagnostics.redactMessageText}
+          onChange={(e) =>
+            setDiagnostics({ ...diagnostics, redactMessageText: e.target.checked })
+          }
+        />
+        Redact message text when copying
+      </label>
+      <br />
+      <br />
+      <CopyDiagnosticsButton redactMessageText={diagnostics.redactMessageText} />
+    </div>
+  );
+};
+
 const Preferences: React.FC = () => {
   const tabs: TabProps[] = [
     { id: "preferences-general-tab", label: "General", content: <GeneralTab /> },
@@ -488,6 +564,7 @@ const Preferences: React.FC = () => {
     { id: "preferences-midi-tab", label: "MIDI", content: <MidiTab /> },
     { id: "preferences-haptics-tab", label: "Haptics", content: <HapticsTab /> },
     { id: "preferences-autologging-tab", label: "Logging", content: <AutologgingTab /> },
+    { id: "preferences-diagnostics-tab", label: "Diagnostics", content: <DiagnosticsTab /> },
   ];
 
   return <Tabs tabs={tabs} ariaLabel="Preferences sections" />;
