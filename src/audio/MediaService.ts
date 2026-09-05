@@ -21,6 +21,13 @@ type CacophonySoundKind = NonNullable<Parameters<Cacophony['createSound']>[1]>;
 const CACOPHONY_BUFFER = 'buffer' satisfies CacophonySoundKind;
 const CACOPHONY_HTML = 'html' satisfies CacophonySoundKind;
 const MAX_PRELOADED_SOUNDS = 32;
+/** Idle period after which the AudioContext is suspended. A running context holds an open OS
+ *  audio stream and a 1 ms platform timer request (a machine-wide effect on Windows), so a tab
+ *  left open overnight burns battery for nothing. Five minutes is long enough that a server-sent
+ *  sound effect essentially never lands on a cold context mid-session, while still capturing the
+ *  overnight/AFK savings. Resuming is allowed without a fresh gesture once the document has
+ *  sticky user activation, which a MUD client has by login. */
+const IDLE_SUSPEND_MS = 5 * 60 * 1000;
 
 /** Constant makeup gain restoring the clean positional FOA decode to a useful level. Tune by ear.
  *  The SN3D encode + SH-HRIR binaural decode lands well below unity, so a positioned source is
@@ -168,6 +175,14 @@ export class MediaService {
   private readonly manageFocus: boolean;
   private unsubscribePreferences: (() => void) | null = null;
   private shutdownComplete = false;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Single in-flight resume shared by concurrent {@link ensureAwake} callers. */
+  private resumePromise: Promise<void> | null = null;
+  /** True while we have suspended the context ourselves (mirrors cacophony's suspendState). */
+  private contextSuspended = false;
+  /** Wall-clock deadline for scheduled-but-not-yet-run automation (ramps, fades). */
+  private busyUntil = 0;
+  private readonly wakeHolds = new Set<string>();
 
   constructor(cacophony: Cacophony = new Cacophony(), options: MediaServiceOptions = {}) {
     this.cacophony = cacophony;
@@ -187,6 +202,10 @@ export class MediaService {
         this.updateBackgroundMuteState();
       },
     );
+
+    // The context is constructed eagerly (deliberately — see IDLE_SUSPEND_MS), so a session
+    // that never plays anything still has to fall asleep on its own.
+    this.scheduleIdleCheck();
   }
 
   get muted(): boolean {
@@ -206,6 +225,48 @@ export class MediaService {
     const prefs = usePreferences.getState();
     const shouldMuteInBackground = prefs.sound.muteInBackground && !this.isWindowFocused;
     this.cacophony.muted = this.globalMuted || shouldMuteInBackground;
+  }
+
+  /**
+   * Wake the audio context if the idle timer put it to sleep, and restart the idle countdown.
+   * Awaited at the top of every inbound audio path so nothing is ever played into a suspended
+   * context. Concurrent callers share one memoized resume promise, so a burst of GMCP messages
+   * during a wake resolves through a single `resume()` rather than racing several.
+   *
+   * Never rejects: a rejected resume (autoplay policy before the first gesture) must not abort
+   * the play, since cacophony's auto-unlock will start the queued sound at the first gesture.
+   */
+  async ensureAwake(): Promise<void> {
+    this.scheduleIdleCheck();
+    if (!this.contextSuspended && this.cacophony.locked !== true) {
+      return;
+    }
+    this.resumePromise ??= this.cacophony
+      .resume()
+      .then(() => {
+        this.contextSuspended = false;
+      })
+      .catch((error) => {
+        console.warn('Client.Media: failed to resume the audio context', error);
+      })
+      .finally(() => {
+        this.resumePromise = null;
+      });
+    await this.resumePromise;
+  }
+
+  /**
+   * Pin the context awake for an activity the sound registry cannot see (voice chat, mic
+   * capture). Held by id so overlapping owners each release their own hold.
+   */
+  acquireWakeHold(id: string): void {
+    this.wakeHolds.add(id);
+    void this.ensureAwake();
+  }
+
+  releaseWakeHold(id: string): void {
+    this.wakeHolds.delete(id);
+    this.scheduleIdleCheck();
   }
 
   setListenerPosition(position: Position | null | undefined): void {
@@ -247,7 +308,9 @@ export class MediaService {
     }
   }
 
-  setChain(data: ClientMediaChainPayload): Promise<void> {
+  async setChain(data: ClientMediaChainPayload): Promise<void> {
+    await this.ensureAwake();
+    this.markBusyFor(data.fadein);
     return this.effects.setChain(data);
   }
 
@@ -256,6 +319,10 @@ export class MediaService {
   }
 
   automate(data: ClientMediaAutomatePayload): void {
+    // Sync by contract (GMCP handler), so the wake is fire-and-forget: the ramp is scheduled on
+    // the timeline and busyUntil keeps the suspend away until it has actually run.
+    void this.ensureAwake();
+    this.markBusyFor(data.ramp);
     const chain = this.resolveAutomateTarget(data);
     if (!chain) {
       console.warn('Client.Media.Automate: target chain/sound not found; ignored');
@@ -275,6 +342,7 @@ export class MediaService {
   }
 
   async load(data: ClientMediaLoadPayload): Promise<void> {
+    await this.ensureAwake();
     const url = this.mediaUrl(data);
     const key = url;
     if (!this.sounds[key]) {
@@ -308,6 +376,9 @@ export class MediaService {
   }
 
   async play(data: ClientMediaPlayPayload): Promise<void> {
+    await this.ensureAwake();
+    this.markBusyFor(data.fadein);
+    this.markBusyFor(data.fadeout);
     const mediaUrl = this.mediaUrl(data);
     data.key = data.key || mediaUrl;
     const soundKey = data.key;
@@ -392,6 +463,10 @@ export class MediaService {
   }
 
   update(data: ClientMediaUpdatePayload): void {
+    // Sync by contract (GMCP handler); the wake runs alongside, as in automate().
+    void this.ensureAwake();
+    this.markBusyFor(data.fadein);
+    this.markBusyFor(data.fadeout);
     const targetSounds = data.key
       ? this.soundsByKey(data.key)
       : data.name
@@ -431,6 +506,7 @@ export class MediaService {
   }
 
   stop(data: ClientMediaStopPayload): void {
+    this.scheduleIdleCheck();
     if (data.name) {
       this.soundsByName(data.name).forEach((sound) => {
         this.stopSound(sound);
@@ -504,12 +580,71 @@ export class MediaService {
       return;
     }
     this.shutdownComplete = true;
+    if (this.idleTimer !== null) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    this.wakeHolds.clear();
     if (this.manageFocus && typeof window !== 'undefined') {
       window.removeEventListener('focus', this.handleWindowFocus);
       window.removeEventListener('blur', this.handleWindowBlur);
     }
     this.unsubscribePreferences?.();
     this.unsubscribePreferences = null;
+  }
+
+  /** (Re)arm the idle countdown. Any audio activity pushes the suspend further out. */
+  private scheduleIdleCheck(delay: number = IDLE_SUSPEND_MS): void {
+    if (this.shutdownComplete) {
+      return;
+    }
+    if (this.idleTimer !== null) {
+      clearTimeout(this.idleTimer);
+    }
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      void this.suspendIfIdle();
+    }, delay);
+  }
+
+  private async suspendIfIdle(): Promise<void> {
+    // AudioContext.currentTime freezes while suspended, so anything already scheduled on the
+    // timeline would never run. Wait out the longest pending ramp/fade before re-checking.
+    const busyRemaining = this.busyUntil - Date.now();
+    if (busyRemaining > 0) {
+      this.scheduleIdleCheck(busyRemaining);
+      return;
+    }
+    if (this.isAudioInUse()) {
+      this.scheduleIdleCheck();
+      return;
+    }
+    if (this.contextSuspended) {
+      return;
+    }
+    this.contextSuspended = true;
+    try {
+      await this.cacophony.pause();
+    } catch (error) {
+      console.warn('Client.Media: failed to suspend the idle audio context', error);
+      this.contextSuspended = false;
+      this.scheduleIdleCheck();
+    }
+  }
+
+  private isAudioInUse(): boolean {
+    if (this.wakeHolds.size > 0 || this.currentMusic) {
+      return true;
+    }
+    return this.allSounds.some((sound) => sound.isPlaying);
+  }
+
+  /** Extend the "scheduled automation pending" deadline. Ramp/fade durations are milliseconds. */
+  private markBusyFor(durationMs?: number): void {
+    if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs <= 0) {
+      return;
+    }
+    this.busyUntil = Math.max(this.busyUntil, Date.now() + durationMs);
   }
 
   private readonly handleWindowFocus = (): void => {
@@ -969,6 +1104,9 @@ export class MediaService {
     if (!sound) {
       return;
     }
+    // The OS transport control expects an immediate response, so the context wake runs alongside
+    // the resume rather than gating it; the element keeps playing once the context is back.
+    void this.ensureAwake();
     sound.resume();
     this.mediaSession.setPlaybackState('playing');
     this.updateMusicPosition();
