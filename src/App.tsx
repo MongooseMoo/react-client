@@ -20,6 +20,7 @@ import WasmGuest from "./components/WasmGuest";
 import type { WasmHostState } from "./components/WasmHost";
 import WasmHost from "./components/WasmHost";
 import { createConfiguredClient } from "./createConfiguredClient";
+import { ensurePerfWatchdog } from "./diagnostics/perfWatchdog";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
 import { createHapticsRuntime, type HapticsRuntime } from "./haptics/runtime";
 import { useChannelHistory } from "./hooks/useChannelHistory";
@@ -245,6 +246,10 @@ function App() {
     },
     [isMobile],
   );
+
+  // Watch for sustained main-thread work while idle, for the life of the app.
+  // Independent of the connection, so it keeps measuring across reconnects.
+  useEffect(() => ensurePerfWatchdog(), []);
 
   // Default telnet mode: create client and connect via WebSocket
   useEffect(() => {

@@ -21,6 +21,20 @@ export class EditorManager {
     this.setupChannelListeners();
   }
 
+  /**
+   * Editor windows that are still open. Read by the diagnostics and
+   * performance tooling when attributing main-thread work.
+   */
+  get openEditorCount(): number {
+    let count = 0;
+    for (const session of this.editors.values()) {
+      if (session.state !== EditorState.Closed && session.window && !session.window.closed) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   openEditorWindow(editorSession: EditorSession) {
     console.log('Opening editor window for session:', editorSession);
     const id = editorSession.reference;
