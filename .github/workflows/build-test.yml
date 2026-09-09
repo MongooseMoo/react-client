@@ -44,3 +44,7 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm test
+      - name: Install browser for production audio cache check
+        run: npx playwright install --with-deps chromium
+      - name: Verify lazy audio caching in the production build
+        run: npm run test:audio-cache
