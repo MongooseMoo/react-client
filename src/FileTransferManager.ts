@@ -63,6 +63,7 @@ export default class FileTransferManager extends EventEmitter {
     new Map();
   private store: FileTransferStore;
   private storeInitialized: boolean = false;
+  private cleanupComplete = false;
   private readonly handleDataChannelMessage = (data: ArrayBuffer): void => {
     void this.handleIncomingChunk(data);
   };
@@ -142,6 +143,10 @@ export default class FileTransferManager extends EventEmitter {
   private async initializeStore(): Promise<void> {
     try {
       await this.store.initialize();
+      if (this.cleanupComplete) {
+        this.store.close();
+        return;
+      }
       this.storeInitialized = true;
       console.log('[FileTransferManager] Store initialized successfully');
     } catch (error) {
@@ -729,6 +734,7 @@ export default class FileTransferManager extends EventEmitter {
   }
 
   cleanup(): void {
+    this.cleanupComplete = true;
     this.webRTCService.off('dataChannelMessage', this.handleDataChannelMessage);
     this.webRTCService.off('iceCandidate', this.handleLocalIceCandidate);
     this.webRTCService.off('webRTCReconnecting', this.handleWebRTCReconnecting);

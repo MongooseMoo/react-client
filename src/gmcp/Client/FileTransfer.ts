@@ -101,4 +101,23 @@ const GMCPClientFileTransferBase = GMCPPackage.with({
   ] as const,
 });
 
-export class GMCPClientFileTransfer extends GMCPClientFileTransferBase {}
+export class GMCPClientFileTransfer extends GMCPClientFileTransferBase {
+  private generation = 0;
+
+  override receiveRegisteredMessage(wireName: string, payload: unknown): boolean {
+    if (!['Offer', 'Accept', 'Reject', 'Cancel', 'Candidate'].includes(wireName)) return false;
+    const generation = this.generation;
+    // Install the transfer owner's listeners before delivering the first message.
+    // Promise callbacks retain wire order while the feature code is loading.
+    void this.client.getFileTransferManager().then(() => {
+      if (generation === this.generation) super.receiveRegisteredMessage(wireName, payload);
+    }).catch((error) => {
+      if (generation === this.generation) console.error('Failed to initialize file transfer:', error);
+    });
+    return true;
+  }
+
+  override reset(): void {
+    this.generation++;
+  }
+}

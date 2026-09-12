@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, fireEvent, screen, createEvent } from '@testing-library/react';
 import CommandInput from './input';
-import { CommandHistory } from '../CommandHistory';
+import { useInputStore } from '../stores/inputStore';
 
 // Shared spy so tests can assert which commands were replayed into history
-const { addCommandMock, navigateDownMock, navigateUpMock } = vi.hoisted(() => ({
+const { addCommandMock, navigateDownMock, navigateUpMock, getHistoryMock } = vi.hoisted(() => ({
   addCommandMock: vi.fn(),
   navigateDownMock: vi.fn(),
   navigateUpMock: vi.fn(),
+  getHistoryMock: vi.fn((): string[] => []),
 }));
 
 // Mock CommandHistory
@@ -20,7 +21,7 @@ vi.mock('../CommandHistory', () => ({
     addCommand = addCommandMock;
     navigateUp = navigateUpMock;
     navigateDown = navigateDownMock;
-    getHistory = vi.fn(() => []);
+    getHistory = getHistoryMock;
   }
 }));
 
@@ -48,6 +49,10 @@ describe('CommandInput Component', () => {
   
   beforeEach(() => {
     vi.clearAllMocks();
+    useInputStore.getState().clear();
+    navigateUpMock.mockReturnValue('');
+    navigateDownMock.mockReturnValue('');
+    getHistoryMock.mockReturnValue([]);
     localStorageMock.clear();
   });
   
@@ -62,7 +67,7 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'hello world' } });
+    fireEvent.input(textarea, { target: { value: 'hello world' } });
     
     expect((textarea as HTMLTextAreaElement).value).toBe('hello world');
   });
@@ -71,7 +76,7 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'look' } });
+    fireEvent.input(textarea, { target: { value: 'look' } });
     
     const sendButton = screen.getByRole('button', { name: /send/i });
     fireEvent.click(sendButton);
@@ -84,7 +89,7 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'examine sword' } });
+    fireEvent.input(textarea, { target: { value: 'examine sword' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
     expect(onSendMock).toHaveBeenCalledWith('examine sword');
@@ -95,7 +100,7 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
 
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: '   ' } }); // Just spaces
+    fireEvent.input(textarea, { target: { value: '   ' } }); // Just spaces
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
     expect(onSendMock).toHaveBeenCalledWith('   ');
@@ -107,7 +112,7 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'look' } });
+    fireEvent.input(textarea, { target: { value: 'look' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
     expect(onSendMock).toHaveBeenCalledWith('look');
@@ -122,7 +127,7 @@ describe('CommandInput Component', () => {
     const textarea = screen.getByRole('textbox');
     
     // First send a command
-    fireEvent.change(textarea, { target: { value: 'command1' } });
+    fireEvent.input(textarea, { target: { value: 'command1' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
     // Verify no errors when navigating with arrow keys
@@ -213,7 +218,7 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'save this command' } });
+    fireEvent.input(textarea, { target: { value: 'save this command' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
     expect(localStorageMock.setItem).toHaveBeenCalledWith('command_history', expect.any(String));
@@ -222,20 +227,18 @@ describe('CommandInput Component', () => {
   it('limits command history size when saving', () => {
     // Mock getHistory to return a large array
     const largeMockHistory = Array(1010).fill(0).map((_, i) => `command${i}`);
-    const mockCommandHistory = new CommandHistory();
-    vi.spyOn(mockCommandHistory, 'getHistory').mockReturnValue(largeMockHistory);
-    vi.spyOn(React, 'useRef').mockReturnValue({ current: mockCommandHistory });
+    getHistoryMock.mockReturnValue(largeMockHistory);
     
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'one more command' } });
+    fireEvent.input(textarea, { target: { value: 'one more command' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
     // Should have saved only the last 1000 commands
     const savedValue = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
     expect(savedValue.version).toBe(1);
-    expect(savedValue.data.length).toBeLessThanOrEqual(1000);
+    expect(savedValue.data).toEqual(largeMockHistory.slice(-1000));
   });
 
 });

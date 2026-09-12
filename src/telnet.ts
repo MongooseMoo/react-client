@@ -1,5 +1,4 @@
 import { EventEmitter } from "eventemitter3";
-import { Buffer } from "buffer";
 
 export enum TelnetOption {
   BINARY = 0, // Binary Transmission
@@ -78,9 +77,9 @@ export enum TelnetCommand {
 }
 
 export interface Stream {
-  on(event: "data", cb: (data: Buffer) => void): void;
+  on(event: "data", cb: (data: Uint8Array) => void): void;
   on(event: "close", cb: () => void): void;
-  write(data: Buffer): void;
+  write(data: Uint8Array): void;
 }
 
 export class WebSocketStream implements Stream {
@@ -88,14 +87,15 @@ export class WebSocketStream implements Stream {
 
   constructor(ws: WebSocket) {
     this.ws = ws;
+    ws.binaryType = "arraybuffer";
   }
 
-  on(event: "data", cb: (data: Buffer) => void): void;
+  on(event: "data", cb: (data: Uint8Array) => void): void;
   on(event: "close", cb: () => void): void;
   on(event: string, cb: (...args: any[]) => void): void {
     if (event === "data") {
       this.ws.onmessage = (e) => {
-        cb(e.data);
+        cb(new Uint8Array(e.data));
       };
       return;
     }
@@ -104,8 +104,8 @@ export class WebSocketStream implements Stream {
     this[funcname] = cb;
   }
 
-  write(data: Buffer): void {
-    this.ws.send(data);
+  write(data: Uint8Array): void {
+    this.ws.send(new Uint8Array(data));
   }
 }
 
@@ -118,23 +118,21 @@ enum TelnetState {
 
 export class TelnetParser extends EventEmitter {
   private state: TelnetState;
-  private buffer: Buffer;
-  private subBuffer: Buffer;
-  private iacSEBuffer = Buffer.from([TelnetCommand.IAC, TelnetCommand.SE]);
+  private buffer: Uint8Array;
+  private iacSEBuffer = new Uint8Array([TelnetCommand.IAC, TelnetCommand.SE]);
   private negotiationByte = 0;
   stream: Stream | undefined;
 
   constructor(stream?: Stream) {
     super();
     this.state = TelnetState.DATA;
-    this.buffer = Buffer.alloc(0);
-    this.subBuffer = Buffer.alloc(0);
-    stream && stream.on("data", (data: Buffer) => this.parse(data));
+    this.buffer = new Uint8Array(0);
+    stream && stream.on("data", (data: Uint8Array) => this.parse(data));
     this.stream = stream;
   }
 
-  public parse(data: Buffer) {
-    this.buffer = Buffer.concat([this.buffer, Buffer.from(data)]);
+  public parse(data: Uint8Array) {
+    this.buffer = concatBytes(this.buffer, data);
 
     while (this.buffer.length > 0) {
       let done: boolean | undefined;
@@ -168,12 +166,12 @@ export class TelnetParser extends EventEmitter {
     const index = this.buffer.indexOf(TelnetCommand.IAC);
     if (index === -1) {
       this.emit("data", this.buffer);
-      this.buffer = Buffer.alloc(0);
+      this.buffer = new Uint8Array(0);
       return;
     }
 
-    this.emit("data", this.buffer.slice(0, index));
-    this.buffer = this.buffer.slice(index);
+    this.emit("data", this.buffer.subarray(0, index));
+    this.buffer = this.buffer.subarray(index);
     this.state = TelnetState.COMMAND;
   }
 
@@ -182,7 +180,7 @@ export class TelnetParser extends EventEmitter {
       return true;
     }
     const command = this.buffer[1];
-    this.buffer = this.buffer.slice(2);
+    this.buffer = this.buffer.subarray(2);
 
     switch (command) {
       case TelnetCommand.NOP:
@@ -192,7 +190,6 @@ export class TelnetParser extends EventEmitter {
         this.state = TelnetState.DATA;
         break;
       case TelnetCommand.SB:
-        this.subBuffer = Buffer.alloc(0);
         this.state = TelnetState.SUBNEGOTIATION;
         break;
       case TelnetCommand.DO:
@@ -216,7 +213,7 @@ export class TelnetParser extends EventEmitter {
 
     const command = this.negotiationByte;
     const option = this.buffer[0];
-    this.buffer = this.buffer.slice(1);
+    this.buffer = this.buffer.subarray(1);
 
     this.emit("negotiation", command, option);
     this.state = TelnetState.DATA;
@@ -224,52 +221,68 @@ export class TelnetParser extends EventEmitter {
   }
 
   private handleSubnegotiation(): boolean {
-    let index = this.buffer.indexOf(this.iacSEBuffer);
+    let index = -1;
+    for (let i = 0; i + 1 < this.buffer.length; i++) {
+      if (this.buffer[i] === TelnetCommand.IAC && this.buffer[i + 1] === TelnetCommand.SE) {
+        index = i;
+        break;
+      }
+    }
     if (index === -1) {
       return true;
     }
 
     this.state = TelnetState.DATA;
-    let sb = this.buffer.slice(0, index);
+    let sb = this.buffer.subarray(0, index);
     if (sb[0] === TelnetOption.GMCP) {
-      this.handleGmcp(sb.slice(1));
+      this.handleGmcp(sb.subarray(1));
     } else {
       this.emit("subnegotiation", sb);
     }
-    this.buffer = this.buffer.slice(index + 2);
+    this.buffer = this.buffer.subarray(index + 2);
     return false;
   }
 
-  private handleGmcp(data: Buffer) {
-    const gmcpString = data.toString();
+  private handleGmcp(data: Uint8Array) {
+    const gmcpString = new TextDecoder("utf-8", { ignoreBOM: true }).decode(data);
     const [gmcpPackage, dataString] = gmcpString.split(/ +(.+?)$/, 2);
     this.emit("gmcp", gmcpPackage, dataString);
   }
 
   sendNegotiation(command: TelnetCommand, option: TelnetOption) {
-    this.stream!.write(Buffer.from([TelnetCommand.IAC, command, option]));
+    this.stream!.write(new Uint8Array([TelnetCommand.IAC, command, option]));
   }
 
   sendGmcp(gmcpPackage: string, data: string) {
     const gmcpString = gmcpPackage + " " + data;
-    const gmcpBuffer = Buffer.from(gmcpString);
-    const buffer = Buffer.concat([
-      Buffer.from([TelnetCommand.IAC, TelnetCommand.SB]),
-      Buffer.from([TelnetOption.GMCP]),
+    const gmcpBuffer = new TextEncoder().encode(gmcpString);
+    const buffer = concatBytes(
+      new Uint8Array([TelnetCommand.IAC, TelnetCommand.SB]),
+      new Uint8Array([TelnetOption.GMCP]),
       gmcpBuffer,
       this.iacSEBuffer,
-    ]);
+    );
     this.stream!.write(buffer);
   }
 
   sendTerminalType(terminalType: string) {
-    const gmcpBuffer = Buffer.from(terminalType);
-    const buffer = Buffer.concat([
-      Buffer.from([TelnetCommand.IAC, TelnetCommand.SB]),
-      Buffer.from([TelnetOption.TERMINAL_TYPE, TelnetOption.BINARY]),
+    const gmcpBuffer = new TextEncoder().encode(terminalType);
+    const buffer = concatBytes(
+      new Uint8Array([TelnetCommand.IAC, TelnetCommand.SB]),
+      new Uint8Array([TelnetOption.TERMINAL_TYPE, TelnetOption.BINARY]),
       gmcpBuffer,
       this.iacSEBuffer,
-    ]);
+    );
     this.stream!.write(buffer);
   }
+}
+
+function concatBytes(...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
+  const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
 }

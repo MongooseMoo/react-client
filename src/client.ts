@@ -6,7 +6,6 @@ import {
   WebSocketStream,
 } from "./telnet";
 
-import { Buffer } from "buffer";
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
 import { type GMCPClientFileTransfer, GmcpSession } from "./gmcp";
@@ -18,8 +17,7 @@ import {
 
 import { MediaService } from "./audio/MediaService";
 import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
-import { WebRTCService } from "./WebRTCService";
-import FileTransferManager from "./FileTransferManager.js";
+import type FileTransferManager from "./FileTransferManager";
 import { useInputStore } from "./stores/inputStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useOutputStore } from "./stores/outputStore";
@@ -58,8 +56,9 @@ class MudClient {
   public gmcp_fileTransfer!: GMCPClientFileTransfer;
   public media: MediaService;
   public editors?: EditorManager;
-  public webRTCService: WebRTCService;
-  public fileTransferManager!: FileTransferManager;
+  private fileTransferManager?: FileTransferManager;
+  private fileTransferLoading?: Promise<FileTransferManager>;
+  private fileTransferGeneration = 0;
   private _autosay: boolean = false;
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
@@ -83,17 +82,40 @@ class MudClient {
     });
     this.gmcp = new GmcpSession(this);
     this.media = new MediaService();
-    this.webRTCService = new WebRTCService();
     useInputStore.getState().setAutosay(this._autosay);
   }
 
   configureFileTransfer(fileTransfer: GMCPClientFileTransfer): void {
     this.gmcp_fileTransfer = fileTransfer;
-    this.fileTransferManager = new FileTransferManager(
-      this.webRTCService,
-      this.gmcp_fileTransfer,
-    );
-    this.registerDisconnectReset(() => this.fileTransferManager.cleanup());
+    const resetFileTransfer = () => {
+      this.fileTransferGeneration++;
+      this.fileTransferManager?.cleanup();
+      this.fileTransferManager = undefined;
+      this.fileTransferLoading = undefined;
+    };
+    this.registerDisconnectReset(resetFileTransfer);
+    this.registerCleanup(resetFileTransfer);
+  }
+
+  getFileTransferManager(): Promise<FileTransferManager> {
+    if (this.shutdownComplete) return Promise.reject(new Error('Client has shut down'));
+    if (this.fileTransferManager) return Promise.resolve(this.fileTransferManager);
+    if (this.fileTransferLoading) return this.fileTransferLoading;
+    const generation = this.fileTransferGeneration;
+    const loading = Promise.all([import('./FileTransferManager'), import('./WebRTCService')])
+      .then(([{ default: FileTransferManager }, { WebRTCService }]) => {
+        if (this.shutdownComplete || generation !== this.fileTransferGeneration) {
+          throw new Error('File transfer initialization cancelled');
+        }
+        const manager = new FileTransferManager(new WebRTCService(), this.gmcp_fileTransfer);
+        this.fileTransferManager = manager;
+        return manager;
+      }).catch((error) => {
+        if (this.fileTransferLoading === loading) this.fileTransferLoading = undefined;
+        throw error;
+      });
+    this.fileTransferLoading = loading;
+    return loading;
   }
 
   registerMcpPackage(p: new () => MCPPackage): MCPPackage {
@@ -128,7 +150,7 @@ class MudClient {
       useConnectionStore.getState().setConnected(true);
     };
 
-    this.telnet.on("data", (data: ArrayBuffer) => {
+    this.telnet.on("data", (data: Uint8Array) => {
       this.handleData(data);
     });
 
@@ -201,7 +223,7 @@ class MudClient {
     this.telnet = new TelnetParser(stream);
     this.gmcp.attachTransport(this.telnet);
 
-    this.telnet.on("data", (data: ArrayBuffer) => {
+    this.telnet.on("data", (data: Uint8Array) => {
       this.handleData(data);
     });
 
@@ -262,7 +284,7 @@ class MudClient {
   public send(data: string) {
     if (this._connected && this.localMode && this.localStream) {
       // In local mode, write through the stream (WorkerStream -> Worker)
-      this.localStream.write(Buffer.from(data));
+      this.localStream.write(new TextEncoder().encode(data));
       return;
     }
     if (
@@ -349,7 +371,7 @@ class MudClient {
 An MCP message consists of three parts: the name of the message, the authentication key, and a set of keywords and their associated values. The message name indicates what action is to be performed; if the given message name is unknown, the message should be ignored. The authentication key is generated at the beginning of the session; if it is incorrect, the message should be ignored. The keyword-value pairs specify the arguments to the message. These arguments may occur in any order, and the ordering of the arguments does not affect the semantics of the message. There is no limit on the number of keyword-value pairs which may appear in a message, or on the lengths of message names, keywords, or values.
 */
 
-  private handleData(data: ArrayBuffer) {
+  private handleData(data: Uint8Array) {
     this.telnetBuffer += this.decoder.decode(data, { stream: true });
     const lines = this.telnetBuffer.split("\n");
     this.telnetBuffer = lines.pop() ?? "";

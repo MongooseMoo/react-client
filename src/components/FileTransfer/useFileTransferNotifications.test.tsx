@@ -28,20 +28,20 @@ describe('useFileTransferNotifications', () => {
     const sendNotification = vi.fn();
     const fileTransferManager = {
       on: vi.fn((event: string, handler: (offer: FileTransferOffer) => void) => {
-        if (event === 'fileTransferOffer') {
+        if (event === 'offer') {
           offerHandler = handler;
         }
       }),
       off: vi.fn(),
     };
     const client = {
-      fileTransferManager,
+      gmcp_fileTransfer: fileTransferManager,
       sendNotification,
     } as unknown as MudClient;
 
     const view = render(<TestHook client={client} />);
 
-    expect(fileTransferManager.on).toHaveBeenCalledWith('fileTransferOffer', expect.any(Function));
+    expect(fileTransferManager.on).toHaveBeenCalledWith('offer', expect.any(Function));
 
     offerHandler?.({
       sender: 'Riley',
@@ -56,6 +56,6 @@ describe('useFileTransferNotifications', () => {
 
     view.unmount();
 
-    expect(fileTransferManager.off).toHaveBeenCalledWith('fileTransferOffer', offerHandler);
+    expect(fileTransferManager.off).toHaveBeenCalledWith('offer', offerHandler);
   });
 });

@@ -11,8 +11,8 @@ import {
   FaServer,
   FaUsers,
 } from 'react-icons/fa';
-import FileTransferUI from './FileTransfer';
-const AudioChat = React.lazy(() => import('./audioChat'));
+const FileTransferUI = React.lazy(() => import('./FileTransfer'));
+import AudioChatBoundary from './AudioChatBoundary';
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
 import Tabs, { type TabProps } from './tabs';
 import './sidebar.css';
@@ -23,7 +23,7 @@ import Inventory from './inventory'; // Changed from InventoryList to Inventory
 // import SkillsDisplay from "./SkillsDisplay"; // Removed
 import type MudClient from '../client';
 import RoomInfoDisplay from './RoomInfoDisplay'; // Import new component
-import HapticsStatus from './HapticsStatus'; // Import Haptics component
+const HapticsStatus = React.lazy(() => import('./HapticsStatus'));
 import { usePreferences } from '../stores/preferencesStore';
 import { useRoomStore } from '../stores/roomStore';
 import { useItemsStore } from '../stores/itemsStore';
@@ -208,7 +208,8 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         id: 'haptics-tab',
         label: 'Haptics',
         icon: <FaGamepad />,
-        content: <HapticsStatus client={client} />,
+        content: <Suspense fallback={<p role="status">Loading haptics…</p>}><HapticsStatus client={client} /></Suspense>,
+        mountOnSelect: true,
         condition: hapticsPreferences.enabled,
       },
 
@@ -234,18 +235,15 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         id: 'files-tab',
         label: 'Files',
         icon: <FaFolderOpen />,
-        content: <FileTransferUI client={client} expanded={fileTransferExpanded} users={users} />,
+        content: <Suspense fallback={<p role="status">Loading file transfers…</p>}><FileTransferUI client={client} expanded={fileTransferExpanded} users={users} /></Suspense>,
+        mountOnSelect: true,
         condition: true, // Always show Files tab
       },
       {
         id: 'audio-tab',
         label: 'Audio',
         icon: <FaHeadphones />,
-        content: (
-          <Suspense fallback={null}>
-            <AudioChat client={client} />
-          </Suspense>
-        ),
+        content: <AudioChatBoundary client={client} />,
         condition: true, // Always show Audio tab (or add condition if needed)
       },
     ];
@@ -288,10 +286,10 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
     // Example effect to toggle file transfer based on activity
     useEffect(() => {
       const handleActivity = () => setFileTransferExpanded(true);
-      client.fileTransferManager.on('fileTransferOffer', handleActivity);
+      client.gmcp_fileTransfer.on('offer', handleActivity);
       // Add listeners for other relevant events like progress, complete, error
       return () => {
-        client.fileTransferManager.off('fileTransferOffer', handleActivity);
+        client.gmcp_fileTransfer.off('offer', handleActivity);
         // Remove other listeners
       };
     }, [client]);

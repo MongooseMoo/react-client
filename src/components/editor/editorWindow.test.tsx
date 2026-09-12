@@ -1,10 +1,14 @@
 import React from 'react';
-import { MemoryRouter } from 'react-router-dom';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MOO_LANGUAGE_ID } from '../../editor/moocode/language';
 import { MOO_EDITOR_THEME_NAME } from '../../editor/moocode/theme';
 import EditorWindow from './editorWindow';
+
+function TestLocation({ initialEntries, children }: { initialEntries: string[]; children: React.ReactNode }) {
+  window.history.replaceState(null, '', initialEntries[0]);
+  return <>{children}</>;
+}
 
 const editorMock = vi.hoisted(() => ({
   props: undefined as Record<string, unknown> | undefined,
@@ -67,7 +71,7 @@ const treeSitterParseMock = vi.hoisted(() =>
 );
 const announceMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@monaco-editor/react', () => ({
+vi.mock('../../editor/MonacoEditor', () => ({
   default: (props: Record<string, unknown>) => {
     editorMock.props = props;
     const beforeMount = props.beforeMount as ((monaco: unknown) => void) | undefined;
@@ -79,6 +83,7 @@ vi.mock('@monaco-editor/react', () => ({
           focus: editorMock.focus,
           executeEdits: editorMock.executeEdits,
           getModel: () => editorMock.model,
+          getValue: () => editorMock.props?.defaultValue ?? '',
           pushUndoStop: editorMock.pushUndoStop,
           revealPositionInCenter: editorMock.revealPositionInCenter,
           setPosition: editorMock.setPosition,
@@ -200,9 +205,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([parserMarker]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -247,9 +252,9 @@ describe('EditorWindow language selection', () => {
 
   it('applies the dark MOO Monaco theme to the editor', async () => {
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -272,9 +277,9 @@ describe('EditorWindow language selection', () => {
 
   it('uses plaintext for non-MOO simpleedit sessions', async () => {
     render(
-      <MemoryRouter initialEntries={['/editor?reference=note']}>
+      <TestLocation initialEntries={['/editor?reference=note']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -308,9 +313,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -335,9 +340,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -375,9 +380,9 @@ describe('EditorWindow language selection', () => {
     // mirroring the editor text into the hidden textarea and replaces our
     // ariaLabel with an error string. The off-state must resolve to 'auto'.
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -407,9 +412,9 @@ describe('EditorWindow language selection', () => {
     // navigable. The mock has accessibilityMode: false, so this passing also
     // proves the option is ungated.
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -434,9 +439,9 @@ describe('EditorWindow language selection', () => {
 
   it('enables the richer Monaco language-service UI for MOO sessions', async () => {
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -481,9 +486,9 @@ describe('EditorWindow language selection', () => {
 
   it('keeps non-MOO editor sessions on the lightweight Monaco option set', async () => {
     render(
-      <MemoryRouter initialEntries={['/editor?reference=note']}>
+      <TestLocation initialEntries={['/editor?reference=note']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -517,9 +522,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -556,9 +561,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -616,9 +621,9 @@ describe('EditorWindow language selection', () => {
     );
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -658,9 +663,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -691,9 +696,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -730,9 +735,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -760,9 +765,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValue([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -813,9 +818,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValue([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -865,9 +870,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -894,9 +899,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -940,9 +945,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -965,8 +970,9 @@ describe('EditorWindow language selection', () => {
     );
 
     await waitFor(() =>
-      expect(editorMock.props?.value).toBe(
+      expect(treeSitterDiagnosticsMock).toHaveBeenCalledWith(
         ['while (1)', '  notify(player, "tick");', 'endwhile'].join('\n'),
+        expect.any(Number),
       ),
     );
     expect(editorMock.executeEdits).toHaveBeenCalledWith('moo-problems-quick-fix', [
@@ -1000,9 +1006,9 @@ describe('EditorWindow language selection', () => {
     treeSitterDiagnosticsMock.mockResolvedValueOnce([]);
 
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -1027,8 +1033,9 @@ describe('EditorWindow language selection', () => {
     );
 
     await waitFor(() =>
-      expect(editorMock.props?.value).toBe(
+      expect(treeSitterDiagnosticsMock).toHaveBeenCalledWith(
         ['used = 1;', '_unused = 2;', '_stale = 3;', 'notify(player, used);'].join('\n'),
+        expect.any(Number),
       ),
     );
     expect(screen.getByRole('status').textContent).toContain('Changed');
@@ -1036,9 +1043,9 @@ describe('EditorWindow language selection', () => {
 
   it('focuses the code editor exactly once when a document loads, without a timer', async () => {
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -1070,9 +1077,9 @@ describe('EditorWindow language selection', () => {
     // must be ignored — otherwise a not-yet-loaded window would swallow it and
     // could later save over that verb's code.
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -1092,16 +1099,16 @@ describe('EditorWindow language selection', () => {
 
     // The mismatched load is dropped: nothing loads, no content, no focus move.
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.postMessage).toHaveBeenCalled());
-    expect(editorMock.props?.value).toBe('');
+    expect(screen.queryByTestId('monaco-editor')).not.toBeInTheDocument();
     expect(editorMock.focus).not.toHaveBeenCalled();
     expect(document.title).toBe('Mongoose Editor');
   });
 
   it('accepts a load addressed to this window id (existing behavior preserved)', async () => {
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
@@ -1119,15 +1126,15 @@ describe('EditorWindow language selection', () => {
       });
     });
 
-    await waitFor(() => expect(editorMock.props?.value).toBe('notify(player, "ok");'));
+    await waitFor(() => expect(editorMock.props?.defaultValue).toBe('notify(player, "ok");'));
     expect(editorMock.focus).toHaveBeenCalledTimes(1);
   });
 
   it('returns focus to the editor when the user saves', async () => {
     render(
-      <MemoryRouter initialEntries={['/editor?reference=%231:test']}>
+      <TestLocation initialEntries={['/editor?reference=%231:test']}>
         <EditorWindow />
-      </MemoryRouter>,
+      </TestLocation>,
     );
 
     await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));

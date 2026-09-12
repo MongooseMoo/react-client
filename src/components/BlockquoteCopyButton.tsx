@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import TurndownService from 'turndown';
 
 interface BlockquoteCopyButtonProps {
   blockquoteElement: HTMLElement;
@@ -12,9 +11,6 @@ const BlockquoteCopyButton: React.FC<BlockquoteCopyButtonProps> = ({
 }) => {
   const [buttonState, setButtonState] = useState<'default' | 'copied' | 'error'>('default');
   
-  // Create TurndownService instance
-  const turndownService = new TurndownService({ headingStyle: 'atx', emDelimiter: '*' });
-
   const handleCopyClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -25,22 +21,26 @@ const BlockquoteCopyButton: React.FC<BlockquoteCopyButtonProps> = ({
       
       // Remove any existing copy buttons from the clone
       const buttonsInClone = clonedBlockquote.querySelectorAll('.blockquote-copy-button');
-      buttonsInClone.forEach(button => button.remove());
-
-      let textToCopy: string;
+      buttonsInClone.forEach(button => { button.remove(); });
 
       // Check if the content type is markdown
       if (contentType === 'text/markdown') {
-        // Get the inner HTML of the clone (without the button)
         const htmlContent = clonedBlockquote.innerHTML;
-        // Convert HTML to Markdown using Turndown
-        textToCopy = turndownService.turndown(htmlContent);
+        const markdown = import('turndown').then(({ default: TurndownService }) =>
+          new TurndownService({ headingStyle: 'atx', emDelimiter: '*' }).turndown(htmlContent).trim(),
+        );
+        if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
+          // Start the clipboard write during the click's user activation, even
+          // when downloading the converter takes longer than that activation.
+          await navigator.clipboard.write([new ClipboardItem({
+            'text/plain': markdown.then((text) => new Blob([text], { type: 'text/plain' })),
+          })]);
+        } else {
+          await navigator.clipboard.writeText(await markdown);
+        }
       } else {
-        // Default behavior: Get text content from the clone
-        textToCopy = clonedBlockquote.textContent || '';
+        await navigator.clipboard.writeText((clonedBlockquote.textContent || '').trim());
       }
-
-      await navigator.clipboard.writeText(textToCopy.trim());
       
       // Visual feedback: Change to copied state
       setButtonState('copied');

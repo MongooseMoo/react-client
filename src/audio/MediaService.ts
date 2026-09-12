@@ -8,10 +8,10 @@ import {
 
 import { usePreferences } from '../stores/preferencesStore';
 import { AmbisonicRenderer } from './AmbisonicRenderer';
-import { PositionalFoaRenderer } from './PositionalFoaRenderer';
+import type { PositionalFoaRenderer } from './PositionalFoaRenderer';
 import { distanceBetween, inverseDistanceGain, SPATIAL_DISTANCE_MODEL } from './distanceModel';
 import { VectorTweener } from './vectorTween';
-import { EffectChain } from './effects/EffectChain';
+import type { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
 import type { EffectSpec } from './effects/types';
 import { MediaSessionController } from './MediaSessionController';
@@ -569,6 +569,7 @@ export class MediaService {
     const generation = (sound.effectGeneration ?? 0) + 1;
     sound.effectGeneration = generation;
 
+    const { EffectChain } = await import('./effects/EffectChain');
     const inline = await EffectChain.createAnonymous(this.cacophony, effects);
 
     const stale =
@@ -798,6 +799,7 @@ export class MediaService {
     this.cleanupUpmix(sound);
     let renderer: PositionalFoaRenderer;
     try {
+      const { PositionalFoaRenderer } = await import('./PositionalFoaRenderer');
       renderer = await PositionalFoaRenderer.create(
         this.cacophony,
         POSITIONAL_FOA_MAKEUP,

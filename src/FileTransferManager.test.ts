@@ -2,6 +2,7 @@ import EventEmitter from 'eventemitter3';
 import { describe, expect, it, vi } from 'vitest';
 
 import FileTransferManager from './FileTransferManager';
+import { FileTransferStore } from './FileTransferStore';
 import type { FileTransferAccept, GMCPClientFileTransfer } from './gmcp/Client/FileTransfer';
 import { useSessionStore } from './stores/sessionStore';
 import type { WebRTCService } from './WebRTCService';
@@ -147,6 +148,13 @@ function createManager() {
 }
 
 describe('FileTransferManager lifecycle', () => {
+  it('closes a store that finishes initializing after owner cleanup', async () => {
+    const { manager } = createManager();
+    const store = vi.mocked(FileTransferStore).mock.results.at(-1)?.value as FileTransferStore;
+    manager.cleanup();
+    await vi.waitFor(() => expect(store.close).toHaveBeenCalledOnce());
+  });
+
   it('unsubscribes the listeners it registered during cleanup', () => {
     const { gmcpOff, gmcpOn, manager, webRTCOff, webRTCOn, webRTCService } = createManager();
 

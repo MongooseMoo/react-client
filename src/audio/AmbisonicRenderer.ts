@@ -1,5 +1,5 @@
 import type { Cacophony, AudioNode as CacophonyAudioNode, Playback } from 'cacophony';
-import Omnitone, { type FOARenderer } from 'omnitone/build/omnitone.min.esm.js';
+import type { FOARenderer } from 'omnitone/build/omnitone.min.esm.js';
 
 import { smoothParamTo } from './audioParamSmoothing';
 
@@ -19,6 +19,7 @@ export class AmbisonicRenderer {
   ) {}
 
   static async create(cacophony: Cacophony, inputChannels: number): Promise<AmbisonicRenderer> {
+    const { default: Omnitone } = await import('omnitone/build/omnitone.min.esm.js');
     const renderer = Omnitone.createFOARenderer(cacophony.context as unknown as BaseAudioContext);
     await renderer.initialize();
     renderer.setRenderingMode('ambisonic');

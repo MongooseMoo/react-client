@@ -21,7 +21,7 @@ import type { WasmHostState } from "./components/WasmHost";
 import WasmHost from "./components/WasmHost";
 import { createConfiguredClient } from "./createConfiguredClient";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
-import { createHapticsRuntime, type HapticsRuntime } from "./haptics/runtime";
+import type { HapticsRuntime } from "./haptics/runtime";
 import { useChannelHistory } from "./hooks/useChannelHistory";
 import {
   autoLogService,
@@ -336,10 +336,6 @@ function App() {
 
     client.requestNotificationPermission();
 
-    const hapticsRuntime = createHapticsRuntime();
-    hapticsRuntimeRef.current = hapticsRuntime;
-    hapticsRuntime.setEnabled(usePreferences.getState().haptics.enabled);
-
     // on focus, focus the input
     const handleFocus = () => {
       inRef.current?.focus();
@@ -348,12 +344,6 @@ function App() {
 
     return () => {
       document.removeEventListener("focus", handleFocus);
-      if (hapticsRuntimeRef.current === hapticsRuntime) {
-        hapticsRuntimeRef.current = null;
-      }
-      hapticsRuntime.dispose().catch((error) => {
-        console.error("Failed to dispose haptics runtime:", error);
-      });
     };
   }, [client]);
 
@@ -403,8 +393,27 @@ function App() {
   }, [client, roomInfo]);
 
   useEffect(() => {
-    hapticsRuntimeRef.current?.setEnabled(hapticsEnabled);
-  }, [hapticsEnabled]);
+    if (!client || !hapticsEnabled) return;
+    let cancelled = false;
+    let runtime: HapticsRuntime | undefined;
+    import('./haptics/runtime').then(({ createHapticsRuntime }) => {
+      if (cancelled) return;
+      runtime = createHapticsRuntime();
+      hapticsRuntimeRef.current = runtime;
+      runtime.setEnabled(true);
+    }).catch((error) => {
+      console.error('Failed to initialize haptics runtime:', error);
+    });
+    return () => {
+      cancelled = true;
+      if (!runtime) return;
+      if (hapticsRuntimeRef.current === runtime) hapticsRuntimeRef.current = null;
+      runtime.emergencyStop();
+      void runtime.dispose().catch((error) => {
+        console.error('Failed to dispose haptics runtime:', error);
+      });
+    };
+  }, [client, hapticsEnabled]);
 
   const handleCommand = useCallback(
     (text: string) => {

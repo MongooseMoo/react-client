@@ -7,7 +7,7 @@
 
 import type { Cacophony } from 'cacophony';
 
-import { EffectChain } from './EffectChain';
+import type { EffectChain } from './EffectChain';
 import { CHAIN_PRESETS } from './presets';
 import { ADVERTISED_EFFECT_TYPES, type ChainSpec, type EffectSpec } from './types';
 
@@ -81,6 +81,7 @@ export class MediaEffects {
     if (existing) {
       await existing.replace(capped, options);
     } else {
+      const { EffectChain } = await import('./EffectChain');
       const chain = await EffectChain.create(this.cacophony, spec.id, capped, options);
       this.chains.set(spec.id, chain);
     }
