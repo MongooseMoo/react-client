@@ -60,12 +60,6 @@ function createClient() {
   return {
     connectLocal: vi.fn(),
     shutdown: vi.fn(),
-    fileTransferManager: {
-      cleanup: vi.fn(),
-    },
-    webRTCService: {
-      cleanup: vi.fn(),
-    },
   };
 }
 
@@ -122,7 +116,6 @@ describe("WasmHost lifecycle", () => {
 
     expect(clearIntervalSpy).toHaveBeenCalledWith(interval);
     expect(client.shutdown).toHaveBeenCalledTimes(1);
-    expect(client.webRTCService.cleanup).toHaveBeenCalledTimes(1);
     expect(mocks.workerStreamDispose).toHaveBeenCalledTimes(1);
     expect(worker.removeEventListener).toHaveBeenCalledWith(
       "message",

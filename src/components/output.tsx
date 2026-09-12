@@ -6,7 +6,6 @@ import type MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
 import DOMPurify from 'dompurify';
 import { useInputStore } from '../stores/inputStore';
-import TurndownService from 'turndown'; // <-- Import TurndownService
 import { usePreferences } from '../stores/preferencesStore'; // Import preferences store
 import { useUserlistStore } from '../stores/userlistStore';
 import { useConnectionStore } from '../stores/connectionStore';
@@ -114,8 +113,6 @@ class Output extends React.Component<Props, State> {
   private unsubscribeOutputStore: (() => void) | undefined;
   private previousConnected = useConnectionStore.getState().connected;
   private lastOutputEntryId = 0;
-  // Add a TurndownService instance (can be reused)
-  turndownService = new TurndownService({headingStyle: 'atx', emDelimiter: '*'});
 
   // Full output history (NOT in React state — avoids O(N) reconciliation)
   private allLines: OutputLine[] = [];

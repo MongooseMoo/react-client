@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import MudClient from '../../client';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type MudClient from '../../client';
+import type FileTransferManager from '../../FileTransferManager';
+import { useConnectionStore } from '../../stores/connectionStore';
 import type { UserlistPlayer } from '../../mcp';
 import { findTransferPeerByAddress, userlistPlayersToTransferPeers } from '../../fileTransferPeers';
 import type { TransferPeer } from '../../fileTransferPeers';
@@ -29,7 +31,7 @@ interface OutgoingOffer {
   recipientAddress: string;
 }
 
-const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded, users }) => {
+const FileTransferUI = ({ manager, expanded, users }: FileTransferUIProps & { manager: FileTransferManager }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedRecipient, setSelectedRecipient] = useState<TransferPeer | null>(null);
   const [sendProgress, setSendProgress] = useState<number>(0);
@@ -150,30 +152,31 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded, users
 
   useEffect(() => {
     // Set up event listeners
-    client.fileTransferManager.on('fileTransferOffer', handleFileTransferOffer);
-    client.fileTransferManager.on('fileTransferAccepted', handleFileTransferAccepted);
-    client.fileTransferManager.on('fileSendProgress', handleFileSendProgress);
-    client.fileTransferManager.on('fileReceiveProgress', handleFileReceiveProgress);
-    client.fileTransferManager.on('fileTransferError', handleFileTransferError);
-    client.fileTransferManager.on('fileTransferCancelled', handleFileTransferCancelled);
-    client.fileTransferManager.on('fileTransferRejected', handleFileTransferRejected);
-    client.fileTransferManager.on('fileSendComplete', handleFileSendComplete);
-    client.fileTransferManager.on('fileReceiveComplete', handleFileReceiveComplete);
+    setPendingOffers([...manager.pendingOffers.values()]);
+    manager.on('fileTransferOffer', handleFileTransferOffer);
+    manager.on('fileTransferAccepted', handleFileTransferAccepted);
+    manager.on('fileSendProgress', handleFileSendProgress);
+    manager.on('fileReceiveProgress', handleFileReceiveProgress);
+    manager.on('fileTransferError', handleFileTransferError);
+    manager.on('fileTransferCancelled', handleFileTransferCancelled);
+    manager.on('fileTransferRejected', handleFileTransferRejected);
+    manager.on('fileSendComplete', handleFileSendComplete);
+    manager.on('fileReceiveComplete', handleFileReceiveComplete);
 
     return () => {
       // Clean up event listeners
-      client.fileTransferManager.off('fileTransferOffer', handleFileTransferOffer);
-      client.fileTransferManager.off('fileTransferAccepted', handleFileTransferAccepted);
-      client.fileTransferManager.off('fileSendProgress', handleFileSendProgress);
-      client.fileTransferManager.off('fileReceiveProgress', handleFileReceiveProgress);
-      client.fileTransferManager.off('fileTransferError', handleFileTransferError);
-      client.fileTransferManager.off('fileTransferCancelled', handleFileTransferCancelled);
-      client.fileTransferManager.off('fileTransferRejected', handleFileTransferRejected);
-      client.fileTransferManager.off('fileSendComplete', handleFileSendComplete);
-      client.fileTransferManager.off('fileReceiveComplete', handleFileReceiveComplete);
+      manager.off('fileTransferOffer', handleFileTransferOffer);
+      manager.off('fileTransferAccepted', handleFileTransferAccepted);
+      manager.off('fileSendProgress', handleFileSendProgress);
+      manager.off('fileReceiveProgress', handleFileReceiveProgress);
+      manager.off('fileTransferError', handleFileTransferError);
+      manager.off('fileTransferCancelled', handleFileTransferCancelled);
+      manager.off('fileTransferRejected', handleFileTransferRejected);
+      manager.off('fileSendComplete', handleFileSendComplete);
+      manager.off('fileReceiveComplete', handleFileReceiveComplete);
     };
   }, [
-    client,
+    manager,
     handleFileTransferOffer,
     handleFileTransferAccepted,
     handleFileSendProgress,
@@ -192,7 +195,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded, users
       const recipientAddress = selectedRecipient.transferAddress;
       setOutgoingOffer({ filename, recipientLabel, recipientAddress });
       addToTransferHistory(`Offered ${filename} to ${recipientLabel} — waiting for accept…`);
-      client.fileTransferManager
+      manager
         .sendFile(selectedFile, recipientAddress)
         .then(() => {
           addToTransferHistory(`Sending ${filename} to ${recipientLabel}`);
@@ -206,7 +209,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded, users
 
   const handleAcceptTransfer = (sender: string, hash: string) => {
     // Accepting an offer triggers FileTransferManager to handle the rest
-    client.fileTransferManager.acceptTransfer(sender, hash).catch((error) => {
+    manager.acceptTransfer(sender, hash).catch((error) => {
       addToTransferHistory(`Error accepting file: ${error.message}`);
     });
     const offer = pendingOffers.find((o) => o.hash === hash);
@@ -220,7 +223,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded, users
   };
 
   const handleRejectTransfer = (sender: string, hash: string) => {
-    client.fileTransferManager.rejectTransfer(sender, hash);
+    manager.rejectTransfer(sender, hash);
     const offer = pendingOffers.find((o) => o.hash === hash);
     if (offer) {
       addToTransferHistory(
@@ -231,7 +234,7 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded, users
   };
 
   const handleCancelTransfer = (hash: string) => {
-    client.fileTransferManager.cancelTransfer(hash);
+    manager.cancelTransfer(hash);
     setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 
@@ -274,4 +277,23 @@ const FileTransferUI: React.FC<FileTransferUIProps> = ({ client, expanded, users
   );
 };
 
-export default FileTransferUI;
+export default function FileTransferPanel(props: FileTransferUIProps) {
+  const [manager, setManager] = useState<FileTransferManager | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const connected = useConnectionStore((state) => state.connected);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Disconnect replaces the transfer owner without changing client identity.
+  useEffect(() => {
+    let cancelled = false;
+    setManager(null);
+    setError(null);
+    void props.client.getFileTransferManager().then((loaded) => {
+      if (!cancelled) setManager(loaded);
+    }).catch((error) => {
+      if (!cancelled) setError(error instanceof Error ? error.message : 'Unable to load file transfers');
+    });
+    return () => { cancelled = true; };
+  }, [props.client, connected]);
+  if (error) return <p role="alert">{error}</p>;
+  if (!manager) return <p role="status">Loading file transfers…</p>;
+  return <FileTransferUI {...props} manager={manager} />;
+}

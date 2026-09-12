@@ -1,4 +1,4 @@
-import { loader } from '@monaco-editor/react';
+import loader from '@monaco-editor/loader';
 import monacoEditorPackage from 'monaco-editor/package.json';
 
 let isConfigured = false;

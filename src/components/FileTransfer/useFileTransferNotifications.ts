@@ -23,9 +23,9 @@ export function useFileTransferNotifications(client: MudClient | null): void {
       );
     };
 
-    client.fileTransferManager.on('fileTransferOffer', handleFileTransferOffer);
+    client.gmcp_fileTransfer.on('offer', handleFileTransferOffer);
     return () => {
-      client.fileTransferManager.off('fileTransferOffer', handleFileTransferOffer);
+      client.gmcp_fileTransfer.off('offer', handleFileTransferOffer);
     };
   }, [client]);
 }

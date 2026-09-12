@@ -1,5 +1,4 @@
 import { type HapticsService, hapticsService } from '../HapticsService';
-import { ButtplugWasmBackend, createRealWasmDeps } from './ButtplugWasmBackend';
 import { GamepadBackend } from './GamepadBackend';
 import type { HapticsBackend } from './types';
 
@@ -22,6 +21,7 @@ export interface HapticsRuntime {
 }
 
 async function createWasmBackend(): Promise<HapticsBackend> {
+  const { ButtplugWasmBackend, createRealWasmDeps } = await import('./ButtplugWasmBackend');
   const deps = await createRealWasmDeps();
   return new ButtplugWasmBackend(deps);
 }

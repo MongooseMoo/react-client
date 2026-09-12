@@ -5,10 +5,11 @@ import type { TelnetParser } from '../../telnet';
 import { GmcpSession } from '../session';
 import { GMCPClientFileTransfer } from './FileTransfer';
 
-function createFileTransferPackage() {
+function createFileTransferPackage(load = () => Promise.resolve({})) {
   const client = {
     emit: vi.fn(),
     registerDisconnectReset: vi.fn(),
+    getFileTransferManager: vi.fn(load),
   } as unknown as MudClient;
   const session = new GmcpSession(client);
   (client as MudClient).gmcp = session;
@@ -25,7 +26,7 @@ function createFileTransferPackage() {
 }
 
 describe('GMCPClientFileTransfer', () => {
-  it('emits inbound file transfer messages through package events', () => {
+  it('emits inbound file transfer messages through package events', async () => {
     const { fileTransfer, session } = createFileTransferPackage();
     const offers: unknown[] = [];
 
@@ -41,7 +42,7 @@ describe('GMCPClientFileTransfer', () => {
       }),
     );
 
-    expect(offers).toEqual([
+    await vi.waitFor(() => expect(offers).toEqual([
       {
         sender: 'Alice',
         filename: 'notes.txt',
@@ -49,7 +50,7 @@ describe('GMCPClientFileTransfer', () => {
         offerSdp: '{}',
         hash: 'hash-1',
       },
-    ]);
+    ]));
   });
 
   it('generates typed outbound send methods from the message registry', () => {
@@ -74,7 +75,7 @@ describe('GMCPClientFileTransfer', () => {
     );
   });
 
-  it('removes package event listeners through off', () => {
+  it('removes package event listeners through off', async () => {
     const { fileTransfer, session } = createFileTransferPackage();
     const listener = vi.fn();
 
@@ -85,6 +86,26 @@ describe('GMCPClientFileTransfer', () => {
       JSON.stringify({ sender: 'Alice', hash: 'hash-1' }),
     );
 
+    await Promise.resolve();
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('retains wire order while loading and drops messages invalidated by reset', async () => {
+    let finish!: (value: object) => void;
+    const loading = new Promise<object>((resolve) => { finish = resolve; });
+    const { fileTransfer } = createFileTransferPackage(() => loading);
+    const received: string[] = [];
+    fileTransfer.on('offer', () => received.push('offer'));
+    fileTransfer.on('cancel', () => received.push('cancel'));
+    fileTransfer.receiveRegisteredMessage('Offer', {});
+    fileTransfer.receiveRegisteredMessage('Cancel', {});
+    expect(received).toEqual([]);
+    finish({});
+    await vi.waitFor(() => expect(received).toEqual(['offer', 'cancel']));
+
+    fileTransfer.receiveRegisteredMessage('Offer', {});
+    fileTransfer.reset();
+    await Promise.resolve();
+    expect(received).toEqual(['offer', 'cancel']);
   });
 });

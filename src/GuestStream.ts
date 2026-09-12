@@ -1,6 +1,5 @@
 import { DataConnection } from "peerjs";
 import { Stream } from "./telnet";
-import { Buffer } from "buffer";
 
 /**
  * Implements Stream interface over a PeerJS DataConnection.
@@ -12,7 +11,7 @@ import { Buffer } from "buffer";
  * - Guest->Host: { type: "input", data: string }
  */
 export class GuestStream implements Stream {
-  private dataCallback: ((data: Buffer) => void) | null = null;
+  private dataCallback: ((data: Uint8Array) => void) | null = null;
   private closeCallback: (() => void) | null = null;
 
   constructor(private conn: DataConnection) {
@@ -23,7 +22,7 @@ export class GuestStream implements Stream {
         msg.data !== undefined &&
         this.dataCallback
       ) {
-        this.dataCallback(Buffer.from(msg.data + "\r\n"));
+        this.dataCallback(new TextEncoder().encode(msg.data + "\r\n"));
       }
     });
 
@@ -34,18 +33,18 @@ export class GuestStream implements Stream {
     });
   }
 
-  on(event: "data", cb: (data: Buffer) => void): void;
+  on(event: "data", cb: (data: Uint8Array) => void): void;
   on(event: "close", cb: () => void): void;
   on(event: string, cb: (...args: any[]) => void): void {
     if (event === "data") {
-      this.dataCallback = cb as (data: Buffer) => void;
+      this.dataCallback = cb as (data: Uint8Array) => void;
     } else if (event === "close") {
       this.closeCallback = cb as () => void;
     }
   }
 
-  write(data: Buffer): void {
-    const text = data.toString("utf-8").replace(/\r?\n$/, "");
+  write(data: Uint8Array): void {
+    const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(data).replace(/\r?\n$/, "");
     this.conn.send({ type: "input", data: text });
   }
 

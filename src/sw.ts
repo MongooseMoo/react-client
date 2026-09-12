@@ -20,7 +20,7 @@ clientsClaim();
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
 
-// Precached application scripts keep precedence. Optional audio chunks are
+// Precached application scripts keep precedence. Optional feature chunks are
 // fetched on first use, then remain available offline under their hashed URLs.
 registerRoute(
   ({ request, url }) =>

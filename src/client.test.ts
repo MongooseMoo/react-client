@@ -85,7 +85,7 @@ vi.mock('./EditorManager', () => ({
   },
 }));
 
-vi.mock('./FileTransferManager.js', () => ({
+vi.mock('./FileTransferManager', () => ({
   default: class {
     acceptTransfer = vi.fn(async () => {});
     cancelTransfer = vi.fn();
@@ -267,13 +267,36 @@ describe('MudClient lifecycle cleanup', () => {
     expect(client.gmcp.ready).toBe(true);
   });
 
-  it('preserves GMCP transport until file transfer cleanup completes', () => {
+  it('constructs one file transfer owner on demand and cleans it up without connecting', async () => {
+    const client = new MudClient('example.test', 443);
+    client.configureFileTransfer(client.gmcp.register(GMCPClientFileTransfer as never));
+    expect(mockFileTransferManagerInstances).toHaveLength(0);
+    const first = client.getFileTransferManager();
+    const second = client.getFileTransferManager();
+    expect(first).toBe(second);
+    const manager = await first;
+    expect(mockFileTransferManagerInstances).toHaveLength(1);
+    client.shutdown();
+    expect(manager.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('does not construct file transfer resources after shutdown during import', async () => {
+    const client = new MudClient('example.test', 443);
+    client.configureFileTransfer(client.gmcp.register(GMCPClientFileTransfer as never));
+    const loading = client.getFileTransferManager();
+    client.shutdown();
+    await expect(loading).rejects.toThrow('cancelled');
+    expect(mockFileTransferManagerInstances).toHaveLength(0);
+  });
+
+  it('preserves GMCP transport until file transfer cleanup completes', async () => {
     const client = new MudClient('example.test', 443);
     client.configureFileTransfer(
       client.gmcp.register(GMCPClientFileTransfer as never),
     );
     client.connect();
     const cleanupOrder: string[] = [];
+    await client.getFileTransferManager();
     const fileTransferManager = mockFileTransferManagerInstances[0];
     fileTransferManager.cleanup.mockImplementation(() => {
       cleanupOrder.push('fileTransferManager.cleanup');

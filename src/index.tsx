@@ -1,18 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import './tokens.css';
 import './index.css';
 import reportWebVitals from './reportWebVitals';
 import { registerSW } from 'virtual:pwa-register';
-import { routes } from './routes';
-
-const router = createBrowserRouter(routes);
+import { AppRoutes } from './routes';
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <AppRoutes />
   </React.StrictMode>,
 );
 

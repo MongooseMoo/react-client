@@ -1,20 +1,20 @@
-import react from '@vitejs/plugin-react';
+import preact from '@preact/preset-vite';
 import { defineConfig } from 'vite';
 import { CommitHashPlugin } from 'vite-plugin-commit-hash';
 import { VitePWA } from 'vite-plugin-pwa';
-import { optionalAudioChunks } from './src/build/optionalAudioChunks';
+import { optionalChunks } from './src/build/optionalChunks';
 
-let audioChunks = new Set<string>();
+let deferredChunks = new Set<string>();
 
 export default defineConfig({
   plugins: [
-    react(),
+    preact(),
     CommitHashPlugin(),
     {
-      name: 'optional-audio-precache',
+      name: 'optional-feature-precache',
       apply: 'build',
       generateBundle(_options, bundle) {
-        audioChunks = optionalAudioChunks(bundle);
+        deferredChunks = optionalChunks(bundle);
       },
     },
     VitePWA({
@@ -31,7 +31,7 @@ export default defineConfig({
         globIgnores: ['**/buttplug_wasm-*.js', '**/wasm/**', '**/wasm-worker.js'],
         manifestTransforms: [
           async (manifest) => ({
-            manifest: manifest.filter((entry) => !audioChunks.has(entry.url)),
+            manifest: manifest.filter((entry) => !deferredChunks.has(entry.url)),
             warnings: [],
           }),
         ],

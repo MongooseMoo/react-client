@@ -15,7 +15,7 @@ const {
     cancelSpeech: vi.fn(),
     connect: vi.fn(),
     connected: false,
-    fileTransferManager: {
+    gmcp_fileTransfer: {
       off: vi.fn(),
       on: vi.fn(),
     },
@@ -179,15 +179,19 @@ describe('App haptics backend lifecycle', () => {
     cleanup();
   });
 
-  it('disposes the haptics runtime created during client setup on cleanup', async () => {
+  it('loads haptics only after enabling and disposes its runtime on cleanup', async () => {
     const view = render(<App />);
+
+    expect(mockHapticsRuntimes).toHaveLength(0);
+    mockPreferences.haptics.enabled = true;
+    view.rerender(<App />);
 
     await waitFor(() => {
       expect(mockHapticsRuntimes).toHaveLength(1);
     });
 
     const runtime = mockHapticsRuntimes[0];
-    expect(runtime.setEnabled).toHaveBeenCalledWith(false);
+    expect(runtime.setEnabled).toHaveBeenCalledWith(true);
 
     view.unmount();
 

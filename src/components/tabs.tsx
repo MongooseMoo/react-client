@@ -8,6 +8,7 @@ export interface TabProps {
   icon?: React.ReactNode; // Optional icon; label collapses to icon-only when the bar is squished
   content: JSX.Element;
   condition?: boolean; // Condition is now handled in parent, but keep for potential future use
+  mountOnSelect?: boolean;
 }
 
 export interface TabsProps {
@@ -18,6 +19,14 @@ export interface TabsProps {
 
 const Tabs: React.FC<TabsProps> = ({ tabs, trailingElement, ariaLabel }) => {
   const [selectedTab, setSelectedTab] = useState(0);
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set());
+  const selectedId = tabs[selectedTab]?.id;
+  useEffect(() => {
+    if (selectedId) setVisitedTabs((previous) => {
+      if (previous.has(selectedId)) return previous;
+      return new Set([...previous, selectedId]);
+    });
+  }, [selectedId]);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
   const userInteractedRef = useRef(false);
 
@@ -117,7 +126,7 @@ const Tabs: React.FC<TabsProps> = ({ tabs, trailingElement, ariaLabel }) => {
         >
           {/* Inner div handles padding and content overflow */}
           <div className="sidebar-tab-content">
-            {tab.content}
+            {(!tab.mountOnSelect || selectedTab === index || visitedTabs.has(tab.id)) && tab.content}
           </div>
         </div>
       ))}

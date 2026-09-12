@@ -1,8 +1,9 @@
 // @ts-expect-error This import is virtually resolved
 import CommitHash from 'virtual:commit-hash';
-import React, { useEffect, useRef, useState } from "react";
-import Preferences from "./preferences";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "./PreferencesDialog.css";
+
+const Preferences = lazy(() => import('./preferences'));
 
 export type PreferencesDialogRef = {
   open: () => void;
@@ -75,7 +76,7 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
         backgroundColor: "black"
       }
       }  >Preferences</h2>
-      {isOpen && <Preferences />}
+      {isOpen && <Suspense fallback={<p role="status">Loading preferences…</p>}><Preferences /></Suspense>}
       <button type="button" onClick={() => setIsOpen(false)}>Close</button>
       <br />
       <span id="commit-hash">

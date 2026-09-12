@@ -1,346 +1,40 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  autoLogEntriesToHtml,
-  autoLogEntriesToText,
-  autoLogEntryToPlainText,
-  buildAutoLogFilename,
-  downloadAutoLog,
-} from "../logging/AutoLogExport";
-import { autoLogStore } from "../logging/AutoLogStore";
-import type { AutoLogEntry, AutoLogSession } from "../logging/AutoLogTypes";
-import "./AutoLogDialog.css";
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import './AutoLogDialog.css';
 
-export type AutoLogDialogRef = {
-  open: () => void;
-  close: () => void;
-};
+const Content = lazy(() => import('./AutoLogDialogContent'));
 
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function formatSessionDate(value: number): string {
-  return new Date(value).toLocaleString();
-}
-
-function getSessionDuration(session: AutoLogSession): string {
-  if (!session.endedAt) {
-    return "In progress";
-  }
-
-  const seconds = Math.max(0, Math.round((session.endedAt - session.startedAt) / 1000));
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;
-}
-
-// A pending destructive action awaiting confirmation: either deleting a single
-// session, or deleting every session.
-type PendingDelete =
-  | { kind: "session"; session: AutoLogSession }
-  | { kind: "all"; count: number };
+export type AutoLogDialogRef = { open: () => void; close: () => void };
 
 const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
   const [isOpen, setIsOpen] = useState(false);
-  const dialogRef = useRef<HTMLDialogElement | null>(null);
-  const confirmDialogRef = useRef<HTMLDialogElement | null>(null);
-  const [sessions, setSessions] = useState<AutoLogSession[]>([]);
-  const [selectedSession, setSelectedSession] = useState<AutoLogSession | null>(null);
-  const [entries, setEntries] = useState<AutoLogEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
-
-  const refreshSessions = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const nextSessions = await autoLogStore.listSessions();
-      setSessions(nextSessions);
-      if (selectedSession && !nextSessions.some((session) => session.id === selectedSession.id)) {
-        setSelectedSession(null);
-        setEntries([]);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load autolog sessions.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedSession]);
-
-  const loadSessionEntries = useCallback(async (session: AutoLogSession) => {
-    setSelectedSession(session);
-    setIsLoading(true);
-    setError(null);
-    try {
-      setEntries(await autoLogStore.getEntries(session.id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load autolog entries.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const handleDelete = useCallback(async (session: AutoLogSession) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      await autoLogStore.deleteSession(session.id);
-      if (selectedSession?.id === session.id) {
-        setSelectedSession(null);
-        setEntries([]);
-      }
-      await refreshSessions();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete autolog session.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [refreshSessions, selectedSession]);
-
-  const handleDeleteAll = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      await autoLogStore.deleteAll();
-      setSelectedSession(null);
-      setEntries([]);
-      await refreshSessions();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete autolog sessions.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [refreshSessions]);
-
-  // Destructive triggers open the confirmation alertdialog instead of deleting
-  // immediately, gating handleDelete / handleDeleteAll behind a confirm step.
-  const requestDelete = useCallback((session: AutoLogSession) => {
-    setPendingDelete({ kind: "session", session });
-  }, []);
-
-  const requestDeleteAll = useCallback(() => {
-    setPendingDelete({ kind: "all", count: sessions.length });
-  }, [sessions.length]);
-
-  const cancelDelete = useCallback(() => {
-    setPendingDelete(null);
-  }, []);
-
-  const confirmDelete = useCallback(async () => {
-    const pending = pendingDelete;
-    setPendingDelete(null);
-    if (!pending) {
-      return;
-    }
-    if (pending.kind === "session") {
-      await handleDelete(pending.session);
-    } else {
-      await handleDeleteAll();
-    }
-  }, [pendingDelete, handleDelete, handleDeleteAll]);
-
-  const handleDownload = useCallback(async (session: AutoLogSession, format: "text" | "html") => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const sessionEntries = selectedSession?.id === session.id ? entries : await autoLogStore.getEntries(session.id);
-      const content = format === "html"
-        ? autoLogEntriesToHtml(session, sessionEntries)
-        : autoLogEntriesToText(sessionEntries);
-      downloadAutoLog(content, buildAutoLogFilename(session, format), format);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to download autolog session.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [entries, selectedSession]);
+  const [hasOpened, setHasOpened] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   React.useImperativeHandle(ref, () => ({
-    open() {
-      setIsOpen(true);
-    },
-    close() {
-      setIsOpen(false);
-    },
+    open() { setHasOpened(true); setIsOpen(true); },
+    close() { setIsOpen(false); },
   }));
 
   useEffect(() => {
-    if (isOpen) {
-      refreshSessions();
-    }
-  }, [isOpen, refreshSessions]);
-
-  // Drive the native modal dialog from React state. showModal() puts the dialog
-  // in the top layer, traps focus, makes the background inert, renders a
-  // ::backdrop, closes on Escape, and restores focus to the previously-focused
-  // element on close — so the react-focus-lock wrapper is no longer needed.
-  useEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog) {
-      return;
-    }
-    if (isOpen) {
-      // showModal() throws if the dialog is already open.
-      if (!dialog.open) {
-        dialog.showModal();
-      }
-    } else if (dialog.open) {
-      dialog.close();
-    }
+    if (!dialog) return;
+    if (isOpen && !dialog.open) dialog.showModal();
+    else if (!isOpen && dialog.open) dialog.close();
   }, [isOpen]);
 
-  // Sync React state when the dialog closes natively (e.g. Escape), so isOpen
-  // stays in step with the dialog's real open state.
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) {
-      return;
-    }
-    const handleClose = () => {
-      setIsOpen(false);
-    };
-    dialog.addEventListener("close", handleClose);
-    return () => {
-      dialog.removeEventListener("close", handleClose);
-    };
-  }, []);
-
-  // Drive the confirmation alertdialog from pendingDelete, same showModal()
-  // approach as the main dialog. showModal() traps focus and closes on Escape;
-  // the dialog's "close" event (Escape or Cancel) clears pendingDelete without
-  // deleting.
-  useEffect(() => {
-    const dialog = confirmDialogRef.current;
-    if (!dialog) {
-      return;
-    }
-    if (pendingDelete) {
-      if (!dialog.open) {
-        dialog.showModal();
-      }
-    } else if (dialog.open) {
-      dialog.close();
-    }
-  }, [pendingDelete]);
-
-  useEffect(() => {
-    const dialog = confirmDialogRef.current;
-    if (!dialog) {
-      return;
-    }
-    const handleClose = () => {
-      setPendingDelete(null);
-    };
-    dialog.addEventListener("close", handleClose);
-    return () => {
-      dialog.removeEventListener("close", handleClose);
-    };
-  }, []);
-
-  const totalBytes = useMemo(
-    () => sessions.reduce((total, session) => total + session.byteEstimate, 0),
-    [sessions]
-  );
-
-  const confirmMessage = pendingDelete
-    ? pendingDelete.kind === "session"
-      ? `Delete the autolog "${pendingDelete.session.title}"? This permanently removes the session and cannot be undone.`
-      : `Delete all ${pendingDelete.count} autolog sessions? This permanently removes them and cannot be undone.`
-    : "";
-
   return (
-    <>
-    <dialog className="autolog-dialog" ref={dialogRef} aria-label="Autologs">
-      {isOpen && (
-        <>
-          <div className="autolog-dialog-header">
-            <h2>Autologs</h2>
-            <button type="button" onClick={() => setIsOpen(false)}>Close</button>
-          </div>
-
-          <div className="autolog-dialog-toolbar">
-            <span>{sessions.length} sessions, {formatBytes(totalBytes)}</span>
-            <button type="button" onClick={refreshSessions} disabled={isLoading}>Refresh</button>
-            <button type="button" onClick={requestDeleteAll} disabled={isLoading || sessions.length === 0}>Delete All</button>
-          </div>
-
-          {error && <div className="autolog-dialog-error" role="alert">{error}</div>}
-
-          <div className="autolog-dialog-body" aria-busy={isLoading}>
-            <section className="autolog-session-list" aria-label="Autolog sessions">
-              {sessions.length === 0 && !isLoading && (
-                <p className="autolog-empty">No autolog sessions have been saved.</p>
-              )}
-              {sessions.map((session) => (
-                <article
-                  key={session.id}
-                  className={`autolog-session-row ${selectedSession?.id === session.id ? "selected" : ""}`}
-                >
-                  <button type="button" className="autolog-session-main" aria-current={selectedSession?.id === session.id ? "true" : undefined} onClick={() => loadSessionEntries(session)}>
-                    <span className="autolog-session-title">{session.title}</span>
-                    <span className="autolog-session-meta">
-                      {formatSessionDate(session.startedAt)} · {getSessionDuration(session)} · {session.lineCount} lines · {formatBytes(session.byteEstimate)}
-                    </span>
-                  </button>
-                  <div className="autolog-session-actions">
-                    <button type="button" aria-label={`Download "${session.title}" as plain text`} onClick={() => handleDownload(session, "text")}>TXT</button>
-                    <button type="button" aria-label={`Download "${session.title}" as HTML`} onClick={() => handleDownload(session, "html")}>HTML</button>
-                    <button type="button" aria-label={`Delete log "${session.title}"`} onClick={() => requestDelete(session)}>Delete</button>
-                  </div>
-                </article>
-              ))}
-            </section>
-
-            <section className="autolog-entry-viewer" aria-label="Autolog entries">
-              {selectedSession ? (
-                <>
-                  <h3>{selectedSession.title}</h3>
-                  <div className="autolog-entry-meta">
-                    {formatSessionDate(selectedSession.startedAt)} · {selectedSession.sanitizedUrl}
-                  </div>
-                  <div className="autolog-entry-list">
-                    {entries.map((entry) => (
-                      <pre key={`${entry.sessionId}-${entry.sequence}`} className={`autolog-entry autolog-entry-${entry.type}`}>
-                        <span className="autolog-entry-time">{new Date(entry.timestamp).toLocaleTimeString()}</span>
-                        {autoLogEntryToPlainText(entry)}
-                      </pre>
-                    ))}
-                    {entries.length === 0 && !isLoading && <p className="autolog-empty">No entries in this session.</p>}
-                  </div>
-                </>
-              ) : (
-                <p className="autolog-empty">Select a session to view its entries.</p>
-              )}
-            </section>
-          </div>
-        </>
-      )}
+    <dialog className="autolog-dialog" ref={dialogRef} aria-label="Autologs"
+      onClose={(event) => {
+        if (event.target === event.currentTarget) setIsOpen(false);
+      }}>
+      <div className="autolog-dialog-header">
+        <h2>Autologs</h2>
+        <button type="button" onClick={() => setIsOpen(false)}>Close</button>
+      </div>
+      {hasOpened && <Suspense fallback={<p role="status">Loading logs…</p>}>
+        <Content isOpen={isOpen} />
+      </Suspense>}
     </dialog>
-
-    <dialog
-      className="autolog-confirm-dialog"
-      ref={confirmDialogRef}
-      role="alertdialog"
-      aria-labelledby="autolog-confirm-title"
-      aria-describedby="autolog-confirm-message"
-    >
-      {pendingDelete && (
-        <>
-          <h2 id="autolog-confirm-title">
-            {pendingDelete.kind === "session" ? "Delete autolog" : "Delete all autologs"}
-          </h2>
-          <p id="autolog-confirm-message">{confirmMessage}</p>
-          <div className="autolog-confirm-actions">
-            <button type="button" autoFocus onClick={cancelDelete}>Cancel</button>
-            <button type="button" onClick={confirmDelete}>Delete</button>
-          </div>
-        </>
-      )}
-    </dialog>
-    </>
   );
 });
 

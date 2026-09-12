@@ -4,8 +4,8 @@ const loaderMock = vi.hoisted(() => ({
   config: vi.fn(),
 }));
 
-vi.mock('@monaco-editor/react', () => ({
-  loader: loaderMock,
+vi.mock('@monaco-editor/loader', () => ({
+  default: loaderMock,
 }));
 
 describe('configureMonacoLoader', () => {
@@ -14,7 +14,7 @@ describe('configureMonacoLoader', () => {
     loaderMock.config.mockClear();
   });
 
-  it('configures @monaco-editor/react to use an explicit Monaco version once', async () => {
+  it('configures the loader to use an explicit Monaco version once', async () => {
     const { MONACO_LOADER_VS_PATH, configureMonacoLoader } = await import('./monacoLoader');
 
     configureMonacoLoader();

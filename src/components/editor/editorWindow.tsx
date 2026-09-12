@@ -1,12 +1,10 @@
-import Editor from '@monaco-editor/react';
-import type { Monaco, OnMount } from '@monaco-editor/react';
+import Editor from '../../editor/MonacoEditor';
+import type * as MonacoApi from 'monaco-editor/esm/vs/editor/editor.api';
 import { announce } from '@react-aria/live-announcer';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useBeforeunload } from 'react-beforeunload';
-import { useLocation } from 'react-router-dom';
 import { useTitle } from 'react-use';
-import { configureMonacoLoader } from '../../editor/monacoLoader';
 import {
   getMooQuickFixes,
   type MooQuickFix,
@@ -28,7 +26,7 @@ import EditorToolbar from './toolbar';
 import { EditorStatusBar } from './statusbar';
 import './editor.css'; // Import the new CSS file
 
-configureMonacoLoader();
+type Monaco = typeof MonacoApi;
 
 export enum DocumentState {
   Unchanged,
@@ -59,10 +57,10 @@ const EDITOR_STATUSBAR_ID = 'editor-statusbar';
 const EDITOR_PROBLEMS_ID = 'editor-moo-problems';
 const MOO_PROBLEMS_QUICK_FIX_EDIT_SOURCE = 'moo-problems-quick-fix';
 
-function EditorWindow() {
-  const location = useLocation();
+function EditorWindow({ search = window.location.search }: { search?: string }) {
   const editorInstance = React.useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const monacoInstance = React.useRef<Monaco | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
   // Set when a document is loaded; consumed exactly once to focus the editor as
   // soon as the editor instance is ready (deterministic, no timer). Focus may be
   // requested before the editor has mounted (load arrives first) or after (editor
@@ -101,9 +99,10 @@ function EditorWindow() {
     editor.focus();
   }, []);
 
-  const handleEditorMount: OnMount = (editor, monaco) => {
+  const handleEditorMount = (editor: MonacoEditor.IStandaloneCodeEditor, monaco: Monaco) => {
     editorInstance.current = editor;
     monacoInstance.current = monaco;
+    setEditorReady(true);
     // If a document already loaded before the editor mounted, focus it now.
     focusEditorOnReady();
   };
@@ -122,7 +121,7 @@ function EditorWindow() {
 
   useEffect(() => {
     const monaco = monacoInstance.current;
-    if (!monaco || !editorInstance.current?.getModel()) {
+    if (!editorReady || !monaco || !editorInstance.current?.getModel()) {
       return;
     }
 
@@ -182,7 +181,7 @@ function EditorWindow() {
       cancelled = true;
       window.clearTimeout(debounceTimer);
     };
-  }, [code, editorLanguage, updateMooDiagnostics]);
+  }, [code, editorLanguage, editorReady, updateMooDiagnostics]);
 
   useBeforeunload((event) => {
     channel.postMessage({ type: 'close', id });
@@ -274,7 +273,7 @@ function EditorWindow() {
     [code, originalCode],
   );
   const channel = useMemo(() => new BroadcastChannel('editor'), []);
-  const params = new URLSearchParams(location.search);
+  const params = new URLSearchParams(search);
   const id = decodeURIComponent(params.get('reference') || '');
 
   useEffect(() => {
@@ -331,13 +330,21 @@ function EditorWindow() {
   }, [channel, clientId, id, documentState, focusEditorOnReady]);
 
   const revert = () => {
+    const editor = editorInstance.current;
+    const model = editor?.getModel();
+    if (editor && model) {
+      editor.pushUndoStop();
+      editor.executeEdits('revert', [{ range: model.getFullModelRange(), text: originalCode }]);
+      editor.pushUndoStop();
+      editor.focus();
+    }
     setCode(originalCode);
     setDocumentState(DocumentState.Unchanged);
   };
 
   // Save the code
   const onSave = (event: React.MouseEvent<HTMLButtonElement>) => {
-    const contents = code.split(/\r\n|\r|\n/); // Split the code into lines
+    const contents = (editorInstance.current?.getValue() ?? code).split(/\r\n|\r|\n/);
     const sessionData = { ...session, contents };
     channel.postMessage({ type: 'save', session: sessionData, id });
     setDocumentState(DocumentState.Saved);
@@ -363,7 +370,7 @@ function EditorWindow() {
 
   // Download code to text file
   const downloadText = () => {
-    const blob = new Blob([code], { type: 'text/plain' });
+    const blob = new Blob([editorInstance.current?.getValue() ?? code], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
 
@@ -385,12 +392,11 @@ function EditorWindow() {
     // Use the ID for CSS targeting
     <div id="editor-window">
       <EditorToolbar onSave={onSave} onRevert={revert} onDownload={downloadText} />
-      <Editor
+      {isLoaded && <Editor
         height="80vh"
-        defaultLanguage={editorLanguage}
         language={editorLanguage}
         theme={MOO_EDITOR_THEME_NAME}
-        value={code}
+        defaultValue={session.contents.join('\n')}
         onChange={onChanges}
         options={editorOptions}
         wrapperProps={{
@@ -399,7 +405,7 @@ function EditorWindow() {
         beforeMount={handleEditorBeforeMount}
         onMount={handleEditorMount}
         path={session.reference}
-      />
+      />}
       {editorLanguage === MOO_LANGUAGE_ID ? (
         <MooProblemsPanel
           id={EDITOR_PROBLEMS_ID}
