@@ -35,6 +35,7 @@ import {
 import { usePreferences } from "./stores/preferencesStore";
 import { useRoomStore } from "./stores/roomStore";
 import { useConnectionStore } from "./stores/connectionStore";
+import { useOutputStore } from "./stores/outputStore";
 import { stripMudAnsiTags } from "./stripMudAnsiTags";
 import { ensurePushSubscription } from "./webpush";
 
@@ -309,6 +310,17 @@ function App() {
     if (!client || !sessionReady) return;
     ensurePushSubscription(client).catch((error) => {
       console.error("Failed to ensure push subscription:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      // Chrome reports a wedged GCM connection as "push service error";
+      // a browser restart re-establishes it.
+      const hint = message.includes("push service error")
+        ? " (browser push service unavailable; restarting the browser usually fixes this)"
+        : "";
+      useOutputStore
+        .getState()
+        .addError(
+          new Error(`Push notifications couldn't be enabled: ${message}${hint}`)
+        );
     });
   }, [client, sessionReady]);
 
