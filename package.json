@@ -7,7 +7,7 @@
     "@monaco-editor/loader": "^1.7.0",
     "@react-aria/live-announcer": "^3.5.0",
     "@types/marked": "^5.0.2",
-    "@xrnavigation/webaudio-tinysynth": "github:xrnavigation/webaudio-tinysynth#v1.2.0",
+    "@xrnavigation/webaudio-tinysynth": "github:xrnavigation/webaudio-tinysynth#v1.3.0",
     "anser": "^2.3.5",
     "buttplug": "^3.2.2",
     "buttplug-wasm": "^2.0.1",
