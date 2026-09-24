@@ -538,3 +538,68 @@ describe("Output frozen history resilience", () => {
     expect(frozen.children).toHaveLength(1301);
   });
 });
+
+describe("Output line markup rendering", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    mockClipboardWriteText.mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: mockClipboardWriteText },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  it("reviewing and copying live lines does not corrupt them for later renders", async () => {
+    const errors: unknown[] = [];
+    const recordError = (error: unknown) => errors.push(error);
+    process.on("uncaughtException", recordError);
+    process.on("unhandledRejection", recordError);
+    let output: Output | undefined;
+    const { container } = render(
+      <Output
+        ref={(instance: Output | null) => { if (instance) output = instance; }}
+        client={{ sendCommand: vi.fn() } as unknown as MudClient}
+      />,
+    );
+    const flush = () => act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const store = useOutputStore.getState();
+    store.addMessage("\x1b[31mred 0\x1b[0m and \x1b[1mbold\x1b[0m text");
+    store.addMessage("see https://example.com/a and http://example.org/b ok");
+    store.addHtml("<p>before</p><blockquote data-content-type=\"text/markdown\"><p>quoted</p></blockquote><p>after</p>");
+    store.addHtml("<p>plain <b>html</b> <a href=\"https://x.y\">link</a></p>");
+    store.addCommand("page claude fix teardown");
+    store.addMessage("It pages, \"Checked Midgaard #4905 first. Go?\"");
+    await flush();
+    for (let lineNumber = 1; lineNumber <= 8; lineNumber += 1) {
+      output?.reviewRecentOutputLine(lineNumber);
+      await output?.copyRecentOutputLine(lineNumber);
+    }
+
+    // Push the reviewed lines out of the live window so they unmount.
+    for (let index = 0; index < Output.LIVE_WINDOW_SIZE + 50; index += 1) {
+      useOutputStore.getState().addMessage(`\x1b[32mfiller ${index}\x1b[0m`);
+      if (index % 20 === 0) await flush();
+    }
+    await flush();
+    process.off("uncaughtException", recordError);
+    process.off("unhandledRejection", recordError);
+
+    expect(errors).toEqual([]);
+    const text = container.querySelector(".output")?.textContent ?? "";
+    expect(text).toContain("red 0 and bold text");
+    // The multi-part HTML message is one line, frozen once, not once per part.
+    expect(text.split("quoted").length - 1).toBe(1);
+    expect(text).toContain(`filler ${Output.LIVE_WINDOW_SIZE + 49}`);
+  });
+});
