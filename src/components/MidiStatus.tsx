@@ -18,12 +18,6 @@ interface DeviceChangeEvent {
   type: DeviceChangeEventType;
 }
 
-// How long to keep polling for virtual synth availability before giving up.
-// JZZ has no onChange event for the virtual synth, so a short bounded poll
-// is the only way to catch it; hardware changes are handled by onDeviceChange.
-const VIRTUAL_SYNTH_POLL_TIMEOUT_MS = 60000;
-const VIRTUAL_SYNTH_POLL_INTERVAL_MS = 2000;
-
 type MidiConnectionState = typeof midiService.connectionStatus;
 
 // Shallow field-by-field compare, avoiding JSON.stringify allocations.
@@ -186,40 +180,6 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         loadDevices();
       }
       
-      // Poll briefly to catch virtual synth availability, since JZZ has no
-      // onChange event for it. Hardware device arrival/removal and
-      // auto-reconnect status are handled event-driven via onDeviceChange
-      // below, so once the virtual synth has been observed (or the poll
-      // times out) the interval stops permanently instead of running forever.
-      const pollStartedAt = Date.now();
-      const connectionStateInterval = setInterval(() => {
-        if (virtualMidiService.initialized) {
-          clearInterval(connectionStateInterval);
-          if (!document.hidden) {
-            loadDevices(); // Final refresh to pick up the virtual synth
-          }
-          return;
-        }
-
-        if (Date.now() - pollStartedAt >= VIRTUAL_SYNTH_POLL_TIMEOUT_MS) {
-          clearInterval(connectionStateInterval); // Give up; events still cover hardware changes
-          return;
-        }
-
-        if (document.hidden) return; // Skip refresh work while backgrounded
-
-        loadDevices();
-      }, VIRTUAL_SYNTH_POLL_INTERVAL_MS);
-
-      // The interval above skips work while hidden, so catch up with a
-      // single refresh when the tab becomes visible again.
-      const handleVisibilityChange = () => {
-        if (!document.hidden) {
-          loadDevices();
-        }
-      };
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-
       // Set up device change monitoring
       const unsubscribe = midiService.onDeviceChange((info) => {
         const timestamp = new Date().toLocaleTimeString();
@@ -270,8 +230,6 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       });
 
       return () => {
-        clearInterval(connectionStateInterval);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
         unsubscribe();
       };
     } else {
@@ -325,7 +283,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   };
 
   const handleRefreshDevices = async () => {
-    // Refresh JZZ device list
+    // Refresh hardware device list
     midiService.refresh();
     
     // Make sure virtual synthesizer is initialized

@@ -85,15 +85,12 @@ describe('MidiStatus lifecycle refreshes', () => {
     vi.useRealTimers();
   });
 
-  it('stops the bounded poll after its timeout while the document is hidden', async () => {
-    testState.documentHidden = true;
+  it('does not poll for the virtual synth', async () => {
     testState.virtualSynthInitialized = false;
 
     render(<MidiStatus client={client} />);
-    expect(vi.getTimerCount()).toBe(1);
-
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(0);
     });
 
     expect(vi.getTimerCount()).toBe(0);

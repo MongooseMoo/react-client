@@ -359,7 +359,18 @@ function App() {
 
     let cancelled = false;
     import("./VirtualMidiService")
-      .then(({ virtualMidiService }) => virtualMidiService.initialize())
+      .then(async ({ virtualMidiService }) => {
+        if (client) {
+          // Render into the client's master gain so the synth shares its
+          // clock, volume, mute, and autoplay unlock.
+          const { cacophony } = client.media;
+          await virtualMidiService.setAudioOutput({
+            context: cacophony.context as unknown as BaseAudioContext,
+            destination: cacophony.globalGainNode as unknown as AudioNode,
+          });
+        }
+        return virtualMidiService.initialize();
+      })
       .then((success) => {
         if (cancelled) return;
         if (success) {
@@ -376,7 +387,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [midiEnabled]);
+  }, [midiEnabled, client]);
 
   // Window subtitle tracks the current room from the room store. On disconnect
   // the client resets the store, which clears roomInfo and so clears the subtitle.

@@ -1,25 +1,26 @@
-import JZZ from 'jzz';
-import { Tiny } from 'jzz-synth-tiny';
+import WebAudioTinySynth from '@xrnavigation/webaudio-tinysynth';
 
-type JzzEngine = Awaited<ReturnType<typeof JZZ>>;
-type JzzPort = Awaited<ReturnType<JzzEngine["openMidiOut"]>>;
+/** Where the synth renders: an AudioContext and a node on that context. */
+export interface SynthAudioOutput {
+  context: BaseAudioContext;
+  destination: AudioNode;
+}
 
-type TinySynthFactory = {
-  (name?: string): unknown;
-  register(name?: string): void;
-  version(): string;
-};
-
-type JzzWithTinySynth = typeof JZZ & {
-  synth: {
-    Tiny: TinySynthFactory;
-  };
-};
+/**
+ * A MIDI output the MidiService can drive. Hardware JZZ ports satisfy the
+ * `send`/`close` part; the virtual synth also schedules on its audio clock.
+ */
+export interface MidiOutputSink {
+  send(data: number[]): void;
+  /** Send `data` `secondsFromNow` later on the sink's own clock. */
+  sendAt?(data: number[], secondsFromNow: number): void;
+  close(): void;
+}
 
 export class VirtualMidiService {
   private static instance: VirtualMidiService;
-  private isInitialized = false;
-  private virtualPort: JzzPort | null = null;
+  private synth: WebAudioTinySynth | null = null;
+  private output: SynthAudioOutput | null = null;
   private readonly portName = 'Virtual Synthesizer';
 
   private constructor() {}
@@ -32,26 +33,22 @@ export class VirtualMidiService {
   }
 
   async initialize(): Promise<boolean> {
-    if (this.isInitialized) {
+    if (this.synth) {
       return true;
     }
 
     try {
-      // Wait for JZZ to be ready first
-      const jzz = await JZZ();
-      
-      // Initialize JZZ with Tiny synthesizer
-      Tiny(JZZ);
-      
-      // Register the virtual synthesizer as a MIDI port
-      const jzzWithTinySynth = JZZ as JzzWithTinySynth;
-      jzzWithTinySynth.synth.Tiny.register(this.portName);
-      
-      // Refresh JZZ to update the device list
-      jzz.refresh();
-      
-      console.log(`Virtual MIDI synthesizer registered as: ${this.portName}`);
-      this.isInitialized = true;
+      // Without an attached output the synth owns a private AudioContext
+      // until setAudioOutput moves it onto the client's graph.
+      const synth = this.output
+        ? new WebAudioTinySynth({
+            audioContext: this.output.context,
+            destination: this.output.destination,
+          })
+        : new WebAudioTinySynth();
+      await synth.ready();
+      this.synth = synth;
+      console.log(`Virtual MIDI synthesizer ready: ${this.portName}`);
       return true;
     } catch (error) {
       console.error('Failed to initialize virtual MIDI synthesizer:', error);
@@ -59,21 +56,37 @@ export class VirtualMidiService {
     }
   }
 
-  async getVirtualPort(): Promise<JzzPort | null> {
-    if (!this.isInitialized) {
-      const success = await this.initialize();
-      if (!success) return null;
+  /**
+   * Render the synth into `output` (normally the client's Cacophony master
+   * gain), so it shares the app's clock, volume, mute, and autoplay unlock.
+   */
+  async setAudioOutput(output: SynthAudioOutput): Promise<void> {
+    if (this.output?.context === output.context && this.output.destination === output.destination) {
+      return;
     }
+    this.output = output;
+    if (this.synth) {
+      await this.synth.setAudioContext(output.context, output.destination);
+    }
+  }
 
-    try {
-      this.close();
-      // Get the virtual port through JZZ
-      this.virtualPort = await JZZ().openMidiOut(this.portName);
-      return this.virtualPort;
-    } catch (error) {
-      console.error('Failed to open virtual MIDI port:', error);
-      return null;
-    }
+  async getVirtualPort(): Promise<MidiOutputSink | null> {
+    if (!(await this.initialize())) return null;
+    const synth = this.synth;
+    if (!synth) return null;
+
+    return {
+      send: (data) => synth.send(data),
+      sendAt: (data, secondsFromNow) => {
+        const now = synth.getAudioContext()?.currentTime ?? 0;
+        synth.send(data, now + Math.max(0, secondsFromNow));
+      },
+      close: () => {
+        for (let channel = 0; channel < 16; channel++) {
+          synth.allSoundOff(channel);
+        }
+      },
+    };
   }
 
   getPortName(): string {
@@ -81,14 +94,13 @@ export class VirtualMidiService {
   }
 
   get initialized(): boolean {
-    return this.isInitialized;
+    return this.synth !== null;
   }
 
-  close(): void {
-    if (this.virtualPort) {
-      this.virtualPort.close();
-      this.virtualPort = null;
-    }
+  async dispose(): Promise<void> {
+    const synth = this.synth;
+    this.synth = null;
+    await synth?.dispose();
   }
 }
 
