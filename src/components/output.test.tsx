@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type React from "react";
 
+import { act, render } from "@testing-library/react";
 import type MudClient from "../client";
 import { useOutputStore } from "../stores/outputStore";
 import Output, { type OutputLine, OutputType } from "./output";
@@ -441,5 +442,99 @@ describe("Output history exposure toggle", () => {
     expect(hiddenCount(output)).toBe(40);
     expect(frozenDiv.children[0].getAttribute("aria-hidden")).toBe("true");
     expect(frozenDiv.children[40].hasAttribute("aria-hidden")).toBe(false);
+  });
+});
+
+describe("Output delivery resilience", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  it("keeps delivering output after one entry fails to render", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let output!: Output;
+    render(
+      <Output
+        ref={(instance: Output | null) => { if (instance) output = instance; }}
+        client={{ sendCommand: vi.fn() } as unknown as MudClient}
+      />,
+    );
+    const handleMessage = output.handleMessage;
+    output.handleMessage = (message: string) => {
+      if (message === "poison") throw new Error("render failed");
+      handleMessage(message);
+    };
+    const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const rendered = () =>
+      [...document.querySelectorAll(".output > .output-line")].map((line) => line.textContent);
+
+    useOutputStore.getState().addMessage("before");
+    useOutputStore.getState().addMessage("poison");
+    await flush();
+    useOutputStore.getState().addMessage("after");
+    await flush();
+
+    expect(rendered()).toEqual(["before", "poison", "after"]);
+  });
+});
+
+describe("Output frozen history resilience", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  it("keeps rendering and saving when the frozen container falls out of sync", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { container } = render(<Output client={{ sendCommand: vi.fn() } as unknown as MudClient} />);
+    for (let index = 0; index < 1500; index += 1) {
+      useOutputStore.getState().addMessage(`old ${index}`);
+    }
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const frozen = container.querySelector(".output > div:not(.output-line):not(.history-exposure-toggle)")!;
+    expect(frozen.children).toHaveLength(1300);
+
+    // The state seen in production: the counters describe more frozen lines
+    // than the container holds, so freezeOverflow indexed past its end.
+    while (frozen.children.length > 100) frozen.lastElementChild!.remove();
+
+    // Let the save scheduled by the initial burst finish so only saves caused
+    // by the post-drift update are observed below.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, Output.SAVE_DEBOUNCE_MS + 50));
+    });
+    const setItem = vi.spyOn(window.localStorage, "setItem");
+    useOutputStore.getState().addMessage("after drift");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, Output.SAVE_DEBOUNCE_MS + 50));
+    });
+
+    const rendered = [...container.querySelectorAll(".output > .output-line")].map((line) => line.textContent);
+    expect(rendered.at(-1)).toBe("after drift");
+    const lastWrite = setItem.mock.calls.filter(([key]) => key === Output.LOCAL_STORAGE_KEY).at(-1);
+    expect(lastWrite).toBeDefined();
+    const saved = JSON.parse(lastWrite![1]).data;
+    expect(saved.at(-1).sourceContent).toBe("after drift");
+    expect(frozen.children).toHaveLength(1301);
   });
 });

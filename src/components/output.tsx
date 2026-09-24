@@ -2,6 +2,7 @@ import { announce } from "@react-aria/live-announcer";
 import "./output.css";
 import React from "react";
 import { parseToElements } from "../ansiParser";
+import stripAnsi from "strip-ansi";
 import type MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
 import DOMPurify from 'dompurify';
@@ -120,6 +121,8 @@ class Output extends React.Component<Props, State> {
   private frozenCount: number = 0;
   // How many frozen lines (from the front) carry aria-hidden
   private frozenHiddenCount: number = 0;
+  // The container frozenCount/frozenHiddenCount describe
+  private frozenContainer: HTMLDivElement | null = null;
   // Total lines ever added (monotonically increasing, survives trimming)
   private totalLinesAdded: number = 0;
   private prevTotalLinesAdded: number = 0;
@@ -262,6 +265,9 @@ class Output extends React.Component<Props, State> {
       case 'system':
         return [<h2> {savedLine.sourceContent}</h2>];
 
+      case 'plain':
+        return [<span>{savedLine.sourceContent}</span>];
+
       default:
         console.warn(`Unknown sourceType: ${savedLine.sourceType}, falling back to text display`);
         return [<span>{savedLine.sourceContent}</span>];
@@ -273,7 +279,14 @@ class Output extends React.Component<Props, State> {
     // Re-process source data through handlers to recreate proper React components.
     return savedLines.map((savedLine: SavedOutputLine): OutputLine => {
       const currentKey = this.messageKey++;
-      const recreatedElements = this.recreateContentFromSource(savedLine);
+      let recreatedElements: React.ReactElement[];
+      try {
+        recreatedElements = this.recreateContentFromSource(savedLine);
+      } catch (error) {
+        // One unrenderable saved line must not take down the whole restored log.
+        console.error("Failed to restore saved output line; showing it as plain text:", savedLine, error);
+        recreatedElements = [<span>{String(savedLine.sourceContent)}</span>];
+      }
 
       const wrappedContent = recreatedElements.length === 1 ?
         recreatedElements[0] :
@@ -334,10 +347,31 @@ class Output extends React.Component<Props, State> {
       .entries.filter((entry) => entry.id > this.lastOutputEntryId);
 
     for (const entry of entries) {
-      this.handleOutputEntry(entry);
+      // Advance past the entry BEFORE handling it. If handling throws and the id
+      // were not advanced, every later flush would retry the same bad entry,
+      // throw again, and silently drop all output queued behind it forever.
       this.lastOutputEntryId = entry.id;
+      try {
+        this.handleOutputEntry(entry);
+      } catch (error) {
+        console.error("Failed to render output entry; showing it as plain text:", entry, error);
+        this.addPlainTextFallback(entry);
+      }
     }
   };
+
+  private addPlainTextFallback(entry: OutputEntry) {
+    const text =
+      entry.type === "message" ? stripAnsi(entry.message)
+      : entry.type === "html" ? this.sanitizeHtml(entry.html)
+      : entry.type === "error" ? `Error: ${entry.error.message}`
+      : entry.command;
+    try {
+      this.addToOutput([<span>{text}</span>], OutputType.ServerMessage, true, 'plain', text);
+    } catch (error) {
+      console.error("Plain-text fallback also failed:", entry, error);
+    }
+  }
 
   handleOutputEntry = (entry: OutputEntry) => {
     switch (entry.type) {
@@ -373,8 +407,14 @@ componentDidUpdate(
       this.scrollToBottom();
     }
 
-    // Freeze overflow lines into the static HTML container
-    this.freezeOverflow();
+    // Freeze overflow lines into the static HTML container. A failure here must
+    // not skip the bookkeeping and save below: when it did, every later update
+    // threw before scheduleSave() and nothing was persisted again.
+    try {
+      this.freezeOverflow();
+    } catch (error) {
+      console.error("Failed to freeze output overflow:", error);
+    }
 
     // Track new lines for the "N new messages" notification
     const newLineCount = this.totalLinesAdded - this.prevTotalLinesAdded;
@@ -387,7 +427,9 @@ componentDidUpdate(
       ).length;
 
       if (visibleNewLinesCount > 0) {
-        if (!this.isScrolledToBottom()) {
+        // Use the pre-update snapshot: scrollToBottom() above runs in a rAF, so
+        // measuring now would count lines the view is about to reveal as unread.
+        if (!wasScrolledToBottom) {
           this.setState(state => ({
             newLinesCount: state.newLinesCount + visibleNewLinesCount,
           }));
@@ -408,6 +450,25 @@ componentDidUpdate(
   private freezeOverflow() {
     const frozenDiv = this.frozenRef.current;
     if (!frozenDiv) return;
+
+    // The counters below are only valid for the container they were built in.
+    // If the container was replaced or its children changed behind our back,
+    // rebuild it from allLines instead of indexing past its end.
+    if (frozenDiv !== this.frozenContainer || frozenDiv.children.length !== this.frozenCount) {
+      if (this.frozenCount !== 0 || frozenDiv.children.length !== 0) {
+        console.warn("Frozen output container out of sync; rebuilding", {
+          sameContainer: frozenDiv === this.frozenContainer,
+          children: frozenDiv.children.length,
+          frozenCount: this.frozenCount,
+          frozenHiddenCount: this.frozenHiddenCount,
+          allLines: this.allLines.length,
+        });
+      }
+      frozenDiv.replaceChildren();
+      this.frozenContainer = frozenDiv;
+      this.frozenCount = 0;
+      this.frozenHiddenCount = 0;
+    }
 
     // How many lines should be frozen (everything not in the live window)
     const shouldBeFrozen = Math.max(0, this.allLines.length - Output.LIVE_WINDOW_SIZE);
@@ -545,15 +606,20 @@ componentDidUpdate(
     metadata?: Record<string, any>
   ) {
     if (shouldAnnounce) {
-      elements.forEach((element) => {
-        if (React.isValidElement(element)) {
-          const htmlString = ReactDOMServer.renderToString(element);
-          const plainText = this.sanitizeHtml(htmlString);
-          announce(plainText);
-        } else if (typeof element === "string") {
-          announce(element);
-        }
-      });
+      // Announcing is secondary to displaying: a failure here must not drop the line.
+      try {
+        elements.forEach((element) => {
+          if (React.isValidElement(element)) {
+            const htmlString = ReactDOMServer.renderToString(element);
+            const plainText = this.sanitizeHtml(htmlString);
+            announce(plainText);
+          } else if (typeof element === "string") {
+            announce(element);
+          }
+        });
+      } catch (error) {
+        console.error("Failed to announce output line:", error);
+      }
     }
 
     const newOutputLines: OutputLine[] = elements.map((element) => {
@@ -573,12 +639,18 @@ componentDidUpdate(
     this.totalLinesAdded += newOutputLines.length;
 
     if (sourceContent !== "") {
-      autoLogService.recordLine({
-        type: type as unknown as AutoLogLineType,
-        sourceType: sourceType as AutoLogSourceType,
-        sourceContent,
-        metadata,
-      });
+      // The line is already in allLines; an auto-log failure must not abort the
+      // render below (the fallback path would then add it a second time).
+      try {
+        autoLogService.recordLine({
+          type: type as unknown as AutoLogLineType,
+          sourceType: sourceType as AutoLogSourceType,
+          sourceContent,
+          metadata,
+        });
+      } catch (error) {
+        console.error("Auto-log failed to record line:", error);
+      }
     }
 
     // Trim if over max
