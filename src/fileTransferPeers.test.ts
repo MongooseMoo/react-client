@@ -28,14 +28,14 @@ describe("file transfer peers", () => {
       {
         id: "#100",
         label: "Quinn",
-        transferAddress: "Quinn",
+        transferAddress: "#100",
         away: false,
         idle: true,
       },
       {
         id: "#200",
         label: "Riley",
-        transferAddress: "Riley",
+        transferAddress: "#200",
         away: true,
         idle: false,
       },
