@@ -185,6 +185,19 @@ class Output extends React.Component<Props, State> {
     }
   };
 
+  /**
+   * Static markup for a line, rendered from fresh elements built from its source.
+   * Never pass line.content (or anything that is or will be mounted) to
+   * renderToStaticMarkup: Preact vnodes are mutable, rendering one to a string
+   * writes render state onto it, and a mounted line corrupted that way crashes
+   * Preact when it later unmounts, losing output.
+   */
+  private renderLineMarkup(line: SavedOutputLine): string {
+    return ReactDOMServer.renderToStaticMarkup(
+      <div className={`output-line output-line-${line.type}`}>{this.recreateContentFromSource(line)}</div>
+    );
+  }
+
   // Helper method to re-create content from source data
   recreateContentFromSource = (savedLine: SavedOutputLine): React.ReactElement[] => {
     switch (savedLine.sourceType) {
@@ -478,7 +491,7 @@ componentDidUpdate(
       const line = this.allLines[this.frozenCount];
       const wrapper = document.createElement('div');
       wrapper.className = `output-line output-line-${line.type}`;
-      wrapper.innerHTML = ReactDOMServer.renderToStaticMarkup(line.content);
+      wrapper.innerHTML = this.renderLineMarkup(line);
       frozenDiv.appendChild(wrapper);
       this.frozenCount++;
     }
@@ -608,31 +621,29 @@ componentDidUpdate(
     if (shouldAnnounce) {
       // Announcing is secondary to displaying: a failure here must not drop the line.
       try {
-        elements.forEach((element) => {
-          if (React.isValidElement(element)) {
-            const htmlString = ReactDOMServer.renderToString(element);
-            const plainText = this.sanitizeHtml(htmlString);
-            announce(plainText);
-          } else if (typeof element === "string") {
-            announce(element);
-          }
-        });
+        // Render fresh elements, not `elements`: those are about to be mounted.
+        announce(this.sanitizeHtml(this.renderLineMarkup({ type, sourceType, sourceContent, metadata })));
       } catch (error) {
         console.error("Failed to announce output line:", error);
       }
     }
 
-    const newOutputLines: OutputLine[] = elements.map((element) => {
-      const currentKey = this.messageKey++;
-      return {
-        id: currentKey,
-        type: type,
-        content: <div key={currentKey} className={`output-line output-line-${type}`}>{element}</div>,
-        sourceType: sourceType,
-        sourceContent: sourceContent,
-        metadata: metadata
-      };
-    });
+    // One line per message, matching what loadOutput rebuilds from the saved
+    // source. (Splitting a multi-element message into lines that each carried
+    // the whole source duplicated it on restart and when rendering from source.)
+    const currentKey = this.messageKey++;
+    const newOutputLines: OutputLine[] = [{
+      id: currentKey,
+      type: type,
+      content: (
+        <div key={currentKey} className={`output-line output-line-${type}`}>
+          {elements.length === 1 ? elements[0] : elements}
+        </div>
+      ),
+      sourceType: sourceType,
+      sourceContent: sourceContent,
+      metadata: metadata
+    }];
 
     // Append to full history
     this.allLines.push(...newOutputLines);
@@ -939,8 +950,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
     // Extract text content from the JSX element
     const tempDiv = document.createElement('div');
-    const html = ReactDOMServer.renderToStaticMarkup(line.content);
-    tempDiv.innerHTML = html;
+    tempDiv.innerHTML = this.renderLineMarkup(line);
     const textContent = tempDiv.textContent || tempDiv.innerText || '';
 
     // Announce to screen reader
@@ -978,7 +988,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     }
 
     const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = ReactDOMServer.renderToStaticMarkup(line.content);
+    tempDiv.innerHTML = this.renderLineMarkup(line);
     const textContent = tempDiv.textContent || tempDiv.innerText || "";
 
     return navigator.clipboard.writeText(textContent).then(
