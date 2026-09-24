@@ -5,13 +5,12 @@ import { parseToElements } from "../ansiParser";
 import stripAnsi from "strip-ansi";
 import type MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
-import DOMPurify from 'dompurify';
 import { useInputStore } from '../stores/inputStore';
 import { usePreferences } from '../stores/preferencesStore'; // Import preferences store
 import { useUserlistStore } from '../stores/userlistStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useOutputStore, type OutputEntry } from '../stores/outputStore';
-import BlockquoteWithCopy from './BlockquoteWithCopy';
+import { renderServerHtml } from './serverHtml';
 import { autoLogService } from '../logging/AutoLogService';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
 import {
@@ -204,66 +203,8 @@ class Output extends React.Component<Props, State> {
       case 'ansi':
         return parseToElements(savedLine.sourceContent, this.handleExitClick);
 
-      case 'html': {
-        // Re-process through handleHtml logic
-        const clean = DOMPurify.sanitize(savedLine.sourceContent);
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(clean, 'text/html');
-        const blockquotes = doc.querySelectorAll('blockquote');
-
-        if (blockquotes.length > 0) {
-          const elements: React.ReactElement[] = [];
-          const bodyElement = doc.body;
-          let currentContent = '';
-
-          Array.from(bodyElement.childNodes).forEach((node, index) => {
-            if (node.nodeName === 'BLOCKQUOTE') {
-              if (currentContent.trim()) {
-                elements.push(
-                  <div
-                    key={`content-${index}`}
-                    style={{ whiteSpace: "normal" }}
-                    dangerouslySetInnerHTML={{ __html: currentContent }}
-                  />
-                );
-                currentContent = '';
-              }
-
-              const blockquoteElement = node as HTMLElement;
-              const contentType = blockquoteElement.getAttribute('data-content-type') || undefined;
-
-              elements.push(
-                <BlockquoteWithCopy
-                  key={`blockquote-${index}`}
-                  contentType={contentType}
-                >
-                  {blockquoteElement.innerHTML}
-                </BlockquoteWithCopy>
-              );
-            } else {
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                currentContent += (node as HTMLElement).outerHTML;
-              } else if (node.nodeType === Node.TEXT_NODE) {
-                currentContent += node.textContent || '';
-              }
-            }
-          });
-
-          if (currentContent.trim()) {
-            elements.push(
-              <div
-                key="remaining-content"
-                style={{ whiteSpace: "normal" }}
-                dangerouslySetInnerHTML={{ __html: currentContent }}
-              />
-            );
-          }
-
-          return elements;
-        } else {
-          return [<div style={{ whiteSpace: "normal" }} dangerouslySetInnerHTML={{ __html: clean }}></div>];
-        }
-      }
+      case 'html':
+        return renderServerHtml(savedLine.sourceContent);
 
       case 'command':
         return [
@@ -689,74 +630,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   };
 
   handleHtml = (html: string) => {
-    const clean = DOMPurify.sanitize(html);
-
-    // Parse the cleaned HTML to detect blockquotes
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(clean, 'text/html');
-    const blockquotes = doc.querySelectorAll('blockquote');
-
-    if (blockquotes.length > 0) {
-      // If we have blockquotes, we need to process them individually
-      const elements: React.ReactElement[] = [];
-
-      // Split content around blockquotes
-      const bodyElement = doc.body;
-      let currentContent = '';
-
-      Array.from(bodyElement.childNodes).forEach((node, index) => {
-        if (node.nodeName === 'BLOCKQUOTE') {
-          // Add any accumulated content before this blockquote
-          if (currentContent.trim()) {
-            elements.push(
-              <div
-                key={`content-${index}`}
-                style={{ whiteSpace: "normal" }}
-                dangerouslySetInnerHTML={{ __html: currentContent }}
-              />
-            );
-            currentContent = '';
-          }
-
-          // Add the blockquote with copy functionality
-          const blockquoteElement = node as HTMLElement;
-          const contentType = blockquoteElement.getAttribute('data-content-type') || undefined;
-
-          elements.push(
-            <BlockquoteWithCopy
-              key={`blockquote-${index}`}
-              contentType={contentType}
-            >
-              {blockquoteElement.innerHTML}
-            </BlockquoteWithCopy>
-          );
-        } else {
-          // Accumulate non-blockquote content
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            currentContent += (node as HTMLElement).outerHTML;
-          } else if (node.nodeType === Node.TEXT_NODE) {
-            currentContent += node.textContent || '';
-          }
-        }
-      });
-
-      // Add any remaining content
-      if (currentContent.trim()) {
-        elements.push(
-          <div
-            key="remaining-content"
-            style={{ whiteSpace: "normal" }}
-            dangerouslySetInnerHTML={{ __html: currentContent }}
-          />
-        );
-      }
-
-      this.addToOutput(elements, OutputType.ServerMessage, true, 'html', html);
-    } else {
-      // No blockquotes, use original logic
-      const e = <div style={{ whiteSpace: "normal" }} dangerouslySetInnerHTML={{ __html: clean }}></div>;
-      this.addToOutput([e], OutputType.ServerMessage, true, 'html', html);
-    }
+    this.addToOutput(renderServerHtml(html), OutputType.ServerMessage, true, 'html', html);
   }
 
   handleExitClick = (exit: string) => {
