@@ -16,7 +16,11 @@ export function userlistPlayersToTransferPeers(
     .map((player) => ({
       id: String(player.Object),
       label: player.Name,
-      transferAddress: player.Name,
+      // Route by MOO object reference, not display name: names can contain spaces or
+      // be formatted differently than the underlying object (e.g. "Tangra Guest" vs.
+      // the real object "Tangra_Guest"), which made server-side name matching fail
+      // silently and drop offers. The object id is unambiguous.
+      transferAddress: String(player.Object),
       away: player.away,
       idle: player.idle,
     }));
