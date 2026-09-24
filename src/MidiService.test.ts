@@ -46,6 +46,40 @@ vi.mock('./stores/preferencesStore', () => ({
   },
 }));
 
+const virtualPort = vi.hoisted(() => ({
+  send: vi.fn(),
+  sendAt: vi.fn(),
+  close: vi.fn(),
+}));
+
+vi.mock('./VirtualMidiService', () => ({
+  virtualMidiService: {
+    initialized: true,
+    getPortName: () => 'Virtual Synthesizer',
+    getVirtualPort: vi.fn(async () => virtualPort),
+  },
+}));
+
+describe('MidiService note scheduling', () => {
+  beforeEach(() => {
+    midiService.disconnect();
+    vi.clearAllMocks();
+  });
+
+  it('schedules the note-off on the virtual synth clock', async () => {
+    await midiService.connectOutputDevice('virtual-synth');
+
+    const scheduled = midiService.scheduleNoteOff({ note: 60, velocity: 100, on: true, channel: 2 }, 250);
+
+    expect(scheduled).toBe(true);
+    expect(virtualPort.sendAt).toHaveBeenCalledWith([0x82, 60, 0], 0.25);
+  });
+
+  it('reports no scheduling without an output', () => {
+    expect(midiService.scheduleNoteOff({ note: 60, velocity: 100, on: true }, 250)).toBe(false);
+  });
+});
+
 describe('MidiService device changes', () => {
   beforeEach(() => {
     midiService.disconnect();

@@ -247,6 +247,10 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     midiService.sendNote(note);
 
     if (data.on && data.duration) {
+      // The virtual synth schedules the release on its audio clock; hardware
+      // ports have no clock we can target, so they keep a timer.
+      if (midiService.scheduleNoteOff(note, data.duration)) return;
+
       const timeout = setTimeout(() => {
         midiService.sendNote({
           ...note,

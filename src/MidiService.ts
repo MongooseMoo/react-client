@@ -1,4 +1,4 @@
-import { virtualMidiService } from './VirtualMidiService';
+import { virtualMidiService, type MidiOutputSink } from './VirtualMidiService';
 import JZZ from 'jzz';
 import { usePreferences } from './stores/preferencesStore';
 
@@ -81,7 +81,7 @@ type JzzWatcher = Awaited<ReturnType<JzzEngine["onChange"]>>;
 class MidiService {
   private jzz: JzzEngine | null = null;
   private inputDevice: JzzPort | null = null;
-  private outputDevice: JzzPort | null = null;
+  private outputDevice: MidiOutputSink | null = null;
   private inputCallback: MidiInputCallback | null = null;
   private deviceChangeCallbacks: Set<DeviceChangeCallback> = new Set();
   private deviceWatcher: JzzWatcher | null = null;
@@ -339,6 +339,19 @@ class MidiService {
     const velocity = note.on ? Math.max(1, Math.min(127, note.velocity)) : 0;
 
     this.outputDevice.send([status, note.note, velocity]);
+  }
+
+  /**
+   * Schedule the note-off for `note` `durationMs` from now on the output's
+   * audio clock. Returns false when the output can't schedule, so the caller
+   * falls back to a timer.
+   */
+  scheduleNoteOff(note: MidiNote, durationMs: number): boolean {
+    if (!this.outputDevice?.sendAt) return false;
+
+    const channel = note.channel || 0;
+    this.outputDevice.sendAt([0x80 | channel, note.note, 0], durationMs / 1000);
+    return true;
   }
 
   sendRawMessage(data: number[]): void {
