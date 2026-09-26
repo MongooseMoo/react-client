@@ -294,6 +294,7 @@ const EditorTab: React.FC = () => {
   const setEditorAccessibilityMode = usePreferences(
     (state) => state.setEditorAccessibilityMode,
   );
+  const setEditorLineComments = usePreferences((state) => state.setEditorLineComments);
 
   const handleAutocompleteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditorAutocompleteEnabled(e.target.checked);
@@ -301,6 +302,10 @@ const EditorTab: React.FC = () => {
 
   const handleAccessibilityModeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditorAccessibilityMode(e.target.checked);
+  };
+
+  const handleLineCommentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditorLineComments(e.target.checked);
   };
 
   return (
@@ -313,6 +318,11 @@ const EditorTab: React.FC = () => {
       <label>
         <input type="checkbox" checked={editor.accessibilityMode} onChange={handleAccessibilityModeChange} />
         Enable Accessibility Mode
+      </label>
+      <br />
+      <label>
+        <input type="checkbox" checked={editor.lineComments} onChange={handleLineCommentsChange} />
+        Show "comment"; lines in MOO code as {'//'} comments
       </label>
       <br />
     </div>

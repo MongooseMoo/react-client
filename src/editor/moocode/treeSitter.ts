@@ -7,7 +7,7 @@ import type {
   MooStructureSymbolKind,
 } from './structure';
 
-export type MooTreeSitterDiagnosticCode = 'missing-node' | 'parse-error';
+export type MooTreeSitterDiagnosticCode = 'missing-node' | 'parse-error' | 'trailing-line-comment';
 
 export type MooTreeSitterDiagnostic = {
   code: MooTreeSitterDiagnosticCode;
@@ -180,7 +180,7 @@ export async function createMooTreeSitterService(
           rootType: tree.rootNode.type,
           hasError: tree.rootNode.hasError,
           treeText: tree.rootNode.toString(),
-          diagnostics: collectTreeSitterDiagnostics(tree.rootNode),
+          diagnostics: collectTreeSitterDiagnostics(tree.rootNode, source),
           structure,
         };
       } finally {
@@ -237,11 +237,31 @@ function emptyMooStructure(): MooStructure {
   };
 }
 
-function collectTreeSitterDiagnostics(root: TreeSitterNodeLike): MooTreeSitterDiagnostic[] {
+function collectTreeSitterDiagnostics(
+  root: TreeSitterNodeLike,
+  source: string,
+): MooTreeSitterDiagnostic[] {
   const diagnostics: MooTreeSitterDiagnostic[] = [];
+  const lines = source.split(/\r\n|\r|\n/);
   const visit = (node: TreeSitterNodeLike) => {
     if (node.isError || node.isMissing) {
       diagnostics.push(toDiagnostic(node));
+      return;
+    }
+
+    // Only a line that is nothing but `// text` gets rewritten into a
+    // statement on save; a `//` after code reaches the server and fails.
+    if (node.type === 'line_comment') {
+      const { row, column } = node.startPosition;
+      if ((lines[row] ?? '').slice(0, column).trim() !== '') {
+        diagnostics.push({
+          code: 'trailing-line-comment',
+          message: '// comments must be on a line of their own; MOO will not compile this one.',
+          lineNumber: row + 1,
+          startColumn: column + 1,
+          endColumn: node.endPosition.column + 1,
+        });
+      }
       return;
     }
 
