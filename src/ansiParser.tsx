@@ -34,24 +34,7 @@ function convertBundleIntoReact(
 ): React.ReactElement[] {
     const style = createStyle(bundle);
     const content: React.ReactNode[] = [];
-    let index = 0;
     let keyCounter = 0; // Initialize a counter for keys
-
-    function processRegex(
-        regex: RegExp,
-        process: (match: RegExpExecArray) => React.ReactNode
-    ): void {
-        let match: RegExpExecArray | null = regex.exec(bundle.content);
-        while (match !== null) {
-            const startIndex = match.index;
-            if (startIndex > index) {
-                content.push(bundle.content.substring(index, startIndex));
-            }
-            content.push(process(match));
-            index = regex.lastIndex;
-            match = regex.exec(bundle.content);
-        }
-    }
 
     function processUrlMatch(match: RegExpExecArray): React.ReactNode {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -94,9 +77,27 @@ function convertBundleIntoReact(
         );
     }
 
-    processRegex(URL_REGEX, processUrlMatch);
-    processRegex(EMAIL_REGEX, processEmailMatch);
-    processRegex(exitRegex, processExitMatch);
+    // Collect matches from every pattern, then walk the text once in order.
+    // Earlier passes win ties; a match overlapping an earlier one is dropped.
+    const passes: Array<[RegExp, (match: RegExpExecArray) => React.ReactNode]> = [
+        [URL_REGEX, processUrlMatch],
+        [EMAIL_REGEX, processEmailMatch],
+        [exitRegex, processExitMatch],
+    ];
+    const matches = passes
+        .flatMap(([regex, process], pass) =>
+            Array.from(bundle.content.matchAll(regex), (match) => ({ match, process, pass })))
+        .sort((a, b) => a.match.index - b.match.index || a.pass - b.pass);
+
+    let index = 0;
+    for (const { match, process } of matches) {
+        if (match.index < index) continue;
+        if (match.index > index) {
+            content.push(bundle.content.substring(index, match.index));
+        }
+        content.push(process(match as RegExpExecArray));
+        index = match.index + match[0].length;
+    }
 
     if (index < bundle.content.length) {
         content.push(bundle.content.substring(index));

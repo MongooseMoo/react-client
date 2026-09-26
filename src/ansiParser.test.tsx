@@ -67,6 +67,28 @@ describe("Output", () => {
       )
     });
 
+    describe("mixed links on one line", () => {
+      testRenderedMarkup("mail bob@gmail.com or see https://example.com/a now",
+        <>
+          mail{" "}
+          <a href="mailto:bob@gmail.com" target="_blank" rel="noreferrer">bob@gmail.com</a>
+          {" "}or see{" "}
+          <a href="https://example.com/a" target="_blank" rel="noreferrer">https://example.com/a</a>
+          {" "}now
+        </>
+      );
+
+      testRenderedMarkup("go @[exit:north]north@[/] or https://example.com/a",
+        <>
+          go{" "}
+          {/* biome-ignore lint/a11y/useValidAnchor: mirrors the exit markup ansiParser emits */}
+          <a data-exit="north" className="exit" href="#">north</a>
+          {" "}or{" "}
+          <a href="https://example.com/a" target="_blank" rel="noreferrer">https://example.com/a</a>
+        </>
+      );
+    });
+
     //     describe("complex messages", () => {
     //       testRenderedMarkup(
     //         "This is a sentence with a bold word: \x1b[1mbold\x1b[0m and a link: https://www.google.com",
