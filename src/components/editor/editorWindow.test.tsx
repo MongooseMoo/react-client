@@ -100,21 +100,19 @@ vi.mock('@react-aria/live-announcer', () => ({
   announce: announceMock,
 }));
 
+const preferencesMock = vi.hoisted(() => ({
+  editor: {
+    accessibilityMode: false,
+    autocompleteEnabled: true,
+    lineComments: false,
+  },
+}));
+
 vi.mock('../../stores/preferencesStore', () => ({
-  usePreferences: (
-    selector: (state: {
-      editor: {
-        accessibilityMode: boolean;
-        autocompleteEnabled: boolean;
-      };
-    }) => unknown,
-  ) =>
-    selector({
-      editor: {
-        accessibilityMode: false,
-        autocompleteEnabled: true,
-      },
-    }),
+  usePreferences: Object.assign(
+    (selector: (state: typeof preferencesMock) => unknown) => selector(preferencesMock),
+    { getState: () => preferencesMock },
+  ),
 }));
 
 vi.mock('../../editor/monacoLoader', () => ({
@@ -188,6 +186,7 @@ describe('EditorWindow language selection', () => {
     });
     MockBroadcastChannel.instances = [];
     vi.stubGlobal('BroadcastChannel', MockBroadcastChannel);
+    preferencesMock.editor.lineComments = false;
   });
 
   it('uses the MOO Monaco language for moo-code sessions', async () => {
@@ -1162,5 +1161,62 @@ describe('EditorWindow language selection', () => {
     // of being stranded on the Save button.
     expect(editorMock.focus).toHaveBeenCalled();
     expect(screen.getByRole('status').textContent).toContain('Saved');
+  });
+
+  describe('// comments', () => {
+    const openAndSave = async (type: string, contents: string[]) => {
+      render(
+        <TestLocation initialEntries={['/editor?reference=%231:test']}>
+          <EditorWindow />
+        </TestLocation>,
+      );
+      await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+      act(() => {
+        MockBroadcastChannel.instances[0].emit({
+          type: 'load',
+          id: '#1:test',
+          session: { contents, name: '#1:test', reference: '#1:test', type },
+        });
+      });
+      await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Unchanged'));
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      const channel = MockBroadcastChannel.instances[0];
+      return channel.postMessage.mock.calls.map(([message]) => message).find((m) => m.type === 'save');
+    };
+
+    it('saves whole-line // comments as the string statements the MOO compiles', async () => {
+      const saved = await openAndSave('moo-code', [
+        '// greet them',
+        'notify(player, "hi"); // stays as written',
+        '  // say "bye"',
+      ]);
+
+      expect(saved.session.contents).toEqual([
+        '"greet them";',
+        'notify(player, "hi"); // stays as written',
+        '  "say \\"bye\\"";',
+      ]);
+    });
+
+    it('leaves // alone when the session is not MOO code', async () => {
+      const saved = await openAndSave('string-list', ['// just text']);
+
+      expect(saved.session.contents).toEqual(['// just text']);
+    });
+
+    it('shows string statements as // comments when the preference is on', async () => {
+      preferencesMock.editor.lineComments = true;
+
+      const saved = await openAndSave('moo-code', ['"greet them";', 'return 1;']);
+
+      expect(editorMock.props?.defaultValue).toBe('// greet them\nreturn 1;');
+      expect(saved.session.contents).toEqual(['"greet them";', 'return 1;']);
+    });
+
+    it('opens string statements unchanged when the preference is off', async () => {
+      await openAndSave('moo-code', ['"greet them";']);
+
+      expect(editorMock.props?.defaultValue).toBe('"greet them";');
+    });
   });
 });

@@ -39,6 +39,9 @@ export type ChannelPreferences = {
 export type EditorPreferences = {
   autocompleteEnabled: boolean;
   accessibilityMode: boolean;
+  // Show `"text";` statements as `// text` when opening MOO code. Saving always
+  // turns `//` lines back into statements, whatever this says.
+  lineComments: boolean;
 };
 
 export type NavigationKeyScheme = "jkli" | "wasd" | "dvorak-rh" | "dvorak-lh";
@@ -83,6 +86,7 @@ type PrefActions = {
   setChannels: (data: { [channelId: string]: ChannelPreferences }) => void;
   setEditorAutocompleteEnabled: (value: boolean) => void;
   setEditorAccessibilityMode: (value: boolean) => void;
+  setEditorLineComments: (value: boolean) => void;
   setKeyboard: (data: KeyboardPreferences) => void;
   setMidi: (data: MidiPreferences) => void;
   setHaptics: (data: HapticsPreferences) => void;
@@ -111,7 +115,7 @@ function getInitialPreferences(): PrefState {
     channels: {
       sayto: { autoreadMode: AutoreadMode.Off, notify: true },
     },
-    editor: { autocompleteEnabled: true, accessibilityMode: true },
+    editor: { autocompleteEnabled: true, accessibilityMode: true, lineComments: false },
     keyboard: { navigationKeyScheme: "jkli" },
     midi: { enabled: false },
     haptics: { enabled: false, intensityCap: 1.0, autoStopTimeout: 5 },
@@ -189,6 +193,8 @@ export const usePreferences = create<PrefState & PrefActions>()(
       set((s) => ({ editor: { ...s.editor, autocompleteEnabled: value } })),
     setEditorAccessibilityMode: (value) =>
       set((s) => ({ editor: { ...s.editor, accessibilityMode: value } })),
+    setEditorLineComments: (value) =>
+      set((s) => ({ editor: { ...s.editor, lineComments: value } })),
     setKeyboard: (data) => set({ keyboard: data }),
     setMidi: (data) => set({ midi: data }),
     setHaptics: (data) => set({ haptics: data }),

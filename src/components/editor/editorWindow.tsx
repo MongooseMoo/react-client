@@ -18,6 +18,10 @@ import {
   registerMooLanguage,
 } from '../../editor/moocode/language';
 import { MOO_CODE_ACTION_FIX_ALL_KIND } from '../../editor/moocode/contract';
+import {
+  lineCommentsToStringStatements,
+  stringStatementsToLineComments,
+} from '../../editor/moocode/lineComments';
 import { MOO_EDITOR_THEME_NAME } from '../../editor/moocode/theme';
 import { toMonacoTreeSitterMarkers } from '../../editor/moocode/treeSitter';
 import { usePreferences } from '../../stores/preferencesStore';
@@ -291,10 +295,16 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
           if (clientId !== '') {
             return; // We already have a session
           }
-          const contents = event.data.session.contents.join('\n');
+          const loaded: EditorSession = event.data.session;
+          const lines =
+            getEditorLanguageForSessionType(loaded.type) === MOO_LANGUAGE_ID &&
+            usePreferences.getState().editor.lineComments
+              ? stringStatementsToLineComments(loaded.contents)
+              : loaded.contents;
+          const contents = lines.join('\n');
           setCode(contents);
           setOriginalCode(contents);
-          setSession(event.data.session);
+          setSession({ ...loaded, contents: lines });
           setDocumentState(DocumentState.Unchanged);
           setClientId(event.data.clientId);
           setIsLoaded(true); // Add this line to set isLoaded to true when content is loaded
@@ -344,7 +354,10 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
 
   // Save the code
   const onSave = (event: React.MouseEvent<HTMLButtonElement>) => {
-    const contents = (editorInstance.current?.getValue() ?? code).split(/\r\n|\r|\n/);
+    const lines = (editorInstance.current?.getValue() ?? code).split(/\r\n|\r|\n/);
+    // The server does not know `//`; send what the core's own rewrite would.
+    const contents =
+      editorLanguage === MOO_LANGUAGE_ID ? lineCommentsToStringStatements(lines) : lines;
     const sessionData = { ...session, contents };
     channel.postMessage({ type: 'save', session: sessionData, id });
     setDocumentState(DocumentState.Saved);

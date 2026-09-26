@@ -32,11 +32,30 @@ describe('MOO Tree-sitter grammar', () => {
     expect(result.hasError).toBe(false);
   });
 
-  it('reports // as a parse error because MOO has no line comments', () => {
-    const result = service.parse('x = 1; // not a comment');
+  it('accepts // comments on lines of their own', () => {
+    const result = service.parse('// top\nif (x)\n  // indented\n  y = 1;\nendif');
+
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('flags a // comment that follows code, which the MOO will not compile', () => {
+    const result = service.parse('y = 1; // trailing');
+
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'trailing-line-comment',
+        lineNumber: 1,
+        startColumn: 8,
+        endColumn: 19,
+      }),
+    ]);
+  });
+
+  it('reports a // line inside an expression as a parse error', () => {
+    const result = service.parse('x = {1,\n// note\n2};');
 
     expect(result.hasError).toBe(true);
-    expect(result.diagnostics.length).toBeGreaterThan(0);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain('parse-error');
   });
 
   it('extracts block and middle-clause symbols from real parser nodes', () => {
