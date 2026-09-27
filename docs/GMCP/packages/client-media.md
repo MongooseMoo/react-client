@@ -60,15 +60,24 @@ Implementation notes:
 
 - `type` is `sound`, `music`, or `video`.
 - `volume` is interpreted as 0 to 100 and converted to local gain.
-- `start` and `finish` are MCMP positions in milliseconds. When `finish` is
-  present, playback is stopped after `finish - start` milliseconds.
-- `loops: -1` loops indefinitely. Other loop counts are converted to the
-  underlying Cacophony loop count.
+- `start` and `finish` are absolute MCMP positions in milliseconds that define
+  the play segment `[start, finish)`. `finish` defaults to the end of the file
+  and is clamped to it; a `finish` at or before `start` is ignored.
+- `loops` is how many times the segment plays: `1` (default) plays it once,
+  `N` repeats it `N` times, and `-1` repeats it until stopped. Only the
+  segment repeats, never the whole file.
+- Buffered sounds realize the segment as a Cacophony sprite region, so the
+  loop is sample-accurate and gapless and the sound ends by itself after its
+  last pass. Streamed `music` cannot use regions: it seeks back to `start`
+  every `finish - start` milliseconds and stops after `N × (finish - start)`
+  (never, for `loops: -1`).
 - `priority` stops lower-priority active sounds.
 - `key` is the active sound identity. If absent, the resolved media URL is used.
 - `music` URLs are routed through the configured CORS proxy before playback.
-- `end` is accepted as a deprecated Mongoose compatibility alias for a local
-  stop delay in milliseconds when `finish` is absent.
+- `end` is accepted as a deprecated alias for `finish` (a position, not a
+  delay) when `finish` is absent.
+- Replaying a `Play` for a key that is still playing the same segment keeps it
+  playing; it does not restart it or arm a second stop.
 
 ### `Client.Media.Stop`
 
@@ -94,8 +103,13 @@ Updates active sounds selected by `key` or `name`.
 Supported update fields include:
 
 - Identity and selectors: `name`, `url`, `type`, `tag`, `key`
-- Playback state: `volume`, `fadein`, `fadeout`, `start`, `loops`, `priority`,
-  `continue`
+- Playback state: `volume`, `fadein`, `fadeout`, `start`, `finish`, `loops`,
+  `priority`, `continue`
+
+`start` alone seeks to that absolute position (clamped into the current
+segment). `finish` (or legacy `end`) moves the segment: the sound's original
+`Play` is replayed with the update merged over it, which restarts playback at
+the new segment's `start`.
 - Spatial state: `is3d`, `pan`, `position`
 - Ambisonic state: `upmix`, `channels`
 - Effects: `chain`, `send`, `effects`

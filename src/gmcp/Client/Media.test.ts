@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockAmbisonicRendererCreate, mockPositionalFoaRendererCreate, mockCreateSound } =
-  vi.hoisted(() => ({
-    mockAmbisonicRendererCreate: vi.fn(),
-    mockPositionalFoaRendererCreate: vi.fn(),
-    mockCreateSound: vi.fn(),
-  }));
+const {
+  mockAmbisonicRendererCreate,
+  mockPositionalFoaRendererCreate,
+  mockCreateSound,
+  mockCreateSprite,
+} = vi.hoisted(() => ({
+  mockAmbisonicRendererCreate: vi.fn(),
+  mockPositionalFoaRendererCreate: vi.fn(),
+  mockCreateSound: vi.fn(),
+  mockCreateSprite: vi.fn(),
+}));
 
 vi.mock('../../audio/AmbisonicRenderer', () => ({
   AmbisonicRenderer: {
@@ -42,7 +47,9 @@ type MockPlayback = {
 };
 
 type MockSound = {
+  buffer?: { duration: number };
   cleanup: ReturnType<typeof vi.fn>;
+  region?: { start: number; duration: number };
   isPlaying: boolean;
   key?: string;
   loop: ReturnType<typeof vi.fn>;
@@ -136,6 +143,7 @@ function createMockClient() {
       sampleRate: 48000,
     },
     createSound: mockCreateSound,
+    createSprite: mockCreateSprite,
     createBus: vi.fn((name?: string) => {
       const bus = makeEffectBus(name ?? null);
       if (name) {
@@ -606,6 +614,214 @@ describe('GMCPClientMedia', () => {
 
     expect(sound.cleanup).toHaveBeenCalledOnce();
     expect(handler.sounds).toEqual({});
+  });
+
+  describe('MCMP start..finish segments', () => {
+    function mockSegmentSound(url: string, start: number, duration: number) {
+      const base = createMockSound(url);
+      base.buffer = { duration: 10 };
+      const region = createMockSound('');
+      region.buffer = base.buffer;
+      region.region = { start, duration };
+      mockCreateSound.mockResolvedValue(base);
+      mockCreateSprite.mockResolvedValue({ get: () => region });
+      return { base, region };
+    }
+
+    it('loops the start..finish region, not the whole file', async () => {
+      vi.useFakeTimers();
+      const { base, region } = mockSegmentSound('rain.ogg', 2, 3);
+
+      await handler.handlePlay({
+        finish: 5000,
+        key: 'rain',
+        loops: -1,
+        name: 'rain.ogg',
+        start: 2000,
+        type: 'sound',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSprite).toHaveBeenCalledWith(
+        base.buffer,
+        { segment: { start: 2, duration: 3 } },
+        { panType: 'stereo' },
+      );
+      expect(base.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds.rain).toBe(region);
+      expect(region.play).toHaveBeenCalledOnce();
+      expect(region.loop).toHaveBeenCalledWith('infinite');
+      // Positions are absolute in MCMP but region-relative in Cacophony.
+      expect(region.seek).toHaveBeenCalledWith(0);
+
+      // No stop timer: an infinite segment keeps playing past one clip length.
+      vi.advanceTimersByTime(60_000);
+      expect(region.cleanup).not.toHaveBeenCalled();
+    });
+
+    it('lets a finite region end naturally after N passes', async () => {
+      vi.useFakeTimers();
+      const { region } = mockSegmentSound('drip.ogg', 1, 0.5);
+
+      await handler.handlePlay({
+        finish: 1500,
+        key: 'drip',
+        loops: 3,
+        name: 'drip.ogg',
+        start: 1000,
+        type: 'sound',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(region.loop).toHaveBeenCalledWith(2);
+      vi.advanceTimersByTime(10_000);
+      expect(region.cleanup).not.toHaveBeenCalled();
+
+      region.trigger('ended');
+      vi.advanceTimersByTime(0);
+      expect(region.cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('clamps finish to the end of the file', async () => {
+      mockSegmentSound('tail.ogg', 8, 2);
+
+      await handler.handlePlay({
+        finish: 99_000,
+        key: 'tail',
+        name: 'tail.ogg',
+        start: 8000,
+        type: 'sound',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSprite).toHaveBeenCalledWith(
+        expect.anything(),
+        { segment: { start: 8, duration: 2 } },
+        expect.anything(),
+      );
+    });
+
+    it('repeats a region-less segment by seeking back, then stops after N x (finish - start)', async () => {
+      vi.useFakeTimers();
+      const sound = createMockSound('theme.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+
+      await handler.handlePlay({
+        finish: 300,
+        key: 'theme',
+        loops: 3,
+        name: 'theme.ogg',
+        start: 100,
+        type: 'music',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSprite).not.toHaveBeenCalled();
+      expect(sound.loop).not.toHaveBeenCalled();
+      sound.seek.mockClear();
+
+      vi.advanceTimersByTime(200);
+      expect(sound.seek).toHaveBeenCalledWith(0.1);
+      vi.advanceTimersByTime(200);
+      expect(sound.cleanup).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(199);
+      expect(sound.cleanup).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(sound.cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('never stops an infinite region-less segment', async () => {
+      vi.useFakeTimers();
+      const sound = createMockSound('theme.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+
+      await handler.handlePlay({
+        finish: 300,
+        key: 'theme',
+        loops: -1,
+        name: 'theme.ogg',
+        start: 100,
+        type: 'music',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+
+      vi.advanceTimersByTime(60_000);
+      expect(sound.cleanup).not.toHaveBeenCalled();
+    });
+
+    it('does not stack a second stop timer when the same key is replayed', async () => {
+      vi.useFakeTimers();
+      const sound = createMockSound('bell.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      const play = {
+        finish: 250,
+        key: 'bell',
+        loops: 2,
+        name: 'bell.ogg',
+        start: 50,
+        type: 'sound',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay;
+
+      await handler.handlePlay(play);
+      vi.advanceTimersByTime(100);
+      await handler.handlePlay(play);
+
+      // One timer from the first Play: passes end at 200ms and 400ms.
+      vi.advanceTimersByTime(299);
+      expect(sound.cleanup).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(sound.cleanup).toHaveBeenCalledOnce();
+      vi.advanceTimersByTime(1000);
+      expect(sound.cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('reads end as a finish position, not a delay', async () => {
+      vi.useFakeTimers();
+      const sound = createMockSound('bell.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+
+      await handler.handlePlay({
+        end: 300,
+        key: 'bell',
+        name: 'bell.ogg',
+        start: 100,
+        type: 'music',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+
+      vi.advanceTimersByTime(199);
+      expect(sound.cleanup).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(sound.cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('moves the segment when an Update carries finish', async () => {
+      const first = mockSegmentSound('rain.ogg', 2, 3);
+
+      await handler.handlePlay({
+        finish: 5000,
+        key: 'rain',
+        loops: -1,
+        name: 'rain.ogg',
+        start: 2000,
+        type: 'sound',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+
+      const second = mockSegmentSound('rain.ogg', 2, 4);
+      handler.handleUpdate({ key: 'rain', finish: 6000 } as GMCPMessageClientMediaUpdate);
+      await vi.waitFor(() => expect(second.region.play).toHaveBeenCalledOnce());
+
+      expect(first.region.cleanup).toHaveBeenCalledOnce();
+      expect(mockCreateSprite).toHaveBeenLastCalledWith(
+        second.base.buffer,
+        { segment: { start: 2, duration: 4 } },
+        { panType: 'stereo' },
+      );
+      expect(second.region.loop).toHaveBeenCalledWith('infinite');
+      expect(handler.sounds.rain).toBe(second.region);
+    });
   });
 
   it('cleans up a finite sound after natural playback completion', async () => {

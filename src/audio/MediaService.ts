@@ -84,6 +84,7 @@ export interface ClientMediaUpdatePayload {
   readonly fadein?: number;
   readonly fadeout?: number;
   readonly start?: number;
+  readonly finish?: number;
   readonly loops?: number;
   readonly priority?: number;
   readonly continue?: boolean;
@@ -97,6 +98,12 @@ export interface ClientMediaUpdatePayload {
   readonly chain?: string;
   readonly send?: number;
   readonly effects?: EffectSpec[];
+}
+
+/** The MCMP play window, as absolute file positions in milliseconds. */
+interface MediaSegment {
+  readonly start: number;
+  readonly finish?: number;
 }
 
 export interface ClientMediaChainPayload {
@@ -143,6 +150,18 @@ export interface ExtendedSound extends Sound {
   upmix?: string;
   effectChain?: EffectChain;
   effectGeneration?: number;
+  /** The requested play window; a buffer sound realizes it as a Cacophony region. */
+  segment?: MediaSegment;
+  /** Last MCMP loop count; drives timer-based segment repeats for region-less sounds. */
+  segmentLoops?: number;
+  /** Pending finish/repeat timer for a region-less segment. */
+  segmentTimer?: ReturnType<typeof setTimeout>;
+  /** The Play that started this sound, so an Update can move its segment. */
+  playPayload?: ClientMediaPlayPayload;
+}
+
+function finiteMs(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : undefined;
 }
 
 interface MediaServiceOptions {
@@ -314,7 +333,9 @@ export class MediaService {
     let sound = this.sounds[soundKey] as ExtendedSound;
     this.preloadedSoundKeys.delete(soundKey);
     const panType = data.is3d ? 'HRTF' : 'stereo';
-    const isNewSound = !sound || sound.url !== mediaUrl;
+    const segment = this.requestedSegment(data);
+    const isNewSound =
+      !sound || sound.url !== mediaUrl || !this.sameSegment(sound.segment, segment);
     if (isNewSound) {
       if (sound) {
         this.releaseSound(sound, soundKey);
@@ -331,7 +352,11 @@ export class MediaService {
           CACOPHONY_BUFFER,
           panType,
         )) as ExtendedSound;
+        if (segment) {
+          sound = await this.segmentSound(sound, segment, panType);
+        }
       }
+      sound.segment = segment;
     }
 
     // A concurrent play() for this key read the slot as empty before our await
@@ -345,19 +370,10 @@ export class MediaService {
 
     sound.key = soundKey;
     sound.mediaName = data.name;
+    sound.playPayload = data;
     this.assignSoundMetadata(sound, data);
     this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
-
-    const stopDelay = this.stopDelayMs(data);
-    if (stopDelay !== undefined) {
-      const endKey = soundKey;
-      setTimeout(() => {
-        if (this.sounds[endKey] === sound) {
-          this.releaseSound(sound, endKey);
-        }
-      }, stopDelay);
-    }
 
     if (!sound.isPlaying) {
       const [playback] = sound.play({
@@ -366,8 +382,9 @@ export class MediaService {
       }) as Playback[];
       this.releaseSoundWhenPlaybackEnds(sound, soundKey);
       if (data.start !== undefined) {
-        sound.seek(data.start / 1000);
+        this.seekToPosition(sound, data.start);
       }
+      this.scheduleSegmentTimer(sound, soundKey);
 
       if (data.upmix === 'ambisonic') {
         const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
@@ -399,6 +416,9 @@ export class MediaService {
         : [];
 
     targetSounds.forEach((sound) => {
+      if (this.resegment(sound, data)) {
+        return;
+      }
       this.assignSoundMetadata(sound, {
         key: data.key ?? sound.key,
         tag: data.tag ?? sound.tag,
@@ -652,6 +672,7 @@ export class MediaService {
 
   private releaseSound(sound: ExtendedSound, key?: string): void {
     this.motion.cancel(sound);
+    this.clearSegmentTimer(sound);
     if (sound === this.currentMusic) {
       this.currentMusic = undefined;
       this.mediaSession.clear();
@@ -870,8 +891,15 @@ export class MediaService {
     }
 
     if (data.loops !== undefined) {
-      const loopCount = data.loops === -1 ? Infinity : data.loops - 1;
-      sound.loop(loopCount);
+      sound.segmentLoops = data.loops;
+      // A region-less segment with a finish repeats by timer; looping the
+      // element itself would replay the whole file.
+      if (!this.repeatsByTimer(sound)) {
+        // 'infinite' (not Infinity) is what makes Cacophony loop the source
+        // natively and gaplessly; a number restarts it from onended each pass.
+        const loopCount = data.loops === -1 ? 'infinite' : data.loops - 1;
+        sound.loop(loopCount);
+      }
     }
 
     if (data.is3d) {
@@ -899,7 +927,7 @@ export class MediaService {
     }
 
     if (data.start !== undefined) {
-      sound.seek(data.start / 1000);
+      this.seekToPosition(sound, data.start);
     }
 
     if (data.priority) {
@@ -916,20 +944,134 @@ export class MediaService {
     }
   }
 
-  private stopDelayMs(
+  /**
+   * The MCMP window a Play asks for, or undefined for the whole file. `start`
+   * and `finish` are absolute positions in ms; `end` is a legacy spelling of
+   * `finish`. A finish at or before start is ignored.
+   */
+  private requestedSegment(
     data: Pick<ClientMediaPlayPayload, 'finish' | 'start' | 'end'>,
-  ): number | undefined {
-    if (typeof data.finish === 'number' && Number.isFinite(data.finish)) {
-      const start =
-        typeof data.start === 'number' && Number.isFinite(data.start) ? Math.max(0, data.start) : 0;
-      return Math.max(0, data.finish - start);
+  ): MediaSegment | undefined {
+    const start = finiteMs(data.start) ?? 0;
+    let finish = finiteMs(data.finish) ?? finiteMs(data.end);
+    if (finish !== undefined && finish <= start) {
+      console.warn(`Client.Media: finish ${finish} is not after start ${start}; ignored`);
+      finish = undefined;
     }
-
-    if (typeof data.end === 'number' && Number.isFinite(data.end) && data.end > 0) {
-      return data.end;
+    if (start === 0 && finish === undefined) {
+      return undefined;
     }
+    return { start, finish };
+  }
 
-    return undefined;
+  private sameSegment(a: MediaSegment | undefined, b: MediaSegment | undefined): boolean {
+    return a?.start === b?.start && a?.finish === b?.finish;
+  }
+
+  /**
+   * Swap a whole-file buffer sound for a Cacophony region over [start, finish).
+   * Region playback seeks, loops and ends inside the window natively (the
+   * source's loopStart/loopEnd), so `loops` repeats the segment, not the file.
+   */
+  private async segmentSound(
+    base: ExtendedSound,
+    segment: MediaSegment,
+    panType: 'HRTF' | 'stereo',
+  ): Promise<ExtendedSound> {
+    const buffer = base.buffer;
+    if (!buffer) {
+      return base;
+    }
+    const start = segment.start / 1000;
+    const finish = Math.min(
+      segment.finish === undefined ? buffer.duration : segment.finish / 1000,
+      buffer.duration,
+    );
+    if (finish <= start) {
+      return base;
+    }
+    const sprite = await this.cacophony.createSprite(
+      buffer,
+      { segment: { start, duration: finish - start } },
+      { panType },
+    );
+    const sound = sprite.get('segment') as ExtendedSound;
+    sound.url = base.url;
+    base.cleanup();
+    return sound;
+  }
+
+  /** Seek to an absolute file position, translated into the sound's region if it has one. */
+  private seekToPosition(sound: ExtendedSound, positionMs: number): void {
+    const seconds = positionMs / 1000;
+    const region = sound.region;
+    if (!region) {
+      sound.seek(seconds);
+      return;
+    }
+    sound.seek(Math.min(Math.max(0, seconds - region.start), region.duration));
+  }
+
+  private repeatsByTimer(sound: ExtendedSound): boolean {
+    return !sound.region && sound.segment?.finish !== undefined;
+  }
+
+  /**
+   * A region-less sound (streamed music, or an undecodable buffer) cannot loop
+   * a window natively, so a timer seeks back to `start` at each `finish` and
+   * releases the sound after the last pass: N × (finish - start), or never
+   * for `loops: -1`.
+   */
+  private scheduleSegmentTimer(sound: ExtendedSound, key: string): void {
+    this.clearSegmentTimer(sound);
+    const segment = sound.segment;
+    if (!this.repeatsByTimer(sound) || segment?.finish === undefined) {
+      return;
+    }
+    const length = segment.finish - segment.start;
+    let passes = 0;
+    const onSegmentEnd = () => {
+      sound.segmentTimer = undefined;
+      if (this.sounds[key] !== sound) {
+        return;
+      }
+      passes += 1;
+      const loops = sound.segmentLoops ?? 1;
+      if (loops !== -1 && passes >= Math.max(1, loops)) {
+        this.releaseSound(sound, key);
+        return;
+      }
+      this.seekToPosition(sound, segment.start);
+      sound.segmentTimer = setTimeout(onSegmentEnd, length);
+    };
+    sound.segmentTimer = setTimeout(onSegmentEnd, length);
+  }
+
+  private clearSegmentTimer(sound: ExtendedSound): void {
+    if (sound.segmentTimer !== undefined) {
+      clearTimeout(sound.segmentTimer);
+      sound.segmentTimer = undefined;
+    }
+  }
+
+  /**
+   * An Update carrying `finish` (or legacy `end`) moves the play window, which
+   * a region cannot do in place: replay the original Play with the update
+   * merged over it. Returns true when it took over the update.
+   */
+  private resegment(sound: ExtendedSound, data: ClientMediaUpdatePayload): boolean {
+    const original = sound.playPayload;
+    if (!original || (data.finish === undefined && data.end === undefined)) {
+      return false;
+    }
+    const overrides = Object.fromEntries(
+      Object.entries(data).filter(([, value]) => value !== undefined),
+    ) as Partial<ClientMediaPlayPayload>;
+    const finish = data.finish ?? data.end;
+    void this.play({ ...original, ...overrides, finish, key: sound.key ?? original.key }).catch(
+      (error) => console.error('Client.Media.Update: resegment failed', error),
+    );
+    return true;
   }
 
   private stopSound(sound: ExtendedSound): void {
