@@ -8,6 +8,15 @@ import {
 
 import { usePreferences } from '../stores/preferencesStore';
 import { AmbisonicRenderer } from './AmbisonicRenderer';
+import {
+  type AudioCatalogIds,
+  type AudioCategory,
+  type AudioDiagnosticError,
+  type AudioStage,
+  AudioDiagnosticsRing,
+  classifyLoadError,
+  errorMessage,
+} from './audioDiagnostics';
 import type { PositionalFoaRenderer } from './PositionalFoaRenderer';
 import {
   DEFAULT_SPATIAL_PROFILE,
@@ -83,6 +92,8 @@ export interface ClientMediaPlayPayload {
   readonly artist?: string;
   readonly album?: string;
   readonly artwork?: MediaImage[];
+  /** Catalog provenance, recorded in diagnostics only. */
+  readonly catalog?: AudioCatalogIds;
 }
 
 export interface ClientMediaStopPayload {
@@ -201,6 +212,8 @@ export interface ExtendedSound extends Sound {
   namedSend?: number;
   /** Whether {@link namedChain} is currently applied as the source's own route. */
   chainRouted?: boolean;
+  /** The key claim generation that created this sound (diagnostics). */
+  generation?: number;
 }
 
 /** A pending load's claim on a media key; a newer claim, Stop, or reset makes it stale. */
@@ -212,6 +225,7 @@ interface KeyClaim {
 }
 
 interface KeyTicket {
+  readonly generation: number;
   /** True while this claim is still the latest for its key and no reset intervened. */
   current(): boolean;
   /** Drop the pending-load record once the load has settled. */
@@ -220,6 +234,11 @@ interface KeyTicket {
 
 function finiteMs(value: number | undefined): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : undefined;
+}
+
+/** Contract default until messages carry a category: music → music, anything else → effects. */
+function mediaCategory(type: MediaType | undefined): AudioCategory {
+  return type === 'music' ? 'music' : 'effects';
 }
 
 interface MediaServiceOptions {
@@ -232,6 +251,8 @@ export class MediaService {
   readonly cacophony: Cacophony;
   sounds: Record<string, ExtendedSound> = {};
   defaultUrl = '';
+  /** The last 500 stage transitions and failures, for the Audio diagnostics view. */
+  readonly diagnostics = new AudioDiagnosticsRing();
 
   private readonly cleanedSounds = new WeakSet<ExtendedSound>();
   /** Glides server-sent sound positions (keyed by sound) instead of snapping. */
@@ -406,6 +427,43 @@ export class MediaService {
     this.defaultUrl = url;
   }
 
+  /** Record a stage for a payload that has not produced a sound yet. */
+  private tracePayload(
+    stage: AudioStage,
+    data: Pick<ClientMediaPlayPayload, 'name' | 'type' | 'catalog'>,
+    key: string,
+    generation: number,
+    error?: AudioDiagnosticError,
+  ): void {
+    this.diagnostics.record({
+      stage,
+      key,
+      name: data.name,
+      generation,
+      category: mediaCategory(data.type),
+      catalog: data.catalog,
+      error,
+    });
+  }
+
+  /** Record a stage for an existing sound. */
+  private traceSound(
+    stage: AudioStage,
+    sound: ExtendedSound,
+    key = sound.key,
+    error?: AudioDiagnosticError,
+  ): void {
+    this.diagnostics.record({
+      stage,
+      key,
+      name: sound.mediaName,
+      generation: sound.generation,
+      category: mediaCategory(sound.mediaType),
+      catalog: sound.playPayload?.catalog,
+      error,
+    });
+  }
+
   async load(data: ClientMediaLoadPayload): Promise<void> {
     const url = this.mediaUrl(data);
     const key = url;
@@ -414,9 +472,20 @@ export class MediaService {
     }
     const ticket = this.claimKey(key, { name: data.name, type: data.type });
     try {
-      const sound = (await this.cacophony.createSound(url)) as ExtendedSound;
+      this.tracePayload('loading', data, key, ticket.generation);
+      let sound: ExtendedSound;
+      try {
+        sound = (await this.cacophony.createSound(url)) as ExtendedSound;
+      } catch (error) {
+        this.tracePayload('loading', data, key, ticket.generation, {
+          code: classifyLoadError(error),
+          message: errorMessage(error),
+        });
+        throw error;
+      }
       if (!ticket.current() || this.sounds[key]) {
         // A Play, Stop, or reset for this key arrived while we were loading.
+        this.tracePayload('decoded', data, key, ticket.generation, { code: 'STALE_GENERATION' });
         this.releaseSound(sound);
         return;
       }
@@ -429,12 +498,17 @@ export class MediaService {
         this.preloadedSoundKeys.delete(oldestKey);
         const oldestSound = this.sounds[oldestKey];
         if (oldestSound) {
-          this.releaseSound(oldestSound, oldestKey);
+          this.releaseSound(oldestSound, oldestKey, {
+            code: 'CAPACITY',
+            message: `preload cache full (${MAX_PRELOADED_SOUNDS})`,
+          });
         }
       }
 
       sound.key = key;
       sound.mediaName = data.name;
+      sound.generation = ticket.generation;
+      this.tracePayload('decoded', data, key, ticket.generation);
       this.sounds[key] = sound;
       this.preloadedSoundKeys.add(key);
     } finally {
@@ -454,6 +528,7 @@ export class MediaService {
     this.pendingLoads.set(key, claim);
     const epoch = this.epoch;
     return {
+      generation,
       current: () => this.keyGenerations.get(key) === generation && this.epoch === epoch,
       finish: () => {
         if (this.pendingLoads.get(key) === claim) {
@@ -510,7 +585,7 @@ export class MediaService {
       if (sound) {
         this.releaseSound(sound, soundKey);
       }
-      sound = await this.createMediaSound(data, mediaUrl, panType, segment, ticket);
+      sound = await this.createMediaSound(data, soundKey, mediaUrl, panType, segment, ticket);
       if (!sound) {
         return;
       }
@@ -520,6 +595,7 @@ export class MediaService {
     sound.key = soundKey;
     sound.mediaName = data.name;
     sound.playPayload = data;
+    sound.generation = ticket.generation;
     this.assignSoundMetadata(sound, data);
     this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
@@ -529,13 +605,16 @@ export class MediaService {
     if (data.chain) {
       await this.effects.whenChainReady(data.chain);
       if (!ticket.current()) {
+        this.tracePayload('routed', data, soundKey, ticket.generation, { code: 'STALE_GENERATION' });
         return;
       }
     }
     await this.applyEffectRouting(sound, soundKey, data, 'play');
     if (!ticket.current() || this.sounds[soundKey] !== sound) {
+      this.tracePayload('routed', data, soundKey, ticket.generation, { code: 'STALE_GENERATION' });
       return;
     }
+    this.traceSound('routed', sound);
 
     if (sound.isPlaying) {
       // Same key and source: keep the voice. An explicit start still seeks.
@@ -569,22 +648,66 @@ export class MediaService {
   /** Create the source (and its region sprite) for a Play; undefined if the claim went stale. */
   private async createMediaSound(
     data: ClientMediaPlayPayload,
+    soundKey: string,
     mediaUrl: string,
     panType: 'HRTF' | 'stereo',
     segment: MediaSegment | undefined,
     ticket: KeyTicket,
   ): Promise<ExtendedSound | undefined> {
     const kind = data.type === 'music' ? CACOPHONY_HTML : CACOPHONY_BUFFER;
-    let sound = (await this.cacophony.createSound(mediaUrl, kind, panType)) as ExtendedSound;
+    this.tracePayload('loading', data, soundKey, ticket.generation);
+    let sound: ExtendedSound;
+    try {
+      sound = (await this.cacophony.createSound(mediaUrl, kind, panType)) as ExtendedSound;
+    } catch (error) {
+      this.tracePayload('loading', data, soundKey, ticket.generation, {
+        code: classifyLoadError(error),
+        message: errorMessage(error),
+      });
+      throw error;
+    }
     if (ticket.current() && segment && kind === CACOPHONY_BUFFER) {
+      const regionError = this.regionOutOfRange(sound, segment);
+      if (regionError) {
+        this.tracePayload('decoded', data, soundKey, ticket.generation, regionError);
+      }
       sound = await this.segmentSound(sound, segment, panType);
     }
     if (!ticket.current()) {
       // Superseded by a later Play, a Stop, or a reset: release only our own source.
+      this.tracePayload('decoded', data, soundKey, ticket.generation, {
+        code: 'STALE_GENERATION',
+      });
       this.releaseSound(sound);
       return undefined;
     }
+    this.tracePayload('decoded', data, soundKey, ticket.generation);
     return sound;
+  }
+
+  /**
+   * A requested region that the decoded buffer cannot hold. A bound off by at
+   * most one decoded sample is rounding; anything more is REGION_OUT_OF_RANGE.
+   * Diagnostic only: segmentSound still clamps the region to the buffer.
+   */
+  private regionOutOfRange(
+    sound: ExtendedSound,
+    segment: MediaSegment,
+  ): AudioDiagnosticError | undefined {
+    const buffer = sound.buffer;
+    if (!buffer) {
+      return undefined;
+    }
+    const sample = 1 / (buffer.sampleRate || this.cacophony.context.sampleRate);
+    const start = segment.start / 1000;
+    const finish = segment.finish === undefined ? undefined : segment.finish / 1000;
+    if (start > buffer.duration + sample || (finish !== undefined && finish > buffer.duration + sample)) {
+      return {
+        code: 'REGION_OUT_OF_RANGE',
+        message: `region ${segment.start}..${segment.finish ?? 'end'} ms exceeds decoded ${Math.round(buffer.duration * 1000)} ms`,
+      };
+    }
+    return undefined;
   }
 
   /**
@@ -609,12 +732,17 @@ export class MediaService {
         playback.seek(offset);
       } catch (error) {
         console.warn(`Client.Media: cannot start '${soundKey}' at ${offset}s; starting at 0`, error);
+        this.traceSound('started', sound, soundKey, {
+          code: 'SEEK_UNAVAILABLE',
+          message: `cannot start at ${offset}s: ${errorMessage(error)}`,
+        });
       }
     }
     playback.play({
       fadeIn: data.fadein || undefined,
       fadeOut: data.fadeout || undefined,
     });
+    this.traceSound('started', sound, soundKey);
     return playback;
   }
 
@@ -718,6 +846,7 @@ export class MediaService {
     this.epoch += 1;
     this.pendingLoads.clear();
     this.allSounds.forEach((sound) => {
+      this.traceSound('stopped', sound);
       this.releaseSound(sound);
     });
     this.sounds = {};
@@ -785,6 +914,10 @@ export class MediaService {
       sound.chainRouted = true;
     } catch (error) {
       console.warn(`Client.Media: chain '${chain}' unavailable; playing dry`, error);
+      this.traceSound('routed', sound, sound.key, {
+        code: 'CAPABILITY_UNAVAILABLE',
+        message: `chain '${chain}' unavailable; playing dry: ${errorMessage(error)}`,
+      });
     }
   }
 
@@ -929,6 +1062,10 @@ export class MediaService {
       sound.routeTo(inline.bus);
     } catch (error) {
       console.warn('Client.Media: failed to route sound through inline effects', error);
+      this.traceSound('routed', sound, soundKey, {
+        code: 'CAPABILITY_UNAVAILABLE',
+        message: `inline effects unavailable: ${errorMessage(error)}`,
+      });
     }
   }
 
@@ -975,7 +1112,10 @@ export class MediaService {
     return soundKey !== undefined && this.sounds[soundKey] !== sound;
   }
 
-  private releaseSound(sound: ExtendedSound, key?: string): void {
+  private releaseSound(sound: ExtendedSound, key?: string, reason?: AudioDiagnosticError): void {
+    if (!this.cleanedSounds.has(sound)) {
+      this.traceSound('released', sound, key ?? sound.key, reason);
+    }
     this.motion.cancel(sound);
     this.clearSegmentTimer(sound);
     if (sound === this.currentMusic) {
@@ -1096,6 +1236,10 @@ export class MediaService {
         inputChannels,
         sound: sound.key ?? sound.url,
       });
+      this.traceSound('routed', sound, soundKey ?? sound.key, {
+        code: 'CAPABILITY_UNAVAILABLE',
+        message: `ambisonic renderer unavailable for ${inputChannels} channels: ${errorMessage(error)}`,
+      });
       return;
     }
     if (this.isSoundStale(sound, soundKey)) {
@@ -1135,6 +1279,10 @@ export class MediaService {
       console.warn('Positional FOA renderer unavailable', {
         error,
         sound: sound.key ?? sound.url,
+      });
+      this.traceSound('routed', sound, soundKey ?? sound.key, {
+        code: 'CAPABILITY_UNAVAILABLE',
+        message: `positional FOA renderer unavailable: ${errorMessage(error)}`,
       });
       return;
     }
@@ -1176,6 +1324,10 @@ export class MediaService {
       console.warn(
         `Client.Media: named chain '${data.chain}' is not supported for ambisonic sounds; use inline effects`,
       );
+      this.traceSound('routed', sound, soundKey, {
+        code: 'CAPABILITY_UNAVAILABLE',
+        message: `named chain '${data.chain}' is not supported for ambisonic sounds`,
+      });
     }
     return undefined;
   }
@@ -1412,6 +1564,7 @@ export class MediaService {
   }
 
   private stopSound(sound: ExtendedSound): void {
+    this.traceSound('stopped', sound);
     if (sound.key !== undefined) {
       // Also supersede a Play for this key that is still awaiting routing.
       this.cancelKey(sound.key);

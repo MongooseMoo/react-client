@@ -5,6 +5,7 @@
 // malformed frame throws MediaPayloadError; the GMCP session catches and logs
 // it, so a bad packet never reaches Cacophony.
 
+import type { AudioCatalogIds } from './audioDiagnostics';
 import { SPATIAL_MODELS, type SpatialModel, type SpatialProfile } from './distanceModel';
 import type { EffectSpec } from './effects/types';
 import type {
@@ -217,6 +218,29 @@ function optArtwork(r: Fields, what: string): MediaImage[] | undefined {
   });
 }
 
+/** Optional `catalog` provenance: string ids (numbers are accepted and stringified). */
+function optCatalog(r: Fields, what: string): AudioCatalogIds | undefined {
+  if (r.catalog === undefined) {
+    return undefined;
+  }
+  const label = `${what}.catalog`;
+  const c = fields(r.catalog, label);
+  const id = (key: 'soundId' | 'assetId' | 'segmentId'): string | undefined => {
+    const value = c[key];
+    if (value === undefined) {
+      return undefined;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+    if (typeof value !== 'string') {
+      fail(`${label}.${key} must be a string`);
+    }
+    return value;
+  };
+  return defined({ soundId: id('soundId'), assetId: id('assetId'), segmentId: id('segmentId') });
+}
+
 /** Keep only defined entries, so a field the MOO omitted stays absent ("keep current"). */
 function defined<T extends object>(value: T): T {
   return Object.fromEntries(
@@ -307,6 +331,7 @@ export function decodeMediaPlay(raw: unknown): ClientMediaPlayPayload {
     artist: optString(r, 'artist', what),
     album: optString(r, 'album', what),
     artwork: optArtwork(r, what),
+    catalog: optCatalog(r, what),
   });
 }
 
