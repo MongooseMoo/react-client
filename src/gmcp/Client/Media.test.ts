@@ -25,6 +25,7 @@ vi.mock('../../audio/PositionalFoaRenderer', () => ({
 }));
 
 import { MediaService } from '../../audio/MediaService';
+import { MediaPayloadError } from '../../audio/mediaPayloads';
 import { VectorTweener } from '../../audio/vectorTween';
 import { useSpatialStore } from '../../stores/spatialStore';
 import {
@@ -43,6 +44,8 @@ type MockPlayback = {
   connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
   duration: number;
+  play: ReturnType<typeof vi.fn>;
+  seek: ReturnType<typeof vi.fn>;
   stereoPan: number;
 };
 
@@ -55,9 +58,10 @@ type MockSound = {
   loop: ReturnType<typeof vi.fn>;
   mediaType?: string;
   on: ReturnType<typeof vi.fn>;
-  play: ReturnType<typeof vi.fn>;
+  playbackRate: number;
   playbacks: MockPlayback[];
   position: number[];
+  preplay: ReturnType<typeof vi.fn>;
   priority?: number;
   routeTo: ReturnType<typeof vi.fn>;
   seek: ReturnType<typeof vi.fn>;
@@ -66,6 +70,8 @@ type MockSound = {
   threeDOptions?: Record<string, unknown>;
   trigger: (event: string) => void;
   url: string;
+  /** The voice MediaService prepares with preplay() and starts with Playback.play(). */
+  voice: MockPlayback;
   volume: number;
 };
 
@@ -75,6 +81,11 @@ function createMockSound(url: string): MockSound {
     connect: vi.fn(),
     disconnect: vi.fn(),
     duration: 5,
+    play: vi.fn(() => {
+      sound.isPlaying = true;
+      return [playback];
+    }),
+    seek: vi.fn(),
     stereoPan: 0,
   };
 
@@ -90,10 +101,9 @@ function createMockSound(url: string): MockSound {
       soundListeners.get(event)?.add(listener);
       return () => soundListeners.get(event)?.delete(listener);
     }),
-    play: vi.fn(() => {
-      sound.isPlaying = true;
-      return [playback];
-    }),
+    playbackRate: 1,
+    preplay: vi.fn(() => [playback]),
+    voice: playback,
     playbacks: [playback],
     position: [0, 0, 0],
     priority: undefined,
@@ -240,7 +250,7 @@ describe('GMCPClientMedia', () => {
   });
 
   it('uses the resolved URL as the load and play key when data.url is missing', async () => {
-    handler.handleDefault('https://media.example/');
+    handler.handleDefault({ url: 'https://media.example/' });
     const sound = createMockSound('https://media.example/chime.ogg');
     mockCreateSound.mockResolvedValue(sound);
 
@@ -257,7 +267,7 @@ describe('GMCPClientMedia', () => {
     } as GMCPMessageClientMediaPlay);
 
     expect(mockCreateSound).toHaveBeenCalledTimes(1);
-    expect(sound.play).toHaveBeenCalledOnce();
+    expect(sound.voice.play).toHaveBeenCalledOnce();
     expect(handler.sounds['https://media.example/chime.ogg']).toBe(sound);
   });
 
@@ -283,7 +293,7 @@ describe('GMCPClientMedia', () => {
     } as GMCPMessageClientMediaPlay);
 
     expect(mockCreateSound).toHaveBeenCalledTimes(1);
-    expect(sound.play).toHaveBeenCalledOnce();
+    expect(sound.voice.play).toHaveBeenCalledOnce();
     expect(handler.sounds[proxiedUrl]).toBe(sound);
   });
 
@@ -307,7 +317,7 @@ describe('GMCPClientMedia', () => {
   });
 
   it('clears media session state without disposing lifetime ownership', async () => {
-    handler.handleDefault('https://media.example/');
+    handler.handleDefault({ url: 'https://media.example/' });
     const sound = createMockSound('https://media.example/chime.ogg');
     mockCreateSound.mockResolvedValue(sound);
     await handler.handleLoad({ name: 'chime.ogg' });
@@ -386,7 +396,7 @@ describe('GMCPClientMedia', () => {
         volume: 50,
         chain: 'ghost',
       } as unknown as GMCPMessageClientMediaPlay);
-      expect(sound.play).toHaveBeenCalledOnce(); // the sound still played
+      expect(sound.voice.play).toHaveBeenCalledOnce(); // the sound still played
     });
 
     it('advertises EffectsSupport to the server', () => {
@@ -649,10 +659,12 @@ describe('GMCPClientMedia', () => {
       );
       expect(base.cleanup).toHaveBeenCalledOnce();
       expect(handler.sounds.rain).toBe(region);
-      expect(region.play).toHaveBeenCalledOnce();
+      expect(region.voice.play).toHaveBeenCalledOnce();
       expect(region.loop).toHaveBeenCalledWith('infinite');
-      // Positions are absolute in MCMP but region-relative in Cacophony.
-      expect(region.seek).toHaveBeenCalledWith(0);
+      // Positions are absolute in MCMP but region-relative in Cacophony: the
+      // cursor sits at the region start, so the voice starts at 0 with no seek.
+      expect(region.voice.seek).not.toHaveBeenCalled();
+      expect(region.seek).not.toHaveBeenCalled();
 
       // No stop timer: an infinite segment keeps playing past one clip length.
       vi.advanceTimersByTime(60_000);
@@ -718,6 +730,8 @@ describe('GMCPClientMedia', () => {
 
       expect(mockCreateSprite).not.toHaveBeenCalled();
       expect(sound.loop).not.toHaveBeenCalled();
+      // The prepared voice is positioned before it starts.
+      expect(sound.voice.seek).toHaveBeenCalledWith(0.1);
       sound.seek.mockClear();
 
       vi.advanceTimersByTime(200);
@@ -811,7 +825,7 @@ describe('GMCPClientMedia', () => {
 
       const second = mockSegmentSound('rain.ogg', 2, 4);
       handler.handleUpdate({ key: 'rain', finish: 6000 } as GMCPMessageClientMediaUpdate);
-      await vi.waitFor(() => expect(second.region.play).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(second.region.voice.play).toHaveBeenCalledOnce());
 
       expect(first.region.cleanup).toHaveBeenCalledOnce();
       expect(mockCreateSprite).toHaveBeenLastCalledWith(
@@ -928,7 +942,7 @@ describe('GMCPClientMedia', () => {
       position: [0, 0, 0],
     } as GMCPMessageClientMediaPlay);
 
-    expect(sound.play).toHaveBeenCalledTimes(1);
+    expect(sound.voice.play).toHaveBeenCalledTimes(1);
 
     handler.handleUpdate({
       key: 'radio-1',
@@ -939,7 +953,7 @@ describe('GMCPClientMedia', () => {
       position: [4, 5, 6],
     } as GMCPMessageClientMediaUpdate);
 
-    expect(sound.play).toHaveBeenCalledTimes(1);
+    expect(sound.voice.play).toHaveBeenCalledTimes(1);
     expect(sound.volume).toBe(0.25);
     expect(sound.stereoPan).toBe(0.5);
     // The move glides rather than snapping; run the tween to completion.
@@ -947,15 +961,17 @@ describe('GMCPClientMedia', () => {
     client.stepMotion(600);
     expect(sound.position).toEqual([-4, 6, 5]);
     expect(sound.seek).toHaveBeenCalledWith(2);
+    // The panner only positions; distance falloff is applied once, at the
+    // sound's gain (see the spatial profile tests), so its rolloff is 0.
     expect(sound.threeDOptions).toMatchObject({
       coneInnerAngle: 360,
       coneOuterAngle: 360,
-      coneOuterGain: 0,
+      coneOuterGain: 1,
       distanceModel: 'inverse',
       maxDistance: 10000,
       panningModel: 'HRTF',
       refDistance: 1,
-      rolloffFactor: 1,
+      rolloffFactor: 0,
     });
   });
 
@@ -1084,12 +1100,12 @@ describe('GMCPClientMedia', () => {
       } as GMCPMessageClientMediaPlay);
       await Promise.all([p1, p2]);
 
-      // The first play to resolve createSound claims the slot and plays; the
-      // loser is released before it can play, so no orphaned overlapping audio.
-      expect(handler.sounds.race).toBe(soundA);
-      expect(soundA.play).toHaveBeenCalledOnce();
-      expect(soundB.play).not.toHaveBeenCalled();
-      expect(soundB.cleanup).toHaveBeenCalledOnce();
+      // The later Play owns the key; the superseded load is released before it
+      // can play, so there is no orphaned overlapping audio.
+      expect(handler.sounds.race).toBe(soundB);
+      expect(soundB.voice.play).toHaveBeenCalledOnce();
+      expect(soundA.voice.play).not.toHaveBeenCalled();
+      expect(soundA.cleanup).toHaveBeenCalledOnce();
     });
 
     it('does not attach the positional FOA renderer to a sound released mid-create (H2)', async () => {
@@ -1200,5 +1216,491 @@ describe('GMCPClientMedia', () => {
     );
 
     expect(renderer.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(-Math.PI / 2);
+  });
+
+  describe('live MOO wire shapes (chunk 01)', () => {
+    const tonePlay = {
+      key: 's4894767',
+      name: 'fixture/tone.m4a',
+      url: 'https://mongoose.world/sounds/',
+      type: 'sound',
+      volume: 50,
+      pan: 0,
+      loops: 1,
+      start: 0,
+    };
+
+    it('accepts Default {url} (contract case "default") and still a bare string', () => {
+      handler.receiveRegisteredMessage('Default', { url: 'https://mongoose.world/sounds/' });
+      expect(client.media.defaultUrl).toBe('https://mongoose.world/sounds/');
+      handler.receiveRegisteredMessage('Default', 'https://legacy.example/');
+      expect(client.media.defaultUrl).toBe('https://legacy.example/');
+      handler.receiveRegisteredMessage('Default', { url: '' });
+      expect(client.media.defaultUrl).toBe('');
+    });
+
+    it('rejects a Default whose url is not a string, leaving the base untouched', () => {
+      handler.receiveRegisteredMessage('Default', { url: 'https://mongoose.world/sounds/' });
+      expect(() => handler.receiveRegisteredMessage('Default', { url: {} })).toThrow(
+        MediaPayloadError,
+      );
+      expect(client.media.defaultUrl).toBe('https://mongoose.world/sounds/');
+    });
+
+    it('rejects a malformed Play before creating any audio node', () => {
+      expect(() =>
+        handler.receiveRegisteredMessage('Play', { ...tonePlay, loops: 1.5 }),
+      ).toThrow(MediaPayloadError);
+      expect(() =>
+        handler.receiveRegisteredMessage('Play', { ...tonePlay, chain: ['world', 'sphere'] }),
+      ).toThrow(MediaPayloadError);
+      expect(mockCreateSound).not.toHaveBeenCalled();
+      expect(mockCreateSprite).not.toHaveBeenCalled();
+    });
+
+    it('catches and logs a failed Play or Load instead of leaving an unhandled rejection', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockCreateSound.mockRejectedValue(new Error('decode failed'));
+
+      handler.receiveRegisteredMessage('Play', tonePlay);
+      handler.receiveRegisteredMessage('Load', { name: 'fixture/tone.m4a', url: tonePlay.url });
+
+      await vi.waitFor(() => expect(consoleError).toHaveBeenCalledTimes(2));
+      const logged = consoleError.mock.calls.map(([line]) => String(line)).sort();
+      expect(logged).toEqual([
+        "Client.Media.Load failed for 'fixture/tone.m4a': decode failed",
+        "Client.Media.Play failed for 's4894767': decode failed",
+      ]);
+      consoleError.mockRestore();
+    });
+
+    it('keeps send 0 as a real aux send (contract case "chain")', async () => {
+      const sound = createMockSound('https://mongoose.world/sounds/ambience/buzz1.m4a');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        key: 'fixture:machine',
+        name: 'ambience/buzz1.m4a',
+        type: 'sound',
+        loops: 1,
+        chain: 'workshop',
+        send: 0,
+      } as GMCPMessageClientMediaPlay);
+      expect(sound.routeTo).toHaveBeenCalledWith('workshop', 0);
+    });
+
+    it('chain "" on Update clears a primary named route back to master', async () => {
+      const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({ ...tonePlay, chain: 'workshop' } as GMCPMessageClientMediaPlay);
+      expect(sound.routeTo).toHaveBeenCalledWith('workshop');
+
+      handler.handleUpdate({ key: tonePlay.key, chain: '' } as GMCPMessageClientMediaUpdate);
+      expect(sound.routeTo).toHaveBeenLastCalledWith(client.effectBuses.master);
+
+      // Clearing is idempotent: a second clear does not reroute again.
+      sound.routeTo.mockClear();
+      handler.handleUpdate({ key: tonePlay.key, chain: '' } as GMCPMessageClientMediaUpdate);
+      expect(sound.routeTo).not.toHaveBeenCalled();
+    });
+
+    it('chain "" on Update silences an aux send', async () => {
+      const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        ...tonePlay,
+        chain: 'workshop',
+        send: 0.25,
+      } as GMCPMessageClientMediaPlay);
+      expect(sound.routeTo).toHaveBeenCalledWith('workshop', 0.25);
+
+      handler.handleUpdate({ key: tonePlay.key, chain: '' } as GMCPMessageClientMediaUpdate);
+      expect(sound.routeTo).toHaveBeenLastCalledWith('workshop', 0);
+    });
+
+    it('effects [] on Update tears down the inline chain and restores the named route', async () => {
+      const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        ...tonePlay,
+        effects: [{ id: 'muffle', type: 'lowpass', params: { frequency: 400 } }],
+      } as GMCPMessageClientMediaPlay);
+      const inline = client.effectBuses.anon[0];
+      expect(sound.routeTo).toHaveBeenCalledWith(inline);
+
+      handler.handleUpdate({
+        key: tonePlay.key,
+        effects: [],
+        chain: 'workshop',
+      } as GMCPMessageClientMediaUpdate);
+      await vi.waitFor(() => expect(inline.destroy).toHaveBeenCalled());
+      const routes = sound.routeTo.mock.calls.map(([target]) => target);
+      expect(routes.slice(-2)).toEqual([client.effectBuses.master, 'workshop']);
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+    });
+
+    it('an Update {key, volume} neither seeks, restarts nor reroutes', async () => {
+      const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({ ...tonePlay, chain: 'workshop' } as GMCPMessageClientMediaPlay);
+      sound.routeTo.mockClear();
+
+      handler.receiveRegisteredMessage('Update', { key: tonePlay.key, volume: 25 });
+
+      expect(sound.volume).toBe(0.25);
+      expect(sound.seek).not.toHaveBeenCalled();
+      expect(sound.voice.seek).not.toHaveBeenCalled();
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+      expect(sound.routeTo).not.toHaveBeenCalled();
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+      ['open', 12.5, 6000],
+      ['closed', 2, 800],
+    ])('plays a door-projected copy (%s door: volume %s, lowpass %s Hz)', async (_door, volume, hz) => {
+      const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
+      mockCreateSound.mockResolvedValue(sound);
+      handler.receiveRegisteredMessage('Play', {
+        ...tonePlay,
+        volume,
+        is3d: true,
+        position: [2, 2, 1],
+        effects: [
+          { id: 'door-lowpass:#62:north', type: 'lowpass', params: { frequency: hz } },
+        ],
+      });
+      await vi.waitFor(() => expect(sound.voice.play).toHaveBeenCalledOnce());
+
+      expect(client.media.cacophony.createBiquadFilter).toHaveBeenCalledWith({
+        type: 'lowpass',
+        frequency: hz,
+      });
+      expect(sound.routeTo).toHaveBeenCalledWith(client.effectBuses.anon[0]);
+      // Fractional percent volume, then the default inverse curve at the doorway.
+      const distance = Math.hypot(2, 2, 1);
+      expect(sound.volume).toBeCloseTo((volume / 100) / distance, 9);
+    });
+
+    it('waits for a pending Chain definition before starting the voice (no dry burst)', async () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const cacophony = client.media.cacophony as unknown as { createBus: ReturnType<typeof vi.fn> };
+      cacophony.createBus.mockImplementationOnce((name?: string) => {
+        const bus = makeEffectBus(name ?? null);
+        bus.addFilter = vi.fn(async (arg: unknown) => {
+          await gate;
+          return arg;
+        });
+        client.effectBuses.created[name ?? ''] = bus;
+        return bus;
+      });
+      handler.receiveRegisteredMessage('Chain', {
+        id: 'workshop',
+        effects: [{ id: 'muffle', type: 'lowpass', params: { frequency: 400 } }],
+        gain: 1,
+        fadein: 0,
+      });
+
+      const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
+      mockCreateSound.mockResolvedValue(sound);
+      const playing = handler.handlePlay({
+        ...tonePlay,
+        chain: 'workshop',
+      } as GMCPMessageClientMediaPlay);
+      await vi.waitFor(() => expect(client.effectBuses.created.workshop?.addFilter).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sound.voice.play).not.toHaveBeenCalled();
+
+      release();
+      await playing;
+      expect(sound.routeTo).toHaveBeenCalledWith('workshop');
+      expect(sound.routeTo.mock.invocationCallOrder[0]).toBeLessThan(
+        sound.voice.play.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('Automate applies both params and an explicit bypass: false', async () => {
+      await client.media.setChain({
+        id: 'workshop',
+        effects: [{ id: 'muffle', type: 'lowpass', params: { frequency: 400 } }],
+      });
+      const bus = client.effectBuses.created.workshop;
+      handler.receiveRegisteredMessage('Automate', {
+        chain: 'workshop',
+        target: 'muffle',
+        params: { frequency: 1200 },
+        ramp: 500,
+        curve: 'exponential',
+        bypass: false,
+      });
+      expect(bus.setFilterBypassed).toHaveBeenCalledWith(expect.anything(), false);
+      expect(bus.rampFilterParam).toHaveBeenCalledWith(expect.anything(), 'frequency', 1200, {
+        duration: 500,
+        type: 'exponential',
+      });
+    });
+  });
+
+  describe('per-key generations (chunk 02)', () => {
+    function deferred<T>() {
+      let resolve: (value: T) => void = () => undefined;
+      const promise = new Promise<T>((done) => {
+        resolve = done;
+      });
+      return { promise, resolve };
+    }
+
+    it('a later Play for the key wins even when the earlier load resolves last', async () => {
+      const a = deferred<MockSound>();
+      const b = deferred<MockSound>();
+      const soundA = createMockSound('https://media.example/a.ogg');
+      const soundB = createMockSound('https://media.example/b.ogg');
+      mockCreateSound.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+
+      const playA = handler.handlePlay({ key: 'k', name: 'a.ogg', type: 'sound' } as GMCPMessageClientMediaPlay);
+      const playB = handler.handlePlay({ key: 'k', name: 'b.ogg', type: 'sound' } as GMCPMessageClientMediaPlay);
+      b.resolve(soundB);
+      await playB;
+      a.resolve(soundA);
+      await playA;
+
+      expect(handler.sounds.k).toBe(soundB);
+      expect(soundB.voice.play).toHaveBeenCalledOnce();
+      expect(soundA.voice.play).not.toHaveBeenCalled();
+      expect(soundA.cleanup).toHaveBeenCalledOnce();
+      expect(soundB.cleanup).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['key', { key: 'k' }],
+      ['tag', { tag: 'tag-#1' }],
+      ['name', { name: 'a.ogg' }],
+      ['everything', {}],
+    ])('Stop by %s cancels a pending load', async (_label, stop) => {
+      const pending = deferred<MockSound>();
+      const sound = createMockSound('https://media.example/a.ogg');
+      mockCreateSound.mockReturnValueOnce(pending.promise);
+
+      const playing = handler.handlePlay({
+        key: 'k',
+        name: 'a.ogg',
+        tag: 'tag-#1',
+        type: 'sound',
+      } as GMCPMessageClientMediaPlay);
+      handler.handleStop(stop as GMCPMessageClientMediaStop);
+      pending.resolve(sound);
+      await playing;
+
+      expect(sound.voice.play).not.toHaveBeenCalled();
+      expect(sound.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds).toEqual({});
+    });
+
+    it('reset invalidates a pending load', async () => {
+      const pending = deferred<MockSound>();
+      const sound = createMockSound('https://media.example/a.ogg');
+      mockCreateSound.mockReturnValueOnce(pending.promise);
+
+      const playing = handler.handlePlay({ key: 'k', name: 'a.ogg', type: 'sound' } as GMCPMessageClientMediaPlay);
+      handler.reset();
+      pending.resolve(sound);
+      await playing;
+
+      expect(sound.voice.play).not.toHaveBeenCalled();
+      expect(handler.sounds).toEqual({});
+    });
+
+    it('an old segment timer after key reuse cannot kill the replacement', async () => {
+      vi.useFakeTimers();
+      const first = createMockSound('https://media.example/theme.ogg');
+      const second = createMockSound('https://media.example/other.ogg');
+      mockCreateSound.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+
+      await handler.handlePlay({
+        key: 'theme',
+        name: 'theme.ogg',
+        type: 'music',
+        start: 100,
+        finish: 300,
+      } as GMCPMessageClientMediaPlay);
+      await handler.handlePlay({ key: 'theme', name: 'other.ogg', type: 'music' } as GMCPMessageClientMediaPlay);
+
+      vi.advanceTimersByTime(10_000);
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(second.cleanup).not.toHaveBeenCalled();
+      expect(handler.sounds.theme).toBe(second);
+    });
+  });
+
+  describe('clip offset, gain, pitch and spatial profile (chunks 04/05)', () => {
+    it('plays catalog sound 56 as a sprite over its region (contract case "catalogOffset")', async () => {
+      const base = createMockSound('https://mongoose.world/sounds/ambience/arcade.m4a');
+      base.buffer = { duration: 60 };
+      const region = createMockSound('');
+      region.region = { start: 40.32731292517007, duration: 0.23289115646258507 };
+      mockCreateSound.mockResolvedValue(base);
+      mockCreateSprite.mockResolvedValue({ get: () => region });
+
+      await handler.handlePlay({
+        key: 's4894736',
+        name: 'ambience/arcade.m4a',
+        type: 'sound',
+        loops: 1,
+        start: 40327.31292517007,
+        finish: 40560.204081632655,
+      } as GMCPMessageClientMediaPlay);
+
+      const [, spec] = mockCreateSprite.mock.calls[0];
+      expect(spec.segment.start).toBeCloseTo(40.32731292517007, 9);
+      expect(spec.segment.duration).toBeCloseTo(0.23289115646258507, 9);
+      expect(region.voice.play).toHaveBeenCalledOnce();
+      expect(region.voice.seek).not.toHaveBeenCalled();
+    });
+
+    it('starts a region-less voice at its offset before it plays, not play-then-seek', async () => {
+      const sound = createMockSound('https://media.example/theme.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+
+      await handler.handlePlay({
+        key: 'theme',
+        name: 'theme.ogg',
+        type: 'music',
+        start: 240000,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(sound.voice.seek).toHaveBeenCalledWith(240);
+      expect(sound.voice.seek.mock.invocationCallOrder[0]).toBeLessThan(
+        sound.voice.play.mock.invocationCallOrder[0],
+      );
+      expect(sound.seek).not.toHaveBeenCalled();
+    });
+
+    it('applies gainDb as a gain multiplier and pitchSemitones as rate before the voice starts', async () => {
+      const sound = createMockSound('https://media.example/bell.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      let rateAtStart = 0;
+      sound.voice.play.mockImplementationOnce(() => {
+        rateAtStart = sound.playbackRate;
+        sound.isPlaying = true;
+        return [sound.voice];
+      });
+
+      await handler.handlePlay({
+        key: 'bell',
+        name: 'bell.ogg',
+        type: 'sound',
+        volume: 50,
+        gainDb: 6,
+        pitchSemitones: 12,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(rateAtStart).toBe(2);
+      expect(sound.volume).toBeCloseTo(0.5 * 1.9952623149688795, 9);
+
+      handler.handleUpdate({ key: 'bell', pitchSemitones: -12 } as GMCPMessageClientMediaUpdate);
+      expect(sound.playbackRate).toBe(0.5);
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+    });
+
+    it('applies a spatial profile once, at the sound gain, with the panner rolloff at 0', async () => {
+      const sound = createMockSound('https://media.example/fountain.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+
+      await handler.handlePlay({
+        key: 'fountain',
+        name: 'fountain.ogg',
+        type: 'sound',
+        volume: 50,
+        is3d: true,
+        position: [0, 10, 0],
+        spatial: {
+          model: 'inverse',
+          refDistance: 1,
+          maxDistance: 50,
+          rolloff: 1,
+          coneInnerAngle: 360,
+          coneOuterAngle: 360,
+          coneOuterGain: 1,
+        },
+      } as GMCPMessageClientMediaPlay);
+
+      expect(sound.threeDOptions).toMatchObject({
+        refDistance: 1,
+        maxDistance: 50,
+        rolloffFactor: 0,
+      });
+      expect(sound.volume).toBeCloseTo(0.5 * 0.1, 9);
+
+      // Listener moves to 2 m away; max distance is a clamp, not a cutoff.
+      client.media.setListenerPosition([0, 0, 8]);
+      expect(sound.volume).toBeCloseTo(0.5 * 0.5, 9);
+      client.media.setListenerPosition([0, 0, -90]);
+      expect(sound.volume).toBeCloseTo(0.5 * 0.02, 9);
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+    });
+
+    it('points a directional cone along the converted orientation', async () => {
+      const sound = createMockSound('https://media.example/speaker.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+
+      await handler.handlePlay({
+        key: 'speaker',
+        name: 'speaker.ogg',
+        type: 'sound',
+        is3d: true,
+        position: [0, 0, 0],
+        spatial: {
+          model: 'inverse',
+          refDistance: 1,
+          maxDistance: 50,
+          rolloff: 1,
+          coneInnerAngle: 90,
+          coneOuterAngle: 180,
+          coneOuterGain: 0.25,
+        },
+        orientation: [1, 0, 0],
+      } as GMCPMessageClientMediaPlay);
+
+      // Mongoose east (+x) becomes Web Audio [-1, 0, 0].
+      expect(sound.threeDOptions).toMatchObject({
+        coneInnerAngle: 90,
+        coneOuterAngle: 180,
+        coneOuterGain: 0.25,
+        orientationX: -1,
+        orientationY: 0,
+        orientationZ: 0,
+      });
+    });
+
+    it('leaves distance to the FOA renderer for ambisonic sounds (no double falloff)', async () => {
+      const sound = createMockSound('https://media.example/show.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+
+      await handler.handlePlay({
+        key: 'show',
+        name: 'show.ogg',
+        type: 'sound',
+        upmix: 'ambisonic',
+        volume: 50,
+        is3d: true,
+        position: [0, 10, 0],
+        spatial: {
+          model: 'inverse',
+          refDistance: 1,
+          maxDistance: 50,
+          rolloff: 1,
+          coneInnerAngle: 360,
+          coneOuterAngle: 360,
+          coneOuterGain: 1,
+        },
+      } as GMCPMessageClientMediaPlay);
+
+      const renderer = await mockPositionalFoaRendererCreate.mock.results[0].value;
+      expect(renderer.setDistanceGain).toHaveBeenLastCalledWith(0.1);
+      expect(sound.volume).toBe(0.5);
+      expect(sound.threeDOptions).toMatchObject({ rolloffFactor: 0 });
+    });
   });
 });

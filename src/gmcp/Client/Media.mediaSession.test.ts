@@ -46,7 +46,15 @@ function installMockSession() {
 
 function createMockMusicSound(url: string) {
   const listeners = new Map<string, Set<() => void>>();
-  const playback = { currentTime: 0, duration: 180 };
+  const playback = {
+    currentTime: 0,
+    duration: 180,
+    play: vi.fn(() => {
+      sound.isPlaying = true;
+      return [playback];
+    }),
+    seek: vi.fn(),
+  };
   const sound = {
     cleanup: vi.fn(),
     duration: 180,
@@ -64,10 +72,7 @@ function createMockMusicSound(url: string) {
     pause: vi.fn(() => {
       sound.isPlaying = false;
     }),
-    play: vi.fn(() => {
-      sound.isPlaying = true;
-      return [playback];
-    }),
+    preplay: vi.fn(() => [playback]),
     playbacks: [playback],
     position: [0, 0, 0],
     priority: undefined,
