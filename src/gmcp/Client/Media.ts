@@ -24,7 +24,9 @@ import {
   decodeMediaPlay,
   decodeMediaStop,
   decodeMediaUpdate,
+  MediaPayloadError,
 } from '../../audio/mediaPayloads';
+import { errorMessage } from '../../audio/audioDiagnostics';
 import {
   mongooseToWebAudioVector,
   mongooseToWebAudioOrientation,
@@ -245,9 +247,11 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.on('automate', (data) => this.handleAutomate(data));
     this.on('default', (data) => this.handleDefault(data));
     this.on('load', (data) => {
+      this.traceWire('validated', data);
       this.handleLoad(data).catch((error) => logMediaFailure('Load', data, error));
     });
     this.on('play', (data) => {
+      this.traceWire('validated', data);
       this.handlePlay(data).catch((error) => logMediaFailure('Play', data, error));
     });
     this.on('update', (data) => this.handleUpdate(data));
@@ -259,6 +263,37 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
 
   get sounds(): Record<string, ExtendedSound> {
     return this.client.media.sounds;
+  }
+
+  /**
+   * Trace Load and Play frames as received, and any frame the decoder rejects
+   * as INVALID_PAYLOAD. The rejection still propagates to the GMCP session.
+   */
+  override receiveRegisteredMessage(wireName: string, payload: unknown): boolean {
+    const traced = wireName === 'Play' || wireName === 'Load';
+    if (traced) {
+      this.traceWire('received', payload);
+    }
+    try {
+      return super.receiveRegisteredMessage(wireName, payload);
+    } catch (error) {
+      if (error instanceof MediaPayloadError) {
+        this.traceWire('received', payload, `Client.Media.${wireName}: ${errorMessage(error)}`);
+      }
+      throw error;
+    }
+  }
+
+  private traceWire(stage: 'received' | 'validated', payload: unknown, invalid?: string): void {
+    const fields =
+      payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+    const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
+    this.client.media.diagnostics.record({
+      stage,
+      key: text(fields.key),
+      name: text(fields.name),
+      error: invalid === undefined ? undefined : { code: 'INVALID_PAYLOAD', message: invalid },
+    });
   }
 
   publishEffectsSupport(): void {
