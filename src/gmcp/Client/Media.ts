@@ -52,6 +52,7 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage implements ClientMed
   public readonly fadein?: number = 0;
   public readonly fadeout?: number = 0;
   public readonly start: number = 0;
+  public readonly loopStart?: number;
   public readonly finish?: number;
   public readonly loops?: number = 0;
   public readonly priority?: number = 0;
@@ -89,6 +90,7 @@ export class GMCPMessageClientMediaUpdate extends GMCPMessage implements ClientM
   public readonly fadein?: number = 0;
   public readonly fadeout?: number = 0;
   public readonly start?: number = 0;
+  public readonly loopStart?: number;
   public readonly finish?: number;
   public readonly loops?: number = 0;
   public readonly priority?: number = 0;

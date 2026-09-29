@@ -51,8 +51,13 @@ export interface ClientMediaPlayPayload {
   readonly volume?: number;
   readonly fadein?: number;
   readonly fadeout?: number;
+  /** Join cursor: absolute source ms where the first pass starts. */
   readonly start?: number;
+  /** Repeat window start: absolute source ms where later passes start (default: start). */
+  readonly loopStart?: number;
+  /** Window end: absolute source ms, exclusive. */
   readonly finish?: number;
+  /** Plays remaining, counted from start; -1 loops forever. */
   readonly loops?: number;
   readonly priority?: number;
   readonly continue?: boolean;
@@ -97,6 +102,7 @@ export interface ClientMediaUpdatePayload {
   readonly fadein?: number;
   readonly fadeout?: number;
   readonly start?: number;
+  readonly loopStart?: number;
   readonly finish?: number;
   readonly loops?: number;
   readonly priority?: number;
@@ -117,9 +123,14 @@ export interface ClientMediaUpdatePayload {
   readonly orientation?: number[];
 }
 
-/** The MCMP play window, as absolute file positions in milliseconds. */
+/**
+ * The MCMP play window, as absolute file positions in milliseconds. The first
+ * pass plays start..finish; later passes play loopStart..finish.
+ */
 interface MediaSegment {
   readonly start: number;
+  /** Repeat window start, at or before start. */
+  readonly loopStart: number;
   readonly finish?: number;
 }
 
@@ -1254,12 +1265,13 @@ export class MediaService {
   }
 
   /**
-   * The MCMP window a Play asks for, or undefined for the whole file. `start`
-   * and `finish` are absolute positions in ms; `end` is a legacy spelling of
-   * `finish`. A finish at or before start is ignored.
+   * The MCMP window a Play asks for, or undefined for the whole file. `start`,
+   * `loopStart` and `finish` are absolute positions in ms; `end` is a legacy
+   * spelling of `finish`. A finish at or before start is ignored; without a
+   * usable loopStart the repeat window starts at `start`.
    */
   private requestedSegment(
-    data: Pick<ClientMediaPlayPayload, 'finish' | 'start' | 'end'>,
+    data: Pick<ClientMediaPlayPayload, 'finish' | 'start' | 'loopStart' | 'end'>,
   ): MediaSegment | undefined {
     const start = finiteMs(data.start) ?? 0;
     let finish = finiteMs(data.finish) ?? finiteMs(data.end);
@@ -1267,20 +1279,28 @@ export class MediaService {
       console.warn(`Client.Media: finish ${finish} is not after start ${start}; ignored`);
       finish = undefined;
     }
+    let loopStart = finiteMs(data.loopStart) ?? start;
+    if (loopStart > start) {
+      console.warn(`Client.Media: loopStart ${loopStart} is after start ${start}; ignored`);
+      loopStart = start;
+    }
     if (start === 0 && finish === undefined) {
       return undefined;
     }
-    return { start, finish };
+    return { start, loopStart, finish };
   }
 
   private sameSegment(a: MediaSegment | undefined, b: MediaSegment | undefined): boolean {
-    return a?.start === b?.start && a?.finish === b?.finish;
+    return a?.start === b?.start && a?.loopStart === b?.loopStart && a?.finish === b?.finish;
   }
 
   /**
-   * Swap a whole-file buffer sound for a Cacophony region over [start, finish).
-   * Region playback seeks, loops and ends inside the window natively (the
-   * source's loopStart/loopEnd), so `loops` repeats the segment, not the file.
+   * Swap a whole-file buffer sound for a Cacophony region over the repeat
+   * window [loopStart, finish). Region playback seeks, loops and ends inside
+   * the window natively (the source's loopStart/loopEnd), so `loops` repeats
+   * the window, not the file. The voice then starts at `start` inside the
+   * region (startVoice), so the first pass is start..finish and every later
+   * pass restarts at the region start, loopStart.
    */
   private async segmentSound(
     base: ExtendedSound,
@@ -1291,7 +1311,7 @@ export class MediaService {
     if (!buffer) {
       return base;
     }
-    const start = segment.start / 1000;
+    const start = segment.loopStart / 1000;
     const finish = Math.min(
       segment.finish === undefined ? buffer.duration : segment.finish / 1000,
       buffer.duration,
@@ -1331,9 +1351,9 @@ export class MediaService {
 
   /**
    * A region-less sound (streamed music, or an undecodable buffer) cannot loop
-   * a window natively, so a timer seeks back to `start` at each `finish` and
-   * releases the sound after the last pass: N × (finish - start), or never
-   * for `loops: -1`.
+   * a window natively, so a timer seeks back to `loopStart` at each `finish`
+   * and releases the sound after the last pass: (finish - start) +
+   * (N - 1) × (finish - loopStart), or never for `loops: -1`.
    */
   private scheduleSegmentTimer(sound: ExtendedSound, key: string): void {
     this.clearSegmentTimer(sound);
@@ -1341,7 +1361,8 @@ export class MediaService {
     if (!this.repeatsByTimer(sound) || segment?.finish === undefined) {
       return;
     }
-    const length = segment.finish - segment.start;
+    const firstLength = segment.finish - segment.start;
+    const length = segment.finish - segment.loopStart;
     let passes = 0;
     const onSegmentEnd = () => {
       sound.segmentTimer = undefined;
@@ -1354,10 +1375,10 @@ export class MediaService {
         this.releaseSound(sound, key);
         return;
       }
-      this.seekToPosition(sound, segment.start);
+      this.seekToPosition(sound, segment.loopStart);
       sound.segmentTimer = setTimeout(onSegmentEnd, length);
     };
-    sound.segmentTimer = setTimeout(onSegmentEnd, length);
+    sound.segmentTimer = setTimeout(onSegmentEnd, firstLength);
   }
 
   private clearSegmentTimer(sound: ExtendedSound): void {
@@ -1368,19 +1389,22 @@ export class MediaService {
   }
 
   /**
-   * An Update carrying `finish` (or legacy `end`) moves the play window, which
-   * a region cannot do in place: replay the original Play with the update
-   * merged over it. Returns true when it took over the update.
+   * An Update carrying `finish` (or legacy `end`) or `loopStart` moves the
+   * play window, which a region cannot do in place: replay the original Play
+   * with the update merged over it. Returns true when it took over the update.
    */
   private resegment(sound: ExtendedSound, data: ClientMediaUpdatePayload): boolean {
     const original = sound.playPayload;
-    if (!original || (data.finish === undefined && data.end === undefined)) {
+    if (
+      !original ||
+      (data.finish === undefined && data.end === undefined && data.loopStart === undefined)
+    ) {
       return false;
     }
     const overrides = Object.fromEntries(
       Object.entries(data).filter(([, value]) => value !== undefined),
     ) as Partial<ClientMediaPlayPayload>;
-    const finish = data.finish ?? data.end;
+    const finish = data.finish ?? data.end ?? original.finish;
     void this.play({ ...original, ...overrides, finish, key: sound.key ?? original.key }).catch(
       (error) => console.error('Client.Media.Update: resegment failed', error),
     );
