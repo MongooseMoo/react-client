@@ -112,6 +112,84 @@ describe('MediaEffects', () => {
     expect(bus.destroy).toHaveBeenCalledWith({ drainTo: master });
   });
 
+  describe('pending definitions and revisions', () => {
+    /** The next createBus returns a bus whose addFilter waits for release(). */
+    function deferNextBus(cacophony: Cacophony) {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const bus = makeBus('deferred');
+      bus.addFilter = vi.fn(async (arg: unknown) => {
+        await gate;
+        return arg;
+      });
+      vi.mocked(cacophony.createBus).mockImplementationOnce(() => bus as unknown as Bus);
+      return { bus, release };
+    }
+
+    it('lets the newer Chain win when an older build resolves late', async () => {
+      const { cacophony } = makeCacophony();
+      const fx = new MediaEffects(cacophony);
+      const old = deferNextBus(cacophony);
+      const first = fx.setChain({ id: 'workshop', effects: [{ type: 'reverb' }] });
+      await vi.waitFor(() => expect(old.bus.addFilter).toHaveBeenCalled());
+      const second = fx.setChain({
+        id: 'workshop',
+        effects: [{ type: 'lowpass', params: { frequency: 400 } }],
+      });
+      old.release();
+      await Promise.all([first, second]);
+
+      expect(old.bus.destroy).toHaveBeenCalled();
+      const live = fx.getChain('workshop');
+      expect(live?.bus).not.toBe(old.bus);
+      expect(cacophony.createBiquadFilter).toHaveBeenCalledWith({ type: 'lowpass', frequency: 400 });
+    });
+
+    it('whenChainReady waits for a pending definition', async () => {
+      const { cacophony } = makeCacophony();
+      const fx = new MediaEffects(cacophony);
+      const pending = deferNextBus(cacophony);
+      void fx.setChain({ id: 'workshop', effects: [{ type: 'reverb' }] });
+      let ready = false;
+      const waiting = fx.whenChainReady('workshop').then(() => {
+        ready = true;
+      });
+      await vi.waitFor(() => expect(pending.bus.addFilter).toHaveBeenCalled());
+      expect(ready).toBe(false);
+      pending.release();
+      await waiting;
+      expect(fx.hasChain('workshop')).toBe(true);
+    });
+
+    it('a ChainStop during a pending build discards the build', async () => {
+      const { cacophony } = makeCacophony();
+      const fx = new MediaEffects(cacophony);
+      const pending = deferNextBus(cacophony);
+      const build = fx.setChain({ id: 'workshop', effects: [{ type: 'reverb' }] });
+      await vi.waitFor(() => expect(pending.bus.addFilter).toHaveBeenCalled());
+      fx.removeChain('workshop');
+      pending.release();
+      await build;
+      expect(fx.hasChain('workshop')).toBe(false);
+      expect(pending.bus.destroy).toHaveBeenCalled();
+    });
+
+    it('accepts the captured MOO Chain definition (contract case "chain")', async () => {
+      const { cacophony } = makeCacophony();
+      const fx = new MediaEffects(cacophony);
+      await fx.setChain({
+        id: 'workshop',
+        effects: [{ id: 'muffle', type: 'lowpass', params: { frequency: 400 } }],
+        gain: 1,
+        fadein: 0,
+      });
+      expect(fx.hasChain('workshop')).toBe(true);
+      expect(cacophony.createBiquadFilter).toHaveBeenCalledWith({ type: 'lowpass', frequency: 400 });
+    });
+  });
+
   it('shutdown tears down every chain', async () => {
     const { cacophony, created } = makeCacophony();
     const fx = new MediaEffects(cacophony);

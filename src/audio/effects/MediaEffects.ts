@@ -22,6 +22,11 @@ export interface EffectsSupport {
   maxEffectsPerChain: number;
 }
 
+/** The latest queued build for one chain id; it never rejects. */
+interface PendingChain {
+  settled: Promise<void>;
+}
+
 const MAX_CHAINS = 16;
 const MAX_EFFECTS_PER_CHAIN = 8;
 
@@ -40,9 +45,37 @@ export function buildEffectsSupport(): EffectsSupport {
 export class MediaEffects {
   private readonly cacophony: Cacophony;
   private readonly chains = new Map<string, EffectChain>();
+  /** Latest requested revision per chain id; a build for an older revision is discarded. */
+  private readonly revisions = new Map<string, number>();
+  /** The tail of each chain's serialized build queue, while one is outstanding. */
+  private readonly pending = new Map<string, PendingChain>();
 
   constructor(cacophony: Cacophony) {
     this.cacophony = cacophony;
+  }
+
+  /**
+   * Resolves once every Chain definition received so far for `id` has been
+   * applied (or discarded), so a Play can route through the chain it names
+   * without a dry burst. Never rejects.
+   */
+  whenChainReady(id: string): Promise<void> {
+    return this.pending.get(id)?.settled ?? Promise.resolve();
+  }
+
+  /** Whether a Chain definition for `id` is still being applied. */
+  hasPendingChain(id: string): boolean {
+    return this.pending.has(id);
+  }
+
+  private bumpRevision(id: string): number {
+    const revision = (this.revisions.get(id) ?? 0) + 1;
+    this.revisions.set(id, revision);
+    return revision;
+  }
+
+  private isCurrent(id: string, revision: number): boolean {
+    return this.revisions.get(id) === revision;
   }
 
   /** Look up a live chain (for routing a sound through it). */
@@ -58,9 +91,33 @@ export class MediaEffects {
    * Apply a `Client.Media.Chain` message: create, replace, or remove the named
    * chain. Effects come from `spec.effects`, or from a client chain preset when
    * `spec.preset` is given. Empty effects remove the chain.
+   *
+   * Definitions for one id are applied in arrival order; each carries a
+   * revision, and a build that is no longer the latest when it runs (or when
+   * its async construction finishes) is dropped, so a stale build never wins.
    */
-  async setChain(spec: ChainSpec): Promise<void> {
+  setChain(spec: ChainSpec): Promise<void> {
     if (!spec.id) {
+      return Promise.resolve();
+    }
+    const { id } = spec;
+    const revision = this.bumpRevision(id);
+    const entry: PendingChain = { settled: Promise.resolve() };
+    const build = this.whenChainReady(id)
+      .then(() => this.applyChain(spec, revision))
+      .finally(() => {
+        // Cleared before the caller's await resumes, so it sees the chain as ready.
+        if (this.pending.get(id) === entry) {
+          this.pending.delete(id);
+        }
+      });
+    entry.settled = build.catch(() => undefined);
+    this.pending.set(id, entry);
+    return build;
+  }
+
+  private async applyChain(spec: ChainSpec, revision: number): Promise<void> {
+    if (!this.isCurrent(spec.id, revision)) {
       return;
     }
     const effects = this.resolveChainEffects(spec);
@@ -68,7 +125,7 @@ export class MediaEffects {
       return; // unknown preset — no-op (do not disturb an existing chain)
     }
     if (effects.length === 0) {
-      this.removeChain(spec.id);
+      this.destroyChain(spec.id);
       return;
     }
     if (this.chains.size >= MAX_CHAINS && !this.chains.has(spec.id)) {
@@ -83,12 +140,28 @@ export class MediaEffects {
     } else {
       const { EffectChain } = await import('./EffectChain');
       const chain = await EffectChain.create(this.cacophony, spec.id, capped, options);
+      if (!this.isCurrent(spec.id, revision)) {
+        // Superseded (a ChainStop or reset) while building: never install it.
+        const master = this.cacophony.getBus('master');
+        if (master) {
+          chain.destroy(master);
+        }
+        return;
+      }
       this.chains.set(spec.id, chain);
     }
   }
 
-  /** Remove a named chain (`Client.Media.ChainStop` or empty `Chain`). */
+  /**
+   * Remove a named chain (`Client.Media.ChainStop`). Also cancels any
+   * definition for it that is still building.
+   */
   removeChain(id: string): void {
+    this.bumpRevision(id);
+    this.destroyChain(id);
+  }
+
+  private destroyChain(id: string): void {
     const chain = this.chains.get(id);
     if (!chain) {
       return;
@@ -102,7 +175,7 @@ export class MediaEffects {
 
   /** Tear down every chain (e.g. on package shutdown). */
   shutdown(): void {
-    for (const id of [...this.chains.keys()]) {
+    for (const id of new Set([...this.chains.keys(), ...this.pending.keys()])) {
       this.removeChain(id);
     }
   }
