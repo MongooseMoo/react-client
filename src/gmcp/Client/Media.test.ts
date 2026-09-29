@@ -836,6 +836,149 @@ describe('GMCPClientMedia', () => {
       expect(second.region.loop).toHaveBeenCalledWith('infinite');
       expect(handler.sounds.rain).toBe(second.region);
     });
+
+    describe('loopStart (the repeat window start, #3010:45)', () => {
+      it('plays start..finish once, then loopStart..finish for the remaining loops', async () => {
+        const { region } = mockSegmentSound('bells.ogg', 0, 10);
+
+        await handler.handlePlay({
+          finish: 10000,
+          key: 'bells',
+          loopStart: 0,
+          loops: 3,
+          name: 'bells.ogg',
+          start: 5000,
+          type: 'sound',
+          volume: 50,
+        } as GMCPMessageClientMediaPlay);
+
+        // The region is the repeat window 0..10 s, so Cacophony's later passes
+        // restart at its start; the first pass joins it at the 5 s cursor.
+        expect(mockCreateSprite).toHaveBeenCalledWith(
+          expect.anything(),
+          { segment: { start: 0, duration: 10 } },
+          { panType: 'stereo' },
+        );
+        expect(region.voice.seek).toHaveBeenCalledWith(5);
+        expect(region.voice.play).toHaveBeenCalledOnce();
+        // loops counts plays from start: 5–10 once, then 0–10 twice.
+        expect(region.loop).toHaveBeenCalledWith(2);
+      });
+
+      it('with loops -1, plays start..finish and then loops loopStart..finish forever', async () => {
+        vi.useFakeTimers();
+        const { region } = mockSegmentSound('hum.ogg', 1, 9);
+
+        await handler.handlePlay({
+          finish: 10000,
+          key: 'hum',
+          loopStart: 1000,
+          loops: -1,
+          name: 'hum.ogg',
+          start: 5000,
+          type: 'sound',
+          volume: 50,
+        } as GMCPMessageClientMediaPlay);
+
+        expect(mockCreateSprite).toHaveBeenCalledWith(
+          expect.anything(),
+          { segment: { start: 1, duration: 9 } },
+          { panType: 'stereo' },
+        );
+        expect(region.voice.seek).toHaveBeenCalledWith(4);
+        expect(region.loop).toHaveBeenCalledWith('infinite');
+        vi.advanceTimersByTime(60_000);
+        expect(region.cleanup).not.toHaveBeenCalled();
+      });
+
+      it('repeats a region-less sound from loopStart after a first pass from start', async () => {
+        vi.useFakeTimers();
+        const sound = createMockSound('theme.ogg');
+        mockCreateSound.mockResolvedValue(sound);
+
+        await handler.handlePlay({
+          finish: 300,
+          key: 'theme',
+          loopStart: 0,
+          loops: 3,
+          name: 'theme.ogg',
+          start: 100,
+          type: 'music',
+          volume: 50,
+        } as GMCPMessageClientMediaPlay);
+
+        expect(sound.voice.seek).toHaveBeenCalledWith(0.1);
+        // First pass 100..300 (200 ms), then two passes of 0..300 (300 ms each).
+        vi.advanceTimersByTime(199);
+        expect(sound.seek).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(1);
+        expect(sound.seek).toHaveBeenLastCalledWith(0);
+        vi.advanceTimersByTime(300);
+        expect(sound.seek).toHaveBeenCalledTimes(2);
+        expect(sound.seek).toHaveBeenLastCalledWith(0);
+        vi.advanceTimersByTime(299);
+        expect(sound.cleanup).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(1);
+        expect(sound.cleanup).toHaveBeenCalledOnce();
+      });
+
+      it('loops a region-less sound from loopStart forever with loops -1', async () => {
+        vi.useFakeTimers();
+        const sound = createMockSound('theme.ogg');
+        mockCreateSound.mockResolvedValue(sound);
+
+        await handler.handlePlay({
+          finish: 300,
+          key: 'theme',
+          loopStart: 50,
+          loops: -1,
+          name: 'theme.ogg',
+          start: 100,
+          type: 'music',
+          volume: 50,
+        } as GMCPMessageClientMediaPlay);
+
+        vi.advanceTimersByTime(200);
+        expect(sound.seek).toHaveBeenLastCalledWith(0.05);
+        vi.advanceTimersByTime(250 * 10);
+        expect(sound.seek).toHaveBeenCalledTimes(11);
+        expect(sound.seek).toHaveBeenLastCalledWith(0.05);
+        expect(sound.cleanup).not.toHaveBeenCalled();
+      });
+
+      it('moves the repeat window when an Update carries loopStart', async () => {
+        const first = mockSegmentSound('rain.ogg', 2, 3);
+
+        await handler.handlePlay({
+          finish: 5000,
+          key: 'rain',
+          loops: -1,
+          name: 'rain.ogg',
+          start: 2000,
+          type: 'sound',
+          volume: 50,
+        } as GMCPMessageClientMediaPlay);
+
+        const second = mockSegmentSound('rain.ogg', 1, 4);
+        handler.handleUpdate({
+          key: 'rain',
+          loopStart: 1000,
+          start: 3000,
+          finish: 5000,
+          loops: -1,
+        } as GMCPMessageClientMediaUpdate);
+        await vi.waitFor(() => expect(second.region.voice.play).toHaveBeenCalledOnce());
+
+        expect(first.region.cleanup).toHaveBeenCalledOnce();
+        expect(mockCreateSprite).toHaveBeenLastCalledWith(
+          second.base.buffer,
+          { segment: { start: 1, duration: 4 } },
+          { panType: 'stereo' },
+        );
+        expect(second.region.voice.seek).toHaveBeenCalledWith(2);
+        expect(second.region.loop).toHaveBeenCalledWith('infinite');
+      });
+    });
   });
 
   it('cleans up a finite sound after natural playback completion', async () => {

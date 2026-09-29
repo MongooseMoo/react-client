@@ -248,9 +248,29 @@ function defined<T extends object>(value: T): T {
   ) as T;
 }
 
+/**
+ * `loopStart` opens the repeat window [loopStart, finish); `start` is the join
+ * cursor inside it. The MOO sends all three absolute, in source ms.
+ */
+function checkLoopWindow(
+  window: { start?: number; loopStart?: number; finish?: number },
+  what: string,
+): void {
+  const { start, loopStart, finish } = window;
+  if (loopStart === undefined) {
+    return;
+  }
+  if (start !== undefined && loopStart > start) {
+    fail(`${what}.loopStart ${loopStart} is after start ${start}`);
+  }
+  if (finish !== undefined && loopStart >= finish) {
+    fail(`${what}.loopStart ${loopStart} is not before finish ${finish}`);
+  }
+}
+
 /** The fields Play and Update share; Update sends only the groups that changed. */
 function mediaFields(r: Fields, what: string) {
-  return {
+  const fieldsOut = {
     name: optString(r, 'name', what),
     url: optString(r, 'url', what),
     type: optMediaType(r, what),
@@ -261,6 +281,7 @@ function mediaFields(r: Fields, what: string) {
     fadein: optNumber(r, 'fadein', what, { min: 0 }),
     fadeout: optNumber(r, 'fadeout', what, { min: 0 }),
     start: optNumber(r, 'start', what, { min: 0 }),
+    loopStart: optNumber(r, 'loopStart', what, { min: 0 }),
     finish: optNumber(r, 'finish', what, { min: 0 }),
     end: optNumber(r, 'end', what, { min: 0 }),
     loops: optNumber(r, 'loops', what, { min: -1, integer: true }),
@@ -278,6 +299,8 @@ function mediaFields(r: Fields, what: string) {
     spatial: r.spatial === undefined ? undefined : spatialProfile(r.spatial, what),
     orientation: optOrientation(r, what),
   };
+  checkLoopWindow(fieldsOut, what);
+  return fieldsOut;
 }
 
 export function decodeMediaDefault(raw: unknown): ClientMediaDefaultPayload {

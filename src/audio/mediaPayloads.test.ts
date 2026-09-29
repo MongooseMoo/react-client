@@ -149,8 +149,27 @@ describe('decodeMediaPlay', () => {
     ['maxDistance not above refDistance', { ...catalogPlay, spatial: { ...catalogPlay.spatial, maxDistance: 1 } }],
     ['an inverted cone', { ...catalogPlay, spatial: { ...catalogPlay.spatial, coneInnerAngle: 300, coneOuterAngle: 90 } }],
     ['a zero orientation', { ...catalogPlay, orientation: [0, 0, 0] }],
+    ['a negative loopStart', { ...catalogPlay, loopStart: -1 }],
+    ['a non-finite loopStart', { ...catalogPlay, loopStart: Number.POSITIVE_INFINITY }],
+    ['a string loopStart', { ...catalogPlay, loopStart: '0' }],
+    ['loopStart after start', { ...catalogPlay, start: 5000, loopStart: 6000, finish: 10000 }],
+    ['loopStart at finish', { ...catalogPlay, start: 0, loopStart: 10000, finish: 10000 }],
+    ['loopStart after finish', { ...catalogPlay, loopStart: 12000, finish: 10000 }],
   ])('rejects %s', (_label, raw) => {
     expect(() => decodeMediaPlay(raw)).toThrow(MediaPayloadError);
+  });
+
+  it('accepts loopStart, the repeat window start (#3010:45)', () => {
+    expect(
+      decodeMediaPlay({ ...catalogPlay, start: 5000, loopStart: 0, finish: 10000, loops: 3 }),
+    ).toMatchObject({ start: 5000, loopStart: 0, finish: 10000, loops: 3 });
+  });
+
+  it('accepts loopStart equal to start, and loopStart without start or finish', () => {
+    expect(
+      decodeMediaPlay({ ...catalogPlay, start: 2000, loopStart: 2000, finish: 3000 }).loopStart,
+    ).toBe(2000);
+    expect(decodeMediaPlay({ name: 'drone.ogg', loopStart: 1500 }).loopStart).toBe(1500);
   });
 });
 
@@ -167,6 +186,21 @@ describe('decodeMediaUpdate', () => {
       chain: '',
       effects: [],
     });
+  });
+
+  it('carries loopStart with the start/loops/finish group', () => {
+    expect(
+      decodeMediaUpdate({ key: 's1', start: 5000, loopStart: 0, finish: 10000, loops: -1 }),
+    ).toEqual({ key: 's1', start: 5000, loopStart: 0, finish: 10000, loops: -1 });
+  });
+
+  it('rejects an update whose loopStart is after start or at finish', () => {
+    expect(() => decodeMediaUpdate({ key: 's1', start: 1000, loopStart: 2000 })).toThrow(
+      MediaPayloadError,
+    );
+    expect(() => decodeMediaUpdate({ key: 's1', loopStart: 3000, finish: 3000 })).toThrow(
+      MediaPayloadError,
+    );
   });
 
   it('rejects an update with neither key nor name', () => {
