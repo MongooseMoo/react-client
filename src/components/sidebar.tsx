@@ -10,7 +10,9 @@ import {
   FaMusic,
   FaServer,
   FaUsers,
+  FaWaveSquare,
 } from 'react-icons/fa';
+const AudioDiagnostics = React.lazy(() => import('./AudioDiagnostics'));
 const FileTransferUI = React.lazy(() => import('./FileTransfer'));
 import AudioChatBoundary from './AudioChatBoundary';
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
@@ -245,6 +247,19 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         icon: <FaHeadphones />,
         content: <AudioChatBoundary client={client} />,
         condition: true, // Always show Audio tab (or add condition if needed)
+      },
+      {
+        // Last, so the Ctrl+Shift+number shortcuts of existing tabs keep their positions.
+        id: 'audio-diagnostics-tab',
+        label: 'Audio diagnostics',
+        icon: <FaWaveSquare />,
+        content: (
+          <Suspense fallback={<p role="status">Loading audio diagnostics…</p>}>
+            <AudioDiagnostics diagnostics={client.media.diagnostics} />
+          </Suspense>
+        ),
+        mountOnSelect: true,
+        condition: true,
       },
     ];
 
