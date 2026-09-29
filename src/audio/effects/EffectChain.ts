@@ -58,6 +58,8 @@ export class EffectChain {
   private entries: ChainEntry[] = [];
   /** Downstream target the bus output currently feeds (default: master). */
   private downstream: Bus | null = null;
+  /** Aux-send target fed in parallel with the primary output, if any. */
+  private sendTarget: Bus | null = null;
 
   private constructor(cacophony: Cacophony, id: string | null, bus: Bus, mode: ChainMode) {
     this.cacophony = cacophony;
@@ -114,6 +116,25 @@ export class EffectChain {
     }
     this.bus.connect(next);
     this.downstream = next;
+  }
+
+  /**
+   * Feed the bus output into `target` at `gain` as an aux send, alongside its
+   * primary output (`sound → inline → master`, plus `inline → send → named
+   * chain`). A null target removes the send; a new gain re-gains it in place.
+   */
+  setSend(target: Bus | null, gain = 1): void {
+    if (this.bus.destroyed) {
+      return;
+    }
+    if (this.sendTarget && this.sendTarget !== target) {
+      this.bus.disconnect(this.sendTarget);
+      this.sendTarget = null;
+    }
+    if (target) {
+      this.bus.connect(target, gain);
+      this.sendTarget = target;
+    }
   }
 
   /** Replace the effect graph in place (re-`Chain`), gain-dipped to mask the click. */

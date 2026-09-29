@@ -15,6 +15,17 @@ import type {
 } from '../../audio/MediaService';
 import { buildEffectsSupport } from '../../audio/effects/MediaEffects';
 import {
+  type ClientMediaDefaultPayload,
+  decodeMediaAutomate,
+  decodeMediaChain,
+  decodeMediaChainStop,
+  decodeMediaDefault,
+  decodeMediaLoad,
+  decodeMediaPlay,
+  decodeMediaStop,
+  decodeMediaUpdate,
+} from '../../audio/mediaPayloads';
+import {
   mongooseToWebAudioVector,
   mongooseToWebAudioOrientation,
 } from '../../audio/mongooseCoordinates';
@@ -41,6 +52,7 @@ export class GMCPMessageClientMediaPlay extends GMCPMessage implements ClientMed
   public readonly fadein?: number = 0;
   public readonly fadeout?: number = 0;
   public readonly start: number = 0;
+  public readonly loopStart?: number;
   public readonly finish?: number;
   public readonly loops?: number = 0;
   public readonly priority?: number = 0;
@@ -78,6 +90,7 @@ export class GMCPMessageClientMediaUpdate extends GMCPMessage implements ClientM
   public readonly fadein?: number = 0;
   public readonly fadeout?: number = 0;
   public readonly start?: number = 0;
+  public readonly loopStart?: number;
   public readonly finish?: number;
   public readonly loops?: number = 0;
   public readonly priority?: number = 0;
@@ -137,20 +150,60 @@ export class GMCPMessageClientMediaListenerPosition
   public readonly position?: Position;
 }
 
-const mediaChain = gmcpJsonMessage<'Chain', GMCPMessageClientMediaChain>('Chain');
-const mediaChainStop = gmcpJsonMessage<
+/** An inbound-only codec whose decoder validates the wire payload. */
+function inboundCodec<Payload>(decode: (raw: unknown) => Payload) {
+  return {
+    decode,
+    encode(payload: Payload): unknown {
+      return payload;
+    },
+  };
+}
+
+const mediaChain = gmcpJsonMessage<'Chain', ClientMediaChainPayload>(
+  'Chain',
+  inboundCodec(decodeMediaChain),
+);
+const mediaChainStop = gmcpJsonMessage<'ChainStop', ClientMediaChainStopPayload>(
   'ChainStop',
-  GMCPMessageClientMediaChainStop
->('ChainStop');
-const mediaAutomate = gmcpJsonMessage<
+  inboundCodec(decodeMediaChainStop),
+);
+const mediaAutomate = gmcpJsonMessage<'Automate', ClientMediaAutomatePayload>(
   'Automate',
-  GMCPMessageClientMediaAutomate
->('Automate');
-const mediaDefault = gmcpJsonMessage<'Default', string>('Default');
-const mediaLoad = gmcpJsonMessage<'Load', GMCPMessageClientMediaLoad>('Load');
-const mediaPlay = gmcpJsonMessage<'Play', GMCPMessageClientMediaPlay>('Play');
-const mediaUpdate = gmcpJsonMessage<'Update', GMCPMessageClientMediaUpdate>('Update');
-const mediaStop = gmcpJsonMessage<'Stop', GMCPMessageClientMediaStop>('Stop');
+  inboundCodec(decodeMediaAutomate),
+);
+const mediaDefault = gmcpJsonMessage<'Default', ClientMediaDefaultPayload>(
+  'Default',
+  inboundCodec(decodeMediaDefault),
+);
+const mediaLoad = gmcpJsonMessage<'Load', ClientMediaLoadPayload>(
+  'Load',
+  inboundCodec(decodeMediaLoad),
+);
+const mediaPlay = gmcpJsonMessage<'Play', ClientMediaPlayPayload>(
+  'Play',
+  inboundCodec(decodeMediaPlay),
+);
+const mediaUpdate = gmcpJsonMessage<'Update', ClientMediaUpdatePayload>(
+  'Update',
+  inboundCodec(decodeMediaUpdate),
+);
+const mediaStop = gmcpJsonMessage<'Stop', ClientMediaStopPayload>(
+  'Stop',
+  inboundCodec(decodeMediaStop),
+);
+
+/** Log an async Client.Media failure as one bounded line (never an unhandled rejection). */
+function logMediaFailure(
+  message: string,
+  data: { key?: string; name?: string },
+  error: unknown,
+): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error(
+    `Client.Media.${message} failed for '${data.key ?? data.name ?? '?'}': ${detail.slice(0, 200)}`,
+  );
+}
 const mediaListenerPosition = gmcpJsonMessage<
   'ListenerPosition',
   GMCPMessageClientMediaListenerPosition
@@ -192,10 +245,10 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.on('automate', (data) => this.handleAutomate(data));
     this.on('default', (data) => this.handleDefault(data));
     this.on('load', (data) => {
-      void this.handleLoad(data);
+      this.handleLoad(data).catch((error) => logMediaFailure('Load', data, error));
     });
     this.on('play', (data) => {
-      void this.handlePlay(data);
+      this.handlePlay(data).catch((error) => logMediaFailure('Play', data, error));
     });
     this.on('update', (data) => this.handleUpdate(data));
     this.on('stop', (data) => this.handleStop(data));
@@ -212,43 +265,43 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.sendEffectsSupport(buildEffectsSupport());
   }
 
-  handleChain(data: GMCPMessageClientMediaChain): void {
+  handleChain(data: ClientMediaChainPayload): void {
     this.client.media
       .setChain(data)
-      .catch((error) => console.error(`Client.Media.Chain '${data.id}' failed`, error));
+      .catch((error) => logMediaFailure('Chain', { key: data.id }, error));
   }
 
-  handleChainStop(data: GMCPMessageClientMediaChainStop): void {
+  handleChainStop(data: ClientMediaChainStopPayload): void {
     if (data.id) {
       this.client.media.removeChain(data.id);
     }
   }
 
-  handleAutomate(data: GMCPMessageClientMediaAutomate): void {
+  handleAutomate(data: ClientMediaAutomatePayload): void {
     this.client.media.automate(data);
   }
 
-  handleDefault(url: string): void {
-    this.client.media.handleDefault(url);
+  handleDefault(data: ClientMediaDefaultPayload): void {
+    this.client.media.handleDefault(data.url);
   }
 
-  handleLoad(data: GMCPMessageClientMediaLoad): Promise<void> {
+  async handleLoad(data: ClientMediaLoadPayload): Promise<void> {
     return this.client.media.load(data);
   }
 
-  mediaUrl(data: GMCPMessageClientMediaPlay): string {
+  mediaUrl(data: ClientMediaPlayPayload): string {
     return this.client.media.mediaUrl(data);
   }
 
-  handlePlay(data: GMCPMessageClientMediaPlay): Promise<void> {
+  async handlePlay(data: ClientMediaPlayPayload): Promise<void> {
     return this.client.media.play(this.transformSpatialPayload(data));
   }
 
-  handleUpdate(data: GMCPMessageClientMediaUpdate): void {
+  handleUpdate(data: ClientMediaUpdatePayload): void {
     this.client.media.update(this.transformSpatialPayload(data));
   }
 
-  handleStop(data: GMCPMessageClientMediaStop): void {
+  handleStop(data: ClientMediaStopPayload): void {
     this.client.media.stop(data);
   }
 
@@ -297,19 +350,26 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.client.media.syncAmbisonicRendererYaw();
   };
 
+  /** Convert MOO east/north/up vectors (position, cone orientation) to Web Audio axes, once. */
   private transformSpatialPayload<
-    T extends { position?: number[] | Position; is3d?: boolean; upmix?: string },
+    T extends { position?: number[] | Position; orientation?: number[] },
   >(data: T): T {
-    if (!data.position?.length) {
-      return data;
-    }
-    const { position } = data;
-    if (position.length < 3) {
+    const position = toWebAudio(data.position);
+    const orientation = toWebAudio(data.orientation);
+    if (!position && !orientation) {
       return data;
     }
     return {
       ...data,
-      position: mongooseToWebAudioVector([position[0], position[1], position[2]]) ?? undefined,
+      ...(position ? { position } : {}),
+      ...(orientation ? { orientation } : {}),
     };
   }
+}
+
+function toWebAudio(vector: readonly number[] | undefined): Position | undefined {
+  if (!vector || vector.length < 3) {
+    return undefined;
+  }
+  return mongooseToWebAudioVector([vector[0], vector[1], vector[2]]) ?? undefined;
 }

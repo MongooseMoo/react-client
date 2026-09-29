@@ -9,7 +9,12 @@ import {
 import { usePreferences } from '../stores/preferencesStore';
 import { AmbisonicRenderer } from './AmbisonicRenderer';
 import type { PositionalFoaRenderer } from './PositionalFoaRenderer';
-import { distanceBetween, inverseDistanceGain, SPATIAL_DISTANCE_MODEL } from './distanceModel';
+import {
+  DEFAULT_SPATIAL_PROFILE,
+  distanceBetween,
+  profileDistanceGain,
+  type SpatialProfile,
+} from './distanceModel';
 import { VectorTweener } from './vectorTween';
 import type { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
@@ -46,8 +51,13 @@ export interface ClientMediaPlayPayload {
   readonly volume?: number;
   readonly fadein?: number;
   readonly fadeout?: number;
+  /** Join cursor: absolute source ms where the first pass starts. */
   readonly start?: number;
+  /** Repeat window start: absolute source ms where later passes start (default: start). */
+  readonly loopStart?: number;
+  /** Window end: absolute source ms, exclusive. */
   readonly finish?: number;
+  /** Plays remaining, counted from start; -1 loops forever. */
   readonly loops?: number;
   readonly priority?: number;
   readonly continue?: boolean;
@@ -61,6 +71,14 @@ export interface ClientMediaPlayPayload {
   readonly chain?: string;
   readonly send?: number;
   readonly effects?: EffectSpec[];
+  /** Catalog gain in dB (-60..12); multiplies with volume. */
+  readonly gainDb?: number;
+  /** Catalog pitch in semitones (-24..24); playback rate 2^(st/12). */
+  readonly pitchSemitones?: number;
+  /** Distance/cone profile for a positioned sound. */
+  readonly spatial?: SpatialProfile;
+  /** Unit facing vector for a directional cone (converted to Web Audio axes by the handler). */
+  readonly orientation?: number[];
   readonly title?: string;
   readonly artist?: string;
   readonly album?: string;
@@ -84,6 +102,7 @@ export interface ClientMediaUpdatePayload {
   readonly fadein?: number;
   readonly fadeout?: number;
   readonly start?: number;
+  readonly loopStart?: number;
   readonly finish?: number;
   readonly loops?: number;
   readonly priority?: number;
@@ -98,11 +117,20 @@ export interface ClientMediaUpdatePayload {
   readonly chain?: string;
   readonly send?: number;
   readonly effects?: EffectSpec[];
+  readonly gainDb?: number;
+  readonly pitchSemitones?: number;
+  readonly spatial?: SpatialProfile;
+  readonly orientation?: number[];
 }
 
-/** The MCMP play window, as absolute file positions in milliseconds. */
+/**
+ * The MCMP play window, as absolute file positions in milliseconds. The first
+ * pass plays start..finish; later passes play loopStart..finish.
+ */
 interface MediaSegment {
   readonly start: number;
+  /** Repeat window start, at or before start. */
+  readonly loopStart: number;
   readonly finish?: number;
 }
 
@@ -158,6 +186,36 @@ export interface ExtendedSound extends Sound {
   segmentTimer?: ReturnType<typeof setTimeout>;
   /** The Play that started this sound, so an Update can move its segment. */
   playPayload?: ClientMediaPlayPayload;
+  /** Wire volume as a 0..1 multiplier (percent / 100); floats arrive on door-projected copies. */
+  mediaVolume?: number;
+  /** Catalog gain in dB; multiplies with volume. */
+  gainDb?: number;
+  /** Distance/cone profile; absent = {@link DEFAULT_SPATIAL_PROFILE}. */
+  spatialProfile?: SpatialProfile;
+  /** Cone facing, in Web Audio axes. */
+  mediaOrientation?: Position;
+  /** Positioned by the HRTF panner, so its distance gain is applied at the sound's gain. */
+  pointSource?: boolean;
+  /** Named chain the sound routes to (primary, or aux when {@link namedSend} is set). */
+  namedChain?: string;
+  namedSend?: number;
+  /** Whether {@link namedChain} is currently applied as the source's own route. */
+  chainRouted?: boolean;
+}
+
+/** A pending load's claim on a media key; a newer claim, Stop, or reset makes it stale. */
+interface KeyClaim {
+  readonly generation: number;
+  readonly name: string;
+  readonly tag?: string;
+  readonly type?: MediaType;
+}
+
+interface KeyTicket {
+  /** True while this claim is still the latest for its key and no reset intervened. */
+  current(): boolean;
+  /** Drop the pending-load record once the load has settled. */
+  finish(): void;
 }
 
 function finiteMs(value: number | undefined): number | undefined {
@@ -181,6 +239,12 @@ export class MediaService {
   private readonly effects: MediaEffects;
   private readonly mediaSession = new MediaSessionController();
   private readonly preloadedSoundKeys = new Set<string>();
+  /** Latest claim generation per media key; every Play/Load/Stop for a key bumps it. */
+  private readonly keyGenerations = new Map<string, number>();
+  /** Loads that have claimed a key but not yet settled, so Stop can cancel them. */
+  private readonly pendingLoads = new Map<string, KeyClaim>();
+  /** Bumped by stop-all/reset: invalidates every pending load at once. */
+  private epoch = 0;
   private currentMusic?: ExtendedSound;
   private globalMuted = false;
   private isWindowFocused = true;
@@ -233,22 +297,62 @@ export class MediaService {
       for (const sound of this.allSounds) {
         this.updateAmbisonicDistance(sound);
         this.updatePositionalSpatial(sound);
+        this.applyLevels(sound);
       }
     }
   }
 
+  /** The sound's distance gain under its spatial profile, for the current listener. */
+  private distanceGain(sound: ExtendedSound): number {
+    const distance = distanceBetween(this.cacophony.listenerPosition, sound.mediaPosition);
+    return profileDistanceGain(distance, sound.spatialProfile ?? DEFAULT_SPATIAL_PROFILE);
+  }
+
   /**
    * Recompute an ambisonic source's distance attenuation from the current
-   * listener position. The HRTF panner gets distance from the Web Audio
-   * PannerNode for free; the ambisonic route has no panner, so we drive its
-   * pre-encoder gain with the same falloff curve ({@link inverseDistanceGain}).
+   * listener position. The ambisonic route has no panner, so we drive its
+   * pre-encoder gain with the sound's profile curve ({@link profileDistanceGain}).
    */
   private updateAmbisonicDistance(sound: ExtendedSound): void {
     if (!sound.ambisonicRenderer) {
       return;
     }
-    const distance = distanceBetween(this.cacophony.listenerPosition, sound.mediaPosition);
-    sound.ambisonicRenderer.setDistanceGain(inverseDistanceGain(distance));
+    sound.ambisonicRenderer.setDistanceGain(this.distanceGain(sound));
+  }
+
+  /**
+   * Set the sound's gain: wire volume × 10^(gainDb/20) × (for an HRTF point
+   * source) its profile distance gain. This is the one stage where distance
+   * falloff is applied on the HRTF route; the panner's rolloff is 0. Ambisonic
+   * routes apply distance in their renderer instead.
+   */
+  private applyLevels(sound: ExtendedSound): void {
+    if (this.cleanedSounds.has(sound)) {
+      return;
+    }
+    const volume = sound.mediaVolume ?? 1;
+    const gain = sound.gainDb ? 10 ** (sound.gainDb / 20) : 1;
+    const distance = sound.pointSource && sound.upmix !== 'ambisonic' ? this.distanceGain(sound) : 1;
+    sound.volume = volume * gain * distance;
+  }
+
+  /** HRTF panner settings for a point source: position and cone only, no native rolloff. */
+  private pannerOptions(sound: ExtendedSound) {
+    const profile = sound.spatialProfile ?? DEFAULT_SPATIAL_PROFILE;
+    const orientation = sound.mediaOrientation;
+    return {
+      coneInnerAngle: profile.coneInnerAngle,
+      coneOuterAngle: profile.coneOuterAngle,
+      coneOuterGain: profile.coneOuterGain,
+      panningModel: 'HRTF' as const,
+      distanceModel: 'inverse' as const,
+      refDistance: profile.refDistance,
+      rolloffFactor: 0,
+      maxDistance: profile.maxDistance,
+      ...(orientation
+        ? { orientationX: orientation[0], orientationY: orientation[1], orientationZ: orientation[2] }
+        : {}),
+    };
   }
 
   setListenerOrientation(
@@ -275,14 +379,23 @@ export class MediaService {
   }
 
   automate(data: ClientMediaAutomatePayload): void {
+    if (data.chain && this.effects.hasPendingChain(data.chain)) {
+      // Apply after the chain's outstanding definition, never to a stale graph.
+      void this.effects.whenChainReady(data.chain).then(() => this.applyAutomation(data));
+      return;
+    }
+    this.applyAutomation(data);
+  }
+
+  private applyAutomation(data: ClientMediaAutomatePayload): void {
     const chain = this.resolveAutomateTarget(data);
     if (!chain) {
       console.warn('Client.Media.Automate: target chain/sound not found; ignored');
       return;
     }
+    // The MOO sends an explicit bypass alongside params; apply both.
     if (typeof data.bypass === 'boolean') {
       chain.setBypass(data.target, data.bypass);
-      return;
     }
     if (data.params) {
       chain.automate(data.target, data.params, { duration: data.ramp, curve: data.curve });
@@ -296,8 +409,17 @@ export class MediaService {
   async load(data: ClientMediaLoadPayload): Promise<void> {
     const url = this.mediaUrl(data);
     const key = url;
-    if (!this.sounds[key]) {
+    if (this.sounds[key] || this.pendingLoads.has(key)) {
+      return;
+    }
+    const ticket = this.claimKey(key, { name: data.name, type: data.type });
+    try {
       const sound = (await this.cacophony.createSound(url)) as ExtendedSound;
+      if (!ticket.current() || this.sounds[key]) {
+        // A Play, Stop, or reset for this key arrived while we were loading.
+        this.releaseSound(sound);
+        return;
+      }
 
       while (this.preloadedSoundKeys.size >= MAX_PRELOADED_SOUNDS) {
         const oldestKey = this.preloadedSoundKeys.values().next().value;
@@ -315,7 +437,36 @@ export class MediaService {
       sound.mediaName = data.name;
       this.sounds[key] = sound;
       this.preloadedSoundKeys.add(key);
+    } finally {
+      ticket.finish();
     }
+  }
+
+  /**
+   * Claim a media key before any await. The claim's generation supersedes
+   * every earlier claim for the key, so a later Play always wins over an
+   * in-flight earlier load; Stop and reset invalidate it as well.
+   */
+  private claimKey(key: string, meta: Omit<KeyClaim, 'generation'>): KeyTicket {
+    const generation = (this.keyGenerations.get(key) ?? 0) + 1;
+    this.keyGenerations.set(key, generation);
+    const claim: KeyClaim = { ...meta, generation };
+    this.pendingLoads.set(key, claim);
+    const epoch = this.epoch;
+    return {
+      current: () => this.keyGenerations.get(key) === generation && this.epoch === epoch,
+      finish: () => {
+        if (this.pendingLoads.get(key) === claim) {
+          this.pendingLoads.delete(key);
+        }
+      },
+    };
+  }
+
+  /** Supersede whatever claim holds `key`, so its pending load never plays. */
+  private cancelKey(key: string): void {
+    this.keyGenerations.set(key, (this.keyGenerations.get(key) ?? 0) + 1);
+    this.pendingLoads.delete(key);
   }
 
   mediaUrl(data: ClientMediaPlayPayload): string {
@@ -330,42 +481,40 @@ export class MediaService {
     const mediaUrl = this.mediaUrl(data);
     data.key = data.key || mediaUrl;
     const soundKey = data.key;
-    let sound = this.sounds[soundKey] as ExtendedSound;
+    // Claim the key before any await: a later Play for this key, a Stop, or a
+    // reset makes this call stale, and every continuation below checks that.
+    const ticket = this.claimKey(soundKey, { name: data.name, tag: data.tag, type: data.type });
+    try {
+      await this.playClaimed(data, soundKey, mediaUrl, ticket);
+    } finally {
+      ticket.finish();
+    }
+  }
+
+  private async playClaimed(
+    data: ClientMediaPlayPayload,
+    soundKey: string,
+    mediaUrl: string,
+    ticket: KeyTicket,
+  ): Promise<void> {
+    let sound: ExtendedSound | undefined = this.sounds[soundKey];
     this.preloadedSoundKeys.delete(soundKey);
     const panType = data.is3d ? 'HRTF' : 'stereo';
     const segment = this.requestedSegment(data);
     const isNewSound =
-      !sound || sound.url !== mediaUrl || !this.sameSegment(sound.segment, segment);
-    if (isNewSound) {
+      !sound ||
+      sound.url !== mediaUrl ||
+      !this.sameSegment(sound.segment, segment) ||
+      data.continue === false;
+    if (!sound || isNewSound) {
       if (sound) {
         this.releaseSound(sound, soundKey);
       }
-      if (data.type === 'music') {
-        sound = (await this.cacophony.createSound(
-          mediaUrl,
-          CACOPHONY_HTML,
-          panType,
-        )) as ExtendedSound;
-      } else {
-        sound = (await this.cacophony.createSound(
-          mediaUrl,
-          CACOPHONY_BUFFER,
-          panType,
-        )) as ExtendedSound;
-        if (segment) {
-          sound = await this.segmentSound(sound, segment, panType);
-        }
+      sound = await this.createMediaSound(data, mediaUrl, panType, segment, ticket);
+      if (!sound) {
+        return;
       }
       sound.segment = segment;
-    }
-
-    // A concurrent play() for this key read the slot as empty before our await
-    // and already claimed it with a different sound; this call lost the create
-    // race. Release the sound we just minted and bail before playing an orphan
-    // that no key points at (mirrors buildInlineChain's post-await staleness guard).
-    if (isNewSound && this.sounds[soundKey] && this.sounds[soundKey] !== sound) {
-      this.releaseSound(sound);
-      return;
     }
 
     sound.key = soundKey;
@@ -375,18 +524,29 @@ export class MediaService {
     this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
 
-    if (!sound.isPlaying) {
-      const [playback] = sound.play({
-        fadeIn: data.fadein || undefined,
-        fadeOut: data.fadeout || undefined,
-      }) as Playback[];
-      this.releaseSoundWhenPlaybackEnds(sound, soundKey);
+    // Route before the voice starts, so it is never heard dry: wait for a
+    // Chain definition that is still building, and for inline effects.
+    if (data.chain) {
+      await this.effects.whenChainReady(data.chain);
+      if (!ticket.current()) {
+        return;
+      }
+    }
+    await this.applyEffectRouting(sound, soundKey, data, 'play');
+    if (!ticket.current() || this.sounds[soundKey] !== sound) {
+      return;
+    }
+
+    if (sound.isPlaying) {
+      // Same key and source: keep the voice. An explicit start still seeks.
       if (data.start !== undefined) {
         this.seekToPosition(sound, data.start);
       }
+    } else {
+      const playback = this.startVoice(sound, soundKey, data);
       this.scheduleSegmentTimer(sound, soundKey);
 
-      if (data.upmix === 'ambisonic') {
+      if (playback && data.upmix === 'ambisonic') {
         const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
         const target = await this.resolveAmbisonicTarget(sound, soundKey, data);
         if (inputChannels === 4) {
@@ -401,11 +561,61 @@ export class MediaService {
       }
     }
 
-    await this.applyEffectRouting(sound, soundKey, data);
-
-    if (data.type === 'music') {
+    if (data.type === 'music' && this.sounds[soundKey] === sound) {
       this.activateMusicSession(sound, data);
     }
+  }
+
+  /** Create the source (and its region sprite) for a Play; undefined if the claim went stale. */
+  private async createMediaSound(
+    data: ClientMediaPlayPayload,
+    mediaUrl: string,
+    panType: 'HRTF' | 'stereo',
+    segment: MediaSegment | undefined,
+    ticket: KeyTicket,
+  ): Promise<ExtendedSound | undefined> {
+    const kind = data.type === 'music' ? CACOPHONY_HTML : CACOPHONY_BUFFER;
+    let sound = (await this.cacophony.createSound(mediaUrl, kind, panType)) as ExtendedSound;
+    if (ticket.current() && segment && kind === CACOPHONY_BUFFER) {
+      sound = await this.segmentSound(sound, segment, panType);
+    }
+    if (!ticket.current()) {
+      // Superseded by a later Play, a Stop, or a reset: release only our own source.
+      this.releaseSound(sound);
+      return undefined;
+    }
+    return sound;
+  }
+
+  /**
+   * Start a fresh voice at the Play's cursor: prepare a stopped Playback,
+   * position it, then start it. Cacophony 0.33 `PlayOptions` has no start
+   * offset, so the offset is set on the prepared Playback (whose `play()`
+   * starts from it) rather than seeking a voice that is already audible.
+   */
+  private startVoice(
+    sound: ExtendedSound,
+    soundKey: string,
+    data: ClientMediaPlayPayload,
+  ): Playback | undefined {
+    const [playback] = sound.preplay();
+    this.releaseSoundWhenPlaybackEnds(sound, soundKey);
+    if (!playback) {
+      return undefined;
+    }
+    const offset = data.start === undefined ? 0 : this.soundOffsetSeconds(sound, data.start);
+    if (offset > 0) {
+      try {
+        playback.seek(offset);
+      } catch (error) {
+        console.warn(`Client.Media: cannot start '${soundKey}' at ${offset}s; starting at 0`, error);
+      }
+    }
+    playback.play({
+      fadeIn: data.fadein || undefined,
+      fadeOut: data.fadeout || undefined,
+    });
+    return playback;
   }
 
   update(data: ClientMediaUpdatePayload): void {
@@ -427,8 +637,12 @@ export class MediaService {
         channels: data.channels ?? sound.inputChannels,
       });
       this.applySoundState(sound, data);
-      void this.applyEffectRouting(sound, sound.key ?? data.key ?? '', data).catch((error) =>
-        console.error('Client.Media.Update: effect routing failed', error),
+      // Only an explicit start moves the playhead; no other Update field seeks or restarts.
+      if (data.start !== undefined) {
+        this.seekToPosition(sound, data.start);
+      }
+      void this.applyEffectRouting(sound, sound.key ?? data.key ?? '', data, 'update').catch(
+        (error) => console.error('Client.Media.Update: effect routing failed', error),
       );
       const [playback] = sound.playbacks;
       if (data.upmix === 'ambisonic' && playback) {
@@ -450,30 +664,34 @@ export class MediaService {
     });
   }
 
+  /**
+   * Stop the union of the given selectors (`{}` stops everything), including
+   * loads that have claimed a matching key but not yet started.
+   */
   stop(data: ClientMediaStopPayload): void {
-    if (data.name) {
-      this.soundsByName(data.name).forEach((sound) => {
-        this.stopSound(sound);
-      });
-    }
-    if (data.type) {
-      this.soundsByType(data.type).forEach((sound) => {
-        this.stopSound(sound);
-      });
-    }
-    if (data.tag) {
-      this.soundsByTag(data.tag).forEach((sound) => {
-        this.stopSound(sound);
-      });
-    }
-    if (data.key) {
-      this.soundsByKey(data.key).forEach((sound) => {
-        this.stopSound(sound);
-      });
-    }
     if (!data.name && !data.type && !data.tag && !data.key) {
       this.stopAllSounds();
+      return;
     }
+    for (const [key, claim] of [...this.pendingLoads]) {
+      if (
+        key === data.key ||
+        (data.name !== undefined && claim.name === data.name) ||
+        (data.tag !== undefined && claim.tag === data.tag) ||
+        (data.type !== undefined && claim.type === data.type)
+      ) {
+        this.cancelKey(key);
+      }
+    }
+    const selected = new Set<ExtendedSound>([
+      ...(data.name ? this.soundsByName(data.name) : []),
+      ...(data.type ? this.soundsByType(data.type) : []),
+      ...(data.tag ? this.soundsByTag(data.tag) : []),
+      ...(data.key ? this.soundsByKey(data.key) : []),
+    ]);
+    selected.forEach((sound) => {
+      this.stopSound(sound);
+    });
   }
 
   soundsByName(name: string): ExtendedSound[] {
@@ -497,6 +715,8 @@ export class MediaService {
   }
 
   stopAllSounds(): void {
+    this.epoch += 1;
+    this.pendingLoads.clear();
     this.allSounds.forEach((sound) => {
       this.releaseSound(sound);
     });
@@ -542,44 +762,115 @@ export class MediaService {
     this.updateBackgroundMuteState();
   };
 
-  private applyChainRouting(
-    sound: ExtendedSound,
-    data: Pick<ClientMediaPlayPayload, 'chain' | 'send'>,
-  ): void {
-    if (!data.chain) {
+  /**
+   * Route the sound to `chain` (primary, or an aux send at `send`), first
+   * undoing a different named route. A no-op when that route is already live.
+   */
+  private routeNamedChain(sound: ExtendedSound, chain: string | undefined, send: number | undefined): void {
+    if (sound.chainRouted && sound.namedChain === chain && sound.namedSend === send) {
+      return;
+    }
+    this.clearNamedRoute(sound);
+    sound.namedChain = chain;
+    sound.namedSend = send;
+    if (!chain) {
       return;
     }
     try {
-      if (typeof data.send === 'number') {
-        sound.routeTo(data.chain, data.send);
+      if (send !== undefined) {
+        sound.routeTo(chain, send);
       } else {
-        sound.routeTo(data.chain);
+        sound.routeTo(chain);
       }
+      sound.chainRouted = true;
     } catch (error) {
-      console.warn(`Client.Media: chain '${data.chain}' unavailable; playing dry`, error);
+      console.warn(`Client.Media: chain '${chain}' unavailable; playing dry`, error);
     }
   }
 
+  /** Undo the live named route: silence its aux send, or return the primary route to master. */
+  private clearNamedRoute(sound: ExtendedSound): void {
+    const chain = sound.namedChain;
+    const routed = sound.chainRouted;
+    sound.chainRouted = false;
+    if (!routed || !chain) {
+      return;
+    }
+    try {
+      if (sound.namedSend !== undefined) {
+        // Cacophony can re-gain a send but not remove it; 0 silences it.
+        sound.routeTo(chain, 0);
+      } else {
+        const master = this.cacophony.getBus('master');
+        if (master) {
+          sound.routeTo(master);
+        }
+      }
+    } catch (error) {
+      console.warn(`Client.Media: could not clear chain '${chain}'`, error);
+    }
+  }
+
+  /** Move a sound off its inline effect bus (back to master) and destroy that bus. */
+  private detachInlineChain(sound: ExtendedSound): void {
+    if (!sound.effectChain) {
+      return;
+    }
+    const master = this.cacophony.getBus('master');
+    try {
+      if (master) {
+        sound.routeTo(master);
+      }
+    } catch (error) {
+      console.warn('Client.Media: could not reroute sound off its inline effects', error);
+    }
+    this.destroyInlineChain(sound);
+  }
+
+  /**
+   * Apply a Play's routing (a full description: absent chain/effects mean
+   * none) or an Update's (absent fields keep their current value; `chain: ""`
+   * clears named routing and `effects: []` clears inline effects).
+   */
   private async applyEffectRouting(
     sound: ExtendedSound,
     soundKey: string,
     data: Pick<ClientMediaPlayPayload, 'chain' | 'send' | 'effects' | 'upmix'>,
+    mode: 'play' | 'update',
   ): Promise<void> {
-    if (data.upmix === 'ambisonic') {
+    if ((data.upmix ?? sound.upmix) === 'ambisonic') {
       return;
     }
-    if (data.effects && data.effects.length > 0) {
-      await this.applyInlineEffects(sound, soundKey, data);
+    const isPlay = mode === 'play';
+    const chain =
+      data.chain !== undefined ? data.chain || undefined : isPlay ? undefined : sound.namedChain;
+    const send = data.send !== undefined ? data.send : isPlay ? undefined : sound.namedSend;
+    const effects = data.effects ?? (isPlay ? [] : undefined);
+
+    if (effects && effects.length > 0) {
+      this.clearNamedRoute(sound);
+      sound.namedChain = chain;
+      sound.namedSend = send;
+      await this.applyInlineEffects(sound, soundKey, { chain, send, effects });
       return;
     }
-    this.applyChainRouting(sound, data);
+    if (effects) {
+      this.detachInlineChain(sound);
+    }
+    if (sound.effectChain) {
+      // Update without effects: keep the inline chain, re-point what it feeds.
+      sound.namedChain = chain;
+      sound.namedSend = send;
+      this.pointInlineChain(sound.effectChain, chain, send);
+      return;
+    }
+    this.routeNamedChain(sound, chain, send);
   }
 
   private async buildInlineChain(
     sound: ExtendedSound,
     soundKey: string,
     effects: EffectSpec[],
-    downstream?: ReturnType<MediaEffects['getChain']> | null,
   ): Promise<EffectChain | undefined> {
     const master = this.cacophony.getBus('master');
     if (sound.effectChain && master) {
@@ -604,22 +895,36 @@ export class MediaService {
     }
 
     sound.effectChain = inline;
-    if (downstream !== undefined) {
-      inline.connectDownstream(downstream ? downstream.bus : null);
-    }
     return inline;
+  }
+
+  /**
+   * Point an inline chain at the sound's named chain. With a `send`, the
+   * inline output stays on master (the dry path) and feeds the named chain at
+   * the send level, exactly as chain+send behaves without inline effects.
+   * Without a send, the inline chain runs in series into the named chain.
+   */
+  private pointInlineChain(inline: EffectChain, chain: string | undefined, send: number | undefined): void {
+    const target = chain ? (this.effects.getChain(chain)?.bus ?? null) : null;
+    if (target && send !== undefined) {
+      inline.connectDownstream(null);
+      inline.setSend(target, send);
+      return;
+    }
+    inline.setSend(null);
+    inline.connectDownstream(target);
   }
 
   private async applyInlineEffects(
     sound: ExtendedSound,
     soundKey: string,
-    data: Pick<ClientMediaPlayPayload, 'chain' | 'effects'>,
+    data: Pick<ClientMediaPlayPayload, 'chain' | 'send' | 'effects'>,
   ): Promise<void> {
-    const downstream = data.chain ? this.effects.getChain(data.chain) : undefined;
-    const inline = await this.buildInlineChain(sound, soundKey, data.effects ?? [], downstream);
+    const inline = await this.buildInlineChain(sound, soundKey, data.effects ?? []);
     if (!inline) {
       return;
     }
+    this.pointInlineChain(inline, data.chain, data.send);
     try {
       sound.routeTo(inline.bus);
     } catch (error) {
@@ -855,7 +1160,7 @@ export class MediaService {
     const listenerPos = this.cacophony.listenerPosition;
     const listenerForward = this.cacophony.listenerForwardOrientation;
     renderer.setBearingFromPositions(listenerPos, listenerForward, sound.mediaPosition);
-    renderer.setDistanceGain(inverseDistanceGain(distanceBetween(listenerPos, sound.mediaPosition)));
+    renderer.setDistanceGain(this.distanceGain(sound));
   }
 
   private async resolveAmbisonicTarget(
@@ -879,11 +1184,33 @@ export class MediaService {
     sound: ExtendedSound,
     data: Pick<
       ClientMediaUpdatePayload,
-      'volume' | 'pan' | 'loops' | 'is3d' | 'position' | 'start' | 'priority'
+      | 'volume'
+      | 'pan'
+      | 'loops'
+      | 'is3d'
+      | 'position'
+      | 'priority'
+      | 'gainDb'
+      | 'pitchSemitones'
+      | 'spatial'
+      | 'orientation'
     >,
   ): void {
     if (data.volume !== undefined) {
-      sound.volume = data.volume / 100;
+      sound.mediaVolume = data.volume / 100;
+    }
+    if (data.gainDb !== undefined) {
+      sound.gainDb = data.gainDb;
+    }
+    if (data.pitchSemitones !== undefined) {
+      // Set on the Sound before its voice is prepared, so the voice starts at this rate.
+      sound.playbackRate = 2 ** (data.pitchSemitones / 12);
+    }
+    if (data.spatial !== undefined) {
+      sound.spatialProfile = data.spatial;
+    }
+    if (data.orientation && data.orientation.length >= 3) {
+      sound.mediaOrientation = [data.orientation[0], data.orientation[1], data.orientation[2]];
     }
 
     if (data.pan !== undefined) {
@@ -903,16 +1230,10 @@ export class MediaService {
     }
 
     if (data.is3d) {
-      sound.threeDOptions = {
-        coneInnerAngle: 360,
-        coneOuterAngle: 360,
-        coneOuterGain: 0,
-        panningModel: 'HRTF',
-        distanceModel: 'inverse',
-        refDistance: SPATIAL_DISTANCE_MODEL.refDistance,
-        rolloffFactor: SPATIAL_DISTANCE_MODEL.rolloffFactor,
-        maxDistance: SPATIAL_DISTANCE_MODEL.maxDistance,
-      };
+      sound.pointSource = true;
+    }
+    if (sound.pointSource && (data.is3d || data.spatial || data.orientation)) {
+      sound.threeDOptions = this.pannerOptions(sound);
     }
 
     if (data.position?.length) {
@@ -923,12 +1244,11 @@ export class MediaService {
         sound.position = sound.mediaPosition;
         this.updateAmbisonicDistance(sound);
         this.updatePositionalSpatial(sound);
+        this.applyLevels(sound);
       });
     }
 
-    if (data.start !== undefined) {
-      this.seekToPosition(sound, data.start);
-    }
+    this.applyLevels(sound);
 
     if (data.priority) {
       for (const key in this.sounds) {
@@ -945,12 +1265,13 @@ export class MediaService {
   }
 
   /**
-   * The MCMP window a Play asks for, or undefined for the whole file. `start`
-   * and `finish` are absolute positions in ms; `end` is a legacy spelling of
-   * `finish`. A finish at or before start is ignored.
+   * The MCMP window a Play asks for, or undefined for the whole file. `start`,
+   * `loopStart` and `finish` are absolute positions in ms; `end` is a legacy
+   * spelling of `finish`. A finish at or before start is ignored; without a
+   * usable loopStart the repeat window starts at `start`.
    */
   private requestedSegment(
-    data: Pick<ClientMediaPlayPayload, 'finish' | 'start' | 'end'>,
+    data: Pick<ClientMediaPlayPayload, 'finish' | 'start' | 'loopStart' | 'end'>,
   ): MediaSegment | undefined {
     const start = finiteMs(data.start) ?? 0;
     let finish = finiteMs(data.finish) ?? finiteMs(data.end);
@@ -958,20 +1279,28 @@ export class MediaService {
       console.warn(`Client.Media: finish ${finish} is not after start ${start}; ignored`);
       finish = undefined;
     }
+    let loopStart = finiteMs(data.loopStart) ?? start;
+    if (loopStart > start) {
+      console.warn(`Client.Media: loopStart ${loopStart} is after start ${start}; ignored`);
+      loopStart = start;
+    }
     if (start === 0 && finish === undefined) {
       return undefined;
     }
-    return { start, finish };
+    return { start, loopStart, finish };
   }
 
   private sameSegment(a: MediaSegment | undefined, b: MediaSegment | undefined): boolean {
-    return a?.start === b?.start && a?.finish === b?.finish;
+    return a?.start === b?.start && a?.loopStart === b?.loopStart && a?.finish === b?.finish;
   }
 
   /**
-   * Swap a whole-file buffer sound for a Cacophony region over [start, finish).
-   * Region playback seeks, loops and ends inside the window natively (the
-   * source's loopStart/loopEnd), so `loops` repeats the segment, not the file.
+   * Swap a whole-file buffer sound for a Cacophony region over the repeat
+   * window [loopStart, finish). Region playback seeks, loops and ends inside
+   * the window natively (the source's loopStart/loopEnd), so `loops` repeats
+   * the window, not the file. The voice then starts at `start` inside the
+   * region (startVoice), so the first pass is start..finish and every later
+   * pass restarts at the region start, loopStart.
    */
   private async segmentSound(
     base: ExtendedSound,
@@ -982,7 +1311,7 @@ export class MediaService {
     if (!buffer) {
       return base;
     }
-    const start = segment.start / 1000;
+    const start = segment.loopStart / 1000;
     const finish = Math.min(
       segment.finish === undefined ? buffer.duration : segment.finish / 1000,
       buffer.duration,
@@ -1001,15 +1330,19 @@ export class MediaService {
     return sound;
   }
 
-  /** Seek to an absolute file position, translated into the sound's region if it has one. */
-  private seekToPosition(sound: ExtendedSound, positionMs: number): void {
+  /** An absolute file position (ms) as seconds into the sound, relative to its region if it has one. */
+  private soundOffsetSeconds(sound: ExtendedSound, positionMs: number): number {
     const seconds = positionMs / 1000;
     const region = sound.region;
     if (!region) {
-      sound.seek(seconds);
-      return;
+      return seconds;
     }
-    sound.seek(Math.min(Math.max(0, seconds - region.start), region.duration));
+    return Math.min(Math.max(0, seconds - region.start), region.duration);
+  }
+
+  /** Seek to an absolute file position, translated into the sound's region if it has one. */
+  private seekToPosition(sound: ExtendedSound, positionMs: number): void {
+    sound.seek(this.soundOffsetSeconds(sound, positionMs));
   }
 
   private repeatsByTimer(sound: ExtendedSound): boolean {
@@ -1018,9 +1351,9 @@ export class MediaService {
 
   /**
    * A region-less sound (streamed music, or an undecodable buffer) cannot loop
-   * a window natively, so a timer seeks back to `start` at each `finish` and
-   * releases the sound after the last pass: N × (finish - start), or never
-   * for `loops: -1`.
+   * a window natively, so a timer seeks back to `loopStart` at each `finish`
+   * and releases the sound after the last pass: (finish - start) +
+   * (N - 1) × (finish - loopStart), or never for `loops: -1`.
    */
   private scheduleSegmentTimer(sound: ExtendedSound, key: string): void {
     this.clearSegmentTimer(sound);
@@ -1028,7 +1361,8 @@ export class MediaService {
     if (!this.repeatsByTimer(sound) || segment?.finish === undefined) {
       return;
     }
-    const length = segment.finish - segment.start;
+    const firstLength = segment.finish - segment.start;
+    const length = segment.finish - segment.loopStart;
     let passes = 0;
     const onSegmentEnd = () => {
       sound.segmentTimer = undefined;
@@ -1041,10 +1375,10 @@ export class MediaService {
         this.releaseSound(sound, key);
         return;
       }
-      this.seekToPosition(sound, segment.start);
+      this.seekToPosition(sound, segment.loopStart);
       sound.segmentTimer = setTimeout(onSegmentEnd, length);
     };
-    sound.segmentTimer = setTimeout(onSegmentEnd, length);
+    sound.segmentTimer = setTimeout(onSegmentEnd, firstLength);
   }
 
   private clearSegmentTimer(sound: ExtendedSound): void {
@@ -1055,19 +1389,22 @@ export class MediaService {
   }
 
   /**
-   * An Update carrying `finish` (or legacy `end`) moves the play window, which
-   * a region cannot do in place: replay the original Play with the update
-   * merged over it. Returns true when it took over the update.
+   * An Update carrying `finish` (or legacy `end`) or `loopStart` moves the
+   * play window, which a region cannot do in place: replay the original Play
+   * with the update merged over it. Returns true when it took over the update.
    */
   private resegment(sound: ExtendedSound, data: ClientMediaUpdatePayload): boolean {
     const original = sound.playPayload;
-    if (!original || (data.finish === undefined && data.end === undefined)) {
+    if (
+      !original ||
+      (data.finish === undefined && data.end === undefined && data.loopStart === undefined)
+    ) {
       return false;
     }
     const overrides = Object.fromEntries(
       Object.entries(data).filter(([, value]) => value !== undefined),
     ) as Partial<ClientMediaPlayPayload>;
-    const finish = data.finish ?? data.end;
+    const finish = data.finish ?? data.end ?? original.finish;
     void this.play({ ...original, ...overrides, finish, key: sound.key ?? original.key }).catch(
       (error) => console.error('Client.Media.Update: resegment failed', error),
     );
@@ -1075,6 +1412,10 @@ export class MediaService {
   }
 
   private stopSound(sound: ExtendedSound): void {
+    if (sound.key !== undefined) {
+      // Also supersede a Play for this key that is still awaiting routing.
+      this.cancelKey(sound.key);
+    }
     this.releaseSound(sound, sound.key);
   }
 
