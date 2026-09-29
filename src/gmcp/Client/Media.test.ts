@@ -1338,6 +1338,88 @@ describe('GMCPClientMedia', () => {
       expect(sound.voice.play).toHaveBeenCalledOnce();
     });
 
+    describe('inline effects with a named chain aux send', () => {
+      const muffle = [{ id: 'muffle', type: 'lowpass', params: { frequency: 400 } }];
+
+      async function defineWorkshop() {
+        await client.media.setChain({
+          id: 'workshop',
+          effects: [{ type: 'reverb' }],
+        });
+        return client.effectBuses.created.workshop;
+      }
+
+      it('Play: inline chain stays on master and feeds the chain at the send level', async () => {
+        const workshop = await defineWorkshop();
+        const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
+        mockCreateSound.mockResolvedValue(sound);
+
+        await handler.handlePlay({
+          ...tonePlay,
+          chain: 'workshop',
+          send: 0.25,
+          effects: muffle,
+        } as GMCPMessageClientMediaPlay);
+
+        const inline = client.effectBuses.anon[0];
+        expect(sound.routeTo).toHaveBeenCalledWith(inline);
+        // Dry path: the inline bus keeps its master output.
+        expect(inline.disconnect).not.toHaveBeenCalledWith(client.effectBuses.master);
+        // Aux path: a 25% feed into the named chain, never a full-level series route.
+        expect(inline.connect).toHaveBeenCalledWith(workshop, 0.25);
+        expect(inline.connect).not.toHaveBeenCalledWith(workshop);
+      });
+
+      it('Play without send still runs the inline chain in series into the named chain', async () => {
+        const workshop = await defineWorkshop();
+        const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
+        mockCreateSound.mockResolvedValue(sound);
+
+        await handler.handlePlay({
+          ...tonePlay,
+          chain: 'workshop',
+          effects: muffle,
+        } as GMCPMessageClientMediaPlay);
+
+        const inline = client.effectBuses.anon[0];
+        expect(inline.disconnect).toHaveBeenCalledWith(client.effectBuses.master);
+        expect(inline.connect).toHaveBeenCalledWith(workshop);
+      });
+
+      it('Update adding effects to a 25% aux sound keeps it an aux feed, not a full-level route', async () => {
+        const workshop = await defineWorkshop();
+        const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
+        mockCreateSound.mockResolvedValue(sound);
+        await handler.handlePlay({
+          ...tonePlay,
+          chain: 'workshop',
+          send: 0.25,
+        } as GMCPMessageClientMediaPlay);
+        expect(sound.routeTo).toHaveBeenCalledWith('workshop', 0.25);
+
+        // A door's no-argument Update re-sends effects with the door lowpass appended.
+        handler.handleUpdate({
+          key: tonePlay.key,
+          effects: [
+            ...muffle,
+            { id: 'door-lowpass:#62:north', type: 'lowpass', params: { frequency: 6000 } },
+          ],
+        } as GMCPMessageClientMediaUpdate);
+        await vi.waitFor(() => expect(client.effectBuses.anon).toHaveLength(1));
+        const inline = client.effectBuses.anon[0];
+        await vi.waitFor(() => expect(sound.routeTo).toHaveBeenCalledWith(inline));
+
+        expect(inline.disconnect).not.toHaveBeenCalledWith(client.effectBuses.master);
+        expect(inline.connect).toHaveBeenCalledWith(workshop, 0.25);
+        expect(inline.connect).not.toHaveBeenCalledWith(workshop);
+
+        // A later send-only Update re-gains the aux feed on the inline bus.
+        handler.handleUpdate({ key: tonePlay.key, send: 0.5 } as GMCPMessageClientMediaUpdate);
+        await vi.waitFor(() => expect(inline.connect).toHaveBeenLastCalledWith(workshop, 0.5));
+        expect(inline.connect).not.toHaveBeenCalledWith(workshop);
+      });
+    });
+
     it('an Update {key, volume} neither seeks, restarts nor reroutes', async () => {
       const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
       mockCreateSound.mockResolvedValue(sound);

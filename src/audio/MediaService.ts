@@ -840,7 +840,7 @@ export class MediaService {
       this.clearNamedRoute(sound);
       sound.namedChain = chain;
       sound.namedSend = send;
-      await this.applyInlineEffects(sound, soundKey, { chain, effects });
+      await this.applyInlineEffects(sound, soundKey, { chain, send, effects });
       return;
     }
     if (effects) {
@@ -850,7 +850,7 @@ export class MediaService {
       // Update without effects: keep the inline chain, re-point what it feeds.
       sound.namedChain = chain;
       sound.namedSend = send;
-      sound.effectChain.connectDownstream(chain ? (this.effects.getChain(chain)?.bus ?? null) : null);
+      this.pointInlineChain(sound.effectChain, chain, send);
       return;
     }
     this.routeNamedChain(sound, chain, send);
@@ -860,7 +860,6 @@ export class MediaService {
     sound: ExtendedSound,
     soundKey: string,
     effects: EffectSpec[],
-    downstream?: ReturnType<MediaEffects['getChain']> | null,
   ): Promise<EffectChain | undefined> {
     const master = this.cacophony.getBus('master');
     if (sound.effectChain && master) {
@@ -885,22 +884,36 @@ export class MediaService {
     }
 
     sound.effectChain = inline;
-    if (downstream !== undefined) {
-      inline.connectDownstream(downstream ? downstream.bus : null);
-    }
     return inline;
+  }
+
+  /**
+   * Point an inline chain at the sound's named chain. With a `send`, the
+   * inline output stays on master (the dry path) and feeds the named chain at
+   * the send level, exactly as chain+send behaves without inline effects.
+   * Without a send, the inline chain runs in series into the named chain.
+   */
+  private pointInlineChain(inline: EffectChain, chain: string | undefined, send: number | undefined): void {
+    const target = chain ? (this.effects.getChain(chain)?.bus ?? null) : null;
+    if (target && send !== undefined) {
+      inline.connectDownstream(null);
+      inline.setSend(target, send);
+      return;
+    }
+    inline.setSend(null);
+    inline.connectDownstream(target);
   }
 
   private async applyInlineEffects(
     sound: ExtendedSound,
     soundKey: string,
-    data: Pick<ClientMediaPlayPayload, 'chain' | 'effects'>,
+    data: Pick<ClientMediaPlayPayload, 'chain' | 'send' | 'effects'>,
   ): Promise<void> {
-    const downstream = data.chain ? this.effects.getChain(data.chain) : undefined;
-    const inline = await this.buildInlineChain(sound, soundKey, data.effects ?? [], downstream);
+    const inline = await this.buildInlineChain(sound, soundKey, data.effects ?? []);
     if (!inline) {
       return;
     }
+    this.pointInlineChain(inline, data.chain, data.send);
     try {
       sound.routeTo(inline.bus);
     } catch (error) {
