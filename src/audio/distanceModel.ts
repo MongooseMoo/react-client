@@ -42,6 +42,53 @@ export function inverseDistanceGain(
   return refDistance / (refDistance + rolloffFactor * (clamped - refDistance));
 }
 
+/** Distance curves a per-sound `spatial` profile may name (catalog `logarithmic` arrives as inverse). */
+export const SPATIAL_MODELS = ['inverse', 'linear', 'none'] as const;
+export type SpatialModel = (typeof SPATIAL_MODELS)[number];
+
+/**
+ * A per-sound `spatial` profile from `Client.Media.Play`
+ * (sounds-todo/contracts.md § Spatial profiles). Angles in degrees.
+ */
+export interface SpatialProfile {
+  readonly model: SpatialModel;
+  readonly refDistance: number;
+  readonly maxDistance: number;
+  readonly rolloff: number;
+  readonly coneInnerAngle: number;
+  readonly coneOuterAngle: number;
+  readonly coneOuterGain: number;
+}
+
+/** The curve for positioned sounds that carry no `spatial` profile (the pre-profile behaviour). */
+export const DEFAULT_SPATIAL_PROFILE: SpatialProfile = {
+  model: 'inverse',
+  refDistance: SPATIAL_DISTANCE_MODEL.refDistance,
+  maxDistance: SPATIAL_DISTANCE_MODEL.maxDistance,
+  rolloff: SPATIAL_DISTANCE_MODEL.rolloffFactor,
+  coneInnerAngle: 360,
+  coneOuterAngle: 360,
+  coneOuterGain: 1,
+};
+
+/**
+ * Distance gain for a profile. With r = refDistance, m = maxDistance and
+ * d' = clamp(d, r, m): inverse r / (r + rolloff (d' - r)), linear
+ * max(0, 1 - rolloff (d' - r) / (m - r)), none 1. Max distance is a clamp,
+ * not a cutoff.
+ */
+export function profileDistanceGain(distance: number, profile: SpatialProfile): number {
+  const { model, refDistance, maxDistance, rolloff } = profile;
+  if (model === 'none' || !Number.isFinite(distance) || distance <= refDistance) {
+    return 1;
+  }
+  const clamped = Math.min(distance, maxDistance);
+  if (model === 'linear') {
+    return Math.max(0, 1 - (rolloff * (clamped - refDistance)) / (maxDistance - refDistance));
+  }
+  return refDistance / (refDistance + rolloff * (clamped - refDistance));
+}
+
 /** Euclidean distance between two 3D positions; missing/short vectors → 0 (co-located). */
 export function distanceBetween(
   a?: readonly number[] | null,

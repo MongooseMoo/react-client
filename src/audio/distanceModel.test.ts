@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { distanceBetween, inverseDistanceGain, SPATIAL_DISTANCE_MODEL } from './distanceModel';
+import {
+  DEFAULT_SPATIAL_PROFILE,
+  distanceBetween,
+  inverseDistanceGain,
+  profileDistanceGain,
+  SPATIAL_DISTANCE_MODEL,
+  type SpatialProfile,
+} from './distanceModel';
 
 describe('inverseDistanceGain', () => {
   it('is full volume at or inside the reference distance', () => {
@@ -40,6 +47,40 @@ describe('inverseDistanceGain', () => {
     const model = { refDistance: 1, rolloffFactor: 1, maxDistance: 10000 };
     expect(inverseDistanceGain(2, model)).toBeCloseTo(1 / 2, 6);
     expect(inverseDistanceGain(10, model)).toBeCloseTo(1 / 10, 6);
+  });
+});
+
+describe('profileDistanceGain', () => {
+  // sounds-todo/contract-cases.json "inverseDistance"
+  const catalogProfile: SpatialProfile = {
+    model: 'inverse',
+    refDistance: 1,
+    maxDistance: 50,
+    rolloff: 1,
+    coneInnerAngle: 360,
+    coneOuterAngle: 360,
+    coneOuterGain: 1,
+  };
+
+  it('matches the contract inverse vectors, with max distance as a clamp', () => {
+    const distances = [1, 2, 10, 50, 100];
+    const expected = [1, 0.5, 0.1, 0.02, 0.02];
+    distances.forEach((distance, i) => {
+      expect(profileDistanceGain(distance, catalogProfile)).toBeCloseTo(expected[i], 9);
+    });
+  });
+
+  it('implements the linear and none models', () => {
+    const linear: SpatialProfile = { ...catalogProfile, model: 'linear', maxDistance: 11 };
+    expect(profileDistanceGain(1, linear)).toBe(1);
+    expect(profileDistanceGain(6, linear)).toBeCloseTo(0.5, 9);
+    expect(profileDistanceGain(11, linear)).toBeCloseTo(0, 9);
+    expect(profileDistanceGain(50, linear)).toBeCloseTo(0, 9);
+    expect(profileDistanceGain(40, { ...catalogProfile, model: 'none' })).toBe(1);
+  });
+
+  it('keeps the legacy default curve for sounds without a profile', () => {
+    expect(profileDistanceGain(58, DEFAULT_SPATIAL_PROFILE)).toBeCloseTo(inverseDistanceGain(58), 12);
   });
 });
 
