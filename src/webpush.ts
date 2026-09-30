@@ -1,7 +1,8 @@
+import { resolveApiUrl } from "./apiOrigin";
 import type MudClient from "./client";
 
-const DEFAULT_PUBLIC_KEY_ENDPOINT = "/api/webpush/public_key";
-const DEFAULT_SUBSCRIPTION_ENDPOINT = "/api/webpush/subscriptions";
+const DEFAULT_PUBLIC_KEY_ENDPOINT = resolveApiUrl("/api/webpush/public_key");
+const DEFAULT_SUBSCRIPTION_ENDPOINT = resolveApiUrl("/api/webpush/subscriptions");
 
 type PushSubscriptionJSONLike = {
   endpoint?: string;
