@@ -1,4 +1,3 @@
-// @ts-expect-error This import is virtually resolved
 import CommitHash from 'virtual:commit-hash';
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "./PreferencesDialog.css";
