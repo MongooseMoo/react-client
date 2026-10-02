@@ -1,9 +1,10 @@
 import preact from '@preact/preset-vite';
 import { fileURLToPath } from 'node:url';
+import { CommitHashPlugin } from 'vite-plugin-commit-hash';
 import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
-  plugins: [preact()],
+  plugins: [preact(), CommitHashPlugin()],
   resolve: {
     mainFields: ['module', 'main'],
     alias: [{

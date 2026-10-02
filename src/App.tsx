@@ -16,6 +16,7 @@ import LinkPickerDialog from "./components/LinkPickerDialog";
 import Sidebar, { clampSidebarWidth, type SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
+import UpdateNotice from "./components/UpdateNotice";
 import WasmGuest from "./components/WasmGuest";
 import type { WasmHostState } from "./components/WasmHost";
 import WasmHost from "./components/WasmHost";
@@ -514,6 +515,7 @@ function App() {
               onOpenLogs={() => autoLogDialogRef.current?.open()}
               showSidebar={showSidebar}
             />
+            <UpdateNotice />
           </header>
           {urlModeParams.isHostMode && (
             <HostPanel
