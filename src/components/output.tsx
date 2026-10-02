@@ -30,7 +30,6 @@ export enum OutputType {
 export interface OutputLine {
   id: number; // Unique key for React list
   type: OutputType;
-  content: JSX.Element; // The actual JSX to render for this line
   sourceType: string; // Track what created this message
   sourceContent: string; // Store original input data
   metadata?: Record<string, any>; // Optional additional data
@@ -71,6 +70,77 @@ const outputLogSchema: LocalStorageSchema<SavedOutputLine[]> = {
     return undefined;
   },
 };
+
+/** Elements for a line, built fresh from its source. */
+function lineElements(line: SavedOutputLine, onExitClick: (exit: string) => void): React.ReactElement[] {
+  switch (line.sourceType) {
+    case 'ansi':
+      return parseToElements(line.sourceContent, onExitClick);
+
+    case 'html':
+      return renderServerHtml(line.sourceContent);
+
+    case 'command':
+      return [
+        <span className="command" aria-live="off">
+          {line.sourceContent}
+        </span>
+      ];
+
+    case 'error':
+      return [<h2> Error: {line.sourceContent}</h2>];
+
+    case 'system':
+      return [<h2> {line.sourceContent}</h2>];
+
+    case 'plain':
+      return [<span>{line.sourceContent}</span>];
+
+    default:
+      console.warn(`Unknown sourceType: ${line.sourceType}, falling back to text display`);
+      return [<span>{line.sourceContent}</span>];
+  }
+}
+
+function plainText(line: SavedOutputLine): string {
+  const source = String(line.sourceContent);
+  switch (line.sourceType) {
+    case 'ansi':
+      return stripAnsi(source);
+    case 'html':
+      return new DOMParser().parseFromString(source, "text/html").body.textContent || "";
+    default:
+      return source;
+  }
+}
+
+interface OutputLineContentProps {
+  line: SavedOutputLine;
+  onExitClick: (exit: string) => void;
+}
+
+/**
+ * Builds a line's elements from its source when it mounts. History keeps
+ * source data only, never elements: a Preact element, once mounted, keeps its
+ * parent from that render, so an element stored in history pins the entire
+ * app tree of the render that mounted it for as long as the line lives.
+ * Memoized so new lines don't re-parse the whole live window.
+ */
+const OutputLineContent = React.memo(({ line, onExitClick }: OutputLineContentProps) => {
+  let elements: React.ReactElement[];
+  try {
+    elements = lineElements(line, onExitClick);
+  } catch (error) {
+    // One unrenderable line must not take down the rest of the output.
+    console.error("Failed to render output line; showing it as plain text:", line, error);
+    elements = [<span>{plainText(line)}</span>];
+  }
+  return (
+    <div className={`output-line output-line-${line.type}`}>
+      {elements.length === 1 ? elements[0] : elements}
+    </div>
+  );
+});
 
 interface Props {
   client: MudClient;
@@ -193,91 +263,30 @@ class Output extends React.Component<Props, State> {
    */
   private renderLineMarkup(line: SavedOutputLine): string {
     return ReactDOMServer.renderToStaticMarkup(
-      <div className={`output-line output-line-${line.type}`}>{this.recreateContentFromSource(line)}</div>
+      <div className={`output-line output-line-${line.type}`}>{lineElements(line, this.handleExitClick)}</div>
     );
   }
 
-  // Helper method to re-create content from source data
-  recreateContentFromSource = (savedLine: SavedOutputLine): React.ReactElement[] => {
-    switch (savedLine.sourceType) {
-      case 'ansi':
-        return parseToElements(savedLine.sourceContent, this.handleExitClick);
-
-      case 'html':
-        return renderServerHtml(savedLine.sourceContent);
-
-      case 'command':
-        return [
-          <span className="command" aria-live="off">
-            {savedLine.sourceContent}
-          </span>
-        ];
-
-      case 'error':
-        return [<h2> Error: {savedLine.sourceContent}</h2>];
-
-      case 'system':
-        return [<h2> {savedLine.sourceContent}</h2>];
-
-      case 'plain':
-        return [<span>{savedLine.sourceContent}</span>];
-
-      default:
-        console.warn(`Unknown sourceType: ${savedLine.sourceType}, falling back to text display`);
-        return [<span>{savedLine.sourceContent}</span>];
-    }
-  };
-
-  loadOutput = (): OutputLine[] => {
-    const savedLines = loadStoredValue(outputLogSchema, []);
-    // Re-process source data through handlers to recreate proper React components.
-    return savedLines.map((savedLine: SavedOutputLine): OutputLine => {
-      const currentKey = this.messageKey++;
-      let recreatedElements: React.ReactElement[];
-      try {
-        recreatedElements = this.recreateContentFromSource(savedLine);
-      } catch (error) {
-        // One unrenderable saved line must not take down the whole restored log.
-        console.error("Failed to restore saved output line; showing it as plain text:", savedLine, error);
-        recreatedElements = [<span>{String(savedLine.sourceContent)}</span>];
-      }
-
-      const wrappedContent = recreatedElements.length === 1 ?
-        recreatedElements[0] :
-        <>{recreatedElements}</>;
-
-      return {
-        id: currentKey,
-        type: savedLine.type,
-        content: <div key={currentKey} className={`output-line output-line-${savedLine.type}`}>{wrappedContent}</div>,
-        sourceType: savedLine.sourceType,
-        sourceContent: savedLine.sourceContent,
-        metadata: savedLine.metadata
-      };
-    });
-  };
+  loadOutput = (): OutputLine[] =>
+    loadStoredValue(outputLogSchema, []).map((savedLine: SavedOutputLine): OutputLine => ({
+      id: this.messageKey++,
+      type: savedLine.type,
+      sourceType: savedLine.sourceType,
+      sourceContent: savedLine.sourceContent,
+      metadata: savedLine.metadata,
+    }));
 
   addCommand = (command: string) => {
-    this.addToOutput(
-      [
-        <span className="command" aria-live="off">
-          {command}
-        </span>,
-      ],
-      OutputType.Command, // Specify type
-      false,
-      'command',
-      command
-    );
+    this.addToOutput(OutputType.Command, false, 'command', command);
   };
 
   addError = (error: Error) =>
-    this.addToOutput([<h2> Error: {error.message}</h2>], OutputType.ErrorMessage, true, 'error', error.message);
+    this.addToOutput(OutputType.ErrorMessage, true, 'error', error.message);
 
-  handleConnected = () => this.addToOutput([<h2> Connected</h2>], OutputType.SystemInfo, true, 'system', 'Connected');
+  handleConnected = () => this.addToOutput(OutputType.SystemInfo, true, 'system', 'Connected');
 
   handleDisconnected = () => {
-    this.addToOutput([<h2> Disconnected</h2>], OutputType.SystemInfo, true, 'system', 'Disconnected');
+    this.addToOutput(OutputType.SystemInfo, true, 'system', 'Disconnected');
     this.setState({ sidebarVisible: false });
   };
 
@@ -321,7 +330,7 @@ class Output extends React.Component<Props, State> {
       : entry.type === "error" ? `Error: ${entry.error.message}`
       : entry.command;
     try {
-      this.addToOutput([<span>{text}</span>], OutputType.ServerMessage, true, 'plain', text);
+      this.addToOutput(OutputType.ServerMessage, true, 'plain', text);
     } catch (error) {
       console.error("Plain-text fallback also failed:", entry, error);
     }
@@ -552,7 +561,6 @@ componentDidUpdate(
   }
 
   addToOutput(
-    elements: React.ReactNode[],
     type: OutputType,
     shouldAnnounce: boolean = true,
     sourceType: string = 'unknown',
@@ -562,7 +570,6 @@ componentDidUpdate(
     if (shouldAnnounce) {
       // Announcing is secondary to displaying: a failure here must not drop the line.
       try {
-        // Render fresh elements, not `elements`: those are about to be mounted.
         announce(this.sanitizeHtml(this.renderLineMarkup({ type, sourceType, sourceContent, metadata })));
       } catch (error) {
         console.error("Failed to announce output line:", error);
@@ -572,15 +579,9 @@ componentDidUpdate(
     // One line per message, matching what loadOutput rebuilds from the saved
     // source. (Splitting a multi-element message into lines that each carried
     // the whole source duplicated it on restart and when rendering from source.)
-    const currentKey = this.messageKey++;
     const newOutputLines: OutputLine[] = [{
-      id: currentKey,
+      id: this.messageKey++,
       type: type,
-      content: (
-        <div key={currentKey} className={`output-line output-line-${type}`}>
-          {elements.length === 1 ? elements[0] : elements}
-        </div>
-      ),
       sourceType: sourceType,
       sourceContent: sourceContent,
       metadata: metadata
@@ -625,12 +626,11 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     if (!message) {
       return;
     }
-    const elements = parseToElements(message, this.handleExitClick);
-    this.addToOutput(elements, OutputType.ServerMessage, true, 'ansi', message);
+    this.addToOutput(OutputType.ServerMessage, true, 'ansi', message);
   };
 
   handleHtml = (html: string) => {
-    this.addToOutput(renderServerHtml(html), OutputType.ServerMessage, true, 'html', html);
+    this.addToOutput(OutputType.ServerMessage, true, 'html', html);
   }
 
   handleExitClick = (exit: string) => {
@@ -945,7 +945,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
             className={`output-line ${this.state.focusedLineIndex === index ? 'focused-line' : ''}`}
             data-line-index={index}
           >
-            {line.content}
+            <OutputLineContent line={line} onExitClick={this.handleExitClick} />
           </div>
         ))}
         {this.state.newLinesCount > 0 && (
