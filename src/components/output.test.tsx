@@ -42,14 +42,12 @@ describe("Output keyboard handling", () => {
     const output = new Output({ client: {} as MudClient });
     const lines: OutputLine[] = [
       {
-        content: <div>first line</div>,
         id: 1,
         sourceContent: "first line",
         sourceType: "test",
         type: OutputType.ServerMessage,
       },
       {
-        content: <div>second line</div>,
         id: 2,
         sourceContent: "second line",
         sourceType: "test",
@@ -71,7 +69,6 @@ describe("Output keyboard handling", () => {
     const output = new Output({ client: {} as MudClient });
     const lines: OutputLine[] = [
       {
-        content: <div>copy this text</div>,
         id: 1,
         sourceContent: "<p>copy this text</p>",
         sourceType: "html",
@@ -184,7 +181,6 @@ describe("Output initial scroll position", () => {
 describe("Output persistence", () => {
   const makeLines = (count: number): OutputLine[] =>
     Array.from({ length: count }, (_, i) => ({
-      content: <div>{`line ${i}`}</div>,
       id: i,
       sourceContent: `line ${i}`,
       sourceType: "test",
@@ -295,7 +291,6 @@ describe("Output persistence", () => {
 describe("Output accessibility-tree exposure cap", () => {
   const makeLines = (count: number): OutputLine[] =>
     Array.from({ length: count }, (_, i) => ({
-      content: <div>{`line ${i}`}</div>,
       id: i,
       sourceContent: `line ${i}`,
       sourceType: "test",
@@ -384,7 +379,6 @@ describe("Output accessibility-tree exposure cap", () => {
 describe("Output history exposure toggle", () => {
   const makeLines = (count: number): OutputLine[] =>
     Array.from({ length: count }, (_, i) => ({
-      content: <div>{`line ${i}`}</div>,
       id: i,
       sourceContent: `line ${i}`,
       sourceType: "test",
@@ -601,5 +595,41 @@ describe("Output line markup rendering", () => {
     // The multi-part HTML message is one line, frozen once, not once per part.
     expect(text.split("quoted").length - 1).toBe(1);
     expect(text).toContain(`filler ${Output.LIVE_WINDOW_SIZE + 49}`);
+  });
+
+  it("history lines hold no mounted elements that pin earlier render trees", async () => {
+    let output: Output | undefined;
+    render(
+      <Output
+        ref={(instance: Output | null) => { if (instance) output = instance; }}
+        client={{ sendCommand: vi.fn() } as unknown as MudClient}
+      />,
+    );
+    const flush = () => act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    for (let index = 0; index < 5; index += 1) {
+      useOutputStore.getState().addMessage(`\x1b[31mline ${index}\x1b[0m`);
+      await flush();
+    }
+
+    // A mounted Preact vnode keeps `__` (its parent) from the render that
+    // mounted it. Reachable from long-lived history, that pointer pins the
+    // whole app tree of that render; with thousands of lines this grew the
+    // live client's heap past 1.4 GB.
+    const mounted: unknown[] = [];
+    const seen = new Set<unknown>();
+    const visit = (value: unknown) => {
+      if (value === null || typeof value !== "object" || seen.has(value) || value instanceof Node) return;
+      seen.add(value);
+      const record = value as Record<string, unknown>;
+      if ("props" in record && "type" in record && record.__ != null) mounted.push(value);
+      for (const key of Object.keys(record)) visit(record[key]);
+    };
+    visit((output as unknown as { allLines: OutputLine[] }).allLines);
+
+    expect(mounted).toEqual([]);
   });
 });
