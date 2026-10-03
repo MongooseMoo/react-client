@@ -1365,7 +1365,11 @@ export class MediaService {
       sound.mediaOrientation = [data.orientation[0], data.orientation[1], data.orientation[2]];
     }
 
-    if (data.pan !== undefined) {
+    // A source's panning mode is fixed when it is created (is3d -> HRTF), and
+    // Cacophony rejects the other mode's setters. The MOO sends `pan` on every
+    // packet, so a point source ignores it rather than failing the Play.
+    const hrtf = sound.panType === 'HRTF';
+    if (data.pan !== undefined && !hrtf) {
       sound.stereoPan = data.pan / 100;
     }
 
@@ -1384,7 +1388,7 @@ export class MediaService {
     if (data.is3d) {
       sound.pointSource = true;
     }
-    if (sound.pointSource && (data.is3d || data.spatial || data.orientation)) {
+    if (hrtf && sound.pointSource && (data.is3d || data.spatial || data.orientation)) {
       sound.threeDOptions = this.pannerOptions(sound);
     }
 
@@ -1393,7 +1397,9 @@ export class MediaService {
       // First placement snaps; later updates glide from the current position.
       this.motion.tween(sound, sound.mediaPosition, target, (value) => {
         sound.mediaPosition = [value[0], value[1], value[2]];
-        sound.position = sound.mediaPosition;
+        if (hrtf) {
+          sound.position = sound.mediaPosition;
+        }
         this.updateAmbisonicDistance(sound);
         this.updatePositionalSpatial(sound);
         this.applyLevels(sound);
