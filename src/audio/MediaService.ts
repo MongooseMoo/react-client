@@ -921,7 +921,7 @@ export class MediaService {
     }
   }
 
-  /** Undo the live named route: silence its aux send, or return the primary route to master. */
+  /** Undo the live named route: remove its aux send, or return the primary route to master. */
   private clearNamedRoute(sound: ExtendedSound): void {
     const chain = sound.namedChain;
     const routed = sound.chainRouted;
@@ -931,8 +931,7 @@ export class MediaService {
     }
     try {
       if (sound.namedSend !== undefined) {
-        // Cacophony can re-gain a send but not remove it; 0 silences it.
-        sound.routeTo(chain, 0);
+        sound.removeSend(chain);
       } else {
         const master = this.cacophony.getBus('master');
         if (master) {
