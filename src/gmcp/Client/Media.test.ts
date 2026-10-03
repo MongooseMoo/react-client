@@ -58,6 +58,8 @@ type MockSound = {
   loop: ReturnType<typeof vi.fn>;
   mediaType?: string;
   on: ReturnType<typeof vi.fn>;
+  /** Fixed at creation, as in Cacophony; the client's mock createSound/createSprite set it. */
+  panType: 'HRTF' | 'stereo';
   playbackRate: number;
   playbacks: MockPlayback[];
   position: number[];
@@ -88,6 +90,9 @@ function createMockSound(url: string): MockSound {
     seek: vi.fn(),
     stereoPan: 0,
   };
+  let position = [0, 0, 0];
+  let stereoPan = 0;
+  let threeDOptions: Record<string, unknown> | undefined;
 
   const sound: MockSound = {
     cleanup: vi.fn(),
@@ -101,17 +106,45 @@ function createMockSound(url: string): MockSound {
       soundListeners.get(event)?.add(listener);
       return () => soundListeners.get(event)?.delete(listener);
     }),
+    panType: 'stereo',
     playbackRate: 1,
     preplay: vi.fn(() => [playback]),
     voice: playback,
     playbacks: [playback],
-    position: [0, 0, 0],
+    // Cacophony's spatial setters reject the other panning mode (and throw the
+    // same messages); the mock must too, or a test can pass on a call that
+    // throws in the real library.
+    get position() {
+      return position;
+    },
+    set position(value: number[]) {
+      if (sound.panType !== 'HRTF') {
+        throw new Error('Position and threeDOptions require HRTF panning');
+      }
+      position = value;
+    },
     priority: undefined,
     routeTo: vi.fn(),
     seek: vi.fn(),
-    stereoPan: 0,
+    get stereoPan() {
+      return stereoPan;
+    },
+    set stereoPan(value: number) {
+      if (sound.panType !== 'stereo') {
+        throw new Error('Stereo panning is not available when using HRTF.');
+      }
+      stereoPan = value;
+    },
     tag: undefined,
-    threeDOptions: undefined,
+    get threeDOptions() {
+      return threeDOptions;
+    },
+    set threeDOptions(value: Record<string, unknown> | undefined) {
+      if (sound.panType !== 'HRTF') {
+        throw new Error('Position and threeDOptions require HRTF panning');
+      }
+      threeDOptions = value;
+    },
     trigger(event: string) {
       for (const listener of soundListeners.get(event) ?? []) {
         listener();
@@ -152,8 +185,23 @@ function createMockClient() {
       currentTime: 100,
       sampleRate: 48000,
     },
-    createSound: mockCreateSound,
-    createSprite: mockCreateSprite,
+    // A source's panning mode is whatever it was created with.
+    createSound: async (...args: unknown[]) => {
+      const sound = await mockCreateSound(...args);
+      if (sound && (args[2] === 'HRTF' || args[2] === 'stereo')) {
+        sound.panType = args[2];
+      }
+      return sound;
+    },
+    createSprite: async (...args: unknown[]) => {
+      const sprite = await mockCreateSprite(...args);
+      const panType = (args[2] as { panType?: 'HRTF' | 'stereo' } | undefined)?.panType;
+      const segment = sprite?.get?.('segment');
+      if (segment && panType) {
+        segment.panType = panType;
+      }
+      return sprite;
+    },
     createBus: vi.fn((name?: string) => {
       const bus = makeEffectBus(name ?? null);
       if (name) {
@@ -1098,7 +1146,9 @@ describe('GMCPClientMedia', () => {
 
     expect(sound.voice.play).toHaveBeenCalledTimes(1);
     expect(sound.volume).toBe(0.25);
-    expect(sound.stereoPan).toBe(0.5);
+    // The MOO sends `pan` on every packet. A point source is HRTF-panned by
+    // position, so the stereo pan is ignored instead of throwing.
+    expect(sound.stereoPan).toBe(0);
     // The move glides rather than snapping; run the tween to completion.
     expect(sound.position).toEqual([0, 0, 0]);
     client.stepMotion(600);
@@ -1160,12 +1210,6 @@ describe('GMCPClientMedia', () => {
     };
     mockPositionalFoaRendererCreate.mockResolvedValue(renderer);
     const sound = createMockSound('https://media.example/show.ogg');
-    const setPosition = vi.fn();
-    Object.defineProperty(sound, 'position', {
-      configurable: true,
-      get: () => [0, 0, 0],
-      set: setPosition,
-    });
     mockCreateSound.mockResolvedValue(sound);
 
     await handler.handlePlay({
@@ -1177,7 +1221,14 @@ describe('GMCPClientMedia', () => {
       volume: 50,
     } as GMCPMessageClientMediaPlay);
 
-    expect(setPosition).toHaveBeenCalledWith([0, 10, 0]);
+    // This source is not HRTF-panned, so its position goes to the renderer
+    // (converted once to browser axes), never to the sound's own panner.
+    expect(renderer.setBearingFromPositions).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      [0, 10, 0],
+    );
+    expect(sound.position).toEqual([0, 0, 0]);
     expect(renderer.setDistanceGain).toHaveBeenCalled();
     // Free-field inverse attenuation: pressure amplitude is 1 / distance.
     expect(renderer.setDistanceGain.mock.calls[0][0]).toBeCloseTo(1 / 10);
