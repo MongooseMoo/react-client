@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { deleteAwayDatabase } from './awayTestHelpers';
 
 const workboxMocks = vi.hoisted(() => ({
   cleanupOutdatedCaches: vi.fn(),
@@ -218,5 +219,289 @@ describe('service worker push notifications', () => {
     await dispatchClick('nourl', { actionUrls: {}, url: '/play' });
 
     expect(openWindow).toHaveBeenCalledWith('https://client.mongoose.world/play');
+  });
+
+  describe('away lines', () => {
+    const LINES_URL = 'https://mongoose.world/api/away/lines';
+    let postMessage: ReturnType<typeof vi.fn>;
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      postMessage = vi.fn();
+      matchAll.mockResolvedValue([{ postMessage }]);
+      fetchMock = vi.fn(async () => Response.json({ connected: 0, lines: [], seq: 0 }));
+      vi.stubGlobal('fetch', fetchMock);
+    });
+
+    afterEach(async () => {
+      vi.restoreAllMocks();
+      await deleteAwayDatabase();
+    });
+
+    // `period: null` leaves the period out of the payload.
+    function roomPush(
+      lines: Array<[number, string]>,
+      extra: Record<string, unknown> = {},
+      period: number | null = 1,
+    ) {
+      return {
+        body: lines[lines.length - 1][1],
+        data: {
+          from: lines[0][0],
+          lines,
+          ...(period === null ? {} : { period }),
+          to: lines[lines.length - 1][0],
+        },
+        tag: 'mongoose-room',
+        title: 'The Lounge',
+        url: '/',
+        ...extra,
+      };
+    }
+
+    async function storeToken(): Promise<void> {
+      const { storeAwayToken } = await import('./away');
+      await storeAwayToken({ expiresAt: Math.floor(Date.now() / 1000) + 86400 * 30, token: 'away-1' });
+    }
+
+    // Everything stored and not yet shown on a page, which in these tests is
+    // everything stored for the current away period.
+    async function storedLines() {
+      const { takeUnshownAwayLines } = await import('./away');
+      return takeUnshownAwayLines();
+    }
+
+    it('stores the lines, messages every window, and shows an alerting notification', async () => {
+      const otherWindow = { postMessage: vi.fn() };
+      matchAll.mockResolvedValue([{ postMessage }, otherWindow]);
+
+      await dispatchPush(
+        roomPush([
+          [1, 'Bob waves.'],
+          [2, 'Bob says, "hi"'],
+        ]),
+      );
+
+      const lines = [
+        { seq: 1, text: 'Bob waves.' },
+        { seq: 2, text: 'Bob says, "hi"' },
+      ];
+      expect(matchAll).toHaveBeenCalledWith({ includeUncontrolled: true, type: 'window' });
+      expect(postMessage).toHaveBeenCalledWith({ lines, type: 'away-lines' });
+      expect(otherWindow.postMessage).toHaveBeenCalledWith({ lines, type: 'away-lines' });
+      expect(showNotification).toHaveBeenCalledWith('The Lounge', {
+        actions: [],
+        body: 'Bob says, "hi"',
+        data: { actionUrls: {}, url: '/' },
+        renotify: true,
+        tag: 'mongoose-room',
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(await storedLines()).toEqual(lines);
+    });
+
+    it('shows a silent notification without renotify when the payload says silent', async () => {
+      await dispatchPush(roomPush([[1, 'Bob waves.']], { silent: 1 }));
+
+      expect(showNotification).toHaveBeenCalledWith('The Lounge', {
+        actions: [],
+        body: 'Bob waves.',
+        data: { actionUrls: {}, url: '/' },
+        silent: true,
+        tag: 'mongoose-room',
+      });
+    });
+
+    it('keeps the actions of a push that carries lines', async () => {
+      await dispatchPush(
+        roomPush([[1, 'Bob waves.']], {
+          actions: [{ action: 'stop', title: 'Stop these', url: '/api/webpush/stop?t=abc' }],
+        }),
+      );
+
+      expect(showNotification).toHaveBeenCalledWith(
+        'The Lounge',
+        expect.objectContaining({
+          actions: [{ action: 'stop', title: 'Stop these' }],
+          data: { actionUrls: { stop: '/api/webpush/stop?t=abc' }, url: '/' },
+        }),
+      );
+    });
+
+    it('leaves a push without data alone: nothing stored, no message, no fetch', async () => {
+      await storeToken();
+
+      await dispatchPush({ body: 'Hello', tag: 'mongoose-page', title: 'Page' });
+
+      expect(showNotification).toHaveBeenCalledWith('Page', {
+        actions: [],
+        body: 'Hello',
+        data: { actionUrls: {}, url: '/' },
+        tag: 'mongoose-page',
+      });
+      expect(postMessage).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(await storedLines()).toEqual([]);
+    });
+
+    it('repairs a gap with exactly one fetch and merges the result', async () => {
+      await storeToken();
+      await dispatchPush(
+        roomPush([
+          [1, 'one'],
+          [2, 'two'],
+        ]),
+      );
+      postMessage.mockClear();
+      fetchMock.mockResolvedValue(
+        Response.json({
+          connected: 0,
+          lines: [
+            { seq: 3, text: 'three' },
+            { seq: 4, text: 'four' },
+            { seq: 5, text: 'five' },
+          ],
+          seq: 5,
+        }),
+      );
+
+      await dispatchPush(roomPush([[5, 'five']]));
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock).toHaveBeenCalledWith(`${LINES_URL}?after=2`, {
+        headers: { Authorization: 'Bearer away-1' },
+        method: 'GET',
+      });
+      expect(postMessage).toHaveBeenCalledWith({
+        lines: [
+          { seq: 3, text: 'three' },
+          { seq: 4, text: 'four' },
+          { seq: 5, text: 'five' },
+        ],
+        type: 'away-lines',
+      });
+      expect((await storedLines()).map((line) => line.seq)).toEqual([1, 2, 3, 4, 5]);
+      expect(showNotification).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not fetch when the next push follows on directly', async () => {
+      await storeToken();
+      await dispatchPush(roomPush([[1, 'one']]));
+
+      await dispatchPush(roomPush([[2, 'two']]));
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect((await storedLines()).map((line) => line.seq)).toEqual([1, 2]);
+    });
+
+    it('does not fetch for a gap when no away token is stored', async () => {
+      await dispatchPush(roomPush([[1, 'one']]));
+
+      await dispatchPush(roomPush([[4, 'four']]));
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect((await storedLines()).map((line) => line.seq)).toEqual([1, 4]);
+    });
+
+    it.each([
+      ['the request rejects', () => Promise.reject(new TypeError('Failed to fetch'))],
+      ['the server answers 500', async () => new Response('nope', { status: 500 })],
+    ])('keeps what the push carried when the gap fetch fails because %s', async (_label, respond) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await storeToken();
+      await dispatchPush(roomPush([[1, 'one']]));
+      postMessage.mockClear();
+      fetchMock.mockImplementation(respond);
+
+      await dispatchPush(roomPush([[4, 'four']]));
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(postMessage).toHaveBeenCalledWith({
+        lines: [{ seq: 4, text: 'four' }],
+        type: 'away-lines',
+      });
+      expect((await storedLines()).map((line) => line.seq)).toEqual([1, 4]);
+      expect(showNotification).toHaveBeenCalledTimes(2);
+    });
+
+    const oldPeriodLines: Array<[number, string]> = [
+      [1, 'old one'],
+      [2, 'old two'],
+      [3, 'old three'],
+    ];
+
+    it('discards the stored lines when a push carries a different period', async () => {
+      await dispatchPush(roomPush(oldPeriodLines, {}, 7));
+      expect(await storedLines()).toHaveLength(3);
+      postMessage.mockClear();
+
+      await dispatchPush(roomPush([[1, 'new one']], {}, 8));
+
+      expect(postMessage).toHaveBeenCalledWith({
+        lines: [{ seq: 1, text: 'new one' }],
+        type: 'away-lines',
+      });
+      // The shown mark went with the old period: seq 1 is handed out again.
+      expect(await storedLines()).toEqual([{ seq: 1, text: 'new one' }]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('counts a gap from 0 after a different period discarded the highest seq', async () => {
+      await storeToken();
+      await dispatchPush(roomPush(oldPeriodLines, {}, 7));
+
+      await dispatchPush(roomPush([[2, 'new two']], {}, 8));
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0][0]).toBe(`${LINES_URL}?after=0`);
+    });
+
+    it.each([
+      ['the same period', 7],
+      ['period 0', 0],
+      ['no period', null],
+    ])('keeps the stored lines when a push starting at seq 1 carries %s', async (_label, period) => {
+      await dispatchPush(roomPush(oldPeriodLines, {}, 7));
+      postMessage.mockClear();
+
+      await dispatchPush(roomPush([[1, 'old one']], {}, period));
+
+      expect(postMessage).not.toHaveBeenCalled();
+      expect((await storedLines()).map((line) => line.text)).toEqual([
+        'old one',
+        'old two',
+        'old three',
+      ]);
+      expect(showNotification).toHaveBeenCalledTimes(2);
+    });
+
+    it('starts over with the fetched lines when the gap fetch answers from a different period', async () => {
+      await storeToken();
+      await dispatchPush(roomPush([[1, 'one']], {}, 7));
+      postMessage.mockClear();
+      fetchMock.mockResolvedValue(
+        Response.json({ connected: 0, lines: [{ seq: 1, text: 'newer period' }], period: 9, seq: 1 }),
+      );
+
+      await dispatchPush(roomPush([[4, 'four']], {}, 7));
+
+      expect(postMessage).toHaveBeenCalledWith({
+        lines: [{ seq: 1, text: 'newer period' }],
+        type: 'away-lines',
+      });
+      expect(await storedLines()).toEqual([{ seq: 1, text: 'newer period' }]);
+    });
+
+    it('still shows the notification when the lines cannot be stored', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(indexedDB, 'open').mockImplementation(() => {
+        throw new Error('IndexedDB unavailable');
+      });
+
+      await dispatchPush(roomPush([[1, 'one']]));
+
+      expect(showNotification).toHaveBeenCalledOnce();
+      expect(console.error).toHaveBeenCalled();
+    });
   });
 });

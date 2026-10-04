@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  mockAwayStore,
   mockCacophonyInstances,
   mockFileTransferManagerInstances,
   mockPreferenceListeners,
@@ -9,6 +10,7 @@ const {
   mockWebSocketInstances,
 } = vi.hoisted(() => {
   return {
+    mockAwayStore: { enabled: false },
     mockCacophonyInstances: [] as Array<{
       muted: boolean;
       setGlobalVolume: ReturnType<typeof vi.fn>;
@@ -117,6 +119,23 @@ vi.mock('./gmcp', async () => {
   };
 });
 
+// A client reads the away store (IndexedDB) as soon as it connects. Only the
+// 'away channel' tests switch the store on; everywhere else it is inert, so no
+// database work outlives a test or stalls under fake timers.
+vi.mock('./away', async () => {
+  const actual = await vi.importActual<typeof import('./away')>('./away');
+  return {
+    ...actual,
+    clearAwayLines: () => (mockAwayStore.enabled ? actual.clearAwayLines() : Promise.resolve()),
+    sendAwayCommand: (line: string) =>
+      mockAwayStore.enabled
+        ? actual.sendAwayCommand(line)
+        : Promise.resolve({ status: 'no-token' }),
+    takeUnshownAwayLines: (extra?: Array<{ seq: number; text: string }>, period?: unknown) =>
+      mockAwayStore.enabled ? actual.takeUnshownAwayLines(extra, period) : Promise.resolve([]),
+  };
+});
+
 vi.mock('./mcp', () => ({
   McpAwnsGetSet: class {
     packageName = 'mcp-awns-getset';
@@ -143,8 +162,11 @@ vi.mock('./mcp', () => ({
   },
 }));
 
+import { readAwayToken, recordAwayPush, storeAwayToken, takeUnshownAwayLines } from './away';
+import { deleteAwayDatabase } from './awayTestHelpers';
 import MudClient from './client';
 import { GMCPClientFileTransfer, GMCPCore } from './gmcp';
+import { useConnectionStore } from './stores/connectionStore';
 import { useOutputStore } from './stores/outputStore';
 import type { Stream } from './telnet';
 
@@ -216,6 +238,8 @@ function sendSocketBytes(socket: MockWebSocket, bytes: number[]): void {
 }
 
 describe('MudClient lifecycle cleanup', () => {
+  const connectedClients = new Set<MudClient>();
+
   beforeEach(() => {
     mockCacophonyInstances.length = 0;
     mockFileTransferManagerInstances.length = 0;
@@ -230,6 +254,18 @@ describe('MudClient lifecycle cleanup', () => {
       configurable: true,
       value: MockWebSocket,
     });
+    const connect = MudClient.prototype.connect;
+    vi.spyOn(MudClient.prototype, 'connect').mockImplementation(function (this: MudClient) {
+      connectedClients.add(this);
+      connect.call(this);
+    });
+  });
+
+  // A connected client listens for page events until it is shut down; none
+  // may outlive its test and react to events a later test dispatches.
+  afterEach(() => {
+    for (const client of connectedClients) client.shutdown();
+    connectedClients.clear();
   });
 
   it('shutdown removes window focus listeners and preferences subscription', () => {
@@ -966,6 +1002,550 @@ describe('MudClient lifecycle cleanup', () => {
       window.dispatchEvent(new Event('online'));
 
       expect(mockWebSocketInstances).toHaveLength(2);
+    });
+  });
+
+  describe('away channel', () => {
+    const COMMAND_URL = 'https://mongoose.world/api/away/command';
+    const clients: MudClient[] = [];
+    let fetchMock: ReturnType<typeof vi.fn>;
+    let serviceWorker: ReturnType<typeof stubServiceWorker>;
+
+    type AwayClient = {
+      awayWork: Promise<void>;
+      sendCommandWhileAway: (command: string, disconnected: Error) => Promise<void>;
+    };
+
+    function createClient(): MudClient {
+      const client = new MudClient('example.test', 443);
+      clients.push(client);
+      return client;
+    }
+
+    // The page side of a registered service worker: lets a test deliver a
+    // worker message and observe the notifications being closed.
+    function stubServiceWorker() {
+      const listeners = new Set<(event: MessageEvent) => void>();
+      const notification = { close: vi.fn() };
+      const getNotifications = vi.fn(async (_filter?: { tag?: string }) => [notification]);
+      Object.defineProperty(navigator, 'serviceWorker', {
+        configurable: true,
+        value: {
+          addEventListener: (type: string, listener: (event: MessageEvent) => void) => {
+            if (type === 'message') listeners.add(listener);
+          },
+          getRegistration: async () => ({ getNotifications }),
+          removeEventListener: (_type: string, listener: (event: MessageEvent) => void) => {
+            listeners.delete(listener);
+          },
+        },
+      });
+      return {
+        deliver: (data: unknown) => {
+          for (const listener of listeners) listener({ data } as MessageEvent);
+        },
+        getNotifications,
+        notification,
+      };
+    }
+
+    // Waits until the client's queued away work (IndexedDB, fetch) has run and
+    // the output store has flushed.
+    async function awaySettled(client: MudClient): Promise<void> {
+      const away = client as unknown as AwayClient;
+      let work: Promise<void>;
+      do {
+        work = away.awayWork;
+        await work;
+      } while (work !== away.awayWork);
+      await Promise.resolve();
+    }
+
+    // Sends a command and waits for the HTTP fallback (if it was taken) and
+    // everything it queued.
+    async function sendCommandAndSettle(client: MudClient, command: string): Promise<void> {
+      const fallback = vi.spyOn(client as unknown as AwayClient, 'sendCommandWhileAway');
+      client.sendCommand(command);
+      await Promise.all(fallback.mock.results.map((result) => result.value));
+      await awaySettled(client);
+    }
+
+    function awayLines(...lines: Array<[number, string]>) {
+      return { lines: lines.map(([seq, text]) => ({ seq, text })), type: 'away-lines' };
+    }
+
+    function shownMessages(): string[] {
+      return useOutputStore
+        .getState()
+        .entries.flatMap((entry) => (entry.type === 'message' ? [entry.message] : []));
+    }
+
+    function shownErrors(): string[] {
+      return useOutputStore
+        .getState()
+        .entries.flatMap((entry) => (entry.type === 'error' ? [entry.error.message] : []));
+    }
+
+    function storeToken(): Promise<void> {
+      return storeAwayToken({
+        expiresAt: Math.floor(Date.now() / 1000) + 30 * 86400,
+        token: 'away-1',
+      });
+    }
+
+    function commandResponse(...lines: Array<[number, string]>): Response {
+      return commandResponseIn(1, ...lines);
+    }
+
+    function commandResponseIn(period: number, ...lines: Array<[number, string]>): Response {
+      return Response.json({
+        lines: lines.map(([seq, text]) => ({ seq, text })),
+        ok: 1,
+        period,
+        seq: lines.length > 0 ? lines[lines.length - 1][0] : 0,
+      });
+    }
+
+    // What the server's Char.Name does in the configured client: the player
+    // is logged in.
+    function logIn(): void {
+      useConnectionStore.getState().setSessionReady(true);
+    }
+
+    beforeEach(() => {
+      useConnectionStore.getState().reset();
+      mockAwayStore.enabled = true;
+      clients.length = 0;
+      vi.stubEnv('DEV', false);
+      vi.stubEnv('VITE_API_ORIGIN', '');
+      fetchMock = vi.fn(async () => commandResponse());
+      vi.stubGlobal('fetch', fetchMock);
+      serviceWorker = stubServiceWorker();
+    });
+
+    afterEach(async () => {
+      for (const client of clients) {
+        client.shutdown();
+        await awaySettled(client);
+      }
+      Reflect.deleteProperty(navigator, 'serviceWorker');
+      Reflect.deleteProperty(document, 'visibilityState');
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+      useConnectionStore.getState().reset();
+      mockAwayStore.enabled = false;
+      await deleteAwayDatabase();
+    });
+
+    describe('lines while disconnected', () => {
+      it('shows lines from the service worker as provisional output, each seq once', async () => {
+        const client = createClient();
+        client.connect();
+
+        serviceWorker.deliver(awayLines([1, 'Bob waves.'], [2, 'Bob says, "hi"']));
+        serviceWorker.deliver(awayLines([2, 'Bob says, "hi"'], [3, 'Bob leaves.']));
+        await awaySettled(client);
+
+        expect(useOutputStore.getState().entries).toEqual([
+          { id: 1, message: 'Bob waves.', provisional: true, type: 'message' },
+          { id: 2, message: 'Bob says, "hi"', provisional: true, type: 'message' },
+          { id: 3, message: 'Bob leaves.', provisional: true, type: 'message' },
+        ]);
+      });
+
+      it('shows stored lines on load and the newer ones when the page becomes visible', async () => {
+        await recordAwayPush({ from: 1, lines: [[1, 'one']], to: 1 });
+        const client = createClient();
+        client.connect();
+        await awaySettled(client);
+        expect(shownMessages()).toEqual(['one']);
+
+        await recordAwayPush({ from: 2, lines: [[2, 'two']], to: 2 });
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: 'visible',
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+        await awaySettled(client);
+
+        expect(shownMessages()).toEqual(['one', 'two']);
+      });
+
+      it('does not show the same stored lines again after a reload', async () => {
+        await recordAwayPush({ from: 1, lines: [[1, 'one']], to: 1 });
+        const first = createClient();
+        first.connect();
+        await awaySettled(first);
+        first.shutdown();
+        await awaySettled(first);
+        useOutputStore.getState().reset();
+
+        const second = createClient();
+        second.connect();
+        await awaySettled(second);
+
+        expect(shownMessages()).toEqual([]);
+      });
+
+      it('ignores other service worker messages', async () => {
+        const client = createClient();
+        client.connect();
+
+        serviceWorker.deliver({ type: 'something-else' });
+        serviceWorker.deliver(null);
+        await awaySettled(client);
+
+        expect(useOutputStore.getState().entries).toEqual([]);
+      });
+
+      it('does not show away lines while the socket is connected', async () => {
+        const client = createClient();
+        client.connect();
+        mockWebSocketInstances[0].onopen?.(new Event('open'));
+
+        serviceWorker.deliver(awayLines([1, 'Bob waves.']));
+        await awaySettled(client);
+
+        expect(shownMessages()).toEqual([]);
+      });
+
+      it('stops listening to the service worker after shutdown', async () => {
+        const client = createClient();
+        client.connect();
+        client.shutdown();
+
+        serviceWorker.deliver(awayLines([1, 'Bob waves.']));
+        await awaySettled(client);
+
+        expect(shownMessages()).toEqual([]);
+      });
+    });
+
+    describe('reconnect', () => {
+      it('clears the stored lines and marks and closes the room notifications', async () => {
+        await recordAwayPush({
+          from: 1,
+          lines: [
+            [1, 'one'],
+            [2, 'two'],
+          ],
+          to: 2,
+        });
+        const client = createClient();
+        client.connect();
+        await awaySettled(client);
+        expect(shownMessages()).toEqual(['one', 'two']);
+        expect(serviceWorker.getNotifications).not.toHaveBeenCalled();
+
+        mockWebSocketInstances[0].onopen?.(new Event('open'));
+        logIn();
+        await awaySettled(client);
+
+        expect(serviceWorker.getNotifications).toHaveBeenCalledWith({ tag: 'mongoose-room' });
+        expect(serviceWorker.notification.close).toHaveBeenCalledOnce();
+        expect(await takeUnshownAwayLines()).toEqual([]);
+        // A fresh period starting at seq 1 is shown again: the marks were reset.
+        await recordAwayPush({ from: 1, lines: [[1, 'next period']], to: 1 });
+        expect(await takeUnshownAwayLines()).toEqual([{ seq: 1, text: 'next period' }]);
+      });
+
+      it('does not clear anything at page load, before the socket opens', async () => {
+        await recordAwayPush({ from: 1, lines: [[1, 'one']], to: 1 });
+        const client = createClient();
+        client.connect();
+        await awaySettled(client);
+
+        expect(serviceWorker.getNotifications).not.toHaveBeenCalled();
+        expect(shownMessages()).toEqual(['one']);
+      });
+
+      it('keeps everything when the socket opens but nobody logs in', async () => {
+        await recordAwayPush({
+          from: 1,
+          lines: [
+            [1, 'one'],
+            [2, 'two'],
+          ],
+          to: 2,
+        });
+        const client = createClient();
+        client.connect();
+        await awaySettled(client);
+
+        mockWebSocketInstances[0].onopen?.(new Event('open'));
+        await awaySettled(client);
+
+        expect(serviceWorker.getNotifications).not.toHaveBeenCalled();
+        // The shown mark is still at 2: seq 2 is not handed out again.
+        expect(await takeUnshownAwayLines([{ seq: 2, text: 'two' }])).toEqual([]);
+      });
+
+      it('logs in without a service worker', async () => {
+        Reflect.deleteProperty(navigator, 'serviceWorker');
+        await recordAwayPush({ from: 1, lines: [[1, 'one']], to: 1 });
+        const client = createClient();
+        client.connect();
+
+        mockWebSocketInstances[0].onopen?.(new Event('open'));
+        logIn();
+        await awaySettled(client);
+
+        expect(client.connected).toBe(true);
+        expect(await takeUnshownAwayLines()).toEqual([]);
+      });
+
+      it('leaves the away store alone when a local-mode session logs in', async () => {
+        await recordAwayPush({ from: 1, lines: [[1, 'one']], to: 1 });
+        const client = createClient();
+        client.connectLocal({ on: vi.fn(), write: vi.fn() } as unknown as Stream);
+
+        logIn();
+        await awaySettled(client);
+
+        expect(serviceWorker.getNotifications).not.toHaveBeenCalled();
+        expect(await takeUnshownAwayLines()).toEqual([{ seq: 1, text: 'one' }]);
+      });
+
+      it('stops ending away periods after shutdown', async () => {
+        const client = createClient();
+        client.connect();
+        client.shutdown();
+
+        logIn();
+        await awaySettled(client);
+
+        expect(serviceWorker.getNotifications).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('commands while disconnected', () => {
+      it('sends the command over HTTP and shows the returned lines as provisional', async () => {
+        await storeToken();
+        fetchMock.mockResolvedValue(commandResponse([4, 'You look around.'], [5, 'The Lounge']));
+        const client = createClient();
+        client.connect();
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(fetchMock).toHaveBeenCalledWith(COMMAND_URL, {
+          body: JSON.stringify({ line: 'look' }),
+          headers: { Authorization: 'Bearer away-1', 'Content-Type': 'application/json' },
+          method: 'POST',
+        });
+        expect(mockWebSocketInstances[0].send).not.toHaveBeenCalled();
+        expect(useOutputStore.getState().entries).toEqual([
+          { id: 1, message: 'You look around.', provisional: true, type: 'message' },
+          { id: 2, message: 'The Lounge', provisional: true, type: 'message' },
+        ]);
+      });
+
+      it('does not show a returned seq again when the service worker also delivers it', async () => {
+        await storeToken();
+        fetchMock.mockResolvedValue(commandResponse([4, 'You look around.']));
+        const client = createClient();
+        client.connect();
+
+        await sendCommandAndSettle(client, 'look');
+        serviceWorker.deliver(awayLines([4, 'You look around.'], [5, 'Bob waves.']));
+        await awaySettled(client);
+
+        expect(shownMessages()).toEqual(['You look around.', 'Bob waves.']);
+      });
+
+      it('discards what was stored and shown-marked when the response is from a different period', async () => {
+        await storeToken();
+        await recordAwayPush({
+          from: 1,
+          lines: [
+            [1, 'one'],
+            [2, 'two'],
+          ],
+          period: 7,
+          to: 2,
+        });
+        const client = createClient();
+        client.connect();
+        await awaySettled(client);
+        fetchMock.mockResolvedValue(commandResponseIn(8, [1, 'You look around.']));
+
+        await sendCommandAndSettle(client, 'look');
+
+        // Seq 1 is shown again: it is a different line in the new period.
+        expect(shownMessages()).toEqual(['one', 'two', 'You look around.']);
+        // The old period's highest seq went too: seq 2 of the new one is no gap.
+        fetchMock.mockClear();
+        expect(await recordAwayPush({ from: 2, lines: [[2, 'Bob waves.']], period: 8, to: 2 })).toEqual([
+          { seq: 2, text: 'Bob waves.' },
+        ]);
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+
+      it('keeps the marks when the response is from the same period', async () => {
+        await storeToken();
+        await recordAwayPush({
+          from: 1,
+          lines: [
+            [1, 'one'],
+            [2, 'two'],
+          ],
+          period: 7,
+          to: 2,
+        });
+        const client = createClient();
+        client.connect();
+        await awaySettled(client);
+        fetchMock.mockResolvedValue(commandResponseIn(7, [2, 'two'], [3, 'You look around.']));
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(shownMessages()).toEqual(['one', 'two', 'You look around.']);
+      });
+
+      it('advances the highest seq seen so the service worker does not refetch the output', async () => {
+        await storeToken();
+        fetchMock.mockResolvedValue(commandResponse([1, 'You look around.'], [2, 'The Lounge']));
+        const client = createClient();
+        client.connect();
+        await sendCommandAndSettle(client, 'look');
+        fetchMock.mockClear();
+
+        await recordAwayPush({ from: 3, lines: [[3, 'Bob waves.']], to: 3 });
+
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+
+      it('applies autosay before sending', async () => {
+        await storeToken();
+        const client = createClient();
+        client.connect();
+        client.autosay = true;
+
+        await sendCommandAndSettle(client, 'hello there');
+
+        expect(fetchMock.mock.calls[0][1].body).toBe(JSON.stringify({ line: 'say hello there' }));
+      });
+
+      it('echoes the command before its output when local echo is on', async () => {
+        mockPreferencesState.general.localEcho = true;
+        await storeToken();
+        fetchMock.mockResolvedValue(commandResponse([1, 'You look around.']));
+        const client = createClient();
+        client.connect();
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(useOutputStore.getState().entries).toEqual([
+          { command: 'look', id: 1, type: 'command' },
+          { id: 2, message: 'You look around.', provisional: true, type: 'message' },
+        ]);
+      });
+
+      it('drops the token on 401 and shows the disconnected error', async () => {
+        mockPreferencesState.general.localEcho = true;
+        await storeToken();
+        fetchMock.mockResolvedValue(Response.json({ error: 'Invalid token' }, { status: 401 }));
+        const client = createClient();
+        client.connect();
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(await readAwayToken()).toBeNull();
+        expect(useOutputStore.getState().entries).toEqual([
+          { error: new Error('Cannot send while disconnected'), id: 1, type: 'error' },
+        ]);
+      });
+
+      it.each([
+        [403, 'Guests cannot send commands while away.'],
+        [429, 'Too fast; wait a moment.'],
+        [400, 'Missing line.'],
+      ])("shows the server's error text on %i and keeps the token", async (status, error) => {
+        await storeToken();
+        fetchMock.mockResolvedValue(Response.json({ error }, { status }));
+        const client = createClient();
+        client.connect();
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(useOutputStore.getState().entries).toEqual([
+          { error: new Error(error), id: 1, type: 'error' },
+        ]);
+        expect((await readAwayToken())?.token).toBe('away-1');
+      });
+
+      it('shows the HTTP status when an error response carries no error text', async () => {
+        await storeToken();
+        fetchMock.mockResolvedValue(new Response('Bad Gateway', { status: 502 }));
+        const client = createClient();
+        client.connect();
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(shownErrors()).toEqual([`HTTP 502 from ${COMMAND_URL}`]);
+      });
+
+      it('shows the failure when the request cannot be made', async () => {
+        await storeToken();
+        fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+        const client = createClient();
+        client.connect();
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(shownErrors()).toEqual(['Failed to fetch']);
+      });
+
+      it('behaves as before with no away token: an error, no request, no echo', async () => {
+        mockPreferencesState.general.localEcho = true;
+        const client = createClient();
+        client.connect();
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(useOutputStore.getState().entries).toEqual([
+          { error: new Error('Cannot send while disconnected'), id: 1, type: 'error' },
+        ]);
+      });
+
+      it('sends over the socket, not HTTP, while connected', async () => {
+        await storeToken();
+        const client = createClient();
+        client.connect();
+        mockWebSocketInstances[0].onopen?.(new Event('open'));
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(mockWebSocketInstances[0].send).toHaveBeenCalledWith('look\r\n');
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+
+      it('never uses HTTP in local mode, even with a token stored', async () => {
+        await storeToken();
+        const client = createClient();
+        const closeListeners: Array<() => void> = [];
+        const stream = {
+          on: vi.fn((event: string, callback: () => void) => {
+            if (event === 'close') closeListeners.push(callback);
+          }),
+          write: vi.fn(),
+        } as unknown as Stream;
+        client.connectLocal(stream);
+        for (const listener of closeListeners) listener();
+
+        client.sendCommand('look');
+        // Exactly as today: the error is queued synchronously.
+        await Promise.resolve();
+
+        expect(useOutputStore.getState().entries).toEqual([
+          { error: new Error('Cannot send while disconnected'), id: 1, type: 'error' },
+        ]);
+        await awaySettled(client);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(stream.write).not.toHaveBeenCalled();
+      });
     });
   });
 });

@@ -1,5 +1,7 @@
 import { resolveApiUrl } from "./apiOrigin";
+import { ensureAwayToken } from "./away";
 import type MudClient from "./client";
+import { useOutputStore } from "./stores/outputStore";
 
 const DEFAULT_PUBLIC_KEY_ENDPOINT = resolveApiUrl("/api/webpush/public_key");
 const DEFAULT_SUBSCRIPTION_ENDPOINT = resolveApiUrl("/api/webpush/subscriptions");
@@ -116,6 +118,11 @@ export async function ensurePushSubscription(client: MudClient): Promise<void> {
     return;
   }
 
+  await registerSubscription(token);
+  await enableAwayChannel(token);
+}
+
+async function registerSubscription(token: string): Promise<void> {
   const registration = await navigator.serviceWorker.ready;
   const existing = await registration.pushManager.getSubscription();
   if (existing) {
@@ -142,6 +149,19 @@ export async function ensurePushSubscription(client: MudClient): Promise<void> {
     throw error;
   }
   await uploadSubscription(token, created);
+}
+
+// Push already works at this point, so a failure here is reported, not thrown.
+async function enableAwayChannel(token: string): Promise<void> {
+  try {
+    await ensureAwayToken(token);
+  } catch (error) {
+    console.error("[webpush] away token request failed", error);
+    const message = error instanceof Error ? error.message : String(error);
+    useOutputStore
+      .getState()
+      .addError(new Error(`Away messages couldn't be enabled: ${message}`));
+  }
 }
 
 export async function unregisterPushSubscription(client: MudClient): Promise<void> {

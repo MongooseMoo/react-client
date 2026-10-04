@@ -1,20 +1,23 @@
 import { create } from "zustand";
 
+// A provisional message is an away line shown while the game socket is down.
+// The output removes it once the socket is back, because the server then
+// replays the authoritative copy.
 export type OutputEntry =
-  | { id: number; type: "message"; message: string }
+  | { id: number; type: "message"; message: string; provisional?: true }
   | { id: number; type: "html"; html: string }
   | { id: number; type: "error"; error: Error }
   | { id: number; type: "command"; command: string };
 
 type NewOutputEntry =
-  | { type: "message"; message: string }
+  | { type: "message"; message: string; provisional?: true }
   | { type: "html"; html: string }
   | { type: "error"; error: Error }
   | { type: "command"; command: string };
 
 interface OutputState {
   entries: OutputEntry[];
-  addMessage: (message: string) => void;
+  addMessage: (message: string, provisional?: boolean) => void;
   addHtml: (html: string) => void;
   addError: (error: Error) => void;
   addCommand: (command: string) => void;
@@ -34,7 +37,11 @@ let flushScheduled = false;
 
 export const useOutputStore = create<OutputState>((set) => ({
   entries: [],
-  addMessage: (message) => addOutputEntry(set, { type: "message", message }),
+  addMessage: (message, provisional = false) =>
+    addOutputEntry(
+      set,
+      provisional ? { type: "message", message, provisional } : { type: "message", message },
+    ),
   addHtml: (html) => addOutputEntry(set, { type: "html", html }),
   addError: (error) => addOutputEntry(set, { type: "error", error }),
   addCommand: (command) => addOutputEntry(set, { type: "command", command }),
