@@ -120,6 +120,7 @@ function parsePushActions(actions: unknown): {
 async function deliverAwayLines(data: AwayPushData): Promise<void> {
   try {
     const lines = await recordAwayPush(data);
+    if (lines.length === 0) return;
     const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
     for (const client of clients) {
       client.postMessage({ lines, type: 'away-lines' });

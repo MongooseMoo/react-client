@@ -131,8 +131,8 @@ vi.mock('./away', async () => {
       mockAwayStore.enabled
         ? actual.sendAwayCommand(line)
         : Promise.resolve({ status: 'no-token' }),
-    takeUnshownAwayLines: (extra?: Array<{ seq: number; text: string }>) =>
-      mockAwayStore.enabled ? actual.takeUnshownAwayLines(extra) : Promise.resolve([]),
+    takeUnshownAwayLines: (extra?: Array<{ seq: number; text: string }>, period?: unknown) =>
+      mockAwayStore.enabled ? actual.takeUnshownAwayLines(extra, period) : Promise.resolve([]),
   };
 });
 
@@ -166,6 +166,7 @@ import { readAwayToken, recordAwayPush, storeAwayToken, takeUnshownAwayLines } f
 import { deleteAwayDatabase } from './awayTestHelpers';
 import MudClient from './client';
 import { GMCPClientFileTransfer, GMCPCore } from './gmcp';
+import { useConnectionStore } from './stores/connectionStore';
 import { useOutputStore } from './stores/outputStore';
 import type { Stream } from './telnet';
 
@@ -1093,14 +1094,26 @@ describe('MudClient lifecycle cleanup', () => {
     }
 
     function commandResponse(...lines: Array<[number, string]>): Response {
+      return commandResponseIn(1, ...lines);
+    }
+
+    function commandResponseIn(period: number, ...lines: Array<[number, string]>): Response {
       return Response.json({
         lines: lines.map(([seq, text]) => ({ seq, text })),
         ok: 1,
+        period,
         seq: lines.length > 0 ? lines[lines.length - 1][0] : 0,
       });
     }
 
+    // What the server's Char.Name does in the configured client: the player
+    // is logged in.
+    function logIn(): void {
+      useConnectionStore.getState().setSessionReady(true);
+    }
+
     beforeEach(() => {
+      useConnectionStore.getState().reset();
       mockAwayStore.enabled = true;
       clients.length = 0;
       vi.stubEnv('DEV', false);
@@ -1120,6 +1133,7 @@ describe('MudClient lifecycle cleanup', () => {
       vi.unstubAllEnvs();
       vi.unstubAllGlobals();
       vi.restoreAllMocks();
+      useConnectionStore.getState().reset();
       mockAwayStore.enabled = false;
       await deleteAwayDatabase();
     });
@@ -1225,6 +1239,7 @@ describe('MudClient lifecycle cleanup', () => {
         expect(serviceWorker.getNotifications).not.toHaveBeenCalled();
 
         mockWebSocketInstances[0].onopen?.(new Event('open'));
+        logIn();
         await awaySettled(client);
 
         expect(serviceWorker.getNotifications).toHaveBeenCalledWith({ tag: 'mongoose-room' });
@@ -1245,17 +1260,62 @@ describe('MudClient lifecycle cleanup', () => {
         expect(shownMessages()).toEqual(['one']);
       });
 
-      it('reconnects without a service worker', async () => {
+      it('keeps everything when the socket opens but nobody logs in', async () => {
+        await recordAwayPush({
+          from: 1,
+          lines: [
+            [1, 'one'],
+            [2, 'two'],
+          ],
+          to: 2,
+        });
+        const client = createClient();
+        client.connect();
+        await awaySettled(client);
+
+        mockWebSocketInstances[0].onopen?.(new Event('open'));
+        await awaySettled(client);
+
+        expect(serviceWorker.getNotifications).not.toHaveBeenCalled();
+        // The shown mark is still at 2: seq 2 is not handed out again.
+        expect(await takeUnshownAwayLines([{ seq: 2, text: 'two' }])).toEqual([]);
+      });
+
+      it('logs in without a service worker', async () => {
         Reflect.deleteProperty(navigator, 'serviceWorker');
         await recordAwayPush({ from: 1, lines: [[1, 'one']], to: 1 });
         const client = createClient();
         client.connect();
 
         mockWebSocketInstances[0].onopen?.(new Event('open'));
+        logIn();
         await awaySettled(client);
 
         expect(client.connected).toBe(true);
         expect(await takeUnshownAwayLines()).toEqual([]);
+      });
+
+      it('leaves the away store alone when a local-mode session logs in', async () => {
+        await recordAwayPush({ from: 1, lines: [[1, 'one']], to: 1 });
+        const client = createClient();
+        client.connectLocal({ on: vi.fn(), write: vi.fn() } as unknown as Stream);
+
+        logIn();
+        await awaySettled(client);
+
+        expect(serviceWorker.getNotifications).not.toHaveBeenCalled();
+        expect(await takeUnshownAwayLines()).toEqual([{ seq: 1, text: 'one' }]);
+      });
+
+      it('stops ending away periods after shutdown', async () => {
+        const client = createClient();
+        client.connect();
+        client.shutdown();
+
+        logIn();
+        await awaySettled(client);
+
+        expect(serviceWorker.getNotifications).not.toHaveBeenCalled();
       });
     });
 
@@ -1292,6 +1352,55 @@ describe('MudClient lifecycle cleanup', () => {
         await awaySettled(client);
 
         expect(shownMessages()).toEqual(['You look around.', 'Bob waves.']);
+      });
+
+      it('discards what was stored and shown-marked when the response is from a different period', async () => {
+        await storeToken();
+        await recordAwayPush({
+          from: 1,
+          lines: [
+            [1, 'one'],
+            [2, 'two'],
+          ],
+          period: 7,
+          to: 2,
+        });
+        const client = createClient();
+        client.connect();
+        await awaySettled(client);
+        fetchMock.mockResolvedValue(commandResponseIn(8, [1, 'You look around.']));
+
+        await sendCommandAndSettle(client, 'look');
+
+        // Seq 1 is shown again: it is a different line in the new period.
+        expect(shownMessages()).toEqual(['one', 'two', 'You look around.']);
+        // The old period's highest seq went too: seq 2 of the new one is no gap.
+        fetchMock.mockClear();
+        expect(await recordAwayPush({ from: 2, lines: [[2, 'Bob waves.']], period: 8, to: 2 })).toEqual([
+          { seq: 2, text: 'Bob waves.' },
+        ]);
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+
+      it('keeps the marks when the response is from the same period', async () => {
+        await storeToken();
+        await recordAwayPush({
+          from: 1,
+          lines: [
+            [1, 'one'],
+            [2, 'two'],
+          ],
+          period: 7,
+          to: 2,
+        });
+        const client = createClient();
+        client.connect();
+        await awaySettled(client);
+        fetchMock.mockResolvedValue(commandResponseIn(7, [2, 'two'], [3, 'You look around.']));
+
+        await sendCommandAndSettle(client, 'look');
+
+        expect(shownMessages()).toEqual(['one', 'two', 'You look around.']);
       });
 
       it('advances the highest seq seen so the service worker does not refetch the output', async () => {

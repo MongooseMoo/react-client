@@ -182,6 +182,7 @@ class Output extends React.Component<Props, State> {
   private unsubscribeConnection: (() => void) | undefined;
   private unsubscribeOutputStore: (() => void) | undefined;
   private previousConnected = useConnectionStore.getState().connected;
+  private previousSessionReady = useConnectionStore.getState().sessionReady;
   private lastOutputEntryId = 0;
 
   // Full output history (NOT in React state — avoids O(N) reconciliation)
@@ -283,14 +284,13 @@ class Output extends React.Component<Props, State> {
   addError = (error: Error) =>
     this.addToOutput(OutputType.ErrorMessage, true, 'error', error.message);
 
-  handleConnected = () => {
-    this.removeProvisionalLines();
-    this.addToOutput(OutputType.SystemInfo, true, 'system', 'Connected');
-  };
+  handleConnected = () => this.addToOutput(OutputType.SystemInfo, true, 'system', 'Connected');
 
   /**
-   * Away lines shown while the socket was down are provisional: once it is
-   * back the server replays the authoritative copy, so ours are dropped.
+   * Away lines shown while the socket was down are provisional: once the
+   * player is logged in again the server replays the authoritative copy, so
+   * ours are dropped. A socket that opens without a login gets no replay, so
+   * they stay until then.
    */
   private removeProvisionalLines() {
     const kept = this.allLines.filter((line) => !line.metadata?.provisional);
@@ -316,7 +316,11 @@ class Output extends React.Component<Props, State> {
     this.setState({ sidebarVisible: useUserlistStore.getState().hasReceivedList });
 
   handleConnectionStateChange = () => {
-    const connected = useConnectionStore.getState().connected;
+    const { connected, sessionReady } = useConnectionStore.getState();
+    if (sessionReady && !this.previousSessionReady) {
+      this.removeProvisionalLines();
+    }
+    this.previousSessionReady = sessionReady;
     if (connected === this.previousConnected) return;
     this.previousConnected = connected;
     if (connected) {
@@ -361,8 +365,8 @@ class Output extends React.Component<Props, State> {
   handleOutputEntry = (entry: OutputEntry) => {
     switch (entry.type) {
       case "message":
-        // A provisional line that arrives after the socket is back is stale.
-        if (entry.provisional && useConnectionStore.getState().connected) break;
+        // A provisional line that arrives after the player is logged in is stale.
+        if (entry.provisional && useConnectionStore.getState().sessionReady) break;
         this.handleMessage(entry.message, entry.provisional);
         break;
       case "html":

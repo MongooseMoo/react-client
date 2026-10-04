@@ -238,10 +238,20 @@ describe('service worker push notifications', () => {
       await deleteAwayDatabase();
     });
 
-    function roomPush(lines: Array<[number, string]>, extra: Record<string, unknown> = {}) {
+    // `period: null` leaves the period out of the payload.
+    function roomPush(
+      lines: Array<[number, string]>,
+      extra: Record<string, unknown> = {},
+      period: number | null = 1,
+    ) {
       return {
         body: lines[lines.length - 1][1],
-        data: { from: lines[0][0], lines, to: lines[lines.length - 1][0] },
+        data: {
+          from: lines[0][0],
+          lines,
+          ...(period === null ? {} : { period }),
+          to: lines[lines.length - 1][0],
+        },
         tag: 'mongoose-room',
         title: 'The Lounge',
         url: '/',
@@ -414,25 +424,72 @@ describe('service worker push notifications', () => {
       expect(showNotification).toHaveBeenCalledTimes(2);
     });
 
-    it('discards the stored lines when a new away period starts at seq 1', async () => {
-      await dispatchPush(
-        roomPush([
-          [1, 'old one'],
-          [2, 'old two'],
-          [3, 'old three'],
-        ]),
-      );
+    const oldPeriodLines: Array<[number, string]> = [
+      [1, 'old one'],
+      [2, 'old two'],
+      [3, 'old three'],
+    ];
+
+    it('discards the stored lines when a push carries a different period', async () => {
+      await dispatchPush(roomPush(oldPeriodLines, {}, 7));
       expect(await storedLines()).toHaveLength(3);
       postMessage.mockClear();
 
-      await dispatchPush(roomPush([[1, 'new one']]));
+      await dispatchPush(roomPush([[1, 'new one']], {}, 8));
 
       expect(postMessage).toHaveBeenCalledWith({
         lines: [{ seq: 1, text: 'new one' }],
         type: 'away-lines',
       });
+      // The shown mark went with the old period: seq 1 is handed out again.
       expect(await storedLines()).toEqual([{ seq: 1, text: 'new one' }]);
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('counts a gap from 0 after a different period discarded the highest seq', async () => {
+      await storeToken();
+      await dispatchPush(roomPush(oldPeriodLines, {}, 7));
+
+      await dispatchPush(roomPush([[2, 'new two']], {}, 8));
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0][0]).toBe(`${LINES_URL}?after=0`);
+    });
+
+    it.each([
+      ['the same period', 7],
+      ['period 0', 0],
+      ['no period', null],
+    ])('keeps the stored lines when a push starting at seq 1 carries %s', async (_label, period) => {
+      await dispatchPush(roomPush(oldPeriodLines, {}, 7));
+      postMessage.mockClear();
+
+      await dispatchPush(roomPush([[1, 'old one']], {}, period));
+
+      expect(postMessage).not.toHaveBeenCalled();
+      expect((await storedLines()).map((line) => line.text)).toEqual([
+        'old one',
+        'old two',
+        'old three',
+      ]);
+      expect(showNotification).toHaveBeenCalledTimes(2);
+    });
+
+    it('starts over with the fetched lines when the gap fetch answers from a different period', async () => {
+      await storeToken();
+      await dispatchPush(roomPush([[1, 'one']], {}, 7));
+      postMessage.mockClear();
+      fetchMock.mockResolvedValue(
+        Response.json({ connected: 0, lines: [{ seq: 1, text: 'newer period' }], period: 9, seq: 1 }),
+      );
+
+      await dispatchPush(roomPush([[4, 'four']], {}, 7));
+
+      expect(postMessage).toHaveBeenCalledWith({
+        lines: [{ seq: 1, text: 'newer period' }],
+        type: 'away-lines',
+      });
+      expect(await storedLines()).toEqual([{ seq: 1, text: 'newer period' }]);
     });
 
     it('still shows the notification when the lines cannot be stored', async () => {

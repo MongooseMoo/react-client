@@ -22,6 +22,8 @@ const TOKEN_KEY = "token";
 const HIGHEST_SEQ_KEY = "highestSeq";
 // Highest seq a page has already put in the output.
 const SHOWN_SEQ_KEY = "shownSeq";
+// The away period the stored lines and both marks belong to.
+const PERIOD_KEY = "period";
 
 const TOKEN_ENDPOINT = "/api/away/token";
 const LINES_ENDPOINT = "/api/away/lines";
@@ -44,10 +46,11 @@ export type AwayPushData = {
   lines: Array<[number, string]>;
   from?: number;
   to?: number;
+  period?: number;
 };
 
 export type AwayCommandResult =
-  | { status: "sent"; lines: AwayLine[] }
+  | { status: "sent"; lines: AwayLine[]; period: unknown }
   | { status: "no-token" }
   | { status: "unauthorized" }
   | { status: "rejected"; error: string };
@@ -93,6 +96,28 @@ function forgetLines(lines: IDBObjectStore, state: IDBObjectStore): void {
   lines.clear();
   state.delete(HIGHEST_SEQ_KEY);
   state.delete(SHOWN_SEQ_KEY);
+  state.delete(PERIOD_KEY);
+}
+
+// The server numbers each disconnected period; 0 means none is open.
+function isOpenPeriod(period: unknown): period is number {
+  return typeof period === "number" && period !== 0;
+}
+
+// Makes `period` the stored period and returns the period now stored. Lines
+// and marks stored for a different period are discarded first.
+async function enterPeriod(
+  lines: IDBObjectStore,
+  state: IDBObjectStore,
+  period: unknown,
+): Promise<unknown> {
+  const stored: unknown = await requestToPromise(state.get(PERIOD_KEY));
+  if (!isOpenPeriod(period) || period === stored) {
+    return stored;
+  }
+  forgetLines(lines, state);
+  state.put(period, PERIOD_KEY);
+  return period;
 }
 
 // The lines after `after`, one per seq, in order.
@@ -166,43 +191,52 @@ export async function ensureAwayToken(pushToken: string): Promise<void> {
   });
 }
 
-async function fetchAwayLines(after: number, token: string): Promise<AwayLine[]> {
+async function fetchAwayLines(
+  after: number,
+  token: string,
+): Promise<{ lines: AwayLine[]; period: unknown }> {
   const url = `${resolveApiUrl(LINES_ENDPOINT)}?after=${after}`;
   const response = await awayFetch(url, token, { method: "GET" });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} from ${url}`);
   }
-  const payload = (await response.json()) as { lines?: unknown };
-  return Array.isArray(payload.lines) ? (payload.lines as AwayLine[]) : [];
+  const payload = (await response.json()) as { lines?: unknown; period?: unknown };
+  return {
+    lines: Array.isArray(payload.lines) ? (payload.lines as AwayLine[]) : [],
+    period: payload.period,
+  };
 }
 
 /**
  * Stores the lines a push carried and returns the ones that are new. A push
- * starting at seq 1 when lines are already stored begins a new away period,
- * so the old ones are discarded first. A gap before the push is repaired with
- * one fetch; if that fails, what the push carried is kept.
+ * from a different away period discards what was stored first. A gap before
+ * the push is repaired with one fetch; if that fails, what the push carried
+ * is kept.
  */
 export async function recordAwayPush(data: AwayPushData): Promise<AwayLine[]> {
-  const pushed = newerLines(
+  let pushed = newerLines(
     data.lines.filter(Array.isArray).map(([seq, text]) => ({ seq, text })),
     0,
   );
   const from = typeof data.from === "number" ? data.from : pushed[0]?.seq;
 
-  const { highest, token } = await withAwayStores("readwrite", async (lines, state) => {
+  let { highest, period, token } = await withAwayStores("readwrite", async (lines, state) => {
+    const period = await enterPeriod(lines, state, data.period);
     const stored: AwayToken | undefined = await requestToPromise(state.get(TOKEN_KEY));
-    const highest = await readSeq(state, HIGHEST_SEQ_KEY);
-    if (from === 1 && highest >= 1) {
-      forgetLines(lines, state);
-      return { highest: 0, token: stored?.token };
-    }
-    return { highest, token: stored?.token };
+    return { highest: await readSeq(state, HIGHEST_SEQ_KEY), period, token: stored?.token };
   });
 
   let missed: AwayLine[] = [];
   if (from !== undefined && from > highest + 1 && token) {
     try {
-      missed = await fetchAwayLines(highest, token);
+      const fetched = await fetchAwayLines(highest, token);
+      missed = fetched.lines;
+      if (isOpenPeriod(fetched.period) && fetched.period !== period) {
+        // The server is already in another period: only its lines count.
+        period = fetched.period;
+        pushed = [];
+        highest = 0;
+      }
     } catch (error) {
       console.error("[away] could not fetch the lines missing before a push", error);
     }
@@ -211,6 +245,7 @@ export async function recordAwayPush(data: AwayPushData): Promise<AwayLine[]> {
   const fresh = newerLines([...missed, ...pushed], highest);
   if (fresh.length > 0) {
     await withAwayStores("readwrite", async (lines, state) => {
+      await enterPeriod(lines, state, period);
       for (const line of fresh) {
         lines.put(line);
       }
@@ -223,10 +258,14 @@ export async function recordAwayPush(data: AwayPushData): Promise<AwayLine[]> {
 /**
  * Returns the lines no page has shown yet (stored ones plus `extra`, which a
  * page already holds), in order, and marks them shown, so a seq is handed out
- * only once however it arrives.
+ * only once however it arrives. `period` is the period `extra` came from.
  */
-export function takeUnshownAwayLines(extra: AwayLine[] = []): Promise<AwayLine[]> {
+export function takeUnshownAwayLines(
+  extra: AwayLine[] = [],
+  period?: unknown,
+): Promise<AwayLine[]> {
   return withAwayStores("readwrite", async (lines, state) => {
+    await enterPeriod(lines, state, period);
     const shown = await readSeq(state, SHOWN_SEQ_KEY);
     const stored: AwayLine[] = await requestToPromise(
       lines.getAll(IDBKeyRange.lowerBound(shown, true)),
@@ -243,7 +282,7 @@ export function takeUnshownAwayLines(extra: AwayLine[] = []): Promise<AwayLine[]
   });
 }
 
-/** Forgets the stored lines and both marks; the token stays. */
+/** Forgets the stored lines, both marks and the period; the token stays. */
 export function clearAwayLines(): Promise<void> {
   return withAwayStores("readwrite", async (lines, state) => {
     forgetLines(lines, state);
@@ -271,6 +310,7 @@ export async function sendAwayCommand(line: string): Promise<AwayCommandResult> 
   const payload = (await response.json().catch(() => null)) as {
     error?: unknown;
     lines?: unknown;
+    period?: unknown;
   } | null;
   if (!response.ok) {
     const error =
@@ -279,6 +319,7 @@ export async function sendAwayCommand(line: string): Promise<AwayCommandResult> 
   }
   return {
     lines: Array.isArray(payload?.lines) ? (payload.lines as AwayLine[]) : [],
+    period: payload?.period,
     status: "sent",
   };
 }

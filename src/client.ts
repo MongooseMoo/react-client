@@ -180,7 +180,6 @@ class MudClient {
       resetMidiIntentionalDisconnectFlags();
 
       useConnectionStore.getState().setConnected(true);
-      this.endAwayPeriod();
     };
 
     this.telnet.on("data", (data: Uint8Array) => {
@@ -491,7 +490,7 @@ class MudClient {
       return;
     }
     this.echoCommand(command);
-    this.showAwayLines(result.lines);
+    this.showAwayLines(result.lines, result.period);
   }
 
   // Away work touches IndexedDB; running it one job at a time keeps the lines
@@ -516,18 +515,26 @@ class MudClient {
         navigator.serviceWorker.removeEventListener("message", onMessage);
       });
     }
+    // sessionReady turns true when the server names the logged-in character.
+    this.registerCleanup(
+      useConnectionStore.subscribe((state, previous) => {
+        if (state.sessionReady && !previous.sessionReady) this.endAwayPeriod();
+      }),
+    );
     this.showAwayLines();
   }
 
   /**
    * While the socket is down, puts the away lines not yet shown (the stored
-   * ones plus `extra`) into the output as provisional lines.
+   * ones plus `extra`, which came from away period `period`) into the output
+   * as provisional lines.
    */
-  private showAwayLines(extra?: AwayLine[]): void {
+  private showAwayLines(extra?: AwayLine[], period?: unknown): void {
     this.queueAwayWork(async () => {
       if (this._connected || !this.awayChannel || this.shutdownComplete) return;
-      const lines = await takeUnshownAwayLines(extra);
-      if (this._connected) return;
+      // Lines taken are marked shown, so they are always emitted; the output
+      // drops them itself if the player has logged in meanwhile.
+      const lines = await takeUnshownAwayLines(extra, period);
       for (const line of lines) {
         this.emitMessage(line.text, true);
       }
@@ -535,12 +542,13 @@ class MudClient {
   }
 
   /**
-   * The socket is back and the server replays what was missed, so the output
-   * drops its provisional lines; the stored lines and the notifications that
-   * announced them are obsolete too.
+   * The player is logged in again and the server replays what was missed, so
+   * the output drops its provisional lines; the stored lines and the
+   * notifications that announced them are obsolete too.
    */
   private endAwayPeriod(): void {
     this.queueAwayWork(async () => {
+      if (!this.awayChannel) return;
       await clearAwayLines();
       if (!("serviceWorker" in navigator)) return;
       const registration = await navigator.serviceWorker.getRegistration();

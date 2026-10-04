@@ -672,7 +672,20 @@ describe("Output provisional away lines", () => {
     expect(announcements[1]).toEqual(announcements[0]);
   });
 
-  it("removes provisional lines when the connection comes back and keeps the rest", async () => {
+  it("keeps provisional lines when the socket opens but nobody is logged in yet", async () => {
+    mount();
+    useOutputStore.getState().addMessage("missed one", true);
+    await flush();
+
+    await act(async () => {
+      useConnectionStore.getState().setConnected(true);
+    });
+    await flush();
+
+    expect(rendered()).toEqual(["missed one"]);
+  });
+
+  it("removes provisional lines at login and keeps the rest", async () => {
     mount();
     useOutputStore.getState().addMessage("before");
     useOutputStore.getState().addMessage("missed one", true);
@@ -682,6 +695,7 @@ describe("Output provisional away lines", () => {
 
     await act(async () => {
       useConnectionStore.getState().setConnected(true);
+      useConnectionStore.getState().setSessionReady(true);
     });
     useOutputStore.getState().addMessage("replayed");
     await flush();
@@ -700,6 +714,7 @@ describe("Output provisional away lines", () => {
 
     await act(async () => {
       useConnectionStore.getState().setConnected(true);
+      useConnectionStore.getState().setSessionReady(true);
     });
     await flush();
 
@@ -708,10 +723,11 @@ describe("Output provisional away lines", () => {
     expect(rendered()[0]).toBe("line 0");
   });
 
-  it("drops a provisional line that is delivered after the connection is back", async () => {
+  it("drops a provisional line that is delivered after login", async () => {
     mount();
     await act(async () => {
       useConnectionStore.getState().setConnected(true);
+      useConnectionStore.getState().setSessionReady(true);
     });
 
     useOutputStore.getState().addMessage("too late", true);
