@@ -141,7 +141,7 @@ describe("away token after push registration", () => {
   it("fetches an away token with the push token once registration has succeeded", async () => {
     const expiresAt = nowSeconds() + 30 * DAY_SECONDS;
     const { callsTo, fetchMock } = stubRegisteredBrowser(() =>
-      Response.json({ expires_at: expiresAt, token: "away-1" }),
+      Response.json({ expires_at: expiresAt, player: 42, token: "away-1" }),
     );
     const { ensurePushSubscription, readAwayToken } = await importProduction();
 
@@ -152,36 +152,67 @@ describe("away token after push registration", () => {
       method: "POST",
     });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([SUBSCRIPTION_URL, AWAY_TOKEN_URL]);
-    expect(await readAwayToken()).toEqual({ expiresAt, token: "away-1" });
+    expect(await readAwayToken()).toEqual({ expiresAt, player: 42, token: "away-1" });
     expect(callsTo(AWAY_TOKEN_URL)).toHaveLength(1);
   });
 
-  it("reuses a stored away token that is more than 7 days from expiry", async () => {
-    const { callsTo } = stubRegisteredBrowser(() =>
-      Response.json({ expires_at: nowSeconds() + 30 * DAY_SECONDS, token: "away-1" }),
-    );
-    const { ensurePushSubscription, readAwayToken } = await importProduction();
-
-    await ensurePushSubscription(stubClient());
-    await ensurePushSubscription(stubClient());
-
-    expect(callsTo(AWAY_TOKEN_URL)).toHaveLength(1);
-    expect(callsTo(SUBSCRIPTION_URL)).toHaveLength(2);
-    expect((await readAwayToken())?.token).toBe("away-1");
-  });
-
-  it("replaces a stored away token that is within 7 days of expiry", async () => {
+  // The page cannot tell which character a stored token belongs to (it knows
+  // the character's name, the server reports its object number), so it asks
+  // on every registration and compares the answer with what is stored.
+  it("keeps the stored lines when the token is for the same character", async () => {
     const expiresAt = nowSeconds() + 30 * DAY_SECONDS;
     const { callsTo } = stubRegisteredBrowser(() =>
-      Response.json({ expires_at: expiresAt, token: "away-2" }),
+      Response.json({ expires_at: expiresAt, player: 42, token: "away-2" }),
     );
-    const { ensurePushSubscription, readAwayToken, storeAwayToken } = await importProduction();
-    await storeAwayToken({ expiresAt: nowSeconds() + 6 * DAY_SECONDS, token: "away-old" });
+    const { ensurePushSubscription, readAwayToken, recordAwayPush, storeAwayToken, takeUnshownAwayLines } =
+      await importProduction();
+    await storeAwayToken({ expiresAt: nowSeconds() + 20 * DAY_SECONDS, player: 42, token: "away-1" });
+    await recordAwayPush({ from: 1, lines: [[1, "one"], [2, "two"]], to: 2 });
 
     await ensurePushSubscription(stubClient());
 
     expect(callsTo(AWAY_TOKEN_URL)).toHaveLength(1);
-    expect(await readAwayToken()).toEqual({ expiresAt, token: "away-2" });
+    expect(await readAwayToken()).toEqual({ expiresAt, player: 42, token: "away-2" });
+    expect(await takeUnshownAwayLines()).toEqual([
+      { seq: 1, text: "one" },
+      { seq: 2, text: "two" },
+    ]);
+  });
+
+  it.each([
+    ["a different character", { player: 7, token: "away-1" }],
+    ["no known character", { token: "away-1" }],
+  ])("replaces the token and discards the stored lines when it was for %s", async (_label, stored) => {
+    const expiresAt = nowSeconds() + 30 * DAY_SECONDS;
+    const { callsTo } = stubRegisteredBrowser(() =>
+      Response.json({ expires_at: expiresAt, player: 42, token: "away-2" }),
+    );
+    const { ensurePushSubscription, readAwayToken, recordAwayPush, storeAwayToken, takeUnshownAwayLines } =
+      await importProduction();
+    await storeAwayToken({ expiresAt: nowSeconds() + 20 * DAY_SECONDS, ...stored });
+    await recordAwayPush({ from: 1, lines: [[1, "one"], [2, "two"]], to: 2 });
+
+    await ensurePushSubscription(stubClient());
+
+    expect(await readAwayToken()).toEqual({ expiresAt, player: 42, token: "away-2" });
+    expect(await takeUnshownAwayLines()).toEqual([]);
+    // The highest seq went too: a push at seq 3 is now a gap counted from 0.
+    await recordAwayPush({ from: 3, lines: [[3, "three"]], to: 3 });
+    expect(callsTo("https://mongoose.world/api/away/lines?after=0")).toHaveLength(1);
+  });
+
+  it("discards the stored lines when the server does not say whose token it is", async () => {
+    stubRegisteredBrowser(() =>
+      Response.json({ expires_at: nowSeconds() + 30 * DAY_SECONDS, token: "away-2" }),
+    );
+    const { ensurePushSubscription, recordAwayPush, storeAwayToken, takeUnshownAwayLines } =
+      await importProduction();
+    await storeAwayToken({ expiresAt: nowSeconds() + 20 * DAY_SECONDS, player: 42, token: "away-1" });
+    await recordAwayPush({ from: 1, lines: [[1, "one"]], to: 1 });
+
+    await ensurePushSubscription(stubClient());
+
+    expect(await takeUnshownAwayLines()).toEqual([]);
   });
 
   it("keeps push registration working and reports the error when the away token fails", async () => {

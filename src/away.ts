@@ -26,7 +26,6 @@ const SHOWN_SEQ_KEY = "shownSeq";
 const TOKEN_ENDPOINT = "/api/away/token";
 const LINES_ENDPOINT = "/api/away/lines";
 const COMMAND_ENDPOINT = "/api/away/command";
-const TOKEN_REFRESH_MARGIN_SECONDS = 7 * 24 * 60 * 60;
 
 export type AwayLine = {
   seq: number;
@@ -37,6 +36,8 @@ export type AwayToken = {
   token: string;
   // Unix seconds.
   expiresAt: number;
+  // Object number of the character the token belongs to, when the server said.
+  player?: number;
 };
 
 export type AwayPushData = {
@@ -132,25 +133,37 @@ export function dropAwayToken(): Promise<void> {
 }
 
 /**
- * Makes sure a long-lived away token is stored, trading the short-lived push
- * token for one unless the stored one is still more than 7 days from expiry.
+ * Trades the short-lived push token for a long-lived away token and stores it.
+ * The page knows the character by name and the server by object number, so a
+ * stored token cannot be matched to the character without asking: this asks
+ * every time. Lines stored for any other character are discarded.
  */
 export async function ensureAwayToken(pushToken: string): Promise<void> {
-  const stored = await readAwayToken();
-  if (stored && stored.expiresAt - Date.now() / 1000 > TOKEN_REFRESH_MARGIN_SECONDS) {
-    return;
-  }
-
   const url = resolveApiUrl(TOKEN_ENDPOINT);
   const response = await awayFetch(url, pushToken, { method: "POST" });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} from ${url}`);
   }
-  const payload = (await response.json()) as { token?: unknown; expires_at?: unknown };
+  const payload = (await response.json()) as {
+    token?: unknown;
+    expires_at?: unknown;
+    player?: unknown;
+  };
   if (typeof payload.token !== "string" || typeof payload.expires_at !== "number") {
     throw new Error("Away token missing from server response");
   }
-  await storeAwayToken({ expiresAt: payload.expires_at, token: payload.token });
+  const fresh: AwayToken = { expiresAt: payload.expires_at, token: payload.token };
+  if (typeof payload.player === "number") {
+    fresh.player = payload.player;
+  }
+
+  await withAwayStores("readwrite", async (lines, state) => {
+    const stored: AwayToken | undefined = await requestToPromise(state.get(TOKEN_KEY));
+    if (fresh.player === undefined || stored?.player !== fresh.player) {
+      forgetLines(lines, state);
+    }
+    state.put(fresh, TOKEN_KEY);
+  });
 }
 
 async function fetchAwayLines(after: number, token: string): Promise<AwayLine[]> {
