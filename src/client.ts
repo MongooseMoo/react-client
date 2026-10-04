@@ -22,6 +22,14 @@ import { useInputStore } from "./stores/inputStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useOutputStore } from "./stores/outputStore";
 import { reconnectDelay } from "./reconnectBackoff";
+import {
+  AWAY_NOTIFICATION_TAG,
+  type AwayCommandResult,
+  type AwayLine,
+  clearAwayLines,
+  sendAwayCommand,
+  takeUnshownAwayLines,
+} from "./away";
 
 // How long an open socket may stay silent after a resume ping before it is
 // treated as dead.
@@ -51,6 +59,11 @@ class MudClient {
   private intentionalDisconnect: boolean = false;
   private localMode: boolean = false;
   private localStream?: Stream;
+  // True once connected over the websocket: the away channel (lines over Web
+  // Push, commands over HTTP) only exists for the real server.
+  private awayChannel: boolean = false;
+  private awayListenersRegistered: boolean = false;
+  private awayWork: Promise<void> = Promise.resolve();
 
   get connected(): boolean {
     return this._connected;
@@ -146,6 +159,8 @@ class MudClient {
     this.connectionCleanupComplete = false;
     this.gmcp.reset();
     this.registerResumeListeners();
+    this.awayChannel = true;
+    this.registerAwayListeners();
     const ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
     this.ws = ws;
     this.ws.binaryType = "arraybuffer";
@@ -165,6 +180,7 @@ class MudClient {
       resetMidiIntentionalDisconnectFlags();
 
       useConnectionStore.getState().setConnected(true);
+      this.endAwayPeriod();
     };
 
     this.telnet.on("data", (data: Uint8Array) => {
@@ -252,6 +268,7 @@ class MudClient {
   }
 
   private handleResume(): void {
+    this.showAwayLines();
     if (this.shutdownComplete || this.intentionalDisconnect || this.localMode) {
       return;
     }
@@ -293,6 +310,7 @@ class MudClient {
    * creating a WebSocket.
    */
   public connectLocal(stream: Stream) {
+    this.awayChannel = false;
     this.localMode = true;
     this.localStream = stream;
     this.intentionalDisconnect = false;
@@ -431,15 +449,106 @@ class MudClient {
     try {
       this.send(`${command}\r\n`);
     } catch (error) {
+      const disconnected = error instanceof Error ? error : new Error(String(error));
+      if (this.awayChannel && !this.shutdownComplete) {
+        void this.sendCommandWhileAway(command, disconnected);
+      } else {
+        useOutputStore.getState().addError(disconnected);
+      }
+      return;
+    }
+    this.echoCommand(command);
+  }
+
+  private echoCommand(command: string): void {
+    if (usePreferences.getState().general.localEcho) {
+      useOutputStore.getState().addCommand(command);
+    }
+    console.log(`> ${command}`);
+  }
+
+  /**
+   * With the socket down, a stored away token lets the command go out over
+   * HTTP; its output comes back as away lines. Without one, `disconnected` is
+   * reported as it always was.
+   */
+  private async sendCommandWhileAway(command: string, disconnected: Error): Promise<void> {
+    let result: AwayCommandResult;
+    try {
+      result = await sendAwayCommand(command);
+    } catch (error) {
       useOutputStore
         .getState()
         .addError(error instanceof Error ? error : new Error(String(error)));
       return;
     }
-    if (usePreferences.getState().general.localEcho) {
-      useOutputStore.getState().addCommand(command);
+    if (result.status === "rejected") {
+      useOutputStore.getState().addError(new Error(result.error));
+      return;
     }
-    console.log(`> ${command}`);
+    if (result.status !== "sent") {
+      useOutputStore.getState().addError(disconnected);
+      return;
+    }
+    this.echoCommand(command);
+    this.showAwayLines(result.lines);
+  }
+
+  // Away work touches IndexedDB; running it one job at a time keeps the lines
+  // in order and puts a reconnect's clean-up behind any show still pending.
+  private queueAwayWork(job: () => Promise<void>): void {
+    this.awayWork = this.awayWork.then(job).catch((error) => {
+      console.error("Away channel failed:", error);
+    });
+  }
+
+  private registerAwayListeners(): void {
+    if (this.awayListenersRegistered) return;
+    this.awayListenersRegistered = true;
+    if ("serviceWorker" in navigator) {
+      const onMessage = (event: MessageEvent) => {
+        if (event.data?.type === "away-lines" && Array.isArray(event.data.lines)) {
+          this.showAwayLines(event.data.lines);
+        }
+      };
+      navigator.serviceWorker.addEventListener("message", onMessage);
+      this.registerCleanup(() => {
+        navigator.serviceWorker.removeEventListener("message", onMessage);
+      });
+    }
+    this.showAwayLines();
+  }
+
+  /**
+   * While the socket is down, puts the away lines not yet shown (the stored
+   * ones plus `extra`) into the output as provisional lines.
+   */
+  private showAwayLines(extra?: AwayLine[]): void {
+    this.queueAwayWork(async () => {
+      if (this._connected || !this.awayChannel || this.shutdownComplete) return;
+      const lines = await takeUnshownAwayLines(extra);
+      if (this._connected) return;
+      for (const line of lines) {
+        this.emitMessage(line.text, true);
+      }
+    });
+  }
+
+  /**
+   * The socket is back and the server replays what was missed, so the output
+   * drops its provisional lines; the stored lines and the notifications that
+   * announced them are obsolete too.
+   */
+  private endAwayPeriod(): void {
+    this.queueAwayWork(async () => {
+      await clearAwayLines();
+      if (!("serviceWorker" in navigator)) return;
+      const registration = await navigator.serviceWorker.getRegistration();
+      const notifications = await registration?.getNotifications({ tag: AWAY_NOTIFICATION_TAG });
+      for (const notification of notifications ?? []) {
+        notification.close();
+      }
+    });
   }
 
   /*
@@ -473,7 +582,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     this.mcpSession.receiveLine(decoded);
   }
 
-  private emitMessage(dataString: string) {
+  private emitMessage(dataString: string, provisional: boolean = false) {
     const autoreadMode = usePreferences.getState().speech.autoreadMode;
     if (autoreadMode === AutoreadMode.All) {
       this.speak(dataString);
@@ -481,7 +590,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
       this.speak(dataString);
     }
-    useOutputStore.getState().addMessage(dataString);
+    useOutputStore.getState().addMessage(dataString, provisional);
   }
 
   shutdown() {

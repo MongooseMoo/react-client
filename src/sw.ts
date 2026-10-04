@@ -6,6 +6,7 @@ import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
 import { CacheFirst } from 'workbox-strategies';
 import { resolveApiUrl } from './apiOrigin';
+import { type AwayPushData, recordAwayPush } from './away';
 
 declare let self: ServiceWorkerGlobalScope;
 
@@ -18,6 +19,8 @@ type PushAction = {
 type PushPayload = {
   actions?: PushAction[];
   body?: string;
+  data?: AwayPushData;
+  silent?: unknown;
   tag?: string;
   title?: string;
   url?: string;
@@ -28,9 +31,10 @@ type NotificationAction = {
   title: string;
 };
 
-// TypeScript's lib.webworker NotificationOptions omits `actions`.
+// TypeScript's lib.webworker NotificationOptions omits `actions` and `renotify`.
 type NotificationOptionsWithActions = NotificationOptions & {
   actions?: NotificationAction[];
+  renotify?: boolean;
 };
 
 self.skipWaiting();
@@ -111,6 +115,20 @@ function parsePushActions(actions: unknown): {
   return { actionUrls, actions: parsed };
 }
 
+// Stores the lines a push carried and hands the new ones to every open page.
+// A failure here must not stop the notification from being shown.
+async function deliverAwayLines(data: AwayPushData): Promise<void> {
+  try {
+    const lines = await recordAwayPush(data);
+    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+    for (const client of clients) {
+      client.postMessage({ lines, type: 'away-lines' });
+    }
+  } catch (error) {
+    console.error('[away] could not store or deliver pushed lines', error);
+  }
+}
+
 self.addEventListener('push', (event) => {
   const payload = parsePushPayload(event);
   const title = payload.title ?? 'Mongoose';
@@ -128,7 +146,23 @@ self.addEventListener('push', (event) => {
     },
     tag,
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  const awayData = payload.data;
+  if (!awayData || !Array.isArray(awayData.lines)) {
+    event.waitUntil(self.registration.showNotification(title, options));
+    return;
+  }
+
+  // A tagged notification replaces the previous one without alerting unless
+  // renotify is set. iOS revokes a subscription whose pushes show nothing, so
+  // the notification is shown whatever happens to the lines.
+  if (payload.silent) {
+    options.silent = true;
+  } else {
+    options.renotify = true;
+  }
+  event.waitUntil(
+    Promise.all([self.registration.showNotification(title, options), deliverAwayLines(awayData)]),
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {

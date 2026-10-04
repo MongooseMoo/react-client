@@ -283,7 +283,29 @@ class Output extends React.Component<Props, State> {
   addError = (error: Error) =>
     this.addToOutput(OutputType.ErrorMessage, true, 'error', error.message);
 
-  handleConnected = () => this.addToOutput(OutputType.SystemInfo, true, 'system', 'Connected');
+  handleConnected = () => {
+    this.removeProvisionalLines();
+    this.addToOutput(OutputType.SystemInfo, true, 'system', 'Connected');
+  };
+
+  /**
+   * Away lines shown while the socket was down are provisional: once it is
+   * back the server replays the authoritative copy, so ours are dropped.
+   */
+  private removeProvisionalLines() {
+    const kept = this.allLines.filter((line) => !line.metadata?.provisional);
+    if (kept.length === this.allLines.length) return;
+    this.allLines = kept;
+    // The removed lines can sit anywhere in the frozen container; empty it
+    // and let freezeOverflow rebuild it from allLines.
+    this.frozenRef.current?.replaceChildren();
+    this.frozenCount = 0;
+    this.frozenHiddenCount = 0;
+    this.setState({
+      liveOutput: this.allLines.slice(-Output.LIVE_WINDOW_SIZE),
+      focusedLineIndex: null,
+    });
+  }
 
   handleDisconnected = () => {
     this.addToOutput(OutputType.SystemInfo, true, 'system', 'Disconnected');
@@ -339,7 +361,9 @@ class Output extends React.Component<Props, State> {
   handleOutputEntry = (entry: OutputEntry) => {
     switch (entry.type) {
       case "message":
-        this.handleMessage(entry.message);
+        // A provisional line that arrives after the socket is back is stale.
+        if (entry.provisional && useConnectionStore.getState().connected) break;
+        this.handleMessage(entry.message, entry.provisional);
         break;
       case "html":
         this.handleHtml(entry.html);
@@ -622,11 +646,17 @@ componentDidUpdate(
 scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 // Use requestAnimationFrame to ensure DOM updates are complete
  requestAnimationFrame(() => { output.scrollTop = output.scrollHeight; }); } };
-  handleMessage = (message: string) => {
+  handleMessage = (message: string, provisional: boolean = false) => {
     if (!message) {
       return;
     }
-    this.addToOutput(OutputType.ServerMessage, true, 'ansi', message);
+    this.addToOutput(
+      OutputType.ServerMessage,
+      true,
+      'ansi',
+      message,
+      provisional ? { provisional: true } : undefined,
+    );
   };
 
   handleHtml = (html: string) => {

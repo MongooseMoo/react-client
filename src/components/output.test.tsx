@@ -3,6 +3,7 @@ import type React from "react";
 
 import { act, render } from "@testing-library/react";
 import type MudClient from "../client";
+import { useConnectionStore } from "../stores/connectionStore";
 import { useOutputStore } from "../stores/outputStore";
 import Output, { type OutputLine, OutputType } from "./output";
 
@@ -631,5 +632,91 @@ describe("Output line markup rendering", () => {
     visit((output as unknown as { allLines: OutputLine[] }).allLines);
 
     expect(mounted).toEqual([]);
+  });
+});
+
+describe("Output provisional away lines", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    useConnectionStore.getState().reset();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    useConnectionStore.getState().reset();
+  });
+
+  const mount = () =>
+    render(<Output client={{ sendCommand: vi.fn() } as unknown as MudClient} />);
+  const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  // Server lines in order, frozen or live. A frozen line nests the same class
+  // inside its wrapper, so only the innermost match counts.
+  const rendered = () =>
+    [...document.querySelectorAll(".output .output-line-serverMessage")]
+      .filter((line) => !line.querySelector(".output-line-serverMessage"))
+      .map((line) => line.textContent);
+
+  it("announces a provisional line exactly as it announces a normal line", async () => {
+    mount();
+
+    useOutputStore.getState().addMessage("Bob waves.");
+    useOutputStore.getState().addMessage("Bob waves.", true);
+    await flush();
+
+    expect(rendered()).toEqual(["Bob waves.", "Bob waves."]);
+    const announcements = mockAnnounce.mock.calls.filter(([text]) => text === "Bob waves.");
+    expect(announcements).toHaveLength(2);
+    expect(announcements[1]).toEqual(announcements[0]);
+  });
+
+  it("removes provisional lines when the connection comes back and keeps the rest", async () => {
+    mount();
+    useOutputStore.getState().addMessage("before");
+    useOutputStore.getState().addMessage("missed one", true);
+    useOutputStore.getState().addMessage("missed two", true);
+    await flush();
+    expect(rendered()).toEqual(["before", "missed one", "missed two"]);
+
+    await act(async () => {
+      useConnectionStore.getState().setConnected(true);
+    });
+    useOutputStore.getState().addMessage("replayed");
+    await flush();
+
+    expect(rendered()).toEqual(["before", "replayed"]);
+  });
+
+  it("removes provisional lines that were already frozen out of the live window", async () => {
+    mount();
+    useOutputStore.getState().addMessage("missed early", true);
+    for (let index = 0; index < Output.LIVE_WINDOW_SIZE; index += 1) {
+      useOutputStore.getState().addMessage(`line ${index}`);
+    }
+    await flush();
+    expect(rendered()).toContain("missed early");
+
+    await act(async () => {
+      useConnectionStore.getState().setConnected(true);
+    });
+    await flush();
+
+    expect(rendered()).not.toContain("missed early");
+    expect(rendered()).toHaveLength(Output.LIVE_WINDOW_SIZE);
+    expect(rendered()[0]).toBe("line 0");
+  });
+
+  it("drops a provisional line that is delivered after the connection is back", async () => {
+    mount();
+    await act(async () => {
+      useConnectionStore.getState().setConnected(true);
+    });
+
+    useOutputStore.getState().addMessage("too late", true);
+    await flush();
+
+    expect(rendered()).toEqual([]);
   });
 });
