@@ -161,9 +161,32 @@ export function dropAwayToken(): Promise<void> {
  * Trades the short-lived push token for a long-lived away token and stores it.
  * The page knows the character by name and the server by object number, so a
  * stored token cannot be matched to the character without asking: this asks
- * every time. Lines stored for any other character are discarded.
+ * every time. Lines stored for any other character are discarded. If no
+ * fresh token can be had, the stored one may be another character's, so it
+ * and the stored lines are dropped before the error is passed on.
  */
 export async function ensureAwayToken(pushToken: string): Promise<void> {
+  let fresh: AwayToken;
+  try {
+    fresh = await fetchAwayToken(pushToken);
+  } catch (error) {
+    await withAwayStores("readwrite", async (lines, state) => {
+      forgetLines(lines, state);
+      state.delete(TOKEN_KEY);
+    });
+    throw error;
+  }
+
+  await withAwayStores("readwrite", async (lines, state) => {
+    const stored: AwayToken | undefined = await requestToPromise(state.get(TOKEN_KEY));
+    if (fresh.player === undefined || stored?.player !== fresh.player) {
+      forgetLines(lines, state);
+    }
+    state.put(fresh, TOKEN_KEY);
+  });
+}
+
+async function fetchAwayToken(pushToken: string): Promise<AwayToken> {
   const url = resolveApiUrl(TOKEN_ENDPOINT);
   const response = await awayFetch(url, pushToken, { method: "POST" });
   if (!response.ok) {
@@ -181,14 +204,7 @@ export async function ensureAwayToken(pushToken: string): Promise<void> {
   if (typeof payload.player === "number") {
     fresh.player = payload.player;
   }
-
-  await withAwayStores("readwrite", async (lines, state) => {
-    const stored: AwayToken | undefined = await requestToPromise(state.get(TOKEN_KEY));
-    if (fresh.player === undefined || stored?.player !== fresh.player) {
-      forgetLines(lines, state);
-    }
-    state.put(fresh, TOKEN_KEY);
-  });
+  return fresh;
 }
 
 async function fetchAwayLines(

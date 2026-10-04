@@ -237,4 +237,37 @@ describe("away token after push registration", () => {
     ]);
     expect(console.error).toHaveBeenCalled();
   });
+
+  // The stored token may be another character's; when it cannot be replaced
+  // it must not stay usable.
+  it.each([
+    ["the server answers 500", () => new Response("nope", { status: 500 })],
+    ["the request cannot be made", () => {
+      throw new TypeError("Failed to fetch");
+    }],
+    ["the response has no token", () => Response.json({ player: 42 })],
+  ])("drops the stored token and lines when %s", async (_label, respond) => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { callsTo } = stubRegisteredBrowser(respond);
+    const {
+      ensurePushSubscription,
+      readAwayToken,
+      recordAwayPush,
+      storeAwayToken,
+      takeUnshownAwayLines,
+      useOutputStore,
+    } = await importProduction();
+    useOutputStore.getState().reset();
+    await storeAwayToken({ expiresAt: nowSeconds() + 20 * DAY_SECONDS, player: 42, token: "away-1" });
+    await recordAwayPush({ from: 1, lines: [[1, "one"]], period: 7, to: 1 });
+
+    await expect(ensurePushSubscription(stubClient())).resolves.toBeUndefined();
+
+    expect(callsTo(SUBSCRIPTION_URL)).toHaveLength(1);
+    expect(await readAwayToken()).toBeNull();
+    expect(await takeUnshownAwayLines()).toEqual([]);
+    await Promise.resolve();
+    expect(useOutputStore.getState().entries).toHaveLength(1);
+    expect(useOutputStore.getState().entries[0]).toMatchObject({ type: "error" });
+  });
 });
