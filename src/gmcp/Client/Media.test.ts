@@ -65,6 +65,7 @@ type MockSound = {
   position: number[];
   preplay: ReturnType<typeof vi.fn>;
   priority?: number;
+  removeSend: ReturnType<typeof vi.fn>;
   routeTo: ReturnType<typeof vi.fn>;
   seek: ReturnType<typeof vi.fn>;
   stereoPan: number;
@@ -124,6 +125,7 @@ function createMockSound(url: string): MockSound {
       position = value;
     },
     priority: undefined,
+    removeSend: vi.fn(),
     routeTo: vi.fn(),
     seek: vi.fn(),
     get stereoPan() {
@@ -1497,7 +1499,7 @@ describe('GMCPClientMedia', () => {
       expect(sound.routeTo).not.toHaveBeenCalled();
     });
 
-    it('chain "" on Update silences an aux send', async () => {
+    it('chain "" on Update removes an aux send', async () => {
       const sound = createMockSound('https://mongoose.world/sounds/fixture/tone.m4a');
       mockCreateSound.mockResolvedValue(sound);
       await handler.handlePlay({
@@ -1508,7 +1510,10 @@ describe('GMCPClientMedia', () => {
       expect(sound.routeTo).toHaveBeenCalledWith('workshop', 0.25);
 
       handler.handleUpdate({ key: tonePlay.key, chain: '' } as GMCPMessageClientMediaUpdate);
-      expect(sound.routeTo).toHaveBeenLastCalledWith('workshop', 0);
+      expect(sound.removeSend).toHaveBeenCalledTimes(1);
+      expect(sound.removeSend).toHaveBeenCalledWith('workshop');
+      // The send is removed, not re-gained to 0, so no silent send is left behind.
+      expect(sound.routeTo).not.toHaveBeenCalledWith('workshop', 0);
     });
 
     it('effects [] on Update tears down the inline chain and restores the named route', async () => {
