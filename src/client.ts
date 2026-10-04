@@ -21,6 +21,11 @@ import type FileTransferManager from "./FileTransferManager";
 import { useInputStore } from "./stores/inputStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useOutputStore } from "./stores/outputStore";
+import { reconnectDelay } from "./reconnectBackoff";
+
+// How long an open socket may stay silent after a resume ping before it is
+// treated as dead.
+const LIVENESS_TIMEOUT_MS = 4000;
 
 function resetMidiIntentionalDisconnectFlags(): void {
   if (!usePreferences.getState().midi.enabled) return;
@@ -38,6 +43,9 @@ class MudClient {
   private ws!: WebSocket;
   private decoder = new TextDecoder("utf8");
   private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private reconnectAttempt: number = 0;
+  private livenessTimer?: ReturnType<typeof setTimeout>;
+  private resumeListenersRegistered: boolean = false;
   private telnet!: TelnetParser;
   private _connected: boolean = false;
   private intentionalDisconnect: boolean = false;
@@ -137,12 +145,21 @@ class MudClient {
     this.intentionalDisconnect = false;
     this.connectionCleanupComplete = false;
     this.gmcp.reset();
-    this.ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
+    this.registerResumeListeners();
+    const ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
+    this.ws = ws;
     this.ws.binaryType = "arraybuffer";
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
     this.gmcp.attachTransport(this.telnet);
+    // Any inbound bytes prove the socket is alive, whatever they parse to.
+    const deliverMessage = ws.onmessage;
+    ws.onmessage = (event: MessageEvent) => {
+      this.clearLivenessProbe();
+      deliverMessage?.call(ws, event);
+    };
     this.ws.onopen = () => {
       this._connected = true;
+      this.reconnectAttempt = 0;
 
       // Reset MIDI intentional disconnect flags when successfully reconnecting to server
       resetMidiIntentionalDisconnectFlags();
@@ -195,18 +212,79 @@ class MudClient {
     });
 
     this.ws.onclose = () => {
+      // A socket we already replaced (e.g. a dead one whose close arrives
+      // late) must not tear down the connection that superseded it.
+      if (ws !== this.ws) return;
       this.cleanupConnection();
       // Only auto reconnect if it wasn't an intentional disconnect
       if (!this.intentionalDisconnect) {
         this.reconnectTimer = setTimeout(() => {
           this.connect();
-        }, 10000);
+        }, reconnectDelay(this.reconnectAttempt++));
       }
     };
 
     this.ws.onerror = (error: Event) => {
       useOutputStore.getState().addError(connectionErrorFromEvent(error));
     };
+  }
+
+  /**
+   * Mobile browsers kill or freeze the socket while the page is hidden, and
+   * throttle the reconnect timer along with it. When the page comes back,
+   * reconnect straight away or check that the socket we still hold is alive.
+   */
+  private registerResumeListeners(): void {
+    if (this.resumeListenersRegistered) return;
+    this.resumeListenersRegistered = true;
+    const onResume = () => this.handleResume();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") this.handleResume();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pageshow", onResume);
+    window.addEventListener("online", onResume);
+    this.registerCleanup(() => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pageshow", onResume);
+      window.removeEventListener("online", onResume);
+    });
+  }
+
+  private handleResume(): void {
+    if (this.shutdownComplete || this.intentionalDisconnect || this.localMode) {
+      return;
+    }
+    if (this.ws.readyState === WebSocket.CONNECTING) return;
+    if (this.ws.readyState === WebSocket.OPEN) {
+      this.probeLiveness();
+      return;
+    }
+    this.reconnectNow();
+  }
+
+  /**
+   * Ping the server over an open socket; if nothing at all comes back in
+   * time the socket is a zombie, so drop it and reconnect.
+   */
+  private probeLiveness(): void {
+    if (this.livenessTimer !== undefined || !this.gmcp.ready) return;
+    this.livenessTimer = setTimeout(() => {
+      this.livenessTimer = undefined;
+      this.ws.close();
+      this.reconnectNow();
+    }, LIVENESS_TIMEOUT_MS);
+    this.gmcp.require("Core").sendPing(undefined);
+  }
+
+  private clearLivenessProbe(): void {
+    clearTimeout(this.livenessTimer);
+    this.livenessTimer = undefined;
+  }
+
+  private reconnectNow(): void {
+    this.cleanupConnection();
+    this.connect();
   }
 
   /**
@@ -310,6 +388,7 @@ class MudClient {
     if (this.connectionCleanupComplete) return;
     this.connectionCleanupComplete = true;
     this._connected = false;
+    this.clearLivenessProbe();
     for (const callback of this.disconnectResetCallbacks) {
       try {
         callback();
