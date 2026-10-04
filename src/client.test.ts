@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   mockCacophonyInstances,
@@ -144,7 +144,7 @@ vi.mock('./mcp', () => ({
 }));
 
 import MudClient from './client';
-import { GMCPClientFileTransfer } from './gmcp';
+import { GMCPClientFileTransfer, GMCPCore } from './gmcp';
 import { useOutputStore } from './stores/outputStore';
 import type { Stream } from './telnet';
 
@@ -173,26 +173,34 @@ class MockWebSocket {
 class MockCorePackage {
   packageName = 'Core';
   packageVersion = 1;
+  reset = vi.fn();
   sendHello = vi.fn();
+  shutdown = vi.fn();
 }
 
 class MockCoreSupportsPackage {
   packageName = 'Core.Supports';
   packageVersion = 1;
   advertisedModules = vi.fn(() => ['Core 1', 'Core.Supports 1']);
+  reset = vi.fn();
   sendSet = vi.fn();
+  shutdown = vi.fn();
 }
 
 class MockAutoLoginPackage {
   packageName = 'Auth.Autologin';
   packageVersion = 1;
+  reset = vi.fn();
   sendStoredLogin = vi.fn();
+  shutdown = vi.fn();
 }
 
 class MockClientMediaPackage {
   packageName = 'Client.Media';
   packageVersion = 1;
   publishEffectsSupport = vi.fn();
+  reset = vi.fn();
+  shutdown = vi.fn();
 }
 
 function sendSocketText(socket: MockWebSocket, text: string): void {
@@ -265,6 +273,8 @@ describe('MudClient lifecycle cleanup', () => {
     } as MessageEvent);
 
     expect(client.gmcp.ready).toBe(true);
+    // Stop this client answering resume events fired by later tests.
+    client.shutdown();
   });
 
   it('constructs one file transfer owner on demand and cleans it up without connecting', async () => {
@@ -507,10 +517,10 @@ describe('MudClient lifecycle cleanup', () => {
       expect(mockWebSocketInstances).toHaveLength(1);
 
       // Unexpected drop: onclose fires while intentionalDisconnect is still false,
-      // scheduling a reconnect 10s out.
+      // scheduling a reconnect.
       mockWebSocketInstances[0].onclose?.(new Event('close'));
 
-      // The user then intentionally disconnects inside that 10s window.
+      // The user then intentionally disconnects before that reconnect fires.
       client.close();
       vi.advanceTimersByTime(10000);
 
@@ -586,5 +596,376 @@ describe('MudClient lifecycle cleanup', () => {
     expect(useOutputStore.getState().entries).toContainEqual(
       expect.objectContaining({ type: 'message', message: '�' }),
     );
+  });
+
+  describe('reconnect on resume', () => {
+    const clients: MudClient[] = [];
+
+    function createClient(): MudClient {
+      const client = new MudClient('example.test', 443);
+      clients.push(client);
+      return client;
+    }
+
+    // Connects and completes GMCP negotiation with the real Core package, so
+    // Core.Ping can be sent on this connection.
+    function connectWithGmcp(client: MudClient): MockWebSocket {
+      client.gmcp.register(GMCPCore);
+      client.gmcp.register(MockCoreSupportsPackage as never);
+      client.gmcp.register(MockAutoLoginPackage as never);
+      client.gmcp.register(MockClientMediaPackage as never);
+      client.connect();
+      const socket = latestSocket();
+      socket.onopen?.(new Event('open'));
+      sendSocketBytes(socket, [255, 251, 201]);
+      socket.send.mockClear();
+      return socket;
+    }
+
+    function latestSocket(): MockWebSocket {
+      return mockWebSocketInstances[mockWebSocketInstances.length - 1] as MockWebSocket;
+    }
+
+    function dropSocket(socket: MockWebSocket): void {
+      socket.readyState = MockWebSocket.CLOSED;
+      socket.onclose?.(new Event('close'));
+    }
+
+    function setVisibility(state: DocumentVisibilityState): void {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        value: state,
+      });
+    }
+
+    function becomeVisible(): void {
+      setVisibility('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+    }
+
+    function sentPings(socket: MockWebSocket): number {
+      return socket.send.mock.calls.filter(([data]) =>
+        new TextDecoder().decode(data as Uint8Array).includes('Core.Ping'),
+      ).length;
+    }
+
+    const resumeTriggers: Array<[string, () => void]> = [
+      ['visibilitychange to visible', becomeVisible],
+      ['pageshow', () => window.dispatchEvent(new Event('pageshow'))],
+      ['online', () => window.dispatchEvent(new Event('online'))],
+    ];
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      clients.length = 0;
+    });
+
+    afterEach(() => {
+      for (const client of clients) client.shutdown();
+      Reflect.deleteProperty(document, 'visibilityState');
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    });
+
+    it.each(resumeTriggers)(
+      'reconnects immediately on %s when the socket has closed',
+      (_label, trigger) => {
+        const client = createClient();
+        client.connect();
+        dropSocket(mockWebSocketInstances[0]);
+
+        trigger();
+
+        expect(mockWebSocketInstances).toHaveLength(2);
+      },
+    );
+
+    it('cancels the pending reconnect timer when resuming, so it connects only once', () => {
+      const client = createClient();
+      client.connect();
+      dropSocket(mockWebSocketInstances[0]);
+
+      becomeVisible();
+      vi.advanceTimersByTime(60000);
+
+      expect(mockWebSocketInstances).toHaveLength(2);
+    });
+
+    it('does not reconnect when the page becomes hidden', () => {
+      const client = createClient();
+      client.connect();
+      dropSocket(mockWebSocketInstances[0]);
+
+      setVisibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(mockWebSocketInstances).toHaveLength(1);
+    });
+
+    it('does not open a second socket while one is still connecting', () => {
+      const client = createClient();
+      client.connect();
+      mockWebSocketInstances[0].readyState = MockWebSocket.CONNECTING;
+
+      becomeVisible();
+
+      expect(mockWebSocketInstances).toHaveLength(1);
+    });
+
+    it('ignores a late close event from a socket it already replaced', () => {
+      const client = createClient();
+      const reset = vi.fn();
+      client.registerDisconnectReset(reset);
+      client.connect();
+      const firstSocket = mockWebSocketInstances[0];
+      // Closed while hidden, with the close event not delivered yet.
+      firstSocket.readyState = MockWebSocket.CLOSED;
+
+      becomeVisible();
+      expect(mockWebSocketInstances).toHaveLength(2);
+      expect(reset).toHaveBeenCalledTimes(1);
+      mockWebSocketInstances[1].onopen?.(new Event('open'));
+
+      firstSocket.onclose?.(new Event('close'));
+      vi.advanceTimersByTime(60000);
+
+      expect(reset).toHaveBeenCalledTimes(1);
+      expect(client.connected).toBe(true);
+      expect(mockWebSocketInstances).toHaveLength(2);
+    });
+
+    it('backs off 1s, 2s, 5s, then 10s for every later attempt, and resets when a socket opens', () => {
+      const client = createClient();
+      client.connect();
+
+      for (const delay of [1000, 2000, 5000, 10000, 10000]) {
+        const count = mockWebSocketInstances.length;
+        dropSocket(latestSocket());
+
+        vi.advanceTimersByTime(delay - 1);
+        expect(mockWebSocketInstances).toHaveLength(count);
+        vi.advanceTimersByTime(1);
+        expect(mockWebSocketInstances).toHaveLength(count + 1);
+      }
+
+      const count = mockWebSocketInstances.length;
+      latestSocket().onopen?.(new Event('open'));
+      dropSocket(latestSocket());
+      vi.advanceTimersByTime(1000);
+
+      expect(mockWebSocketInstances).toHaveLength(count + 1);
+    });
+
+    it('keeps retrying on schedule while the browser reports being offline', () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+      const client = createClient();
+      client.connect();
+      dropSocket(mockWebSocketInstances[0]);
+
+      vi.advanceTimersByTime(1000);
+      expect(mockWebSocketInstances).toHaveLength(2);
+
+      dropSocket(mockWebSocketInstances[1]);
+      vi.advanceTimersByTime(2000);
+      expect(mockWebSocketInstances).toHaveLength(3);
+    });
+
+    it.each(resumeTriggers)('probes an open socket with Core.Ping on %s', (_label, trigger) => {
+      const socket = connectWithGmcp(createClient());
+
+      trigger();
+
+      expect(sentPings(socket)).toBe(1);
+      expect(mockWebSocketInstances).toHaveLength(1);
+    });
+
+    it('keeps the socket when the server answers the ping', () => {
+      const socket = connectWithGmcp(createClient());
+
+      becomeVisible();
+      vi.advanceTimersByTime(3999);
+      sendSocketBytes(socket, [
+        255,
+        250,
+        201,
+        ...new TextEncoder().encode('Core.Ping'),
+        255,
+        240,
+      ]);
+      vi.advanceTimersByTime(60000);
+
+      expect(socket.close).not.toHaveBeenCalled();
+      expect(mockWebSocketInstances).toHaveLength(1);
+    });
+
+    it('keeps the socket when any other inbound data arrives during the probe', () => {
+      const socket = connectWithGmcp(createClient());
+
+      becomeVisible();
+      sendSocketText(socket, 'The wind howls.\r\n');
+      vi.advanceTimersByTime(60000);
+
+      expect(socket.close).not.toHaveBeenCalled();
+      expect(mockWebSocketInstances).toHaveLength(1);
+    });
+
+    it('closes a silent socket after 4s and reconnects exactly once', () => {
+      const client = createClient();
+      const reset = vi.fn();
+      const socket = connectWithGmcp(client);
+      client.registerDisconnectReset(reset);
+
+      becomeVisible();
+      vi.advanceTimersByTime(3999);
+      expect(socket.close).not.toHaveBeenCalled();
+      expect(mockWebSocketInstances).toHaveLength(1);
+
+      vi.advanceTimersByTime(1);
+      expect(socket.close).toHaveBeenCalledOnce();
+      expect(reset).toHaveBeenCalledTimes(1);
+      expect(mockWebSocketInstances).toHaveLength(2);
+
+      // The dead socket's close event arrives late; it must not tear down or
+      // re-dial the replacement.
+      socket.onclose?.(new Event('close'));
+      vi.advanceTimersByTime(60000);
+
+      expect(reset).toHaveBeenCalledTimes(1);
+      expect(mockWebSocketInstances).toHaveLength(2);
+    });
+
+    it('runs only one probe at a time', () => {
+      const socket = connectWithGmcp(createClient());
+
+      becomeVisible();
+      window.dispatchEvent(new Event('pageshow'));
+      window.dispatchEvent(new Event('online'));
+
+      expect(sentPings(socket)).toBe(1);
+
+      vi.advanceTimersByTime(60000);
+      expect(socket.close).toHaveBeenCalledOnce();
+      expect(mockWebSocketInstances).toHaveLength(2);
+    });
+
+    it('probes again on a later resume once the previous probe passed', () => {
+      const socket = connectWithGmcp(createClient());
+
+      becomeVisible();
+      sendSocketText(socket, 'The wind howls.\r\n');
+      becomeVisible();
+
+      expect(sentPings(socket)).toBe(2);
+    });
+
+    it('skips the probe when GMCP has not been negotiated', () => {
+      const client = createClient();
+      client.gmcp.register(GMCPCore);
+      client.connect();
+      const socket = mockWebSocketInstances[0];
+      socket.onopen?.(new Event('open'));
+
+      becomeVisible();
+      vi.advanceTimersByTime(60000);
+
+      expect(socket.send).not.toHaveBeenCalled();
+      expect(socket.close).not.toHaveBeenCalled();
+      expect(mockWebSocketInstances).toHaveLength(1);
+    });
+
+    it('abandons the probe when the socket closes on its own', () => {
+      const socket = connectWithGmcp(createClient());
+
+      becomeVisible();
+      dropSocket(socket);
+      vi.advanceTimersByTime(1000);
+      expect(mockWebSocketInstances).toHaveLength(2);
+
+      vi.advanceTimersByTime(60000);
+
+      expect(mockWebSocketInstances[1].close).not.toHaveBeenCalled();
+      expect(mockWebSocketInstances).toHaveLength(2);
+    });
+
+    it.each(resumeTriggers)(
+      'neither reconnects nor probes on %s after an intentional close',
+      (_label, trigger) => {
+        const client = createClient();
+        const socket = connectWithGmcp(client);
+        client.close();
+
+        trigger();
+        vi.advanceTimersByTime(60000);
+
+        expect(sentPings(socket)).toBe(0);
+        expect(mockWebSocketInstances).toHaveLength(1);
+      },
+    );
+
+    it('does not let a running probe reconnect after an intentional close', () => {
+      const client = createClient();
+      const socket = connectWithGmcp(client);
+
+      becomeVisible();
+      client.close();
+      vi.advanceTimersByTime(60000);
+
+      expect(socket.close).toHaveBeenCalledOnce();
+      expect(mockWebSocketInstances).toHaveLength(1);
+    });
+
+    it.each(resumeTriggers)('does nothing on %s in local mode', (_label, trigger) => {
+      const addWindowListener = vi.spyOn(window, 'addEventListener');
+      const addDocumentListener = vi.spyOn(document, 'addEventListener');
+      const client = createClient();
+      addWindowListener.mockClear();
+      const stream = { on: vi.fn(), write: vi.fn() } as unknown as Stream;
+      client.connectLocal(stream);
+
+      trigger();
+      vi.advanceTimersByTime(60000);
+
+      expect(addWindowListener).not.toHaveBeenCalled();
+      expect(addDocumentListener).not.toHaveBeenCalled();
+      expect(stream.write).not.toHaveBeenCalled();
+      expect(mockWebSocketInstances).toHaveLength(0);
+    });
+
+    it('registers the resume listeners once and removes them on shutdown', () => {
+      const addWindowListener = vi.spyOn(window, 'addEventListener');
+      const removeWindowListener = vi.spyOn(window, 'removeEventListener');
+      const addDocumentListener = vi.spyOn(document, 'addEventListener');
+      const removeDocumentListener = vi.spyOn(document, 'removeEventListener');
+      const client = createClient();
+      client.connect();
+      dropSocket(mockWebSocketInstances[0]);
+      client.connect();
+
+      const listenersFor = (spy: typeof addWindowListener, type: string) =>
+        spy.mock.calls.filter(([name]) => name === type).map(([, listener]) => listener);
+      const pageshow = listenersFor(addWindowListener, 'pageshow');
+      const online = listenersFor(addWindowListener, 'online');
+      const visibilitychange = listenersFor(
+        addDocumentListener as unknown as typeof addWindowListener,
+        'visibilitychange',
+      );
+      expect(pageshow).toHaveLength(1);
+      expect(online).toHaveLength(1);
+      expect(visibilitychange).toHaveLength(1);
+
+      client.shutdown();
+
+      expect(removeWindowListener).toHaveBeenCalledWith('pageshow', pageshow[0]);
+      expect(removeWindowListener).toHaveBeenCalledWith('online', online[0]);
+      expect(removeDocumentListener).toHaveBeenCalledWith('visibilitychange', visibilitychange[0]);
+
+      dropSocket(latestSocket());
+      becomeVisible();
+      window.dispatchEvent(new Event('pageshow'));
+      window.dispatchEvent(new Event('online'));
+
+      expect(mockWebSocketInstances).toHaveLength(2);
+    });
   });
 });
