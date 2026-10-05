@@ -52,11 +52,24 @@ import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
 import { useOutputStore } from "./stores/outputStore";
+import { useItemsStore } from "./stores/itemsStore";
+import { useRoomStore } from "./stores/roomStore";
+
+/**
+ * How long the player's room and inventory must hold still before the command
+ * list is asked for again. Building it costs the server a few hundred
+ * milliseconds, so walking through several rooms asks once, at the end.
+ */
+export const COMMAND_REFRESH_DELAY_MS = 1500;
 
 marked.setOptions({
   breaks: true,
   gfm: true,
 });
+
+function itemIds(items: { id: string }[]): string {
+  return items.map((item) => item.id).join(" ");
+}
 
 function getLocalTimezoneIdentifier(): string {
   return new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -277,6 +290,41 @@ export function createConfiguredClient(): MudClient {
     visualPackage?.requestSelf();
     visualPackage?.requestLocation();
     visualPackage?.requestUsers();
+  });
+
+  // The commands a player can type depend on the room they stand in and on
+  // what they carry, so a change to either asks for the list again. Things
+  // arriving in the room are not followed: in a busy room that would ask
+  // every time someone walked through.
+  let commandRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshCommandsSoon = () => {
+    clearTimeout(commandRefreshTimer);
+    commandRefreshTimer = setTimeout(() => {
+      if (client.connected) {
+        rehashPackage?.requestCommands();
+      }
+    }, COMMAND_REFRESH_DELAY_MS);
+  };
+  // The first room and the first inventory of a session are covered by the
+  // request made when MCP negotiation ends.
+  const unsubscribeRoom = useRoomStore.subscribe((state, previous) => {
+    const room = state.roomInfo?.num;
+    const previousRoom = previous.roomInfo?.num;
+    if (room !== undefined && previousRoom !== undefined && room !== previousRoom) {
+      refreshCommandsSoon();
+    }
+  });
+  const unsubscribeInventory = useItemsStore.subscribe((state, previous) => {
+    const carried = state.itemsByLocation.inv;
+    const previouslyCarried = previous.itemsByLocation.inv;
+    if (carried && previouslyCarried && itemIds(carried) !== itemIds(previouslyCarried)) {
+      refreshCommandsSoon();
+    }
+  });
+  client.registerCleanup(() => {
+    unsubscribeRoom();
+    unsubscribeInventory();
+    clearTimeout(commandRefreshTimer);
   });
 
   return client;

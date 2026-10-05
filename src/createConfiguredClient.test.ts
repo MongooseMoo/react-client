@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type MudClient from "./client";
-import { createConfiguredClient } from "./createConfiguredClient";
+import { COMMAND_REFRESH_DELAY_MS, createConfiguredClient } from "./createConfiguredClient";
 import type { Stream } from "./telnet";
 import { useInputStore } from "./stores/inputStore";
 import { useItemsStore } from "./stores/itemsStore";
@@ -368,6 +368,92 @@ describe("createConfiguredClient", () => {
     expect(sent.some((line) => line.includes(`#$#dns-com-awns-visual-getusers ${authKey}`))).toBe(
       true,
     );
+  });
+
+  describe("command list refresh", () => {
+    const getcommands = (sent: string[]) =>
+      sent.filter((line) => line.includes("#$#dns-com-awns-rehash-getcommands")).length;
+
+    function connectedClient() {
+      vi.useFakeTimers();
+      client = createConfiguredClient();
+      vi.spyOn(client, "connected", "get").mockReturnValue(true);
+      const sent: string[] = [];
+      vi.spyOn(client, "send").mockImplementation((line: string) => {
+        sent.push(line);
+      });
+      client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+      return { client, sent };
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("asks once after the player has stopped moving between rooms", () => {
+      const { client, sent } = connectedClient();
+      const room = client.gmcp.require("Room");
+
+      room.receiveRegisteredMessage("Info", { num: 101, name: "Hall" });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(0);
+
+      room.receiveRegisteredMessage("Info", { num: 102, name: "Stairs" });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS - 1);
+      room.receiveRegisteredMessage("Info", { num: 103, name: "Landing" });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS - 1);
+      expect(getcommands(sent)).toBe(0);
+
+      vi.advanceTimersByTime(1);
+      expect(getcommands(sent)).toBe(1);
+
+      room.receiveRegisteredMessage("Info", { num: 103, name: "Landing" });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(1);
+    });
+
+    it("asks when what the player carries changes, not when the same list arrives again", () => {
+      const { client, sent } = connectedClient();
+      const items = client.gmcp.require("Char.Items");
+      const coin = { id: "#1", name: "a coin" };
+
+      items.receiveRegisteredMessage("List", { location: "inv", items: [coin] });
+      items.receiveRegisteredMessage("List", { location: "inv", items: [coin] });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(0);
+
+      items.receiveRegisteredMessage("Add", { location: "inv", item: { id: "#2", name: "a key" } });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(1);
+
+      items.receiveRegisteredMessage("Remove", { location: "inv", item: coin });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(2);
+    });
+
+    it("does not ask when something arrives in or leaves the room", () => {
+      const { client, sent } = connectedClient();
+      const items = client.gmcp.require("Char.Items");
+
+      items.receiveRegisteredMessage("List", { location: "room", items: [{ id: "#3", name: "a table" }] });
+      items.receiveRegisteredMessage("Add", { location: "room", item: { id: "#4", name: "Guest" } });
+      items.receiveRegisteredMessage("Remove", { location: "room", item: { id: "#4", name: "Guest" } });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+
+      expect(getcommands(sent)).toBe(0);
+    });
+
+    it("does not ask after the client has disconnected", () => {
+      const { client, sent } = connectedClient();
+      const room = client.gmcp.require("Room");
+
+      room.receiveRegisteredMessage("Info", { num: 101, name: "Hall" });
+      room.receiveRegisteredMessage("Info", { num: 102, name: "Stairs" });
+      vi.spyOn(client, "connected", "get").mockReturnValue(false);
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+
+      expect(getcommands(sent)).toBe(0);
+    });
   });
 
   it("does not send timezone when syncTimezoneToServer is disabled", () => {
