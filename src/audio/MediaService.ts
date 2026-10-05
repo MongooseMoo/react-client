@@ -39,6 +39,14 @@ const CACOPHONY_BUFFER = 'buffer' satisfies CacophonySoundKind;
 const CACOPHONY_HTML = 'html' satisfies CacophonySoundKind;
 const MAX_PRELOADED_SOUNDS = 32;
 
+/**
+ * How far (ms) a kept voice's playhead may be from a Play's `start` cursor
+ * before the Play seeks it. The server re-Plays every audible sound, at its
+ * current cursor, to a listener who enters a room; a voice that is already
+ * there is left alone, so the re-Play is seamless.
+ */
+export const MEDIA_SEEK_TOLERANCE_MS = 150;
+
 /** Constant makeup gain restoring the clean positional FOA decode to a useful level. Tune by ear.
  *  The SN3D encode + SH-HRIR binaural decode lands well below unity, so a positioned source is
  *  noticeably quiet even at distance 0 (live: peak ~30% at makeup 1), so ~3 (~+9.5 dB) targets a
@@ -143,13 +151,20 @@ export interface ClientMediaUpdatePayload {
 
 /**
  * The MCMP play window, as absolute file positions in milliseconds. The first
- * pass plays start..finish; later passes play loopStart..finish.
+ * pass plays start..finish; later passes play loopStart..finish. The region a
+ * voice is built over is loopStart..finish; `start` is only the join cursor.
  */
 interface MediaSegment {
   readonly start: number;
   /** Repeat window start, at or before start. */
   readonly loopStart: number;
   readonly finish?: number;
+  /**
+   * Whether the request pins where the region starts: it names `loopStart`, or
+   * the sound repeats (its repeat window then defaults to `start`). A single
+   * pass without `loopStart` only needs a region that reaches back to `start`.
+   */
+  readonly pinned: boolean;
 }
 
 export interface ClientMediaChainPayload {
@@ -614,7 +629,7 @@ export class MediaService {
     const isNewSound =
       !sound ||
       sound.url !== mediaUrl ||
-      !this.sameSegment(sound.segment, segment) ||
+      !this.sameRegion(sound.segment, segment) ||
       data.continue === false;
     if (!sound || isNewSound) {
       if (sound) {
@@ -662,8 +677,10 @@ export class MediaService {
     this.traceSound('routed', sound);
 
     if (sound.isPlaying) {
-      // Same key and source: keep the voice. An explicit start still seeks.
-      if (data.start !== undefined) {
+      // Same key, source and region: keep the voice. An explicit start seeks,
+      // unless the voice is already at that cursor (a re-Play to a listener
+      // who walked in), where a seek would only be an audible cut.
+      if (data.start !== undefined && !this.isAtCursor(sound, data.start)) {
         this.seekToPosition(sound, data.start);
       }
     } else {
@@ -1491,7 +1508,7 @@ export class MediaService {
    * usable loopStart the repeat window starts at `start`.
    */
   private requestedSegment(
-    data: Pick<ClientMediaPlayPayload, 'finish' | 'start' | 'loopStart' | 'end'>,
+    data: Pick<ClientMediaPlayPayload, 'finish' | 'start' | 'loopStart' | 'end' | 'loops'>,
   ): MediaSegment | undefined {
     const start = finiteMs(data.start) ?? 0;
     let finish = finiteMs(data.finish) ?? finiteMs(data.end);
@@ -1507,11 +1524,50 @@ export class MediaService {
     if (start === 0 && finish === undefined) {
       return undefined;
     }
-    return { start, loopStart, finish };
+    const repeats = data.loops === -1 || (data.loops !== undefined && data.loops > 1);
+    return { start, loopStart, finish, pinned: finiteMs(data.loopStart) !== undefined || repeats };
   }
 
-  private sameSegment(a: MediaSegment | undefined, b: MediaSegment | undefined): boolean {
-    return a?.start === b?.start && a?.loopStart === b?.loopStart && a?.finish === b?.finish;
+  /**
+   * Whether a voice built for `current` can keep playing `requested`. Region
+   * identity is the repeat window, loopStart..finish; `start` is the join
+   * cursor, which a kept voice reaches by seeking, so a re-Play of a
+   * continuing sound at a moved cursor keeps its voice.
+   *
+   * The MOO sends `loopStart` only for a sound that repeats. A single pass
+   * without it has no repeat window to compare: the voice is kept when its
+   * region reaches back at least to the new cursor.
+   */
+  private sameRegion(current: MediaSegment | undefined, requested: MediaSegment | undefined): boolean {
+    if (current?.finish !== requested?.finish) {
+      return false;
+    }
+    const regionStart = current?.loopStart ?? 0;
+    if (!requested || requested.pinned) {
+      return (requested?.loopStart ?? 0) === regionStart;
+    }
+    return requested.start >= regionStart;
+  }
+
+  /**
+   * Whether the kept voice's playhead is within {@link MEDIA_SEEK_TOLERANCE_MS}
+   * of the absolute source position `positionMs`. A looping voice just before
+   * its loop point and a cursor just after it (or the reverse) are close. An
+   * engine that does not report a playhead is never "at" the cursor.
+   */
+  private isAtCursor(sound: ExtendedSound, positionMs: number): boolean {
+    const playhead = sound.playbacks[0]?.currentTime;
+    if (typeof playhead !== 'number' || !Number.isFinite(playhead)) {
+      return false;
+    }
+    let apart = Math.abs(playhead - this.soundOffsetSeconds(sound, positionMs));
+    const length = sound.region?.duration ?? sound.duration;
+    const loops = sound.segmentLoops;
+    if ((loops === -1 || (loops !== undefined && loops > 1)) && Number.isFinite(length) && length > 0) {
+      apart = Math.min(apart, Math.abs(length - apart));
+    }
+    // Compare in whole microseconds: 12.15 s - 12 s is not exactly 0.15 in binary.
+    return Math.round(apart * 1e6) <= MEDIA_SEEK_TOLERANCE_MS * 1000;
   }
 
   /**

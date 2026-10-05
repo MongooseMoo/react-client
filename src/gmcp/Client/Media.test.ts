@@ -24,7 +24,7 @@ vi.mock('../../audio/PositionalFoaRenderer', () => ({
   },
 }));
 
-import { MediaService } from '../../audio/MediaService';
+import { MEDIA_SEEK_TOLERANCE_MS, MediaService } from '../../audio/MediaService';
 import { MediaPayloadError } from '../../audio/mediaPayloads';
 import { VectorTweener } from '../../audio/vectorTween';
 import { useSpatialStore } from '../../stores/spatialStore';
@@ -43,6 +43,8 @@ type MockCacophony = ConstructorParameters<typeof MediaService>[0];
 
 type MockPlayback = {
   connect: ReturnType<typeof vi.fn>;
+  /** Playhead in seconds into the sound (its region, if it has one); unset = not reported. */
+  currentTime?: number;
   disconnect: ReturnType<typeof vi.fn>;
   duration: number;
   /** The last requested amount, as Cacophony's `Playback.occlusion` reports it. */
@@ -2337,6 +2339,233 @@ describe('GMCPClientMedia', () => {
       expect(sound.volume).toBe(0.5);
       expect(sound.routeTo).not.toHaveBeenCalled();
       warn.mockRestore();
+    });
+  });
+
+  describe('a re-Play of a playing key at a moved cursor (the listener enters the room)', () => {
+    const fire = {
+      key: 'fire',
+      name: 'fire.ogg',
+      type: 'sound',
+      volume: 50,
+      loops: -1,
+      loopStart: 0,
+    };
+
+    async function playFire(extra: Record<string, unknown> = {}) {
+      const sound = createMockSound('fire.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({ ...fire, start: 0, ...extra } as GMCPMessageClientMediaPlay);
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+      return sound;
+    }
+
+    function regionSound(start: number, duration: number) {
+      const base = createMockSound('rain.ogg');
+      base.buffer = { duration: 10 };
+      const region = createMockSound('');
+      region.buffer = base.buffer;
+      region.region = { start, duration };
+      mockCreateSound.mockResolvedValue(base);
+      mockCreateSprite.mockResolvedValue({ get: () => region });
+      return region;
+    }
+
+    function expectKept(sound: MockSound) {
+      expect(handler.sounds[sound === handler.sounds.fire ? 'fire' : 'rain']).toBe(sound);
+      expect(sound.cleanup).not.toHaveBeenCalled();
+      expect(sound.preplay).toHaveBeenCalledOnce();
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+    }
+
+    it('keeps the voice, seamlessly, when the cursor is where the voice already is', async () => {
+      const sound = await playFire();
+      sound.voice.currentTime = 12;
+
+      // The server re-Plays every audible sound at its current cursor.
+      await handler.handlePlay({ ...fire, start: 12_050 } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expectKept(sound);
+      expect(sound.seek).not.toHaveBeenCalled();
+      expect(sound.voice.seek).not.toHaveBeenCalled();
+    });
+
+    it('keeps the voice and seeks when the cursor is further away than the tolerance', async () => {
+      const sound = await playFire();
+      sound.voice.currentTime = 12;
+
+      await handler.handlePlay({
+        ...fire,
+        start: 12_000 + MEDIA_SEEK_TOLERANCE_MS + 1,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expectKept(sound);
+      expect(sound.seek).toHaveBeenCalledOnce();
+      expect(sound.seek).toHaveBeenCalledWith((12_000 + MEDIA_SEEK_TOLERANCE_MS + 1) / 1000);
+    });
+
+    it('does not seek at exactly the tolerance, in either direction', async () => {
+      const sound = await playFire();
+      sound.voice.currentTime = 12;
+
+      await handler.handlePlay({
+        ...fire,
+        start: 12_000 + MEDIA_SEEK_TOLERANCE_MS,
+      } as GMCPMessageClientMediaPlay);
+      await handler.handlePlay({
+        ...fire,
+        start: 12_000 - MEDIA_SEEK_TOLERANCE_MS,
+      } as GMCPMessageClientMediaPlay);
+
+      expectKept(sound);
+      expect(sound.seek).not.toHaveBeenCalled();
+    });
+
+    it('names the tolerance: 150 ms', () => {
+      expect(MEDIA_SEEK_TOLERANCE_MS).toBe(150);
+    });
+
+    it('seeks when the engine does not report a playhead', async () => {
+      const sound = await playFire();
+
+      await handler.handlePlay({ ...fire, start: 12_050 } as GMCPMessageClientMediaPlay);
+
+      expectKept(sound);
+      expect(sound.seek).toHaveBeenCalledWith(12.05);
+    });
+
+    it('keeps a region voice: the cursor is not part of the region', async () => {
+      const region = regionSound(2, 3);
+      const rain = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: -1 };
+      await handler.handlePlay({
+        ...rain,
+        start: 2000,
+        loopStart: 2000,
+        finish: 5000,
+      } as GMCPMessageClientMediaPlay);
+      // One second into the region: absolute source position 3000 ms.
+      region.voice.currentTime = 1;
+
+      await handler.handlePlay({
+        ...rain,
+        start: 3040,
+        loopStart: 2000,
+        finish: 5000,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expect(mockCreateSprite).toHaveBeenCalledOnce();
+      expectKept(region);
+      expect(region.seek).not.toHaveBeenCalled();
+
+      // A cursor elsewhere in the same region seeks, region-relative.
+      await handler.handlePlay({
+        ...rain,
+        start: 4500,
+        loopStart: 2000,
+        finish: 5000,
+      } as GMCPMessageClientMediaPlay);
+
+      expectKept(region);
+      expect(region.seek).toHaveBeenCalledOnce();
+      expect(region.seek).toHaveBeenCalledWith(2.5);
+    });
+
+    it('treats a looping playhead and a cursor either side of the loop point as close', async () => {
+      const region = regionSound(2, 3);
+      const rain = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: -1 };
+      const window = { loopStart: 2000, finish: 5000 };
+      await handler.handlePlay({ ...rain, ...window, start: 2000 } as GMCPMessageClientMediaPlay);
+      // 50 ms before the loop point; the server's cursor has just wrapped.
+      region.voice.currentTime = 2.95;
+
+      await handler.handlePlay({ ...rain, ...window, start: 2020 } as GMCPMessageClientMediaPlay);
+
+      expectKept(region);
+      expect(region.seek).not.toHaveBeenCalled();
+    });
+
+    it('keeps a single-pass voice, which is re-Played without loopStart', async () => {
+      const sound = createMockSound('speech.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      const speech = { key: 'fire', name: 'speech.ogg', type: 'sound', volume: 50, loops: 1 };
+      await handler.handlePlay({ ...speech, start: 0 } as GMCPMessageClientMediaPlay);
+      sound.voice.currentTime = 7;
+
+      await handler.handlePlay({ ...speech, start: 7100 } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expectKept(sound);
+      expect(sound.seek).not.toHaveBeenCalled();
+    });
+
+    it('replaces a single-pass region voice whose region starts after the new cursor', async () => {
+      const first = regionSound(2, 3);
+      const speech = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: 1 };
+      await handler.handlePlay({ ...speech, start: 2000, finish: 5000 } as GMCPMessageClientMediaPlay);
+      first.voice.currentTime = 1;
+      const second = regionSound(1, 4);
+
+      // The kept region [2000, 5000) cannot play from 1000.
+      await handler.handlePlay({ ...speech, start: 1000, finish: 5000 } as GMCPMessageClientMediaPlay);
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds.rain).toBe(second);
+      expect(second.voice.play).toHaveBeenCalledOnce();
+    });
+
+    it('replaces the voice when continue is false, even at the same cursor', async () => {
+      const first = await playFire();
+      first.voice.currentTime = 12;
+      const second = createMockSound('fire.ogg');
+      mockCreateSound.mockResolvedValue(second);
+
+      await handler.handlePlay({
+        ...fire,
+        start: 12_000,
+        continue: false,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds.fire).toBe(second);
+      expect(second.voice.play).toHaveBeenCalledOnce();
+      // A new voice starts at the cursor before it plays.
+      expect(second.voice.seek).toHaveBeenCalledWith(12);
+    });
+
+    it.each([
+      ['finish', { loopStart: 2000, finish: 6000 }],
+      ['loopStart', { loopStart: 2500, finish: 5000 }],
+    ])('replaces the voice when %s changes: that is a different region', async (_field, window) => {
+      const first = regionSound(2, 3);
+      const rain = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: -1 };
+      await handler.handlePlay({
+        ...rain,
+        start: 3000,
+        loopStart: 2000,
+        finish: 5000,
+      } as GMCPMessageClientMediaPlay);
+      const second = regionSound(window.loopStart / 1000, (window.finish - window.loopStart) / 1000);
+
+      await handler.handlePlay({ ...rain, ...window, start: 3000 } as GMCPMessageClientMediaPlay);
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds.rain).toBe(second);
+    });
+
+    it('replaces a repeating voice re-Played without loopStart: its repeat window follows start', async () => {
+      const first = regionSound(2, 3);
+      const rain = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: -1 };
+      await handler.handlePlay({ ...rain, start: 2000, finish: 5000 } as GMCPMessageClientMediaPlay);
+      const second = regionSound(3, 2);
+
+      // Per the wire contract, with no loopStart later passes play start..finish.
+      await handler.handlePlay({ ...rain, start: 3000, finish: 5000 } as GMCPMessageClientMediaPlay);
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds.rain).toBe(second);
     });
   });
 
