@@ -1,8 +1,9 @@
 import type { Position } from "cacophony";
 
 import type { MediaService } from "./MediaService";
-import type { MediaVoice, VoiceRoute } from "./MediaVoices";
+import type { MediaVoice, VoicePosition, VoiceRoute } from "./MediaVoices";
 
+/** The participant's position as an entity in the current scene; null or undefined when not in it. */
 export type SpatialPositionLookup = (participantId: string) => Position | null | undefined;
 
 type VoiceMedia = Pick<MediaService, "attachVoice">;
@@ -12,7 +13,11 @@ interface SpatialAudioEntry {
   voice: MediaVoice;
 }
 
-/** One LiveKit room's remote participants, as positioned voices in the shared audio graph. */
+/**
+ * One LiveKit room's remote participants, as voices in the shared audio graph:
+ * positioned at their entity while it is in the current scene, non-positional
+ * otherwise.
+ */
 export class LiveKitSpatialAudioBridge {
   private readonly entries = new Map<string, SpatialAudioEntry>();
   private route: VoiceRoute = {};
@@ -31,7 +36,7 @@ export class LiveKitSpatialAudioBridge {
 
     this.detachParticipant(participantId);
 
-    // The first placement snaps so a new voice does not fly in from the origin.
+    // A first placement snaps, so a new voice does not fly in from the origin.
     const voice = this.media.attachVoice(track, this.positionFor(participantId));
     voice.setRoute(this.route);
     this.entries.set(participantId, { track, voice });
@@ -79,7 +84,13 @@ export class LiveKitSpatialAudioBridge {
     }
   }
 
-  private positionFor(participantId: string): Position {
-    return this.lookupPosition(participantId) ?? [0, 0, 0];
+  /**
+   * Where the participant is in the current scene, or null when they are not
+   * in it (a phone-call partner, or a speaker in a room the listener has left).
+   * Each room has its own coordinate origin, so there is no position to fall
+   * back on: such a voice is non-positional, never parked at this room's origin.
+   */
+  private positionFor(participantId: string): VoicePosition {
+    return this.lookupPosition(participantId) ?? null;
   }
 }

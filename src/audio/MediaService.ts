@@ -24,7 +24,7 @@ import {
   profileDistanceGain,
   type SpatialProfile,
 } from './distanceModel';
-import { type MediaVoice, MediaVoices } from './MediaVoices';
+import { type MediaVoice, MediaVoices, type VoicePosition } from './MediaVoices';
 import { clearNamedRoute, type NamedRouteState, routeNamedChain } from './namedRoute';
 import { hasOcclusion, OCCLUSION_GLIDE_MS } from './occlusion';
 import { VectorTweener } from './vectorTween';
@@ -418,10 +418,11 @@ export class MediaService {
   }
 
   /**
-   * Put a live voice track (a LiveKit participant) in the graph as an HRTF
-   * point source. It is not a media key: Client.Media.Stop never touches it.
+   * Put a live voice track (a LiveKit participant) in the graph: an HRTF point
+   * source at `position`, or non-positional when it is null. It is not a media
+   * key: Client.Media.Stop never touches it.
    */
-  attachVoice(track: MediaStreamTrack, position: Position): MediaVoice {
+  attachVoice(track: MediaStreamTrack, position: VoicePosition): MediaVoice {
     return this.voices.attach(track, position);
   }
 

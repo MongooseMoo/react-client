@@ -8,10 +8,32 @@ import { MediaVoices } from './MediaVoices';
 const MockMediaStream = vi.fn();
 vi.stubGlobal('MediaStream', MockMediaStream);
 
-function makeVoiceSound() {
+function makeVoiceSound(panType: 'HRTF' | 'stereo' = 'HRTF') {
+  let threeDOptions: unknown;
+  let position: unknown;
+  // Cacophony fixes a stream sound's panning mode at creation and rejects the
+  // other mode's setters; the mock must too.
+  const requireHrtf = () => {
+    if (panType !== 'HRTF') {
+      throw new Error('Position and threeDOptions require HRTF panning');
+    }
+  };
   const sound = {
-    threeDOptions: undefined as unknown,
-    position: undefined as unknown,
+    panType,
+    get threeDOptions() {
+      return threeDOptions;
+    },
+    set threeDOptions(value: unknown) {
+      requireHrtf();
+      threeDOptions = value;
+    },
+    get position() {
+      return position;
+    },
+    set position(value: unknown) {
+      requireHrtf();
+      position = value;
+    },
     spatialSmoothingTau: 0,
     /** What the sound looked like at the moment it started playing. */
     atPlay: undefined as unknown,
@@ -31,8 +53,8 @@ function setup() {
   const made: ReturnType<typeof makeVoiceSound>[] = [];
   const cacophony = {
     context: { currentTime: 7 },
-    createMediaStreamSound: vi.fn(() => {
-      const voice = makeVoiceSound();
+    createMediaStreamSound: vi.fn((_stream: unknown, options?: { panType?: 'HRTF' | 'stereo' }) => {
+      const voice = makeVoiceSound(options?.panType);
       made.push(voice);
       return voice.sound;
     }),
@@ -104,6 +126,103 @@ describe('MediaVoices', () => {
 
     voice.setPosition([4, 5, 6]);
     expect(sound.position).toEqual([4, 5, 6]);
+  });
+
+  describe('a speaker with no place in the current scene', () => {
+    it('is heard plainly: a centred stereo voice with no panner pose at all', () => {
+      const { cacophony, made, voices } = setup();
+      const remote = track();
+
+      voices.attach(remote, null);
+
+      expect(remote.enabled).toBe(true);
+      expect(cacophony.createMediaStreamSound).toHaveBeenCalledWith(expect.any(MockMediaStream), {
+        panType: 'stereo',
+        stopTracksOnStop: false,
+      });
+      const { sound } = made[0];
+      // No 3D panner exists for this voice, so there is no position (not the
+      // room origin, not the listener's), no distance model and no direction.
+      expect(sound.position).toBeUndefined();
+      expect(sound.threeDOptions).toBeUndefined();
+      expect(sound.play).toHaveBeenCalledOnce();
+    });
+
+    it('becomes a point source at its entity when one appears, and plain again when it leaves', () => {
+      const { cacophony, made, voices } = setup();
+      const remote = track();
+      const voice = voices.attach(remote, null);
+
+      voice.setPosition([1, 2, 3]);
+
+      expect(made).toHaveLength(2);
+      expect(made[0].sound.cleanup).toHaveBeenCalledOnce();
+      expect(cacophony.createMediaStreamSound).toHaveBeenLastCalledWith(
+        expect.any(MockMediaStream),
+        { panType: 'HRTF', stopTracksOnStop: false },
+      );
+      // Placed before it plays: the voice does not fly in from the origin.
+      expect(made[1].sound.atPlay).toEqual({ position: [1, 2, 3], tau: SPATIAL_PARAM_TAU_S });
+      expect(made[1].sound.threeDOptions).toEqual(
+        expect.objectContaining({ panningModel: 'HRTF', distanceModel: 'inverse' }),
+      );
+
+      voice.setPosition([4, 5, 6]);
+      expect(made).toHaveLength(2);
+      expect(made[1].sound.position).toEqual([4, 5, 6]);
+
+      voice.setPosition(null);
+
+      expect(made).toHaveLength(3);
+      expect(made[1].sound.cleanup).toHaveBeenCalledOnce();
+      expect(made[2].sound.panType).toBe('stereo');
+      expect(made[2].sound.position).toBeUndefined();
+      expect(made[2].sound.play).toHaveBeenCalledOnce();
+
+      // Still non-positional: nothing is rebuilt.
+      voice.setPosition(null);
+      expect(made).toHaveLength(3);
+      expect(remote.stop).not.toHaveBeenCalled();
+      expect(remote.enabled).toBe(true);
+    });
+
+    it('keeps its route, live or still wanted, when it changes mode', () => {
+      const { defined, made, voices } = setup();
+      defined.add('room');
+      const routed = voices.attach(track(), null);
+      const waiting = voices.attach(track(), null);
+      routed.setRoute({ chain: 'room', send: 0.4 });
+      waiting.setRoute({ chain: 'later' });
+
+      routed.setPosition([1, 2, 3]);
+      waiting.setPosition([1, 2, 3]);
+
+      expect(made[2].sound.routeTo).toHaveBeenCalledWith('room', 0.4);
+      expect(made[3].sound.routeTo).not.toHaveBeenCalled();
+
+      defined.add('later');
+      voices.chainCreated('later');
+      expect(made[3].sound.routeTo).toHaveBeenCalledWith('later');
+      // The sounds they replaced are gone from the graph and get nothing more.
+      expect(made[1].sound.routeTo).not.toHaveBeenCalled();
+
+      routed.setRoute({});
+      expect(made[2].sound.removeSend).toHaveBeenCalledWith('room');
+    });
+
+    it('detaches the sound it has now, once', () => {
+      const { made, voices } = setup();
+      const voice = voices.attach(track(), null);
+      voice.setPosition([1, 2, 3]);
+
+      voice.detach();
+      voice.detach();
+      voice.setPosition(null);
+
+      expect(made).toHaveLength(2);
+      expect(made[0].sound.cleanup).toHaveBeenCalledOnce();
+      expect(made[1].sound.cleanup).toHaveBeenCalledOnce();
+    });
   });
 
   it('detaches once, leaves the track running, and ignores later calls', () => {
