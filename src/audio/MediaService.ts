@@ -47,6 +47,9 @@ const MAX_PRELOADED_SOUNDS = 32;
  */
 export const MEDIA_SEEK_TOLERANCE_MS = 150;
 
+/** Update fields that select a sound or move its playhead, rather than describe its state. */
+const UPDATE_FIELDS_NOT_STATE: ReadonlySet<string> = new Set(['key', 'name', 'start', 'continue']);
+
 /** Constant makeup gain restoring the clean positional FOA decode to a useful level. Tune by ear.
  *  The SN3D encode + SH-HRIR binaural decode lands well below unity, so a positioned source is
  *  noticeably quiet even at distance 0 (live: peak ~30% at makeup 1), so ~3 (~+9.5 dB) targets a
@@ -603,6 +606,15 @@ export class MediaService {
   }
 
   async play(data: ClientMediaPlayPayload): Promise<void> {
+    return this.claimAndPlay(data, false);
+  }
+
+  /**
+   * `continuing` marks this service's own replay of a playing sound (an Update
+   * that changed its panning mode): the voice keeps its region and playhead,
+   * whatever cursor its original Play carried.
+   */
+  private async claimAndPlay(data: ClientMediaPlayPayload, continuing: boolean): Promise<void> {
     const mediaUrl = this.mediaUrl(data);
     data.key = data.key || mediaUrl;
     const soundKey = data.key;
@@ -610,27 +622,30 @@ export class MediaService {
     // reset makes this call stale, and every continuation below checks that.
     const ticket = this.claimKey(soundKey, { name: data.name, tag: data.tag, type: data.type });
     try {
-      await this.playClaimed(data, soundKey, mediaUrl, ticket);
+      await this.playClaimed(data, soundKey, mediaUrl, ticket, continuing);
     } finally {
       ticket.finish();
     }
   }
 
   private async playClaimed(
-    data: ClientMediaPlayPayload,
+    request: ClientMediaPlayPayload,
     soundKey: string,
     mediaUrl: string,
     ticket: KeyTicket,
+    continuing: boolean,
   ): Promise<void> {
+    let data = request;
     let sound: ExtendedSound | undefined = this.sounds[soundKey];
     this.preloadedSoundKeys.delete(soundKey);
     const panType = data.is3d ? 'HRTF' : 'stereo';
-    const segment = this.requestedSegment(data);
+    const segment = continuing && sound ? sound.segment : this.requestedSegment(data);
     const isNewSound =
       !sound ||
       sound.url !== mediaUrl ||
-      !this.sameRegion(sound.segment, segment) ||
-      data.continue === false;
+      (!continuing && (!this.sameRegion(sound.segment, segment) || data.continue === false));
+    // A playing voice in the other panning mode: audible until its replacement starts.
+    let retiring: ExtendedSound | undefined;
     if (!sound || isNewSound) {
       if (sound) {
         this.releaseSound(sound, soundKey);
@@ -640,8 +655,85 @@ export class MediaService {
         return;
       }
       sound.segment = segment;
+    } else if (this.needsPanMode(sound, panType, data)) {
+      // Cacophony fixes a source's panning mode at creation, so a kept voice
+      // cannot change it: build the same source and region in the new mode.
+      // The old voice plays on while this loads, so the swap leaves no gap.
+      const old = sound;
+      sound = await this.createMediaSound(data, soundKey, mediaUrl, panType, segment, ticket);
+      if (!sound) {
+        return;
+      }
+      if (!this.cleanedSounds.has(old) && old.isPlaying) {
+        retiring = old;
+        if (continuing && old.playPayload) {
+          // Updates that arrived while it loaded are part of the state to carry.
+          data = { ...old.playPayload, start: data.start, occlusion: old.occlusion, key: soundKey };
+        }
+      } else if (continuing) {
+        // It ended while the replacement loaded: nothing is left to continue.
+        this.releaseSound(sound);
+        return;
+      } else {
+        this.releaseSound(old, soundKey);
+      }
+      sound.segment = segment;
+      this.carryVoiceState(old, sound);
     }
 
+    try {
+      await this.playPrepared(sound, data, soundKey, ticket, retiring);
+    } finally {
+      // Never leave the replaced voice playing, however this Play ended.
+      if (retiring) {
+        this.releaseSound(retiring);
+      }
+    }
+  }
+
+  /** Whether a Play or Update in `panType` needs this already-played sound rebuilt in that mode. */
+  private needsPanMode(
+    sound: ExtendedSound,
+    panType: 'HRTF' | 'stereo',
+    data: Pick<ClientMediaPlayPayload, 'upmix'>,
+  ): boolean {
+    return (
+      sound.playPayload !== undefined &&
+      sound.panType !== panType &&
+      (data.upmix ?? sound.upmix) !== 'ambisonic'
+    );
+  }
+
+  /**
+   * Give a rebuilt sound the state its predecessor holds outside any one
+   * payload, so fields the triggering Play or Update omits keep their values
+   * exactly as they would on a kept voice. The position is not carried: the
+   * new panner is placed directly by the payload, never glided from elsewhere.
+   */
+  private carryVoiceState(from: ExtendedSound, to: ExtendedSound): void {
+    to.mediaVolume = from.mediaVolume;
+    to.gainDb = from.gainDb;
+    to.spatialProfile = from.spatialProfile;
+    to.mediaOrientation = from.mediaOrientation;
+    to.playbackRate = from.playbackRate;
+    to.priority = from.priority;
+    to.tag = from.tag;
+    to.mediaType = from.mediaType;
+    to.upmix = from.upmix;
+    to.inputChannels = from.inputChannels;
+    if (from.segmentLoops !== undefined) {
+      this.applyLoops(to, from.segmentLoops);
+    }
+  }
+
+  /** Apply a Play to its prepared sound: state, routing, then start (or keep) the voice. */
+  private async playPrepared(
+    sound: ExtendedSound,
+    data: ClientMediaPlayPayload,
+    soundKey: string,
+    ticket: KeyTicket,
+    retiring: ExtendedSound | undefined,
+  ): Promise<void> {
     sound.key = soundKey;
     sound.mediaName = data.name;
     sound.playPayload = data;
@@ -684,7 +776,18 @@ export class MediaService {
         this.seekToPosition(sound, data.start);
       }
     } else {
-      const playback = this.startVoice(sound, soundKey, data);
+      let resumeAtMs: number | undefined;
+      if (retiring) {
+        // Swap now: read the old voice's playhead, drop it, start the new one there.
+        resumeAtMs = this.resumeCursor(retiring, data.start);
+        this.releaseSound(retiring);
+        if (resumeAtMs !== undefined && sound.segment) {
+          // The first pass now runs from here, for a timer-driven segment.
+          const start = Math.max(resumeAtMs, sound.segment.loopStart);
+          sound.segment = { ...sound.segment, start };
+        }
+      }
+      const playback = this.startVoice(sound, soundKey, data, resumeAtMs);
       this.scheduleSegmentTimer(sound, soundKey);
 
       if (playback && data.upmix === 'ambisonic') {
@@ -782,6 +885,8 @@ export class MediaService {
     sound: ExtendedSound,
     soundKey: string,
     data: ClientMediaPlayPayload,
+    /** Absolute source ms to continue from: this voice replaces one that was playing there. */
+    resumeAtMs?: number,
   ): Playback | undefined {
     const voices = sound.preplay();
     const [playback] = voices;
@@ -794,7 +899,8 @@ export class MediaService {
       // a sound that starts behind a closed door never leaks an unfiltered attack.
       this.renderOcclusion(sound, voices, 0);
     }
-    const offset = data.start === undefined ? 0 : this.soundOffsetSeconds(sound, data.start);
+    const cursor = resumeAtMs ?? data.start;
+    const offset = cursor === undefined ? 0 : this.soundOffsetSeconds(sound, cursor);
     if (offset > 0) {
       try {
         playback.seek(offset);
@@ -807,11 +913,29 @@ export class MediaService {
       }
     }
     playback.play({
-      fadeIn: data.fadein || undefined,
+      // A voice continuing another's playhead is the same sound: it does not fade in again.
+      fadeIn: resumeAtMs === undefined ? data.fadein || undefined : undefined,
       fadeOut: data.fadeout || undefined,
     });
     this.traceSound('started', sound, soundKey);
     return playback;
+  }
+
+  /**
+   * Where a voice that is being replaced is playing now, as an absolute source
+   * position in ms, so its replacement can continue from there. Undefined when
+   * it is not playing, the engine reports no playhead, or the Play names a
+   * cursor (`requestedStart`) further than the seek tolerance from it.
+   */
+  private resumeCursor(voice: ExtendedSound, requestedStart: number | undefined): number | undefined {
+    const playhead = voice.isPlaying ? voice.playbacks[0]?.currentTime : undefined;
+    if (typeof playhead !== 'number' || !Number.isFinite(playhead)) {
+      return undefined;
+    }
+    if (requestedStart !== undefined && !this.isAtCursor(voice, requestedStart)) {
+      return undefined;
+    }
+    return ((voice.region?.start ?? 0) + playhead) * 1000;
   }
 
   /**
@@ -859,7 +983,8 @@ export class MediaService {
         : [];
 
     targetSounds.forEach((sound) => {
-      if (this.resegment(sound, data)) {
+      this.rememberUpdate(sound, data);
+      if (this.resegment(sound, data) || this.changePanMode(sound, data)) {
         return;
       }
       this.assignSoundMetadata(sound, {
@@ -1450,15 +1575,7 @@ export class MediaService {
     }
 
     if (data.loops !== undefined) {
-      sound.segmentLoops = data.loops;
-      // A region-less segment with a finish repeats by timer; looping the
-      // element itself would replay the whole file.
-      if (!this.repeatsByTimer(sound)) {
-        // 'infinite' (not Infinity) is what makes Cacophony loop the source
-        // natively and gaplessly; a number restarts it from onended each pass.
-        const loopCount = data.loops === -1 ? 'infinite' : data.loops - 1;
-        sound.loop(loopCount);
-      }
+      this.applyLoops(sound, data.loops);
     }
 
     if (data.is3d) {
@@ -1498,6 +1615,18 @@ export class MediaService {
         }
       }
       sound.priority = data.priority;
+    }
+  }
+
+  /** Set the MCMP loop count (plays remaining; -1 loops forever) on the sound. */
+  private applyLoops(sound: ExtendedSound, loops: number): void {
+    sound.segmentLoops = loops;
+    // A region-less segment with a finish repeats by timer; looping the
+    // element itself would replay the whole file.
+    if (!this.repeatsByTimer(sound)) {
+      // 'infinite' (not Infinity) is what makes Cacophony loop the source
+      // natively and gaplessly; a number restarts it from onended each pass.
+      sound.loop(loops === -1 ? 'infinite' : loops - 1);
     }
   }
 
@@ -1694,6 +1823,50 @@ export class MediaService {
     }).catch(
       (error) => console.error('Client.Media.Update: resegment failed', error),
     );
+    return true;
+  }
+
+  /**
+   * Fold an Update's fields into the payload that describes the sound, so a
+   * later rebuild (a moved segment, a changed panning mode) replays the state
+   * in effect now, not the original Play's. `start` is a cursor, not state.
+   */
+  private rememberUpdate(sound: ExtendedSound, data: ClientMediaUpdatePayload): void {
+    if (!sound.playPayload) {
+      return;
+    }
+    const state = Object.fromEntries(
+      Object.entries(data).filter(
+        ([field, value]) => value !== undefined && !UPDATE_FIELDS_NOT_STATE.has(field),
+      ),
+    ) as Partial<ClientMediaPlayPayload>;
+    sound.playPayload = { ...sound.playPayload, ...state };
+  }
+
+  /**
+   * An Update whose `is3d` differs from the playing voice's panning mode. The
+   * mode is fixed when a source is created, so replay the sound in the new
+   * mode, continuing from the current playhead. Returns true when it took over
+   * the update.
+   */
+  private changePanMode(sound: ExtendedSound, data: ClientMediaUpdatePayload): boolean {
+    const current = sound.playPayload;
+    if (!current || data.is3d === undefined || !sound.isPlaying) {
+      return false;
+    }
+    if (!this.needsPanMode(sound, data.is3d ? 'HRTF' : 'stereo', data)) {
+      return false;
+    }
+    void this.claimAndPlay(
+      {
+        ...current,
+        // Only an explicit start moves the playhead; the Play's join cursor is long past.
+        start: data.start,
+        occlusion: data.occlusion ?? sound.occlusion,
+        key: sound.key ?? current.key,
+      },
+      true,
+    ).catch((error) => console.error('Client.Media.Update: panning mode change failed', error));
     return true;
   }
 
