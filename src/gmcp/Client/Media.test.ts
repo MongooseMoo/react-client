@@ -2067,8 +2067,12 @@ describe('GMCPClientMedia', () => {
 
         handler.receiveRegisteredMessage('Play', { ...tone, ...spatial, occlusion: 0.3 });
         await vi.waitFor(() => expect(occlusionCalls(sound)).toHaveLength(2));
-        // A further Play that keeps the voice and names no amount changes nothing.
-        await client.media.play({ ...tone, ...spatial } as GMCPMessageClientMediaPlay);
+        // A further Play naming the amount the voice already has makes no engine call.
+        await client.media.play({
+          ...tone,
+          ...spatial,
+          occlusion: 0.3,
+        } as GMCPMessageClientMediaPlay);
 
         expect(occlusionCalls(sound)).toEqual([
           [0.8, 0],
@@ -2080,6 +2084,67 @@ describe('GMCPClientMedia', () => {
         expect(mockCreateSound).toHaveBeenCalledOnce();
         expect(handler.sounds[tone.key]).toBe(sound);
       });
+
+      it('glides a kept voice to clear on a Play without the field (a Play is full state)', async () => {
+        const sound = await playTone({ ...spatial, occlusion: 0.8 });
+
+        // The listener walked through the door: the same key, re-Played direct.
+        await client.media.play({ ...tone, ...spatial } as GMCPMessageClientMediaPlay);
+
+        expect(occlusionCalls(sound)).toEqual([
+          [0.8, 0],
+          [0, 150],
+        ]);
+        expect(sound.voice.occlusion).toBe(0);
+        expect(sound.voice.play).toHaveBeenCalledOnce();
+        expect(sound.voice.seek).not.toHaveBeenCalled();
+        expect(mockCreateSound).toHaveBeenCalledOnce();
+      });
+
+      it('makes no engine call when a clear kept voice is re-Played without the field', async () => {
+        const sound = await playTone(spatial);
+
+        await client.media.play({ ...tone, ...spatial } as GMCPMessageClientMediaPlay);
+
+        expect(occlusionCalls(sound)).toEqual([]);
+        expect(sound.voice.play).toHaveBeenCalledOnce();
+        expect(mockCreateSound).toHaveBeenCalledOnce();
+      });
+    });
+
+    it('starts clear when a Play without the field supersedes an occluded Play still waiting to start', async () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const cacophony = client.media.cacophony as unknown as { createBus: ReturnType<typeof vi.fn> };
+      cacophony.createBus.mockImplementationOnce((name?: string) => {
+        const bus = makeEffectBus(name ?? null);
+        bus.addFilter = vi.fn(async (arg: unknown) => {
+          await gate;
+          return arg;
+        });
+        client.effectBuses.created[name ?? ''] = bus;
+        return bus;
+      });
+      const chain = client.media.setChain({ id: 'workshop', effects: [lowpass('muffle', 400)] });
+      const sound = createMockSound(toneUrl);
+      mockCreateSound.mockResolvedValue(sound);
+
+      // The first Play creates the sound, then waits for its chain.
+      const first = client.media.play({
+        ...tone,
+        chain: 'workshop',
+        occlusion: 0.8,
+      } as GMCPMessageClientMediaPlay);
+      await vi.waitFor(() => expect(handler.sounds[tone.key]).toBe(sound));
+      await client.media.play({ ...tone } as GMCPMessageClientMediaPlay);
+      release();
+      await Promise.all([first, chain]);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+      expect(occlusionCalls(sound)).toEqual([]);
     });
 
     it('starts a new voice clear when the Play carries no amount', async () => {

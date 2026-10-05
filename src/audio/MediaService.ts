@@ -82,7 +82,7 @@ export interface ClientMediaPlayPayload {
   readonly channels?: number;
   readonly chain?: string;
   readonly send?: number;
-  /** How obstructed this voice's direct path is, 0 (clear) to 1; absent on a new voice means 0. */
+  /** How obstructed this voice's direct path is, 0 (clear) to 1; absent on a Play means 0. */
   readonly occlusion?: number;
   readonly effects?: EffectSpec[];
   /** Catalog gain in dB (-60..12); multiplies with volume. */
@@ -132,7 +132,7 @@ export interface ClientMediaUpdatePayload {
   readonly channels?: number;
   readonly chain?: string;
   readonly send?: number;
-  /** New occlusion amount, 0..1; absent keeps the current one. */
+  /** New occlusion amount, 0..1; absent on an Update keeps the current one. */
   readonly occlusion?: number;
   readonly effects?: EffectSpec[];
   readonly gainDb?: number;
@@ -616,14 +616,16 @@ export class MediaService {
     this.assignSoundMetadata(sound, data);
     this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
-    if (data.occlusion !== undefined) {
-      sound.occlusion = data.occlusion;
-      if (sound.isPlaying) {
-        // Same key and source: the voice is kept, so it glides (a door moving mid-sound).
-        this.renderOcclusion(sound, sound.playbacks, OCCLUSION_GLIDE_MS);
-      }
-      // Otherwise startVoice applies it to the voice it prepares, before the first sample.
+    // A Play is full state: without the field the voice is clear, so a listener
+    // who walks through the door and is re-Played the sound direct hears it open up.
+    const occlusion = data.occlusion ?? 0;
+    const occlusionChanged = occlusion !== (sound.occlusion ?? 0);
+    sound.occlusion = occlusion;
+    if (occlusionChanged && sound.isPlaying) {
+      // Same key and source: the voice is kept, so it glides (a door moving mid-sound).
+      this.renderOcclusion(sound, sound.playbacks, OCCLUSION_GLIDE_MS);
     }
+    // A voice that is not playing yet gets the amount in startVoice, before its first sample.
 
     // Route before the voice starts, so it is never heard dry: wait for a
     // Chain definition that is still building, and for inline effects.
@@ -1602,8 +1604,9 @@ export class MediaService {
       Object.entries(data).filter(([, value]) => value !== undefined),
     ) as Partial<ClientMediaPlayPayload>;
     const finish = data.finish ?? data.end ?? original.finish;
-    // The replay builds a new voice; it must start at the amount in effect now,
-    // which a later Update may have moved away from the original Play's.
+    // This replay is internal, not a full-state Play from the server: name the
+    // amount in effect now, or play() would read its absence as clear. A later
+    // Update may also have moved it away from the original Play's.
     const occlusion = data.occlusion ?? sound.occlusion;
     void this.play({
       ...original,

@@ -211,11 +211,14 @@ Cacophony renders it per voice (`Playback.setOcclusion`), ahead of the panner
 and independently of `volume`, fades, distance gain, `send` and effect routing,
 on the stereo, HRTF and ambisonic routes alike.
 
+- A `Play` is full state: without the field the amount is 0 (clear), whether
+  the voice is new or kept.
 - A `Play` that starts a new voice applies the amount before the first sample.
-  Without the field a new voice is clear (0).
-- An `Update`, or a `Play` that keeps the playing voice (same key and source),
-  glides to the new amount over 150 ms. Without the field the amount is
-  unchanged.
+- A `Play` that keeps the playing voice (same key and source) glides to its
+  amount over 150 ms. So a voice heard at 0.3 and re-`Play`ed without the field
+  glides to clear.
+- An `Update` with the field glides to the new amount over 150 ms. Without the
+  field the amount is unchanged.
 
 Send the field only to a client whose `EffectsSupport` has `occlusion: true`.
 
