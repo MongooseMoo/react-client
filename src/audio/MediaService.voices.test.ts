@@ -88,6 +88,21 @@ describe('MediaService voices', () => {
     expect(sound.routeTo).toHaveBeenLastCalledWith('room', 0.4);
   });
 
+  it('keeps a voice send level with the room as the listener walks away from the speaker', async () => {
+    const { media, sound } = setup();
+    await media.setChain(reverb);
+    media.setListenerPosition([0, 0, 0]);
+    const voice = media.attachVoice(track(), [0, 0, 4], [0, 0, -1]);
+    voice.setRoute({ chain: 'room', send: 0.3 });
+    // 4 m: the panner's distance gain is 0.25, ahead of the tap.
+    expect(sound.routeTo).toHaveBeenLastCalledWith('room', expect.closeTo(1.2, 9));
+    expect(sound.threeDOptions).toEqual(expect.objectContaining({ orientationZ: -1 }));
+
+    media.setListenerPosition([0, 0, 2]);
+    expect(sound.routeTo).toHaveBeenLastCalledWith('room', expect.closeTo(0.6, 9));
+    expect(sound.removeSend).not.toHaveBeenCalled();
+  });
+
   it('keeps voices through a stop-all and a reset, which only returns them to dry', async () => {
     const { media, order, sound } = setup();
     await media.setChain(reverb);

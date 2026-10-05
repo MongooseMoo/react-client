@@ -2,8 +2,17 @@ import type { Cacophony } from 'cacophony';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SPATIAL_PARAM_TAU_S } from './audioParamSmoothing';
-import { SPATIAL_DISTANCE_MODEL } from './distanceModel';
-import { MediaVoices } from './MediaVoices';
+import {
+  DEFAULT_SPATIAL_PROFILE,
+  MAX_SEND_DISTANCE_BOOST,
+  SPATIAL_DISTANCE_MODEL,
+} from './distanceModel';
+import {
+  MediaVoices,
+  VOICE_CONE_INNER_ANGLE,
+  VOICE_CONE_OUTER_ANGLE,
+  VOICE_CONE_OUTER_GAIN,
+} from './MediaVoices';
 
 const MockMediaStream = vi.fn();
 vi.stubGlobal('MediaStream', MockMediaStream);
@@ -53,6 +62,8 @@ function setup() {
   const made: ReturnType<typeof makeVoiceSound>[] = [];
   const cacophony = {
     context: { currentTime: 7 },
+    /** Unset unless a test places the listener: every voice is then at distance gain 1. */
+    listenerPosition: undefined as [number, number, number] | undefined,
     createMediaStreamSound: vi.fn((_stream: unknown, options?: { panType?: 'HRTF' | 'stereo' }) => {
       const voice = makeVoiceSound(options?.panType);
       made.push(voice);
@@ -328,5 +339,280 @@ describe('MediaVoices', () => {
     voices.chainCreated('room');
     expect(sound.routeTo).toHaveBeenLastCalledWith('room', 0.2);
     expect(sound.removeSend).not.toHaveBeenCalled();
+  });
+
+  describe('distance', () => {
+    it('falls off on the curve media sounds use by default', () => {
+      const { made, voices } = setup();
+
+      voices.attach(track(), [1, 2, 3]);
+
+      expect(made[0].sound.threeDOptions).toEqual(
+        expect.objectContaining({
+          distanceModel: DEFAULT_SPATIAL_PROFILE.model,
+          refDistance: DEFAULT_SPATIAL_PROFILE.refDistance,
+          rolloffFactor: DEFAULT_SPATIAL_PROFILE.rolloff,
+          maxDistance: DEFAULT_SPATIAL_PROFILE.maxDistance,
+        }),
+      );
+    });
+  });
+
+  describe("a speaker's facing", () => {
+    const cone = {
+      coneInnerAngle: VOICE_CONE_INNER_ANGLE,
+      coneOuterAngle: VOICE_CONE_OUTER_ANGLE,
+      coneOuterGain: VOICE_CONE_OUTER_GAIN,
+    };
+    const omnidirectional = { coneInnerAngle: 360, coneOuterAngle: 360, coneOuterGain: 1 };
+
+    it('is a gentle cone: full level within 60 degrees either side, -6 dB directly behind', () => {
+      expect(VOICE_CONE_INNER_ANGLE).toBe(120);
+      expect(VOICE_CONE_OUTER_ANGLE).toBe(360);
+      expect(20 * Math.log10(VOICE_CONE_OUTER_GAIN)).toBeCloseTo(-6, 9);
+    });
+
+    it('points the voice along its entity forward, with the cone, before it plays', () => {
+      const { cacophony, made, voices } = setup();
+      let optionsAtPlay: unknown;
+      cacophony.createMediaStreamSound.mockImplementationOnce(
+        (_stream: unknown, options?: { panType?: 'HRTF' | 'stereo' }) => {
+          const voice = makeVoiceSound(options?.panType);
+          voice.sound.play.mockImplementation(() => {
+            optionsAtPlay = voice.sound.threeDOptions;
+            return [];
+          });
+          made.push(voice);
+          return voice.sound;
+        },
+      );
+
+      voices.attach(track(), [1, 2, 3], [0, 0, -1]);
+
+      const expected = expect.objectContaining({
+        ...cone,
+        orientationX: 0,
+        orientationY: 0,
+        orientationZ: -1,
+        // Still the positional voice it was: the cone is added, nothing replaced.
+        panningModel: 'HRTF',
+        refDistance: DEFAULT_SPATIAL_PROFILE.refDistance,
+      });
+      expect(optionsAtPlay).toEqual(expected);
+      expect(made[0].sound.threeDOptions).toEqual(expected);
+    });
+
+    it('turns with the entity', () => {
+      const { made, voices } = setup();
+      const voice = voices.attach(track(), [1, 2, 3], [0, 0, -1]);
+      const { sound } = made[0];
+
+      voice.setFacing([1, 0, 0]);
+
+      expect(sound.threeDOptions).toEqual({
+        ...cone,
+        orientationX: 1,
+        orientationY: 0,
+        orientationZ: 0,
+      });
+      // The position is its own state: a turn does not move the voice.
+      expect(sound.position).toEqual([1, 2, 3]);
+    });
+
+    it('writes nothing to the engine when the facing has not changed', () => {
+      const { made, voices } = setup();
+      const voice = voices.attach(track(), [1, 2, 3], [0, 0, -1]);
+      const { sound } = made[0];
+      const before = sound.threeDOptions;
+
+      voice.setFacing([0, 0, -1]);
+
+      expect(sound.threeDOptions).toBe(before);
+    });
+
+    it('is omnidirectional for an entity with no forward', () => {
+      const { made, voices } = setup();
+
+      voices.attach(track(), [1, 2, 3]);
+
+      const options = made[0].sound.threeDOptions as Record<string, unknown>;
+      expect(options).toEqual(expect.objectContaining(omnidirectional));
+      expect(options).not.toHaveProperty('orientationX');
+    });
+
+    it('gains the cone when a forward arrives, and loses it when the forward goes', () => {
+      const { made, voices } = setup();
+      const voice = voices.attach(track(), [1, 2, 3]);
+      const { sound } = made[0];
+
+      voice.setFacing([0, 0, 1]);
+      expect(sound.threeDOptions).toEqual({
+        ...cone,
+        orientationX: 0,
+        orientationY: 0,
+        orientationZ: 1,
+      });
+
+      voice.setFacing(null);
+      expect(sound.threeDOptions).toEqual(omnidirectional);
+    });
+
+    it('treats a zero-length forward as no facing', () => {
+      const { made, voices } = setup();
+
+      voices.attach(track(), [1, 2, 3], [0, 0, 0]);
+
+      expect(made[0].sound.threeDOptions).toEqual(expect.objectContaining(omnidirectional));
+    });
+
+    it('gives a non-positional voice no cone, and keeps the facing for when it is placed', () => {
+      const { made, voices } = setup();
+      const voice = voices.attach(track(), null, [0, 0, -1]);
+
+      // A stereo voice has no panner: its setters would throw.
+      expect(made[0].sound.threeDOptions).toBeUndefined();
+      voice.setFacing([1, 0, 0]);
+      expect(made[0].sound.threeDOptions).toBeUndefined();
+
+      voice.setPosition([1, 2, 3]);
+      expect(made[1].sound.threeDOptions).toEqual(
+        expect.objectContaining({ ...cone, orientationX: 1, orientationY: 0, orientationZ: 0 }),
+      );
+
+      voice.setPosition(null);
+      expect(made[2].sound.threeDOptions).toBeUndefined();
+    });
+
+    it('ignores a turn after the voice is detached', () => {
+      const { made, voices } = setup();
+      const voice = voices.attach(track(), [1, 2, 3]);
+      const before = made[0].sound.threeDOptions;
+
+      voice.detach();
+      voice.setFacing([1, 0, 0]);
+
+      expect(made[0].sound.threeDOptions).toBe(before);
+    });
+  });
+
+  describe('reverb send independent of distance', () => {
+    // The voice's rolloff is inside its panner, ahead of the gain the send is
+    // tapped from. 4 m from the listener: distance gain 0.25.
+    function room() {
+      const context = setup();
+      context.defined.add('room');
+      context.cacophony.listenerPosition = [0, 0, 0];
+      return context;
+    }
+
+    function lastSend(sound: ReturnType<typeof makeVoiceSound>['sound']): unknown[] {
+      return sound.routeTo.mock.calls[sound.routeTo.mock.calls.length - 1];
+    }
+
+    it('sends a positional voice at send / distance gain', () => {
+      const { made, voices } = room();
+      const voice = voices.attach(track(), [0, 0, 4]);
+
+      voice.setRoute({ chain: 'room', send: 0.3 });
+
+      expect(lastSend(made[0].sound)).toEqual(['room', expect.closeTo(1.2, 9)]);
+    });
+
+    it('re-gains the send in place when the speaker moves', () => {
+      const { made, voices } = room();
+      const voice = voices.attach(track(), [0, 0, 4]);
+      voice.setRoute({ chain: 'room', send: 0.3 });
+
+      voice.setPosition([0, 0, 2]);
+
+      expect(lastSend(made[0].sound)).toEqual(['room', expect.closeTo(0.6, 9)]);
+      expect(made[0].sound.removeSend).not.toHaveBeenCalled();
+    });
+
+    it('re-gains the send in place when the listener moves', () => {
+      const { cacophony, made, voices } = room();
+      const voice = voices.attach(track(), [0, 0, 4]);
+      voice.setRoute({ chain: 'room', send: 0.3 });
+
+      cacophony.listenerPosition = [0, 0, 2];
+      voices.listenerMoved();
+
+      expect(lastSend(made[0].sound)).toEqual(['room', expect.closeTo(0.6, 9)]);
+      expect(made[0].sound.removeSend).not.toHaveBeenCalled();
+    });
+
+    it('caps the boost for a distant speaker', () => {
+      const { made, voices } = room();
+      const voice = voices.attach(track(), [0, 0, 1000]);
+
+      voice.setRoute({ chain: 'room', send: 0.3 });
+
+      expect(lastSend(made[0].sound)).toEqual([
+        'room',
+        expect.closeTo(0.3 * MAX_SEND_DISTANCE_BOOST, 9),
+      ]);
+    });
+
+    it('recomputes when the send changes', () => {
+      const { made, voices } = room();
+      const voice = voices.attach(track(), [0, 0, 4]);
+      voice.setRoute({ chain: 'room', send: 0.3 });
+
+      voice.setRoute({ chain: 'room', send: 0.5 });
+
+      expect(lastSend(made[0].sound)).toEqual(['room', expect.closeTo(2, 9)]);
+    });
+
+    it('applies when the chain is defined after the voice asked for it', () => {
+      const { defined, made, voices } = room();
+      defined.delete('room');
+      const voice = voices.attach(track(), [0, 0, 4]);
+      voice.setRoute({ chain: 'room', send: 0.3 });
+      expect(made[0].sound.routeTo).not.toHaveBeenCalled();
+
+      defined.add('room');
+      voices.chainCreated('room');
+
+      expect(lastSend(made[0].sound)).toEqual(['room', expect.closeTo(1.2, 9)]);
+    });
+
+    it('leaves a non-positional voice at its send, wherever the listener goes', () => {
+      const { cacophony, made, voices } = room();
+      const voice = voices.attach(track(), null);
+      voice.setRoute({ chain: 'room', send: 0.3 });
+
+      cacophony.listenerPosition = [0, 0, 50];
+      voices.listenerMoved();
+
+      expect(made[0].sound.routeTo).toHaveBeenCalledOnce();
+      expect(made[0].sound.routeTo).toHaveBeenCalledWith('room', 0.3);
+    });
+
+    it('follows the voice between positional and non-positional', () => {
+      const { made, voices } = room();
+      const voice = voices.attach(track(), null);
+      voice.setRoute({ chain: 'room', send: 0.3 });
+
+      voice.setPosition([0, 0, 4]);
+      expect(lastSend(made[1].sound)).toEqual(['room', expect.closeTo(1.2, 9)]);
+
+      voice.setPosition(null);
+      expect(lastSend(made[2].sound)).toEqual(['room', 0.3]);
+    });
+
+    it('makes no send call for a dry voice or a primary route', () => {
+      const { cacophony, made, voices } = room();
+      voices.attach(track(), [0, 0, 4]);
+      const primary = voices.attach(track(), [0, 0, 4]);
+      primary.setRoute({ chain: 'room' });
+
+      cacophony.listenerPosition = [0, 0, 2];
+      voices.listenerMoved();
+      primary.setPosition([0, 0, 9]);
+
+      expect(made[0].sound.routeTo).not.toHaveBeenCalled();
+      expect(made[1].sound.routeTo).toHaveBeenCalledOnce();
+      expect(made[1].sound.routeTo).toHaveBeenCalledWith('room');
+    });
   });
 });

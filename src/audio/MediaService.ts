@@ -25,7 +25,12 @@ import {
   profileDistanceGain,
   type SpatialProfile,
 } from './distanceModel';
-import { type MediaVoice, MediaVoices, type VoicePosition } from './MediaVoices';
+import {
+  type MediaVoice,
+  MediaVoices,
+  type VoiceFacing,
+  type VoicePosition,
+} from './MediaVoices';
 import { clearNamedRoute, type NamedRouteState, routeNamedChain } from './namedRoute';
 import { hasOcclusion, OCCLUSION_GLIDE_MS } from './occlusion';
 import { VectorTweener } from './vectorTween';
@@ -352,6 +357,7 @@ export class MediaService {
         this.updatePositionalSpatial(sound);
         this.applyLevels(sound);
       }
+      this.voices.listenerMoved();
     }
   }
 
@@ -483,11 +489,16 @@ export class MediaService {
 
   /**
    * Put a live voice track (a LiveKit participant) in the graph: an HRTF point
-   * source at `position`, or non-positional when it is null. It is not a media
-   * key: Client.Media.Stop never touches it.
+   * source at `position` facing `forward` (no facing when that is null), or
+   * non-positional when the position is null. It is not a media key:
+   * Client.Media.Stop never touches it.
    */
-  attachVoice(track: MediaStreamTrack, position: VoicePosition): MediaVoice {
-    return this.voices.attach(track, position);
+  attachVoice(
+    track: MediaStreamTrack,
+    position: VoicePosition,
+    forward: VoiceFacing = null,
+  ): MediaVoice {
+    return this.voices.attach(track, position, forward);
   }
 
   setChain(data: ClientMediaChainPayload): Promise<void> {

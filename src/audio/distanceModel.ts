@@ -90,6 +90,27 @@ export function profileDistanceGain(distance: number, profile: SpatialProfile): 
 }
 
 /**
+ * PannerNode distance parameters under which the panner's own rolloff is
+ * {@link profileDistanceGain} for the profile: Web Audio's `inverse` and
+ * `linear` models are the same formulas, with the same clamp at maxDistance.
+ * `none` is the inverse model with no rolloff. (Web Audio limits a linear
+ * rolloff to 0..1; a profile outside that range has no native equivalent.)
+ */
+export function profilePannerDistance(profile: SpatialProfile): {
+  distanceModel: 'inverse' | 'linear';
+  refDistance: number;
+  rolloffFactor: number;
+  maxDistance: number;
+} {
+  return {
+    distanceModel: profile.model === 'linear' ? 'linear' : 'inverse',
+    refDistance: profile.refDistance,
+    rolloffFactor: profile.model === 'none' ? 0 : profile.rolloff,
+    maxDistance: profile.maxDistance,
+  };
+}
+
+/**
  * The most a reverb send is raised to undo a source's distance gain (32 x is
  * +30 dB). The engine takes a send after the source's gain and accepts any
  * finite send gain, so it sets no limit of its own, and the curves give none
