@@ -26,6 +26,7 @@ import {
 } from './distanceModel';
 import { type MediaVoice, MediaVoices } from './MediaVoices';
 import { clearNamedRoute, type NamedRouteState, routeNamedChain } from './namedRoute';
+import { hasOcclusion, OCCLUSION_GLIDE_MS } from './occlusion';
 import { VectorTweener } from './vectorTween';
 import type { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
@@ -81,6 +82,8 @@ export interface ClientMediaPlayPayload {
   readonly channels?: number;
   readonly chain?: string;
   readonly send?: number;
+  /** How obstructed this voice's direct path is, 0 (clear) to 1; absent on a Play means 0. */
+  readonly occlusion?: number;
   readonly effects?: EffectSpec[];
   /** Catalog gain in dB (-60..12); multiplies with volume. */
   readonly gainDb?: number;
@@ -129,6 +132,8 @@ export interface ClientMediaUpdatePayload {
   readonly channels?: number;
   readonly chain?: string;
   readonly send?: number;
+  /** New occlusion amount, 0..1; absent on an Update keeps the current one. */
+  readonly occlusion?: number;
   readonly effects?: EffectSpec[];
   readonly gainDb?: number;
   readonly pitchSemitones?: number;
@@ -203,6 +208,8 @@ export interface ExtendedSound extends Sound, NamedRouteState {
   mediaVolume?: number;
   /** Catalog gain in dB; multiplies with volume. */
   gainDb?: number;
+  /** Requested occlusion amount (0..1); absent = 0. Rendered per Playback, never in the gain. */
+  occlusion?: number;
   /** Distance/cone profile; absent = {@link DEFAULT_SPATIAL_PROFILE}. */
   spatialProfile?: SpatialProfile;
   /** Cone facing, in Web Audio axes. */
@@ -609,6 +616,16 @@ export class MediaService {
     this.assignSoundMetadata(sound, data);
     this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
+    // A Play is full state: without the field the voice is clear, so a listener
+    // who walks through the door and is re-Played the sound direct hears it open up.
+    const occlusion = data.occlusion ?? 0;
+    const occlusionChanged = occlusion !== (sound.occlusion ?? 0);
+    sound.occlusion = occlusion;
+    if (occlusionChanged && sound.isPlaying) {
+      // Same key and source: the voice is kept, so it glides (a door moving mid-sound).
+      this.renderOcclusion(sound, sound.playbacks, OCCLUSION_GLIDE_MS);
+    }
+    // A voice that is not playing yet gets the amount in startVoice, before its first sample.
 
     // Route before the voice starts, so it is never heard dry: wait for a
     // Chain definition that is still building, and for inline effects.
@@ -731,10 +748,16 @@ export class MediaService {
     soundKey: string,
     data: ClientMediaPlayPayload,
   ): Playback | undefined {
-    const [playback] = sound.preplay();
+    const voices = sound.preplay();
+    const [playback] = voices;
     this.releaseSoundWhenPlaybackEnds(sound, soundKey);
     if (!playback) {
       return undefined;
+    }
+    if (sound.occlusion) {
+      // A fresh Playback is clear (0). Occlude it while it is still stopped, so
+      // a sound that starts behind a closed door never leaks an unfiltered attack.
+      this.renderOcclusion(sound, voices, 0);
     }
     const offset = data.start === undefined ? 0 : this.soundOffsetSeconds(sound, data.start);
     if (offset > 0) {
@@ -756,6 +779,43 @@ export class MediaService {
     return playback;
   }
 
+  /**
+   * Move `voices` to the sound's occlusion amount over `durationMs`. Cacophony
+   * renders occlusion per Playback (a Sound does not forward it), in a stage
+   * of its own between the voice's effects and its panner. Everything this
+   * service re-routes (named chains, inline effect buses, the FOA renderers)
+   * hangs off the Playback's output, downstream of that stage, and a seek or
+   * loop restart keeps the stage with its Playback, so the amount only needs
+   * applying when a voice is prepared and when the amount changes. It is
+   * independent of {@link applyLevels}: volume, fades and distance never fold in.
+   */
+  private renderOcclusion(
+    sound: ExtendedSound,
+    voices: readonly Playback[],
+    durationMs: number,
+  ): void {
+    const amount = sound.occlusion ?? 0;
+    for (const voice of voices) {
+      let failure: string | undefined;
+      if (hasOcclusion(voice)) {
+        try {
+          voice.setOcclusion(amount, durationMs);
+        } catch (error) {
+          failure = errorMessage(error);
+        }
+      } else {
+        failure = 'the audio engine has no per-voice occlusion';
+      }
+      if (failure !== undefined) {
+        console.warn(`Client.Media: occlusion unavailable for '${sound.key}'; playing unoccluded`);
+        this.traceSound('routed', sound, sound.key, {
+          code: 'CAPABILITY_UNAVAILABLE',
+          message: `occlusion ${amount} unavailable; playing unoccluded: ${failure}`,
+        });
+      }
+    }
+  }
+
   update(data: ClientMediaUpdatePayload): void {
     const targetSounds = data.key
       ? this.soundsByKey(data.key)
@@ -775,6 +835,10 @@ export class MediaService {
         channels: data.channels ?? sound.inputChannels,
       });
       this.applySoundState(sound, data);
+      if (data.occlusion !== undefined) {
+        sound.occlusion = data.occlusion;
+        this.renderOcclusion(sound, sound.playbacks, OCCLUSION_GLIDE_MS);
+      }
       // Only an explicit start moves the playhead; no other Update field seeks or restarts.
       if (data.start !== undefined) {
         this.seekToPosition(sound, data.start);
@@ -1540,7 +1604,17 @@ export class MediaService {
       Object.entries(data).filter(([, value]) => value !== undefined),
     ) as Partial<ClientMediaPlayPayload>;
     const finish = data.finish ?? data.end ?? original.finish;
-    void this.play({ ...original, ...overrides, finish, key: sound.key ?? original.key }).catch(
+    // This replay is internal, not a full-state Play from the server: name the
+    // amount in effect now, or play() would read its absence as clear. A later
+    // Update may also have moved it away from the original Play's.
+    const occlusion = data.occlusion ?? sound.occlusion;
+    void this.play({
+      ...original,
+      ...overrides,
+      finish,
+      occlusion,
+      key: sound.key ?? original.key,
+    }).catch(
       (error) => console.error('Client.Media.Update: resegment failed', error),
     );
     return true;

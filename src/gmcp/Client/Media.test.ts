@@ -44,8 +44,12 @@ type MockPlayback = {
   connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
   duration: number;
+  /** The last requested amount, as Cacophony's `Playback.occlusion` reports it. */
+  occlusion: number;
   play: ReturnType<typeof vi.fn>;
   seek: ReturnType<typeof vi.fn>;
+  /** Optional so a test can remove it to model an engine without the occlusion stage. */
+  setOcclusion?: ReturnType<typeof vi.fn>;
   stereoPan: number;
 };
 
@@ -84,11 +88,15 @@ function createMockSound(url: string): MockSound {
     connect: vi.fn(),
     disconnect: vi.fn(),
     duration: 5,
+    occlusion: 0,
     play: vi.fn(() => {
       sound.isPlaying = true;
       return [playback];
     }),
     seek: vi.fn(),
+    setOcclusion: vi.fn((amount: number) => {
+      playback.occlusion = amount;
+    }),
     stereoPan: 0,
   };
   let position = [0, 0, 0];
@@ -1982,6 +1990,352 @@ describe('GMCPClientMedia', () => {
       expect(renderer.setDistanceGain).toHaveBeenLastCalledWith(0.1);
       expect(sound.volume).toBe(0.5);
       expect(sound.threeDOptions).toMatchObject({ rolloffFactor: 0 });
+    });
+  });
+
+  describe('per-voice occlusion', () => {
+    const tone = {
+      key: 's4894767',
+      name: 'fixture/tone.m4a',
+      url: 'https://mongoose.world/sounds/',
+      type: 'sound',
+      volume: 50,
+      pan: 0,
+      loops: 1,
+    };
+    const toneUrl = 'https://mongoose.world/sounds/fixture/tone.m4a';
+    const lowpass = (id: string, frequency: number) => ({
+      id,
+      type: 'lowpass',
+      params: { frequency },
+    });
+
+    async function playTone(extra: Record<string, unknown> = {}) {
+      const sound = createMockSound(toneUrl);
+      mockCreateSound.mockResolvedValue(sound);
+      handler.receiveRegisteredMessage('Play', { ...tone, ...extra });
+      await vi.waitFor(() => expect(sound.voice.play).toHaveBeenCalledOnce());
+      return sound;
+    }
+
+    function occlusionCalls(sound: MockSound): unknown[][] {
+      return sound.voice.setOcclusion?.mock.calls ?? [];
+    }
+
+    function expectOccludedBeforeStart(sound: MockSound): void {
+      expect(sound.voice.setOcclusion?.mock.invocationCallOrder[0]).toBeLessThan(
+        sound.voice.play.mock.invocationCallOrder[0],
+      );
+    }
+
+    describe.each([
+      ['stereo', {}],
+      ['HRTF', { is3d: true, position: [2, 2, 1] }],
+    ])('with %s panning', (panType, spatial) => {
+      it('occludes a new voice from its first sample', async () => {
+        const sound = await playTone({ ...spatial, occlusion: 0.8 });
+
+        expect(sound.panType).toBe(panType);
+        expect(occlusionCalls(sound)).toEqual([[0.8, 0]]);
+        expect(sound.voice.occlusion).toBe(0.8);
+        expectOccludedBeforeStart(sound);
+      });
+
+      it('glides to the amount an Update carries', async () => {
+        const sound = await playTone({ ...spatial, occlusion: 0.8 });
+
+        handler.receiveRegisteredMessage('Update', { key: tone.key, occlusion: 0.2 });
+
+        expect(occlusionCalls(sound)).toEqual([
+          [0.8, 0],
+          [0.2, 150],
+        ]);
+        expect(sound.voice.play).toHaveBeenCalledOnce();
+      });
+
+      it('leaves the amount alone on an Update without the field', async () => {
+        const sound = await playTone({ ...spatial, occlusion: 0.8 });
+
+        handler.receiveRegisteredMessage('Update', { key: tone.key, volume: 25 });
+
+        expect(occlusionCalls(sound)).toEqual([[0.8, 0]]);
+        expect(sound.voice.occlusion).toBe(0.8);
+      });
+
+      it('glides, without restarting, on a Play that keeps the voice', async () => {
+        const sound = await playTone({ ...spatial, occlusion: 0.8 });
+
+        handler.receiveRegisteredMessage('Play', { ...tone, ...spatial, occlusion: 0.3 });
+        await vi.waitFor(() => expect(occlusionCalls(sound)).toHaveLength(2));
+        // A further Play naming the amount the voice already has makes no engine call.
+        await client.media.play({
+          ...tone,
+          ...spatial,
+          occlusion: 0.3,
+        } as GMCPMessageClientMediaPlay);
+
+        expect(occlusionCalls(sound)).toEqual([
+          [0.8, 0],
+          [0.3, 150],
+        ]);
+        expect(sound.voice.occlusion).toBe(0.3);
+        expect(sound.voice.play).toHaveBeenCalledOnce();
+        expect(sound.voice.seek).not.toHaveBeenCalled();
+        expect(mockCreateSound).toHaveBeenCalledOnce();
+        expect(handler.sounds[tone.key]).toBe(sound);
+      });
+
+      it('glides a kept voice to clear on a Play without the field (a Play is full state)', async () => {
+        const sound = await playTone({ ...spatial, occlusion: 0.8 });
+
+        // The listener walked through the door: the same key, re-Played direct.
+        await client.media.play({ ...tone, ...spatial } as GMCPMessageClientMediaPlay);
+
+        expect(occlusionCalls(sound)).toEqual([
+          [0.8, 0],
+          [0, 150],
+        ]);
+        expect(sound.voice.occlusion).toBe(0);
+        expect(sound.voice.play).toHaveBeenCalledOnce();
+        expect(sound.voice.seek).not.toHaveBeenCalled();
+        expect(mockCreateSound).toHaveBeenCalledOnce();
+      });
+
+      it('makes no engine call when a clear kept voice is re-Played without the field', async () => {
+        const sound = await playTone(spatial);
+
+        await client.media.play({ ...tone, ...spatial } as GMCPMessageClientMediaPlay);
+
+        expect(occlusionCalls(sound)).toEqual([]);
+        expect(sound.voice.play).toHaveBeenCalledOnce();
+        expect(mockCreateSound).toHaveBeenCalledOnce();
+      });
+    });
+
+    it('starts clear when a Play without the field supersedes an occluded Play still waiting to start', async () => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const cacophony = client.media.cacophony as unknown as { createBus: ReturnType<typeof vi.fn> };
+      cacophony.createBus.mockImplementationOnce((name?: string) => {
+        const bus = makeEffectBus(name ?? null);
+        bus.addFilter = vi.fn(async (arg: unknown) => {
+          await gate;
+          return arg;
+        });
+        client.effectBuses.created[name ?? ''] = bus;
+        return bus;
+      });
+      const chain = client.media.setChain({ id: 'workshop', effects: [lowpass('muffle', 400)] });
+      const sound = createMockSound(toneUrl);
+      mockCreateSound.mockResolvedValue(sound);
+
+      // The first Play creates the sound, then waits for its chain.
+      const first = client.media.play({
+        ...tone,
+        chain: 'workshop',
+        occlusion: 0.8,
+      } as GMCPMessageClientMediaPlay);
+      await vi.waitFor(() => expect(handler.sounds[tone.key]).toBe(sound));
+      await client.media.play({ ...tone } as GMCPMessageClientMediaPlay);
+      release();
+      await Promise.all([first, chain]);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+      expect(occlusionCalls(sound)).toEqual([]);
+    });
+
+    it('starts a new voice clear when the Play carries no amount', async () => {
+      const sound = await playTone();
+
+      expect(occlusionCalls(sound)).toEqual([]);
+      expect(sound.voice.occlusion).toBe(0);
+    });
+
+    it('occludes a clear voice when an Update first names an amount, and clears it at 0', async () => {
+      const sound = await playTone();
+
+      handler.receiveRegisteredMessage('Update', { key: tone.key, occlusion: 1 });
+      handler.receiveRegisteredMessage('Update', { key: tone.key, occlusion: 0 });
+
+      expect(occlusionCalls(sound)).toEqual([
+        [1, 150],
+        [0, 150],
+      ]);
+    });
+
+    it('starts a replacement voice for the same key clear unless its Play says otherwise', async () => {
+      const first = await playTone({ occlusion: 0.8 });
+      const second = createMockSound('https://mongoose.world/sounds/fixture/other.m4a');
+      mockCreateSound.mockResolvedValue(second);
+
+      handler.receiveRegisteredMessage('Play', { ...tone, name: 'fixture/other.m4a' });
+      await vi.waitFor(() => expect(second.voice.play).toHaveBeenCalledOnce());
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(occlusionCalls(second)).toEqual([]);
+    });
+
+    it('keeps its amount through named-chain routing and a replaced chain', async () => {
+      await client.media.setChain({ id: 'workshop', effects: [lowpass('muffle', 400)] });
+      const sound = await playTone({ chain: 'workshop', occlusion: 0.6 });
+      expect(sound.routeTo).toHaveBeenCalledWith('workshop');
+      expectOccludedBeforeStart(sound);
+
+      // The chain is redefined under the voice, then the voice is re-pointed
+      // and given inline effects: none of it carries or implies an amount.
+      await client.media.setChain({ id: 'workshop', effects: [lowpass('muffle', 2000)] });
+      await client.media.setChain({ id: 'cave', effects: [lowpass('dark', 900)] });
+      handler.receiveRegisteredMessage('Update', { key: tone.key, chain: 'cave', send: 0.3 });
+      expect(sound.routeTo).toHaveBeenLastCalledWith('cave', 0.3);
+      handler.receiveRegisteredMessage('Update', {
+        key: tone.key,
+        effects: [lowpass('door', 800)],
+      });
+      await vi.waitFor(() =>
+        expect(sound.routeTo).toHaveBeenLastCalledWith(client.effectBuses.anon[0]),
+      );
+      client.media.removeChain('cave');
+
+      expect(occlusionCalls(sound)).toEqual([[0.6, 0]]);
+      expect(sound.voice.occlusion).toBe(0.6);
+
+      handler.receiveRegisteredMessage('Update', { key: tone.key, occlusion: 0.1 });
+      expect(occlusionCalls(sound)).toEqual([
+        [0.6, 0],
+        [0.1, 150],
+      ]);
+    });
+
+    it('carries the current amount onto the voice a moved segment rebuilds', async () => {
+      const segmentSound = (duration: number) => {
+        const base = createMockSound('rain.ogg');
+        base.buffer = { duration: 10 };
+        const region = createMockSound('');
+        region.buffer = base.buffer;
+        region.region = { start: 2, duration };
+        mockCreateSound.mockResolvedValue(base);
+        mockCreateSprite.mockResolvedValue({ get: () => region });
+        return region;
+      };
+      const first = segmentSound(3);
+      await handler.handlePlay({
+        finish: 5000,
+        key: 'rain',
+        loops: -1,
+        name: 'rain.ogg',
+        start: 2000,
+        type: 'sound',
+        volume: 50,
+        occlusion: 0.8,
+      } as GMCPMessageClientMediaPlay);
+      // The door moved after the Play: 0.4 is the amount in effect now.
+      handler.handleUpdate({ key: 'rain', occlusion: 0.4 } as GMCPMessageClientMediaUpdate);
+      expect(occlusionCalls(first)).toEqual([
+        [0.8, 0],
+        [0.4, 150],
+      ]);
+
+      const second = segmentSound(4);
+      handler.handleUpdate({ key: 'rain', finish: 6000 } as GMCPMessageClientMediaUpdate);
+      await vi.waitFor(() => expect(second.voice.play).toHaveBeenCalledOnce());
+
+      expect(handler.sounds.rain).toBe(second);
+      expect(occlusionCalls(second)).toEqual([[0.4, 0]]);
+      expectOccludedBeforeStart(second);
+    });
+
+    it('keeps its amount across timer-driven segment repeats', async () => {
+      vi.useFakeTimers();
+      const sound = createMockSound('https://mongoose.world:9080/?url=theme');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        finish: 300,
+        key: 'theme',
+        loops: -1,
+        name: 'theme.ogg',
+        type: 'music',
+        volume: 50,
+        occlusion: 0.5,
+      } as GMCPMessageClientMediaPlay);
+
+      vi.advanceTimersByTime(1000);
+
+      expect(sound.seek).toHaveBeenCalled();
+      expect(sound.preplay).toHaveBeenCalledOnce();
+      expect(occlusionCalls(sound)).toEqual([[0.5, 0]]);
+      expect(sound.voice.occlusion).toBe(0.5);
+    });
+
+    it.each([
+      ['a positional FOA', 2, mockPositionalFoaRendererCreate],
+      ['a 4-channel ambisonic', 4, mockAmbisonicRendererCreate],
+    ])('occludes %s voice before it starts and glides it afterwards', async (_route, channels, create) => {
+      const sound = await playTone({
+        upmix: 'ambisonic',
+        channels,
+        is3d: true,
+        position: [2, 2, 1],
+        occlusion: 0.7,
+      });
+      await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+
+      expect(occlusionCalls(sound)).toEqual([[0.7, 0]]);
+      expectOccludedBeforeStart(sound);
+
+      handler.receiveRegisteredMessage('Update', { key: tone.key, occlusion: 0.2 });
+      expect(occlusionCalls(sound)).toEqual([
+        [0.7, 0],
+        [0.2, 150],
+      ]);
+    });
+
+    it.each([
+      ['Play', -0.1],
+      ['Play', 1.5],
+      ['Play', 'x'],
+      ['Update', -0.1],
+      ['Update', 1.5],
+      ['Update', 'x'],
+    ])('rejects %s occlusion %j and leaves the amount unchanged', async (wireName, occlusion) => {
+      const sound = await playTone({ occlusion: 0.8 });
+
+      expect(() => handler.receiveRegisteredMessage(wireName, { ...tone, occlusion })).toThrow(
+        MediaPayloadError,
+      );
+
+      expect(occlusionCalls(sound)).toEqual([[0.8, 0]]);
+      expect(sound.voice.occlusion).toBe(0.8);
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expect(client.media.diagnostics.entries().at(-1)?.error).toMatchObject({
+        code: 'INVALID_PAYLOAD',
+      });
+    });
+
+    it('reports an engine without the occlusion stage instead of faking it', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const sound = createMockSound(toneUrl);
+      sound.voice.setOcclusion = undefined;
+      mockCreateSound.mockResolvedValue(sound);
+
+      handler.receiveRegisteredMessage('Play', { ...tone, occlusion: 0.8 });
+      await vi.waitFor(() => expect(sound.voice.play).toHaveBeenCalledOnce());
+      handler.receiveRegisteredMessage('Update', { key: tone.key, occlusion: 0.2 });
+
+      const unavailable = client.media.diagnostics
+        .entries()
+        .filter((entry) => entry.error?.code === 'CAPABILITY_UNAVAILABLE');
+      expect(unavailable.map((entry) => [entry.stage, entry.key])).toEqual([
+        ['routed', tone.key],
+        ['routed', tone.key],
+      ]);
+      expect(unavailable[0].error?.message).toContain('occlusion');
+      // Level and routing are untouched: the sound plays unoccluded, not approximated.
+      expect(sound.volume).toBe(0.5);
+      expect(sound.routeTo).not.toHaveBeenCalled();
+      warn.mockRestore();
     });
   });
 });

@@ -293,6 +293,7 @@ function mediaFields(r: Fields, what: string) {
     channels: optNumber(r, 'channels', what, { min: 1, integer: true }),
     chain: optString(r, 'chain', what),
     send: optNumber(r, 'send', what, { min: 0, max: 1 }),
+    occlusion: optNumber(r, 'occlusion', what, { min: 0, max: 1 }),
     effects: optEffects(r, what),
     gainDb: optNumber(r, 'gainDb', what, { min: -60, max: 12 }),
     pitchSemitones: optNumber(r, 'pitchSemitones', what, { min: -24, max: 24 }),

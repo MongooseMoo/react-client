@@ -5,8 +5,9 @@
 // an existing chain); empty/absent effects remove the chain (rerouting its live
 // sounds to master first, via EffectChain.destroy → cacophony drain).
 
-import type { Cacophony } from 'cacophony';
+import { type Cacophony, Playback } from 'cacophony';
 
+import { hasOcclusion } from '../occlusion';
 import type { EffectChain } from './EffectChain';
 import { CHAIN_PRESETS } from './presets';
 import { ADVERTISED_EFFECT_TYPES, type ChainSpec, type EffectSpec } from './types';
@@ -20,6 +21,8 @@ export interface EffectsSupport {
   chains: boolean;
   maxChains: number;
   maxEffectsPerChain: number;
+  /** The client applies the `occlusion` field of Play/Update (0..1, per voice). */
+  occlusion: boolean;
 }
 
 /** The latest queued build for one chain id; it never rejects. */
@@ -36,7 +39,11 @@ export interface ChainObserver {
 const MAX_CHAINS = 16;
 const MAX_EFFECTS_PER_CHAIN = 8;
 
-export function buildEffectsSupport(): EffectsSupport {
+/**
+ * `voice` is what the engine plays sounds with; occlusion is advertised only
+ * when it really has `setOcclusion` (the installed Cacophony's Playback does).
+ */
+export function buildEffectsSupport(voice: unknown = Playback.prototype): EffectsSupport {
   return {
     types: ADVERTISED_EFFECT_TYPES,
     reverbAlgorithms: ['fdn', 'plate'],
@@ -45,6 +52,7 @@ export function buildEffectsSupport(): EffectsSupport {
     chains: true,
     maxChains: MAX_CHAINS,
     maxEffectsPerChain: MAX_EFFECTS_PER_CHAIN,
+    occlusion: hasOcclusion(voice),
   };
 }
 

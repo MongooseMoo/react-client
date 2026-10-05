@@ -17,6 +17,7 @@ Mongoose implements the Mudlet MCMP baseline: `Default`, `Load`, `Play`, and
 - 3D fields: `is3d`, `pan`, and `position`.
 - Ambisonic playback fields: `upmix` and `channels`.
 - Effect chain fields: `chain`, `send`, and inline `effects`.
+- Per-voice `occlusion` (0..1) on `Play` and `Update`.
 - Effect management messages: `Chain`, `ChainStop`, and `Automate`.
 - Client to server capability advertisement: `EffectsSupport`.
 - Media Session metadata fields: `title`, `artist`, `album`, and `artwork`.

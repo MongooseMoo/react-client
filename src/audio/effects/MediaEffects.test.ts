@@ -254,4 +254,12 @@ describe('buildEffectsSupport', () => {
     expect(s.chains).toBe(true);
     expect(s.automation).toBe(true);
   });
+
+  it('advertises per-voice occlusion, which the installed Cacophony provides', () => {
+    expect(buildEffectsSupport()).toMatchObject({ occlusion: true });
+  });
+
+  it('does not advertise occlusion for an engine whose voices lack setOcclusion', () => {
+    expect(buildEffectsSupport({ play: () => [] }).occlusion).toBe(false);
+  });
 });
