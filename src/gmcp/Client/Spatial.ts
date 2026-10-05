@@ -282,15 +282,18 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
       entityPositionKey(entityId),
       current?.position,
       position,
-      (value, done) => {
+      (value) => {
         useSpatialStore.getState().patchEntity(entityId, { position: value });
-        if (done && entityId === useSpatialStore.getState().listenerEntityId) {
-          // The listener's own entity doubles as the cacophony listener.
-          this.syncCacophonyListenerPosition(value);
-        }
       },
       { speed: magnitude(velocity) },
     );
+
+    if (entityId === store.listenerEntityId) {
+      // The listener's own entity doubles as the cacophony listener. The mover
+      // also gets a ListenerPosition for the same step: both feed the one
+      // listener glide, here at the speed this step carries.
+      this.glideListener(position, magnitude(velocity) ?? this.listenerSpeed());
+    }
 
     if (forward) {
       this.motion.tween(
@@ -310,15 +313,26 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
     if (!position) {
       return;
     }
+    this.glideListener(position, this.listenerSpeed(), data.listenerId);
+  }
+
+  /**
+   * The only writer of the listener position while it moves (a Scene and a
+   * reset place it directly). ListenerPosition and the listener's own
+   * EntityMove both land here, on one tween key, so a step that arrives as
+   * both messages retargets a single glide instead of running two that write
+   * the engine listener at different speeds.
+   */
+  private glideListener(position: SpatialVector, speed: number | undefined, listenerId?: string): void {
     this.motion.tween(
       LISTENER_POSITION_KEY,
       useSpatialStore.getState().listenerPosition,
       position,
       (value) => {
-        useSpatialStore.getState().setListenerPosition(value, data.listenerId);
+        useSpatialStore.getState().setListenerPosition(value, listenerId);
         this.syncCacophonyListenerPosition(value);
       },
-      { speed: this.listenerSpeed() },
+      { speed },
     );
   }
 
