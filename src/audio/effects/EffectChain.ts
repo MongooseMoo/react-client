@@ -60,6 +60,8 @@ export class EffectChain {
   private downstream: Bus | null = null;
   /** Aux-send target fed in parallel with the primary output, if any. */
   private sendTarget: Bus | null = null;
+  /** The gain of the feed into {@link sendTarget}. */
+  private sendGain = 1;
 
   private constructor(cacophony: Cacophony, id: string | null, bus: Bus, mode: ChainMode) {
     this.cacophony = cacophony;
@@ -127,6 +129,10 @@ export class EffectChain {
     if (this.bus.destroyed) {
       return;
     }
+    if (target && this.sendTarget === target && this.sendGain === gain) {
+      // Already fed at this level: the feed is refreshed on every listener step.
+      return;
+    }
     if (this.sendTarget && this.sendTarget !== target) {
       this.bus.disconnect(this.sendTarget);
       this.sendTarget = null;
@@ -134,6 +140,7 @@ export class EffectChain {
     if (target) {
       this.bus.connect(target, gain);
       this.sendTarget = target;
+      this.sendGain = gain;
     }
   }
 
