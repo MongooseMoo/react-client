@@ -128,7 +128,7 @@ describe("createConfiguredClient", () => {
     ]);
     expect(useServerLinksStore.getState().homeUrl).toBe("https://example.test/");
     expect(useServerLinksStore.getState().helpUrl).toBe("https://example.test/help");
-    expect(useInputStore.getState().visibleCommands).toEqual(["open", "r", "re", "rea", "read"]);
+    expect(useInputStore.getState().visibleCommands).toEqual(["open", "read"]);
     expect(useWorldMapStore.getState().locationId).toBe("#100");
     expect(useWorldMapStore.getState().selfId).toBe("#42");
   });

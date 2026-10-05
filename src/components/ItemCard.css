@@ -1,5 +1,6 @@
 .item-card {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--color-border);
@@ -46,53 +47,17 @@
     text-overflow: ellipsis;
 }
 
-.item-drop-button {
-    margin-left: var(--space-2);
-    padding: var(--space-1) var(--space-2);
-    font-size: 1.1em;
-    font-weight: bold;
-    line-height: 1;
-    position: relative;
-    color: var(--color-text-button, #fff);
-    background-color: var(--color-danger);
-    border: none;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
-
-.item-drop-button::before {
-    content: "✕";
-    display: inline-block;
-    text-align: center;
-}
-
-.item-drop-button:hover {
-    background-color: var(--color-danger-hover);
-}
-
-.item-drop-button:focus {
-    outline: 2px solid var(--color-focus-ring);
-    outline-offset: 1px;
-}
-
-.item-get-button {
-    color: var(--color-text-button, #fff);
-    background-color: var(--color-success);
-}
-
-.item-get-button:hover {
-    background-color: var(--color-success-hover);
-}
-
+/* The server decides how many actions an item has, so they wrap. */
 .item-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
     margin-left: auto;
 }
 
 .item-actions button {
-    margin-left: var(--space-2);
     padding: var(--space-1) var(--space-2);
     font-size: 0.9em;
     border: 1px solid transparent;
@@ -101,26 +66,13 @@
     transition: all var(--transition-fast);
 }
 
-.item-wear-button {
+.item-action-button {
     color: var(--color-text-button, #fff);
     background-color: var(--color-success);
 }
 
-.item-wear-button:hover {
+.item-action-button:hover {
     background-color: var(--color-success-hover);
-}
-
-.item-remove-button {
-    color: var(--color-text-button, #fff);
-    background-color: var(--color-warning);
-}
-
-.item-remove-button:hover {
-    background-color: var(--color-warning-hover);
-}
-
-.item-actions .item-drop-button {
-    margin-left: var(--space-2);
 }
 
 .item-actions button:focus {

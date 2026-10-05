@@ -9,6 +9,11 @@ export interface Item {
   icon?: string;
   Attrib?: string; // wWlgctmdx
   location?: ItemLocation; // Added location
+  /**
+   * Mongoose addition: what the player can do to the item from the command line.
+   * Each entry is the verb's names followed by its arguments; see `itemActions`.
+   */
+  verbs?: string[][];
 }
 
 export type ItemLocation = "inv" | "room" | string; // "repNUMBER" for containers
