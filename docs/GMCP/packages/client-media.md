@@ -113,6 +113,7 @@ the new segment's `start`.
 - Spatial state: `is3d`, `pan`, `position`
 - Ambisonic state: `upmix`, `channels`
 - Effects: `chain`, `send`, `effects`
+- Occlusion: `occlusion`
 
 ### `Client.Media.Chain`
 
@@ -200,6 +201,24 @@ Named effect chains are not supported for ambisonic sounds. Use inline
 - `send`: aux-send level into the named chain while keeping dry output.
 - `effects`: inline per-sound effect chain torn down with the sound.
 
+### Occlusion
+
+- `occlusion`: how obstructed this voice's direct path is, a number from 0
+  (clear) to 1 (fully occluded: about -18 dB and an 800 Hz low-pass). A value
+  outside 0..1, or not a number, rejects the whole message.
+
+Cacophony renders it per voice (`Playback.setOcclusion`), ahead of the panner
+and independently of `volume`, fades, distance gain, `send` and effect routing,
+on the stereo, HRTF and ambisonic routes alike.
+
+- A `Play` that starts a new voice applies the amount before the first sample.
+  Without the field a new voice is clear (0).
+- An `Update`, or a `Play` that keeps the playing voice (same key and source),
+  glides to the new amount over 150 ms. Without the field the amount is
+  unchanged.
+
+Send the field only to a client whose `EffectsSupport` has `occlusion: true`.
+
 ### Media Session Metadata
 
 For `type: "music"`, Mongoose can publish now-playing metadata and local
@@ -224,4 +243,5 @@ Sent after GMCP startup to advertise the supported effect vocabulary:
 ```
 
 The exact payload is built by `buildEffectsSupport()` in
-`src/audio/effects/MediaEffects.ts`.
+`src/audio/effects/MediaEffects.ts`. Its boolean `occlusion` is true when the
+audio engine can render the per-voice `occlusion` field of `Play` and `Update`.

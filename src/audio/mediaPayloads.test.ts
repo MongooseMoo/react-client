@@ -130,7 +130,19 @@ describe('decodeMediaPlay', () => {
     ).toMatchObject({ gainDb: 6, pitchSemitones: 12, orientation: [0, 1, 0] });
   });
 
+  it.each([0, 0.8, 1])('accepts occlusion %s (0 is a real value)', (occlusion) => {
+    expect(decodeMediaPlay({ ...catalogPlay, occlusion }).occlusion).toBe(occlusion);
+  });
+
+  it('leaves occlusion absent when the MOO did not send it', () => {
+    expect('occlusion' in decodeMediaPlay(catalogPlay)).toBe(false);
+  });
+
   it.each([
+    ['occlusion below 0', { ...catalogPlay, occlusion: -0.1 }],
+    ['occlusion above 1', { ...catalogPlay, occlusion: 1.5 }],
+    ['a string occlusion', { ...catalogPlay, occlusion: 'x' }],
+    ['a non-finite occlusion', { ...catalogPlay, occlusion: Number.NaN }],
     ['a missing name', { ...chainPlay, name: undefined }],
     ['a non-object payload', 'fixture/tone.m4a'],
     ['fractional loops', { ...chainPlay, loops: 1.5 }],
@@ -201,6 +213,15 @@ describe('decodeMediaUpdate', () => {
     expect(() => decodeMediaUpdate({ key: 's1', loopStart: 3000, finish: 3000 })).toThrow(
       MediaPayloadError,
     );
+  });
+
+  it('carries occlusion alone, including 0', () => {
+    expect(decodeMediaUpdate({ key: 's1', occlusion: 0.2 })).toEqual({ key: 's1', occlusion: 0.2 });
+    expect(decodeMediaUpdate({ key: 's1', occlusion: 0 })).toEqual({ key: 's1', occlusion: 0 });
+  });
+
+  it.each([-0.1, 1.5, 'x'])('rejects occlusion %j rather than clamping it', (occlusion) => {
+    expect(() => decodeMediaUpdate({ key: 's1', occlusion })).toThrow(MediaPayloadError);
   });
 
   it('rejects an update with neither key nor name', () => {
