@@ -214,6 +214,8 @@ export interface ExtendedSound extends Sound, NamedRouteState {
   spatialProfile?: SpatialProfile;
   /** Cone facing, in Web Audio axes. */
   mediaOrientation?: Position;
+  /** The scene (room) {@link mediaPosition} was given in; a position from an earlier scene is not a glide origin. */
+  positionScene?: number;
   /** Positioned by the HRTF panner, so its distance gain is applied at the sound's gain. */
   pointSource?: boolean;
   /** The key claim generation that created this sound (diagnostics). */
@@ -271,6 +273,8 @@ export class MediaService {
   private readonly pendingLoads = new Map<string, KeyClaim>();
   /** Bumped by stop-all/reset: invalidates every pending load at once. */
   private epoch = 0;
+  /** Bumped by every scene snapshot; each room has its own coordinate origin. */
+  private scene = 0;
   private currentMusic?: ExtendedSound;
   private globalMuted = false;
   private isWindowFocused = true;
@@ -330,6 +334,19 @@ export class MediaService {
         this.applyLevels(sound);
       }
     }
+  }
+
+  /**
+   * A Client.Spatial.Scene snapshot arrived: a hard cut, usually a room change.
+   * Sound positions glide on this service's own tweener, which the Spatial
+   * handler's cancel does not reach. Glides in flight land on their targets at
+   * once (the last position the server gave, never somewhere part-way), and
+   * the next position each sound receives is placed directly: its previous one
+   * was in another room's coordinates, so there is nothing to glide from.
+   */
+  sceneChanged(): void {
+    this.scene += 1;
+    this.motion.finishAll();
   }
 
   /** The sound's distance gain under its spatial profile, for the current listener. */
@@ -1435,8 +1452,11 @@ export class MediaService {
 
     if (data.position?.length) {
       const target: Position = [data.position[0], data.position[1], data.position[2]];
-      // First placement snaps; later updates glide from the current position.
-      this.motion.tween(sound, sound.mediaPosition, target, (value) => {
+      // First placement snaps, and so does the first one after a scene snapshot;
+      // later updates glide from the current position.
+      const from = sound.positionScene === this.scene ? sound.mediaPosition : undefined;
+      sound.positionScene = this.scene;
+      this.motion.tween(sound, from, target, (value) => {
         sound.mediaPosition = [value[0], value[1], value[2]];
         if (hrtf) {
           sound.position = sound.mediaPosition;

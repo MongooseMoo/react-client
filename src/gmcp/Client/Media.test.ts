@@ -37,6 +37,7 @@ import {
   type GMCPMessageClientMediaStop,
   type GMCPMessageClientMediaUpdate,
 } from './Media';
+import { GMCPClientSpatial } from './Spatial';
 
 type MockCacophony = ConstructorParameters<typeof MediaService>[0];
 
@@ -2336,6 +2337,99 @@ describe('GMCPClientMedia', () => {
       expect(sound.volume).toBe(0.5);
       expect(sound.routeTo).not.toHaveBeenCalled();
       warn.mockRestore();
+    });
+  });
+
+  describe('a scene snapshot (room change)', () => {
+    async function playRadio() {
+      const sound = createMockSound('https://media.example/radio.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        key: 'radio-1',
+        name: 'radio.ogg',
+        type: 'sound',
+        volume: 50,
+        is3d: true,
+        position: [0, 0, 0],
+      } as GMCPMessageClientMediaPlay);
+      return sound;
+    }
+
+    it('ends a position glide in flight: no frame moves the sound afterwards', async () => {
+      const sound = await playRadio();
+      handler.handleUpdate({ key: 'radio-1', position: [4, 0, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(100);
+      // Part-way along the glide, in the old room's coordinates.
+      expect(sound.position[0]).toBeLessThan(0);
+      expect(sound.position[0]).toBeGreaterThan(-4);
+
+      client.media.sceneChanged();
+
+      // The glide is over at once, on the last position the server gave.
+      expect(sound.position).toEqual([-4, 0, 0]);
+      client.stepMotion(100);
+      client.stepMotion(600);
+      expect(sound.position).toEqual([-4, 0, 0]);
+    });
+
+    it('snaps the first position a sound receives after the snapshot', async () => {
+      const sound = await playRadio();
+      handler.handleUpdate({ key: 'radio-1', position: [4, 0, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(600);
+      expect(sound.position).toEqual([-4, 0, 0]);
+
+      client.media.sceneChanged();
+      // The new room has its own origin: [1, 0, 0] here is unrelated to [4, 0, 0] there.
+      handler.handleUpdate({ key: 'radio-1', position: [1, 0, 0] } as GMCPMessageClientMediaUpdate);
+
+      expect(sound.position).toEqual([-1, 0, 0]);
+      expect(handler.sounds['radio-1'].mediaPosition).toEqual([-1, 0, 0]);
+
+      // Within the new room, later moves glide again.
+      handler.handleUpdate({ key: 'radio-1', position: [3, 0, 0] } as GMCPMessageClientMediaUpdate);
+      expect(sound.position).toEqual([-1, 0, 0]);
+      client.stepMotion(600);
+      expect(sound.position).toEqual([-3, 0, 0]);
+    });
+
+    it('is driven by Client.Spatial.Scene, whose handler glides on a tweener of its own', async () => {
+      const spatial = new GMCPClientSpatial(client as never);
+      const sound = await playRadio();
+      handler.handleUpdate({ key: 'radio-1', position: [4, 0, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(100);
+
+      spatial.handleScene({
+        roomId: 'next-room',
+        listenerId: 'player-1',
+        entities: [],
+        emitters: [],
+      });
+      const landed = [...sound.position];
+      client.stepMotion(600);
+
+      expect(sound.position).toEqual(landed);
+      handler.handleUpdate({ key: 'radio-1', position: [1, 0, 0] } as GMCPMessageClientMediaUpdate);
+      expect(sound.position).toEqual([-1, 0, 0]);
+      spatial.shutdown();
+    });
+
+    it('snaps a kept voice re-Played with its position in the new room', async () => {
+      const sound = await playRadio();
+      handler.handleUpdate({ key: 'radio-1', position: [4, 0, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(600);
+
+      client.media.sceneChanged();
+      await handler.handlePlay({
+        key: 'radio-1',
+        name: 'radio.ogg',
+        type: 'sound',
+        volume: 50,
+        is3d: true,
+        position: [0, 2, 0],
+      } as GMCPMessageClientMediaPlay);
+
+      expect(handler.sounds['radio-1']).toBe(sound);
+      expect(sound.position).toEqual([0, 0, 2]);
     });
   });
 });

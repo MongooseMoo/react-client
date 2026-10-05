@@ -230,7 +230,9 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
 
   handleScene(data: GMCPMessageClientSpatialScene): void {
     // A scene snapshot is a hard cut (room change) — never glide across it.
+    // Sound positions glide on the media service's own tweener, so tell it too.
     this.motion.cancelAll();
+    this.client.media.sceneChanged();
     useSessionStore.getState().setRoomId(data.roomId);
     const listenerPosition = mongooseToWebAudioVector(data.listenerPosition);
     const listenerOrientation = {

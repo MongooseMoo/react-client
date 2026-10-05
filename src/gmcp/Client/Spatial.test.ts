@@ -39,6 +39,7 @@ function createMockClient() {
   return {
     media: {
       cacophony,
+      sceneChanged: vi.fn(),
       setListenerOrientation: vi.fn((orientation) => {
         cacophony.listenerForwardOrientation = orientation?.forward ?? [0, 0, -1];
         cacophony.listenerUpOrientation = orientation?.up ?? [0, 1, 0];
@@ -279,6 +280,22 @@ describe('GMCPClientSpatial', () => {
     step(600);
 
     expect(useSpatialStore.getState().spatialEntities['player-1'].position).toEqual([-5, 5, 5]);
+  });
+
+  it('tells the media service about every Scene snapshot, before placing the listener', () => {
+    handler.handleScene({
+      roomId: 'next-room',
+      listenerId: 'player-1',
+      listenerPosition: [1, 2, 3],
+      entities: [],
+      emitters: [],
+    });
+
+    // Sound positions glide on the media service's own tweener, not this handler's.
+    expect(client.media.sceneChanged).toHaveBeenCalledOnce();
+    expect(client.media.sceneChanged.mock.invocationCallOrder[0]).toBeLessThan(
+      client.media.setListenerPosition.mock.invocationCallOrder[0],
+    );
   });
 
   it('updates listener position and orientation messages', () => {
