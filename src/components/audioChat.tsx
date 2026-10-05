@@ -45,6 +45,8 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps & VoiceRoute> = ({ client, ch
     bridgeRef.current = new LiveKitSpatialAudioBridge(
       client.media,
       (participantId) => useSpatialStore.getState().spatialEntities[participantId]?.position,
+      // Already in Web Audio axes: Client.Spatial converts and tweens it into the store.
+      (participantId) => useSpatialStore.getState().spatialEntities[participantId]?.forward,
     );
   }
 

@@ -21,10 +21,16 @@ import type { PositionalFoaRenderer } from './PositionalFoaRenderer';
 import {
   DEFAULT_SPATIAL_PROFILE,
   distanceBetween,
+  distanceCompensatedSend,
   profileDistanceGain,
   type SpatialProfile,
 } from './distanceModel';
-import { type MediaVoice, MediaVoices, type VoicePosition } from './MediaVoices';
+import {
+  type MediaVoice,
+  MediaVoices,
+  type VoiceFacing,
+  type VoicePosition,
+} from './MediaVoices';
 import { clearNamedRoute, type NamedRouteState, routeNamedChain } from './namedRoute';
 import { hasOcclusion, OCCLUSION_GLIDE_MS } from './occlusion';
 import { VectorTweener } from './vectorTween';
@@ -351,6 +357,7 @@ export class MediaService {
         this.updatePositionalSpatial(sound);
         this.applyLevels(sound);
       }
+      this.voices.listenerMoved();
     }
   }
 
@@ -386,10 +393,23 @@ export class MediaService {
   }
 
   /**
+   * The distance gain that is part of the sound's own gain: its profile's, for
+   * an HRTF point source, and 1 for every other sound (non-positional sounds
+   * have none; ambisonic routes apply distance in their renderer instead).
+   */
+  private levelDistanceGain(sound: ExtendedSound): number {
+    return sound.pointSource && sound.upmix !== 'ambisonic' ? this.distanceGain(sound) : 1;
+  }
+
+  /**
    * Set the sound's gain: wire volume × 10^(gainDb/20) × (for an HRTF point
    * source) its profile distance gain. This is the one stage where distance
    * falloff is applied on the HRTF route; the panner's rolloff is 0. Ambisonic
    * routes apply distance in their renderer instead.
+   *
+   * The engine taps a send after this gain, so the send to the sound's chain
+   * is re-gained here too: every change of the distance gain (the listener or
+   * the source moves, the profile changes) comes through this method.
    */
   private applyLevels(sound: ExtendedSound): void {
     if (this.cleanedSounds.has(sound)) {
@@ -397,8 +417,40 @@ export class MediaService {
     }
     const volume = sound.mediaVolume ?? 1;
     const gain = sound.gainDb ? 10 ** (sound.gainDb / 20) : 1;
-    const distance = sound.pointSource && sound.upmix !== 'ambisonic' ? this.distanceGain(sound) : 1;
-    sound.volume = volume * gain * distance;
+    sound.volume = volume * gain * this.levelDistanceGain(sound);
+    this.refreshSend(sound);
+  }
+
+  /**
+   * The gain for the sound's send to its named chain. Cacophony takes a send
+   * from the voice's output, after its gain, so the wire `send` alone would
+   * make the reverberant level fall with distance exactly as the direct level
+   * does. A room's reverberant field is roughly even, and the direct-to-reverb
+   * ratio is how a listener hears distance: so the distance gain is divided
+   * back out of the send ({@link distanceCompensatedSend}) and the chain gets
+   * volume × send wherever the source is. Occlusion sits before the tap and
+   * still dims direct and reverb alike.
+   */
+  private sendGain(sound: ExtendedSound, send: number | undefined): number | undefined {
+    return send === undefined
+      ? undefined
+      : distanceCompensatedSend(send, this.levelDistanceGain(sound));
+  }
+
+  /**
+   * Bring a live send up to date with the sound's distance gain. Only a send
+   * that is already routed is touched: one the engine refused is not retried
+   * on every listener step.
+   */
+  private refreshSend(sound: ExtendedSound): void {
+    if (sound.namedSend === undefined) {
+      return;
+    }
+    if (sound.effectChain) {
+      this.pointInlineChain(sound.effectChain, sound.namedChain, this.sendGain(sound, sound.namedSend));
+    } else if (sound.chainRouted) {
+      this.routeNamedChain(sound, sound.namedChain, sound.namedSend);
+    }
   }
 
   /** HRTF panner settings for a point source: position and cone only, no native rolloff. */
@@ -437,11 +489,16 @@ export class MediaService {
 
   /**
    * Put a live voice track (a LiveKit participant) in the graph: an HRTF point
-   * source at `position`, or non-positional when it is null. It is not a media
-   * key: Client.Media.Stop never touches it.
+   * source at `position` facing `forward` (no facing when that is null), or
+   * non-positional when the position is null. It is not a media key:
+   * Client.Media.Stop never touches it.
    */
-  attachVoice(track: MediaStreamTrack, position: VoicePosition): MediaVoice {
-    return this.voices.attach(track, position);
+  attachVoice(
+    track: MediaStreamTrack,
+    position: VoicePosition,
+    forward: VoiceFacing = null,
+  ): MediaVoice {
+    return this.voices.attach(track, position, forward);
   }
 
   setChain(data: ClientMediaChainPayload): Promise<void> {
@@ -1130,7 +1187,13 @@ export class MediaService {
    * undoing a different named route. A no-op when that route is already live.
    */
   private routeNamedChain(sound: ExtendedSound, chain: string | undefined, send: number | undefined): void {
-    const error = routeNamedChain(sound, chain, send, this.cacophony.getBus('master'));
+    const error = routeNamedChain(
+      sound,
+      chain,
+      send,
+      this.cacophony.getBus('master'),
+      this.sendGain(sound, send),
+    );
     if (error) {
       console.warn(`Client.Media: chain '${chain}' unavailable; playing dry`, error);
       this.traceSound('routed', sound, sound.key, {
@@ -1195,7 +1258,7 @@ export class MediaService {
       // Update without effects: keep the inline chain, re-point what it feeds.
       sound.namedChain = chain;
       sound.namedSend = send;
-      this.pointInlineChain(sound.effectChain, chain, send);
+      this.pointInlineChain(sound.effectChain, chain, this.sendGain(sound, send));
       return;
     }
     this.routeNamedChain(sound, chain, send);
@@ -1237,6 +1300,8 @@ export class MediaService {
    * inline output stays on master (the dry path) and feeds the named chain at
    * the send level, exactly as chain+send behaves without inline effects.
    * Without a send, the inline chain runs in series into the named chain.
+   * `send` is the gain for that feed ({@link sendGain}): the inline bus is
+   * downstream of the sound's gain, so its feed is after the distance gain too.
    */
   private pointInlineChain(inline: EffectChain, chain: string | undefined, send: number | undefined): void {
     const target = chain ? (this.effects.getChain(chain)?.bus ?? null) : null;
@@ -1258,7 +1323,7 @@ export class MediaService {
     if (!inline) {
       return;
     }
-    this.pointInlineChain(inline, data.chain, data.send);
+    this.pointInlineChain(inline, data.chain, this.sendGain(sound, data.send));
     try {
       sound.routeTo(inline.bus);
     } catch (error) {

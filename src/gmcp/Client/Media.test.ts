@@ -24,6 +24,7 @@ vi.mock('../../audio/PositionalFoaRenderer', () => ({
   },
 }));
 
+import { MAX_SEND_DISTANCE_BOOST } from '../../audio/distanceModel';
 import { MEDIA_SEEK_TOLERANCE_MS, MediaService } from '../../audio/MediaService';
 import { MediaPayloadError } from '../../audio/mediaPayloads';
 import { VectorTweener } from '../../audio/vectorTween';
@@ -1996,6 +1997,205 @@ describe('GMCPClientMedia', () => {
     });
   });
 
+  describe('reverb send independent of distance', () => {
+    // Mongoose north 4 m: distance 4 from a listener at the origin, so the
+    // default inverse curve gives a distance gain of 0.25.
+    const fire = {
+      key: 'fire',
+      name: 'fire.ogg',
+      type: 'sound',
+      volume: 50,
+      is3d: true,
+      position: [0, 4, 0],
+      chain: 'room',
+      send: 0.3,
+    };
+
+    async function playFire(extra: Record<string, unknown> = {}) {
+      const sound = createMockSound('https://media.example/fire.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({ ...fire, ...extra } as GMCPMessageClientMediaPlay);
+      return sound;
+    }
+
+    function lastSend(sound: MockSound): unknown[] {
+      return sound.routeTo.mock.calls[sound.routeTo.mock.calls.length - 1];
+    }
+
+    it('sends a positional sound at send / distance gain, leaving the direct level alone', async () => {
+      const sound = await playFire();
+
+      expect(sound.routeTo).toHaveBeenCalledOnce();
+      expect(lastSend(sound)).toEqual(['room', expect.closeTo(1.2, 9)]);
+      // volume x distance gain x effective send = volume x send
+      expect(sound.volume).toBeCloseTo(0.5 * 0.25, 9);
+      expect(sound.volume * (lastSend(sound)[1] as number)).toBeCloseTo(0.5 * 0.3, 9);
+    });
+
+    it('re-gains the send in place when the listener moves', async () => {
+      const sound = await playFire();
+
+      // 2 m from the source: distance gain 0.5.
+      client.media.setListenerPosition([0, 0, 2]);
+      expect(lastSend(sound)).toEqual(['room', expect.closeTo(0.6, 9)]);
+      expect(sound.volume).toBeCloseTo(0.5 * 0.5, 9);
+
+      // On top of it: no attenuation, so the send is the wire send.
+      client.media.setListenerPosition([0, 0, 4]);
+      expect(lastSend(sound)).toEqual(['room', expect.closeTo(0.3, 9)]);
+
+      expect(sound.removeSend).not.toHaveBeenCalled();
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+    });
+
+    it('does not call the engine again when the listener moves without changing the distance', async () => {
+      const sound = await playFire();
+      sound.routeTo.mockClear();
+
+      // Still 4 m away, on the other side.
+      client.media.setListenerPosition([0, 0, 8]);
+      expect(sound.routeTo).not.toHaveBeenCalled();
+    });
+
+    it('follows the source as it glides', async () => {
+      const sound = await playFire();
+
+      handler.handleUpdate({ key: 'fire', position: [0, 2, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(10_000);
+
+      expect(sound.volume).toBeCloseTo(0.5 * 0.5, 9);
+      expect(lastSend(sound)).toEqual(['room', expect.closeTo(0.6, 9)]);
+    });
+
+    it('caps the boost for a very distant sound', async () => {
+      const sound = await playFire();
+
+      client.media.setListenerPosition([0, 0, 1004]);
+      expect(sound.volume).toBeCloseTo(0.5 / 1000, 9);
+      expect(lastSend(sound)).toEqual(['room', expect.closeTo(0.3 * MAX_SEND_DISTANCE_BOOST, 9)]);
+    });
+
+    it('stays finite where a linear profile reaches silence', async () => {
+      const sound = await playFire({
+        spatial: {
+          model: 'linear',
+          refDistance: 1,
+          maxDistance: 4,
+          rolloff: 1,
+          coneInnerAngle: 360,
+          coneOuterAngle: 360,
+          coneOuterGain: 1,
+        },
+      });
+
+      expect(sound.volume).toBe(0);
+      expect(lastSend(sound)).toEqual(['room', expect.closeTo(0.3 * MAX_SEND_DISTANCE_BOOST, 9)]);
+    });
+
+    it('recomputes when an Update changes the send, without dropping the send', async () => {
+      const sound = await playFire();
+
+      handler.handleUpdate({ key: 'fire', send: 0.5 } as GMCPMessageClientMediaUpdate);
+
+      expect(lastSend(sound)).toEqual(['room', expect.closeTo(2, 9)]);
+      expect(sound.removeSend).not.toHaveBeenCalled();
+    });
+
+    it('recomputes when an Update changes the spatial profile', async () => {
+      const sound = await playFire();
+
+      handler.handleUpdate({
+        key: 'fire',
+        spatial: {
+          model: 'inverse',
+          refDistance: 2,
+          maxDistance: 50,
+          rolloff: 1,
+          coneInnerAngle: 360,
+          coneOuterAngle: 360,
+          coneOuterGain: 1,
+        },
+      } as GMCPMessageClientMediaUpdate);
+
+      // 2 / (2 + (4 - 2)) = 0.5
+      expect(sound.volume).toBeCloseTo(0.5 * 0.5, 9);
+      expect(lastSend(sound)).toEqual(['room', expect.closeTo(0.6, 9)]);
+    });
+
+    it('carries the compensated send to a new chain', async () => {
+      const sound = await playFire();
+
+      handler.handleUpdate({ key: 'fire', chain: 'hall' } as GMCPMessageClientMediaUpdate);
+
+      expect(sound.removeSend).toHaveBeenCalledWith('room');
+      expect(lastSend(sound)).toEqual(['hall', expect.closeTo(1.2, 9)]);
+    });
+
+    it('leaves a non-positional sound at its wire send, wherever the listener goes', async () => {
+      const sound = await playFire({ is3d: false, position: undefined });
+
+      expect(sound.routeTo).toHaveBeenCalledOnce();
+      expect(sound.routeTo).toHaveBeenCalledWith('room', 0.3);
+
+      client.media.setListenerPosition([0, 0, 50]);
+      handler.handleUpdate({ key: 'fire', volume: 25 } as GMCPMessageClientMediaUpdate);
+      expect(sound.routeTo).toHaveBeenCalledOnce();
+      expect(sound.volume).toBe(0.25);
+    });
+
+    it('makes no send call for a sound with no chain', async () => {
+      const sound = await playFire({ chain: undefined });
+
+      client.media.setListenerPosition([0, 0, 2]);
+      handler.handleUpdate({ key: 'fire', position: [0, 9, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(10_000);
+
+      expect(sound.routeTo).not.toHaveBeenCalled();
+      expect(sound.removeSend).not.toHaveBeenCalled();
+    });
+
+    it('leaves a primary (send-less) route alone', async () => {
+      const sound = await playFire({ send: undefined });
+
+      client.media.setListenerPosition([0, 0, 2]);
+
+      expect(sound.routeTo).toHaveBeenCalledOnce();
+      expect(sound.routeTo).toHaveBeenCalledWith('room');
+    });
+
+    it('does not retry a send the engine refused each time the listener moves', async () => {
+      const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const sound = createMockSound('https://media.example/fire.ogg');
+      sound.routeTo.mockImplementation(() => {
+        throw new Error("No bus registered with name 'room'");
+      });
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay(fire as GMCPMessageClientMediaPlay);
+      expect(sound.routeTo).toHaveBeenCalledOnce();
+
+      client.media.setListenerPosition([0, 0, 2]);
+      expect(sound.routeTo).toHaveBeenCalledOnce();
+      consoleWarn.mockRestore();
+    });
+
+    it('compensates the aux feed of an inline effect chain the same way', async () => {
+      await client.media.setChain({ id: 'room', effects: [{ type: 'reverb' }] });
+      const room = client.effectBuses.created.room;
+      const sound = await playFire({
+        effects: [{ id: 'muffle', type: 'lowpass', params: { frequency: 400 } }],
+      });
+      const inline = client.effectBuses.anon[0];
+
+      expect(sound.routeTo).toHaveBeenCalledWith(inline);
+      expect(inline.connect).toHaveBeenLastCalledWith(room, expect.closeTo(1.2, 9));
+
+      client.media.setListenerPosition([0, 0, 2]);
+      expect(inline.connect).toHaveBeenLastCalledWith(room, expect.closeTo(0.6, 9));
+      // The dry path stays on master throughout.
+      expect(inline.disconnect).not.toHaveBeenCalled();
+    });
+  });
+
   describe('per-voice occlusion', () => {
     const tone = {
       key: 's4894767',
@@ -2767,12 +2967,15 @@ describe('GMCPClientMedia', () => {
         second.voice.play.mock.invocationCallOrder[0],
       );
       expect(handler.sounds.fire.mediaVolume).toBe(0.2);
-      expect(second.routeTo).toHaveBeenLastCalledWith('workshop', 0.3);
+      expect(handler.sounds.fire.namedSend).toBe(0.3);
       expect(second.loop).toHaveBeenCalledWith('infinite');
       if (mode === 'HRTF') {
         expect(second.position).toEqual([-2, 0, 0]);
+        // 2 m away: distance gain 0.5, which the send (tapped after it) undoes.
+        expect(second.routeTo).toHaveBeenLastCalledWith('workshop', expect.closeTo(0.6, 9));
       } else {
         expect(second.volume).toBe(0.2);
+        expect(second.routeTo).toHaveBeenLastCalledWith('workshop', 0.3);
       }
     });
 

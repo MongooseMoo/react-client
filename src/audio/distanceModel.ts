@@ -89,6 +89,50 @@ export function profileDistanceGain(distance: number, profile: SpatialProfile): 
   return refDistance / (refDistance + rolloff * (clamped - refDistance));
 }
 
+/**
+ * PannerNode distance parameters under which the panner's own rolloff is
+ * {@link profileDistanceGain} for the profile: Web Audio's `inverse` and
+ * `linear` models are the same formulas, with the same clamp at maxDistance.
+ * `none` is the inverse model with no rolloff. (Web Audio limits a linear
+ * rolloff to 0..1; a profile outside that range has no native equivalent.)
+ */
+export function profilePannerDistance(profile: SpatialProfile): {
+  distanceModel: 'inverse' | 'linear';
+  refDistance: number;
+  rolloffFactor: number;
+  maxDistance: number;
+} {
+  return {
+    distanceModel: profile.model === 'linear' ? 'linear' : 'inverse',
+    refDistance: profile.refDistance,
+    rolloffFactor: profile.model === 'none' ? 0 : profile.rolloff,
+    maxDistance: profile.maxDistance,
+  };
+}
+
+/**
+ * The most a reverb send is raised to undo a source's distance gain (32 x is
+ * +30 dB). The engine takes a send after the source's gain and accepts any
+ * finite send gain, so it sets no limit of its own, and the curves give none
+ * that is usable: the default one floors at 1 / 10 000 and a linear one
+ * reaches 0, where the tap is silent and no boost can recover it. So this is a
+ * choice: under the default curve a room's reverberant level is even out to
+ * 32 m, and past that it falls with the direct sound. It is a cap on the
+ * boost, not on the send, so that distance is the same whatever the send.
+ */
+export const MAX_SEND_DISTANCE_BOOST = 32;
+
+/**
+ * The gain to give a send that is tapped after `distanceGain`, so that what
+ * reaches the reverb is `send` times the undistanced sound: send / distanceGain,
+ * with the boost capped at {@link MAX_SEND_DISTANCE_BOOST}. The direct sound
+ * still falls with distance, so the direct-to-reverb ratio does too.
+ */
+export function distanceCompensatedSend(send: number, distanceGain: number): number {
+  const boost = distanceGain > 0 ? Math.min(1 / distanceGain, MAX_SEND_DISTANCE_BOOST) : MAX_SEND_DISTANCE_BOOST;
+  return send * boost;
+}
+
 /** Euclidean distance between two 3D positions; missing/short vectors → 0 (co-located). */
 export function distanceBetween(
   a?: readonly number[] | null,

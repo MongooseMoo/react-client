@@ -1,10 +1,13 @@
 import type { Position } from "cacophony";
 
 import type { MediaService } from "./MediaService";
-import type { MediaVoice, VoicePosition, VoiceRoute } from "./MediaVoices";
+import type { MediaVoice, VoiceFacing, VoicePosition, VoiceRoute } from "./MediaVoices";
 
 /** The participant's position as an entity in the current scene; null or undefined when not in it. */
 export type SpatialPositionLookup = (participantId: string) => Position | null | undefined;
+
+/** The way the participant's entity faces (its `forward`); null or undefined when it has none. */
+export type SpatialFacingLookup = (participantId: string) => Position | null | undefined;
 
 type VoiceMedia = Pick<MediaService, "attachVoice">;
 
@@ -15,8 +18,8 @@ interface SpatialAudioEntry {
 
 /**
  * One LiveKit room's remote participants, as voices in the shared audio graph:
- * positioned at their entity while it is in the current scene, non-positional
- * otherwise.
+ * positioned at their entity, and facing the way it faces, while it is in the
+ * current scene; non-positional otherwise.
  */
 export class LiveKitSpatialAudioBridge {
   private readonly entries = new Map<string, SpatialAudioEntry>();
@@ -25,6 +28,7 @@ export class LiveKitSpatialAudioBridge {
   constructor(
     private readonly media: VoiceMedia,
     private readonly lookupPosition: SpatialPositionLookup,
+    private readonly lookupFacing: SpatialFacingLookup = () => null,
   ) {}
 
   attachParticipantTrack(participantId: string, track: MediaStreamTrack): void {
@@ -37,7 +41,11 @@ export class LiveKitSpatialAudioBridge {
     this.detachParticipant(participantId);
 
     // A first placement snaps, so a new voice does not fly in from the origin.
-    const voice = this.media.attachVoice(track, this.positionFor(participantId));
+    const voice = this.media.attachVoice(
+      track,
+      this.positionFor(participantId),
+      this.facingFor(participantId),
+    );
     voice.setRoute(this.route);
     this.entries.set(participantId, { track, voice });
   }
@@ -50,8 +58,14 @@ export class LiveKitSpatialAudioBridge {
     }
   }
 
+  /** Bring the participant's voice to where its entity is now, and the way it faces. */
   syncParticipant(participantId: string): void {
-    this.entries.get(participantId)?.voice.setPosition(this.positionFor(participantId));
+    const voice = this.entries.get(participantId)?.voice;
+    if (!voice) {
+      return;
+    }
+    voice.setPosition(this.positionFor(participantId));
+    voice.setFacing(this.facingFor(participantId));
   }
 
   syncAll(): void {
@@ -92,5 +106,10 @@ export class LiveKitSpatialAudioBridge {
    */
   private positionFor(participantId: string): VoicePosition {
     return this.lookupPosition(participantId) ?? null;
+  }
+
+  /** The way the participant's entity faces, or null: a voice with no facing has no cone. */
+  private facingFor(participantId: string): VoiceFacing {
+    return this.lookupFacing(participantId) ?? null;
   }
 }
