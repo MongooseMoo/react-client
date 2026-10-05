@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import builtinVariables from 'tree-sitter-moocode/builtin-variables.json';
 import { MOO_BUILTIN_NAMES } from './builtins';
 import {
   BUILTIN_FUNCTIONS,
+  BUILTIN_VARIABLES,
   ERROR_CONSTANTS,
   MOO_BLOCKS,
   MOO_CLOSE_KEYWORDS,
@@ -19,6 +21,17 @@ describe('MOO language contract', () => {
     expect(MOO_LANGUAGE_ID).toBe('moocode');
     expect(MOO_SESSION_TYPES).toContain('moo-code');
     expect(MOO_SESSION_TYPES).toContain('lambdamoo');
+  });
+
+  it('takes builtin variables from the grammar package instead of a second list', () => {
+    const predefined = builtinVariables.variables
+      .filter((variable) => variable.kind !== 'boolean')
+      .map((variable) => variable.name);
+
+    expect(BUILTIN_VARIABLES).toEqual(predefined);
+    expect(BUILTIN_VARIABLES).toEqual(
+      expect.arrayContaining(['player', 'iobjstr', 'LIST', 'OBJ', 'INT', 'MAP', 'WAIF', 'BOOL']),
+    );
   });
 
   it('owns shared syntax vocabulary used by highlighting and diagnostics', () => {

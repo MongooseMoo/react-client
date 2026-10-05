@@ -51,7 +51,9 @@ export type MooSemanticTokenRange = {
 const KEYWORDS = new Set<string>(STATEMENT_KEYWORDS.map((keyword) => keyword.toLowerCase()));
 const OPERATOR_KEYWORDS = new Set<string>(OPERATOR_WORDS.map((operator) => operator.toLowerCase()));
 const ERROR_NAMES = new Set<string>(ERROR_CONSTANTS);
-const BUILTIN_VARIABLE_NAMES = new Set<string>(BUILTIN_VARIABLES);
+const BUILTIN_VARIABLE_NAMES = new Set<string>(
+  BUILTIN_VARIABLES.map((variable) => variable.toLowerCase()),
+);
 const BUILTIN_FUNCTION_NAMES = new Set<string>(BUILTIN_FUNCTIONS);
 const IDENTIFIER_PATTERN = new RegExp(MOO_IDENTIFIER_PATTERN_SOURCE, 'g');
 const SYSTEM_REFERENCE_PATTERN = new RegExp(`\\$${MOO_IDENTIFIER_PATTERN_SOURCE}`, 'g');
@@ -146,7 +148,7 @@ export function collectMooSemanticTokens(source: string): MooSemanticToken[] {
       continue;
     }
 
-    if (BUILTIN_VARIABLE_NAMES.has(text)) {
+    if (BUILTIN_VARIABLE_NAMES.has(lowerText) && !isPropertyName(masked, startOffset)) {
       tokens.push({
         lineNumber: range.startLineNumber,
         startColumn: range.startColumn,
@@ -384,12 +386,20 @@ function dedupeSemanticTokens(tokens: MooSemanticToken[]): MooSemanticToken[] {
 }
 
 function isVerbName(source: string, offset: number): boolean {
+  return previousNonWhitespaceCharacter(source, offset) === ':';
+}
+
+function isPropertyName(source: string, offset: number): boolean {
+  return previousNonWhitespaceCharacter(source, offset) === '.';
+}
+
+function previousNonWhitespaceCharacter(source: string, offset: number): string | undefined {
   let index = offset - 1;
   while (index >= 0 && /\s/.test(source[index])) {
     index -= 1;
   }
 
-  return source[index] === ':';
+  return source[index];
 }
 
 function markOccupiedOffsets(

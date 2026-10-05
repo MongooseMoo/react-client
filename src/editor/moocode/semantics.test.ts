@@ -1,3 +1,4 @@
+import builtinVariables from 'tree-sitter-moocode/builtin-variables.json';
 import { describe, expect, it } from 'vitest';
 import {
   analyzeMooSemantics,
@@ -434,6 +435,23 @@ describe('MOO semantic model', () => {
       },
     ]);
     expect(analyzeMooSemantics(source).symbols.map((symbol) => symbol.name)).toContain('utils');
+  });
+
+  it('does not report variables the server predefines as undefined, in any case', () => {
+    const names = builtinVariables.variables.map((variable) => variable.name);
+    const spellings = names.flatMap((name) => [name, name.toLowerCase(), name.toUpperCase()]);
+    const source = [
+      'value = args[1];',
+      'if (typeof(value) == LIST || typeof(value) == OBJ)',
+      `  return {${spellings.join(', ')}};`,
+      'endif',
+    ].join('\n');
+
+    expect(names).toContain('LIST');
+    expect(findMooUndefinedLocalReferences(source)).toEqual([]);
+    expect(findMooUndefinedLocalReferences('return LISTS;')).toEqual([
+      { name: 'LISTS', range: wordRange('return LISTS;', 'LISTS', 1) },
+    ]);
   });
 
   it('suggests visible local typo targets for undefined local references', () => {

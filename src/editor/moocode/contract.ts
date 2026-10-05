@@ -1,3 +1,5 @@
+import builtinVariables from 'tree-sitter-moocode/builtin-variables.json';
+
 export const MOO_LANGUAGE_ID = 'moocode';
 export const PLAINTEXT_LANGUAGE_ID = 'plaintext';
 export const MOO_CODE_ACTION_QUICKFIX_KIND = 'quickfix';
@@ -54,19 +56,13 @@ export const ERROR_CONSTANTS = [
   'E_INTRPT',
 ] as const;
 
-export const BUILTIN_VARIABLES = [
-  'player',
-  'this',
-  'caller',
-  'verb',
-  'args',
-  'argstr',
-  'dobj',
-  'dobjstr',
-  'prepstr',
-  'iobj',
-  'iobjstr',
-] as const;
+// The variables the server predefines in every verb, spelled as the server
+// spells them (`LIST`, `player`). The server compares variable names without
+// regard to case, so match these case-insensitively. `true` and `false` are
+// predefined too but are handled as constants, not listed here.
+export const BUILTIN_VARIABLES: readonly string[] = builtinVariables.variables
+  .filter((variable) => variable.kind !== 'boolean')
+  .map((variable) => variable.name);
 
 export const SYSTEM_REFERENCES = [
   '$login',
