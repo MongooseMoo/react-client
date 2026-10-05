@@ -117,6 +117,28 @@ Client messages:
 When `Text` arrives, the client emits `channel_text` and may send a browser
 notification for `say_to_you` while the document is unfocused.
 
+## `Comm.LiveKit`
+
+Source: Mongoose.
+
+Server messages:
+
+- `Comm.LiveKit.room_token`:
+  `{ "token": "...", "chain": "room", "send": 0.4 }`. The client joins the
+  LiveKit room the token grants and plays each remote participant as a
+  positioned voice. `chain` and `send` are optional and mean what they do on
+  `Client.Media.Play`: `chain` alone routes the room's voices through that
+  named effect chain, and `chain` with `send` (0 to 1) keeps the dry voice and
+  adds an aux send into it. `send` without `chain` is rejected. A token the
+  client already holds replaces that room's `chain` and `send`; absent fields
+  mean dry.
+- `Comm.LiveKit.room_leave`: `{ "token": "..." }`; the client leaves that room.
+
+The chain is defined with `Client.Media.Chain`, before or after the token. A
+voice plays dry while its chain does not exist, joins it when it is defined, and
+returns to dry on `Client.Media.ChainStop`. `Client.Media.Stop` never stops a
+voice.
+
 ## `Group`
 
 Source: MUD Standards/IRE-adjacent.

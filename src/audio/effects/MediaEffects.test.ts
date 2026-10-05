@@ -200,6 +200,47 @@ describe('MediaEffects', () => {
     expect(created.get('b')!.destroy).toHaveBeenCalled();
     expect(fx.hasChain('a')).toBe(false);
   });
+
+  describe('chain observer', () => {
+    it('hears a chain once it exists, and not again when it is redefined in place', async () => {
+      const { cacophony } = makeCacophony();
+      const observer = {
+        chainCreated: vi.fn((id: string) => expect(fx.hasChain(id)).toBe(true)),
+        chainDestroying: vi.fn(),
+      };
+      const fx = new MediaEffects(cacophony, observer);
+
+      await fx.setChain({ id: 'cave', effects: [{ type: 'reverb' }] });
+      await fx.setChain({ id: 'cave', effects: [{ type: 'distortion' }] });
+
+      expect(observer.chainCreated).toHaveBeenCalledTimes(1);
+      expect(observer.chainCreated).toHaveBeenCalledWith('cave');
+      expect(observer.chainDestroying).not.toHaveBeenCalled();
+    });
+
+    it('hears a chain going while its bus is still alive, on every way it can go', async () => {
+      const { cacophony, created } = makeCacophony();
+      const observer = {
+        chainCreated: vi.fn(),
+        chainDestroying: vi.fn((id: string) => {
+          expect(fx.hasChain(id)).toBe(true);
+          expect(created.get(id)!.destroy).not.toHaveBeenCalled();
+        }),
+      };
+      const fx = new MediaEffects(cacophony, observer);
+      for (const id of ['stopped', 'emptied', 'shutdown']) {
+        await fx.setChain({ id, effects: [{ type: 'reverb' }] });
+      }
+
+      fx.removeChain('stopped');
+      await fx.setChain({ id: 'emptied', effects: [] });
+      fx.shutdown();
+      fx.removeChain('never-defined');
+
+      expect(observer.chainDestroying.mock.calls).toEqual([['stopped'], ['emptied'], ['shutdown']]);
+      expect(created.get('shutdown')!.destroy).toHaveBeenCalled();
+    });
+  });
 });
 
 describe('buildEffectsSupport', () => {

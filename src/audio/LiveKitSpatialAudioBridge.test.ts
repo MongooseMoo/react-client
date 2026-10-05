@@ -1,120 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveKitSpatialAudioBridge } from "./LiveKitSpatialAudioBridge";
-import { SPATIAL_PARAM_TAU_S } from "./audioParamSmoothing";
-import { SPATIAL_DISTANCE_MODEL } from "./distanceModel";
 
-const MockMediaStream = vi.fn();
-
-vi.stubGlobal("MediaStream", MockMediaStream);
-// jsdom does not implement HTMLMediaElement.play(); replace Audio with a quiet
-// mock so the priming element does not spew "Not implemented" to stderr.
-vi.stubGlobal(
-  "Audio",
-  vi.fn(() => ({
-    muted: false,
-    srcObject: null,
-    play: vi.fn().mockResolvedValue(undefined),
-    pause: vi.fn(),
-  })),
-);
-
-type BridgeCacophony = ConstructorParameters<typeof LiveKitSpatialAudioBridge>[0];
-
-function createAudioParam(value = 0) {
-  return {
-    value,
-    setValueAtTime: vi.fn((nextValue: number) => {
-      value = nextValue;
-      return undefined as never;
-    }),
-    setTargetAtTime: vi.fn((nextValue: number) => {
-      value = nextValue;
-      return undefined as never;
+function createMedia() {
+  const voices: Array<{
+    detach: ReturnType<typeof vi.fn>;
+    setPosition: ReturnType<typeof vi.fn>;
+    setRoute: ReturnType<typeof vi.fn>;
+  }> = [];
+  const media = {
+    attachVoice: vi.fn(() => {
+      const voice = { detach: vi.fn(), setPosition: vi.fn(), setRoute: vi.fn() };
+      voices.push(voice);
+      return voice;
     }),
   };
+  return { media, voices };
 }
 
-function createNode(name: string) {
-  return {
-    channelCount: 2,
-    channelCountMode: "max" as ChannelCountMode,
-    channelInterpretation: "speakers" as ChannelInterpretation,
-    connect: vi.fn(),
-    context: { currentTime: 0 },
-    disconnect: vi.fn(),
-    name,
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-  };
-}
-
-function createGain(name: string) {
-  return {
-    ...createNode(name),
-    gain: createAudioParam(1),
-  };
-}
-
-function createPanner() {
-  return {
-    ...createNode("panner"),
-    coneInnerAngle: 360,
-    coneOuterAngle: 360,
-    coneOuterGain: 0,
-    distanceModel: "inverse" as DistanceModelType,
-    maxDistance: 10000,
-    orientationX: createAudioParam(),
-    orientationY: createAudioParam(),
-    orientationZ: createAudioParam(),
-    panningModel: "HRTF" as PanningModelType,
-    positionX: createAudioParam(),
-    positionY: createAudioParam(),
-    positionZ: createAudioParam(),
-    refDistance: 1,
-    rolloffFactor: 1,
-  };
-}
-
-function createCacophony() {
-  const source = {
-    ...createNode("source"),
-    mediaStream: undefined,
-  };
-  const splitter = createNode("splitter");
-  const panner = createPanner();
-  const globalGainNode = createGain("global");
-  const gains = [
-    createGain("mix"),
-    createGain("channel-1"),
-    createGain("channel-2"),
-    createGain("output"),
-  ];
-
-  let gainIndex = 0;
-  const context = {
-    currentTime: 7,
-    createChannelSplitter: vi.fn(() => splitter),
-    createGain: vi.fn(() => gains[gainIndex++]),
-    createMediaStreamSource: vi.fn(() => source),
-  };
-
-  const cacophony = {
-    context,
-    createPanner: vi.fn(() => panner),
-    globalGainNode,
-    resume: vi.fn(async () => {}),
-  } as unknown as BridgeCacophony;
-
-  return { cacophony, context, gains, globalGainNode, panner, source, splitter };
-}
-
-function track(channelCount?: number) {
-  return {
-    enabled: false,
-    getSettings: vi.fn(() => ({ channelCount })),
-    id: "track-1",
-    stop: vi.fn(),
-  } as unknown as MediaStreamTrack;
+function track(id: string) {
+  return { id } as unknown as MediaStreamTrack;
 }
 
 describe("LiveKitSpatialAudioBridge", () => {
@@ -122,147 +26,82 @@ describe("LiveKitSpatialAudioBridge", () => {
     vi.clearAllMocks();
   });
 
-  it("downmixes unknown remote tracks before the Cacophony HRTF panner", () => {
-    const remoteTrack = track();
-    const { cacophony, context, gains, globalGainNode, panner, source, splitter } =
-      createCacophony();
-    const bridge = new LiveKitSpatialAudioBridge(cacophony, () => [1, 2, 3]);
+  it("attaches a participant's track as a voice at its looked-up position", () => {
+    const { media } = createMedia();
+    const remoteTrack = track("a");
+    const bridge = new LiveKitSpatialAudioBridge(media, () => [1, 2, 3]);
 
     bridge.attachParticipantTrack("player-2", remoteTrack);
 
-    expect(remoteTrack.enabled).toBe(true);
-    expect(MockMediaStream).toHaveBeenCalledWith([remoteTrack]);
-    expect(context.createMediaStreamSource).toHaveBeenCalledWith(expect.any(MockMediaStream));
-    expect(context.createChannelSplitter).toHaveBeenCalledWith(2);
-    expect(source.connect).toHaveBeenCalledWith(splitter);
-    expect(splitter.connect).toHaveBeenCalledWith(gains[1], 0);
-    expect(splitter.connect).toHaveBeenCalledWith(gains[2], 1);
-    expect(gains[1].gain.value).toBe(0.5);
-    expect(gains[2].gain.value).toBe(0.5);
-    expect(gains[1].connect).toHaveBeenCalledWith(gains[0]);
-    expect(gains[2].connect).toHaveBeenCalledWith(gains[0]);
-    expect(gains[0].connect).toHaveBeenCalledWith(panner);
-    expect(panner.connect).toHaveBeenCalledWith(gains[3]);
-    expect(gains[3].connect).toHaveBeenCalledWith(globalGainNode);
-    expect(cacophony.createPanner).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channelCount: 1,
-        channelCountMode: "explicit",
-        channelInterpretation: "speakers",
-        coneInnerAngle: 360,
-        coneOuterAngle: 360,
-        coneOuterGain: 0,
-        distanceModel: "inverse",
-        panningModel: "HRTF",
-        refDistance: SPATIAL_DISTANCE_MODEL.refDistance,
-        rolloffFactor: SPATIAL_DISTANCE_MODEL.rolloffFactor,
-        maxDistance: SPATIAL_DISTANCE_MODEL.maxDistance,
-      }),
-    );
-    expect(panner.positionX.setValueAtTime).toHaveBeenCalledWith(1, 7);
-    expect(panner.positionY.setValueAtTime).toHaveBeenCalledWith(2, 7);
-    expect(panner.positionZ.setValueAtTime).toHaveBeenCalledWith(3, 7);
-    expect(cacophony.resume).toHaveBeenCalledOnce();
+    expect(media.attachVoice).toHaveBeenCalledWith(remoteTrack, [1, 2, 3]);
   });
 
-  it("snaps the initial panner position, then ramps position updates from the spatial lookup", () => {
-    const remoteTrack = track(1);
-    const { cacophony, panner } = createCacophony();
-    const positions: Record<string, [number, number, number]> = {
-      "player-2": [1, 2, 3],
-    };
-    const bridge = new LiveKitSpatialAudioBridge(cacophony, (participantId) => positions[participantId]);
+  it("places a participant with no known position at the origin", () => {
+    const { media } = createMedia();
+    const bridge = new LiveKitSpatialAudioBridge(media, () => undefined);
+
+    bridge.attachParticipantTrack("player-2", track("a"));
+
+    expect(media.attachVoice).toHaveBeenCalledWith(expect.anything(), [0, 0, 0]);
+  });
+
+  it("moves the voice on sync, and re-attaching the same track only syncs", () => {
+    const { media, voices } = createMedia();
+    const positions: Record<string, [number, number, number]> = { "player-2": [1, 2, 3] };
+    const remoteTrack = track("a");
+    const bridge = new LiveKitSpatialAudioBridge(media, (participantId) => positions[participantId]);
 
     bridge.attachParticipantTrack("player-2", remoteTrack);
-
-    expect(panner.positionX.setValueAtTime).toHaveBeenCalledWith(1, 7);
-    expect(panner.positionX.setTargetAtTime).not.toHaveBeenCalled();
+    expect(voices[0].setPosition).not.toHaveBeenCalled();
 
     positions["player-2"] = [4, 5, 6];
-    bridge.syncParticipant("player-2");
+    bridge.syncAll();
+    expect(voices[0].setPosition).toHaveBeenLastCalledWith([4, 5, 6]);
 
-    expect(panner.positionX.setTargetAtTime).toHaveBeenLastCalledWith(4, 7, SPATIAL_PARAM_TAU_S);
-    expect(panner.positionY.setTargetAtTime).toHaveBeenLastCalledWith(5, 7, SPATIAL_PARAM_TAU_S);
-    expect(panner.positionZ.setTargetAtTime).toHaveBeenLastCalledWith(6, 7, SPATIAL_PARAM_TAU_S);
+    bridge.attachParticipantTrack("player-2", remoteTrack);
+    expect(media.attachVoice).toHaveBeenCalledOnce();
+    expect(voices[0].setPosition).toHaveBeenCalledTimes(2);
   });
 
-  it("primes Chromium decode with a muted media element and tears it down on detach", () => {
-    const createdElements: Array<{
-      muted: boolean;
-      srcObject: unknown;
-      play: ReturnType<typeof vi.fn>;
-      pause: ReturnType<typeof vi.fn>;
-    }> = [];
-    const MockAudio = vi.fn(() => {
-      const element = {
-        muted: false,
-        srcObject: null as unknown,
-        play: vi.fn().mockResolvedValue(undefined),
-        pause: vi.fn(),
-      };
-      createdElements.push(element);
-      return element;
-    });
-    const originalAudio = (globalThis as { Audio?: unknown }).Audio;
-    (globalThis as { Audio?: unknown }).Audio = MockAudio;
+  it("replaces the voice when a participant's track changes", () => {
+    const { media, voices } = createMedia();
+    const bridge = new LiveKitSpatialAudioBridge(media, () => [0, 0, 0]);
 
-    try {
-      const remoteTrack = track(1);
-      const { cacophony } = createCacophony();
-      const bridge = new LiveKitSpatialAudioBridge(cacophony, () => [0, 0, 0]);
+    bridge.attachParticipantTrack("player-2", track("a"));
+    bridge.attachParticipantTrack("player-2", track("b"));
 
-      bridge.attachParticipantTrack("player-2", remoteTrack);
-
-      expect(createdElements).toHaveLength(1);
-      const element = createdElements[0];
-      expect(element.muted).toBe(true);
-      expect(element.srcObject).toBeInstanceOf(MockMediaStream);
-      expect(element.play).toHaveBeenCalledOnce();
-
-      bridge.detachParticipant("player-2");
-
-      expect(element.pause).toHaveBeenCalledOnce();
-      expect(element.srcObject).toBeNull();
-    } finally {
-      (globalThis as { Audio?: unknown }).Audio = originalAudio;
-    }
+    expect(voices[0].detach).toHaveBeenCalledOnce();
+    expect(voices).toHaveLength(2);
+    expect(voices[1].detach).not.toHaveBeenCalled();
   });
 
-  it("cleans up stale participant graph nodes without stopping the underlying track", () => {
-    const firstTrack = track(2);
-    const secondTrack = track(1);
-    const first = createCacophony();
-    const second = createCacophony();
-    const cacophony = {
-      ...first.cacophony,
-      context: {
-        ...first.context,
-        createChannelSplitter: vi.fn(first.context.createChannelSplitter)
-          .mockImplementationOnce(first.context.createChannelSplitter)
-          .mockImplementationOnce(second.context.createChannelSplitter),
-        createGain: vi.fn(first.context.createGain)
-          .mockImplementationOnce(first.context.createGain)
-          .mockImplementationOnce(first.context.createGain)
-          .mockImplementationOnce(first.context.createGain)
-          .mockImplementationOnce(second.context.createGain),
-        createMediaStreamSource: vi.fn()
-          .mockImplementationOnce(first.context.createMediaStreamSource)
-          .mockImplementationOnce(second.context.createMediaStreamSource),
-      },
-      createPanner: vi.fn()
-        .mockImplementationOnce(first.cacophony.createPanner)
-        .mockImplementationOnce(second.cacophony.createPanner),
-    } as unknown as BridgeCacophony;
-    const bridge = new LiveKitSpatialAudioBridge(cacophony, () => [0, 0, 0]);
+  it("gives the room's route to voices already attached and to later ones", () => {
+    const { media, voices } = createMedia();
+    const bridge = new LiveKitSpatialAudioBridge(media, () => [0, 0, 0]);
 
-    bridge.attachParticipantTrack("player-1", firstTrack);
-    bridge.attachParticipantTrack("player-2", secondTrack);
+    bridge.attachParticipantTrack("player-1", track("a"));
+    expect(voices[0].setRoute).toHaveBeenLastCalledWith({});
+
+    bridge.setRoute({ chain: "room", send: 0.4 });
+    expect(voices[0].setRoute).toHaveBeenLastCalledWith({ chain: "room", send: 0.4 });
+
+    bridge.attachParticipantTrack("player-2", track("b"));
+    expect(voices[1].setRoute).toHaveBeenLastCalledWith({ chain: "room", send: 0.4 });
+  });
+
+  it("detaches participants that are no longer active, and everyone on cleanup", () => {
+    const { media, voices } = createMedia();
+    const bridge = new LiveKitSpatialAudioBridge(media, () => [0, 0, 0]);
+
+    bridge.attachParticipantTrack("player-1", track("a"));
+    bridge.attachParticipantTrack("player-2", track("b"));
     bridge.detachMissing(["player-2"]);
 
-    expect(first.source.disconnect).toHaveBeenCalled();
-    expect(first.splitter.disconnect).toHaveBeenCalled();
-    expect(first.panner.disconnect).toHaveBeenCalled();
-    expect(firstTrack.stop).not.toHaveBeenCalled();
-    expect(second.source.disconnect).not.toHaveBeenCalled();
+    expect(voices[0].detach).toHaveBeenCalledOnce();
+    expect(voices[1].detach).not.toHaveBeenCalled();
+
+    bridge.cleanup();
+    expect(voices[1].detach).toHaveBeenCalledOnce();
+    expect(voices[0].detach).toHaveBeenCalledOnce();
   });
 });
