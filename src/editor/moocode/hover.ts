@@ -1,5 +1,4 @@
 import type {
-  BUILTIN_VARIABLES,
   ERROR_CONSTANTS,
   OPERATOR_WORDS,
   STATEMENT_KEYWORDS,
@@ -27,7 +26,19 @@ type WordOffsets = {
   endOffset: number;
 };
 
-const BUILTIN_VARIABLE_DOCUMENTATION: Record<(typeof BUILTIN_VARIABLES)[number], string> = {
+// Keyed by lowercased name; hover.test.ts checks every builtin variable has an entry.
+const BUILTIN_VARIABLE_DOCUMENTATION: Record<string, string> = {
+  num: 'The typeof() code for integers. The older name for INT.',
+  obj: 'The typeof() code for object numbers.',
+  str: 'The typeof() code for strings.',
+  list: 'The typeof() code for lists.',
+  err: 'The typeof() code for error values.',
+  int: 'The typeof() code for integers.',
+  float: 'The typeof() code for floating-point numbers.',
+  map: 'The typeof() code for maps.',
+  anon: 'The typeof() code for anonymous objects.',
+  waif: 'The typeof() code for waifs.',
+  bool: 'The typeof() code for booleans.',
   player: 'The player whose command started this task.',
   this: 'The object whose verb is executing.',
   caller: 'The object or verb that called this verb.',
@@ -109,10 +120,9 @@ const WORD_PATTERNS = [
 
 export function getMooBuiltinVariableDocumentation(name: string): string | null {
   const normalizedName = name.toLowerCase();
-  return (
-    BUILTIN_VARIABLE_DOCUMENTATION[normalizedName as keyof typeof BUILTIN_VARIABLE_DOCUMENTATION] ??
-    null
-  );
+  return Object.hasOwn(BUILTIN_VARIABLE_DOCUMENTATION, normalizedName)
+    ? BUILTIN_VARIABLE_DOCUMENTATION[normalizedName]
+    : null;
 }
 
 export function getMooErrorDocumentation(name: string): string | null {

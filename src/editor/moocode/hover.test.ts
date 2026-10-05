@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { getMooHover } from './hover';
+import { BUILTIN_VARIABLES } from './contract';
+import { getMooBuiltinVariableDocumentation, getMooHover } from './hover';
 
 describe('MOO hover service', () => {
+  it('documents every builtin variable, however it is spelled', () => {
+    for (const variable of BUILTIN_VARIABLES) {
+      expect(getMooBuiltinVariableDocumentation(variable), variable).toEqual(expect.any(String));
+    }
+
+    expect(getMooBuiltinVariableDocumentation('list')).toBe(
+      getMooBuiltinVariableDocumentation('LIST'),
+    );
+    expect(getMooBuiltinVariableDocumentation('listing')).toBeNull();
+  });
+
   it('describes ToastStunt builtins with signatures and documentation', () => {
     const hover = getMooHover('notify(player, "hello");', { lineNumber: 1, column: 3 });
 

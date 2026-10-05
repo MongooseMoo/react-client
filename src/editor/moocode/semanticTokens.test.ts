@@ -34,6 +34,22 @@ describe('MOO semantic tokens', () => {
     );
   });
 
+  it('marks type constants as builtin variables in any case, but not same-named properties', () => {
+    const source = ['if (typeof(x) == LIST || typeof(x) == obj)', '  return this.list;', 'endif'].join(
+      '\n',
+    );
+    const summary = tokenSummary(source);
+
+    expect(summary).toEqual(
+      expect.arrayContaining([
+        '1:18:LIST:variable:defaultLibrary',
+        '1:39:obj:variable:defaultLibrary',
+        '2:10:this:variable:defaultLibrary',
+      ]),
+    );
+    expect(summary).not.toEqual(expect.arrayContaining(['2:15:list:variable:defaultLibrary']));
+  });
+
   it('does not include invalid dollar-separated text in MOO identifier tokens', () => {
     const source = ['$room_extra:announce("ok");', '$room$extra:announce("bad");'].join('\n');
 
