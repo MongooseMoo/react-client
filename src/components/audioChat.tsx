@@ -13,6 +13,7 @@ import {
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { LiveKitSpatialAudioBridge } from '../audio/LiveKitSpatialAudioBridge';
+import type { VoiceRoute } from '../audio/MediaVoices';
 import type MudClient from '../client';
 import { useLiveKitStore } from '../stores/liveKitStore';
 import { useSpatialStore } from '../stores/spatialStore';
@@ -36,16 +37,21 @@ function liveKitRemoteMediaStreamTrack(track: unknown): MediaStreamTrack | null 
   return null;
 }
 
-const SpatialLiveKitAudio: React.FC<AudioChatProps> = ({ client }) => {
+const SpatialLiveKitAudio: React.FC<AudioChatProps & VoiceRoute> = ({ client, chain, send }) => {
   const tracks = useTracks([Track.Source.Microphone], { onlySubscribed: true });
   const bridgeRef = useRef<LiveKitSpatialAudioBridge>();
 
   if (!bridgeRef.current) {
     bridgeRef.current = new LiveKitSpatialAudioBridge(
-      client.media.cacophony,
+      client.media,
       (participantId) => useSpatialStore.getState().spatialEntities[participantId]?.position,
     );
   }
+
+  // Declared before the track effect, so a voice is attached straight onto the room's chain.
+  useEffect(() => {
+    bridgeRef.current?.setRoute({ chain, send });
+  }, [chain, send]);
 
   useEffect(() => {
     const bridge = bridgeRef.current;
@@ -110,16 +116,16 @@ const CacophonyAudioConference: React.FC = () => {
 };
 
 const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
-  const tokens = useLiveKitStore((state) => state.tokens);
+  const rooms = useLiveKitStore((state) => state.rooms);
   const removeToken = useLiveKitStore((state) => state.removeToken);
 
-  if (!tokens.length) {
+  if (!rooms.length) {
     return null;
   }
 
   return (
     <div data-lk-theme="default">
-      {tokens.map((token) => (
+      {rooms.map(({ token, chain, send }) => (
         <LiveKitRoom
           key={token}
           video={false}
@@ -131,7 +137,7 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
             removeToken(token);
           }}
         >
-          <SpatialLiveKitAudio client={client} />
+          <SpatialLiveKitAudio client={client} chain={chain} send={send} />
           <CacophonyAudioConference />
         </LiveKitRoom>
       ))}

@@ -42,7 +42,9 @@ channel name payload.
   rendering.
 - `Client.Speech`: browser speech synthesis.
 - `Client.WebPush`: bearer token negotiation for Web Push registration.
-- `Comm.LiveKit`: LiveKit room token delivery and leave notification.
+- `Comm.LiveKit`: LiveKit room token delivery and leave notification, with an
+  optional `chain` and `send` naming the effect chain the room's voices play
+  through.
 - `Logging`: server-side logging/error messages surfaced in the client.
 - `Char.Offer`, `Char.Prompt`, `Char.Status.AffectedBy`,
   `Char.Status.Conditions`, and `Char.Status.Timers`: Mongoose character and

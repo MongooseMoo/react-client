@@ -1,13 +1,52 @@
 import { inbound } from "../../protocol/messages";
 import { GMCPMessage, GMCPPackage } from "../package";
-import { useLiveKitStore } from "../../stores/liveKitStore";
+import { type LiveKitRoom, useLiveKitStore } from "../../stores/liveKitStore";
 import { gmcpJsonMessage } from "../messages";
 
 export class GMCPMessageCommLiveKitToken extends GMCPMessage {
     token: string = "";
 }
 
-const roomToken = gmcpJsonMessage<"room_token", GMCPMessageCommLiveKitToken>("room_token");
+function tokenField(raw: unknown, what: string): string {
+    const token = (raw as { token?: unknown } | null)?.token;
+    if (typeof token !== "string") {
+        throw new TypeError(`${what}.token must be a string`);
+    }
+    return token;
+}
+
+/**
+ * `room_token {token, chain?, send?}`: `chain` and `send` mean what they do on
+ * `Client.Media.Play`. Checked here so a bad frame never reaches the audio graph.
+ */
+export function decodeRoomToken(raw: unknown): LiveKitRoom {
+    const what = "Comm.LiveKit.room_token";
+    const room: LiveKitRoom = { token: tokenField(raw, what) };
+    const { chain, send } = raw as { chain?: unknown; send?: unknown };
+    if (chain !== undefined) {
+        if (typeof chain !== "string") {
+            throw new TypeError(`${what}.chain must be a string`);
+        }
+        if (chain) {
+            room.chain = chain;
+        }
+    }
+    if (send !== undefined) {
+        if (typeof send !== "number" || !(send >= 0 && send <= 1)) {
+            throw new TypeError(`${what}.send must be a number within 0..1`);
+        }
+        if (!room.chain) {
+            throw new TypeError(`${what}.send requires a chain`);
+        }
+        room.send = send;
+    }
+    return room;
+}
+
+const roomToken = gmcpJsonMessage<"room_token", LiveKitRoom>("room_token", {
+    decode: decodeRoomToken,
+    encode: (payload: LiveKitRoom): unknown => payload,
+});
 const roomLeave = gmcpJsonMessage<"room_leave", GMCPMessageCommLiveKitToken>("room_leave");
 
 const GMCPCommLiveKitBase = GMCPPackage.with({
@@ -22,8 +61,8 @@ export class GMCPCommLiveKit extends GMCPCommLiveKitBase {
         this.on("roomLeave", (data) => this.handleroom_leave(data));
     }
 
-    handleroom_token(data: GMCPMessageCommLiveKitToken): void {
-        useLiveKitStore.getState().addToken(data.token);
+    handleroom_token(data: LiveKitRoom): void {
+        useLiveKitStore.getState().setRoom(data);
     }
 
     handleroom_leave(data: GMCPMessageCommLiveKitToken): void {

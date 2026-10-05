@@ -24,6 +24,8 @@ import {
   profileDistanceGain,
   type SpatialProfile,
 } from './distanceModel';
+import { type MediaVoice, MediaVoices } from './MediaVoices';
+import { clearNamedRoute, type NamedRouteState, routeNamedChain } from './namedRoute';
 import { VectorTweener } from './vectorTween';
 import type { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
@@ -176,7 +178,7 @@ export interface ClientMediaListenerPositionPayload {
   readonly position?: Position;
 }
 
-export interface ExtendedSound extends Sound {
+export interface ExtendedSound extends Sound, NamedRouteState {
   ambisonicRenderer?: AmbisonicRenderer;
   positionalFoa?: PositionalFoaRenderer;
   inputChannels?: number;
@@ -207,11 +209,6 @@ export interface ExtendedSound extends Sound {
   mediaOrientation?: Position;
   /** Positioned by the HRTF panner, so its distance gain is applied at the sound's gain. */
   pointSource?: boolean;
-  /** Named chain the sound routes to (primary, or aux when {@link namedSend} is set). */
-  namedChain?: string;
-  namedSend?: number;
-  /** Whether {@link namedChain} is currently applied as the source's own route. */
-  chainRouted?: boolean;
   /** The key claim generation that created this sound (diagnostics). */
   generation?: number;
 }
@@ -258,6 +255,7 @@ export class MediaService {
   /** Glides server-sent sound positions (keyed by sound) instead of snapping. */
   private readonly motion: VectorTweener;
   private readonly effects: MediaEffects;
+  private readonly voices: MediaVoices;
   private readonly mediaSession = new MediaSessionController();
   private readonly preloadedSoundKeys = new Set<string>();
   /** Latest claim generation per media key; every Play/Load/Stop for a key bumps it. */
@@ -275,7 +273,11 @@ export class MediaService {
 
   constructor(cacophony: Cacophony = new Cacophony(), options: MediaServiceOptions = {}) {
     this.cacophony = cacophony;
-    this.effects = new MediaEffects(this.cacophony);
+    this.effects = new MediaEffects(this.cacophony, {
+      chainCreated: (id) => this.voices.chainCreated(id),
+      chainDestroying: (id) => this.voices.chainDestroying(id),
+    });
+    this.voices = new MediaVoices(this.cacophony, this.effects);
     this.manageFocus = options.manageFocus ?? true;
     this.motion = options.motion ?? new VectorTweener();
 
@@ -389,6 +391,14 @@ export class MediaService {
     for (const sound of this.allSounds) {
       this.updatePositionalSpatial(sound);
     }
+  }
+
+  /**
+   * Put a live voice track (a LiveKit participant) in the graph as an HRTF
+   * point source. It is not a media key: Client.Media.Stop never touches it.
+   */
+  attachVoice(track: MediaStreamTrack, position: Position): MediaVoice {
+    return this.voices.attach(track, position);
   }
 
   setChain(data: ClientMediaChainPayload): Promise<void> {
@@ -896,23 +906,8 @@ export class MediaService {
    * undoing a different named route. A no-op when that route is already live.
    */
   private routeNamedChain(sound: ExtendedSound, chain: string | undefined, send: number | undefined): void {
-    if (sound.chainRouted && sound.namedChain === chain && sound.namedSend === send) {
-      return;
-    }
-    this.clearNamedRoute(sound);
-    sound.namedChain = chain;
-    sound.namedSend = send;
-    if (!chain) {
-      return;
-    }
-    try {
-      if (send !== undefined) {
-        sound.routeTo(chain, send);
-      } else {
-        sound.routeTo(chain);
-      }
-      sound.chainRouted = true;
-    } catch (error) {
+    const error = routeNamedChain(sound, chain, send, this.cacophony.getBus('master'));
+    if (error) {
       console.warn(`Client.Media: chain '${chain}' unavailable; playing dry`, error);
       this.traceSound('routed', sound, sound.key, {
         code: 'CAPABILITY_UNAVAILABLE',
@@ -923,24 +918,7 @@ export class MediaService {
 
   /** Undo the live named route: remove its aux send, or return the primary route to master. */
   private clearNamedRoute(sound: ExtendedSound): void {
-    const chain = sound.namedChain;
-    const routed = sound.chainRouted;
-    sound.chainRouted = false;
-    if (!routed || !chain) {
-      return;
-    }
-    try {
-      if (sound.namedSend !== undefined) {
-        sound.removeSend(chain);
-      } else {
-        const master = this.cacophony.getBus('master');
-        if (master) {
-          sound.routeTo(master);
-        }
-      }
-    } catch (error) {
-      console.warn(`Client.Media: could not clear chain '${chain}'`, error);
-    }
+    clearNamedRoute(sound, this.cacophony.getBus('master'));
   }
 
   /** Move a sound off its inline effect bus (back to master) and destroy that bus. */

@@ -1,34 +1,24 @@
-import type {
-  AudioNode as CacophonyAudioNode,
-  Cacophony,
-  GainNode as CacophonyGainNode,
-  MediaStreamAudioSourceNode,
-  PannerNode as CacophonyPannerNode,
-  Position,
-} from "cacophony";
+import type { Position } from "cacophony";
 
-import { smoothParamTo } from "./audioParamSmoothing";
-import { SPATIAL_DISTANCE_MODEL } from "./distanceModel";
+import type { MediaService } from "./MediaService";
+import type { MediaVoice, VoiceRoute } from "./MediaVoices";
 
 export type SpatialPositionLookup = (participantId: string) => Position | null | undefined;
 
-type LiveKitCacophony = Pick<Cacophony, "context" | "createPanner" | "globalGainNode" | "resume">;
+type VoiceMedia = Pick<MediaService, "attachVoice">;
 
 interface SpatialAudioEntry {
   track: MediaStreamTrack;
-  stream: MediaStream;
-  source: MediaStreamAudioSourceNode;
-  panner: CacophonyPannerNode;
-  outputGain: CacophonyGainNode;
-  downmixNodes: CacophonyAudioNode[];
-  primeElement?: HTMLAudioElement;
+  voice: MediaVoice;
 }
 
+/** One LiveKit room's remote participants, as positioned voices in the shared audio graph. */
 export class LiveKitSpatialAudioBridge {
   private readonly entries = new Map<string, SpatialAudioEntry>();
+  private route: VoiceRoute = {};
 
   constructor(
-    private readonly cacophony: LiveKitCacophony,
+    private readonly media: VoiceMedia,
     private readonly lookupPosition: SpatialPositionLookup,
   ) {}
 
@@ -41,55 +31,22 @@ export class LiveKitSpatialAudioBridge {
 
     this.detachParticipant(participantId);
 
-    if (!this.cacophony.context.createMediaStreamSource) {
-      throw new Error("Media stream sources are not supported on this audio context.");
+    // The first placement snaps so a new voice does not fly in from the origin.
+    const voice = this.media.attachVoice(track, this.positionFor(participantId));
+    voice.setRoute(this.route);
+    this.entries.set(participantId, { track, voice });
+  }
+
+  /** The named effect chain every voice in this room plays through. */
+  setRoute(route: VoiceRoute): void {
+    this.route = route;
+    for (const entry of this.entries.values()) {
+      entry.voice.setRoute(route);
     }
-
-    track.enabled = true;
-    const stream = new MediaStream([track]);
-    const source = this.cacophony.context.createMediaStreamSource(stream);
-    const { output, nodes } = this.downmixToMono(source, track);
-    const panner = this.cacophony.createPanner({
-      channelCount: 1,
-      channelCountMode: "explicit",
-      channelInterpretation: "speakers",
-      coneInnerAngle: 360,
-      coneOuterAngle: 360,
-      coneOuterGain: 0,
-      distanceModel: "inverse",
-      panningModel: "HRTF",
-      refDistance: SPATIAL_DISTANCE_MODEL.refDistance,
-      rolloffFactor: SPATIAL_DISTANCE_MODEL.rolloffFactor,
-      maxDistance: SPATIAL_DISTANCE_MODEL.maxDistance,
-    });
-    const outputGain = this.cacophony.context.createGain();
-
-    output.connect(panner);
-    panner.connect(outputGain);
-    outputGain.connect(this.cacophony.globalGainNode);
-
-    this.applyPosition(panner, this.positionFor(participantId), { snap: true });
-    this.entries.set(participantId, {
-      downmixNodes: nodes,
-      outputGain,
-      panner,
-      primeElement: this.createPrimeElement(stream),
-      source,
-      stream,
-      track,
-    });
-
-    void this.cacophony.resume().catch((error) => {
-      console.warn("LiveKit spatial audio: could not resume Cacophony context", error);
-    });
   }
 
   syncParticipant(participantId: string): void {
-    const entry = this.entries.get(participantId);
-    if (!entry) {
-      return;
-    }
-    this.applyPosition(entry.panner, this.positionFor(participantId));
+    this.entries.get(participantId)?.voice.setPosition(this.positionFor(participantId));
   }
 
   syncAll(): void {
@@ -103,7 +60,7 @@ export class LiveKitSpatialAudioBridge {
     if (!entry) {
       return;
     }
-    this.disconnectEntry(entry);
+    entry.voice.detach();
     this.entries.delete(participantId);
   }
 
@@ -124,110 +81,5 @@ export class LiveKitSpatialAudioBridge {
 
   private positionFor(participantId: string): Position {
     return this.lookupPosition(participantId) ?? [0, 0, 0];
-  }
-
-  private createPrimeElement(stream: MediaStream): HTMLAudioElement | undefined {
-    // Chromium will not decode a remote WebRTC track that is only wired into
-    // the Web Audio graph: packets arrive but no samples are produced, so the
-    // panner taps silence. Pulling the same stream through a muted media
-    // element primes the decode pipeline; the element stays muted so it does
-    // not double-play over the spatialised Web Audio output. Firefox does not
-    // need this, but the element is harmless there.
-    if (typeof Audio === "undefined") {
-      return undefined;
-    }
-    try {
-      const element = new Audio();
-      element.muted = true;
-      element.srcObject = stream;
-      // Muted autoplay needs no user gesture; a rejection only loses priming.
-      void element.play().catch(() => {});
-      return element;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private downmixToMono(
-    source: MediaStreamAudioSourceNode,
-    track: MediaStreamTrack,
-  ): { output: CacophonyAudioNode; nodes: CacophonyAudioNode[] } {
-    const channelCount = this.trackChannelCount(track);
-    if (channelCount <= 1 || !this.cacophony.context.createChannelSplitter) {
-      return { output: source, nodes: [] };
-    }
-
-    const splitter = this.cacophony.context.createChannelSplitter(channelCount);
-    const mix = this.cacophony.context.createGain();
-    const nodes: CacophonyAudioNode[] = [splitter, mix];
-
-    source.connect(splitter);
-    for (let channel = 0; channel < channelCount; channel += 1) {
-      const channelGain = this.cacophony.context.createGain();
-      channelGain.gain.value = 1 / channelCount;
-      splitter.connect(channelGain, channel);
-      channelGain.connect(mix);
-      nodes.push(channelGain);
-    }
-
-    return { output: mix, nodes };
-  }
-
-  private trackChannelCount(track: MediaStreamTrack): number {
-    const channelCount = track.getSettings?.().channelCount;
-    if (typeof channelCount === "number" && Number.isFinite(channelCount) && channelCount > 0) {
-      return Math.max(1, Math.trunc(channelCount));
-    }
-    return 2;
-  }
-
-  /**
-   * Aim the participant's panner. The first placement (attach) snaps so a new
-   * voice does not audibly fly in from the origin; subsequent syncs ramp with a
-   * short time constant to de-zipper the per-frame steps the position tweener
-   * delivers through the spatial store.
-   */
-  private applyPosition(
-    panner: CacophonyPannerNode,
-    [x, y, z]: Position,
-    options?: { snap?: boolean },
-  ): void {
-    const time = this.cacophony.context.currentTime;
-    const axes = [
-      [panner.positionX, x],
-      [panner.positionY, y],
-      [panner.positionZ, z],
-    ] as const;
-    for (const [param, value] of axes) {
-      if (options?.snap) {
-        param.setValueAtTime(value, time);
-      } else {
-        smoothParamTo(param, value, time);
-      }
-    }
-  }
-
-  private disconnectEntry(entry: SpatialAudioEntry): void {
-    if (entry.primeElement) {
-      try {
-        entry.primeElement.pause();
-        entry.primeElement.srcObject = null;
-      } catch {
-        // Element may already be torn down by the browser during teardown.
-      }
-    }
-    const nodes: CacophonyAudioNode[] = [
-      entry.source,
-      ...entry.downmixNodes,
-      entry.panner,
-      entry.outputGain,
-    ];
-    for (const node of nodes) {
-      try {
-        node.disconnect();
-      } catch {
-        // Node may already be disconnected by the browser during track teardown.
-      }
-    }
   }
 }

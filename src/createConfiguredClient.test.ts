@@ -302,7 +302,7 @@ describe("createConfiguredClient", () => {
 
     expect(useCharacterStatusStore.getState().vitals).toBeNull();
     expect(useItemsStore.getState().itemsByLocation).toEqual({});
-    expect(useLiveKitStore.getState().tokens).toEqual([]);
+    expect(useLiveKitStore.getState().rooms).toEqual([]);
     expect(useRoomStore.getState().roomInfo).toBeNull();
     expect(useSessionStore.getState()).toMatchObject({
       playerId: "",

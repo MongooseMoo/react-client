@@ -26,14 +26,14 @@ it('loads on the first token, keeps hidden calls mounted, and unmounts when toke
   const view = render(<div hidden><AudioChatBoundary client={client} /></div>);
   expect(chat.loaded).not.toHaveBeenCalled();
 
-  act(() => useLiveKitStore.getState().addToken('first'));
+  act(() => useLiveKitStore.getState().setRoom({ token: 'first' }));
   await screen.findByText('Active call');
   expect(chat.loaded).toHaveBeenCalledOnce();
   await waitFor(() => expect(chat.mounted).toHaveBeenCalledOnce());
 
   view.rerender(<div><AudioChatBoundary client={client} /></div>);
   view.rerender(<div hidden><AudioChatBoundary client={client} /></div>);
-  act(() => useLiveKitStore.getState().addToken('second'));
+  act(() => useLiveKitStore.getState().setRoom({ token: 'second' }));
   act(() => useLiveKitStore.getState().removeToken('first'));
   expect(chat.disconnected).not.toHaveBeenCalled();
   expect(chat.mounted).toHaveBeenCalledOnce();

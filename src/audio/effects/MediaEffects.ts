@@ -27,6 +27,12 @@ interface PendingChain {
   settled: Promise<void>;
 }
 
+/** Told when a named chain's bus appears or is about to go, for sources that outlive chains. */
+export interface ChainObserver {
+  chainCreated(id: string): void;
+  chainDestroying(id: string): void;
+}
+
 const MAX_CHAINS = 16;
 const MAX_EFFECTS_PER_CHAIN = 8;
 
@@ -50,7 +56,10 @@ export class MediaEffects {
   /** The tail of each chain's serialized build queue, while one is outstanding. */
   private readonly pending = new Map<string, PendingChain>();
 
-  constructor(cacophony: Cacophony) {
+  constructor(
+    cacophony: Cacophony,
+    private readonly observer?: ChainObserver,
+  ) {
     this.cacophony = cacophony;
   }
 
@@ -149,6 +158,7 @@ export class MediaEffects {
         return;
       }
       this.chains.set(spec.id, chain);
+      this.observer?.chainCreated(spec.id);
     }
   }
 
@@ -166,6 +176,7 @@ export class MediaEffects {
     if (!chain) {
       return;
     }
+    this.observer?.chainDestroying(id);
     const master = this.cacophony.getBus('master');
     if (master) {
       chain.destroy(master);
