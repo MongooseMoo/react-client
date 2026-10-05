@@ -24,7 +24,7 @@ vi.mock('../../audio/PositionalFoaRenderer', () => ({
   },
 }));
 
-import { MediaService } from '../../audio/MediaService';
+import { MEDIA_SEEK_TOLERANCE_MS, MediaService } from '../../audio/MediaService';
 import { MediaPayloadError } from '../../audio/mediaPayloads';
 import { VectorTweener } from '../../audio/vectorTween';
 import { useSpatialStore } from '../../stores/spatialStore';
@@ -37,11 +37,14 @@ import {
   type GMCPMessageClientMediaStop,
   type GMCPMessageClientMediaUpdate,
 } from './Media';
+import { GMCPClientSpatial } from './Spatial';
 
 type MockCacophony = ConstructorParameters<typeof MediaService>[0];
 
 type MockPlayback = {
   connect: ReturnType<typeof vi.fn>;
+  /** Playhead in seconds into the sound (its region, if it has one); unset = not reported. */
+  currentTime?: number;
   disconnect: ReturnType<typeof vi.fn>;
   duration: number;
   /** The last requested amount, as Cacophony's `Playback.occlusion` reports it. */
@@ -2336,6 +2339,602 @@ describe('GMCPClientMedia', () => {
       expect(sound.volume).toBe(0.5);
       expect(sound.routeTo).not.toHaveBeenCalled();
       warn.mockRestore();
+    });
+  });
+
+  describe('a re-Play of a playing key at a moved cursor (the listener enters the room)', () => {
+    const fire = {
+      key: 'fire',
+      name: 'fire.ogg',
+      type: 'sound',
+      volume: 50,
+      loops: -1,
+      loopStart: 0,
+    };
+
+    async function playFire(extra: Record<string, unknown> = {}) {
+      const sound = createMockSound('fire.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({ ...fire, start: 0, ...extra } as GMCPMessageClientMediaPlay);
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+      return sound;
+    }
+
+    function regionSound(start: number, duration: number) {
+      const base = createMockSound('rain.ogg');
+      base.buffer = { duration: 10 };
+      const region = createMockSound('');
+      region.buffer = base.buffer;
+      region.region = { start, duration };
+      mockCreateSound.mockResolvedValue(base);
+      mockCreateSprite.mockResolvedValue({ get: () => region });
+      return region;
+    }
+
+    function expectKept(sound: MockSound) {
+      expect(handler.sounds[sound === handler.sounds.fire ? 'fire' : 'rain']).toBe(sound);
+      expect(sound.cleanup).not.toHaveBeenCalled();
+      expect(sound.preplay).toHaveBeenCalledOnce();
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+    }
+
+    it('keeps the voice, seamlessly, when the cursor is where the voice already is', async () => {
+      const sound = await playFire();
+      sound.voice.currentTime = 12;
+
+      // The server re-Plays every audible sound at its current cursor.
+      await handler.handlePlay({ ...fire, start: 12_050 } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expectKept(sound);
+      expect(sound.seek).not.toHaveBeenCalled();
+      expect(sound.voice.seek).not.toHaveBeenCalled();
+    });
+
+    it('keeps the voice and seeks when the cursor is further away than the tolerance', async () => {
+      const sound = await playFire();
+      sound.voice.currentTime = 12;
+
+      await handler.handlePlay({
+        ...fire,
+        start: 12_000 + MEDIA_SEEK_TOLERANCE_MS + 1,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expectKept(sound);
+      expect(sound.seek).toHaveBeenCalledOnce();
+      expect(sound.seek).toHaveBeenCalledWith((12_000 + MEDIA_SEEK_TOLERANCE_MS + 1) / 1000);
+    });
+
+    it('does not seek at exactly the tolerance, in either direction', async () => {
+      const sound = await playFire();
+      sound.voice.currentTime = 12;
+
+      await handler.handlePlay({
+        ...fire,
+        start: 12_000 + MEDIA_SEEK_TOLERANCE_MS,
+      } as GMCPMessageClientMediaPlay);
+      await handler.handlePlay({
+        ...fire,
+        start: 12_000 - MEDIA_SEEK_TOLERANCE_MS,
+      } as GMCPMessageClientMediaPlay);
+
+      expectKept(sound);
+      expect(sound.seek).not.toHaveBeenCalled();
+    });
+
+    it('names the tolerance: 150 ms', () => {
+      expect(MEDIA_SEEK_TOLERANCE_MS).toBe(150);
+    });
+
+    it('seeks when the engine does not report a playhead', async () => {
+      const sound = await playFire();
+
+      await handler.handlePlay({ ...fire, start: 12_050 } as GMCPMessageClientMediaPlay);
+
+      expectKept(sound);
+      expect(sound.seek).toHaveBeenCalledWith(12.05);
+    });
+
+    it('keeps a region voice: the cursor is not part of the region', async () => {
+      const region = regionSound(2, 3);
+      const rain = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: -1 };
+      await handler.handlePlay({
+        ...rain,
+        start: 2000,
+        loopStart: 2000,
+        finish: 5000,
+      } as GMCPMessageClientMediaPlay);
+      // One second into the region: absolute source position 3000 ms.
+      region.voice.currentTime = 1;
+
+      await handler.handlePlay({
+        ...rain,
+        start: 3040,
+        loopStart: 2000,
+        finish: 5000,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expect(mockCreateSprite).toHaveBeenCalledOnce();
+      expectKept(region);
+      expect(region.seek).not.toHaveBeenCalled();
+
+      // A cursor elsewhere in the same region seeks, region-relative.
+      await handler.handlePlay({
+        ...rain,
+        start: 4500,
+        loopStart: 2000,
+        finish: 5000,
+      } as GMCPMessageClientMediaPlay);
+
+      expectKept(region);
+      expect(region.seek).toHaveBeenCalledOnce();
+      expect(region.seek).toHaveBeenCalledWith(2.5);
+    });
+
+    it('treats a looping playhead and a cursor either side of the loop point as close', async () => {
+      const region = regionSound(2, 3);
+      const rain = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: -1 };
+      const window = { loopStart: 2000, finish: 5000 };
+      await handler.handlePlay({ ...rain, ...window, start: 2000 } as GMCPMessageClientMediaPlay);
+      // 50 ms before the loop point; the server's cursor has just wrapped.
+      region.voice.currentTime = 2.95;
+
+      await handler.handlePlay({ ...rain, ...window, start: 2020 } as GMCPMessageClientMediaPlay);
+
+      expectKept(region);
+      expect(region.seek).not.toHaveBeenCalled();
+    });
+
+    it('keeps a single-pass voice, which is re-Played without loopStart', async () => {
+      const sound = createMockSound('speech.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      const speech = { key: 'fire', name: 'speech.ogg', type: 'sound', volume: 50, loops: 1 };
+      await handler.handlePlay({ ...speech, start: 0 } as GMCPMessageClientMediaPlay);
+      sound.voice.currentTime = 7;
+
+      await handler.handlePlay({ ...speech, start: 7100 } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expectKept(sound);
+      expect(sound.seek).not.toHaveBeenCalled();
+    });
+
+    it('replaces a single-pass region voice whose region starts after the new cursor', async () => {
+      const first = regionSound(2, 3);
+      const speech = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: 1 };
+      await handler.handlePlay({ ...speech, start: 2000, finish: 5000 } as GMCPMessageClientMediaPlay);
+      first.voice.currentTime = 1;
+      const second = regionSound(1, 4);
+
+      // The kept region [2000, 5000) cannot play from 1000.
+      await handler.handlePlay({ ...speech, start: 1000, finish: 5000 } as GMCPMessageClientMediaPlay);
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds.rain).toBe(second);
+      expect(second.voice.play).toHaveBeenCalledOnce();
+    });
+
+    it('replaces the voice when continue is false, even at the same cursor', async () => {
+      const first = await playFire();
+      first.voice.currentTime = 12;
+      const second = createMockSound('fire.ogg');
+      mockCreateSound.mockResolvedValue(second);
+
+      await handler.handlePlay({
+        ...fire,
+        start: 12_000,
+        continue: false,
+      } as GMCPMessageClientMediaPlay);
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds.fire).toBe(second);
+      expect(second.voice.play).toHaveBeenCalledOnce();
+      // A new voice starts at the cursor before it plays.
+      expect(second.voice.seek).toHaveBeenCalledWith(12);
+    });
+
+    it.each([
+      ['finish', { loopStart: 2000, finish: 6000 }],
+      ['loopStart', { loopStart: 2500, finish: 5000 }],
+    ])('replaces the voice when %s changes: that is a different region', async (_field, window) => {
+      const first = regionSound(2, 3);
+      const rain = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: -1 };
+      await handler.handlePlay({
+        ...rain,
+        start: 3000,
+        loopStart: 2000,
+        finish: 5000,
+      } as GMCPMessageClientMediaPlay);
+      const second = regionSound(window.loopStart / 1000, (window.finish - window.loopStart) / 1000);
+
+      await handler.handlePlay({ ...rain, ...window, start: 3000 } as GMCPMessageClientMediaPlay);
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds.rain).toBe(second);
+    });
+
+    it('replaces a repeating voice re-Played without loopStart: its repeat window follows start', async () => {
+      const first = regionSound(2, 3);
+      const rain = { key: 'rain', name: 'rain.ogg', type: 'sound', volume: 50, loops: -1 };
+      await handler.handlePlay({ ...rain, start: 2000, finish: 5000 } as GMCPMessageClientMediaPlay);
+      const second = regionSound(3, 2);
+
+      // Per the wire contract, with no loopStart later passes play start..finish.
+      await handler.handlePlay({ ...rain, start: 3000, finish: 5000 } as GMCPMessageClientMediaPlay);
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(handler.sounds.rain).toBe(second);
+    });
+  });
+
+  describe('a change of panning mode on a playing key', () => {
+    const fire = {
+      key: 'fire',
+      name: 'fire.ogg',
+      type: 'sound',
+      volume: 50,
+      pan: 0,
+      loops: -1,
+      loopStart: 0,
+    };
+    /** Heard through a doorway with no known point: no position, not 3D. */
+    const throughDoor = { ...fire, is3d: false };
+    /** Heard in its own room. MOO [2, 0, 0] is Web Audio [-2, 0, 0]. */
+    const inRoom = { ...fire, is3d: true, position: [2, 0, 0] };
+
+    beforeEach(() => {
+      // These tests queue one sound per expected creation; never inherit a leftover.
+      mockCreateSound.mockReset();
+      mockCreateSprite.mockReset();
+    });
+
+    async function start(payload: Record<string, unknown>) {
+      const sound = createMockSound('fire.ogg');
+      mockCreateSound.mockResolvedValueOnce(sound);
+      await handler.handlePlay({ start: 0, ...payload } as GMCPMessageClientMediaPlay);
+      expect(sound.voice.play).toHaveBeenCalledOnce();
+      return sound;
+    }
+
+    function nextSound() {
+      const sound = createMockSound('fire.ogg');
+      mockCreateSound.mockResolvedValueOnce(sound);
+      return sound;
+    }
+
+    it('rebuilds a non-positional voice as a point source and continues from the playhead', async () => {
+      const first = await start({ ...throughDoor, fadein: 500 });
+      expect(first.panType).toBe('stereo');
+      first.voice.currentTime = 8;
+      const second = nextSound();
+
+      // The listener walked into the sound's room: same key, now 3D with a position.
+      await handler.handlePlay({ ...inRoom, fadein: 500, start: 8040 } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenLastCalledWith('fire.ogg', 'buffer', 'HRTF');
+      expect(second.panType).toBe('HRTF');
+      expect(handler.sounds.fire).toBe(second);
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      // It picks up where the old voice was, not at the beginning...
+      expect(second.voice.seek).toHaveBeenCalledWith(8);
+      expect(second.voice.seek.mock.invocationCallOrder[0]).toBeLessThan(
+        second.voice.play.mock.invocationCallOrder[0],
+      );
+      // ...and does not fade in again: this is the same sound continuing.
+      expect(second.voice.play).toHaveBeenCalledWith({ fadeIn: undefined, fadeOut: undefined });
+      expect(second.position).toEqual([-2, 0, 0]);
+      expect(second.threeDOptions).toMatchObject({ panningModel: 'HRTF', rolloffFactor: 0 });
+      expect(second.loop).toHaveBeenCalledWith('infinite');
+    });
+
+    it('rebuilds a point source as a non-positional voice: no position, no distance attenuation', async () => {
+      const first = await start({ ...inRoom, position: [8, 0, 0] });
+      expect(first.panType).toBe('HRTF');
+      // Eight metres away: the point source is attenuated at its gain.
+      expect(first.volume).toBeLessThan(0.5);
+      first.voice.currentTime = 3;
+      const second = nextSound();
+
+      // The listener stepped out: heard through a doorway that has no known point.
+      await handler.handlePlay({ ...throughDoor, pan: 40, start: 3000 } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSound).toHaveBeenLastCalledWith('fire.ogg', 'buffer', 'stereo');
+      expect(second.panType).toBe('stereo');
+      expect(handler.sounds.fire).toBe(second);
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(second.voice.seek).toHaveBeenCalledWith(3);
+      expect(second.volume).toBe(0.5);
+      expect(second.stereoPan).toBe(0.4);
+      expect(second.threeDOptions).toBeUndefined();
+      expect(handler.sounds.fire.pointSource).toBeFalsy();
+
+      // The listener walking around no longer changes its level.
+      client.media.setListenerPosition([50, 0, 0]);
+      expect(second.volume).toBe(0.5);
+    });
+
+    it('keeps the old voice playing until its replacement is ready', async () => {
+      const first = await start(throughDoor);
+      first.voice.currentTime = 8;
+      const second = createMockSound('fire.ogg');
+      let deliver: (sound: MockSound) => void = () => undefined;
+      mockCreateSound.mockReturnValueOnce(
+        new Promise<MockSound>((resolve) => {
+          deliver = resolve;
+        }),
+      );
+
+      const replay = handler.handlePlay({ ...inRoom, start: 8000 } as GMCPMessageClientMediaPlay);
+      await Promise.resolve();
+      expect(first.cleanup).not.toHaveBeenCalled();
+      expect(handler.sounds.fire).toBe(first);
+
+      // The old voice played on while the new one loaded: continue from where it is now.
+      first.voice.currentTime = 8.1;
+      deliver(second);
+      await replay;
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(second.voice.seek).toHaveBeenCalledWith(8.1);
+      expect(first.cleanup.mock.invocationCallOrder[0]).toBeLessThan(
+        second.voice.play.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('starts at the Play cursor when that is not where the old voice was', async () => {
+      const first = await start(throughDoor);
+      first.voice.currentTime = 8;
+      const second = nextSound();
+
+      await handler.handlePlay({ ...inRoom, start: 20_000 } as GMCPMessageClientMediaPlay);
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(second.voice.seek).toHaveBeenCalledWith(20);
+    });
+
+    it('rebuilds a region voice over the same region, at the region-relative playhead', async () => {
+      const region = (panType: string) => {
+        const base = createMockSound('rain.ogg');
+        base.buffer = { duration: 10 };
+        const sound = createMockSound('');
+        sound.buffer = base.buffer;
+        sound.region = { start: 2, duration: 3 };
+        mockCreateSound.mockResolvedValueOnce(base);
+        mockCreateSprite.mockResolvedValueOnce({ get: () => sound });
+        return { sound, panType };
+      };
+      const rain = {
+        key: 'rain',
+        name: 'rain.ogg',
+        type: 'sound',
+        volume: 50,
+        loops: -1,
+        loopStart: 2000,
+        finish: 5000,
+      };
+      const first = region('stereo').sound;
+      await handler.handlePlay({ ...rain, start: 2000 } as GMCPMessageClientMediaPlay);
+      first.voice.currentTime = 1.25;
+      const second = region('HRTF').sound;
+
+      await handler.handlePlay({
+        ...rain,
+        start: 3250,
+        is3d: true,
+        position: [2, 0, 0],
+      } as GMCPMessageClientMediaPlay);
+
+      expect(mockCreateSprite).toHaveBeenLastCalledWith(
+        expect.anything(),
+        { segment: { start: 2, duration: 3 } },
+        { panType: 'HRTF' },
+      );
+      expect(handler.sounds.rain).toBe(second);
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(second.voice.seek).toHaveBeenCalledWith(1.25);
+    });
+
+    it.each([
+      ['to 3D', throughDoor, { is3d: true, position: [2, 0, 0] }, 'HRTF'],
+      ['to non-positional', inRoom, { is3d: false }, 'stereo'],
+    ])('rebuilds on an Update %s, carrying the state the voice has now', async (_way, play, update, mode) => {
+      await client.media.setChain({
+        id: 'workshop',
+        effects: [{ id: 'muffle', type: 'lowpass', params: { frequency: 400 } }],
+      });
+      const first = await start({ ...play, fadein: 500, occlusion: 0.8, chain: 'workshop' });
+      // Updates since the Play: these, not the Play's values, are the state in effect.
+      handler.handleUpdate({ key: 'fire', volume: 20, occlusion: 0.4 } as GMCPMessageClientMediaUpdate);
+      handler.handleUpdate({ key: 'fire', chain: 'workshop', send: 0.3 } as GMCPMessageClientMediaUpdate);
+      first.voice.currentTime = 8;
+      const second = nextSound();
+
+      handler.handleUpdate({ key: 'fire', ...update } as GMCPMessageClientMediaUpdate);
+      await vi.waitFor(() => expect(second.voice.play).toHaveBeenCalledOnce());
+
+      expect(mockCreateSound).toHaveBeenLastCalledWith('fire.ogg', 'buffer', mode);
+      expect(second.panType).toBe(mode);
+      expect(handler.sounds.fire).toBe(second);
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      // No restart from the beginning (or from the Play's start), and no second fade-in.
+      expect(second.voice.seek).toHaveBeenCalledWith(8);
+      expect(second.voice.play).toHaveBeenCalledWith({ fadeIn: undefined, fadeOut: undefined });
+      // Occlusion from the first sample, the level and the route of the voice it replaces.
+      expect(second.voice.setOcclusion?.mock.calls).toEqual([[0.4, 0]]);
+      expect(second.voice.setOcclusion?.mock.invocationCallOrder[0]).toBeLessThan(
+        second.voice.play.mock.invocationCallOrder[0],
+      );
+      expect(handler.sounds.fire.mediaVolume).toBe(0.2);
+      expect(second.routeTo).toHaveBeenLastCalledWith('workshop', 0.3);
+      expect(second.loop).toHaveBeenCalledWith('infinite');
+      if (mode === 'HRTF') {
+        expect(second.position).toEqual([-2, 0, 0]);
+      } else {
+        expect(second.volume).toBe(0.2);
+      }
+    });
+
+    it('leaves the voice alone on an Update that names the mode it already has', async () => {
+      const first = await start(inRoom);
+
+      handler.handleUpdate({ key: 'fire', is3d: true, position: [3, 0, 0] } as GMCPMessageClientMediaUpdate);
+      await Promise.resolve();
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expect(first.cleanup).not.toHaveBeenCalled();
+      expect(handler.sounds.fire).toBe(first);
+    });
+
+    it('applies an Update that arrives while the rebuild is loading', async () => {
+      const first = await start(throughDoor);
+      first.voice.currentTime = 8;
+      const second = createMockSound('fire.ogg');
+      let deliver: (sound: MockSound) => void = () => undefined;
+      mockCreateSound.mockReturnValueOnce(
+        new Promise<MockSound>((resolve) => {
+          deliver = resolve;
+        }),
+      );
+
+      handler.handleUpdate({
+        key: 'fire',
+        is3d: true,
+        position: [2, 0, 0],
+      } as GMCPMessageClientMediaUpdate);
+      handler.handleUpdate({ key: 'fire', volume: 20 } as GMCPMessageClientMediaUpdate);
+      deliver(second);
+      await vi.waitFor(() => expect(second.voice.play).toHaveBeenCalledOnce());
+
+      expect(handler.sounds.fire).toBe(second);
+      expect(handler.sounds.fire.mediaVolume).toBe(0.2);
+    });
+
+    it('plays nothing when the key is stopped while the rebuild is loading', async () => {
+      const first = await start(throughDoor);
+      const second = createMockSound('fire.ogg');
+      let deliver: (sound: MockSound) => void = () => undefined;
+      mockCreateSound.mockReturnValueOnce(
+        new Promise<MockSound>((resolve) => {
+          deliver = resolve;
+        }),
+      );
+
+      const replay = handler.handlePlay({ ...inRoom, start: 0 } as GMCPMessageClientMediaPlay);
+      await Promise.resolve();
+      handler.handleStop({ key: 'fire' });
+      deliver(second);
+      await replay;
+
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      expect(second.cleanup).toHaveBeenCalledOnce();
+      expect(second.voice.play).not.toHaveBeenCalled();
+      expect(handler.sounds.fire).toBeUndefined();
+    });
+
+    it('does not rebuild an ambisonic sound (that path is out of scope here)', async () => {
+      const first = await start({ ...inRoom, upmix: 'ambisonic', channels: 2 });
+      await vi.waitFor(() => expect(mockPositionalFoaRendererCreate).toHaveBeenCalledOnce());
+
+      handler.handleUpdate({ key: 'fire', is3d: false } as GMCPMessageClientMediaUpdate);
+      await Promise.resolve();
+
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expect(first.cleanup).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a scene snapshot (room change)', () => {
+    async function playRadio() {
+      const sound = createMockSound('https://media.example/radio.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      await handler.handlePlay({
+        key: 'radio-1',
+        name: 'radio.ogg',
+        type: 'sound',
+        volume: 50,
+        is3d: true,
+        position: [0, 0, 0],
+      } as GMCPMessageClientMediaPlay);
+      return sound;
+    }
+
+    it('ends a position glide in flight: no frame moves the sound afterwards', async () => {
+      const sound = await playRadio();
+      handler.handleUpdate({ key: 'radio-1', position: [4, 0, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(100);
+      // Part-way along the glide, in the old room's coordinates.
+      expect(sound.position[0]).toBeLessThan(0);
+      expect(sound.position[0]).toBeGreaterThan(-4);
+
+      client.media.sceneChanged();
+
+      // The glide is over at once, on the last position the server gave.
+      expect(sound.position).toEqual([-4, 0, 0]);
+      client.stepMotion(100);
+      client.stepMotion(600);
+      expect(sound.position).toEqual([-4, 0, 0]);
+    });
+
+    it('snaps the first position a sound receives after the snapshot', async () => {
+      const sound = await playRadio();
+      handler.handleUpdate({ key: 'radio-1', position: [4, 0, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(600);
+      expect(sound.position).toEqual([-4, 0, 0]);
+
+      client.media.sceneChanged();
+      // The new room has its own origin: [1, 0, 0] here is unrelated to [4, 0, 0] there.
+      handler.handleUpdate({ key: 'radio-1', position: [1, 0, 0] } as GMCPMessageClientMediaUpdate);
+
+      expect(sound.position).toEqual([-1, 0, 0]);
+      expect(handler.sounds['radio-1'].mediaPosition).toEqual([-1, 0, 0]);
+
+      // Within the new room, later moves glide again.
+      handler.handleUpdate({ key: 'radio-1', position: [3, 0, 0] } as GMCPMessageClientMediaUpdate);
+      expect(sound.position).toEqual([-1, 0, 0]);
+      client.stepMotion(600);
+      expect(sound.position).toEqual([-3, 0, 0]);
+    });
+
+    it('is driven by Client.Spatial.Scene, whose handler glides on a tweener of its own', async () => {
+      const spatial = new GMCPClientSpatial(client as never);
+      const sound = await playRadio();
+      handler.handleUpdate({ key: 'radio-1', position: [4, 0, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(100);
+
+      spatial.handleScene({
+        roomId: 'next-room',
+        listenerId: 'player-1',
+        entities: [],
+        emitters: [],
+      });
+      const landed = [...sound.position];
+      client.stepMotion(600);
+
+      expect(sound.position).toEqual(landed);
+      handler.handleUpdate({ key: 'radio-1', position: [1, 0, 0] } as GMCPMessageClientMediaUpdate);
+      expect(sound.position).toEqual([-1, 0, 0]);
+      spatial.shutdown();
+    });
+
+    it('snaps a kept voice re-Played with its position in the new room', async () => {
+      const sound = await playRadio();
+      handler.handleUpdate({ key: 'radio-1', position: [4, 0, 0] } as GMCPMessageClientMediaUpdate);
+      client.stepMotion(600);
+
+      client.media.sceneChanged();
+      await handler.handlePlay({
+        key: 'radio-1',
+        name: 'radio.ogg',
+        type: 'sound',
+        volume: 50,
+        is3d: true,
+        position: [0, 2, 0],
+      } as GMCPMessageClientMediaPlay);
+
+      expect(handler.sounds['radio-1']).toBe(sound);
+      expect(sound.position).toEqual([0, 0, 2]);
     });
   });
 });
