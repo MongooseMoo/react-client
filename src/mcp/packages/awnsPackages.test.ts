@@ -105,7 +105,7 @@ describe('AWNS MCP packages', () => {
     expect(sent).toEqual(['#$#world.mongoose.location auth01 lat: 39.7392 lon: -104.9903']);
   });
 
-  it('tracks rehash command lists and abbreviation expansions', () => {
+  it('tracks rehash command lists by full command name', () => {
     const sent: string[] = [];
     const commandEvents: unknown[] = [];
     const addEvents: unknown[] = [];
@@ -124,30 +124,30 @@ describe('AWNS MCP packages', () => {
     session.receiveLine('#$#MCP version: 2.1 to: 2.1');
     sent.length = 0;
     rehash.requestCommands();
-    session.receiveLine('#$#dns-com-awns-rehash-commands auth01 list: "open close r*ead"');
+    session.receiveLine('#$#dns-com-awns-rehash-commands auth01 list: "open close r*ead @grants* *"');
     session.receiveLine('#$#dns-com-awns-rehash-add auth01 list: "l*ook"');
     session.receiveLine('#$#dns-com-awns-rehash-remove auth01 list: "r*ead"');
 
     expect(sent).toEqual(['#$#dns-com-awns-rehash-getcommands auth01']);
     expect(commandEvents).toEqual([
       {
-        list: 'open close r*ead',
-        commands: ['open', 'close', 'r', 're', 'rea', 'read'],
+        list: 'open close r*ead @grants* *',
+        commands: ['open', 'close', 'read', '@grants'],
       },
     ]);
     expect(addEvents).toEqual([
       {
         list: 'l*ook',
-        commands: ['l', 'lo', 'loo', 'look'],
+        commands: ['look'],
       },
     ]);
     expect(removeEvents).toEqual([
       {
         list: 'r*ead',
-        commands: ['r', 're', 'rea', 'read'],
+        commands: ['read'],
       },
     ]);
-    expect(rehash.commands).toEqual(['open', 'close', 'l', 'lo', 'loo', 'look']);
+    expect(rehash.commands).toEqual(['open', 'close', '@grants', 'look']);
   });
 
   it('sends visual requests with the server package gettopology spelling', () => {

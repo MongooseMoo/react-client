@@ -30,6 +30,21 @@ The public IRE protocol defines list, players, start, end, and text messages.
 Mongoose adds `Comm.Channel.Enable` as a client to server request with the
 channel name payload.
 
+### `Char.Items`
+
+Mongoose adds `verbs` to each item in `List` and `Add`: what the receiving
+player can do to the item from the command line. Each entry is the verb's names
+joined by `/` (a `*` marks how far a name can be abbreviated), followed by its
+arguments in typing order: the item's own id, a preposition, or `<anything>`
+where the player supplies the text.
+
+```json
+{"id": "#2201", "name": "chest", "Attrib": "c",
+ "verbs": [["t*ake/g*et", "#2201"], ["p*ut/in*sert", "<anything>", "in", "#2201"]]}
+```
+
+The client offers one action per entry and has no item actions of its own.
+
 ## New Mongoose Packages
 
 - `Auth.Autologin`: token-based login.

@@ -71,23 +71,18 @@ export class McpAwnsRehash extends McpAwnsRehashBase {
   }
 }
 
+/**
+ * The server lists verb names, where a "*" marks how far a name can be
+ * abbreviated ("r*ead"). A command here is the full name ("read"): completion
+ * matches by prefix, which already covers every abbreviation.
+ */
 function commandUpdateFrom(list: string): AwnsRehashCommandUpdate {
   return {
     list,
-    commands: list.trim().split(/\s+/).filter(Boolean).flatMap(expandCommand),
+    commands: list
+      .trim()
+      .split(/\s+/)
+      .map((name) => name.replaceAll('*', ''))
+      .filter(Boolean),
   };
-}
-
-function expandCommand(command: string): string[] {
-  const marker = command.indexOf('*');
-  if (marker === -1) {
-    return [command];
-  }
-
-  const expanded = command.slice(0, marker) + command.slice(marker + 1);
-  const commands: string[] = [];
-  for (let length = marker; length <= expanded.length; length += 1) {
-    commands.push(expanded.slice(0, length));
-  }
-  return commands;
 }

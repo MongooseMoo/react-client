@@ -2,6 +2,7 @@ import type React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import type MudClient from '../client';
 import type { Item } from '../gmcp/Char/Items';
+import { type ItemAction, performItemAction } from '../itemActions';
 import { useItemsStore } from '../stores/itemsStore';
 import InventoryList from './InventoryList';
 import './InventoryList.css'; // Styles for inventory tab, list, and card container
@@ -30,16 +31,8 @@ const Inventory: React.FC<InventoryProps> = ({ client }) => {
     setSelectedItem(item);
   };
 
-  const handleDropItem = useCallback((itemToDrop: Item) => {
-    client.sendCommand(`drop ${itemToDrop.id}`);
-  }, [client]);
-
-  const handleWearItem = useCallback((itemToWear: Item) => {
-    client.sendCommand(`wear ${itemToWear.id}`);
-  }, [client]);
-
-  const handleRemoveItem = useCallback((itemToRemove: Item) => {
-    client.sendCommand(`remove ${itemToRemove.id}`);
+  const handleItemAction = useCallback((action: ItemAction) => {
+    performItemAction(client, action);
   }, [client]);
 
   const headingId = "inventory-heading";
@@ -62,9 +55,7 @@ const Inventory: React.FC<InventoryProps> = ({ client }) => {
         <div className="selected-item-card-container" style={{ marginTop: '1rem' }}>
           <ItemCard
             item={selectedItem}
-            onDrop={handleDropItem}
-            onWear={handleWearItem}
-            onRemove={handleRemoveItem}
+            onAction={handleItemAction}
           />
         </div>
       )}

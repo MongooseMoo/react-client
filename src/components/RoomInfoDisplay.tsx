@@ -4,6 +4,7 @@ import type MudClient from "../client";
 import type { RoomPlayer } from "../gmcp/Room";
 import { useRoomStore } from "../stores/roomStore";
 import type { Item } from "../gmcp/Char/Items";
+import { type ItemAction, performItemAction } from "../itemActions";
 import { useItemsStore } from "../stores/itemsStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
@@ -68,8 +69,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     setSelectedRoomItem(index > -1 && filteredRoomItems[index] ? filteredRoomItems[index] : null);
   };
 
-  const handleGetItem = useCallback((itemToGet: Item) => {
-    client.sendCommand(`get ${itemToGet.id}`);
+  const handleItemAction = useCallback((action: ItemAction) => {
+    performItemAction(client, action);
   }, [client]);
 
   const handleSelectPlayer = (index: number) => {
@@ -172,8 +173,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
         <div className="selected-room-item-card-container" style={{ marginTop: '1rem' }}>
           <ItemCard
             item={selectedRoomItem}
-            onGet={handleGetItem}
-            // No onDrop, onWear, onRemove for items on the ground via RoomInfoDisplay
+            onAction={handleItemAction}
           />
         </div>
       )}
