@@ -67,6 +67,15 @@ describe("decodeRoomToken", () => {
     });
   });
 
+  it("accepts the room_token captured from the MOO fixture (token redacted)", () => {
+    const captured = JSON.parse('{"token":"<redacted>","chain":"room","send":0.285866666666667}');
+    expect(decodeRoomToken(captured)).toEqual({
+      token: "<redacted>",
+      chain: "room",
+      send: 0.285866666666667,
+    });
+  });
+
   it("treats an empty chain as none and drops unknown fields", () => {
     expect(decodeRoomToken({ token: "t", chain: "", extra: 1 })).toEqual({ token: "t" });
   });
