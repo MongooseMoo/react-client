@@ -36,13 +36,36 @@ describe("LiveKitSpatialAudioBridge", () => {
     expect(media.attachVoice).toHaveBeenCalledWith(remoteTrack, [1, 2, 3]);
   });
 
-  it("places a participant with no known position at the origin", () => {
+  it("attaches a participant who is not in the scene as a non-positional voice", () => {
     const { media } = createMedia();
+    const remoteTrack = track("a");
     const bridge = new LiveKitSpatialAudioBridge(media, () => undefined);
 
+    bridge.attachParticipantTrack("player-2", remoteTrack);
+
+    // A phone-call partner has no place in this room: never the room origin.
+    expect(media.attachVoice).toHaveBeenCalledWith(remoteTrack, null);
+  });
+
+  it("makes the voice positional when its entity appears, and non-positional when it leaves", () => {
+    const { media, voices } = createMedia();
+    const positions: Record<string, [number, number, number] | null> = {};
+    const bridge = new LiveKitSpatialAudioBridge(media, (participantId) => positions[participantId]);
     bridge.attachParticipantTrack("player-2", track("a"));
 
-    expect(media.attachVoice).toHaveBeenCalledWith(expect.anything(), [0, 0, 0]);
+    positions["player-2"] = [4, 5, 6];
+    bridge.syncAll();
+    expect(voices[0].setPosition).toHaveBeenLastCalledWith([4, 5, 6]);
+
+    // The speaker left the scene (or the listener walked out and stayed on the call).
+    delete positions["player-2"];
+    bridge.syncAll();
+    expect(voices[0].setPosition).toHaveBeenLastCalledWith(null);
+
+    positions["player-2"] = null;
+    bridge.syncParticipant("player-2");
+    expect(voices[0].setPosition).toHaveBeenLastCalledWith(null);
+    expect(media.attachVoice).toHaveBeenCalledOnce();
   });
 
   it("moves the voice on sync, and re-attaching the same track only syncs", () => {

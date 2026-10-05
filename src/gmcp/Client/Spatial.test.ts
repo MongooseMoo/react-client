@@ -39,6 +39,7 @@ function createMockClient() {
   return {
     media: {
       cacophony,
+      sceneChanged: vi.fn(),
       setListenerOrientation: vi.fn((orientation) => {
         cacophony.listenerForwardOrientation = orientation?.forward ?? [0, 0, -1];
         cacophony.listenerUpOrientation = orientation?.up ?? [0, 1, 0];
@@ -262,6 +263,89 @@ describe('GMCPClientSpatial', () => {
     expect(client.media.cacophony.listenerPosition).toEqual([-1, 0, 0]);
   });
 
+  describe('the listener walking one step', () => {
+    /** Every engine listener x written, in order. */
+    function engineListenerXs(): number[] {
+      return client.media.setListenerPosition.mock.calls.map(([position]) => position[0]);
+    }
+
+    beforeEach(() => {
+      useSpatialStore.setState({
+        listenerEntityId: 'player-1',
+        listenerPosition: [0, 0, 0],
+        spatialEntities: {
+          // Standing still until now: the stored velocity is slower than the step's.
+          'player-1': { id: 'player-1', position: [0, 0, 0], velocity: [-0.5, 0, 0] },
+        },
+      });
+      client.media.setListenerPosition.mockClear();
+    });
+
+    it('moves the engine listener in one monotonic glide when the mover gets both messages', () => {
+      // The server sends the mover ListenerPosition first, then its own EntityMove.
+      handler.handleListenerPosition({ listenerId: 'player-1', position: [1, 0, 0] });
+      handler.handleEntityMove({
+        entityId: 'player-1',
+        position: [1, 0, 0],
+        velocity: [4, 0, 0],
+      });
+
+      for (let elapsed = 0; elapsed < 700; elapsed += 50) {
+        step(50);
+      }
+
+      const xs = engineListenerXs();
+      expect(xs.length).toBeGreaterThan(1);
+      // Web Audio x is MOO -x: the glide runs from 0 down to -1 and never turns back.
+      for (let index = 1; index < xs.length; index += 1) {
+        expect(xs[index]).toBeLessThanOrEqual(xs[index - 1]);
+      }
+      expect(xs.at(-1)).toBe(-1);
+      // It arrives once: nothing writes the listener again after the glide lands.
+      expect(xs.filter((x) => x === -1)).toHaveLength(1);
+      expect(useSpatialStore.getState().listenerPosition).toEqual([-1, 0, 0]);
+      expect(useSpatialStore.getState().spatialEntities['player-1'].position).toEqual([-1, 0, 0]);
+    });
+
+    it('glides at the speed the step itself carries', () => {
+      handler.handleListenerPosition({ listenerId: 'player-1', position: [1, 0, 0] });
+      handler.handleEntityMove({
+        entityId: 'player-1',
+        position: [1, 0, 0],
+        velocity: [4, 0, 0],
+      });
+
+      // 1m at 4 m/s = 250ms, not the 600ms the stale stored velocity would give.
+      step(125);
+      expect(client.media.cacophony.listenerPosition).toEqual([-0.5, 0, 0]);
+      step(125);
+      expect(client.media.cacophony.listenerPosition).toEqual([-1, 0, 0]);
+    });
+
+    it('still follows an EntityMove for the listener that arrives on its own', () => {
+      handler.handleEntityMove({
+        entityId: 'player-1',
+        position: [1, 0, 0],
+        velocity: [2, 0, 0],
+      });
+
+      step(250);
+      expect(client.media.cacophony.listenerPosition).toEqual([-0.5, 0, 0]);
+      step(250);
+      expect(client.media.cacophony.listenerPosition).toEqual([-1, 0, 0]);
+      expect(useSpatialStore.getState().listenerPosition).toEqual([-1, 0, 0]);
+    });
+
+    it("leaves the engine listener alone when another entity moves", () => {
+      useSpatialStore.getState().enterEntity({ id: 'player-2', position: [3, 0, 0] });
+
+      handler.handleEntityMove({ entityId: 'player-2', position: [4, 0, 0] });
+      step(600);
+
+      expect(client.media.setListenerPosition).not.toHaveBeenCalled();
+    });
+  });
+
   it('drops in-flight glides on a Scene snapshot', () => {
     useSpatialStore.setState({
       spatialEntities: {
@@ -279,6 +363,22 @@ describe('GMCPClientSpatial', () => {
     step(600);
 
     expect(useSpatialStore.getState().spatialEntities['player-1'].position).toEqual([-5, 5, 5]);
+  });
+
+  it('tells the media service about every Scene snapshot, before placing the listener', () => {
+    handler.handleScene({
+      roomId: 'next-room',
+      listenerId: 'player-1',
+      listenerPosition: [1, 2, 3],
+      entities: [],
+      emitters: [],
+    });
+
+    // Sound positions glide on the media service's own tweener, not this handler's.
+    expect(client.media.sceneChanged).toHaveBeenCalledOnce();
+    expect(client.media.sceneChanged.mock.invocationCallOrder[0]).toBeLessThan(
+      client.media.setListenerPosition.mock.invocationCallOrder[0],
+    );
   });
 
   it('updates listener position and orientation messages', () => {

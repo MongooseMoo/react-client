@@ -6,6 +6,7 @@ import {
   MIN_TWEEN_DURATION_MS,
   VectorTweener,
   type TweenScheduler,
+  type TweenVisibility,
 } from './vectorTween';
 
 /** Manual clock + frame queue so tests drive the tweener deterministically. */
@@ -23,14 +24,39 @@ function harness() {
       }
     },
   };
-  const tweener = new VectorTweener({ scheduler, now: () => now });
+  // A document stand-in: frames stop arriving while hidden, as rAF does in a background tab.
+  let hidden = false;
+  const visibilityListeners = new Set<() => void>();
+  const visibility: TweenVisibility = {
+    isHidden: () => hidden,
+    subscribe: (onChange) => {
+      visibilityListeners.add(onChange);
+      return () => visibilityListeners.delete(onChange);
+    },
+  };
+  const tweener = new VectorTweener({ scheduler, now: () => now, visibility });
   const step = (ms: number) => {
     now += ms;
+    if (hidden) {
+      return;
+    }
     const frame = queued;
     queued = null;
     frame?.();
   };
-  return { tweener, step, hasFrame: () => queued !== null };
+  const setHidden = (value: boolean) => {
+    hidden = value;
+    for (const listener of Array.from(visibilityListeners)) {
+      listener();
+    }
+  };
+  return {
+    tweener,
+    step,
+    setHidden,
+    hasFrame: () => queued !== null,
+    visibilityListenerCount: () => visibilityListeners.size,
+  };
 }
 
 describe('VectorTweener', () => {
@@ -150,6 +176,105 @@ describe('VectorTweener', () => {
     expect(hasFrame()).toBe(false);
     step(100);
     expect(b).toHaveBeenCalledOnce();
+  });
+
+  describe('hidden document', () => {
+    it('lands an in-flight glide on its target the moment the document is hidden', () => {
+      const { tweener, step, setHidden, hasFrame } = harness();
+      const apply = vi.fn();
+
+      tweener.tween('k', [0, 0, 0], [2, 0, 0], apply, { durationMs: 400 });
+      step(100);
+      expect(apply).toHaveBeenLastCalledWith([0.5, 0, 0], false);
+
+      setHidden(true);
+
+      // No frame will come while hidden, and audio keeps playing: land now.
+      expect(apply).toHaveBeenLastCalledWith([2, 0, 0], true);
+      expect(apply).toHaveBeenCalledTimes(2);
+      expect(hasFrame()).toBe(false);
+    });
+
+    it('snaps a tween requested while the document is hidden', () => {
+      const { tweener, setHidden, hasFrame } = harness();
+      const apply = vi.fn();
+      setHidden(true);
+
+      tweener.tween('k', [0, 0, 0], [2, 0, 0], apply, { durationMs: 400 });
+
+      expect(apply).toHaveBeenCalledOnce();
+      expect(apply).toHaveBeenCalledWith([2, 0, 0], true);
+      expect(hasFrame()).toBe(false);
+    });
+
+    it('lands a normalized axis on the unit target', () => {
+      const { tweener, setHidden } = harness();
+      const apply = vi.fn();
+
+      tweener.tween('fwd', [1, 0, 0], [0, 0, 2], apply, { durationMs: 100, normalize: true });
+      setHidden(true);
+
+      expect(apply).toHaveBeenLastCalledWith([0, 0, 1], true);
+    });
+
+    it('does not jump when the document becomes visible again', () => {
+      const { tweener, step, setHidden } = harness();
+      const apply = vi.fn();
+
+      tweener.tween('k', [0, 0, 0], [2, 0, 0], apply, { durationMs: 400 });
+      step(100);
+      setHidden(true);
+      step(5000);
+      const callsWhileHidden = apply.mock.calls.length;
+
+      setHidden(false);
+      step(16);
+      step(400);
+
+      // Nothing replays the old glide, and nothing moves away from the target.
+      expect(apply).toHaveBeenCalledTimes(callsWhileHidden);
+      expect(apply).toHaveBeenLastCalledWith([2, 0, 0], true);
+
+      // The next move glides from where the hidden one landed.
+      tweener.tween('k', [2, 0, 0], [4, 0, 0], apply, { durationMs: 400 });
+      step(200);
+      expect(apply).toHaveBeenLastCalledWith([3, 0, 0], false);
+    });
+
+    it('watches visibility only while a glide is in flight', () => {
+      const { tweener, step, visibilityListenerCount } = harness();
+      const apply = vi.fn();
+      expect(visibilityListenerCount()).toBe(0);
+
+      tweener.tween('a', [0, 0, 0], [1, 0, 0], apply, { durationMs: 100 });
+      tweener.tween('b', [0, 0, 0], [1, 0, 0], apply, { durationMs: 100 });
+      expect(visibilityListenerCount()).toBe(1);
+
+      step(100);
+      expect(visibilityListenerCount()).toBe(0);
+
+      tweener.tween('a', [1, 0, 0], [2, 0, 0], apply, { durationMs: 100 });
+      tweener.cancelAll();
+      expect(visibilityListenerCount()).toBe(0);
+    });
+  });
+
+  it('finishAll lands every in-flight tween on its target', () => {
+    const { tweener, step, hasFrame } = harness();
+    const a = vi.fn();
+    const b = vi.fn();
+
+    tweener.tween('a', [0, 0, 0], [1, 0, 0], a, { durationMs: 100 });
+    tweener.tween('b', [0, 0, 0], [0, 2, 0], b, { durationMs: 200 });
+    step(50);
+    tweener.finishAll();
+
+    expect(a).toHaveBeenLastCalledWith([1, 0, 0], true);
+    expect(b).toHaveBeenLastCalledWith([0, 2, 0], true);
+    expect(hasFrame()).toBe(false);
+    step(200);
+    expect(a).toHaveBeenCalledTimes(2);
+    expect(b).toHaveBeenCalledTimes(2);
   });
 
   it('snap cancels an in-flight tween for the same key', () => {

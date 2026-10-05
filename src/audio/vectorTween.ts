@@ -40,6 +40,18 @@ export interface TweenScheduler {
   cancel(handle: unknown): void;
 }
 
+/**
+ * Whether anything can see frames. Browsers stop `requestAnimationFrame` for a
+ * hidden or minimised tab while its audio keeps playing, so a glide that waits
+ * for frames freezes mid-way. The tweener lands on targets instead of gliding
+ * while hidden.
+ */
+export interface TweenVisibility {
+  isHidden(): boolean;
+  /** Call `onChange` whenever visibility changes; returns the unsubscribe. */
+  subscribe(onChange: () => void): () => void;
+}
+
 /** Server default walk speed (m/s); used when a move carries no velocity. */
 export const DEFAULT_TWEEN_SPEED = 2;
 /** Clamp: fast enough that short hops never feel laggy… */
@@ -61,6 +73,26 @@ function defaultScheduler(): TweenScheduler {
   return {
     schedule: (callback) => setTimeout(callback, FALLBACK_FRAME_MS),
     cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  };
+}
+
+const ALWAYS_VISIBLE: TweenVisibility = {
+  isHidden: () => false,
+  subscribe: () => () => {},
+};
+
+/** The page's visibility, or always-visible where there is no document. */
+function defaultVisibility(): TweenVisibility {
+  if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') {
+    return ALWAYS_VISIBLE;
+  }
+  return {
+    // Only 'hidden' stops frames; other states (jsdom reports 'prerender') still run them.
+    isHidden: () => document.visibilityState === 'hidden',
+    subscribe: (onChange) => {
+      document.addEventListener('visibilitychange', onChange);
+      return () => document.removeEventListener('visibilitychange', onChange);
+    },
   };
 }
 
@@ -96,17 +128,26 @@ export class VectorTweener {
   private readonly active = new Map<unknown, ActiveTween>();
   private readonly scheduler: TweenScheduler;
   private readonly now: () => number;
+  private readonly visibility: TweenVisibility;
   private frameHandle: unknown;
+  /** Set only while a glide is in flight, so an idle tweener holds no listener. */
+  private stopWatchingVisibility: (() => void) | undefined;
 
-  constructor(options?: { scheduler?: TweenScheduler; now?: () => number }) {
+  constructor(options?: {
+    scheduler?: TweenScheduler;
+    now?: () => number;
+    visibility?: TweenVisibility;
+  }) {
     this.scheduler = options?.scheduler ?? defaultScheduler();
     this.now = options?.now ?? (() => performance.now());
+    this.visibility = options?.visibility ?? defaultVisibility();
   }
 
   /**
    * Glide `key` from `from` (or its in-flight value) to `to`, feeding `apply`
    * each frame. Snaps — one immediate `apply(to, true)` — when there is no
-   * starting point or the delta is negligible.
+   * starting point, the delta is negligible, or the document is hidden (no
+   * frames would arrive to carry the glide).
    */
   tween(
     key: unknown,
@@ -127,6 +168,10 @@ export class VectorTweener {
       this.snap(key, target, apply);
       return;
     }
+    if (this.visibility.isHidden()) {
+      this.snap(key, options?.normalize ? unitOr(target, target) : target, apply);
+      return;
+    }
     const durationMs = this.durationFor(distance, options);
     this.active.set(key, {
       from: origin,
@@ -143,20 +188,51 @@ export class VectorTweener {
   /** Apply `to` immediately, cancelling any tween in flight for `key`. */
   snap(key: unknown, to: TweenableVector, apply: TweenApply): void {
     this.active.delete(key);
+    this.idleIfEmpty();
     apply(toTriple(to), true);
   }
 
   cancel(key: unknown): void {
     this.active.delete(key);
+    this.idleIfEmpty();
   }
 
   cancelAll(): void {
     this.active.clear();
+    this.idleIfEmpty();
+  }
+
+  /**
+   * Land every in-flight tween on its target now: one `apply(target, true)`
+   * each. Unlike {@link cancelAll}, nothing is left part-way.
+   */
+  finishAll(): void {
+    const landing = Array.from(this.active.values());
+    this.active.clear();
+    this.idleIfEmpty();
+    for (const tween of landing) {
+      tween.apply(this.interpolate(tween, 1), true);
+    }
+  }
+
+  /** With nothing in flight, drop the pending frame and the visibility listener. */
+  private idleIfEmpty(): void {
+    if (this.active.size > 0) {
+      return;
+    }
     if (this.frameHandle !== undefined) {
       this.scheduler.cancel(this.frameHandle);
       this.frameHandle = undefined;
     }
+    this.stopWatchingVisibility?.();
+    this.stopWatchingVisibility = undefined;
   }
+
+  private readonly handleVisibilityChange = (): void => {
+    if (this.visibility.isHidden()) {
+      this.finishAll();
+    }
+  };
 
   private durationFor(distance: number, options?: TweenOptions): number {
     if (options?.durationMs !== undefined && Number.isFinite(options.durationMs)) {
@@ -171,6 +247,7 @@ export class VectorTweener {
   }
 
   private ensureFrame(): void {
+    this.stopWatchingVisibility ??= this.visibility.subscribe(this.handleVisibilityChange);
     if (this.frameHandle !== undefined) {
       return;
     }
@@ -195,6 +272,8 @@ export class VectorTweener {
     }
     if (this.active.size > 0) {
       this.ensureFrame();
+    } else {
+      this.idleIfEmpty();
     }
   }
 
@@ -205,13 +284,18 @@ export class VectorTweener {
       from[1] + (to[1] - from[1]) * t,
       from[2] + (to[2] - from[2]) * t,
     ];
-    if (!tween.normalize) {
-      return value;
-    }
-    const length = Math.hypot(value[0], value[1], value[2]);
-    if (length < 1e-6) {
-      return [...to];
-    }
-    return [value[0] / length, value[1] / length, value[2] / length];
+    return tween.normalize ? unitOr(value, to) : value;
   }
+}
+
+/** `value` at unit length, or `fallback` when it has collapsed to (near) zero. */
+function unitOr(
+  value: [number, number, number],
+  fallback: [number, number, number],
+): [number, number, number] {
+  const length = Math.hypot(value[0], value[1], value[2]);
+  if (length < 1e-6) {
+    return [...fallback];
+  }
+  return [value[0] / length, value[1] / length, value[2] / length];
 }
