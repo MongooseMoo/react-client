@@ -1,3 +1,5 @@
+import commitHash from 'virtual:commit-hash';
+
 import type MudClient from '../client';
 import type { TelnetParser } from '../telnet';
 import {
@@ -51,7 +53,7 @@ export class GmcpSession {
   }
 
   start(): boolean {
-    this.require('Core').sendHello({ client: 'Mongoose Client', version: '0.1' });
+    this.require('Core').sendHello({ client: 'Mongoose Client', version: commitHash });
     const coreSupports = this.require('Core.Supports');
     coreSupports.sendSet(coreSupports.advertisedModules());
     this.require('Auth.Autologin').sendStoredLogin();
