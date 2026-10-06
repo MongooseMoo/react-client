@@ -1,3 +1,4 @@
+import commitHash from 'virtual:commit-hash';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type MudClient from '../client';
@@ -126,6 +127,8 @@ describe('GmcpSession', () => {
     expect(session.start()).toBe(false);
 
     expect(core.sendHello).toHaveBeenCalledTimes(2);
+    expect(commitHash).not.toBe('');
+    expect(core.sendHello).toHaveBeenCalledWith({ client: 'Mongoose Client', version: commitHash });
     expect(supports.sendSet).toHaveBeenCalledTimes(2);
     expect(supports.sendSet).toHaveBeenCalledWith(['Core 1', 'Core.Supports 1']);
     expect(autoLogin.sendStoredLogin).toHaveBeenCalledTimes(2);
