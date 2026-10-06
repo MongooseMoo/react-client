@@ -63,6 +63,8 @@
   --color-text-tertiary: #707080;
   --color-text-muted: #606070;
   --color-text-inverse: #14141a;
+  /* Text on a filled button. The fills are bright, so the text is dark. */
+  --color-text-button: var(--color-text-inverse);
 
   /* Borders */
   --color-border: rgba(255,255,255,0.06);
@@ -100,6 +102,11 @@
   --color-info: #a78bfa;
   --color-info-hover: #9070f0;
   --color-info-subtle: rgba(167, 139, 250, 0.12);
+
+  /* Action - Orange: buttons that do something in the world */
+  --color-action: #fb923c;
+  --color-action-hover: #f97316;
+  --color-action-active: #ea580c;
 
   /* Focus ring */
   --color-focus-ring: var(--color-primary);

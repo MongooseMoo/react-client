@@ -58,21 +58,35 @@
 }
 
 .item-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
     padding: var(--space-1) var(--space-2);
     font-size: 0.9em;
+    font-weight: var(--font-weight-semibold, 600);
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all var(--transition-fast);
 }
 
-.item-action-button {
-    color: var(--color-text-button, #fff);
-    background-color: var(--color-success);
+/* Outlined until pointed at: an item can have a dozen or more of these. */
+.item-actions .item-action-button {
+    color: var(--color-action);
+    background-color: transparent;
+    border-color: var(--color-action);
 }
 
-.item-action-button:hover {
-    background-color: var(--color-success-hover);
+.item-actions .item-action-button:hover {
+    color: var(--color-text-button);
+    background-color: var(--color-action);
+}
+
+.item-actions .item-action-button:active {
+    color: var(--color-text-button);
+    background-color: var(--color-action-active);
+    border-color: var(--color-action-active);
+    transform: translateY(1px);
 }
 
 .item-actions button:focus {

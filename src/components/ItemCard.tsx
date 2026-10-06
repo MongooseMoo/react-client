@@ -1,7 +1,35 @@
 import React from 'react';
+import type { IconType } from 'react-icons';
+import {
+    FaArrowDown,
+    FaBed,
+    FaBox,
+    FaBoxOpen,
+    FaChair,
+    FaGift,
+    FaHandRock,
+    FaLock,
+    FaLockOpen,
+    FaSignInAlt,
+} from 'react-icons/fa';
 import { Item } from '../gmcp/Char/Items'; // Assuming Item interface is here
 import { type ItemAction, itemActions } from '../itemActions';
 import './ItemCard.css';
+
+// The server names the verbs, so only the ones listed here get an icon.
+const ACTION_ICONS = new Map<string, IconType>([
+    ['sit', FaChair],
+    ['lie', FaBed],
+    ['take', FaHandRock],
+    ['remove', FaHandRock],
+    ['put', FaSignInAlt],
+    ['open', FaBoxOpen],
+    ['close', FaBox],
+    ['give', FaGift],
+    ['drop', FaArrowDown],
+    ['bolt', FaLock],
+    ['unbolt', FaLockOpen],
+]);
 
 interface ItemCardProps {
     item: Item;
@@ -22,20 +50,24 @@ const ItemCard: React.FC<ItemCardProps> = ({ item, onAction }) => {
                 {/* Attribute display removed for now */}
             </div>
             <div className="item-actions">
-                {itemActions(item).map((action) => (
-                    <button
-                        key={action.command}
-                        type="button"
-                        className="item-action-button"
-                        onClick={(e) => {
-                            e.stopPropagation(); // Prevent click from propagating to parent elements if any
-                            onAction(action);
-                        }}
-                        aria-label={action.description}
-                    >
-                        {action.label}
-                    </button>
-                ))}
+                {itemActions(item).map((action) => {
+                    const Icon = ACTION_ICONS.get(action.verb);
+                    return (
+                        <button
+                            key={action.command}
+                            type="button"
+                            className="item-action-button"
+                            onClick={(e) => {
+                                e.stopPropagation(); // Prevent click from propagating to parent elements if any
+                                onAction(action);
+                            }}
+                            aria-label={action.description}
+                        >
+                            {Icon && <Icon aria-hidden="true" />}
+                            {action.label}
+                        </button>
+                    );
+                })}
             </div>
         </div>
     );
