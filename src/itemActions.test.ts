@@ -26,6 +26,7 @@ describe("itemActions", () => {
 
   it("makes a complete command from a verb that takes only the item", () => {
     expect(itemActions(chest)).toContainEqual({
+      verb: "take",
       label: "Take",
       description: "Take chest",
       command: "take #2201",
@@ -36,12 +37,14 @@ describe("itemActions", () => {
   it("leaves a slot empty where the player supplies the text, and says where it is", () => {
     const actions = itemActions(chest);
     expect(actions).toContainEqual({
+      verb: "put",
       label: "Put … in",
       description: "Put … in chest",
       command: "put  in #2201",
       caret: 4,
     });
     expect(actions).toContainEqual({
+      verb: "give",
       label: "Give to …",
       description: "Give chest to …",
       command: "give #2201 to ",

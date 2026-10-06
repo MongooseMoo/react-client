@@ -6,6 +6,8 @@ import { setInputTextAndFocus } from "./inputFocus";
 const ANYTHING = "<anything>";
 
 export interface ItemAction {
+  /** The verb's first name in full, e.g. "take"; picks the button's icon. */
+  verb: string;
   /** Button text: the verb and its fixed words, e.g. "Take" or "Put … in". */
   label: string;
   /** The same with the item named, e.g. "Put … in chest". */
@@ -50,6 +52,7 @@ export function itemActions(item: Item): ItemAction[] {
     }
     if (!actions.has(command)) {
       actions.set(command, {
+        verb: name,
         label: capitalize(label.join(" ")),
         description: capitalize(description.join(" ")),
         command,
