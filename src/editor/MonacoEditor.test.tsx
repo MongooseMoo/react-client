@@ -29,6 +29,7 @@ beforeEach(() => {
   mock.init.mockImplementation(() => Object.assign(Promise.resolve(mock.api), { cancel: mock.cancel }));
   mock.api.editor.create.mockImplementation((container: HTMLElement) => {
     const textbox = document.createElement('div');
+    textbox.className = 'native-edit-context';
     textbox.setAttribute('role', 'textbox');
     textbox.setAttribute('aria-label', 'Code');
     textbox.tabIndex = 0;
@@ -47,11 +48,32 @@ it('describes the actual DIV textbox and newly created input surfaces with conci
   await act(async () => {
     old.remove();
     const textarea = document.createElement('textarea');
+    textarea.className = 'inputarea';
     textarea.setAttribute('aria-label', 'Code');
     root.appendChild(textarea);
   });
   expect(screen.getByRole('textbox', { name: 'Code' })).toHaveAccessibleDescription('Saved, 1 error');
   view.unmount();
+});
+
+it('preserves native descriptions and leaves Find input context alone', async () => {
+  const initial = props();
+  const view = render(<><p id="status">Saved</p><p id="native-help">Code help</p><p id="find-help">Find help</p><MonacoEditor {...initial} /></>);
+  await waitFor(() => expect(initial.onMount).toHaveBeenCalledOnce());
+  const code = screen.getByRole('textbox', { name: 'Code' });
+  const find = document.createElement('textarea');
+  find.setAttribute('aria-label', 'Find');
+  find.setAttribute('aria-describedby', 'find-help');
+  await act(async () => {
+    code.setAttribute('aria-describedby', 'native-help status');
+    mock.editor.getDomNode().appendChild(find);
+    find.focus();
+  });
+  expect(find).toHaveAccessibleDescription('Find help');
+  expect(code).toHaveAccessibleDescription('Code help Saved');
+  view.rerender(<><p id="next-status">Modified</p><p id="native-help">Code help</p><p id="find-help">Find help</p><MonacoEditor {...initial} ariaDescribedBy="next-status" /></>);
+  expect(code).toHaveAccessibleDescription('Code help Modified');
+  expect(find).toHaveAccessibleDescription('Find help');
 });
 
 it('reports model changes without writing render snapshots back into the model', async () => {

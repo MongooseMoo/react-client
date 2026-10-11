@@ -35,13 +35,15 @@ export default function MonacoEditor(props: Props) {
     let subscription: Monaco.IDisposable | undefined;
     let inputObserver: MutationObserver | undefined;
     let editorRoot: HTMLElement | null = null;
+    const ownedDescriptions = new WeakMap<HTMLElement, Set<string>>();
     const syncDescription = () => {
-      const surfaces = editorRoot?.querySelectorAll<HTMLElement>('[role="textbox"], textarea') ?? [];
+      const surfaces = editorRoot?.querySelectorAll<HTMLElement>('.native-edit-context[role="textbox"], textarea.inputarea, textarea.ime-text-area') ?? [];
       for (const surface of surfaces) {
-        surface.setAttribute('aria-describedby', latest.current.ariaDescribedBy);
-      }
-      if (editorRoot?.matches('[role="textbox"]')) {
-        editorRoot.setAttribute('aria-describedby', latest.current.ariaDescribedBy);
+        const previous = ownedDescriptions.get(surface);
+        const nativeIds = (surface.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(id => id && !previous?.has(id));
+        const ownIds = latest.current.ariaDescribedBy.split(/\s+/).filter(Boolean);
+        ownedDescriptions.set(surface, new Set(ownIds.filter(id => !nativeIds.includes(id))));
+        surface.setAttribute('aria-describedby', [...new Set([...nativeIds, ...ownIds])].join(' '));
       }
     };
     const dispose = () => {
@@ -76,7 +78,7 @@ export default function MonacoEditor(props: Props) {
         // support changes. Describe the actual inputs, never a generic wrapper
         // or the complete growing problems list.
         inputObserver = new MutationObserver(syncDescription);
-        inputObserver.observe(editorRoot, { childList: true, subtree: true, attributes: true, attributeFilter: ['role'] });
+        inputObserver.observe(editorRoot, { childList: true, subtree: true, attributes: true, attributeFilter: ['role', 'class'] });
         editorRoot.addEventListener('focusin', syncDescription);
       }
       const ownedModel = model;
