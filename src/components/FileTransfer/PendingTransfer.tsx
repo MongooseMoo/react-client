@@ -1,35 +1,42 @@
 import React from "react";
+import { formatFileSize } from "./formatFileSize";
 import "./PendingTransfer.css";
 
-interface PendingOffer {
-  sender: string;
-  filename: string;
-  filesize: number;
-  hash: string;
-}
-
 interface PendingTransferProps {
-  offer: PendingOffer;
+  filename: string;
+  /** Size of the offered file in bytes. */
+  size: number;
   senderLabel: string;
-  onAccept: (sender: string, hash: string) => void;
-  onReject: (sender: string, hash: string) => void;
+  onAccept: () => void;
+  onReject: () => void;
 }
 
 const PendingTransfer: React.FC<PendingTransferProps> = ({
-  offer,
+  filename,
+  size,
   senderLabel,
   onAccept,
   onReject,
 }) => {
+  const descriptionId = React.useId();
+  const offer = `${filename} from ${senderLabel}`;
   return (
-    <div className="incoming-transfer">
-      <p>
-        Incoming file: {offer.filename} from {senderLabel}
+    // Named by its description, so a user who tabs to the buttons also hears the size
+    // they are asked to accept.
+    // biome-ignore lint/a11y/useSemanticElements: a fieldset needs a legend, and this text is a sentence, not a caption.
+    <div className="incoming-transfer" role="group" aria-labelledby={descriptionId}>
+      <p id={descriptionId}>
+        Incoming file: {filename} ({formatFileSize(size)}) from {senderLabel}
       </p>
-      <button onClick={() => onAccept(offer.sender, offer.hash)}>
+      <button type="button" aria-label={`Accept ${offer}`} onClick={onAccept}>
         Accept
       </button>
-      <button onClick={() => onReject(offer.sender, offer.hash)}>
+      <button
+        type="button"
+        className="reject"
+        aria-label={`Reject ${offer}`}
+        onClick={onReject}
+      >
         Reject
       </button>
     </div>

@@ -17,7 +17,7 @@ import {
 
 import { MediaService } from "./audio/MediaService";
 import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
-import type FileTransferManager from "./FileTransferManager";
+import type { FileTransfers, TransferSnapshot } from "./fileTransfer/types";
 import { useInputStore } from "./stores/inputStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useOutputStore } from "./stores/outputStore";
@@ -74,12 +74,14 @@ class MudClient {
   private telnetBuffer: string = "";
   public readonly gmcp: GmcpSession;
   public readonly mcpSession: McpSession;
-  public gmcp_fileTransfer!: GMCPClientFileTransfer;
+  private gmcp_fileTransfer!: GMCPClientFileTransfer;
   public media: MediaService;
   public editors?: EditorManager;
-  private fileTransferManager?: FileTransferManager;
-  private fileTransferLoading?: Promise<FileTransferManager>;
+  private fileTransfers?: FileTransfers;
+  private fileTransfersLoading?: Promise<FileTransfers>;
   private fileTransferGeneration = 0;
+  // Kept here, not on the engine: they outlive each engine a disconnect disposes.
+  private readonly fileTransferOfferWatchers = new Set<(transfer: TransferSnapshot) => void>();
   private _autosay: boolean = false;
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
@@ -110,33 +112,55 @@ class MudClient {
     this.gmcp_fileTransfer = fileTransfer;
     const resetFileTransfer = () => {
       this.fileTransferGeneration++;
-      this.fileTransferManager?.cleanup();
-      this.fileTransferManager = undefined;
-      this.fileTransferLoading = undefined;
+      this.fileTransfers?.dispose();
+      this.fileTransfers = undefined;
+      this.fileTransfersLoading = undefined;
     };
     this.registerDisconnectReset(resetFileTransfer);
     this.registerCleanup(resetFileTransfer);
   }
 
-  getFileTransferManager(): Promise<FileTransferManager> {
+  getFileTransfers(): Promise<FileTransfers> {
     if (this.shutdownComplete) return Promise.reject(new Error('Client has shut down'));
-    if (this.fileTransferManager) return Promise.resolve(this.fileTransferManager);
-    if (this.fileTransferLoading) return this.fileTransferLoading;
+    if (this.fileTransfers) return Promise.resolve(this.fileTransfers);
+    if (this.fileTransfersLoading) return this.fileTransfersLoading;
     const generation = this.fileTransferGeneration;
-    const loading = Promise.all([import('./FileTransferManager'), import('./WebRTCService')])
-      .then(([{ default: FileTransferManager }, { WebRTCService }]) => {
+    const loading = import('./fileTransfer/createFileTransfers')
+      .then(({ createFileTransfers }) => {
         if (this.shutdownComplete || generation !== this.fileTransferGeneration) {
           throw new Error('File transfer initialization cancelled');
         }
-        const manager = new FileTransferManager(new WebRTCService(), this.gmcp_fileTransfer);
-        this.fileTransferManager = manager;
-        return manager;
+        const transfers = createFileTransfers(this.gmcp_fileTransfer);
+        for (const watcher of this.fileTransferOfferWatchers) transfers.on('change', watcher);
+        this.fileTransfers = transfers;
+        return transfers;
       }).catch((error) => {
-        if (this.fileTransferLoading === loading) this.fileTransferLoading = undefined;
+        if (this.fileTransfersLoading === loading) this.fileTransfersLoading = undefined;
         throw error;
       });
-    this.fileTransferLoading = loading;
+    this.fileTransfersLoading = loading;
     return loading;
+  }
+
+  /**
+   * Calls `listener` once for each offer from a peer that the user is asked to decide
+   * on, and not for the offers this client makes. An offer that resumes a transfer this
+   * client still has does not ask, so it does not call; one that resumes a transfer this
+   * client no longer knows does, because the user is asked again: after a page reload,
+   * after this client gave up waiting for the sender, or once the transfer has left the
+   * history. Returns the function that removes the listener again.
+   */
+  onFileTransferOffer(listener: (offer: TransferSnapshot) => void): () => void {
+    // An incoming transfer is published as 'offered' when it appears and never again.
+    const watcher = (transfer: TransferSnapshot) => {
+      if (transfer.direction === 'receive' && transfer.state === 'offered') listener(transfer);
+    };
+    this.fileTransferOfferWatchers.add(watcher);
+    this.fileTransfers?.on('change', watcher);
+    return () => {
+      this.fileTransferOfferWatchers.delete(watcher);
+      this.fileTransfers?.off('change', watcher);
+    };
   }
 
   registerMcpPackage(p: new () => MCPPackage): MCPPackage {
@@ -627,15 +651,16 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
   }
 
-  sendNotification(title: string, body: string) {
+  /** Whether the notification was shown: it is not without the user's permission. */
+  sendNotification(title: string, body: string): boolean {
     if (!("Notification" in window)) {
       console.log("This browser does not support desktop notification");
-      return;
+      return false;
     }
 
-    if (Notification.permission === "granted") {
-      new Notification(title, { body });
-    }
+    if (Notification.permission !== "granted") return false;
+    new Notification(title, { body });
+    return true;
   }
 
   speak(text: string) {

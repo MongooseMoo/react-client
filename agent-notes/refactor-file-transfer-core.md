@@ -10,12 +10,31 @@ target is the transfer manager, WebRTC service and store. Concretely: bounded me
 several transfers at once, real resume, a signalling interface, no app coupling in the core, and the receive-side
 trust checks of the old manager kept.
 
-## State (2026-10-10, end of session)
+## State (2026-10-10, after the accessibility pass)
 
-The code is written, reviewed once independently, revised, and passes every automated check. It is NOT committed
-(only this note is), not pushed, no PR. Q has not asked for any of those. It has NOT been run in a real browser:
-every test uses fake links and fake or in-memory storage, so real WebRTC, real IndexedDB timing and the MOO relay
-are unexercised.
+The code is written, reviewed once independently, revised, given an accessibility pass (Q asked for one, using the
+a11y skills) and committed on this branch at Q's request. Not pushed, no PR: Q has not asked for those. It has NOT
+been run in a real browser or with a real screen reader: every test uses fake links and jsdom, so real WebRTC, real
+IndexedDB timing, the MOO relay and what NVDA actually says are unexercised.
+
+Accessibility pass (skills used: live-regions, focus-management, a11y-combobox, at-experience-verification), all in
+`src/components/FileTransfer/` unless noted:
+- Announcements: `useTransferHistory` speaks each history line through the app's announcer
+  (`@react-aria/live-announcer`); `History` is a plain list. A live region inside the tab panel is silent whenever
+  another tab shows (`tabs.tsx` sets `hidden`). The "Waiting for…" row is no longer `role="status"` (it was mounted
+  together with its text).
+- New offers: `useFileTransferNotifications` names the sender from the user list (was the raw object id) and speaks
+  the offer when no desktop notification could be shown; `client.sendNotification` now returns whether it showed one.
+  The history lists the incoming offer but does not speak it again.
+- Focus: `useFocusRefuge` moves focus to the panel heading (`tabIndex=-1`) when the row holding it is removed, and
+  only if focus really fell to the body.
+- Combobox (`Controls.tsx`): listbox always in the DOM (`hidden` when empty or closed) so `aria-controls` resolves;
+  `aria-selected` follows the highlighted option; empty state is a pre-existing `role="status"`, not a child of the
+  listbox; `aria-expanded` is true only when options show; highlighted option scrolls into view; file input labelled.
+- Rows are `role="group"` named by their sentence; Cancel buttons say what they cancel; the progress bar is
+  indeterminate while connecting and carries `aria-valuetext` for Connecting/Verifying; Reject has its danger style.
+- CSS: the open panel no longer clips at 1000px; a collapsed panel is `visibility: hidden`; the history box no
+  longer scrolls (ten lines at most, and it was not keyboard-scrollable).
 
 What exists:
 - `src/fileTransfer/`: `types.ts` (contract), `wire.ts` (frames, `SEND_WINDOW`), `contentId.ts`, `storage.ts`,
@@ -35,8 +54,8 @@ Last verification, run by me after the final edits:
 - `npx tsc --noEmit`: exit 0.
 - `npx biome lint` over every new or changed ts/tsx file: 0 errors, 6 warnings (2 in untouched lines of
   `sidebar.tsx`, 4 non-null assertions in tests).
-- Full `npx vitest run`: 135 files, 2048 tests, two consecutive clean runs (21-23 s). Master: 130 files, 1576 tests.
-- `npm run build`: OK; transfer code is its own chunk, `assets/createFileTransfers-*.js`, 28.73 kB (9.28 kB gzip).
+- Full `npx vitest run`: 135 files, 2061 tests, two consecutive clean runs (20-21 s). Master: 130 files, 1576 tests.
+- `npm run build`: OK; transfer code is its own chunk, `assets/createFileTransfers-*.js`, 28.73 kB (9.27 kB gzip).
 - The reviewer's probes (`<session scratchpad>/ftprobe/probe.test.ts`) re-run against the fixed code: the defects
   for findings 1-7 no longer reproduce. PROBE8 prints unchanged numbers because its file is exactly one window;
   the bound is shown by the engine test "keeps a fast sender within the window while the receiver stores slowly".
@@ -89,14 +108,22 @@ Last verification, run by me after the final edits:
 - The sidebar's `fileTransferExpanded` starts true and is never set false, so its offer effect is a no-op
   (agent-reported; I read only the diff).
 - `useSessionStore` has no reader left outside tests (agent-reported, unchecked).
-- The notification text shows the raw peer address (MOO object id), as before.
-- Pre-existing lint errors in `components/FileTransfer/Controls.tsx` / `Controls.test.tsx` (untouched files).
+- `fireEvent.change` on a text input does not reach `onChange` under Preact here; `fireEvent.input` does. The old
+  Controls test "keeps Send disabled for arbitrary typed recipients" passes either way, so it proves little.
+- The test library computes the waiting row's name with a space before the ellipsis ("file.bin …"); browsers may not.
+
+Accessibility items seen and left:
+- Other announcements in the panel still depend on it having been opened once (`mountOnSelect`): before that, only
+  new offers are spoken (app-level hook); completions and failures are not.
+- Opening the recipient list on focus, and no Home/End/Alt+Down in the combobox.
+- Offer+cancel floods speak once per offer.
+- Colour contrast of the panel's buttons was not measured.
 
 Known limits, accepted for now:
 - Identical content offered both ways at the same instant ends both 'rejected'.
 - A receiver-side failure the sender never heard is answered on resume with a reject, so the sender shows 'rejected'.
 - A cancel landing during `deliver` itself ends 'cancelled' though the app may have the file (ours is synchronous).
-- Offer+cancel floods still fire one notification each, as on master.
+- Offer+cancel floods still fire one notification (or one spoken line) each, as on master.
 - A sender's progress counts bytes queued on the link, so it can lead the receiver by up to the window.
 - Final assembly builds a Blob from stored pieces: JS heap is bounded, Blob memory is the browser's. The storage
   interface leaves room for an OPFS implementation.
@@ -108,7 +135,8 @@ For Q to decide; nothing here has been started:
 1. A live two-browser test (two guests through the dev server, which proxies to the real MOO): send a file each way,
    then drop a link mid-transfer to see resume. This is the only way to learn whether real WebRTC, IndexedDB timing
    and the server relay behave as the fakes assume. Earlier notes say the server-side `toobj()` recipient fix on
-   object #5897 was never confirmed live; if offers vanish, check that first.
-2. Commit the work on this branch and open a PR, if wanted.
+   object #5897 was never confirmed live; if offers vanish, check that first. Do it with NVDA running: nothing in
+   the accessibility pass has been heard, only asserted in jsdom.
+2. Push and open a PR, if wanted.
 3. If the core is to become a package: the only imports from outside `src/fileTransfer/` are in `gmcpSignaling.ts`
    and `createFileTransfers.ts` (GMCP package type) and `storage.ts` (`../persistence` IndexedDB helpers).

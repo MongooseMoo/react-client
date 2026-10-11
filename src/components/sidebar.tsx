@@ -68,7 +68,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
     const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
     const midiPreferences = usePreferences((state) => state.midi);
     const hapticsPreferences = usePreferences((state) => state.haptics);
-    const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
+    const [fileTransferExpanded, setFileTransferExpanded] = useState(true);
 
     // State to track if data has been received for optional tabs
     // const [hasAfflictionsData, setHasAfflictionsData] = useState(false); // Removed
@@ -298,16 +298,8 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       [visibleTabs],
     ); // Dependency: visibleTabs
 
-    // Example effect to toggle file transfer based on activity
-    useEffect(() => {
-      const handleActivity = () => setFileTransferExpanded(true);
-      client.gmcp_fileTransfer.on('offer', handleActivity);
-      // Add listeners for other relevant events like progress, complete, error
-      return () => {
-        client.gmcp_fileTransfer.off('offer', handleActivity);
-        // Remove other listeners
-      };
-    }, [client]);
+    // A newly offered file expands the file transfer panel.
+    useEffect(() => client.onFileTransferOffer(() => setFileTransferExpanded(true)), [client]);
 
     // If no tabs are visible (e.g., only Users tab exists but no users yet),
     // you might want to render nothing or a placeholder.
