@@ -137,4 +137,32 @@ describe('MidiStatus lifecycle refreshes', () => {
     expect(document.activeElement).toBe(action);
     expect((screen.getByRole('combobox', { name: 'Input device' }) as HTMLSelectElement).value).toBe('in');
   });
+
+  it('reports loss and restoration only for a device that was in use', async () => {
+    testState.connectionStatus.inputConnected = true;
+    testState.connectionStatus.inputDeviceId = 'used';
+    testState.connectionStatus.inputDeviceName = 'Keyboard';
+    render(<MidiStatus client={client} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const change = vi.mocked(midiService.onDeviceChange).mock.calls.at(-1)![0];
+    await act(async () => {
+      change({ inputs: { added: [], removed: [{ id: 'unused', name: 'Unused' }] }, outputs: { added: [], removed: [] } });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByRole('status').textContent).toBe('');
+    testState.connectionStatus.inputConnected = false;
+    testState.connectionStatus.inputDeviceId = undefined;
+    await act(async () => {
+      change({ inputs: { added: [], removed: [{ id: 'used', name: 'Keyboard' }] }, outputs: { added: [], removed: [] } });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByRole('status').textContent).toBe('Input device disconnected.');
+    testState.connectionStatus.inputConnected = true;
+    testState.connectionStatus.inputDeviceId = 'used';
+    await act(async () => {
+      change({ inputs: { added: [{ id: 'used', name: 'Keyboard' }], removed: [] }, outputs: { added: [], removed: [] } });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByRole('status').textContent).toBe('Input device reconnected.');
+  });
 });
