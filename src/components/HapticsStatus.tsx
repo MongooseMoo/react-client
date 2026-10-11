@@ -71,7 +71,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
 
   if (!hapticsPreferences.enabled) {
     return (
-      <div style={{ padding: "10px" }}>
+      <div style={{ padding: "10px", color: "var(--color-text)", overflowWrap: "anywhere" }}>
         <p>Haptics is disabled. Enable it in preferences to use haptics features.</p>
       </div>
     );
@@ -82,7 +82,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
     (a) => a.deviceClass === "gaming"
   );
   return (
-    <div style={{ padding: "10px" }}>
+    <div style={{ padding: "10px", color: "var(--color-text)", overflowWrap: "anywhere" }}>
       <h3>Haptics Status</h3>
       <p role="status">{outcome}</p>
 
@@ -93,20 +93,20 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
         </div>
         {gamepadConnected || gamepadActuators.length > 0 ? (
           <div>
-            <span style={{ color: "green" }}>Connected (automatic)</span>
+            <span style={{ color: "var(--color-success)" }}>Connected (automatic)</span>
             {gamepadActuators.length > 0 ? (
-              <div style={{ marginTop: "5px", fontSize: "0.9em", color: "#666" }}>
+              <div style={{ marginTop: "5px", fontSize: "0.9em", color: "var(--color-text-secondary)" }}>
                 {gamepadActuators.length} actuator{gamepadActuators.length !== 1 ? "s" : ""} available
               </div>
             ) : (
-              <div style={{ marginTop: "5px", fontSize: "0.9em", color: "#666" }}>
+              <div style={{ marginTop: "5px", fontSize: "0.9em", color: "var(--color-text-secondary)" }}>
                 No gamepads detected. Connect a controller to use gamepad haptics.
               </div>
             )}
           </div>
         ) : (
           <div>
-            <span style={{ color: "#666", fontSize: "0.9em" }}>
+            <span style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
               Listening for gamepads... Connect a controller to use gamepad haptics.
             </span>
           </div>
@@ -133,12 +133,12 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
             >
               {isScanning ? "Scanning..." : "Scan for Devices"}
             </button>
-            <div style={{ marginTop: "5px", fontSize: "0.85em", color: "#666" }}>
+            <div style={{ marginTop: "5px", fontSize: "0.85em", color: "var(--color-text-secondary)" }}>
               Opens the browser device picker. Your device must be in pairing mode.
             </div>
           </div>
         ) : (
-          <div style={{ fontSize: "0.9em", color: "#999" }}>
+          <div style={{ fontSize: "0.9em", color: "var(--color-text-secondary)" }}>
             WebBluetooth is not supported in this browser. Use Chrome or Edge.
           </div>
         )}
@@ -150,7 +150,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
           <strong>Devices</strong>
         </div>
         {capabilities.actuators.length === 0 && capabilities.sensors.length === 0 ? (
-          <div style={{ color: "#666", fontSize: "0.9em" }}>
+          <div style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
             No haptic devices connected.
           </div>
         ) : (
@@ -165,9 +165,9 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
                     maxHeight: "200px",
                     overflow: "auto",
                     fontSize: "0.85em",
-                    backgroundColor: "#f9f9f9",
+                    backgroundColor: "var(--color-bg-surface)",
                     padding: "8px",
-                    border: "1px solid #ddd",
+                    border: "1px solid var(--color-border)",
                     borderRadius: "4px",
                   }}
                 >
@@ -177,14 +177,14 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
                       style={{
                         marginBottom: "4px",
                         paddingBottom: "4px",
-                        borderBottom: "1px solid #eee",
+                        borderBottom: "1px solid var(--color-border)",
                       }}
                     >
-                      <span style={{ color: "#333" }}>
+                      <span style={{ color: "var(--color-text)" }}>
                         #{actuator.id}
                       </span>{" "}
                       <span>{actuator.types.join(", ")}</span>{" "}
-                      <span style={{ color: "#666" }}>
+                      <span style={{ color: "var(--color-text-secondary)" }}>
                         ({actuator.deviceClass}, {actuator.steps} steps)
                       </span>
                     </div>
@@ -202,9 +202,9 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
                     maxHeight: "150px",
                     overflow: "auto",
                     fontSize: "0.85em",
-                    backgroundColor: "#f9f9f9",
+                    backgroundColor: "var(--color-bg-surface)",
                     padding: "8px",
-                    border: "1px solid #ddd",
+                    border: "1px solid var(--color-border)",
                     borderRadius: "4px",
                   }}
                 >
@@ -214,14 +214,14 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
                       style={{
                         marginBottom: "4px",
                         paddingBottom: "4px",
-                        borderBottom: "1px solid #eee",
+                        borderBottom: "1px solid var(--color-border)",
                       }}
                     >
-                      <span style={{ color: "#333" }}>
+                      <span style={{ color: "var(--color-text)" }}>
                         #{sensor.id}
                       </span>{" "}
                       <span>{sensor.types.join(", ")}</span>{" "}
-                      <span style={{ color: "#666" }}>
+                      <span style={{ color: "var(--color-text-secondary)" }}>
                         ({sensor.deviceClass}, range {sensor.range[0]}-{sensor.range[1]})
                       </span>
                     </div>
@@ -240,8 +240,8 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
           onClick={handleEmergencyStop}
           style={{
             padding: "10px 20px",
-            backgroundColor: "#d32f2f",
-            color: "white",
+            backgroundColor: "var(--color-danger)",
+            color: "var(--color-text-button)",
             border: "none",
             borderRadius: "4px",
             cursor: "pointer",
@@ -257,7 +257,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
       {/* Usage Info */}
       <details>
         <summary><strong>Info</strong></summary>
-        <div style={{ padding: "10px 0", fontSize: "0.9em", color: "#666" }}>
+        <div style={{ padding: "10px 0", fontSize: "0.9em", color: "var(--color-text-secondary)" }}>
           <p>Gamepad haptics are automatic when a compatible controller is connected.</p>
           <p>Bluetooth devices are discovered via in-browser WebBluetooth (Chromium browsers only).</p>
           <p>The server can send haptic commands when the Client.Haptics GMCP package is active.</p>
