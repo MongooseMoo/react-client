@@ -111,7 +111,7 @@ const AccessibleList = <T extends AccessibleListItem>({
             // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: the listbox owns option keyboard operation.
             <li role="option" key={item.id} id={`${listId}-item-${item.id}`}
               className={`${itemClassName?.(item, index, selected) ?? ''} ${selected ? 'selected' : ''}`}
-              aria-selected={selected} onClick={() => { select(index); containerRef.current?.focus(); onActivate?.(index); }}>
+              aria-selected={selected} onClick={() => { containerRef.current?.focus(); select(index); onActivate?.(index); }}>
               {renderItem(item, index, selected)}
             </li>
           );
