@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type React from "react";
 
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type MudClient from "../client";
 import { useConnectionStore } from "../stores/connectionStore";
 import { useOutputStore } from "../stores/outputStore";
@@ -537,6 +537,22 @@ describe("Output frozen history resilience", () => {
     vi.restoreAllMocks();
     localStorage.clear();
     useOutputStore.getState().reset();
+  });
+
+  it('keeps quotation copy available after the live window rolls over', async () => {
+    const { container } = render(<Output client={{} as MudClient} />);
+    useOutputStore.getState().addHtml('<blockquote>keep this quotation</blockquote>');
+    await act(async () => { await Promise.resolve(); });
+    for (let index = 0; index < 201; index++) useOutputStore.getState().addMessage(`later ${index}`);
+    await act(async () => { await Promise.resolve(); });
+    const quote = [...container.querySelectorAll('blockquote')].find(node => node.textContent === 'keep this quotation')!;
+    const button = quote.parentElement!.querySelector('button')!;
+    expect(button).not.toBeNull();
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: mockClipboardWriteText } });
+    mockClipboardWriteText.mockResolvedValue(undefined);
+    await act(async () => { fireEvent.click(button); });
+    expect(mockClipboardWriteText).toHaveBeenCalledWith('keep this quotation');
+    await waitFor(() => expect(mockAnnounce).toHaveBeenCalledWith('Copied', 'polite'));
   });
 
   it("keeps rendering and saving when the frozen container falls out of sync", async () => {

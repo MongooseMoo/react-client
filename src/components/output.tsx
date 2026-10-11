@@ -11,6 +11,7 @@ import { useUserlistStore } from '../stores/userlistStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useOutputStore, type OutputEntry } from '../stores/outputStore';
 import { renderServerHtml } from './serverHtml';
+import { copyBlockquoteContent } from './BlockquoteCopyButton';
 import { autoLogService } from '../logging/AutoLogService';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
 import {
@@ -600,6 +601,7 @@ componentDidUpdate(
 
   sanitizeHtml(html: string): string {
     const doc = new DOMParser().parseFromString(html, "text/html");
+    doc.querySelectorAll('.blockquote-copy-button, .copy-feedback').forEach(node => node.remove());
     return doc.body.textContent || "";
   }
 
@@ -689,6 +691,25 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   // --- Combined click handler for delegated events ---
   handleOutputClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const targetElement = event.target as HTMLElement;
+    const copyButton = targetElement.closest<HTMLButtonElement>('.blockquote-copy-button');
+    if (copyButton) {
+      const wrapper = copyButton.closest('.blockquote-with-copy');
+      const quote = wrapper?.querySelector('blockquote');
+      if (!quote) return;
+      event.preventDefault();
+      void copyBlockquoteContent(quote, quote.dataset.contentType).then(() => {
+        announce('Copied', 'polite');
+        copyButton.textContent = 'Copied!';
+        const feedback = wrapper?.querySelector('.copy-feedback');
+        if (feedback) feedback.textContent = '';
+        window.setTimeout(() => { if (copyButton.isConnected) copyButton.textContent = 'Copy'; }, 1500);
+      }, () => {
+        announce('Could not copy', 'polite');
+        const feedback = wrapper?.querySelector('.copy-feedback');
+        if (feedback) feedback.textContent = 'Could not copy. Select the text to copy it.';
+      });
+      return;
+    }
 
     // --- Handle exit link clicks (data-exit delegation) ---
     const exitLink = targetElement.closest('a.exit[data-exit]');
@@ -877,7 +898,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     // Extract text content from the JSX element
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = this.renderLineMarkup(line);
-    const textContent = tempDiv.textContent || tempDiv.innerText || '';
+    const textContent = this.sanitizeHtml(tempDiv.innerHTML);
 
     // Announce to screen reader
     announce(textContent, 'polite');
@@ -915,7 +936,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = this.renderLineMarkup(line);
-    const textContent = tempDiv.textContent || tempDiv.innerText || "";
+    const textContent = this.sanitizeHtml(tempDiv.innerHTML);
 
     return navigator.clipboard.writeText(textContent).then(
       () => announce("Copied", "polite"),
