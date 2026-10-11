@@ -32,9 +32,13 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
     const multiUserManagerRef = useRef<MultiUserManager | null>(null);
     const autoSaveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const workerMessageHandlerRef = useRef<((e: MessageEvent) => void) | null>(null);
+    const rejectBootRef = useRef<((reason: Error) => void) | null>(null);
+    const [bootError, setBootError] = useState('');
 
     const cleanupWasmResources = React.useCallback(() => {
         disposedRef.current = true;
+        rejectBootRef.current?.(new Error('Database loading stopped.'));
+        rejectBootRef.current = null;
 
         if (autoSaveIntervalRef.current !== null) {
             clearInterval(autoSaveIntervalRef.current);
@@ -81,7 +85,9 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
     const bootWithDb = React.useCallback((dbBuffer: ArrayBuffer) => {
         if (bootedRef.current || disposedRef.current) return;
         bootedRef.current = true;
-        setWaitingForDb(false);
+
+        return new Promise<void>((resolve, reject) => {
+        rejectBootRef.current = reject;
 
         const worker = new Worker('/wasm-worker.js');
         const stream = new WorkerStream(worker);
@@ -97,14 +103,19 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
 
         // Listen for worker status messages
         const handleWorkerMessage = async (e: MessageEvent) => {
+            if (workerRef.current !== worker || disposedRef.current) return;
             const msg = e.data;
             if (msg.type === 'log') {
                 console.log('[WASM server]', msg.data);
             } else if (msg.type === 'error') {
                 console.error('[WASM error]', msg.message);
+                if (rejectBootRef.current) reject(new Error(msg.message || 'Could not start the database.'));
             } else if (msg.type === 'ready') {
-                if (disposedRef.current) return;
+                if (!rejectBootRef.current) return;
+                rejectBootRef.current = null;
                 console.log('[WASM] Server is listening');
+                onClientReady(newClient);
+                resolve();
                 // Start periodic auto-save (every 5 minutes)
                 const autoSaveInterval = setInterval(() => {
                     worker.postMessage({ type: 'save' });
@@ -184,21 +195,28 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
                     }
                 }
 
+                if (disposedRef.current || workerRef.current !== worker) return;
                 (window as any).wasmDbKey = dbKey;
                 console.log('[WASM] Database ready, size:', dbData.byteLength, 'key:', dbKey.slice(0, 12) + '...');
-                if (!disposedRef.current) {
+                if (!disposedRef.current && workerRef.current === worker) {
                     worker.postMessage({ type: 'start', dbData });
                 }
             } catch (err) {
                 if (!disposedRef.current) {
                     console.error('[WASM] Failed to load database:', err);
+                    reject(err);
                 }
             }
         })();
 
-        // Report client ready to parent
-        onClientReady(newClient);
-    }, [isHostMode, onClientReady, onHostStateChange]);
+        }).catch((failure: unknown) => {
+            if (disposedRef.current) throw failure;
+            cleanupWasmResources();
+            disposedRef.current = false;
+            bootedRef.current = false;
+            throw failure;
+        });
+    }, [isHostMode, onClientReady, onHostStateChange, cleanupWasmResources]);
 
     // Auto-boot when we have a dbUrl (or local mode with no dbUrl uses Minimal.db)
     useEffect(() => {
@@ -214,10 +232,14 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
                 return res.arrayBuffer();
             })
             .then((buffer) => {
-                bootWithDb(buffer);
+                return bootWithDb(buffer);
             })
             .catch((err) => {
                 console.error('[WASM] Failed to fetch database:', err);
+                if (!disposedRef.current) {
+                    setBootError('Could not start the database. Choose a file or try again.');
+                    setWaitingForDb(true);
+                }
             });
     }, [dbUrl, isHostMode, waitingForDb, bootWithDb]);
 
@@ -228,7 +250,10 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
 
     // Before client is ready: show upload dialog if waiting for DB
     if (!clientReady && waitingForDb) {
-        return <DbUploadDialog onDbSelected={(data) => bootWithDb(data)} />;
+        return <>
+            {bootError && <p role="alert">{bootError}</p>}
+            <DbUploadDialog onDbSelected={(data) => { setBootError(''); return bootWithDb(data); }} />
+        </>;
     }
 
     // WasmHost renders nothing in the grid — App.tsx renders HostPanel directly
