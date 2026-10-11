@@ -8,6 +8,7 @@ import {
 } from "../logging/AutoLogExport";
 import { autoLogStore } from "../logging/AutoLogStore";
 import type { AutoLogEntry, AutoLogSession } from "../logging/AutoLogTypes";
+import AccessibleList from './AccessibleList';
 import "./AutoLogDialog.css";
 
 function formatBytes(value: number): string {
@@ -37,7 +38,7 @@ type PendingDelete =
   | { kind: "session"; session: AutoLogSession }
   | { kind: "all"; count: number };
 
-export default function AutoLogDialogContent({ isOpen }: { isOpen: boolean }) {
+export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: boolean; onReady?: () => void }) {
   const confirmDialogRef = useRef<HTMLDialogElement | null>(null);
   const [sessions, setSessions] = useState<AutoLogSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<AutoLogSession | null>(null);
@@ -45,6 +46,12 @@ export default function AutoLogDialogContent({ isOpen }: { isOpen: boolean }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const viewerHeadingRef = useRef<HTMLHeadingElement>(null);
+  const selectedSessionRef = useRef(selectedSession);
+  selectedSessionRef.current = selectedSession;
+  const entriesRequest = useRef(0);
+  const focusAfterDelete = useRef(false);
+  const [sessionsReady, setSessionsReady] = useState(false);
 
   const refreshSessions = useCallback(async () => {
     setIsLoading(true);
@@ -52,27 +59,34 @@ export default function AutoLogDialogContent({ isOpen }: { isOpen: boolean }) {
     try {
       const nextSessions = await autoLogStore.listSessions();
       setSessions(nextSessions);
-      if (selectedSession && !nextSessions.some((session) => session.id === selectedSession.id)) {
+      const current = selectedSessionRef.current;
+      if (current && !nextSessions.some((session) => session.id === current.id)) {
+        entriesRequest.current++;
         setSelectedSession(null);
         setEntries([]);
       }
+      return nextSessions;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load autolog sessions.");
     } finally {
       setIsLoading(false);
+      setSessionsReady(true);
     }
-  }, [selectedSession]);
+  }, []);
 
   const loadSessionEntries = useCallback(async (session: AutoLogSession) => {
+    const request = ++entriesRequest.current;
     setSelectedSession(session);
+    setEntries([]);
     setIsLoading(true);
     setError(null);
     try {
-      setEntries(await autoLogStore.getEntries(session.id));
+      const nextEntries = await autoLogStore.getEntries(session.id);
+      if (request === entriesRequest.current) setEntries(nextEntries);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load autolog entries.");
+      if (request === entriesRequest.current) setError(err instanceof Error ? err.message : "Failed to load autolog entries.");
     } finally {
-      setIsLoading(false);
+      if (request === entriesRequest.current) setIsLoading(false);
     }
   }, []);
 
@@ -81,32 +95,49 @@ export default function AutoLogDialogContent({ isOpen }: { isOpen: boolean }) {
     setError(null);
     try {
       await autoLogStore.deleteSession(session.id);
+      const previousIndex = sessions.findIndex(item => item.id === session.id);
       if (selectedSession?.id === session.id) {
         setSelectedSession(null);
         setEntries([]);
       }
-      await refreshSessions();
+      const nextSessions = await refreshSessions();
+      const successor = nextSessions?.[Math.min(previousIndex, nextSessions.length - 1)];
+      if (successor) await loadSessionEntries(successor);
+      focusAfterDelete.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete autolog session.");
     } finally {
       setIsLoading(false);
     }
-  }, [refreshSessions, selectedSession]);
+  }, [refreshSessions, selectedSession, sessions, loadSessionEntries]);
 
   const handleDeleteAll = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       await autoLogStore.deleteAll();
+      entriesRequest.current++;
       setSelectedSession(null);
       setEntries([]);
       await refreshSessions();
+      focusAfterDelete.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete autolog sessions.");
     } finally {
       setIsLoading(false);
     }
   }, [refreshSessions]);
+
+  useEffect(() => {
+    if (isOpen && !isLoading && focusAfterDelete.current) {
+      focusAfterDelete.current = false;
+      document.getElementById(sessions.length ? 'autolog-session-selector' : 'autolog-refresh')?.focus();
+    }
+  }, [isOpen, isLoading, sessions]);
+
+  useEffect(() => {
+    if (isOpen && sessionsReady) onReady?.();
+  }, [isOpen, sessionsReady, onReady]);
 
   // Destructive triggers open the confirmation alertdialog instead of deleting
   // immediately, gating handleDelete / handleDeleteAll behind a confirm step.
@@ -206,43 +237,43 @@ export default function AutoLogDialogContent({ isOpen }: { isOpen: boolean }) {
         <>
           <div className="autolog-dialog-toolbar">
             <span>{sessions.length} sessions, {formatBytes(totalBytes)}</span>
-            <button type="button" onClick={refreshSessions} disabled={isLoading}>Refresh</button>
+            <button id="autolog-refresh" type="button" onClick={() => { if (!isLoading) void refreshSessions(); }} aria-disabled={isLoading}>Refresh</button>
             <button type="button" onClick={requestDeleteAll} disabled={isLoading || sessions.length === 0}>Delete All</button>
           </div>
 
           {error && <div className="autolog-dialog-error" role="alert">{error}</div>}
 
-          <div className="autolog-dialog-body" aria-busy={isLoading}>
+          <div className="autolog-dialog-body">
             <section className="autolog-session-list" aria-label="Autolog sessions">
+              <h3 id="autolog-sessions-title">Autolog sessions</h3>
               {sessions.length === 0 && !isLoading && (
                 <p className="autolog-empty">No autolog sessions have been saved.</p>
               )}
-              {sessions.map((session) => (
-                <article
-                  key={session.id}
-                  className={`autolog-session-row ${selectedSession?.id === session.id ? "selected" : ""}`}
-                >
-                  <button type="button" className="autolog-session-main" aria-current={selectedSession?.id === session.id ? "true" : undefined} onClick={() => loadSessionEntries(session)}>
-                    <span className="autolog-session-title">{session.title}</span>
-                    <span className="autolog-session-meta">
-                      {formatSessionDate(session.startedAt)} · {getSessionDuration(session)} · {session.lineCount} lines · {formatBytes(session.byteEstimate)}
-                    </span>
-                  </button>
-                  <div className="autolog-session-actions">
-                    <button type="button" aria-label={`Download "${session.title}" as plain text`} onClick={() => handleDownload(session, "text")}>TXT</button>
-                    <button type="button" aria-label={`Download "${session.title}" as HTML`} onClick={() => handleDownload(session, "html")}>HTML</button>
-                    <button type="button" aria-label={`Delete log "${session.title}"`} onClick={() => requestDelete(session)}>Delete</button>
-                  </div>
-                </article>
-              ))}
+              {sessions.length > 0 && <AccessibleList
+                listId="autolog-session-selector" labelledBy="autolog-sessions-title" items={sessions}
+                renderItem={session => <><span className="autolog-session-title">{session.title}</span>{' '}
+                  <span className="autolog-session-meta">{formatSessionDate(session.startedAt)}</span></>}
+                getItemTextValue={session => session.title.toLowerCase()}
+                onSelectedIndexChange={index => {
+                  const session = sessions[index];
+                  if (session && session.id !== selectedSessionRef.current?.id) void loadSessionEntries(session);
+                }}
+                onActivate={() => viewerHeadingRef.current?.focus()}
+              />}
             </section>
 
-            <section className="autolog-entry-viewer" aria-label="Autolog entries">
+            <section className="autolog-entry-viewer" aria-label="Autolog entries" aria-busy={isLoading}>
               {selectedSession ? (
                 <>
-                  <h3>{selectedSession.title}</h3>
+                  <h3 ref={viewerHeadingRef} tabIndex={-1}>{selectedSession.title}</h3>
                   <div className="autolog-entry-meta">
-                    {formatSessionDate(selectedSession.startedAt)} · {selectedSession.sanitizedUrl}
+                    {formatSessionDate(selectedSession.startedAt)} · {getSessionDuration(selectedSession)} · {selectedSession.lineCount} lines · {formatBytes(selectedSession.byteEstimate)} · {selectedSession.sanitizedUrl}
+                  </div>
+                  <div className="autolog-session-actions">
+                    <button type="button" onClick={() => viewerHeadingRef.current?.focus()}>View entries</button>
+                    <button type="button" aria-disabled={isLoading} aria-label={`Download "${selectedSession.title}" as plain text`} onClick={() => { if (!isLoading) void handleDownload(selectedSession, "text"); }}>TXT</button>
+                    <button type="button" aria-disabled={isLoading} aria-label={`Download "${selectedSession.title}" as HTML`} onClick={() => { if (!isLoading) void handleDownload(selectedSession, "html"); }}>HTML</button>
+                    <button type="button" aria-disabled={isLoading} aria-label={`Delete log "${selectedSession.title}"`} onClick={() => { if (!isLoading) requestDelete(selectedSession); }}>Delete</button>
                   </div>
                   <div className="autolog-entry-list">
                     {entries.map((entry) => (
