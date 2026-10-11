@@ -6,6 +6,34 @@ import { useVoices } from "../hooks/useVoices";
 import Tabs, { type TabProps } from "./tabs";
 import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
 
+function PreferenceNumber({ id, label, value, min, max, onCommit }: {
+  id: string; label: string; value: number; min: number; max: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const [error, setError] = useState('');
+  React.useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const next = Number(draft);
+    if (!draft.trim() || !Number.isInteger(next) || next < min || next > max) {
+      setError(`Enter a whole number from ${min} to ${max}.`);
+      return;
+    }
+    setError('');
+    onCommit(next);
+  };
+  return <>
+    <label htmlFor={id}>{label}</label>
+    <input id={id} type="number" min={min} max={max} step="1" value={draft}
+      aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined}
+      onChange={event => { setDraft(event.currentTarget.value); setError(''); }}
+      onBlur={commit} onKeyDown={event => {
+        if (event.key === 'Enter') { event.preventDefault(); commit(); }
+      }} />
+    {error && <p id={`${id}-error`} role="alert">{error}</p>}
+  </>;
+}
+
 const GeneralTab: React.FC = () => {
   const general = usePreferences((state) => state.general);
   const setGeneral = usePreferences((state) => state.setGeneral);
@@ -108,7 +136,7 @@ const RateSelection: React.FC = () => {
 
   return (
     <label>
-      Rate ({speech.rate.toFixed(1)}, range 0.1 - 10.0):
+      Rate
       <input
         type="range"
         min="0.1"
@@ -129,7 +157,7 @@ const PitchSelection: React.FC = () => {
 
   return (
     <label>
-      Pitch ({speech.pitch.toFixed(1)}, range 0 - 2):
+      Pitch
       <input
         type="range"
         min="0"
@@ -150,7 +178,7 @@ const VolumeSelection: React.FC = () => {
 
   return (
     <label>
-      Volume ({speech.volume.toFixed(2)}, range 0 - 1):
+      Volume
       <input
         type="range"
         min="0"
@@ -351,11 +379,9 @@ const MidiTab: React.FC = () => {
       <br />
       <br />
 
-      {midi.enabled && (
         <p id="midi-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
           Device selection and management is available in the MIDI tab when connected to a server.
         </p>
-      )}
     </div>
   );
 };
@@ -384,37 +410,29 @@ const HapticsTab: React.FC = () => {
         <div>
           <br />
           <label>
-            Intensity Cap ({Math.round(haptics.intensityCap * 100)}%):
+            Intensity Cap
             <input
               type="range"
               min="0"
               max="1"
               step="0.01"
               value={haptics.intensityCap}
+              aria-valuetext={`${Math.round(haptics.intensityCap * 100)}%`}
               onChange={(e) =>
                 setHaptics({ ...haptics, intensityCap: parseFloat(e.target.value) })
               }
             />
           </label>
           <br />
-          <label>
-            Auto-Stop Timeout (seconds):
-            <input
-              type="number"
-              min="1"
-              max="60"
-              value={haptics.autoStopTimeout}
-              onChange={(e) =>
-                setHaptics({ ...haptics, autoStopTimeout: parseInt(e.target.value, 10) || 1 })
-              }
-            />
-          </label>
+          <PreferenceNumber id="haptics-timeout" label="Auto-Stop Timeout (seconds):"
+            min={1} max={60} value={haptics.autoStopTimeout}
+            onCommit={autoStopTimeout => setHaptics({ ...haptics, autoStopTimeout })} />
           <br />
-          <p id="haptics-bluetooth-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "8px" }}>
-            Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
-          </p>
         </div>
       )}
+      <p id="haptics-bluetooth-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "8px" }}>
+        Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
+      </p>
     </div>
   );
 };
@@ -466,21 +484,9 @@ const AutologgingTab: React.FC = () => {
         Enable Autologging
       </label>
       <br />
-      <label>
-        Storage Cap (MB):
-        <input
-          type="number"
-          min="1"
-          max="2048"
-          value={maxMegabytes}
-          onChange={(e) =>
-            setAutologging({
-              ...autologging,
-              maxBytes: Math.max(1, parseInt(e.target.value, 10) || 1) * 1024 * 1024,
-            })
-          }
-        />
-      </label>
+      <PreferenceNumber id="autolog-storage-cap" label="Storage Cap (MB):"
+        min={1} max={2048} value={maxMegabytes}
+        onCommit={megabytes => setAutologging({ ...autologging, maxBytes: megabytes * 1024 * 1024 })} />
       <br />
       <button type="button" onClick={() => dialogRef.current?.open()}>Manage Autologs</button>
       <AutoLogDialog ref={dialogRef} />
