@@ -38,7 +38,7 @@ textarea:focus {
   width: 60px;
   flex-shrink: 0;
   background: var(--gradient-success);
-  color: #ffffff;
+  color: var(--color-text-button);
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
