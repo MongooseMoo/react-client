@@ -377,7 +377,7 @@ class Output extends React.Component<Props, State> {
       case "message":
         // A provisional line that arrives after the player is logged in is stale.
         if (entry.provisional && useConnectionStore.getState().sessionReady) break;
-        this.handleMessage(entry.message, entry.provisional);
+        this.handleMessage(entry.message, entry.provisional, entry.browserSpeechOwned);
         break;
       case "html":
         this.handleHtml(entry.html);
@@ -667,13 +667,13 @@ componentDidUpdate(
 scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 // Use requestAnimationFrame to ensure DOM updates are complete
  requestAnimationFrame(() => { output.scrollTop = output.scrollHeight; }); } };
-  handleMessage = (message: string, provisional: boolean = false) => {
+  handleMessage = (message: string, provisional: boolean = false, browserSpeechOwned: boolean = false) => {
     if (!message) {
       return;
     }
     this.addToOutput(
       OutputType.ServerMessage,
-      true,
+      !browserSpeechOwned,
       'ansi',
       message,
       provisional ? { provisional: true } : undefined,
