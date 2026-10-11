@@ -373,8 +373,11 @@ function App() {
     if (!midiEnabled) return;
 
     let cancelled = false;
+    let releasePlayback: (() => void) | undefined;
     import("./VirtualMidiService")
       .then(async ({ virtualMidiService }) => {
+        if (cancelled) return false;
+        releasePlayback = virtualMidiService.setPlaybackSource(client?.media ?? null);
         if (client) {
           // Render into the client's master gain so the synth shares its
           // clock, volume, mute, and autoplay unlock.
@@ -384,6 +387,7 @@ function App() {
             destination: cacophony.globalGainNode as unknown as AudioNode,
           });
         }
+        if (cancelled) return false;
         return virtualMidiService.initialize();
       })
       .then((success) => {
@@ -401,6 +405,7 @@ function App() {
 
     return () => {
       cancelled = true;
+      releasePlayback?.();
     };
   }, [midiEnabled, client]);
 
