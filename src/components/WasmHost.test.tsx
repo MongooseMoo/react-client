@@ -103,12 +103,14 @@ describe("WasmHost lifecycle", () => {
       />
     );
 
-    await waitFor(() => expect(onClientReady).toHaveBeenCalledWith(client));
+    await waitFor(() => expect(mocks.workers).toHaveLength(1));
     const worker = mocks.workers[0];
+    expect(onClientReady).not.toHaveBeenCalled();
 
     act(() => {
       worker.dispatchMessage({ type: "ready" });
     });
+    expect(onClientReady).toHaveBeenCalledWith(client);
     const interval = (window as any).__wasmAutoSaveInterval;
     expect(interval).toBeDefined();
 
@@ -125,5 +127,16 @@ describe("WasmHost lifecycle", () => {
     expect((window as any).wasmWorker).toBeUndefined();
     expect((window as any).__wasmAutoSaveInterval).toBeUndefined();
     expect((window as any).wasmDbKey).toBeUndefined();
+  });
+
+  it('reports a failed boot and lets a host choose another database', async () => {
+    const { screen, fireEvent } = await import('@testing-library/react');
+    render(<WasmHost dbUrl={null} isHostMode onClientReady={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Use default database/ }));
+    await waitFor(() => expect(mocks.workers).toHaveLength(1));
+    act(() => mocks.workers[0].dispatchMessage({ type: 'error', message: 'Database parse failed.' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Database parse failed'));
+    fireEvent.click(screen.getByRole('button', { name: /Use default database/ }));
+    await waitFor(() => expect(mocks.workers).toHaveLength(2));
   });
 });

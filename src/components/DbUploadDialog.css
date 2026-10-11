@@ -1,0 +1,9 @@
+.database-startup { display: flex; justify-content: center; align-items: center; min-height: 100%; padding: 1rem; box-sizing: border-box; color: var(--color-text); background: var(--color-bg-deep); }
+.database-card { display: flex; flex-direction: column; gap: 1rem; padding: 2rem; width: min(100%, 26rem); min-width: 0; box-sizing: border-box; background: var(--color-bg-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); }
+.database-card h2, .database-card p { margin: 0; }
+.database-drop-zone { border: 2px dashed var(--color-border-strong); padding: 1.5rem; text-align: center; border-radius: var(--radius-sm); }
+.database-drop-zone.drag-over { border-color: var(--color-primary); }
+.database-card button { padding: .5rem .75rem; background: var(--color-bg-hover); color: var(--color-text); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); cursor: pointer; font: inherit; }
+.database-card button:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.database-card button[aria-disabled=true] { cursor: wait; }
+.database-error { color: var(--color-danger); }
