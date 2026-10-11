@@ -576,8 +576,10 @@ describe("Output frozen history resilience", () => {
     const { container } = render(<Output client={{} as MudClient} />);
     useOutputStore.getState().addHtml('<blockquote>keep this quotation</blockquote>');
     await act(async () => { await Promise.resolve(); });
+    screen.getByRole('button', { name: 'Copy blockquote content' }).focus();
     for (let index = 0; index < 201; index++) useOutputStore.getState().addMessage(`later ${index}`);
     await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement).toBe(container.querySelector('.output'));
     const quote = [...container.querySelectorAll('blockquote')].find(node => node.textContent === 'keep this quotation')!;
     const button = quote.parentElement!.querySelector('button')!;
     expect(button).not.toBeNull();
@@ -586,6 +588,33 @@ describe("Output frozen history resilience", () => {
     await act(async () => { fireEvent.click(button); });
     expect(mockClipboardWriteText).toHaveBeenCalledWith('keep this quotation');
     await waitFor(() => expect(mockAnnounce).toHaveBeenCalledWith('Copied', 'polite'));
+  });
+
+  it('shows the reviewed line indicator in frozen history', async () => {
+    const { container } = render(<Output client={{} as MudClient} />);
+    for (let index = 0; index < 205; index++) useOutputStore.getState().addMessage(`review ${index}`);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'Home' });
+    const firstLine = screen.getByText('review 0').closest('[data-line-id]')!;
+    expect(firstLine.classList.contains('focused-line')).toBe(true);
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'ArrowDown' });
+    expect(firstLine.classList.contains('focused-line')).toBe(false);
+    expect(screen.getByText('review 1').closest('[data-line-id]')!.classList.contains('focused-line')).toBe(true);
+  });
+
+  it('does not animate review scrolling when reduced motion is requested', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+    try {
+      const { container } = render(<Output client={{} as MudClient} />);
+      useOutputStore.getState().addMessage('review quietly');
+      await act(async () => { await Promise.resolve(); });
+      fireEvent.keyDown(container.querySelector('.output')!, { key: 'Home' });
+      await waitFor(() => expect(scroll).toHaveBeenCalledWith({ behavior: 'auto', block: 'nearest' }));
+    } finally {
+      vi.unstubAllGlobals();
+      scroll.mockRestore();
+    }
   });
 
   it("keeps rendering and saving when the frozen container falls out of sync", async () => {
