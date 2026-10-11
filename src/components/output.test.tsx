@@ -152,6 +152,17 @@ describe("Output keyboard handling", () => {
     expect(document.activeElement).toBe(container.querySelector('.output'));
   });
 
+  it('keeps routine connection and error messages out of heading navigation', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    const { container } = render(<Output client={{} as MudClient} />);
+    useOutputStore.getState().addError(new Error('Network unavailable'));
+    useOutputStore.getState().addHtml('<h2>Room description</h2>');
+    await act(async () => { await Promise.resolve(); });
+    expect([...container.querySelectorAll('h2')].map(node => node.textContent)).toEqual(['Room description']);
+    useOutputStore.getState().reset();
+  });
+
   it('reviews the same message after it ages into frozen history', async () => {
     localStorage.clear();
     useOutputStore.getState().reset();
