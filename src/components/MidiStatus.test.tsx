@@ -1,7 +1,8 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type MudClient from '../client';
 import MidiStatus from './MidiStatus';
+import { midiService } from '../MidiService';
 
 const testState = vi.hoisted(() => ({
   connectionStatus: {
@@ -46,6 +47,10 @@ vi.mock('../MidiService', () => ({
     getOutputDevices: vi.fn(() => []),
     canReconnectToDevice: vi.fn(() => false),
     onDeviceChange: vi.fn(() => vi.fn()),
+    disconnectWithIntent: vi.fn((kind: string) => {
+      if (kind === 'input') testState.connectionStatus.inputConnected = false;
+      else testState.connectionStatus.outputConnected = false;
+    }),
   },
 }));
 
@@ -94,5 +99,42 @@ describe('MidiStatus lifecycle refreshes', () => {
     });
 
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('names input and output controls and keeps the requested action focused', async () => {
+    vi.mocked(midiService.getInputDevices).mockReturnValue([{ id: 'in', name: 'Keyboard', type: 'input' } as never]);
+    vi.mocked(midiService.getOutputDevices).mockReturnValue([{ id: 'out', name: 'Synth', type: 'output' } as never]);
+    const connectInputDevice = vi.fn(async () => {
+      testState.connectionStatus.inputConnected = true;
+      testState.connectionStatus.inputDeviceName = 'Keyboard';
+      return true;
+    });
+    render(<MidiStatus client={{ gmcp: { handlers: { 'Client.Midi': { connectInputDevice, setDebugCallback: vi.fn() } } } } as unknown as MudClient} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Input device' }), { target: { value: 'in' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByRole('combobox', { name: 'Output device' })).toBeTruthy();
+    const action = screen.getByRole('button', { name: 'Connect input device' });
+    action.focus();
+    await act(async () => { fireEvent.click(action); await vi.advanceTimersByTimeAsync(0); });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Disconnect input device' }));
+    expect(screen.getByRole('status').textContent).toContain('Input device connected');
+    await act(async () => { fireEvent.click(document.activeElement!); await vi.advanceTimersByTimeAsync(0); });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Connect input device' }));
+  });
+
+  it('keeps the selected device and action available after a failed connection', async () => {
+    vi.mocked(midiService.getInputDevices).mockReturnValue([{ id: 'in', name: 'Keyboard', type: 'input' } as never]);
+    const connectInputDevice = vi.fn(async () => { throw new Error('Permission denied'); });
+    render(<MidiStatus client={{ gmcp: { handlers: { 'Client.Midi': { connectInputDevice, setDebugCallback: vi.fn() } } } } as unknown as MudClient} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Input device' }), { target: { value: 'in' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const action = screen.getByRole('button', { name: 'Connect input device' });
+    action.focus();
+    await act(async () => { fireEvent.click(action); await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByRole('status').textContent).toContain('Input device could not connect');
+    expect(document.activeElement).toBe(action);
+    expect((screen.getByRole('combobox', { name: 'Input device' }) as HTMLSelectElement).value).toBe('in');
   });
 });

@@ -1,5 +1,6 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { useFocusRefuge } from './FileTransfer/useFocusRefuge';
 import type MudClient from "../client";
 import { midiService, type MidiDevice } from "../MidiService";
 import { usePreferences } from "../stores/preferencesStore";
@@ -33,6 +34,26 @@ function connectionStatesEqual(a: MidiConnectionState, b: MidiConnectionState): 
 }
 
 const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
+  const inputId = useId();
+  const outputId = useId();
+  const inputGroup = useRef<HTMLDivElement>(null);
+  const outputGroup = useRef<HTMLDivElement>(null);
+  const inputAction = useRef<HTMLButtonElement>(null);
+  const outputAction = useRef<HTMLButtonElement>(null);
+  useFocusRefuge(inputGroup, inputAction);
+  useFocusRefuge(outputGroup, outputAction);
+  const [outcome, setOutcome] = useState('');
+  const operation = async (label: string, action: () => Promise<boolean>) => {
+    setOutcome('');
+    try {
+      const success = await action();
+      setOutcome(success ? label : `${label.split(' ')[0]} device could not connect. Try another device or refresh devices.`);
+      return success;
+    } catch {
+      setOutcome(`${label.split(' ')[0]} device could not connect. Try another device or refresh devices.`);
+      return false;
+    }
+  };
   const midiPreferences = usePreferences((state) => state.midi);
   const [midiPackage, setMidiPackage] = useState<GMCPClientMidi | null>(null);
   const [inputDevices, setInputDevices] = useState<MidiDevice[]>([]);
@@ -252,37 +273,39 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   
   const handleConnectInput = async () => {
     if (!midiPackage || !selectedInputId) return;
-    const success = await midiPackage.connectInputDevice(selectedInputId);
+    const success = await operation('Input device connected.', () => midiPackage.connectInputDevice(selectedInputId));
     if (success) {
       refreshConnectionState();
-      setSelectedInputId("");
       loadDevices(); // Refresh to update reconnectable devices
     }
   };
   
   const handleDisconnectInput = () => {
     midiService.disconnectWithIntent('input');
+    setOutcome('Input device disconnected.');
     refreshConnectionState();
     loadDevices(); // Refresh to update reconnectable devices
   };
   
   const handleConnectOutput = async () => {
     if (!midiPackage || !selectedOutputId) return;
-    const success = await midiPackage.connectOutputDevice(selectedOutputId);
+    const success = await operation('Output device connected.', () => midiPackage.connectOutputDevice(selectedOutputId));
     if (success) {
       refreshConnectionState();
-      setSelectedOutputId("");
       loadDevices(); // Refresh to update reconnectable devices
     }
   };
   
   const handleDisconnectOutput = () => {
     midiService.disconnectWithIntent('output');
+    setOutcome('Output device disconnected.');
     refreshConnectionState();
     loadDevices(); // Refresh to update reconnectable devices
   };
 
   const handleRefreshDevices = async () => {
+    setOutcome('');
+    try {
     // Refresh hardware device list
     midiService.refresh();
     
@@ -292,15 +315,19 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     }
     
     // Load devices and update connection state
-    loadDevices();
+    await loadDevices();
     refreshConnectionState();
+    setOutcome('Devices refreshed.');
+    } catch {
+      setOutcome('Could not refresh devices. Check device access and try again.');
+    }
     
   };
 
   // Handle reconnection attempts
   const handleReconnectInput = async () => {
     if (!reconnectableDevices.input || !midiPackage) return;
-    const success = await midiService.attemptReconnect(reconnectableDevices.input.id, 'input');
+    const success = await operation('Input device reconnected.', () => midiService.attemptReconnect(reconnectableDevices.input!.id, 'input'));
     if (success) {
       refreshConnectionState();
       loadDevices();
@@ -314,7 +341,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
 
   const handleReconnectOutput = async () => {
     if (!reconnectableDevices.output || !midiPackage) return;
-    const success = await midiService.attemptReconnect(reconnectableDevices.output.id, 'output');
+    const success = await operation('Output device reconnected.', () => midiService.attemptReconnect(reconnectableDevices.output!.id, 'output'));
     if (success) {
       refreshConnectionState();
       loadDevices();
@@ -352,6 +379,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const handleAllNotesOff = () => {
     if (midiPackage) {
       midiPackage.sendAllNotesOff();
+      setOutcome('All notes stopped.');
     }
   };
 
@@ -389,21 +417,15 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   return (
     <div style={{ padding: "10px" }}>
       <h3>MIDI Status</h3>
+      <p role="status">{outcome}</p>
       
-      <div style={{ marginBottom: "15px" }}>
+      <div ref={inputGroup} style={{ marginBottom: "15px" }}>
         <div style={{ marginBottom: "8px" }}>
-          <strong>Input Device:</strong>
+          <label htmlFor={inputId}>Input device</label>
         </div>
         {connectionState.inputConnected ? (
           <div style={{ marginBottom: "8px" }}>
             <span style={{ color: "green" }}>✓ {connectionState.inputDeviceName}</span>
-            <button
-              type="button"
-              onClick={handleDisconnectInput}
-              style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "0.8em" }}
-            >
-              Disconnect
-            </button>
           </div>
         ) : (
           <div style={{ marginBottom: "8px" }}>
@@ -417,6 +439,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                   <span>{reconnectableDevices.input.name}</span>
                   <button
                     type="button"
+                    aria-label="Reconnect input device"
                     onClick={handleReconnectInput}
                     style={{ 
                       marginLeft: "10px", 
@@ -440,6 +463,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
             ) : (
               <>
                 <select
+                  id={inputId}
                   value={selectedInputId}
                   onChange={(e) => setSelectedInputId(e.target.value)}
                   style={{ marginRight: "10px" }}
@@ -451,34 +475,28 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={handleConnectInput}
-                  disabled={!selectedInputId}
-                  style={{ padding: "2px 8px", fontSize: "0.8em", marginRight: "5px" }}
-                >
-                  Connect
-                </button>
               </>
             )}
           </div>
         )}
+        <button
+          ref={inputAction}
+          type="button"
+          aria-label={connectionState.inputConnected ? 'Disconnect input device' : 'Connect input device'}
+          onClick={connectionState.inputConnected ? handleDisconnectInput : handleConnectInput}
+          disabled={!connectionState.inputConnected && !selectedInputId}
+        >
+          {connectionState.inputConnected ? 'Disconnect' : 'Connect'}
+        </button>
       </div>
       
-      <div style={{ marginBottom: "15px" }}>
+      <div ref={outputGroup} style={{ marginBottom: "15px" }}>
         <div style={{ marginBottom: "8px" }}>
-          <strong>Output Device:</strong>
+          <label htmlFor={outputId}>Output device</label>
         </div>
         {connectionState.outputConnected ? (
           <div style={{ marginBottom: "8px" }}>
             <span style={{ color: "green" }}>✓ {connectionState.outputDeviceName}</span>
-            <button
-              type="button"
-              onClick={handleDisconnectOutput}
-              style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "0.8em" }}
-            >
-              Disconnect
-            </button>
           </div>
         ) : (
           <div style={{ marginBottom: "8px" }}>
@@ -492,6 +510,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                   <span>{reconnectableDevices.output.name}</span>
                   <button
                     type="button"
+                    aria-label="Reconnect output device"
                     onClick={handleReconnectOutput}
                     style={{ 
                       marginLeft: "10px", 
@@ -515,6 +534,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
             ) : (
               <>
                 <select
+                  id={outputId}
                   value={selectedOutputId}
                   onChange={(e) => setSelectedOutputId(e.target.value)}
                   style={{ marginRight: "10px" }}
@@ -526,18 +546,19 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={handleConnectOutput}
-                  disabled={!selectedOutputId}
-                  style={{ padding: "2px 8px", fontSize: "0.8em", marginRight: "5px" }}
-                >
-                  Connect
-                </button>
               </>
             )}
           </div>
         )}
+        <button
+          ref={outputAction}
+          type="button"
+          aria-label={connectionState.outputConnected ? 'Disconnect output device' : 'Connect output device'}
+          onClick={connectionState.outputConnected ? handleDisconnectOutput : handleConnectOutput}
+          disabled={!connectionState.outputConnected && !selectedOutputId}
+        >
+          {connectionState.outputConnected ? 'Disconnect' : 'Connect'}
+        </button>
       </div>
       
       <div style={{ marginBottom: "15px" }}>
