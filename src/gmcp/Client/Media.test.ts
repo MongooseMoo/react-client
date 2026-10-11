@@ -72,6 +72,8 @@ type MockSound = {
   playbacks: MockPlayback[];
   position: number[];
   preplay: ReturnType<typeof vi.fn>;
+  pause: ReturnType<typeof vi.fn>;
+  resume: ReturnType<typeof vi.fn>;
   priority?: number;
   removeSend: ReturnType<typeof vi.fn>;
   routeTo: ReturnType<typeof vi.fn>;
@@ -122,6 +124,8 @@ function createMockSound(url: string): MockSound {
     panType: 'stereo',
     playbackRate: 1,
     preplay: vi.fn(() => [playback]),
+    pause: vi.fn(() => { sound.isPlaying = false; }),
+    resume: vi.fn(() => { sound.isPlaying = true; }),
     voice: playback,
     playbacks: [playback],
     // Cacophony's spatial setters reject the other panning mode (and throw the
@@ -245,6 +249,8 @@ function createMockClient() {
     listenerUpOrientation: [0, 1, 0],
     listenerPosition: [0, 0, 0],
     muted: false,
+    pause: vi.fn(async () => {}),
+    resume: vi.fn(async () => {}),
     setGlobalVolume: vi.fn(),
   };
   // Manually-clocked tweener so tests can step sound-position glides.
@@ -2803,6 +2809,49 @@ describe('GMCPClientMedia', () => {
       mockCreateSound.mockResolvedValueOnce(sound);
       return sound;
     }
+
+    it('rebuilds a globally paused source on Update at its retained playhead without starting it', async () => {
+      const first = await start(throughDoor);
+      first.voice.currentTime = 8;
+      await client.media.pauseAllSounds();
+      const second = nextSound();
+      handler.handleUpdate({ key: 'fire', is3d: true, position: [2, 0, 0] } as GMCPMessageClientMediaUpdate);
+      await vi.waitFor(() => expect(handler.sounds.fire).toBe(second));
+      expect(second.voice.seek).toHaveBeenCalledWith(8);
+      expect(second.voice.play).not.toHaveBeenCalled();
+      expect(first.cleanup).toHaveBeenCalledOnce();
+      await client.media.resumeAllSounds();
+      expect(second.voice.play).toHaveBeenCalledOnce();
+      expect(first.resume).not.toHaveBeenCalled();
+    });
+
+    it('keeps a continuing replacement when Escape pauses the old source while it loads', async () => {
+      const first = await start(throughDoor);
+      first.voice.currentTime = 8;
+      const second = createMockSound('fire.ogg');
+      let deliver!: (sound: MockSound) => void;
+      mockCreateSound.mockReturnValueOnce(new Promise<MockSound>((resolve) => { deliver = resolve; }));
+      handler.handleUpdate({ key: 'fire', is3d: true, position: [2, 0, 0] } as GMCPMessageClientMediaUpdate);
+      await client.media.pauseAllSounds();
+      deliver(second);
+      await vi.waitFor(() => expect(handler.sounds.fire).toBe(second));
+      expect(second.voice.seek).toHaveBeenCalledWith(8);
+      expect(second.voice.play).not.toHaveBeenCalled();
+      await client.media.resumeAllSounds();
+      expect(second.voice.play).toHaveBeenCalledOnce();
+    });
+
+    it('leaves an independently paused source inactive during a panning update and global resume', async () => {
+      const sound = await start(throughDoor);
+      sound.pause();
+      await client.media.pauseAllSounds();
+      handler.handleUpdate({ key: 'fire', is3d: true, position: [2, 0, 0] } as GMCPMessageClientMediaUpdate);
+      await client.media.resumeAllSounds();
+      expect(mockCreateSound).toHaveBeenCalledOnce();
+      expect(handler.sounds.fire).toBe(sound);
+      expect(sound.resume).not.toHaveBeenCalled();
+      expect(sound.isPlaying).toBe(false);
+    });
 
     it('rebuilds a non-positional voice as a point source and continues from the playhead', async () => {
       const first = await start({ ...throughDoor, fadein: 500 });
