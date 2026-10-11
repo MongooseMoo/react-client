@@ -13,6 +13,7 @@ import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
 import { useChannelHistoryStore } from "./stores/channelHistoryStore";
+import { useChannelsStore } from "./stores/channelsStore";
 import { useLiveKitStore } from "./stores/liveKitStore";
 import { useOutputStore } from "./stores/outputStore";
 import { useRoomStore } from "./stores/roomStore";
@@ -260,7 +261,9 @@ describe("createConfiguredClient", () => {
       token: "token-a",
     });
     const channel = client.gmcp.require("Comm.Channel");
-    channel.receiveRegisteredMessage("List", ["chat"]);
+    channel.receiveRegisteredMessage("List", [
+      { name: "chat", caption: "Chat", command: "xchat", kind: "channel", listening: true },
+    ]);
     channel.receiveRegisteredMessage("Text", {
       channel: "chat",
       talker: "Alice",
@@ -319,7 +322,7 @@ describe("createConfiguredClient", () => {
     expect(useInputStore.getState().visibleCommands).toEqual([]);
     expect(useWorldMapStore.getState().locationId).toBe("");
     expect(useUserlistStore.getState().players).toEqual([]);
-    expect(channel.channels).toEqual([]);
+    expect(useChannelsStore.getState().channels).toEqual([]);
     expect(keystrokes.listBindings()).toEqual([]);
 
     expect(useChannelHistoryStore.getState().entries).toEqual([

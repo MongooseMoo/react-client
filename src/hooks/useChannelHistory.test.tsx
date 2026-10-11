@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useChannelHistoryStore } from "../stores/channelHistoryStore";
+import { usePreferences } from "../stores/preferencesStore";
 import {
   formatAnnouncementMessage,
   MAX_ALL_BUFFER_MESSAGES,
@@ -316,6 +317,46 @@ describe("useChannelHistory", () => {
 
     expect(event.defaultPrevented).toBe(true);
     expect(result.current.buffers.get("all")?.currentIndex).toBe(2);
+  });
+
+  it("steps the current channel's reading rule with Alt+Shift+R", async () => {
+    usePreferences.setState({ channels: {} });
+    const { result } = renderHook(() => useChannelHistory());
+
+    act(() => {
+      addChannelText("gossip", "Reader", "one");
+    });
+    await waitFor(() => {
+      expect(result.current.bufferOrder).toEqual(["all", "gossip"]);
+    });
+    act(() => {
+      dispatchKeyboardEvent({ altKey: true, key: "ArrowRight" });
+    });
+
+    const pressed: boolean[] = [];
+    const modes: string[] = [];
+    for (let press = 0; press < 4; press++) {
+      act(() => {
+        pressed.push(
+          dispatchKeyboardEvent({ altKey: true, shiftKey: true, key: "R", code: "KeyR" }).defaultPrevented,
+        );
+      });
+      modes.push(usePreferences.getState().channels.gossip.autoreadMode);
+    }
+
+    expect(pressed).toEqual([true, true, true, true]);
+    expect(modes).toEqual(["off", "unfocused", "all", "default"]);
+  });
+
+  it("changes no channel with Alt+Shift+R on the all buffer", () => {
+    usePreferences.setState({ channels: {} });
+    renderHook(() => useChannelHistory());
+
+    act(() => {
+      dispatchKeyboardEvent({ altKey: true, shiftKey: true, key: "R", code: "KeyR" });
+    });
+
+    expect(usePreferences.getState().channels).toEqual({});
   });
 });
 

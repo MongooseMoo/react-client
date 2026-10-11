@@ -16,7 +16,9 @@ import {
 } from "./mcp";
 
 import { MediaService } from "./audio/MediaService";
-import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
+import { usePreferences } from "./stores/preferencesStore";
+import { useChannelsStore } from "./stores/channelsStore";
+import { channelHasOwnReading, shouldSpeak } from "./channelReading";
 import type { FileTransfers, TransferSnapshot } from "./fileTransfer/types";
 import { useInputStore } from "./stores/inputStore";
 import { useConnectionStore } from "./stores/connectionStore";
@@ -615,11 +617,13 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string, provisional: boolean = false) {
+    // A line the server marked as a channel's (Comm.Channel.Start/End) is left
+    // to that channel's own reading rule when it has one; Comm.Channel.Text
+    // speaks it. Otherwise Auto Read decides, as for any other line.
+    const channel = useChannelsStore.getState().activeChannel;
+    const channelDecides = channel !== null && channelHasOwnReading(channel);
     const autoreadMode = usePreferences.getState().speech.autoreadMode;
-    if (autoreadMode === AutoreadMode.All) {
-      this.speak(dataString);
-    }
-    if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
+    if (!channelDecides && shouldSpeak(autoreadMode, document.hasFocus())) {
       this.speak(dataString);
     }
     useOutputStore.getState().addMessage(dataString, provisional);
@@ -663,7 +667,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
     return true;
   }
 
-  speak(text: string) {
+  /** Speaks with the Speech preferences; `voiceName`, when given, replaces their voice. */
+  speak(text: string, voiceName: string = "") {
     if (!("speechSynthesis" in window)) {
       console.log("This browser does not support speech synthesis");
       return;
@@ -675,7 +680,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     utterance.pitch = pitch;
     utterance.volume = volume;
     const voices = speechSynthesis.getVoices();
-    const selectedVoice = voices.find((v) => v.name === voice);
+    const selectedVoice = voices.find((v) => v.name === (voiceName || voice));
     if (selectedVoice) {
       utterance.voice = selectedVoice;
     }

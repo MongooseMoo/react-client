@@ -5,6 +5,7 @@ import { usePreferences } from "../stores/preferencesStore";
 import { useVoices } from "../hooks/useVoices";
 import Tabs, { type TabProps } from "./tabs";
 import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
+import ChannelPreferencesTab from "./ChannelPreferences";
 
 const GeneralTab: React.FC = () => {
   const general = usePreferences((state) => state.general);
@@ -492,6 +493,7 @@ const Preferences: React.FC = () => {
   const tabs: TabProps[] = [
     { id: "preferences-general-tab", label: "General", content: <GeneralTab /> },
     { id: "preferences-speech-tab", label: "Speech", content: <SpeechTab /> },
+    { id: "preferences-channels-tab", label: "Channels", content: <ChannelPreferencesTab /> },
     { id: "preferences-sounds-tab", label: "Sounds", content: <SoundsTab /> },
     { id: "preferences-editor-tab", label: "Editor", content: <EditorTab /> },
     { id: "preferences-keyboard-tab", label: "Keyboard", content: <KeyboardTab /> },
