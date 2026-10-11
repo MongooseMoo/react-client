@@ -60,8 +60,8 @@
   /* Text hierarchy */
   --color-text: #e8e8ed;
   --color-text-secondary: #a0a0b0;
-  --color-text-tertiary: #707080;
-  --color-text-muted: #606070;
+  --color-text-tertiary: #a0a0b0;
+  --color-text-muted: #9999aa;
   --color-text-inverse: #14141a;
   /* Text on a filled button. The fills are bright, so the text is dark. */
   --color-text-button: var(--color-text-inverse);
