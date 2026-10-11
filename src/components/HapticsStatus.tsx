@@ -46,16 +46,24 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
 
   const handleEmergencyStop = (): void => {
     hapticsService.emergencyStop();
+    setOutcome('Haptics stopped.');
   };
 
   const [isScanning, setIsScanning] = useState(false);
+  const [outcome, setOutcome] = useState('');
 
   const handleScan = async (): Promise<void> => {
+    if (isScanning) return;
+    setOutcome('');
     setIsScanning(true);
     try {
       await hapticsService.scan();
+      setOutcome('Device scan finished.');
     } catch (err) {
-      console.error("Scan failed:", err);
+      const name = typeof err === 'object' && err !== null && 'name' in err ? err.name : '';
+      setOutcome(name === 'NotFoundError' ? 'No device selected.'
+        : name === 'AbortError' ? 'Device scan cancelled.'
+        : 'Could not scan for devices. Check Bluetooth access and try again.');
     } finally {
       setIsScanning(false);
     }
@@ -76,6 +84,7 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
   return (
     <div style={{ padding: "10px" }}>
       <h3>Haptics Status</h3>
+      <p role="status">{outcome}</p>
 
       {/* Gamepad Status */}
       <div style={{ marginBottom: "15px" }}>
@@ -114,7 +123,8 @@ const HapticsStatus: React.FC<HapticsStatusProps> = () => {
             <button
               type="button"
               onClick={handleScan}
-              disabled={isScanning}
+              aria-disabled={isScanning}
+              aria-label="Scan for Devices"
               style={{
                 padding: "6px 16px",
                 fontSize: "0.9em",
