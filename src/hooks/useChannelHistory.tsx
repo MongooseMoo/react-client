@@ -4,6 +4,11 @@ import { useChannelHistoryStore, type ChannelTextEntry } from "../stores/channel
 import { usePreferences, type NavigationKeyScheme } from "../stores/preferencesStore";
 import { extractLinks, openLink, type ExtractedLink } from "../messageLinks";
 import {
+  CHANNEL_READ_MODE_LABELS,
+  channelPreferencesFor,
+  nextChannelReadMode,
+} from "../channelReading";
+import {
   loadStoredValue,
   saveStoredValue,
   type LocalStorageSchema,
@@ -507,6 +512,24 @@ export const useChannelHistory = () => {
     });
   };
 
+  // Alt+Shift+R: step the current channel's reading rule (the same setting as
+  // the Channels tab in Preferences) and say what it now is.
+  const cycleCurrentChannelReading = () => {
+    const channel = bufferOrder[currentBufferIndex];
+    if (channel === ALL_BUFFER_NAME) {
+      announce("Move to a channel to change how it is read.", "assertive", 2000);
+      return;
+    }
+
+    const current = channelPreferencesFor(channel);
+    const autoreadMode = nextChannelReadMode(current.autoreadMode);
+    usePreferences.getState().setChannelPreferences(channel, { ...current, autoreadMode });
+    announce(
+      `${channel} read aloud: ${CHANNEL_READ_MODE_LABELS[autoreadMode]}`,
+      "assertive", 2000
+    );
+  };
+
   const deleteCurrentBuffer = () => {
     const currentBufferName = bufferOrder[currentBufferIndex];
 
@@ -722,6 +745,13 @@ export const useChannelHistory = () => {
       if (e.altKey && e.shiftKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         toggleTimestamps();
+        return;
+      }
+
+      // Alt+Shift+R: Cycle how the current channel is read aloud
+      if (e.altKey && e.shiftKey && !e.ctrlKey && (e.key.toLowerCase() === "r" || e.code === "KeyR")) {
+        e.preventDefault();
+        cycleCurrentChannelReading();
         return;
       }
 

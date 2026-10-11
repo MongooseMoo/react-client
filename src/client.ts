@@ -17,6 +17,8 @@ import {
 
 import { MediaService } from "./audio/MediaService";
 import { AutoreadMode, usePreferences } from "./stores/preferencesStore";
+import { useChannelsStore } from "./stores/channelsStore";
+import { channelHasOwnReading, channelPreferencesFor, shouldSpeak } from "./channelReading";
 import type { FileTransfers, TransferSnapshot } from "./fileTransfer/types";
 import { useInputStore } from "./stores/inputStore";
 import { useConnectionStore } from "./stores/connectionStore";
@@ -615,6 +617,15 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string, provisional: boolean = false) {
+    // A line the server marked as a channel's (Comm.Channel.Start/End) is left
+    // to that channel's own reading rule when it has one: Comm.Channel.Text
+    // speaks it, so it is not spoken here. Otherwise Auto Read decides, as for
+    // any other line.
+    const channel = useChannelsStore.getState().activeChannel;
+    if (channel !== null && channelHasOwnReading(channel)) {
+      useOutputStore.getState().addMessage(dataString, provisional, this.channelOwnsSpeech(channel));
+      return;
+    }
     const browserSpeechOwned = this.willSpeakIncomingMessages();
     if (browserSpeechOwned) {
       this.speak(dataString);
@@ -622,11 +633,23 @@ An MCP message consists of three parts: the name of the message, the authenticat
     useOutputStore.getState().addMessage(dataString, provisional, browserSpeechOwned);
   }
 
-  willSpeakIncomingMessages(): boolean {
+  private canSpeak(): boolean {
     if (typeof window.speechSynthesis?.speak !== 'function' || typeof SpeechSynthesisUtterance !== 'function') return false;
-    const { autoreadMode, volume } = usePreferences.getState().speech;
-    return volume > 0 && (autoreadMode === AutoreadMode.All ||
-      (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()));
+    return usePreferences.getState().speech.volume > 0;
+  }
+
+  willSpeakIncomingMessages(): boolean {
+    return this.canSpeak() && shouldSpeak(usePreferences.getState().speech.autoreadMode, document.hasFocus());
+  }
+
+  /**
+   * Whether a channel's own rule takes its line away from the screen reader's
+   * announcement: because the rule speaks it, or because the rule is Never.
+   */
+  private channelOwnsSpeech(channel: string): boolean {
+    const mode = channelPreferencesFor(channel).autoreadMode;
+    if (mode === AutoreadMode.Off) return true;
+    return mode !== "default" && this.canSpeak() && shouldSpeak(mode, document.hasFocus());
   }
 
   shutdown() {
@@ -667,7 +690,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
     return true;
   }
 
-  speak(text: string) {
+  /** Speaks with the Speech preferences; `voiceName`, when given, replaces their voice. */
+  speak(text: string, voiceName: string = "") {
     if (!("speechSynthesis" in window)) {
       console.log("This browser does not support speech synthesis");
       return;
@@ -679,7 +703,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     utterance.pitch = pitch;
     utterance.volume = volume;
     const voices = speechSynthesis.getVoices();
-    const selectedVoice = voices.find((v) => v.name === voice);
+    const selectedVoice = voices.find((v) => v.name === (voiceName || voice));
     if (selectedVoice) {
       utterance.voice = selectedVoice;
     }

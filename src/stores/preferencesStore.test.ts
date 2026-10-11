@@ -61,7 +61,7 @@ describe("preferencesStore", () => {
     expect(setItem).toHaveBeenCalledWith("preferences", expect.any(String));
     const lastCall = setItem.mock.calls.at(-1);
     const stored = JSON.parse(lastCall?.[1] as string);
-    expect(stored.version).toBe(1);
+    expect(stored.version).toBe(2);
     expect(stored.data.general.localEcho).toBe(true);
     expect(stored.data.general.syncTimezoneToServer).toBe(false);
     expect(stored.data.general.syncLocationToServer).toBe(true);
@@ -157,5 +157,63 @@ describe("preferencesStore", () => {
     usePreferences.getState().setMidi({ enabled: true });
 
     expect(() => vi.runAllTimers()).not.toThrow();
+  });
+
+  it("notifies for say_to_you by default and reads no channel specially", () => {
+    expect(usePreferences.getState().channels).toEqual({
+      say_to_you: { autoreadMode: "default", voice: "", notify: true },
+    });
+  });
+
+  it("setChannelPreferences sets one channel and leaves the others", () => {
+    usePreferences.getState().setChannelPreferences("mongoose", {
+      autoreadMode: AutoreadMode.All,
+      voice: "Robot",
+      notify: false,
+    });
+
+    expect(usePreferences.getState().channels).toEqual({
+      say_to_you: { autoreadMode: "default", voice: "", notify: true },
+      mongoose: { autoreadMode: AutoreadMode.All, voice: "Robot", notify: false },
+    });
+  });
+
+  describe("stored preferences", () => {
+    afterEach(() => {
+      vi.mocked(localStorage.getItem).mockReset();
+      vi.mocked(localStorage.getItem).mockImplementation(() => null);
+      vi.resetModules();
+    });
+
+    async function loadWith(stored: unknown) {
+      vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+        key === "preferences" ? JSON.stringify(stored) : null,
+      );
+      vi.resetModules();
+      return (await import("./preferencesStore")).usePreferences.getState();
+    }
+
+    it("drops the version 1 sayto entry, which no server channel is named", async () => {
+      const loaded = await loadWith({
+        version: 1,
+        data: { channels: { sayto: { autoreadMode: "off", notify: true } } },
+      });
+
+      expect(loaded.channels).toEqual({
+        say_to_you: { autoreadMode: "default", voice: "", notify: true },
+      });
+    });
+
+    it("keeps version 2 channel settings", async () => {
+      const loaded = await loadWith({
+        version: 2,
+        data: { channels: { mongoose: { autoreadMode: "all", voice: "Robot", notify: false } } },
+      });
+
+      expect(loaded.channels).toEqual({
+        say_to_you: { autoreadMode: "default", voice: "", notify: true },
+        mongoose: { autoreadMode: "all", voice: "Robot", notify: false },
+      });
+    });
   });
 });

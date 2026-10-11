@@ -31,8 +31,14 @@ export type SoundPreferences = {
   volume: number;
 };
 
+// "default" follows the Speech tab's Auto Read; the others override it for
+// one channel.
+export type ChannelReadMode = AutoreadMode | "default";
+
 export type ChannelPreferences = {
-  autoreadMode: AutoreadMode;
+  autoreadMode: ChannelReadMode;
+  // A speechSynthesis voice name; "" is the Speech tab's voice.
+  voice: string;
   notify: boolean;
 };
 
@@ -71,7 +77,9 @@ export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
   sound: SoundPreferences;
-  channels?: { [channelId: string]: ChannelPreferences };
+  // Keyed by the channel name the server uses in Comm.Channel.Text. A channel
+  // with no entry follows Auto Read, the Speech voice, and does not notify.
+  channels: { [channelName: string]: ChannelPreferences };
   editor: EditorPreferences;
   keyboard: KeyboardPreferences;
   midi: MidiPreferences;
@@ -83,7 +91,7 @@ type PrefActions = {
   setGeneral: (data: GeneralPreferences) => void;
   setSpeech: (data: SpeechPreferences) => void;
   setSound: (data: SoundPreferences) => void;
-  setChannels: (data: { [channelId: string]: ChannelPreferences }) => void;
+  setChannelPreferences: (channelName: string, data: ChannelPreferences) => void;
   setEditorAutocompleteEnabled: (value: boolean) => void;
   setEditorAccessibilityMode: (value: boolean) => void;
   setEditorLineComments: (value: boolean) => void;
@@ -94,7 +102,7 @@ type PrefActions = {
 };
 
 const STORAGE_KEY = "preferences";
-const STORAGE_VERSION = 1;
+const STORAGE_VERSION = 2;
 const PERSIST_DEBOUNCE_MS = 250;
 
 function getInitialPreferences(): PrefState {
@@ -113,7 +121,7 @@ function getInitialPreferences(): PrefState {
     },
     sound: { muteInBackground: false, volume: 1.0 },
     channels: {
-      sayto: { autoreadMode: AutoreadMode.Off, notify: true },
+      say_to_you: { autoreadMode: "default", voice: "", notify: true },
     },
     editor: { autocompleteEnabled: true, accessibilityMode: true, lineComments: false },
     keyboard: { navigationKeyScheme: "jkli" },
@@ -133,9 +141,7 @@ function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
     general: { ...initial.general, ...stored.general },
     speech: { ...initial.speech, ...stored.speech },
     sound: { ...initial.sound, ...stored.sound },
-    channels: stored.channels
-      ? { ...initial.channels, ...stored.channels }
-      : initial.channels,
+    channels: { ...initial.channels, ...stored.channels },
     editor: { ...initial.editor, ...stored.editor },
     keyboard: { ...initial.keyboard, ...stored.keyboard },
     midi: { ...initial.midi, ...stored.midi },
@@ -167,6 +173,12 @@ const preferencesSchema: LocalStorageSchema<PrefState> = {
       delete parsed.general.volume;
     }
 
+    // Before version 2 nothing read or wrote channel settings; the only stored
+    // entry was a default under "sayto", a name the server never sends.
+    if (storedVersion < 2) {
+      delete (parsed as Partial<PrefState>).channels;
+    }
+
     return mergePreferences(getInitialPreferences(), parsed);
   },
 };
@@ -188,7 +200,8 @@ export const usePreferences = create<PrefState & PrefActions>()(
     setGeneral: (data) => set({ general: data }),
     setSpeech: (data) => set({ speech: data }),
     setSound: (data) => set({ sound: data }),
-    setChannels: (data) => set({ channels: data }),
+    setChannelPreferences: (channelName, data) =>
+      set((s) => ({ channels: { ...s.channels, [channelName]: data } })),
     setEditorAutocompleteEnabled: (value) =>
       set((s) => ({ editor: { ...s.editor, autocompleteEnabled: value } })),
     setEditorAccessibilityMode: (value) =>
