@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useChannelHistoryStore } from "../stores/channelHistoryStore";
@@ -63,6 +63,23 @@ describe("ChannelPreferencesTab", () => {
     expect(
       (screen.getByLabelText("Mongoose: notify when the window is not focused") as HTMLInputElement).checked,
     ).toBe(false);
+  });
+
+  it("keeps both changes when two land before the next render", () => {
+    render(<ChannelPreferencesTab />);
+    const mode = screen.getByLabelText("Mongoose: read aloud") as HTMLSelectElement;
+    const voice = screen.getByLabelText("Mongoose: voice") as HTMLSelectElement;
+
+    act(() => {
+      mode.value = AutoreadMode.All;
+      mode.dispatchEvent(new Event("change", { bubbles: true }));
+      voice.value = "Robot";
+      voice.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(usePreferences.getState().channels).toEqual({
+      mongoose: { autoreadMode: AutoreadMode.All, voice: "Robot", notify: false },
+    });
   });
 
   it("saves each setting under the server's channel name", () => {

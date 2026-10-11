@@ -4,6 +4,7 @@ import {
   CHANNEL_READ_MODES,
   CHANNEL_READ_MODE_LABELS,
   DEFAULT_CHANNEL_PREFERENCES,
+  channelPreferencesFor,
 } from "../channelReading";
 import { useVoices } from "../hooks/useVoices";
 import { useChannelHistoryStore } from "../stores/channelHistoryStore";
@@ -86,8 +87,10 @@ const ChannelPreferencesTab: React.FC = () => {
         <tbody>
           {rows.map((row) => {
             const current: ChannelSettings = settings[row.name] ?? DEFAULT_CHANNEL_PREFERENCES;
+            // Merge into what is stored now, not into what this render saw: two
+            // changes can land before the next render.
             const update = (change: Partial<ChannelSettings>) =>
-              setChannelPreferences(row.name, { ...current, ...change });
+              setChannelPreferences(row.name, { ...channelPreferencesFor(row.name), ...change });
             const voiceInstalled =
               current.voice === "" || voices.some((voice) => voice.name === current.voice);
 

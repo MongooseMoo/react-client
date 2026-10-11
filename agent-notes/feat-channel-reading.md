@@ -6,7 +6,19 @@ Q, 2026-10-10: the server tells the client which channels exist, and the player 
 
 ## State (2026-10-11)
 
-Built on `origin/master` `e0155436`, committed on this branch, not pushed, no PR. `tsc --noEmit` clean; `vitest run` 137 files pass. Not looked at in a browser, and not tried against the live server: the server does not send `Comm.Channel.List`, `Start` or `End` until the MOO handoff is verified.
+Built on `origin/master` `e0155436`, committed on this branch, not pushed, no PR. `tsc --noEmit` clean; `vitest run` 137 files pass (2086 tests).
+
+Tried in Chrome against the live server on 2026-10-11 (`vite` on 127.0.0.1:5199, logged in as a guest, `speechSynthesis.speak` replaced by a recorder so nothing sounded):
+
+- The Channels tab listed the real channels: Mongoose first, then Say, Say to you, Page, Links, then the 18 others marked "not listening".
+- Say on "Always", Auto Read off: one utterance, `Tangra_Guest. Always rule check.`, in the chosen voice.
+- Say on "Always", Auto Read on: still one utterance for the say, and `look me` read by Auto Read in the default voice.
+- Say on "Never", Auto Read on: the say line was printed and not spoken; `look me` was spoken.
+- Alt+Shift+R on the `say` buffer stepped Never to "When the window is not focused" and announced it. On the first buffer (not a channel) it announced "Move to a channel to change how it is read."
+
+That run found one bug, fixed here: a mode change and a voice change landing before the next render lost the first one, because the row merged into the settings it had rendered. It now merges into the stored settings (`ChannelPreferences.tsx`; test "keeps both changes when two land before the next render").
+
+Not done: nobody has listened to it with a screen reader, and "When the window is not focused" was not tried with the window actually unfocused. The key's announcement uses the channel's name (`say`), not its caption (`Say`).
 
 What it does:
 
@@ -26,10 +38,9 @@ What it does:
 
 ## Known gap
 
-Against a server that does not send `Start`/`End` for some sender, a channel with its own rule and global Auto Read on is spoken twice (once per path), and "Never" does not silence its output line. The handoff has the server mark every sender; check its results for any it left unmarked.
+For a sender the server does not bracket with `Start`/`End`, a channel with its own rule and global Auto Read on is spoken twice (once per path), and "Never" does not silence its output line. Seen live on the wire as bracketed: channel talk, say, page, pasted links. Bracketed in the code and not seen live: directed say, games, fediverse notices. Not bracketed: neural-interface channels (`#1893:gmcp_publish`). `$wizinfo_chan` sends no `Text` at all, so a rule set on it does nothing.
 
 ## Next step
 
-1. Verify the MOO side (hub notes), then try this branch against the live server: the Channels tab lists real channels; Always/Never/Unfocused each behave on a real channel line with Auto Read on and off.
-2. Listen to it with a screen reader: the table's row and column headers, and the Alt+Shift+R announcement.
-3. Push and open the PR when Q says.
+1. Listen to it with a screen reader: the table's row and column headers, and the Alt+Shift+R announcement.
+2. Push and open the PR when Q says.
