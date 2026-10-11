@@ -1,0 +1,8 @@
+.join-startup { display: flex; justify-content: center; align-items: center; min-height: 100%; padding: 1rem; box-sizing: border-box; color: var(--color-text); background: var(--color-bg-deep); }
+.join-card { display: flex; flex-direction: column; gap: .75rem; padding: 2rem; width: min(100%, 25rem); min-width: 0; box-sizing: border-box; background: var(--color-bg-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); }
+.join-card h2, .join-card p { margin: 0; }
+.join-card input, .join-card button { box-sizing: border-box; min-width: 0; width: 100%; padding: .5rem .75rem; font: inherit; color: var(--color-text); background: var(--color-bg-deep); border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); }
+.join-card button { background: var(--color-bg-hover); cursor: pointer; }
+.join-card input:focus-visible, .join-card button:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.join-card button[aria-disabled=true] { cursor: wait; }
+.join-error { color: var(--color-danger); }

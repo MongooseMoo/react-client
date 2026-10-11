@@ -1,74 +1,56 @@
-import React, { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import './JoinDialog.css';
 
 interface JoinDialogProps {
     onJoin: (roomId: string) => void;
+    initialRoomId?: string;
+    connecting?: boolean;
+    connectionError?: string;
 }
 
-const JoinDialog: React.FC<JoinDialogProps> = ({ onJoin }) => {
-    const [roomInput, setRoomInput] = useState('');
-    const [error, setError] = useState('');
+export default function JoinDialog({ onJoin, initialRoomId = '', connecting = false, connectionError = '' }: JoinDialogProps) {
+    const [roomInput, setRoomInput] = useState(initialRoomId);
+    const [validationError, setValidationError] = useState('');
+    const [editedSinceFailure, setEditedSinceFailure] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const error = validationError || (!editedSinceFailure ? connectionError : '');
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        const trimmed = roomInput.trim();
-        if (!trimmed) {
-            setError('Please enter a room ID');
-            return;
+    useEffect(() => {
+        if (connectionError) {
+            setEditedSinceFailure(false);
+            inputRef.current?.focus();
         }
-        setError('');
-        onJoin(trimmed);
-    };
+    }, [connectionError]);
 
     return (
-        <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '100%',
-            backgroundColor: '#0a0a1a'
-        }}>
-            <form onSubmit={handleSubmit} style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                padding: '32px',
-                backgroundColor: '#1a1a2e',
-                borderRadius: '8px',
-                border: '1px solid #333'
+        <section className="join-startup" aria-labelledby="join-title">
+            <form className="join-card" onSubmit={event => {
+                event.preventDefault();
+                if (connecting) return;
+                const trimmed = roomInput.trim();
+                if (!trimmed) {
+                    setValidationError('Enter a room ID.');
+                    inputRef.current?.focus();
+                    return;
+                }
+                setValidationError('');
+                onJoin(trimmed);
             }}>
-                <h2 style={{ color: '#ccc', margin: 0, fontSize: '18px' }}>Join Session</h2>
-                <input
-                    type="text"
-                    value={roomInput}
-                    onChange={(e) => setRoomInput(e.target.value)}
-                    placeholder="Enter room ID"
-                    autoFocus
-                    style={{
-                        padding: '8px 12px',
-                        backgroundColor: '#0a0a1a',
-                        border: '1px solid #555',
-                        borderRadius: '4px',
-                        color: '#ccc',
-                        fontSize: '16px',
-                        width: '300px'
-                    }}
-                />
-                {error && <span style={{ color: '#ff6b6b', fontSize: '13px' }}>{error}</span>}
-                <button type="submit" style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#4fc3f7',
-                    border: 'none',
-                    borderRadius: '4px',
-                    color: '#000',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold'
-                }}>
-                    Connect
-                </button>
+                <h2 id="join-title">Join Session</h2>
+                <label htmlFor="join-room-id">Room ID</label>
+                <input id="join-room-id" ref={inputRef} type="text" value={roomInput}
+                    readOnly={connecting} autoFocus aria-invalid={!!error}
+                    aria-describedby={error ? 'join-error' : undefined}
+                    onChange={event => {
+                        setRoomInput(event.currentTarget.value);
+                        setValidationError('');
+                        setEditedSinceFailure(true);
+                    }} />
+                {error && <p id="join-error" className="join-error">{error}</p>}
+                <button type="submit" aria-disabled={connecting}>Connect</button>
+                <p role="status">{connecting ? 'Connecting…' : ''}</p>
             </form>
-        </div>
+        </section>
     );
-};
+}
 
-export default JoinDialog;
