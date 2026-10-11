@@ -42,11 +42,12 @@ function setup() {
     createFdnReverb: vi.fn(() => ({ __effect: 'fdn' })),
     createMediaStreamSound: vi.fn(() => sound),
     resume: vi.fn(async () => {}),
+    pause: vi.fn(async () => {}),
     setGlobalVolume: vi.fn(),
     muted: false,
   };
   const media = new MediaService(cacophony as unknown as Cacophony, { manageFocus: false });
-  return { media, order, sound };
+  return { media, order, sound, cacophony };
 }
 
 const reverb = { id: 'room', effects: [{ type: 'reverb', algorithm: 'fdn' }] };
@@ -61,6 +62,47 @@ describe('MediaService voices', () => {
 
   afterEach(() => {
     warn.mockRestore();
+  });
+
+  it('keeps newly attached voices under the paused graph until an explicit resume', async () => {
+    const { media, cacophony, sound } = setup();
+    await media.pauseAllSounds();
+    media.attachVoice(track(), null);
+    await media.pauseAllSounds(); // Wait through the queued voice context request.
+    expect(cacophony.resume).not.toHaveBeenCalled();
+    expect(media.paused).toBe(true);
+    expect(sound.cleanup).not.toHaveBeenCalled();
+    await media.resumeAllSounds();
+    expect(cacophony.resume).toHaveBeenCalledOnce();
+    expect(media.paused).toBe(false);
+  });
+
+  it('does not reopen the context when a voice arrives during a pending pause', async () => {
+    const { media, cacophony } = setup();
+    let resolvePause!: () => void;
+    cacophony.pause.mockImplementationOnce(() => new Promise<void>((resolve) => { resolvePause = resolve; }));
+    const pending = media.pauseAllSounds();
+    await vi.waitFor(() => expect(cacophony.pause).toHaveBeenCalledOnce());
+    media.attachVoice(track(), null);
+    expect(cacophony.resume).not.toHaveBeenCalled();
+    resolvePause();
+    await pending;
+    await media.pauseAllSounds();
+    expect(cacophony.resume).not.toHaveBeenCalled();
+    expect(media.paused).toBe(true);
+  });
+
+  it('honors Escape pause after an earlier voice context request has already begun', async () => {
+    const { media, cacophony } = setup();
+    let resolveResume!: () => void;
+    cacophony.resume.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveResume = resolve; }));
+    media.attachVoice(track(), null);
+    await vi.waitFor(() => expect(cacophony.resume).toHaveBeenCalledOnce());
+    const paused = media.pauseAllSounds();
+    resolveResume();
+    await paused;
+    expect(cacophony.pause).toHaveBeenCalledOnce();
+    expect(media.paused).toBe(true);
   });
 
   it('joins a chain that is defined after the voice asked for it', async () => {

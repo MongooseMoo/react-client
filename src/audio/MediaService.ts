@@ -318,7 +318,9 @@ export class MediaService {
       chainCreated: (id) => this.voices.chainCreated(id),
       chainDestroying: (id) => this.voices.chainDestroying(id),
     });
-    this.voices = new MediaVoices(this.cacophony, this.effects);
+    this.voices = new MediaVoices(this.cacophony, this.effects, () => this.transitionPlayback(async () => {
+      if (!this.playbackPaused) await this.cacophony.resume();
+    }));
     this.manageFocus = options.manageFocus ?? true;
     this.motion = options.motion ?? new VectorTweener();
 
