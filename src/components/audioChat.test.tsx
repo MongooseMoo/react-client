@@ -5,18 +5,22 @@ import { useLiveKitStore } from '../stores/liveKitStore';
 import AudioChat from './audioChat';
 
 const spoken = vi.hoisted(() => vi.fn());
+const roomHooks = vi.hoisted(() => ({ errors: [] as unknown[] }));
 vi.mock('@react-aria/live-announcer', () => ({ announce: spoken }));
 vi.mock('../audio/LiveKitSpatialAudioBridge', () => ({
   LiveKitSpatialAudioBridge: class { setRoute() {} syncAll() {} cleanup() {} detachMissing() {} },
 }));
 vi.mock('@livekit/components-react', () => ({
-  LiveKitRoom: (props: { children: unknown; onError?: (error: Error) => void; onMediaDeviceFailure?: () => void; onDisconnected: () => void }) => <div>
+  LiveKitRoom: (props: { children: unknown; onError?: (error: Error) => void; onMediaDeviceFailure?: () => void; onDisconnected: () => void }) => {
+    roomHooks.errors.push(props.onError);
+    return <div>
     <button onClick={() => props.onError?.(new Error('failed'))}>Simulate connection failure</button>
     <button onClick={() => { props.onError?.(new Error('failed')); props.onDisconnected(); }}>Simulate failed disconnect</button>
     <button onClick={() => props.onMediaDeviceFailure?.()}>Simulate microphone failure</button>
     <button onClick={props.onDisconnected}>Leave call</button>
     {props.children as never}
-  </div>,
+  </div>;
+  },
   LayoutContextProvider: ({ children }: { children: unknown }) => <>{children as never}</>,
   TrackLoop: () => null,
   ParticipantAudioTile: () => null,
@@ -27,13 +31,14 @@ vi.mock('@livekit/components-react', () => ({
   useTracks: () => [],
 }));
 
-afterEach(() => { useLiveKitStore.getState().reset(); spoken.mockClear(); });
+afterEach(() => { useLiveKitStore.getState().reset(); spoken.mockClear(); roomHooks.errors = []; });
 
 it('provides recoverable voice errors and retains the result after leaving', async () => {
   useLiveKitStore.getState().setRoom({ token: 'test-room' });
   render(<AudioChat client={{} as MudClient} />);
   fireEvent.click(screen.getByText('Simulate connection failure'));
   await screen.findByText('Voice chat could not connect. Try again.');
+  expect(new Set(roomHooks.errors).size).toBe(1);
   const retry = screen.getByRole('button', { name: 'Retry voice chat' });
   retry.focus();
   await act(async () => { fireEvent.click(retry); });
