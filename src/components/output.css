@@ -95,9 +95,10 @@ a.exit {
 
 /* BlockquoteCopyButton styles */
 .blockquote-copy-button {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+    position: static;
+    display: block;
+    margin: var(--space-1) 0 var(--space-1) auto;
+    min-height: 24px;
   background-color: var(--color-bg-surface);
   color: #ffffff;
   border: 1px solid var(--color-border);
@@ -122,13 +123,13 @@ a.exit {
 .blockquote-copy-button.copied {
   background-color: var(--color-success);
   border-color: var(--color-success);
-  color: #ffffff;
+    color: var(--color-text-button);
 }
 
 .blockquote-copy-button.error {
   background-color: var(--color-danger);
   border-color: var(--color-danger);
-  color: #ffffff;
+    color: var(--color-text-button);
 }
 
 /* === Markdown Element Normalization === */
