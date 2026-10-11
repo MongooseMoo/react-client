@@ -152,7 +152,7 @@ interface State {
   sidebarVisible: boolean;
   newLinesCount: number; // Added to track the count of new lines
   localEchoActive: boolean; // To store the current local echo preference
-  focusedLineIndex: number | null; // Index of currently focused line for keyboard navigation
+  focusedLineId: number | null; // Index of currently focused line for keyboard navigation
   historyRevealed: boolean; // Expose beyond-cap history to the accessibility tree
 }
 
@@ -216,7 +216,7 @@ class Output extends React.Component<Props, State> {
       sidebarVisible: false,
       newLinesCount: 0,
       localEchoActive: usePreferences.getState().general.localEcho,
-      focusedLineIndex: null,
+      focusedLineId: null,
       historyRevealed: false,
     };
   }
@@ -312,7 +312,7 @@ class Output extends React.Component<Props, State> {
     this.frozenHiddenCount = 0;
     this.setState({
       liveOutput: this.allLines.slice(-Output.LIVE_WINDOW_SIZE),
-      focusedLineIndex: null,
+      focusedLineId: null,
     });
   }
 
@@ -479,6 +479,7 @@ componentDidUpdate(
       const line = this.allLines[this.frozenCount];
       const wrapper = document.createElement('div');
       wrapper.className = `output-line output-line-${line.type}`;
+      wrapper.dataset.lineId = String(line.id);
       wrapper.innerHTML = this.renderLineMarkup(line);
       frozenDiv.appendChild(wrapper);
       this.frozenCount++;
@@ -558,6 +559,7 @@ componentDidUpdate(
 
   handleScrollToBottom = () => {
     this.scrollToBottom();
+    this.outputRef.current?.focus();
     this.setState({ newLinesCount: 0 }); // Reset the counter after scrolling
   };
 
@@ -776,14 +778,14 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
    * Scroll focused line into view
    */
   scrollFocusedLineIntoView = () => {
-    if (this.state.focusedLineIndex === null) return;
+    if (this.state.focusedLineId === null) return;
 
     // Use setTimeout to ensure DOM has updated
     setTimeout(() => {
       const outputDiv = this.outputRef.current;
       if (!outputDiv) return;
 
-      const focusedElement = outputDiv.querySelector(`[data-line-index="${this.state.focusedLineIndex}"]`);
+      const focusedElement = outputDiv.querySelector(`[data-line-id="${this.state.focusedLineId}"]`);
       if (focusedElement) {
         focusedElement.scrollIntoView({
           behavior: 'smooth',
@@ -797,6 +799,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
    * Handle keyboard navigation through output lines
    */
   handleOutputKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
     const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
 
     // Suppress Alt+Arrow and Alt+letter so browser defaults
@@ -814,7 +817,8 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       return;
     }
 
-    const visibleOutput = this.state.liveOutput.filter(
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const visibleOutput = this.allLines.filter(
       line => this.state.localEchoActive || line.type !== OutputType.Command
     );
 
@@ -823,9 +827,9 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     switch (e.key) {
       case 'ArrowDown': {
         e.preventDefault();
-        const currentIndex = this.state.focusedLineIndex ?? -1;
+        const currentIndex = visibleOutput.findIndex(line => line.id === this.state.focusedLineId);
         const nextIndex = Math.min(currentIndex + 1, visibleOutput.length - 1);
-        this.setState({ focusedLineIndex: nextIndex }, () => {
+        this.setState({ focusedLineId: visibleOutput[nextIndex].id }, () => {
           this.announceOutputLine(visibleOutput[nextIndex]);
           this.scrollFocusedLineIntoView();
         });
@@ -834,9 +838,10 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
       case 'ArrowUp': {
         e.preventDefault();
-        const currentIndex = this.state.focusedLineIndex ?? visibleOutput.length;
+        const found = visibleOutput.findIndex(line => line.id === this.state.focusedLineId);
+        const currentIndex = found < 0 ? visibleOutput.length : found;
         const prevIndex = Math.max(currentIndex - 1, 0);
-        this.setState({ focusedLineIndex: prevIndex }, () => {
+        this.setState({ focusedLineId: visibleOutput[prevIndex].id }, () => {
           this.announceOutputLine(visibleOutput[prevIndex]);
           this.scrollFocusedLineIntoView();
         });
@@ -845,7 +850,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
       case 'Home':
         e.preventDefault();
-        this.setState({ focusedLineIndex: 0 }, () => {
+        this.setState({ focusedLineId: visibleOutput[0].id }, () => {
           this.announceOutputLine(visibleOutput[0]);
           this.scrollFocusedLineIntoView();
         });
@@ -854,7 +859,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       case 'End': {
         e.preventDefault();
         const lastIndex = visibleOutput.length - 1;
-        this.setState({ focusedLineIndex: lastIndex }, () => {
+        this.setState({ focusedLineId: visibleOutput[lastIndex].id }, () => {
           this.announceOutputLine(visibleOutput[lastIndex]);
           this.scrollFocusedLineIntoView();
         });
@@ -927,13 +932,13 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   handleOutputFocus = (event: React.FocusEvent<HTMLDivElement>) => {
     this.lastFocusedOutputElement = event.target as HTMLElement;
     // If no line is focused, start at the last line
-    if (this.state.focusedLineIndex === null) {
+    if (this.state.focusedLineId === null) {
       const visibleOutput = this.state.liveOutput.filter(
         line => this.state.localEchoActive || line.type !== OutputType.Command
       );
       if (visibleOutput.length > 0) {
         const lastIndex = visibleOutput.length - 1;
-        this.setState({ focusedLineIndex: lastIndex });
+        this.setState({ focusedLineId: visibleOutput[lastIndex].id });
       }
     }
   };
@@ -949,7 +954,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       }
     });
     // Optionally clear focus indicator when tabbing away
-    // this.setState({ focusedLineIndex: null });
+    // this.setState({ focusedLineId: null });
   };
 
   render() {
@@ -996,21 +1001,21 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         {visibleLiveOutput.map((line, index) => (
           <div
             key={line.id}
-            className={`output-line ${this.state.focusedLineIndex === index ? 'focused-line' : ''}`}
-            data-line-index={index}
+            className={`output-line ${this.state.focusedLineId === line.id ? 'focused-line' : ''}`}
+            data-line-id={line.id}
           >
             <OutputLineContent line={line} onExitClick={this.handleExitClick} />
           </div>
         ))}
         {this.state.newLinesCount > 0 && (
-          <div
+          <button
+            type="button"
             className="new-lines-notification"
             onClick={this.handleScrollToBottom}
-            role="button"
             aria-live="off"
           >
-            {newLinesText}
-          </div>
+            Show {newLinesText}
+          </button>
         )}
       </div>
     );

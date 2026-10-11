@@ -104,6 +104,52 @@ describe("Output keyboard handling", () => {
     expect(plainAltArrow.preventDefault).toHaveBeenCalled();
     expect(metaAltArrow.preventDefault).not.toHaveBeenCalled();
   });
+
+  it('leaves nested controls and modified review keys alone', () => {
+    const output = new Output({ client: {} as MudClient });
+    const root = document.createElement('div');
+    const input = document.createElement('input');
+    const nested = { ...makeKeyboardEvent({ key: 'Home', code: 'Home', altKey: false }), target: input, currentTarget: root };
+    const modified = { ...makeKeyboardEvent({ key: 'ArrowUp', code: 'ArrowUp', altKey: false, ctrlKey: true }), target: root, currentTarget: root };
+    output.state.liveOutput = [{ id: 1, sourceType: 'plain', sourceContent: 'message', type: OutputType.ServerMessage }];
+    output.handleOutputKeyDown(nested as unknown as React.KeyboardEvent<HTMLDivElement>);
+    output.handleOutputKeyDown(modified as unknown as React.KeyboardEvent<HTMLDivElement>);
+    expect(nested.preventDefault).not.toHaveBeenCalled();
+    expect(modified.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('provides a native unread action and keeps focus after activation', () => {
+    let output: Output | null = null;
+    const { container } = render(<Output ref={(value) => { output = value; }} client={{} as MudClient} />);
+    act(() => { output!.setState({ newLinesCount: 8 }); });
+    const button = screen.getByRole('button', { name: 'Show 8 new messages' });
+    expect(button.tagName).toBe('BUTTON');
+    button.focus();
+    fireEvent.click(button);
+    expect(screen.queryByRole('button', { name: 'Show 8 new messages' })).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('.output'));
+  });
+
+  it('reviews the same message after it ages into frozen history', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    let output: Output | null = null;
+    const { container } = render(<Output ref={(value) => { output = value; }} client={{} as MudClient} />);
+    useOutputStore.getState().addMessage('first');
+    useOutputStore.getState().addMessage('selected');
+    useOutputStore.getState().addMessage('next');
+    await act(async () => { await Promise.resolve(); });
+    const root = container.querySelector('.output')!;
+    fireEvent.keyDown(root, { key: 'Home' });
+    fireEvent.keyDown(root, { key: 'ArrowDown' });
+    for (let index = 0; index < 205; index++) useOutputStore.getState().addMessage(`later ${index}`);
+    await act(async () => { await Promise.resolve(); });
+    mockAnnounce.mockClear();
+    fireEvent.keyDown(root, { key: 'ArrowDown' });
+    expect(mockAnnounce).toHaveBeenCalledWith('next', 'polite');
+    act(() => { output!.clearLog(); });
+    useOutputStore.getState().reset();
+  });
 });
 
 describe("Output store delivery", () => {
