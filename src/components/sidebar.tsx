@@ -16,7 +16,7 @@ const AudioDiagnostics = React.lazy(() => import('./AudioDiagnostics'));
 const FileTransferUI = React.lazy(() => import('./FileTransfer'));
 import AudioChatBoundary from './AudioChatBoundary';
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
-import Tabs, { type TabProps } from './tabs';
+import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
 // import AfflictionsList from "./AfflictionsList"; // Removed
@@ -35,7 +35,8 @@ import ServerFeaturesPanel from './ServerFeaturesPanel';
 
 // Define the type for the imperative handle
 export type SidebarRef = {
-  switchToTab: (index: number) => void;
+  switchToTab: (index: number) => boolean;
+  hasTab: (index: number) => boolean;
 };
 
 export const MIN_SIDEBAR_WIDTH = 180;
@@ -64,6 +65,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
   ({ client, collapsed, onToggleCollapse, width = null, onWidthChange }, ref) => {
     const users = useUserlistStore((state) => state.players);
     const containerRef = useRef<HTMLDivElement | null>(null);
+    const tabsRef = useRef<TabsRef>(null);
     const [isResizing, setIsResizing] = useState(false);
     const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
     const midiPreferences = usePreferences((state) => state.midi);
@@ -263,36 +265,18 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       },
     ];
 
-    const visibleTabs = allTabs.filter((tab) => tab.condition ?? true);
+    // Reserve each destination's number even when optional data is absent.
+    const visibleTabs = allTabs.map((tab, index) => ({ ...tab, shortcut: `Control+Shift+${index + 1}` }))
+      .filter((tab) => tab.condition ?? true);
 
     // Expose switchToTab function via useImperativeHandle
     React.useImperativeHandle(
       ref,
       () => ({
-        switchToTab: (targetIndex: number) => {
-          if (targetIndex >= 0 && targetIndex < visibleTabs.length) {
-            const targetTabId = visibleTabs[targetIndex]?.id;
-            if (targetTabId) {
-              console.log(`switchToTab: Trying index ${targetIndex}, ID: ${targetTabId}`);
-              const buttonElement = document.getElementById(targetTabId);
-              if (buttonElement) {
-                console.log(`switchToTab: Found button element, attempting click...`);
-                buttonElement.click(); // Simulate click
-                console.log(`switchToTab: Click simulation finished.`);
-              } else {
-                console.error(`switchToTab: Could not find button element with ID: ${targetTabId}`);
-              }
-            } else {
-              console.warn(
-                `switchToTab: Could not determine targetTabId for index ${targetIndex}. Visible tabs:`,
-                visibleTabs,
-              );
-            }
-          } else {
-            console.warn(
-              `switchToTab: Invalid targetIndex ${targetIndex}. Visible tabs count: ${visibleTabs.length}`,
-            );
-          }
+        hasTab: (index) => Boolean(allTabs[index] && (allTabs[index].condition ?? true)),
+        switchToTab: (index) => {
+          const tab = allTabs[index];
+          return Boolean(tab && (tab.condition ?? true) && tabsRef.current?.selectTab(tab.id));
         },
       }),
       [visibleTabs],
@@ -343,7 +327,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         )}
         {collapsed && collapseButton}
         <div className="sidebar-content" hidden={collapsed}>
-          <Tabs tabs={visibleTabs} trailingElement={!collapsed ? collapseButton : undefined} />
+          <Tabs ref={tabsRef} tabs={visibleTabs} ariaLabel="Sidebar" trailingElement={!collapsed ? collapseButton : undefined} />
         </div>
       </div>
     );

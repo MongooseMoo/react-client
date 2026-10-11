@@ -9,6 +9,7 @@ export interface TabProps {
   content: JSX.Element;
   condition?: boolean;
   mountOnSelect?: boolean;
+  shortcut?: string;
 }
 
 export interface TabsProps {
@@ -74,8 +75,9 @@ const Tabs = React.forwardRef<TabsRef, TabsProps>(({ tabs, trailingElement, aria
             <button key={tab.id} type="button" role="tab" id={tab.id}
               ref={(element) => { if (element) buttons.current.set(tab.id, element); else buttons.current.delete(tab.id); }}
               aria-selected={resolvedId === tab.id} aria-controls={`${tab.id}-panel`}
+              aria-keyshortcuts={tab.shortcut}
               onClick={() => selectTab(tab.id)} onKeyDown={handleKeyDown}
-              tabIndex={resolvedId === tab.id ? 0 : -1} title={tab.icon ? tab.label : undefined}>
+              tabIndex={resolvedId === tab.id ? 0 : -1} title={tab.shortcut ? `${tab.label} (${tab.shortcut.replace('Control', 'Ctrl')})` : tab.icon ? tab.label : undefined}>
               {tab.icon && <span className="tab-icon" aria-hidden="true">{tab.icon}</span>}
               <span className={tab.icon ? 'tab-label' : undefined}>{tab.label}</span>
             </button>
