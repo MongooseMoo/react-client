@@ -50,13 +50,13 @@ const parseWordForCompletion = (word: string): { leadingPunctuation: string, nam
     // Leading punctuation is considered empty as quotes handle the structure.
     const namePart = word.substring(1);
     // Don't strip trailing quote from user's partial input like "David M
-    // if (namePart.endsWith('"')) { 
+    // if (namePart.endsWith('"')) {
     //   namePart = namePart.substring(0, namePart.length - 1);
     // }
     return { leadingPunctuation: "", namePart };
   } else {
     // Matches leading non-alphanumeric, non-whitespace, non-quote characters
-    const punctuationMatch = word.match(/^([^\w\s"]+)(.*)$/); 
+    const punctuationMatch = word.match(/^([^\w\s"]+)(.*)$/);
     if (punctuationMatch) {
       return { leadingPunctuation: punctuationMatch[1], namePart: punctuationMatch[2] };
     }
@@ -72,7 +72,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
   const completionCandidatesRef = useRef<string[]>([]);
   const completionIndexRef = useRef<number>(0);
   // Stores the full word (e.g., "-Da", "David") that initiated the current completion sequence
-  const completionActiveOriginalWordRef = useRef<string | null>(null); 
+  const completionActiveOriginalWordRef = useRef<string | null>(null);
 
   // Load saved history on component mount
   useEffect(() => {
@@ -140,7 +140,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         resetCompletionState();
         return; // Allow default tab behavior if input is empty
       }
-      
+
       const cursorPos = textArea.selectionStart;
       const textBeforeCursor = currentInputText.substring(0, cursorPos);
       const wordMatch = textBeforeCursor.match(/(?:[^"\s]\S*|"[^"]*"?)$/);
@@ -172,13 +172,13 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         resetCompletionState(); // Reset before starting a new completion sequence
 
         const { leadingPunctuation: initialLeadingPunctuation, namePart: initialNamePart } = parseWordForCompletion(currentWord);
-        
+
         // If, after parsing, the namePart is empty (e.g., currentWord was just "-" or ""), do not attempt to complete.
         if (initialNamePart === "") {
           // No resetCompletionState() here as it was called above, and we don't want to clear a just-started valid prefix
           return;
         }
-        
+
         const visibleCommandCandidates =
           wordStartIndex === 0 && initialLeadingPunctuation === "" && !currentWord.startsWith('"')
             ? useInputStore
@@ -212,7 +212,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
           completionCandidatesRef.current = completionCandidates;
           completionIndexRef.current = 0;
           const completedName = completionCandidates[0];
-          
+
           const newText = currentInputText.substring(0, wordStartIndex) + completedName + currentInputText.substring(cursorPos);
           useInputStore.getState().setText(newText);
           const newCursorPos = wordStartIndex + completedName.length;

@@ -42,7 +42,7 @@ const BlockquoteCopyButton: React.FC<BlockquoteCopyButtonProps> = ({
   getBlockquoteElement
 }) => {
   const [buttonState, setButtonState] = useState<'default' | 'copied' | 'error'>('default');
-  
+
   const handleCopyClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -60,7 +60,7 @@ const BlockquoteCopyButton: React.FC<BlockquoteCopyButtonProps> = ({
 
     } catch (err) {
       console.error('Failed to copy text: ', err);
-      
+
       // Error feedback
       setButtonState('error');
       announce('Could not copy', 'polite');

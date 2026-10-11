@@ -12,9 +12,9 @@ interface PlayerCardProps {
   focusFallbackId?: string;
 }
 
-const PlayerCard: React.FC<PlayerCardProps> = ({ 
-  player, 
-  onLook, 
+const PlayerCard: React.FC<PlayerCardProps> = ({
+  player,
+  onLook,
   onFollow,
   focusReturnId,
   focusFallbackId,
