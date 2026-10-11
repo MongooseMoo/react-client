@@ -61,6 +61,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const [selectedInputId, setSelectedInputId] = useState("");
   const [selectedOutputId, setSelectedOutputId] = useState("");
   const [connectionState, setConnectionState] = useState(midiService.connectionStatus);
+  const latestConnection = useRef(midiService.connectionStatus);
+  const lostDevices = useRef<{ input?: string; output?: string }>({});
   const [deviceChangeEvents, setDeviceChangeEvents] = useState<DeviceChangeEvent[]>([]);
   const [reconnectableDevices, setReconnectableDevices] = useState<{
     input?: { id: string, name: string };
@@ -95,8 +97,19 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   // when a field actually changed (avoids stale-closure issues by always
   // comparing against the latest state via the functional setState form).
   const refreshConnectionState = () => {
+    const next = midiService.connectionStatus;
+    latestConnection.current = next;
+    const restored: string[] = [];
+    if (next.inputConnected && lostDevices.current.input === next.inputDeviceId && next.inputDeviceId) {
+      restored.push('Input');
+      delete lostDevices.current.input;
+    }
+    if (next.outputConnected && lostDevices.current.output === next.outputDeviceId && next.outputDeviceId) {
+      restored.push(restored.length ? 'output' : 'Output');
+      delete lostDevices.current.output;
+    }
+    if (restored.length) setOutcome(`${restored.join(' and ')} device${restored.length > 1 ? 's' : ''} reconnected.`);
     setConnectionState(prev => {
-      const next = midiService.connectionStatus;
       return connectionStatesEqual(prev, next) ? prev : next;
     });
   };
@@ -203,6 +216,17 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       
       // Set up device change monitoring
       const unsubscribe = midiService.onDeviceChange((info) => {
+        const previous = latestConnection.current;
+        const lost: string[] = [];
+        if (previous.inputConnected && info.inputs.removed.some(device => device.id === previous.inputDeviceId)) {
+          lostDevices.current.input = previous.inputDeviceId;
+          lost.push('Input');
+        }
+        if (previous.outputConnected && info.outputs.removed.some(device => device.id === previous.outputDeviceId)) {
+          lostDevices.current.output = previous.outputDeviceId;
+          lost.push(lost.length ? 'output' : 'Output');
+        }
+        if (lost.length) setOutcome(`${lost.join(' and ')} device${lost.length > 1 ? 's' : ''} disconnected.`);
         const timestamp = new Date().toLocaleTimeString();
         const events: DeviceChangeEvent[] = [];
         
