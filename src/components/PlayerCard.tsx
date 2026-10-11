@@ -1,19 +1,26 @@
-import type React from 'react';
+import React from 'react';
 import type { RoomPlayer } from '../gmcp/Room';
 import { setInputTextAndFocus } from '../inputFocus';
 import './PlayerCard.css';
+import { useFocusRecovery } from '../hooks/useFocusRecovery';
 
 interface PlayerCardProps {
   player: RoomPlayer;
   onLook: (player: RoomPlayer) => void;
   onFollow: (player: RoomPlayer) => void;
+  focusReturnId?: string;
+  focusFallbackId?: string;
 }
 
 const PlayerCard: React.FC<PlayerCardProps> = ({ 
   player, 
   onLook, 
-  onFollow 
+  onFollow,
+  focusReturnId,
+  focusFallbackId,
 }) => {
+  const cardRef = React.useRef<HTMLDivElement>(null);
+  useFocusRecovery(cardRef, focusReturnId, focusFallbackId);
   const handlePageClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setInputTextAndFocus(`page ${player.name} `);
@@ -35,7 +42,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
   };
 
   return (
-    <div className="player-card" title={player.fullname} data-player-name={player.name}>
+    <div ref={cardRef} className="player-card" title={player.fullname} data-player-name={player.name}>
       <div className="player-details">
         <div className="player-name">{player.fullname}</div>
       </div>
