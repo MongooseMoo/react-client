@@ -155,6 +155,7 @@ interface State {
   localEchoActive: boolean; // To store the current local echo preference
   focusedLineId: number | null; // Index of currently focused line for keyboard navigation
   historyRevealed: boolean; // Expose beyond-cap history to the accessibility tree
+  actionFeedback: string;
 }
 
 // Add a small threshold for scroll calculations to handle browser differences
@@ -219,6 +220,7 @@ class Output extends React.Component<Props, State> {
       localEchoActive: usePreferences.getState().general.localEcho,
       focusedLineId: null,
       historyRevealed: false,
+      actionFeedback: '',
     };
   }
 
@@ -785,19 +787,33 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     removeStoredValue(Output.LOCAL_STORAGE_KEY);
   }
 
-  copyLog() {
-    const output = this.outputRef.current;
-    if (output) {
-      const textToCopy = output.innerText; // Get plain text content
-      navigator.clipboard.writeText(textToCopy)
-        .then(() => {
-          console.log("Log copied to clipboard.");
-          // Optional: Add visual feedback here if needed
+  async copyLog() {
+    this.setState({ actionFeedback: '' });
+    try {
+      const text = this.allLines
+        .filter(line => this.state.localEchoActive || line.type !== OutputType.Command)
+        .map(line => {
+          if (line.sourceType === 'ansi') {
+            return stripAnsi(line.sourceContent).replace(/@\[exit:[a-zA-Z]+\]([a-zA-Z]+)@\[\/\]/g, '$1');
+          }
+          const doc = new DOMParser().parseFromString(this.renderLineMarkup(line), 'text/html');
+          doc.querySelectorAll('.blockquote-copy-button, .copy-feedback').forEach(node => node.remove());
+          const read = (node: Node): string => {
+            if (node.nodeName === 'BR') return '\n';
+            if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+            const content = Array.from(node.childNodes).map(read).join('');
+            return /^(P|DIV|LI|PRE|BLOCKQUOTE|H[1-6]|TR)$/.test(node.nodeName) && content && !content.endsWith('\n')
+              ? `${content}\n` : content;
+          };
+          return read(doc.body).replace(/\n$/, '');
         })
-        .catch(err => {
-          console.error('Failed to copy log: ', err);
-          alert("Failed to copy log to clipboard. See console for details.");
-        });
+        .join('\n');
+      await navigator.clipboard.writeText(text);
+      announce('Log copied', 'polite');
+      this.setState({ actionFeedback: 'Log copied.' });
+    } catch {
+      announce('Could not copy log', 'polite');
+      this.setState({ actionFeedback: 'Could not copy log. Select the text to copy it.' });
     }
   }
 
@@ -1013,6 +1029,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         tabIndex={0}
         aria-label="Game output log - use arrow keys to navigate"
       >
+        {this.state.actionFeedback && <p className="output-action-feedback">{this.state.actionFeedback}</p>}
         {this.beyondCapLineCount() > 0 && (
           <button
             type="button"
