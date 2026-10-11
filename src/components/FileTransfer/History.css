@@ -1,6 +1,6 @@
+/* No height limit: it holds ten lines at most, and a scrolling box nobody can focus
+   could not be scrolled from the keyboard. */
 .transfer-history {
-  max-height: 200px;
-  overflow-y: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-3);

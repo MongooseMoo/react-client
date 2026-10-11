@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   mockAwayStore,
   mockCacophonyInstances,
-  mockFileTransferManagerInstances,
+  mockFileTransferWorld,
   mockPreferenceListeners,
   mockPreferenceSubscribe,
   mockPreferencesState,
@@ -15,12 +15,13 @@ const {
       muted: boolean;
       setGlobalVolume: ReturnType<typeof vi.fn>;
     }>,
-    mockFileTransferManagerInstances: [] as Array<{
-      acceptTransfer: ReturnType<typeof vi.fn>;
-      cancelTransfer: ReturnType<typeof vi.fn>;
-      cleanup: ReturnType<typeof vi.fn>;
-      sendFile: ReturnType<typeof vi.fn>;
-    }>,
+    // What the client's file transfer engines are wired to instead of GMCP and WebRTC;
+    // each test gets a fresh hub and network.
+    mockFileTransferWorld: {} as {
+      hub: import('./fileTransfer/testHarness').SignalingHub;
+      network: import('./fileTransfer/testHarness').LinkNetwork;
+      engines: import('./fileTransfer/FileTransferEngine').FileTransferEngine[];
+    },
     mockPreferenceListeners: new Set<() => void>(),
     mockPreferenceSubscribe: vi.fn((listener: () => void) => {
       mockPreferenceListeners.add(listener);
@@ -87,24 +88,27 @@ vi.mock('./EditorManager', () => ({
   },
 }));
 
-vi.mock('./FileTransferManager', () => ({
-  default: class {
-    acceptTransfer = vi.fn(async () => {});
-    cancelTransfer = vi.fn();
-    cleanup = vi.fn();
-    sendFile = vi.fn(async () => {});
-
-    constructor() {
-      mockFileTransferManagerInstances.push(this);
-    }
-  },
-}));
-
-vi.mock('./WebRTCService', () => ({
-  WebRTCService: class {
-    cleanup = vi.fn();
-  },
-}));
+// The client's engine is a real one, named 'me' on the test's hub and network.
+vi.mock('./fileTransfer/createFileTransfers', async () => {
+  const { FileTransferEngine } = await vi.importActual<
+    typeof import('./fileTransfer/FileTransferEngine')
+  >('./fileTransfer/FileTransferEngine');
+  const { createMemoryTransferStorage } = await vi.importActual<
+    typeof import('./fileTransfer/storage')
+  >('./fileTransfer/storage');
+  return {
+    createFileTransfers: () => {
+      const engine = new FileTransferEngine({
+        signaling: mockFileTransferWorld.hub.peer('me'),
+        createLink: mockFileTransferWorld.network.factory('me'),
+        storage: createMemoryTransferStorage(),
+        deliver: () => undefined,
+      });
+      mockFileTransferWorld.engines.push(engine);
+      return engine;
+    },
+  };
+});
 
 vi.mock('./gmcp', async () => {
   const actual = await vi.importActual<typeof import('./gmcp')>('./gmcp');
@@ -165,6 +169,10 @@ vi.mock('./mcp', () => ({
 import { readAwayToken, recordAwayPush, storeAwayToken, takeUnshownAwayLines } from './away';
 import { deleteAwayDatabase } from './awayTestHelpers';
 import MudClient from './client';
+import { FileTransferEngine } from './fileTransfer/FileTransferEngine';
+import { createMemoryTransferStorage } from './fileTransfer/storage';
+import { LinkNetwork, polyfillBlobArrayBuffer, SignalingHub } from './fileTransfer/testHarness';
+import type { TransferSnapshot } from './fileTransfer/types';
 import { GMCPClientFileTransfer, GMCPCore } from './gmcp';
 import { useConnectionStore } from './stores/connectionStore';
 import { useOutputStore } from './stores/outputStore';
@@ -242,7 +250,9 @@ describe('MudClient lifecycle cleanup', () => {
 
   beforeEach(() => {
     mockCacophonyInstances.length = 0;
-    mockFileTransferManagerInstances.length = 0;
+    mockFileTransferWorld.hub = new SignalingHub();
+    mockFileTransferWorld.network = new LinkNetwork();
+    mockFileTransferWorld.engines = [];
     mockPreferenceListeners.clear();
     mockPreferenceSubscribe.mockClear();
     mockPreferencesState.general.localEcho = false;
@@ -313,47 +323,177 @@ describe('MudClient lifecycle cleanup', () => {
     client.shutdown();
   });
 
-  it('constructs one file transfer owner on demand and cleans it up without connecting', async () => {
-    const client = new MudClient('example.test', 443);
-    client.configureFileTransfer(client.gmcp.register(GMCPClientFileTransfer as never));
-    expect(mockFileTransferManagerInstances).toHaveLength(0);
-    const first = client.getFileTransferManager();
-    const second = client.getFileTransferManager();
-    expect(first).toBe(second);
-    const manager = await first;
-    expect(mockFileTransferManagerInstances).toHaveLength(1);
-    client.shutdown();
-    expect(manager.cleanup).toHaveBeenCalledOnce();
-  });
+  describe('file transfers', () => {
+    polyfillBlobArrayBuffer();
 
-  it('does not construct file transfer resources after shutdown during import', async () => {
-    const client = new MudClient('example.test', 443);
-    client.configureFileTransfer(client.gmcp.register(GMCPClientFileTransfer as never));
-    const loading = client.getFileTransferManager();
-    client.shutdown();
-    await expect(loading).rejects.toThrow('cancelled');
-    expect(mockFileTransferManagerInstances).toHaveLength(0);
-  });
+    let others: FileTransferEngine[];
 
-  it('preserves GMCP transport until file transfer cleanup completes', async () => {
-    const client = new MudClient('example.test', 443);
-    client.configureFileTransfer(
-      client.gmcp.register(GMCPClientFileTransfer as never),
-    );
-    client.connect();
-    const cleanupOrder: string[] = [];
-    await client.getFileTransferManager();
-    const fileTransferManager = mockFileTransferManagerInstances[0];
-    fileTransferManager.cleanup.mockImplementation(() => {
-      cleanupOrder.push('fileTransferManager.cleanup');
-    });
-    vi.spyOn(client.gmcp, 'reset').mockImplementation(() => {
-      cleanupOrder.push('gmcp.reset');
+    beforeEach(() => {
+      others = [];
     });
 
-    client.close();
+    afterEach(() => {
+      for (const engine of [...others, ...mockFileTransferWorld.engines]) engine.dispose();
+    });
 
-    expect(cleanupOrder).toEqual(['fileTransferManager.cleanup', 'gmcp.reset']);
+    function clientWithFileTransfer(): MudClient {
+      const client = new MudClient('example.test', 443);
+      client.configureFileTransfer(client.gmcp.register(GMCPClientFileTransfer as never));
+      return client;
+    }
+
+    /** Another player's engine, reachable from the client's as `name`. */
+    function otherPlayer(name: string): FileTransferEngine {
+      const engine = new FileTransferEngine({
+        signaling: mockFileTransferWorld.hub.peer(name),
+        createLink: mockFileTransferWorld.network.factory(name),
+        storage: createMemoryTransferStorage(),
+        deliver: () => undefined,
+      });
+      others.push(engine);
+      return engine;
+    }
+
+    function fileOf(size: number, name: string): File {
+      return new File([new Uint8Array(size).fill(7)], name);
+    }
+
+    function offersHeardBy(client: MudClient): TransferSnapshot[] {
+      const heard: TransferSnapshot[] = [];
+      client.onFileTransferOffer((offer) => heard.push(offer));
+      return heard;
+    }
+
+    it('assembles one engine on demand and disposes it at shutdown without connecting', async () => {
+      const client = clientWithFileTransfer();
+      expect(mockFileTransferWorld.engines).toHaveLength(0);
+
+      const first = client.getFileTransfers();
+      const second = client.getFileTransfers();
+      expect(first).toBe(second);
+      const transfers = await first;
+      expect(mockFileTransferWorld.engines).toEqual([transfers]);
+      const dispose = vi.spyOn(transfers, 'dispose');
+
+      client.shutdown();
+
+      expect(dispose).toHaveBeenCalledOnce();
+      await expect(client.getFileTransfers()).rejects.toThrow('Client has shut down');
+    });
+
+    it('does not assemble an engine after shutdown during import', async () => {
+      const client = clientWithFileTransfer();
+      const loading = client.getFileTransfers();
+
+      client.shutdown();
+
+      await expect(loading).rejects.toThrow('cancelled');
+      expect(mockFileTransferWorld.engines).toHaveLength(0);
+    });
+
+    it('disposes the engine on disconnect, before GMCP is reset, and assembles a new one afterwards', async () => {
+      const client = clientWithFileTransfer();
+      client.connect();
+      const order: string[] = [];
+      const first = await client.getFileTransfers();
+      vi.spyOn(first, 'dispose').mockImplementation(() => {
+        order.push('fileTransfers.dispose');
+      });
+      vi.spyOn(client.gmcp, 'reset').mockImplementation(() => {
+        order.push('gmcp.reset');
+      });
+
+      client.close();
+
+      expect(order).toEqual(['fileTransfers.dispose', 'gmcp.reset']);
+      expect(await client.getFileTransfers()).not.toBe(first);
+      expect(mockFileTransferWorld.engines).toHaveLength(2);
+    });
+
+    it('tells a listener registered before the engine was loaded of an incoming offer', async () => {
+      const client = clientWithFileTransfer();
+      const heard = offersHeardBy(client);
+      const alice = otherPlayer('alice');
+
+      await client.getFileTransfers();
+      await alice.send(fileOf(10, 'notes.txt'), 'me');
+
+      await vi.waitFor(() => expect(heard).toHaveLength(1));
+      expect(heard[0]).toMatchObject({
+        direction: 'receive',
+        state: 'offered',
+        peer: 'alice',
+        name: 'notes.txt',
+        size: 10,
+      });
+    });
+
+    it('tells of each offer once: not of its progress, and not when the sender resumes it', async () => {
+      const { network, hub } = mockFileTransferWorld;
+      const client = clientWithFileTransfer();
+      const heard = offersHeardBy(client);
+      const alice = otherPlayer('alice');
+      const transfers = await client.getFileTransfers();
+      const stateOfTheOne = () => transfers.transfers()[0]?.state;
+
+      let holdPieces = true;
+      network.tap = (_link, type) => (type === 'piece' && holdPieces ? 'hold' : 'pass');
+      await alice.send(fileOf(40_000, 'map.bin'), 'me');
+      await vi.waitFor(() => expect(heard).toHaveLength(1));
+      await transfers.accept(heard[0].key);
+      await vi.waitFor(() => expect(stateOfTheOne()).toBe('transferring'));
+
+      holdPieces = false;
+      network.linksOf('me')[0].sever();
+      await vi.waitFor(() => expect(stateOfTheOne()).toBe('complete'));
+
+      expect(hub.sentOf('offer').map((signal) => 'attempt' in signal && signal.attempt)).toEqual([
+        'first',
+        'resume',
+      ]);
+      expect(heard).toHaveLength(1);
+    });
+
+    it('does not tell of the offers this client makes', async () => {
+      const client = clientWithFileTransfer();
+      const heard = offersHeardBy(client);
+      const alice = otherPlayer('alice');
+      const transfers = await client.getFileTransfers();
+
+      await transfers.send(fileOf(10, 'mine.txt'), 'alice');
+      await vi.waitFor(() => expect(alice.transfers()).toHaveLength(1));
+
+      expect(heard).toEqual([]);
+    });
+
+    it('keeps telling its listeners after a disconnect replaced the engine', async () => {
+      const client = clientWithFileTransfer();
+      const heard = offersHeardBy(client);
+      const alice = otherPlayer('alice');
+      client.connect();
+      await client.getFileTransfers();
+
+      client.close();
+      await client.getFileTransfers();
+      await alice.send(fileOf(10, 'after.txt'), 'me');
+
+      await vi.waitFor(() => expect(heard.map((offer) => offer.name)).toEqual(['after.txt']));
+    });
+
+    it('stops telling a listener that was removed', async () => {
+      const client = clientWithFileTransfer();
+      const removed = vi.fn();
+      const stop = client.onFileTransferOffer(removed);
+      const heard = offersHeardBy(client);
+      const alice = otherPlayer('alice');
+      await client.getFileTransfers();
+
+      stop();
+      await alice.send(fileOf(10, 'notes.txt'), 'me');
+
+      await vi.waitFor(() => expect(heard).toHaveLength(1));
+      expect(removed).not.toHaveBeenCalled();
+    });
   });
 
   it('runs disconnect resets in registration order and isolates failures', () => {

@@ -168,9 +168,9 @@ This is the current production checklist for making `MudClient` stop being an
 emitter. A checkbox may cover multiple source lines only when those lines are
 the same event family and must move/delete together.
 
-Non-client emitters are outside this checklist: `FileTransferManager`,
-`WebRTCService`, `HapticsService`, haptics backends, and `TelnetParser` still use
-events internally. The hard rule here is specifically that `MudClient` is not an
+Non-client emitters are outside this checklist: the file transfer engine
+(`src/fileTransfer/`), `HapticsService`, haptics backends, and `TelnetParser`
+still use events internally. The hard rule here is specifically that `MudClient` is not an
 emitter and no code uses `client` as an event bus.
 
 ### `src/client.ts`

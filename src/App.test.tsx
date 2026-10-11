@@ -15,14 +15,11 @@ const {
     cancelSpeech: vi.fn(),
     connect: vi.fn(),
     connected: false,
-    gmcp_fileTransfer: {
-      off: vi.fn(),
-      on: vi.fn(),
-    },
     gmcp: {
       handlers: {},
       sessionReady: false,
     },
+    onFileTransferOffer: vi.fn(() => () => {}),
     requestNotificationPermission: vi.fn(),
     sendCommand: vi.fn(),
     sendNotification: vi.fn(),

@@ -19,6 +19,7 @@ const Controls: React.FC<FileTransferControlsProps> = ({
   selectedRecipient,
   recipients,
 }) => {
+  const fileInputId = React.useId();
   const recipientInputId = React.useId();
   const recipientListId = React.useId();
   const [recipientQuery, setRecipientQuery] = useState("");
@@ -105,9 +106,30 @@ const Controls: React.FC<FileTransferControlsProps> = ({
     }
   };
 
+  const activeRecipient = matchingRecipients[activeRecipientIndex];
+  const optionId = (recipient: TransferPeer) => `${recipientListId}-${recipient.id}`;
+  const hasOptions = isRecipientListOpen && matchingRecipients.length > 0;
+  const nobody =
+    isRecipientListOpen && matchingRecipients.length === 0
+      ? recipients.length === 0
+        ? "No connected players"
+        : "No matching players"
+      : "";
+
+  // The highlighted option moves by the arrow keys, which do not scroll the list themselves.
+  useEffect(() => {
+    if (hasOptions && activeRecipient) {
+      document.getElementById(`${recipientListId}-${activeRecipient.id}`)
+        ?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [hasOptions, activeRecipient, recipientListId]);
+
   return (
     <div className="file-transfer-controls">
-      <input type="file" onChange={handleFileChange} />
+      <label htmlFor={fileInputId} className="sr-only">
+        File to send
+      </label>
+      <input id={fileInputId} type="file" onChange={handleFileChange} />
       <div className="file-transfer-recipient">
         <label htmlFor={recipientInputId} className="sr-only">
           Recipient
@@ -117,12 +139,10 @@ const Controls: React.FC<FileTransferControlsProps> = ({
           type="text"
           role="combobox"
           aria-autocomplete="list"
-          aria-expanded={isRecipientListOpen}
+          aria-expanded={hasOptions}
           aria-controls={recipientListId}
           aria-activedescendant={
-            isRecipientListOpen && matchingRecipients[activeRecipientIndex]
-              ? `${recipientListId}-${matchingRecipients[activeRecipientIndex].id}`
-              : undefined
+            hasOptions && activeRecipient ? optionId(activeRecipient) : undefined
           }
           placeholder="Recipient"
           value={recipientQuery}
@@ -131,41 +151,53 @@ const Controls: React.FC<FileTransferControlsProps> = ({
           onBlur={() => setIsRecipientListOpen(false)}
           onKeyDown={handleRecipientKeyDown}
         />
-        {isRecipientListOpen && (
-          <ul
-            id={recipientListId}
-            className="file-transfer-recipient-list"
-            role="listbox"
+        {/* Always in the document, so that `aria-controls` never points at nothing. */}
+        <div
+          id={recipientListId}
+          className="file-transfer-recipient-list"
+          role="listbox"
+          aria-label="Players"
+          hidden={!hasOptions}
+        >
+          {matchingRecipients.map((recipient, index) => (
+            // biome-ignore lint/a11y/useFocusableInteractive: options are reached through aria-activedescendant; focus stays in the input.
+            <div
+              key={recipient.id}
+              id={optionId(recipient)}
+              className={
+                index === activeRecipientIndex
+                  ? "file-transfer-recipient-option active"
+                  : "file-transfer-recipient-option"
+              }
+              role="option"
+              // The highlighted option, which is what a screen reader follows; the chosen
+              // player is the input's value.
+              aria-selected={index === activeRecipientIndex}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                selectRecipient(recipient);
+              }}
+            >
+              <span>{recipient.label}</span>
+            </div>
+          ))}
+        </div>
+        {nobody && (
+          <div
+            className="file-transfer-recipient-list file-transfer-recipient-empty"
+            aria-hidden="true"
           >
-            {matchingRecipients.length === 0 ? (
-              <li className="file-transfer-recipient-empty">
-                No connected players
-              </li>
-            ) : (
-              matchingRecipients.map((recipient, index) => (
-                <li
-                  key={recipient.id}
-                  id={`${recipientListId}-${recipient.id}`}
-                  className={
-                    index === activeRecipientIndex
-                      ? "file-transfer-recipient-option active"
-                      : "file-transfer-recipient-option"
-                  }
-                  role="option"
-                  aria-selected={selectedRecipient?.id === recipient.id}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    selectRecipient(recipient);
-                  }}
-                >
-                  <span>{recipient.label}</span>
-                </li>
-              ))
-            )}
-          </ul>
+            {nobody}
+          </div>
         )}
+        {/* An empty list cannot be heard; this says so. It exists before it has anything
+            to say, as a status must to be announced. */}
+        <span role="status" className="sr-only">
+          {nobody}
+        </span>
       </div>
       <button
+        type="button"
         onClick={onSendFile}
         disabled={!selectedFile || !selectedRecipient}
       >

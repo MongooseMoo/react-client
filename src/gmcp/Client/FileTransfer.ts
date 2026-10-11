@@ -1,4 +1,4 @@
-import { duplex, identityCodec, outbound } from '../../protocol/messages';
+import { duplex, identityCodec } from '../../protocol/messages';
 import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
 
@@ -50,11 +50,6 @@ export interface FileTransferCandidateRequest {
   candidate: string;
 }
 
-export interface FileTransferRequestResend {
-  sender: string;
-  hash: string;
-}
-
 const fileTransferOffer = gmcpJsonMessage<
   'Offer',
   FileTransferOffer,
@@ -84,10 +79,6 @@ const fileTransferCandidate = gmcpJsonMessage<
 >(
   'Candidate',
 );
-const fileTransferRequestResend = gmcpJsonMessage(
-  'RequestResend',
-  identityCodec<FileTransferRequestResend>(),
-);
 
 const GMCPClientFileTransferBase = GMCPPackage.with({
   packageName: 'Client.FileTransfer',
@@ -97,7 +88,6 @@ const GMCPClientFileTransferBase = GMCPPackage.with({
     duplex(fileTransferReject),
     duplex(fileTransferCancel),
     duplex(fileTransferCandidate),
-    outbound(fileTransferRequestResend),
   ] as const,
 });
 
@@ -107,13 +97,23 @@ export class GMCPClientFileTransfer extends GMCPClientFileTransferBase {
   override receiveRegisteredMessage(wireName: string, payload: unknown): boolean {
     if (!['Offer', 'Accept', 'Reject', 'Cancel', 'Candidate'].includes(wireName)) return false;
     const generation = this.generation;
-    // Install the transfer owner's listeners before delivering the first message.
-    // Promise callbacks retain wire order while the feature code is loading.
-    void this.client.getFileTransferManager().then(() => {
-      if (generation === this.generation) super.receiveRegisteredMessage(wireName, payload);
-    }).catch((error) => {
-      if (generation === this.generation) console.error('Failed to initialize file transfer:', error);
-    });
+    const current = () => generation === this.generation;
+    // The engine must be listening before the first message is delivered.
+    // Promise callbacks retain wire order while its code is loading.
+    void this.client
+      .getFileTransfers()
+      .then(
+        () => {
+          if (current()) super.receiveRegisteredMessage(wireName, payload);
+        },
+        (error) => {
+          if (current()) console.error('Failed to load file transfer:', error);
+        },
+      )
+      // Reached only from the delivery above: a handler of the message threw.
+      .catch((error) => {
+        console.error(`A handler of Client.FileTransfer.${wireName} failed:`, error);
+      });
     return true;
   }
 

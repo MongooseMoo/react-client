@@ -1,5 +1,15 @@
 .progress-bar {
+  align-items: center;
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: 1fr auto auto;
   margin-bottom: var(--space-4);
+}
+
+.progress-bar p {
+  grid-column: 1 / -1;
+  margin: 0;
+  word-break: break-word;
 }
 
 .progress-bar progress {

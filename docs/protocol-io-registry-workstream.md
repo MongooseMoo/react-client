@@ -21,15 +21,14 @@ class GMCPClientFileTransfer extends GMCPPackage.with({
     inbound(FileTransferOffer),
     inbound(FileTransferAccept),
     duplex(FileTransferCancel),
-    outbound(FileTransferRequestResend),
   ],
 }) {}
 
 fileTransfer.on("offer", (offer) => {
-  fileTransferManager.handleOffer(offer);
+  handleOffer(offer);
 });
 
-fileTransfer.sendRequestResend({ sender, hash });
+fileTransfer.sendCancel({ recipient, hash });
 ```
 
 For MCP:
@@ -262,6 +261,11 @@ Commit when gates pass.
 
 Goal: prove GMCP JSON registry on a package with meaningful inbound and outbound
 I/O.
+
+This slice is written as it was planned. Since then the file transfer rewrite
+removed the `RequestResend` message, and `FileTransferManager` and its test gave
+way to the engine in `src/fileTransfer/`, which reaches the package through
+`src/fileTransfer/gmcpSignaling.ts`.
 
 Actions:
 
