@@ -24,6 +24,7 @@ const {
     sendCommand: vi.fn(),
     sendNotification: vi.fn(),
     shutdown: vi.fn(),
+    pauseAllSounds: vi.fn(async () => {}),
     stopAllSounds: vi.fn(),
   };
 
@@ -225,7 +226,8 @@ describe('App haptics backend lifecycle', () => {
     expect(mockClient.cancelSpeech).toHaveBeenCalledOnce();
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(mockClient.stopAllSounds).toHaveBeenCalledOnce();
+    expect(mockClient.pauseAllSounds).toHaveBeenCalledOnce();
+    expect(mockClient.stopAllSounds).not.toHaveBeenCalled();
     expect(mockHapticsRuntimes[0].emergencyStop).toHaveBeenCalledOnce();
 
     fireEvent.keyDown(document, { ctrlKey: true, key: '1' });

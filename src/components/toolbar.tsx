@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useSyncExternalStore } from 'react';
 import {
   FaCog,
   FaCommentDots,
@@ -10,6 +10,8 @@ import {
   FaChevronRight,
   FaChevronLeft,
   FaHistory,
+  FaPause,
+  FaPlay,
 } from 'react-icons/fa';
 import type MudClient from '../client';
 import { usePreferences } from '../stores/preferencesStore';
@@ -42,6 +44,18 @@ const Toolbar = ({
   const [muted, setMuted] = React.useState(client.media.muted);
   const autosay = useInputStore((state) => state.autosay);
   const [volume, setVolume] = React.useState(usePreferences.getState().sound.volume);
+  const paused = useSyncExternalStore(client.media.subscribePlayback, () => client.media.paused);
+  const [playbackError, setPlaybackError] = React.useState('');
+
+  const handlePlaybackToggle = useCallback(async () => {
+    setPlaybackError('');
+    try {
+      if (client.media.paused) await client.resumeAllSounds();
+      else await client.pauseAllSounds();
+    } catch {
+      setPlaybackError(client.media.paused ? 'Could not resume sounds. Try again.' : 'Could not pause sounds. Try again.');
+    }
+  }, [client]);
 
   const handleMuteToggle = useCallback(() => {
     const newMutedState = !muted;
@@ -139,6 +153,16 @@ const Toolbar = ({
 
       {/* Mute + Volume group */}
       <div className="toolbar-group">
+        <button
+          type="button"
+          onClick={handlePlaybackToggle}
+          aria-label={paused ? 'Resume sounds' : 'Pause sounds'}
+          title={paused ? 'Resume sounds' : 'Pause sounds (Escape)'}
+        >
+          {paused ? <FaPlay aria-hidden="true" /> : <FaPause aria-hidden="true" />}
+          <span className="toolbar-label">{paused ? 'Resume sounds' : 'Pause sounds'}</span>
+        </button>
+        <span role="status">{playbackError}</span>
         <button
           type="button"
           onClick={handleMuteToggle}

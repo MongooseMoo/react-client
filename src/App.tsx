@@ -176,11 +176,9 @@ function App() {
       }
 
       if (event.key === "Escape") {
-        client.stopAllSounds();
-        const midiPackage = client.gmcp.handlers["Client.Midi"];
-        if (midiPackage) {
-          midiPackage.sendAllNotesOff();
-        }
+        void client.pauseAllSounds().catch(() => {
+          useOutputStore.getState().addError(new Error('Could not pause sounds. Try again.'));
+        });
         hapticsRuntimeRef.current?.emergencyStop();
       }
 
