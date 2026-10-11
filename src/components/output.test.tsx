@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type React from "react";
 
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type MudClient from "../client";
 import { useConnectionStore } from "../stores/connectionStore";
 import { useOutputStore } from "../stores/outputStore";
@@ -103,6 +103,125 @@ describe("Output keyboard handling", () => {
 
     expect(plainAltArrow.preventDefault).toHaveBeenCalled();
     expect(metaAltArrow.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('leaves nested controls and modified review keys alone', () => {
+    const output = new Output({ client: {} as MudClient });
+    const root = document.createElement('div');
+    const input = document.createElement('input');
+    const nested = { ...makeKeyboardEvent({ key: 'Home', code: 'Home', altKey: false }), target: input, currentTarget: root };
+    const modified = { ...makeKeyboardEvent({ key: 'ArrowUp', code: 'ArrowUp', altKey: false, ctrlKey: true }), target: root, currentTarget: root };
+    output.state.liveOutput = [{ id: 1, sourceType: 'plain', sourceContent: 'message', type: OutputType.ServerMessage }];
+    output.handleOutputKeyDown(nested as unknown as React.KeyboardEvent<HTMLDivElement>);
+    output.handleOutputKeyDown(modified as unknown as React.KeyboardEvent<HTMLDivElement>);
+    expect(nested.preventDefault).not.toHaveBeenCalled();
+    expect(modified.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('gives automatic ANSI speech one owner while retaining manual review and errors', () => {
+    const output = new Output({ client: {} as MudClient });
+    output.handleMessage('spoken by browser TTS', false, true);
+    expect(mockAnnounce).not.toHaveBeenCalled();
+    output.reviewRecentOutputLine(1);
+    expect(mockAnnounce).toHaveBeenCalledWith('spoken by browser TTS', 'polite');
+    output.addError(new Error('connection lost'));
+    expect(mockAnnounce.mock.calls.at(-1)?.[0].trim()).toBe('Error: connection lost');
+  });
+
+  it('retains the emit-time speech owner through asynchronous output delivery', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    render(<Output client={{ willSpeakIncomingMessages: () => false } as MudClient} />);
+    mockAnnounce.mockClear();
+    useOutputStore.getState().addMessage('already read aloud', false, true);
+    await act(async () => { await Promise.resolve(); });
+    expect(mockAnnounce).not.toHaveBeenCalled();
+    expect(screen.getByText('already read aloud')).toBeTruthy();
+    useOutputStore.getState().reset();
+  });
+
+  it('provides a native unread action and keeps focus after activation', () => {
+    let output: Output | null = null;
+    const { container } = render(<Output ref={(value) => { output = value; }} client={{} as MudClient} />);
+    act(() => { output!.setState({ newLinesCount: 8 }); });
+    const button = screen.getByRole('button', { name: 'Show 8 new messages' });
+    expect(button.tagName).toBe('BUTTON');
+    button.focus();
+    fireEvent.click(button);
+    expect(screen.queryByRole('button', { name: 'Show 8 new messages' })).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('.output'));
+  });
+
+  it('starts review at current output after activating the unread jump', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    let output: Output | null = null;
+    const { container } = render(<Output ref={value => { output = value; }} client={{} as MudClient} />);
+    for (const text of ['old', 'current', 'latest']) useOutputStore.getState().addMessage(text);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'Home' });
+    act(() => output!.setState({ newLinesCount: 2 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 new messages' }));
+    mockAnnounce.mockClear();
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'ArrowUp' });
+    expect(mockAnnounce).toHaveBeenCalledWith('current', 'polite');
+    useOutputStore.getState().reset();
+  });
+
+  it('copies actual log content with concise feedback and keeps failures available', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    let output: Output | null = null;
+    render(<Output ref={value => { output = value; }} client={{} as MudClient} />);
+    useOutputStore.getState().addHtml('<blockquote>quotation</blockquote>');
+    useOutputStore.getState().addMessage('next line');
+    useOutputStore.getState().addHtml('<p>paragraph one</p><p>paragraph two</p>');
+    useOutputStore.getState().addMessage('first physical line\r\nsecond physical line');
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await output!.copyLog(); });
+    expect(mockClipboardWriteText).toHaveBeenLastCalledWith('quotation\nnext line\nparagraph one\nparagraph two\nfirst physical line\r\nsecond physical line');
+    expect(mockAnnounce).toHaveBeenCalledWith('Log copied', 'polite');
+    mockClipboardWriteText.mockRejectedValueOnce(new Error('Permission denied'));
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+    try {
+      await act(async () => { await output!.copyLog(); });
+      await screen.findByText('Could not copy log. Select the text to copy it.');
+      expect(alert).not.toHaveBeenCalled();
+      expect(mockAnnounce).toHaveBeenCalledWith('Could not copy log', 'polite');
+    } finally { alert.mockRestore(); }
+    useOutputStore.getState().reset();
+  });
+
+  it('keeps routine connection and error messages out of heading navigation', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    const { container } = render(<Output client={{} as MudClient} />);
+    useOutputStore.getState().addError(new Error('Network unavailable'));
+    useOutputStore.getState().addHtml('<h2>Room description</h2>');
+    await act(async () => { await Promise.resolve(); });
+    expect([...container.querySelectorAll('h2')].map(node => node.textContent)).toEqual(['Room description']);
+    useOutputStore.getState().reset();
+  });
+
+  it('reviews the same message after it ages into frozen history', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    let output: Output | null = null;
+    const { container } = render(<Output ref={(value) => { output = value; }} client={{} as MudClient} />);
+    useOutputStore.getState().addMessage('first');
+    useOutputStore.getState().addMessage('selected');
+    useOutputStore.getState().addMessage('next');
+    await act(async () => { await Promise.resolve(); });
+    const root = container.querySelector('.output')!;
+    fireEvent.keyDown(root, { key: 'Home' });
+    fireEvent.keyDown(root, { key: 'ArrowDown' });
+    for (let index = 0; index < 205; index++) useOutputStore.getState().addMessage(`later ${index}`);
+    await act(async () => { await Promise.resolve(); });
+    mockAnnounce.mockClear();
+    fireEvent.keyDown(root, { key: 'ArrowDown' });
+    expect(mockAnnounce).toHaveBeenCalledWith('next', 'polite');
+    act(() => { output!.clearLog(); });
+    useOutputStore.getState().reset();
   });
 });
 
@@ -326,6 +445,7 @@ describe("Output accessibility-tree exposure cap", () => {
     const frozenDiv = frozen(output);
     expect(frozenDiv.children.length).toBe(total - Output.LIVE_WINDOW_SIZE);
     expect(hiddenCount(output)).toBe(50);
+    expect(frozenDiv.children[0].hasAttribute('inert')).toBe(true);
     // The oldest lines are hidden; the most recent frozen lines are exposed.
     expect(frozenDiv.children[0].getAttribute("aria-hidden")).toBe("true");
     expect(frozenDiv.children[49].getAttribute("aria-hidden")).toBe("true");
@@ -490,6 +610,51 @@ describe("Output frozen history resilience", () => {
     vi.restoreAllMocks();
     localStorage.clear();
     useOutputStore.getState().reset();
+  });
+
+  it('keeps quotation copy available after the live window rolls over', async () => {
+    const { container } = render(<Output client={{} as MudClient} />);
+    useOutputStore.getState().addHtml('<blockquote>keep this quotation</blockquote>');
+    await act(async () => { await Promise.resolve(); });
+    screen.getByRole('button', { name: 'Copy blockquote content' }).focus();
+    for (let index = 0; index < 201; index++) useOutputStore.getState().addMessage(`later ${index}`);
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement).toBe(container.querySelector('.output'));
+    const quote = [...container.querySelectorAll('blockquote')].find(node => node.textContent === 'keep this quotation')!;
+    const button = quote.parentElement!.querySelector('button')!;
+    expect(button).not.toBeNull();
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: mockClipboardWriteText } });
+    mockClipboardWriteText.mockResolvedValue(undefined);
+    await act(async () => { fireEvent.click(button); });
+    expect(mockClipboardWriteText).toHaveBeenCalledWith('keep this quotation');
+    await waitFor(() => expect(mockAnnounce).toHaveBeenCalledWith('Copied', 'polite'));
+  });
+
+  it('shows the reviewed line indicator in frozen history', async () => {
+    const { container } = render(<Output client={{} as MudClient} />);
+    for (let index = 0; index < 205; index++) useOutputStore.getState().addMessage(`review ${index}`);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'Home' });
+    const firstLine = screen.getByText('review 0').closest('[data-line-id]')!;
+    expect(firstLine.classList.contains('focused-line')).toBe(true);
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'ArrowDown' });
+    expect(firstLine.classList.contains('focused-line')).toBe(false);
+    expect(screen.getByText('review 1').closest('[data-line-id]')!.classList.contains('focused-line')).toBe(true);
+  });
+
+  it('does not animate review scrolling when reduced motion is requested', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+    try {
+      const { container } = render(<Output client={{} as MudClient} />);
+      useOutputStore.getState().addMessage('review quietly');
+      await act(async () => { await Promise.resolve(); });
+      fireEvent.keyDown(container.querySelector('.output')!, { key: 'Home' });
+      await waitFor(() => expect(scroll).toHaveBeenCalledWith({ behavior: 'auto', block: 'nearest' }));
+    } finally {
+      vi.unstubAllGlobals();
+      scroll.mockRestore();
+    }
   });
 
   it("keeps rendering and saving when the frozen container falls out of sync", async () => {

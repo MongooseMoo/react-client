@@ -14,13 +14,7 @@
 /* .sidebar ul rule removed (handled by AccessibleList) */
 
 .idle {
-  color: gray; /* Consider using CSS variable */
-}
-
-/* Updated selector to target li within AccessibleList's ul */
-.accessible-list-ul li.selected {
-  background-color: #bde4ff; /* Consider using CSS variable */
-  border-radius: 2px;
+  color: var(--color-text-tertiary);
 }
 
 /* Add base styling for userlist items if needed */
@@ -36,6 +30,5 @@
 }
 
 .userlist-item.away {
-  /* Style for away users */
-  opacity: 0.7;
+  color: var(--color-text-secondary);
 }

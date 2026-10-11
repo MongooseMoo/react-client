@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from '@playwright/test';
+import { chromium, expect } from '@playwright/test';
 
 // Exercise only production artifacts, without connecting the application to a MOO.
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -181,8 +181,44 @@ try {
   await editorPage.waitForFunction(() => document.activeElement?.closest('.monaco-editor'));
   await editorPage.keyboard.press('Control+z');
   await editorPage.waitForFunction(() => window.monaco.editor.getModels()[0].getValue(1) === 'while (1)\n  notify(player, "tick");');
+  const codeInput = editorPage.getByRole('textbox', { name: 'MOO code editor for preact-trial', exact: true });
+  await expect(codeInput).toBeFocused();
+  assert.ok((await codeInput.getAttribute('aria-describedby')).split(/\s+/).includes('editor-statusbar'));
+  await editorPage.keyboard.press('Control+f');
+  const findInput = editorPage.getByRole('textbox', { name: 'Find', exact: true });
+  await expect(findInput).toBeFocused();
+  assert.ok(!(await findInput.getAttribute('aria-describedby') ?? '').includes('editor-statusbar'));
+  await editorPage.keyboard.press('Escape');
+  await editorPage.evaluate(() => window.monaco.editor.getModels()[0].setValue([
+    'notify(player, "start");', 'frobnicate(player);', 'notify(player, "middle");',
+    'endif', 'notify(player, "done");',
+  ].join('\n')));
+  const firstMarker = 'frobnicate is not a known ToastStunt builtin.';
+  const secondMarker = 'Unexpected endif without a matching if.';
+  await expect(editorPage.locator('.editor-problem-message').filter({ hasText: firstMarker })).toBeVisible();
+  await codeInput.focus();
+  await editorPage.keyboard.press('Control+Home');
+  const markerAlert = editorPage.locator('.monaco-editor .peekview-widget .message[role="alert"]');
+  await editorPage.keyboard.press('F8');
+  await expect(markerAlert).toContainText(firstMarker);
+  await editorPage.keyboard.press('F8');
+  await expect(markerAlert).toContainText(secondMarker);
+  await editorPage.keyboard.press('Shift+F8');
+  await expect(markerAlert).toContainText(firstMarker);
+  await editorPage.keyboard.press('Escape');
+  const filters = editorPage.getByRole('toolbar', { name: 'MOO problem filters', exact: true });
+  await filters.locator('button[tabindex="0"]').focus();
+  await editorPage.keyboard.press('End');
+  await expect(filters.getByRole('button').last()).toBeFocused();
+  await editorPage.keyboard.press('Home');
+  await expect(filters.getByRole('button').first()).toBeFocused();
+  await editorPage.setViewportSize({ width: 320, height: 800 });
+  // Monaco's automatic layout responds asynchronously to a viewport resize.
+  await expect.poll(() => editorPage.evaluate(() => document.documentElement.scrollWidth), {
+    message: 'Editor must reflow at 320px after its resize observer runs',
+  }).toBeLessThanOrEqual(321);
   assert.deepEqual(editorErrors, [], 'Real editor must load, edit, save, revert and apply fixes without runtime errors');
-  console.log('PASS: real Monaco typing, save, revert, undo/redo, diagnostics, quick fix and focus.');
+  console.log('PASS: real Monaco editing, native input descriptions, marker/filter keyboard navigation and reflow.');
   await ui.close();
 
   // A missing editor chunk triggers one automatic reload, then a usable error

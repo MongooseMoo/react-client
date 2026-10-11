@@ -9,13 +9,16 @@ interface WasmGuestProps {
 }
 
 const WasmGuest: React.FC<WasmGuestProps> = ({ roomId, onClientReady }) => {
-    const [showJoinDialog, setShowJoinDialog] = useState(!roomId);
+    const [connected, setConnected] = useState(false);
+    const [connecting, setConnecting] = useState(false);
+    const [connectionError, setConnectionError] = useState('');
     const connectedRef = useRef(false);
 
     const connectToRoom = useCallback(async (targetRoomId: string) => {
         if (connectedRef.current) return;
         connectedRef.current = true;
-        setShowJoinDialog(false);
+        setConnecting(true);
+        setConnectionError('');
 
         try {
             console.log('[WebRTC] Joining room:', targetRoomId);
@@ -33,6 +36,7 @@ const WasmGuest: React.FC<WasmGuestProps> = ({ roomId, onClientReady }) => {
                 newClient.connectLocal(guestStream);
                 console.log('[WebRTC] Connected to host');
                 onClientReady(newClient);
+                setConnected(true);
             } catch (err) {
                 peerSvc.destroy();
                 throw err;
@@ -40,7 +44,9 @@ const WasmGuest: React.FC<WasmGuestProps> = ({ roomId, onClientReady }) => {
         } catch (err) {
             console.error('[WebRTC] Failed to join session:', err);
             connectedRef.current = false;
-            setShowJoinDialog(true);
+            setConnectionError('Could not join this session. Check the room ID or try again.');
+        } finally {
+            setConnecting(false);
         }
     }, [onClientReady]);
 
@@ -51,8 +57,9 @@ const WasmGuest: React.FC<WasmGuestProps> = ({ roomId, onClientReady }) => {
         }
     }, [roomId, connectToRoom]);
 
-    if (showJoinDialog) {
-        return <JoinDialog onJoin={connectToRoom} />;
+    if (!connected) {
+        return <JoinDialog onJoin={connectToRoom} initialRoomId={roomId || ''}
+            connecting={connecting} connectionError={connectionError} />;
     }
 
     return null;

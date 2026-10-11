@@ -128,6 +128,8 @@ export class MediaVoices {
   constructor(
     private readonly cacophony: Cacophony,
     private readonly chains: VoiceChains,
+    /** The shared playback owner decides whether a new voice may reopen its context. */
+    private readonly requestContext: () => Promise<void> = () => cacophony.resume(),
   ) {}
 
   attach(track: MediaStreamTrack, position: VoicePosition, forward: VoiceFacing = null): MediaVoice {
@@ -135,7 +137,7 @@ export class MediaVoices {
     let sound = this.start(track, position, facing);
     let positional = position !== null;
 
-    void this.cacophony.resume().catch((error) => {
+    void this.requestContext().catch((error) => {
       console.warn('Voice audio: could not resume the audio context', error);
     });
 

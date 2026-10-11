@@ -50,13 +50,13 @@ const parseWordForCompletion = (word: string): { leadingPunctuation: string, nam
     // Leading punctuation is considered empty as quotes handle the structure.
     const namePart = word.substring(1);
     // Don't strip trailing quote from user's partial input like "David M
-    // if (namePart.endsWith('"')) { 
+    // if (namePart.endsWith('"')) {
     //   namePart = namePart.substring(0, namePart.length - 1);
     // }
     return { leadingPunctuation: "", namePart };
   } else {
     // Matches leading non-alphanumeric, non-whitespace, non-quote characters
-    const punctuationMatch = word.match(/^([^\w\s"]+)(.*)$/); 
+    const punctuationMatch = word.match(/^([^\w\s"]+)(.*)$/);
     if (punctuationMatch) {
       return { leadingPunctuation: punctuationMatch[1], namePart: punctuationMatch[2] };
     }
@@ -72,7 +72,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
   const completionCandidatesRef = useRef<string[]>([]);
   const completionIndexRef = useRef<number>(0);
   // Stores the full word (e.g., "-Da", "David") that initiated the current completion sequence
-  const completionActiveOriginalWordRef = useRef<string | null>(null); 
+  const completionActiveOriginalWordRef = useRef<string | null>(null);
 
   // Load saved history on component mount
   useEffect(() => {
@@ -123,11 +123,16 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     const currentInputText = text;
     const textArea = inputRef.current;
     const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+    const canRecallHistory = !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+      !currentInputText.includes('\n') && textArea?.selectionStart === textArea?.selectionEnd;
 
     if (e.key === "Tab") {
       // e.preventDefault(); // Remove from here
 
-      if (!textArea) return;
+      if (!textArea || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) {
+        resetCompletionState();
+        return;
+      }
 
       // If the entire input field is empty, reset completion state and do nothing further.
       // This handles the case where Tab is pressed in a completely empty input.
@@ -135,9 +140,6 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         resetCompletionState();
         return; // Allow default tab behavior if input is empty
       }
-      
-      // Add e.preventDefault() here, as we are now proceeding with custom tab handling
-      e.preventDefault(); 
 
       const cursorPos = textArea.selectionStart;
       const textBeforeCursor = currentInputText.substring(0, cursorPos);
@@ -158,6 +160,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       }
 
       if (isCycling) { // We are cycling
+        e.preventDefault();
         completionIndexRef.current = (completionIndexRef.current + 1) % completionCandidatesRef.current.length;
         const completedName = completionCandidatesRef.current[completionIndexRef.current];
 
@@ -169,13 +172,13 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         resetCompletionState(); // Reset before starting a new completion sequence
 
         const { leadingPunctuation: initialLeadingPunctuation, namePart: initialNamePart } = parseWordForCompletion(currentWord);
-        
+
         // If, after parsing, the namePart is empty (e.g., currentWord was just "-" or ""), do not attempt to complete.
         if (initialNamePart === "") {
           // No resetCompletionState() here as it was called above, and we don't want to clear a just-started valid prefix
           return;
         }
-        
+
         const visibleCommandCandidates =
           wordStartIndex === 0 && initialLeadingPunctuation === "" && !currentWord.startsWith('"')
             ? useInputStore
@@ -204,11 +207,12 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         ];
 
         if (completionCandidates.length > 0) {
+          e.preventDefault();
           completionActiveOriginalWordRef.current = currentWord; // Store the word that initiated this sequence
           completionCandidatesRef.current = completionCandidates;
           completionIndexRef.current = 0;
           const completedName = completionCandidates[0];
-          
+
           const newText = currentInputText.substring(0, wordStartIndex) + completedName + currentInputText.substring(cursorPos);
           useInputStore.getState().setText(newText);
           const newCursorPos = wordStartIndex + completedName.length;
@@ -228,12 +232,12 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       e.preventDefault();
     } else if (isPlainAlt && e.code === "Space") {
       e.preventDefault();
-    } else if (e.key === "ArrowUp" && !e.altKey) {
+    } else if (e.key === "ArrowUp" && canRecallHistory) {
       e.preventDefault();
       const prevCommand = commandHistory.navigateUp(currentInputText);
       useInputStore.getState().setText(prevCommand);
       resetCompletionState();
-    } else if (e.key === "ArrowDown" && !e.altKey) {
+    } else if (e.key === "ArrowDown" && canRecallHistory) {
       e.preventDefault();
       const nextCommand = commandHistory.navigateDown(currentInputText);
       useInputStore.getState().setText(nextCommand);
@@ -260,6 +264,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         }}
         onKeyDown={handleKeyDown}
         id="command-input"
+        aria-label="Command"
         ref={inputRef}
         autoFocus
       />

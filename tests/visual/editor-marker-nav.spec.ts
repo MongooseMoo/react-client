@@ -1,21 +1,17 @@
 import { expect, test } from '@playwright/test';
 
-// Piece 3 (editor a11y): PROOF that F8 / Shift+F8 navigate between diagnostic
-// markers in our Monaco editor AND that each jump is announced to assistive tech.
-//
-// We add NO keybindings here. F8 (editor.action.marker.nextInFiles) and
-// Shift+F8 (editor.action.marker.prevInFiles) ship with the standalone Monaco
-// build we load, together with their built-in `aria.status` announcement that
-// renders the gotoError peek widget. This spec drives the real editor end to end
-// and asserts the built-in behavior actually works for a blind user.
+// Browser keyboard and live-region DOM evidence. This test does not run a
+// screen reader or establish what users actually hear. F8/Shift+F8 are Monaco
+// commands; the application does not add competing marker keybindings.
 
 const EDITOR_REFERENCE = '#1:test';
 
-// MOO source that yields exactly two parser ERRORS on different lines:
+// MOO source with two lexical errors on different lines:
 //   L2: `frobnicate(player);`  -> unknown-builtin  (frobnicate is not a builtin)
 //   L4: `endif`                -> unexpected-close  (endif without matching if)
-// Both are synchronous parser diagnostics (no tree-sitter needed), so the
-// markers are pushed via setModelMarkers as soon as the model loads.
+// Lexical diagnostics are debounced after load; parser diagnostics may add
+// further markers. Assertions identify the relevant messages rather than
+// assuming a fixed total from every diagnostic source.
 const MOO_SOURCE_LINES = [
   'notify(player, "start");',
   'frobnicate(player);',
@@ -28,36 +24,38 @@ const FIRST_MARKER_MESSAGE = 'frobnicate is not a known ToastStunt builtin.';
 const SECOND_MARKER_MESSAGE = 'Unexpected endif without a matching if.';
 
 test.describe('Editor marker navigation (F8 / Shift+F8)', () => {
-  test('F8/Shift+F8 navigate between diagnostics and announce them', async ({ page }) => {
+  test('F8/Shift+F8 navigate diagnostics and update the error live-region DOM', async ({ page }) => {
     // Monaco is fetched from a CDN at runtime; give the editor room to load.
     test.setTimeout(90_000);
     // 1. Open the editor route directly, then deliver the document the way the
     //    app does in production: a BroadcastChannel('editor') `load` message.
-    await page.goto(`/editor?reference=${encodeURIComponent(EDITOR_REFERENCE)}`);
-
-    // Monaco is loaded from a CDN at runtime; wait for the real editor to mount.
-    // (In this SR-optimized build the input element is `textarea.ime-text-area`.)
-    const editorTextarea = page.locator('.monaco-editor textarea').first();
-    await expect(editorTextarea).toBeVisible({ timeout: 60_000 });
-
-    // Deliver content via the same channel the parent window uses.
-    await page.evaluate(
+    // Register the sender before navigation, responding to the editor's ready
+    // handshake. The editor only mounts after receiving this load message.
+    await page.addInitScript(
       ({ reference, lines }) => {
         const channel = new BroadcastChannel('editor');
-        channel.postMessage({
-          type: 'load',
-          clientId: 'e2e-marker-nav',
-          session: {
-            contents: lines,
-            name: reference,
-            reference,
-            type: 'moo-code',
-          },
+        channel.addEventListener('message', event => {
+          if (event.data.type !== 'ready' || event.data.id !== reference) return;
+          channel.postMessage({
+            type: 'load',
+            id: reference,
+            clientId: 'e2e-marker-nav',
+            session: {
+              contents: lines,
+              name: reference,
+              reference,
+              type: 'moo-code',
+            },
+          });
         });
-        channel.close();
       },
       { reference: EDITOR_REFERENCE, lines: MOO_SOURCE_LINES },
     );
+    const origin = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173';
+    await page.goto(new URL(`/editor?reference=${encodeURIComponent(EDITOR_REFERENCE)}`, origin).href);
+    const editorInput = page.getByRole('textbox', { name: `MOO code editor for ${EDITOR_REFERENCE}` });
+    await expect(editorInput).toBeVisible({ timeout: 60_000 });
+    await expect(editorInput).toHaveAttribute('aria-describedby', 'editor-statusbar');
 
     // 2. The two parser errors must reach Monaco as markers. We prove they were
     //    pushed by asserting the app's own problems panel lists both messages.
@@ -71,29 +69,26 @@ test.describe('Editor marker navigation (F8 / Shift+F8)', () => {
     ).toBeVisible();
 
     // Focus the code surface so the editor-scoped F8 keybinding is in effect.
-    // Click the visible text region (the hidden ime-text-area cannot be clicked);
-    // Monaco routes keyboard events through its focus tracker once focused.
-    await page.locator('.monaco-editor .view-lines').click();
-    await expect(page.locator('.monaco-editor.focused')).toBeVisible();
+    // The optimized focus surface can be a DIV; do not target a hidden textarea.
+    await editorInput.focus();
+    await expect(editorInput).toBeFocused();
 
-    // The gotoError peek widget Monaco opens on navigate. Its `.message` block is
-    // `role="alert" aria-live="assertive"` — the element AT reads aloud. We assert
-    // against the concrete message text per marker, not merely "a widget exists".
+    // The gotoError peek widget's message exposes alert semantics. Assert its
+    // concrete DOM text, not presumed speech.
     const peekMessage = page.locator('.monaco-editor .peekview-widget .message[role="alert"]');
 
     // 3. Press F8 -> navigate to the first marker (line 2, frobnicate). The peek
-    //    appears and announces that marker's message.
+    //    exposes that marker's message in the peek widget.
     await page.keyboard.press('F8');
     await expect(peekMessage).toBeVisible({ timeout: 15_000 });
     await expect(peekMessage).toContainText(FIRST_MARKER_MESSAGE);
-    await expect(page.locator('.monaco-editor .peekview-title')).toContainText('of 2');
 
     // 4. Press F8 again -> advance to the second marker (line 4, endif). The same
-    //    announcement element now reads the next marker's message.
+    //    live-region element contains the next marker's message.
     await page.keyboard.press('F8');
     await expect(peekMessage).toContainText(SECOND_MARKER_MESSAGE);
 
-    // 5. Press Shift+F8 -> move BACK to the first marker. Announcement reverts.
+    // 5. Press Shift+F8 -> move BACK to the first marker. DOM text reverts.
     await page.keyboard.press('Shift+F8');
     await expect(peekMessage).toContainText(FIRST_MARKER_MESSAGE);
   });

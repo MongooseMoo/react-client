@@ -9,9 +9,19 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [contentReady, setContentReady] = useState(false);
+  const initialFocusPending = useRef(false);
+  const interacted = useRef(false);
+  const markReady = React.useCallback(() => setContentReady(true), []);
 
   React.useImperativeHandle(ref, () => ({
-    open() { setHasOpened(true); setIsOpen(true); },
+    open() {
+      initialFocusPending.current = true;
+      interacted.current = false;
+      setContentReady(false);
+      setHasOpened(true);
+      setIsOpen(true);
+    },
     close() { setIsOpen(false); },
   }));
 
@@ -22,8 +32,21 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
     else if (!isOpen && dialog.open) dialog.close();
   }, [isOpen]);
 
+  useEffect(() => {
+    if (isOpen && contentReady && initialFocusPending.current) {
+      initialFocusPending.current = false;
+      if (!interacted.current) {
+        const dialog = dialogRef.current;
+        const destination = dialog?.querySelector<HTMLElement>('[role="listbox"]') ?? dialog?.querySelector<HTMLElement>('#autolog-refresh');
+        destination?.focus();
+      }
+    }
+  }, [isOpen, contentReady]);
+
   return (
     <dialog className="autolog-dialog" ref={dialogRef} aria-label="Autologs"
+      onKeyDownCapture={() => { interacted.current = true; }}
+      onPointerDownCapture={() => { interacted.current = true; }}
       onClose={(event) => {
         if (event.target === event.currentTarget) setIsOpen(false);
       }}>
@@ -32,7 +55,7 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
         <button type="button" onClick={() => setIsOpen(false)}>Close</button>
       </div>
       {hasOpened && <Suspense fallback={<p role="status">Loading logs…</p>}>
-        <Content isOpen={isOpen} />
+        <Content isOpen={isOpen} onReady={markReady} />
       </Suspense>}
     </dialog>
   );

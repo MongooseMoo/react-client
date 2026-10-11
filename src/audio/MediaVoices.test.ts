@@ -57,7 +57,7 @@ function makeVoiceSound(panType: 'HRTF' | 'stereo' = 'HRTF') {
   return { sound };
 }
 
-function setup() {
+function setup(requestContext?: () => Promise<void>) {
   const master = { name: 'master' };
   const made: ReturnType<typeof makeVoiceSound>[] = [];
   const cacophony = {
@@ -77,7 +77,7 @@ function setup() {
   const voices = new MediaVoices(cacophony as unknown as Cacophony, {
     hasChain: (id) => defined.has(id),
     hasPendingChain: (id) => pending.has(id),
-  });
+  }, requestContext);
   return { cacophony, defined, made, master, pending, voices };
 }
 
@@ -95,6 +95,15 @@ describe('MediaVoices', () => {
 
   afterEach(() => {
     warn.mockRestore();
+  });
+
+  it('uses the owning playback policy instead of reopening its audio context directly', () => {
+    const request = vi.fn(async () => {});
+    const { voices, cacophony, made } = setup(request);
+    voices.attach(track(), null);
+    expect(request).toHaveBeenCalledOnce();
+    expect(cacophony.resume).not.toHaveBeenCalled();
+    expect(made[0].sound.play).toHaveBeenCalledOnce();
   });
 
   it('plays a track as an HRTF point source without taking ownership of it', () => {

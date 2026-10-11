@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -24,6 +24,7 @@ const {
     sendCommand: vi.fn(),
     sendNotification: vi.fn(),
     shutdown: vi.fn(),
+    pauseAllSounds: vi.fn(async () => {}),
     stopAllSounds: vi.fn(),
   };
 
@@ -81,7 +82,7 @@ vi.mock('./webpush', () => ({
 }));
 
 vi.mock('./components/input', () => ({
-  default: () => <div data-testid="input" />,
+  default: ({ inputRef }: { inputRef: React.Ref<HTMLTextAreaElement> }) => <textarea ref={inputRef} aria-label="Command" />,
 }));
 
 vi.mock('./components/output', async () => {
@@ -120,9 +121,9 @@ vi.mock('./components/AutoLogDialog', async () => {
 vi.mock('./components/sidebar', async () => {
   const ReactModule = await vi.importActual<typeof import('react')>('react');
   return {
-    default: ReactModule.forwardRef((_props, ref) => {
-      ReactModule.useImperativeHandle(ref, () => ({ switchToTab: mockSwitchToTab }));
-      return null;
+    default: ReactModule.forwardRef((props: { collapsed: boolean; onToggleCollapse: () => void }, ref) => {
+      ReactModule.useImperativeHandle(ref, () => ({ switchToTab: mockSwitchToTab, hasTab: () => true }));
+      return <button type="button" onClick={props.onToggleCollapse}>{props.collapsed ? 'Expand' : 'Collapse'}</button>;
     }),
   };
 });
@@ -132,7 +133,7 @@ vi.mock('./components/statusbar', () => ({
 }));
 
 vi.mock('./components/toolbar', () => ({
-  default: () => <div data-testid="toolbar" />,
+  default: ({ onToggleSidebar }: { onToggleSidebar: () => void }) => <button type="button" onClick={onToggleSidebar}>Toggle sidebar</button>,
 }));
 
 vi.mock('./components/WasmHost', () => ({
@@ -225,7 +226,8 @@ describe('App haptics backend lifecycle', () => {
     expect(mockClient.cancelSpeech).toHaveBeenCalledOnce();
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(mockClient.stopAllSounds).toHaveBeenCalledOnce();
+    expect(mockClient.pauseAllSounds).toHaveBeenCalledOnce();
+    expect(mockClient.stopAllSounds).not.toHaveBeenCalled();
     expect(mockHapticsRuntimes[0].emergencyStop).toHaveBeenCalledOnce();
 
     fireEvent.keyDown(document, { ctrlKey: true, key: '1' });
@@ -260,5 +262,19 @@ describe('App haptics backend lifecycle', () => {
     fireEvent.keyDown(document, { ctrlKey: true, key: '1' });
 
     expect(mockCopyRecentOutputLine).not.toHaveBeenCalled();
+  });
+
+  it('focuses Command when the client becomes ready and reveals hidden/collapsed shortcut destinations', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Command' })).toHaveFocus());
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
+    fireEvent.keyDown(document, { ctrlKey: true, shiftKey: true, key: '#', code: 'Digit3' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Collapse' })).toBeVisible());
+    expect(mockSwitchToTab).toHaveBeenCalledWith(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }));
+    expect(document.querySelector('aside')).toHaveAttribute('hidden');
+    fireEvent.keyDown(document, { ctrlKey: true, shiftKey: true, key: '#', code: 'Digit3' });
+    await waitFor(() => expect(document.querySelector('aside')).not.toHaveAttribute('hidden'));
+    expect(mockSwitchToTab).toHaveBeenLastCalledWith(2);
   });
 });

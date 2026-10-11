@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import WasmGuest from './WasmGuest';
@@ -72,5 +72,48 @@ describe('WasmGuest PeerService lifecycle', () => {
     expect(consoleError).toHaveBeenCalledWith('[WebRTC] Failed to join session:', error);
 
     consoleError.mockRestore();
+  });
+
+  it('retains the room ID after failure and retries without re-entry', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.joinSession.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValueOnce({ peer: 'host' });
+    mocks.createConfiguredClient.mockReturnValue(createClient());
+    const onClientReady = vi.fn();
+    render(<WasmGuest roomId={null} onClientReady={onClientReady} />);
+    const room = screen.getByRole('textbox', { name: 'Room ID' });
+    await act(async () => fireEvent.input(room, { target: { value: 'room-to-retry' } }));
+    fireEvent.submit(room.closest('form')!);
+    await waitFor(() => expect(room).toHaveAttribute('aria-invalid', 'true'));
+    expect(room).toHaveValue('room-to-retry');
+    expect(room).toHaveFocus();
+    expect(room).toHaveAccessibleDescription(/Could not join/);
+    fireEvent.submit(room.closest('form')!);
+    await waitFor(() => expect(onClientReady).toHaveBeenCalledOnce());
+    expect(mocks.joinSession.mock.calls.map(call => call[0])).toEqual(['room-to-retry', 'room-to-retry']);
+  });
+
+  it('identifies whitespace submission and keeps correction on the labeled field', async () => {
+    render(<WasmGuest roomId={null} onClientReady={vi.fn()} />);
+    const room = screen.getByRole('textbox', { name: 'Room ID' });
+    await act(async () => fireEvent.input(room, { target: { value: '  ' } }));
+    fireEvent.submit(room.closest('form')!);
+    expect(room).toHaveFocus();
+    expect(room).toHaveAttribute('aria-invalid', 'true');
+    expect(room).toHaveAccessibleDescription('Enter a room ID.');
+    expect(mocks.joinSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps the field mounted and prevents duplicate joins while connecting', async () => {
+    mocks.joinSession.mockReturnValue(new Promise(() => {}));
+    render(<WasmGuest roomId={null} onClientReady={vi.fn()} />);
+    const room = screen.getByRole('textbox', { name: 'Room ID' });
+    await act(async () => fireEvent.input(room, { target: { value: 'pending-room' } }));
+    fireEvent.submit(room.closest('form')!);
+    await waitFor(() => expect(mocks.joinSession).toHaveBeenCalledOnce());
+    expect(room).toHaveValue('pending-room');
+    expect(room).toHaveAttribute('readonly');
+    expect(screen.getByRole('status')).toHaveTextContent('Connecting');
+    fireEvent.submit(room.closest('form')!);
+    expect(mocks.joinSession).toHaveBeenCalledOnce();
   });
 });

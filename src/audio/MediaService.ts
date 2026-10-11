@@ -226,6 +226,7 @@ export interface ExtendedSound extends Sound, NamedRouteState {
   segmentLoops?: number;
   /** Pending finish/repeat timer for a region-less segment. */
   segmentTimer?: ReturnType<typeof setTimeout>;
+  segmentTimerState?: { callback: () => void; remaining: number; startedAt: number };
   /** The Play that started this sound, so an Update can move its segment. */
   playPayload?: ClientMediaPlayPayload;
   /** Wire volume as a 0..1 multiplier (percent / 100); floats arrive on door-projected copies. */
@@ -300,6 +301,11 @@ export class MediaService {
   /** Bumped by every scene snapshot; each room has its own coordinate origin. */
   private scene = 0;
   private currentMusic?: ExtendedSound;
+  private playbackPaused = false;
+  private readonly pausedSounds = new Set<ExtendedSound>();
+  private readonly pendingStarts = new Map<ExtendedSound, () => void>();
+  private readonly playbackListeners = new Set<() => void>();
+  private playbackTransition: Promise<void> = Promise.resolve();
   private globalMuted = false;
   private isWindowFocused = true;
   private readonly manageFocus: boolean;
@@ -312,7 +318,9 @@ export class MediaService {
       chainCreated: (id) => this.voices.chainCreated(id),
       chainDestroying: (id) => this.voices.chainDestroying(id),
     });
-    this.voices = new MediaVoices(this.cacophony, this.effects);
+    this.voices = new MediaVoices(this.cacophony, this.effects, () => this.transitionPlayback(async () => {
+      if (!this.playbackPaused) await this.cacophony.resume();
+    }));
     this.manageFocus = options.manageFocus ?? true;
     this.motion = options.motion ?? new VectorTweener();
 
@@ -721,7 +729,7 @@ export class MediaService {
       if (!sound) {
         return;
       }
-      if (!this.cleanedSounds.has(old) && old.isPlaying) {
+      if (!this.cleanedSounds.has(old) && this.isActiveSound(old)) {
         retiring = old;
         if (continuing && old.playPayload) {
           // Updates that arrived while it loaded are part of the state to carry.
@@ -825,7 +833,7 @@ export class MediaService {
     }
     this.traceSound('routed', sound);
 
-    if (sound.isPlaying) {
+    if (sound.isPlaying || this.pausedSounds.has(sound) || this.pendingStarts.has(sound)) {
       // Same key, source and region: keep the voice. An explicit start seeks,
       // unless the voice is already at that cursor (a re-Play to a listener
       // who walked in), where a seek would only be an audible cut.
@@ -969,23 +977,28 @@ export class MediaService {
         });
       }
     }
-    playback.play({
+    const options = {
       // A voice continuing another's playhead is the same sound: it does not fade in again.
       fadeIn: resumeAtMs === undefined ? data.fadein || undefined : undefined,
       fadeOut: data.fadeout || undefined,
-    });
-    this.traceSound('started', sound, soundKey);
+    };
+    const start = () => {
+      playback.play(options);
+      this.traceSound('started', sound, soundKey);
+    };
+    if (this.playbackPaused) this.pendingStarts.set(sound, start);
+    else start();
     return playback;
   }
 
   /**
    * Where a voice that is being replaced is playing now, as an absolute source
    * position in ms, so its replacement can continue from there. Undefined when
-   * it is not playing, the engine reports no playhead, or the Play names a
+   * it is neither playing nor held by global pause, the engine reports no playhead, or the Play names a
    * cursor (`requestedStart`) further than the seek tolerance from it.
    */
   private resumeCursor(voice: ExtendedSound, requestedStart: number | undefined): number | undefined {
-    const playhead = voice.isPlaying ? voice.playbacks[0]?.currentTime : undefined;
+    const playhead = this.isActiveSound(voice) ? voice.playbacks[0]?.currentTime : undefined;
     if (typeof playhead !== 'number' || !Number.isFinite(playhead)) {
       return undefined;
     }
@@ -1131,6 +1144,119 @@ export class MediaService {
 
   get allSounds(): ExtendedSound[] {
     return Object.values(this.sounds);
+  }
+
+  get paused(): boolean {
+    return this.playbackPaused;
+  }
+
+  readonly subscribePlayback = (listener: () => void): (() => void) => {
+    this.playbackListeners.add(listener);
+    return () => this.playbackListeners.delete(listener);
+  };
+
+  /** Pause without discarding sources, positions, or remaining segment passes. */
+  pauseAllSounds(): Promise<void> {
+    return this.transitionPlayback(async () => {
+      if (this.playbackPaused) return;
+      this.playbackPaused = true;
+      for (const sound of this.allSounds) this.parkSegmentTimer(sound);
+      try {
+        for (const sound of this.allSounds) {
+          if (sound.isPlaying) {
+            // Retain ownership even if the engine throws after pausing a source.
+            this.pausedSounds.add(sound);
+            sound.pause();
+          }
+        }
+        this.notifyPlayback();
+        await this.cacophony.pause();
+      } catch (error) {
+        // Undo a partial pause. If restoration also fails, it keeps the graph
+        // suspended and the sources available for a later Resume attempt.
+        try {
+          await this.restorePausedSounds();
+        } catch {
+          // Report the operation that initially failed.
+        }
+        throw error;
+      }
+      if (this.currentMusic) this.mediaSession.setPlaybackState('paused');
+      this.updateMusicPosition();
+    });
+  }
+
+  resumeAllSounds(): Promise<void> {
+    return this.transitionPlayback(async () => {
+      if (!this.playbackPaused) return;
+      await this.restorePausedSounds();
+    });
+  }
+
+  private transitionPlayback(action: () => Promise<void>): Promise<void> {
+    const transition = this.playbackTransition.catch(() => {}).then(action);
+    this.playbackTransition = transition;
+    return transition;
+  }
+
+  private async restorePausedSounds(): Promise<void> {
+    try {
+      await this.cacophony.resume();
+      for (const sound of this.pausedSounds) {
+        if (!sound.isPlaying) sound.resume();
+      }
+      for (const [sound, start] of this.pendingStarts) {
+        try {
+          start();
+        } finally {
+          // A successful start must retry from its paused cursor, rather than
+          // invoking Play a second time if a later source fails to start.
+          if (sound.isPlaying && this.pendingStarts.get(sound) === start) {
+            this.pendingStarts.delete(sound);
+            this.pausedSounds.add(sound);
+          }
+        }
+      }
+    } catch (error) {
+      for (const sound of this.allSounds) {
+        this.parkSegmentTimer(sound);
+        if (sound.isPlaying) {
+          this.pausedSounds.add(sound);
+          try {
+            sound.pause();
+          } catch {
+            // Suspending the shared graph below also silences sources whose
+            // engine-level pause failed. Retain their ownership for retry.
+          }
+        }
+      }
+      try {
+        await this.cacophony.pause();
+      } finally {
+        if (this.currentMusic) this.mediaSession.setPlaybackState('paused');
+        this.updateMusicPosition();
+        this.notifyPlayback();
+      }
+      throw error;
+    }
+    this.pausedSounds.clear();
+    this.pendingStarts.clear();
+    this.playbackPaused = false;
+    for (const sound of this.allSounds) {
+      const timer = sound.segmentTimerState;
+      if (timer && sound.segmentTimer === undefined) this.armSegmentTimer(sound, timer.callback, timer.remaining);
+    }
+    if (this.currentMusic) this.mediaSession.setPlaybackState(this.currentMusic.isPlaying ? 'playing' : 'paused');
+    this.updateMusicPosition();
+    this.notifyPlayback();
+  }
+
+  private notifyPlayback(): void {
+    for (const listener of this.playbackListeners) listener();
+  }
+
+  private isActiveSound(sound: ExtendedSound): boolean {
+    return sound.isPlaying || this.pausedSounds.has(sound) || this.pendingStarts.has(sound);
   }
 
   stopAllSounds(): void {
@@ -1379,6 +1505,8 @@ export class MediaService {
   }
 
   private releaseSound(sound: ExtendedSound, key?: string, reason?: AudioDiagnosticError): void {
+    this.pausedSounds.delete(sound);
+    this.pendingStarts.delete(sound);
     if (!this.cleanedSounds.has(sound)) {
       this.traceSound('released', sound, key ?? sound.key, reason);
     }
@@ -1836,6 +1964,7 @@ export class MediaService {
     let passes = 0;
     const onSegmentEnd = () => {
       sound.segmentTimer = undefined;
+      sound.segmentTimerState = undefined;
       if (this.sounds[key] !== sound) {
         return;
       }
@@ -1846,12 +1975,27 @@ export class MediaService {
         return;
       }
       this.seekToPosition(sound, segment.loopStart);
-      sound.segmentTimer = setTimeout(onSegmentEnd, length);
+      this.armSegmentTimer(sound, onSegmentEnd, length);
     };
-    sound.segmentTimer = setTimeout(onSegmentEnd, firstLength);
+    this.armSegmentTimer(sound, onSegmentEnd, firstLength);
+  }
+
+  private armSegmentTimer(sound: ExtendedSound, callback: () => void, remaining: number): void {
+    sound.segmentTimerState = { callback, remaining, startedAt: Date.now() };
+    if (!this.playbackPaused) sound.segmentTimer = setTimeout(callback, remaining);
+  }
+
+  private parkSegmentTimer(sound: ExtendedSound): void {
+    const timer = sound.segmentTimerState;
+    if (timer && sound.segmentTimer !== undefined) {
+      timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
+      clearTimeout(sound.segmentTimer);
+      sound.segmentTimer = undefined;
+    }
   }
 
   private clearSegmentTimer(sound: ExtendedSound): void {
+    sound.segmentTimerState = undefined;
     if (sound.segmentTimer !== undefined) {
       clearTimeout(sound.segmentTimer);
       sound.segmentTimer = undefined;
@@ -1916,7 +2060,7 @@ export class MediaService {
    */
   private changePanMode(sound: ExtendedSound, data: ClientMediaUpdatePayload): boolean {
     const current = sound.playPayload;
-    if (!current || data.is3d === undefined || !sound.isPlaying) {
+    if (!current || data.is3d === undefined || !this.isActiveSound(sound)) {
       return false;
     }
     if (!this.needsPanMode(sound, data.is3d ? 'HRTF' : 'stereo', data)) {
@@ -1977,6 +2121,16 @@ export class MediaService {
   private resumeCurrentMusic(): void {
     const sound = this.currentMusic;
     if (!sound) {
+      return;
+    }
+    if (this.playbackPaused) {
+      void this.resumeAllSounds().then(() => {
+        if (this.currentMusic === sound && !sound.isPlaying) {
+          sound.resume();
+          this.mediaSession.setPlaybackState('playing');
+          this.updateMusicPosition();
+        }
+      }).catch((error) => console.error('Could not resume sounds:', error));
       return;
     }
     sound.resume();
