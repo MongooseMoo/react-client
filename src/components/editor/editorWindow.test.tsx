@@ -365,11 +365,7 @@ describe('EditorWindow language selection', () => {
         ariaLabel: 'MOO code editor for #1:test',
       }),
     );
-    expect(editorMock.props?.wrapperProps).toEqual(
-      expect.objectContaining({
-        'aria-describedby': 'editor-statusbar editor-moo-problems',
-      }),
-    );
+    expect(editorMock.props?.ariaDescribedBy).toBe('editor-statusbar');
     expect(screen.getByRole('status').getAttribute('id')).toBe('editor-statusbar');
   });
 
@@ -921,6 +917,14 @@ describe('EditorWindow language selection', () => {
     const allFilter = await screen.findByRole('button', { name: 'Show all MOO problems (2)' });
     const errorFilter = screen.getByRole('button', { name: 'Show MOO errors (1)' });
     const warningFilter = screen.getByRole('button', { name: 'Show MOO warnings (1)' });
+    expect(allFilter.tabIndex).toBe(0);
+    expect(errorFilter.tabIndex).toBe(-1);
+    expect(warningFilter.tabIndex).toBe(-1);
+    allFilter.focus();
+    fireEvent.keyDown(allFilter, { key: 'ArrowRight' });
+    expect(errorFilter).toHaveFocus();
+    fireEvent.keyDown(errorFilter, { key: 'End' });
+    expect(warningFilter).toHaveFocus();
 
     expect(allFilter.getAttribute('aria-pressed')).toBe('true');
     expect(errorFilter.getAttribute('aria-pressed')).toBe('false');

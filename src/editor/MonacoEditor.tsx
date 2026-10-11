@@ -10,7 +10,7 @@ type Props = {
   theme: string;
   height: string;
   options: Monaco.editor.IStandaloneEditorConstructionOptions;
-  wrapperProps: { 'aria-describedby': string };
+  ariaDescribedBy: string;
   beforeMount: (monaco: typeof Monaco) => void;
   onMount: (editor: Monaco.editor.IStandaloneCodeEditor, monaco: typeof Monaco) => void;
   onChange: (value: string) => void;
@@ -25,6 +25,7 @@ export default function MonacoEditor(props: Props) {
   const instance = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const api = useRef<typeof Monaco | null>(null);
   const [failure, setFailure] = useState<Error | null>(null);
+  const describeInputs = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     configureMonacoLoader();
@@ -32,7 +33,21 @@ export default function MonacoEditor(props: Props) {
     let editor: Monaco.editor.IStandaloneCodeEditor | undefined;
     let model: Monaco.editor.ITextModel | undefined;
     let subscription: Monaco.IDisposable | undefined;
+    let inputObserver: MutationObserver | undefined;
+    let editorRoot: HTMLElement | null = null;
+    const syncDescription = () => {
+      const surfaces = editorRoot?.querySelectorAll<HTMLElement>('[role="textbox"], textarea') ?? [];
+      for (const surface of surfaces) {
+        surface.setAttribute('aria-describedby', latest.current.ariaDescribedBy);
+      }
+      if (editorRoot?.matches('[role="textbox"]')) {
+        editorRoot.setAttribute('aria-describedby', latest.current.ariaDescribedBy);
+      }
+    };
     const dispose = () => {
+      inputObserver?.disconnect();
+      editorRoot?.removeEventListener('focusin', syncDescription);
+      if (describeInputs.current === syncDescription) describeInputs.current = null;
       subscription?.dispose();
       editor?.dispose();
       model?.dispose();
@@ -53,6 +68,17 @@ export default function MonacoEditor(props: Props) {
         ...current.options, automaticLayout: true, model, theme: current.theme,
       });
       instance.current = editor;
+      editorRoot = editor.getDomNode();
+      describeInputs.current = syncDescription;
+      syncDescription();
+      if (editorRoot) {
+        // Monaco can replace its DIV/textarea focus surface when accessibility
+        // support changes. Describe the actual inputs, never a generic wrapper
+        // or the complete growing problems list.
+        inputObserver = new MutationObserver(syncDescription);
+        inputObserver.observe(editorRoot, { childList: true, subtree: true, attributes: true, attributeFilter: ['role'] });
+        editorRoot.addEventListener('focusin', syncDescription);
+      }
       const ownedModel = model;
       subscription = model.onDidChangeContent(() => latest.current.onChange(ownedModel.getValue()));
       current.onMount(editor, monaco);
@@ -72,6 +98,8 @@ export default function MonacoEditor(props: Props) {
     instance.current?.updateOptions(props.options);
   }, [props.options]);
 
+  useLayoutEffect(() => { describeInputs.current?.(); }, [props.ariaDescribedBy]);
+
   useLayoutEffect(() => {
     const model = instance.current?.getModel();
     if (model) api.current?.editor.setModelLanguage(model, props.language);
@@ -79,5 +107,5 @@ export default function MonacoEditor(props: Props) {
   }, [props.language, props.theme]);
 
   if (failure) throw failure;
-  return <div ref={container} style={{ height: props.height }} {...props.wrapperProps} />;
+  return <div ref={container} style={{ height: props.height }} />;
 }

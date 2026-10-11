@@ -228,10 +228,6 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
     [code, editorLanguage, mooDiagnosticMarkers],
   );
   const editorAriaLabel = formatEditorAriaLabel(session.reference, editorLanguage);
-  const editorDescribedBy =
-    mooDiagnosticProblems.length > 0
-      ? `${EDITOR_STATUSBAR_ID} ${EDITOR_PROBLEMS_ID}`
-      : EDITOR_STATUSBAR_ID;
   const editorOptions = useMemo(
     () =>
       createEditorOptions({
@@ -364,8 +360,8 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
     event.preventDefault();
     // Saving from the toolbar (button click or Alt+S) leaves focus on the Save
     // button, stranding a screen-reader user away from their code. Put focus back
-    // in the editor so typing continues immediately. The MOO plays its own save
-    // sound, so we don't rely on a "Saved" live-region announcement here.
+    // in the editor so typing continues immediately. The concise status region
+    // also exposes the Saved state; this handler adds no separate announcement.
     editorInstance.current?.focus();
   };
 
@@ -412,9 +408,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
         defaultValue={session.contents.join('\n')}
         onChange={onChanges}
         options={editorOptions}
-        wrapperProps={{
-          'aria-describedby': editorDescribedBy,
-        }}
+        ariaDescribedBy={EDITOR_STATUSBAR_ID}
         beforeMount={handleEditorBeforeMount}
         onMount={handleEditorMount}
         path={session.reference}
@@ -432,6 +426,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
         id={EDITOR_STATUSBAR_ID}
         onDiagnosticsClick={mooDiagnosticTarget ? showFirstMooDiagnostic : undefined}
         diagnosticsSummary={mooDiagnosticsSummary}
+        diagnosticsEnabled={editorLanguage === MOO_LANGUAGE_ID}
         docstate={docstate}
         session={session}
       />
@@ -455,6 +450,8 @@ function MooProblemsPanel({
   quickFixes,
 }: MooProblemsPanelProps) {
   const [filter, setFilter] = useState<MooProblemFilter>('all');
+  const [activeToolbarButton, setActiveToolbarButton] = useState(0);
+  const toolbarRef = React.useRef<HTMLDivElement>(null);
 
   const counts = getMooDiagnosticCounts(markers);
   const visibleMarkers = markers.filter((marker) => mooProblemFilterIncludesMarker(filter, marker));
@@ -466,8 +463,30 @@ function MooProblemsPanel({
         <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage('all')}</p>
       ) : (
         <>
-          <div aria-label="MOO problem filters" className="editor-problems-filters" role="toolbar">
-            {mooProblemFilterOptions(markers.length, counts).map((option) => (
+          <div aria-label="MOO problem filters" className="editor-problems-filters" role="toolbar" ref={toolbarRef}
+            onFocusCapture={event => {
+              if (!(event.target instanceof HTMLButtonElement)) return;
+              const buttons = Array.from(toolbarRef.current?.querySelectorAll('button') ?? []);
+              const index = buttons.indexOf(event.target);
+              if (index >= 0) setActiveToolbarButton(index);
+            }}
+            onKeyDown={event => {
+              if (!(event.target instanceof HTMLButtonElement)) return;
+              const buttons = Array.from(toolbarRef.current?.querySelectorAll('button') ?? []);
+              const index = buttons.indexOf(event.target);
+              if (index < 0) return;
+              let next: number;
+              switch (event.key) {
+                case 'ArrowRight': next = (index + 1) % buttons.length; break;
+                case 'ArrowLeft': next = (index + buttons.length - 1) % buttons.length; break;
+                case 'Home': next = 0; break;
+                case 'End': next = buttons.length - 1; break;
+                default: return;
+              }
+              event.preventDefault();
+              buttons[next]?.focus();
+            }}>
+            {mooProblemFilterOptions(markers.length, counts).map((option, index) => (
               <button
                 aria-label={option.ariaLabel}
                 aria-pressed={filter === option.filter}
@@ -475,17 +494,19 @@ function MooProblemsPanel({
                 key={option.filter}
                 onClick={() => setFilter(option.filter)}
                 type="button"
+                tabIndex={index === Math.min(activeToolbarButton, 2 + fixAllQuickFixes.length) ? 0 : -1}
               >
                 {option.label}
               </button>
             ))}
-            {fixAllQuickFixes.map((quickFix) => (
+            {fixAllQuickFixes.map((quickFix, index) => (
               <button
                 aria-label={`Apply MOO fix all: ${quickFix.title}`}
                 className="editor-problems-fix-all-button"
                 key={quickFix.title}
                 onClick={() => onQuickFixClick(quickFix)}
                 type="button"
+                tabIndex={index + 3 === Math.min(activeToolbarButton, 2 + fixAllQuickFixes.length) ? 0 : -1}
               >
                 Fix all
               </button>

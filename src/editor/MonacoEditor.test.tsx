@@ -1,4 +1,4 @@
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import MonacoEditor from './MonacoEditor';
 
@@ -8,7 +8,8 @@ const mock = vi.hoisted(() => {
     getValue: vi.fn(() => 'newer typing'), dispose: vi.fn(),
     onDidChangeContent: vi.fn((_callback: () => void) => subscription),
   };
-  const editor = { dispose: vi.fn(), updateOptions: vi.fn(), getModel: () => model };
+  const editor = { dispose: vi.fn(), updateOptions: vi.fn(), getModel: () => model,
+    getDomNode: vi.fn() };
   const api = {
     Uri: { parse: (path: string) => path },
     editor: { create: vi.fn(() => editor), createModel: vi.fn(() => model), setModelLanguage: vi.fn(), setTheme: vi.fn() },
@@ -19,13 +20,38 @@ vi.mock('@monaco-editor/loader', () => ({ default: { init: mock.init, config: vi
 
 const props = () => ({
   defaultValue: 'initial', path: 'moo://test', language: 'moo', theme: 'dark', height: '80vh',
-  options: {}, wrapperProps: { 'aria-describedby': 'status' },
+  options: {}, ariaDescribedBy: 'status',
   beforeMount: vi.fn(), onMount: vi.fn(), onChange: vi.fn(),
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
   mock.init.mockImplementation(() => Object.assign(Promise.resolve(mock.api), { cancel: mock.cancel }));
+  mock.api.editor.create.mockImplementation((container: HTMLElement) => {
+    const textbox = document.createElement('div');
+    textbox.setAttribute('role', 'textbox');
+    textbox.setAttribute('aria-label', 'Code');
+    textbox.tabIndex = 0;
+    container.appendChild(textbox);
+    mock.editor.getDomNode.mockReturnValue(container);
+    return mock.editor;
+  });
+});
+
+it('describes the actual DIV textbox and newly created input surfaces with concise context', async () => {
+  const initial = props();
+  const view = render(<><p id="status">Saved, 1 error</p><MonacoEditor {...initial} /></>);
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Code' })).toHaveAccessibleDescription('Saved, 1 error'));
+  const root = mock.editor.getDomNode();
+  const old = screen.getByRole('textbox', { name: 'Code' });
+  await act(async () => {
+    old.remove();
+    const textarea = document.createElement('textarea');
+    textarea.setAttribute('aria-label', 'Code');
+    root.appendChild(textarea);
+  });
+  expect(screen.getByRole('textbox', { name: 'Code' })).toHaveAccessibleDescription('Saved, 1 error');
+  view.unmount();
 });
 
 it('reports model changes without writing render snapshots back into the model', async () => {
