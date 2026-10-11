@@ -615,10 +615,11 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string, provisional: boolean = false) {
-    if (this.willSpeakIncomingMessages()) {
+    const browserSpeechOwned = this.willSpeakIncomingMessages();
+    if (browserSpeechOwned) {
       this.speak(dataString);
     }
-    useOutputStore.getState().addMessage(dataString, provisional);
+    useOutputStore.getState().addMessage(dataString, provisional, browserSpeechOwned);
   }
 
   willSpeakIncomingMessages(): boolean {
