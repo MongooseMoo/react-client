@@ -16,19 +16,15 @@ const EMPTY_ITEMS: Item[] = [];
 
 const Inventory: React.FC<InventoryProps> = ({ client }) => {
   const items = useItemsStore((state) => state.itemsByLocation.inv ?? EMPTY_ITEMS);
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const selectedItem = items.find((item) => item.id === selectedItemId) ?? null;
 
   useEffect(() => {
     client.gmcp.handlers['Char.Items']?.sendInv("");
   }, [client]);
 
-  useEffect(() => {
-    if (!selectedItem) return;
-    setSelectedItem(items.find((item) => item.id === selectedItem.id) ?? null);
-  }, [items, selectedItem]);
-
   const handleItemSelected = (item: Item | null) => {
-    setSelectedItem(item);
+    setSelectedItemId(item?.id ?? null);
   };
 
   const handleItemAction = useCallback((action: ItemAction) => {
@@ -49,6 +45,7 @@ const Inventory: React.FC<InventoryProps> = ({ client }) => {
           onItemSelected={handleItemSelected}
           listId={listId}
           labelledBy={headingId}
+          focusReturnId={headingId}
         />
       )}
       {selectedItem && (
@@ -56,6 +53,8 @@ const Inventory: React.FC<InventoryProps> = ({ client }) => {
           <ItemCard
             item={selectedItem}
             onAction={handleItemAction}
+            focusReturnId={listId}
+            focusFallbackId={headingId}
           />
         </div>
       )}

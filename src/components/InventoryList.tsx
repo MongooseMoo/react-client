@@ -8,6 +8,7 @@ interface InventoryListProps {
   onItemSelected: (item: Item | null) => void;
   listId: string;
   labelledBy: string;
+  focusReturnId?: string;
 }
 
 const InventoryList: React.FC<InventoryListProps> = ({
@@ -15,6 +16,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
   onItemSelected,
   listId,
   labelledBy,
+  focusReturnId,
 }) => {
 
   const handleSelectionChange = (index: number) => {
@@ -56,6 +58,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
       itemClassName={getInventoryItemClassName}
       getItemTextValue={getInventoryItemTextValue}
       onSelectedIndexChange={handleSelectionChange}
+      focusReturnId={focusReturnId}
     />
   );
 };

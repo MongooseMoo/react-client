@@ -23,8 +23,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   const roomInfo = useRoomStore((state) => state.roomInfo);
   const roomPlayers = useRoomStore((state) => state.roomPlayers);
   const roomItems = useItemsStore((state) => state.itemsByLocation.room ?? EMPTY_ITEMS);
-  const [selectedRoomItem, setSelectedRoomItem] = useState<Item | null>(null);
-  const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
+  const [selectedRoomItemId, setSelectedRoomItemId] = useState<string | null>(null);
+  const [selectedPlayerName, setSelectedPlayerName] = useState<string | null>(null);
 
   const charItemsHandler = client.gmcp.handlers['Char.Items'];
 
@@ -39,6 +39,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   const filteredRoomItems = useMemo(() => {
     return roomItems.filter(item => !isPlayerItem(item, roomPlayers));
   }, [roomItems, roomPlayers, isPlayerItem]);
+  const selectedRoomItem = filteredRoomItems.find((item) => item.id === selectedRoomItemId) ?? null;
+  const selectedPlayer = roomPlayers.find((player) => player.name === selectedPlayerName) ?? null;
 
   // Request the room's item list once on mount. Room info/players are now
   // subscribed from the room store above rather than fed by client events.
@@ -49,24 +51,12 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   }, [charItemsHandler]);
 
 
-  useEffect(() => {
-    if (!selectedRoomItem) return;
-    setSelectedRoomItem(roomItems.find((item) => item.id === selectedRoomItem.id) ?? null);
-  }, [roomItems, selectedRoomItem]);
-
-  // Clear the player selection if the selected player has left the room.
-  useEffect(() => {
-    if (selectedPlayer && !roomPlayers.some((p) => p.name === selectedPlayer.name)) {
-      setSelectedPlayer(null);
-    }
-  }, [roomPlayers, selectedPlayer]);
-
   const handleExitClick = (direction: string) => {
     client.sendCommand(direction); 
   };
 
   const handleSelectItemFromRoom = (index: number) => {
-    setSelectedRoomItem(index > -1 && filteredRoomItems[index] ? filteredRoomItems[index] : null);
+    setSelectedRoomItemId(filteredRoomItems[index]?.id ?? null);
   };
 
   const handleItemAction = useCallback((action: ItemAction) => {
@@ -74,7 +64,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   }, [client]);
 
   const handleSelectPlayer = (index: number) => {
-    setSelectedPlayer(index > -1 && roomPlayers[index] ? roomPlayers[index] : null);
+    setSelectedPlayerName(roomPlayers[index]?.name ?? null);
   };
 
 
@@ -165,6 +155,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
             itemClassName={getRoomItemClassName}
             getItemTextValue={getRoomItemTextValue}
             onSelectedIndexChange={handleSelectItemFromRoom}
+            focusReturnId={contentsHeadingId}
           />
         )}
       </div>
@@ -174,6 +165,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
           <ItemCard
             item={selectedRoomItem}
             onAction={handleItemAction}
+            focusReturnId={contentsListId}
+            focusFallbackId={contentsHeadingId}
           />
         </div>
       )}
@@ -192,6 +185,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
             itemClassName={getPlayerItemClassName}
             getItemTextValue={getPlayerTextValue}
             onSelectedIndexChange={handleSelectPlayer}
+            focusReturnId={playersHeadingId}
           />
         )}
       </div>
@@ -202,6 +196,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
             player={selectedPlayer}
             onLook={handleLookAtPlayer}
             onFollow={handleFollowPlayer}
+            focusReturnId={playersListId}
+            focusFallbackId={playersHeadingId}
           />
         </div>
       )}
