@@ -14,10 +14,10 @@ vi.mock('@livekit/components-react', () => ({
   LiveKitRoom: (props: { children: unknown; onError?: (error: Error) => void; onMediaDeviceFailure?: () => void; onDisconnected: () => void }) => {
     roomHooks.errors.push(props.onError);
     return <div>
-    <button onClick={() => props.onError?.(new Error('failed'))}>Simulate connection failure</button>
-    <button onClick={() => { props.onError?.(new Error('failed')); props.onDisconnected(); }}>Simulate failed disconnect</button>
-    <button onClick={() => props.onMediaDeviceFailure?.()}>Simulate microphone failure</button>
-    <button onClick={props.onDisconnected}>Leave call</button>
+    <button type="button" onClick={() => props.onError?.(new Error('failed'))}>Simulate connection failure</button>
+    <button type="button" onClick={() => { props.onError?.(new Error('failed')); props.onDisconnected(); }}>Simulate failed disconnect</button>
+    <button type="button" onClick={() => props.onMediaDeviceFailure?.()}>Simulate microphone failure</button>
+    <button type="button" onClick={props.onDisconnected}>Leave call</button>
     {props.children as never}
   </div>;
   },
@@ -27,7 +27,7 @@ vi.mock('@livekit/components-react', () => ({
   BarVisualizer: () => null,
   ParticipantName: () => null,
   ConnectionQualityIndicator: () => null,
-  ControlBar: () => <button>Microphone</button>,
+  ControlBar: () => <button type="button">Microphone</button>,
   useTracks: () => [],
 }));
 
