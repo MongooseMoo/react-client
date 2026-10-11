@@ -168,6 +168,30 @@ describe("Output keyboard handling", () => {
     useOutputStore.getState().reset();
   });
 
+  it('copies actual log content with concise feedback and keeps failures available', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    let output: Output | null = null;
+    render(<Output ref={value => { output = value; }} client={{} as MudClient} />);
+    useOutputStore.getState().addHtml('<blockquote>quotation</blockquote>');
+    useOutputStore.getState().addMessage('next line');
+    useOutputStore.getState().addHtml('<p>paragraph one</p><p>paragraph two</p>');
+    useOutputStore.getState().addMessage('first physical line\r\nsecond physical line');
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await output!.copyLog(); });
+    expect(mockClipboardWriteText).toHaveBeenLastCalledWith('quotation\nnext line\nparagraph one\nparagraph two\nfirst physical line\r\nsecond physical line');
+    expect(mockAnnounce).toHaveBeenCalledWith('Log copied', 'polite');
+    mockClipboardWriteText.mockRejectedValueOnce(new Error('Permission denied'));
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+    try {
+      await act(async () => { await output!.copyLog(); });
+      await screen.findByText('Could not copy log. Select the text to copy it.');
+      expect(alert).not.toHaveBeenCalled();
+      expect(mockAnnounce).toHaveBeenCalledWith('Could not copy log', 'polite');
+    } finally { alert.mockRestore(); }
+    useOutputStore.getState().reset();
+  });
+
   it('keeps routine connection and error messages out of heading navigation', async () => {
     localStorage.clear();
     useOutputStore.getState().reset();
