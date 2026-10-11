@@ -12,6 +12,7 @@ vi.mock('../audio/LiveKitSpatialAudioBridge', () => ({
 vi.mock('@livekit/components-react', () => ({
   LiveKitRoom: (props: { children: unknown; onError?: (error: Error) => void; onMediaDeviceFailure?: () => void; onDisconnected: () => void }) => <div>
     <button onClick={() => props.onError?.(new Error('failed'))}>Simulate connection failure</button>
+    <button onClick={() => { props.onError?.(new Error('failed')); props.onDisconnected(); }}>Simulate failed disconnect</button>
     <button onClick={() => props.onMediaDeviceFailure?.()}>Simulate microphone failure</button>
     <button onClick={props.onDisconnected}>Leave call</button>
     {props.children as never}
@@ -43,4 +44,14 @@ it('provides recoverable voice errors and retains the result after leaving', asy
   await act(async () => { fireEvent.click(screen.getByText('Leave call')); });
   await screen.findByText('Voice chat disconnected.');
   expect(screen.queryByText('Microphone')).toBeNull();
+});
+
+it('retains retry and dismissal when a connection failure also disconnects the room', async () => {
+  useLiveKitStore.getState().setRoom({ token: 'test-room' });
+  render(<AudioChat client={{} as MudClient} />);
+  fireEvent.click(screen.getByText('Simulate failed disconnect'));
+  await screen.findByRole('button', { name: 'Retry voice chat' });
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss voice chat' }));
+  await screen.findByText('Voice chat disconnected.');
+  expect(useLiveKitStore.getState().rooms).toHaveLength(0);
 });
