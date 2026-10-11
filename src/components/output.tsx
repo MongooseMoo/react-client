@@ -564,9 +564,10 @@ componentDidUpdate(
   const scrollBottom = Math.ceil(output.scrollHeight - output.scrollTop); const viewportHeight = Math.ceil(output.clientHeight); return scrollBottom <= viewportHeight + SCROLL_THRESHOLD; };
 
   handleScrollToBottom = () => {
+    const latest = this.allLines.filter(line => this.state.localEchoActive || line.type !== OutputType.Command).at(-1);
     this.scrollToBottom();
     this.outputRef.current?.focus();
-    this.setState({ newLinesCount: 0 }); // Reset the counter after scrolling
+    this.setState({ newLinesCount: 0, focusedLineId: latest?.id ?? null });
   };
 
   componentDidMount() {

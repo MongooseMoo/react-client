@@ -152,6 +152,22 @@ describe("Output keyboard handling", () => {
     expect(document.activeElement).toBe(container.querySelector('.output'));
   });
 
+  it('starts review at current output after activating the unread jump', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    let output: Output | null = null;
+    const { container } = render(<Output ref={value => { output = value; }} client={{} as MudClient} />);
+    for (const text of ['old', 'current', 'latest']) useOutputStore.getState().addMessage(text);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'Home' });
+    act(() => output!.setState({ newLinesCount: 2 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 new messages' }));
+    mockAnnounce.mockClear();
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'ArrowUp' });
+    expect(mockAnnounce).toHaveBeenCalledWith('current', 'polite');
+    useOutputStore.getState().reset();
+  });
+
   it('keeps routine connection and error messages out of heading navigation', async () => {
     localStorage.clear();
     useOutputStore.getState().reset();
