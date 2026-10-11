@@ -53,7 +53,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
           onClick={handlePageClick}
           aria-label={`Page ${player.fullname}`}
           tabIndex={0}
-          accessKey="p"
+          accessKey="g"
         >
           Page
         </button>
@@ -61,7 +61,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
           type="button"
           className="player-sayto-button"
           onClick={handleSayToClick}
-          aria-label={`Say to ${player.fullname} (using -${player.name})`}
+          aria-label={`Say to ${player.fullname}`}
           title={`Say to ${player.fullname} (uses -${player.name} command)`}
           tabIndex={0}
           accessKey="s"
@@ -74,7 +74,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
           onClick={handleLookClick}
           aria-label={`Look at ${player.fullname}`}
           tabIndex={0}
-          accessKey="l"
+          accessKey="k"
         >
           Look
         </button>
