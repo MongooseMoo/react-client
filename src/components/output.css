@@ -78,6 +78,19 @@ a.exit {
   font-weight: bold; /* Keep errors bold */
 }
 
+.output a {
+  color: var(--color-primary);
+}
+
+.output a:visited {
+  color: var(--color-info);
+}
+
+.output a:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 /* BlockquoteWithCopy wrapper styles */
 .blockquote-with-copy {
   position: relative;
