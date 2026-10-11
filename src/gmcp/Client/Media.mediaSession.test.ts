@@ -62,6 +62,7 @@ function createMockMusicSound(url: string) {
     key: undefined as string | undefined,
     loop: vi.fn(),
     mediaType: undefined as string | undefined,
+    panType: 'stereo',
     on: vi.fn((event: string, listener: () => void) => {
       if (!listeners.has(event)) {
         listeners.set(event, new Set());
@@ -106,6 +107,8 @@ function createMockClient() {
     listenerPosition: [0, 0, 0],
     listenerUpOrientation: [0, 1, 0],
     muted: false,
+    pause: vi.fn(async () => {}),
+    resume: vi.fn(async () => {}),
     setGlobalVolume: vi.fn(),
   };
 
@@ -191,6 +194,84 @@ describe('GMCPClientMedia ↔ Media Session', () => {
     handlers.play?.({ action: 'play' });
     expect(sound.resume).toHaveBeenCalledOnce();
     expect(session.playbackState).toBe('playing');
+  });
+
+  it('pauses all sounds without releasing them and resumes from the same playhead', async () => {
+    const sound = createMockMusicSound('proxy/theme.ogg');
+    mockCreateSound.mockResolvedValue(sound);
+    await playMusic(handler, {});
+    sound.playbacks[0].currentTime = 42;
+    await mockClient.media.pauseAllSounds();
+    await mockClient.media.pauseAllSounds();
+    expect(sound.pause).toHaveBeenCalledOnce();
+    expect(sound.cleanup).not.toHaveBeenCalled();
+    expect(mockClient.media.allSounds).toContain(sound);
+    expect(mockClient.media.paused).toBe(true);
+    expect(session.playbackState).toBe('paused');
+    await mockClient.media.resumeAllSounds();
+    expect(sound.resume).toHaveBeenCalledOnce();
+    expect(sound.playbacks[0].currentTime).toBe(42);
+    expect(mockClient.media.paused).toBe(false);
+    expect(session.playbackState).toBe('playing');
+  });
+
+  it('keeps incoming sounds and repeated Play requests silent until explicitly resumed', async () => {
+    await mockClient.media.pauseAllSounds();
+    const sound = createMockMusicSound(mockClient.media.mediaUrl({ name: 'theme.ogg', type: 'music' }));
+    mockCreateSound.mockResolvedValue(sound);
+    await playMusic(handler, {});
+    await playMusic(handler, {});
+    expect(sound.playbacks[0].play).not.toHaveBeenCalled();
+    expect(sound.preplay).toHaveBeenCalledOnce();
+    await mockClient.media.resumeAllSounds();
+    expect(sound.playbacks[0].play).toHaveBeenCalledOnce();
+  });
+
+  it('does not restart stopped sounds or independently paused music on resume', async () => {
+    const sound = createMockMusicSound('proxy/theme.ogg');
+    mockCreateSound.mockResolvedValue(sound);
+    await playMusic(handler, {});
+    handlers.pause?.({ action: 'pause' });
+    await mockClient.media.pauseAllSounds();
+    await mockClient.media.resumeAllSounds();
+    expect(sound.resume).not.toHaveBeenCalled();
+    handlers.play?.({ action: 'play' });
+    await mockClient.media.pauseAllSounds();
+    mockClient.media.stopAllSounds();
+    await mockClient.media.resumeAllSounds();
+    expect(sound.resume).toHaveBeenCalledOnce();
+    expect(sound.cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('parks segment finish timers while paused and preserves remaining loop passes', async () => {
+    vi.useFakeTimers();
+    try {
+      const sound = createMockMusicSound('proxy/theme.ogg');
+      mockCreateSound.mockResolvedValue(sound);
+      await playMusic(handler, { start: 1000, finish: 3000, loopStart: 1000, loops: 2 });
+      await vi.advanceTimersByTimeAsync(2500); // First pass finished; second has 1500 ms left.
+      await mockClient.media.pauseAllSounds();
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(sound.cleanup).not.toHaveBeenCalled();
+      await mockClient.media.resumeAllSounds();
+      await vi.advanceTimersByTimeAsync(1499);
+      expect(sound.cleanup).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sound.cleanup).toHaveBeenCalledOnce();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('keeps paused sounds available when resuming the audio context fails', async () => {
+    const sound = createMockMusicSound('proxy/theme.ogg');
+    mockCreateSound.mockResolvedValue(sound);
+    await playMusic(handler, {});
+    await mockClient.media.pauseAllSounds();
+    vi.mocked(mockClient.media.cacophony.resume).mockRejectedValueOnce(new Error('Audio unavailable'));
+    await expect(mockClient.media.resumeAllSounds()).rejects.toThrow('Audio unavailable');
+    expect(mockClient.media.paused).toBe(true);
+    expect(sound.resume).not.toHaveBeenCalled();
+    await mockClient.media.resumeAllSounds();
+    expect(sound.resume).toHaveBeenCalledOnce();
   });
 
   it('seeks the track from the OS scrubber', async () => {

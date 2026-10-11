@@ -692,6 +692,14 @@ An MCP message consists of three parts: the name of the message, the authenticat
   stopAllSounds() {
     this.media.stopAllSounds();
   }
+
+  pauseAllSounds(): Promise<void> {
+    return this.media.pauseAllSounds();
+  }
+
+  resumeAllSounds(): Promise<void> {
+    return this.media.resumeAllSounds();
+  }
 }
 
 function connectionErrorFromEvent(error: Event): Error {
