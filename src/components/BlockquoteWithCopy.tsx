@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import BlockquoteCopyButton from './BlockquoteCopyButton';
 
 interface BlockquoteWithCopyProps {
@@ -11,12 +11,6 @@ const BlockquoteWithCopy: React.FC<BlockquoteWithCopyProps> = ({
   contentType
 }) => {
   const blockquoteRef = useRef<HTMLQuoteElement>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    // Ensure component is mounted before accessing ref
-    setMounted(true);
-  }, []);
 
   return (
     <div className="blockquote-with-copy" style={{ position: 'relative' }}>
@@ -27,9 +21,9 @@ const BlockquoteWithCopy: React.FC<BlockquoteWithCopyProps> = ({
       >
         {typeof children !== 'string' ? children : undefined}
       </blockquote>
-      {mounted && blockquoteRef.current && (
+      {(
         <BlockquoteCopyButton
-          blockquoteElement={blockquoteRef.current}
+          getBlockquoteElement={() => blockquoteRef.current}
           contentType={contentType}
         />
       )}
