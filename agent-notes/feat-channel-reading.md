@@ -6,7 +6,7 @@ Q, 2026-10-10: the server tells the client which channels exist, and the player 
 
 ## State (2026-10-11)
 
-Built on `origin/master` `e0155436`, committed on this branch, not pushed, no PR. `tsc --noEmit` clean; `vitest run` 137 files pass (2086 tests).
+Built on `origin/master` `e0155436`, pushed; PR MongooseMoo/react-client#174 (opened 2026-10-11, Q's go-ahead). `tsc --noEmit` clean; `vitest run` 137 files pass (2086 tests).
 
 Tried in Chrome against the live server on 2026-10-11 (`vite` on 127.0.0.1:5199, logged in as a guest, `speechSynthesis.speak` replaced by a recorder so nothing sounded):
 
@@ -43,4 +43,4 @@ For a sender the server does not bracket with `Start`/`End`, a channel with its 
 ## Next step
 
 1. Listen to it with a screen reader: the table's row and column headers, and the Alt+Shift+R announcement.
-2. Push and open the PR when Q says.
+2. After #174 merges: remove this worktree and the branch.
