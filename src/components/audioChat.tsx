@@ -125,6 +125,7 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
   const removeToken = useLiveKitStore((state) => state.removeToken);
   const [status, setStatus] = useState('');
   const [failedRooms, setFailedRooms] = useState<Set<string>>(() => new Set());
+  const failedRoomRefs = useRef(new Set<string>());
   const [attempts, setAttempts] = useState<Record<string, number>>({});
   const panel = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
@@ -151,10 +152,12 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
           serverUrl={serverUrl}
           connect={true}
           onConnected={() => {
+            failedRoomRefs.current.delete(token);
             setFailedRooms(previous => { const next = new Set(previous); next.delete(token); return next; });
             report(rooms.length > 1 ? `Voice chat ${index + 1} connected.` : 'Voice chat connected.');
           }}
           onError={() => {
+            failedRoomRefs.current.add(token);
             setFailedRooms(previous => new Set(previous).add(token));
             report(rooms.length > 1 ? `Voice chat ${index + 1} could not connect. Try again.` : 'Voice chat could not connect. Try again.');
           }}
@@ -163,20 +166,32 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
             else microphoneFailure();
           }}
           onDisconnected={() => {
+            // Connection failure can emit both events in one turn. Retain its recovery actions.
+            if (failedRoomRefs.current.has(token)) return;
             report('Voice chat disconnected.');
             removeToken(token);
           }}
         >
           <SpatialLiveKitAudio client={client} chain={chain} send={send} />
-          <CacophonyAudioConference onDeviceError={microphoneFailure} />
+          <CacophonyAudioConference onDeviceError={() => {
+            if (rooms.length > 1) report(`Voice chat ${index + 1}: Microphone unavailable. Check microphone access, then try the microphone button again.`);
+            else microphoneFailure();
+          }} />
         </LiveKitRoom>
-        {failedRooms.has(token) && <button type="button" onClick={() => {
+        {failedRooms.has(token) && <><button type="button" onClick={() => {
+          failedRoomRefs.current.delete(token);
           setFailedRooms(previous => { const next = new Set(previous); next.delete(token); return next; });
           setAttempts(previous => ({ ...previous, [token]: (previous[token] ?? 0) + 1 }));
           report('Retrying voice chat.');
         }}>
           {rooms.length > 1 ? `Retry voice chat ${index + 1}` : 'Retry voice chat'}
-        </button>}
+        </button>
+        <button type="button" onClick={() => {
+          failedRoomRefs.current.delete(token);
+          setFailedRooms(previous => { const next = new Set(previous); next.delete(token); return next; });
+          removeToken(token);
+          report('Voice chat disconnected.');
+        }}>{rooms.length > 1 ? `Dismiss voice chat ${index + 1}` : 'Dismiss voice chat'}</button></>}
         </section>
       ))}
       <p ref={statusRef} tabIndex={-1} className="audio-status">{status}</p>
