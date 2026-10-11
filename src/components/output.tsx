@@ -153,7 +153,7 @@ interface State {
   sidebarVisible: boolean;
   newLinesCount: number; // Added to track the count of new lines
   localEchoActive: boolean; // To store the current local echo preference
-  focusedLineId: number | null; // Index of currently focused line for keyboard navigation
+  focusedLineId: number | null; // Stable entry ID for keyboard review
   historyRevealed: boolean; // Expose beyond-cap history to the accessibility tree
   actionFeedback: string;
 }
@@ -420,7 +420,7 @@ componentDidUpdate(
     }
     this.recoverOutputFocus();
     const frozen = this.frozenRef.current;
-    frozen?.querySelectorAll('.focused-line').forEach(line => line.classList.remove('focused-line'));
+    frozen?.querySelectorAll('.focused-line').forEach(line => { line.classList.remove('focused-line'); });
     if (this.state.focusedLineId !== null) {
       frozen?.querySelector(`[data-line-id="${this.state.focusedLineId}"]`)?.classList.add('focused-line');
     }
@@ -609,7 +609,7 @@ componentDidUpdate(
 
   sanitizeHtml(html: string): string {
     const doc = new DOMParser().parseFromString(html, "text/html");
-    doc.querySelectorAll('.blockquote-copy-button, .copy-feedback').forEach(node => node.remove());
+    doc.querySelectorAll('.blockquote-copy-button, .copy-feedback').forEach(node => { node.remove(); });
     return doc.body.textContent || "";
   }
 
@@ -797,7 +797,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
             return stripAnsi(line.sourceContent).replace(/@\[exit:[a-zA-Z]+\]([a-zA-Z]+)@\[\/\]/g, '$1');
           }
           const doc = new DOMParser().parseFromString(this.renderLineMarkup(line), 'text/html');
-          doc.querySelectorAll('.blockquote-copy-button, .copy-feedback').forEach(node => node.remove());
+          doc.querySelectorAll('.blockquote-copy-button, .copy-feedback').forEach(node => { node.remove(); });
           const read = (node: Node): string => {
             if (node.nodeName === 'BR') return '\n';
             if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';

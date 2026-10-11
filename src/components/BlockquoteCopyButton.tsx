@@ -4,7 +4,7 @@ import { announce } from '@react-aria/live-announcer';
 export async function copyBlockquoteContent(blockquoteElement: HTMLElement, contentType?: string): Promise<void> {
   // Clone the blockquote to avoid modifying the live DOM
   const clonedBlockquote = blockquoteElement.cloneNode(true) as HTMLElement;
-  
+
   // Remove any existing copy buttons from the clone
   const buttonsInClone = clonedBlockquote.querySelectorAll('.blockquote-copy-button');
   buttonsInClone.forEach(button => { button.remove(); });
@@ -27,7 +27,7 @@ export async function copyBlockquoteContent(blockquoteElement: HTMLElement, cont
   } else {
   await navigator.clipboard.writeText((clonedBlockquote.textContent || '').trim());
   }
-  
+
 }
 
 interface BlockquoteCopyButtonProps {

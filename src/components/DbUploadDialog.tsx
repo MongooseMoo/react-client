@@ -70,4 +70,3 @@ export default function DbUploadDialog({ onDbSelected }: DbUploadDialogProps) {
         </section>
     );
 }
-

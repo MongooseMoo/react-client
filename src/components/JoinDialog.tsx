@@ -53,4 +53,3 @@ export default function JoinDialog({ onJoin, initialRoomId = '', connecting = fa
         </section>
     );
 }
-

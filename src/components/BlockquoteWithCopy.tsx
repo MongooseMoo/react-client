@@ -14,13 +14,13 @@ const BlockquoteWithCopy: React.FC<BlockquoteWithCopyProps> = ({
 
   return (
     <div className="blockquote-with-copy" style={{ position: 'relative' }}>
-      <blockquote
+      {typeof children === 'string' ? <blockquote
         ref={blockquoteRef}
         data-content-type={contentType}
-        dangerouslySetInnerHTML={typeof children === 'string' ? { __html: children } : undefined}
-      >
-        {typeof children !== 'string' ? children : undefined}
-      </blockquote>
+        dangerouslySetInnerHTML={{ __html: children }}
+      /> : <blockquote ref={blockquoteRef} data-content-type={contentType}>
+        {children}
+      </blockquote>}
       {(
         <BlockquoteCopyButton
           getBlockquoteElement={() => blockquoteRef.current}

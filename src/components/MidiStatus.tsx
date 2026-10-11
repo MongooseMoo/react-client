@@ -469,8 +469,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                       marginLeft: "10px", 
                       padding: "2px 8px", 
                       fontSize: "0.8em", 
-                      backgroundColor: "var(--color-info)", 
-                      color: "var(--color-text-button)", 
+                      backgroundColor: "var(--color-info)",
+                      color: "var(--color-text-button)",
                       border: "none", 
                       borderRadius: "2px",
                       cursor: "pointer"
@@ -540,8 +540,8 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                       marginLeft: "10px", 
                       padding: "2px 8px", 
                       fontSize: "0.8em", 
-                      backgroundColor: "var(--color-success)", 
-                      color: "var(--color-text-button)", 
+                      backgroundColor: "var(--color-success)",
+                      color: "var(--color-text-button)",
                       border: "none", 
                       borderRadius: "2px",
                       cursor: "pointer"
