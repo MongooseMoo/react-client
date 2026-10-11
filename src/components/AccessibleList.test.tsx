@@ -9,6 +9,14 @@ const initial = [{ id: 'a', name: 'Apple' }, { id: 'b', name: 'Apricot' }, { id:
 const renderItem = (item: (typeof initial)[number]) => item.name;
 
 describe('AccessibleList task selection', () => {
+  it('selects the clicked option when first entering the list with a pointer', () => {
+    const selected = vi.fn();
+    render(<AccessibleList items={initial} renderItem={renderItem} listId="items" labelledBy="label" onSelectedIndexChange={selected} />);
+    fireEvent.click(screen.getByRole('option', { name: 'Banana' }));
+    expect(screen.getByRole('option', { name: 'Banana' })).toHaveAttribute('aria-selected', 'true');
+    expect(selected).toHaveBeenLastCalledWith(2);
+  });
+
   it('retains identity during reorder and selects the sole survivor on replacement', () => {
     const selected = vi.fn();
     const { rerender } = render(<AccessibleList items={initial.slice(0, 2)} renderItem={renderItem} listId="items" labelledBy="label" onSelectedIndexChange={selected} />);
