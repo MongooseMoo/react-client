@@ -417,6 +417,11 @@ componentDidUpdate(
       console.error("Failed to freeze output overflow:", error);
     }
     this.recoverOutputFocus();
+    const frozen = this.frozenRef.current;
+    frozen?.querySelectorAll('.focused-line').forEach(line => line.classList.remove('focused-line'));
+    if (this.state.focusedLineId !== null) {
+      frozen?.querySelector(`[data-line-id="${this.state.focusedLineId}"]`)?.classList.add('focused-line');
+    }
 
     // Track new lines for the "N new messages" notification
     const newLineCount = this.totalLinesAdded - this.prevTotalLinesAdded;
@@ -809,7 +814,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       const focusedElement = outputDiv.querySelector(`[data-line-id="${this.state.focusedLineId}"]`);
       if (focusedElement) {
         focusedElement.scrollIntoView({
-          behavior: 'smooth',
+          behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
           block: 'nearest',
         });
       }
