@@ -763,7 +763,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           <p>• Use manual controls above to test server communication</p>
           <p>• <strong>Duration Mode:</strong> Send Note On with auto Note Off after specified time</p>
           <p>• <strong>Manual Mode:</strong> Send explicit Note On/Off messages</p>
-          <p>• Press Escape to stop all sounds and MIDI notes</p>
+          <p>• Escape pauses client audio. Use Resume sounds in the toolbar to continue.</p>
           <p>• MIDI notes: 0-127 (60 = Middle C, 69 = A4-440Hz)</p>
         </div>
       </details>
