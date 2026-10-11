@@ -12,6 +12,7 @@
   height: 100vh; /* Fill the viewport height */
   background-color: var(--color-bg-deep);
   color: var(--color-text);
+  min-width: 0;
 }
 
 /* Editor Toolbar Styles */
@@ -27,6 +28,8 @@
 
 .editor-toolbar form {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
   gap: 0.5rem; /* Space between buttons */
 }
 
@@ -40,6 +43,7 @@
   display: inline-flex; /* Align icon and text */
   align-items: center;
   gap: 0.4rem; /* Space between icon and text */
+  font: inherit;
 }
 
 .editor-toolbar button:hover {
@@ -72,6 +76,8 @@
 /* Editor Status Bar Styles */
 .editor-statusbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem 1rem;
@@ -84,6 +90,8 @@
 
 .editor-statusbar span {
   margin: 0 0.5rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .editor-statusbar-button {
@@ -113,6 +121,8 @@
 
 .editor-problems-filters {
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
   gap: 0;
   padding: 0.5rem 0.75rem 0;
 }
@@ -276,4 +286,30 @@
   margin: 0;
   padding: 0.75rem;
   color: var(--color-text-tertiary);
+}
+
+@media (max-width: 48rem) {
+  .editor-problem-button {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.25rem 0.5rem;
+  }
+
+  .editor-problem-code,
+  .editor-problem-message,
+  .editor-problem-severity,
+  .editor-problem-location {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
+
+  .editor-problem-location,
+  .editor-problem-message {
+    grid-column: 1 / -1;
+  }
+
+  .editor-problems-filter {
+    border-right-width: 1px;
+  }
 }
