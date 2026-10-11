@@ -89,10 +89,10 @@ function lineElements(line: SavedOutputLine, onExitClick: (exit: string) => void
       ];
 
     case 'error':
-      return [<h2> Error: {line.sourceContent}</h2>];
+      return [<span>Error: {line.sourceContent}</span>];
 
     case 'system':
-      return [<h2> {line.sourceContent}</h2>];
+      return [<span>{line.sourceContent}</span>];
 
     case 'plain':
       return [<span>{line.sourceContent}</span>];
