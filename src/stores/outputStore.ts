@@ -4,20 +4,20 @@ import { create } from "zustand";
 // The output removes it once the socket is back, because the server then
 // replays the authoritative copy.
 export type OutputEntry =
-  | { id: number; type: "message"; message: string; provisional?: true }
+  | { id: number; type: "message"; message: string; provisional?: true; browserSpeechOwned?: boolean }
   | { id: number; type: "html"; html: string }
   | { id: number; type: "error"; error: Error }
   | { id: number; type: "command"; command: string };
 
 type NewOutputEntry =
-  | { type: "message"; message: string; provisional?: true }
+  | { type: "message"; message: string; provisional?: true; browserSpeechOwned?: boolean }
   | { type: "html"; html: string }
   | { type: "error"; error: Error }
   | { type: "command"; command: string };
 
 interface OutputState {
   entries: OutputEntry[];
-  addMessage: (message: string, provisional?: boolean) => void;
+  addMessage: (message: string, provisional?: boolean, browserSpeechOwned?: boolean) => void;
   addHtml: (html: string) => void;
   addError: (error: Error) => void;
   addCommand: (command: string) => void;
@@ -37,10 +37,13 @@ let flushScheduled = false;
 
 export const useOutputStore = create<OutputState>((set) => ({
   entries: [],
-  addMessage: (message, provisional = false) =>
+  addMessage: (message, provisional = false, browserSpeechOwned = false) =>
     addOutputEntry(
       set,
-      provisional ? { type: "message", message, provisional } : { type: "message", message },
+      { type: "message", message,
+        ...(provisional ? { provisional: true as const } : {}),
+        ...(browserSpeechOwned ? { browserSpeechOwned: true } : {}),
+      },
     ),
   addHtml: (html) => addOutputEntry(set, { type: "html", html }),
   addError: (error) => addOutputEntry(set, { type: "error", error }),

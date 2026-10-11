@@ -118,6 +118,28 @@ describe("Output keyboard handling", () => {
     expect(modified.preventDefault).not.toHaveBeenCalled();
   });
 
+  it('gives automatic ANSI speech one owner while retaining manual review and errors', () => {
+    const output = new Output({ client: {} as MudClient });
+    output.handleMessage('spoken by browser TTS', false, true);
+    expect(mockAnnounce).not.toHaveBeenCalled();
+    output.reviewRecentOutputLine(1);
+    expect(mockAnnounce).toHaveBeenCalledWith('spoken by browser TTS', 'polite');
+    output.addError(new Error('connection lost'));
+    expect(mockAnnounce.mock.calls.at(-1)?.[0].trim()).toBe('Error: connection lost');
+  });
+
+  it('retains the emit-time speech owner through asynchronous output delivery', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    render(<Output client={{ willSpeakIncomingMessages: () => false } as MudClient} />);
+    mockAnnounce.mockClear();
+    useOutputStore.getState().addMessage('already read aloud', false, true);
+    await act(async () => { await Promise.resolve(); });
+    expect(mockAnnounce).not.toHaveBeenCalled();
+    expect(screen.getByText('already read aloud')).toBeTruthy();
+    useOutputStore.getState().reset();
+  });
+
   it('provides a native unread action and keeps focus after activation', () => {
     let output: Output | null = null;
     const { container } = render(<Output ref={(value) => { output = value; }} client={{} as MudClient} />);
