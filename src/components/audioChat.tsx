@@ -1,5 +1,6 @@
 import type React from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { announce } from '@react-aria/live-announcer';
 import {
   BarVisualizer,
   ConnectionQualityIndicator,
@@ -17,6 +18,7 @@ import type { VoiceRoute } from '../audio/MediaVoices';
 import type MudClient from '../client';
 import { useLiveKitStore } from '../stores/liveKitStore';
 import { useSpatialStore } from '../stores/spatialStore';
+import { useFocusRefuge } from './FileTransfer/useFocusRefuge';
 
 const serverUrl = 'wss://mongoose-67t79p35.livekit.cloud';
 
@@ -90,7 +92,7 @@ const SpatialLiveKitAudio: React.FC<AudioChatProps & VoiceRoute> = ({ client, ch
   return null;
 };
 
-const CacophonyAudioConference: React.FC = () => {
+const CacophonyAudioConference: React.FC<{ onDeviceError: () => void }> = ({ onDeviceError }) => {
   const audioTracks = useTracks([Track.Source.Microphone]);
 
   return (
@@ -110,6 +112,7 @@ const CacophonyAudioConference: React.FC = () => {
           </TrackLoop>
         </div>
         <ControlBar
+          onDeviceError={onDeviceError}
           controls={{ microphone: true, screenShare: false, camera: false, chat: false }}
         />
       </div>
@@ -120,30 +123,63 @@ const CacophonyAudioConference: React.FC = () => {
 const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
   const rooms = useLiveKitStore((state) => state.rooms);
   const removeToken = useLiveKitStore((state) => state.removeToken);
-
-  if (!rooms.length) {
-    return null;
-  }
+  const [status, setStatus] = useState('');
+  const [failedRooms, setFailedRooms] = useState<Set<string>>(() => new Set());
+  const [attempts, setAttempts] = useState<Record<string, number>>({});
+  const panel = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLParagraphElement>(null);
+  useFocusRefuge(panel, statusRef);
+  const lastReport = useRef('');
+  const report = (message: string) => {
+    if (lastReport.current === message) return;
+    lastReport.current = message;
+    setStatus(message);
+    // The call remains mounted while its tab is hidden; a local live region would be silent.
+    announce(message, 'polite');
+  };
+  const microphoneFailure = () => report('Microphone unavailable. Check microphone access, then try the microphone button again.');
 
   return (
-    <div data-lk-theme="default">
-      {rooms.map(({ token, chain, send }) => (
+    <div ref={panel} data-lk-theme="default">
+      {rooms.map(({ token, chain, send }, index) => (
+        <section key={token} aria-label={rooms.length > 1 ? `Voice chat ${index + 1}` : 'Voice chat'}>
         <LiveKitRoom
-          key={token}
+          key={`${token}-${attempts[token] ?? 0}`}
           video={false}
           audio={true}
           token={token}
           serverUrl={serverUrl}
           connect={true}
+          onConnected={() => {
+            setFailedRooms(previous => { const next = new Set(previous); next.delete(token); return next; });
+            report(rooms.length > 1 ? `Voice chat ${index + 1} connected.` : 'Voice chat connected.');
+          }}
+          onError={() => {
+            setFailedRooms(previous => new Set(previous).add(token));
+            report(rooms.length > 1 ? `Voice chat ${index + 1} could not connect. Try again.` : 'Voice chat could not connect. Try again.');
+          }}
+          onMediaDeviceFailure={() => {
+            if (rooms.length > 1) report(`Voice chat ${index + 1}: Microphone unavailable. Check microphone access, then try the microphone button again.`);
+            else microphoneFailure();
+          }}
           onDisconnected={() => {
+            report('Voice chat disconnected.');
             removeToken(token);
           }}
         >
           <SpatialLiveKitAudio client={client} chain={chain} send={send} />
-          <CacophonyAudioConference />
+          <CacophonyAudioConference onDeviceError={microphoneFailure} />
         </LiveKitRoom>
+        {failedRooms.has(token) && <button type="button" onClick={() => {
+          setFailedRooms(previous => { const next = new Set(previous); next.delete(token); return next; });
+          setAttempts(previous => ({ ...previous, [token]: (previous[token] ?? 0) + 1 }));
+          report('Retrying voice chat.');
+        }}>
+          {rooms.length > 1 ? `Retry voice chat ${index + 1}` : 'Retry voice chat'}
+        </button>}
+        </section>
       ))}
-      <div className="audio-status" aria-live="polite"></div>
+      <p ref={statusRef} tabIndex={-1} className="audio-status">{status}</p>
     </div>
   );
 };

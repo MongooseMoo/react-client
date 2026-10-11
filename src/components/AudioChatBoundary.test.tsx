@@ -20,7 +20,7 @@ vi.mock('./audioChat', () => {
   };
 });
 
-it('loads on the first token, keeps hidden calls mounted, and unmounts when tokens are cleared', async () => {
+it('loads on the first token and keeps the status owner mounted after tokens clear', async () => {
   useLiveKitStore.getState().reset();
   const client = {} as MudClient;
   const view = render(<div hidden><AudioChatBoundary client={client} /></div>);
@@ -39,6 +39,8 @@ it('loads on the first token, keeps hidden calls mounted, and unmounts when toke
   expect(chat.mounted).toHaveBeenCalledOnce();
 
   act(() => useLiveKitStore.getState().reset());
+  expect(chat.disconnected).not.toHaveBeenCalled();
+  expect(screen.queryByText('Active call')).toBeInTheDocument();
+  view.unmount();
   await waitFor(() => expect(chat.disconnected).toHaveBeenCalledOnce());
-  expect(screen.queryByText('Active call')).not.toBeInTheDocument();
 });
