@@ -1,4 +1,5 @@
-import React, { useMemo } from "react";
+import type React from "react";
+import { useMemo } from "react";
 import {
   CHANNEL_READ_MODES,
   CHANNEL_READ_MODE_LABELS,
