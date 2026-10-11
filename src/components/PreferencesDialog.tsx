@@ -4,6 +4,11 @@ import "./PreferencesDialog.css";
 
 const Preferences = lazy(() => import('./preferences'));
 
+function ReadyPreferences({ onReady }: { onReady: () => void }) {
+  useEffect(onReady, [onReady]);
+  return <Preferences />;
+}
+
 export type PreferencesDialogRef = {
   open: () => void;
   close: () => void;
@@ -12,9 +17,16 @@ export type PreferencesDialogRef = {
 const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const initialFocusPending = useRef(false);
+  const interacted = useRef(false);
+  const [contentReady, setContentReady] = useState(false);
+  const markReady = React.useCallback(() => setContentReady(true), []);
 
   React.useImperativeHandle(ref, () => ({
     open() {
+      initialFocusPending.current = true;
+      interacted.current = false;
+      setContentReady(false);
       setIsOpen(true);
     },
     close() {
@@ -41,6 +53,15 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (isOpen && contentReady && initialFocusPending.current) {
+      initialFocusPending.current = false;
+      if (!interacted.current) {
+        dialogRef.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus();
+      }
+    }
+  }, [isOpen, contentReady]);
+
   // Sync React state when the dialog closes natively (e.g. Escape), so isOpen
   // stays in step with the dialog's real open state.
   useEffect(() => {
@@ -61,10 +82,11 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
     <dialog
       className="preferences-dialog"
       ref={dialogRef}
-      tabIndex={-1}
       aria-labelledby="preferences-dialog-title"
+      onKeyDownCapture={() => { interacted.current = true; }}
+      onPointerDownCapture={() => { interacted.current = true; }}
     >
-      <h2 id="preferences-dialog-title" style={{
+      <h2 id="preferences-dialog-title" tabIndex={-1} autoFocus style={{
         color: "white",
         textAlign: "center",
         fontSize: "1.5em",
@@ -75,7 +97,7 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
         backgroundColor: "black"
       }
       }  >Preferences</h2>
-      {isOpen && <Suspense fallback={<p role="status">Loading preferences…</p>}><Preferences /></Suspense>}
+      {isOpen && <Suspense fallback={<p role="status">Loading preferences…</p>}><ReadyPreferences onReady={markReady} /></Suspense>}
       <button type="button" onClick={() => setIsOpen(false)}>Close</button>
       <br />
       <span id="commit-hash">
