@@ -36,7 +36,9 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
     if (isOpen && contentReady && initialFocusPending.current) {
       initialFocusPending.current = false;
       if (!interacted.current) {
-        dialogRef.current?.querySelector<HTMLElement>('[role="listbox"], #autolog-refresh')?.focus();
+        const dialog = dialogRef.current;
+        const destination = dialog?.querySelector<HTMLElement>('[role="listbox"]') ?? dialog?.querySelector<HTMLElement>('#autolog-refresh');
+        destination?.focus();
       }
     }
   }, [isOpen, contentReady]);
