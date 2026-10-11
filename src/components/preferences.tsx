@@ -459,8 +459,33 @@ const KeyboardTab: React.FC = () => {
         </select>
       </label>
       <p id="keyboard-nav-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "0.5em" }}>
-        Arrow keys always work in addition to the selected scheme.
+        Alt+arrow keys always work in addition to the selected scheme.
       </p>
+      <details>
+        <summary>Keyboard shortcuts</summary>
+        <dl>
+          <dt>Command</dt>
+          <dd>Enter sends; Shift+Enter adds a line. Tab completes a matching command or name; with no match or after a space, Tab leaves. Shift+Tab always leaves without changing your draft. Up/Down recalls history for a single-line draft.</dd>
+          <dt>Recent output</dt>
+          <dd>Ctrl+1 through Ctrl+0 reviews the newest ten lines (0 is tenth). Repeat the same shortcut within half a second to copy the line.</dd>
+          <dt>Buffers</dt>
+          <dd>Alt+Left/Right changes buffer; Alt+Up/Down reviews messages. The selected letter scheme works with Alt too. Alt+PageUp/PageDown moves ten messages; Alt+Home/End moves to the first/last message.</dd>
+          <dt>Reviewed message</dt>
+          <dd>Alt+Space repeats; Alt+Enter opens its link or offers a link choice; Alt+Shift+Space copies. Alt+Shift+1 through Alt+Shift+0 selects a numbered buffer. Alt+Shift+T toggles timestamps; Alt+Shift+Delete deletes the current buffer.</dd>
+          <dt>Sounds</dt>
+          <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback.</dd>
+        </dl>
+        <p>Ctrl+Shift+number opens and focuses a sidebar destination. Numbers stay fixed when optional tabs appear; unavailable destinations do nothing.</p>
+        <table>
+          <caption>Sidebar destinations</caption>
+          <thead><tr><th scope="col">Number</th><th scope="col">Destination</th></tr></thead>
+          <tbody>
+            {['Room', 'Inventory', 'Users', 'Server', 'MIDI', 'Haptics', 'Files', 'Audio', 'Audio diagnostics'].map((label, index) =>
+              <tr key={label}><td>{index + 1}</td><td>{label}</td></tr>)}
+          </tbody>
+        </table>
+        <p>Browser access keys: L Save log, C Copy log, E Clear log, P Preferences, M Mute, V Volume, U Sidebar. Selected player: G Page, S Say to, K Look, F Follow. The activation modifier depends on your browser and operating system.</p>
+      </details>
     </div>
   );
 };
