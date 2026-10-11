@@ -615,14 +615,17 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string, provisional: boolean = false) {
-    const autoreadMode = usePreferences.getState().speech.autoreadMode;
-    if (autoreadMode === AutoreadMode.All) {
-      this.speak(dataString);
-    }
-    if (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()) {
+    if (this.willSpeakIncomingMessages()) {
       this.speak(dataString);
     }
     useOutputStore.getState().addMessage(dataString, provisional);
+  }
+
+  willSpeakIncomingMessages(): boolean {
+    if (typeof window.speechSynthesis?.speak !== 'function' || typeof SpeechSynthesisUtterance !== 'function') return false;
+    const { autoreadMode, volume } = usePreferences.getState().speech;
+    return volume > 0 && (autoreadMode === AutoreadMode.All ||
+      (autoreadMode === AutoreadMode.Unfocused && !document.hasFocus()));
   }
 
   shutdown() {
@@ -651,7 +654,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
     }
   }
 
-  /** Whether the notification was shown: it is not without the user's permission. */
+  /** Whether a desktop notification was requested, not proof of delivery or speech. */
   sendNotification(title: string, body: string): boolean {
     if (!("Notification" in window)) {
       console.log("This browser does not support desktop notification");
@@ -683,7 +686,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   cancelSpeech() {
-    speechSynthesis.cancel();
+    window.speechSynthesis?.cancel();
   }
 
   stopAllSounds() {

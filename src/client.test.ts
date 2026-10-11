@@ -278,6 +278,28 @@ describe('MudClient lifecycle cleanup', () => {
     connectedClients.clear();
   });
 
+  it('selects browser speech only when it is available and autoread applies', () => {
+    const client = new MudClient('example.test', 443);
+    const hasFocus = vi.spyOn(document, 'hasFocus');
+    vi.stubGlobal('speechSynthesis', { speak: vi.fn(), getVoices: () => [] });
+    vi.stubGlobal('SpeechSynthesisUtterance', class {});
+    mockPreferencesState.speech.autoreadMode = 'off';
+    expect(client.willSpeakIncomingMessages()).toBe(false);
+    mockPreferencesState.speech.autoreadMode = 'all';
+    expect(client.willSpeakIncomingMessages()).toBe(true);
+    mockPreferencesState.speech.autoreadMode = 'unfocused';
+    hasFocus.mockReturnValue(true);
+    expect(client.willSpeakIncomingMessages()).toBe(false);
+    hasFocus.mockReturnValue(false);
+    expect(client.willSpeakIncomingMessages()).toBe(true);
+    mockPreferencesState.speech.autoreadMode = 'off';
+    vi.stubGlobal('speechSynthesis', undefined);
+    mockPreferencesState.speech.autoreadMode = 'all';
+    expect(client.willSpeakIncomingMessages()).toBe(false);
+    mockPreferencesState.speech.autoreadMode = 'off';
+    client.shutdown();
+  });
+
   it('shutdown removes window focus listeners and preferences subscription', () => {
     const addListener = vi.spyOn(window, 'addEventListener');
     const removeListener = vi.spyOn(window, 'removeEventListener');
