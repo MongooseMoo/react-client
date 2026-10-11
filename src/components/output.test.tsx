@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type React from "react";
 
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type MudClient from "../client";
 import { useConnectionStore } from "../stores/connectionStore";
 import { useOutputStore } from "../stores/outputStore";
@@ -326,6 +326,7 @@ describe("Output accessibility-tree exposure cap", () => {
     const frozenDiv = frozen(output);
     expect(frozenDiv.children.length).toBe(total - Output.LIVE_WINDOW_SIZE);
     expect(hiddenCount(output)).toBe(50);
+    expect(frozenDiv.children[0].hasAttribute('inert')).toBe(true);
     // The oldest lines are hidden; the most recent frozen lines are exposed.
     expect(frozenDiv.children[0].getAttribute("aria-hidden")).toBe("true");
     expect(frozenDiv.children[49].getAttribute("aria-hidden")).toBe("true");

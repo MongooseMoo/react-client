@@ -184,6 +184,15 @@ class Output extends React.Component<Props, State> {
   private previousConnected = useConnectionStore.getState().connected;
   private previousSessionReady = useConnectionStore.getState().sessionReady;
   private lastOutputEntryId = 0;
+  private lastFocusedOutputElement: HTMLElement | null = null;
+
+  private recoverOutputFocus = () => {
+    const held = this.lastFocusedOutputElement;
+    if (!held || (held.isConnected && !held.closest('[inert]'))) return;
+    this.lastFocusedOutputElement = null;
+    const active = document.activeElement;
+    if (active === document.body || active === held) this.outputRef.current?.focus();
+  };
 
   // Full output history (NOT in React state — avoids O(N) reconciliation)
   private allLines: OutputLine[] = [];
@@ -406,6 +415,7 @@ componentDidUpdate(
     } catch (error) {
       console.error("Failed to freeze output overflow:", error);
     }
+    this.recoverOutputFocus();
 
     // Track new lines for the "N new messages" notification
     const newLineCount = this.totalLinesAdded - this.prevTotalLinesAdded;
@@ -482,12 +492,15 @@ componentDidUpdate(
       : Math.max(0, frozenDiv.children.length - Output.A11Y_EXPOSED_FROZEN_LINES);
     while (this.frozenHiddenCount < shouldBeHidden) {
       frozenDiv.children[this.frozenHiddenCount].setAttribute('aria-hidden', 'true');
+      frozenDiv.children[this.frozenHiddenCount].setAttribute('inert', '');
       this.frozenHiddenCount++;
     }
     while (this.frozenHiddenCount > shouldBeHidden) {
       this.frozenHiddenCount--;
       frozenDiv.children[this.frozenHiddenCount].removeAttribute('aria-hidden');
+      frozenDiv.children[this.frozenHiddenCount].removeAttribute('inert');
     }
+    this.recoverOutputFocus();
   }
 
   /** Lines currently (or potentially) excluded from the accessibility tree. */
@@ -911,7 +924,8 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   /**
    * Handle focus on output area
    */
-  handleOutputFocus = () => {
+  handleOutputFocus = (event: React.FocusEvent<HTMLDivElement>) => {
+    this.lastFocusedOutputElement = event.target as HTMLElement;
     // If no line is focused, start at the last line
     if (this.state.focusedLineIndex === null) {
       const visibleOutput = this.state.liveOutput.filter(
@@ -927,7 +941,13 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   /**
    * Handle blur on output area
    */
-  handleOutputBlur = () => {
+  handleOutputBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    const left = event.target as HTMLElement;
+    queueMicrotask(() => {
+      if (this.lastFocusedOutputElement === left && left.isConnected && !left.closest('[inert]')) {
+        this.lastFocusedOutputElement = null;
+      }
+    });
     // Optionally clear focus indicator when tabbing away
     // this.setState({ focusedLineIndex: null });
   };
