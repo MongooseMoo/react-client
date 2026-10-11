@@ -26,6 +26,14 @@ interface AudioChatProps {
   client: MudClient;
 }
 
+interface RoomCallbacks {
+  label: string;
+  onConnected: () => void;
+  onError: () => void;
+  onMicrophoneError: () => void;
+  onDisconnected: () => void;
+}
+
 function liveKitRemoteMediaStreamTrack(track: unknown): MediaStreamTrack | null {
   if (
     track &&
@@ -131,6 +139,7 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
   const statusRef = useRef<HTMLParagraphElement>(null);
   useFocusRefuge(panel, statusRef);
   const lastReport = useRef('');
+  const roomCallbacks = useRef(new Map<string, RoomCallbacks>());
   const report = (message: string) => {
     if (lastReport.current === message) return;
     lastReport.current = message;
@@ -138,11 +147,54 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
     // The call remains mounted while its tab is hidden; a local live region would be silent.
     announce(message, 'polite');
   };
-  const microphoneFailure = () => report('Microphone unavailable. Check microphone access, then try the microphone button again.');
+  useEffect(() => {
+    const active = new Set(rooms.map(room => room.token));
+    for (const token of roomCallbacks.current.keys()) {
+      if (!active.has(token)) {
+        roomCallbacks.current.delete(token);
+        failedRoomRefs.current.delete(token);
+      }
+    }
+    setFailedRooms(previous => {
+      const next = new Set([...previous].filter(token => active.has(token)));
+      return next.size === previous.size ? previous : next;
+    });
+    setAttempts(previous => {
+      const entries = Object.entries(previous).filter(([token]) => active.has(token));
+      return entries.length === Object.keys(previous).length ? previous : Object.fromEntries(entries);
+    });
+  }, [rooms]);
 
   return (
     <div ref={panel} data-lk-theme="default">
-      {rooms.map(({ token, chain, send }, index) => (
+      {rooms.map(({ token, chain, send }, index) => {
+        let callbacks = roomCallbacks.current.get(token);
+        if (!callbacks) {
+          // LiveKit reconnects when onError changes. Keep callbacks stable through status updates.
+          const held: RoomCallbacks = {
+            label: 'Voice chat',
+            onConnected: () => {
+              failedRoomRefs.current.delete(token);
+              setFailedRooms(previous => { const next = new Set(previous); next.delete(token); return next; });
+              report(`${held.label} connected.`);
+            },
+            onError: () => {
+              failedRoomRefs.current.add(token);
+              setFailedRooms(previous => previous.has(token) ? previous : new Set(previous).add(token));
+              report(`${held.label} could not connect. Try again.`);
+            },
+            onMicrophoneError: () => report(`${held.label === 'Voice chat' ? '' : `${held.label}: `}Microphone unavailable. Check microphone access, then try the microphone button again.`),
+            onDisconnected: () => {
+              if (failedRoomRefs.current.has(token)) return;
+              report(`${held.label} disconnected.`);
+              removeToken(token);
+            },
+          };
+          callbacks = held;
+          roomCallbacks.current.set(token, held);
+        }
+        callbacks.label = rooms.length > 1 ? `Voice chat ${index + 1}` : 'Voice chat';
+        return (
         <section key={token} aria-label={rooms.length > 1 ? `Voice chat ${index + 1}` : 'Voice chat'}>
         <LiveKitRoom
           key={`${token}-${attempts[token] ?? 0}`}
@@ -151,32 +203,13 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
           token={token}
           serverUrl={serverUrl}
           connect={true}
-          onConnected={() => {
-            failedRoomRefs.current.delete(token);
-            setFailedRooms(previous => { const next = new Set(previous); next.delete(token); return next; });
-            report(rooms.length > 1 ? `Voice chat ${index + 1} connected.` : 'Voice chat connected.');
-          }}
-          onError={() => {
-            failedRoomRefs.current.add(token);
-            setFailedRooms(previous => new Set(previous).add(token));
-            report(rooms.length > 1 ? `Voice chat ${index + 1} could not connect. Try again.` : 'Voice chat could not connect. Try again.');
-          }}
-          onMediaDeviceFailure={() => {
-            if (rooms.length > 1) report(`Voice chat ${index + 1}: Microphone unavailable. Check microphone access, then try the microphone button again.`);
-            else microphoneFailure();
-          }}
-          onDisconnected={() => {
-            // Connection failure can emit both events in one turn. Retain its recovery actions.
-            if (failedRoomRefs.current.has(token)) return;
-            report('Voice chat disconnected.');
-            removeToken(token);
-          }}
+          onConnected={callbacks.onConnected}
+          onError={callbacks.onError}
+          onMediaDeviceFailure={callbacks.onMicrophoneError}
+          onDisconnected={callbacks.onDisconnected}
         >
           <SpatialLiveKitAudio client={client} chain={chain} send={send} />
-          <CacophonyAudioConference onDeviceError={() => {
-            if (rooms.length > 1) report(`Voice chat ${index + 1}: Microphone unavailable. Check microphone access, then try the microphone button again.`);
-            else microphoneFailure();
-          }} />
+          <CacophonyAudioConference onDeviceError={callbacks.onMicrophoneError} />
         </LiveKitRoom>
         {failedRooms.has(token) && <><button type="button" onClick={() => {
           failedRoomRefs.current.delete(token);
@@ -193,7 +226,7 @@ const AudioChat: React.FC<AudioChatProps> = ({ client }) => {
           report('Voice chat disconnected.');
         }}>{rooms.length > 1 ? `Dismiss voice chat ${index + 1}` : 'Dismiss voice chat'}</button></>}
         </section>
-      ))}
+      ); })}
       <p ref={statusRef} tabIndex={-1} className="audio-status">{status}</p>
     </div>
   );
