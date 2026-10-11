@@ -83,25 +83,6 @@
   border-right: 1px solid var(--color-border);
 }
 
-.autolog-session-row {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  margin-bottom: var(--space-2);
-  background: var(--color-bg);
-}
-
-.autolog-session-row.selected {
-  border-color: var(--color-primary);
-}
-
-.autolog-session-main {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: transparent !important;
-  border: 0 !important;
-}
-
 .autolog-session-title {
   display: block;
   font-weight: 600;
@@ -118,8 +99,16 @@
 .autolog-session-actions {
   display: flex;
   gap: var(--space-1);
+  flex-wrap: wrap;
   padding: 0 var(--space-2) var(--space-2);
 }
+
+.autolog-session-list h3 { margin: 0 0 var(--space-2); }
+.autolog-session-list .accessible-list-container { max-height: none; }
+.autolog-entry-viewer h3:focus-visible,
+.autolog-dialog button:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.autolog-confirm-dialog { max-width: min(32rem, 90vw); padding: var(--space-4); color: var(--color-text); background: var(--color-bg-surface); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); }
+.autolog-confirm-actions { display: flex; gap: var(--space-2); }
 
 .autolog-session-actions button {
   flex: 1;

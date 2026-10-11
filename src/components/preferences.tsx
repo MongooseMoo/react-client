@@ -7,6 +7,34 @@ import Tabs, { type TabProps } from "./tabs";
 import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
 import ChannelPreferencesTab from "./ChannelPreferences";
 
+function PreferenceNumber({ id, label, value, min, max, onCommit }: {
+  id: string; label: string; value: number; min: number; max: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const [error, setError] = useState('');
+  React.useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const next = Number(draft);
+    if (!draft.trim() || !Number.isInteger(next) || next < min || next > max) {
+      setError(`Enter a whole number from ${min} to ${max}.`);
+      return;
+    }
+    setError('');
+    onCommit(next);
+  };
+  return <>
+    <label htmlFor={id}>{label}</label>
+    <input id={id} type="number" min={min} max={max} step="1" value={draft}
+      aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined}
+      onChange={event => { setDraft(event.currentTarget.value); setError(''); }}
+      onBlur={commit} onKeyDown={event => {
+        if (event.key === 'Enter') { event.preventDefault(); commit(); }
+      }} />
+    {error && <p id={`${id}-error`} role="alert">{error}</p>}
+  </>;
+}
+
 const GeneralTab: React.FC = () => {
   const general = usePreferences((state) => state.general);
   const setGeneral = usePreferences((state) => state.setGeneral);
@@ -109,7 +137,7 @@ const RateSelection: React.FC = () => {
 
   return (
     <label>
-      Rate ({speech.rate.toFixed(1)}, range 0.1 - 10.0):
+      Rate
       <input
         type="range"
         min="0.1"
@@ -130,7 +158,7 @@ const PitchSelection: React.FC = () => {
 
   return (
     <label>
-      Pitch ({speech.pitch.toFixed(1)}, range 0 - 2):
+      Pitch
       <input
         type="range"
         min="0"
@@ -151,7 +179,7 @@ const VolumeSelection: React.FC = () => {
 
   return (
     <label>
-      Volume ({speech.volume.toFixed(2)}, range 0 - 1):
+      Volume
       <input
         type="range"
         min="0"
@@ -352,11 +380,9 @@ const MidiTab: React.FC = () => {
       <br />
       <br />
 
-      {midi.enabled && (
         <p id="midi-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
           Device selection and management is available in the MIDI tab when connected to a server.
         </p>
-      )}
     </div>
   );
 };
@@ -385,37 +411,29 @@ const HapticsTab: React.FC = () => {
         <div>
           <br />
           <label>
-            Intensity Cap ({Math.round(haptics.intensityCap * 100)}%):
+            Intensity Cap
             <input
               type="range"
               min="0"
               max="1"
               step="0.01"
               value={haptics.intensityCap}
+              aria-valuetext={`${Math.round(haptics.intensityCap * 100)}%`}
               onChange={(e) =>
                 setHaptics({ ...haptics, intensityCap: parseFloat(e.target.value) })
               }
             />
           </label>
           <br />
-          <label>
-            Auto-Stop Timeout (seconds):
-            <input
-              type="number"
-              min="1"
-              max="60"
-              value={haptics.autoStopTimeout}
-              onChange={(e) =>
-                setHaptics({ ...haptics, autoStopTimeout: parseInt(e.target.value, 10) || 1 })
-              }
-            />
-          </label>
+          <PreferenceNumber id="haptics-timeout" label="Auto-Stop Timeout (seconds):"
+            min={1} max={60} value={haptics.autoStopTimeout}
+            onCommit={autoStopTimeout => setHaptics({ ...haptics, autoStopTimeout })} />
           <br />
-          <p id="haptics-bluetooth-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "8px" }}>
-            Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
-          </p>
         </div>
       )}
+      <p id="haptics-bluetooth-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "8px" }}>
+        Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
+      </p>
     </div>
   );
 };
@@ -442,8 +460,33 @@ const KeyboardTab: React.FC = () => {
         </select>
       </label>
       <p id="keyboard-nav-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "0.5em" }}>
-        Arrow keys always work in addition to the selected scheme.
+        Alt+arrow keys always work in addition to the selected scheme.
       </p>
+      <details>
+        <summary>Keyboard shortcuts</summary>
+        <dl>
+          <dt>Command</dt>
+          <dd>Enter sends; Shift+Enter adds a line. Tab completes a matching command or name; with no match or after a space, Tab leaves. Shift+Tab always leaves without changing your draft. Up/Down recalls history for a single-line draft.</dd>
+          <dt>Recent output</dt>
+          <dd>Ctrl+1 through Ctrl+0 reviews the newest ten lines (0 is tenth). Repeat the same shortcut within half a second to copy the line.</dd>
+          <dt>Buffers</dt>
+          <dd>Alt+Left/Right changes buffer; Alt+Up/Down reviews messages. The selected letter scheme works with Alt too. Alt+PageUp/PageDown moves ten messages; Alt+Home/End moves to the first/last message.</dd>
+          <dt>Reviewed message</dt>
+          <dd>Alt+Space repeats; Alt+Enter opens its link or offers a link choice; Alt+Shift+Space copies. Alt+Shift+1 through Alt+Shift+0 selects a numbered buffer. Alt+Shift+T toggles timestamps; Alt+Shift+Delete deletes the current buffer.</dd>
+          <dt>Sounds</dt>
+          <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback.</dd>
+        </dl>
+        <p>Ctrl+Shift+number opens and focuses a sidebar destination. Numbers stay fixed when optional tabs appear; unavailable destinations do nothing.</p>
+        <table>
+          <caption>Sidebar destinations</caption>
+          <thead><tr><th scope="col">Number</th><th scope="col">Destination</th></tr></thead>
+          <tbody>
+            {['Room', 'Inventory', 'Users', 'Server', 'MIDI', 'Haptics', 'Files', 'Audio', 'Audio diagnostics'].map((label, index) =>
+              <tr key={label}><td>{index + 1}</td><td>{label}</td></tr>)}
+          </tbody>
+        </table>
+        <p>Browser access keys: L Save log, C Copy log, E Clear log, P Preferences, M Mute, V Volume, U Sidebar. Selected player: G Page, S Say to, K Look, F Follow. The activation modifier depends on your browser and operating system.</p>
+      </details>
     </div>
   );
 };
@@ -467,21 +510,9 @@ const AutologgingTab: React.FC = () => {
         Enable Autologging
       </label>
       <br />
-      <label>
-        Storage Cap (MB):
-        <input
-          type="number"
-          min="1"
-          max="2048"
-          value={maxMegabytes}
-          onChange={(e) =>
-            setAutologging({
-              ...autologging,
-              maxBytes: Math.max(1, parseInt(e.target.value, 10) || 1) * 1024 * 1024,
-            })
-          }
-        />
-      </label>
+      <PreferenceNumber id="autolog-storage-cap" label="Storage Cap (MB):"
+        min={1} max={2048} value={maxMegabytes}
+        onCommit={megabytes => setAutologging({ ...autologging, maxBytes: megabytes * 1024 * 1024 })} />
       <br />
       <button type="button" onClick={() => dialogRef.current?.open()}>Manage Autologs</button>
       <AutoLogDialog ref={dialogRef} />

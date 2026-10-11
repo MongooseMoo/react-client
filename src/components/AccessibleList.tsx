@@ -1,177 +1,124 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import './AccessibleList.css'; // Import the CSS file
+import React, { useState, useRef, useLayoutEffect } from 'react';
+import { useFocusRecovery } from '../hooks/useFocusRecovery';
+import './AccessibleList.css';
 
 interface AccessibleListItem {
-    id: string; // Unique identifier for the item
-    // Add other common properties if needed, or allow generic type T
-    [key: string]: any; // Allow arbitrary properties for flexibility
-}
-
-interface AccessibleListRenderResult {
-    node: React.ReactNode;
-    labelId?: string; // This will effectively be unused by renderItem's new signature but kept for type compatibility if other parts rely on it.
+  id: string;
+  [key: string]: any;
 }
 
 interface AccessibleListProps<T extends AccessibleListItem> {
-    items: T[];
-    renderItem: (item: T, index: number, isSelected: boolean) => React.ReactNode; // Updated signature
-    listId: string; // Unique ID for the listbox element
-    labelledBy: string; // ID of the element labelling this list
-    className?: string; // Optional class for the container div
-    itemClassName?: (item: T, index: number, isSelected: boolean) => string; // Optional function for item classes
-    getItemTextValue?: (item: T) => string; // Function to get text value for typeahead
-    onSelectedIndexChange?: (index: number) => void; // Callback for when selected index changes
-    onActivate?: (index: number) => void; // Callback when an item is activated (Enter or click)
+  items: T[];
+  renderItem: (item: T, index: number, isSelected: boolean) => React.ReactNode;
+  listId: string;
+  labelledBy: string;
+  className?: string;
+  itemClassName?: (item: T, index: number, isSelected: boolean) => string;
+  getItemTextValue?: (item: T) => string;
+  onSelectedIndexChange?: (index: number) => void;
+  onActivate?: (index: number) => void;
+  /** Surviving heading/control used only if this focused list is removed. */
+  focusReturnId?: string;
 }
 
 const AccessibleList = <T extends AccessibleListItem>({
-    items,
-    renderItem,
-    listId,
-    labelledBy,
-    className = '',
-    itemClassName,
-    getItemTextValue = (item) => (item.name || item.id || '').toString().toLowerCase(), // Default text value getter
-    onSelectedIndexChange,
-    onActivate,
+  items, renderItem, listId, labelledBy, className = '', itemClassName,
+  getItemTextValue = (item) => (item.name || item.id || '').toString(),
+  onSelectedIndexChange, onActivate, focusReturnId,
 }: AccessibleListProps<T>) => {
-    const [selectedIndex, setSelectedIndexState] = useState<number>(-1);
-    const containerRef = useRef<HTMLDivElement>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const previousIndex = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const notifiedSelection = useRef({ id: null as string | null, index: -1 });
+  const selectionCallback = useRef(onSelectedIndexChange);
+  selectionCallback.current = onSelectedIndexChange;
+  const typeahead = useRef({ text: '', time: 0 });
+  useFocusRecovery(containerRef, focusReturnId);
 
-    const setSelectedIndex = useCallback((index: number) => {
-        setSelectedIndexState(index);
-        if (onSelectedIndexChange) {
-            onSelectedIndexChange(index);
+  const retainedIndex = items.findIndex((item) => item.id === selectedId);
+  const selectedIndex = selectedId === null ? -1 : retainedIndex >= 0 ? retainedIndex :
+    items.length > 0 ? Math.min(previousIndex.current, items.length - 1) : -1;
+  const resolvedId = items[selectedIndex]?.id ?? null;
+
+  useLayoutEffect(() => {
+    if (selectedId !== resolvedId) setSelectedId(resolvedId);
+    if (selectedIndex >= 0) previousIndex.current = selectedIndex;
+    if (notifiedSelection.current.id !== resolvedId || notifiedSelection.current.index !== selectedIndex) {
+      notifiedSelection.current = { id: resolvedId, index: selectedIndex };
+      selectionCallback.current?.(selectedIndex);
+    }
+    // Background refreshes must not scroll a panel the user is not using.
+    if (resolvedId && document.activeElement === containerRef.current) {
+      document.getElementById(`${listId}-item-${resolvedId}`)?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [selectedId, resolvedId, selectedIndex, listId]);
+
+  const select = (index: number) => {
+    previousIndex.current = index;
+    setSelectedId(items[index]?.id ?? null);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!items.length || event.ctrlKey || event.metaKey || event.altKey) return;
+    let next = selectedIndex;
+    switch (event.key) {
+      case 'ArrowDown': next = (selectedIndex + 1) % items.length; break;
+      case 'ArrowUp': next = selectedIndex < 0 ? items.length - 1 : (selectedIndex - 1 + items.length) % items.length; break;
+      case 'Home': next = 0; break;
+      case 'End': next = items.length - 1; break;
+      case 'PageUp': next = Math.max(selectedIndex - 5, 0); break;
+      case 'PageDown': next = Math.min(selectedIndex + 5, items.length - 1); break;
+      case 'Enter':
+        if (!onActivate || selectedIndex < 0) return;
+        event.preventDefault();
+        onActivate(selectedIndex);
+        return;
+      default: {
+        if (event.key.length !== 1 || event.key === ' ') return;
+        const now = Date.now();
+        const prior = now - typeahead.current.time < 700 ? typeahead.current.text : '';
+        const text = prior + event.key.toLowerCase();
+        const repeated = [...text].every((character) => character === text[0]);
+        const query = repeated ? text[0] : text;
+        const start = prior && !repeated ? Math.max(selectedIndex, 0) : (selectedIndex + 1) % items.length;
+        typeahead.current = { text: repeated ? query : text, time: now };
+        next = -1;
+        for (let offset = 0; offset < items.length; offset++) {
+          const index = (start + offset) % items.length;
+          if (getItemTextValue(items[index]).toLowerCase().startsWith(query)) { next = index; break; }
         }
-    }, [onSelectedIndexChange]);
+        if (next < 0) return;
+        event.preventDefault();
+        select(next);
+        return;
+      }
+    }
+    typeahead.current = { text: '', time: 0 };
+    event.preventDefault();
+    select(next);
+  };
 
-    const handleFocus = () => {
-        if (selectedIndex === -1 && items.length > 0) {
-            setSelectedIndex(0); // Uses the new setSelectedIndex
-        }
-    };
-
-    useEffect(() => {
-        // Reset index if items change and selected index becomes invalid
-        if (selectedIndex >= items.length) {
-            setSelectedIndex(items.length > 0 ? 0 : -1); // Uses the new setSelectedIndex
-        }
-        // Ensure the selected item is visible
-        if (selectedIndex !== -1 && items[selectedIndex]) { // Add check for items[selectedIndex]
-            const selectedElId = `${listId}-item-${items[selectedIndex]?.id}`;
-            const selectedEl = document.getElementById(selectedElId);
-            if (selectedEl) {
-                selectedEl.scrollIntoView({ block: 'nearest' });
-            }
-        }
-    }, [selectedIndex, items, listId]);
-
-    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-        if (items.length === 0) return;
-
-        let newIndex = selectedIndex;
-        let preventDefault = true; // Assume prevention unless specified otherwise
-
-        switch (e.key) {
-            case "ArrowDown":
-                newIndex = (selectedIndex + 1) % items.length;
-                break;
-            case "ArrowUp":
-                newIndex = (selectedIndex - 1 + items.length) % items.length;
-                break;
-            case "Home":
-                newIndex = 0;
-                break;
-            case "End":
-                newIndex = items.length - 1;
-                break;
-            case "Enter":
-                if (onActivate && selectedIndex > -1) {
-                    onActivate(selectedIndex);
-                }
-                break;
-            case "PageUp":
-                // Implement PageUp logic if needed, e.g., jump 5 items
-                newIndex = Math.max(selectedIndex - 5, 0);
-                break;
-            case "PageDown":
-                // Implement PageDown logic if needed, e.g., jump 5 items
-                newIndex = Math.min(selectedIndex + 5, items.length - 1);
-                break;
-            default:
-                if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                    // Typeahead logic
-                    const letter = e.key.toLowerCase();
-                    let startIndex = selectedIndex === -1 ? 0 : (selectedIndex + 1) % items.length;
-                    let foundIndex = -1;
-                    for (let i = 0; i < items.length; i++) {
-                        const idx = (startIndex + i) % items.length;
-                        const itemText = getItemTextValue(items[idx]);
-                        if (itemText.startsWith(letter)) {
-                            foundIndex = idx;
-                            break;
-                        }
-                    }
-                    if (foundIndex !== -1) {
-                        newIndex = foundIndex;
-                    } else {
-                        preventDefault = false; // Don't prevent default if no match found
-                    }
-                } else {
-                    preventDefault = false; // Don't prevent default for unhandled keys
-                }
-                break;
-        }
-
-        if (newIndex !== selectedIndex) {
-            setSelectedIndex(newIndex);
-        }
-
-        if (preventDefault) {
-            e.preventDefault();
-        }
-    }, [selectedIndex, items, getItemTextValue, onActivate]);
-
-    return (
-        <div
-            id={listId}
-            className={`accessible-list-container ${className}`}
-            ref={containerRef}
-            tabIndex={0} // Make the container focusable
-            role="listbox"
-            aria-labelledby={labelledBy}
-            aria-activedescendant={selectedIndex !== -1 ? `${listId}-item-${items[selectedIndex]?.id}` : undefined}
-            onFocus={handleFocus}
-            onKeyDown={handleKeyDown}
-        >
-            {/* Add className to ul */}
-            <ul role="none" className="accessible-list-ul">
-                {items.map((item, index) => {
-                    const isSelected = index === selectedIndex;
-                    // renderItem now directly returns React.ReactNode
-                    const itemContent = renderItem(item, index, isSelected);
-                    const classes = itemClassName ? itemClassName(item, index, isSelected) : '';
-                    return (
-                        // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: role="option" on <li> is the standard APG listbox markup; activation is handled at the listbox container.
-                        <li role="option"
-                            key={item.id}
-                            id={`${listId}-item-${item.id}`}
-                            className={`${classes} ${isSelected ? 'selected' : ''}`}
-                            aria-selected={isSelected}
-                            // aria-labelledby removed as item content will label it
-                            // Click selects, and activates when an onActivate handler is provided.
-                            onClick={() => {
-                                setSelectedIndex(index);
-                                onActivate?.(index);
-                            }}
-                        >
-                            {itemContent}
-                        </li>
-                    );
-                })}
-            </ul>
-        </div>
-    );
+  return (
+    <div id={listId} className={`accessible-list-container ${className}`} ref={containerRef}
+      tabIndex={0} role="listbox" aria-labelledby={labelledBy}
+      aria-activedescendant={resolvedId ? `${listId}-item-${resolvedId}` : undefined}
+      onFocus={() => { if (selectedIndex < 0 && items.length) select(0); }}
+      onBlur={() => { typeahead.current = { text: '', time: 0 }; }} onKeyDown={handleKeyDown}>
+      <ul role="none" className="accessible-list-ul">
+        {items.map((item, index) => {
+          const selected = index === selectedIndex;
+          return (
+            // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: the listbox owns option keyboard operation.
+            <li role="option" key={item.id} id={`${listId}-item-${item.id}`}
+              className={`${itemClassName?.(item, index, selected) ?? ''} ${selected ? 'selected' : ''}`}
+              aria-selected={selected} onClick={() => { containerRef.current?.focus(); select(index); onActivate?.(index); }}>
+              {renderItem(item, index, selected)}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 };
 
 export default AccessibleList;

@@ -11,6 +11,7 @@ import { useUserlistStore } from '../stores/userlistStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useOutputStore, type OutputEntry } from '../stores/outputStore';
 import { renderServerHtml } from './serverHtml';
+import { copyBlockquoteContent } from './BlockquoteCopyButton';
 import { autoLogService } from '../logging/AutoLogService';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
 import {
@@ -88,10 +89,10 @@ function lineElements(line: SavedOutputLine, onExitClick: (exit: string) => void
       ];
 
     case 'error':
-      return [<h2> Error: {line.sourceContent}</h2>];
+      return [<span>Error: {line.sourceContent}</span>];
 
     case 'system':
-      return [<h2> {line.sourceContent}</h2>];
+      return [<span>{line.sourceContent}</span>];
 
     case 'plain':
       return [<span>{line.sourceContent}</span>];
@@ -152,8 +153,9 @@ interface State {
   sidebarVisible: boolean;
   newLinesCount: number; // Added to track the count of new lines
   localEchoActive: boolean; // To store the current local echo preference
-  focusedLineIndex: number | null; // Index of currently focused line for keyboard navigation
+  focusedLineId: number | null; // Stable entry ID for keyboard review
   historyRevealed: boolean; // Expose beyond-cap history to the accessibility tree
+  actionFeedback: string;
 }
 
 // Add a small threshold for scroll calculations to handle browser differences
@@ -184,6 +186,15 @@ class Output extends React.Component<Props, State> {
   private previousConnected = useConnectionStore.getState().connected;
   private previousSessionReady = useConnectionStore.getState().sessionReady;
   private lastOutputEntryId = 0;
+  private lastFocusedOutputElement: HTMLElement | null = null;
+
+  private recoverOutputFocus = () => {
+    const held = this.lastFocusedOutputElement;
+    if (!held || (held.isConnected && !held.closest('[inert]'))) return;
+    this.lastFocusedOutputElement = null;
+    const active = document.activeElement;
+    if (active === document.body || active === held) this.outputRef.current?.focus();
+  };
 
   // Full output history (NOT in React state — avoids O(N) reconciliation)
   private allLines: OutputLine[] = [];
@@ -207,8 +218,9 @@ class Output extends React.Component<Props, State> {
       sidebarVisible: false,
       newLinesCount: 0,
       localEchoActive: usePreferences.getState().general.localEcho,
-      focusedLineIndex: null,
+      focusedLineId: null,
       historyRevealed: false,
+      actionFeedback: '',
     };
   }
 
@@ -303,7 +315,7 @@ class Output extends React.Component<Props, State> {
     this.frozenHiddenCount = 0;
     this.setState({
       liveOutput: this.allLines.slice(-Output.LIVE_WINDOW_SIZE),
-      focusedLineIndex: null,
+      focusedLineId: null,
     });
   }
 
@@ -367,7 +379,7 @@ class Output extends React.Component<Props, State> {
       case "message":
         // A provisional line that arrives after the player is logged in is stale.
         if (entry.provisional && useConnectionStore.getState().sessionReady) break;
-        this.handleMessage(entry.message, entry.provisional);
+        this.handleMessage(entry.message, entry.provisional, entry.browserSpeechOwned);
         break;
       case "html":
         this.handleHtml(entry.html);
@@ -405,6 +417,12 @@ componentDidUpdate(
       this.freezeOverflow();
     } catch (error) {
       console.error("Failed to freeze output overflow:", error);
+    }
+    this.recoverOutputFocus();
+    const frozen = this.frozenRef.current;
+    frozen?.querySelectorAll('.focused-line').forEach(line => { line.classList.remove('focused-line'); });
+    if (this.state.focusedLineId !== null) {
+      frozen?.querySelector(`[data-line-id="${this.state.focusedLineId}"]`)?.classList.add('focused-line');
     }
 
     // Track new lines for the "N new messages" notification
@@ -469,6 +487,7 @@ componentDidUpdate(
       const line = this.allLines[this.frozenCount];
       const wrapper = document.createElement('div');
       wrapper.className = `output-line output-line-${line.type}`;
+      wrapper.dataset.lineId = String(line.id);
       wrapper.innerHTML = this.renderLineMarkup(line);
       frozenDiv.appendChild(wrapper);
       this.frozenCount++;
@@ -482,12 +501,15 @@ componentDidUpdate(
       : Math.max(0, frozenDiv.children.length - Output.A11Y_EXPOSED_FROZEN_LINES);
     while (this.frozenHiddenCount < shouldBeHidden) {
       frozenDiv.children[this.frozenHiddenCount].setAttribute('aria-hidden', 'true');
+      frozenDiv.children[this.frozenHiddenCount].setAttribute('inert', '');
       this.frozenHiddenCount++;
     }
     while (this.frozenHiddenCount > shouldBeHidden) {
       this.frozenHiddenCount--;
       frozenDiv.children[this.frozenHiddenCount].removeAttribute('aria-hidden');
+      frozenDiv.children[this.frozenHiddenCount].removeAttribute('inert');
     }
+    this.recoverOutputFocus();
   }
 
   /** Lines currently (or potentially) excluded from the accessibility tree. */
@@ -544,8 +566,10 @@ componentDidUpdate(
   const scrollBottom = Math.ceil(output.scrollHeight - output.scrollTop); const viewportHeight = Math.ceil(output.clientHeight); return scrollBottom <= viewportHeight + SCROLL_THRESHOLD; };
 
   handleScrollToBottom = () => {
+    const latest = this.allLines.filter(line => this.state.localEchoActive || line.type !== OutputType.Command).at(-1);
     this.scrollToBottom();
-    this.setState({ newLinesCount: 0 }); // Reset the counter after scrolling
+    this.outputRef.current?.focus();
+    this.setState({ newLinesCount: 0, focusedLineId: latest?.id ?? null });
   };
 
   componentDidMount() {
@@ -585,6 +609,7 @@ componentDidUpdate(
 
   sanitizeHtml(html: string): string {
     const doc = new DOMParser().parseFromString(html, "text/html");
+    doc.querySelectorAll('.blockquote-copy-button, .copy-feedback').forEach(node => { node.remove(); });
     return doc.body.textContent || "";
   }
 
@@ -650,13 +675,13 @@ componentDidUpdate(
 scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 // Use requestAnimationFrame to ensure DOM updates are complete
  requestAnimationFrame(() => { output.scrollTop = output.scrollHeight; }); } };
-  handleMessage = (message: string, provisional: boolean = false) => {
+  handleMessage = (message: string, provisional: boolean = false, browserSpeechOwned: boolean = false) => {
     if (!message) {
       return;
     }
     this.addToOutput(
       OutputType.ServerMessage,
-      true,
+      !browserSpeechOwned,
       'ansi',
       message,
       provisional ? { provisional: true } : undefined,
@@ -674,6 +699,25 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   // --- Combined click handler for delegated events ---
   handleOutputClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const targetElement = event.target as HTMLElement;
+    const copyButton = targetElement.closest<HTMLButtonElement>('.blockquote-copy-button');
+    if (copyButton) {
+      const wrapper = copyButton.closest('.blockquote-with-copy');
+      const quote = wrapper?.querySelector('blockquote');
+      if (!quote) return;
+      event.preventDefault();
+      void copyBlockquoteContent(quote, quote.dataset.contentType).then(() => {
+        announce('Copied', 'polite');
+        copyButton.textContent = 'Copied!';
+        const feedback = wrapper?.querySelector('.copy-feedback');
+        if (feedback) feedback.textContent = '';
+        window.setTimeout(() => { if (copyButton.isConnected) copyButton.textContent = 'Copy'; }, 1500);
+      }, () => {
+        announce('Could not copy', 'polite');
+        const feedback = wrapper?.querySelector('.copy-feedback');
+        if (feedback) feedback.textContent = 'Could not copy. Select the text to copy it.';
+      });
+      return;
+    }
 
     // --- Handle exit link clicks (data-exit delegation) ---
     const exitLink = targetElement.closest('a.exit[data-exit]');
@@ -743,19 +787,33 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     removeStoredValue(Output.LOCAL_STORAGE_KEY);
   }
 
-  copyLog() {
-    const output = this.outputRef.current;
-    if (output) {
-      const textToCopy = output.innerText; // Get plain text content
-      navigator.clipboard.writeText(textToCopy)
-        .then(() => {
-          console.log("Log copied to clipboard.");
-          // Optional: Add visual feedback here if needed
+  async copyLog() {
+    this.setState({ actionFeedback: '' });
+    try {
+      const text = this.allLines
+        .filter(line => this.state.localEchoActive || line.type !== OutputType.Command)
+        .map(line => {
+          if (line.sourceType === 'ansi') {
+            return stripAnsi(line.sourceContent).replace(/@\[exit:[a-zA-Z]+\]([a-zA-Z]+)@\[\/\]/g, '$1');
+          }
+          const doc = new DOMParser().parseFromString(this.renderLineMarkup(line), 'text/html');
+          doc.querySelectorAll('.blockquote-copy-button, .copy-feedback').forEach(node => { node.remove(); });
+          const read = (node: Node): string => {
+            if (node.nodeName === 'BR') return '\n';
+            if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+            const content = Array.from(node.childNodes).map(read).join('');
+            return /^(P|DIV|LI|PRE|BLOCKQUOTE|H[1-6]|TR)$/.test(node.nodeName) && content && !content.endsWith('\n')
+              ? `${content}\n` : content;
+          };
+          return read(doc.body).replace(/\n$/, '');
         })
-        .catch(err => {
-          console.error('Failed to copy log: ', err);
-          alert("Failed to copy log to clipboard. See console for details.");
-        });
+        .join('\n');
+      await navigator.clipboard.writeText(text);
+      announce('Log copied', 'polite');
+      this.setState({ actionFeedback: 'Log copied.' });
+    } catch {
+      announce('Could not copy log', 'polite');
+      this.setState({ actionFeedback: 'Could not copy log. Select the text to copy it.' });
     }
   }
 
@@ -763,17 +821,17 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
    * Scroll focused line into view
    */
   scrollFocusedLineIntoView = () => {
-    if (this.state.focusedLineIndex === null) return;
+    if (this.state.focusedLineId === null) return;
 
     // Use setTimeout to ensure DOM has updated
     setTimeout(() => {
       const outputDiv = this.outputRef.current;
       if (!outputDiv) return;
 
-      const focusedElement = outputDiv.querySelector(`[data-line-index="${this.state.focusedLineIndex}"]`);
+      const focusedElement = outputDiv.querySelector(`[data-line-id="${this.state.focusedLineId}"]`);
       if (focusedElement) {
         focusedElement.scrollIntoView({
-          behavior: 'smooth',
+          behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
           block: 'nearest',
         });
       }
@@ -784,6 +842,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
    * Handle keyboard navigation through output lines
    */
   handleOutputKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget) return;
     const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
 
     // Suppress Alt+Arrow and Alt+letter so browser defaults
@@ -801,7 +860,8 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       return;
     }
 
-    const visibleOutput = this.state.liveOutput.filter(
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const visibleOutput = this.allLines.filter(
       line => this.state.localEchoActive || line.type !== OutputType.Command
     );
 
@@ -810,9 +870,9 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     switch (e.key) {
       case 'ArrowDown': {
         e.preventDefault();
-        const currentIndex = this.state.focusedLineIndex ?? -1;
+        const currentIndex = visibleOutput.findIndex(line => line.id === this.state.focusedLineId);
         const nextIndex = Math.min(currentIndex + 1, visibleOutput.length - 1);
-        this.setState({ focusedLineIndex: nextIndex }, () => {
+        this.setState({ focusedLineId: visibleOutput[nextIndex].id }, () => {
           this.announceOutputLine(visibleOutput[nextIndex]);
           this.scrollFocusedLineIntoView();
         });
@@ -821,9 +881,10 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
       case 'ArrowUp': {
         e.preventDefault();
-        const currentIndex = this.state.focusedLineIndex ?? visibleOutput.length;
+        const found = visibleOutput.findIndex(line => line.id === this.state.focusedLineId);
+        const currentIndex = found < 0 ? visibleOutput.length : found;
         const prevIndex = Math.max(currentIndex - 1, 0);
-        this.setState({ focusedLineIndex: prevIndex }, () => {
+        this.setState({ focusedLineId: visibleOutput[prevIndex].id }, () => {
           this.announceOutputLine(visibleOutput[prevIndex]);
           this.scrollFocusedLineIntoView();
         });
@@ -832,7 +893,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
       case 'Home':
         e.preventDefault();
-        this.setState({ focusedLineIndex: 0 }, () => {
+        this.setState({ focusedLineId: visibleOutput[0].id }, () => {
           this.announceOutputLine(visibleOutput[0]);
           this.scrollFocusedLineIntoView();
         });
@@ -841,7 +902,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       case 'End': {
         e.preventDefault();
         const lastIndex = visibleOutput.length - 1;
-        this.setState({ focusedLineIndex: lastIndex }, () => {
+        this.setState({ focusedLineId: visibleOutput[lastIndex].id }, () => {
           this.announceOutputLine(visibleOutput[lastIndex]);
           this.scrollFocusedLineIntoView();
         });
@@ -859,7 +920,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     // Extract text content from the JSX element
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = this.renderLineMarkup(line);
-    const textContent = tempDiv.textContent || tempDiv.innerText || '';
+    const textContent = this.sanitizeHtml(tempDiv.innerHTML);
 
     // Announce to screen reader
     announce(textContent, 'polite');
@@ -897,7 +958,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
 
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = this.renderLineMarkup(line);
-    const textContent = tempDiv.textContent || tempDiv.innerText || "";
+    const textContent = this.sanitizeHtml(tempDiv.innerHTML);
 
     return navigator.clipboard.writeText(textContent).then(
       () => announce("Copied", "polite"),
@@ -911,15 +972,16 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   /**
    * Handle focus on output area
    */
-  handleOutputFocus = () => {
+  handleOutputFocus = (event: React.FocusEvent<HTMLDivElement>) => {
+    this.lastFocusedOutputElement = event.target as HTMLElement;
     // If no line is focused, start at the last line
-    if (this.state.focusedLineIndex === null) {
+    if (this.state.focusedLineId === null) {
       const visibleOutput = this.state.liveOutput.filter(
         line => this.state.localEchoActive || line.type !== OutputType.Command
       );
       if (visibleOutput.length > 0) {
         const lastIndex = visibleOutput.length - 1;
-        this.setState({ focusedLineIndex: lastIndex });
+        this.setState({ focusedLineId: visibleOutput[lastIndex].id });
       }
     }
   };
@@ -927,9 +989,15 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   /**
    * Handle blur on output area
    */
-  handleOutputBlur = () => {
+  handleOutputBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    const left = event.target as HTMLElement;
+    queueMicrotask(() => {
+      if (this.lastFocusedOutputElement === left && left.isConnected && !left.closest('[inert]')) {
+        this.lastFocusedOutputElement = null;
+      }
+    });
     // Optionally clear focus indicator when tabbing away
-    // this.setState({ focusedLineIndex: null });
+    // this.setState({ focusedLineId: null });
   };
 
   render() {
@@ -961,6 +1029,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         tabIndex={0}
         aria-label="Game output log - use arrow keys to navigate"
       >
+        {this.state.actionFeedback && <p className="output-action-feedback">{this.state.actionFeedback}</p>}
         {this.beyondCapLineCount() > 0 && (
           <button
             type="button"
@@ -976,21 +1045,21 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         {visibleLiveOutput.map((line, index) => (
           <div
             key={line.id}
-            className={`output-line ${this.state.focusedLineIndex === index ? 'focused-line' : ''}`}
-            data-line-index={index}
+            className={`output-line ${this.state.focusedLineId === line.id ? 'focused-line' : ''}`}
+            data-line-id={line.id}
           >
             <OutputLineContent line={line} onExitClick={this.handleExitClick} />
           </div>
         ))}
         {this.state.newLinesCount > 0 && (
-          <div
+          <button
+            type="button"
             className="new-lines-notification"
             onClick={this.handleScrollToBottom}
-            role="button"
             aria-live="off"
           >
-            {newLinesText}
-          </div>
+            Show {newLinesText}
+          </button>
         )}
       </div>
     );

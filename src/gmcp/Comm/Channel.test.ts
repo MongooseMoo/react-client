@@ -221,6 +221,23 @@ describe("Comm.Channel", () => {
       expect(spokenTexts()).toEqual(['[Music] Bob says, "loud"']);
     });
 
+    it("keeps a line from the screen reader's announcement when its channel speaks it or is set to Never", async () => {
+      setReading("always", AutoreadMode.All);
+      setReading("never", AutoreadMode.Off);
+      setReading("away", AutoreadMode.Unfocused);
+
+      receiveChannelLine("always", "Alice", "one");
+      receiveChannelLine("never", "Alice", "two");
+      receiveChannelLine("away", "Alice", "three");
+      receiveChannelLine("untouched", "Alice", "four");
+      await Promise.resolve();
+
+      const owned = useOutputStore
+        .getState()
+        .entries.map((entry) => entry.type === "message" && entry.browserSpeechOwned === true);
+      expect(owned).toEqual([true, true, false, false]);
+    });
+
     it("still puts every channel line in the output and the channel history", async () => {
       setReading("mongoose", AutoreadMode.Off);
 

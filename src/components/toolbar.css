@@ -49,27 +49,27 @@
 /* Connect button (blue/primary) */
 .toolbar .btn-connect {
   background: var(--color-primary);
-  color: white;
+  color: var(--color-text-button);
   border-color: transparent;
   font-weight: 600;
 }
 
 .toolbar .btn-connect:hover {
   background: var(--color-primary-hover);
-  color: white;
+  color: var(--color-text-button);
 }
 
 /* Disconnect button (red/danger) */
 .toolbar .btn-disconnect {
   background: var(--color-danger, #dc3545);
-  color: white;
+  color: var(--color-text-button);
   border-color: transparent;
   font-weight: 600;
 }
 
 .toolbar .btn-disconnect:hover {
   background: color-mix(in srgb, var(--color-danger, #dc3545) 85%, black);
-  color: white;
+  color: var(--color-text-button);
 }
 
 /* Toolbar grouping */
@@ -104,12 +104,30 @@
 
 .toolbar-volume input[type="range"] {
   width: 80px;
-  height: 5px;
+  height: 24px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255,255,255,0.25);
+  background: transparent;
   border-radius: 2px;
   outline: none;
+}
+
+.toolbar-volume input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px;
+  background: var(--color-text-secondary);
+  border-radius: 2px;
+}
+
+.toolbar-volume input[type="range"]::-moz-range-track {
+  height: 5px;
+  background: var(--color-text-secondary);
+  border-radius: 2px;
+}
+
+.toolbar-volume input[type="range"]:focus-visible,
+.toolbar-toggle input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 .toolbar-volume input[type="range"]::-webkit-slider-thumb {
@@ -117,6 +135,7 @@
   appearance: none;
   width: 12px;
   height: 12px;
+  margin-top: -3.5px;
   border-radius: 50%;
   background: var(--color-text);
   cursor: pointer;

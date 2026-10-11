@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import type MudClient from "./client";
@@ -74,12 +74,9 @@ function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
 }
 
 function getShortcutDigit(event: KeyboardEvent): number | null {
-  const digit = Number.parseInt(event.key, 10);
-  if (Number.isNaN(digit) || digit < 0 || digit > 9) {
-    return null;
-  }
-
-  return digit;
+  // Shift changes KeyboardEvent.key to punctuation on many layouts.
+  const value = /^Digit([0-9])$/.exec(event.code)?.[1] ?? (/^[0-9]$/.test(event.key) ? event.key : null);
+  return value === null ? null : Number(value);
 }
 
 function getOutputReviewLineNumber(event: KeyboardEvent): number | null {
@@ -112,6 +109,7 @@ function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [sidebarFocusRequest, setSidebarFocusRequest] = useState<{ index: number } | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(loadSidebarWidth);
 
   // Persist the user-chosen sidebar width, debounced so drags don't
@@ -178,11 +176,9 @@ function App() {
       }
 
       if (event.key === "Escape") {
-        client.stopAllSounds();
-        const midiPackage = client.gmcp.handlers["Client.Midi"];
-        if (midiPackage) {
-          midiPackage.sendAllNotesOff();
-        }
+        void client.pauseAllSounds().catch(() => {
+          useOutputStore.getState().addError(new Error('Could not pause sounds. Try again.'));
+        });
         hapticsRuntimeRef.current?.emergencyStop();
       }
 
@@ -204,19 +200,25 @@ function App() {
         return;
       }
 
-      if (showSidebar) {
-        const targetIndex = getSidebarShortcutIndex(event);
-        if (targetIndex !== null) {
+      const targetIndex = getSidebarShortcutIndex(event);
+      if (targetIndex !== null && sidebarRef.current?.hasTab(targetIndex)) {
+        if (!(event.target instanceof Element && event.target.closest('dialog[open], [role="dialog"][aria-modal="true"]'))) {
           event.preventDefault();
-          console.log(
-            `App: Detected CTRL+SHIFT+${targetIndex + 1}, calling switchToTab(${targetIndex})`,
-          );
-          sidebarRef.current?.switchToTab(targetIndex);
+          setShowSidebar(true);
+          setSidebarCollapsed(false);
+          setSidebarFocusRequest({ index: targetIndex });
         }
       }
     },
-    [client, showSidebar],
+    [client],
   );
+
+  useLayoutEffect(() => {
+    if (sidebarFocusRequest && showSidebar && !sidebarCollapsed) {
+      sidebarRef.current?.switchToTab(sidebarFocusRequest.index);
+      setSidebarFocusRequest(null);
+    }
+  }, [sidebarFocusRequest, showSidebar, sidebarCollapsed]);
 
   // are we on mobile?
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -371,8 +373,11 @@ function App() {
     if (!midiEnabled) return;
 
     let cancelled = false;
+    let releasePlayback: (() => void) | undefined;
     import("./VirtualMidiService")
       .then(async ({ virtualMidiService }) => {
+        if (cancelled) return false;
+        releasePlayback = virtualMidiService.setPlaybackSource(client?.media ?? null);
         if (client) {
           // Render into the client's master gain so the synth shares its
           // clock, volume, mute, and autoplay unlock.
@@ -382,6 +387,7 @@ function App() {
             destination: cacophony.globalGainNode as unknown as AudioNode,
           });
         }
+        if (cancelled) return false;
         return virtualMidiService.initialize();
       })
       .then((success) => {
@@ -399,6 +405,7 @@ function App() {
 
     return () => {
       cancelled = true;
+      releasePlayback?.();
     };
   }, [midiEnabled, client]);
 
@@ -468,7 +475,7 @@ function App() {
 
   useEffect(() => {
     inRef.current?.focus();
-  }, []);
+  }, [client]);
 
   // --- Render ---
   // The WASM/guest components are always in the tree (when active) to avoid

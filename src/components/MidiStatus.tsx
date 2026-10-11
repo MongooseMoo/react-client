@@ -1,5 +1,6 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { useFocusRefuge } from './FileTransfer/useFocusRefuge';
 import type MudClient from "../client";
 import { midiService, type MidiDevice } from "../MidiService";
 import { usePreferences } from "../stores/preferencesStore";
@@ -33,6 +34,26 @@ function connectionStatesEqual(a: MidiConnectionState, b: MidiConnectionState): 
 }
 
 const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
+  const inputId = useId();
+  const outputId = useId();
+  const inputGroup = useRef<HTMLDivElement>(null);
+  const outputGroup = useRef<HTMLDivElement>(null);
+  const inputAction = useRef<HTMLButtonElement>(null);
+  const outputAction = useRef<HTMLButtonElement>(null);
+  useFocusRefuge(inputGroup, inputAction);
+  useFocusRefuge(outputGroup, outputAction);
+  const [outcome, setOutcome] = useState('');
+  const operation = async (label: string, action: () => Promise<boolean>) => {
+    setOutcome('');
+    try {
+      const success = await action();
+      setOutcome(success ? label : `${label.split(' ')[0]} device could not connect. Try another device or refresh devices.`);
+      return success;
+    } catch {
+      setOutcome(`${label.split(' ')[0]} device could not connect. Try another device or refresh devices.`);
+      return false;
+    }
+  };
   const midiPreferences = usePreferences((state) => state.midi);
   const [midiPackage, setMidiPackage] = useState<GMCPClientMidi | null>(null);
   const [inputDevices, setInputDevices] = useState<MidiDevice[]>([]);
@@ -40,12 +61,14 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const [selectedInputId, setSelectedInputId] = useState("");
   const [selectedOutputId, setSelectedOutputId] = useState("");
   const [connectionState, setConnectionState] = useState(midiService.connectionStatus);
+  const latestConnection = useRef(midiService.connectionStatus);
+  const lostDevices = useRef<{ input?: string; output?: string }>({});
   const [deviceChangeEvents, setDeviceChangeEvents] = useState<DeviceChangeEvent[]>([]);
   const [reconnectableDevices, setReconnectableDevices] = useState<{
     input?: { id: string, name: string };
     output?: { id: string, name: string };
   }>({});
-  
+
   // Manual note controls
   const [selectedNote, setSelectedNote] = useState(60); // Middle C
   const [selectedVelocity, setSelectedVelocity] = useState(64); // Medium velocity
@@ -53,7 +76,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const [selectedChannel, setSelectedChannel] = useState(0);
   const [useDuration, setUseDuration] = useState(false);
   const [duration, setDuration] = useState(1000); // 1 second default
-  
+
   // Debug display state - keep history of last 5 messages
   const [midiHistory, setMidiHistory] = useState<Array<{
     hex: string;
@@ -74,8 +97,19 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   // when a field actually changed (avoids stale-closure issues by always
   // comparing against the latest state via the functional setState form).
   const refreshConnectionState = () => {
+    const next = midiService.connectionStatus;
+    latestConnection.current = next;
+    const restored: string[] = [];
+    if (next.inputConnected && lostDevices.current.input === next.inputDeviceId && next.inputDeviceId) {
+      restored.push('Input');
+      delete lostDevices.current.input;
+    }
+    if (next.outputConnected && lostDevices.current.output === next.outputDeviceId && next.outputDeviceId) {
+      restored.push(restored.length ? 'output' : 'Output');
+      delete lostDevices.current.output;
+    }
+    if (restored.length) setOutcome(`${restored.join(' and ')} device${restored.length > 1 ? 's' : ''} reconnected.`);
     setConnectionState(prev => {
-      const next = midiService.connectionStatus;
       return connectionStatesEqual(prev, next) ? prev : next;
     });
   };
@@ -106,15 +140,15 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     const prefs = usePreferences.getState().midi;
     const intentionalFlags = midiService.intentionalDisconnectStatus;
     const newReconnectables: { input?: { id: string, name: string }; output?: { id: string, name: string } } = {};
-    
-    
+
+
     // Check if last input device is available but not connected
     if (prefs.lastInputDeviceId && !connectionState.inputConnected) {
       const device = inputDevices.find(d => d.id === prefs.lastInputDeviceId);
-      
+
       if (device && midiService.canReconnectToDevice(prefs.lastInputDeviceId, 'input')) {
         newReconnectables.input = device;
-        
+
         // Only auto-reconnect if not intentionally disconnected
         if (midiPackage && !intentionalFlags.input) {
           try {
@@ -136,14 +170,14 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         }
       }
     }
-    
-    // Check if last output device is available but not connected  
+
+    // Check if last output device is available but not connected
     if (prefs.lastOutputDeviceId && !connectionState.outputConnected) {
       const device = outputDevices.find(d => d.id === prefs.lastOutputDeviceId);
-      
+
       if (device && midiService.canReconnectToDevice(prefs.lastOutputDeviceId, 'output')) {
         newReconnectables.output = device;
-        
+
         // Only auto-reconnect if not intentionally disconnected
         if (midiPackage && !intentionalFlags.output) {
           try {
@@ -165,7 +199,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         }
       }
     }
-    
+
     setReconnectableDevices(newReconnectables);
   };
 
@@ -179,12 +213,23 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       } else {
         loadDevices();
       }
-      
+
       // Set up device change monitoring
       const unsubscribe = midiService.onDeviceChange((info) => {
+        const previous = latestConnection.current;
+        const lost: string[] = [];
+        if (previous.inputConnected && info.inputs.removed.some(device => device.id === previous.inputDeviceId)) {
+          lostDevices.current.input = previous.inputDeviceId;
+          lost.push('Input');
+        }
+        if (previous.outputConnected && info.outputs.removed.some(device => device.id === previous.outputDeviceId)) {
+          lostDevices.current.output = previous.outputDeviceId;
+          lost.push(lost.length ? 'output' : 'Output');
+        }
+        if (lost.length) setOutcome(`${lost.join(' and ')} device${lost.length > 1 ? 's' : ''} disconnected.`);
         const timestamp = new Date().toLocaleTimeString();
         const events: DeviceChangeEvent[] = [];
-        
+
         // Log device additions
         info.inputs.added.forEach(device => {
           events.push({
@@ -193,7 +238,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
             type: 'connected'
           });
         });
-        
+
         info.outputs.added.forEach(device => {
           events.push({
             timestamp,
@@ -201,7 +246,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
             type: 'connected'
           });
         });
-        
+
         // Log device removals
         info.inputs.removed.forEach(device => {
           events.push({
@@ -210,7 +255,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
             type: 'disconnected'
           });
         });
-        
+
         info.outputs.removed.forEach(device => {
           events.push({
             timestamp,
@@ -218,7 +263,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
             type: 'disconnected'
           });
         });
-        
+
         if (events.length > 0) {
           setDeviceChangeEvents(prev => [...events, ...prev].slice(0, 10)); // Keep last 10 events
         }
@@ -248,59 +293,65 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   useEffect(() => {
     updateReconnectableDevices();
   }, [connectionState, inputDevices, outputDevices, midiPackage]);
-  
-  
+
+
   const handleConnectInput = async () => {
     if (!midiPackage || !selectedInputId) return;
-    const success = await midiPackage.connectInputDevice(selectedInputId);
+    const success = await operation('Input device connected.', () => midiPackage.connectInputDevice(selectedInputId));
     if (success) {
       refreshConnectionState();
-      setSelectedInputId("");
       loadDevices(); // Refresh to update reconnectable devices
     }
   };
-  
+
   const handleDisconnectInput = () => {
     midiService.disconnectWithIntent('input');
+    setOutcome('Input device disconnected.');
     refreshConnectionState();
     loadDevices(); // Refresh to update reconnectable devices
   };
-  
+
   const handleConnectOutput = async () => {
     if (!midiPackage || !selectedOutputId) return;
-    const success = await midiPackage.connectOutputDevice(selectedOutputId);
+    const success = await operation('Output device connected.', () => midiPackage.connectOutputDevice(selectedOutputId));
     if (success) {
       refreshConnectionState();
-      setSelectedOutputId("");
       loadDevices(); // Refresh to update reconnectable devices
     }
   };
-  
+
   const handleDisconnectOutput = () => {
     midiService.disconnectWithIntent('output');
+    setOutcome('Output device disconnected.');
     refreshConnectionState();
     loadDevices(); // Refresh to update reconnectable devices
   };
 
   const handleRefreshDevices = async () => {
+    setOutcome('');
+    try {
     // Refresh hardware device list
     midiService.refresh();
-    
+
     // Make sure virtual synthesizer is initialized
     if (!virtualMidiService.initialized) {
       await virtualMidiService.initialize();
     }
-    
+
     // Load devices and update connection state
-    loadDevices();
+    await loadDevices();
     refreshConnectionState();
-    
+    setOutcome('Devices refreshed.');
+    } catch {
+      setOutcome('Could not refresh devices. Check device access and try again.');
+    }
+
   };
 
   // Handle reconnection attempts
   const handleReconnectInput = async () => {
     if (!reconnectableDevices.input || !midiPackage) return;
-    const success = await midiService.attemptReconnect(reconnectableDevices.input.id, 'input');
+    const success = await operation('Input device reconnected.', () => midiService.attemptReconnect(reconnectableDevices.input!.id, 'input'));
     if (success) {
       refreshConnectionState();
       loadDevices();
@@ -314,7 +365,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
 
   const handleReconnectOutput = async () => {
     if (!reconnectableDevices.output || !midiPackage) return;
-    const success = await midiService.attemptReconnect(reconnectableDevices.output.id, 'output');
+    const success = await operation('Output device reconnected.', () => midiService.attemptReconnect(reconnectableDevices.output!.id, 'output'));
     if (success) {
       refreshConnectionState();
       loadDevices();
@@ -325,23 +376,23 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
       }, ...prev].slice(0, 10));
     }
   };
-  
+
   // Set up debug callback for MIDI input monitoring
   useEffect(() => {
     if (!midiPackage) return;
-    
+
     // Set debug callback to capture MIDI input and GMCP output
     midiPackage.setDebugCallback((hex: string, type: string, gmcpMessage: string) => {
       const timestamp = new Date().toLocaleTimeString();
       const newEntry = { hex, type, gmcp: gmcpMessage, timestamp };
-      
+
       setMidiHistory(prev => {
         const updated = [newEntry, ...prev];
         // Keep only last 15 entries
         return updated.slice(0, 15);
       });
     });
-    
+
     return () => {
       // Clean up callback on unmount
       midiPackage.setDebugCallback(() => {});
@@ -352,15 +403,16 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const handleAllNotesOff = () => {
     if (midiPackage) {
       midiPackage.sendAllNotesOff();
+      setOutcome('All notes stopped.');
     }
   };
 
   const handleSendNote = () => {
     if (!midiPackage) return;
-    
+
     // Send note to server with proper duration handling
     const noteDuration = useDuration && noteOn ? duration : undefined;
-    
+
     midiPackage.sendManualNote(
       selectedNote,
       selectedVelocity,
@@ -380,51 +432,46 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
 
   if (!midiPreferences.enabled) {
     return (
-      <div style={{ padding: "10px" }}>
+      <div style={{ padding: "10px", color: "var(--color-text)", overflowWrap: "anywhere" }}>
         <p>MIDI is disabled. Enable it in preferences to use MIDI features.</p>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: "10px" }}>
+    <div style={{ padding: "10px", color: "var(--color-text)", overflowWrap: "anywhere" }}>
       <h3>MIDI Status</h3>
-      
-      <div style={{ marginBottom: "15px" }}>
+      <p role="status">{outcome}</p>
+
+      <div ref={inputGroup} style={{ marginBottom: "15px" }}>
         <div style={{ marginBottom: "8px" }}>
-          <strong>Input Device:</strong>
+          <label htmlFor={inputId}>Input device</label>
         </div>
         {connectionState.inputConnected ? (
           <div style={{ marginBottom: "8px" }}>
-            <span style={{ color: "green" }}>✓ {connectionState.inputDeviceName}</span>
-            <button
-              type="button"
-              onClick={handleDisconnectInput}
-              style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "0.8em" }}
-            >
-              Disconnect
-            </button>
+            <span style={{ color: "var(--color-success)" }}>✓ {connectionState.inputDeviceName}</span>
           </div>
         ) : (
           <div style={{ marginBottom: "8px" }}>
             {/* Show reconnection option if available */}
             {reconnectableDevices.input && (
-              <div style={{ marginBottom: "8px", padding: "8px", backgroundColor: "#e3f2fd", border: "1px solid #2196F3", borderRadius: "4px" }}>
+              <div style={{ marginBottom: "8px", padding: "8px", backgroundColor: "var(--color-info-subtle)", border: "1px solid var(--color-info)", borderRadius: "4px" }}>
                 <div style={{ fontSize: "0.9em", marginBottom: "5px" }}>
-                  <span style={{ color: "#1976D2" }}>🔄 Last used device available:</span>
+                  <span style={{ color: "var(--color-info)" }}>🔄 Last used device available:</span>
                 </div>
                 <div>
                   <span>{reconnectableDevices.input.name}</span>
                   <button
                     type="button"
+                    aria-label="Reconnect input device"
                     onClick={handleReconnectInput}
-                    style={{ 
-                      marginLeft: "10px", 
-                      padding: "2px 8px", 
-                      fontSize: "0.8em", 
-                      backgroundColor: "#2196F3", 
-                      color: "white", 
-                      border: "none", 
+                    style={{
+                      marginLeft: "10px",
+                      padding: "2px 8px",
+                      fontSize: "0.8em",
+                      backgroundColor: "var(--color-info)",
+                      color: "var(--color-text-button)",
+                      border: "none",
                       borderRadius: "2px",
                       cursor: "pointer"
                     }}
@@ -434,15 +481,16 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                 </div>
               </div>
             )}
-            
+
             {inputDevices.length === 0 ? (
-              <span style={{ color: "#666", fontSize: "0.9em" }}>No input devices found</span>
+              <span style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>No input devices found</span>
             ) : (
               <>
                 <select
+                  id={inputId}
                   value={selectedInputId}
                   onChange={(e) => setSelectedInputId(e.target.value)}
-                  style={{ marginRight: "10px" }}
+                  style={{ marginRight: "10px", maxWidth: "100%" }}
                 >
                   <option value="">Select input device...</option>
                   {inputDevices.map((device) => (
@@ -451,55 +499,50 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={handleConnectInput}
-                  disabled={!selectedInputId}
-                  style={{ padding: "2px 8px", fontSize: "0.8em", marginRight: "5px" }}
-                >
-                  Connect
-                </button>
               </>
             )}
           </div>
         )}
+        <button
+          ref={inputAction}
+          type="button"
+          aria-label={connectionState.inputConnected ? 'Disconnect input device' : 'Connect input device'}
+          onClick={connectionState.inputConnected ? handleDisconnectInput : handleConnectInput}
+          disabled={!connectionState.inputConnected && !selectedInputId}
+        >
+          {connectionState.inputConnected ? 'Disconnect' : 'Connect'}
+        </button>
       </div>
-      
-      <div style={{ marginBottom: "15px" }}>
+
+      <div ref={outputGroup} style={{ marginBottom: "15px" }}>
         <div style={{ marginBottom: "8px" }}>
-          <strong>Output Device:</strong>
+          <label htmlFor={outputId}>Output device</label>
         </div>
         {connectionState.outputConnected ? (
           <div style={{ marginBottom: "8px" }}>
-            <span style={{ color: "green" }}>✓ {connectionState.outputDeviceName}</span>
-            <button
-              type="button"
-              onClick={handleDisconnectOutput}
-              style={{ marginLeft: "10px", padding: "2px 8px", fontSize: "0.8em" }}
-            >
-              Disconnect
-            </button>
+            <span style={{ color: "var(--color-success)" }}>✓ {connectionState.outputDeviceName}</span>
           </div>
         ) : (
           <div style={{ marginBottom: "8px" }}>
             {/* Show reconnection option if available */}
             {reconnectableDevices.output && (
-              <div style={{ marginBottom: "8px", padding: "8px", backgroundColor: "#e8f5e8", border: "1px solid #4CAF50", borderRadius: "4px" }}>
+              <div style={{ marginBottom: "8px", padding: "8px", backgroundColor: "var(--color-success-subtle)", border: "1px solid var(--color-success)", borderRadius: "4px" }}>
                 <div style={{ fontSize: "0.9em", marginBottom: "5px" }}>
-                  <span style={{ color: "#2E7D32" }}>🔄 Last used device available:</span>
+                  <span style={{ color: "var(--color-success)" }}>🔄 Last used device available:</span>
                 </div>
                 <div>
                   <span>{reconnectableDevices.output.name}</span>
                   <button
                     type="button"
+                    aria-label="Reconnect output device"
                     onClick={handleReconnectOutput}
-                    style={{ 
-                      marginLeft: "10px", 
-                      padding: "2px 8px", 
-                      fontSize: "0.8em", 
-                      backgroundColor: "#4CAF50", 
-                      color: "white", 
-                      border: "none", 
+                    style={{
+                      marginLeft: "10px",
+                      padding: "2px 8px",
+                      fontSize: "0.8em",
+                      backgroundColor: "var(--color-success)",
+                      color: "var(--color-text-button)",
+                      border: "none",
                       borderRadius: "2px",
                       cursor: "pointer"
                     }}
@@ -509,15 +552,16 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                 </div>
               </div>
             )}
-            
+
             {outputDevices.length === 0 ? (
-              <span style={{ color: "#666", fontSize: "0.9em" }}>No output devices found</span>
+              <span style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>No output devices found</span>
             ) : (
               <>
                 <select
+                  id={outputId}
                   value={selectedOutputId}
                   onChange={(e) => setSelectedOutputId(e.target.value)}
-                  style={{ marginRight: "10px" }}
+                  style={{ marginRight: "10px", maxWidth: "100%" }}
                 >
                   <option value="">Select output device...</option>
                   {outputDevices.map((device) => (
@@ -526,20 +570,21 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={handleConnectOutput}
-                  disabled={!selectedOutputId}
-                  style={{ padding: "2px 8px", fontSize: "0.8em", marginRight: "5px" }}
-                >
-                  Connect
-                </button>
               </>
             )}
           </div>
         )}
+        <button
+          ref={outputAction}
+          type="button"
+          aria-label={connectionState.outputConnected ? 'Disconnect output device' : 'Connect output device'}
+          onClick={connectionState.outputConnected ? handleDisconnectOutput : handleConnectOutput}
+          disabled={!connectionState.outputConnected && !selectedOutputId}
+        >
+          {connectionState.outputConnected ? 'Disconnect' : 'Connect'}
+        </button>
       </div>
-      
+
       <div style={{ marginBottom: "15px" }}>
         <button
           type="button"
@@ -549,7 +594,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           Refresh Devices
         </button>
       </div>
-      
+
       <div style={{ marginBottom: "15px" }}>
         <button type="button" onClick={handleAllNotesOff}>
           All Notes Off
@@ -571,12 +616,12 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                 onChange={(e) => setSelectedNote(parseInt(e.target.value, 10))}
                 style={{ width: "60px", marginRight: "10px" }}
               />
-              <span style={{ fontSize: "0.9em", color: "#666" }}>
+              <span style={{ fontSize: "0.9em", color: "var(--color-text-secondary)" }}>
                 ({getNoteNameFromNumber(selectedNote)})
               </span>
             </label>
           </div>
-          
+
           <div style={{ marginBottom: "10px" }}>
             <label>
               <strong>Velocity:</strong>{" "}
@@ -591,14 +636,14 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
               <span style={{ fontSize: "0.9em" }}>{selectedVelocity}</span>
             </label>
           </div>
-          
+
           <div style={{ marginBottom: "10px" }}>
             <label>
               <strong>Channel:</strong>{" "}
               <select
                 value={selectedChannel}
                 onChange={(e) => setSelectedChannel(parseInt(e.target.value, 10))}
-                style={{ marginRight: "10px" }}
+                style={{ marginRight: "10px", maxWidth: "100%" }}
               >
                 {Array.from({ length: 16 }, (_, i) => (
                   <option key={i} value={i}>
@@ -608,7 +653,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
               </select>
             </label>
           </div>
-          
+
           <div style={{ marginBottom: "10px" }}>
             <label>
               <input
@@ -634,7 +679,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
                   onChange={(e) => setDuration(parseInt(e.target.value, 10))}
                   style={{ width: "80px", marginRight: "10px" }}
                 />
-                <span style={{ fontSize: "0.9em", color: "#666" }}>ms</span>
+                <span style={{ fontSize: "0.9em", color: "var(--color-text-secondary)" }}>ms</span>
               </label>
             </div>
           ) : (
@@ -650,22 +695,22 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
               </label>
             </div>
           )}
-          
+
           <div style={{ marginBottom: "15px" }}>
             <button
               type="button"
               onClick={handleSendNote}
-              style={{ 
-                padding: "8px 16px", 
-                backgroundColor: useDuration ? "#2196F3" : (noteOn ? "#4CAF50" : "#f44336"),
-                color: "white",
+              style={{
+                padding: "8px 16px",
+                backgroundColor: useDuration ? "var(--color-info)" : (noteOn ? "var(--color-success)" : "var(--color-danger)"),
+                color: "var(--color-text-button)",
                 border: "none",
                 borderRadius: "4px",
                 cursor: "pointer"
               }}
             >
-              {useDuration 
-                ? `Send Note (${duration}ms duration)` 
+              {useDuration
+                ? `Send Note (${duration}ms duration)`
                 : `Send ${noteOn ? "Note On" : "Note Off"} to Server`
               }
             </button>
@@ -673,7 +718,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         </div>
       </details>
 
-      
+
       {deviceChangeEvents.length > 0 && (
         <details>
           <summary><strong>Device Connection Events</strong></summary>
@@ -683,19 +728,19 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
               overflow: "auto",
               fontFamily: "monospace",
               fontSize: "0.8em",
-              backgroundColor: "#f9f9f9",
+              backgroundColor: "var(--color-bg-surface)",
               padding: "10px",
-              border: "1px solid #ddd",
+              border: "1px solid var(--color-border)",
               marginBottom: "15px"
             }}>
               {deviceChangeEvents.map((event, index) => (
-                <div key={index} style={{ 
-                  marginBottom: "5px", 
-                  paddingBottom: "5px", 
-                  borderBottom: index < deviceChangeEvents.length - 1 ? "1px solid #eee" : "none",
-                  color: event.type === 'connected' ? '#2E7D32' : event.type === 'disconnected' ? '#D32F2F' : '#1976D2'
+                <div key={index} style={{
+                  marginBottom: "5px",
+                  paddingBottom: "5px",
+                  borderBottom: index < deviceChangeEvents.length - 1 ? "1px solid var(--color-border)" : "none",
+                  color: event.type === 'connected' ? 'var(--color-success)' : event.type === 'disconnected' ? 'var(--color-danger)' : 'var(--color-info)'
                 }}>
-                  <span style={{ color: "#666" }}>{event.timestamp}</span> - {event.message}
+                  <span style={{ color: "var(--color-text-secondary)" }}>{event.timestamp}</span> - {event.message}
                 </div>
               ))}
             </div>
@@ -711,38 +756,38 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
             overflow: "auto",
             fontFamily: "monospace",
             fontSize: "0.8em",
-            backgroundColor: "#f5f5f5",
+            backgroundColor: "var(--color-bg-surface)",
             padding: "10px",
-            border: "1px solid #ddd",
+            border: "1px solid var(--color-border)",
             marginBottom: "15px"
           }}>
             {midiHistory.length === 0 ? (
-              <div style={{ color: "#999" }}>No MIDI messages received yet</div>
+              <div style={{ color: "var(--color-text-secondary)" }}>No MIDI messages received yet</div>
             ) : (
               midiHistory.map((entry, index) => (
-                <div key={index} style={{ marginBottom: "8px", paddingBottom: "8px", borderBottom: index < midiHistory.length - 1 ? "1px solid #ddd" : "none" }}>
-                  <div><strong>MIDI:</strong> {entry.hex} ({entry.type}) <span style={{ color: "#666", fontSize: "0.9em" }}>{entry.timestamp}</span></div>
+                <div key={index} style={{ marginBottom: "8px", paddingBottom: "8px", borderBottom: index < midiHistory.length - 1 ? "1px solid var(--color-border)" : "none" }}>
+                  <div><strong>MIDI:</strong> {entry.hex} ({entry.type}) <span style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>{entry.timestamp}</span></div>
                   <div><strong>GMCP:</strong> {entry.gmcp}</div>
                 </div>
               ))
             )}
-            <div style={{ marginTop: "10px", color: "#666", fontSize: "0.9em", borderTop: "1px solid #ddd", paddingTop: "5px" }}>
+            <div style={{ marginTop: "10px", color: "var(--color-text-secondary)", fontSize: "0.9em", borderTop: "1px solid var(--color-border)", paddingTop: "5px" }}>
               Showing last 15 messages • Active Sensing (0xFE) suppressed
             </div>
           </div>
         </div>
       </details>
-      
-      
+
+
       <details>
         <summary><strong>Usage</strong></summary>
-        <div style={{ padding: "10px 0", fontSize: "0.9em", color: "#666" }}>
+        <div style={{ padding: "10px 0", fontSize: "0.9em", color: "var(--color-text-secondary)" }}>
           <p>• Press keys on your MIDI keyboard to send notes to the server</p>
           <p>• Server can send notes back to play on your MIDI device</p>
           <p>• Use manual controls above to test server communication</p>
           <p>• <strong>Duration Mode:</strong> Send Note On with auto Note Off after specified time</p>
           <p>• <strong>Manual Mode:</strong> Send explicit Note On/Off messages</p>
-          <p>• Press Escape to stop all sounds and MIDI notes</p>
+          <p>• Escape pauses client audio. Use Resume sounds in the toolbar to continue.</p>
           <p>• MIDI notes: 0-127 (60 = Middle C, 69 = A4-440Hz)</p>
         </div>
       </details>

@@ -15,6 +15,7 @@ import {
 import { Item } from '../gmcp/Char/Items'; // Assuming Item interface is here
 import { type ItemAction, itemActions } from '../itemActions';
 import './ItemCard.css';
+import { useFocusRecovery } from '../hooks/useFocusRecovery';
 
 // The server names the verbs, so only the ones listed here get an icon.
 const ACTION_ICONS = new Map<string, IconType>([
@@ -34,16 +35,20 @@ const ACTION_ICONS = new Map<string, IconType>([
 interface ItemCardProps {
     item: Item;
     onAction: (action: ItemAction) => void;
+    focusReturnId?: string;
+    focusFallbackId?: string;
     // isSelected is no longer needed as card is only shown for the selected item
     // detailsId is no longer needed
 }
 
-const ItemCard: React.FC<ItemCardProps> = ({ item, onAction }) => {
+const ItemCard: React.FC<ItemCardProps> = ({ item, onAction, focusReturnId, focusFallbackId }) => {
+    const cardRef = React.useRef<HTMLDivElement>(null);
+    useFocusRecovery(cardRef, focusReturnId, focusFallbackId);
     // const attributes = parseAttributes(item.Attrib); // Removed attribute parsing
     const itemTitle = item.name; // Title is just the item name for now
 
     return (
-        <div className="item-card" title={itemTitle} data-item-id={item.id}>
+        <div ref={cardRef} className="item-card" title={itemTitle} data-item-id={item.id}>
             {item.icon && <img src={item.icon} alt="" className="item-icon" />}
             <div className="item-details"> {/* The id attribute, which previously used detailsId, was removed here */}
                 <div className="item-name">{item.name}</div>
