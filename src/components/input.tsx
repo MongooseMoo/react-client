@@ -123,11 +123,16 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     const currentInputText = text;
     const textArea = inputRef.current;
     const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+    const canRecallHistory = !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+      !currentInputText.includes('\n') && textArea?.selectionStart === textArea?.selectionEnd;
 
     if (e.key === "Tab") {
       // e.preventDefault(); // Remove from here
 
-      if (!textArea) return;
+      if (!textArea || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) {
+        resetCompletionState();
+        return;
+      }
 
       // If the entire input field is empty, reset completion state and do nothing further.
       // This handles the case where Tab is pressed in a completely empty input.
@@ -136,9 +141,6 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         return; // Allow default tab behavior if input is empty
       }
       
-      // Add e.preventDefault() here, as we are now proceeding with custom tab handling
-      e.preventDefault(); 
-
       const cursorPos = textArea.selectionStart;
       const textBeforeCursor = currentInputText.substring(0, cursorPos);
       const wordMatch = textBeforeCursor.match(/(?:[^"\s]\S*|"[^"]*"?)$/);
@@ -158,6 +160,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       }
 
       if (isCycling) { // We are cycling
+        e.preventDefault();
         completionIndexRef.current = (completionIndexRef.current + 1) % completionCandidatesRef.current.length;
         const completedName = completionCandidatesRef.current[completionIndexRef.current];
 
@@ -204,6 +207,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         ];
 
         if (completionCandidates.length > 0) {
+          e.preventDefault();
           completionActiveOriginalWordRef.current = currentWord; // Store the word that initiated this sequence
           completionCandidatesRef.current = completionCandidates;
           completionIndexRef.current = 0;
@@ -228,12 +232,12 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       e.preventDefault();
     } else if (isPlainAlt && e.code === "Space") {
       e.preventDefault();
-    } else if (e.key === "ArrowUp" && !e.altKey) {
+    } else if (e.key === "ArrowUp" && canRecallHistory) {
       e.preventDefault();
       const prevCommand = commandHistory.navigateUp(currentInputText);
       useInputStore.getState().setText(prevCommand);
       resetCompletionState();
-    } else if (e.key === "ArrowDown" && !e.altKey) {
+    } else if (e.key === "ArrowDown" && canRecallHistory) {
       e.preventDefault();
       const nextCommand = commandHistory.navigateDown(currentInputText);
       useInputStore.getState().setText(nextCommand);
@@ -260,6 +264,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         }}
         onKeyDown={handleKeyDown}
         id="command-input"
+        aria-label="Command"
         ref={inputRef}
         autoFocus
       />

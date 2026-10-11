@@ -62,6 +62,51 @@ describe('CommandInput Component', () => {
     expect(screen.getByRole('textbox')).toBeTruthy();
     expect(screen.getByRole('button', { name: /send/i })).toBeTruthy();
   });
+
+  it('names the command field and leaves nonmatching drafts intact when traversing', () => {
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+    const textarea = screen.getByRole('textbox', { name: 'Command' });
+    for (const value of ['unknown-prefix', 'look ']) {
+      fireEvent.input(textarea, { target: { value } });
+      const tab = createEvent.keyDown(textarea, { key: 'Tab' });
+      fireEvent(textarea, tab);
+      expect(tab.defaultPrevented).toBe(false);
+      expect(textarea).toHaveValue(value);
+    }
+  });
+
+  it('allows reverse traversal during matching completion without changing the draft', () => {
+    useInputStore.setState({ visibleCommands: ['look', 'lock'] });
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+    const textarea = screen.getByRole('textbox');
+    fireEvent.input(textarea, { target: { value: 'lo' } });
+    const tab = createEvent.keyDown(textarea, { key: 'Tab' });
+    fireEvent(textarea, tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(textarea).toHaveValue('look');
+    const reverse = createEvent.keyDown(textarea, { key: 'Tab', shiftKey: true });
+    fireEvent(textarea, reverse);
+    expect(reverse.defaultPrevented).toBe(false);
+    expect(textarea).toHaveValue('look');
+  });
+
+  it('preserves multiline and modified caret navigation instead of replacing drafts from history', () => {
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+    const textarea = screen.getByRole('textbox');
+    fireEvent.input(textarea, { target: { value: 'first\nsecond' } });
+    for (const key of ['ArrowUp', 'ArrowDown']) {
+      const event = createEvent.keyDown(textarea, { key });
+      fireEvent(textarea, event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    fireEvent.input(textarea, { target: { value: 'draft' } });
+    for (const modifier of ['shiftKey', 'ctrlKey', 'metaKey']) {
+      fireEvent.keyDown(textarea, { key: 'ArrowUp', [modifier]: true });
+    }
+    expect(navigateUpMock).not.toHaveBeenCalled();
+    expect(navigateDownMock).not.toHaveBeenCalled();
+    expect(textarea).toHaveValue('draft');
+  });
   
   it('updates input value when user types', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
