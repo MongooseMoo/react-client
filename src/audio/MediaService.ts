@@ -729,7 +729,7 @@ export class MediaService {
       if (!sound) {
         return;
       }
-      if (!this.cleanedSounds.has(old) && old.isPlaying) {
+      if (!this.cleanedSounds.has(old) && this.isActiveSound(old)) {
         retiring = old;
         if (continuing && old.playPayload) {
           // Updates that arrived while it loaded are part of the state to carry.
@@ -994,11 +994,11 @@ export class MediaService {
   /**
    * Where a voice that is being replaced is playing now, as an absolute source
    * position in ms, so its replacement can continue from there. Undefined when
-   * it is not playing, the engine reports no playhead, or the Play names a
+   * it is neither playing nor held by global pause, the engine reports no playhead, or the Play names a
    * cursor (`requestedStart`) further than the seek tolerance from it.
    */
   private resumeCursor(voice: ExtendedSound, requestedStart: number | undefined): number | undefined {
-    const playhead = voice.isPlaying ? voice.playbacks[0]?.currentTime : undefined;
+    const playhead = this.isActiveSound(voice) ? voice.playbacks[0]?.currentTime : undefined;
     if (typeof playhead !== 'number' || !Number.isFinite(playhead)) {
       return undefined;
     }
@@ -1160,18 +1160,25 @@ export class MediaService {
     return this.transitionPlayback(async () => {
       if (this.playbackPaused) return;
       this.playbackPaused = true;
-      for (const sound of this.allSounds) {
-        if (sound.isPlaying) {
-          this.pausedSounds.add(sound);
-          sound.pause();
-        }
-        this.parkSegmentTimer(sound);
-      }
-      this.notifyPlayback();
+      for (const sound of this.allSounds) this.parkSegmentTimer(sound);
       try {
+        for (const sound of this.allSounds) {
+          if (sound.isPlaying) {
+            // Retain ownership even if the engine throws after pausing a source.
+            this.pausedSounds.add(sound);
+            sound.pause();
+          }
+        }
+        this.notifyPlayback();
         await this.cacophony.pause();
       } catch (error) {
-        this.restorePausedSounds();
+        // Undo a partial pause. If restoration also fails, it keeps the graph
+        // suspended and the sources available for a later Resume attempt.
+        try {
+          await this.restorePausedSounds();
+        } catch {
+          // Report the operation that initially failed.
+        }
         throw error;
       }
       if (this.currentMusic) this.mediaSession.setPlaybackState('paused');
@@ -1182,8 +1189,7 @@ export class MediaService {
   resumeAllSounds(): Promise<void> {
     return this.transitionPlayback(async () => {
       if (!this.playbackPaused) return;
-      await this.cacophony.resume();
-      this.restorePausedSounds();
+      await this.restorePausedSounds();
     });
   }
 
@@ -1193,12 +1199,49 @@ export class MediaService {
     return transition;
   }
 
-  private restorePausedSounds(): void {
-    this.playbackPaused = false;
-    for (const sound of this.pausedSounds) sound.resume();
+  private async restorePausedSounds(): Promise<void> {
+    try {
+      await this.cacophony.resume();
+      for (const sound of this.pausedSounds) {
+        if (!sound.isPlaying) sound.resume();
+      }
+      for (const [sound, start] of this.pendingStarts) {
+        try {
+          start();
+        } finally {
+          // A successful start must retry from its paused cursor, rather than
+          // invoking Play a second time if a later source fails to start.
+          if (sound.isPlaying && this.pendingStarts.get(sound) === start) {
+            this.pendingStarts.delete(sound);
+            this.pausedSounds.add(sound);
+          }
+        }
+      }
+    } catch (error) {
+      for (const sound of this.allSounds) {
+        this.parkSegmentTimer(sound);
+        if (sound.isPlaying) {
+          this.pausedSounds.add(sound);
+          try {
+            sound.pause();
+          } catch {
+            // Suspending the shared graph below also silences sources whose
+            // engine-level pause failed. Retain their ownership for retry.
+          }
+        }
+      }
+      try {
+        await this.cacophony.pause();
+      } finally {
+        if (this.currentMusic) this.mediaSession.setPlaybackState('paused');
+        this.updateMusicPosition();
+        this.notifyPlayback();
+      }
+      throw error;
+    }
     this.pausedSounds.clear();
-    for (const start of this.pendingStarts.values()) start();
     this.pendingStarts.clear();
+    this.playbackPaused = false;
     for (const sound of this.allSounds) {
       const timer = sound.segmentTimerState;
       if (timer && sound.segmentTimer === undefined) this.armSegmentTimer(sound, timer.callback, timer.remaining);
@@ -1210,6 +1253,10 @@ export class MediaService {
 
   private notifyPlayback(): void {
     for (const listener of this.playbackListeners) listener();
+  }
+
+  private isActiveSound(sound: ExtendedSound): boolean {
+    return sound.isPlaying || this.pausedSounds.has(sound) || this.pendingStarts.has(sound);
   }
 
   stopAllSounds(): void {
@@ -2013,7 +2060,7 @@ export class MediaService {
    */
   private changePanMode(sound: ExtendedSound, data: ClientMediaUpdatePayload): boolean {
     const current = sound.playPayload;
-    if (!current || data.is3d === undefined || !sound.isPlaying) {
+    if (!current || data.is3d === undefined || !this.isActiveSound(sound)) {
       return false;
     }
     if (!this.needsPanMode(sound, data.is3d ? 'HRTF' : 'stereo', data)) {
