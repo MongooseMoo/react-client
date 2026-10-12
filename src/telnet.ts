@@ -254,7 +254,7 @@ export class TelnetParser extends EventEmitter {
   }
 
   sendGmcp(gmcpPackage: string, data: string) {
-    const gmcpString = gmcpPackage + " " + data;
+    const gmcpString = data ? gmcpPackage + " " + data : gmcpPackage;
     const gmcpBuffer = new TextEncoder().encode(gmcpString);
     const buffer = concatBytes(
       new Uint8Array([TelnetCommand.IAC, TelnetCommand.SB]),
