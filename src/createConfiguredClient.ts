@@ -129,7 +129,7 @@ export function createConfiguredClient(): MudClient {
   // GMCP packages
   const clientFileTransfer = client.gmcp.register(GMCPClientFileTransfer);
   client.configureFileTransfer(clientFileTransfer);
-  client.gmcp.register(GMCPCore);
+  client.configureLatency(client.gmcp.register(GMCPCore));
   client.gmcp.register(GMCPClientMedia);
   client.gmcp.register(GmcPIRESound);
   client.gmcp.register(GMCPClientSpatial);

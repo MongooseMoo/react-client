@@ -4,6 +4,7 @@ import './statusbar.css'; // Ensure CSS is imported
 
 const Statusbar: React.FC = () => {
   const statusText = useConnectionStore((state) => state.statusText);
+  const latency = useConnectionStore((state) => state.latency);
   const vitals = useCharacterStatusStore((state) => state.vitals);
 
   // Derive connection state for the status dot
@@ -39,6 +40,12 @@ const Statusbar: React.FC = () => {
     <div className="statusbar">
       <span className={`status-dot ${connectionState}`} />
       <span className="status-connection">{statusText}</span>
+      {latency.status !== 'unavailable' && (
+        <span className="status-latency" title="Round-trip time to the game, including network and server processing">
+          {latency.status === 'current' ? `Ping: ${latency.rttMs} ms` :
+            latency.status === 'stale' ? 'Ping: no reply' : 'Ping: measuring'}
+        </span>
+      )}
       {vitals && (
         <span className="status-vitals">
           {hp && <> HP: <span className={hpClass}>{hp}</span></>}

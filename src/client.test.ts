@@ -345,6 +345,50 @@ describe('MudClient lifecycle cleanup', () => {
     client.shutdown();
   });
 
+  it('samples negotiated GMCP on the wire, shares the average and resets on disable and close', () => {
+    vi.useFakeTimers();
+    let clock = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const client = new MudClient('example.test', 443);
+    client.configureLatency(client.gmcp.register(GMCPCore));
+    client.gmcp.register(MockCoreSupportsPackage as never);
+    client.gmcp.register(MockAutoLoginPackage as never);
+    client.gmcp.register(MockClientMediaPackage as never);
+    client.connect();
+    const socket = mockWebSocketInstances[0];
+    socket.onopen?.(new Event('open'));
+    const pingPackets = () => socket.send.mock.calls.map(([data]) =>
+      new TextDecoder().decode(data as Uint8Array)).filter((packet) => packet.includes('Core.Ping'));
+    try {
+      expect(pingPackets()).toEqual([]);
+      sendSocketBytes(socket, [255, 251, 201]);
+      expect(pingPackets()).toEqual([new TextDecoder().decode(new Uint8Array([
+        255, 250, 201, ...new TextEncoder().encode('Core.Ping'), 255, 240,
+      ]))]);
+      clock = 120;
+      sendSocketBytes(socket, [255, 250, 201, ...new TextEncoder().encode('Core.Ping'), 255, 240]);
+      expect(useConnectionStore.getState().latency).toEqual({ status: 'current', rttMs: 120, averageMs: 120 });
+      clock = 5000;
+      vi.advanceTimersByTime(5000);
+      expect(pingPackets()[1]).toContain('Core.Ping 120');
+      window.dispatchEvent(new Event('pageshow'));
+      expect(pingPackets()).toHaveLength(2);
+      sendSocketBytes(socket, [255, 252, 201]);
+      expect(useConnectionStore.getState().latency.status).toBe('unavailable');
+      vi.advanceTimersByTime(1000);
+      expect(pingPackets()).toHaveLength(2);
+      sendSocketBytes(socket, [255, 251, 201]);
+      expect(pingPackets()).toHaveLength(3);
+      client.close();
+      vi.advanceTimersByTime(60000);
+      expect(pingPackets()).toHaveLength(3);
+      expect(useConnectionStore.getState().latency.status).toBe('unavailable');
+    } finally {
+      client.shutdown();
+      vi.useRealTimers();
+    }
+  });
+
   describe('file transfers', () => {
     polyfillBlobArrayBuffer();
 

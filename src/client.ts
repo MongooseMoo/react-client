@@ -8,6 +8,8 @@ import {
 
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
+import { ConnectionLatency } from "./ConnectionLatency";
+import type { GMCPCore } from "./gmcp/Core";
 import { type GMCPClientFileTransfer, GmcpSession } from "./gmcp";
 import {
   type MCPPackage,
@@ -55,6 +57,7 @@ class MudClient {
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private reconnectAttempt: number = 0;
   private livenessTimer?: ReturnType<typeof setTimeout>;
+  private latency?: ConnectionLatency;
   private resumeListenersRegistered: boolean = false;
   private telnet!: TelnetParser;
   private _connected: boolean = false;
@@ -108,6 +111,20 @@ class MudClient {
     this.gmcp = new GmcpSession(this);
     this.media = new MediaService();
     useInputStore.getState().setAutosay(this._autosay);
+  }
+
+  configureLatency(core: GMCPCore): void {
+    const latency = new ConnectionLatency(
+      (average) => core.sendPing(average),
+      (snapshot) => useConnectionStore.getState().setLatency(snapshot),
+    );
+    this.latency = latency;
+    const unsubscribe = core.on('ping', () => latency.receive());
+    this.registerDisconnectReset(() => latency.stop());
+    this.registerCleanup(() => {
+      latency.stop();
+      unsubscribe();
+    });
   }
 
   configureFileTransfer(fileTransfer: GMCPClientFileTransfer): void {
@@ -227,7 +244,11 @@ class MudClient {
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
-        this.gmcp.start();
+        if (this.gmcp.start()) this.latency?.start();
+      } else if (command === TelnetCommand.WONT && option === TelnetOption.GMCP) {
+        this.latency?.stop();
+        this.gmcp.reset();
+        this.gmcp.attachTransport(this.telnet);
       } else if (
         command === TelnetCommand.DO &&
         option === TelnetOption.TERMINAL_TYPE
@@ -316,7 +337,8 @@ class MudClient {
       this.ws.close();
       this.reconnectNow();
     }, LIVENESS_TIMEOUT_MS);
-    this.gmcp.require("Core").sendPing(undefined);
+    if (this.latency) this.latency.probe();
+    else this.gmcp.require("Core").sendPing(undefined);
   }
 
   private clearLivenessProbe(): void {

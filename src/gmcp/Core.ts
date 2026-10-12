@@ -42,15 +42,17 @@ const GMCPCoreBase = GMCPPackage.with({
 });
 
 export class GMCPCore extends GMCPCoreBase {
-  constructor(client: ConstructorParameters<typeof GMCPCoreBase>[0]) {
-    super(client);
-    this.on("ping", () => this.handlePing());
-    this.on("goodbye", (reason) => this.handleGoodbye(reason));
+  override sendData(messageName: string, data?: unknown): void {
+    if (messageName === 'Ping' && data === undefined) {
+      this.client.gmcp.send('Core.Ping', '');
+      return;
+    }
+    super.sendData(messageName, data);
   }
 
-  handlePing(): void {
-    // Server replied to our ping, potentially update latency metrics
-    console.log("Received Core.Ping response from server.");
+  constructor(client: ConstructorParameters<typeof GMCPCoreBase>[0]) {
+    super(client);
+    this.on("goodbye", (reason) => this.handleGoodbye(reason));
   }
 
   handleGoodbye(reason: string): void {

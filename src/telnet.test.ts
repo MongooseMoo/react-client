@@ -79,6 +79,10 @@ describe('Telnet', () => {
     expect(stream.write).toHaveBeenLastCalledWith(new Uint8Array([
       255, 250, 201, ...new TextEncoder().encode('Test.Unicode "🎵"'), 255, 240,
     ]));
+    parser.sendGmcp('Core.Ping', '');
+    expect(stream.write).toHaveBeenLastCalledWith(new Uint8Array([
+      255, 250, 201, ...new TextEncoder().encode('Core.Ping'), 255, 240,
+    ]));
     parser.sendTerminalType('Mongoose');
     expect(stream.write).toHaveBeenLastCalledWith(new Uint8Array([
       255, 250, 24, 0, ...new TextEncoder().encode('Mongoose'), 255, 240,
