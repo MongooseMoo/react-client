@@ -18,6 +18,7 @@ export class ConnectionLatency {
     private readonly send: (averageMs: number | undefined) => void,
     private readonly publish: (snapshot: LatencySnapshot) => void,
     private readonly now: () => number = () => performance.now(),
+    private readonly recover: () => void = () => {},
   ) {}
 
   start(): void {
@@ -30,7 +31,7 @@ export class ConnectionLatency {
   probe(): void {
     if (this.interval === undefined || this.sentAt !== undefined) return;
     this.sentAt = this.now();
-    this.timeout = setTimeout(() => this.expire(), PING_TIMEOUT_MS);
+    this.timeout = setTimeout(() => { this.expire(); this.recover(); }, PING_TIMEOUT_MS);
     this.send(this.average());
   }
 

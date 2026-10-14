@@ -26,6 +26,7 @@ import { useInputStore } from "./stores/inputStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useOutputStore } from "./stores/outputStore";
 import { usePersonalDataStore } from './stores/personalDataStore';
+import { canUseGameConnection } from './browserPolicy';
 import { reconnectDelay } from "./reconnectBackoff";
 import { closeAwayStream, readAwayStream, sameRecipient, takeAwayLines } from './awayV2';
 import { browserNotificationTag, sendBrowserAwayCommand } from './browserAway';
@@ -96,6 +97,7 @@ class MudClient {
   private disconnectResetCallbacks: Array<() => void> = [];
   private identityResetCallbacks: Array<() => void> = [];
   private transportGeneration = 0;
+  private latencyRecoveryAttempted = false;
   private cleanupCallbacks: Array<() => void> = [];
 
   get autosay(): boolean {
@@ -128,9 +130,19 @@ class MudClient {
     const latency = new ConnectionLatency(
       (average) => core.sendPing(average),
       (snapshot) => useConnectionStore.getState().setLatency(snapshot),
+      () => performance.now(),
+      () => {
+        // A remembered owner can recover transparently. Never loop reconnects
+        // when a server does not answer pings, or discard a manual guest login.
+        if (this.latencyRecoveryAttempted || this.shutdownComplete || this.intentionalDisconnect ||
+            this.localMode || !this.gmcp.require('Auth.Autologin').currentGrant) return;
+        this.latencyRecoveryAttempted = true;
+        this.ws.close();
+        this.reconnectNow();
+      },
     );
     this.latency = latency;
-    const unsubscribe = core.on('ping', () => latency.receive());
+    const unsubscribe = core.on('ping', () => { latency.receive(); this.latencyRecoveryAttempted = false; });
     this.registerDisconnectReset(() => latency.stop());
     this.registerCleanup(() => {
       latency.stop();
@@ -524,9 +536,8 @@ class MudClient {
   }
 
   public sendCommand(command: string): void {
-    const policy = usePersonalDataStore.getState();
-    if (policy.visitor && !policy.visitorWindow) return;
-    if (this.autosay && !command.startsWith("-") && !command.startsWith("'")) {
+    if (!canUseGameConnection()) return;
+    if (this.autosay && usePersonalDataStore.getState().owner && !command.startsWith("-") && !command.startsWith("'")) {
       command = `say ${command}`;
     }
     try {
@@ -697,8 +708,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string, provisional: boolean = false) {
-    const policy = usePersonalDataStore.getState();
-    if (policy.visitor && !policy.visitorWindow) return;
+    if (!canUseGameConnection()) return;
     // A line the server marked as a channel's (Comm.Channel.Start/End) is left
     // to that channel's own reading rule when it has one: Comm.Channel.Text
     // speaks it, so it is not spoken here. Otherwise Auto Read decides, as for

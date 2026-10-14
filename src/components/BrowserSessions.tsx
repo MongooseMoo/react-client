@@ -14,6 +14,7 @@ export default function BrowserSessions({ client }: { client?: MudClient }) {
   const visitorWindow = usePersonalDataStore(value => value.visitorWindow);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   useEffect(() => {
     void initializeBrowserPolicy().catch(() => setError('Browser session storage is unavailable; saved data stays paused'));
     return () => disposeBrowserPolicy();
@@ -21,7 +22,7 @@ export default function BrowserSessions({ client }: { client?: MudClient }) {
 
   const run = (work: () => Promise<void>) => {
     if (busy) return;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setMessage('');
     void work().catch(value => setError(value instanceof Error ? value.message : 'Browser session could not be updated'))
       .finally(() => setBusy(false));
   };
@@ -67,17 +68,19 @@ export default function BrowserSessions({ client }: { client?: MudClient }) {
     if (!client?.connected || !client.liveServer) throw new Error('Sign in as an owner to resume this browser');
     const grant = client.gmcp.require('Auth.Autologin').currentGrant;
     if (!grant || grant.purpose === 'visitor' || !policy.ownerPlayers.includes(grant.playerUuid)) throw new Error('Sign in as a previously saved character to resume this browser');
-    await enrollBrowserNotifications(client, false, true);
+    // Authentication resumes archives independently of push permissions.
+    // The browser can stay quiet when notification enrollment is unavailable.
+    await changeBrowserPolicy(policy, { phase: 'owner', visitorSessionId: '', ownerPlayers: policy.ownerPlayers });
+    await enrollBrowserNotifications(client);
     const context = useBrowserNotifications.getState().context;
     const saved = await readEnrollmentState(MONGOOSE_SERVER_KEY, grant.installationId);
     if (!context && saved?.profile.quiet && saved.profile.bindings.some(binding => binding.mode !== 'forgotten')) {
-      throw new Error('Browser notifications are still paused. Allow notifications and reconnect this character before resuming');
+      setMessage('Saved data is restored. Notifications remain paused; enable browser notifications when you want them.');
     }
     if (context?.profile.quiet) {
       const next = await manageBrowserNotifications(context, 'resume');
       useBrowserNotifications.setState({ context: next });
     }
-    await changeBrowserPolicy(policy, { phase: 'owner', visitorSessionId: '', ownerPlayers: policy.ownerPlayers });
     client.setBrowserNotificationContext(useBrowserNotifications.getState().context);
   };
   const binding = state.context?.profile.bindings.find(row => row.bindingId === state.context?.recipient.bindingId);
@@ -86,6 +89,7 @@ export default function BrowserSessions({ client }: { client?: MudClient }) {
     <summary>Browser sessions</summary>
     {(!ready || busy || state.busy) && <p role="status">Updating browser session…</p>}
     {(error || state.error || policyError) && <p role="alert">{error || state.error || policyError}</p>}
+    {message && <p role="status">{message}</p>}
     {policyError && <button type="button" disabled={busy} onClick={() => run(async () => {
       await refreshBrowserPolicy();
       if (client) await enrollBrowserNotifications(client);
@@ -95,11 +99,16 @@ export default function BrowserSessions({ client }: { client?: MudClient }) {
       <button type="button" disabled={busy || !ready} onClick={() => run(endVisit)}>End temporary visit</button>
     </>}
     {policy.phase === 'owner-paused' && <>
-      <p>The visit has ended. Sign in as an owner, then resume saved data and notifications.</p>
+      <p>The visit has ended. Sign in to your saved character using the command box, then choose Resume owner. Saved data stays hidden until you resume.</p>
       <button type="button" disabled={busy || !ready} onClick={() => run(resumeOwner)}>Resume owner</button>
+      <button type="button" disabled={!client || busy} onClick={() => run(async () => {
+        client?.gmcp.require('Auth.Autologin').signOut();
+        client?.connect();
+      })}>Choose a different character</button>
     </>}
     {policy.phase === 'owner' && <>
       <p>New tabs ask you to choose a character. Reloads resume the character selected in that tab.</p>
+      <p>A temporary visit lets someone else sign in without saving their history. It pauses your saved data and notifications in every tab until you return.</p>
       {primary && <p>Primary notification character: {primary.label}</p>}
       <button type="button" disabled={!client?.connected || busy || state.busy || !ready} onClick={() => run(async () => { if (client) await enrollBrowserNotifications(client, true); })}>Enable browser notifications</button>
       {state.context && <fieldset disabled={busy}>

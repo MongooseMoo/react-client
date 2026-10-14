@@ -14,6 +14,7 @@ import { renderServerHtml } from './serverHtml';
 import { copyBlockquoteContent } from './BlockquoteCopyButton';
 import { autoLogService } from '../logging/AutoLogService';
 import { ownerKey, personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
+import { canUseGameConnection } from '../browserPolicy';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
 import {
   loadStoredValue,
@@ -644,8 +645,7 @@ componentDidUpdate(
     sourceContent: string = '',
     metadata?: Record<string, any>
   ) {
-    const policy = usePersonalDataStore.getState();
-    if (policy.visitor && !policy.visitorWindow) return;
+    if (!canUseGameConnection()) return;
     if (shouldAnnounce) {
       // Announcing is secondary to displaying: a failure here must not drop the line.
       try {

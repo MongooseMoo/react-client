@@ -7,6 +7,8 @@ import { usePersonalDataStore } from './stores/personalDataStore';
 import { useOutputStore } from './stores/outputStore';
 import { AutoreadMode, usePreferences } from './stores/preferencesStore';
 import { storeAwayToken } from './away';
+import { useBrowserPolicy } from './browserPolicy';
+import { personalStorageKey } from './stores/personalDataStore';
 
 vi.mock('./audio/MediaService', () => ({ MediaService: class {
   stopAllSounds = vi.fn(); shutdown = vi.fn(); pauseAllSounds = vi.fn(async () => {});
@@ -64,6 +66,7 @@ beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
   sockets = []; listeners = [];
   usePersonalDataStore.setState({ policyReady: true, owner: undefined, visitor: false });
+  useBrowserPolicy.setState({ ready: true, policy: { revision: 0, phase: 'owner', visitorSessionId: '', ownerPlayers: [] } });
   useOutputStore.getState().reset();
   usePreferences.getState().setSpeech({ autoreadMode: AutoreadMode.Off });
   usePreferences.getState().setGeneral({ localEcho: false });
@@ -79,6 +82,28 @@ beforeEach(() => {
   } });
 });
 afterEach(() => { for (const client of clients.splice(0)) client.shutdown(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it('allows owner login after a visit ends while saved data and authenticated windows stay paused', async () => {
+  const client = await create(a, true);
+  useBrowserPolicy.setState({ policy: { revision: 1, phase: 'owner-paused', visitorSessionId: 'visitor-tab', ownerPlayers: ['a'] } });
+  usePersonalDataStore.setState({ visitor: true, visitorWindow: false });
+  usePersonalDataStore.getState().clear();
+  client.autosay = true;
+  client.sendCommand('login');
+  expect(sockets.at(-1)?.send).toHaveBeenCalledWith('login\r\n');
+  const text = client as unknown as { handleTextLine: (line: string) => void };
+  text.handleTextLine('Enter your username:');
+  await Promise.resolve();
+  expect(JSON.stringify(useOutputStore.getState().entries)).toContain('Enter your username:');
+  expect(personalStorageKey('output')).toBeUndefined();
+  usePersonalDataStore.getState().confirm({ runtime: client.runtimeNamespace, playerUuid: 'a', playerRef: '#101' });
+  sockets.at(-1)?.send.mockClear();
+  client.sendCommand('look');
+  text.handleTextLine('Private owner output');
+  await Promise.resolve();
+  expect(sockets.at(-1)?.send).not.toHaveBeenCalled();
+  expect(JSON.stringify(useOutputStore.getState().entries)).not.toContain('Private owner output');
+});
 
 it('ignores legacy worker data and rejects global legacy credentials before a player is confirmed', async () => {
   await storeAwayToken({ token: 'synthetic-legacy-b', expires_at: Date.now() / 1000 + 600 });
