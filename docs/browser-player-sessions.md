@@ -21,11 +21,12 @@ Inherited/missing/ambiguous IDs require migration before v2 enrollment.
 
 ## Login
 
-V2 `Auth.Autologin.Login` carries `{version:2, token, sessionId, playerUuid}`.
+`Auth.Autologin.Resume` carries `{version:2, token, sessionId, installationId, playerUuid, requestId}`.
 The server validates the grant's account, selected player's current membership,
 stored object reference and UUID. A resume does not use RECENT/ROLLOVER.
-`Auth.Autologin.Token` v2 carries `{version:2, token, sessionId, playerUuid,
-expires_at}` after confirmed selection. Each session has its own rotating token.
+`Auth.Autologin.Session` requests `{version:2, sessionId, installationId, requestId}` after confirmed selection. `SessionToken` carries `{version:2, token, sessionId, installationId, playerUuid, playerRef, requestId, selectionOrder, expires_at}`. Replies must match the pending request and selected player. Each session has its own rotating token.
+`SessionStatus` reports an expired grant or connected-player conflict; `SessionLogout` revokes the addressed grant. Legacy string Login/Token messages remain distinct and cannot consume v2 grants.
+The server assigns selectionOrder when it confirms a new session/player selection. Refreshes and automatic resumes retain that order. Enrollment compares this order, so delayed HTTP registrations cannot replace a more recent confirmed primary choice.
 A new tab chooses an account explicitly; legacy browser-wide tokens do not
 become authority for an arbitrary player. A conflicting connected session
 requires explicit takeover instead of automatic reconnect loops.

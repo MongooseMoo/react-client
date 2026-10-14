@@ -977,6 +977,28 @@ describe('MudClient lifecycle cleanup', () => {
       expect(mockWebSocketInstances).toHaveLength(2);
     });
 
+    it('rejects late text, GMCP, open and error callbacks from a replaced socket', () => {
+      const client = createClient();
+      client.connect();
+      const old = mockWebSocketInstances[0];
+      old.readyState = MockWebSocket.CLOSED;
+      becomeVisible();
+      const current = mockWebSocketInstances[1];
+      const receive = vi.spyOn(client.gmcp, 'receive');
+      const addError = vi.spyOn(useOutputStore.getState(), 'addError');
+      const outputBefore = useOutputStore.getState().entries;
+      sendSocketText(old as MockWebSocket, 'private stale output\n');
+      sendSocketBytes(old as MockWebSocket, [255, 250, 201, ...new TextEncoder().encode('Char.Name {"name":"#10","uuid":"stale"}'), 255, 240]);
+      old.onerror?.(new Event('error'));
+      old.onopen?.(new Event('open'));
+      expect(receive).not.toHaveBeenCalled();
+      expect(addError).not.toHaveBeenCalled();
+      expect(useOutputStore.getState().entries).toBe(outputBefore);
+      expect(client.connected).toBe(false);
+      current.onopen?.(new Event('open'));
+      expect(client.connected).toBe(true);
+    });
+
     it('backs off 1s, 2s, 5s, then 10s for every later attempt, and resets when a socket opens', () => {
       const client = createClient();
       client.connect();

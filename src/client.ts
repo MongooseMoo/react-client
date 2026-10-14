@@ -74,6 +74,8 @@ class MudClient {
     return this._connected;
   }
 
+  get liveServer(): boolean { return this.awayChannel && !this.localMode && !this.shutdownComplete; }
+
   private host: string;
   private port: number;
   private telnetBuffer: string = "";
@@ -91,6 +93,8 @@ class MudClient {
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
   private disconnectResetCallbacks: Array<() => void> = [];
+  private identityResetCallbacks: Array<() => void> = [];
+  private transportGeneration = 0;
   private cleanupCallbacks: Array<() => void> = [];
 
   get autosay(): boolean {
@@ -136,6 +140,7 @@ class MudClient {
       this.fileTransfersLoading = undefined;
     };
     this.registerDisconnectReset(resetFileTransfer);
+    this.registerIdentityReset(resetFileTransfer);
     this.registerCleanup(resetFileTransfer);
   }
 
@@ -191,12 +196,14 @@ class MudClient {
   configureEditors(simpleEdit: McpSimpleEdit): void {
     this.editors = new EditorManager(simpleEdit);
     this.registerDisconnectReset(() => this.editors?.reset());
+    this.registerIdentityReset(() => this.editors?.reset());
     simpleEdit.on("openSession", (session) => {
       this.editors?.openEditorWindow(session);
     });
   }
 
   public connect() {
+    const generation = ++this.transportGeneration;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
     this.intentionalDisconnect = false;
@@ -209,14 +216,17 @@ class MudClient {
     this.ws = ws;
     this.ws.binaryType = "arraybuffer";
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
+    const current = () => generation === this.transportGeneration && !this.shutdownComplete;
     this.gmcp.attachTransport(this.telnet);
     // Any inbound bytes prove the socket is alive, whatever they parse to.
     const deliverMessage = ws.onmessage;
     ws.onmessage = (event: MessageEvent) => {
+      if (!current()) return;
       this.clearLivenessProbe();
       deliverMessage?.call(ws, event);
     };
     this.ws.onopen = () => {
+      if (!current()) return;
       this._connected = true;
       this.reconnectAttempt = 0;
 
@@ -227,10 +237,12 @@ class MudClient {
     };
 
     this.telnet.on("data", (data: Uint8Array) => {
+      if (!current()) return;
       this.handleData(data);
     });
 
     this.telnet.on("command", (command) => {
+      if (!current()) return;
       if (
         (command === TelnetCommand.GA || command === TelnetCommand.EOR) &&
         this.telnetBuffer
@@ -241,6 +253,7 @@ class MudClient {
     });
 
     this.telnet.on("negotiation", (command, option) => {
+      if (!current()) return;
       // Negotiation that we support GMCP
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation");
@@ -266,18 +279,14 @@ class MudClient {
     });
 
     this.telnet.on("gmcp", (packageName, data) => {
-      console.log("GMCP Package:", packageName, data);
-      try {
-        this.gmcp.receive(packageName, data);
-      } catch (e) {
-        console.error("Calling GMCP:", e);
-      }
+      if (!current()) return;
+      this.gmcp.receive(packageName, data);
     });
 
     this.ws.onclose = () => {
       // A socket we already replaced (e.g. a dead one whose close arrives
       // late) must not tear down the connection that superseded it.
-      if (ws !== this.ws) return;
+      if (!current() || ws !== this.ws) return;
       this.cleanupConnection();
       // Only auto reconnect if it wasn't an intentional disconnect
       if (!this.intentionalDisconnect) {
@@ -288,6 +297,7 @@ class MudClient {
     };
 
     this.ws.onerror = (error: Event) => {
+      if (!current()) return;
       useOutputStore.getState().addError(connectionErrorFromEvent(error));
     };
   }
@@ -358,6 +368,8 @@ class MudClient {
    * creating a WebSocket.
    */
   public connectLocal(stream: Stream) {
+    const generation = ++this.transportGeneration;
+    const current = () => generation === this.transportGeneration && !this.shutdownComplete;
     this.awayChannel = false;
     this.localMode = true;
     this.localStream = stream;
@@ -368,10 +380,12 @@ class MudClient {
     this.gmcp.attachTransport(this.telnet);
 
     this.telnet.on("data", (data: Uint8Array) => {
+      if (!current()) return;
       this.handleData(data);
     });
 
     this.telnet.on("command", (command) => {
+      if (!current()) return;
       if (
         (command === TelnetCommand.GA || command === TelnetCommand.EOR) &&
         this.telnetBuffer
@@ -385,6 +399,7 @@ class MudClient {
     // so these handlers are unlikely to fire — but wire them up anyway
     // for correctness.
     this.telnet.on("negotiation", (command, option) => {
+      if (!current()) return;
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation (local)");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
@@ -405,15 +420,12 @@ class MudClient {
     });
 
     this.telnet.on("gmcp", (packageName, data) => {
-      console.log("GMCP Package (local):", packageName, data);
-      try {
-        this.gmcp.receive(packageName, data);
-      } catch (e) {
-        console.error("Calling GMCP:", e);
-      }
+      if (!current()) return;
+      this.gmcp.receive(packageName, data);
     });
 
     stream.on("close", () => {
+      if (!current()) return;
       this.cleanupConnection();
     });
 
@@ -450,9 +462,20 @@ class MudClient {
     this.disconnectResetCallbacks.push(callback);
   }
 
+  registerIdentityReset(callback: () => void): void {
+    this.identityResetCallbacks.push(callback);
+  }
+
+  resetIdentityState(): void {
+    for (const reset of this.identityResetCallbacks) reset();
+    this.cancelSpeech();
+    this.stopAllSounds();
+  }
+
   private cleanupConnection(): void {
     if (this.connectionCleanupComplete) return;
     this.connectionCleanupComplete = true;
+    this.transportGeneration++;
     this._connected = false;
     this.clearLivenessProbe();
     for (const callback of this.disconnectResetCallbacks) {

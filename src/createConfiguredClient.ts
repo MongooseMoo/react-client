@@ -161,6 +161,7 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPClientHaptics);
 
   char.on("name", (data) => {
+    client.gmcp.require('Auth.Autologin').confirmPlayer(data.uuid ?? '');
     useConnectionStore.getState().setStatusText(`Logged in as ${data.fullname}`);
     if (client.gmcp.markSessionReady()) {
       useConnectionStore.getState().setSessionReady(true);
@@ -169,12 +170,14 @@ export function createConfiguredClient(): MudClient {
   char.on("vitals", (data) => useCharacterStatusStore.getState().setVitals(data));
   clientHtml.on("addHtml", (data) => useOutputStore.getState().addHtml(data.data.join("\n")));
   clientHtml.on("addMarkdown", (data) => {
+    const generation = client.gmcp.generation;
     const html = marked(data.data.join("\n"));
     if (typeof html === "string") {
       useOutputStore.getState().addHtml(html.trimEnd());
       return;
     }
     html.then((renderedHtml) => {
+      if (generation !== client.gmcp.generation) return;
       useOutputStore.getState().addHtml(renderedHtml.trimEnd());
     });
   });

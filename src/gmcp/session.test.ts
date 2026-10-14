@@ -161,4 +161,23 @@ describe('GmcpSession', () => {
     expect(session.ready).toBe(false);
     expect(session.sessionReady).toBe(false);
   });
+
+  it('treats a same-socket player or lifetime change as a new identity generation', () => {
+    const resetOwned = vi.fn();
+    const client = { registerDisconnectReset: vi.fn(), resetIdentityState: resetOwned } as unknown as MudClient;
+    const session = new GmcpSession(client);
+    const handler = session.register(RegistryPackage);
+    const reset = vi.spyOn(handler, 'reset');
+    expect(session.confirmIdentity('#10', 'player-a')).toBe(true);
+    const generation = session.generation;
+    expect(session.confirmIdentity('#10', 'player-a')).toBe(false);
+    expect(session.generation).toBe(generation);
+    expect(reset).not.toHaveBeenCalled();
+    expect(session.confirmIdentity('#11', 'player-b')).toBe(true);
+    expect(reset).toHaveBeenCalledOnce();
+    expect(resetOwned).toHaveBeenCalledOnce();
+    expect(session.generation).toBeGreaterThan(generation);
+    session.confirmIdentity('#11', 'replacement-lifetime');
+    expect(resetOwned).toHaveBeenCalledTimes(2);
+  });
 });

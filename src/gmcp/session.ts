@@ -17,6 +17,25 @@ export class GmcpSession {
   private telnet: TelnetParser | null = null;
   private _ready = false;
   private _sessionReady = false;
+  private identity = '';
+  private _generation = 0;
+
+  get generation(): number { return this._generation; }
+
+  confirmIdentity(playerRef: string, playerUuid: string): boolean {
+    const identity = JSON.stringify([playerRef, playerUuid]);
+    if (identity === this.identity) return false;
+    const changed = this.identity !== '';
+    this.identity = identity;
+    this._generation++;
+    if (changed) {
+      for (const handler of Object.values(this.packageHandlers)) {
+        if (handler && !['Char', 'Core', 'Core.Supports'].includes(handler.packageName)) handler.reset();
+      }
+      this.client.resetIdentityState();
+    }
+    return true;
+  }
 
   constructor(private readonly client: MudClient) {}
 
@@ -114,6 +133,8 @@ export class GmcpSession {
   }
 
   reset(): void {
+    this._generation++;
+    this.identity = '';
     this._ready = false;
     this._sessionReady = false;
     this.telnet = null;

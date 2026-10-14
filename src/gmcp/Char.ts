@@ -38,9 +38,7 @@ export class GMCPChar extends GMCPCharBase {
 
   handleName(data: GmcpMessageCharName): void {
     const previous = useSessionStore.getState();
-    if (previous.playerId && (previous.playerId !== data.name || previous.playerUuid !== (data.uuid ?? ""))) {
-      this.client.editors?.reset();
-    }
+    this.client.gmcp.confirmIdentity(data.name, data.uuid ?? '');
     previous.setPlayer(data.name, data.fullname, data.uuid);
   }
   // --- Vitals ---

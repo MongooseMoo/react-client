@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GMCPChar } from './Char';
 import { useSessionStore } from '../stores/sessionStore';
+import { GmcpSession } from './session';
+import type MudClient from '../client';
 
 describe('confirmed character ownership', () => {
   beforeEach(() => useSessionStore.getState().reset());
 
   it('retains the wire identity and invalidates editors on an in-place switch', () => {
     const reset = vi.fn();
-    const handler = new GMCPChar({ editors: { reset } } as never);
+    const client = { resetIdentityState: reset } as unknown as MudClient;
+    Object.assign(client, { gmcp: new GmcpSession(client) });
+    const handler = new GMCPChar(client);
     handler.handleName({ name: '#10', fullname: 'A', uuid: 'opaque-a' });
     expect(useSessionStore.getState().playerUuid).toBe('opaque-a');
     handler.handleName({ name: '#10', fullname: 'Renamed A', uuid: 'opaque-a' });
