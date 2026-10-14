@@ -34,7 +34,7 @@ export class EditorManager {
       if (!message || message.id !== id) return;
       switch (message.type) {
         case 'ready':
-          if (entry.state === 'closed') return;
+          if (!entry.window || entry.window.closed) return;
           entry.state = 'open';
           channel.postMessage({ type: 'load', id, session: entry.session });
           break;
@@ -45,7 +45,6 @@ export class EditorManager {
           break;
         case 'close':
           entry.state = 'closed';
-          channel.close();
           break;
       }
     };
