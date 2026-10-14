@@ -51,7 +51,7 @@ async function scan(name) {
     await writeFile(resolve(reportDir, `${name}-tree.yml`), await page.locator('body').ariaSnapshot());
     await page.screenshot({ path: resolve(reportDir, `${name}.png`), fullPage: true });
   }
-  assert.equal(result.violations.length, 0, `${name}: ${result.violations.map(({ id }) => id).join(', ')}`);
+  assert.equal(result.violations.length, 0, `${name}: ${JSON.stringify(result.violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target) })))}`);
 }
 try {
   if (reportDir) await mkdir(reportDir, { recursive: true });
@@ -93,6 +93,10 @@ try {
   await scan('host-320px');
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(origin);
+  await page.waitForFunction(() => !!window.mudClient);
+  await page.evaluate(() => window.mudClient.gmcp.handlers.Char.receiveRegisteredMessage('Name', {
+    uuid: 'native-a11y-owner', name: '#101', fullname: 'Native accessibility fixture owner',
+  }));
   const command = page.getByRole('textbox', { name: 'Command', exact: true });
   await expect(command).toBeFocused();
   await command.fill('xyznomatch');
@@ -214,7 +218,8 @@ try {
     for (let i = 1; i <= 20; i++) {
       const id = `fixture-${i}`;
       transaction.objectStore('sessions').put({ id, title: `Fixture log ${String(i).padStart(2, '0')}`, startedAt: 2000000000000 - i * 1000,
-        endedAt: 2000000001000 - i * 1000, mode: 'default', sanitizedUrl: 'https://example.test/', lineCount: 1, byteEstimate: 128 });
+        endedAt: 2000000001000 - i * 1000, mode: 'default', sanitizedUrl: 'https://example.test/', lineCount: 1, byteEstimate: 128,
+        owner: { runtime: window.mudClient.runtimeNamespace, playerUuid: 'native-a11y-owner', playerRef: '#101' } });
       transaction.objectStore('entries').put({ sessionId: id, sequence: 1, timestamp: 2000000000000 - i * 1000,
         type: 'serverMessage', sourceType: 'ansi', sourceContent: `Entry for log ${i}` });
     }

@@ -15,6 +15,9 @@ export function ownerKey(owner: PersonalDataOwner): string {
 interface PersonalDataState {
   owner?: PersonalDataOwner;
   visitor: boolean;
+  visitorWindow: boolean;
+  policyReady: boolean;
+  gameSessionId: string;
   confirm: (owner: PersonalDataOwner) => void;
   clear: () => void;
   setVisitor: (visitor: boolean) => void;
@@ -27,6 +30,9 @@ function clearTransientData(): void {
 
 export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
   visitor: false,
+  visitorWindow: false,
+  policyReady: false,
+  gameSessionId: '',
   confirm(owner) {
     const previous = get().owner;
     if (previous && ownerKey(previous) === ownerKey(owner)) return;
@@ -42,5 +48,6 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
 }));
 
 export function personalStorageKey(kind: string, owner = usePersonalDataStore.getState().owner): string | undefined {
-  return owner && !usePersonalDataStore.getState().visitor ? `mongoose:personal:v2:${kind}:${ownerKey(owner)}` : undefined;
+  const policy = usePersonalDataStore.getState();
+  return owner && policy.policyReady && !policy.visitor ? `mongoose:personal:v2:${kind}:${ownerKey(owner)}` : undefined;
 }

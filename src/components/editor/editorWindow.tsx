@@ -26,6 +26,7 @@ import { MOO_EDITOR_THEME_NAME } from '../../editor/moocode/theme';
 import { toMonacoTreeSitterMarkers } from '../../editor/moocode/treeSitter';
 import { usePreferences } from '../../stores/preferencesStore';
 import type { EditorSession } from '../../mcp';
+import { canUseBrowserWindow, initializeBrowserPolicy, useBrowserPolicy } from '../../browserPolicy';
 import EditorToolbar from './toolbar';
 import { EditorStatusBar } from './statusbar';
 import './editor.css'; // Import the new CSS file
@@ -197,7 +198,14 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   // Update the title
 
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
-  const title = isLoaded ? `${session.name} - Mongoose Editor` : 'Mongoose Editor';
+  const policy = useBrowserPolicy();
+  const ownerMetadata = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return { sessionId: params.get('parentSession') ?? '', purpose: params.get('purpose') === 'visitor' ? 'visitor' as const : 'owner' as const };
+  }, []);
+  const paused = !policy.ready || !canUseBrowserWindow(policy.policy, ownerMetadata.sessionId, ownerMetadata.purpose);
+  useEffect(() => { void initializeBrowserPolicy().catch(() => {}); }, []);
+  const title = paused ? 'Mongoose Editor paused' : isLoaded ? `${session.name} - Mongoose Editor` : 'Mongoose Editor';
   useTitle(title);
   const docstate = useMemo(() => {
     switch (documentState) {
@@ -364,7 +372,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
 
   // Save the code
   const onSave = (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (!sessionActive) {
+    if (!sessionActive || paused) {
       event.preventDefault();
       return;
     }
@@ -397,6 +405,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
 
   // Download code to text file
   const downloadText = () => {
+    if (paused) return;
     const blob = new Blob([editorInstance.current?.getValue() ?? code], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -417,7 +426,9 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
 
   return (
     // Use the ID for CSS targeting
-    <div id="editor-window">
+    <>
+    {paused && <p role="status">This editor is paused during the temporary visit. Your work is kept for the owner.</p>}
+    <div id="editor-window" hidden={paused}>
       <EditorToolbar onSave={onSave} onRevert={revert} onDownload={downloadText} saveDisabled={!sessionActive} />
       {isLoaded && <Editor
         height="80vh"
@@ -425,7 +436,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
         theme={MOO_EDITOR_THEME_NAME}
         defaultValue={session.contents.join('\n')}
         onChange={onChanges}
-        options={editorOptions}
+        options={{ ...editorOptions, readOnly: paused }}
         ariaDescribedBy={EDITOR_STATUSBAR_ID}
         beforeMount={handleEditorBeforeMount}
         onMount={handleEditorMount}
@@ -451,6 +462,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
         session={session}
       />
     </div>
+    </>
   );
 }
 

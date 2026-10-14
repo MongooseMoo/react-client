@@ -20,7 +20,7 @@ vi.mock('../logging/AutoLogStore', () => ({ autoLogStore: {
 
 beforeEach(() => {
   const owner = { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' };
-  usePersonalDataStore.setState({ owner, visitor: false });
+  usePersonalDataStore.setState({ policyReady: true, owner, visitor: false });
   mocks.sessions = Array.from({ length: 20 }, (_, index) => ({
     id: `session-${index}`, title: `Log ${index + 1}`, startedAt: index + 1000,
     owner,

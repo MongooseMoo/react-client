@@ -644,6 +644,8 @@ componentDidUpdate(
     sourceContent: string = '',
     metadata?: Record<string, any>
   ) {
+    const policy = usePersonalDataStore.getState();
+    if (policy.visitor && !policy.visitorWindow) return;
     if (shouldAnnounce) {
       // Announcing is secondary to displaying: a failure here must not drop the line.
       try {
@@ -1051,6 +1053,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
         onFocus={this.handleOutputFocus}
         onBlur={this.handleOutputBlur}
         tabIndex={0}
+        role="region"
         aria-label="Game output log - use arrow keys to navigate"
       >
         {this.state.actionFeedback && <p className="output-action-feedback">{this.state.actionFeedback}</p>}

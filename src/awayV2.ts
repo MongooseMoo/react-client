@@ -36,9 +36,9 @@ interface StreamCursor {
 
 interface RecipientRecord extends BrowserRecipient { enabled: boolean; }
 export const AWAY_V2_DB_NAME = 'mongoose-away-v2';
-const stores = ['recipients', 'streams', 'lines', 'credentials', 'rendered'];
+const stores = ['recipients', 'streams', 'lines', 'credentials', 'rendered', 'tabs'];
 const schema = {
-  name: AWAY_V2_DB_NAME, version: 1,
+  name: AWAY_V2_DB_NAME, version: 2,
   upgrade(database: IDBDatabase): void {
     for (const name of stores) if (!database.objectStoreNames.contains(name)) database.createObjectStore(name);
   },
@@ -56,6 +56,11 @@ async function transaction<T>(mode: IDBTransactionMode, run: (store: StoreAccess
 
 export function recipientKey(recipient: BrowserRecipient): string[] {
   return [recipient.serverKey, recipient.playerUuid, recipient.bindingId];
+}
+
+export function recipientMetadata(value: BrowserRecipient): BrowserRecipient {
+  return { serverKey: value.serverKey, installationId: value.installationId, playerUuid: value.playerUuid,
+    playerRef: value.playerRef, bindingId: value.bindingId, revision: value.revision };
 }
 
 export function sameRecipient(left: BrowserRecipient, right: BrowserRecipient): boolean {
@@ -79,8 +84,11 @@ export function isAwayEnvelope(value: unknown): value is AwayEnvelope {
   if (!['streamOrder', 'firstAvailable', 'from', 'to'].every((key) =>
       typeof fields[key] === 'number' && Number.isSafeInteger(fields[key]) && Number(fields[key]) >= 0)) return false;
   return Array.isArray(fields.lines) && fields.lines.length <= 500 && fields.lines.every((line: unknown) =>
-    Array.isArray(line) && line.length === 2 && Number.isSafeInteger(line[0]) && line[0] > 0 && typeof line[1] === 'string') &&
-    fields.streamOrder !== 0 && fields.firstAvailable !== 0;
+    Array.isArray(line) && line.length === 2 && Number.isSafeInteger(line[0]) && line[0] >= Number(fields.firstAvailable) &&
+    line[0] <= Number(fields.to) && typeof line[1] === 'string' && line[1].length <= 65536) &&
+    fields.lines.every((line: unknown[], index: number, lines: unknown[][]) => index === 0 || Number(line[0]) > Number(lines[index - 1][0])) &&
+    fields.from === (fields.lines.length ? fields.lines[0][0] : 0) &&
+    Number(fields.to) >= Number(fields.firstAvailable) - 1 && fields.streamOrder !== 0 && fields.firstAvailable !== 0;
 }
 
 export async function registerAwayRecipient(grant: BrowserAwayGrant, expected: BrowserRecipient, enabled = true): Promise<boolean> {
@@ -89,7 +97,7 @@ export async function registerAwayRecipient(grant: BrowserAwayGrant, expected: B
     const key = recipientKey(grant);
     const previous: RecipientRecord | undefined = await requestToPromise(store('recipients').get(key));
     if (previous && (previous.revision > grant.revision || (!previous.enabled && previous.revision === grant.revision && enabled))) return false;
-    store('recipients').put({ ...expected, enabled }, key);
+    store('recipients').put({ ...recipientMetadata(expected), enabled }, key);
     store('credentials').put(grant, [...key, grant.sessionId]);
     return true;
   });
@@ -171,6 +179,70 @@ export async function disableAwayRecipient(recipient: BrowserRecipient): Promise
   return transaction('readwrite', async (store) => {
     const key = recipientKey(recipient);
     const previous: RecipientRecord | undefined = await requestToPromise(store('recipients').get(key));
-    if (previous && sameRecipient(previous, recipient)) store('recipients').put({ ...previous, enabled: false }, key);
+    if (previous && previous.installationId === recipient.installationId && previous.playerRef === recipient.playerRef &&
+        previous.revision <= recipient.revision) store('recipients').put({ ...recipientMetadata(recipient), enabled: false }, key);
   });
+}
+
+export async function findBrowserAwayGrant(recipient: BrowserRecipient): Promise<BrowserAwayGrant | undefined> {
+  return transaction('readonly', async store => {
+    const key = recipientKey(recipient);
+    const registered: RecipientRecord | undefined = await requestToPromise(store('recipients').get(key));
+    if (!registered || !sameRecipient(registered, recipient)) return;
+    const grants: BrowserAwayGrant[] = await requestToPromise(store('credentials').getAll(IDBKeyRange.bound(key, [...key, []])));
+    return grants.filter(grant => sameRecipient(grant, recipient) && grant.expires_at * 1000 > Date.now())
+      .sort((a, b) => b.expires_at - a.expires_at)[0];
+  });
+}
+
+export async function findRefreshableBrowserAwayGrant(recipient: BrowserRecipient): Promise<BrowserAwayGrant | undefined> {
+  return transaction('readonly', async store => {
+    const key = recipientKey(recipient);
+    const grants: BrowserAwayGrant[] = await requestToPromise(store('credentials').getAll(IDBKeyRange.bound(key, [...key, []])));
+    return grants.filter(grant => grant.installationId === recipient.installationId && grant.playerRef === recipient.playerRef &&
+      grant.expires_at * 1000 > Date.now()).sort((a, b) => b.revision - a.revision)[0];
+  });
+}
+
+export async function clearBrowserAwaySession(serverKey: string, installationId: string, playerUuid: string, sessionId: string): Promise<void> {
+  return transaction('readwrite', async store => {
+    const prefix = [serverKey, playerUuid];
+    const keys: IDBValidKey[] = await requestToPromise(store('credentials').getAllKeys(IDBKeyRange.bound(prefix, [...prefix, []])));
+    for (const key of keys) {
+      const grant: BrowserAwayGrant | undefined = await requestToPromise(store('credentials').get(key));
+      if (grant?.installationId === installationId && grant.sessionId === sessionId) store('credentials').delete(key);
+    }
+  });
+}
+
+export async function isAwayRecipientEnabled(recipient: BrowserRecipient): Promise<boolean> {
+  return transaction('readonly', async store => {
+    const record: RecipientRecord | undefined = await requestToPromise(store('recipients').get(recipientKey(recipient)));
+    return !!record?.enabled && sameRecipient(record, recipient);
+  });
+}
+
+export interface AwayTabOwner {
+  recipient: BrowserRecipient;
+  sessionId: string;
+  connected: boolean;
+  expiresAt: number;
+}
+export async function rememberAwayTab(clientId: string, recipient: BrowserRecipient, sessionId: string, connected: boolean): Promise<boolean> {
+  if (!clientId || !isRecipient(recipient)) return false;
+  return transaction('readwrite', async store => {
+    const grant: BrowserAwayGrant | undefined = await requestToPromise(store('credentials').get([...recipientKey(recipient), sessionId]));
+    if (!grant || !sameRecipient(grant, recipient) || grant.expires_at * 1000 <= Date.now()) return false;
+    store('tabs').put({ recipient: recipientMetadata(recipient), sessionId, connected, expiresAt: grant.expires_at * 1000 }, clientId);
+    return true;
+  });
+}
+export async function readAwayTab(clientId: string): Promise<AwayTabOwner | undefined> {
+  return transaction('readonly', async store => {
+    const owner: AwayTabOwner | undefined = await requestToPromise(store('tabs').get(clientId));
+    return owner && owner.expiresAt > Date.now() ? owner : undefined;
+  });
+}
+export async function forgetAwayTab(clientId: string): Promise<void> {
+  return transaction('readwrite', async store => { store('tabs').delete(clientId); });
 }

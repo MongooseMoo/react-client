@@ -21,7 +21,7 @@ beforeEach(() => {
     clear: () => values.clear(),
   });
   localStorage.clear();
-  usePersonalDataStore.setState({ owner: undefined, visitor: false });
+  usePersonalDataStore.setState({ policyReady: true, owner: undefined, visitor: false });
   useOutputStore.getState().reset();
   useInputStore.getState().clear();
 });

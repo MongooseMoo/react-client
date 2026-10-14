@@ -47,7 +47,7 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
   const includeUnassigned = !!scope && unassignedScope === scope;
   const permitted = useCallback((session: AutoLogSession) => {
     const current = usePersonalDataStore.getState();
-    return !current.visitor && !!current.owner && ownerKey(current.owner) === scope &&
+    return current.policyReady && !current.visitor && !!current.owner && ownerKey(current.owner) === scope &&
       (session.owner ? ownerKey(session.owner) === scope : includeUnassigned);
   }, [scope, includeUnassigned]);
   const confirmDialogRef = useRef<HTMLDialogElement | null>(null);

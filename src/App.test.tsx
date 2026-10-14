@@ -12,10 +12,13 @@ const {
   mockSwitchToTab,
 } = vi.hoisted(() => {
   const mockClient = {
+    liveServer: true,
+    setBrowserNotificationContext: vi.fn(),
     cancelSpeech: vi.fn(),
     connect: vi.fn(),
     connected: false,
     gmcp: {
+      require: vi.fn(() => ({ on: vi.fn(() => () => {}) })),
       handlers: {},
       sessionReady: false,
     },
@@ -77,8 +80,9 @@ vi.mock('./hooks/useChannelHistory', () => ({
   useChannelHistory: () => ({ clearAllBuffers: vi.fn() }),
 }));
 
-vi.mock('./webpush', () => ({
-  ensurePushSubscription: mockEnsurePushSubscription,
+vi.mock('./browserNotifications', async () => ({
+  ...await vi.importActual<typeof import('./browserNotifications')>('./browserNotifications'),
+  enrollBrowserNotifications: mockEnsurePushSubscription,
 }));
 
 vi.mock('./components/input', () => ({
@@ -196,21 +200,26 @@ describe('App haptics backend lifecycle', () => {
     expect(runtime.dispose).toHaveBeenCalledOnce();
   });
 
-  it('waits for sessionReady before ensuring a push subscription', async () => {
+  it('reenrolls on scoped token confirmation rather than a shared readiness flag', async () => {
+    let confirm = () => {};
+    mockClient.gmcp.require.mockReturnValue({ on: vi.fn((_type: string, listener: () => void) => { confirm = listener; return () => {}; }) });
     const view = render(<App />);
 
     await waitFor(() => {
       expect(mockHapticsRuntimes).toHaveLength(1);
     });
-    expect(mockEnsurePushSubscription).not.toHaveBeenCalled();
+    expect(mockEnsurePushSubscription).toHaveBeenCalledTimes(1);
 
     act(() => {
       useConnectionStore.getState().setSessionReady(true);
     });
 
-    await waitFor(() => {
-      expect(mockEnsurePushSubscription).toHaveBeenCalledWith(mockClient);
-    });
+    expect(mockEnsurePushSubscription).toHaveBeenCalledTimes(1);
+    act(() => confirm());
+    expect(mockEnsurePushSubscription).toHaveBeenCalledTimes(2);
+    act(() => confirm());
+    expect(mockEnsurePushSubscription).toHaveBeenCalledTimes(3);
+    expect(mockClient.requestNotificationPermission).not.toHaveBeenCalled();
 
     view.unmount();
   });

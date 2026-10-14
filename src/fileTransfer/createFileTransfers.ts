@@ -29,11 +29,11 @@ export const ICE_CONFIGURATION: RTCConfiguration = {
 };
 
 export function createFileTransfers(gmcp: GMCPClientFileTransfer): FileTransfers {
-  const { owner, visitor } = usePersonalDataStore.getState();
+  const { owner, visitor, policyReady } = usePersonalDataStore.getState();
   const capturedOwner = owner ? ownerKey(owner) : undefined;
   return new FileTransferEngine({
     signaling: createGmcpTransferSignaling(gmcp),
-    storage: capturedOwner && !visitor
+    storage: capturedOwner && policyReady && !visitor
       ? createIndexedDbTransferStorage({ owner: capturedOwner }) : createMemoryTransferStorage(),
     createLink: createRtcTransferLinkFactory(ICE_CONFIGURATION),
     deliver(file) {

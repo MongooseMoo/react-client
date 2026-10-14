@@ -53,6 +53,7 @@ export function transferDatabaseName(owner = 'unassigned'): string {
 
 export function createIndexedDbTransferStorage(options?: TransferStorageOptions): TransferStorage {
   const now = clockOf(options);
+  const databaseName = transferDatabaseName(options?.owner);
   let opening: Promise<IDBDatabase> | null = null;
 
   function open(): Promise<IDBDatabase> {
@@ -60,7 +61,7 @@ export function createIndexedDbTransferStorage(options?: TransferStorageOptions)
       return opening;
     }
 
-    const attempt = openIndexedDatabase({ ...pieceDatabaseSchema, name: transferDatabaseName(options?.owner) });
+    const attempt = openIndexedDatabase({ ...pieceDatabaseSchema, name: databaseName });
     opening = attempt;
     attempt.catch(() => {
       // Forget a failed open so the next call tries again instead of failing forever.

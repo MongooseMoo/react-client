@@ -1,4 +1,5 @@
 import commitHash from 'virtual:commit-hash';
+import { usePersonalDataStore } from '../stores/personalDataStore';
 
 import type MudClient from '../client';
 import type { TelnetParser } from '../telnet';
@@ -98,6 +99,10 @@ export class GmcpSession {
       console.log('Invalid GMCP package:', gmcpPackage);
       return;
     }
+
+    const policy = usePersonalDataStore.getState();
+    if (policy.visitor && !policy.visitorWindow &&
+        !['Auth.Autologin', 'Char', 'Core', 'Core.Supports'].includes(address.packageName)) return;
 
     console.log('GMCP Message:', address.packageName, address.messageType);
     const handler = this.packageHandlers[address.packageName];

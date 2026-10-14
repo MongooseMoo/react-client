@@ -6,6 +6,10 @@
 */
 
 /* Main editor window container */
+#editor-window[hidden] {
+  display: none;
+}
+
 #editor-window {
   display: flex;
   flex-direction: column;

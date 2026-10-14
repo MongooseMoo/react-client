@@ -1,6 +1,8 @@
 import { inbound, outbound } from '../protocol/messages';
 import { useConnectionStore } from '../stores/connectionStore';
 import { usePersonalDataStore } from '../stores/personalDataStore';
+import { currentBrowserPurpose, initializeBrowserPolicy, useBrowserPolicy } from '../browserPolicy';
+import { clearBrowserAwaySession } from '../awayV2';
 import { createTabSession, isSessionGrant, type SessionGrant } from '../tabSession';
 import { gmcpJsonMessage } from './messages';
 import { GMCPPackage } from './package';
@@ -10,6 +12,7 @@ const legacyLogin = gmcpJsonMessage<'Login', never, string>('Login');
 const sessionToken = gmcpJsonMessage<'SessionToken', unknown>('SessionToken');
 const sessionStatus = gmcpJsonMessage<'SessionStatus', unknown>('SessionStatus');
 interface SessionRequest {
+  purpose: 'owner' | 'visitor';
   version: 2;
   sessionId: string;
   installationId: string;
@@ -27,25 +30,37 @@ const GMCPAutoLoginBase = GMCPPackage.with({
 });
 
 export class GMCPAutoLogin extends GMCPAutoLoginBase {
+  override readonly packageVersion = 2;
   private readonly tab = createTabSession('https://mongoose.world');
   private epoch = 0;
   private pending?: { requestId: string; playerUuid: string; epoch: number };
   private confirmedUuid = '';
+  private readonly unsubscribePolicy: () => void;
 
   constructor(client: ConstructorParameters<typeof GMCPAutoLoginBase>[0]) {
     super(client);
     // Legacy browser-wide refresh tokens remain unattributed and are not reused.
     this.on('sessionToken', (data) => this.handleSessionToken(data));
     this.on('sessionStatus', (data) => this.handleSessionStatus(data));
+    this.unsubscribePolicy = useBrowserPolicy.subscribe((state, previous) => {
+      if (!state.ready || state.policy.phase !== 'owner' || previous.policy.phase === 'owner') return;
+      if (this.tab.grant?.purpose === 'visitor') this.signOut();
+      else if (!this.confirmedUuid && this.client.connected) this.sendStoredLogin();
+    });
   }
 
   sendStoredLogin(): void {
     if (!this.client.liveServer) return;
     const epoch = this.epoch;
-    void this.tab.prepare().then(() => {
+    void this.tab.prepare().then(async () => {
+      await initializeBrowserPolicy(this.tab.sessionId);
       if (epoch !== this.epoch || !this.client.liveServer || !this.client.connected || this.confirmedUuid) return;
       const grant = this.tab.grant;
       if (!grant) return;
+      const policy = useBrowserPolicy.getState().policy;
+      if (policy.phase === 'owner-paused' ||
+          (policy.phase === 'visitor' && (policy.visitorSessionId !== this.tab.sessionId || grant.purpose !== 'visitor')) ||
+          (policy.phase === 'owner' && grant.purpose === 'visitor')) return;
       const requestId = crypto.randomUUID();
       this.pending = { requestId, playerUuid: grant.playerUuid, epoch };
       this.sendResume({ ...this.request(requestId), token: grant.token, playerUuid: grant.playerUuid });
@@ -61,7 +76,8 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
     if (this.pending?.playerUuid === playerUuid) return;
     this.pending = undefined;
     const epoch = ++this.epoch;
-    void this.tab.prepare().then(() => {
+    void this.tab.prepare().then(async () => {
+      await initializeBrowserPolicy(this.tab.sessionId);
       if (epoch !== this.epoch || !this.client.connected || !this.client.liveServer || !this.tab.installationId) return;
       if (this.tab.grant && this.tab.grant.playerUuid !== playerUuid) this.tab.forgetGrant();
       const requestId = crypto.randomUUID();
@@ -73,7 +89,7 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
   }
 
   private request(requestId: string): SessionRequest {
-    return { version: 2, sessionId: this.tab.sessionId, installationId: this.tab.installationId, requestId };
+    return { version: 2, purpose: currentBrowserPurpose(this.tab.sessionId), sessionId: this.tab.sessionId, installationId: this.tab.installationId, requestId };
   }
 
   private handleSessionToken(data: unknown): void {
@@ -97,6 +113,7 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
   get currentGrant(): SessionGrant | undefined {
     return this.confirmedUuid && this.tab.grant?.playerUuid !== this.confirmedUuid ? undefined : this.tab.grant;
   }
+  get sessionId(): string { return this.tab.sessionId; }
 
   signOut(): void {
     const grant = this.tab.grant;
@@ -105,6 +122,8 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
         this.sendSessionLogout({ ...this.request(crypto.randomUUID()), token: grant.token, playerUuid: grant.playerUuid });
       }
     } finally {
+      if (grant) void clearBrowserAwaySession('https://mongoose.world', grant.installationId, grant.playerUuid, grant.sessionId)
+        .catch(() => console.error('Browser tab credentials could not be cleared'));
       usePersonalDataStore.getState().clear();
       this.tab.forgetGrant();
       this.reset();
@@ -119,6 +138,7 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
   }
 
   override shutdown(): void {
+    this.unsubscribePolicy();
     this.reset();
     this.tab.dispose();
   }

@@ -49,7 +49,7 @@ function create(gmcp = fakeGmcp()): { transfers: FileTransfers; options: FileTra
 }
 
 beforeEach(() => {
-  usePersonalDataStore.setState({ visitor: false, owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
+  usePersonalDataStore.setState({ policyReady: true, visitor: false, owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
   engines.length = 0;
   globalThis.indexedDB = new IDBFactory();
 });

@@ -40,6 +40,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('keeps the captured database owner when mutable options change and the storage reopens', async () => {
+  const options = { owner: 'runtime-a/player-a' };
+  const storage = createIndexedDbTransferStorage(options);
+  await storage.putPiece(alice, 0, bytesOf(42));
+  storage.close();
+  options.owner = 'runtime-a/player-b';
+  expect(contentsOf(await storage.readPiece(alice, 0))).toEqual([42]);
+  const other = createIndexedDbTransferStorage(options);
+  await expect(other.readPiece(alice, 0)).resolves.toBeUndefined();
+  storage.close(); other.close();
+});
+
 describe.each([
   ['IndexedDB', createIndexedDbTransferStorage],
   ['memory', createMemoryTransferStorage],

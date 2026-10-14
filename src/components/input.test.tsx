@@ -55,7 +55,7 @@ describe('CommandInput Component', () => {
     navigateDownMock.mockReturnValue('');
     getHistoryMock.mockReturnValue([]);
     localStorageMock.clear();
-    usePersonalDataStore.setState({ visitor: false, owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
+    usePersonalDataStore.setState({ policyReady: true, visitor: false, owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
   });
   
   it('renders a textarea and a button', () => {

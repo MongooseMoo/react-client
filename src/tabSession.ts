@@ -1,6 +1,7 @@
 import { getBrowserInstallationId } from './browserInstallation';
 
 export interface SessionGrant {
+  purpose?: 'owner' | 'visitor';
   version: 2;
   token: string;
   sessionId: string;
@@ -15,6 +16,7 @@ export function isSessionGrant(value: unknown): value is SessionGrant {
   if (typeof value !== 'object' || value === null) return false;
   const fields = value as Record<string, unknown>;
   return fields.version === 2 &&
+    (fields.purpose === undefined || fields.purpose === 'owner' || fields.purpose === 'visitor') &&
     ['token', 'sessionId', 'installationId', 'playerUuid', 'playerRef', 'requestId']
       .every((key) => typeof fields[key] === 'string' && fields[key] !== '') &&
     typeof fields.expires_at === 'number' && Number.isFinite(fields.expires_at);

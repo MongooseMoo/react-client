@@ -4,7 +4,10 @@ import { GMCPAutoLogin } from './Auth';
 import { useConnectionStore } from '../stores/connectionStore';
 
 const installation = '00000000-0000-4000-8000-000000000001';
-vi.mock('../browserInstallation', () => ({ getBrowserInstallationId: async () => installation }));
+vi.mock('../browserInstallation', async () => ({
+  ...await vi.importActual<typeof import('../browserInstallation')>('../browserInstallation'),
+  getBrowserInstallationId: async () => installation,
+}));
 const handlers: GMCPAutoLogin[] = [];
 
 function client() {

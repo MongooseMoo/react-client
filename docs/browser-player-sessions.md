@@ -24,7 +24,7 @@ Inherited/missing/ambiguous IDs require migration before v2 enrollment.
 `Auth.Autologin.Resume` carries `{version:2, token, sessionId, installationId, playerUuid, requestId}`.
 The server validates the grant's account, selected player's current membership,
 stored object reference and UUID. A resume does not use RECENT/ROLLOVER.
-`Auth.Autologin.Session` requests `{version:2, sessionId, installationId, requestId}` after confirmed selection. `SessionToken` carries `{version:2, token, sessionId, installationId, playerUuid, playerRef, requestId, selectionOrder, expires_at}`. Replies must match the pending request and selected player. Each session has its own rotating token.
+`Auth.Autologin.Session` requests `{version:2, purpose, sessionId, installationId, requestId}` after confirmed selection. `SessionToken` carries `{version:2, purpose, token, sessionId, installationId, playerUuid, playerRef, requestId, selectionOrder, expires_at}`. Purpose is `owner` or `visitor` and remains immutable across resume. Replies must match the pending request and selected player. Each session has its own rotating token.
 `SessionStatus` reports an expired grant or connected-player conflict; `SessionLogout` revokes the addressed grant. Legacy string Login/Token messages remain distinct and cannot consume v2 grants.
 The server assigns selectionOrder when it confirms a new session/player selection. Refreshes and automatic resumes retain that order. Enrollment compares this order, so delayed HTTP registrations cannot replace a more recent confirmed primary choice.
 A new tab chooses an account explicitly; legacy browser-wide tokens do not
@@ -33,9 +33,9 @@ requires explicit takeover instead of automatic reconnect loops.
 
 ## Enrollment and grants
 
-V2 `Client.WebPush.Request` carries `{version:2, installationId, sessionId}`.
+V2 `Client.WebPush.SessionRequest` carries `{version:2, installationId, sessionId, requestId}`.
 Its reply carries `{version:2, token, expires_at, serverKey, playerUuid,
-playerRef, installationId, sessionId}` from trusted session identity.
+playerRef, installationId, sessionId, requestId}` from trusted session identity.
 Subscription POST includes that metadata, the subscription, `mode` (`primary`
 or explicitly `retained`), and the expected binding revision when updating.
 The server returns its authoritative `{bindingId, revision}`.
@@ -53,6 +53,34 @@ Browser grants carry audience `browser-away` and narrow operations; operational
 grants use audience `ops`. Legacy Ops authority remains usable. Browser grants
 never authorize the Ops API. Every use validates expiration, revocation, current
 membership, stored object identity and binding revision.
+
+Preference revisions allow a scoped replacement of an unexpired reader grant
+through `POST /api/away/browser_refresh`. Replacement preserves its original
+deadline and operations. A separate credential epoch invalidates replacements
+after Forget, endpoint rotation, password changes or player recycling.
+
+The staged HTTP surface is `/api/webpush/browser_key`, `browser_profile`,
+`bindings`, and `browser_control`, plus `/api/away/browser_lines`, `browser_ack`,
+`browser_command`, and `browser_refresh`. Enrollment uses a five-minute grant
+whose authority follows the pinned native session; away operations use a
+distinct recipient/session grant. Identifiers and profile reads confer no authority.
+
+## Temporary visits
+
+Canonical IndexedDB policy has `owner`, `visitor`, and `owner-paused` phases.
+Transitions compare revisions; BroadcastChannel signals cause each window to
+read canonical state. Native tab locks prevent copied session credentials from
+becoming shared resume authority. New tabs choose a character manually.
+
+Begin temporary visit pauses this installation's notifications before signing
+out the owner tab. Other owner windows and editors hide their contents; dirty
+editors keep their work with Save disabled after the owning connection ends.
+Visitor session grants carry purpose `visitor`, expire within one hour, and
+cannot enroll durable notifications. Visitor commands, output, logs and file
+pieces do not enter owner archives. End leaves owners paused. Resume owner
+requires an authenticated previously saved character and an explicit choice.
+Policy/storage failures keep personal archives paused while ordinary login
+remains available. Other devices retain their own enrollment and preferences.
 
 ## Away envelopes
 
