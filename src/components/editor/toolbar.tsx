@@ -5,9 +5,10 @@ interface ToolbarProps {
   onSave: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onRevert: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onDownload: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  saveDisabled?: boolean;
 }
 
-export default function EditorToolbar({ onSave, onRevert, onDownload }: ToolbarProps) {
+export default function EditorToolbar({ onSave, onRevert, onDownload, saveDisabled = false }: ToolbarProps) {
   return (
     <div className="editor-toolbar">
       {/*
@@ -17,7 +18,7 @@ export default function EditorToolbar({ onSave, onRevert, onDownload }: ToolbarP
       */}
       <form onSubmit={(event) => event.preventDefault()}>
         {/* biome-ignore lint/a11y/noAccessKey: intentional Alt+S save shortcut. */}
-        <button accessKey="s" onClick={onSave} title="Save (Alt+S)" type="button">
+        <button accessKey="s" onClick={onSave} disabled={saveDisabled} title="Save (Alt+S)" type="button">
           <FaSave aria-hidden="true" />
           Save
         </button>
