@@ -24,7 +24,7 @@ Inherited/missing/ambiguous IDs require migration before v2 enrollment.
 `Auth.Autologin.Resume` carries `{version:2, token, sessionId, installationId, playerUuid, requestId}`.
 The server validates the grant's account, selected player's current membership,
 stored object reference and UUID. A resume does not use RECENT/ROLLOVER.
-`Auth.Autologin.Session` requests `{version:2, purpose, sessionId, installationId, requestId}` after confirmed selection. `SessionToken` carries `{version:2, purpose, token, sessionId, installationId, playerUuid, playerRef, requestId, selectionOrder, expires_at}`. Purpose is `owner` or `visitor` and remains immutable across resume. Replies must match the pending request and selected player. Each session has its own rotating token.
+`Auth.Autologin.Session` requests `{version:2, purpose, sessionId, installationId, requestId}` after confirmed selection. Owners include existing subscription material when available, proving installation possession before asynchronous HTTP enrollment completes. `SessionToken` carries `{version:2, purpose, token, sessionId, installationId, playerUuid, playerRef, requestId, selectionOrder, expires_at}`. Purpose is `owner` or `visitor` and remains immutable across resume. Replies must match the pending request and selected player. Each session has its own rotating token.
 `SessionStatus` reports an expired grant or connected-player conflict; `SessionLogout` revokes the addressed grant. Legacy string Login/Token messages remain distinct and cannot consume v2 grants.
 The server assigns selectionOrder when it confirms a new session/player selection. Refreshes and automatic resumes retain that order. Enrollment compares this order, so delayed HTTP registrations cannot replace a more recent confirmed primary choice.
 A new tab chooses an account explicitly; legacy browser-wide tokens do not
@@ -64,6 +64,10 @@ The staged HTTP surface is `/api/webpush/browser_key`, `browser_profile`,
 `browser_command`, and `browser_refresh`. Enrollment uses a five-minute grant
 whose authority follows the pinned native session; away operations use a
 distinct recipient/session grant. Identifiers and profile reads confer no authority.
+`POST /api/webpush/browser_logout` uses the pinned native tab grant, rather than
+an installation credential, to revoke the tab even when its socket is disconnected.
+It removes automatic membership while preserving explicit retention. A network
+failure clears local authority and reports that server revocation was not confirmed.
 
 ## Temporary visits
 

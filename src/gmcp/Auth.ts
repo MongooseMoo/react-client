@@ -1,9 +1,10 @@
+import { clearBrowserAwaySession } from '../awayV2';
+import { readEnrollmentState } from '../browserInstallation';
+import { currentBrowserPurpose, initializeBrowserPolicy, useBrowserPolicy } from '../browserPolicy';
+import { revokeBrowserSession } from '../browserSessionLogout';
 import { inbound, outbound } from '../protocol/messages';
 import { useConnectionStore } from '../stores/connectionStore';
 import { usePersonalDataStore } from '../stores/personalDataStore';
-import { currentBrowserPurpose, initializeBrowserPolicy, useBrowserPolicy } from '../browserPolicy';
-import { clearBrowserAwaySession } from '../awayV2';
-import { readEnrollmentState } from '../browserInstallation';
 import { createTabSession, isSessionGrant, type SessionGrant } from '../tabSession';
 import { gmcpJsonMessage } from './messages';
 import { GMCPPackage } from './package';
@@ -122,6 +123,9 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
 
   signOut(): void {
     const grant = this.tab.grant;
+    if (grant && this.client.liveServer) void revokeBrowserSession(grant).catch(() => {
+      useConnectionStore.getState().setStatusText('Signed out here; server sign-out could not be confirmed');
+    });
     try {
       if (grant && this.client.connected && this.client.liveServer) {
         this.sendSessionLogout({ ...this.request(crypto.randomUUID()), token: grant.token, playerUuid: grant.playerUuid });

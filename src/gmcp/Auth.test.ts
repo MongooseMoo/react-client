@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type MudClient from '../client';
-import { GMCPAutoLogin } from './Auth';
-import { useConnectionStore } from '../stores/connectionStore';
 import { readEnrollmentState } from '../browserInstallation';
+import { revokeBrowserSession } from '../browserSessionLogout';
+import type MudClient from '../client';
+import { useConnectionStore } from '../stores/connectionStore';
+import { GMCPAutoLogin } from './Auth';
+
+vi.mock('../browserSessionLogout', () => ({ revokeBrowserSession: vi.fn(async () => {}) }));
 
 const installation = '00000000-0000-4000-8000-000000000001';
 vi.mock('../browserInstallation', async () => ({
@@ -44,6 +47,7 @@ describe('player-pinned tab authentication', () => {
       get length() { return values.size; },
     });
     useConnectionStore.getState().reset();
+    vi.mocked(revokeBrowserSession).mockClear();
     vi.mocked(readEnrollmentState).mockReset();
     vi.mocked(readEnrollmentState).mockResolvedValue(undefined);
     const held = new Set<string>();
@@ -153,6 +157,20 @@ describe('player-pinned tab authentication', () => {
     reply(auth, send, 'player-a', 'synthetic-tab-private');
     send.mockImplementation(() => { throw new Error('closed transport'); });
     expect(() => auth.signOut()).toThrow('closed transport');
+    expect(auth.currentGrant).toBeUndefined();
+    expect(endpoint.close).toHaveBeenCalledOnce();
+  });
+
+  it('revokes the pinned tab through HTTP when its game socket is disconnected', async () => {
+    const { auth, endpoint, send } = client();
+    auth.confirmPlayer('player-a');
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    reply(auth, send, 'player-a', 'synthetic-disconnected-tab');
+    const owner = auth.currentGrant;
+    endpoint.connected = false;
+    auth.signOut();
+    expect(revokeBrowserSession).toHaveBeenCalledWith(owner);
+    expect(send).toHaveBeenCalledOnce();
     expect(auth.currentGrant).toBeUndefined();
     expect(endpoint.close).toHaveBeenCalledOnce();
   });
