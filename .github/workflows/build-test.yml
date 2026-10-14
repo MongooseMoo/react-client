@@ -43,6 +43,20 @@ jobs:
       - run: npm test
       - name: Install browser for production audio cache check
         run: npx playwright install --with-deps chromium
+      - name: Verify editor ownership across game sessions
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:5183
+        run: |
+          node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5183 --strictPort > /tmp/editor-vite.log 2>&1 &
+          editor_server_pid=$!
+          trap 'kill "$editor_server_pid"' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent "$PLAYWRIGHT_BASE_URL/src/EditorManager.ts" > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          node node_modules/@playwright/test/cli.js test tests/browser/editor-ownership.spec.ts --workers=1 --reporter=line
       - name: Verify lazy audio caching in the production build
         run: npm run test:audio-cache
       - name: Verify keyboard accessibility in the production build

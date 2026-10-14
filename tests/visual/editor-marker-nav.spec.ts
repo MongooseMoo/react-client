@@ -28,7 +28,7 @@ test.describe('Editor marker navigation (F8 / Shift+F8)', () => {
     // Monaco is fetched from a CDN at runtime; give the editor room to load.
     test.setTimeout(90_000);
     // 1. Open the editor route directly, then deliver the document the way the
-    //    app does in production: a BroadcastChannel('editor') `load` message.
+    //    app does in production: a scoped BroadcastChannel `load` message.
     // Register the sender before navigation, responding to the editor's ready
     // handshake. The editor only mounts after receiving this load message.
     await page.addInitScript(
