@@ -50,7 +50,7 @@ jobs:
           node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5183 --strictPort > /tmp/editor-vite.log 2>&1 &
           editor_server_pid=$!
           trap 'kill "$editor_server_pid"' EXIT
-          for attempt in {1..30}; do
+          for ((attempt=0; attempt<30; attempt++)); do
             if curl --fail --silent "$PLAYWRIGHT_BASE_URL/src/EditorManager.ts" > /dev/null; then
               break
             fi
