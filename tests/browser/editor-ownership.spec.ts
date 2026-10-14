@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 const origin = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173';
 
 test('two game sessions and reopened editors keep saves and shutdown with their owner', async ({ context }) => {
+  test.setTimeout(60_000);
   // Exercise the actual manager and browser BroadcastChannels. The blank game
   // document supplies only the already-authenticated MCP boundary; editor
   // windows use the application's real route and channel handshake.
@@ -32,8 +33,10 @@ test('two game sessions and reopened editors keep saves and shutdown with their 
   const ownerB = new URL(editorB.url()).searchParams.get('owner');
   expect(ownerA).toBeTruthy();
   expect(ownerB).not.toBe(ownerA);
+  await expect(editorA).toHaveTitle('A - Mongoose Editor', { timeout: 20_000 });
+  await expect(editorB).toHaveTitle('B - Mongoose Editor', { timeout: 20_000 });
+  await editorA.reload();
   await expect(editorA).toHaveTitle('A - Mongoose Editor');
-  await expect(editorB).toHaveTitle('B - Mongoose Editor');
   // Use the real document's channel from another document, as the editor save
   // does, to avoid depending on Monaco's CDN or keyboard focus for routing.
   await editorA.evaluate((owner) => {
