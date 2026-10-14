@@ -71,6 +71,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   // mounts first); whichever happens second performs the focus.
   const pendingFocusOnReady = React.useRef<boolean>(false);
   const [clientId, setClientId] = useState<string>('');
+  const [sessionActive, setSessionActive] = useState(false);
   const [code, setCode] = useState<string>('');
   const [originalCode, setOriginalCode] = useState<string>('');
   const [documentState, setDocumentState] = useState<DocumentState>(DocumentState.Unchanged);
@@ -316,6 +317,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
           setSession({ ...loaded, contents: lines });
           setDocumentState(DocumentState.Unchanged);
           setClientId(id);
+          setSessionActive(true);
           setIsLoaded(true); // Add this line to set isLoaded to true when content is loaded
           // Focus the code editor on open, deterministically and exactly once.
           // If the editor instance is already mounted, this focuses now; if the
@@ -325,6 +327,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
           break;
         }
         case 'shutdown':
+          setSessionActive(false);
           if (documentState === DocumentState.Changed) {
             const shouldClose = window.confirm(
               'You have unsaved changes. Are you sure you want to close this editor?',
@@ -361,6 +364,10 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
 
   // Save the code
   const onSave = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!sessionActive) {
+      event.preventDefault();
+      return;
+    }
     const lines = (editorInstance.current?.getValue() ?? code).split(/\r\n|\r|\n/);
     // The server does not know `//`; send what the core's own rewrite would.
     const contents =
@@ -411,7 +418,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   return (
     // Use the ID for CSS targeting
     <div id="editor-window">
-      <EditorToolbar onSave={onSave} onRevert={revert} onDownload={downloadText} />
+      <EditorToolbar onSave={onSave} onRevert={revert} onDownload={downloadText} saveDisabled={!sessionActive} />
       {isLoaded && <Editor
         height="80vh"
         language={editorLanguage}
@@ -438,7 +445,9 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
         onDiagnosticsClick={mooDiagnosticTarget ? showFirstMooDiagnostic : undefined}
         diagnosticsSummary={mooDiagnosticsSummary}
         diagnosticsEnabled={editorLanguage === MOO_LANGUAGE_ID}
-        docstate={docstate}
+        docstate={isLoaded && !sessionActive
+          ? `${docstate}. Game session ended. Download your edits before closing or reopen from the game to save.`
+          : docstate}
         session={session}
       />
     </div>

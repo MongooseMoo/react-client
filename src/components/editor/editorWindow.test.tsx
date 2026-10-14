@@ -1167,6 +1167,30 @@ describe('EditorWindow language selection', () => {
     expect(screen.getByRole('status').textContent).toContain('Saved');
   });
 
+  it('keeps unsaved edits downloadable while preventing saves after owner shutdown', async () => {
+    render(<EditorWindow search="?reference=note&owner=owned-editor" />);
+    await waitFor(() => expect(MockBroadcastChannel.instances[0]?.listeners.length).toBe(1));
+    const channel = MockBroadcastChannel.instances[0];
+    act(() => channel.emit({ type: 'load', id: 'note', session: {
+      contents: ['original'], name: 'note', reference: 'note', type: 'text/plain',
+    } }));
+    await waitFor(() => expect(editorMock.props).toBeDefined());
+    act(() => (editorMock.props?.onChange as (value: string) => void)('unsaved edit'));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    try {
+      act(() => channel.emit({ type: 'shutdown', id: 'note' }));
+      expect(confirm).toHaveBeenCalledOnce();
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled();
+      expect(screen.getByRole('status')).toHaveTextContent('Game session ended');
+      channel.postMessage.mockClear();
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      expect(channel.postMessage).not.toHaveBeenCalled();
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
   describe('// comments', () => {
     const openAndSave = async (type: string, contents: string[]) => {
       render(
