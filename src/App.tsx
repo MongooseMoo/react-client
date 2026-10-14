@@ -37,6 +37,7 @@ import { usePreferences } from "./stores/preferencesStore";
 import { useRoomStore } from "./stores/roomStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useOutputStore } from "./stores/outputStore";
+import { usePersonalDataStore } from './stores/personalDataStore';
 import { stripMudAnsiTags } from "./stripMudAnsiTags";
 import { ensurePushSubscription } from "./webpush";
 
@@ -278,9 +279,10 @@ function App() {
     }
 
     const configureAutologSession = () => {
-      autoLogService.configureSession(
-        createAutoLogSessionDraft(document.title || WINDOW_TITLE),
-      );
+      const { owner, visitor } = usePersonalDataStore.getState();
+      autoLogService.configureSession(owner && !visitor
+        ? { ...createAutoLogSessionDraft(document.title || WINDOW_TITLE), owner: { ...owner } }
+        : null);
     };
     const startAutologSession = () => {
       configureAutologSession();
@@ -295,6 +297,7 @@ function App() {
     };
 
     configureAutologSession();
+    const unsubscribeOwner = usePersonalDataStore.subscribe(() => { startAutologSession(); });
     if (connected) {
       startAutologSession();
     } else {
@@ -302,6 +305,7 @@ function App() {
     }
 
     return () => {
+      unsubscribeOwner();
       autoLogService.endSession().catch((error) => {
         console.error("Failed to end autolog session during cleanup:", error);
       });

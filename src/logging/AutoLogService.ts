@@ -23,6 +23,8 @@ const SENSITIVE_URL_PARAMS = new Set([
 export function sanitizeLogUrl(url: string): string {
   try {
     const parsed = new URL(url);
+    parsed.username = '';
+    parsed.password = '';
     for (const key of Array.from(parsed.searchParams.keys())) {
       if (SENSITIVE_URL_PARAMS.has(key.toLowerCase())) {
         parsed.searchParams.set(key, "[redacted]");
@@ -65,6 +67,8 @@ export class AutoLogService {
   private flushTimer: number | null = null;
   private flushPromise: Promise<void> = Promise.resolve();
   private unsubscribePreferences: (() => void) | null = null;
+  private generation = 0;
+  private starting: Promise<void> | undefined;
 
   constructor(store: AutoLogStore = autoLogStore) {
     this.store = store;
@@ -85,7 +89,11 @@ export class AutoLogService {
   }
 
   configureSession(draft: AutoLogSessionDraft | null): void {
-    this.sessionDraft = draft;
+    if (JSON.stringify(this.sessionDraft) === JSON.stringify(draft)) return;
+    this.generation++;
+    this.starting = undefined;
+    void this.endSession().catch(() => console.error('Failed to close the previous autolog session'));
+    this.sessionDraft = draft ? { ...draft, ...(draft.owner ? { owner: { ...draft.owner } } : {}) } : null;
   }
 
   async startSession(): Promise<void> {
@@ -93,18 +101,32 @@ export class AutoLogService {
       return;
     }
 
-    this.currentSession = await this.store.createSession(this.sessionDraft);
-    this.sequence = 0;
+    if (this.starting) return this.starting;
+    const generation = this.generation;
+    const draft = this.sessionDraft;
+    const starting = this.store.createSession(draft).then(async (session) => {
+      if (generation !== this.generation) {
+        await this.store.endSession(session.id);
+        return;
+      }
+      this.currentSession = session;
+      this.sequence = 0;
+    });
+    this.starting = starting;
+    try { await starting; }
+    finally { if (this.starting === starting) this.starting = undefined; }
   }
 
   recordLine(line: AutoLogInputLine): void {
+    const generation = this.generation;
+    const timestamp = Date.now();
     if (!usePreferences.getState().autologging.enabled) {
       return;
     }
 
     this.ensureSession()
       .then(() => {
-        if (!this.currentSession) {
+        if (generation !== this.generation || !this.currentSession) {
           return;
         }
 
@@ -112,7 +134,7 @@ export class AutoLogService {
           ...line,
           sessionId: this.currentSession.id,
           sequence: this.sequence++,
-          timestamp: Date.now(),
+          timestamp,
         });
 
         if (this.pendingEntries.length >= FLUSH_BATCH_SIZE) {
@@ -141,27 +163,24 @@ export class AutoLogService {
     const entries = this.pendingEntries;
     this.pendingEntries = [];
     const maxBytes = usePreferences.getState().autologging.maxBytes;
+    const protectedSession = this.currentSession?.id;
 
     const flushPromise = this.flushPromise
       .then(() => this.store.appendEntries(entries))
-      .then(() => this.store.pruneToMaxBytes(maxBytes, this.currentSession?.id));
+      .then(() => this.store.pruneToMaxBytes(maxBytes, protectedSession));
 
     this.flushPromise = flushPromise.catch(() => {});
     return flushPromise;
   }
 
   async endSession(): Promise<void> {
+    this.generation++;
+    this.starting = undefined;
     const session = this.currentSession;
-    try {
-      await this.flush();
-
-      if (session) {
-        await this.store.endSession(session.id);
-      }
-    } finally {
-      this.currentSession = null;
-      this.sequence = 0;
-    }
+    this.currentSession = null;
+    this.sequence = 0;
+    await this.flush();
+    if (session) await this.store.endSession(session.id);
   }
 
   dispose(): void {

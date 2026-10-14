@@ -7,13 +7,14 @@ import {
 import type { StoredTransferKey, TransferStorage } from './types';
 
 export interface TransferStorageOptions {
+  /** Immutable recipient/runtime owner captured when the engine is created. */
+  owner?: string;
   /** Epoch milliseconds; the clock that stamps each write. Defaults to the wall clock. */
   now?: () => number;
 }
 
 const PIECES = 'pieces';
 const TRANSFERS = 'transfers';
-const LEGACY_DATABASE_NAME = 'file-transfer-store';
 
 interface PieceRecord extends StoredTransferKey {
   index: number;
@@ -46,31 +47,20 @@ function deleteTransfer(transaction: IDBTransaction, key: StoredTransferKey): vo
   transaction.objectStore(TRANSFERS).delete([key.from, key.id]);
 }
 
-function requestLegacyDatabaseDeletion(): void {
-  try {
-    // Fire and forget: the outcome, blocked and failed included, changes nothing here.
-    indexedDB.deleteDatabase(LEGACY_DATABASE_NAME);
-  } catch {
-    // Best effort; the pieces database works whether or not the old one goes away.
-  }
+export function transferDatabaseName(owner = 'unassigned'): string {
+  return `file-transfer-pieces-v2:${owner}`;
 }
 
 export function createIndexedDbTransferStorage(options?: TransferStorageOptions): TransferStorage {
   const now = clockOf(options);
   let opening: Promise<IDBDatabase> | null = null;
-  let legacyDeletionRequested = false;
 
   function open(): Promise<IDBDatabase> {
     if (opening) {
       return opening;
     }
 
-    if (!legacyDeletionRequested) {
-      legacyDeletionRequested = true;
-      requestLegacyDatabaseDeletion();
-    }
-
-    const attempt = openIndexedDatabase(pieceDatabaseSchema);
+    const attempt = openIndexedDatabase({ ...pieceDatabaseSchema, name: transferDatabaseName(options?.owner) });
     opening = attempt;
     attempt.catch(() => {
       // Forget a failed open so the next call tries again instead of failing forever.

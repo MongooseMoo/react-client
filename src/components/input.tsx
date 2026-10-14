@@ -5,6 +5,7 @@ import "./input.css";
 import { useInputStore } from "../stores/inputStore";
 import { useRoomStore } from "../stores/roomStore";
 import { registerCommandInput } from "../inputFocus";
+import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
 import type MudClient from "../client"; // Import MudClient
 import type { RoomPlayer } from "../gmcp/Room"; // Import RoomPlayer type
 import {
@@ -67,6 +68,9 @@ const parseWordForCompletion = (word: string): { leadingPunctuation: string, nam
 const CommandInput = ({ onSend, inputRef }: Props) => {
   const commandHistoryRef = useRef(new CommandHistory());
   const text = useInputStore((s) => s.text);
+  const owner = usePersonalDataStore((s) => s.owner);
+  const visitor = usePersonalDataStore((s) => s.visitor);
+  const historyKey = personalStorageKey('commands', owner);
 
   // Refs for tab completion state
   const completionCandidatesRef = useRef<string[]>([]);
@@ -76,11 +80,12 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
 
   // Load saved history on component mount
   useEffect(() => {
-    const savedHistory = loadStoredValue(commandHistorySchema, []);
+    commandHistoryRef.current = new CommandHistory();
+    const savedHistory = historyKey ? loadStoredValue({ ...commandHistorySchema, key: historyKey }, []) : [];
     savedHistory.forEach((command) => {
       commandHistoryRef.current.addCommand(command);
     });
-  }, []);
+  }, [historyKey, visitor, owner]);
 
   // Register input ref with InputStore for focus functionality
   useEffect(() => {
@@ -89,16 +94,17 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
 
   // Save history when commands are added
   const saveHistory = useCallback(() => {
+    if (!historyKey || historyKey !== personalStorageKey('commands')) return;
     try {
       // Get direct access to the history array
       const history = commandHistoryRef.current.getHistory();
       // Save only up to MAX_HISTORY commands
       const trimmedHistory = history.slice(-MAX_HISTORY);
-      saveStoredValue(commandHistorySchema, trimmedHistory);
+      saveStoredValue({ ...commandHistorySchema, key: historyKey }, trimmedHistory);
     } catch (e) {
       console.warn('Failed to save command history:', e);
     }
-  }, []);
+  }, [historyKey]);
 
   const resetCompletionState = useCallback(() => {
     completionCandidatesRef.current = [];
@@ -109,7 +115,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
   const handleSend = useCallback(() => {
     const currentInput = text;
     onSend(currentInput);
-    if (currentInput.trim()) {
+    if (currentInput.trim() && owner) {
       commandHistoryRef.current.addCommand(currentInput);
       saveHistory();
     }

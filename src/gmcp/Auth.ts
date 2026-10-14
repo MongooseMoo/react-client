@@ -1,5 +1,6 @@
 import { inbound, outbound } from '../protocol/messages';
 import { useConnectionStore } from '../stores/connectionStore';
+import { usePersonalDataStore } from '../stores/personalDataStore';
 import { createTabSession, isSessionGrant, type SessionGrant } from '../tabSession';
 import { gmcpJsonMessage } from './messages';
 import { GMCPPackage } from './package';
@@ -104,6 +105,7 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
         this.sendSessionLogout({ ...this.request(crypto.randomUUID()), token: grant.token, playerUuid: grant.playerUuid });
       }
     } finally {
+      usePersonalDataStore.getState().clear();
       this.tab.forgetGrant();
       this.reset();
       this.client.close();

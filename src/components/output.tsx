@@ -13,6 +13,7 @@ import { useOutputStore, type OutputEntry } from '../stores/outputStore';
 import { renderServerHtml } from './serverHtml';
 import { copyBlockquoteContent } from './BlockquoteCopyButton';
 import { autoLogService } from '../logging/AutoLogService';
+import { ownerKey, personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
 import type { AutoLogLineType, AutoLogSourceType } from '../logging/AutoLogTypes';
 import {
   loadStoredValue,
@@ -183,6 +184,9 @@ class Output extends React.Component<Props, State> {
   private unsubscribeUserlist: (() => void) | undefined;
   private unsubscribeConnection: (() => void) | undefined;
   private unsubscribeOutputStore: (() => void) | undefined;
+  private unsubscribeOwner: (() => void) | undefined;
+  private storageKey = personalStorageKey('output');
+  private ownerIdentity = usePersonalDataStore.getState().owner;
   private previousConnected = useConnectionStore.getState().connected;
   private previousSessionReady = useConnectionStore.getState().sessionReady;
   private lastOutputEntryId = 0;
@@ -229,6 +233,7 @@ class Output extends React.Component<Props, State> {
   };
 
   saveOutput = () => {
+    if (!this.storageKey || usePersonalDataStore.getState().visitor) return;
     const linesToSave: SavedOutputLine[] = this.allLines.map((line: OutputLine) => {
       return {
         type: line.type,
@@ -240,11 +245,12 @@ class Output extends React.Component<Props, State> {
 
     // Saving is best-effort — a failed write (e.g. QuotaExceededError) must never
     // propagate out of componentDidUpdate and crash the output view.
-    const result = saveStoredValue(outputLogSchema, linesToSave);
+    const schema = { ...outputLogSchema, key: this.storageKey };
+    const result = saveStoredValue(schema, linesToSave);
     if (result === "quota-exceeded") {
       // One recovery attempt: drop the oldest half of the persisted set and retry.
       const trimmed = linesToSave.slice(Math.floor(linesToSave.length / 2));
-      saveStoredValue(outputLogSchema, trimmed);
+      saveStoredValue(schema, trimmed);
     }
   };
 
@@ -281,7 +287,7 @@ class Output extends React.Component<Props, State> {
   }
 
   loadOutput = (): OutputLine[] =>
-    loadStoredValue(outputLogSchema, []).map((savedLine: SavedOutputLine): OutputLine => ({
+    (this.storageKey ? loadStoredValue({ ...outputLogSchema, key: this.storageKey }, []) : []).map((savedLine: SavedOutputLine): OutputLine => ({
       id: this.messageKey++,
       type: savedLine.type,
       sourceType: savedLine.sourceType,
@@ -573,6 +579,23 @@ componentDidUpdate(
   };
 
   componentDidMount() {
+    this.unsubscribeOwner = usePersonalDataStore.subscribe(() => {
+      const key = personalStorageKey('output');
+      const owner = usePersonalDataStore.getState().owner;
+      if (key === this.storageKey && (owner ? ownerKey(owner) : '') === (this.ownerIdentity ? ownerKey(this.ownerIdentity) : '')) return;
+      this.cancelScheduledSave();
+      this.saveOutput();
+      this.storageKey = key;
+      this.ownerIdentity = owner;
+      this.allLines = this.loadOutput();
+      this.lastOutputEntryId = 0;
+      this.totalLinesAdded = this.prevTotalLinesAdded = this.allLines.length;
+      this.frozenRef.current?.replaceChildren();
+      this.frozenCount = this.frozenHiddenCount = 0;
+      this.lastFocusedOutputElement = null;
+      this.setState({ liveOutput: this.allLines.slice(-Output.LIVE_WINDOW_SIZE),
+        focusedLineId: null, newLinesCount: 0, historyRevealed: false, actionFeedback: '' });
+    });
     this.unsubscribePrefs = usePreferences.subscribe(
       (state) => state.general.localEcho,
       this.handlePreferencesChange,
@@ -590,6 +613,7 @@ componentDidUpdate(
   }
 
   componentWillUnmount() {
+    this.unsubscribeOwner?.();
     if (this.unsubscribePrefs) {
       this.unsubscribePrefs();
     }
@@ -784,7 +808,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     const frozenDiv = this.frozenRef.current;
     if (frozenDiv) frozenDiv.innerHTML = '';
     this.setState({ liveOutput: [] });
-    removeStoredValue(Output.LOCAL_STORAGE_KEY);
+    if (this.storageKey) removeStoredValue(this.storageKey);
   }
 
   async copyLog() {

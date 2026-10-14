@@ -8,6 +8,7 @@ import {
 } from "../logging/AutoLogExport";
 import { autoLogStore } from "../logging/AutoLogStore";
 import type { AutoLogEntry, AutoLogSession } from "../logging/AutoLogTypes";
+import { ownerKey, usePersonalDataStore } from '../stores/personalDataStore';
 import AccessibleList from './AccessibleList';
 import "./AutoLogDialog.css";
 
@@ -36,11 +37,22 @@ function getSessionDuration(session: AutoLogSession): string {
 // session, or deleting every session.
 type PendingDelete =
   | { kind: "session"; session: AutoLogSession }
-  | { kind: "all"; count: number };
+  | { kind: "all"; count: number; scope: string; sessions: AutoLogSession[] };
 
 export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: boolean; onReady?: () => void }) {
+  const owner = usePersonalDataStore((state) => state.owner);
+  const visitor = usePersonalDataStore((state) => state.visitor);
+  const [unassignedScope, setUnassignedScope] = useState('');
+  const scope = owner ? ownerKey(owner) : '';
+  const includeUnassigned = !!scope && unassignedScope === scope;
+  const permitted = useCallback((session: AutoLogSession) => {
+    const current = usePersonalDataStore.getState();
+    return !current.visitor && !!current.owner && ownerKey(current.owner) === scope &&
+      (session.owner ? ownerKey(session.owner) === scope : includeUnassigned);
+  }, [scope, includeUnassigned]);
   const confirmDialogRef = useRef<HTMLDialogElement | null>(null);
   const [sessions, setSessions] = useState<AutoLogSession[]>([]);
+  const visibleSessions = sessions.filter(permitted);
   const [selectedSession, setSelectedSession] = useState<AutoLogSession | null>(null);
   const [entries, setEntries] = useState<AutoLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -54,10 +66,11 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
   const [sessionsReady, setSessionsReady] = useState(false);
 
   const refreshSessions = useCallback(async () => {
+    if (visitor || !scope) { setSessions([]); setSessionsReady(true); return []; }
     setIsLoading(true);
     setError(null);
     try {
-      const nextSessions = await autoLogStore.listSessions();
+      const nextSessions = (await autoLogStore.listSessions()).filter(permitted);
       setSessions(nextSessions);
       const current = selectedSessionRef.current;
       if (current && !nextSessions.some((session) => session.id === current.id)) {
@@ -72,9 +85,10 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
       setIsLoading(false);
       setSessionsReady(true);
     }
-  }, []);
+  }, [scope, visitor, permitted]);
 
   const loadSessionEntries = useCallback(async (session: AutoLogSession) => {
+    if (!permitted(session)) return;
     const request = ++entriesRequest.current;
     setSelectedSession(session);
     setEntries([]);
@@ -82,15 +96,16 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
     setError(null);
     try {
       const nextEntries = await autoLogStore.getEntries(session.id);
-      if (request === entriesRequest.current) setEntries(nextEntries);
+      if (request === entriesRequest.current && permitted(session)) setEntries(nextEntries);
     } catch (err) {
       if (request === entriesRequest.current) setError(err instanceof Error ? err.message : "Failed to load autolog entries.");
     } finally {
       if (request === entriesRequest.current) setIsLoading(false);
     }
-  }, []);
+  }, [permitted]);
 
   const handleDelete = useCallback(async (session: AutoLogSession) => {
+    if (!permitted(session)) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -109,13 +124,15 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
     } finally {
       setIsLoading(false);
     }
-  }, [refreshSessions, selectedSession, sessions, loadSessionEntries]);
+  }, [refreshSessions, selectedSession, sessions, loadSessionEntries, permitted]);
 
-  const handleDeleteAll = useCallback(async () => {
+  const handleDeleteAll = useCallback(async (targets: AutoLogSession[]) => {
     setIsLoading(true);
     setError(null);
     try {
-      await autoLogStore.deleteAll();
+      for (const session of targets) {
+        if (permitted(session)) await autoLogStore.deleteSession(session.id);
+      }
       entriesRequest.current++;
       setSelectedSession(null);
       setEntries([]);
@@ -126,7 +143,7 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
     } finally {
       setIsLoading(false);
     }
-  }, [refreshSessions]);
+  }, [refreshSessions, permitted]);
 
   useEffect(() => {
     if (isOpen && !isLoading && focusAfterDelete.current) {
@@ -146,8 +163,9 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
   }, []);
 
   const requestDeleteAll = useCallback(() => {
-    setPendingDelete({ kind: "all", count: sessions.length });
-  }, [sessions.length]);
+    const targets = sessions.filter(permitted);
+    setPendingDelete({ kind: "all", count: targets.length, scope, sessions: targets });
+  }, [sessions, scope, permitted]);
 
   const cancelDelete = useCallback(() => {
     setPendingDelete(null);
@@ -162,15 +180,17 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
     if (pending.kind === "session") {
       await handleDelete(pending.session);
     } else {
-      await handleDeleteAll();
+      if (pending.scope === scope) await handleDeleteAll(pending.sessions);
     }
-  }, [pendingDelete, handleDelete, handleDeleteAll]);
+  }, [pendingDelete, handleDelete, handleDeleteAll, scope]);
 
   const handleDownload = useCallback(async (session: AutoLogSession, format: "text" | "html") => {
+    if (!permitted(session)) return;
     setIsLoading(true);
     setError(null);
     try {
       const sessionEntries = selectedSession?.id === session.id ? entries : await autoLogStore.getEntries(session.id);
+      if (!permitted(session)) return;
       const content = format === "html"
         ? autoLogEntriesToHtml(session, sessionEntries)
         : autoLogEntriesToText(sessionEntries);
@@ -180,13 +200,20 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
     } finally {
       setIsLoading(false);
     }
-  }, [entries, selectedSession]);
+  }, [entries, selectedSession, permitted]);
 
   useEffect(() => {
     if (isOpen) {
       refreshSessions();
     }
   }, [isOpen, refreshSessions]);
+
+  useEffect(() => {
+    entriesRequest.current++;
+    setSelectedSession(null);
+    setEntries([]);
+    setPendingDelete(null);
+  }, [scope, visitor]);
 
   // Drive the confirmation alertdialog from pendingDelete, same showModal()
   // approach as the main dialog. showModal() traps focus and closes on Escape;
@@ -221,11 +248,11 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
   }, []);
 
   const totalBytes = useMemo(
-    () => sessions.reduce((total, session) => total + session.byteEstimate, 0),
-    [sessions]
+    () => visibleSessions.reduce((total, session) => total + session.byteEstimate, 0),
+    [visibleSessions]
   );
 
-  const confirmMessage = pendingDelete
+  const confirmMessage = pendingDelete && !visitor && (pendingDelete.kind === 'session' ? permitted(pendingDelete.session) : pendingDelete.scope === scope)
     ? pendingDelete.kind === "session"
       ? `Delete the autolog "${pendingDelete.session.title}"? This permanently removes the session and cannot be undone.`
       : `Delete all ${pendingDelete.count} autolog sessions? This permanently removes them and cannot be undone.`
@@ -233,12 +260,15 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
 
   return (
     <>
-      {isOpen && (
+      {isOpen && visitor && <p>Saved logs are unavailable during a temporary visit.</p>}
+      {isOpen && !visitor && !scope && <p>Sign in to a character to view saved logs.</p>}
+      {isOpen && !visitor && scope && (
         <>
           <div className="autolog-dialog-toolbar">
-            <span>{sessions.length} sessions, {formatBytes(totalBytes)}</span>
+            <span>{visibleSessions.length} sessions, {formatBytes(totalBytes)}</span>
             <button id="autolog-refresh" type="button" onClick={() => { if (!isLoading) void refreshSessions(); }} aria-disabled={isLoading}>Refresh</button>
-            <button type="button" onClick={requestDeleteAll} disabled={isLoading || sessions.length === 0}>Delete All</button>
+            <label><input type="checkbox" checked={includeUnassigned} onChange={event => setUnassignedScope(event.currentTarget.checked ? scope : '')} />Show older unassigned logs</label>
+            <button type="button" onClick={requestDeleteAll} disabled={isLoading || visibleSessions.length === 0}>Delete All</button>
           </div>
 
           {error && <div className="autolog-dialog-error" role="alert">{error}</div>}
@@ -246,16 +276,16 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
           <div className="autolog-dialog-body">
             <section className="autolog-session-list" aria-label="Autolog sessions">
               <h3 id="autolog-sessions-title">Autolog sessions</h3>
-              {sessions.length === 0 && !isLoading && (
+              {visibleSessions.length === 0 && !isLoading && (
                 <p className="autolog-empty">No autolog sessions have been saved.</p>
               )}
-              {sessions.length > 0 && <AccessibleList
-                listId="autolog-session-selector" labelledBy="autolog-sessions-title" items={sessions}
+              {visibleSessions.length > 0 && <AccessibleList
+                listId="autolog-session-selector" labelledBy="autolog-sessions-title" items={visibleSessions}
                 renderItem={session => <><span className="autolog-session-title">{session.title}</span>{' '}
                   <span className="autolog-session-meta">{formatSessionDate(session.startedAt)}</span></>}
                 getItemTextValue={session => session.title.toLowerCase()}
                 onSelectedIndexChange={index => {
-                  const session = sessions[index];
+                  const session = visibleSessions[index];
                   if (session && session.id !== selectedSessionRef.current?.id) void loadSessionEntries(session);
                 }}
                 onActivate={() => viewerHeadingRef.current?.focus()}
@@ -263,7 +293,7 @@ export default function AutoLogDialogContent({ isOpen, onReady }: { isOpen: bool
             </section>
 
             <section className="autolog-entry-viewer" aria-label="Autolog entries" aria-busy={isLoading}>
-              {selectedSession ? (
+              {selectedSession && permitted(selectedSession) ? (
                 <>
                   <h3 ref={viewerHeadingRef} tabIndex={-1}>{selectedSession.title}</h3>
                   <div className="autolog-entry-meta">

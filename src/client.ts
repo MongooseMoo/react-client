@@ -25,6 +25,7 @@ import type { FileTransfers, TransferSnapshot } from "./fileTransfer/types";
 import { useInputStore } from "./stores/inputStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useOutputStore } from "./stores/outputStore";
+import { usePersonalDataStore } from './stores/personalDataStore';
 import { reconnectDelay } from "./reconnectBackoff";
 import {
   AWAY_NOTIFICATION_TAG,
@@ -75,6 +76,10 @@ class MudClient {
   }
 
   get liveServer(): boolean { return this.awayChannel && !this.localMode && !this.shutdownComplete; }
+  private readonly localRuntime = `local:${crypto.randomUUID()}`;
+  get runtimeNamespace(): string {
+    return this.liveServer ? `live:${this.host}:${this.port}` : this.localRuntime;
+  }
 
   private host: string;
   private port: number;
@@ -114,6 +119,9 @@ class MudClient {
     });
     this.gmcp = new GmcpSession(this);
     this.media = new MediaService();
+    this.registerCleanup(usePersonalDataStore.subscribe((state, previous) => {
+      if (state.visitor !== previous.visitor) this.resetIdentityState();
+    }));
     useInputStore.getState().setAutosay(this._autosay);
   }
 
@@ -203,6 +211,7 @@ class MudClient {
   }
 
   public connect() {
+    usePersonalDataStore.getState().clear();
     const generation = ++this.transportGeneration;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
@@ -368,6 +377,7 @@ class MudClient {
    * creating a WebSocket.
    */
   public connectLocal(stream: Stream) {
+    usePersonalDataStore.getState().clear();
     const generation = ++this.transportGeneration;
     const current = () => generation === this.transportGeneration && !this.shutdownComplete;
     this.awayChannel = false;
