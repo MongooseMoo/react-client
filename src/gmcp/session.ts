@@ -80,7 +80,7 @@ export class GmcpSession {
       return;
     }
 
-    console.log('GMCP Message:', address.packageName, address.messageType, gmcpMessage);
+    console.log('GMCP Message:', address.packageName, address.messageType);
     const handler = this.packageHandlers[address.packageName];
     if (!handler) {
       console.log('No handler for GMCP package:', address.packageName);
@@ -91,10 +91,9 @@ export class GmcpSession {
     try {
       const payload = parseGmcpPayload(gmcpMessage);
       handled = handler.receiveRegisteredMessage(address.messageType, payload);
-    } catch (error) {
+    } catch {
       console.error(
         `Error dispatching GMCP message for ${address.packageName}.${address.messageType}:`,
-        error,
       );
       return;
     }
@@ -110,7 +109,7 @@ export class GmcpSession {
     if (!this.telnet) {
       throw new Error(`Cannot send GMCP before a transport is attached: ${packageName}`);
     }
-    console.log('Sending GMCP:', packageName, data);
+    console.log('Sending GMCP:', packageName);
     this.telnet.sendGmcp(packageName, encodeGmcpPayload(data));
   }
 

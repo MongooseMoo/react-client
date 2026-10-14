@@ -83,7 +83,6 @@ describe('GmcpSession', () => {
 
     expect(consoleError).toHaveBeenCalledWith(
       'Error dispatching GMCP message for Registry.Thing:',
-      expect.any(SyntaxError),
     );
   });
 
@@ -100,8 +99,18 @@ describe('GmcpSession', () => {
 
     expect(consoleError).toHaveBeenCalledWith(
       'Error dispatching GMCP message for Registry.Thing:',
-      error,
     );
+  });
+
+  it('keeps credential payloads out of inbound/outbound diagnostics', () => {
+    const { session } = createSession();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    session.attachTransport({ sendGmcp: vi.fn() } as unknown as TelnetParser);
+    session.send('Auth.Autologin.Login', 'synthetic-private-login');
+    session.receive('Client.WebPush.Token', '{"token":"synthetic-private-push"}');
+    const diagnostics = JSON.stringify(log.mock.calls);
+    expect(diagnostics).not.toContain('synthetic-private-login');
+    expect(diagnostics).not.toContain('synthetic-private-push');
   });
 
   it('encodes outbound messages through the attached telnet transport', () => {

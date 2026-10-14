@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GMCPClientWebPush } from "./WebPush";
 
@@ -15,9 +15,16 @@ describe("GMCPClientWebPush", () => {
   let handler: GMCPClientWebPush;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-14T00:00:00Z"));
     vi.clearAllMocks();
     client = createMockClient();
     handler = new GMCPClientWebPush(client as never);
+  });
+
+  afterEach(() => {
+    handler.shutdown();
+    vi.useRealTimers();
   });
 
   it("stores token payloads and emits package token events", () => {
@@ -54,5 +61,28 @@ describe("GMCPClientWebPush", () => {
     expect(client.gmcp.send).toHaveBeenCalledWith("Client.WebPush.Request", "{}");
     handler.receiveRegisteredMessage("Token", { token: "token-b" });
     await expect(tokenPromise).resolves.toBe("token-b");
+  });
+
+  it("uses Unix seconds expiry and renews within the margin", async () => {
+    handler.handleToken({ token: "valid", expires_at: Date.now() / 1000 + 300 });
+    await expect(handler.requestToken()).resolves.toBe("valid");
+    expect(client.gmcp.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(271_000);
+    const renewed = handler.requestToken();
+    expect(client.gmcp.send).toHaveBeenCalledOnce();
+    handler.receiveRegisteredMessage("Token", { token: "renewed", expires_at: Date.now() / 1000 + 300 });
+    await expect(renewed).resolves.toBe("renewed");
+  });
+
+  it("cancels all pending listeners on reset", async () => {
+    const removeListener = vi.spyOn(handler, "off");
+    const first = handler.requestToken();
+    const second = handler.requestToken();
+    handler.reset();
+    await expect(first).resolves.toBeNull();
+    await expect(second).resolves.toBeNull();
+    handler.receiveRegisteredMessage("Token", { token: "late" });
+    expect(removeListener).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
