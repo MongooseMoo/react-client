@@ -3,6 +3,7 @@ import { useConnectionStore } from '../stores/connectionStore';
 import { usePersonalDataStore } from '../stores/personalDataStore';
 import { currentBrowserPurpose, initializeBrowserPolicy, useBrowserPolicy } from '../browserPolicy';
 import { clearBrowserAwaySession } from '../awayV2';
+import { readEnrollmentState } from '../browserInstallation';
 import { createTabSession, isSessionGrant, type SessionGrant } from '../tabSession';
 import { gmcpJsonMessage } from './messages';
 import { GMCPPackage } from './package';
@@ -17,6 +18,7 @@ interface SessionRequest {
   sessionId: string;
   installationId: string;
   requestId: string;
+  subscription?: PushSubscriptionJSON;
 }
 interface ResumeRequest extends SessionRequest { token: string; playerUuid: string; }
 const session = gmcpJsonMessage<'Session', never, SessionRequest>('Session');
@@ -80,9 +82,12 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
       await initializeBrowserPolicy(this.tab.sessionId);
       if (epoch !== this.epoch || !this.client.connected || !this.client.liveServer || !this.tab.installationId) return;
       if (this.tab.grant && this.tab.grant.playerUuid !== playerUuid) this.tab.forgetGrant();
+      const saved = await readEnrollmentState('https://mongoose.world', this.tab.installationId);
+      if (epoch !== this.epoch || !this.client.connected || this.confirmedUuid !== playerUuid) return;
       const requestId = crypto.randomUUID();
       this.pending = { requestId, playerUuid, epoch };
-      this.sendSession(this.request(requestId));
+      const request = this.request(requestId);
+      this.sendSession({ ...request, ...(saved && request.purpose === 'owner' ? { subscription: saved.subscription } : {}) });
     }).catch(() => {
       useConnectionStore.getState().setStatusText('Connected; automatic resume is unavailable');
     });

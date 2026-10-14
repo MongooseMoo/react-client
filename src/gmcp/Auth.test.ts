@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type MudClient from '../client';
 import { GMCPAutoLogin } from './Auth';
 import { useConnectionStore } from '../stores/connectionStore';
+import { readEnrollmentState } from '../browserInstallation';
 
 const installation = '00000000-0000-4000-8000-000000000001';
 vi.mock('../browserInstallation', async () => ({
   ...await vi.importActual<typeof import('../browserInstallation')>('../browserInstallation'),
   getBrowserInstallationId: async () => installation,
+  readEnrollmentState: vi.fn(async () => undefined),
 }));
 const handlers: GMCPAutoLogin[] = [];
 
@@ -42,6 +44,8 @@ describe('player-pinned tab authentication', () => {
       get length() { return values.size; },
     });
     useConnectionStore.getState().reset();
+    vi.mocked(readEnrollmentState).mockReset();
+    vi.mocked(readEnrollmentState).mockResolvedValue(undefined);
     const held = new Set<string>();
     vi.stubGlobal('navigator', {
       locks: {
@@ -97,6 +101,27 @@ describe('player-pinned tab authentication', () => {
     expect(auth.currentGrant).toBeUndefined();
     reply(auth, send, 'player-b', 'synthetic-current');
     expect(auth.currentGrant?.token).toBe('synthetic-current');
+  });
+
+  it('carries existing installation possession in owner confirmation and fences a delayed read after switching', async () => {
+    const subscription = { endpoint: 'https://push.example/confirmation-fixture', keys: { auth: 'synthetic', p256dh: 'synthetic' } };
+    const saved = { subscription, profile: { id: installation, revision: 1, quiet: 0, bindings: [] } };
+    vi.mocked(readEnrollmentState).mockResolvedValueOnce(saved);
+    const first = client();
+    first.auth.confirmPlayer('player-a');
+    await vi.waitFor(() => expect(first.send).toHaveBeenCalledOnce());
+    expect(JSON.parse(first.send.mock.calls[0][1]).subscription).toEqual(subscription);
+    first.auth.reset();
+    let finish: ((value: typeof saved) => void) | undefined;
+    vi.mocked(readEnrollmentState).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    first.auth.confirmPlayer('player-old');
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    first.auth.confirmPlayer('player-new');
+    await vi.waitFor(() => expect(first.send).toHaveBeenCalledTimes(2));
+    finish?.(saved);
+    await Promise.resolve();
+    expect(first.send).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(first.send.mock.calls[1][1]).subscription).toBeUndefined();
   });
 
   it('reports an active-player conflict without starting takeover or discarding the grant', async () => {

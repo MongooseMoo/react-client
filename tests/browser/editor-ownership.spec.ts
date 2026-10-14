@@ -18,7 +18,7 @@ test('two game sessions and reopened editors keep saves and shutdown with their 
   const managerModule = ts.transpileModule(await readFile(resolve('src/EditorManager.ts'), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  await context.route('**/ownership-manager.js', (route) => route.fulfill({
+  await context.route('**/src/ownership-manager.js', (route) => route.fulfill({
     contentType: 'text/javascript', body: managerModule,
   }));
   const a = await context.newPage();
@@ -26,7 +26,9 @@ test('two game sessions and reopened editors keep saves and shutdown with their 
   await Promise.all([a.goto(`${origin}/ownership-game`), b.goto(`${origin}/ownership-game`)]);
   for (const page of [a, b]) {
     await page.evaluate(async () => {
-      const { EditorManager } = await import('/ownership-manager.js');
+      const { initializeBrowserPolicy } = await import('/src/browserPolicy.ts');
+      await initializeBrowserPolicy(crypto.randomUUID());
+      const { EditorManager } = await import('/src/ownership-manager.js');
       globalThis.saves = [];
       globalThis.manager = new EditorManager({ sendSet: (session) => globalThis.saves.push(session) });
     });
