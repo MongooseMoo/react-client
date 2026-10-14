@@ -82,6 +82,11 @@ try {
   });
   await page.locator('details.browser-sessions summary').click();
   await page.getByRole('button', { name: 'Begin temporary visit', exact: true }).click();
+  // The click starts an async storage/notification transition. The old owner
+  // socket remains ready until that transition signs it out; waiting only on
+  // connected/ready can accidentally send the guest login to that old socket.
+  await expect(page.getByRole('button', { name: 'End temporary visit', exact: true })).toBeVisible();
+  await expect.poll(() => sockets.length).toBe(2);
   await page.waitForFunction(() => window.mudClient.connected && window.mudClient.gmcp.ready);
   const command = page.getByRole('textbox', { name: 'Command', exact: true });
   await command.fill('guest'); await command.press('Enter');
