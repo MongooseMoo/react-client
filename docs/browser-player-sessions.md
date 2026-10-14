@@ -27,6 +27,8 @@ stored object reference and UUID. A resume does not use RECENT/ROLLOVER.
 `Auth.Autologin.Session` requests `{version:2, purpose, sessionId, installationId, requestId}` after confirmed selection. Owners include existing subscription material when available, proving installation possession before asynchronous HTTP enrollment completes. `SessionToken` carries `{version:2, purpose, token, sessionId, installationId, playerUuid, playerRef, requestId, selectionOrder, expires_at}`. Purpose is `owner` or `visitor` and remains immutable across resume. Replies must match the pending request and selected player. Each session has its own rotating token.
 `SessionStatus` reports an expired grant or connected-player conflict; `SessionLogout` revokes the addressed grant. Legacy string Login/Token messages remain distinct and cannot consume v2 grants.
 The server assigns selectionOrder when it confirms a new session/player selection. Refreshes and automatic resumes retain that order. Enrollment compares this order, so delayed HTTP registrations cannot replace a more recent confirmed primary choice.
+Ordinary live guests without account membership receive `SessionStatus` with
+`status:unavailable`, continue playing, and receive no remembered account grant.
 A new tab chooses an account explicitly; legacy browser-wide tokens do not
 become authority for an arbitrary player. A conflicting connected session
 requires explicit takeover instead of automatic reconnect loops.

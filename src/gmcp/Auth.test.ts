@@ -144,6 +144,16 @@ describe('player-pinned tab authentication', () => {
     expect(reload.auth.currentGrant?.playerUuid).toBe('player-a');
   });
 
+  it('keeps an ordinary guest connected without remembered account authority', async () => {
+    const { auth, endpoint, send } = client();
+    auth.confirmPlayer('guest-player');
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    auth.receiveRegisteredMessage('SessionStatus', { ...request(send), version: 2, status: 'unavailable' });
+    expect(auth.currentGrant).toBeUndefined();
+    expect(endpoint.close).not.toHaveBeenCalled();
+    expect(useConnectionStore.getState().statusText).toContain('Guest session');
+  });
+
   it('does not request live grants in a local runtime and clears local authority when sign-out sending fails', async () => {
     const { auth, endpoint, send } = client();
     endpoint.liveServer = false;

@@ -111,7 +111,9 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
         data.requestId !== this.pending?.requestId || !('status' in data)) return;
     this.pending = undefined;
     if (data.status === 'expired') this.tab.forgetGrant();
-    useConnectionStore.getState().setStatusText(data.status === 'connected'
+    useConnectionStore.getState().setStatusText(data.status === 'unavailable'
+      ? 'Guest session; sign in to an account to remember this character'
+      : data.status === 'connected'
       ? 'That character is already connected. Choose a character or reconnect deliberately.'
       : 'Sign in to choose a character');
   }
