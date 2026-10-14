@@ -188,7 +188,6 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   }, [code, editorLanguage, editorReady, updateMooDiagnostics]);
 
   useBeforeunload((event) => {
-    channel.postMessage({ type: 'close', id });
     if (documentState === DocumentState.Changed) {
       event.preventDefault();
     }
@@ -272,9 +271,22 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
     },
     [code, originalCode],
   );
-  const channel = useMemo(() => new BroadcastChannel('editor'), []);
   const params = new URLSearchParams(search);
-  const id = decodeURIComponent(params.get('reference') || '');
+  const id = params.get('reference') || '';
+  const channel = useMemo(
+    () => new BroadcastChannel(`editor:${new URLSearchParams(search).get('owner') || crypto.randomUUID()}`),
+    [search],
+  );
+
+  useEffect(() => {
+    const closed = () => channel.postMessage({ type: 'close', id });
+    window.addEventListener('pagehide', closed);
+    return () => {
+      window.removeEventListener('pagehide', closed);
+      closed();
+      channel.close();
+    };
+  }, [channel, id]);
 
   useEffect(() => {
     if (!id) {
@@ -283,6 +295,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
     channel.postMessage({ type: 'ready', id });
 
     const handleMessage = (event: MessageEvent) => {
+      if (!event.data || event.data.id !== id) return;
       switch (event.data.type) {
         case 'load': {
           if (event.data.id !== id) {
@@ -302,7 +315,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
           setOriginalCode(contents);
           setSession({ ...loaded, contents: lines });
           setDocumentState(DocumentState.Unchanged);
-          setClientId(event.data.clientId);
+          setClientId(id);
           setIsLoaded(true); // Add this line to set isLoaded to true when content is loaded
           // Focus the code editor on open, deterministically and exactly once.
           // If the editor instance is already mounted, this focuses now; if the
@@ -320,7 +333,6 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
               return;
             }
           }
-          channel.close();
           window.close();
           break;
         default:
@@ -331,7 +343,6 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
     channel.addEventListener('message', handleMessage);
     return () => {
       channel.removeEventListener('message', handleMessage);
-      channel.postMessage({ type: 'close', id });
     };
   }, [channel, clientId, id, documentState, focusEditorOnReady]);
 

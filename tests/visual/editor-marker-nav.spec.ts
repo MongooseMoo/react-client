@@ -33,7 +33,7 @@ test.describe('Editor marker navigation (F8 / Shift+F8)', () => {
     // handshake. The editor only mounts after receiving this load message.
     await page.addInitScript(
       ({ reference, lines }) => {
-        const channel = new BroadcastChannel('editor');
+        const channel = new BroadcastChannel('editor:e2e-marker-nav');
         channel.addEventListener('message', event => {
           if (event.data.type !== 'ready' || event.data.id !== reference) return;
           channel.postMessage({
@@ -52,7 +52,7 @@ test.describe('Editor marker navigation (F8 / Shift+F8)', () => {
       { reference: EDITOR_REFERENCE, lines: MOO_SOURCE_LINES },
     );
     const origin = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173';
-    await page.goto(new URL(`/editor?reference=${encodeURIComponent(EDITOR_REFERENCE)}`, origin).href);
+    await page.goto(new URL(`/editor?reference=${encodeURIComponent(EDITOR_REFERENCE)}&owner=e2e-marker-nav`, origin).href);
     const editorInput = page.getByRole('textbox', { name: `MOO code editor for ${EDITOR_REFERENCE}` });
     await expect(editorInput).toBeVisible({ timeout: 60_000 });
     await expect(editorInput).toHaveAttribute('aria-describedby', 'editor-statusbar');

@@ -1,111 +1,81 @@
 import type { EditorSession, McpSimpleEdit } from './mcp';
 
-enum EditorState {
-  Pending,
-  Open,
-  Closed,
-}
-
-interface WindowedSession extends EditorSession {
+interface WindowedSession {
+  session: EditorSession;
   window: Window | null;
-  state: EditorState;
+  channel: BroadcastChannel;
+  state: 'pending' | 'open' | 'closed';
 }
 
 export class EditorManager {
-  private editors: Map<string, WindowedSession>;
-  private channel: BroadcastChannel;
+  private readonly editors = new Map<string, WindowedSession>();
+  private stopped = false;
 
-  constructor(private simpleEdit: McpSimpleEdit) {
-    this.editors = new Map();
-    this.channel = new BroadcastChannel('editor');
-    this.setupChannelListeners();
-  }
+  constructor(private readonly simpleEdit: McpSimpleEdit) {}
 
-  openEditorWindow(editorSession: EditorSession) {
-    console.log('Opening editor window for session:', editorSession);
-    const id = editorSession.reference;
-    const existingSession = this.editors.get(id);
-
-    if (
-      existingSession &&
-      existingSession.state === EditorState.Open &&
-      existingSession.window &&
-      !existingSession.window.closed
-    ) {
-      existingSession.window.focus();
-    } else {
-      const encodedId = encodeURIComponent(id);
-      const editorWindow = window.open(`/editor?reference=${encodedId}`, '_blank');
-      const windowedSession: WindowedSession = {
-        ...editorSession,
-        window: editorWindow,
-        state: EditorState.Pending,
-      };
-      this.editors.set(id, windowedSession);
-      if (editorWindow) {
-        editorWindow.focus();
+  openEditorWindow(session: EditorSession): void {
+    if (this.stopped) return;
+    const id = session.reference;
+    const previous = this.editors.get(id);
+    if (previous?.state === 'open' && previous.window && !previous.window.closed) {
+      previous.window.focus();
+      return;
+    }
+    previous?.channel.close();
+    // Each opening owns a channel, fencing other game sessions and late messages
+    // from an earlier window editing the same reference.
+    const owner = crypto.randomUUID();
+    const channel = new BroadcastChannel(`editor:${owner}`);
+    const entry: WindowedSession = { session, channel, window: null, state: 'pending' };
+    this.editors.set(id, entry);
+    channel.onmessage = (event: MessageEvent) => {
+      if (this.stopped || this.editors.get(id) !== entry) return;
+      const message = event.data;
+      if (!message || message.id !== id) return;
+      switch (message.type) {
+        case 'ready':
+          if (entry.state === 'closed') return;
+          entry.state = 'open';
+          channel.postMessage({ type: 'load', id, session: entry.session });
+          break;
+        case 'save':
+          if (entry.state === 'open' && message.session?.reference === id) {
+            this.saveEditorWindow(message.session);
+          }
+          break;
+        case 'close':
+          entry.state = 'closed';
+          channel.close();
+          break;
       }
+    };
+    entry.window = window.open(
+      `/editor?reference=${encodeURIComponent(id)}&owner=${owner}`, '_blank',
+    );
+    if (entry.window) entry.window.focus();
+    else {
+      channel.close();
+      this.editors.delete(id);
     }
   }
 
-  saveEditorWindow(editorSession: EditorSession) {
-    this.simpleEdit.sendSet(editorSession);
+  saveEditorWindow(session: EditorSession): void {
+    const entry = this.editors.get(session?.reference);
+    if (this.stopped || !entry || entry.state !== 'open' || !entry.window || entry.window.closed) return;
+    if (!Array.isArray(session.contents) || !session.contents.every((line) => typeof line === 'string')) return;
+    this.simpleEdit.sendSet({ ...entry.session, contents: session.contents });
   }
 
-  private setupChannelListeners() {
-    this.channel.onmessage = (ev) => {
-      console.log('Editor window message:', ev);
-      const { type, id, session } = ev.data;
-
-      switch (type) {
-        case 'ready': {
-          console.log('Editor window ready, id:', id);
-          const editorSession = this.editors.get(id);
-          if (editorSession) {
-            editorSession.state = EditorState.Open;
-            const { window, ...sessionWithoutWindow } = editorSession;
-            this.channel.postMessage({
-              type: 'load',
-              id,
-              session: sessionWithoutWindow,
-            });
-          } else {
-            console.error(`No session found for id: ${id}`);
-          }
-          break;
-        }
-        case 'save':
-          console.log('Saving editor window with session:', session);
-          this.saveEditorWindow(session);
-          break;
-        case 'close': {
-          console.log('Closing editor window, id:', id);
-          const closingSession = this.editors.get(id);
-          if (closingSession) {
-            closingSession.state = EditorState.Closed;
-          }
-          break;
-        }
-      }
-    };
-  }
-
-  shutdown() {
-    console.log('Shutting down EditorManager');
-    this.editors.forEach((session, id) => {
-      try {
-        if (session.state === EditorState.Open && session.window) {
-          console.log(`Closing editor window for ${id}`);
-          session.window.close();
-          this.channel.postMessage({ type: 'shutdown', id });
-        }
-      } catch (error) {
-        console.error(`Error closing editor window ${id}:`, error);
-      }
-    });
+  reset(): void {
+    for (const [id, entry] of this.editors) {
+      entry.channel.postMessage({ type: 'shutdown', id });
+      entry.channel.close();
+    }
     this.editors.clear();
-    console.log('Closing broadcast channel');
-    this.channel.close();
-    console.log('EditorManager shutdown complete');
+  }
+
+  shutdown(): void {
+    this.reset();
+    this.stopped = true;
   }
 }
