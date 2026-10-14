@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { performance } from 'node:perf_hooks';
 
 import { computeContentId } from './contentId';
 import { FileTransferEngine, type FileTransferEngineOptions } from './FileTransferEngine';
@@ -88,7 +89,10 @@ function turn(): Promise<void> {
 }
 
 async function until<T>(probe: () => T | undefined | null | false, what: string): Promise<T> {
-  for (let turns = 0; turns < 5000; turns++) {
+  // Native hashing/file reads run beside the controlled engine timers. A turn
+  // count can expire before those operations finish on a busy CI worker.
+  const deadline = performance.now() + 2 * SECOND;
+  while (performance.now() < deadline) {
     const found = probe();
     if (found) return found;
     await turn();
