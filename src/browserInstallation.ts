@@ -16,12 +16,16 @@ export async function getBrowserInstallationId(): Promise<string> {
   const database = await openIndexedDatabase(schema);
   try {
     const transaction = database.transaction('installation', 'readwrite');
-    const done = transactionDone(transaction);
     const store = transaction.objectStore('installation');
-    const stored: unknown = await requestToPromise(store.get('id'));
-    const id = typeof stored === 'string' && stored ? stored : crypto.randomUUID();
-    if (id !== stored) store.put(id, 'id');
-    await done;
+    const [id] = await Promise.all([
+      (async () => {
+        const stored: unknown = await requestToPromise(store.get('id'));
+        const id = typeof stored === 'string' && stored ? stored : crypto.randomUUID();
+        if (id !== stored) store.put(id, 'id');
+        return id;
+      })(),
+      transactionDone(transaction),
+    ]);
     return id;
   } finally {
     database.close();
