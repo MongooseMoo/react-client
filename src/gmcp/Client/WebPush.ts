@@ -31,6 +31,7 @@ export class GMCPClientWebPush extends GMCPClientWebPushBase {
 
   private token: string | null = null;
   private expiresAt: number | null = null;
+  private readonly pending = new Set<() => void>();
 
   constructor(client: ConstructorParameters<typeof GMCPClientWebPushBase>[0]) {
     super(client);
@@ -39,7 +40,7 @@ export class GMCPClientWebPush extends GMCPClientWebPushBase {
 
   handleToken(data: GMCPMessageClientWebPushToken): void {
     this.token = data.token || null;
-    this.expiresAt = typeof data.expires_at === "number" ? data.expires_at : null;
+    this.expiresAt = typeof data.expires_at === "number" ? data.expires_at * 1000 : null;
   }
 
   async requestToken(): Promise<string | null> {
@@ -47,7 +48,7 @@ export class GMCPClientWebPush extends GMCPClientWebPushBase {
       return this.token;
     }
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const timeout = window.setTimeout(() => {
         cleanup();
         console.error("[webpush] token request timed out");
@@ -62,14 +63,27 @@ export class GMCPClientWebPush extends GMCPClientWebPushBase {
       const cleanup = () => {
         window.clearTimeout(timeout);
         this.off("token", handleToken);
+        this.pending.delete(cancel);
       };
 
+      const cancel = () => {
+        cleanup();
+        resolve(null);
+      };
+
+      this.pending.add(cancel);
       this.on("token", handleToken);
-      this.sendRequest();
+      try {
+        this.sendRequest();
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
     });
   }
 
   override reset(): void {
+    for (const cancel of this.pending) cancel();
     this.token = null;
     this.expiresAt = null;
   }
