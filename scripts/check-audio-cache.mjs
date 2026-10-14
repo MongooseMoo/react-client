@@ -147,7 +147,7 @@ try {
   editorPage.on('pageerror', (error) => editorErrors.push(error.message));
   await editorPage.addInitScript(() => {
     window.editorMessages = [];
-    const channel = new BroadcastChannel('editor');
+    const channel = new BroadcastChannel('editor:audio-cache-check');
     channel.onmessage = ({ data }) => {
       window.editorMessages.push(data);
       if (data.type === 'ready') channel.postMessage({
@@ -156,7 +156,7 @@ try {
       });
     };
   });
-  await editorPage.goto(`${origin}/editor?reference=preact-trial`);
+  await editorPage.goto(`${origin}/editor?reference=preact-trial&owner=audio-cache-check`);
   await editorPage.waitForFunction(() => window.monaco?.editor.getModels().some((model) => model.getValue() === 'return 1;'));
   await editorPage.locator('.monaco-editor textarea').waitFor();
   await editorPage.waitForFunction(() => document.activeElement?.closest('.monaco-editor'));
