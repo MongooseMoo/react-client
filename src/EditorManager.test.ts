@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorManager } from './EditorManager';
 import type { EditorSession, McpSimpleEdit } from './mcp';
+import { useBrowserPolicy } from './browserPolicy';
 
 type MockBroadcastChannel = {
   close: ReturnType<typeof vi.fn>;
@@ -35,6 +36,7 @@ describe('EditorManager', () => {
   let mockWindow: MockEditorWindow;
 
   beforeEach(() => {
+    useBrowserPolicy.setState({ ready: true, policy: { revision: 0, phase: 'owner', visitorSessionId: '', ownerPlayers: [] } });
     mockSimpleEdit = {
       sendSet: vi.fn(),
     } as unknown as McpSimpleEdit;
@@ -173,6 +175,14 @@ describe('EditorManager', () => {
     editorManager.openEditorWindow(createSession());
     dispatchEditorMessage(mockBroadcastChannel, { type: 'ready', id: 'test-ref' });
     mockWindow.closed = true;
+    dispatchEditorMessage(mockBroadcastChannel, { type: 'save', id: 'test-ref', session: createSession() });
+    expect(mockSimpleEdit.sendSet).not.toHaveBeenCalled();
+  });
+
+  it('rejects an owner save delivered after a temporary visit starts', () => {
+    editorManager.openEditorWindow(createSession());
+    dispatchEditorMessage(mockBroadcastChannel, { type: 'ready', id: 'test-ref' });
+    useBrowserPolicy.setState({ policy: { revision: 1, phase: 'visitor', visitorSessionId: '', ownerPlayers: [] } });
     dispatchEditorMessage(mockBroadcastChannel, { type: 'save', id: 'test-ref', session: createSession() });
     expect(mockSimpleEdit.sendSet).not.toHaveBeenCalled();
   });

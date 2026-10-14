@@ -42,6 +42,33 @@ class FakeAutoLogStore {
 }
 
 describe("AutoLogService", () => {
+  it('cannot attach delayed session creation or old lines to a new owner', async () => {
+    const store = new FakeAutoLogStore();
+    const create = store.createSession.bind(store);
+    let release = () => {};
+    const held = new Promise<void>(resolve => { release = resolve; });
+    store.createSession = async draft => {
+      const session = await create(draft);
+      if (draft.title === 'A') await held;
+      return session;
+    };
+    const service = new AutoLogService(store as unknown as AutoLogStore);
+    usePreferences.getState().setAutologging({ enabled: true, maxBytes: 1000 });
+    service.configureSession({ title: 'A', mode: 'default', sanitizedUrl: '',
+      owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
+    service.recordLine({ type: 'serverMessage', sourceType: 'ansi', sourceContent: 'Old A line' });
+    service.configureSession({ title: 'B', mode: 'default', sanitizedUrl: '',
+      owner: { runtime: 'fixture', playerUuid: 'b', playerRef: '#2' } });
+    service.recordLine({ type: 'serverMessage', sourceType: 'ansi', sourceContent: 'New B line' });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    release();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await service.flush();
+    expect(store.ended).toContain('session-0');
+    expect(store.entries.map(entry => [entry.sessionId, entry.sourceContent])).toEqual([['session-1', 'New B line']]);
+    expect(store.sessions[1].owner?.playerUuid).toBe('b');
+    service.dispose();
+  });
   beforeEach(() => {
     vi.useRealTimers();
     usePreferences.getState().setAutologging({ enabled: false, maxBytes: 1000 });

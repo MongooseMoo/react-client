@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createIndexedDbTransferStorage, createMemoryTransferStorage } from './storage';
+import { createIndexedDbTransferStorage, createMemoryTransferStorage, transferDatabaseName } from './storage';
 import type { StoredTransferKey, TransferStorage } from './types';
 
 const PIECE_SIZE = 16 * 1024;
@@ -38,6 +38,18 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+it('keeps the captured database owner when mutable options change and the storage reopens', async () => {
+  const options = { owner: 'runtime-a/player-a' };
+  const storage = createIndexedDbTransferStorage(options);
+  await storage.putPiece(alice, 0, bytesOf(42));
+  storage.close();
+  options.owner = 'runtime-a/player-b';
+  expect(contentsOf(await storage.readPiece(alice, 0))).toEqual([42]);
+  const other = createIndexedDbTransferStorage(options);
+  await expect(other.readPiece(alice, 0)).resolves.toBeUndefined();
+  storage.close(); other.close();
 });
 
 describe.each([
@@ -326,16 +338,32 @@ describe.each([
 });
 
 describe('IndexedDB transfer storage, database handling', () => {
+  it('isolates overlapping transfers, cleanup and resume by immutable owner', async () => {
+    const a = createIndexedDbTransferStorage({ owner: 'live:player-a', now: () => 1 });
+    const b = createIndexedDbTransferStorage({ owner: 'live:player-b', now: () => 1 });
+    const local = createIndexedDbTransferStorage({ owner: 'local:player-a', now: () => 1 });
+    await Promise.all([a.putPiece(alice, 0, bytesOf(1)), b.putPiece(alice, 0, bytesOf(2))]);
+    expect(contentsOf(await a.readPiece(alice, 0))).toEqual([1]);
+    expect(contentsOf(await b.readPiece(alice, 0))).toEqual([2]);
+    expect(await local.heldPieces(alice)).toEqual([]);
+    await a.discardUntouchedSince(2);
+    expect(await a.heldPieces(alice)).toEqual([]);
+    expect(contentsOf(await b.readPiece(alice, 0))).toEqual([2]);
+    b.close();
+    const resumed = createIndexedDbTransferStorage({ owner: 'live:player-b' });
+    expect(contentsOf(await resumed.readPiece(alice, 0))).toEqual([2]);
+    for (const storage of [a, b, local, resumed]) storage.close();
+  });
   const LEGACY_DATABASE = 'file-transfer-store';
 
-  it('keeps pieces in the file-transfer-pieces database, version 1, in the agreed layout', async () => {
+  it('keeps pieces in the owner database, version 1, in the agreed layout', async () => {
     const storage = createIndexedDbTransferStorage({ now: () => 1_234 });
     await storage.putPiece(alice, 2, bytesOf(7));
     storage.close();
 
-    expect(await indexedDB.databases()).toContainEqual({ name: 'file-transfer-pieces', version: 1 });
+    expect(await indexedDB.databases()).toContainEqual({ name: transferDatabaseName(), version: 1 });
 
-    const database = await openRaw('file-transfer-pieces');
+    const database = await openRaw(transferDatabaseName());
     const transaction = database.transaction(['pieces', 'transfers'], 'readonly');
     const pieces = transaction.objectStore('pieces');
     const transfers = transaction.objectStore('transfers');
@@ -404,7 +432,7 @@ describe('IndexedDB transfer storage, database handling', () => {
   // A database that still has an open handle cannot be deleted; the request is blocked.
   function deletePieceDatabase(): Promise<'deleted' | 'blocked' | 'error'> {
     return new Promise((resolve) => {
-      const request = indexedDB.deleteDatabase('file-transfer-pieces');
+      const request = indexedDB.deleteDatabase(transferDatabaseName());
       request.onsuccess = () => resolve('deleted');
       request.onblocked = () => resolve('blocked');
       request.onerror = () => resolve('error');
@@ -474,7 +502,7 @@ describe('IndexedDB transfer storage, database handling', () => {
     storage.close();
   });
 
-  it('deletes the database the old store left behind', async () => {
+  it('preserves the unassigned legacy database', async () => {
     const legacy = await openRaw(LEGACY_DATABASE, (database) => {
       database.createObjectStore('chunks', { keyPath: ['hash', 'index'] });
     });
@@ -483,15 +511,13 @@ describe('IndexedDB transfer storage, database handling', () => {
 
     const storage = createIndexedDbTransferStorage();
     await storage.putPiece(alice, 0, bytesOf(1));
-    await vi.waitFor(async () => {
-      expect(await databaseNames()).not.toContain(LEGACY_DATABASE);
-    });
+    expect(await databaseNames()).toContain(LEGACY_DATABASE);
 
-    expect(await databaseNames()).toContain('file-transfer-pieces');
+    expect(await databaseNames()).toContain(transferDatabaseName());
     storage.close();
   });
 
-  it('asks for the old database to be deleted only on its first open', async () => {
+  it('never requests legacy deletion during use or reopen', async () => {
     const deleteDatabase = vi.spyOn(indexedDB, 'deleteDatabase');
     const storage = createIndexedDbTransferStorage();
 
@@ -499,7 +525,7 @@ describe('IndexedDB transfer storage, database handling', () => {
     storage.close();
     await storage.heldPieces(alice);
 
-    expect(deleteDatabase.mock.calls).toEqual([[LEGACY_DATABASE]]);
+    expect(deleteDatabase).not.toHaveBeenCalled();
     storage.close();
   });
 

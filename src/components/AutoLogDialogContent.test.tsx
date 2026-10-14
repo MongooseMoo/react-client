@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import AutoLogDialogContent from './AutoLogDialogContent';
 import type { AutoLogSession } from '../logging/AutoLogTypes';
+import { usePersonalDataStore } from '../stores/personalDataStore';
 
 const mocks = vi.hoisted(() => ({
   sessions: [] as AutoLogSession[],
@@ -18,8 +19,11 @@ vi.mock('../logging/AutoLogStore', () => ({ autoLogStore: {
 } }));
 
 beforeEach(() => {
+  const owner = { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' };
+  usePersonalDataStore.setState({ policyReady: true, owner, visitor: false });
   mocks.sessions = Array.from({ length: 20 }, (_, index) => ({
     id: `session-${index}`, title: `Log ${index + 1}`, startedAt: index + 1000,
+    owner,
     endedAt: index + 2000, lineCount: 0, byteEstimate: 0, sanitizedUrl: 'https://example.test', mode: 'default',
   } as AutoLogSession));
   mocks.getEntries.mockClear();
@@ -44,6 +48,21 @@ it('does not display an old request under a newly selected log', async () => {
   expect(screen.getByText('Newest entries', { exact: false })).toBeInTheDocument();
 });
 afterEach(() => cleanup());
+
+it('hides foreign and unassigned archives until a deliberate legacy selection', async () => {
+  const legacy = { ...mocks.sessions[0], id: 'legacy', title: 'Older unassigned', owner: undefined };
+  const foreign = { ...mocks.sessions[0], id: 'foreign', title: 'Other character', owner: { runtime: 'fixture', playerUuid: 'b', playerRef: '#2' } };
+  mocks.sessions = [mocks.sessions[0], legacy, foreign];
+  render(<AutoLogDialogContent isOpen />);
+  await screen.findByRole('listbox', { name: 'Autolog sessions' });
+  expect(screen.queryByText('Other character')).not.toBeInTheDocument();
+  expect(screen.queryByText('Older unassigned')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Show older unassigned logs' }));
+  await screen.findByRole('option', { name: /Older unassigned/ });
+  await act(async () => usePersonalDataStore.getState().setVisitor(true));
+  expect(screen.queryByText('Older unassigned')).not.toBeInTheDocument();
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+});
 
 it('reaches the twentieth log with End and Enter without row-action Tab stops', async () => {
   render(<AutoLogDialogContent isOpen />);

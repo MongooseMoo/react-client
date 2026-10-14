@@ -31,12 +31,12 @@ not already have a usable token.
 ```json
 {
   "token": "opaque-token",
-  "expires_at": 1760000000000
+  "expires_at": 1760000000
 }
 ```
 
 - `token`: bearer token used by the HTTP web push registration API.
-- `expires_at`: optional Unix epoch milliseconds.
+- `expires_at`: optional Unix epoch seconds, converted once to milliseconds in the client.
 
 The client treats tokens without `expires_at` as usable until shutdown. When an
 expiry exists, the token is considered stale if it is within 10 percent of the
@@ -46,5 +46,4 @@ default five-minute TTL from expiry.
 
 - `requestToken()` waits up to 5 seconds for `Token`.
 - Tokens are emitted as a `webpushToken` client event.
-- `shutdown()` clears the cached token and expiry.
-
+- Reset and shutdown clear the cached token/expiry and cancel pending requests.

@@ -8,7 +8,8 @@ import type { GMCPClientFileTransfer } from '../gmcp/Client/FileTransfer';
 import { FileTransferEngine } from './FileTransferEngine';
 import { createGmcpTransferSignaling } from './gmcpSignaling';
 import { createRtcTransferLinkFactory } from './rtcLink';
-import { createIndexedDbTransferStorage } from './storage';
+import { createIndexedDbTransferStorage, createMemoryTransferStorage } from './storage';
+import { ownerKey, usePersonalDataStore } from '../stores/personalDataStore';
 import type { FileTransfers, ReceivedFile } from './types';
 
 export const ICE_CONFIGURATION: RTCConfiguration = {
@@ -28,11 +29,18 @@ export const ICE_CONFIGURATION: RTCConfiguration = {
 };
 
 export function createFileTransfers(gmcp: GMCPClientFileTransfer): FileTransfers {
+  const { owner, visitor, policyReady } = usePersonalDataStore.getState();
+  const capturedOwner = owner ? ownerKey(owner) : undefined;
   return new FileTransferEngine({
     signaling: createGmcpTransferSignaling(gmcp),
-    storage: createIndexedDbTransferStorage(),
+    storage: capturedOwner && policyReady && !visitor
+      ? createIndexedDbTransferStorage({ owner: capturedOwner }) : createMemoryTransferStorage(),
     createLink: createRtcTransferLinkFactory(ICE_CONFIGURATION),
-    deliver: saveAsDownload,
+    deliver(file) {
+      const current = usePersonalDataStore.getState();
+      if (current.visitor !== visitor || (current.owner ? ownerKey(current.owner) : undefined) !== capturedOwner) return;
+      saveAsDownload(file);
+    },
   });
 }
 

@@ -1,3 +1,5 @@
+import type { PersonalDataOwner } from '../stores/personalDataStore';
+
 export type AutoLogLineType =
   | "command"
   | "serverMessage"
@@ -15,6 +17,7 @@ export type AutoLogSourceType =
 export type AutoLogMode = "default" | "local" | "host" | "join";
 
 export interface AutoLogSession {
+  owner?: PersonalDataOwner;
   id: string;
   startedAt: number;
   endedAt?: number;
@@ -43,6 +46,7 @@ export interface AutoLogInputLine {
 }
 
 export interface AutoLogSessionDraft {
+  owner?: PersonalDataOwner;
   title: string;
   mode: AutoLogMode;
   sanitizedUrl: string;

@@ -20,6 +20,8 @@ vi.mock('./FileTransferEngine', () => ({
 }));
 
 import { createFileTransfers, ICE_CONFIGURATION } from './createFileTransfers';
+import { ownerKey, usePersonalDataStore } from '../stores/personalDataStore';
+import { transferDatabaseName } from './storage';
 
 const SOME_ID = 'ab'.repeat(32);
 
@@ -47,6 +49,7 @@ function create(gmcp = fakeGmcp()): { transfers: FileTransfers; options: FileTra
 }
 
 beforeEach(() => {
+  usePersonalDataStore.setState({ policyReady: true, visitor: false, owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
   engines.length = 0;
   globalThis.indexedDB = new IDBFactory();
 });
@@ -88,7 +91,9 @@ describe('createFileTransfers', () => {
     await options.storage.putPiece(key, 3, new Uint8Array([1, 2, 3]).buffer);
 
     expect(await options.storage.heldPieces(key)).toEqual([3]);
-    expect((await indexedDB.databases()).map(({ name }) => name)).toContain('file-transfer-pieces');
+    const owner = usePersonalDataStore.getState().owner;
+    expect(owner).toBeDefined();
+    expect((await indexedDB.databases()).map(({ name }) => name)).toContain(transferDatabaseName(owner ? ownerKey(owner) : undefined));
     options.storage.close();
   });
 
@@ -138,6 +143,20 @@ describe('createFileTransfers', () => {
 });
 
 describe('the delivery of a received file', () => {
+  it('blocks a delayed download after identity or visitor policy changes', () => {
+    const createObjectURL = vi.fn();
+    Object.assign(URL, { createObjectURL });
+    const { options } = create();
+    usePersonalDataStore.getState().confirm({ runtime: 'fixture', playerUuid: 'b', playerRef: '#2' });
+    void options.deliver({ from: '#2', id: SOME_ID, name: 'old.txt', blob: new Blob(['old']) });
+    expect(createObjectURL).not.toHaveBeenCalled();
+    const other = create();
+    usePersonalDataStore.getState().setVisitor(true);
+    void other.options.deliver({ from: '#2', id: SOME_ID, name: 'owner.txt', blob: new Blob(['owner']) });
+    expect(createObjectURL).not.toHaveBeenCalled();
+    options.storage.close();
+    other.options.storage.close();
+  });
   it('saves it through the browser under its name and releases the object URL', () => {
     const blob = new Blob(['hello']);
     const steps: string[] = [];

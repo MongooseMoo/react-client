@@ -25,15 +25,11 @@ import type { FileTransfers, TransferSnapshot } from "./fileTransfer/types";
 import { useInputStore } from "./stores/inputStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useOutputStore } from "./stores/outputStore";
+import { usePersonalDataStore } from './stores/personalDataStore';
 import { reconnectDelay } from "./reconnectBackoff";
-import {
-  AWAY_NOTIFICATION_TAG,
-  type AwayCommandResult,
-  type AwayLine,
-  clearAwayLines,
-  sendAwayCommand,
-  takeUnshownAwayLines,
-} from "./away";
+import { closeAwayStream, readAwayStream, sameRecipient, takeAwayLines } from './awayV2';
+import { browserNotificationTag, sendBrowserAwayCommand } from './browserAway';
+import type { BrowserNotificationContext } from './browserNotifications';
 
 // How long an open socket may stay silent after a resume ping before it is
 // treated as dead.
@@ -69,9 +65,16 @@ class MudClient {
   private awayChannel: boolean = false;
   private awayListenersRegistered: boolean = false;
   private awayWork: Promise<void> = Promise.resolve();
+  private browserContext?: BrowserNotificationContext;
 
   get connected(): boolean {
     return this._connected;
+  }
+
+  get liveServer(): boolean { return this.awayChannel && !this.localMode && !this.shutdownComplete; }
+  private readonly localRuntime = `local:${crypto.randomUUID()}`;
+  get runtimeNamespace(): string {
+    return this.liveServer ? `live:${this.host}:${this.port}` : this.localRuntime;
   }
 
   private host: string;
@@ -91,6 +94,8 @@ class MudClient {
   private connectionCleanupComplete: boolean = true;
   private shutdownComplete: boolean = false;
   private disconnectResetCallbacks: Array<() => void> = [];
+  private identityResetCallbacks: Array<() => void> = [];
+  private transportGeneration = 0;
   private cleanupCallbacks: Array<() => void> = [];
 
   get autosay(): boolean {
@@ -110,6 +115,12 @@ class MudClient {
     });
     this.gmcp = new GmcpSession(this);
     this.media = new MediaService();
+    this.registerCleanup(usePersonalDataStore.subscribe((state, previous) => {
+      if (state.visitor !== previous.visitor) this.resetIdentityState();
+      if (state.visitor || !state.owner || state.owner.playerUuid !== this.browserContext?.recipient.playerUuid) {
+        this.setBrowserNotificationContext(undefined);
+      }
+    }));
     useInputStore.getState().setAutosay(this._autosay);
   }
 
@@ -136,6 +147,7 @@ class MudClient {
       this.fileTransfersLoading = undefined;
     };
     this.registerDisconnectReset(resetFileTransfer);
+    this.registerIdentityReset(resetFileTransfer);
     this.registerCleanup(resetFileTransfer);
   }
 
@@ -191,12 +203,15 @@ class MudClient {
   configureEditors(simpleEdit: McpSimpleEdit): void {
     this.editors = new EditorManager(simpleEdit);
     this.registerDisconnectReset(() => this.editors?.reset());
+    this.registerIdentityReset(() => this.editors?.reset());
     simpleEdit.on("openSession", (session) => {
       this.editors?.openEditorWindow(session);
     });
   }
 
   public connect() {
+    usePersonalDataStore.getState().clear();
+    const generation = ++this.transportGeneration;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
     this.intentionalDisconnect = false;
@@ -209,14 +224,17 @@ class MudClient {
     this.ws = ws;
     this.ws.binaryType = "arraybuffer";
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));
+    const current = () => generation === this.transportGeneration && !this.shutdownComplete;
     this.gmcp.attachTransport(this.telnet);
     // Any inbound bytes prove the socket is alive, whatever they parse to.
     const deliverMessage = ws.onmessage;
     ws.onmessage = (event: MessageEvent) => {
+      if (!current()) return;
       this.clearLivenessProbe();
       deliverMessage?.call(ws, event);
     };
     this.ws.onopen = () => {
+      if (!current()) return;
       this._connected = true;
       this.reconnectAttempt = 0;
 
@@ -227,10 +245,12 @@ class MudClient {
     };
 
     this.telnet.on("data", (data: Uint8Array) => {
+      if (!current()) return;
       this.handleData(data);
     });
 
     this.telnet.on("command", (command) => {
+      if (!current()) return;
       if (
         (command === TelnetCommand.GA || command === TelnetCommand.EOR) &&
         this.telnetBuffer
@@ -241,6 +261,7 @@ class MudClient {
     });
 
     this.telnet.on("negotiation", (command, option) => {
+      if (!current()) return;
       // Negotiation that we support GMCP
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation");
@@ -266,18 +287,14 @@ class MudClient {
     });
 
     this.telnet.on("gmcp", (packageName, data) => {
-      console.log("GMCP Package:", packageName, data);
-      try {
-        this.gmcp.receive(packageName, data);
-      } catch (e) {
-        console.error("Calling GMCP:", e);
-      }
+      if (!current()) return;
+      this.gmcp.receive(packageName, data);
     });
 
     this.ws.onclose = () => {
       // A socket we already replaced (e.g. a dead one whose close arrives
       // late) must not tear down the connection that superseded it.
-      if (ws !== this.ws) return;
+      if (!current() || ws !== this.ws) return;
       this.cleanupConnection();
       // Only auto reconnect if it wasn't an intentional disconnect
       if (!this.intentionalDisconnect) {
@@ -288,6 +305,7 @@ class MudClient {
     };
 
     this.ws.onerror = (error: Event) => {
+      if (!current()) return;
       useOutputStore.getState().addError(connectionErrorFromEvent(error));
     };
   }
@@ -358,6 +376,9 @@ class MudClient {
    * creating a WebSocket.
    */
   public connectLocal(stream: Stream) {
+    usePersonalDataStore.getState().clear();
+    const generation = ++this.transportGeneration;
+    const current = () => generation === this.transportGeneration && !this.shutdownComplete;
     this.awayChannel = false;
     this.localMode = true;
     this.localStream = stream;
@@ -368,10 +389,12 @@ class MudClient {
     this.gmcp.attachTransport(this.telnet);
 
     this.telnet.on("data", (data: Uint8Array) => {
+      if (!current()) return;
       this.handleData(data);
     });
 
     this.telnet.on("command", (command) => {
+      if (!current()) return;
       if (
         (command === TelnetCommand.GA || command === TelnetCommand.EOR) &&
         this.telnetBuffer
@@ -385,6 +408,7 @@ class MudClient {
     // so these handlers are unlikely to fire — but wire them up anyway
     // for correctness.
     this.telnet.on("negotiation", (command, option) => {
+      if (!current()) return;
       if (command === TelnetCommand.WILL && option === TelnetOption.GMCP) {
         console.log("GMCP Negotiation (local)");
         this.telnet.sendNegotiation(TelnetCommand.DO, TelnetOption.GMCP);
@@ -405,15 +429,12 @@ class MudClient {
     });
 
     this.telnet.on("gmcp", (packageName, data) => {
-      console.log("GMCP Package (local):", packageName, data);
-      try {
-        this.gmcp.receive(packageName, data);
-      } catch (e) {
-        console.error("Calling GMCP:", e);
-      }
+      if (!current()) return;
+      this.gmcp.receive(packageName, data);
     });
 
     stream.on("close", () => {
+      if (!current()) return;
       this.cleanupConnection();
     });
 
@@ -450,9 +471,20 @@ class MudClient {
     this.disconnectResetCallbacks.push(callback);
   }
 
+  registerIdentityReset(callback: () => void): void {
+    this.identityResetCallbacks.push(callback);
+  }
+
+  resetIdentityState(): void {
+    for (const reset of this.identityResetCallbacks) reset();
+    this.cancelSpeech();
+    this.stopAllSounds();
+  }
+
   private cleanupConnection(): void {
     if (this.connectionCleanupComplete) return;
     this.connectionCleanupComplete = true;
+    this.transportGeneration++;
     this._connected = false;
     this.clearLivenessProbe();
     for (const callback of this.disconnectResetCallbacks) {
@@ -469,6 +501,7 @@ class MudClient {
     this.localMode = false;
     this.localStream = undefined;
     useConnectionStore.getState().setConnected(false);
+    this.setBrowserNotificationContext(this.shutdownComplete ? undefined : this.browserContext);
   }
 
   public close(): void {
@@ -491,6 +524,8 @@ class MudClient {
   }
 
   public sendCommand(command: string): void {
+    const policy = usePersonalDataStore.getState();
+    if (policy.visitor && !policy.visitorWindow) return;
     if (this.autosay && !command.startsWith("-") && !command.startsWith("'")) {
       command = `say ${command}`;
     }
@@ -512,7 +547,7 @@ class MudClient {
     if (usePreferences.getState().general.localEcho) {
       useOutputStore.getState().addCommand(command);
     }
-    console.log(`> ${command}`);
+    console.log('Command sent');
   }
 
   /**
@@ -521,25 +556,38 @@ class MudClient {
    * reported as it always was.
    */
   private async sendCommandWhileAway(command: string, disconnected: Error): Promise<void> {
-    let result: AwayCommandResult;
+    const context = this.browserContext;
+    if (!context || usePersonalDataStore.getState().visitor) {
+      useOutputStore.getState().addError(disconnected);
+      return;
+    }
+    const generation = this.gmcp.generation;
     try {
-      result = await sendAwayCommand(command);
+      await sendBrowserAwayCommand(context.recipient, context.grant, command);
     } catch (error) {
+      if (context !== this.browserContext || generation !== this.gmcp.generation || this.shutdownComplete) return;
       useOutputStore
         .getState()
         .addError(error instanceof Error ? error : new Error(String(error)));
       return;
     }
-    if (result.status === "rejected") {
-      useOutputStore.getState().addError(new Error(result.error));
-      return;
-    }
-    if (result.status !== "sent") {
-      useOutputStore.getState().addError(disconnected);
-      return;
-    }
+    if (context !== this.browserContext || generation !== this.gmcp.generation || this.shutdownComplete) return;
     this.echoCommand(command);
-    this.showAwayLines(result.lines, result.period);
+    this.showAwayLines();
+  }
+
+  setBrowserNotificationContext(context?: BrowserNotificationContext): void {
+    const owner = usePersonalDataStore.getState();
+    if (context && (!this.liveServer || owner.visitor || owner.owner?.playerUuid !== context.recipient.playerUuid ||
+        owner.owner.playerRef !== context.recipient.playerRef || owner.owner.runtime !== this.runtimeNamespace)) return;
+    this.browserContext = context;
+    if ('serviceWorker' in navigator) navigator.serviceWorker.controller?.postMessage(context
+      ? { type: 'browser-owner', recipient: context.recipient, sessionId: context.sessionId, connected: this.connected }
+      : { type: 'browser-owner-clear' });
+    if (context) {
+      if (this.connected) this.endAwayPeriod();
+      else this.showAwayLines();
+    }
   }
 
   // Away work touches IndexedDB; running it one job at a time keeps the lines
@@ -555,8 +603,11 @@ class MudClient {
     this.awayListenersRegistered = true;
     if ("serviceWorker" in navigator) {
       const onMessage = (event: MessageEvent) => {
-        if (event.data?.type === "away-lines" && Array.isArray(event.data.lines)) {
-          this.showAwayLines(event.data.lines);
+        if (event.data?.type === 'browser-owner-query') {
+          event.ports?.[0]?.postMessage({ recipient: usePersonalDataStore.getState().visitor ? undefined : this.browserContext?.recipient });
+        } else if (event.data?.type === 'browser-away' && this.browserContext &&
+            event.data.recipient && sameRecipient(event.data.recipient, this.browserContext.recipient)) {
+          this.showAwayLines();
         }
       };
       navigator.serviceWorker.addEventListener("message", onMessage);
@@ -578,14 +629,17 @@ class MudClient {
    * ones plus `extra`, which came from away period `period`) into the output
    * as provisional lines.
    */
-  private showAwayLines(extra?: AwayLine[], period?: unknown): void {
+  private showAwayLines(): void {
+    const context = this.browserContext;
     this.queueAwayWork(async () => {
-      if (this._connected || !this.awayChannel || this.shutdownComplete) return;
+      if (!context || context !== this.browserContext || this._connected || !this.awayChannel || this.shutdownComplete) return;
       // Lines taken are marked shown, so they are always emitted; the output
       // drops them itself if the player has logged in meanwhile.
-      const lines = await takeUnshownAwayLines(extra, period);
-      for (const line of lines) {
-        this.emitMessage(line.text, true);
+      const result = await takeAwayLines(context.recipient, context.sessionId);
+      if (context !== this.browserContext || this._connected || this.shutdownComplete) return;
+      if (result.missingBefore) this.emitMessage(`${result.missingBefore} older away lines are no longer available.`, true);
+      for (const line of result.lines) {
+        this.emitMessage(line[1], true);
       }
     });
   }
@@ -596,14 +650,17 @@ class MudClient {
    * notifications that announced them are obsolete too.
    */
   private endAwayPeriod(): void {
+    const context = this.browserContext;
     this.queueAwayWork(async () => {
-      if (!this.awayChannel) return;
-      await clearAwayLines();
+      if (!context || context !== this.browserContext || !this.awayChannel) return;
+      const stream = await readAwayStream(context.recipient);
+      if (!stream || context !== this.browserContext) return;
+      await closeAwayStream(context.recipient, stream.id);
       if (!("serviceWorker" in navigator)) return;
       const registration = await navigator.serviceWorker.getRegistration();
-      const notifications = await registration?.getNotifications({ tag: AWAY_NOTIFICATION_TAG });
+      const notifications = await registration?.getNotifications({ tag: browserNotificationTag(context.recipient) });
       for (const notification of notifications ?? []) {
-        notification.close();
+        if (context === this.browserContext && notification.data?.streamId === stream.id) notification.close();
       }
     });
   }
@@ -640,6 +697,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
   }
 
   private emitMessage(dataString: string, provisional: boolean = false) {
+    const policy = usePersonalDataStore.getState();
+    if (policy.visitor && !policy.visitorWindow) return;
     // A line the server marked as a channel's (Comm.Channel.Start/End) is left
     // to that channel's own reading rule when it has one: Comm.Channel.Text
     // speaks it, so it is not spoken here. Otherwise Auto Read decides, as for
@@ -678,6 +737,7 @@ An MCP message consists of three parts: the name of the message, the authenticat
   shutdown() {
     if (this.shutdownComplete) return;
     this.shutdownComplete = true;
+    this.setBrowserNotificationContext(undefined);
     for (const callback of this.cleanupCallbacks.splice(0)) {
       callback();
     }

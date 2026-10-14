@@ -76,6 +76,7 @@ export class AutoLogStore {
       title: draft.title,
       mode: draft.mode,
       sanitizedUrl: draft.sanitizedUrl,
+      ...(draft.owner ? { owner: { ...draft.owner } } : {}),
       lineCount: 0,
       byteEstimate: 0,
     };

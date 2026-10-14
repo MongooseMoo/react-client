@@ -5,12 +5,17 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type MudClient from "../client";
 import { useConnectionStore } from "../stores/connectionStore";
 import { useOutputStore } from "../stores/outputStore";
+import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
 import Output, { type OutputLine, OutputType } from "./output";
 
 const { mockAnnounce, mockClipboardWriteText } = vi.hoisted(() => ({
   mockAnnounce: vi.fn(),
   mockClipboardWriteText: vi.fn(),
 }));
+
+beforeEach(() => {
+  usePersonalDataStore.setState({ policyReady: true, visitor: false, owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
+});
 
 vi.mock("@react-aria/live-announcer", () => ({
   announce: mockAnnounce,
@@ -269,7 +274,7 @@ describe("Output initial scroll position", () => {
   });
 
   it("starts at the bottom when mounting persisted output history", () => {
-    localStorage.setItem(Output.LOCAL_STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(personalStorageKey('output') ?? '', JSON.stringify({
       version: 2,
       data: [{
         type: OutputType.ServerMessage,
@@ -691,7 +696,7 @@ describe("Output frozen history resilience", () => {
 
     const rendered = [...container.querySelectorAll(".output > .output-line")].map((line) => line.textContent);
     expect(rendered.at(-1)).toBe("after drift");
-    const lastWrite = setItem.mock.calls.filter(([key]) => key === Output.LOCAL_STORAGE_KEY).at(-1);
+    const lastWrite = setItem.mock.calls.filter(([key]) => key === personalStorageKey('output')).at(-1);
     expect(lastWrite).toBeDefined();
     const saved = JSON.parse(lastWrite![1]).data;
     expect(saved.at(-1).sourceContent).toBe("after drift");

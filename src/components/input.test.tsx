@@ -3,6 +3,7 @@ import React from 'react';
 import { render, fireEvent, screen, createEvent } from '@testing-library/react';
 import CommandInput from './input';
 import { useInputStore } from '../stores/inputStore';
+import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
 
 // Shared spy so tests can assert which commands were replayed into history
 const { addCommandMock, navigateDownMock, navigateUpMock, getHistoryMock } = vi.hoisted(() => ({
@@ -54,6 +55,7 @@ describe('CommandInput Component', () => {
     navigateDownMock.mockReturnValue('');
     getHistoryMock.mockReturnValue([]);
     localStorageMock.clear();
+    usePersonalDataStore.setState({ policyReady: true, visitor: false, owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
   });
   
   it('renders a textarea and a button', () => {
@@ -223,7 +225,7 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     // Check that localStorage was accessed with the correct key
-    expect(localStorageMock.getItem).toHaveBeenCalledWith('command_history');
+    expect(localStorageMock.getItem).toHaveBeenCalledWith(personalStorageKey('commands'));
   });
 
   it('replays a valid JSON array from localStorage into history on mount', () => {
@@ -245,7 +247,7 @@ describe('CommandInput Component', () => {
 
     // History stays empty and the corrupt key is removed.
     expect(addCommandMock).not.toHaveBeenCalled();
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('command_history');
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(personalStorageKey('commands'));
   });
 
   it('treats a valid non-array JSON value as empty history without throwing', () => {
@@ -256,7 +258,7 @@ describe('CommandInput Component', () => {
     ).not.toThrow();
 
     expect(addCommandMock).not.toHaveBeenCalled();
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('command_history');
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(personalStorageKey('commands'));
   });
   
   it('saves command history to localStorage', () => {
@@ -266,7 +268,7 @@ describe('CommandInput Component', () => {
     fireEvent.input(textarea, { target: { value: 'save this command' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('command_history', expect.any(String));
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(personalStorageKey('commands'), expect.any(String));
   });
   
   it('limits command history size when saving', () => {

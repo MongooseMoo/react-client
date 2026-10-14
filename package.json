@@ -78,6 +78,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "axe-core": "4.10.3",
     "cross-env": "^7.0.3",
+    "esbuild": "^0.25.12",
     "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",
     "jsdom": "^26.1.0",

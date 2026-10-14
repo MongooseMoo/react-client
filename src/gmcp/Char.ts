@@ -1,5 +1,6 @@
 import { useSessionStore } from "../stores/sessionStore";
 import { useCharacterStatusStore } from "../stores/characterStatusStore";
+import { usePersonalDataStore } from '../stores/personalDataStore';
 import { inbound, outbound } from "../protocol/messages";
 import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
@@ -37,9 +38,13 @@ export class GMCPChar extends GMCPCharBase {
   }
 
   handleName(data: GmcpMessageCharName): void {
+    if (typeof data.name !== 'string' || !data.name ||
+        (data.uuid !== undefined && typeof data.uuid !== 'string')) return;
     const previous = useSessionStore.getState();
-    if (previous.playerId && (previous.playerId !== data.name || previous.playerUuid !== (data.uuid ?? ""))) {
-      this.client.editors?.reset();
+    this.client.gmcp.confirmIdentity(data.name, data.uuid ?? '');
+    if (data.uuid || !this.client.liveServer) {
+      usePersonalDataStore.getState().confirm({ runtime: this.client.runtimeNamespace,
+        playerUuid: data.uuid ?? '', playerRef: data.name });
     }
     previous.setPlayer(data.name, data.fullname, data.uuid);
   }

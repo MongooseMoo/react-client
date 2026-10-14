@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { dirname, resolve, sep } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
 
@@ -9,9 +9,11 @@ import { chromium, expect } from '@playwright/test';
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = process.env.BUNDLE_DIST ? resolve(process.env.BUNDLE_DIST) : resolve(projectRoot, 'dist');
 const manifest = JSON.parse(await readFile(resolve(dist, '.vite/manifest.json'), 'utf8'));
+const dependencyPrefix = relative(projectRoot, await realpath(resolve(projectRoot, 'node_modules'))).split(sep).join('/') + '/';
+const manifestId = id => id.startsWith('node_modules/') ? dependencyPrefix + id.slice('node_modules/'.length) : id;
 const audio = Object.entries(manifest).filter(([id]) =>
-  id.startsWith('node_modules/cacophony/dist/bundles/') ||
-  id === 'node_modules/cacophony/dist/webCodecsStream.mjs');
+  id.startsWith(manifestId('node_modules/cacophony/dist/bundles/')) ||
+  id === manifestId('node_modules/cacophony/dist/webCodecsStream.mjs'));
 const reverb = audio.find(([id]) => id.includes('/dattorro-reverb-bundle.'))?.[1];
 assert.ok(reverb, 'Build must emit the lazy reverb worklet');
 assert.ok(audio.some(([id]) => id.endsWith('/webCodecsStream.mjs')), 'Build must emit the lazy stream adapter');
@@ -34,6 +36,7 @@ const featureIds = [
   'src/audio/effects/EffectChain.ts',
 ];
 const features = featureIds.map((id) => {
+  id = manifestId(id);
   assert.ok(manifest[id], `Build must emit a lazy chunk for ${id}`);
   optionalPaths.add(`/${manifest[id].file}`);
   return manifest[id];
@@ -51,7 +54,7 @@ for (const [id, chunk] of Object.entries(manifest)) {
   if (chunk.isEntry) collectImports(id, startupIds);
 }
 const featureDependencies = new Set();
-for (const id of featureIds) collectImports(id, featureDependencies);
+for (const id of featureIds) collectImports(manifestId(id), featureDependencies);
 for (const id of featureDependencies) {
   if (!startupIds.has(id)) optionalPaths.add(`/${manifest[id].file}`);
 }
@@ -112,6 +115,9 @@ try {
   await ui.routeWebSocket('**/*', (socket) => socket.close());
   const uiPage = await ui.newPage();
   await uiPage.goto(origin, { waitUntil: 'networkidle' });
+  await uiPage.evaluate(() => window.mudClient.gmcp.handlers.Char.receiveRegisteredMessage('Name', {
+    uuid: 'native-cache-owner', name: '#101', fullname: 'Native cache fixture owner',
+  }));
   const preferencesButton = uiPage.getByRole('button', { name: 'Preferences', exact: true });
   await preferencesButton.click();
   const preferencesDialog = uiPage.getByRole('dialog', { name: 'Preferences', exact: true });

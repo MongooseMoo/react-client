@@ -124,6 +124,10 @@ body {
   box-sizing: border-box; /* Ensure padding/border included if App has them */
 }
 
+.App[hidden] {
+  display: none;
+}
+
 /* Grid layout when sidebar is shown */
 .App.sidebar-shown {
   grid-template-areas:

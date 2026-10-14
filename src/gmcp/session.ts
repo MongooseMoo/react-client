@@ -1,4 +1,5 @@
 import commitHash from 'virtual:commit-hash';
+import { usePersonalDataStore } from '../stores/personalDataStore';
 
 import type MudClient from '../client';
 import type { TelnetParser } from '../telnet';
@@ -17,6 +18,25 @@ export class GmcpSession {
   private telnet: TelnetParser | null = null;
   private _ready = false;
   private _sessionReady = false;
+  private identity = '';
+  private _generation = 0;
+
+  get generation(): number { return this._generation; }
+
+  confirmIdentity(playerRef: string, playerUuid: string): boolean {
+    const identity = JSON.stringify([playerRef, playerUuid]);
+    if (identity === this.identity) return false;
+    const changed = this.identity !== '';
+    this.identity = identity;
+    this._generation++;
+    if (changed) {
+      for (const handler of Object.values(this.packageHandlers)) {
+        if (handler && !['Char', 'Core', 'Core.Supports'].includes(handler.packageName)) handler.reset();
+      }
+      this.client.resetIdentityState();
+    }
+    return true;
+  }
 
   constructor(private readonly client: MudClient) {}
 
@@ -80,7 +100,11 @@ export class GmcpSession {
       return;
     }
 
-    console.log('GMCP Message:', address.packageName, address.messageType, gmcpMessage);
+    const policy = usePersonalDataStore.getState();
+    if (policy.visitor && !policy.visitorWindow &&
+        !['Auth.Autologin', 'Char', 'Core', 'Core.Supports'].includes(address.packageName)) return;
+
+    console.log('GMCP Message:', address.packageName, address.messageType);
     const handler = this.packageHandlers[address.packageName];
     if (!handler) {
       console.log('No handler for GMCP package:', address.packageName);
@@ -91,10 +115,9 @@ export class GmcpSession {
     try {
       const payload = parseGmcpPayload(gmcpMessage);
       handled = handler.receiveRegisteredMessage(address.messageType, payload);
-    } catch (error) {
+    } catch {
       console.error(
         `Error dispatching GMCP message for ${address.packageName}.${address.messageType}:`,
-        error,
       );
       return;
     }
@@ -110,11 +133,13 @@ export class GmcpSession {
     if (!this.telnet) {
       throw new Error(`Cannot send GMCP before a transport is attached: ${packageName}`);
     }
-    console.log('Sending GMCP:', packageName, data);
+    console.log('Sending GMCP:', packageName);
     this.telnet.sendGmcp(packageName, encodeGmcpPayload(data));
   }
 
   reset(): void {
+    this._generation++;
+    this.identity = '';
     this._ready = false;
     this._sessionReady = false;
     this.telnet = null;

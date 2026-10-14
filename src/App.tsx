@@ -37,8 +37,11 @@ import { usePreferences } from "./stores/preferencesStore";
 import { useRoomStore } from "./stores/roomStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useOutputStore } from "./stores/outputStore";
+import { usePersonalDataStore } from './stores/personalDataStore';
 import { stripMudAnsiTags } from "./stripMudAnsiTags";
-import { ensurePushSubscription } from "./webpush";
+import { enrollBrowserNotifications, useBrowserNotifications } from './browserNotifications';
+import BrowserSessions from './components/BrowserSessions';
+import { useBrowserPolicy } from './browserPolicy';
 
 const WINDOW_TITLE = "Mongoose Client";
 const DOUBLE_PRESS_WINDOW_MS = 500;
@@ -106,6 +109,10 @@ function getSidebarShortcutIndex(event: KeyboardEvent): number | null {
 }
 
 function App() {
+  const browserPolicy = useBrowserPolicy();
+  const personal = usePersonalDataStore();
+  const browserPaused = personal.visitor && !personal.visitorWindow &&
+    (browserPolicy.policy.phase !== 'owner-paused' || !!personal.owner);
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -131,6 +138,15 @@ function App() {
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
   const autoLogDialogRef = React.useRef<AutoLogDialogRef | null>(null);
+  useEffect(() => {
+    if (!browserPaused) return;
+    prefsDialogRef.current?.close();
+    autoLogDialogRef.current?.close();
+    const frame = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('.browser-sessions > summary')?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [browserPaused]);
   const sidebarRef = React.useRef<SidebarRef | null>(null);
   const autoLoginAttempted = useRef(false);
   const lastOutputReviewShortcut = useRef<{
@@ -143,7 +159,6 @@ function App() {
   const midiEnabled = usePreferences((state) => state.midi.enabled);
   const hapticsEnabled = usePreferences((state) => state.haptics.enabled);
   const connected = useConnectionStore((state) => state.connected);
-  const sessionReady = useConnectionStore((state) => state.sessionReady);
   useFileTransferNotifications(client);
 
   const saveLog = () => {
@@ -182,6 +197,8 @@ function App() {
         hapticsRuntimeRef.current?.emergencyStop();
       }
 
+      if (browserPaused) return;
+
       const outputReviewLineNumber = getOutputReviewLineNumber(event);
       if (outputReviewLineNumber !== null) {
         event.preventDefault();
@@ -210,7 +227,7 @@ function App() {
         }
       }
     },
-    [client],
+    [client, browserPaused],
   );
 
   useLayoutEffect(() => {
@@ -278,9 +295,10 @@ function App() {
     }
 
     const configureAutologSession = () => {
-      autoLogService.configureSession(
-        createAutoLogSessionDraft(document.title || WINDOW_TITLE),
-      );
+      const { owner, visitor, policyReady } = usePersonalDataStore.getState();
+      autoLogService.configureSession(owner && policyReady && !visitor
+        ? { ...createAutoLogSessionDraft(document.title || WINDOW_TITLE), owner: { ...owner } }
+        : null);
     };
     const startAutologSession = () => {
       configureAutologSession();
@@ -295,6 +313,7 @@ function App() {
     };
 
     configureAutologSession();
+    const unsubscribeOwner = usePersonalDataStore.subscribe(() => { startAutologSession(); });
     if (connected) {
       startAutologSession();
     } else {
@@ -302,6 +321,7 @@ function App() {
     }
 
     return () => {
+      unsubscribeOwner();
       autoLogService.endSession().catch((error) => {
         console.error("Failed to end autolog session during cleanup:", error);
       });
@@ -310,22 +330,23 @@ function App() {
   }, [client, connected]);
 
   useEffect(() => {
-    if (!client || !sessionReady) return;
-    ensurePushSubscription(client).catch((error) => {
-      console.error("Failed to ensure push subscription:", error);
-      const message = error instanceof Error ? error.message : String(error);
-      // Chrome reports a wedged GCM connection as "push service error";
-      // a browser restart re-establishes it.
-      const hint = message.includes("push service error")
-        ? " (browser push service unavailable; restarting the browser usually fixes this)"
-        : "";
-      useOutputStore
-        .getState()
-        .addError(
-          new Error(`Push notifications couldn't be enabled: ${message}${hint}`)
-        );
+    if (!client?.liveServer) return;
+    const auth = client.gmcp.require('Auth.Autologin');
+    const enroll = () => { void enrollBrowserNotifications(client); };
+    const unsubscribeToken = auth.on('sessionToken', enroll);
+    const unsubscribeContext = useBrowserNotifications.subscribe((state) => client.setBrowserNotificationContext(state.context));
+    const unsubscribeOwner = usePersonalDataStore.subscribe((state) => {
+      const current = useBrowserNotifications.getState().context;
+      if (state.visitor || !state.owner || state.owner.playerUuid !== current?.recipient.playerUuid) {
+        useBrowserNotifications.setState({ context: undefined, busy: false, error: '' });
+      }
     });
-  }, [client, sessionReady]);
+    const unsubscribePolicy = useBrowserPolicy.subscribe((state, previous) => {
+      if (state.ready && state.policy.phase === 'owner' && previous.policy.phase !== 'owner') enroll();
+    });
+    enroll();
+    return () => { unsubscribeToken(); unsubscribeContext(); unsubscribeOwner(); unsubscribePolicy(); client.setBrowserNotificationContext(undefined); };
+  }, [client]);
 
   useEffect(() => {
     if (!client || !connected || autoLoginAttempted.current) return;
@@ -348,8 +369,6 @@ function App() {
   // Common client setup: notifications, auto-login, MIDI, haptics, focus handlers
   useEffect(() => {
     if (!client) return;
-
-    client.requestNotificationPermission();
 
     // on focus, focus the input
     const handleFocus = () => {
@@ -413,6 +432,7 @@ function App() {
   // the client resets the store, which clears roomInfo and so clears the subtitle.
   const roomInfo = useRoomStore((state) => state.roomInfo);
   useEffect(() => {
+    if (browserPaused) { document.title = 'Mongoose Client – paused'; return; }
     if (!client) {
       setWindowSubtitle();
       return;
@@ -421,7 +441,7 @@ function App() {
     return () => {
       setWindowSubtitle();
     };
-  }, [client, roomInfo]);
+  }, [client, roomInfo, browserPaused]);
 
   useEffect(() => {
     if (!client || !hapticsEnabled) return;
@@ -484,6 +504,8 @@ function App() {
 
   return (
     <>
+      {client && <BrowserSessions client={client} />}
+      {browserPaused && <p role="status">This game window is paused for the temporary visit.</p>}
       {/* Mode components — always mounted in stable tree position */}
       {isWasmMode && (
         <WasmHost
@@ -504,6 +526,7 @@ function App() {
       {/* UI shell — only renders when client is ready */}
       {client && (
         <div
+          hidden={browserPaused}
           className={`App ${showSidebar ? (sidebarCollapsed ? "sidebar-collapsed" : "sidebar-shown") : ""}`}
           style={
             sidebarWidth !== null
@@ -567,7 +590,7 @@ function App() {
       )}
       {/* Link picker for Alt+Enter over an Alt+Arrow-reviewed message with 2+ links */}
       <LinkPickerDialog
-        links={linkPickerLinks ?? null}
+        links={browserPaused ? null : linkPickerLinks ?? null}
         onClose={closeLinkPicker ?? (() => {})}
       />
       {/* Default mode with no client yet — blank */}

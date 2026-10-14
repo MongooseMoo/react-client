@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import ts from 'typescript';
+import { build } from 'esbuild';
 
 const origin = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173';
 
@@ -15,10 +14,11 @@ test('two game sessions and reopened editors keep saves and shutdown with their 
   }));
   // Compile the actual manager without Vite's development hot-reload bootstrap.
   // The authenticated game fixture stays alive while the real editor reloads.
-  const managerModule = ts.transpileModule(await readFile(resolve('src/EditorManager.ts'), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  await context.route('**/ownership-manager.js', (route) => route.fulfill({
+  const managerBuild = await build({ bundle: true, write: false, format: 'esm', target: 'es2022', platform: 'browser',
+    stdin: { contents: 'export { EditorManager } from "./src/EditorManager.ts"; export { initializeBrowserPolicy } from "./src/browserPolicy.ts";',
+      resolveDir: resolve('.'), loader: 'ts' } });
+  const managerModule = managerBuild.outputFiles[0].text;
+  await context.route('**/src/ownership-manager.js', (route) => route.fulfill({
     contentType: 'text/javascript', body: managerModule,
   }));
   const a = await context.newPage();
@@ -26,7 +26,8 @@ test('two game sessions and reopened editors keep saves and shutdown with their 
   await Promise.all([a.goto(`${origin}/ownership-game`), b.goto(`${origin}/ownership-game`)]);
   for (const page of [a, b]) {
     await page.evaluate(async () => {
-      const { EditorManager } = await import('/ownership-manager.js');
+      const { initializeBrowserPolicy, EditorManager } = await import('/src/ownership-manager.js');
+      await initializeBrowserPolicy(crypto.randomUUID());
       globalThis.saves = [];
       globalThis.manager = new EditorManager({ sendSet: (session) => globalThis.saves.push(session) });
     });
