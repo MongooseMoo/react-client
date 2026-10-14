@@ -71,6 +71,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   // mounts first); whichever happens second performs the focus.
   const pendingFocusOnReady = React.useRef<boolean>(false);
   const [clientId, setClientId] = useState<string>('');
+  const [sessionActive, setSessionActive] = useState(false);
   const [code, setCode] = useState<string>('');
   const [originalCode, setOriginalCode] = useState<string>('');
   const [documentState, setDocumentState] = useState<DocumentState>(DocumentState.Unchanged);
@@ -188,7 +189,6 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   }, [code, editorLanguage, editorReady, updateMooDiagnostics]);
 
   useBeforeunload((event) => {
-    channel.postMessage({ type: 'close', id });
     if (documentState === DocumentState.Changed) {
       event.preventDefault();
     }
@@ -272,9 +272,22 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
     },
     [code, originalCode],
   );
-  const channel = useMemo(() => new BroadcastChannel('editor'), []);
   const params = new URLSearchParams(search);
-  const id = decodeURIComponent(params.get('reference') || '');
+  const id = params.get('reference') || '';
+  const channel = useMemo(
+    () => new BroadcastChannel(`editor:${new URLSearchParams(search).get('owner') || crypto.randomUUID()}`),
+    [search],
+  );
+
+  useEffect(() => {
+    const closed = () => channel.postMessage({ type: 'close', id });
+    window.addEventListener('pagehide', closed);
+    return () => {
+      window.removeEventListener('pagehide', closed);
+      closed();
+      channel.close();
+    };
+  }, [channel, id]);
 
   useEffect(() => {
     if (!id) {
@@ -283,6 +296,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
     channel.postMessage({ type: 'ready', id });
 
     const handleMessage = (event: MessageEvent) => {
+      if (!event.data || event.data.id !== id) return;
       switch (event.data.type) {
         case 'load': {
           if (event.data.id !== id) {
@@ -302,7 +316,8 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
           setOriginalCode(contents);
           setSession({ ...loaded, contents: lines });
           setDocumentState(DocumentState.Unchanged);
-          setClientId(event.data.clientId);
+          setClientId(id);
+          setSessionActive(true);
           setIsLoaded(true); // Add this line to set isLoaded to true when content is loaded
           // Focus the code editor on open, deterministically and exactly once.
           // If the editor instance is already mounted, this focuses now; if the
@@ -312,6 +327,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
           break;
         }
         case 'shutdown':
+          setSessionActive(false);
           if (documentState === DocumentState.Changed) {
             const shouldClose = window.confirm(
               'You have unsaved changes. Are you sure you want to close this editor?',
@@ -320,7 +336,6 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
               return;
             }
           }
-          channel.close();
           window.close();
           break;
         default:
@@ -331,7 +346,6 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
     channel.addEventListener('message', handleMessage);
     return () => {
       channel.removeEventListener('message', handleMessage);
-      channel.postMessage({ type: 'close', id });
     };
   }, [channel, clientId, id, documentState, focusEditorOnReady]);
 
@@ -350,6 +364,10 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
 
   // Save the code
   const onSave = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!sessionActive) {
+      event.preventDefault();
+      return;
+    }
     const lines = (editorInstance.current?.getValue() ?? code).split(/\r\n|\r|\n/);
     // The server does not know `//`; send what the core's own rewrite would.
     const contents =
@@ -400,7 +418,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   return (
     // Use the ID for CSS targeting
     <div id="editor-window">
-      <EditorToolbar onSave={onSave} onRevert={revert} onDownload={downloadText} />
+      <EditorToolbar onSave={onSave} onRevert={revert} onDownload={downloadText} saveDisabled={!sessionActive} />
       {isLoaded && <Editor
         height="80vh"
         language={editorLanguage}
@@ -427,7 +445,9 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
         onDiagnosticsClick={mooDiagnosticTarget ? showFirstMooDiagnostic : undefined}
         diagnosticsSummary={mooDiagnosticsSummary}
         diagnosticsEnabled={editorLanguage === MOO_LANGUAGE_ID}
-        docstate={docstate}
+        docstate={isLoaded && !sessionActive
+          ? `${docstate}. Game session ended. Download your edits before closing or reopen from the game to save.`
+          : docstate}
         session={session}
       />
     </div>

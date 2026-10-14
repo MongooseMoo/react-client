@@ -7,6 +7,7 @@ import { GMCPMessage, GMCPPackage } from "./package";
 class GmcpMessageCharName extends GMCPMessage {
   public name!: string;
   public fullname: string = "";
+  public uuid?: string;
 }
 
 const charName = gmcpJsonMessage<"Name", GmcpMessageCharName>("Name");
@@ -36,7 +37,11 @@ export class GMCPChar extends GMCPCharBase {
   }
 
   handleName(data: GmcpMessageCharName): void {
-    useSessionStore.getState().setPlayer(data.name, data.fullname);
+    const previous = useSessionStore.getState();
+    if (previous.playerId && (previous.playerId !== data.name || previous.playerUuid !== (data.uuid ?? ""))) {
+      this.client.editors?.reset();
+    }
+    previous.setPlayer(data.name, data.fullname, data.uuid);
   }
   // --- Vitals ---
   handleVitals(data: Record<string, unknown>): void {

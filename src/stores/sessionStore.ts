@@ -9,8 +9,9 @@ import { create } from "zustand";
 interface SessionState {
   playerId: string;
   playerName: string;
+  playerUuid: string;
   roomId: string;
-  setPlayer: (playerId: string, playerName: string) => void;
+  setPlayer: (playerId: string, playerName: string, playerUuid?: string) => void;
   setRoomId: (roomId: string) => void;
   reset: () => void;
 }
@@ -18,9 +19,10 @@ interface SessionState {
 export const useSessionStore = create<SessionState>((set) => ({
   playerId: "",
   playerName: "",
+  playerUuid: "",
   roomId: "",
-  setPlayer: (playerId, playerName) => set({ playerId, playerName }),
+  setPlayer: (playerId, playerName, playerUuid = "") => set({ playerId, playerName, playerUuid }),
   setRoomId: (roomId) => set({ roomId }),
-  reset: () => set({ playerId: "", playerName: "", roomId: "" }),
+  reset: () => set({ playerId: "", playerName: "", playerUuid: "", roomId: "" }),
 }));
 

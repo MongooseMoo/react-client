@@ -190,6 +190,7 @@ class MudClient {
 
   configureEditors(simpleEdit: McpSimpleEdit): void {
     this.editors = new EditorManager(simpleEdit);
+    this.registerDisconnectReset(() => this.editors?.reset());
     simpleEdit.on("openSession", (session) => {
       this.editors?.openEditorWindow(session);
     });
