@@ -82,4 +82,16 @@ describe('connection latency', () => {
     }
     expect(send).toHaveBeenLastCalledWith(40);
   });
+
+  it('requests transport recovery once on expiry without issuing an ambiguous second ping', () => {
+    const recover = vi.fn();
+    latency = new ConnectionLatency(send, publish, () => clock, recover);
+    latency.start();
+    clock = 15000;
+    vi.advanceTimersByTime(15000);
+    expect(recover).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(30000);
+    expect(send).toHaveBeenCalledOnce();
+    expect(recover).toHaveBeenCalledOnce();
+  });
 });

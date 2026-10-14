@@ -6,7 +6,7 @@ import { MOO_EDITOR_THEME_NAME } from '../../editor/moocode/theme';
 import EditorWindow from './editorWindow';
 
 function TestLocation({ initialEntries, children }: { initialEntries: string[]; children: React.ReactNode }) {
-  window.history.replaceState(null, '', initialEntries[0]);
+  window.history.replaceState(null, '', `${initialEntries[0]}&owner=fixture-opening`);
   return <>{children}</>;
 }
 
@@ -151,6 +151,13 @@ class MockBroadcastChannel {
 }
 
 describe('EditorWindow language selection', () => {
+  it('explains an old game opening without entering the shared legacy channel', async () => {
+    window.history.replaceState(null, '', '/editor?reference=%238%3Aput');
+    render(<EditorWindow />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('older game tab');
+    expect(screen.getByRole('button', { name: 'Save', exact: true, hidden: true })).toBeDisabled();
+    expect(MockBroadcastChannel.instances.some(channel => channel.name === 'editor')).toBe(false);
+  });
   beforeEach(() => {
     editorMock.props = undefined;
     editorMock.modelVersion = 1;

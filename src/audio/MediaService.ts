@@ -294,6 +294,7 @@ export class MediaService {
   private readonly preloadedSoundKeys = new Set<string>();
   /** Latest claim generation per media key; every Play/Load/Stop for a key bumps it. */
   private readonly keyGenerations = new Map<string, number>();
+  private nextKeyGeneration = 0;
   /** Loads that have claimed a key but not yet settled, so Stop can cancel them. */
   private readonly pendingLoads = new Map<string, KeyClaim>();
   /** Bumped by stop-all/reset: invalidates every pending load at once. */
@@ -640,7 +641,7 @@ export class MediaService {
    * in-flight earlier load; Stop and reset invalidate it as well.
    */
   private claimKey(key: string, meta: Omit<KeyClaim, 'generation'>): KeyTicket {
-    const generation = (this.keyGenerations.get(key) ?? 0) + 1;
+    const generation = ++this.nextKeyGeneration;
     this.keyGenerations.set(key, generation);
     const claim: KeyClaim = { ...meta, generation };
     this.pendingLoads.set(key, claim);
@@ -651,6 +652,7 @@ export class MediaService {
       finish: () => {
         if (this.pendingLoads.get(key) === claim) {
           this.pendingLoads.delete(key);
+          if (!this.sounds[key]) this.keyGenerations.delete(key);
         }
       },
     };
@@ -658,7 +660,7 @@ export class MediaService {
 
   /** Supersede whatever claim holds `key`, so its pending load never plays. */
   private cancelKey(key: string): void {
-    this.keyGenerations.set(key, (this.keyGenerations.get(key) ?? 0) + 1);
+    this.keyGenerations.delete(key);
     this.pendingLoads.delete(key);
   }
 
@@ -1262,6 +1264,7 @@ export class MediaService {
   stopAllSounds(): void {
     this.epoch += 1;
     this.pendingLoads.clear();
+    this.keyGenerations.clear();
     this.allSounds.forEach((sound) => {
       this.traceSound('stopped', sound);
       this.releaseSound(sound);
@@ -1526,8 +1529,11 @@ export class MediaService {
       if (this.sounds[soundKey] === sound) {
         delete this.sounds[soundKey];
         this.preloadedSoundKeys.delete(soundKey);
+        if (!this.pendingLoads.has(soundKey)) this.keyGenerations.delete(soundKey);
       }
     }
+
+    if (key !== undefined && !this.sounds[key] && !this.pendingLoads.has(key)) this.keyGenerations.delete(key);
 
     this.destroyInlineChain(sound);
 

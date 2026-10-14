@@ -198,11 +198,12 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   // Update the title
 
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState('');
   const policy = useBrowserPolicy();
   const ownerMetadata = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(search);
     return { sessionId: params.get('parentSession') ?? '', purpose: params.get('purpose') === 'visitor' ? 'visitor' as const : 'owner' as const };
-  }, []);
+  }, [search]);
   const paused = !policy.ready || !canUseBrowserWindow(policy.policy, ownerMetadata.sessionId, ownerMetadata.purpose);
   useEffect(() => { void initializeBrowserPolicy().catch(() => {}); }, []);
   const title = paused ? 'Mongoose Editor paused' : isLoaded ? `${session.name} - Mongoose Editor` : 'Mongoose Editor';
@@ -282,6 +283,7 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   );
   const params = new URLSearchParams(search);
   const id = params.get('reference') || '';
+  const openingOwner = params.get('owner') || '';
   const channel = useMemo(
     () => new BroadcastChannel(`editor:${new URLSearchParams(search).get('owner') || crypto.randomUUID()}`),
     [search],
@@ -298,10 +300,10 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   }, [channel, id]);
 
   useEffect(() => {
-    if (!id) {
+    if (!id || !openingOwner) {
       return;
     }
-    channel.postMessage({ type: 'ready', id });
+    const timeout = isLoaded ? undefined : window.setTimeout(() => setLoadError('The game tab did not load this document. Reopen the editor from your connected game tab.'), 8000);
 
     const handleMessage = (event: MessageEvent) => {
       if (!event.data || event.data.id !== id) return;
@@ -314,6 +316,8 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
             return; // We already have a session
           }
           const loaded: EditorSession = event.data.session;
+          window.clearTimeout(timeout);
+          setLoadError('');
           const lines =
             getEditorLanguageForSessionType(loaded.type) === MOO_LANGUAGE_ID &&
             usePreferences.getState().editor.lineComments
@@ -352,10 +356,12 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
     };
 
     channel.addEventListener('message', handleMessage);
+    if (!isLoaded) channel.postMessage({ type: 'ready', id });
     return () => {
+      window.clearTimeout(timeout);
       channel.removeEventListener('message', handleMessage);
     };
-  }, [channel, clientId, id, documentState, focusEditorOnReady]);
+  }, [channel, clientId, id, openingOwner, isLoaded, documentState, focusEditorOnReady]);
 
   const revert = () => {
     const editor = editorInstance.current;
@@ -427,7 +433,12 @@ function EditorWindow({ search = window.location.search }: { search?: string }) 
   return (
     // Use the ID for CSS targeting
     <>
-    {paused && <p role="status">This editor is paused during the temporary visit. Your work is kept for the owner.</p>}
+    {!openingOwner && <p role="alert">This editor was opened by an older game tab. Reload that game tab, then reopen the editor to load and save your document.</p>}
+    {loadError && <p role="alert">{loadError}</p>}
+    {(!openingOwner || loadError) && window.opener && <button type="button" onClick={() => window.opener?.focus()}>Return to game tab</button>}
+    {paused && <p role="status">{policy.policy.phase === 'visitor'
+      ? 'This editor is paused during the temporary visit. Your work is kept for the owner.'
+      : 'Saved editor data is paused. Sign in and resume your saved character in the game tab.'}</p>}
     <div id="editor-window" hidden={paused}>
       <EditorToolbar onSave={onSave} onRevert={revert} onDownload={downloadText} saveDisabled={!sessionActive} />
       {isLoaded && <Editor

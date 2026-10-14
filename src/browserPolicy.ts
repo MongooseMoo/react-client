@@ -84,3 +84,12 @@ export function currentBrowserPurpose(tabSessionId: string): 'owner' | 'visitor'
   const policy = useBrowserPolicy.getState().policy;
   return policy.phase === 'visitor' && policy.visitorSessionId === tabSessionId ? 'visitor' : 'owner';
 }
+
+/** A fresh login must remain usable while personal archives are paused. Once
+ * identity is confirmed, an owner explicitly resumes before seeing game data. */
+export function canUseGameConnection(): boolean {
+  const personal = usePersonalDataStore.getState();
+  const browser = useBrowserPolicy.getState();
+  return !personal.visitor || personal.visitorWindow ||
+    (!personal.owner && (!browser.ready || browser.policy.phase === 'owner-paused'));
+}

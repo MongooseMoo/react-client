@@ -288,4 +288,27 @@ describe('Client.Media audio diagnostics', () => {
     await vi.waitFor(() => expect(stages()).toContain('started'));
     expect(JSON.stringify(entries())).not.toMatch(/user|pw@|sig=/);
   });
+
+  it('releases key bookkeeping after stop/reset and prevents a canceled load reclaiming a reused key', async () => {
+    mockCreateSound.mockImplementation(async (url: string) => createMockSound(url));
+    for (let i = 0; i < 40; i++) {
+      await handler.handlePlay({ ...tonePlay, type: 'sound', key: `released-${i}` });
+      client.media.stopAllSounds();
+    }
+    const bookkeeping: unknown = Reflect.get(client.media, 'keyGenerations');
+    expect(bookkeeping instanceof Map && bookkeeping.size).toBe(0);
+    let finishOld = (_sound: ReturnType<typeof createMockSound>) => {};
+    mockCreateSound.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+    const old = handler.handlePlay({ ...tonePlay, type: 'sound' });
+    client.media.stopAllSounds();
+    await handler.handlePlay({ ...tonePlay, type: 'sound' });
+    const replacement = client.media.sounds[tonePlay.key];
+    const stale = createMockSound('https://cdn.example/old');
+    finishOld(stale);
+    await old;
+    expect(client.media.sounds[tonePlay.key]).toBe(replacement);
+    expect(stale.cleanup).toHaveBeenCalledOnce();
+    client.media.reset();
+    expect(bookkeeping instanceof Map && bookkeeping.size).toBe(0);
+  });
 });

@@ -41,7 +41,7 @@ import { usePersonalDataStore } from './stores/personalDataStore';
 import { stripMudAnsiTags } from "./stripMudAnsiTags";
 import { enrollBrowserNotifications, useBrowserNotifications } from './browserNotifications';
 import BrowserSessions from './components/BrowserSessions';
-import { useBrowserPolicy } from './browserPolicy';
+import { canUseGameConnection, useBrowserPolicy } from './browserPolicy';
 
 const WINDOW_TITLE = "Mongoose Client";
 const DOUBLE_PRESS_WINDOW_MS = 500;
@@ -110,9 +110,8 @@ function getSidebarShortcutIndex(event: KeyboardEvent): number | null {
 
 function App() {
   const browserPolicy = useBrowserPolicy();
-  const personal = usePersonalDataStore();
-  const browserPaused = personal.visitor && !personal.visitorWindow &&
-    (browserPolicy.policy.phase !== 'owner-paused' || !!personal.owner);
+  usePersonalDataStore();
+  const browserPaused = !canUseGameConnection();
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -505,7 +504,9 @@ function App() {
   return (
     <>
       {client && <BrowserSessions client={client} />}
-      {browserPaused && <p role="status">This game window is paused for the temporary visit.</p>}
+      {browserPaused && <p role="status">{browserPolicy.policy.phase === 'visitor'
+        ? 'This game window is paused while someone else uses this browser.'
+        : 'Saved game data is paused. Use Browser sessions to resume after signing in.'}</p>}
       {/* Mode components — always mounted in stable tree position */}
       {isWasmMode && (
         <WasmHost
