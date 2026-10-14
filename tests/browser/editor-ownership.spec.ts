@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import ts from 'typescript';
 
 const origin = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173';
 
@@ -10,12 +13,20 @@ test('two game sessions and reopened editors keep saves and shutdown with their 
   await context.route('**/ownership-game', (route) => route.fulfill({
     contentType: 'text/html', body: '<!doctype html><title>Game owner fixture</title>',
   }));
+  // Compile the actual manager without Vite's development hot-reload bootstrap.
+  // The authenticated game fixture stays alive while the real editor reloads.
+  const managerModule = ts.transpileModule(await readFile(resolve('src/EditorManager.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  await context.route('**/ownership-manager.js', (route) => route.fulfill({
+    contentType: 'text/javascript', body: managerModule,
+  }));
   const a = await context.newPage();
   const b = await context.newPage();
   await Promise.all([a.goto(`${origin}/ownership-game`), b.goto(`${origin}/ownership-game`)]);
   for (const page of [a, b]) {
     await page.evaluate(async () => {
-      const { EditorManager } = await import('/src/EditorManager.ts');
+      const { EditorManager } = await import('/ownership-manager.js');
       globalThis.saves = [];
       globalThis.manager = new EditorManager({ sendSet: (session) => globalThis.saves.push(session) });
     });
