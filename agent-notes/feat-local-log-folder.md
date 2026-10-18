@@ -83,6 +83,13 @@ Not exercised in a browser: the real picker, `prompt` permission after
 reload and Reconnect (OPFS handles are always granted), revoked permission,
 write errors. Those paths are covered only by unit tests with fake handles.
 
+Final checks after the HTML removal: `npx tsc --noEmit` exit 0; `npx vitest run`
+177 files / 2380 tests passed; `npx biome lint` on the 10 changed source files
+clean. Chromium rerun: only `.txt` files, focus after Stop on "Choose folder…".
+Feature committed as faed57ca.
+
 ## Next step
 
-Rerun tsc, vitest, biome after the HTML removal; commit; report to team-lead.
+Reported to team-lead; not pushed, no PR (as instructed). Open follow-ups:
+the per-flush keepExistingData copy cost on large sessions, and the
+browser paths that only unit tests cover (listed above).
