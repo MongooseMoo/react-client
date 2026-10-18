@@ -1041,13 +1041,21 @@ export class AutoLogFolder implements AutoLogSink {
 
   // Writes a part, but never into an existing file that is not this session's.
   //
-  // What this guarantees, and what it cannot: Mongoose writers never race
-  // each other (a session's renders hold its Web Lock, name claims hold the
-  // destination lock), and a file that does not open with this session's
-  // exact header is never written. But the File System Access API has no
-  // conditional or exclusive write, so if a program outside Mongoose
-  // replaces this part between the ownership read and createWritable, that
-  // replacement can be overwritten; moving the check only moves the window.
+  // What this guarantees, and what it cannot: when Web Locks are available,
+  // Mongoose writers never race each other (a session's renders hold its Web
+  // Lock, name claims hold the destination lock). Without Web Locks, one
+  // page's folder work is still serialised by its own queue, and there is no
+  // automatic recovery, so no two pages render the same session; but name
+  // claims are not serialised across tabs, so two tabs whose sessions share a
+  // base name (same start second, same 12-digit id suffix) could both claim
+  // it, and one tab's placeholder could replace the other's; that session
+  // then finds a foreign first part, claims a new name and renders again
+  // from IndexedDB. Apart from that placeholder, a file that does not open
+  // with this session's exact header is never written. But the File System
+  // Access API has no conditional or exclusive write, so if a program outside
+  // Mongoose replaces this part between the ownership read and
+  // createWritable, that replacement can be overwritten; moving the check
+  // only moves the window.
   // That is accepted: these are Mongoose's own files, and the preferences
   // help tells players the newest file of a session is rewritten as lines
   // arrive, so copy a log before editing it.

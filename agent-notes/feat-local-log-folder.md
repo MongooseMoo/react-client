@@ -201,6 +201,15 @@ change `.github`.
 
 ## Next step
 
+Codex round 9 approved (head 5880fe00 after team-lead rebased the branch onto
+origin/master 3cd0ff55). Last changes: the writeFile comment now qualifies
+the serialisation claim for the no-Web-Locks fallback (per-page queue, no
+recovery, but name claims not serialised across tabs, so one tab's
+placeholder can replace another's and that session re-renders under a new
+name); PR description written to the session scratchpad
+(`pr-local-logs.md`). Then the 7-step gate on the final head and report.
+Ready for team-lead to open the PR; do not push from here.
+
 Round 9 (Codex review 8 of 930b2ad8) committed and reported: the claim
 placeholder rollback no longer removes anything (an empty or foreign file
 at that path stays and the retry claims " (2)"); the continuation-write
