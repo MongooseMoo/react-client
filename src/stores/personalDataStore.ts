@@ -14,17 +14,14 @@ export function ownerKey(owner: PersonalDataOwner): string {
 
 interface PersonalDataState {
   owner?: PersonalDataOwner;
-  reconnectingIdentity?: PersonalDataOwner;
   visitor: boolean;
   visitorWindow: boolean;
   policyReady: boolean;
   gameSessionId: string;
-  identityState: 'unconfirmed' | 'confirmed' | 'reconnecting' | 'forgotten';
-  forgetEpoch: number;
   confirm: (owner: PersonalDataOwner) => void;
-  clear: (reason?: 'reconnect' | 'identity-change') => void;
-  forget: () => void;
-  /** Starts a connection while preserving a pending launch and same-owner draft. */
+  /** Forgets the owner and everything of theirs on screen: sign-out. */
+  clear: () => void;
+  /** Forgets the owner because a new connection starts; it has nobody signed in yet. */
   clearForConnect: () => void;
   setVisitor: (visitor: boolean) => void;
 }
@@ -47,37 +44,15 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
   visitorWindow: false,
   policyReady: false,
   gameSessionId: '',
-  identityState: 'unconfirmed',
-  forgetEpoch: 0,
   confirm(owner) {
     const previous = get().owner;
-    if (previous && ownerKey(previous) === ownerKey(owner) && get().identityState === 'confirmed')
-      return;
+    if (previous && ownerKey(previous) === ownerKey(owner)) return;
+    // Switching from one owner to another protects the first from the second.
     clearTransientData(!previous);
-    set({ owner, reconnectingIdentity: undefined, identityState: 'confirmed' });
+    set({ owner });
   },
-  clear(reason = 'identity-change') {
-    if (reason !== 'reconnect') {
-      get().forget();
-      return;
-    }
-    clearTransientData(true);
-    set({
-      owner: undefined,
-      reconnectingIdentity: get().owner ?? get().reconnectingIdentity,
-      identityState: 'reconnecting',
-    });
-  },
-  forget() {
-    clearTransientData(false);
-    set({
-      owner: undefined,
-      reconnectingIdentity: undefined,
-      identityState: 'forgotten',
-      forgetEpoch: get().forgetEpoch + 1,
-    });
-  },
-  clearForConnect() { get().clear('reconnect'); },
+  clear() { clearTransientData(false); set({ owner: undefined }); },
+  clearForConnect() { clearTransientData(true); set({ owner: undefined }); },
   setVisitor(visitor) {
     if (visitor === get().visitor) return;
     clearTransientData(false);
@@ -85,12 +60,7 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
   },
 }));
 
-export function personalStorageKey(
-  kind: string,
-  owner = usePersonalDataStore.getState().owner,
-): string | undefined {
+export function personalStorageKey(kind: string, owner = usePersonalDataStore.getState().owner): string | undefined {
   const policy = usePersonalDataStore.getState();
-  return owner && policy.policyReady && !policy.visitor
-    ? `mongoose:personal:v2:${kind}:${ownerKey(owner)}`
-    : undefined;
+  return owner && policy.policyReady && !policy.visitor ? `mongoose:personal:v2:${kind}:${ownerKey(owner)}` : undefined;
 }

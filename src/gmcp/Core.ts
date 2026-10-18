@@ -1,7 +1,6 @@
 import { duplex, inbound, outbound } from "../protocol/messages";
 import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
-import { validateAdvertisedModules, validateSupportRequestId } from './playbackSupport';
 
 
 export class GMCPMessageCoreClient extends GMCPMessage {
@@ -84,30 +83,10 @@ const GMCPCoreSupportsBase = GMCPPackage.with({
 });
 
 export class GMCPCoreSupports extends GMCPCoreSupportsBase {
-  override sendData(messageName: string, data?: unknown): void {
-    this.publish(messageName, data);
-  }
-
-  refreshCurrentSupport(requestId?: string): void {
-    if (requestId !== undefined) validateSupportRequestId(requestId);
-    this.publish('Set', this.advertisedModules(), requestId);
-  }
-
-  private publish(messageName: string, data?: unknown, requestId?: string): void {
-    if (messageName === 'Set') data = validateAdvertisedModules(data);
-    super.sendData(messageName, data);
-    if (!this.client.gmcp.ready) return;
-    if ((messageName === 'Add' || messageName === 'Remove' || messageName === 'Set') && Array.isArray(data)) {
-      const hasClock = data.some((entry) => typeof entry === 'string' && entry.split(' ')[0] === 'Core.Time');
-      this.client.gmcp.require('Client.Media').sendPlaybackSupport(requestId === undefined ? undefined : { requestId });
-      if (messageName === 'Set' || hasClock) this.client.sharedClock?.setNetworkReady(messageName !== 'Remove' && hasClock && !this.client.localConnection);
-    }
-  }
-
   advertisedModules(): string[] {
-    return validateAdvertisedModules(Object.values(this.client.gmcp.handlers)
+    return Object.values(this.client.gmcp.handlers)
       .filter(isAdvertisedGMCPPackage)
-      .map(p => `${p.packageName} ${p.packageVersion.toString()}`));
+      .map(p => `${p.packageName} ${p.packageVersion.toString()}`);
   }
 
   // Note: Server doesn't send Core.Supports messages to the client according to IRE docs.

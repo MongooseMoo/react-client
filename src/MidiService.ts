@@ -2,7 +2,6 @@ import { virtualMidiService, type MidiOutputSink } from './VirtualMidiService';
 import JZZ from 'jzz';
 import { usePreferences } from './stores/preferencesStore';
 import { getSoundfont, SOUNDFONT_OUTPUT } from './midi/soundfonts';
-import type { SequenceOutput } from './midi/SequenceOutput';
 
 export interface MidiDevice {
   id: string;
@@ -49,8 +48,6 @@ export interface MidiMessage {
 }
 
 export type MidiInputCallback = (message: MidiMessage) => void;
-/** Monotonic browser receipt time, before parsing or any network relay. */
-export type TimestampedMidiInputCallback = (message: MidiMessage, performanceTimeMs: number) => void;
 export type DeviceChangeCallback = (info: { inputs: { added: MidiDevice[], removed: MidiDevice[] }, outputs: { added: MidiDevice[], removed: MidiDevice[] } }) => void;
 
 type JzzPortInfo = {
@@ -87,37 +84,12 @@ class MidiService {
   private inputDevice: JzzPort | null = null;
   private outputDevice: MidiOutputSink | null = null;
   private inputCallback: MidiInputCallback | null = null;
-  private readonly inputSubscribers = new Set<TimestampedMidiInputCallback>();
-  private readonly inputConnectionSubscribers = new Set<() => void>();
-  subscribeInput(listener: TimestampedMidiInputCallback): () => void {
-    this.inputSubscribers.add(listener);
-    return () => { this.inputSubscribers.delete(listener); };
-  }
-  subscribeInputConnection(listener: () => void): () => void {
-    this.inputConnectionSubscribers.add(listener);
-    return () => { this.inputConnectionSubscribers.delete(listener); };
-  }
-  private notifyInput(): void { for (const listener of this.inputConnectionSubscribers) listener(); }
   private deviceChangeCallbacks: Set<DeviceChangeCallback> = new Set();
   private deviceWatcher: JzzWatcher | null = null;
   private outputGeneration = 0;
   private pendingOutput: MidiOutputSink | null = null;
   private soundfontMessage = '';
   private readonly soundfontListeners = new Set<() => void>();
-  private readonly outputListeners = new Set<() => void>();
-  subscribeOutput = (listener:()=>void):(()=>void)=>{
-    this.outputListeners.add(listener);
-    return ()=>{this.outputListeners.delete(listener);};
-  };
-  private notifyOutput():void {for(const listener of this.outputListeners)listener();}
-  get sequenceOutputAvailable():boolean {
-    return usePreferences.getState().midi.enabled && this.connectionState.outputConnected &&
-      (this.connectionState.outputDeviceId==='virtual-synth' || this.outputDevice?.getSequenceOutput!==undefined);
-  }
-  async getSequenceOutput():Promise<SequenceOutput|null> {
-    if(!this.sequenceOutputAvailable)return null;
-    return this.connectionState.outputDeviceId==='virtual-synth'?virtualMidiService.getSequenceOutput():this.outputDevice?.getSequenceOutput?.()??null;
-  }
 
   getSoundfontMessage = (): string => this.soundfontMessage;
   subscribeSoundfont = (listener: () => void): (() => void) => {
@@ -235,14 +207,8 @@ class MidiService {
 
       // Set up message handler
       this.inputDevice.connect((message: JzzMidiMessage) => {
-        const receivedAt = performance.now();
         const rawData = Array.from(message.data ?? message, (value) => Number(value));
         const status = rawData[0];
-        if (!Number.isInteger(status) || status < 0x80 || status > 0xff || rawData.some(value => !Number.isInteger(value) || value < 0 || value > 255)) return;
-        if (status < 0xf0) {
-          const length = (status & 0xf0) === 0xc0 || (status & 0xf0) === 0xd0 ? 2 : 3;
-          if (rawData.length !== length || rawData.slice(1).some(value => value > 127)) return;
-        }
         
         // SUPPRESS Active Sensing (0xFE) - floods data every ~300ms
         if (status === 0xFE) {
@@ -291,7 +257,6 @@ class MidiService {
         }
         
         this.inputCallback?.(midiMessage);
-        for (const listener of [...this.inputSubscribers]) listener(midiMessage, receivedAt);
       });
 
       // Update connection state
@@ -302,7 +267,6 @@ class MidiService {
       const devices = this.getInputDevices();
       const device = devices.find(d => d.id === deviceId);
       this.connectionState.inputDeviceName = device?.name || "Unknown Device";
-      this.notifyInput();
       
       // Save to preferences for auto-reconnect
       usePreferences.getState().setMidi({
@@ -351,7 +315,6 @@ class MidiService {
         this.connectionState.outputDeviceName = `Soundfont Synthesizer · ${font.name}`;
         usePreferences.getState().setMidi({ ...usePreferences.getState().midi, lastOutputDeviceId: deviceId });
         this.intentionalDisconnectFlags.output = false;
-        this.notifyOutput();
         return true;
       }
 
@@ -377,7 +340,6 @@ class MidiService {
 
           // Clear intentional disconnect flag since user manually connected
           this.intentionalDisconnectFlags.output = false;
-          this.notifyOutput();
           
           console.log(`Connected to virtual MIDI synthesizer: ${virtualMidiService.getPortName()}`);
           return true;
@@ -412,7 +374,6 @@ class MidiService {
       this.intentionalDisconnectFlags.output = false;
 
       console.log(`Connected to MIDI output: ${this.connectionState.outputDeviceName}`);
-      this.notifyOutput();
       return true;
     } catch (error) {
       if (generation === this.outputGeneration) {
@@ -476,7 +437,6 @@ class MidiService {
       this.connectionState.inputConnected = false;
       this.connectionState.inputDeviceId = undefined;
       this.connectionState.inputDeviceName = undefined;
-      this.notifyInput();
       console.log("Disconnected input device");
     } else if (deviceType === 'output') {
       this.outputGeneration++;
@@ -490,7 +450,6 @@ class MidiService {
       this.connectionState.outputDeviceId = undefined;
       this.connectionState.outputDeviceName = undefined;
       this.reportSoundfont('');
-      this.notifyOutput();
       console.log("Disconnected output device");
     }
   }
@@ -529,10 +488,8 @@ class MidiService {
     this.connectionState.inputDeviceId = undefined;
     this.connectionState.outputDeviceId = undefined;
     this.connectionState.inputDeviceName = undefined;
-    this.notifyInput();
     this.connectionState.outputDeviceName = undefined;
     this.reportSoundfont('');
-    this.notifyOutput();
   }
 
   get isSupported(): boolean {
@@ -628,7 +585,6 @@ class MidiService {
         console.log(`Input device ${this.connectionState.inputDeviceName} was disconnected`);
         this.connectionState.inputConnected = false;
         this.inputDevice = null;
-        this.notifyInput();
       }
     }
 
@@ -639,7 +595,6 @@ class MidiService {
         console.log(`Output device ${this.connectionState.outputDeviceName} was disconnected`);
         this.connectionState.outputConnected = false;
         this.outputDevice = null;
-        this.notifyOutput();
       }
     }
   }

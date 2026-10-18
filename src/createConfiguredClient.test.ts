@@ -23,7 +23,6 @@ import { useSpatialStore } from "./stores/spatialStore";
 
 vi.mock("cacophony", () => ({
   Cacophony: class {
-    context = Object.assign(new EventTarget(), { state: 'suspended', currentTime: 0 });
     muted = false;
     setGlobalVolume = vi.fn();
   },
@@ -65,7 +64,6 @@ describe("createConfiguredClient", () => {
 
   it("wires Char.Name to connection session state", () => {
     client = createConfiguredClient();
-    const support = vi.spyOn(client.gmcp.require('Client.Media'), 'sendPlaybackSupport').mockImplementation(() => {});
 
     const char = client.gmcp.require("Char");
     char.receiveRegisteredMessage("Name", { fullname: "Q", name: "q" });
@@ -74,7 +72,6 @@ describe("createConfiguredClient", () => {
     expect(client.gmcp.sessionReady).toBe(true);
     expect(useConnectionStore.getState().sessionReady).toBe(true);
     expect(useConnectionStore.getState().statusText).toBe("Logged in as Q");
-    expect(support).not.toHaveBeenCalled(); // No refresh before a ready network transport exists.
   });
 
   it("registers IRE.Sound so server sound events reach the media service", () => {

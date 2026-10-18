@@ -20,7 +20,6 @@ export { GMCPCommChannel } from "./Comm/Channel";
 export { GMCPCommLiveKit } from "./Comm/LiveKit";
 export { GMCPCore } from "./Core";
 export { GMCPCoreSupports } from "./Core";
-export { GMCPCoreTime } from './Core/Time';
 export { GMCPCharAfflictions } from "./Char/Afflictions";
 export { GMCPCharDefences } from "./Char/Defences";
 export { GMCPCharItems } from "./Char/Items";
