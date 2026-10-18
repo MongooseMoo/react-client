@@ -135,6 +135,18 @@ try {
   await page.getByRole('button', { name: 'Resume owner', exact: true }).click();
   await expect(command).toBeVisible();
   await expect(page.getByText('Saved data is restored. Notifications remain paused; enable browser notifications when you want them.')).toBeVisible();
+  // Seed this page's cache: the earlier page.reload() discarded socket 0's client.
+  const prior = sockets.at(-1);
+  previous = prior.capabilities.length;
+  prior.reply('Client.Media.SupportRequest', { version: 1, requestId });
+  await expect.poll(() => prior.capabilities.length).toBe(previous + 2);
+  assert.equal(prior.capabilities.at(-1).payload.requestId, requestId);
+  previous = prior.capabilities.length;
+  prior.reply('Client.Media.SupportRequest', { version: 1, requestId });
+  prior.reply('Char.Name', owner);
+  await expect.poll(() => prior.capabilities.length).toBe(previous + 2);
+  assert.deepEqual(prior.capabilities.slice(previous).map(entry => entry.name), ['Core.Supports.Set', 'Client.Media.PlaybackSupport']);
+  assert.equal(prior.capabilities.at(-1).payload.requestId, undefined);
   const oldConnections = sockets.length;
   dropNextPing = true;
   await page.evaluate(() => window.mudClient.latency.probe());
@@ -148,6 +160,7 @@ try {
   await expect.poll(() => replacement.capabilities.length).toBe(previous + 2);
   assert.deepEqual(replacement.capabilities.slice(previous).map(entry => entry.name), ['Core.Supports.Set', 'Client.Media.PlaybackSupport']);
   assert.equal(replacement.capabilities.at(-1).payload.requestId, requestId);
+  assert.deepEqual(replacement.capabilities.at(-1).payload.modules, replacement.capabilities.at(-2).payload);
   const legacy = await context.newPage();
   await legacy.goto(origin + '/editor?reference=%238%3Aput');
   await expect(legacy.getByRole('alert')).toContainText('older game tab');
