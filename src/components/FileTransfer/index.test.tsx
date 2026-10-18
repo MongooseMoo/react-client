@@ -552,16 +552,21 @@ describe('files shared from another app', () => {
     await screen.findByText(/^Shared file ready: map\.png/);
 
     const release = network.holdNegotiation();
+    const send = vi.spyOn(old, 'send');
     sendToAlice();
-    await waitFor(() => expect(statesOf(old)).toEqual(['preparing']));
+    // Past hashing: the send is waiting in negotiation, on a link of its own.
+    await waitFor(() => expect(network.linksOf(ME)).toHaveLength(1));
+    expect(statesOf(old)).toEqual(['preparing']);
     old.dispose();
     current = replacement;
     act(() => useConnectionStore.setState({ connected: true }));
     await screen.findByRole('button', { name: 'Send File' });
 
     release();
-    // Let the old send settle after the replacement panel has loaded.
-    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    // The old send settles only now, after the replacement panel has loaded.
+    let settled: TransferState | undefined;
+    await act(async () => { settled = (await send.mock.results[0].value).state; });
+    expect(settled).toBe('preparing');
     expect(useLaunchStore.getState().stagedShare).toBe(map);
     expect(useLaunchStore.getState().sharedFiles.map((file) => file.name)).toEqual(waitingNames);
     expect(screen.getByText(/^Shared file ready: map\.png/)).not.toBeNull();

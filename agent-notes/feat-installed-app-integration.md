@@ -113,6 +113,10 @@ Nothing a launch carries may ever be sent to the MOO without the player acting.
   editor-ownership on 5196 (served entry index-a0R8Am52.js = local dist;
   pid 97440 stopped) 1 passed, check-browser-sessions, check-client-recovery,
   test:a11y.
+- Codex round 5 on cf1b748e: approve. Its one P3 (the halted-send regression
+  waited a fixed 20 ms) is done: the test now waits for the old engine's link
+  (past hashing) and awaits the spied `send()` promise; with the round-4
+  predicate swapped back in, both cases fail.
 - Not verifiable here: real OS install, OS protocol/file/share/shortcut
   launches, whether Chromium honours focus-existing for these, badge on a real
   icon. Not pushed, no PR.
@@ -168,6 +172,15 @@ Nothing a launch carries may ever be sent to the MOO without the player acting.
 - Stopping a backgrounded `npx vite preview` with TaskStop killed the shell but
   left the node server running (pid found via Win32_Process). Check the port
   and stop the node process by pid.
+- All worktrees share ONE stash list. `git stash push <clean path>` creates
+  nothing, and a following `git stash pop` then applied the main checkout's
+  stash@{0} ("Original checkout before syncing merged PR 129") into this
+  worktree (about 20 conflicts, 313 restored untracked files). Recovered by
+  checking every restored untracked file was byte-identical to stash@{0}^3,
+  then `git reset --hard HEAD`, `git clean -fd`, and removing the restored
+  ignored .claude/settings.local.json; stash@{0} itself was left as it was.
+  Never stash/pop to compare old code; use a scratch `git worktree add <rev>`
+  or a temporary Edit that is reverted.
 
 ## Next step
 Fresh Codex review of the branch. Then a real installed-app test on Windows
