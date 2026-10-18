@@ -41,7 +41,6 @@ import {
   type GMCPMessageClientMediaUpdate,
 } from './Media';
 import { GMCPClientSpatial } from './Spatial';
-import { GMCPChar } from '../Char';
 import { midiService } from '../../MidiService';
 
 type MockCacophony = ConstructorParameters<typeof MediaService>[0];
@@ -327,18 +326,16 @@ describe('GMCPClientMedia', () => {
     const output = vi.spyOn(midiService, 'sequenceOutputAvailable', 'get');
     const clock = { ready: true };
     Object.assign(client, { sharedClock: clock });
-    Object.assign(client.gmcp, { confirmIdentity: vi.fn(), require: () => handler });
-    const char = new GMCPChar(client as never);
-    const identity = { name: '#10', fullname: 'A', uuid: 'a' };
+    Object.assign(client.gmcp, { require: () => ({ advertisedModules: () => ['Client.Media 1', 'Client.Midi 2'] }) });
     const reports = () => client.gmcp.send.mock.calls
       .filter(([name]) => name === 'Client.Media.PlaybackSupport')
       .map(([, body]) => JSON.parse(body));
     output.mockReturnValue(false);
-    char.handleName(identity);
+    handler.sendPlaybackSupport();
     output.mockReturnValue(true);
-    char.handleName(identity);
+    handler.sendPlaybackSupport();
     clock.ready = false;
-    char.handleName(identity);
+    handler.sendPlaybackSupport();
     expect(reports()).toEqual([
       expect.objectContaining({ sharedTransport: true, midiSequences: false }),
       expect.objectContaining({ sharedTransport: true, midiSequences: expect.objectContaining({ version: 1 }) }),

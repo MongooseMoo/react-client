@@ -38,6 +38,8 @@ import { usePreferences } from '../../stores/preferencesStore';
 import { duplex, inbound, outbound } from '../../protocol/messages';
 import { useSpatialStore } from '../../stores/spatialStore';
 import { gmcpJsonMessage } from '../messages';
+import { decodeSupportRequest, validateAdvertisedModules, validateSupportRequestId,
+  type PlaybackSupportEcho, type SupportRequest } from '../playbackSupport';
 import { GMCPMessage, GMCPPackage } from '../package';
 import {
   decodeMediaSync,
@@ -233,22 +235,33 @@ const mediaEffectsSupport = gmcpJsonMessage<
   never,
   ReturnType<typeof buildEffectsSupport>
 >('EffectsSupport');
-export function buildPlaybackSupport(sharedTransport = true) {
-  return {
-    version: 1,
+export function buildPlaybackSupport(modules: string[], sharedTransport = true, requestId?: string) {
+  if (requestId !== undefined) validateSupportRequestId(requestId);
+  const report = {
+    version: 2,
+    modules: validateAdvertisedModules(modules),
     sharedTransport,
     mediaLoops: sharedTransport ? { version: 1, buffer: true, html: false } : false,
     presentationCues: sharedTransport ? { version: 1, maxCues: 512, maxBytes: 16384 } : false,
     midiSequences:
       sharedTransport && midiService.sequenceOutputAvailable ? SEQUENCE_SUPPORT : false,
+    ...(requestId === undefined ? {} : { requestId }),
   };
+  const serialized = JSON.stringify(report);
+  if (serialized.length > 8192 || /[\u0080-\uffff]/.test(serialized))
+    throw new TypeError('Playback support exceeds its ASCII payload budget');
+  return report;
 }
 // Encoding reads the actual selected sink at publication time, including explicit false.
-const mediaPlaybackSupport = gmcpJsonMessage<'PlaybackSupport', never, void>('PlaybackSupport', {
-  encode: () => buildPlaybackSupport(),
+const mediaPlaybackSupport = gmcpJsonMessage<'PlaybackSupport', never, PlaybackSupportEcho>('PlaybackSupport', {
+  encode: (value) => value,
   decode: () => {
     throw new TypeError('PlaybackSupport is outbound only');
   },
+});
+const mediaSupportRequest = gmcpJsonMessage<'SupportRequest', SupportRequest>('SupportRequest', {
+  encode: (value) => value,
+  decode: decodeSupportRequest,
 });
 
 const GMCPClientMediaBase = GMCPPackage.with({
@@ -268,6 +281,7 @@ const GMCPClientMediaBase = GMCPPackage.with({
     inbound(mediaListenerOrientation),
     outbound(mediaEffectsSupport),
     outbound(mediaPlaybackSupport),
+    inbound(mediaSupportRequest),
   ] as const,
 });
 
@@ -296,6 +310,7 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.on('update', (data) => this.handleUpdate(data));
     this.on('stop', (data) => this.handleStop(data));
     this.on('sync', (data) => this.client.media.receiveMediaSync(data));
+    this.on('supportRequest', (data) => this.client.gmcp.respondToSupportRequest(data.requestId));
     this.on('listenerPosition', (data) => this.handleListenerPosition(data));
     this.on('listenerOrientation', (data) => this.handleListenerOrientation(data));
     this.unsubscribeSpatialStore = useSpatialStore.subscribe(this.handleSpatialStoreChange);
@@ -345,7 +360,9 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     super.sendData(
       messageName,
       messageName === 'PlaybackSupport'
-        ? buildPlaybackSupport(this.client.sharedClock?.ready ?? false)
+        ? buildPlaybackSupport(this.client.gmcp.require('Core.Supports').advertisedModules(),
+            this.client.sharedClock?.ready ?? false,
+            (data as PlaybackSupportEcho)?.requestId)
         : data,
     );
   }

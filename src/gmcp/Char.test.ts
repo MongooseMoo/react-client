@@ -6,6 +6,7 @@ import type MudClient from '../client';
 import { usePersonalDataStore } from '../stores/personalDataStore';
 import { GMCPPackage } from './package';
 import type { TelnetParser } from '../telnet';
+import { GMCPCoreSupports } from './Core';
 
 class MediaFixture extends GMCPPackage {
   readonly packageName = 'Client.Media';
@@ -21,6 +22,7 @@ describe('confirmed character ownership', () => {
     const sendGmcp = vi.fn();
     const client = {
       liveServer: true,
+      connected: true,
       resetIdentityState: reset,
       registerDisconnectReset: vi.fn(),
       sharedClock: { setNetworkReady },
@@ -28,7 +30,10 @@ describe('confirmed character ownership', () => {
     client.gmcp = new GmcpSession(client);
     client.gmcp.attachTransport({ sendGmcp } as unknown as TelnetParser);
     const media = client.gmcp.register(MediaFixture);
+    const supports = client.gmcp.register(GMCPCoreSupports);
     client.gmcp.register(GMCPChar);
+    client.gmcp.markReady();
+    setNetworkReady.mockClear();
     const reported: string[] = [];
     media.sendPlaybackSupport.mockImplementation(() => {
       reported.push(useSessionStore.getState().playerUuid || useSessionStore.getState().playerId);
@@ -44,8 +49,8 @@ describe('confirmed character ownership', () => {
     expect(reported).toEqual(['a', 'a', 'b', 'a', '#guest', '#guest']);
     expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(6);
     expect(reset).toHaveBeenCalledTimes(3);
-    expect(setNetworkReady).not.toHaveBeenCalled();
-    expect(sendGmcp).not.toHaveBeenCalled();
+    expect(sendGmcp.mock.calls).toEqual(Array.from({ length: 6 }, () =>
+      ['Core.Supports.Set', JSON.stringify(supports.advertisedModules())]));
   });
 
   it('rejects invalid identity payloads without publishing support or changing identity', () => {

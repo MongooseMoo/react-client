@@ -31,11 +31,18 @@ try {
   const owner = { uuid: 'recovery-owner', name: '#101', fullname: 'Recovery owner' };
   await context.routeWebSocket('**/*', socket => {
     const index = sockets.length;
-    const record = { commands: [], pings: 0 };
+    const record = { commands: [], pings: 0, capabilities: [],
+      reply: (name, data) => socket.send(packet(name, data)) };
     sockets.push(record);
     let identity = owner;
     socket.onMessage(message => {
-      const text = Buffer.from(message).toString('utf8');
+      const bytes = Buffer.from(message);
+      const text = bytes.toString('utf8');
+      if (bytes[0] === 255 && bytes[1] === 250 && bytes[2] === 201) {
+        const capability = bytes.subarray(3, -2).toString('utf8')
+          .match(/^(Core\.Supports\.Set|Client\.Media\.PlaybackSupport) (.+)$/s);
+        if (capability) record.capabilities.push({ name: capability[1], payload: JSON.parse(capability[2]) });
+      }
       if (text.includes('Core.Ping')) {
         record.pings++;
         if (dropNextPing) dropNextPing = false;
@@ -66,6 +73,23 @@ try {
   const page = await context.newPage();
   await page.goto(origin);
   await expect.poll(() => page.evaluate(() => window.mudClient?.gmcp.require('Auth.Autologin').currentGrant?.playerUuid)).toBe(owner.uuid);
+  const first = sockets[0];
+  const requestId = '11111111-1111-4111-8111-111111111111';
+  let previous = first.capabilities.length;
+  first.reply('Client.Media.SupportRequest', { version: 1, requestId, reason: 'stale' });
+  await expect.poll(() => first.capabilities.length).toBe(previous + 2);
+  const refreshed = first.capabilities.slice(previous);
+  assert.deepEqual(refreshed.map(entry => entry.name), ['Core.Supports.Set', 'Client.Media.PlaybackSupport']);
+  assert.equal(refreshed[1].payload.version, 2);
+  assert.equal(refreshed[1].payload.requestId, requestId);
+  assert.deepEqual(refreshed[1].payload.modules, refreshed[0].payload);
+  assert(refreshed[0].payload.includes('Client.Media 1'));
+  previous = first.capabilities.length;
+  first.reply('Client.Media.SupportRequest', { version: 1, requestId });
+  first.reply('Char.Name', owner);
+  await expect.poll(() => first.capabilities.length).toBe(previous + 2);
+  assert.deepEqual(first.capabilities.slice(previous).map(entry => entry.name), ['Core.Supports.Set', 'Client.Media.PlaybackSupport']);
+  assert.equal(first.capabilities.at(-1).payload.requestId, undefined);
   await page.evaluate(async () => {
     const grant = window.mudClient.gmcp.require('Auth.Autologin').currentGrant;
     const db = await new Promise(resolve => { const request = indexedDB.open('mongoose-browser', 1); request.onsuccess = () => resolve(request.result); });
@@ -118,12 +142,18 @@ try {
   await expect(page.locator('.status-latency')).toContainText(/Ping: \d+ ms/);
   await expect.poll(() => page.evaluate(() => window.mudClient.gmcp.require('Auth.Autologin').currentGrant?.playerUuid)).toBe(owner.uuid);
   assert.equal(sockets.length, oldConnections + 1);
+  const replacement = sockets.at(-1);
+  previous = replacement.capabilities.length;
+  replacement.reply('Client.Media.SupportRequest', { version: 1, requestId });
+  await expect.poll(() => replacement.capabilities.length).toBe(previous + 2);
+  assert.deepEqual(replacement.capabilities.slice(previous).map(entry => entry.name), ['Core.Supports.Set', 'Client.Media.PlaybackSupport']);
+  assert.equal(replacement.capabilities.at(-1).payload.requestId, requestId);
   const legacy = await context.newPage();
   await legacy.goto(origin + '/editor?reference=%238%3Aput');
   await expect(legacy.getByRole('alert')).toContainText('older game tab');
   assert.equal(await legacy.locator('.monaco-editor').count(), 0);
   await page.evaluate(() => window.mudClient.close());
-  console.log('Client recovery passed: visit end/reload/login, rejected unrelated owner, retry selection, resumption without push permission, correlated reconnect recovery and explicit obsolete editor feedback.');
+  console.log('Client recovery passed: full module attestation, correlated support refresh/dedup, repeated identity refresh, visit end/reload/login, rejected unrelated owner, retry selection, resumption without push permission, correlated reconnect recovery and explicit obsolete editor feedback.');
 } finally {
   await browser.close();
   await new Promise(done => server.close(done));
