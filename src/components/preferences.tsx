@@ -10,6 +10,8 @@ import KeystrokePreferencesTab from "./KeystrokePreferences";
 import SoundfontPicker from './SoundfontPicker';
 import HeadTrackingControls from './HeadTrackingControls';
 import AppIntegrationPreferences from '../launch/AppIntegrationPreferences';
+import VoiceCommandPreferences from "./VoiceCommandPreferences";
+import { clientSpeechSuspended } from "../clientSpeechSuspension";
 
 function PreferenceNumber({ id, label, value, min, max, onCommit }: {
   id: string; label: string; value: number; min: number; max: number;
@@ -216,11 +218,22 @@ const PreviewButton: React.FC = () => {
 
   const handlePreview = () => {
     if (isPlaying) return; // Extra guard against concurrent calls
+    // A listening voice command would hear the preview as the command.
+    if (clientSpeechSuspended()) {
+      announce("No voice preview while a voice command is listening", "polite");
+      return;
+    }
     setIsPlaying(true);
     announce("Playing voice preview", "polite");
 
     const speakText = () => {
       if (!isMounted.current) return; // Don't proceed if unmounted
+      // The voices may load after a voice command has started listening.
+      if (clientSpeechSuspended()) {
+        setIsPlaying(false);
+        announce("No voice preview while a voice command is listening", "polite");
+        return;
+      }
 
       const utterance = new SpeechSynthesisUtterance("This is a preview of the selected voice settings.");
 
@@ -295,6 +308,7 @@ const SpeechTab: React.FC = () => {
       <VolumeSelection />
       <br />
       <PreviewButton />
+      <VoiceCommandPreferences />
     </div>
   );
 };
@@ -484,6 +498,8 @@ const KeyboardTab: React.FC = () => {
           <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback. Alt+Shift+O recenters head tracking.</dd>
           <dt>Server keys</dt>
           <dd>Alt+Shift+H turns keys mode on and off, so a game's or console's keys work on letters and other typing keys. The Keys section lists every key and lets you change it.</dd>
+          <dt>Voice commands</dt>
+          <dd>Alt+Shift+D listens for one spoken command when voice commands are on in the Speech section; press it again to stop sooner, or Escape to discard.</dd>
         </dl>
         <p>Ctrl+Shift+number opens and focuses a sidebar destination. Numbers stay fixed when optional tabs appear; unavailable destinations do nothing.</p>
         <table>

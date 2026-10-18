@@ -1,0 +1,75 @@
+.voice-command-preferences {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-5) 0 0;
+  padding: var(--space-4) var(--space-5);
+  background: var(--gradient-panel);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.voice-command-preferences legend {
+  padding: 0 var(--space-2);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text);
+}
+
+.voice-command-preferences label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.voice-command-preferences input[type="text"] {
+  min-width: 12rem;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text);
+  background: var(--color-bg-deep);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.voice-command-preferences input[type="text"]:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.voice-command-note {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: 0.9em;
+  line-height: 1.45;
+}
+
+/* The privacy line is the first thing read; mark where the audio goes. */
+#voice-command-privacy {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+}
+
+#voice-command-privacy[data-availability="on-device"] {
+  border-left-color: var(--color-success);
+}
+
+#voice-command-privacy[data-availability="cloud"],
+#voice-command-privacy[data-availability="unknown"],
+#voice-command-privacy[data-availability="downloadable"] {
+  border-left-color: var(--color-warning);
+}
+
+#voice-command-privacy[data-availability="unsupported-language"] {
+  border-left-color: var(--color-danger);
+}
+
+@media (forced-colors: active) {
+  .voice-command-preferences,
+  #voice-command-privacy {
+    border-color: CanvasText;
+  }
+}

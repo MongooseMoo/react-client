@@ -5,6 +5,7 @@ import "./input.css";
 import { useInputStore } from "../stores/inputStore";
 import { useRoomStore } from "../stores/roomStore";
 import { registerCommandInput } from "../inputFocus";
+import VoiceCommandButton from "./VoiceCommandButton";
 import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
 import type MudClient from "../client"; // Import MudClient
 import type { RoomPlayer } from "../gmcp/Room"; // Import RoomPlayer type
@@ -113,7 +114,11 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
   }, []);
 
   const handleSend = useCallback(() => {
-    const currentInput = text;
+    // While a voice command listens, the text is not yet the player's: Enter or
+    // Send finishes listening, and the final transcript is sent instead.
+    if (useInputStore.getState().dictation?.interceptSend()) return;
+    // From the store, not the render: a voice command sets the text and sends at once.
+    const currentInput = useInputStore.getState().text;
     onSend(currentInput);
     if (currentInput.trim() && owner) {
       commandHistoryRef.current.addCommand(currentInput);
@@ -122,7 +127,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     useInputStore.getState().clear();
     inputRef.current?.focus();
     resetCompletionState();
-  }, [text, onSend, inputRef, resetCompletionState, saveHistory]);
+  }, [onSend, inputRef, resetCompletionState, saveHistory, owner]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const commandHistory = commandHistoryRef.current;
@@ -229,6 +234,8 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       }
     } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      // A held Enter must not send a time-limited voice command before the player has checked it.
+      if (e.repeat && useInputStore.getState().needsFreshEnter) return;
       handleSend();
     } else if (isPlainAlt && (
       e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight" ||
@@ -269,11 +276,17 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
           resetCompletionState();
         }}
         onKeyDown={handleKeyDown}
+        onKeyUp={(e) => {
+          if (e.key === "Enter" && useInputStore.getState().needsFreshEnter) {
+            useInputStore.getState().setNeedsFreshEnter(false);
+          }
+        }}
         id="command-input"
         aria-label="Command"
         ref={inputRef}
         autoFocus
       />
+      <VoiceCommandButton onSend={handleSend} />
       <button type="button" onClick={handleSend} className="send-button">
         Send
       </button>

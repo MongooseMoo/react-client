@@ -2,6 +2,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Preferences from './preferences';
 import { usePreferences } from '../stores/preferencesStore';
+import { suspendClientSpeech } from '../clientSpeechSuspension';
+import { FakeRecognition, fakeRecognizer } from '../voiceInputTestHelpers';
 
 vi.mock('../hooks/useVoices', () => ({ useVoices: () => [] }));
 vi.mock('./AutoLogDialog', () => ({ default: () => null }));
@@ -11,6 +13,78 @@ beforeEach(() => {
   vi.stubGlobal('speechSynthesis', { cancel: vi.fn(), getVoices: () => [] });
 });
 afterEach(() => cleanup());
+
+it('renders every section, Speech included, without asking the speech recognizer anything', () => {
+  // Some browsers (headless Chromium 147) crash the page when asked about
+  // on-device recognition; opening Preferences must never be what asks.
+  const available = vi.fn((): Promise<'available'> => { throw new Error('probing crashes this browser'); });
+  FakeRecognition.instances = [];
+  window.webkitSpeechRecognition = fakeRecognizer(available);
+  try {
+    render(<Preferences />);
+    expect(screen.getByRole('checkbox', { name: 'Local Echo' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));
+    expect(screen.getByRole('checkbox', { name: 'Voice commands' })).toBeTruthy();
+    expect(available).not.toHaveBeenCalled();
+    expect(FakeRecognition.instances).toHaveLength(0);
+  } finally {
+    delete window.webkitSpeechRecognition;
+  }
+});
+
+it('still renders when the speech recognizer throws on the check', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  window.webkitSpeechRecognition = fakeRecognizer(() => { throw new Error('probe failed'); });
+  try {
+    render(<Preferences />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Check this browser' })));
+    expect(await screen.findByText(/does not say where speech is turned into text/)).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'Local Echo', hidden: true })).toBeTruthy();
+  } finally {
+    delete window.webkitSpeechRecognition;
+    warn.mockRestore();
+  }
+});
+
+class PreviewUtterance {
+  onend: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  voice: unknown = null;
+  constructor(public text: string) {}
+}
+
+it('plays no voice preview while a voice command is listening', () => {
+  const speak = vi.fn();
+  vi.stubGlobal('speechSynthesis', { cancel: vi.fn(), speak, getVoices: () => [{ name: 'A' }] });
+  vi.stubGlobal('SpeechSynthesisUtterance', PreviewUtterance);
+  render(<Preferences />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));
+  const release = suspendClientSpeech();
+  fireEvent.click(screen.getByRole('button', { name: 'Preview Voice' }));
+  expect(speak).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Preview Voice' })).toBeTruthy();
+  release();
+  fireEvent.click(screen.getByRole('button', { name: 'Preview Voice' }));
+  expect(speak).toHaveBeenCalledTimes(1);
+});
+
+it('plays no delayed voice preview if a voice command starts before the voices load', () => {
+  const speak = vi.fn();
+  const synth: { cancel: () => void; speak: typeof speak; getVoices: () => unknown[]; onvoiceschanged: (() => void) | null } =
+    { cancel: vi.fn(), speak, getVoices: () => [], onvoiceschanged: null };
+  vi.stubGlobal('speechSynthesis', synth);
+  vi.stubGlobal('SpeechSynthesisUtterance', PreviewUtterance);
+  render(<Preferences />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));
+  fireEvent.click(screen.getByRole('button', { name: /Preview Voice|Playing/ }));
+  const release = suspendClientSpeech();
+  synth.getVoices = () => [{ name: 'A' }];
+  act(() => synth.onvoiceschanged?.());
+  expect(speak).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Preview Voice' })).toBeTruthy();
+  release();
+});
 
 it('allows clearing and replacing a storage cap, committing only a valid completed edit', async () => {
   render(<Preferences />);

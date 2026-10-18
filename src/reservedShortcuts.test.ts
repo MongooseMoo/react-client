@@ -1,12 +1,41 @@
 import { describe, expect, it } from "vitest";
 import type { Chord, Modifier } from "./keystrokeChords";
-import { KEYS_MODE_CHORD, reservedReason } from "./reservedShortcuts";
+import {
+  HEAD_RECENTER_CHORD,
+  KEYS_MODE_CHORD,
+  VOICE_COMMAND_CHORD,
+  isHeadRecenterShortcut,
+  isVoiceCommandToggle,
+  reservedReason,
+} from "./reservedShortcuts";
 
 const chord = (key: string, ...modifiers: Modifier[]): Chord => ({ key, modifiers });
 
 describe("reservedReason", () => {
   it("keeps the keys mode toggle", () => {
     expect(reservedReason(KEYS_MODE_CHORD)).toBe("Alt+Shift+H turns keys mode on and off");
+  });
+
+  it("keeps the voice command key from server key layers", () => {
+    expect(reservedReason(VOICE_COMMAND_CHORD)).toBe("Alt+Shift+D listens for a voice command");
+    expect(reservedReason(chord("d", "shift"))).toBeUndefined();
+  });
+
+  it("recognizes Alt+Shift+D by physical key, whatever character it types", () => {
+    const press = (init: KeyboardEventInit) => isVoiceCommandToggle(new KeyboardEvent("keydown", init));
+    expect(press({ code: "KeyD", key: "Î", altKey: true, shiftKey: true })).toBe(true);
+    expect(press({ code: "KeyD", key: "D", altKey: true, shiftKey: true, ctrlKey: true })).toBe(false);
+    expect(press({ code: "KeyD", key: "d", altKey: true })).toBe(false);
+  });
+
+  it("keeps both the voice command and head tracking keys, and neither shortcut takes the other's", () => {
+    expect(reservedReason(VOICE_COMMAND_CHORD)).toBe("Alt+Shift+D listens for a voice command");
+    expect(reservedReason(HEAD_RECENTER_CHORD)).toBe("Alt+Shift+O recenters head tracking");
+    const keydown = (code: string) => new KeyboardEvent("keydown", { code, altKey: true, shiftKey: true });
+    expect(isVoiceCommandToggle(keydown("KeyD"))).toBe(true);
+    expect(isVoiceCommandToggle(keydown("KeyO"))).toBe(false);
+    expect(isHeadRecenterShortcut(keydown("KeyO"))).toBe(true);
+    expect(isHeadRecenterShortcut(keydown("KeyD"))).toBe(false);
   });
 
   it("keeps the keys the browser will not give a page", () => {
