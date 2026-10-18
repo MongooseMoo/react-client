@@ -238,8 +238,10 @@ const mediaEffectsSupport = gmcpJsonMessage<
 export function buildPlaybackSupport(modules: string[], sharedTransport = true, requestId?: string) {
   if (requestId !== undefined) validateSupportRequestId(requestId);
   const report = {
-    version: 2,
     modules: validateAdvertisedModules(modules),
+    liveMidi: midiService.sequenceOutputAvailable
+      ? { maxHeldNotes: 128, controllers: [7, 10, 11, 64], percussion: true }
+      : false,
     sharedTransport,
     mediaLoops: sharedTransport ? { version: 1, buffer: true, html: false } : false,
     presentationCues: sharedTransport ? { version: 1, maxCues: 512, maxBytes: 16384 } : false,
@@ -288,7 +290,6 @@ const GMCPClientMediaBase = GMCPPackage.with({
 export class GMCPClientMedia extends GMCPClientMediaBase {
   private unsubscribeSpatialStore: (() => void) | undefined;
   private unsubscribeOutput: (() => void) | undefined;
-  private unsubscribeMidiPreference: (() => void) | undefined;
   private unsubscribeTimingPreference: (() => void) | undefined;
   private unsubscribeClockSupport: (() => void) | undefined;
   private disposed = false;
@@ -315,10 +316,6 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.on('listenerOrientation', (data) => this.handleListenerOrientation(data));
     this.unsubscribeSpatialStore = useSpatialStore.subscribe(this.handleSpatialStoreChange);
     this.unsubscribeOutput = midiService.subscribeOutput(this.outputChanged);
-    this.unsubscribeMidiPreference = usePreferences.subscribe(
-      (state) => state.midi.enabled,
-      this.outputChanged,
-    );
     this.unsubscribeTimingPreference = usePreferences.subscribe(
       (state) => state.midi.outputTimingCorrectionMs,
       () => this.client.media?.outputTimingChanged(),
@@ -483,7 +480,6 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.reset();
     this.unsubscribeSpatialStore?.();
     this.unsubscribeOutput?.();
-    this.unsubscribeMidiPreference?.();
     this.unsubscribeTimingPreference?.();
     this.unsubscribeClockSupport?.();
     if (typeof document !== 'undefined')
@@ -491,7 +487,7 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   }
   private readonly outputChanged = (): void => {
     this.client.media?.sequenceOutputChanged();
-    if (this.client.sharedClock?.ready) this.sendPlaybackSupport();
+    if (this.client.gmcp.ready) this.sendPlaybackSupport();
   };
   private readonly visibilityChanged = (): void => {
     this.client.media?.setSequencePageHidden(document.hidden);

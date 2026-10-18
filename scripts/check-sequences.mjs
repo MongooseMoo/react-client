@@ -77,9 +77,43 @@ try{
       };
       }
     }
+    for (const kind of ['virtual', 'soundfont']) {
+      const context = new OfflineAudioContext(2, 48000, 48000);
+      await virtualMidiService.setAudioOutput({ context, destination: context.destination });
+      const port = await virtualMidiService.getVirtualPort();
+      if (!port) throw new Error('Browser output unavailable');
+      const font = kind === 'soundfont'
+        ? new SoundfontOutput('MusyngKite', () => ({ context, destination: context.destination }), port, () => {})
+        : null;
+      if (font) await font.ready();
+      const output = font ? font.getSequenceOutput() : await virtualMidiService.getSequenceOutput();
+      if (!output) throw new Error('Independent output unavailable');
+      await output.prepare([{ id: 'drums', name: 'Drums', kind: 'percussion', program: 0, notes: [], controls: [], programs: [] }], new AbortController().signal);
+      const voices = Array.from({ length: 128 }, () => output.playNote({
+        program: 0, percussion: true, note: 81, velocity: 16, startTime: 0.01,
+        destination: context.destination,
+      }));
+      if (voices.some(voice => voice.state !== 'scheduled')) throw new Error('128 percussion voices were not independently admitted');
+      for (const voice of voices.slice(0, 64)) voice.stop();
+      if (voices.slice(64).some(voice => voice.state !== 'scheduled')) throw new Error('Targeted percussion stop cut another owner');
+      for (const voice of voices.slice(64)) voice.release(0.05);
+      const audio = await context.startRendering();
+      await Promise.race([Promise.all(voices.map(voice => voice.ended)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Percussion voices did not end')), 2000))]);
+      if (!audio.getChannelData(0).some(value => Math.abs(value) > 0.001)) throw new Error('128-voice percussion render was silent');
+      output.dispose?.();
+      font?.close();
+      await virtualMidiService.dispose();
+      results[`${kind}-128-percussion`] = { voices: voices.length, retired: 64, audible: true };
+    }
     return results;
   });
   for(const [kind,renderResult]of Object.entries(result)){
+    if (kind.endsWith('-128-percussion')) {
+      assert.deepEqual(renderResult, { voices: 128, retired: 64, audible: true });
+      console.log(`${kind}: 128 native voices, targeted retirement and audible remaining voices passed`);
+      continue;
+    }
     assert.deepEqual(renderResult,{onsetSilent:true,audible:true,cancelled:true,isolated:true});
     console.log(`${kind}: native shared-context onset, future cancellation, source stop, release and part isolation passed`);
   }

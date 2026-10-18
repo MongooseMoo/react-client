@@ -95,21 +95,6 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
     // Show the Room tab once room info has arrived (from the room store).
     const hasRoomData = useRoomStore((state) => state.roomInfo !== null);
 
-    // Handle MIDI support advertisement based on preferences
-    useEffect(() => {
-      const midiPackage = client.gmcp.handlers['Client.Midi'];
-      if (!midiPackage) return;
-
-      // Only handle runtime preference changes - initial advertisement handled by Core.Supports
-      if (client.connected) {
-        if (midiPreferences.enabled) {
-          midiPackage.advertiseMidiSupport();
-        } else {
-          midiPackage.unadvertiseMidiSupport();
-        }
-      }
-    }, [midiPreferences.enabled, client]);
-
     // Handle Haptics support advertisement based on preferences
     useEffect(() => {
       const hapticsPackage = client.gmcp.handlers['Client.Haptics'];

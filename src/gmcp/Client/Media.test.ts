@@ -326,7 +326,7 @@ describe('GMCPClientMedia', () => {
     const output = vi.spyOn(midiService, 'sequenceOutputAvailable', 'get');
     const clock = { ready: true };
     Object.assign(client, { sharedClock: clock });
-    Object.assign(client.gmcp, { require: () => ({ advertisedModules: () => ['Client.Media 1', 'Client.Midi 2'] }) });
+    Object.assign(client.gmcp, { require: () => ({ advertisedModules: () => ['Client.Media 1', 'Client.Midi 1'] }) });
     const reports = () => client.gmcp.send.mock.calls
       .filter(([name]) => name === 'Client.Media.PlaybackSupport')
       .map(([, body]) => JSON.parse(body));
@@ -337,11 +337,29 @@ describe('GMCPClientMedia', () => {
     clock.ready = false;
     handler.sendPlaybackSupport();
     expect(reports()).toEqual([
-      expect.objectContaining({ sharedTransport: true, midiSequences: false }),
-      expect.objectContaining({ sharedTransport: true, midiSequences: expect.objectContaining({ version: 1 }) }),
-      expect.objectContaining({ sharedTransport: false, midiSequences: false }),
+      expect.objectContaining({ sharedTransport: true, liveMidi: false, midiSequences: false }),
+      expect.objectContaining({ sharedTransport: true, liveMidi: expect.objectContaining({ maxHeldNotes: 128 }), midiSequences: expect.objectContaining({ version: 1 }) }),
+      expect.objectContaining({ sharedTransport: false, liveMidi: expect.objectContaining({ maxHeldNotes: 128 }), midiSequences: false }),
     ]);
     expect(client.gmcp.send).toHaveBeenCalledTimes(3);
+    output.mockRestore();
+  });
+
+  it('publishes selected-output changes without shared-clock readiness and waits for GMCP before publishing', () => {
+    const output = vi.spyOn(midiService, 'sequenceOutputAvailable', 'get');
+    Object.assign(client, { sharedClock: { ready: false } });
+    Object.assign(client.gmcp, { ready: true, require: () => ({ advertisedModules: () => ['Client.Media 1', 'Client.Midi 1'] }) });
+    const changed = () => (handler as unknown as { outputChanged(): void }).outputChanged();
+    output.mockReturnValue(true);
+    changed();
+    output.mockReturnValue(false);
+    changed();
+    const reports = client.gmcp.send.mock.calls.filter(([name]) => name === 'Client.Media.PlaybackSupport').map(([, body]) => JSON.parse(body));
+    expect(reports.map((report) => report.liveMidi)).toEqual([{ maxHeldNotes: 128, controllers: [7, 10, 11, 64], percussion: true }, false]);
+    expect(reports.every((report) => report.sharedTransport === false && !Object.hasOwn(report, 'version'))).toBe(true);
+    Object.assign(client.gmcp, { ready: false });
+    changed();
+    expect(client.gmcp.send).toHaveBeenCalledTimes(2);
     output.mockRestore();
   });
 
@@ -1623,8 +1641,8 @@ describe('GMCPClientMedia', () => {
     it('accepts Default {url} (contract case "default") and still a bare string', () => {
       handler.receiveRegisteredMessage('Default', { url: 'https://mongoose.world/sounds/' });
       expect(client.media.defaultUrl).toBe('https://mongoose.world/sounds/');
-      handler.receiveRegisteredMessage('Default', 'https://legacy.example/');
-      expect(client.media.defaultUrl).toBe('https://legacy.example/');
+      handler.receiveRegisteredMessage('Default', 'https://media.example/');
+      expect(client.media.defaultUrl).toBe('https://media.example/');
       handler.receiveRegisteredMessage('Default', { url: '' });
       expect(client.media.defaultUrl).toBe('');
     });

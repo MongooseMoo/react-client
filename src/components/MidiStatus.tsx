@@ -812,7 +812,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
         <summary><strong>Usage</strong></summary>
         <div style={{ padding: "10px 0", fontSize: "0.9em", color: "var(--color-text-secondary)" }}>
           <p>• Press keys on your MIDI keyboard to send notes to the server</p>
-          <p>• Server can send notes back to play on your MIDI device</p>
+          <p>• Choose a browser synth output to hear server notes. Hardware MIDI remains available for device input and output.</p>
           <p>• Use manual controls above to test server communication</p>
           <p>• <strong>Duration Mode:</strong> Send Note On with auto Note Off after specified time</p>
           <p>• <strong>Manual Mode:</strong> Send explicit Note On/Off messages</p>

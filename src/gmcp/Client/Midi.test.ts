@@ -17,6 +17,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const midi of packages.splice(0)) midi.shutdown();
   usePreferences.getState().setMidi(previous);
+  vi.useRealTimers();
 });
 function setup() {
   const send = vi.fn(),
@@ -34,7 +35,7 @@ function setup() {
       gmcp: {
         send,
         handlers: {
-          'Core.Supports': { sendSet, advertisedModules: () => ['Client.Midi 2'] },
+          'Core.Supports': { sendSet, advertisedModules: () => ['Client.Midi 1'] },
         },
       },
       media: { setMidiRoute },
@@ -51,7 +52,54 @@ const input = (midi: GMCPClientMidi, message: Omit<MidiMessage, 'rawData'>) =>
     rawData,
   });
 
-describe('Client.Midi 2', () => {
+describe('Client.Midi 1', () => {
+  it('has no second enable surface and validates both directions at the actual wire boundary', async () => {
+    const { midi, renderer, send } = setup();
+    expect(midi.receiveRegisteredMessage('Enable', { enabled: true })).toBe(false);
+    expect('sendEnable' in midi).toBe(false);
+    expect(() => midi.receiveRegisteredMessage('Note', { note: 60, velocity: 100, on: true, channel: 0 })).toThrow();
+    expect(() => midi.sendNote({ originId: 'invented', eventId: 1, note: 60, velocity: 100, on: true, channel: 0 } as never)).toThrow();
+    midi.sendNote({ note: 60, velocity: 100, on: true, channel: 0 });
+    expect(send).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(renderer.note).not.toHaveBeenCalled();
+  });
+  it('manual duration sends a real exact-owned off with no duration on the wire', async () => {
+    vi.useFakeTimers();
+    const { midi, send } = setup();
+    midi.sendManualNote(60, 100, true, 0, 50);
+    expect(JSON.parse(send.mock.calls[0][1])).toEqual({ note: 60, velocity: 100, on: true, channel: 0 });
+    await vi.advanceTimersByTimeAsync(49);
+    expect(send).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(JSON.parse(send.mock.calls[1][1])).toEqual({ note: 60, velocity: 0, on: false, channel: 0 });
+    midi.sendAllNotesOff();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+  it.each(['manual-off', 'retrigger', 'private-capture', 'disable', 'reset', 'shutdown'])(
+    '%s cancels the previous manual release without cutting replacement ownership', async (action) => {
+      vi.useFakeTimers();
+      const { midi, send } = setup();
+      midi.sendManualNote(60, 100, true, 0, 50);
+      await vi.advanceTimersByTimeAsync(20);
+      if (action === 'manual-off') midi.sendManualNote(60, 0, false);
+      if (action === 'retrigger') midi.sendManualNote(60, 110, true, 0, 100);
+      if (action === 'private-capture') midi.suspendInputRelay();
+      if (action === 'disable') usePreferences.getState().setMidi({ enabled: false });
+      if (action === 'reset') midi.reset();
+      if (action === 'shutdown') midi.shutdown();
+      send.mockClear();
+      await vi.advanceTimersByTimeAsync(31);
+      expect(send).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(69);
+      expect(send).toHaveBeenCalledTimes(action === 'retrigger' ? 1 : 0);
+    },
+  );
+  it.each([0, -1, 1.5, 600001, Infinity, NaN])('rejects invalid local duration %s before sending', (duration) => {
+    const { midi, send } = setup();
+    expect(() => midi.sendManualNote(60, 100, true, 0, duration)).toThrow(/duration/);
+    expect(send).not.toHaveBeenCalled();
+  });
   it.each([
     'unknown-status',
     'oversized-message',
@@ -162,6 +210,7 @@ describe('Client.Midi 2', () => {
     midi.receiveRegisteredMessage('Note', {
       originId: 'session-a',
       eventId: 1,
+      channel: 0,
       note: 60,
       velocity: 100,
       on: true,
@@ -184,7 +233,7 @@ describe('Client.Midi 2', () => {
         }),
     );
     packages.push(midi);
-    midi.receiveRegisteredMessage('Note', { note: 60, velocity: 100, on: 1 });
+    midi.receiveRegisteredMessage('Note', { originId: 'session-a', eventId: 1, channel: 0, note: 60, velocity: 100, on: true });
     midi.reset();
     ready(renderer as unknown as LiveOriginRenderer);
     await Promise.resolve();
@@ -192,10 +241,10 @@ describe('Client.Midi 2', () => {
     expect(renderer.note).not.toHaveBeenCalled();
     expect(renderer.reset).toHaveBeenCalled();
   });
-  it('advertises version 2 and preserves the existing effects route', () => {
+  it('advertises its canonical package and preserves the existing effects route', () => {
     const { midi, sendSet, setMidiRoute } = setup();
     midi.advertiseMidiSupport();
-    expect(sendSet).toHaveBeenCalledWith(['Client.Midi 2']);
+    expect(sendSet).toHaveBeenCalledWith(['Client.Midi 1']);
     midi.receiveRegisteredMessage('Route', { chain: 'room', send: 0.4 });
     expect(setMidiRoute).toHaveBeenCalledWith({ chain: 'room', send: 0.4 });
   });
@@ -237,10 +286,11 @@ describe('Client.Midi 2', () => {
     setNetworkReady.mockClear();
 
     usePreferences.getState().setMidi({ enabled: true });
+    expect(sendGmcp).toHaveBeenCalledOnce();
     midi.advertiseMidiSupport();
     midi.advertiseMidiSupport();
     expect(sendGmcp.mock.calls).toEqual([
-      ['Core.Supports.Set', JSON.stringify([...initial, 'Client.Midi 2'])],
+      ['Core.Supports.Set', JSON.stringify([...initial, 'Client.Midi 1'])],
     ]);
     expect(media.sendPlaybackSupport).toHaveBeenCalledOnce();
     expect(setNetworkReady).toHaveBeenCalledOnce();
@@ -257,7 +307,7 @@ describe('Client.Midi 2', () => {
     midi.advertiseMidiSupport();
     expect(sendGmcp.mock.calls[2]).toEqual([
       'Core.Supports.Set',
-      JSON.stringify(['Core.Supports 1', 'Client.Media 1', 'Core.Time 1', 'Client.Midi 2']),
+      JSON.stringify(['Core.Supports 1', 'Client.Media 1', 'Core.Time 1', 'Client.Midi 1']),
     ]);
     expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(3);
     expect(reset).not.toHaveBeenCalled();
@@ -292,7 +342,7 @@ describe('Client.Midi 2', () => {
       usePreferences.getState().setMidi({ enabled: true });
       session.start();
       const capabilitySet = sendGmcp.mock.calls.find(([name]) => name === 'Core.Supports.Set');
-      expect(JSON.parse(capabilitySet?.[1])).toContain('Client.Midi 2');
+      expect(JSON.parse(capabilitySet?.[1])).toContain('Client.Midi 1');
       sendGmcp.mockClear();
       usePreferences.getState().setMidi({ enabled: false });
       midi.unadvertiseMidiSupport();

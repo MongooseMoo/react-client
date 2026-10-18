@@ -76,16 +76,16 @@ try {
   const first = sockets[0];
   const requestId = '11111111-1111-4111-8111-111111111111';
   let previous = first.capabilities.length;
-  first.reply('Client.Media.SupportRequest', { version: 1, requestId, reason: 'stale' });
+  first.reply('Client.Media.SupportRequest', { requestId, reason: 'stale' });
   await expect.poll(() => first.capabilities.length).toBe(previous + 2);
   const refreshed = first.capabilities.slice(previous);
   assert.deepEqual(refreshed.map(entry => entry.name), ['Core.Supports.Set', 'Client.Media.PlaybackSupport']);
-  assert.equal(refreshed[1].payload.version, 2);
+  assert.equal(Object.hasOwn(refreshed[1].payload, 'version'), false);
   assert.equal(refreshed[1].payload.requestId, requestId);
   assert.deepEqual(refreshed[1].payload.modules, refreshed[0].payload);
   assert(refreshed[0].payload.includes('Client.Media 1'));
   previous = first.capabilities.length;
-  first.reply('Client.Media.SupportRequest', { version: 1, requestId });
+  first.reply('Client.Media.SupportRequest', { requestId });
   first.reply('Char.Name', owner);
   await expect.poll(() => first.capabilities.length).toBe(previous + 2);
   assert.deepEqual(first.capabilities.slice(previous).map(entry => entry.name), ['Core.Supports.Set', 'Client.Media.PlaybackSupport']);
@@ -138,11 +138,11 @@ try {
   // Seed this page's cache: the earlier page.reload() discarded socket 0's client.
   const prior = sockets.at(-1);
   previous = prior.capabilities.length;
-  prior.reply('Client.Media.SupportRequest', { version: 1, requestId });
+  prior.reply('Client.Media.SupportRequest', { requestId });
   await expect.poll(() => prior.capabilities.length).toBe(previous + 2);
   assert.equal(prior.capabilities.at(-1).payload.requestId, requestId);
   previous = prior.capabilities.length;
-  prior.reply('Client.Media.SupportRequest', { version: 1, requestId });
+  prior.reply('Client.Media.SupportRequest', { requestId });
   prior.reply('Char.Name', owner);
   await expect.poll(() => prior.capabilities.length).toBe(previous + 2);
   assert.deepEqual(prior.capabilities.slice(previous).map(entry => entry.name), ['Core.Supports.Set', 'Client.Media.PlaybackSupport']);
@@ -156,15 +156,15 @@ try {
   assert.equal(sockets.length, oldConnections + 1);
   const replacement = sockets.at(-1);
   previous = replacement.capabilities.length;
-  replacement.reply('Client.Media.SupportRequest', { version: 1, requestId });
+  replacement.reply('Client.Media.SupportRequest', { requestId });
   await expect.poll(() => replacement.capabilities.length).toBe(previous + 2);
   assert.deepEqual(replacement.capabilities.slice(previous).map(entry => entry.name), ['Core.Supports.Set', 'Client.Media.PlaybackSupport']);
   assert.equal(replacement.capabilities.at(-1).payload.requestId, requestId);
   assert.deepEqual(replacement.capabilities.at(-1).payload.modules, replacement.capabilities.at(-2).payload);
-  const legacy = await context.newPage();
-  await legacy.goto(origin + '/editor?reference=%238%3Aput');
-  await expect(legacy.getByRole('alert')).toContainText('older game tab');
-  assert.equal(await legacy.locator('.monaco-editor').count(), 0);
+  const obsoleteEditor = await context.newPage();
+  await obsoleteEditor.goto(origin + '/editor?reference=%238%3Aput');
+  await expect(obsoleteEditor.getByRole('alert')).toContainText('older game tab');
+  assert.equal(await obsoleteEditor.locator('.monaco-editor').count(), 0);
   await page.evaluate(() => window.mudClient.close());
   console.log('Client recovery passed: full module attestation, correlated support refresh/dedup, repeated identity refresh, visit end/reload/login, rejected unrelated owner, retry selection, resumption without push permission, correlated reconnect recovery and explicit obsolete editor feedback.');
 } finally {

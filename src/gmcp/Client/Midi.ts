@@ -3,71 +3,41 @@ import { usePreferences } from '../../stores/preferencesStore';
 import { duplex, inbound } from '../../protocol/messages';
 import { decodeMidiRoute, type MidiRoute } from '../../audio/MidiAudioRoute';
 import {
-  decodeLiveNote,
-  decodeLiveControl,
-  decodeLiveProgram,
+  decodeMidiNoteInput,
+  decodeMidiControlInput,
+  decodeMidiProgramInput,
+  decodeMidiNotePlayback,
+  decodeMidiControlPlayback,
+  decodeMidiProgramPlayback,
   decodeLiveReleaseAll,
   type LiveNote,
   type LiveControl,
   type LiveProgram,
+  type MidiNoteInput,
+  type MidiControlInput,
+  type MidiProgramInput,
 } from '../../midi/LiveOriginProtocol';
 import type { LiveOriginRenderer } from '../../midi/LiveOriginRenderer';
 import { gmcpJsonMessage } from '../messages';
-import { GMCPMessage, GMCPPackage } from '../package';
+import { GMCPPackage } from '../package';
 import { WorldMusicClient } from '../../composition/world/WorldMusicClient';
 import { object } from '../../composition/world/protocol';
 
-export class GMCPMessageClientMidiNote extends GMCPMessage {
-  readonly note!: number;
-  readonly velocity!: number;
-  readonly on!: boolean;
-  readonly channel?: number;
-  readonly duration?: number;
-  readonly originId?: string;
-  readonly eventId?: number;
-}
-export class GMCPMessageClientMidiControlChange extends GMCPMessage {
-  readonly controller!: number;
-  readonly value!: number;
-  readonly channel!: number;
-  readonly originId?: string;
-}
-export class GMCPMessageClientMidiProgramChange extends GMCPMessage {
-  readonly program!: number;
-  readonly channel!: number;
-  readonly originId?: string;
-}
-export class GMCPMessageClientMidiEnable extends GMCPMessage {
-  readonly enabled!: boolean;
-}
 type MidiService = typeof import('../../MidiService').midiService;
-const midiNote = gmcpJsonMessage<'Note', LiveNote, GMCPMessageClientMidiNote>('Note', {
-  decode: decodeLiveNote,
-  encode: decodeLiveNote,
+const midiNote = gmcpJsonMessage<'Note', LiveNote, MidiNoteInput>('Note', {
+  decode: decodeMidiNotePlayback,
+  encode: decodeMidiNoteInput,
 });
 const midiControl = gmcpJsonMessage<
   'ControlChange',
   LiveControl,
-  GMCPMessageClientMidiControlChange
->('ControlChange', { decode: decodeLiveControl, encode: decodeLiveControl });
+  MidiControlInput
+>('ControlChange', { decode: decodeMidiControlPlayback, encode: decodeMidiControlInput });
 const midiProgram = gmcpJsonMessage<
   'ProgramChange',
   LiveProgram,
-  GMCPMessageClientMidiProgramChange
->('ProgramChange', { decode: decodeLiveProgram, encode: decodeLiveProgram });
-const midiEnable = gmcpJsonMessage<'Enable', GMCPMessageClientMidiEnable>('Enable', {
-  decode: (value: unknown) => {
-    if (
-      !value ||
-      typeof value !== 'object' ||
-      !('enabled' in value) ||
-      (typeof value.enabled !== 'boolean' && value.enabled !== 0 && value.enabled !== 1)
-    )
-      throw new TypeError('Invalid MIDI enable message');
-    return { enabled: value.enabled === true || value.enabled === 1 };
-  },
-  encode: (value) => value,
-});
+  MidiProgramInput
+>('ProgramChange', { decode: decodeMidiProgramPlayback, encode: decodeMidiProgramInput });
 const midiRoute = gmcpJsonMessage<'Route', MidiRoute>('Route', {
   decode: decodeMidiRoute,
   encode: (value) => value,
@@ -93,16 +63,14 @@ const GMCPClientMidiBase = GMCPPackage.with({
     duplex(midiNote),
     duplex(midiControl),
     duplex(midiProgram),
-    duplex(midiEnable),
     inbound(midiRoute),
     inbound(midiReleaseAll),
     inbound(midiEditorReply),
   ] as const,
 });
 
-/** Version 2 relays only validated notes, whitelisted controls and programs. */
+/** Relays validated input and renders playback owned by the server's actual origin. */
 export class GMCPClientMidi extends GMCPClientMidiBase {
-  public packageVersion = 2;
   readonly world: WorldMusicClient;
   // The initial session Set can advertise MIDI before the runtime toggle runs.
   private isAdvertised: boolean | undefined;
@@ -139,7 +107,6 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     this.on('note', (data) => this.handleNote(data));
     this.on('controlChange', (data) => this.handleControlChange(data));
     this.on('programChange', (data) => this.handleProgramChange(data));
-    this.on('enable', (data) => this.handleEnable(data));
     this.on('noteReleaseAll', (data) => {
       const generation = this.rendererGeneration;
       void this.rendererPromise
@@ -159,7 +126,12 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
       );
     this.releases.push(
       usePreferences.subscribe((state, previous) => {
-        if (previous.midi.enabled && !state.midi.enabled) {
+        if (previous.midi.enabled === state.midi.enabled) return;
+        client.media?.sequenceOutputChanged?.();
+        if (client.connected && client.gmcp.ready) {
+          if (state.midi.enabled) this.advertiseMidiSupport();
+          else this.unadvertiseMidiSupport();
+        } else if (!state.midi.enabled) {
           this.releaseOutgoing();
           this.clearLive();
         }
@@ -290,13 +262,15 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
       this.outgoingTimers.set(
         key,
         setTimeout(() => {
-          if (this.outgoing.get(key) === data) this.outgoing.delete(key);
+          if (this.outgoing.get(key) !== data) return;
+          this.outgoing.delete(key);
           this.outgoingTimers.delete(key);
+          this.sendNote({ ...data, channel: data.channel ?? 0, on: false, velocity: 0 });
         }, duration),
       );
   }
   private releaseOutgoing(): void {
-    for (const note of this.outgoing.values()) this.sendNote({ ...note, on: false, velocity: 0 });
+    for (const note of this.outgoing.values()) this.sendNote({ ...note, channel: note.channel ?? 0, on: false, velocity: 0 });
     for (const channel of this.pedals)
       this.sendControlChange({ channel, controller: 64, value: 0 });
     for (const timer of this.outgoingTimers.values()) clearTimeout(timer);
@@ -308,7 +282,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     if (!this.enabled || this.closed) return;
     let frame = '';
     if (message.note) {
-      const data = decodeLiveNote({ ...message.note, channel: message.note.channel ?? 0 });
+      const data = decodeMidiNoteInput({ ...message.note, channel: message.note.channel ?? 0 });
       const key = `${data.channel}:${data.note}`;
       if (data.on) {
         if (this.relaySuspensions.size || (!this.outgoing.has(key) && this.outgoing.size >= 128))
@@ -320,7 +294,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     } else if (message.controlChange) {
       const raw = message.controlChange;
       if (![7, 10, 11, 64].includes(raw.controller)) return;
-      const data = decodeLiveControl(raw);
+      const data = decodeMidiControlInput(raw);
       if (
         this.relaySuspensions.size &&
         !(data.controller === 64 && data.value < 64 && this.pedals.has(data.channel))
@@ -333,14 +307,14 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
       this.sendControlChange(data);
       frame = `Client.Midi.ControlChange ${JSON.stringify(data)}`;
     } else if (message.programChange && !this.relaySuspensions.size) {
-      const data = decodeLiveProgram(message.programChange);
+      const data = decodeMidiProgramInput(message.programChange);
       this.sendProgramChange(data);
       frame = `Client.Midi.ProgramChange ${JSON.stringify(data)}`;
     }
     if (frame) this.debugCallback?.(message.rawData.hex, message.rawData.type, frame);
   }
-  handleNote(data: GMCPMessageClientMidiNote): void {
-    const note = decodeLiveNote(data);
+  handleNote(data: LiveNote): void {
+    const note = decodeMidiNotePlayback(data);
     if (!this.enabled || (this.client.media?.paused && note.on)) return;
     const generation = this.rendererGeneration;
     void this.loadRenderer()
@@ -349,8 +323,8 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
       })
       .catch((error) => this.report(error instanceof Error ? error.message : String(error)));
   }
-  handleControlChange(data: GMCPMessageClientMidiControlChange): void {
-    const control = decodeLiveControl(data);
+  handleControlChange(data: LiveControl): void {
+    const control = decodeMidiControlPlayback(data);
     if (!this.enabled) return;
     const generation = this.rendererGeneration;
     void this.loadRenderer()
@@ -359,8 +333,8 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
       })
       .catch((error) => this.report(String(error)));
   }
-  handleProgramChange(data: GMCPMessageClientMidiProgramChange): void {
-    const program = decodeLiveProgram(data);
+  handleProgramChange(data: LiveProgram): void {
+    const program = decodeMidiProgramPlayback(data);
     if (!this.enabled) return;
     const generation = this.rendererGeneration;
     void this.loadRenderer()
@@ -369,7 +343,6 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
       })
       .catch((error) => this.report(String(error)));
   }
-  handleEnable(_data: GMCPMessageClientMidiEnable): void {}
   advertiseMidiSupport(): void {
     const supports = this.client.gmcp.handlers['Core.Supports'];
     if (!this.isAdvertised && supports) {
@@ -386,19 +359,6 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
       this.isAdvertised = false;
     }
   }
-  sendMidiCapability(): void {
-    if (!this.enabled) {
-      this.sendEnable({ enabled: false });
-      return;
-    }
-    void this.loadMidiService()
-      .then((service) =>
-        this.sendEnable({
-          enabled: this.enabled && !this.closed && service.isSupported && service.isInitialized,
-        }),
-      )
-      .catch((error) => this.report(String(error)));
-  }
   sendManualNote(
     note: number,
     velocity: number,
@@ -406,12 +366,13 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     channel = 0,
     duration?: number,
   ): void {
-    const data = decodeLiveNote({
+    if (duration !== undefined && (!Number.isSafeInteger(duration) || duration < 1 || duration > 600000))
+      throw new RangeError('Manual MIDI duration must be 1–600000 milliseconds');
+    const data = decodeMidiNoteInput({
       note,
       velocity,
       on,
       channel,
-      ...(duration === undefined ? {} : { duration }),
     });
     if (!this.enabled) return;
     if (this.relaySuspensions.size) return;

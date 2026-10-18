@@ -1,135 +1,101 @@
 # `Client.Midi`
 
-## Browser soundfonts and effects
+The single current package advertises exactly `Client.Midi 1` when MIDI is
+enabled. Enabling publishes the complete current `Core.Supports.Set`, followed
+by `Client.Media.PlaybackSupport`. Disabling removes the package and releases
+owned notes and pedals. There is no separate MIDI enable message.
 
-Enable MIDI in Preferences, choose a soundfont collection, then connect
-**Soundfont Synthesizer** in the MIDI tab. Musyng Kite, FluidR3, and FatBoy
-download from [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts).
-The renderer loads only when this output is connected; opening Preferences or
-the MIDI tab does not download samples. Piano loads on connection. Other
-programs load as requested, with the built-in synth providing immediate
-playback while they load. Channel 10 percussion always uses the built-in synth.
-Reconnect to apply a different collection or retry failed instruments.
+## Input and playback
 
-Both browser synths share the client's volume, mute, Escape/Resume, and master
-effects. External hardware outputs are controlled by their own audio devices.
+The same message names have distinct strict schemas in each direction. All
+fields shown are required; additional fields are rejected. Channels are 0–15,
+notes/programs/values 0–127. An active note needs positive velocity and `on` must
+be boolean.
 
-### `Client.Midi.Route` (server to client)
-
-Route the entire browser MIDI output through a named `Client.Media.Chain`:
+Client to server `Client.Midi.Note`:
 
 ```json
-{ "chain": "room" }
+{ "channel": 0, "note": 60, "velocity": 100, "on": true }
 ```
 
-Use `send` to retain dry output and add an auxiliary feed at a level from 0 to 1:
+Server to client `Client.Midi.Note`:
+
+```json
+{ "originId": "performer-a", "eventId": 1, "channel": 0, "note": 60, "velocity": 100, "on": true }
+```
+
+The matching release has the same origin, event, channel and note, with
+`"on":false`. A delayed release cannot stop a newer strike. Server identity is
+mandatory; client input cannot supply it. No duration travels on the wire.
+Manual duration is local, bounded 1–600000ms, and emits a real matching Note-off.
+Retrigger, manual release, disable, reset and shutdown cancel that timer.
+
+`Client.Midi.ControlChange` accepts controllers 7,10,11,64 only:
+
+```json
+{ "channel": 0, "controller": 64, "value": 127 }
+```
+
+`Client.Midi.ProgramChange`:
+
+```json
+{ "channel": 0, "program": 0 }
+```
+
+Server control/program playback additionally requires `originId`. Its program,
+pedal and mix state belong only to that origin. Server `Client.Midi.NoteReleaseAll`
+is exactly `{"originId":"performer-a"}` and releases only that performer.
+Raw device and system messages are not sent over this protocol.
+
+## Selected output and capability
+
+Physical MIDI input and output remain available in the MIDI tab. Server live
+playback uses a browser output with independently owned voices; selecting a
+hardware output reports `liveMidi:false`.
+
+The sole `Client.Media.PlaybackSupport` report has no report-level format
+selector. It contains `modules`, `liveMidi`, `sharedTransport`, `mediaLoops`,
+`presentationCues`, `midiSequences`, and optional correlated `requestId`.
+Supported live output reports:
+
+```json
+{ "maxHeldNotes": 128, "controllers": [7, 10, 11, 64], "percussion": true }
+```
+
+Live readiness does not require a shared network clock. Synchronized scores,
+files and cues still require `sharedTransport`. A performer may own 128 live
+voices, while live and score playback share the hard 256-voice ceiling. Exhaustion
+is reported without stealing unrelated voices. Channel 9 percussion supports
+notes 35–81. Local pause/interruption clears live voices; resume does not replay
+them.
+
+`Client.Media.SupportRequest` is exactly `{requestId,reason?}`, where requestId
+is a lowercase UUIDv4 and reason is `missing` or `stale`. The original payload
+is limited to 256 ASCII characters. Each request receives one correlated report
+after the full Set, before clock rearm. The last 64 IDs are deduplicated per
+physical transport across identity/readiness resets; a replacement transport
+may answer again. Every valid current-transport Char.Name refreshes the current
+inventory and report, including guest and unchanged identity notifications.
+
+## Browser soundfonts and routing
+
+Choose a soundfont collection, then connect **Soundfont Synthesizer**. Musyng
+Kite, FluidR3 and FatBoy load instruments from MIDI.js Soundfonts. Sampled
+melodic instruments and the built-in percussion renderer provide their actual
+programs; hardware devices retain their own sound and audio controls.
+
+Both browser synths share client volume, mute, Escape/Resume and master effects.
+`Client.Midi.Route` is a complete route description:
 
 ```json
 { "chain": "room", "send": 0.4 }
 ```
 
-This is a full route description: `{}` or `{"chain":""}` restores dry output.
-`send` requires a nonempty chain. The route applies to soundfont notes, built-in
-fallback notes, and percussion together. A missing chain plays dry and joins
-automatically when the chain is defined. Removing a chain restores dry output;
-recreating it restores the requested route. Chain presets, replacement,
-`Client.Media.Automate`, and bypass work through the existing effects system.
-Server disconnect/reset clears the route. Route does not enable MIDI, load a
-soundfont, or alter external hardware outputs.
+Omit send to route directly through the chain. With send 0–1, retain dry output
+and add an auxiliary feed. `{}` or `{"chain":""}` restores dry output. A
+missing chain plays dry until it exists. Removal/reset clears the route without
+changing hardware output, user preference or instrument loading.
 
-Sample memory is bounded: four encoded instruments (32 MiB total), 32 MiB of
-decoded cache, four concurrent decodes, two instrument downloads, and 64 active
-sample voices. Closest decoded samples are pitch-shifted while an exact note
-decodes. Files are capped at 16 MiB and downloads time out after 20 seconds.
-
-`Client.Midi` is a Mongoose bidirectional Web MIDI bridge implemented in
-`src/gmcp/Client/Midi.ts`.
-
-## Package
-
-- Name: `Client.Midi`
-- Version: `1`
-- Source: Mongoose
-- Direction: server to client for MIDI output; client to server for MIDI input
-  and capability state.
-- Support advertisement: dynamic. The package can add or remove itself from
-  `Core.Supports` as the user enables or disables MIDI support.
-
-## Messages
-
-### `Client.Midi.Note`
-
-Server to client: send a note to the selected MIDI output.
-
-Client to server: report a note received from the selected MIDI input.
-
-```json
-{
-  "note": 60,
-  "velocity": 100,
-  "on": true,
-  "channel": 0,
-  "duration": 250
-}
-```
-
-`duration` is meaningful on server to client note-on messages. The client sends
-the matching note-off locally after that many milliseconds.
-
-### `Client.Midi.ControlChange`
-
-```json
-{
-  "controller": 64,
-  "value": 127,
-  "channel": 0
-}
-```
-
-### `Client.Midi.ProgramChange`
-
-```json
-{
-  "program": 10,
-  "channel": 0
-}
-```
-
-### `Client.Midi.SystemMessage`
-
-```json
-{
-  "type": "clock",
-  "data": [248]
-}
-```
-
-### `Client.Midi.RawMessage`
-
-```json
-{
-  "hex": "90 3c 64",
-  "data": [144, 60, 100],
-  "type": "noteOn"
-}
-```
-
-### `Client.Midi.Enable`
-
-Server to client: logs the server MIDI enable state.
-
-Client to server: reports whether MIDI is enabled and initialized.
-
-```json
-{
-  "enabled": true
-}
-```
-
-## Runtime Behavior
-
-- The MIDI service is loaded lazily with dynamic import.
-- Handlers do nothing when the user's MIDI preference is disabled.
-- Output messages are sent only when an output device is connected.
-- Input messages are converted into GMCP messages and sent to the server.
-- `shutdown()` disconnects the MIDI service and clears pending note timers.
+World editor/library messages retain their existing direct authoring owner,
+request correlation, access checks and revision checks. Private capture keeps
+timestamp subscribers attached while suppressing room input relay.

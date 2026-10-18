@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  decodeLiveNote,
-  decodeLiveControl,
-  decodeLiveProgram,
+  decodeMidiNotePlayback,
+  decodeMidiNoteInput,
+  decodeMidiControlInput,
+  decodeMidiProgramInput,
+  decodeMidiControlPlayback,
+  decodeMidiProgramPlayback,
   decodeLiveReleaseAll,
 } from './LiveOriginProtocol';
 import { LiveOriginRenderer } from './LiveOriginRenderer';
@@ -72,27 +75,40 @@ const note = { note: 60, velocity: 100, on: true, channel: 0, originId: 'origin-
 
 describe('strict live protocol', () => {
   it.each([
-    'server:legacy',
+    'server:reserved',
     'server:other',
   ])('rejects reserved server origins across all relay messages: %s', (originId) => {
-    expect(() => decodeLiveNote({ ...note, originId })).toThrow('origin');
-    expect(() => decodeLiveControl({ originId, channel: 0, controller: 7, value: 100 })).toThrow(
+    expect(() => decodeMidiNotePlayback({ ...note, originId })).toThrow('origin');
+    expect(() => decodeMidiControlPlayback({ originId, channel: 0, controller: 7, value: 100 })).toThrow(
       'origin',
     );
-    expect(() => decodeLiveProgram({ originId, channel: 0, program: 0 })).toThrow('origin');
+    expect(() => decodeMidiProgramPlayback({ originId, channel: 0, program: 0 })).toThrow('origin');
     expect(() => decodeLiveReleaseAll({ originId })).toThrow('origin');
   });
-  it('preserves program/channel zero and only normalizes legacy integer booleans', () => {
-    expect(decodeLiveNote({ note: 60, velocity: 100, on: 1 })).toMatchObject({
-      on: true,
-      channel: 0,
-    });
-    expect(decodeLiveProgram({ channel: 0, program: 0 })).toEqual({
-      channel: 0,
-      program: 0,
-      originId: undefined,
-    });
-    expect(() => decodeLiveNote({ ...note, on: 1 })).toThrow();
+  it('preserves program/channel zero in distinct directions', () => {
+    expect(decodeMidiNoteInput({ note: 60, velocity: 100, on: true, channel: 0 })).toEqual({ note: 60, velocity: 100, on: true, channel: 0 });
+    expect(decodeMidiProgramInput({ channel: 0, program: 0 })).toEqual({ channel: 0, program: 0 });
+    expect(decodeMidiProgramPlayback({ channel: 0, program: 0, originId: 'a' })).toEqual({ channel: 0, program: 0, originId: 'a' });
+  });
+  it('requires exact input fields and rejects client-supplied playback identity', () => {
+    const input = { note: 60, velocity: 100, on: true, channel: 0 };
+    for (const data of [{ ...input, on: 1 }, { ...input, channel: undefined },
+      { ...input, duration: 50 }, { ...input, originId: 'a' }, { ...input, eventId: 1 },
+      { ...input, extra: true }]) expect(() => decodeMidiNoteInput(data)).toThrow();
+    expect(() => decodeMidiControlInput({ channel: 0, controller: 64, value: 1, originId: 'a' })).toThrow();
+    expect(() => decodeMidiProgramInput({ channel: 0, program: 0, originId: 'a' })).toThrow();
+    expect(decodeMidiControlInput({ channel: 0, controller: 64, value: 0 })).toEqual({ channel: 0, controller: 64, value: 0 });
+  });
+  it('requires owned playback identity and rejects additional fields in every message', () => {
+    const input = { note: 60, velocity: 100, on: true, channel: 0 };
+    for (const data of [input, { ...note, channel: undefined }, { ...note, on: 1 },
+      { ...note, duration: 50 }, { ...note, extra: true }])
+      expect(() => decodeMidiNotePlayback(data)).toThrow();
+    expect(() => decodeMidiControlPlayback({ channel: 0, controller: 64, value: 0 })).toThrow();
+    expect(() => decodeMidiProgramPlayback({ channel: 0, program: 0 })).toThrow();
+    expect(() => decodeMidiControlPlayback({ channel: 0, controller: 64, value: 0, originId: 'a', eventId: 1 })).toThrow();
+    expect(() => decodeMidiProgramPlayback({ channel: 0, program: 0, originId: 'a', extra: 1 })).toThrow();
+    expect(() => decodeLiveReleaseAll({ originId: 'a', extra: 1 })).toThrow();
   });
   it.each([
     { ...note, note: -1 },
@@ -103,13 +119,13 @@ describe('strict live protocol', () => {
     { ...note, channel: 16 },
     { ...note, duration: Infinity },
   ])('rejects malformed note before audio', (data) => {
-    expect(() => decodeLiveNote(data)).toThrow();
+    expect(() => decodeMidiNotePlayback(data)).toThrow();
   });
   it('rejects reset/raw controllers and malformed release identity', () => {
-    expect(() => decodeLiveControl({ channel: 0, controller: 120, value: 0 })).toThrow();
+    expect(() => decodeMidiControlPlayback({ channel: 0, controller: 120, value: 0 })).toThrow();
     expect(() => decodeLiveReleaseAll({})).toThrow();
     expect(
-      decodeLiveControl({ channel: 0, controller: 64, value: 127, originId: 'a' }),
+      decodeMidiControlPlayback({ channel: 0, controller: 64, value: 127, originId: 'a' }),
     ).toMatchObject({ controller: 64 });
   });
 });
@@ -187,22 +203,28 @@ describe('origin-owned live voices', () => {
     renderer.control({ originId: 'origin-a', channel: 0, controller: 64, value: 0 });
     expect(voices[0].release).toHaveBeenCalled();
   });
-  it('old legacy duration callbacks cannot cut a newer immediate same-key note', async () => {
-    vi.useFakeTimers();
-    const { renderer, voices } = setup();
-    const legacy = { note: 60, velocity: 100, on: true, channel: 0 };
-    await renderer.note({ ...legacy, duration: 50 });
-    await renderer.note(legacy);
-    await vi.advanceTimersByTimeAsync(100);
-    expect(voices[0].stop).toHaveBeenCalled();
-    expect(voices[1].stop).not.toHaveBeenCalled();
-    expect(voices[1].release).not.toHaveBeenCalled();
+  it('admits128 owned voices, refuses129 visibly, and releases only the targeted origin', async () => {
+    const { renderer, voices, error } = setup();
+    for (let i = 0; i < 129; i++) await renderer.note({ ...note, channel: Math.floor(i / 128), note: i % 128, eventId: i + 1 });
+    expect(voices).toHaveLength(128);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('128'));
+    await renderer.note({ ...note, originId: 'origin-b' });
+    renderer.releaseAll('origin-a');
+    expect(voices.slice(0, 128).every((voice) => voice.stop.mock.calls.length === 1)).toBe(true);
+    expect(voices[128].stop).not.toHaveBeenCalled();
   });
-  it('caps live voices per origin and shares total admission instead of stealing', async () => {
-    const { renderer, voices } = setup();
-    for (let i = 0; i < 65; i++) await renderer.note({ ...note, note: i, eventId: i + 1 });
-    expect(voices).toHaveLength(64);
+  it('retains the global256 voice ceiling across origins and reclaims only retired ownership', async () => {
+    const { renderer, voices, error } = setup();
+    for (const originId of ['a', 'b'])
+      for (let i = 0; i < 128; i++) await renderer.note({ ...note, originId, note: i, eventId: i + 1 });
+    await renderer.note({ ...note, originId: 'c' });
+    expect(voices).toHaveLength(256);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('256'));
     expect(voices.every((voice) => !voice.stop.mock.calls.length)).toBe(true);
+    renderer.releaseAll('a');
+    await renderer.note({ ...note, originId: 'c', eventId: 2 });
+    expect(voices).toHaveLength(257);
+    expect(voices.slice(128, 256).every((voice) => !voice.stop.mock.calls.length)).toBe(true);
   });
   it('clears playing and pending notes on interruption without replay on resume', async () => {
     let ready = () => {};

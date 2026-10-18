@@ -1,5 +1,4 @@
 export interface SupportRequest {
-  readonly version: 1;
   readonly requestId: string;
   readonly reason?: 'missing' | 'stale';
 }
@@ -23,15 +22,15 @@ export function decodeSupportRequest(raw: unknown): SupportRequest {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw))
     throw new TypeError('SupportRequest requires an object');
   const value = raw as Record<string, unknown>;
-  if (Object.keys(value).some((key) => !['version', 'requestId', 'reason'].includes(key)) || value.version !== 1)
+  if (Object.keys(value).some((key) => !['requestId', 'reason'].includes(key)))
     throw new TypeError('Invalid SupportRequest fields');
   validateSupportRequestId(value.requestId);
   if ('reason' in value) {
     const reason = value.reason;
     if (reason !== 'missing' && reason !== 'stale') throw new TypeError('Invalid SupportRequest reason');
-    return { version: 1, requestId: value.requestId, reason };
+    return { requestId: value.requestId, reason };
   }
-  return { version: 1, requestId: value.requestId };
+  return { requestId: value.requestId };
 }
 
 export function validateAdvertisedModules(modules: unknown): string[] {

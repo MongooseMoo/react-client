@@ -79,7 +79,13 @@ try {
     window.midiAnalyser = media.cacophony.context.createAnalyser();
     media.cacophony.getBus('master').output.connect(window.midiAnalyser);
   });
-  const note = () => page.evaluate(() => window.mudClient.gmcp.handlers['Client.Midi'].receiveRegisteredMessage('Note', { note: 60, velocity: 100, on: true, channel: 0, duration: 700 }));
+  let eventId = 0;
+  const note = () => page.evaluate((id) => {
+    const midi = window.mudClient.gmcp.handlers['Client.Midi'];
+    const owned = { originId: 'soundfont-probe', eventId: id, note: 60, velocity: 100, on: true, channel: 0 };
+    midi.receiveRegisteredMessage('Note', owned);
+    setTimeout(() => midi.receiveRegisteredMessage('Note', { ...owned, on: false, velocity: 0 }), 700);
+  }, ++eventId);
   const energy = () => page.evaluate(() => {
     const values = new Float32Array(window.midiAnalyser.fftSize);
     window.midiAnalyser.getFloatTimeDomainData(values);

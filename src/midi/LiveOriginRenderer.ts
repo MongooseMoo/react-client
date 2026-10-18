@@ -4,14 +4,12 @@ import { SequencePartGraph } from './SequenceGraph';
 import { sharedSequenceBudget, type SequenceBudget } from './SequenceService';
 import type { LiveControl, LiveNote, LiveProgram } from './LiveOriginProtocol';
 
-export const LEGACY_SERVER_ORIGIN = 'server:legacy';
 interface Owned {
   id: number;
   channel: number;
   key: string;
   voice?: SequenceVoice;
   releaseBudget: () => void;
-  timer?: ReturnType<typeof setTimeout>;
   released: boolean;
   held: boolean;
   abort: AbortController;
@@ -44,7 +42,6 @@ export class LiveOriginRenderer {
     if (this.context?.state !== 'running') this.reset();
   };
   private abort = new AbortController();
-  private legacyCounter = 0;
   constructor(private readonly options: Options) {
     this.budget = options.budget ?? sharedSequenceBudget;
   }
@@ -112,27 +109,31 @@ export class LiveOriginRenderer {
     return this.opening;
   }
   async note(data: LiveNote): Promise<void> {
-    const id = data.originId ?? LEGACY_SERVER_ORIGIN;
+    const id = data.originId;
     const state = data.on ? this.state(id) : this.origins.get(id);
     if (!state) return;
     const channel = this.channel(state, data.channel);
     const key = `${data.channel}:${data.note}`;
     const previous = state.notes.get(key);
     if (!data.on) {
-      if (previous && (data.eventId === undefined || previous.id === data.eventId))
+      if (previous && previous.id === data.eventId)
         this.release(state, previous, channel);
       return;
     }
-    if (data.eventId !== undefined) {
-      if (data.eventId <= state.lastOnId) return;
-      state.lastOnId = data.eventId;
-    }
+    if (data.eventId <= state.lastOnId) return;
+    state.lastOnId = data.eventId;
     if (previous) this.stop(state, previous);
-    if (state.notes.size >= 64) return;
+    if (state.notes.size >= 128) {
+      this.options.error?.('Live MIDI note limit reached; this performer owns 128 voices.');
+      return;
+    }
     const releaseBudget = this.budget.reserveVoice();
-    if (!releaseBudget) return;
+    if (!releaseBudget) {
+      this.options.error?.('MIDI voice limit reached; all 256 shared voices are in use.');
+      return;
+    }
     const owned: Owned = {
-      id: data.eventId ?? ++this.legacyCounter,
+      id: data.eventId,
       channel: data.channel,
       key,
       releaseBudget,
@@ -190,10 +191,6 @@ export class LiveOriginRenderer {
         destination: channel.graph.input,
       });
       void owned.voice.ended.then(() => this.stop(state, owned));
-      if (data.duration !== undefined)
-        owned.timer = setTimeout(() => {
-          if (current()) this.release(state, owned, channel);
-        }, data.duration);
     } catch (error) {
       const aborted = signal.aborted || owned.abort.signal.aborted;
       this.stop(state, owned);
@@ -201,7 +198,7 @@ export class LiveOriginRenderer {
     }
   }
   control(data: LiveControl): void {
-    const state = this.state(data.originId ?? LEGACY_SERVER_ORIGIN);
+    const state = this.state(data.originId);
     if (!state) return;
     const channel = this.channel(state, data.channel);
     channel.controls.set(data.controller, data.value);
@@ -212,13 +209,11 @@ export class LiveOriginRenderer {
       channel.graph?.control(data.controller, data.value, this.output?.context.currentTime ?? 0);
   }
   program(data: LiveProgram): void {
-    const state = this.state(data.originId ?? LEGACY_SERVER_ORIGIN);
+    const state = this.state(data.originId);
     if (state) this.channel(state, data.channel).program = data.program;
   }
   private release(state: Origin, owned: Owned, channel: Channel): void {
     if (owned.released) return;
-    if (owned.timer !== undefined) clearTimeout(owned.timer);
-    owned.timer = undefined;
     if ((channel.controls.get(64) ?? 0) >= 64 && owned.voice) {
       owned.held = true;
       return;
@@ -232,7 +227,6 @@ export class LiveOriginRenderer {
     else owned.voice.release();
   }
   private stop(state: Origin, owned: Owned): void {
-    if (owned.timer !== undefined) clearTimeout(owned.timer);
     owned.released = true;
     owned.abort.abort();
     owned.voice?.stop();

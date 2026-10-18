@@ -45,7 +45,7 @@ async function fixture(ready = true) {
   await Promise.resolve();
   wire.length = 0;
   cleanups.push(() => { media.shutdown(); clock.shutdown(); });
-  const request = (n: number) => session.receive('Client.Media.SupportRequest', JSON.stringify({ version: 1, requestId: id(n), reason: 'stale' }));
+  const request = (n: number) => session.receive('Client.Media.SupportRequest', JSON.stringify({ requestId: id(n), reason: 'stale' }));
   return { state, session, supports, media, clock, wire, transport, request };
 }
 
@@ -60,7 +60,7 @@ describe('playback capability attestation', () => {
     expect(modules).toContain('Client.Optional 37');
     expect(modules).toContain('Client.Media 1');
     expect(f.wire[0].payload).toEqual(modules);
-    expect(f.wire[1].payload).toMatchObject({ version: 2, modules, sharedTransport: true });
+    expect(f.wire[1].payload).toMatchObject({ modules, sharedTransport: true });
     f.wire.length = 0;
     class Duplicate extends GMCPPackage { readonly packageName = 'client.MEDIA'; }
     f.session.register(Duplicate);
@@ -88,8 +88,8 @@ describe('playback capability attestation', () => {
     expect(f.wire.map((message) => message.name)).toEqual([
       'Core.Supports.Set', 'Client.Media.PlaybackSupport', 'Client.Media.PlaybackSupport',
     ]);
-    expect(f.wire[1].payload).toMatchObject({ version: 2, requestId: id(1), sharedTransport: false });
-    expect(f.wire[2].payload).toMatchObject({ version: 2, sharedTransport: true });
+    expect(f.wire[1].payload).toMatchObject({ requestId: id(1), sharedTransport: false });
+    expect(f.wire[2].payload).toMatchObject({ sharedTransport: true });
     expect(f.wire[2].payload).not.toHaveProperty('requestId');
     vi.advanceTimersByTime(0);
     expect(f.wire.at(-1)?.name).toBe('Core.Time.Request');
@@ -147,8 +147,8 @@ describe('playback capability attestation', () => {
     usePersonalDataStore.setState({ visitor: true, visitorWindow: false });
     const receive = vi.spyOn(f.media, 'receiveRegisteredMessage');
     const parse = vi.spyOn(JSON, 'parse');
-    const payload = JSON.stringify({ version: 1, requestId: id(1) });
-    for (const bad of [`${' '.repeat(256)}${payload}`, `${payload}é`, `{"version":1,"requestId":"${'\\u0031'.repeat(40)}"}`])
+    const payload = JSON.stringify({ requestId: id(1) });
+    for (const bad of [`${' '.repeat(256)}${payload}`, `${payload}é`, `{"requestId":"${'\\u0031'.repeat(41)}"}`])
       f.session.receive('Client.Media.SupportRequest', bad);
     expect(parse).not.toHaveBeenCalled();
     expect(receive).not.toHaveBeenCalled();
@@ -163,10 +163,10 @@ describe('playback capability attestation', () => {
   });
 
   it('strictly decodes requests and keeps PlaybackSupport outbound-only', async () => {
-    for (const bad of [null, [], {}, { version: 2, requestId: id(1) }, { version: 1, requestId: id(0xabcdef).toUpperCase() },
-      { version: 1, requestId: id(1), reason: undefined }, { version: 1, requestId: id(1), reason: 'other' },
-      { version: 1, requestId: id(1), extra: true }]) expect(() => decodeSupportRequest(bad)).toThrow();
-    expect(decodeSupportRequest({ version: 1, requestId: id(1), reason: 'missing' })).toEqual({ version: 1, requestId: id(1), reason: 'missing' });
+    for (const bad of [null, [], {}, { version: 1, requestId: id(1) }, { version: 2, requestId: id(1) }, { requestId: id(0xabcdef).toUpperCase() },
+      { requestId: id(1), reason: undefined }, { requestId: id(1), reason: 'other' },
+      { requestId: id(1), extra: true }]) expect(() => decodeSupportRequest(bad)).toThrow();
+    expect(decodeSupportRequest({ requestId: id(1), reason: 'missing' })).toEqual({ requestId: id(1), reason: 'missing' });
     const f = await fixture();
     expect(f.media.receiveRegisteredMessage('PlaybackSupport', {})).toBe(false);
   });
