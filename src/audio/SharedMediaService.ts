@@ -45,6 +45,7 @@ interface Source {
   rendering: boolean;
   occurrence: number;
   cueSignature: string;
+  lastCues: readonly MediaCue[];
   preparing?: number;
   settled?: boolean;
   reportedError?: boolean;
@@ -116,6 +117,7 @@ export class SharedMediaService {
       rendering: false,
       occurrence: -1,
       cueSignature: '',
+      lastCues: [],
     };
     this.sources.set(grant.key, source);
     if (!this.release) this.release = this.options.clock.acquire('shared file media');
@@ -525,14 +527,18 @@ export class SharedMediaService {
     source: Source,
     state: SharedMediaPresentation['state'],
     message?: string,
-    cues: readonly MediaCue[] = [],
+    cues?: readonly MediaCue[],
   ): void {
+    const currentCues =
+      cues ?? (state === 'preparing' || state === 'unavailable' ? [] : source.lastCues);
+    if (state === 'preparing' || state === 'unavailable') source.cueSignature = '';
+    source.lastCues = currentCues;
     this.options.present?.({
       key: source.grant.key,
       sourceId: source.grant.transport.sourceId,
       title: source.grant.title ?? source.grant.name,
       state,
-      cues,
+      cues: currentCues,
       message,
     });
   }

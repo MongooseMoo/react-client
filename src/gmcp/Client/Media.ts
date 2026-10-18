@@ -272,6 +272,7 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   private unsubscribeSpatialStore: (() => void) | undefined;
   private unsubscribeOutput: (() => void) | undefined;
   private unsubscribeMidiPreference: (() => void) | undefined;
+  private unsubscribeTimingPreference: (() => void) | undefined;
 
   constructor(client: ConstructorParameters<typeof GMCPClientMediaBase>[0]) {
     super(client);
@@ -297,6 +298,10 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.unsubscribeMidiPreference = usePreferences.subscribe(
       (state) => state.midi.enabled,
       this.outputChanged,
+    );
+    this.unsubscribeTimingPreference = usePreferences.subscribe(
+      (state) => state.midi.outputTimingCorrectionMs,
+      () => this.client.media?.outputTimingChanged(),
     );
     // Packages can be constructed before their client's media/clock properties.
     queueMicrotask(() => {
@@ -435,6 +440,7 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     this.unsubscribeSpatialStore?.();
     this.unsubscribeOutput?.();
     this.unsubscribeMidiPreference?.();
+    this.unsubscribeTimingPreference?.();
     if (typeof document !== 'undefined')
       document.removeEventListener('visibilitychange', this.visibilityChanged);
   }

@@ -329,6 +329,7 @@ export class MediaService {
       clock,
       context: this.cacophony.context as BaseAudioContext,
       sendSync,
+      correctionMs: () => usePreferences.getState().midi.outputTimingCorrectionMs ?? 0,
       present: updateSharedMediaPresentation,
       error: (key, message, transport) => {
         this.diagnostics.record({
@@ -367,6 +368,7 @@ export class MediaService {
     this.sequences = new SequenceService({
       clock,
       getOutput,
+      correctionMs: () => usePreferences.getState().midi.outputTimingCorrectionMs ?? 0,
       createGraph: (mix) =>
         SequenceGraph.create(this.cacophony, (id) => this.effects.getChain(id)?.bus, mix),
       error: (key, message) => {
@@ -381,6 +383,13 @@ export class MediaService {
   }
   sequenceOutputChanged(): void {
     this.sequences?.reset();
+  }
+  outputTimingChanged(): void {
+    this.sequences?.setSuspended(true);
+    this.sharedMedia?.setSuspended(true);
+    const paused = this.sequencePageHidden || this.playbackPaused;
+    this.sequences?.setSuspended(paused);
+    this.sharedMedia?.setSuspended(paused);
   }
   private readonly mediaSession = new MediaSessionController();
   private readonly preloadedSoundKeys = new Set<string>();
@@ -810,7 +819,10 @@ export class MediaService {
     if (data.key && data.transport?.kind !== 'media') this.sharedMedia?.stop({ key: data.key });
     if (data.key && data.transport?.kind === 'media' && this.sharedMedia?.has(data.key)) {
       const sound = this.sounds[data.key];
-      if (sound?.playPayload?.transport?.sourceId === data.transport.sourceId) {
+      if (
+        sound?.playPayload?.transport?.sourceId === data.transport.sourceId &&
+        sound.url === this.mediaUrl(data)
+      ) {
         this.sharedMedia.update({ ...data, transport: data.transport });
         this.update({ ...data, transport: undefined, start: undefined, loops: undefined });
         return;
@@ -1550,7 +1562,12 @@ export class MediaService {
   }
 
   private isActiveSound(sound: ExtendedSound): boolean {
-    return sound.isPlaying || this.pausedSounds.has(sound) || this.pendingStarts.has(sound);
+    return (
+      sound.isPlaying ||
+      this.pausedSounds.has(sound) ||
+      this.pendingStarts.has(sound) ||
+      Boolean(sound.key && this.sharedMedia?.has(sound.key))
+    );
   }
 
   stopAllSounds(): void {

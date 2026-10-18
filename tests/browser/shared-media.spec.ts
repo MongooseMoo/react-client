@@ -59,6 +59,13 @@ test('native finite HTML joins silently at the current cursor; cancelled future 
     return {cursor:playback.currentTime,errorMs:Math.abs(playback.currentTime*1000-(1000+performance.now()-transport.anchorServerMs))};
   });
   expect(late.cursor).toBeGreaterThan(2);expect(late.errorMs).toBeLessThan(250);
+  const renewed=await page.evaluate(async()=>{
+    const before=globalThis.media.sounds.late;
+    await globalThis.media.play({key:'late',name:'shared-tone.wav?renewed=1',url:location.origin+'/',type:'music',transport:globalThis.snapshot});
+    const sound=globalThis.media.sounds.late;
+    return {replaced:sound!==before,errorMs:Math.abs(sound.playbacks[0].currentTime*1000-(1000+performance.now()-globalThis.snapshot.anchorServerMs))};
+  });
+  expect(renewed.replaced).toBe(true);expect(renewed.errorMs).toBeLessThan(250);
   const cancelled=await page.evaluate(async()=>{
     globalThis.media.stop({key:'late'});
     const transport={...globalThis.snapshot,sourceId:'future',revision:1,anchorServerMs:performance.now()+1000,positionMs:0};

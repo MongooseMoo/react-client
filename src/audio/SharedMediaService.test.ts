@@ -13,10 +13,12 @@ describe('shared file transport', () => {
   let requests: MediaSyncRequest[],
     presentations: (SharedMediaPresentation | { key: string; removed: true })[];
   let voice: SharedMediaVoice, cursor: number;
+  let correction: number;
   beforeEach(() => {
     vi.useFakeTimers();
     now = 10000;
     cursor = 0;
+    correction = 0;
     requests = [];
     presentations = [];
     clock = new SharedClock(
@@ -50,6 +52,7 @@ describe('shared file transport', () => {
       clock,
       context: { state: 'running', currentTime: 5 } as BaseAudioContext,
       now: () => now,
+      correctionMs: () => correction,
       sendSync: (r) => requests.push(r),
       present: (p) => presentations.push(p),
     });
@@ -259,5 +262,30 @@ describe('shared file transport', () => {
     expect(service.has('tv')).toBe(true);
     expect(voice.dispose).toHaveBeenCalledOnce();
     expect(replacement.start).toHaveBeenCalledOnce();
+  });
+  it.each([-500, 500])(
+    'applies signed local correction %sms once at a late entry',
+    async (value) => {
+      correction = value;
+      await join();
+      expect(cursor).toBe(value < 0 ? 10.5 : 10);
+      expect(voice.start).toHaveBeenLastCalledWith({
+        at: value < 0 ? 5 : 5.5,
+        rate: 1,
+        offsetSeconds: value < 0 ? 10.5 : 10,
+      });
+    },
+  );
+  it('suspension cancels owned work and restoration rejoins the continuing cursor', async () => {
+    await join();
+    service.setSuspended(true);
+    expect(voice.pause).toHaveBeenCalled();
+    now = 30000;
+    service.setSuspended(false);
+    await flush();
+    service.receiveSync({ ...requests[1], transport });
+    await flush();
+    expect(cursor).toBe(30);
+    expect(voice.start).toHaveBeenCalledTimes(2);
   });
 });

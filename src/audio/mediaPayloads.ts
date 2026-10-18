@@ -366,6 +366,8 @@ export function decodeMediaPlay(raw: unknown): DecodedMediaPlay {
       r.transport.kind === 'score')
   ) {
     try {
+      if (r.cues !== undefined || r.cueWindows !== undefined)
+        fail('Score playback cannot carry media cues');
       const contentId = sequenceId(r.contentId),
         key = sequenceId(r.key),
         transport = decodeScoreTransport(r.transport);
@@ -437,6 +439,8 @@ export function decodeMediaUpdate(raw: unknown): ClientMediaUpdatePayload {
     }
     try {
       const transport = decodeScoreTransport(r.transport);
+      if (r.cues !== undefined || r.cueWindows !== undefined)
+        fail('Score Update cannot carry media cues');
       const contentId = r.contentId === undefined ? undefined : sequenceId(r.contentId);
       const midi =
         r.midi === undefined

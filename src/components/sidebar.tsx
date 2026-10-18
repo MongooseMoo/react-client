@@ -22,6 +22,7 @@ const MidiStatus = React.lazy(() => import('./MidiStatus'));
 const MapPanel = React.lazy(() => import('./MapPanel'));
 const HelpPanel = React.lazy(() => import('./HelpPanel'));
 const TimersPanel = React.lazy(() => import('./TimersPanel'));
+const SharedMediaPanel = React.lazy(() => import('./SharedMediaPanel'));
 import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
@@ -307,6 +308,11 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         content: <Suspense fallback={<p role="status">Loading timers…</p>}><TimersPanel client={client} /></Suspense>,
         mountOnSelect: true,
         condition: true,
+      },
+      {
+        id: 'shared-media-tab', label: 'Media', icon: <FaHeadphones />,
+        content: <Suspense fallback={<p role="status">Loading media…</p>}><SharedMediaPanel client={client} /></Suspense>,
+        mountOnSelect: true, condition: true,
       },
     ];
 
