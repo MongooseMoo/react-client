@@ -80,6 +80,15 @@ export type AutologgingPreferences = {
   maxBytes: number;
 };
 
+export type VoiceInputPreferences = {
+  enabled: boolean;
+  // Send what was heard as soon as it is final, instead of leaving it in the
+  // command input to check.
+  sendImmediately: boolean;
+  // A BCP 47 tag; "" follows the page language.
+  language: string;
+};
+
 export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
@@ -92,6 +101,7 @@ export type PrefState = {
   midi: MidiPreferences;
   haptics: HapticsPreferences;
   autologging: AutologgingPreferences;
+  voiceInput: VoiceInputPreferences;
   // Keys the player chose for server key layers, keyed by layer id and then by
   // the binding's command.
   keystrokes: KeystrokeOverrides;
@@ -113,6 +123,7 @@ type PrefActions = {
   setMidi: (data: MidiPreferences) => void;
   setHaptics: (data: HapticsPreferences) => void;
   setAutologging: (data: AutologgingPreferences) => void;
+  setVoiceInput: (data: VoiceInputPreferences) => void;
   setKeystrokeOverride: (layerId: string, command: string, chord: Chord) => void;
 };
 
@@ -144,6 +155,7 @@ function getInitialPreferences(): PrefState {
     midi: { enabled: false },
     haptics: { enabled: false, intensityCap: 1.0, autoStopTimeout: 5 },
     autologging: { enabled: false, maxBytes: 100 * 1024 * 1024 },
+    voiceInput: { enabled: false, sendImmediately: false, language: "" },
     keystrokes: {},
   };
 }
@@ -164,6 +176,7 @@ function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
     midi: { ...initial.midi, ...stored.midi, midiJsSoundfont: getSoundfont(stored.midi?.midiJsSoundfont).id },
     haptics: { ...initial.haptics, ...cleanHaptics },
     autologging: { ...initial.autologging, ...stored.autologging },
+    voiceInput: { ...initial.voiceInput, ...stored.voiceInput },
     keystrokes: { ...initial.keystrokes, ...stored.keystrokes },
   };
 }
@@ -230,6 +243,7 @@ export const usePreferences = create<PrefState & PrefActions>()(
     setMidi: (data) => set({ midi: data }),
     setHaptics: (data) => set({ haptics: data }),
     setAutologging: (data) => set({ autologging: data }),
+    setVoiceInput: (data) => set({ voiceInput: data }),
     setKeystrokeOverride: (layerId, command, chord) =>
       set((s) => ({
         keystrokes: {

@@ -29,6 +29,15 @@ export function isHeadRecenterShortcut(event: KeyboardEvent): boolean {
   return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyO";
 }
 
+// D for dictate. Alt+Shift with a letter reaches the page past NVDA's and JAWS's browse mode,
+// and no browser uses Alt+Shift+D.
+export const VOICE_COMMAND_CHORD: Chord = { key: "d", modifiers: ["alt", "shift"] };
+
+/** Alt+Shift+D by physical key, which Alt changes the character of on a Mac. */
+export function isVoiceCommandToggle(event: KeyboardEvent): boolean {
+  return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyD";
+}
+
 const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const ARROWS = ["arrowleft", "arrowright", "arrowup", "arrowdown"];
 // Every scheme's letters: the input and output suppress all of them with Alt.
@@ -46,6 +55,11 @@ const RESERVED_SHORTCUTS: readonly ReservedShortcut[] = [
     keys: [HEAD_RECENTER_CHORD.key],
     modifiers: HEAD_RECENTER_CHORD.modifiers,
     reason: "Alt+Shift+O recenters head tracking",
+  },
+  {
+    keys: [VOICE_COMMAND_CHORD.key],
+    modifiers: VOICE_COMMAND_CHORD.modifiers,
+    reason: "Alt+Shift+D listens for a voice command",
   },
   { keys: ["w", "t", "n", "tab"], modifiers: ["ctrl"], reason: "The browser keeps this key" },
   { keys: ["w", "t", "n", "tab"], modifiers: ["ctrl", "shift"], reason: "The browser keeps this key" },

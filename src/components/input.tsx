@@ -5,6 +5,7 @@ import "./input.css";
 import { useInputStore } from "../stores/inputStore";
 import { useRoomStore } from "../stores/roomStore";
 import { registerCommandInput } from "../inputFocus";
+import VoiceCommandButton from "./VoiceCommandButton";
 import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
 import type MudClient from "../client"; // Import MudClient
 import type { RoomPlayer } from "../gmcp/Room"; // Import RoomPlayer type
@@ -113,7 +114,8 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
   }, []);
 
   const handleSend = useCallback(() => {
-    const currentInput = text;
+    // From the store, not the render: a voice command sets the text and sends at once.
+    const currentInput = useInputStore.getState().text;
     onSend(currentInput);
     if (currentInput.trim() && owner) {
       commandHistoryRef.current.addCommand(currentInput);
@@ -122,7 +124,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     useInputStore.getState().clear();
     inputRef.current?.focus();
     resetCompletionState();
-  }, [text, onSend, inputRef, resetCompletionState, saveHistory]);
+  }, [onSend, inputRef, resetCompletionState, saveHistory, owner]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const commandHistory = commandHistoryRef.current;
@@ -274,6 +276,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         ref={inputRef}
         autoFocus
       />
+      <VoiceCommandButton onSend={handleSend} />
       <button type="button" onClick={handleSend} className="send-button">
         Send
       </button>

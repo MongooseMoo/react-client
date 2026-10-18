@@ -10,6 +10,7 @@ import KeystrokePreferencesTab from "./KeystrokePreferences";
 import SoundfontPicker from './SoundfontPicker';
 import HeadTrackingControls from './HeadTrackingControls';
 import AppIntegrationPreferences from '../launch/AppIntegrationPreferences';
+import VoiceCommandPreferences from "./VoiceCommandPreferences";
 
 function PreferenceNumber({ id, label, value, min, max, onCommit }: {
   id: string; label: string; value: number; min: number; max: number;
@@ -295,6 +296,7 @@ const SpeechTab: React.FC = () => {
       <VolumeSelection />
       <br />
       <PreviewButton />
+      <VoiceCommandPreferences />
     </div>
   );
 };
@@ -484,6 +486,8 @@ const KeyboardTab: React.FC = () => {
           <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback. Alt+Shift+O recenters head tracking.</dd>
           <dt>Server keys</dt>
           <dd>Alt+Shift+H turns keys mode on and off, so a game's or console's keys work on letters and other typing keys. The Keys section lists every key and lets you change it.</dd>
+          <dt>Voice commands</dt>
+          <dd>Alt+Shift+D listens for one spoken command when voice commands are on in the Speech section; press it again to stop sooner, or Escape to discard.</dd>
         </dl>
         <p>Ctrl+Shift+number opens and focuses a sidebar destination. Numbers stay fixed when optional tabs appear; unavailable destinations do nothing.</p>
         <table>
