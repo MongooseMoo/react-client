@@ -23,7 +23,7 @@ Contract read from the live server 2026-10-18 (given in the assignment, not rech
   "help starting-out" (focus to heading, Back enabled), ambiguous "lo" (look, looking), a miss. That
   found and fixed: each choice was offered twice; "no help on" linked a topic "on"; "help search
   <words>" linked a placeholder. Ambiguous results now announce "N topics match". Full suite 2331/2331.
-- Not done: never heard with a screen reader; a "shown" (old-style) topic not found to try.
+- Not done: no "shown" (old-style) topic found to try.
 
 ## Decisions and why
 
