@@ -1001,13 +1001,11 @@ export class AutoLogFolder implements AutoLogSink {
       const claimed = { ...unclaimed, baseName, nameChecked: true };
       await this.persistence.putBinding(claimed);
       const name = partFileName(baseName, 1);
-      let created = false;
       try {
         this.assertLive(binding.ownerKey, record);
         // The placeholder is the first part's header, so from here on the
         // name is provably this session's; an empty file is nobody's.
         const file = await folder.getFileHandle(name, { create: true });
-        created = true;
         const writable = await file.createWritable();
         try {
           await writable.write(partHeader(claimed, session, 1));
@@ -1017,10 +1015,12 @@ export class AutoLogFolder implements AutoLogSink {
           throw error;
         }
       } catch (error) {
-        // No file holds the name: take the claim back so the next try checks
-        // again. If that fails too, the next render finds the first part
-        // missing or someone else's and claims again (see renderBinding).
-        if (created) await folder.removeEntry(name).catch(() => {});
+        // Take the claim back so the next try checks again. Whatever is at
+        // the path stays (an empty file of ours, or something another writer
+        // put there meanwhile): it now counts as taken, so the next claim
+        // moves on to another name. If taking the claim back fails too, the
+        // next render finds the first part missing or someone else's and
+        // claims again (see renderBinding).
         await this.persistence.putBinding(binding).catch((saveError) => {
           console.error("Failed to take back the log file name:", saveError);
         });
@@ -1040,6 +1040,17 @@ export class AutoLogFolder implements AutoLogSink {
   }
 
   // Writes a part, but never into an existing file that is not this session's.
+  //
+  // What this guarantees, and what it cannot: Mongoose writers never race
+  // each other (a session's renders hold its Web Lock, name claims hold the
+  // destination lock), and a file that does not open with this session's
+  // exact header is never written. But the File System Access API has no
+  // conditional or exclusive write, so if a program outside Mongoose
+  // replaces this part between the ownership read and createWritable, that
+  // replacement can be overwritten; moving the check only moves the window.
+  // That is accepted: these are Mongoose's own files, and the preferences
+  // help tells players the newest file of a session is rewritten as lines
+  // arrive, so copy a log before editing it.
   private async writeFile(folder: FileSystemDirectoryHandle, name: string, text: string, sessionId: string, key: string, record: FolderRecord): Promise<void> {
     const owner = await partOwner(folder, name, sessionId);
     this.assertLive(key, record);

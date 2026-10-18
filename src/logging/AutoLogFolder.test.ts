@@ -101,6 +101,8 @@ class FakeDirectory {
   // Fail the next lookup that would create a missing file.
   failCreate: DOMException | undefined;
   removed: string[] = [];
+  // Runs once on the next file this folder creates.
+  onCreate: ((file: FakeFile) => void) | undefined;
   // The first file created anywhere below fails its first write.
   failFirstWrite: DOMException | undefined;
   private parent: FakeDirectory | undefined;
@@ -150,6 +152,9 @@ class FakeDirectory {
       file.failOnce = failing.failFirstWrite;
       failing.failFirstWrite = undefined;
       this.files.set(name, file);
+      const onCreate = this.onCreate;
+      this.onCreate = undefined;
+      onCreate?.(file);
     }
     return file;
   }
@@ -1026,12 +1031,35 @@ describe("AutoLogFolder", () => {
 
     folder.append(session(1), store(entry(1, 1, "second")));
     await folder.whenIdle();
-    const text = root.file(fileOf(1)).text;
+    // The failed placeholder write left an empty file, which is never
+    // removed: whatever is at a path is left alone. The retry claims " (2)".
+    expect(root.file(fileOf(1)).text).toBe("");
+    const text = root.file(fileOf(1).replace(".txt", " (2).txt")).text;
     expect(text.split("\n").slice(0, 3)).toEqual(["Mongoose Client - The Hall", `Session: ${sid(1)}`, "Character: Ada"]);
     expect(lineTexts(text)).toEqual(["first", "second"]);
-    // The failed first write left no file claiming the name, so the retry
-    // gets the same name, not " (2)".
-    expect(Object.keys(root.all())).toEqual([fileOf(1)]);
+    expect(root.dirs.get("Ada")?.removed).toEqual([]);
+    folder.dispose();
+  });
+
+  it("leaves a foreign file that lands before its placeholder write fails, and claims a new name", async () => {
+    const folder = await chosen();
+    const ada = await root.getDirectoryHandle("Ada", { create: true });
+    const foreignText = "Someone else's\nSession: someone-else\nCharacter: Bo\n\nsaved just now\n";
+    // Right after our create, an outside writer commits; then our write fails.
+    ada.onCreate = (file) => {
+      file.bytes = encoder.encode(foreignText);
+      file.failOnce = new DOMException("The disk is full", "QuotaExceededError");
+    };
+    folder.append(session(1), store(entry(1, 0, "first")));
+    await folder.whenIdle();
+    expect(root.file(fileOf(1)).text).toBe(foreignText);
+    expect(persistence.bindings.get(sid(1))?.nameChecked).toBe(false);
+
+    folder.append(session(1), store(entry(1, 1, "second")));
+    await folder.whenIdle();
+    expect(root.file(fileOf(1)).text).toBe(foreignText);
+    expect(ada.removed).toEqual([]);
+    expect(lineTexts(root.file(fileOf(1).replace(".txt", " (2).txt")).text)).toEqual(["first", "second"]);
     folder.dispose();
   });
 

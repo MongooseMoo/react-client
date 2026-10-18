@@ -68,8 +68,9 @@ The fix is a design where replaying is always safe, not more bookkeeping.
 - Recovery on load / Choose / Reconnect: render every binding of the owner
   that this page is not writing. With Web Locks, sessions another tab holds
   are skipped (avoids wasted work and a premature page-closed footer, which
-  the live tab's next render would remove anyway). Without Web Locks only
-  ended or pruned sessions are finished; others are left for a later page.
+  the live tab's next render would remove anyway). Without Web Locks there
+  is no recovery at all (round 4): only the page's own live sessions are
+  written; orphans wait for a page that has Web Locks.
 - Locks are only taken for sessions bound to a folder, released when the
   session completes, the folder is stopped, or the sink is disposed.
 - File names use the last 12 hex characters of the session id; before the
@@ -85,6 +86,20 @@ The fix is a design where replaying is always safe, not more bookkeeping.
 - Unchanged from round 2: owner scoping by the session's own owner key,
   folder records checked after every await (Stop/Choose races), truthful
   announcements, useFocusRefuge, no HTML copy, unsupported = no storage.
+- Ownership (rounds 6-7): every part opens with title / `Session: <id>` /
+  `Character: …`; only a file with exactly that opening and this session's
+  id is ever written. Header fields are one line each and bounded.
+- Mongoose never removes a file (rounds 8-9): zone repair claims a fresh
+  name and leaves old files as they are; a failed claim placeholder leaves
+  whatever is at that path and the retry claims another name.
+- Accepted limitation (round 9, lead's decision): the File System Access API
+  has no conditional or exclusive write. Mongoose writers are serialised by
+  Web Locks and a file with any other header is never written, but a
+  replacement committed by a program outside Mongoose between the ownership
+  read and createWritable can be overwritten. Moving the check only moves
+  the window, so no machinery is added; the comment at `writeFile` states
+  the guarantee, and the preferences help tells players the newest file of
+  a session is rewritten as lines arrive.
 
 ## Surprises
 
@@ -186,7 +201,17 @@ change `.github`.
 
 ## Next step
 
-Round 8 committed and reported; Codex reviews again.
+Round 9 (Codex review 8 of 930b2ad8) committed and reported: the claim
+placeholder rollback no longer removes anything (an empty or foreign file
+at that path stays and the retry claims " (2)"); the continuation-write
+race is documented as accepted (see Decisions). Tests: a foreign commit
+landing before the placeholder write fails is preserved and the session
+goes to " (2)"; "keeps the header when the very first write fails" now
+expects the empty leftover and " (2)". Both failed on 930b2ad8. CI, all 7
+steps, full output kept, none failed: typecheck exit 0; `npm test` 188
+files / 2634 tests; test:audio-cache exit 0 (4 PASS); editor-ownership 1
+passed on 5193 serving this build's `index-DBJ8lbn5.js`; check-browser-
+sessions, check-client-recovery, test:a11y exit 0. Codex reviews again.
 
 ## Round 5 (Codex review 4 of aa9247be: 1 P2, 3 P3, lead's decisions)
 
