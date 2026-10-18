@@ -34,6 +34,8 @@ vi.mock('../stores/preferencesStore', () => {
 
 vi.mock('../MidiService', () => ({
   midiService: {
+    getSoundfontMessage: () => '',
+    subscribeSoundfont: () => () => {},
     get connectionStatus() {
       return { ...testState.connectionStatus };
     },

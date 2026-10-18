@@ -6,6 +6,7 @@ import {
   type LocalStorageSchema,
 } from "../persistence";
 import type { Chord } from "../keystrokeChords";
+import { getSoundfont, type SoundfontId } from '../midi/soundfonts';
 
 export enum AutoreadMode {
   Off = "off",
@@ -59,6 +60,7 @@ export type KeyboardPreferences = {
 
 export type MidiPreferences = {
   enabled: boolean;
+  midiJsSoundfont?: SoundfontId;
   lastInputDeviceId?: string;
   lastOutputDeviceId?: string;
 };
@@ -154,7 +156,7 @@ function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
     channels: { ...initial.channels, ...stored.channels },
     editor: { ...initial.editor, ...stored.editor },
     keyboard: { ...initial.keyboard, ...stored.keyboard },
-    midi: { ...initial.midi, ...stored.midi },
+    midi: { ...initial.midi, ...stored.midi, midiJsSoundfont: getSoundfont(stored.midi?.midiJsSoundfont).id },
     haptics: { ...initial.haptics, ...cleanHaptics },
     autologging: { ...initial.autologging, ...stored.autologging },
     keystrokes: { ...initial.keystrokes, ...stored.keystrokes },

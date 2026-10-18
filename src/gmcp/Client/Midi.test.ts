@@ -37,3 +37,18 @@ describe('GMCPClientMidi ControlChange', () => {
     await vi.waitFor(() => expect(midiService.sendRawMessage).toHaveBeenCalledWith([0xbf, 7, 127]));
   });
 });
+
+describe('GMCPClientMidi effects route', () => {
+  it('routes browser synths through the media chain system without loading a synth', () => {
+    const previous = usePreferences.getState().midi;
+    usePreferences.getState().setMidi({ ...previous, enabled: true });
+    const setMidiRoute = vi.fn();
+    const midi = new GMCPClientMidi({ media: { setMidiRoute } } as never);
+    midi.receiveRegisteredMessage('Route', { chain: 'room', send: 0.4 });
+    expect(setMidiRoute).toHaveBeenCalledWith({ chain: 'room', send: 0.4 });
+    usePreferences.getState().setMidi({ ...previous, enabled: false });
+    midi.receiveRegisteredMessage('Route', {});
+    expect(setMidiRoute).toHaveBeenCalledOnce();
+    usePreferences.getState().setMidi(previous);
+  });
+});

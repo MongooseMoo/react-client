@@ -36,6 +36,7 @@ import { hasOcclusion, OCCLUSION_GLIDE_MS } from './occlusion';
 import { VectorTweener } from './vectorTween';
 import type { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
+import { MidiAudioRoute, type MidiRoute } from './MidiAudioRoute';
 import type { EffectSpec } from './effects/types';
 import { MediaSessionController } from './MediaSessionController';
 
@@ -290,6 +291,7 @@ export class MediaService {
   private readonly motion: VectorTweener;
   private readonly effects: MediaEffects;
   private readonly voices: MediaVoices;
+  private readonly midiAudio: MidiAudioRoute;
   private readonly mediaSession = new MediaSessionController();
   private readonly preloadedSoundKeys = new Set<string>();
   /** Latest claim generation per media key; every Play/Load/Stop for a key bumps it. */
@@ -316,12 +318,13 @@ export class MediaService {
   constructor(cacophony: Cacophony = new Cacophony(), options: MediaServiceOptions = {}) {
     this.cacophony = cacophony;
     this.effects = new MediaEffects(this.cacophony, {
-      chainCreated: (id) => this.voices.chainCreated(id),
-      chainDestroying: (id) => this.voices.chainDestroying(id),
+      chainCreated: (id) => { this.voices.chainCreated(id); this.midiAudio.chainCreated(id); },
+      chainDestroying: (id) => { this.voices.chainDestroying(id); this.midiAudio.chainDestroying(id); },
     });
     this.voices = new MediaVoices(this.cacophony, this.effects, () => this.transitionPlayback(async () => {
       if (!this.playbackPaused) await this.cacophony.resume();
     }));
+    this.midiAudio = new MidiAudioRoute(this.cacophony, (id) => this.effects.getChain(id)?.bus);
     this.manageFocus = options.manageFocus ?? true;
     this.motion = options.motion ?? new VectorTweener();
 
@@ -513,6 +516,10 @@ export class MediaService {
   setChain(data: ClientMediaChainPayload): Promise<void> {
     return this.effects.setChain(data);
   }
+
+  /** MIDI shares the named effect buses and master overlay with media and live voices. */
+  getMidiAudioOutput() { return this.midiAudio.getOutput(); }
+  setMidiRoute(route: MidiRoute): void { this.midiAudio.setRoute(route); }
 
   removeChain(id: string): void {
     this.effects.removeChain(id);
@@ -1284,6 +1291,7 @@ export class MediaService {
     this.defaultUrl = '';
     this.currentMusic = undefined;
     this.mediaSession.clear();
+    this.midiAudio.reset();
     this.effects.shutdown();
   }
 
@@ -1293,6 +1301,7 @@ export class MediaService {
       return;
     }
     this.shutdownComplete = true;
+    this.midiAudio.shutdown();
     if (this.manageFocus && typeof window !== 'undefined') {
       window.removeEventListener('focus', this.handleWindowFocus);
       window.removeEventListener('blur', this.handleWindowBlur);

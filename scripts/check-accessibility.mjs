@@ -203,7 +203,7 @@ try {
   await dialog.getByRole('checkbox', { name: 'Enable Haptics', exact: true }).check();
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+Shift+5');
-  await expect(page.getByRole('heading', { name: 'MIDI Status', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'MIDI studio', exact: true })).toBeVisible();
   await scan('midi-empty');
   await page.setViewportSize({ width: 320, height: 800 });
   await scan('midi-320px');

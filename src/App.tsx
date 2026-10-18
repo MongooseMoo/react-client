@@ -399,11 +399,7 @@ function App() {
         if (client) {
           // Render into the client's master gain so the synth shares its
           // clock, volume, mute, and autoplay unlock.
-          const { cacophony } = client.media;
-          await virtualMidiService.setAudioOutput({
-            context: cacophony.context as unknown as BaseAudioContext,
-            destination: cacophony.globalGainNode as unknown as AudioNode,
-          });
+          await virtualMidiService.setAudioOutput(client.media.getMidiAudioOutput());
         }
         if (cancelled) return false;
         return virtualMidiService.initialize();

@@ -7,6 +7,7 @@ import Tabs, { type TabProps } from "./tabs";
 import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
 import ChannelPreferencesTab from "./ChannelPreferences";
 import KeystrokePreferencesTab from "./KeystrokePreferences";
+import SoundfontPicker from './SoundfontPicker';
 
 function PreferenceNumber({ id, label, value, min, max, onCommit }: {
   id: string; label: string; value: number; min: number; max: number;
@@ -364,7 +365,7 @@ const MidiTab: React.FC = () => {
   const setMidi = usePreferences((state) => state.setMidi);
 
   const handleMidiEnabledChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setMidi({ enabled: e.target.checked });
+    setMidi({ ...midi, enabled: e.target.checked });
   };
 
   return (
@@ -381,6 +382,7 @@ const MidiTab: React.FC = () => {
       <br />
       <br />
 
+        {midi.enabled && <SoundfontPicker />}
         <p id="midi-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
           Device selection and management is available in the MIDI tab when connected to a server.
         </p>

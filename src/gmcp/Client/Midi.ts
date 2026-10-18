@@ -1,6 +1,7 @@
 import type { MidiMessage, MidiNote } from "../../MidiService";
 import { usePreferences } from "../../stores/preferencesStore";
-import { duplex } from "../../protocol/messages";
+import { duplex, inbound } from "../../protocol/messages";
+import { decodeMidiRoute, type MidiRoute } from '../../audio/MidiAudioRoute';
 import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -55,6 +56,7 @@ const midiSystemMessage = gmcpJsonMessage<
 >("SystemMessage");
 const midiRawMessage = gmcpJsonMessage<"RawMessage", GMCPMessageClientMidiRawMessage>("RawMessage");
 const midiEnable = gmcpJsonMessage<"Enable", GMCPMessageClientMidiEnable>("Enable");
+const midiRoute = gmcpJsonMessage<'Route', MidiRoute>('Route', { decode: decodeMidiRoute, encode: (payload) => payload });
 
 const GMCPClientMidiBase = GMCPPackage.with({
   packageName: "Client.Midi",
@@ -65,6 +67,7 @@ const GMCPClientMidiBase = GMCPPackage.with({
     duplex(midiSystemMessage),
     duplex(midiRawMessage),
     duplex(midiEnable),
+    inbound(midiRoute),
   ] as const,
 });
 
@@ -90,6 +93,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     this.on("systemMessage", (data) => this.handleSystemMessage(data));
     this.on("rawMessage", (data) => this.handleRawMessage(data));
     this.on("enable", (data) => this.handleEnable(data));
+    this.on('route', (data) => { if (this.enabled) this.client.media.setMidiRoute(data); });
   }
 
   private loadMidiService(): Promise<MidiService> {

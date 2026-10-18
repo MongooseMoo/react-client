@@ -22,6 +22,7 @@ const featureIds = [
   'src/components/audioChat.tsx',
   'src/components/editor/editorWindow.tsx',
   'src/components/MidiStatus.tsx',
+  'src/midi/SoundfontOutput.ts',
   'src/PeerService.ts',
   'node_modules/omnitone/build/omnitone.min.esm.js',
   'node_modules/turndown/lib/turndown.browser.es.js',
