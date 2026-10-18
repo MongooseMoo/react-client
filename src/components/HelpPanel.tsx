@@ -23,6 +23,11 @@ const HelpPanel: React.FC<HelpPanelProps> = ({ client }) => {
   const current = useHelpStore((state) => state.current);
   const canGoBack = useHelpStore((state) => state.history.length > 0);
   const serial = useHelpStore((state) => state.serial);
+  // The server writes an ambiguous result's choices as help lines; list only those the text does not link.
+  const linked = new Set(
+    current?.lines.flatMap((line) => splitHelpLine(line, current.choices).flatMap((piece) => piece.topic ?? [])),
+  );
+  const unlinkedChoices = current?.choices.filter((choice) => !linked.has(choice)) ?? [];
   const ready = useConnectionStore((state) => state.sessionReady);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -94,9 +99,9 @@ const HelpPanel: React.FC<HelpPanelProps> = ({ client }) => {
               ))}
             </pre>
           )}
-          {current.choices.length > 0 && (
+          {unlinkedChoices.length > 0 && (
             <ul className="help-choices" aria-label="Matching topics">
-              {current.choices.map((choice) => (
+              {unlinkedChoices.map((choice) => (
                 <li key={choice}>{topicButton(choice, choice, choice)}</li>
               ))}
             </ul>

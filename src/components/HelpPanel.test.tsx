@@ -128,7 +128,7 @@ describe("HelpPanel", () => {
     await vi.waitFor(() => expect(screen.getByRole("heading", { name: "starting-out" })).toHaveFocus());
   });
 
-  it("lists the choices of an ambiguous result as buttons", () => {
+  it("offers each choice of an ambiguous result once, where the text names it", () => {
     useHelpStore.getState().show(result({
       topic: "",
       query: "lo",
@@ -137,7 +137,23 @@ describe("HelpPanel", () => {
       choices: ["look", "lock"],
     }));
     renderPanel();
+    expect(screen.queryByRole("list", { name: "Matching topics" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "help lock" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "help lock" }));
+    expect(sendGet).toHaveBeenCalledWith({ topic: "lock" });
+  });
+
+  it("lists a choice the text does not name as a button", () => {
+    useHelpStore.getState().show(result({
+      topic: "",
+      query: "lo",
+      status: "ambiguous",
+      lines: ['"lo" matches more than one topic:', "help look"],
+      choices: ["look", "lock"],
+    }));
+    renderPanel();
     const list = screen.getByRole("list", { name: "Matching topics" });
+    expect(within(list).queryByRole("button", { name: "look" })).not.toBeInTheDocument();
     fireEvent.click(within(list).getByRole("button", { name: "lock" }));
     expect(sendGet).toHaveBeenCalledWith({ topic: "lock" });
   });
