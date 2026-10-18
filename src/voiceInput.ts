@@ -61,6 +61,18 @@ export function recognitionLanguage(preferred: string): string {
   return preferred.trim() || document.documentElement.lang || navigator.language || "en";
 }
 
+/** A language tag's name in the browser's language ("en-US" -> "English (United States)"), or the tag itself. */
+export function languageName(tag: string): string {
+  if (!tag || typeof Intl.DisplayNames !== "function") return tag;
+  try {
+    // "standard" gives "English (United States)" rather than the dialect name "American English".
+    return new Intl.DisplayNames([navigator.language], { type: "language", languageDisplay: "standard" }).of(tag) ?? tag;
+  } catch {
+    // Not a well-formed tag, such as something typed into the language field.
+    return tag;
+  }
+}
+
 /**
  * Where speech in this language would be recognized.
  * - on-device: audio stays on this computer.

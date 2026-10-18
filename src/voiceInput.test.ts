@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkAvailability,
   getRecognitionConstructor,
+  languageName,
   recognitionLanguage,
   startVoiceSession,
   voiceErrorMessage,
@@ -38,6 +39,30 @@ describe("recognitionLanguage", () => {
   it("uses the preference, then the page language", () => {
     expect(recognitionLanguage(" fr-FR ")).toBe("fr-FR");
     expect(recognitionLanguage("")).toBe(document.documentElement.lang || navigator.language || "en");
+  });
+});
+
+describe("languageName", () => {
+  it("names a language tag in the browser's language", () => {
+    expect(languageName("en")).toBe("English");
+    expect(languageName("en-US")).toBe("English (United States)");
+    expect(languageName("fr-FR")).toBe("French (France)");
+  });
+
+  it("falls back to the tag when it cannot be named", () => {
+    expect(languageName("not a tag")).toBe("not a tag");
+    expect(languageName("")).toBe("");
+  });
+
+  it("falls back to the tag where Intl.DisplayNames is missing", () => {
+    // Replace only DisplayNames: the rest of Intl must stay intact for every other test.
+    const original = Object.getOwnPropertyDescriptor(Intl, "DisplayNames");
+    Object.defineProperty(Intl, "DisplayNames", { value: undefined, configurable: true, writable: true });
+    try {
+      expect(languageName("en-US")).toBe("en-US");
+    } finally {
+      if (original) Object.defineProperty(Intl, "DisplayNames", original);
+    }
   });
 });
 

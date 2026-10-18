@@ -4,12 +4,14 @@ import { usePreferences } from "../stores/preferencesStore";
 import {
   checkAvailability,
   getRecognitionConstructor,
+  languageName,
   recognitionLanguage,
   type VoiceAvailability,
 } from "../voiceInput";
 import "./VoiceCommandPreferences.css";
 
-function privacyText(availability: VoiceAvailability | "checking", lang: string): string {
+function privacyText(availability: VoiceAvailability | "checking", tag: string): string {
+  const lang = languageName(tag);
   switch (availability) {
     case "checking":
       return "Checking where speech is turned into text…";
@@ -65,7 +67,7 @@ const VoiceCommandPreferences = () => {
     if (!recognizer.install) return;
     const installLang = lang;
     setInstalling(true);
-    announce(`Downloading speech recognition for ${installLang}`, "polite");
+    announce(`Downloading speech recognition for ${languageName(installLang)}`, "polite");
     let installed = false;
     try {
       installed = await recognizer.install({ langs: [installLang], processLocally: true });
@@ -75,7 +77,7 @@ const VoiceCommandPreferences = () => {
     setInstalling(false);
     announce(
       installed
-        ? `Speech in ${installLang} can now be turned into text on this device.`
+        ? `Speech in ${languageName(installLang)} can now be turned into text on this device.`
         : "The download did not finish. Your audio still goes to the speech service.",
       installed ? "polite" : "assertive",
     );
