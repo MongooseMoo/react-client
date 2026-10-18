@@ -1,6 +1,8 @@
 import type { MidiOutputSink, SynthAudioOutput } from '../VirtualMidiService';
 import { programs } from './programs';
 import { getSoundfont, type SoundfontId } from './soundfonts';
+import { virtualMidiService } from '../VirtualMidiService';
+import type { SequenceOutput, SequenceVoice } from './SequenceOutput';
 
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_CACHE_BYTES = 32 * 1024 * 1024;
@@ -96,6 +98,12 @@ export class SoundfontOutput implements MidiOutputSink {
   private readonly samples = new Map<number, Samples>();
   private readonly buffers = new Map<string, AudioBuffer>();
   private readonly loading = new Set<number>();
+  private readonly loadPromises = new Map<number, Promise<void>>();
+  private loadSlots = 0;
+  private readonly loadWaiters: (() => void)[] = [];
+  private readonly sequenceVoices = new Set<SequenceVoice>();
+  private readonly sequenceBuffers = new Map<AudioBuffer, number>();
+  private sequenceBytes = 0;
   private readonly decoding = new Set<string>();
   private readonly failedSamples = new Set<string>();
   private readonly failed = new Set<number>();
@@ -129,6 +137,47 @@ export class SoundfontOutput implements MidiOutputSink {
   }
 
   private async load(program: number): Promise<void> {
+    const pending = this.loadPromises.get(program);
+    if (pending) return pending;
+    const loading = this.boundedLoad(program);
+    this.loadPromises.set(program, loading);
+    try {
+      await loading;
+    } finally {
+      if (this.loadPromises.get(program) === loading) this.loadPromises.delete(program);
+    }
+  }
+
+  private async boundedLoad(program: number): Promise<void> {
+    if (this.closed) return;
+    if (this.loadSlots < 2) this.loadSlots++;
+    else {
+      const admitted = await new Promise<boolean>((resolve) => {
+        const enter = () => {
+          if (this.closed) {
+            resolve(false);
+            return;
+          }
+          if (this.loadSlots >= 2) {
+            this.loadWaiters.push(enter);
+            return;
+          }
+          this.loadSlots++;
+          resolve(true);
+        };
+        this.loadWaiters.push(enter);
+      });
+      if (!admitted) return;
+    }
+    try {
+      await this.loadInstrument(program);
+    } finally {
+      this.loadSlots--;
+      this.loadWaiters.shift()?.();
+    }
+  }
+
+  private async loadInstrument(program: number): Promise<void> {
     if (
       this.closed ||
       this.samples.has(program) ||
@@ -259,6 +308,155 @@ export class SoundfontOutput implements MidiOutputSink {
     const buffer = this.buffers.get(key);
     if (buffer) this.bufferBytes -= buffer.length * buffer.numberOfChannels * 4;
     this.buffers.delete(key);
+  }
+
+  /** One score owns captured samples and handles, independently of live MIDI channels. */
+  getSequenceOutput(): SequenceOutput {
+    const graph = this.getOutput();
+    if (!graph || this.closed) throw new Error('Soundfont output unavailable');
+    const instruments = new Map<number, readonly { buffer: AudioBuffer; pitch: number }[]>();
+    const voices = new Set<SequenceVoice>();
+    let disposed = false;
+    let drums: SequenceOutput | null = null;
+    const active = () => !disposed && !this.closed && this.getOutput()?.context === graph.context;
+    return {
+      context: graph.context,
+      prepare: async (parts, signal) => {
+        const requested = [
+          ...new Set(
+            parts
+              .filter((p) => p.kind === 'melodic')
+              .flatMap((p) => [p.program, ...p.programs.map((e) => e.program)]),
+          ),
+        ];
+        // A bounded queue with at most four concurrent instrument preparations.
+        let index = 0;
+        const prepare = async () => {
+          while (index < requested.length) {
+            const program = requested[index++];
+            if (signal.aborted || !active())
+              throw new Error('Score instrument preparation cancelled');
+            if (instruments.has(program)) continue;
+            await this.load(program);
+            if (signal.aborted || !active())
+              throw new Error('Score instrument preparation cancelled');
+            if (instruments.has(program)) continue;
+            const captured = [...this.buffers.entries()]
+              .filter(([key]) => key.startsWith(`${program}:`))
+              .map(([key, buffer]) => ({ buffer, pitch: noteNumber(key.split(':')[1]) ?? 60 }));
+            if (!captured.length) throw new Error('Required score instrument unavailable');
+            const additional = [...new Set(captured.map((item) => item.buffer))]
+              .filter((buffer) => !this.sequenceBuffers.has(buffer))
+              .reduce((sum, buffer) => sum + buffer.length * buffer.numberOfChannels * 4, 0);
+            if (this.sequenceBytes + additional > MAX_CACHE_BYTES)
+              throw new Error('Score sample memory limit reached');
+            for (const { buffer } of captured) {
+              const references = this.sequenceBuffers.get(buffer) ?? 0;
+              if (!references) this.sequenceBytes += buffer.length * buffer.numberOfChannels * 4;
+              this.sequenceBuffers.set(buffer, references + 1);
+            }
+            instruments.set(program, captured);
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(4, requested.length) }, () => prepare()));
+        if (parts.some((p) => p.kind === 'percussion')) {
+          drums = await virtualMidiService.getSequenceOutput();
+          if (!drums) throw new Error('Score percussion unavailable');
+          await drums.prepare(parts, signal);
+        }
+      },
+      playNote: (note) => {
+        if (!active()) throw new Error('Score output cancelled');
+        if (note.percussion) {
+          if (!drums) throw new Error('Score percussion not prepared');
+          const voice = drums.playNote(note);
+          voices.add(voice);
+          this.sequenceVoices.add(voice);
+          void voice.ended.then(() => {
+            voices.delete(voice);
+            this.sequenceVoices.delete(voice);
+          });
+          return voice;
+        }
+        const candidates = instruments.get(note.program);
+        if (!candidates?.length) throw new Error('Score instrument not prepared');
+        const instrument = candidates.reduce((best, item) =>
+          Math.abs(item.pitch - note.note) < Math.abs(best.pitch - note.note) ? item : best,
+        );
+        const context = graph.context,
+          source = context.createBufferSource(),
+          gain = context.createGain();
+        source.buffer = instrument.buffer;
+        source.playbackRate.value = 2 ** ((note.note - instrument.pitch) / 12);
+        gain.gain.value = (note.velocity / 127) ** 2;
+        source.connect(gain);
+        gain.connect(note.destination);
+        let ended = false,
+          releaseAt = Infinity,
+          resolve: () => void = () => {};
+        const completed = new Promise<void>((done) => {
+          resolve = done;
+        });
+        const finish = () => {
+          if (ended) return;
+          ended = true;
+          source.onended = null;
+          source.stop();
+          source.disconnect();
+          gain.disconnect();
+          voices.delete(voice);
+          this.sequenceVoices.delete(voice);
+          resolve();
+        };
+        const voice: SequenceVoice = {
+          get state() {
+            return ended
+              ? 'ended'
+              : context.currentTime < note.startTime
+                ? 'scheduled'
+                : context.currentTime >= releaseAt
+                  ? 'releasing'
+                  : 'playing';
+          },
+          ended: completed,
+          stop: finish,
+          release: (time = context.currentTime) => {
+            if (ended) return;
+            time = Math.max(time, context.currentTime);
+            if (time < note.startTime) {
+              finish();
+              return;
+            }
+            if (time >= releaseAt) return;
+            releaseAt = time;
+            gain.gain.cancelScheduledValues(time);
+            gain.gain.setValueAtTime((note.velocity / 127) ** 2, time);
+            gain.gain.setTargetAtTime(0, time, 0.03);
+            source.stop(time + 0.2);
+          },
+        };
+        source.onended = finish;
+        voices.add(voice);
+        this.sequenceVoices.add(voice);
+        source.start(note.startTime);
+        return voice;
+      },
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        for (const voice of voices) voice.stop();
+        for (const { buffer } of [...instruments.values()].flat()) {
+          const refs = (this.sequenceBuffers.get(buffer) ?? 1) - 1;
+          if (refs) this.sequenceBuffers.set(buffer, refs);
+          else {
+            this.sequenceBuffers.delete(buffer);
+            this.sequenceBytes -= buffer.length * buffer.numberOfChannels * 4;
+          }
+        }
+        instruments.clear();
+        drums?.dispose?.();
+      },
+    };
   }
 
   send(data: number[]): void {
@@ -477,7 +675,9 @@ export class SoundfontOutput implements MidiOutputSink {
     this.closed = true;
     this.releaseOutput?.();
     this.abort.abort();
+    for (const waiter of this.loadWaiters.splice(0)) waiter();
     this.silence();
+    for (const voice of this.sequenceVoices) voice.stop();
     this.fallback.close();
     this.samples.clear();
     this.buffers.clear();
