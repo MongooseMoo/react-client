@@ -5,6 +5,9 @@ export interface HelpLinePiece {
 }
 
 const PHRASE_START = /(?<![\w@$-])help /g;
+// A reference starts a clause: "help look", "New here? help starting-out", "Try help index". In "no help on"
+// help is a word in a sentence.
+const CLAUSE_BEFORE = /(?:^|[:?.!,;(]|\b(?:try|type|see|or|and|use|read))\s*$/i;
 const TRAILING_PUNCTUATION = /[.,;:!?)"']+$/;
 const SEARCH = /^search [^,;]+/;
 
@@ -19,6 +22,8 @@ function topicAt(rest: string, choices: readonly string[]): string | undefined {
     .find((name) => name !== "" && rest.startsWith(name) && isTopicEnd(rest, name.length));
   if (choice) return choice;
   const phrase = SEARCH.exec(rest)?.[0] ?? /^\S+/.exec(rest)?.[0];
+  // "help search <words>" shows how to ask; it is not a topic.
+  if (phrase?.includes("<")) return undefined;
   return phrase?.replace(TRAILING_PUNCTUATION, "").trimEnd() || undefined;
 }
 
@@ -28,7 +33,7 @@ export function splitHelpLine(line: string, choices: readonly string[]): HelpLin
   let consumed = 0;
   for (const match of line.matchAll(PHRASE_START)) {
     const start = match.index ?? 0;
-    if (start < consumed) continue;
+    if (start < consumed || !CLAUSE_BEFORE.test(line.slice(0, start))) continue;
     const topic = topicAt(line.slice(start + match[0].length), choices);
     if (!topic) continue;
     if (start > consumed) pieces.push({ text: line.slice(consumed, start) });

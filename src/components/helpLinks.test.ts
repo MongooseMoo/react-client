@@ -58,6 +58,27 @@ describe("splitHelpLine", () => {
     expect(splitHelpLine("Ask a helper or phelp me.", [])).toEqual([{ text: "Ask a helper or phelp me." }]);
   });
 
+  it("does not link help used as a word in a sentence", () => {
+    expect(splitHelpLine('Sorry, there is no help on "zzqq".', [])).toEqual([{ text: 'Sorry, there is no help on "zzqq".' }]);
+    expect(splitHelpLine("Ask for help in the lobby.", [])).toEqual([{ text: "Ask for help in the lobby." }]);
+  });
+
+  it("does not link a usage pattern with a placeholder", () => {
+    expect(splitHelpLine("More help: help index, or help search <words>", [])).toEqual([
+      { text: "More help: " },
+      { text: "help index", topic: "index" },
+      { text: ", or help search <words>" },
+    ]);
+  });
+
+  it("links help after a lead-in word", () => {
+    expect(splitHelpLine("Type help moving to learn more.", [])).toEqual([
+      { text: "Type " },
+      { text: "help moving", topic: "moving" },
+      { text: " to learn more." },
+    ]);
+  });
+
   it("does not link help with nothing after it", () => {
     expect(splitHelpLine("Type help.", [])).toEqual([{ text: "Type help." }]);
   });
