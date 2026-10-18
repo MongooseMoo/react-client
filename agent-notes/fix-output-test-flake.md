@@ -60,5 +60,28 @@ Evidence gathered:
 - The full suite did not show the teardown error in 4 runs here; it needs a long enough gap
   between one file's teardown and the next file's setup (machine load).
 
+## Second flake: test:a11y "filechooser" timeout (commit fe96545d)
+`scripts/check-accessibility.mjs` sometimes timed out waiting for "filechooser" after Enter
+on "Choose database" (`/?mode=host`, 320px).
+- Probe (temporary script, removed) repeated that journey with in-page logging. Unloaded:
+  30/30 pass. With CDP `Emulation.setCPUThrottlingRate` 12: 1/15 pass. In every failed run
+  the page did its part: keydown Enter on the focused button, trusted click,
+  `input.click()` on a connected file input with `navigator.userActivation.isActive` true,
+  then the input's click event. So no app race; Chromium never reported a chooser.
+- Waiting 30 s instead of 5 s: 0/5, so the event is not late, it never comes.
+- Cause: Playwright 1.59.1 enables interception without awaiting it. `page.waitForEvent`
+  -> `on()` -> `_updateSubscription` sends `updateSubscription` fire-and-forget
+  (node_modules/playwright-core/lib/client/channelOwner.js:53-58); the server then sends
+  CDP `Page.setInterceptFileChooserDialog` (server/chromium/crPage.js:818-824). The script
+  pressed Enter right after, so on a slow renderer the picker request ran before
+  interception was on and took the native headless path (no dialog, no event).
+- Controls at 12x throttle: listener registered before goto 15/15 pass; registered just
+  before Enter (old script) 0/5; registered just before Enter plus 3 s before pressing 8/8.
+- Fix (script only): `page.once('filechooser', ...)` before `page.goto`, then
+  `expect.poll(() => chooserOpened).toBe(true)` after Enter (default expect timeout).
+- Verification: `npm run build` then `npm run test:a11y` 10 consecutive runs: 10 pass,
+  0 fail (machine not deliberately loaded; the throttled probe is the load evidence).
+  biome ignores `scripts/` (biome.json includes), so no lint applies to this file.
+
 ## Next step
 None. Push / PR only if Q asks.
