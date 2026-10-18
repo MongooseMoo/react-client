@@ -1,0 +1,81 @@
+import type React from 'react';
+
+import { headTracking, type HeadTrackingStatus, useHeadTrackingStore } from '../audio/headTracking';
+import { usePreferences } from '../stores/preferencesStore';
+
+/** The head bearing in words, e.g. "Head turned 23 degrees right". */
+export function headBearingText(yawDegrees: number): string {
+  const degrees = Math.round(Math.abs(yawDegrees));
+  if (degrees === 0) {
+    return 'Facing straight ahead';
+  }
+  return `Head turned ${degrees} degree${degrees === 1 ? '' : 's'} ${yawDegrees > 0 ? 'right' : 'left'}`;
+}
+
+const STATUS_TEXT: Record<HeadTrackingStatus, string> = {
+  off: 'Off.',
+  waiting: 'Waiting for the motion sensor.',
+  tracking: 'Tracking.',
+  'no-readings': 'No motion readings yet.',
+  blocked: 'Motion access was not allowed.',
+};
+
+/**
+ * Head tracking in the Sounds preferences: shown only where the device has (or
+ * may have, once allowed) a motion sensor, or while it is on.
+ */
+const HeadTrackingControls: React.FC = () => {
+  const enabled = usePreferences((state) => state.sound.headTracking);
+  const sensor = useHeadTrackingStore((state) => state.sensor);
+  const status = useHeadTrackingStore((state) => state.status);
+  const yawDegrees = useHeadTrackingStore((state) => state.yawDegrees);
+
+  if (!enabled && sensor !== 'available' && sensor !== 'needs-permission') {
+    return null;
+  }
+
+  const askAgain = status === 'blocked' || (enabled && status === 'no-readings' && sensor !== 'available');
+
+  return (
+    <fieldset className="head-tracking">
+      <legend>Head tracking</legend>
+      <label>
+        <input
+          type="checkbox"
+          checked={enabled}
+          aria-describedby="head-tracking-help"
+          onChange={(event) => {
+            if (event.target.checked) {
+              // Called straight from the click: iOS asks for motion access only inside a gesture.
+              void headTracking.enable();
+            } else {
+              headTracking.disable();
+            }
+          }}
+        />
+        Turn the sound scene with this device
+      </label>
+      <p id="head-tracking-help" style={{ color: 'var(--color-text-secondary)', fontSize: '0.9em' }}>
+        With headphones, hold or wear the device so it turns with your head: sounds stay where they
+        are in the world as you turn. Recenter, or Alt+Shift+O, makes the way you face now straight
+        ahead.
+      </p>
+      {enabled && (
+        <button type="button" onClick={() => headTracking.recenter()}>
+          Recenter
+        </button>
+      )}
+      {askAgain && (
+        <button type="button" onClick={() => void headTracking.enable()}>
+          Allow motion access
+        </button>
+      )}
+      <p>
+        Status: {STATUS_TEXT[status]}
+        {status === 'tracking' && ` ${headBearingText(yawDegrees)}.`}
+      </p>
+    </fieldset>
+  );
+};
+
+export default HeadTrackingControls;

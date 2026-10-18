@@ -33,6 +33,7 @@ import {
 } from './MediaVoices';
 import { clearNamedRoute, type NamedRouteState, routeNamedChain } from './namedRoute';
 import { hasOcclusion, OCCLUSION_GLIDE_MS } from './occlusion';
+import { turnAboutUp } from './headYaw';
 import { VectorTweener } from './vectorTween';
 import type { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
@@ -316,6 +317,10 @@ export class MediaService {
   private readonly manageFocus: boolean;
   private unsubscribePreferences: (() => void) | null = null;
   private shutdownComplete = false;
+  /** The server's listener facing, before the head yaw; null until one arrives. */
+  private bodyForward: Position | null = null;
+  private bodyUp: Position | null = null;
+  private headYaw = 0;
 
   constructor(cacophony: Cacophony = new Cacophony(), options: MediaServiceOptions = {}) {
     this.cacophony = cacophony;
@@ -486,14 +491,49 @@ export class MediaService {
     };
   }
 
+  /**
+   * The server's listener facing: the body. The engine listener faces this
+   * turned by the local head yaw ({@link setHeadYaw}); omitted fields keep
+   * their last value.
+   */
   setListenerOrientation(
     orientation: { forward?: Position | null; up?: Position | null } | null | undefined,
   ): void {
     if (orientation?.forward?.length) {
-      this.cacophony.listenerForwardOrientation = orientation.forward;
+      this.bodyForward = orientation.forward;
     }
     if (orientation?.up?.length) {
-      this.cacophony.listenerUpOrientation = orientation.up;
+      this.bodyUp = orientation.up;
+    }
+    this.applyListenerOrientation();
+  }
+
+  /**
+   * The head's turn from the body, in radians clockwise seen from above (head
+   * tracking). Every consumer of the listener's facing reads the engine
+   * listener: HRTF panners and live voices through the AudioListener, FOA beds
+   * through {@link syncAmbisonicRendererYaw}, positional FOA through
+   * {@link updatePositionalSpatial}. So turning that one listener turns them
+   * all, and a yaw of 0 leaves exactly the server's facing.
+   */
+  setHeadYaw(yaw: number): void {
+    if (yaw === this.headYaw) {
+      return;
+    }
+    this.headYaw = yaw;
+    // Facing the server never set is whatever the engine listener faces now.
+    this.bodyForward ??= [...this.cacophony.listenerForwardOrientation];
+    this.applyListenerOrientation();
+  }
+
+  /** Write the body facing, turned by the head yaw, to the engine listener and its followers. */
+  private applyListenerOrientation(): void {
+    if (this.bodyForward) {
+      const up = this.bodyUp ?? this.cacophony.listenerUpOrientation;
+      this.cacophony.listenerForwardOrientation = turnAboutUp(this.bodyForward, up, this.headYaw);
+    }
+    if (this.bodyUp) {
+      this.cacophony.listenerUpOrientation = this.bodyUp;
     }
     this.syncAmbisonicRendererYaw();
     for (const sound of this.allSounds) {

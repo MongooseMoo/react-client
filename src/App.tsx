@@ -24,6 +24,7 @@ import { createConfiguredClient } from "./createConfiguredClient";
 import type { GMCPMessageRoomInfo } from "./gmcp/Room";
 import type { HapticsRuntime } from "./haptics/runtime";
 import { useChannelHistory } from "./hooks/useChannelHistory";
+import { useHeadTracking } from "./hooks/useHeadTracking";
 import {
   autoLogService,
   createAutoLogSessionDraft,
@@ -159,6 +160,7 @@ function App() {
   const hapticsEnabled = usePreferences((state) => state.haptics.enabled);
   const connected = useConnectionStore((state) => state.connected);
   useFileTransferNotifications(client);
+  useHeadTracking(client?.media);
 
   const saveLog = () => {
     if (outRef.current) {

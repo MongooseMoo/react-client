@@ -1432,6 +1432,83 @@ describe('GMCPClientMedia', () => {
     expect(renderer.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(-Math.PI / 2);
   });
 
+  describe('head yaw on top of the server facing', () => {
+    const expectForward = (expected: number[]) => {
+      client.media.cacophony.listenerForwardOrientation.forEach((value: number, index: number) => {
+        expect(value).toBeCloseTo(expected[index], 9);
+      });
+    };
+
+    it('turns the engine listener by the head yaw and back exactly when it returns to zero', () => {
+      // Server: MOO east, which arrives as Web Audio -x (yaw -90 degrees).
+      handler.handleListenerOrientation({ forward: [1, 0, 0], up: [0, 0, 1] } as GMCPMessageClientMediaListenerOrientation);
+      const serverForward = [...client.media.cacophony.listenerForwardOrientation];
+      const serverUp = [...client.media.cacophony.listenerUpOrientation];
+      expect(serverForward).toEqual([-1, 0, 0]);
+
+      client.media.setHeadYaw(Math.PI / 2);
+      // A quarter turn right of that is yaw 0: Web Audio -z.
+      expectForward([0, 0, -1]);
+      expect(client.media.cacophony.listenerUpOrientation).toEqual(serverUp);
+
+      client.media.setHeadYaw(0);
+      expect(client.media.cacophony.listenerForwardOrientation).toEqual(serverForward);
+    });
+
+    it('keeps the head offset when the server turns the body', () => {
+      client.media.setHeadYaw(-Math.PI / 2);
+      // Default facing is Web Audio -z; a quarter turn left faces -x.
+      expectForward([-1, 0, 0]);
+
+      handler.handleListenerOrientation({ forward: [1, 0, 0] } as GMCPMessageClientMediaListenerOrientation);
+      // The body now faces -x; the head is still a quarter turn left of it: +z.
+      expectForward([0, 0, 1]);
+    });
+
+    it('rotates ambisonic beds and re-aims positional FOA sources with the head', async () => {
+      const foaSound = createMockSound('https://media.example/bed.ogg');
+      mockCreateSound.mockResolvedValueOnce(foaSound);
+      await handler.handlePlay({
+        channels: 4,
+        key: 'bed',
+        name: 'bed.ogg',
+        type: 'music',
+        upmix: 'ambisonic',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+      const bed = await mockAmbisonicRendererCreate.mock.results[0].value;
+
+      const stereoSound = createMockSound('https://media.example/fire.ogg');
+      mockCreateSound.mockResolvedValueOnce(stereoSound);
+      await handler.handlePlay({
+        key: 'fire',
+        name: 'fire.ogg',
+        position: [0, 10, 0],
+        type: 'sound',
+        upmix: 'ambisonic',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+      const fire = await mockPositionalFoaRendererCreate.mock.results[0].value;
+
+      client.media.setHeadYaw(Math.PI / 4);
+
+      expect(bed.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(Math.PI / 4);
+      const [, forward] = fire.setBearingFromPositions.mock.lastCall;
+      expect(Math.atan2(forward[0], -forward[2])).toBeCloseTo(Math.PI / 4, 9);
+
+      client.media.setHeadYaw(0);
+      expect(bed.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(0);
+      expect(fire.setBearingFromPositions.mock.lastCall[1]).toEqual([0, 0, -1]);
+    });
+
+    it('does not touch the listener for a head yaw that has not changed', () => {
+      client.media.setHeadYaw(0);
+      client.media.cacophony.listenerForwardOrientation = [0.6, 0, -0.8];
+      client.media.setHeadYaw(0);
+      expect(client.media.cacophony.listenerForwardOrientation).toEqual([0.6, 0, -0.8]);
+    });
+  });
+
   describe('live MOO wire shapes (chunk 01)', () => {
     const tonePlay = {
       key: 's4894767',

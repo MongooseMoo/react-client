@@ -22,6 +22,13 @@ export function isKeysModeToggle(event: KeyboardEvent): boolean {
   return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyH";
 }
 
+export const HEAD_RECENTER_CHORD: Chord = { key: "o", modifiers: ["alt", "shift"] };
+
+/** Alt+Shift+O by physical key: recenters head tracking (src/audio/headTracking.ts). */
+export function isHeadRecenterShortcut(event: KeyboardEvent): boolean {
+  return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyO";
+}
+
 const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const ARROWS = ["arrowleft", "arrowright", "arrowup", "arrowdown"];
 // Every scheme's letters: the input and output suppress all of them with Alt.
@@ -34,6 +41,11 @@ const RESERVED_SHORTCUTS: readonly ReservedShortcut[] = [
     keys: [KEYS_MODE_CHORD.key],
     modifiers: KEYS_MODE_CHORD.modifiers,
     reason: "Alt+Shift+H turns keys mode on and off",
+  },
+  {
+    keys: [HEAD_RECENTER_CHORD.key],
+    modifiers: HEAD_RECENTER_CHORD.modifiers,
+    reason: "Alt+Shift+O recenters head tracking",
   },
   { keys: ["w", "t", "n", "tab"], modifiers: ["ctrl"], reason: "The browser keeps this key" },
   { keys: ["w", "t", "n", "tab"], modifiers: ["ctrl", "shift"], reason: "The browser keeps this key" },
