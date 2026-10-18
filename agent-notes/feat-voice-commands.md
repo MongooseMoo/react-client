@@ -144,6 +144,19 @@ Files:
   PID afterwards; the first run on 5183 never checked whose server it hit);
   check-browser-sessions passed;
   check-client-recovery passed; test:a11y PASS (it opens the Speech tab).
+- After rebasing onto origin/master 7d5181f5, all seven steps at 8cc78f23:
+  typecheck exit 0; npm test 183 files / 2570 tests passed; test:audio-cache
+  exit 0 (4 PASS lines); editor-ownership 1 passed on 5195 (listener PID
+  125940, parent cd'd into this worktree, served and local entry
+  assets/index-BX_X_zod.js); check-browser-sessions passed;
+  check-client-recovery passed; test:a11y PASS.
+- scripts/check-audio-cache.mjs is intermittent on this machine, on master
+  too. Direct runs (node scripts/check-audio-cache.mjs on an existing build):
+  master 7d5181f5 1 failure in 6 (line 132, Autologs Refresh); this branch
+  before 8cc78f23 4 failures in 10 counting one npm run (all line 137, the
+  Files tab's file input). A probe replaying lines 101-137 against vite
+  preview (scratchpad files-tab-probe.mjs) passed 18 of 18, so the cause is
+  not established; the final gate run passed.
 - `npx tsc --noEmit`: exit 0.
 - `npx biome lint` on all branch-changed src files: 7 warnings, all on master
   (client.test.ts:169-174 noUnusedImports, input.tsx:83).
