@@ -372,7 +372,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
   advertiseMidiSupport(): void {
     const supports = this.client.gmcp.handlers['Core.Supports'];
     if (!this.isAdvertised && supports) {
-      supports.sendAdd(['Client.Midi 2']);
+      supports.sendSet(supports.advertisedModules());
       this.isAdvertised = true;
     }
   }
