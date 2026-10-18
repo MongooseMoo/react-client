@@ -192,6 +192,32 @@ describe("AutoLogService", () => {
     service.dispose();
   });
 
+  it("feeds the folder sink only lines IndexedDB accepted, then tells it the session ended", async () => {
+    const store = new FakeAutoLogStore();
+    const sink = { append: vi.fn(), sessionEnded: vi.fn() };
+    const service = new AutoLogService(store as unknown as AutoLogStore, sink);
+    service.configureSession({ title: "Test", mode: "default", sanitizedUrl: "" });
+    usePreferences.getState().setAutologging({ enabled: true, maxBytes: 1000 });
+
+    service.recordLine({ type: "serverMessage", sourceType: "ansi", sourceContent: "lost to IndexedDB" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    store.failNextAppend = true;
+    await expect(service.flush()).rejects.toThrow("IndexedDB write failed");
+    expect(sink.append).not.toHaveBeenCalled();
+
+    service.recordLine({ type: "serverMessage", sourceType: "ansi", sourceContent: "kept" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await service.endSession();
+
+    expect(sink.append).toHaveBeenCalledTimes(1);
+    const [session, entries] = sink.append.mock.calls[0];
+    expect(session.id).toBe("session-0");
+    expect(entries.map((entry: AutoLogEntry) => entry.sourceContent)).toEqual(["kept"]);
+    expect(sink.sessionEnded).toHaveBeenCalledWith(expect.objectContaining({ id: "session-0" }), expect.any(Number));
+    expect(sink.append.mock.invocationCallOrder[0]).toBeLessThan(sink.sessionEnded.mock.invocationCallOrder[0]);
+    service.dispose();
+  });
+
   it("releases the current session when its final flush fails", async () => {
     const store = new FakeAutoLogStore();
     const service = new AutoLogService(store as unknown as AutoLogStore);

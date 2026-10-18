@@ -52,6 +52,23 @@ describe("AutoLogStore", () => {
     store.close();
   });
 
+  it("reads a session and its entries from a sequence in one snapshot", async () => {
+    const store = new AutoLogStore();
+    const session = await store.createSession(draft, 100);
+    const other = await store.createSession(draft, 200);
+    await store.appendEntries([0, 1, 2, 3].map((sequence) => makeEntry(session.id, sequence, `line ${sequence}`)));
+    await store.appendEntries([makeEntry(other.id, 0, "other session")]);
+
+    const snapshot = await store.getSessionSnapshot(session.id, 2);
+    expect(snapshot?.session.id).toBe(session.id);
+    expect(snapshot?.entries.map((entry) => entry.sourceContent)).toEqual(["line 2", "line 3"]);
+
+    await store.deleteSession(session.id);
+    expect(await store.getSessionSnapshot(session.id, 0)).toBeUndefined();
+
+    store.close();
+  });
+
   it("deletes a session and its entries", async () => {
     const store = new AutoLogStore();
     const session = await store.createSession(draft, 100);

@@ -1,4 +1,5 @@
 import { usePreferences } from "../stores/preferencesStore";
+import { autoLogFolder } from "./AutoLogFolder";
 import { type AutoLogStore, autoLogStore } from "./AutoLogStore";
 import type {
   AutoLogEntry,
@@ -6,6 +7,7 @@ import type {
   AutoLogMode,
   AutoLogSession,
   AutoLogSessionDraft,
+  AutoLogSink,
 } from "./AutoLogTypes";
 
 const FLUSH_INTERVAL_MS = 2000;
@@ -60,9 +62,13 @@ export function createAutoLogSessionDraft(
 
 export class AutoLogService {
   private store: AutoLogStore;
+  private sink: AutoLogSink | undefined;
   private sessionDraft: AutoLogSessionDraft | null = null;
   private currentSession: AutoLogSession | null = null;
   private pendingEntries: AutoLogEntry[] = [];
+  // The session pendingEntries belong to; endSession clears currentSession
+  // before its final flush.
+  private pendingSession: AutoLogSession | null = null;
   private sequence = 0;
   private flushTimer: number | null = null;
   private flushPromise: Promise<void> = Promise.resolve();
@@ -70,8 +76,9 @@ export class AutoLogService {
   private generation = 0;
   private starting: Promise<void> | undefined;
 
-  constructor(store: AutoLogStore = autoLogStore) {
+  constructor(store: AutoLogStore = autoLogStore, sink?: AutoLogSink) {
     this.store = store;
+    this.sink = sink;
     this.unsubscribePreferences = usePreferences.subscribe(
       (state) => state.autologging,
       (preferences) => {
@@ -130,6 +137,7 @@ export class AutoLogService {
           return;
         }
 
+        this.pendingSession = this.currentSession;
         this.pendingEntries.push({
           ...line,
           sessionId: this.currentSession.id,
@@ -161,12 +169,14 @@ export class AutoLogService {
     }
 
     const entries = this.pendingEntries;
+    const session = this.pendingSession;
     this.pendingEntries = [];
     const maxBytes = usePreferences.getState().autologging.maxBytes;
     const protectedSession = this.currentSession?.id;
 
     const flushPromise = this.flushPromise
       .then(() => this.store.appendEntries(entries))
+      .then(() => { if (session) this.sink?.append(session, entries); })
       .then(() => this.store.pruneToMaxBytes(maxBytes, protectedSession));
 
     this.flushPromise = flushPromise.catch(() => {});
@@ -180,7 +190,11 @@ export class AutoLogService {
     this.currentSession = null;
     this.sequence = 0;
     await this.flush();
-    if (session) await this.store.endSession(session.id);
+    if (session) {
+      const endedAt = Date.now();
+      await this.store.endSession(session.id, endedAt);
+      this.sink?.sessionEnded(session, endedAt);
+    }
   }
 
   dispose(): void {
@@ -211,4 +225,4 @@ export class AutoLogService {
   }
 }
 
-export const autoLogService = new AutoLogService();
+export const autoLogService = new AutoLogService(autoLogStore, autoLogFolder);
