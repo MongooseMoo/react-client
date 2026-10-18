@@ -45,6 +45,10 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify lazy audio caching in the production build
         run: npm run test:audio-cache
+      - name: Verify native sequence rendering and composer capture
+        run: |
+          npm run test:sequences
+          npm run test:composer
       - name: Verify editor ownership across game sessions
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:5183
