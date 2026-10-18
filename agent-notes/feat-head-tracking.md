@@ -27,6 +27,13 @@ Do not push or open a PR.
   checkbox) when a view swap removes the focused control. Desktop check in Chromium,
   with and without an injected requestPermission resolving "granted": "No motion sensor
   found. Check again", no toggle (scratchpad desktop-check.mjs).
+- Every step of .github/workflows/build-test.yml run locally at 6374775d, all exit 0:
+  actionlint + zizmor (no findings); typecheck; npm test (180 files / 2466 tests);
+  test:audio-cache (build + audio, soundfont and editor checks: 4 PASS lines);
+  editor-ownership spec (1 passed); check-browser-sessions; check-client-recovery;
+  test:a11y (PASS). Port trap: 5183 (the CI port) was held by another agent's preview,
+  so the first editor-ownership "pass" ran against someone else's build; rerun against
+  this worktree's own preview on 5287. Check the port's owner before trusting that step.
   Waiting on the team lead's browser check, then PR.
 - Files as they stand:
   - `src/audio/headYaw.ts` - devicePose (quaternion from alpha/beta/gamma + screen
