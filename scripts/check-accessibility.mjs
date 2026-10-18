@@ -81,15 +81,20 @@ try {
   await page.bringToFront();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
+  // Playwright turns on file chooser interception without waiting for it, so a
+  // listener added just before Enter can lose the race on a loaded machine: the
+  // page opens the picker natively and no filechooser event ever arrives.
+  // Listen before navigating so interception is on long before the key press.
+  let chooserOpened = false;
+  page.once('filechooser', () => { chooserOpened = true; });
   await page.setViewportSize({ width: 320, height: 800 });
   await page.goto(`${origin}/?mode=host`, { waitUntil: 'networkidle' });
   const choose = page.getByRole('button', { name: 'Choose database', exact: true });
   await expect(choose).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(choose).toBeFocused();
-  const chooser = page.waitForEvent('filechooser');
   await page.keyboard.press('Enter');
-  await chooser;
+  await expect.poll(() => chooserOpened, { message: 'Enter on Choose database opens the file chooser' }).toBe(true);
   await scan('host-320px');
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(origin);
