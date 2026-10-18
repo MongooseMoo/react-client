@@ -153,7 +153,9 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         }
 
         const { layers, keysMode } = useKeystrokesStore.getState();
-        const found = findBinding(layers, usePreferences.getState().keystrokes, keysMode, event);
+        // Once the command input has text, typing keys type: a staged command can be finished.
+        const typingKeysFire = keysMode && useInputStore.getState().text === "";
+        const found = findBinding(layers, usePreferences.getState().keystrokes, typingKeysFire, event);
         if (!found) return;
 
         event.preventDefault();

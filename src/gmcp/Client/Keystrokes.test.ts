@@ -302,6 +302,28 @@ describe("GMCPClientKeystrokes", () => {
       mockAnnounce.mockClear();
     });
 
+    it("lets typing keys type once the command input has text, so a staged command can be finished", () => {
+      press(document.body, altShiftH);
+      useInputStore.getState().setText("score ");
+
+      const typed = press(element("command-input"), { key: "p", code: "KeyP" });
+      expect(typed.defaultPrevented).toBe(false);
+      expect(client.sendCommand).not.toHaveBeenCalled();
+
+      useInputStore.getState().clear();
+      press(element("command-input"), { key: "p", code: "KeyP" });
+      expect(client.sendCommand).toHaveBeenCalledWith("press p on #4936");
+    });
+
+    it("still fires a Ctrl binding while the command input has text", () => {
+      handler.receiveRegisteredMessage("Layer", helmLayer);
+      useInputStore.getState().setText("half typed");
+
+      press(element("command-input"), ctrlS);
+
+      expect(client.sendCommand).toHaveBeenCalled();
+    });
+
     it("leaves typing keys to the command input until keys mode is on", () => {
       const typed = press(element("command-input"), { key: "p", code: "KeyP" });
 

@@ -78,6 +78,9 @@ bindings fire only in **keys mode**. Every other binding fires whenever focus al
   It does not switch keys mode on by itself.
 - When the last modal layer goes away, keys mode switches off and the client says so.
 - In keys mode, keys that no layer binds still type as usual, and Enter still sends.
+- In keys mode, a key without Ctrl, Alt or Meta fires only while the command input is empty. Once it
+  has text (a staged `score `, or anything the player started typing), keys type, so the command can
+  be finished. Sending clears the input and the keys work again.
 
 A non-modal layer is announced on arrival as "Helm console keys: 6". A layer leaving is announced as
 "Helm console keys removed".
