@@ -240,6 +240,8 @@ under that same current owner does not restore any remote authority.
 
 For all file authorization and revocation, the MOO predicate is exactly
 `blocked(a,b) = (a in b.gaglist) || (b in a.gaglist)` on player objects.
+Only `.gaglist` counts. `.sgaglist` does NOT count: it is a sound gag, checked
+through `sgag_p` by `$mcmp:play` (`#1811`, verb 0).
 Do not use `#6:gag_p`, which consults task-global player/callers rather than an
 arbitrary player pair. Object/location/caller gags do not apply unless the other
 player object is itself in the list. `#6:set_gaglist`, `#6:gc_gaglist` and every

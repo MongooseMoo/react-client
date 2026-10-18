@@ -2,19 +2,20 @@
 
 ## Goal
 
-Revise the spec at c52b0fe8 on feat/file-sharing-v2 after the second independent
-Claude review. Work only in C:/Users/Q/code/react-client-file-sharing; commit the four
+Apply the final spec edits at 0da13297 on feat/file-sharing-v2 after the third
+independent Claude review. Work only in C:/Users/Q/code/react-client-file-sharing; commit the four
 contracts and this note. Do not push, implement client/server code, or contact
 or modify the MOO. Original tasks/review are in
 C:/Users/Q/AppData/Local/Temp/claude/C--Users-Q-code-react-client/4e69018f-42c3-4d90-a8d7-58e7d41e35bd/scratchpad/:
 codex-dcpp-spec-task.md, codex-dcpp-spec-revise.md, codex-dcpp-spec-revise2.md,
-claude-spec-review-report.md and claude-spec-rereview-report.md.
+codex-dcpp-spec-revise3.md, claude-spec-review-report.md,
+claude-spec-rereview-report.md and claude-spec-rereview2-report.md.
 This note and the linked contracts stand alone.
 
 ## State
 
 All original high, medium and low findings plus B1-B7 and L-new-1..6 from the
-re-review have specified resolutions below; no finding
+re-review, plus C1-C3 and the final L1-L3, have specified resolutions below; no finding
 is rejected or left for an implementer to choose. This remains SPECIFICATION
 ONLY: no implementation, deployment, browser acceptance or author-run live MOO
 probe is claimed. Source baseline is 03a193ba2add2cb0d40bd9b21b508006f7512c96.
@@ -76,8 +77,10 @@ their deployment is not verified here.
 - Tabs elect only the Files endpoint with a queued Web Lock request; every tab's
   game auto-login/reconnect stays unchanged. Followers wait and take over when
   the holder releases. Without Web Locks every tab may register memory-only;
-  the hub's last Hello wins and superseded tabs park. The elected service holds
-  the storage lock for its dedicated worker from Phase 1. IndexedDB needs no
+  the hub's last Hello wins. Every superseded tab, including a visitor, parks
+  until an explicit player Files action; login/reconnect never re-queues it.
+  The elected service holds the storage lock for its dedicated worker from
+  Phase 1. IndexedDB needs no
   sync handle; Phase 5 OPFS does, otherwise bounded memory fallback.
 - Endpoint loss uses fresh Hello ids with 1-second exponential backoff capped
   at 60 seconds plus bounded jitter; only a continuous 30-second outage produces
@@ -87,6 +90,9 @@ their deployment is not verified here.
   pieces/transfers, not later share/content/queue stores. Sender/id/index partials
   survive reload for seven days in Phases 1-3; a fresh accepted same-sender/id/size
   offer adopts them under a new t, then verifies the full root before receipt.
+  A whole-file mismatch fences all referencing attempts, atomically purges the
+  sender/id pieces and transfer record, then reports integrity failure; the
+  next fresh accepted offer starts from zero.
 - Timer work uses bounded due buckets, not full registry scans. Input/cache/
   fanout/record bounds replace application output pacing. Leases remain.
 
@@ -95,7 +101,7 @@ their deployment is not verified here.
 | Finding | Resolution and contract location |
 | --- | --- |
 | H1 | Peer validation explicitly limits hub to bytes/structure. Files Name/Search and data Path rules assign NFC, categories, scalar/token counts, folding and matching only to clients. |
-| H2 | Peer Raw ingress names #3838:parse_gmcp_message after address/data split: cap and common-subset parse INSIDE its existing try, cap before parse, integer-0 rejection marker and no new catch/raw v2 fallback, then bounded depth/value walk. handle_message stops on rejection before mutation/dispatch. Retained first-wins values alone control validation/forwarding/replay; canonical keys checked; raw failures omit untrusted req. |
+| H2 | Peer Raw ingress caps bytes before the existing try and keeps only parse_json inside it. The parser returns a server-only {0, reason} list; handle_message sends the bounded package Error using captured ctx outside catches, then stops before mutation/dispatch. No new catch or raw v2 fallback; retained first-wins values and bounded post-parse checks remain required. |
 | H3 | No null fields: optional target/req/cursor/next/ICE properties; end:true with candidate omitted. Hub never serializes E_NONE as a missing value. Legacy label removed for explicit legacyV1 boolean. |
 | H4 | Files terminal offer LRU is separate from live pending/accepted caps and freely evicted; unknown push cannot revive consent. Legacy observer drops pending tracking under pressure and never rejects an Offer for tombstone/pending load; accepted cancellation records remain live and bounded separately. |
 | H5 | Peer/Data reserve 2 total and 1 not-established session slots/endpoint for offer auth; share-only <=6 total/1 not-established, <=4/downloader player hub-wide. Global offer partition and classification changes are defined. |
@@ -110,7 +116,7 @@ their deployment is not verified here.
 | M6 | OPFS requires an actual createSyncAccessHandle in the dedicated worker and flush before bitmap commit. Otherwise <=100 MiB memory mode. No createWritable durability substitute. |
 | M7 | Get has no exact-revision field; uploader checks pinned id/size against current approved readable index. Revision Revoke includes sharing, stops stale lists/search, retains unaffected gets while still on. |
 | M8 | Ready.canShare boolean reflects authenticated guest eligibility; client hides publishing for false. |
-| M9 | Architecture defines Files-only queued Web Lock election, status-only waiting followers, automatic lock handoff, transport-loss release and worker storage lock. Game auto-login/reconnect stays unchanged. No-lock fallback permits memory-only registration, parking superseded tabs without retry contests. |
+| M9 | Architecture defines Files-only queued Web Lock election, waiting followers, automatic handoff and worker storage lock. End superseded parks EVERY tab kind, including visitors and no-lock tabs, until an explicit player Files action; login/reconnect never re-queues it. Game login remains unchanged. |
 | M10 | Coordinator explicitly settled symmetric gag. Both directions blocked for offers, discovery/search, sessions and established transfers; ungag does not resurrect old consent. |
 | M11 | Binary abort reason 9 is limit, matching hard-cap error/abort wording. |
 | L1 | Peer and Architecture use the same reserved/offering/answering/established/closed session states. |
@@ -124,19 +130,25 @@ their deployment is not verified here.
 | L9 | Files Search and Architecture require a UI statement that query text and requester identity are sent to online sharers. |
 | L10 | Call storage.persist before large receive; explain temporary roughly 2x disk need. Release saved payload immediately if no other consumer/queue/lease holds it, retaining receipt/tombstone. |
 | L11 | Peer names authenticated player plus personalDataStore.policyReady and confirmed owner/visitor as registration trigger, after both packages are advertised and election held. Startup Supports alone is not login confirmation. |
-| B1 | Peer Raw ingress and Architecture #3838 row put cap AND common-subset parse inside the existing try, cap before decoding. Existing except returns the v2 rejection marker; no new try/except/backtick catch. This follows the coordinator's explicit correction to the review's suggested cap location. |
-| B2 | Peer Raw ingress and Architecture name #3838:handle_message: capture ctx/key before parsing, stop on integer-0 rejection before message mutation/route_message, add ctx only for v2, retain other-package message shape; #2729 passes ctx to v2 dispatch. |
+| B1 | Final coordinator decision supersedes the earlier cap-inside-try wording: Peer Raw ingress and Architecture put the cap before the existing try, with ONLY parse_json inside. The existing except returns a v2 rejection reason; no new catch and no parser output. |
+| B2 | Peer Raw ingress and Architecture name #3838:handle_message: capture ctx/key before parsing, recognize {0, reason}, send its bounded package Error using that ctx outside catches and return before mutation/dispatch. Add ctx only to successful v2 maps; #2729 passes ctx to v2 dispatch. |
 | B3 | Peer capability discovery and Architecture name #4004:handle_set / handle_remove handle_add and existing session.gmcp_data["supported_packages"]. Set establishes known-complete; Add/Remove update it, removing a required package invalidates endpoint. Scope all updates/query replies to transport key. |
-| B4 | Files revocation and Architecture define blocked(a,b) as symmetric PLAYER gaglist membership. #6:set_gaglist, #6:gc_gaglist and every direct writer call file_gag_changed after mutation for old/new affected entries; gag_p and object/location/caller gags are excluded. Apply same predicate to v1. |
-| B5 | Architecture election never changes game login/reconnect. Queue one navigator.locks.request without ifAvailable; next eligible waiting tab gets Files role and sends Hello. No locks: all eligible tabs may register memory-only, last valid Hello wins, superseded tabs park. |
+| B4 | Files and Architecture use symmetric PLAYER .gaglist membership only; .sgaglist is excluded as a sound gag. #6:set_gaglist, #6:gc_gaglist and all direct .gaglist writers notify old/new affected player pairs after mutation. gag_p and object/location/caller gags are excluded; same predicate for v1. |
+| B5 | Architecture keeps game login unchanged and queues one navigator.locks.request without ifAvailable. Waiting eligible followers take over on release. Every End superseded recipient stays parked until a player Files action, including visitors; no-lock memory-only tabs follow the same rule. |
 | B6 | Peer Endpoint recovery specifies fresh-id Hello, nominal 1-second doubling to 60 seconds with bounded jitter, rate/busy minimums, stable-Ready reset and one delayed 30-second unavailable notice. legacyV1 uses explicit FileTransfer 1 plus no ready v2 target. Architecture restores idle v1 reception during recovery and adds acceptance rows. |
 | B7 | Architecture Exact Phase 1 client build inventory names package/service/endpoint/transport/session/ctl/frame/offer/storage/worker/export/legacy/UI modules. Database version 1 creates six stores: owner, attempts, offers, exports, pieces, transfers. Worker/lock start in Phase 1; no OPFS until Phase 5. Types 1-5/11 only; later stores/features listed as out of scope. |
 | L-new-1 | Rejected the suggested Phase 1-3 reload regression per coordinator; fixed it instead. Architecture and Data retain same-owner/sender/id/size partials for seven days, fresh Offer/acceptance/new t after reload, provisional have then complete-root verification. Phase 4 replaces peer keys with verified owner/id content. v1 remains isolated. |
 | L-new-2 | Peer registration waits for no live operation before capability re-Hello; enforce a lower limit locally immediately at accept/get, cancelling unsafe work explicitly first. Acceptance matrix covers limit changes without needless live consent revocation. |
 | L-new-3 | Architecture Phase 1 row calls Revoke an outbound helper, never an inbound hub handler. Client Files receives it. |
 | L-new-4 | Peer documents Supports.Get as a new extension, reuses saved complete Sets, checks gag before probing, coalesces targets, limits target probes to one per five seconds across requesters, caps pending/cooldown records at 256 and handles unsupported-query silence as unavailable. |
-| L-new-5 | Architecture ctx names player.uuid as principal_uuid's server source, verified against #3476:0 Char.Name in supplied local snapshot. Capture/check own UUID and incarnation_id against object reuse; connection_key is fresh per transport, not the persistent player UUID. |
+| L-new-5 | Architecture ctx uses the player object's own uuid for principal_uuid. Capture incarnation at Hello and compare only through $object_utils:incarnation(player) (#52 verb 54), never a direct property read; hub needs control/wizard permissions. connection_key remains fresh per transport. |
 | L-new-6 | Architecture Offer state now labels received export substate (local) and explicitly says none is stored by the hub. |
+| C1 | Architecture reload resume, storage inventory and Data full-mode rules require fencing/draining all from/id attempts, then atomic deletion of every retained piece and the transfers record, clearing bitmaps/references/accounting before reporting whole-file integrity failure. No receipt/export; next fresh accepted offer starts from zero, matching v1 discard-on-failure. |
+| C2 | Peer Raw ingress and Architecture #3838 integration keep only parse_json in the existing try. Parser returns {0, reason} without output; handle_message has ctx and sends the package Error outside all catches before returning. Output failures propagate. |
+| C3 | Files and Architecture explicitly exclude .sgaglist: $mcmp:play (#1811 verb 0) checks sgag_p for sounds. Only .gaglist blocks files, in v1 and v2. |
+| Final L1 (visitor tabs) | Architecture election, Peer recovery and acceptance matrix park every superseded tab kind, including visitor/page-nonce and no-lock tabs. No automatic re-queue/Hello, even on login/reconnect; only a player action such as Files “Use this tab for file sharing” re-queues it. |
+| Final L2 (incarnation) | Architecture ctx reads incarnation only through $object_utils:incarnation(player) (#52 verb 54), at Hello and subsequent checks, with required control/wizard permissions. Its lazy initialization prevents a missing-property read. |
+| Final L3 (guest) | Architecture ctx and Peer canShare define guest exactly as $object_utils:isa(player, $guest). Coordinator live evidence: $guest is #31; #2271/#2272 have parent #31. |
 
 The review's small-Phase-1 cuts are applied: no Restart/session generations,
 export hub substate, ctl progress, nine independent rate buckets, MOO output
@@ -160,17 +172,17 @@ handlers. Base leases, consent, revocation and direct-send parity remain require
 
 ## Next step
 
-The coordinator can review this second spec-only revision, obtain Phase 0 browser/live
+The coordinator can review this final spec-only revision, obtain Phase 0 browser/live
 baseline evidence, then implement server-first Phase 1 and its complete direct
 send slice. Do not prebuild later-phase hub handlers. Phase exits must run the
 Architecture acceptance matrix; its rows are future requirements, not tests
-claimed by this documentation task. Both supplied independent Claude reports
+claimed by this documentation task. All three supplied independent Claude reports
 informed the revisions; no independent review of THIS resulting revision is claimed.
 
-Documentation validation passed for this revision: all five Markdown files
-parsed with installed marked; 16 local links and 42 source-citation path/range
-groups checked; the six Phase 1 stores/version/frame gate and all original 30
-plus 13 re-review finding IDs checked; obsolete fallback/election/parse/reload
-wording absent. git diff --check passed. The required commit hook runs typecheck
-and staged lint; successful commit requires both. No client runtime tests, live
-MOO probe or browser acceptance are claimed for this documentation-only task.
+Documentation validation passed for this revision: five Markdown files parsed
+with installed marked; 16 local links, 42 source-citation path/range groups,
+all 49 review-resolution IDs, the six final decisions and Phase 1 store/version/
+frame gates checked. Obsolete parser/election wording is absent; git diff
+--check passed. The required commit hook runs typecheck and staged lint; successful
+commit requires both. No client runtime tests, live MOO probe or browser
+acceptance are claimed for this documentation-only task.

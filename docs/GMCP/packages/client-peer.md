@@ -52,17 +52,16 @@ these addresses only:
 1. `#3838:handle_message` captures the underlying transport's connection_key and
    server ctx BEFORE calling this parser or doing deferred work. Charge admission
    using that context even if the payload is invalid.
-2. INSIDE the existing `try ... except (ANY)` in `parse_gmcp_message`, BEFORE
-   any parse_json call, test `length(data) <= 65536`; MOO length is bytes
+2. BEFORE the existing `try ... except (ANY)` in `parse_gmcp_message`, test
+   `length(data) <= 65536`; MOO length is bytes
    (`C:/Users/Q/src/toaststunt-prod-6d6d2ef/src/list.cc:666-668`). Above this bound do NOT
-   call parse_json, forward, allocate a record or echo input. Send a bounded
-   package Error with `about` the recognized suffix (or Unknown), `code:"too-large"`,
-   empty refs and NO req, because the payload was not decoded. Return the
-   server-only rejection marker described below.
-3. Within the cap call `parse_json(data,"common-subset")` in that SAME existing try.
-   On failure send the same bounded Error with `code:"malformed"`, no req/refs,
-   and return the rejection marker from its existing except arm for v2 only.
-   Require a map root. Add NO new try/except or backtick catch. Keep the existing
+   call parse_json, forward, allocate a record or echo input. Return a rejection
+   reason with `about` the recognized suffix (or Unknown), `code:"too-large"`,
+   empty refs and NO req, because the payload was not decoded.
+3. Within the cap keep ONLY `parse_json(data,"common-subset")` inside that
+   existing try. On failure return the rejection marker with `code:"malformed"`,
+   no req and empty refs from its existing except arm for v2 only. Require a map
+   root outside the try. Add NO new try/except or backtick catch. Keep the existing
    raw-string fallback in that except arm only for other GMCP packages.
 4. Walk the parsed structure, stopping at depth >8 or >2048 total values
    (root and each map value/array item count; keys do not). Reject malformed
@@ -72,10 +71,17 @@ these addresses only:
 5. Continue through the ctx-bound v2 dispatch only after these checks. Other
    GMCP packages retain their existing parsing and routing behavior.
 
-The rejection marker is MOO integer 0, returned ONLY by this v2 rejection path;
-it is not wire data or a parsed message. `#3838:handle_message` tests for it and
-returns immediately BEFORE writing `message["connection"]` or calling
-`$gmcp_registry:route_message`. On a valid v2 message it retains the existing
+The rejection marker is the MOO list `{0, reason}`, returned ONLY by this v2
+rejection path; it is not wire data or a parsed message map. `reason` is a
+server-only map containing the recognized canonical package, bounded about,
+code, empty refs and optional validated req as above. Noncanonical addresses
+and invalid root/depth/value shapes use code malformed. The parser returns
+reasons and NEVER sends output. `#3838:handle_message` recognizes this list,
+sends the bounded package Error using its captured ctx, and returns BEFORE
+writing `message["connection"]` or calling `$gmcp_registry:route_message`.
+The Error send and all other new output code run outside any try/except or
+backtick catch; output failures propagate normally. On a valid v2 message it
+retains the existing
 `message["connection"] = player`, adds `message["ctx"]` with the previously
 captured ctx (including connection_key), and routes through `#2729:route_message`
 to the ctx-aware v2 package dispatcher. Other packages keep the existing message
@@ -178,8 +184,10 @@ Quota/export limits must be rechecked at accept/get even before a new Hello.
 
 `hub` changes on process start or registry loss. Ready.features is the enabled
 hub/client intersection (base only in Phase 1); no disabled feature may be
-advertised. canShare is the hub's authenticated non-guest eligibility; false
-suppresses share setup/publishing but permits direct send, browse and download.
+advertised. The hub classifies a player p as a guest exactly when
+`$object_utils:isa(p, $guest)` is true. canShare is its authenticated non-guest
+eligibility; false suppresses share setup/publishing but permits direct send,
+browse and download.
 Version mismatch is unsupported. Wait 10 seconds for Ready; silence is a
 connection/deployment error, never fallback evidence. Use endpoint recovery below.
 Deploy the hub first.
@@ -273,9 +281,12 @@ return. Transport loss waits for the game's existing reconnect/login path;
 Files never initiates or suppresses game login. End identity waits for a fresh
 confirmed current identity/policy before retrying; End shutdown uses the same
 backoff while the authenticated game connection remains valid, including a hub
-registry restart on that connection. End superseded releases file ownership and parks
-that tab until its next election turn; without Web Locks it waits for a fresh
-login or explicit Files action, preventing a re-Hello contest.
+registry restart on that connection. End superseded releases file ownership and
+parks that tab for EVERY tab kind, including visitors and tabs without Web Locks.
+It never automatically queues for the endpoint lock or retries Hello again,
+including after login/reconnect. Only a player action, such as choosing “Use
+this tab for file sharing” in the Files panel, re-queues it (or permits one fresh
+registration without Web Locks), preventing a re-Hello contest.
 
 Keep transient retries silent to the player. After 30 continuous seconds without
 Ready, show/announce once “File transfers unavailable; retrying”; clear it on

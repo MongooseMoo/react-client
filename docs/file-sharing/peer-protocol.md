@@ -247,6 +247,13 @@ before have; still verify the complete root before receipt/export. Never reuse
 old consent, receipts as permission, or a prior export destination/action. Use
 the serialized peer/id writer and per-t references in architecture.md so a
 cancelled/old attempt cannot overwrite or erase another operation's pieces.
+On a whole-file root mismatch in this direct-send cache, the storage owner
+fences and drains every attempt referencing `(from,id)`, then atomically deletes
+every stored piece and the transfers record for that key, clears the affected
+attempt bitmaps/references and updates byte accounting. Only then report an
+integrity error, without receipt/export. The next fresh accepted offer starts
+from zero; corrupt retained partials must not poison later offers. This integrity
+purge applies even with multiple references, unlike ordinary cancellation.
 Do not combine provisional bytes from unrelated sources or blame
 other peers based on an unauthenticated manifest. Feature absence does not
 authorize range mode or multi-source operation.
