@@ -1,0 +1,14 @@
+{
+  "browser": "147.0.7727.15",
+  "result": "PASS",
+  "errors": [],
+  "check": {
+    "bytes": 49159,
+    "transport": "real RTCPeerConnection",
+    "storage": "dedicated workers and native IndexedDB",
+    "receipt": "verified before explicit Save",
+    "export": "browser-download",
+    "sender": "complete",
+    "receiver": "complete"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "browser": "147.0.7727.15",
+  "identities": [
+    {
+      "page": 0,
+      "own": "Tangra_Guest",
+      "label": "Tangra Guest",
+      "proof": "Tangra_Guest is carrying nothing"
+    },
+    {
+      "page": 1,
+      "own": "Morava_Guest",
+      "label": "Morava Guest",
+      "proof": "Morava_Guest is carrying nothing"
+    }
+  ],
+  "checks": [
+    {
+      "direction": [
+        0,
+        1
+      ],
+      "filename": "phase1-v1-0-to-1.txt",
+      "bytes": 54,
+      "received": "exact bytes",
+      "sender": "complete"
+    },
+    {
+      "direction": [
+        1,
+        0
+      ],
+      "filename": "phase1-v1-1-to-0.txt",
+      "bytes": 54,
+      "received": "exact bytes",
+      "sender": "complete"
+    }
+  ],
+  "errors": [],
+  "speech": "Not tested",
+  "v2Live": "Not tested; the production flag remains off",
+  "result": "PASS"
+}

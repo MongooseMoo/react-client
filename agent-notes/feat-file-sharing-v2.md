@@ -16,6 +16,36 @@ This note and the linked contracts stand alone.
 
 ## State
 
+Phase 1 re-review follow-up (2026-10-18, task `codex-dcpp-phase1-fix2.md`):
+N1/N2 and report F2/N3-N8 are fixed. Unsaved/uncertain received files, their
+visible Save/Discard row and receipt share a seven-day deadline; browser handoffs
+retain Save again for 24 hours. Expiry/Discard atomically delete receipt/export
+intent and unshared bytes, recover capacity and announce removal in the Files
+panel. Seven days explicitly adopts the v1 partial default where the original
+spec was silent. Rate/busy with retryAfterMs and lost replies may retry Outcome;
+all 13 other accepted Error codes stop retries and show a hub-receipt error while
+keeping the verified local file complete/saveable. The harness setup now fails
+every test on captured port listener exceptions.
+
+Accepted consent reservations remain live between RTC attempts to protect their
+partial bytes. The owner receive queue allows eight full 64-piece windows plus
+five-byte headers (8,391,168 bytes). Storage retry passes preserve the restored
+v1 engine. Phase 1 ctl hello accepts only base and verifies the hub-discovered
+feature subset. The Phase 1 DB specification now matches native version 2 /
+schemaVersion 2, explaining the history-index/bitmap migration. Admission errors
+and the spec explain the 1,024-receipts-per-day limit, overlapping unsaved
+retention, and recovery through Discard/expiry. No v1 or login source changes.
+Validation and local commits are recorded in
+`reports/file-sharing-phase1-fix2-validation.md`. No push or deployment authorized.
+Runtime/spec commit `555a505b`: typecheck and all 183 Vitest files / 2,439 tests
+passed after a fresh locked install. All seven required workflow checks, both
+file-sharing browser scripts, actionlint, zizmor and scoped Biome passed.
+The strict 5301 preview matched index/ownerService/storage-worker SHA-256 hashes.
+The original probes now show J rows=1 and G2 Outcome sends=1. Their standalone
+F2 still releases its only consumer; the real reconnect/pressure test covers
+the new consent-reference lifetime. A deliberate external listener exception
+fails at the repository harness afterEach assertion, as required.
+
 Phase 1 client implemented and locally verified (2026-10-18): strict packages/parser and
 full-mode frames, endpoint election/lease/recovery, one multiplexed session per
 pair, consent and bind/ready, credits/cancellation/retries, durable receipts and
@@ -30,7 +60,7 @@ The rollout flag is sampled when MudClient is created; preference edits require
 reload. This preserves active v1 transfers rather than hot-swapping their engine.
 
 Implementation decisions: v1 source files remain untouched. Phase 1 creates
-only the specified six native version-1 stores. Ctl and frame validators reject
+only the specified six stores, now native version 2 with history indexes. Ctl and frame validators reject
 later-phase operations. Workers own v2 database connections. End superseded
 parks the endpoint, including no-lock tabs, until a player action.
 
@@ -117,7 +147,7 @@ worker-owned under the storage lock; no-lock sessions remain memory-only.
   at 60 seconds plus bounded jitter; only a continuous 30-second outage produces
   a player notice. Restore the idle v1 receiver during v2 recovery for the same
   confirmed owner, never old operation authority.
-- Phase 1 database version 1 creates owner/attempts/offers/exports plus payload
+- Phase 1 database version 2 creates owner/attempts/offers/exports plus payload
   pieces/transfers, not later share/content/queue stores. Sender/id/index partials
   survive reload for seven days in Phases 1-3; a fresh accepted same-sender/id/size
   offer adopts them under a new t, then verifies the full root before receipt.

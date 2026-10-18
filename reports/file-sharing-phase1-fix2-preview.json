@@ -1,0 +1,27 @@
+{
+  "origin": "http://127.0.0.1:5301",
+  "portFreeBeforeStart": true,
+  "strictPort": true,
+  "runtimeCommit": "555a505bd7aef84b9f4a7c58f180760d6b2a0120",
+  "indexMatches": true,
+  "chunks": [
+    {
+      "path": "/assets/index-BvgRnwIK.js",
+      "localSHA256": "285db782e18492d31042f200c62713c4f53b396c4b6ba8d89050e29caf46fe01",
+      "servedSHA256": "285db782e18492d31042f200c62713c4f53b396c4b6ba8d89050e29caf46fe01",
+      "matches": true
+    },
+    {
+      "path": "/assets/ownerService-BlPr-5OI.js",
+      "localSHA256": "c125e3bfaecb82d1d6c6cb07373f21881e525ba0260fc0ed945fa91aa382f6a3",
+      "servedSHA256": "c125e3bfaecb82d1d6c6cb07373f21881e525ba0260fc0ed945fa91aa382f6a3",
+      "matches": true
+    },
+    {
+      "path": "/assets/storage.worker-DWKpeDA0.js",
+      "localSHA256": "42872516131657088ab490caf7c8b59846c901991bbabda8d07ba5aaa31f978b",
+      "servedSHA256": "42872516131657088ab490caf7c8b59846c901991bbabda8d07ba5aaa31f978b",
+      "matches": true
+    }
+  ]
+}
