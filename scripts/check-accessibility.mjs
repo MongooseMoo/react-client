@@ -118,25 +118,56 @@ try {
 
   await page.keyboard.press('Control+Shift+4');
   const serverTab = page.getByRole('tab', { name: 'Server', exact: true });
-  await expect(serverTab).toBeFocused();
-  await page.evaluate(() => window.mudClient.gmcp.handlers.Room.handleInfo({ num: 1, name: 'Fixture room', area: 'Fixture', exits: { n: 2 } }));
+  const refresh = page.getByRole('region', { name: 'Server Links', exact: true }).getByRole('button', { name: 'Refresh', exact: true });
+  await expect(refresh).toBeFocused();
+  await page.evaluate(() => window.mudClient.gmcp.handlers.Room.handleInfo({ num: 1, name: 'Fixture room', area: 'Fixture', exits: {} }));
   await expect(serverTab).toHaveAttribute('aria-selected', 'true');
-  await expect(serverTab).toBeFocused();
+  await expect(refresh).toBeFocused();
   await command.focus();
   await page.keyboard.press('Control+Shift+4');
-  await expect(serverTab).toBeFocused();
+  await expect(refresh).toBeFocused();
   await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
   await command.focus();
   await page.keyboard.press('Control+Shift+1');
-  await expect(page.getByRole('tab', { name: 'Room', exact: true })).toBeFocused();
-  await expect(page.getByRole('button', { name: 'Go n', exact: true })).toBeVisible();
-  evidence.journeys.push({ task: 'Reach a sidebar destination', gestures: 'One Ctrl+Shift+digit chord', states: 'Hidden, active, collapsed; inserted tab retains existing selection' });
+  const roomTab = page.getByRole('tab', { name: 'Room', exact: true });
+  await expect(roomTab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tabpanel', { name: 'Room', exact: true })).toBeFocused();
+  await page.evaluate(() => window.mudClient.gmcp.handlers.Room.handleInfo({ num: 1, name: 'Fixture room', area: 'Fixture', exits: { n: 2 } }));
+  const northExit = page.getByRole('button', { name: 'Go n', exact: true });
+  await expect(northExit).toBeFocused();
+  await command.focus();
+  await page.keyboard.press('Control+Shift+1');
+  await expect(northExit).toBeFocused();
+  evidence.journeys.push({ task: 'Reach a sidebar destination', gestures: 'One Ctrl+Shift+digit chord', states: 'Hidden, active, collapsed; first control or static panel focused; inserted tab retains selection and control focus' });
+
+  // Clicking and arrowing still use the tablist; shortcuts enter the panel.
+  await serverTab.click();
+  await expect(serverTab).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('tab', { name: 'Users', exact: true })).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(roomTab).toBeFocused();
+  evidence.journeys.push({ task: 'Navigate the sidebar tablist', result: 'Click, ArrowLeft and Home keep focus on the selected tab' });
+
+  const diagnostics = page.getByRole('tabpanel', { name: 'Audio diagnostics', exact: true });
+  for (const state of ['cold', 'cached']) {
+    await command.focus();
+    await page.keyboard.press('Control+Shift+9');
+    await expect(diagnostics.getByRole('button', { name: 'Pause', exact: true })).toBeFocused();
+    await page.keyboard.press('Control+Shift+4');
+    await expect(refresh).toBeFocused();
+    evidence.journeys.push({ task: `${state} lazy sidebar destination`, result: 'Shortcut focuses the first control after content loads' });
+  }
 
   const items = [{ id: 'a', name: 'Apple', verbs: [['drop', 'a']] }, { id: 'b', name: 'Book', verbs: [['drop', 'b']] }];
   await page.evaluate((items) => window.mudClient.gmcp.handlers['Char.Items'].handleList({ location: 'inv', items }), items);
   await page.keyboard.press('Control+Shift+2');
-  await expect(page.getByRole('tab', { name: 'Inventory', exact: true })).toBeFocused();
   const inventory = page.getByRole('listbox', { name: 'Inventory', exact: true });
+  await expect(inventory).toBeFocused();
+  // Clicking the tab retains the tablist's normal route into the panel.
+  const inventoryTab = page.getByRole('tab', { name: 'Inventory', exact: true });
+  await inventoryTab.click();
+  await expect(inventoryTab).toBeFocused();
   // The tablist's trailing Collapse control remains available before the panel.
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Collapse sidebar', exact: true })).toBeFocused();
