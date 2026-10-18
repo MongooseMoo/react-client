@@ -103,6 +103,19 @@ Files:
   How the stub reached another file under default isolation was not worked out.
 - Intl.DisplayNames' default `languageDisplay: "dialect"` names en-US
   "American English"; "standard" gives "English (United States)".
+- PR #187 CI: `npm run test:audio-cache` timed out waiting for the
+  Preferences dialog. Cause, reproduced on a bare page with no app code
+  (scratchpad available-probe.mjs): in Playwright's headless Chromium 147,
+  `SpeechRecognition.available({langs:["en"], processLocally:true})` crashes
+  the renderer ("Target crashed"); `processLocally:false` and the constructor
+  are fine. The preferences fieldset probed on mount, and every tab mounts
+  when the dialog opens, so opening Preferences crashed the page. A crash is
+  not catchable, and scripts/check-accessibility.mjs:220 opens the Speech tab,
+  so probing "when the Speech tab is shown" would crash test:a11y too.
+  Fix: never probe on render. Probe only on player intent: "Check this
+  browser" button, voice commands turned on (or already on), or a mic press.
+  Before that the privacy line says where speech may go and invites the
+  check. A check that throws is "unknown"; no answer in 10 s is "unknown".
 - Codex harness artifacts seen while verifying: round 2's PreviewButton case
   pasted the old source; round 3's lifecycle harness virtualizes only 15000 and
   2000 ms timers; round 4's held-Enter case label names the old behaviour.
@@ -113,8 +126,12 @@ Files:
   aria-pressed correct; no console errors. It showed the raw tag ("en"), so
   3a6d8293 names the language with Intl.DisplayNames ("English (United
   States)"), falling back to the tag, in every availability and download sentence.
+- All seven .github/workflows/build-test.yml steps run locally after the
+  lazy-check fix (the team lead's gate from now on): typecheck exit 0;
+  npm test 178 files / 2458 tests passed; test:audio-cache exit 0 (4 PASS
+  lines); editor-ownership spec 1 passed; check-browser-sessions passed;
+  check-client-recovery passed; test:a11y PASS (it opens the Speech tab).
 - `npx tsc --noEmit`: exit 0.
-- `npx vitest run`: 178 files, 2450 tests passed (two consecutive runs).
 - `npx biome lint` on all branch-changed src files: 7 warnings, all on master
   (client.test.ts:169-174 noUnusedImports, input.tsx:83).
 - Codex harnesses for rounds 1-4 all show the fixed behaviour (last run at

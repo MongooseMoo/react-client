@@ -17,6 +17,13 @@ afterEach(() => {
   delete window.webkitSpeechRecognition;
 });
 
+/** Render, then ask where speech is recognized, as the player would. */
+function renderAndCheck() {
+  const view = render(<VoiceCommandPreferences />);
+  fireEvent.click(screen.getByRole("button", { name: "Check this browser" }));
+  return view;
+}
+
 describe("VoiceCommandPreferences", () => {
   it("says the browser lacks speech recognition and offers no switch", () => {
     render(<VoiceCommandPreferences />);
@@ -24,10 +31,68 @@ describe("VoiceCommandPreferences", () => {
     expect(screen.queryByRole("checkbox", { name: "Voice commands" })).toBeNull();
   });
 
+  describe("asks the browser only when the player wants to know", () => {
+    it("does not ask on render, and says where speech may go and how to check", () => {
+      const available = vi.fn(async () => "available" as const);
+      window.webkitSpeechRecognition = fakeRecognizer(available);
+      render(<VoiceCommandPreferences />);
+      expect(available).not.toHaveBeenCalled();
+      expect(screen.getByRole("checkbox", { name: "Voice commands" })).toHaveAccessibleDescription(
+        /Some browsers turn speech into text on this device; others send your audio to their maker's speech service/);
+      expect(screen.getByRole("button", { name: "Check this browser" })).toBeTruthy();
+    });
+
+    it("asks when the player presses Check this browser", async () => {
+      const available = vi.fn(async () => "available" as const);
+      window.webkitSpeechRecognition = fakeRecognizer(available);
+      renderAndCheck();
+      expect(available).toHaveBeenCalledWith({ langs: ["en-US"], processLocally: true });
+      await waitFor(() => expect(screen.getByText(/does not leave your computer/)).toBeTruthy());
+      expect(screen.queryByRole("button", { name: "Check this browser" })).toBeNull();
+    });
+
+    it("asks when the player turns voice commands on", async () => {
+      const available = vi.fn(async () => "available" as const);
+      window.webkitSpeechRecognition = fakeRecognizer(available);
+      render(<VoiceCommandPreferences />);
+      fireEvent.click(screen.getByRole("checkbox", { name: "Voice commands" }));
+      await waitFor(() => expect(screen.getByText(/does not leave your computer/)).toBeTruthy());
+      expect(available).toHaveBeenCalled();
+    });
+
+    it("asks at once when voice commands are already on", async () => {
+      usePreferences.getState().setVoiceInput({ ...usePreferences.getState().voiceInput, enabled: true });
+      window.webkitSpeechRecognition = fakeRecognizer(async () => "available");
+      render(<VoiceCommandPreferences />);
+      await waitFor(() => expect(screen.getByText(/does not leave your computer/)).toBeTruthy());
+    });
+
+    it("treats a check that throws as unknown", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      window.webkitSpeechRecognition = fakeRecognizer(() => { throw new Error("not in this browser"); });
+      renderAndCheck();
+      await waitFor(() => expect(screen.getByText(/does not say where speech is turned into text/)).toBeTruthy());
+      warn.mockRestore();
+    });
+
+    it("treats a check that never answers as unknown after ten seconds", async () => {
+      vi.useFakeTimers();
+      try {
+        window.webkitSpeechRecognition = fakeRecognizer(() => new Promise(() => {}));
+        renderAndCheck();
+        expect(screen.getByText(/Checking where speech is turned into text/)).toBeTruthy();
+        await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+        expect(screen.getByText(/does not say where speech is turned into text/)).toBeTruthy();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it("says plainly that audio leaves the device before the switch is on", async () => {
     window.webkitSpeechRecognition = fakeRecognizer(async ({ processLocally }) =>
       processLocally ? "unavailable" : "available");
-    render(<VoiceCommandPreferences />);
+    renderAndCheck();
     const toggle = screen.getByRole("checkbox", { name: "Voice commands" });
     await waitFor(() => expect(toggle).toHaveAccessibleDescription(
       /sends your audio to its maker's speech service \(Google, in Chrome\).*cannot do this on this device/));
@@ -36,13 +101,13 @@ describe("VoiceCommandPreferences", () => {
 
   it("does not claim to know where audio goes when the browser cannot say", async () => {
     window.webkitSpeechRecognition = fakeRecognizer();
-    render(<VoiceCommandPreferences />);
+    renderAndCheck();
     await waitFor(() => expect(screen.getByText(/does not say where speech is turned into text/)).toBeTruthy());
   });
 
   it("says when speech stays on this device", async () => {
     window.webkitSpeechRecognition = fakeRecognizer(async () => "available");
-    render(<VoiceCommandPreferences />);
+    renderAndCheck();
     await waitFor(() => expect(screen.getByText(/does not leave your computer/)).toBeTruthy());
   });
 
@@ -56,7 +121,7 @@ describe("VoiceCommandPreferences", () => {
     ];
     for (const [available, sentence] of sentences) {
       window.webkitSpeechRecognition = fakeRecognizer(available);
-      const view = render(<VoiceCommandPreferences />);
+      const view = renderAndCheck();
       await waitFor(() => expect(view.container.querySelector("#voice-command-privacy")?.textContent).toMatch(sentence));
       expect(view.container.querySelector("#voice-command-privacy")?.textContent).not.toMatch(/en-US/);
       view.unmount();
@@ -71,7 +136,7 @@ describe("VoiceCommandPreferences", () => {
       async () => (installed ? "available" : "downloadable"),
       async () => { installed = true; return true; },
     );
-    render(<VoiceCommandPreferences />);
+    renderAndCheck();
     fireEvent.click(await screen.findByRole("button", { name: "Download on-device recognition" }));
     await waitFor(() => expect(announceMock).toHaveBeenCalledWith(
       "Speech in English (United States) can now be turned into text on this device.", "polite"));
@@ -85,7 +150,7 @@ describe("VoiceCommandPreferences", () => {
       async () => (installed ? "available" : "downloadable"),
       install,
     );
-    render(<VoiceCommandPreferences />);
+    renderAndCheck();
     fireEvent.click(await screen.findByRole("button", { name: "Download on-device recognition" }));
     expect(install).toHaveBeenCalledWith({ langs: ["en-US"], processLocally: true });
     await waitFor(() => expect(screen.getByText(/does not leave your computer/)).toBeTruthy());
@@ -96,7 +161,7 @@ describe("VoiceCommandPreferences", () => {
       async () => "downloadable",
       () => new Promise<boolean>(() => {}),
     );
-    render(<VoiceCommandPreferences />);
+    renderAndCheck();
     fireEvent.click(await screen.findByRole("button", { name: "Download on-device recognition" }));
     expect(screen.getByRole("textbox", { name: "Recognition language" })).toBeDisabled();
   });
@@ -112,7 +177,7 @@ describe("VoiceCommandPreferences", () => {
       },
       () => new Promise<boolean>((resolve) => { finishInstall = () => { installed = true; resolve(true); }; }),
     );
-    render(<VoiceCommandPreferences />);
+    renderAndCheck();
     fireEvent.click(await screen.findByRole("button", { name: "Download on-device recognition" }));
     // The language can still change from elsewhere, such as another tab's saved preferences.
     act(() => usePreferences.getState().setVoiceInput({ ...usePreferences.getState().voiceInput, language: "fr-FR" }));

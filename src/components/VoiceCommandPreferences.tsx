@@ -10,9 +10,14 @@ import {
 } from "../voiceInput";
 import "./VoiceCommandPreferences.css";
 
-function privacyText(availability: VoiceAvailability | "checking", tag: string): string {
+/** How long the browser gets to answer where speech is recognized before the answer counts as unknown. */
+const CHECK_LIMIT_MS = 10000;
+
+function privacyText(availability: VoiceAvailability | "unchecked" | "checking", tag: string): string {
   const lang = languageName(tag);
   switch (availability) {
+    case "unchecked":
+      return "Some browsers turn speech into text on this device; others send your audio to their maker's speech service, such as Google in Chrome. Check this browser before you turn voice commands on.";
     case "checking":
       return "Checking where speech is turned into text…";
     case "on-device":
@@ -37,20 +42,31 @@ const VoiceCommandPreferences = () => {
   // request may set it, so a slow answer never describes another language.
   const [checked, setChecked] = useState<{ lang: string; availability: VoiceAvailability } | null>(null);
   const [installing, setInstalling] = useState(false);
+  // Asking the browser is left until the player wants the answer: Check this
+  // browser, or turning voice commands on. Some browsers (headless Chromium 147)
+  // crash the page when asked about on-device recognition, which no catch can
+  // stop, so opening Preferences or the Speech tab must never be what asks.
+  const [checkRequested, setCheckRequested] = useState(false);
+  const shouldCheck = checkRequested || voiceInput.enabled;
   const requestRef = useRef(0);
   const lang = recognitionLanguage(voiceInput.language);
-  const availability = checked?.lang === lang ? checked.availability : "checking";
+  const availability = !shouldCheck ? "unchecked" : checked?.lang === lang ? checked.availability : "checking";
 
   const refresh = useCallback(async (forLang: string) => {
     if (!recognizer) return;
     const request = ++requestRef.current;
-    const result = await checkAvailability(recognizer, forLang);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const noAnswer = new Promise<VoiceAvailability>((resolve) => {
+      timer = setTimeout(() => resolve("unknown"), CHECK_LIMIT_MS);
+    });
+    const result = await Promise.race([checkAvailability(recognizer, forLang), noAnswer]);
+    clearTimeout(timer);
     if (request === requestRef.current) setChecked({ lang: forLang, availability: result });
   }, [recognizer]);
 
   useEffect(() => {
-    void refresh(lang);
-  }, [refresh, lang]);
+    if (shouldCheck) void refresh(lang);
+  }, [refresh, lang, shouldCheck]);
 
   if (!recognizer) {
     return (
@@ -91,6 +107,9 @@ const VoiceCommandPreferences = () => {
       <p id="voice-command-privacy" className="voice-command-note" data-availability={availability}>
         {privacyText(availability, lang)}
       </p>
+      {availability === "unchecked" && (
+        <button type="button" onClick={() => setCheckRequested(true)}>Check this browser</button>
+      )}
       {availability === "downloadable" && recognizer.install && (
         <button type="button" onClick={() => void install()} disabled={installing}>
           {installing ? "Downloading…" : "Download on-device recognition"}
