@@ -122,7 +122,7 @@ Stores and primary keys:
 
 | Store | Key and required fields |
 | --- | --- |
-| owner | singleton: full ownerKey, schemaVersion matching the installed database version (1 in Phase 1), writerGeneration, next-GC time, reserved/committed byte accounting. |
+| owner | singleton: full ownerKey, schemaVersion matching the installed database version (2 in Phase 1), writerGeneration, next-GC time, reserved/committed byte accounting. |
 | content | id: immutable size/algorithm, manifest-root status, manifest coverage, bitmap, payload presence, touchedAt, recovery state. |
 | attempts | t: owner/id/size, immutable source Endpoint/offer/kind binding, provisional location/bitmap, bytes/reservation, current writer a and fence. New a reuses held bytes; never mixes unrelated sources. Before Phase 4 the location references the sender/id partial store below. |
 | leases | lease Id: content id, consumer kind/id, writerGeneration, expiresAt; immutable owner. |
@@ -204,7 +204,8 @@ Queue at most 128 content items/owner and 16 source hints/item; at most 8 active
 source downloads and 3/content in Phase 6, one/content earlier. Pause new work
 when reservations fail. In-memory mode has a 100 MiB total payload budget, with
 bytes reserved up front; it must not accept several 100 MiB files concurrently.
-Keep at most 8 MiB queued payload buffers, two hashing/verification jobs, one
+Keep at most 8 MiB queued payload buffers (plus five-byte frame headers for
+eight 64-frame receive windows: 8,391,168 bytes total), two hashing/verification jobs, one
 directory scan and one file-list parse/tree worker at a time. Hash reads are
 <=1 MiB, at most four digest operations in flight per job, cancellable between
 reads; no unbounded promise fanout. Bound index at 100000 files/1 TiB total and
@@ -220,6 +221,25 @@ cache, then unreferenced partials; never delete a live consumer/queue/export's
 bytes automatically. Offer tombstones last at least 24 hours, bounded at 1024;
 export receipts last with their queue/offer history reference. On exhaustion
 pause/reject new work rather than erase an outcome needed for safe recovery.
+
+Phase 1 received-but-unsaved and export-uncertain files retain their UI row,
+receipt and payload for seven days from the receipt's last export-state update.
+This explicitly adopts v1's seven-day partial-retention default; the original
+specification did not give unfinished exports a deadline. Every retained received
+row offers Save and Discard. A browser-download handoff retains Save again for
+24 hours from handoff. Expiry or explicit Discard atomically removes the receipt,
+export intent and payload unless another visible receipt or live consumer holds
+the same bytes. Remove the row only after storage cleanup succeeds; announce
+expiry in an open Files panel. Reload applies the same deadlines and never
+restores expired rows. These deadlines override ordinary verified-cache GC.
+An accepted offer retains a live storage reference between attempts, until it
+terminates or its endpoint is fenced; quota pressure cannot evict its partials.
+
+Phase 1 history is bounded at 1,024 receipt slots per owner, reserved before
+acceptance. This means at most 1,024 received-and-saved receipts per day while
+their 24-hour retry windows overlap; unsaved receipts occupy slots for up to
+seven days. The admission error states "1,024 receipts per day" and explains
+Discard and the retention deadlines. Discard or expiry recovers capacity.
 Ephemeral owner data is removed on orderly shutdown and stale ephemeral roots
 older than 24 hours are removed on next startup under the quota lock; it is
 never imported into a remembered account. Cleanup checks full ownerKey/digest
@@ -572,7 +592,10 @@ unchanged. Phase 1 has no ShareIndex (Phase 2) or owner/id DownloadTable (Phase 
 | `src/client.ts`, `src/components/FileTransfer/` | Wire owner/endpoint lifetime beside configureFileTransfer, register packages and expose consent/progress/cancel/save/status. Preserve existing game login/reconnect behavior. |
 
 Phase 1 persistent IndexedDB database is `file-sharing-v2:<ownerKey>`, native
-database version **1**, with owner.schemaVersion=1. Create EXACTLY six stores:
+database version **2**, with owner.schemaVersion=2. Phase 1 was raised from 1
+to 2 during review to add bounded history/content indexes and migrate the
+development bitmap representation; no later-phase stores were added. Subsequent
+phases must migrate from version 2. Create EXACTLY six stores:
 
 | Store | Primary key / Phase 1 data |
 | --- | --- |

@@ -78,6 +78,9 @@ function keyOf(store: Store, row: Record<string, unknown>, key?: IDBValidKey): I
 }
 /** Single writer, serialized by StorageOwner/worker. Cancel fences take effect immediately. */
 const DAY = 86400000;
+// Phase 1: seven days for an unfinished export, one day after browser handoff.
+export const receiptExpiry = (r: Receipt): number =>
+  r.touchedAt + (r.state === 'cancelled' || r.outcome === 'browser-download' ? DAY : 7 * DAY);
 const HISTORY = 1024;
 const ATTEMPTS = 2048;
 function indices(p: Partial): number[] {
@@ -297,13 +300,7 @@ export class StorageDatabase {
   private async trimHistory(): Promise<void> {
     const now = Date.now();
     const receipts = await this.query<Receipt>('offers', 'expiresAt', undefined, HISTORY + 32, now);
-    // Browser handoffs retain a retryable payload for 24 hours. Unsaved/uncertain
-    // receipts pin their bytes while the user still needs to finish exporting.
-    const expired = receipts.filter(
-      (r) =>
-        now - r.touchedAt >= DAY && (r.state === 'cancelled' || r.outcome === 'browser-download'),
-    );
-    // Verified and uncertain saves remain durable consumer references until an explicit handoff.
+    const expired = receipts.filter((r) => now >= receiptExpiry(r));
     const attempts = await this.query<Attempt>(
       'attempts',
       'touchedAt',
@@ -312,22 +309,61 @@ export class StorageDatabase {
       now - DAY,
     );
     const dead = attempts.filter((a) => !a.active && now - a.touchedAt >= DAY);
-    const keys = new Set(expired.map((r) => JSON.stringify([endpointKey(r.sender), r.offer])));
+    await this.removeReceipts(expired, dead);
+  }
+  /** Receipt, export intent and unshared payload disappear in the same transaction. */
+  private async removeReceipts(expired: Receipt[], dead: Attempt[] = []): Promise<void> {
+    const key = (r: Receipt) => JSON.stringify([endpointKey(r.sender), r.offer]);
+    const keys = new Set(expired.map(key));
     const exports =
       expired.length && (await this.count('exports'))
         ? (await this.query<ExportRecord>('exports', 'touchedAt', undefined, HISTORY)).filter((e) =>
             keys.has(JSON.stringify([endpointKey(e.sender), e.offer])),
           )
         : [];
-    if (expired.length || dead.length)
-      await this.write(['offers', 'attempts', 'exports'], (tx) => {
+    const payloads: Partial[] = [];
+    const visited = new Set<string>();
+    for (const r of expired) {
+      if (r.state !== 'received') continue;
+      const contentKey = content(r.sender.player, r.meta.id);
+      if (visited.has(JSON.stringify(contentKey))) continue;
+      visited.add(JSON.stringify(contentKey));
+      const attempts = await this.query<Attempt>('attempts', 'content', contentKey);
+      const receipts = await this.query<Receipt>('offers', 'content', contentKey);
+      if (
+        attempts.some((a) => a.active) ||
+        receipts.some((r) => r.state === 'received' && !keys.has(key(r)))
+      )
+        continue;
+      const p = await this.get<Partial>('transfers', contentKey);
+      if (p && !payloads.some((x) => x.from === p.from && x.id === p.id)) payloads.push(p);
+    }
+    const owner = { ...this.owner };
+    for (const p of payloads) {
+      owner.reserved -= p.charge;
+      owner.committed -= p.committed;
+    }
+    if (expired.length || dead.length) {
+      await this.write(['offers', 'attempts', 'exports', 'transfers', 'pieces', 'owner'], (tx) => {
         for (const r of expired) tx.delete('offers', [endpointKey(r.sender), r.offer]);
         for (const a of dead) {
           tx.delete('attempts', a.t);
           this.fences.delete(a.t);
         }
         for (const e of exports) tx.delete('exports', e.id);
+        for (const p of payloads) {
+          for (const i of indices(p)) tx.delete('pieces', [p.from, p.id, i]);
+          tx.delete('transfers', [p.from, p.id]);
+        }
+        tx.put('owner', owner, 'owner');
       });
+      this.owner = owner;
+      await this.quota?.update(owner.reserved - owner.committed);
+    }
+  }
+  async discard(sender: Endpoint, offer: string): Promise<void> {
+    const r = await this.receipt(sender, offer);
+    if (r) await this.removeReceipts([r]);
   }
   private async deleteExports(r: Receipt): Promise<void> {
     const rows = await this.query<ExportRecord>('exports', 'offer', [
@@ -358,7 +394,7 @@ export class StorageDatabase {
     });
     check(
       (await this.count('offers')) + slots.size < HISTORY,
-      'Recent received files fill history; retry after history expires',
+      'File history is full (1,024 receipts per day). Discard a received file or wait for retention expiry: 24 hours after Save, seven days if unsaved.',
     );
   }
   private async write(
@@ -628,6 +664,7 @@ export class StorageDatabase {
     return new Blob(blobs);
   }
   async readForExport(sender: Endpoint, offer: string): Promise<Blob> {
+    await this.trimHistory();
     const receipt = await this.receipt(sender, offer);
     check(receipt?.state === 'received', 'No verified receipt');
     const parts: BlobPart[] = [];
@@ -736,8 +773,7 @@ export class StorageDatabase {
   private withExpiry(r: Receipt): Receipt {
     return {
       ...r,
-      expiresAt:
-        r.state === 'cancelled' || r.outcome === 'browser-download' ? r.touchedAt + DAY : undefined,
+      expiresAt: receiptExpiry(r),
     };
   }
   async saveReceipt(r: Receipt): Promise<void> {

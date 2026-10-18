@@ -61,6 +61,9 @@ export class OwnerService implements FileTransfers {
   get evictionRisk(): boolean {
     return Boolean(this.storage?.persistenceDenied);
   }
+  get retentionNotice(): string {
+    return this.offers?.retentionNotice ?? '';
+  }
   subscribeStatus(f: () => void): () => void {
     this.statusWatchers.add(f);
     return () => {
@@ -150,7 +153,7 @@ export class OwnerService implements FileTransfers {
           lost: async (reason) => {
             if (endpoint.parked) this.client.fileSharingParked = true;
             try {
-              await this.fence();
+              await this.fence(Boolean(this.offers || this.pool));
             } finally {
               if (this.eligible()) this.restoreLegacy();
               if (!this.eligible() || ['superseded', 'stopped'].includes(reason)) {
@@ -224,7 +227,7 @@ export class OwnerService implements FileTransfers {
     this.pool = pool;
     this.changed();
   }
-  private async fence(): Promise<void> {
+  private async fence(disposeLegacy = true): Promise<void> {
     this.requestAbort.abort();
     this.requestAbort = new AbortController();
     this.generation++;
@@ -232,8 +235,10 @@ export class OwnerService implements FileTransfers {
     this.offers = undefined;
     this.pool?.dispose();
     this.pool = undefined;
-    this.legacy?.dispose();
-    this.legacy = undefined;
+    if (disposeLegacy) {
+      this.legacy?.dispose();
+      this.legacy = undefined;
+    }
     const storage = this.storage;
     this.storage = undefined;
     await storage?.close();
@@ -284,6 +289,10 @@ export class OwnerService implements FileTransfers {
   save(key: string): Promise<void> {
     check(this.offers);
     return this.offers.save(key);
+  }
+  discard(key: string): Promise<void> {
+    check(this.offers);
+    return this.offers.discard(key);
   }
   retry(key: string): void {
     check(this.offers);

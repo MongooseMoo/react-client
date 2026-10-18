@@ -23,16 +23,26 @@ describe('Phase 1 file consent and export accessibility', () => {
   it('requires a named Save action and keeps a focused Save again action after qualified handoff', async () => {
     const listeners = new Set<() => void>();
     let details = [{ key: 'v2:offer', outcome: 'verified', canSave: true }];
+    let notice = '';
+    const discard = vi.fn(async () => {
+      details = [];
+      notice = 'private.txt: downloaded file discarded.';
+      for (const f of listeners) f();
+    });
     const save = vi.fn(async () => {
       details = [{ key: 'v2:offer', outcome: 'browser-download', canSave: true }];
       for (const f of listeners) f();
     });
     const service = {
       status: '',
+      get retentionNotice() {
+        return notice;
+      },
       durable: true,
       details: () => details,
       transfers: () => [{ key: 'v2:offer', name: 'private.txt' }],
       save,
+      discard,
       subscribeStatus: (f: () => void) => {
         listeners.add(f);
         return () => listeners.delete(f);
@@ -60,5 +70,16 @@ describe('Phase 1 file consent and export accessibility', () => {
     expect(screen.getByText(/private.txt: handed to the browser.*24 hours/)).toBeVisible();
     expect(save).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'Save private.txt' })).not.toBeInTheDocument();
+    const discardButton = screen.getByRole('button', { name: 'Discard private.txt' });
+    discardButton.focus();
+    fireEvent.click(discardButton);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Save private.txt again' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(discard).toHaveBeenCalledWith('v2:offer');
+    expect(screen.getByRole('heading', { name: 'Files' })).toHaveFocus();
+    expect(screen.getByText(notice)).toHaveAttribute('role', 'status');
   });
 });

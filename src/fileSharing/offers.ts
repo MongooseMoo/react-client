@@ -31,7 +31,7 @@ import {
   type Ready,
 } from './protocol';
 import type { StorageApi } from './storage';
-import type { Receipt } from './storageDatabase';
+import { receiptExpiry, type Receipt } from './storageDatabase';
 import type { PeerSession, SessionPool } from './sessionPool';
 type Timer = ReturnType<typeof setTimeout>;
 type Request = Extract<Control, { op: 'push' }>;
@@ -42,6 +42,7 @@ export type OfferDetails = {
   canSave: boolean;
   canRetry?: boolean;
   saveError?: string;
+  outcomeError?: string;
 };
 interface Offer {
   key: string;
@@ -67,6 +68,7 @@ interface Offer {
   outcomeReq?: string;
   outcomeRetry?: number;
   outcomeAck?: boolean;
+  outcomeError?: string;
   terminalAt?: number;
   receipt?: Receipt;
   blob?: Blob;
@@ -126,6 +128,8 @@ export class OfferTable {
   private readonly off: (() => void)[];
   private pool!: SessionPool;
   private disposed = false;
+  private retentionTimer?: Timer;
+  retentionNotice = '';
   private generation = 0;
   private queuedBytes = 0;
   private uploads = 0;
@@ -223,7 +227,13 @@ export class OfferTable {
         if (m.req) this.hubRequests.delete(m.req);
         const r = pending.row;
         if (pending.kind === 'Outcome') {
-          this.scheduleOutcome(r, m.retryAfterMs ?? 1000);
+          if ((m.code === 'rate' || m.code === 'busy') && m.retryAfterMs !== undefined)
+            this.scheduleOutcome(r, m.retryAfterMs);
+          else {
+            clearTimeout(r.outcomeTimer);
+            r.outcomeError = `Downloaded and verified; hub receipt failed: ${m.code}`;
+            this.options.changed();
+          }
           return;
         }
         if (!r.receipt && ['pending', 'accepted'].includes(r.state)) {
@@ -252,6 +262,41 @@ export class OfferTable {
       this.rows.set(r.offer, r);
     }
     this.options.changed();
+    this.scheduleRetention();
+  }
+  private scheduleRetention(): void {
+    clearTimeout(this.retentionTimer);
+    if (this.disposed) return;
+    const deadlines = [...this.rows.values()].flatMap((r) =>
+      r.receipt && !r.saving ? [receiptExpiry(r.receipt)] : [],
+    );
+    if (!deadlines.length) return;
+    this.retentionTimer = setTimeout(
+      () => {
+        void this.expireReceipts().catch(() => {
+          // Keep the row visible on a storage error and retry cleanup.
+          this.retentionTimer = setTimeout(() => this.scheduleRetention(), 1000);
+        });
+      },
+      Math.min(2147483647, Math.max(0, Math.min(...deadlines) - Date.now())),
+    );
+  }
+  private async expireReceipts(): Promise<void> {
+    await Promise.all([...this.rows.values()].map((r) => r.verification));
+    const receipts = await this.options.storage.receipts();
+    if (this.disposed) return;
+    for (const r of this.rows.values()) {
+      if (
+        !r.receipt ||
+        r.saving ||
+        receipts.some((x) => x.offer === r.offer && sameEndpoint(x.sender, r.sender))
+      )
+        continue;
+      this.removeRow(r);
+      this.retentionNotice = `${r.meta.name}: download expired and was removed. Receive it again to save it.`;
+    }
+    this.options.changed();
+    this.scheduleRetention();
   }
   attach(pool: SessionPool): void {
     this.pool = pool;
@@ -313,6 +358,7 @@ export class OfferTable {
         r.file && r.state === 'accepted' && r.paused && !r.attempt && !r.q && this.live(),
       ),
       saveError: r.saveError,
+      outcomeError: r.outcomeError,
     }));
   }
   private emit(
@@ -677,7 +723,7 @@ export class OfferTable {
     r.a = m.a;
     r.q = m.q;
     this.tBindings.set(m.t, r);
-    await this.options.storage.release(r.reserveT);
+    // Keep the consent reservation live between attempts; it pins retained pieces.
     let have: number[];
     try {
       have = await this.options.storage.reserve({
@@ -808,7 +854,7 @@ export class OfferTable {
       if (
         e.data.byteLength > s.maxFrame ||
         a.queued >= 64 ||
-        this.queuedBytes + e.data.byteLength > 8 * 1024 ** 2
+        this.queuedBytes + e.data.byteLength > 8 * 64 * (PIECE + 5)
       ) {
         this.abort(a, 9, 'Receive buffer or rate limit');
         return;
@@ -880,6 +926,7 @@ export class OfferTable {
       this.sendFrame(a, { type: 'terminalAck', terminalType: 3 });
       a.terminal = 3;
       this.emit(r, 'complete', r.meta.size);
+      this.scheduleRetention();
       this.drain(a, true);
       return;
     }
@@ -974,6 +1021,7 @@ export class OfferTable {
         clearTimeout(a.timer);
       }
       await this.options.storage.release(a.request.t);
+      if (r.reserveT) await this.options.storage.release(r.reserveT);
     } catch (error) {
       if (!r.receipt && authorized()) {
         r.verification = undefined;
@@ -992,16 +1040,22 @@ export class OfferTable {
     this.options.files.send(kind, data);
   }
   private sendOutcome(r: Offer): void {
-    if (!this.live() || !r.receipt || r.outcomeAck) return;
+    if (!this.live() || !r.receipt || r.outcomeAck || r.outcomeError) return;
     if (r.outcomeReq) this.hubRequests.delete(r.outcomeReq);
     const data = { ...this.target(r.sender), offer: r.offer };
     r.outcomeReq = data.req;
-    this.command(r, 'Outcome', data);
     this.scheduleOutcome(r);
+    this.command(r, 'Outcome', data);
   }
   private scheduleOutcome(r: Offer, minimum = 1000): void {
     clearTimeout(r.outcomeTimer);
-    if (!this.live() || !r.receipt || r.outcomeAck || Date.now() - r.receipt.touchedAt >= 86400000)
+    if (
+      !this.live() ||
+      !r.receipt ||
+      r.outcomeAck ||
+      r.outcomeError ||
+      Date.now() - r.receipt.touchedAt >= 86400000
+    )
       return;
     const delay = Math.max(minimum, Math.min(60000, 1000 * 2 ** Math.min(r.outcomeRetry ?? 0, 6)));
     r.outcomeRetry = (r.outcomeRetry ?? 0) + 1;
@@ -1009,21 +1063,34 @@ export class OfferTable {
   }
   private pruneRows(): void {
     const terminal = [...this.rows.values()].filter(
-      (r) =>
-        r.terminalAt &&
-        !r.saving &&
-        !r.attempt &&
-        !r.verification &&
-        (!r.receipt || Date.now() - r.receipt.touchedAt >= 86400000),
+      (r) => r.terminalAt && !r.saving && !r.attempt && !r.verification && !r.receipt,
     );
     for (const r of terminal) {
       if (Date.now() - (r.terminalAt ?? 0) < 86400000 && this.rows.size < 1024) continue;
-      clearTimeout(r.outcomeTimer);
-      this.rows.delete(r.offer);
-      if (r.t) this.tBindings.delete(r.t);
-      for (const [req, pending] of this.hubRequests)
-        if (pending.row === r) this.hubRequests.delete(req);
+      this.removeRow(r);
     }
+  }
+  private removeRow(r: Offer): void {
+    clearTimeout(r.outcomeTimer);
+    this.rows.delete(r.offer);
+    if (r.t) this.tBindings.delete(r.t);
+    r.blob = undefined;
+    for (const [req, pending] of this.hubRequests)
+      if (pending.row === r) this.hubRequests.delete(req);
+  }
+  async discard(key: string): Promise<void> {
+    const r = this.find(key);
+    check(r.receipt && !r.saving);
+    try {
+      await r.verification;
+      await this.options.storage.discard(r.sender, r.offer);
+      this.removeRow(r);
+      this.retentionNotice = `${r.meta.name}: downloaded file discarded.`;
+      this.scheduleRetention();
+    } catch (error) {
+      r.saveError = `Discard failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    this.options.changed();
   }
   private pump(): void {
     if (this.pumping) return;
@@ -1179,7 +1246,7 @@ export class OfferTable {
     this.options.changed();
     try {
       const generation = this.generation;
-      const blob = r.blob ?? (await this.options.storage.readForExport(r.sender, r.offer));
+      const blob = await this.options.storage.readForExport(r.sender, r.offer);
       r.receipt = await exportDownload(
         this.options.storage,
         r.receipt,
@@ -1192,6 +1259,7 @@ export class OfferTable {
       r.saveError = `Downloaded; save failed: ${error instanceof Error ? error.message : String(error)}`;
     } finally {
       r.saving = false;
+      this.scheduleRetention();
       this.options.changed();
     }
   }
@@ -1211,6 +1279,7 @@ export class OfferTable {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    clearTimeout(this.retentionTimer);
     this.generation++;
     for (const off of this.off) off();
     for (const r of this.rows.values()) {

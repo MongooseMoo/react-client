@@ -55,7 +55,8 @@ export function parseControl(raw: string): Control {
         session: id,
         self: endpoint,
         peer: endpoint,
-        features: (x) => validFeatures(x) && (x as string[]).includes('base'),
+        features: (x) =>
+          validFeatures(x) && (x as string[]).length === 1 && (x as string[])[0] === 'base',
         maxFrame: integer(16391, 32768),
         slots: shape({ free: integer(0, 3), total: integer(0, 3) }),
       })(v);
@@ -128,11 +129,13 @@ export function helloMatches(
   session: string,
   self: Endpoint,
   peer: Endpoint,
+  discoveredFeatures: string[],
 ): void {
   check(
     msg.session === session &&
       endpointKey(msg.self) === endpointKey(peer) &&
-      endpointKey(msg.peer) === endpointKey(self),
+      endpointKey(msg.peer) === endpointKey(self) &&
+      msg.features.every((f) => discoveredFeatures.includes(f)),
   );
 }
 /** Continuous token buckets; control frames and payload have separate limits. */

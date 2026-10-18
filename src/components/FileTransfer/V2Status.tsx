@@ -19,6 +19,7 @@ export default function V2Status({
   return (
     <div ref={panel}>
       <p role="status">{service.status}</p>
+      <p role="status">{service.retentionNotice}</p>
       {service.status === 'File transfers are active in another tab' && (
         <button
           type="button"
@@ -46,14 +47,15 @@ export default function V2Status({
           <div key={d.key}>
             <p role="status">
               {d.outcome === 'verified'
-                ? `${name}: downloaded and verified; ready to save`
+                ? `${name}: downloaded and verified; ready to save for seven days`
                 : d.outcome === 'browser-download'
                   ? `${name}: handed to the browser for download; you can save again for 24 hours`
                   : d.outcome === 'export-uncertain'
-                    ? `${name}: download handoff uncertain; choose whether to save again`
+                    ? `${name}: download handoff uncertain; choose whether to save again within seven days`
                     : ''}
             </p>
             {d.saveError && <p role="alert">{d.saveError}</p>}
+            {d.outcomeError && <p role="alert">{d.outcomeError}</p>}
             {d.canRetry && (
               <button
                 type="button"
@@ -61,6 +63,17 @@ export default function V2Status({
                 onClick={() => service.retry(d.key)}
               >
                 Retry {name}
+              </button>
+            )}
+            {d.canSave && (
+              <button
+                type="button"
+                aria-label={`Discard ${name}`}
+                onClick={() => {
+                  void service.discard(d.key);
+                }}
+              >
+                Discard {name}
               </button>
             )}
             {d.canSave && (

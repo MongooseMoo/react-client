@@ -14,6 +14,7 @@ export type StorageApi = Pick<
   | 'saveReceipt'
   | 'exportRecord'
   | 'receipts'
+  | 'discard'
   | 'close'
 >;
 /** Main-thread facade: the worker alone opens owner databases. The election owns this lifetime. */
@@ -129,6 +130,9 @@ export class StorageOwner {
   }
   receipts(): Promise<Receipt[]> {
     return this.call({ op: 'receipts' });
+  }
+  discard(sender: Endpoint, offer: string): Promise<void> {
+    return this.quotaLock(() => this.call({ op: 'discard', sender, offer }));
   }
   async close(): Promise<void> {
     if (this.closing) return;

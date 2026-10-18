@@ -226,7 +226,7 @@ export class PeerSession {
         const msg = parseControl(e.data);
         if (!this.gotHello) {
           check(msg.op === 'hello');
-          helloMatches(msg, this.id, this.self, this.peer);
+          helloMatches(msg, this.id, this.self, this.peer, this.reservation.capabilities.features);
           this.maxFrame = Math.min(this.maxFrame, msg.maxFrame);
           this.gotHello = true;
           this.establish();

@@ -23,6 +23,8 @@ import {
   type OfferState,
 } from './protocol';
 /** The existing v1 testHarness pattern: asynchronous hub and transport seams, runner-independent. */
+const portErrors: unknown[] = [];
+export const takePortErrors = (): unknown[] => portErrors.splice(0);
 export class MemoryPort<I, O> implements WirePort<I, O> {
   readonly sent: { kind: keyof O; data: O[keyof O] & Record<string, unknown> }[] = [];
   private readonly listeners = new Map<keyof I, Set<(v: unknown) => void>>();
@@ -48,6 +50,7 @@ export class MemoryPort<I, O> implements WirePort<I, O> {
         fn(parsed);
       } catch (error) {
         this.errors.push(error);
+        portErrors.push(error);
       }
     }
   }
@@ -94,7 +97,7 @@ export class Phase1Hub {
   private readonly requests = new Map<string, { raw: string; until: number }>();
   private readonly reservedRequests = new Map<string, string>();
   dropOutcome = false;
-  outcomeErrors: ('rate' | 'busy')[] = [];
+  outcomeErrors: string[] = [];
   peer(player: string, legacy = false): HubPeer {
     const p: HubPeer = {
       connection: randomId(),

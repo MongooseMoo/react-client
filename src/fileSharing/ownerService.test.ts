@@ -129,4 +129,16 @@ describe('OwnerService lifecycle', () => {
     expect(port.peer.sent.filter((m) => m.kind === 'Hello').length).toBeGreaterThan(1);
     expect(mocks.engines[mocks.engines.length - 1].dispose).not.toHaveBeenCalled();
   });
+  it('keeps the restored v1 engine alive across repeated storage-recovery passes', async () => {
+    const { port } = await start();
+    check(service);
+    vi.useFakeTimers();
+    mocks.failOpen = 4;
+    for (let i = 0; i < 10; i++) service.protocolFailure();
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(mocks.engines).toHaveLength(2);
+    expect(mocks.engines[0].dispose).toHaveBeenCalledOnce();
+    expect(mocks.engines[1].dispose).not.toHaveBeenCalled();
+    expect(port.peer.sent.filter((m) => m.kind === 'Hello').length).toBeGreaterThan(1);
+  });
 });

@@ -476,7 +476,7 @@ All limits apply before public sharing is enabled, in addition to hub limits.
 | Binary ingress | Token bucket 2048 frames/second, burst 4096 per session, in addition to byte/window limits; includes stored/terminal/manifest frames and duplicates. Close on 3 breaches/60 seconds. |
 | Open requests | 16 unanswered/session, 64/owner; same hard channel/slot checks for direct pushes on existing sessions. |
 | Repeated list/hash work | One new list per peer per 30 seconds; serve immutable snapshot cache. Manifest block may be requested once per attempt; at most 2 full-manifest equivalents per peer/content per ten minutes, counting reconnects. |
-| Receiving payload queues | 1 MiB/channel, 8 MiB/owner, credit-window and persisted-write checks before promotion. |
+| Receiving payload queues | 1 MiB/channel, 8 MiB/owner plus five-byte piece headers (8,391,168 bytes for eight full 64-frame windows), credit-window and persisted-write checks before promotion. |
 
 Hard cap breaches produce error/abort limit/protocol at the smallest affected
 scope. A violation that exhausts session/control limits closes the session;

@@ -2,6 +2,7 @@ import { StorageDatabase, type Binding, type Receipt, type ExportRecord } from '
 export type StorageCommand =
   | { op: 'adoptEphemeral'; owner: string }
   | { op: 'readForExport'; sender: Receipt['sender']; offer: string }
+  | { op: 'discard'; sender: Receipt['sender']; offer: string }
   | { op: 'hash'; file: Blob; token: string }
   | { op: 'reserve'; binding: Binding }
   | { op: 'put'; t: string; a: number; index: number; bytes: ArrayBuffer }
@@ -28,6 +29,8 @@ export async function execute(
       return db.adoptEphemeral(c.owner);
     case 'readForExport':
       return db.readForExport(c.sender, c.offer);
+    case 'discard':
+      return db.discard(c.sender, c.offer);
     case 'hash':
       return db.hash(c.file, c.token);
     case 'reserve':

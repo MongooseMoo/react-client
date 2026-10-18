@@ -7,7 +7,8 @@ import { chooseTransport } from './transportChoice';
 import { polyfillBlobArrayBuffer } from '../fileTransfer/testHarness';
 import type { TransferSnapshot } from '../fileTransfer/types';
 import { IDBFactory } from 'fake-indexeddb';
-import { check } from './protocol';
+import { check, metadata } from './protocol';
+import { encodeFrame } from './frames';
 polyfillBlobArrayBuffer();
 const cleanups: (() => void | Promise<void>)[] = [];
 function present<T>(value: T | undefined): T {
@@ -75,6 +76,145 @@ async function pair(persistent = false) {
   return { hub, rtc, a: await client(a), b: await client(b), connect: client };
 }
 describe('Phase 1 direct sends against the independent hub contract', () => {
+  it('admits eight full receive windows including their frame headers', async () => {
+    const { hub, rtc, a, b, connect } = await pair();
+    const port = hub.peer('#3');
+    port.peer.send('Hello', {
+      req: '3'.repeat(32),
+      endpoint: '4'.repeat(32),
+      peer: 1,
+      files: 1,
+      data: 1,
+      features: ['base'],
+      maxReceiveSize: 104857600,
+    });
+    await until(() => Boolean(port.ready));
+    const c = await connect(port);
+    rtc.tap = (_channel, data) =>
+      data instanceof ArrayBuffer && new Uint8Array(data)[0] === 1 ? 'hold' : 'pass';
+    // biome-ignore lint/complexity/useLiteralKeys: hold the receive bucket while all windows arrive.
+    vi.spyOn(b.table['ownerDownload'], 'take').mockReturnValue(false);
+    for (const sender of [a, c])
+      for (let i = 0; i < 4; i++)
+        await sender.table.send(
+          new File([new Uint8Array(65 * 16384)], `window-${sender.ready.self.player}-${i}.bin`),
+          b.ready.self,
+          104857600,
+        );
+    await until(() => b.table.snapshots().length === 8);
+    for (const r of b.table.snapshots()) {
+      await b.table.accept(r.key);
+      await until(() => b.table.snapshots().find((x) => x.key === r.key)?.state === 'transferring');
+    }
+    await until(() => b.table.snapshots().every((r) => r.state === 'transferring'));
+    const channels = [b.pool.forPeer(a.ready.self), b.pool.forPeer(c.ready.self)].flatMap((s) => [
+      ...present(s).channels,
+    ]);
+    expect(channels).toHaveLength(8);
+    for (const channel of channels)
+      for (let index = 0; index < 64; index++)
+        channel.onmessage?.(
+          new MessageEvent('message', {
+            data: encodeFrame({ type: 'piece', index, bytes: new ArrayBuffer(16384) }),
+          }),
+        );
+    expect(b.changes.some((r) => r.state === 'failed')).toBe(false);
+    expect(b.table.snapshots().every((r) => r.state === 'transferring')).toBe(true);
+  });
+  it.each([
+    'malformed',
+    'too-large',
+    'unsupported',
+    'unavailable',
+    'denied',
+    'conflict',
+    'stale-endpoint',
+    'unknown',
+    'expired',
+    'closed',
+    'not-found',
+    'limit',
+    'state',
+  ])('stops Outcome retries after %s without losing the verified receipt', async (code) => {
+    const { hub, a, b } = await pair();
+    hub.outcomeErrors = [code];
+    await a.table.send(new File(['received'], 'final-error.txt'), b.ready.self, 104857600);
+    await until(() => b.table.snapshots().length === 1);
+    await b.table.accept(b.table.snapshots()[0].key);
+    await until(() => Boolean(b.table.details()[0].outcomeError));
+    vi.useFakeTimers();
+    try {
+      await vi.advanceTimersByTimeAsync(7500);
+      expect(b.port.files.sent.filter((m) => m.kind === 'Outcome')).toHaveLength(1);
+      expect(b.table.snapshots()[0].state).toBe('complete');
+      expect(b.table.details()[0]).toMatchObject({
+        canSave: true,
+        outcome: 'verified',
+        outcomeError: expect.stringContaining(code),
+      });
+      expect((await b.db.receipts())[0].state).toBe('received');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps a two-day unsaved row saveable, then expires the row, receipt and bytes together', async () => {
+    const { a, b } = await pair();
+    await a.table.send(new File(['retained'], 'retained.txt'), b.ready.self, 104857600);
+    await until(() => b.table.snapshots().length === 1);
+    await b.table.accept(b.table.snapshots()[0].key);
+    await until(() => b.table.details()[0].canSave);
+    const [receipt] = await b.db.receipts();
+    b.table.dispose();
+    await b.db.saveReceipt({ ...receipt, touchedAt: Date.now() - 2 * 86400000 });
+    const restored = new OfferTable({
+      self: b.ready,
+      files: b.port.files,
+      storage: b.db,
+      live: () => true,
+      change: () => {},
+      changed: () => {},
+    });
+    cleanups.push(() => restored.dispose());
+    await until(() => restored.details()[0]?.canSave === true);
+    expect((await b.db.readForExport(receipt.sender, receipt.offer)).size).toBe(8);
+    vi.useFakeTimers();
+    try {
+      // Reschedule from the restored deadline under fake timers.
+      restored.dispose();
+      const timed = new OfferTable({
+        self: b.ready,
+        files: b.port.files,
+        storage: b.db,
+        live: () => true,
+        change: () => {},
+        changed: () => {},
+      });
+      cleanups.push(() => timed.dispose());
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(5 * 86400000);
+      expect(timed.details()).toEqual([]);
+      expect(timed.snapshots()).toEqual([]);
+      expect(timed.retentionNotice).toContain('expired');
+      expect(await b.db.receipts()).toEqual([]);
+      await expect(b.db.readForExport(receipt.sender, receipt.offer)).rejects.toThrow(
+        'No verified receipt',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('explicitly discards a received row and its receipt and payload', async () => {
+    const { a, b } = await pair();
+    await a.table.send(new File(['discard'], 'discard.txt'), b.ready.self, 104857600);
+    await until(() => b.table.snapshots().length === 1);
+    await b.table.accept(b.table.snapshots()[0].key);
+    await until(() => b.table.details()[0].canSave);
+    const [r] = await b.db.receipts();
+    await b.table.discard(b.table.snapshots()[0].key);
+    expect(b.table.snapshots()).toEqual([]);
+    expect(await b.db.receipts()).toEqual([]);
+    await expect(b.db.readForExport(r.sender, r.offer)).rejects.toThrow();
+  });
   it.each([
     'rate',
     'busy',
@@ -346,6 +486,16 @@ describe('Phase 1 direct sends against the independent hub contract', () => {
       .find((m) => m.op === 'push');
     rtc.pcs[0].sever();
     rtc.tap = () => 'pass';
+    // A still-accepted receive pins its partial while waiting for the next attempt.
+    await expect(
+      b.db.reserve({
+        t: '1'.repeat(32),
+        a: 1,
+        offer: '2'.repeat(32),
+        source: a.ready.self,
+        meta: metadata({ id: '0'.repeat(64), size: 104857599, name: 'pressure.bin' }),
+      }),
+    ).rejects.toThrow('budget');
     await until(() => b.table.snapshots()[0].state === 'complete');
     const pushes = rtc.sent
       .filter((m) => typeof m.data === 'string')

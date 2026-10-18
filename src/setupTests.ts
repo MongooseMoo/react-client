@@ -1,5 +1,10 @@
-import { vi } from 'vitest';
+import { afterEach, expect, vi } from 'vitest';
+import { takePortErrors } from './fileSharing/testHarness';
 import 'fake-indexeddb/auto';
+
+afterEach(() => {
+  expect(takePortErrors(), 'file-sharing harness listener errors').toEqual([]);
+});
 
 // jest-dom adds custom jest matchers for asserting on DOM nodes.
 // allows you to do things like:

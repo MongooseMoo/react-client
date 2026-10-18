@@ -1,8 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { strictJson, validatePeer, validateFiles, validName } from './protocol';
 import { decodeFrame, encodeFrame } from './frames';
+import { parseControl, helloMatches } from './ctl';
 
 describe('Phase 1 protocol boundaries', () => {
+  it('rejects unknown or later-phase ctl features and features absent from hub discovery', () => {
+    const self = { player: '#1', endpoint: 'a'.repeat(32), epoch: 'b'.repeat(32) };
+    const peer = { ...self, player: '#2' };
+    const hello = {
+      op: 'hello' as const,
+      v: 1 as const,
+      session: 'c'.repeat(32),
+      self: peer,
+      peer: self,
+      features: ['base'],
+      maxFrame: 32768,
+      slots: { free: 0, total: 0 },
+    };
+    for (const features of [['base', 'future'], ['base', 'leaves'], []])
+      expect(() => parseControl(JSON.stringify({ ...hello, features }))).toThrow();
+    expect(() => helloMatches(hello, hello.session, self, peer, ['base'])).not.toThrow();
+    expect(() => helloMatches(hello, hello.session, self, peer, [])).toThrow();
+  });
   it('C: rejects fractional, exponent and negative-zero spellings of integer fields', () => {
     for (const seq of ['1.0e0', '1.0', '1e0', '-0'])
       expect(() => strictJson(`{"seq":${seq},"leaseMs":30000}`)).toThrow();
