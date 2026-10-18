@@ -12,6 +12,7 @@ import ProgressBar from './ProgressBar';
 import PendingTransfer from './PendingTransfer';
 import OutgoingTransfer from './OutgoingTransfer';
 import History from './History';
+import Sharing from './Sharing';
 import { formatFileSize } from './formatFileSize';
 import { useFocusRefuge } from './useFocusRefuge';
 import { useTransferHistory } from './useTransferHistory';
@@ -182,6 +183,8 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
           onCancel={() => cancel(transfer)}
         />
       ))}
+
+      <Sharing recipients={recipients} />
 
       <History history={history.entries} />
     </div>

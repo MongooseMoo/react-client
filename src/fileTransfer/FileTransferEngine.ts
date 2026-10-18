@@ -23,6 +23,8 @@ export interface FileTransferEngineOptions {
   createLink: TransferLinkFactory;
   /** Receives each verified file. */
   deliver(file: ReceivedFile): void | Promise<void>;
+  /** The shared file with this content id, sent when a peer requests it. */
+  sharedFile?(id: TransferId): File | undefined;
   /** Largest file sent or accepted. Default 100 MiB. */
   maxFileSize?: number;
   /**
@@ -104,7 +106,7 @@ export class FileTransferEngine implements FileTransfers {
   private disposed = false;
 
   constructor(options: FileTransferEngineOptions) {
-    const { signaling, storage, createLink, deliver, ...limits } = options;
+    const { signaling, storage, createLink, deliver, sharedFile, ...limits } = options;
     this.context = {
       signaling,
       storage,
@@ -122,8 +124,11 @@ export class FileTransferEngine implements FileTransfers {
       candidate: (from, id, candidate) => this.linked(from, id)?.addCandidate(candidate),
       reject: (from, id) => this.outgoing(from, id)?.rejectedByPeer(),
       cancel: (from, id) => this.addressed(from, id)?.cancelledByPeer(),
-      // Nothing is shared, so every request is for a file this client does not share.
-      request: (from, id) => signaling.sendReject(from, id),
+      request: (from, id) => {
+        const file = sharedFile?.(id);
+        if (file) this.send(file, from).catch(() => undefined);
+        else signaling.sendReject(from, id);
+      },
     });
   }
 
