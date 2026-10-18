@@ -6,10 +6,6 @@
 // it, so a bad packet never reaches Cacophony.
 
 import type { AudioCatalogIds } from './audioDiagnostics';
-import { decodeSequenceData, decodeScoreTransport, sequenceId } from '../midi/SequencePayload';
-import type { SequenceData } from '../midi/SequencePayload';
-import type { ScoreTransport } from '../midi/score';
-import { decodeFileTransport, decodeMediaCueWindows, mediaIdentity } from './SharedMediaPayload';
 import { SPATIAL_MODELS, type SpatialModel, type SpatialProfile } from './distanceModel';
 import type { EffectSpec } from './effects/types';
 import type {
@@ -79,21 +75,13 @@ function checkNumber(value: unknown, label: string, range: NumberRange): number 
   if (range.integer && !Number.isInteger(value)) {
     fail(`${label} must be an integer`);
   }
-  if (
-    (range.min !== undefined && value < range.min) ||
-    (range.max !== undefined && value > range.max)
-  ) {
+  if ((range.min !== undefined && value < range.min) || (range.max !== undefined && value > range.max)) {
     fail(`${label} must be within ${range.min ?? '-inf'}..${range.max ?? 'inf'}`);
   }
   return value;
 }
 
-function optNumber(
-  r: Fields,
-  key: string,
-  what: string,
-  range: NumberRange = {},
-): number | undefined {
+function optNumber(r: Fields, key: string, what: string, range: NumberRange = {}): number | undefined {
   const value = r[key];
   return value === undefined ? undefined : checkNumber(value, `${what}.${key}`, range);
 }
@@ -171,9 +159,7 @@ function spatialProfile(value: unknown, what: string): SpatialProfile {
   const label = `${what}.spatial`;
   const r = fields(value, label);
   const model = requireString(r, 'model', label);
-  const knownModel = SPATIAL_MODELS.find(
-    (candidate): candidate is SpatialModel => candidate === model,
-  );
+  const knownModel = SPATIAL_MODELS.find((candidate): candidate is SpatialModel => candidate === model);
   if (!knownModel) {
     fail(`${label}.model must be one of ${SPATIAL_MODELS.join(', ')}`);
   }
@@ -257,7 +243,9 @@ function optCatalog(r: Fields, what: string): AudioCatalogIds | undefined {
 
 /** Keep only defined entries, so a field the MOO omitted stays absent ("keep current"). */
 function defined<T extends object>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as T;
 }
 
 /**
@@ -334,22 +322,10 @@ export function decodeMediaLoad(raw: unknown): ClientMediaLoadPayload {
   });
 }
 
-export type DecodedMediaPlay = ClientMediaPlayPayload &
-  (
-    | { mediaKind: 'file'; midi?: never }
-    | {
-        mediaKind: 'score';
-        midi: SequenceData;
-        transport: ScoreTransport;
-        contentId: string;
-        key: string;
-        type: 'music';
-      }
-  );
-export function decodeMediaPlay(raw: unknown): DecodedMediaPlay {
+export function decodeMediaPlay(raw: unknown): ClientMediaPlayPayload {
   const what = 'Client.Media.Play';
   const r = fields(raw, what);
-  const common = defined({
+  return defined({
     ...mediaFields(r, what),
     name: requireString(r, 'name', what),
     title: optString(r, 'title', what),
@@ -358,126 +334,14 @@ export function decodeMediaPlay(raw: unknown): DecodedMediaPlay {
     artwork: optArtwork(r, what),
     catalog: optCatalog(r, what),
   });
-  if (
-    r.midi !== undefined ||
-    (r.transport &&
-      typeof r.transport === 'object' &&
-      'kind' in r.transport &&
-      r.transport.kind === 'score')
-  ) {
-    try {
-      if (r.cues !== undefined || r.cueWindows !== undefined)
-        fail('Score playback cannot carry media cues');
-      const contentId = sequenceId(r.contentId),
-        key = sequenceId(r.key),
-        transport = decodeScoreTransport(r.transport);
-      const midi = decodeSequenceData(r.midi, contentId, transport.revision);
-      if (common.name !== '' || common.type !== 'music')
-        fail('Score Play requires empty name and music type');
-      if ('stream' in midi && transport.loop) fail('Stream transport cannot loop');
-      if ('score' in midi && transport.durationTicks !== midi.score.durationTicks)
-        fail('Score transport duration mismatch');
-      return { ...common, mediaKind: 'score', type: 'music', contentId, key, transport, midi };
-    } catch (error) {
-      fail(error instanceof Error ? error.message : 'Invalid score payload');
-    }
-  }
-  if (!common.name) fail('File Play requires a nonempty name');
-  try {
-    if (r.transport !== undefined) {
-      const transport = decodeFileTransport(r.transport),
-        key = mediaIdentity(r.key);
-      if (r.pitchSemitones !== undefined) fail('Shared media pitch rate belongs in transport.rate');
-      if (transport.mode === 'live' && r.cueWindows !== undefined)
-        fail('Live media cannot carry cue windows');
-      if (r.cueWindows !== undefined && transport.discontinuity === undefined)
-        fail('Cue transport requires discontinuity');
-      if (r.cues !== undefined) fail('Use cueWindows');
-      return {
-        ...common,
-        mediaKind: 'file',
-        key,
-        ...(r.contentId === undefined ? {} : { contentId: mediaIdentity(r.contentId) }),
-        transport,
-        cueWindows: decodeMediaCueWindows(r.cueWindows),
-      };
-    }
-    if (r.cues !== undefined || r.cueWindows !== undefined)
-      fail('Media cues require a shared file transport');
-  } catch (error) {
-    fail(error instanceof Error ? error.message : 'Invalid file transport');
-  }
-  return { ...common, mediaKind: 'file' };
 }
 
 export function decodeMediaUpdate(raw: unknown): ClientMediaUpdatePayload {
   const what = 'Client.Media.Update';
-  const r = fields(raw, what);
-  const decoded = defined(mediaFields(r, what));
+  const decoded = defined(mediaFields(fields(raw, what), what));
   if (decoded.key === undefined && decoded.name === undefined) {
     fail(`${what} requires a key or name`);
   }
-  if (r.midi !== undefined || r.transport !== undefined) {
-    if (
-      r.midi === undefined &&
-      r.transport &&
-      typeof r.transport === 'object' &&
-      'kind' in r.transport &&
-      r.transport.kind === 'media'
-    ) {
-      try {
-        const transport = decodeFileTransport(r.transport);
-        if (r.pitchSemitones !== undefined)
-          fail('Shared media pitch rate belongs in transport.rate');
-        if (r.cues !== undefined || (transport.mode === 'live' && r.cueWindows !== undefined))
-          fail('Invalid cue fields');
-        if (r.cueWindows !== undefined && transport.discontinuity === undefined)
-          fail('Cue transport requires discontinuity');
-        return {
-          ...decoded,
-          key: mediaIdentity(r.key),
-          ...(r.contentId === undefined ? {} : { contentId: mediaIdentity(r.contentId) }),
-          transport,
-          cueWindows: decodeMediaCueWindows(r.cueWindows),
-        };
-      } catch (error) {
-        fail(error instanceof Error ? error.message : 'Invalid file Update');
-      }
-    }
-    try {
-      const transport = decodeScoreTransport(r.transport);
-      if (r.cues !== undefined || r.cueWindows !== undefined)
-        fail('Score Update cannot carry media cues');
-      const contentId = r.contentId === undefined ? undefined : sequenceId(r.contentId);
-      const midi =
-        r.midi === undefined
-          ? undefined
-          : decodeSequenceData(r.midi, sequenceId(contentId), transport.revision);
-      const replaceFromTick = optNumber(r, 'replaceFromTick', what, {
-        min: 0,
-        integer: true,
-        max: Number.MAX_SAFE_INTEGER,
-      });
-      const effectiveServerMs = optNumber(r, 'effectiveServerMs', what, {
-        min: 0,
-        max: Number.MAX_SAFE_INTEGER,
-      });
-      if ((replaceFromTick === undefined) !== (effectiveServerMs === undefined))
-        fail('Replacement requires tick and effective time');
-      return defined({
-        ...decoded,
-        transport,
-        contentId,
-        midi,
-        replaceFromTick,
-        effectiveServerMs,
-      });
-    } catch (error) {
-      fail(error instanceof Error ? error.message : 'Invalid score Update');
-    }
-  }
-  if (r.cues !== undefined || r.cueWindows !== undefined)
-    fail('Media cue updates require transport');
   return decoded;
 }
 

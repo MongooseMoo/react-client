@@ -78,14 +78,12 @@ export class GmcpSession {
     coreSupports.sendSet(coreSupports.advertisedModules());
     this.require('Auth.Autologin').sendStoredLogin();
     this.require('Client.Media').publishEffectsSupport();
-    this.require('Client.Media').sendPlaybackSupport();
     return this.markReady();
   }
 
   markReady(): boolean {
     if (this._ready) return false;
     this._ready = true;
-    this.client.sharedClock?.setNetworkReady(!this.client.localConnection);
     return true;
   }
 
@@ -145,7 +143,6 @@ export class GmcpSession {
     this._ready = false;
     this._sessionReady = false;
     this.telnet = null;
-    this.client.sharedClock?.setNetworkReady(false);
   }
 
   shutdown(): void {

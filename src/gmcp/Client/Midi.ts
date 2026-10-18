@@ -1,481 +1,404 @@
-import type { MidiMessage, MidiNote } from '../../MidiService';
-import { usePreferences } from '../../stores/preferencesStore';
-import { duplex, inbound } from '../../protocol/messages';
+import type { MidiMessage, MidiNote } from "../../MidiService";
+import { usePreferences } from "../../stores/preferencesStore";
+import { duplex, inbound } from "../../protocol/messages";
 import { decodeMidiRoute, type MidiRoute } from '../../audio/MidiAudioRoute';
-import {
-  decodeLiveNote,
-  decodeLiveControl,
-  decodeLiveProgram,
-  decodeLiveReleaseAll,
-  type LiveNote,
-  type LiveControl,
-  type LiveProgram,
-} from '../../midi/LiveOriginProtocol';
-import type { LiveOriginRenderer } from '../../midi/LiveOriginRenderer';
-import { gmcpJsonMessage } from '../messages';
-import { GMCPMessage, GMCPPackage } from '../package';
-import { WorldMusicClient } from '../../composition/world/WorldMusicClient';
-import { object } from '../../composition/world/protocol';
+import { gmcpJsonMessage } from "../messages";
+import { GMCPMessage, GMCPPackage } from "../package";
 
 export class GMCPMessageClientMidiNote extends GMCPMessage {
-  readonly note!: number;
-  readonly velocity!: number;
-  readonly on!: boolean;
-  readonly channel?: number;
-  readonly duration?: number;
-  readonly originId?: string;
-  readonly eventId?: number;
+  public readonly note!: number;
+  public readonly velocity!: number;
+  public readonly on!: boolean;
+  public readonly channel?: number;
+  public readonly duration?: number;
 }
+
 export class GMCPMessageClientMidiControlChange extends GMCPMessage {
-  readonly controller!: number;
-  readonly value!: number;
-  readonly channel!: number;
-  readonly originId?: string;
+  public readonly controller!: number;
+  public readonly value!: number;
+  public readonly channel!: number;
 }
+
 export class GMCPMessageClientMidiProgramChange extends GMCPMessage {
-  readonly program!: number;
-  readonly channel!: number;
-  readonly originId?: string;
+  public readonly program!: number;
+  public readonly channel!: number;
 }
+
+export class GMCPMessageClientMidiSystemMessage extends GMCPMessage {
+  public readonly type!: string;
+  public readonly data!: number[];
+}
+
+export class GMCPMessageClientMidiRawMessage extends GMCPMessage {
+  public readonly hex!: string;
+  public readonly data!: number[];
+  public readonly type!: string;
+}
+
 export class GMCPMessageClientMidiEnable extends GMCPMessage {
-  readonly enabled!: boolean;
+  public readonly enabled!: boolean;
 }
-type MidiService = typeof import('../../MidiService').midiService;
-const midiNote = gmcpJsonMessage<'Note', LiveNote, GMCPMessageClientMidiNote>('Note', {
-  decode: decodeLiveNote,
-  encode: decodeLiveNote,
-});
-const midiControl = gmcpJsonMessage<
-  'ControlChange',
-  LiveControl,
+
+type MidiService = typeof import("../../MidiService").midiService;
+
+const midiNote = gmcpJsonMessage<"Note", GMCPMessageClientMidiNote>("Note");
+const midiControlChange = gmcpJsonMessage<
+  "ControlChange",
   GMCPMessageClientMidiControlChange
->('ControlChange', { decode: decodeLiveControl, encode: decodeLiveControl });
-const midiProgram = gmcpJsonMessage<
-  'ProgramChange',
-  LiveProgram,
+>("ControlChange");
+const midiProgramChange = gmcpJsonMessage<
+  "ProgramChange",
   GMCPMessageClientMidiProgramChange
->('ProgramChange', { decode: decodeLiveProgram, encode: decodeLiveProgram });
-const midiEnable = gmcpJsonMessage<'Enable', GMCPMessageClientMidiEnable>('Enable', {
-  decode: (value: unknown) => {
-    if (
-      !value ||
-      typeof value !== 'object' ||
-      !('enabled' in value) ||
-      (typeof value.enabled !== 'boolean' && value.enabled !== 0 && value.enabled !== 1)
-    )
-      throw new TypeError('Invalid MIDI enable message');
-    return { enabled: value.enabled === true || value.enabled === 1 };
-  },
-  encode: (value) => value,
-});
-const midiRoute = gmcpJsonMessage<'Route', MidiRoute>('Route', {
-  decode: decodeMidiRoute,
-  encode: (value) => value,
-});
-const midiReleaseAll = gmcpJsonMessage<'NoteReleaseAll', { originId: string }>('NoteReleaseAll', {
-  decode: decodeLiveReleaseAll,
-  encode: (value) => value,
-});
-const midiEditorReply = gmcpJsonMessage<
-  'EditorReply',
-  Record<string, unknown> & { requestId: string }
->('EditorReply', {
-  decode: (value: unknown) => {
-    const reply = object(value);
-    if (typeof reply.requestId !== 'string') throw new TypeError('Invalid editor reply identity');
-    return { ...reply, requestId: reply.requestId };
-  },
-  encode: (value) => value,
-});
+>("ProgramChange");
+const midiSystemMessage = gmcpJsonMessage<
+  "SystemMessage",
+  GMCPMessageClientMidiSystemMessage
+>("SystemMessage");
+const midiRawMessage = gmcpJsonMessage<"RawMessage", GMCPMessageClientMidiRawMessage>("RawMessage");
+const midiEnable = gmcpJsonMessage<"Enable", GMCPMessageClientMidiEnable>("Enable");
+const midiRoute = gmcpJsonMessage<'Route', MidiRoute>('Route', { decode: decodeMidiRoute, encode: (payload) => payload });
+
 const GMCPClientMidiBase = GMCPPackage.with({
-  packageName: 'Client.Midi',
+  packageName: "Client.Midi",
   messages: [
     duplex(midiNote),
-    duplex(midiControl),
-    duplex(midiProgram),
+    duplex(midiControlChange),
+    duplex(midiProgramChange),
+    duplex(midiSystemMessage),
+    duplex(midiRawMessage),
     duplex(midiEnable),
     inbound(midiRoute),
-    inbound(midiReleaseAll),
-    inbound(midiEditorReply),
   ] as const,
 });
 
-/** Version 2 relays only validated notes, whitelisted controls and programs. */
 export class GMCPClientMidi extends GMCPClientMidiBase {
-  public packageVersion = 2;
-  readonly world: WorldMusicClient;
-  private isAdvertised = false;
+  public packageVersion?: number = 1;
+  private activeNotes: Map<string, NodeJS.Timeout> = new Map();
+  private isAdvertised: boolean = false;
   private debugCallback?: (hex: string, type: string, gmcpMessage: string) => void;
-  private midiServicePromise?: Promise<MidiService>;
+  private midiServicePromise: Promise<MidiService> | null = null;
   private serviceInitialized = false;
   private hasInputDeviceConnected = false;
   private hasOutputDeviceConnected = false;
-  private renderer?: LiveOriginRenderer;
-  private rendererPromise?: Promise<LiveOriginRenderer>;
-  private rendererGeneration = 0;
-  private closed = false;
-  private releases: Array<() => void> = [];
-  private readonly outgoing = new Map<string, MidiNote>();
-  private readonly outgoingTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly pedals = new Set<number>();
-  private readonly relaySuspensions = new Set<symbol>();
-  private readonly panicListeners = new Set<() => void>();
-  private readonly statusListeners = new Set<() => void>();
-  private status = '';
+
   get enabled(): boolean {
     return usePreferences.getState().midi.enabled;
   }
-  constructor(
-    client: ConstructorParameters<typeof GMCPClientMidiBase>[0],
-    private readonly rendererFactory?: () => Promise<LiveOriginRenderer>,
-  ) {
+
+  constructor(client: ConstructorParameters<typeof GMCPClientMidiBase>[0]) {
     super(client);
-    this.world = new WorldMusicClient(
-      (name, payload) => this.client.gmcp.send(name, payload),
-      () => this.client.connected && this.client.gmcp.ready,
-    );
-    this.on('editorReply', (reply) => this.world.receive(reply));
-    this.on('note', (data) => this.handleNote(data));
-    this.on('controlChange', (data) => this.handleControlChange(data));
-    this.on('programChange', (data) => this.handleProgramChange(data));
-    this.on('enable', (data) => this.handleEnable(data));
-    this.on('noteReleaseAll', (data) => {
-      const generation = this.rendererGeneration;
-      void this.rendererPromise
-        ?.then((renderer) => {
-          if (generation === this.rendererGeneration) renderer.releaseAll(data.originId);
-        })
-        .catch((error) => this.report(String(error)));
-    });
-    this.on('route', (data) => {
-      if (this.enabled) this.client.media.setMidiRoute(data);
-    });
-    if (client.media?.subscribePlayback)
-      this.releases.push(
-        client.media.subscribePlayback(() => {
-          if (client.media.paused) this.clearLive();
-        }),
-      );
-    this.releases.push(
-      usePreferences.subscribe((state, previous) => {
-        if (previous.midi.enabled && !state.midi.enabled) {
-          this.releaseOutgoing();
-          this.clearLive();
-        }
-      }),
-    );
+    this.on("note", (data) => this.handleNote(data));
+    this.on("controlChange", (data) => this.handleControlChange(data));
+    this.on("programChange", (data) => this.handleProgramChange(data));
+    this.on("systemMessage", (data) => this.handleSystemMessage(data));
+    this.on("rawMessage", (data) => this.handleRawMessage(data));
+    this.on("enable", (data) => this.handleEnable(data));
+    this.on('route', (data) => { if (this.enabled) this.client.media.setMidiRoute(data); });
   }
-  getLiveStatus = () => this.status;
-  subscribeLiveStatus = (listener: () => void) => {
-    this.statusListeners.add(listener);
-    return () => {
-      this.statusListeners.delete(listener);
-    };
-  };
-  private report(message: string): void {
-    if (message === this.status) return;
-    this.status = message;
-    for (const listener of this.statusListeners) listener();
-  }
-  private clearLive(): void {
-    this.rendererGeneration++;
-    this.renderer?.reset();
-    this.renderer = undefined;
-    this.rendererPromise = undefined;
-  }
+
   private loadMidiService(): Promise<MidiService> {
-    if (!this.midiServicePromise)
-      this.midiServicePromise = import('../../MidiService').then(({ midiService }) => {
-        if (!this.closed && midiService.subscribeOutput)
-          this.releases.push(
-            midiService.subscribeOutput(() => {
-              this.clearLive();
-              this.syncConnectionState(midiService);
-            }),
-          );
-        return midiService;
-      });
+    if (!this.midiServicePromise) {
+      this.midiServicePromise = import("../../MidiService").then(({ midiService }) => midiService);
+    }
     return this.midiServicePromise;
   }
-  private loadRenderer(): Promise<LiveOriginRenderer> {
-    if (this.rendererPromise) return this.rendererPromise;
-    const generation = this.rendererGeneration;
-    this.rendererPromise = (
-      this.rendererFactory
-        ? this.rendererFactory()
-        : import('../../midi/LiveOriginRenderer').then(
-            ({ LiveOriginRenderer }) =>
-              new LiveOriginRenderer({
-                getOutput: async () => {
-                  const service = await this.loadMidiService();
-                  if (!this.enabled || this.closed || this.client.media.paused) return null;
-                  const output = await service.getSequenceOutput();
-                  if (!output)
-                    this.report('Choose a browser MIDI output that supports independent voices.');
-                  return output;
-                },
-                getDestination: (context) => {
-                  const output = this.client.media.getMidiAudioOutput();
-                  if (context !== output.context)
-                    throw new Error('MIDI output belongs to a different audio context');
-                  return output.destination;
-                },
-                error: (message) => this.report(message),
-              }),
-          )
-    ).then((renderer) => {
-      if (generation !== this.rendererGeneration || this.closed) renderer.reset();
-      else this.renderer = renderer;
-      return renderer;
-    });
-    return this.rendererPromise;
+
+  private syncConnectionState(midiService: MidiService): void {
+    const status = midiService.connectionStatus;
+    this.hasInputDeviceConnected = status.inputConnected;
+    this.hasOutputDeviceConnected = status.outputConnected;
   }
-  private syncConnectionState(service: MidiService): void {
-    this.hasInputDeviceConnected = service.connectionStatus.inputConnected;
-    this.hasOutputDeviceConnected = service.connectionStatus.outputConnected;
-  }
+
   async ensureInitialized(): Promise<boolean> {
-    if (!this.enabled || this.closed) return false;
-    if (this.serviceInitialized) return true;
-    const service = await this.loadMidiService();
-    if (!service.isSupported) return false;
-    const success = await service.initialize();
-    this.serviceInitialized = service.isInitialized;
-    this.syncConnectionState(service);
-    if (success && !this.closed)
-      await service.attemptAutoReconnectInput((message) => this.handleInputMessage(message));
+    if (!this.enabled) {
+      return false;
+    }
+
+    if (this.serviceInitialized) {
+      return true;
+    }
+
+    const midiService = await this.loadMidiService();
+    if (!midiService.isSupported) {
+      console.log("MIDI not supported in this browser");
+      return false;
+    }
+
+    const success = await midiService.initialize();
+    this.serviceInitialized = midiService.isInitialized;
+    this.syncConnectionState(midiService);
+    if (success) {
+      console.log("MIDI service initialized");
+
+      await midiService.attemptAutoReconnectInput((message) => {
+        this.handleInputMessage(message);
+      });
+    }
     return success;
   }
+
   get isInitialized(): boolean {
     return this.serviceInitialized;
   }
-  async connectInputDevice(deviceId: string): Promise<boolean> {
-    if (!(await this.ensureInitialized())) return false;
-    this.releaseOutgoing();
-    const service = await this.loadMidiService();
-    const connected = await service.connectInputDevice(deviceId, (message) =>
-      this.handleInputMessage(message),
-    );
-    this.syncConnectionState(service);
+
+  public async connectInputDevice(deviceId: string): Promise<boolean> {
+    const initialized = await this.ensureInitialized();
+    if (!initialized) return false;
+
+    const midiService = await this.loadMidiService();
+    const connected = await midiService.connectInputDevice(deviceId, (message: MidiMessage) => {
+      this.handleInputMessage(message);
+    });
+    this.syncConnectionState(midiService);
     return connected;
   }
-  async connectOutputDevice(deviceId: string): Promise<boolean> {
-    if (!(await this.ensureInitialized())) return false;
-    const service = await this.loadMidiService();
-    const connected = await service.connectOutputDevice(deviceId);
-    this.syncConnectionState(service);
+
+  public async connectOutputDevice(deviceId: string): Promise<boolean> {
+    const initialized = await this.ensureInitialized();
+    if (!initialized) return false;
+
+    const midiService = await this.loadMidiService();
+    const connected = await midiService.connectOutputDevice(deviceId);
+    this.syncConnectionState(midiService);
     return connected;
   }
-  /** Suppress new room onsets during private capture; timestamp subscribers stay attached. */
-  suspendInputRelay(): () => void {
-    const lease = Symbol('private MIDI recording');
-    if (!this.relaySuspensions.size) this.releaseOutgoing();
-    this.relaySuspensions.add(lease);
-    return () => {
-      this.relaySuspensions.delete(lease);
-    };
-  }
-  private trackOutgoing(data: MidiNote, duration?: number): void {
-    const key = `${data.channel ?? 0}:${data.note}`;
-    const timer = this.outgoingTimers.get(key);
-    if (timer !== undefined) clearTimeout(timer);
-    this.outgoingTimers.delete(key);
-    if (!data.on) {
-      this.outgoing.delete(key);
-      return;
-    }
-    this.outgoing.set(key, data);
-    if (duration !== undefined)
-      this.outgoingTimers.set(
-        key,
-        setTimeout(() => {
-          if (this.outgoing.get(key) === data) this.outgoing.delete(key);
-          this.outgoingTimers.delete(key);
-        }, duration),
-      );
-  }
-  private releaseOutgoing(): void {
-    for (const note of this.outgoing.values()) this.sendNote({ ...note, on: false, velocity: 0 });
-    for (const channel of this.pedals)
-      this.sendControlChange({ channel, controller: 64, value: 0 });
-    for (const timer of this.outgoingTimers.values()) clearTimeout(timer);
-    this.outgoingTimers.clear();
-    this.outgoing.clear();
-    this.pedals.clear();
-  }
+
   private handleInputMessage(message: MidiMessage): void {
-    if (!this.enabled || this.closed) return;
-    let frame = '';
+    let gmcpMessage = "";
+
+    const hex = message.rawData.hex;
+    const type = message.rawData.type;
+
     if (message.note) {
-      const data = decodeLiveNote({ ...message.note, channel: message.note.channel ?? 0 });
-      const key = `${data.channel}:${data.note}`;
-      if (data.on) {
-        if (this.relaySuspensions.size || (!this.outgoing.has(key) && this.outgoing.size >= 128))
-          return;
-      } else if (!this.outgoing.has(key)) return;
-      this.trackOutgoing(data);
-      this.sendNote(data);
-      frame = `Client.Midi.Note ${JSON.stringify(data)}`;
+      const noteData = {
+        note: message.note.note,
+        velocity: message.note.velocity,
+        on: message.note.on,
+        channel: message.note.channel,
+      };
+      this.sendNote(noteData);
+      gmcpMessage = `Client.Midi.Note ${JSON.stringify(noteData)}`;
     } else if (message.controlChange) {
-      const raw = message.controlChange;
-      if (![7, 10, 11, 64].includes(raw.controller)) return;
-      const data = decodeLiveControl(raw);
-      if (
-        this.relaySuspensions.size &&
-        !(data.controller === 64 && data.value < 64 && this.pedals.has(data.channel))
-      )
-        return;
-      if (data.controller === 64) {
-        if (data.value >= 64) this.pedals.add(data.channel);
-        else this.pedals.delete(data.channel);
-      }
-      this.sendControlChange(data);
-      frame = `Client.Midi.ControlChange ${JSON.stringify(data)}`;
-    } else if (message.programChange && !this.relaySuspensions.size) {
-      const data = decodeLiveProgram(message.programChange);
-      this.sendProgramChange(data);
-      frame = `Client.Midi.ProgramChange ${JSON.stringify(data)}`;
+      const ccData = {
+        controller: message.controlChange.controller,
+        value: message.controlChange.value,
+        channel: message.controlChange.channel,
+      };
+      this.sendControlChange(ccData);
+      gmcpMessage = `Client.Midi.ControlChange ${JSON.stringify(ccData)}`;
+    } else if (message.programChange) {
+      const pcData = {
+        program: message.programChange.program,
+        channel: message.programChange.channel,
+      };
+      this.sendProgramChange(pcData);
+      gmcpMessage = `Client.Midi.ProgramChange ${JSON.stringify(pcData)}`;
+    } else if (message.systemMessage) {
+      const sysData = {
+        type: message.systemMessage.type,
+        data: message.systemMessage.data,
+      };
+      this.sendSystemMessage(sysData);
+      gmcpMessage = `Client.Midi.SystemMessage ${JSON.stringify(sysData)}`;
+    } else if (message.raw) {
+      const rawData = {
+        hex: message.raw.hex,
+        data: Array.from(message.raw.data),
+        type: message.raw.type,
+      };
+      this.sendRawMessage(rawData);
+      gmcpMessage = `Client.Midi.RawMessage ${JSON.stringify(rawData)}`;
     }
-    if (frame) this.debugCallback?.(message.rawData.hex, message.rawData.type, frame);
+
+    if (this.debugCallback && gmcpMessage) {
+      this.debugCallback(hex, type, gmcpMessage);
+    }
   }
+
+  private sendNoteToServer(note: MidiNote, duration?: number): void {
+    const noteData: GMCPMessageClientMidiNote = {
+      note: note.note,
+      velocity: note.velocity,
+      on: note.on,
+      channel: note.channel,
+      ...(duration === undefined ? {} : { duration }),
+    };
+
+    this.sendNote(noteData);
+  }
+
   handleNote(data: GMCPMessageClientMidiNote): void {
-    const note = decodeLiveNote(data);
-    if (!this.enabled || (this.client.media?.paused && note.on)) return;
-    const generation = this.rendererGeneration;
-    void this.loadRenderer()
-      .then((renderer) => {
-        if (generation === this.rendererGeneration && this.enabled) return renderer.note(note);
-      })
-      .catch((error) => this.report(error instanceof Error ? error.message : String(error)));
+    if (!this.enabled) return;
+    void this.handleNoteAsync(data);
   }
+
+  private async handleNoteAsync(data: GMCPMessageClientMidiNote): Promise<void> {
+    const midiService = await this.loadMidiService();
+    const note: MidiNote = {
+      note: data.note,
+      velocity: data.velocity,
+      on: data.on,
+      channel: data.channel,
+    };
+
+    const noteKey = `${data.note}_${data.channel || 0}`;
+    const activeNoteTimeout = this.activeNotes.get(noteKey);
+    if (activeNoteTimeout) {
+      clearTimeout(activeNoteTimeout);
+      this.activeNotes.delete(noteKey);
+    }
+
+    midiService.sendNote(note);
+
+    if (data.on && data.duration) {
+      // The virtual synth schedules the release on its audio clock; hardware
+      // ports have no clock we can target, so they keep a timer.
+      if (midiService.scheduleNoteOff(note, data.duration)) return;
+
+      const timeout = setTimeout(() => {
+        midiService.sendNote({
+          ...note,
+          on: false,
+          velocity: 0,
+        });
+        this.activeNotes.delete(noteKey);
+      }, data.duration);
+
+      this.activeNotes.set(noteKey, timeout);
+    }
+  }
+
   handleControlChange(data: GMCPMessageClientMidiControlChange): void {
-    const control = decodeLiveControl(data);
     if (!this.enabled) return;
-    const generation = this.rendererGeneration;
-    void this.loadRenderer()
-      .then((renderer) => {
-        if (generation === this.rendererGeneration && this.enabled) renderer.control(control);
-      })
-      .catch((error) => this.report(String(error)));
+    void this.sendRawIfOutputConnected([0xB0 | data.channel, data.controller, data.value]);
   }
+
   handleProgramChange(data: GMCPMessageClientMidiProgramChange): void {
-    const program = decodeLiveProgram(data);
     if (!this.enabled) return;
-    const generation = this.rendererGeneration;
-    void this.loadRenderer()
-      .then((renderer) => {
-        if (generation === this.rendererGeneration && this.enabled) renderer.program(program);
-      })
-      .catch((error) => this.report(String(error)));
+    void this.sendRawIfOutputConnected([0xC0 | data.channel, data.program]);
   }
-  handleEnable(_data: GMCPMessageClientMidiEnable): void {}
+
+  handleSystemMessage(data: GMCPMessageClientMidiSystemMessage): void {
+    if (!this.enabled) return;
+    void this.sendRawIfOutputConnected(data.data);
+  }
+
+  handleRawMessage(data: GMCPMessageClientMidiRawMessage): void {
+    if (!this.enabled) return;
+    void this.sendRawIfOutputConnected(data.data);
+  }
+
+  private async sendRawIfOutputConnected(data: number[]): Promise<void> {
+    const midiService = await this.loadMidiService();
+    this.syncConnectionState(midiService);
+    if (midiService.hasOutputDevice) {
+      midiService.sendRawMessage(data);
+    }
+  }
+
+  handleEnable(data: GMCPMessageClientMidiEnable): void {
+    console.log("Server MIDI enable status:", data.enabled);
+  }
+
   advertiseMidiSupport(): void {
-    const supports = this.client.gmcp.handlers['Core.Supports'];
-    if (!this.isAdvertised && supports) {
-      supports.sendAdd(['Client.Midi 2']);
-      this.isAdvertised = true;
+    if (!this.isAdvertised) {
+      const coreSupports = this.client.gmcp.handlers["Core.Supports"];
+      if (coreSupports) {
+        coreSupports.sendAdd([`Client.Midi ${this.packageVersion || 1}`]);
+        this.isAdvertised = true;
+        console.log("Advertised MIDI support to server");
+      }
     }
   }
+
   unadvertiseMidiSupport(): void {
-    this.releaseOutgoing();
-    this.clearLive();
-    const supports = this.client.gmcp.handlers['Core.Supports'];
-    if (this.isAdvertised && supports) {
-      supports.sendRemove(['Client.Midi']);
-      this.isAdvertised = false;
+    if (this.isAdvertised) {
+      const coreSupports = this.client.gmcp.handlers["Core.Supports"];
+      if (coreSupports) {
+        coreSupports.sendRemove(["Client.Midi"]);
+        this.isAdvertised = false;
+        console.log("Removed MIDI support advertisement from server");
+      }
     }
   }
+
   sendMidiCapability(): void {
     if (!this.enabled) {
       this.sendEnable({ enabled: false });
       return;
     }
-    void this.loadMidiService()
-      .then((service) =>
-        this.sendEnable({
-          enabled: this.enabled && !this.closed && service.isSupported && service.isInitialized,
-        }),
-      )
-      .catch((error) => this.report(String(error)));
+
+    void this.loadMidiService().then((midiService) => {
+      this.sendEnable({
+        enabled: midiService.isSupported && midiService.isInitialized,
+      });
+    });
   }
-  sendManualNote(
-    note: number,
-    velocity: number,
-    on: boolean,
-    channel = 0,
-    duration?: number,
-  ): void {
-    const data = decodeLiveNote({
+
+  sendManualNote(note: number, velocity: number, on: boolean, channel?: number, duration?: number): void {
+    const noteData = {
       note,
       velocity,
       on,
-      channel,
-      ...(duration === undefined ? {} : { duration }),
-    });
-    if (!this.enabled) return;
-    if (this.relaySuspensions.size) return;
-    if (!on && !this.outgoing.has(`${channel}:${note}`)) return;
-    if (on && !this.outgoing.has(`${channel}:${note}`) && this.outgoing.size >= 128)
-      throw new RangeError('Too many outstanding MIDI notes');
-    this.trackOutgoing(data, duration);
-    this.sendNote(data);
-  }
-  subscribePanic(listener: () => void): () => void {
-    this.panicListeners.add(listener);
-    return () => {
-      this.panicListeners.delete(listener);
+      channel: channel || 0,
     };
+
+    this.sendNoteToServer(noteData, duration);
   }
-  /** Explicit user panic owns the selected MIDI port and all client MIDI sources. */
+
   sendAllNotesOff(): void {
-    this.releaseOutgoing();
-    this.clearLive();
-    this.client.media?.panicSequences?.();
-    for (const listener of this.panicListeners) listener();
-    if (this.enabled)
-      void this.loadMidiService()
-        .then((service) => service.sendAllNotesOff())
-        .catch((error) => this.report(String(error)));
+    if (this.enabled) {
+      void this.loadMidiService().then((midiService) => {
+        midiService.sendAllNotesOff();
+      });
+    }
+
+    this.activeNotes.forEach((timeout) => {
+      clearTimeout(timeout);
+    });
+    this.activeNotes.clear();
   }
+
   async getInputDevices() {
-    return (await this.ensureInitialized()) ? (await this.loadMidiService()).getInputDevices() : [];
+    const initialized = await this.ensureInitialized();
+    if (!initialized) return [];
+
+    const midiService = await this.loadMidiService();
+    return midiService.getInputDevices();
   }
+
   async getOutputDevices() {
-    return (await this.ensureInitialized())
-      ? (await this.loadMidiService()).getOutputDevices()
-      : [];
+    const initialized = await this.ensureInitialized();
+    if (!initialized) return [];
+
+    const midiService = await this.loadMidiService();
+    return midiService.getOutputDevices();
   }
+
   get hasInputDevice(): boolean {
     return this.hasInputDeviceConnected;
   }
+
   get hasOutputDevice(): boolean {
     return this.hasOutputDeviceConnected;
   }
-  setDebugCallback(callback: (hex: string, type: string, message: string) => void): void {
+
+  setDebugCallback(callback: (hex: string, type: string, gmcpMessage: string) => void): void {
     this.debugCallback = callback;
   }
+
   override reset(): void {
-    this.world.reset();
-    this.clearLive();
-    for (const timer of this.outgoingTimers.values()) clearTimeout(timer);
-    this.outgoingTimers.clear();
-    this.outgoing.clear();
-    this.pedals.clear();
+    this.sendAllNotesOff();
     this.isAdvertised = false;
   }
+
   shutdown(): void {
-    this.closed = true;
     this.reset();
-    this.relaySuspensions.clear();
-    for (const release of this.releases.splice(0)) release();
-    this.panicListeners.clear();
-    this.statusListeners.clear();
-    if (this.midiServicePromise)
-      void this.midiServicePromise
-        .then((service) => {
-          service.disconnect();
-          this.syncConnectionState(service);
-        })
-        .catch((error) => this.report(String(error)));
+    if (this.midiServicePromise) {
+      void this.midiServicePromise.then((midiService) => {
+        midiService.disconnect();
+        this.syncConnectionState(midiService);
+      });
+    }
   }
 }

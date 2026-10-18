@@ -35,7 +35,6 @@ class MockAutoLoginPackage extends GMCPPackage {
 class MockClientMediaPackage extends GMCPPackage {
   packageName = 'Client.Media';
   publishEffectsSupport = vi.fn();
-  sendPlaybackSupport = vi.fn();
 }
 
 function createSession() {
@@ -143,7 +142,6 @@ describe('GmcpSession', () => {
     expect(supports.sendSet).toHaveBeenCalledWith(['Core 1', 'Core.Supports 1']);
     expect(autoLogin.sendStoredLogin).toHaveBeenCalledTimes(2);
     expect(media.publishEffectsSupport).toHaveBeenCalledTimes(2);
-    expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(2);
     expect(session.ready).toBe(true);
   });
 

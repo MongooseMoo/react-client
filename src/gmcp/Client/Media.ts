@@ -32,19 +32,10 @@ import {
   mongooseToWebAudioOrientation,
 } from '../../audio/mongooseCoordinates';
 import type { EffectSpec } from '../../audio/effects/types';
-import { midiService } from '../../MidiService';
-import { SEQUENCE_SUPPORT } from '../../midi/SequenceOutput';
-import { usePreferences } from '../../stores/preferencesStore';
-import { duplex, inbound, outbound } from '../../protocol/messages';
+import { inbound, outbound } from '../../protocol/messages';
 import { useSpatialStore } from '../../stores/spatialStore';
 import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
-import {
-  decodeMediaSync,
-  type MediaSyncReply,
-  type MediaSyncRequest,
-  type MediaSourceError,
-} from '../../audio/SharedMediaPayload';
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage implements ClientMediaLoadPayload {
   public readonly url?: string;
@@ -203,11 +194,6 @@ const mediaStop = gmcpJsonMessage<'Stop', ClientMediaStopPayload>(
   'Stop',
   inboundCodec(decodeMediaStop),
 );
-const mediaSync = gmcpJsonMessage<'Sync', MediaSyncReply, MediaSyncRequest>('Sync', {
-  decode: decodeMediaSync,
-  encode: (value) => value,
-});
-const mediaSourceError = gmcpJsonMessage<'SourceError', never, MediaSourceError>('SourceError');
 
 /** Log an async Client.Media failure as one bounded line (never an unhandled rejection). */
 function logMediaFailure(
@@ -233,23 +219,6 @@ const mediaEffectsSupport = gmcpJsonMessage<
   never,
   ReturnType<typeof buildEffectsSupport>
 >('EffectsSupport');
-export function buildPlaybackSupport(sharedTransport = true) {
-  return {
-    version: 1,
-    sharedTransport,
-    mediaLoops: sharedTransport ? { version: 1, buffer: true, html: false } : false,
-    presentationCues: sharedTransport ? { version: 1, maxCues: 512, maxBytes: 16384 } : false,
-    midiSequences:
-      sharedTransport && midiService.sequenceOutputAvailable ? SEQUENCE_SUPPORT : false,
-  };
-}
-// Encoding reads the actual selected sink at publication time, including explicit false.
-const mediaPlaybackSupport = gmcpJsonMessage<'PlaybackSupport', never, void>('PlaybackSupport', {
-  encode: () => buildPlaybackSupport(),
-  decode: () => {
-    throw new TypeError('PlaybackSupport is outbound only');
-  },
-});
 
 const GMCPClientMediaBase = GMCPPackage.with({
   packageName: 'Client.Media',
@@ -262,22 +231,14 @@ const GMCPClientMediaBase = GMCPPackage.with({
     inbound(mediaPlay),
     inbound(mediaUpdate),
     inbound(mediaStop),
-    duplex(mediaSync),
-    outbound(mediaSourceError),
     inbound(mediaListenerPosition),
     inbound(mediaListenerOrientation),
     outbound(mediaEffectsSupport),
-    outbound(mediaPlaybackSupport),
   ] as const,
 });
 
 export class GMCPClientMedia extends GMCPClientMediaBase {
   private unsubscribeSpatialStore: (() => void) | undefined;
-  private unsubscribeOutput: (() => void) | undefined;
-  private unsubscribeMidiPreference: (() => void) | undefined;
-  private unsubscribeTimingPreference: (() => void) | undefined;
-  private unsubscribeClockSupport: (() => void) | undefined;
-  private disposed = false;
 
   constructor(client: ConstructorParameters<typeof GMCPClientMediaBase>[0]) {
     super(client);
@@ -295,59 +256,13 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     });
     this.on('update', (data) => this.handleUpdate(data));
     this.on('stop', (data) => this.handleStop(data));
-    this.on('sync', (data) => this.client.media.receiveMediaSync(data));
     this.on('listenerPosition', (data) => this.handleListenerPosition(data));
     this.on('listenerOrientation', (data) => this.handleListenerOrientation(data));
     this.unsubscribeSpatialStore = useSpatialStore.subscribe(this.handleSpatialStoreChange);
-    this.unsubscribeOutput = midiService.subscribeOutput(this.outputChanged);
-    this.unsubscribeMidiPreference = usePreferences.subscribe(
-      (state) => state.midi.enabled,
-      this.outputChanged,
-    );
-    this.unsubscribeTimingPreference = usePreferences.subscribe(
-      (state) => state.midi.outputTimingCorrectionMs,
-      () => this.client.media?.outputTimingChanged(),
-    );
-    // Packages can be constructed before their client's media/clock properties.
-    queueMicrotask(() => {
-      if (this.disposed) return;
-      if (this.client.sharedClock && this.client.media) {
-        this.client.media.configureSequences(this.client.sharedClock, () =>
-          midiService.getSequenceOutput(),
-          (request) => {
-            const midi = this.client.gmcp.handlers['Client.Midi'];
-            if (!midi) throw new Error('World score delivery is unavailable');
-            return midi.world.loadMediaScore(request);
-          },
-        );
-        this.client.media.configureSharedMedia(
-          this.client.sharedClock,
-          (request) => this.sendSync(request),
-          (report) => this.sendSourceError(report),
-        );
-        let last: boolean | undefined;
-        this.unsubscribeClockSupport = this.client.sharedClock.subscribe(() => {
-          const ready = this.client.sharedClock.ready;
-          if (ready === last) return;
-          last = ready;
-          if (this.client.gmcp.ready) this.sendPlaybackSupport();
-        });
-      }
-    });
-    if (typeof document !== 'undefined')
-      document.addEventListener('visibilitychange', this.visibilityChanged);
   }
 
   get sounds(): Record<string, ExtendedSound> {
     return this.client.media.sounds;
-  }
-  override sendData(messageName: string, data?: unknown): void {
-    super.sendData(
-      messageName,
-      messageName === 'PlaybackSupport'
-        ? buildPlaybackSupport(this.client.sharedClock?.ready ?? false)
-        : data,
-    );
   }
 
   /**
@@ -462,23 +377,9 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   }
 
   override shutdown(): void {
-    this.disposed = true;
     this.reset();
     this.unsubscribeSpatialStore?.();
-    this.unsubscribeOutput?.();
-    this.unsubscribeMidiPreference?.();
-    this.unsubscribeTimingPreference?.();
-    this.unsubscribeClockSupport?.();
-    if (typeof document !== 'undefined')
-      document.removeEventListener('visibilitychange', this.visibilityChanged);
   }
-  private readonly outputChanged = (): void => {
-    this.client.media?.sequenceOutputChanged();
-    if (this.client.sharedClock?.ready) this.sendPlaybackSupport();
-  };
-  private readonly visibilityChanged = (): void => {
-    this.client.media?.setSequencePageHidden(document.hidden);
-  };
 
   private readonly handleSpatialStoreChange = (): void => {
     this.client.media.syncAmbisonicRendererYaw();

@@ -242,16 +242,9 @@ describe("preferencesStore", () => {
 
     it('preserves a saved soundfont and replaces unknown legacy choices with the default', async () => {
       const known = await loadWith({ version: 2, data: { midi: { enabled: true, midiJsSoundfont: 'FluidR3', lastOutputDeviceId: 'soundfont-synth' } } });
-      expect(known.midi).toEqual({ enabled: true, midiJsSoundfont: 'FluidR3', lastOutputDeviceId: 'soundfont-synth', outputTimingCorrectionMs: 0 });
+      expect(known.midi).toEqual({ enabled: true, midiJsSoundfont: 'FluidR3', lastOutputDeviceId: 'soundfont-synth' });
       const unknown = await loadWith({ version: 2, data: { midi: { enabled: false, midiJsSoundfont: 'deleted-font' } } });
       expect(unknown.midi.midiJsSoundfont).toBe('MusyngKite');
-    });
-
-    it('restores bounded signed MIDI output timing correction', async () => {
-      for (const [input, expected] of [[-175, -175], [275, 275], [-999, -500], [999, 500], ['bad', 0]] as const) {
-        const loaded = await loadWith({ version: 2, data: { midi: { enabled: true, outputTimingCorrectionMs: input } } });
-        expect(loaded.midi.outputTimingCorrectionMs).toBe(expected);
-      }
     });
 
     it("keeps changed keys and starts with none", async () => {

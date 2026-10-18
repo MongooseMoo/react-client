@@ -1,9 +1,0 @@
-# Shared clock
-
-`client.sharedClock.acquire(consumerId)` returns an idempotent release function. A ready network connection sends `Core.Time` probes only while at least one consumer holds a lease. `estimate()` reports quality and the actual age of the oldest supporting sample; `getServerNow()` and `targetServerToPerformance()` return `undefined` until quality is current. Consumers subscribe to runtime, reset and restoration changes and cancel scheduled work before rejoining. Audio context restoration calls `invalidate()`.
-
-The clock owns no audience, gameplay action or audio context. Output adapters use `performanceToAudioTime` with a fresh audio snapshot and apply the local correction once. A render-clock fallback reports its acoustic offset as unknown.
-
-Local WASM timing requires an explicit `setLocalMapping({clockId, serverNowMs, performanceNowMs})`. Current `connectLocal` streams are plain text and provide no actual Core.Time runtime UUID, so shared timing remains unavailable there. The bundled WASM `CLOCK_MONOTONIC` uses its worker's `performance.now()`, but worker and window origins cannot be assumed equal. The binary exports only connection, input/output and checkpoint operations, without a clock/environment export; the generated JavaScript's environment is private. A future worker protocol must provide the real MOO runtime UUID and a measured origin mapping before enabling local shared timing.
-
-`Char.Status.Timers` keeps full deadline snapshots on its connection. It leases the common clock while records exist and clears them on identity, disconnect and runtime changes. Local countdown zero only displays "waiting for the server"; it never settles a quest. The Timers panel announces expiry once according to Auto Read preference and leaves changing seconds outside live regions.

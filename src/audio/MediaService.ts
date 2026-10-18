@@ -25,7 +25,12 @@ import {
   profileDistanceGain,
   type SpatialProfile,
 } from './distanceModel';
-import { type MediaVoice, MediaVoices, type VoiceFacing, type VoicePosition } from './MediaVoices';
+import {
+  type MediaVoice,
+  MediaVoices,
+  type VoiceFacing,
+  type VoicePosition,
+} from './MediaVoices';
 import { clearNamedRoute, type NamedRouteState, routeNamedChain } from './namedRoute';
 import { hasOcclusion, OCCLUSION_GLIDE_MS } from './occlusion';
 import { turnAboutUp } from './headYaw';
@@ -37,24 +42,6 @@ import { MidiAudioRoute, type MidiRoute } from './MidiAudioRoute';
 import type { EffectSpec } from './effects/types';
 import { MediaSessionController } from './MediaSessionController';
 import { readAudioPerformance } from './audioPerformance';
-import { SequenceService, type SequenceClock } from '../midi/SequenceService';
-import { SequenceGraph } from '../midi/SequenceGraph';
-import type { SequenceOutput } from '../midi/SequenceOutput';
-import type { SequenceData } from '../midi/SequencePayload';
-import type { ScoreTransport, MediaTransport } from '../midi/score';
-import type { SharedClock } from '../timing/SharedClock';
-import {
-  MediaCapabilityUnavailable,
-  SharedMediaService,
-  type SharedMediaVoice,
-} from './SharedMediaService';
-import type {
-  MediaCueWindow,
-  MediaSyncReply,
-  MediaSyncRequest,
-  MediaSourceError,
-} from './SharedMediaPayload';
-import { updateSharedMediaPresentation } from '../stores/sharedMediaStore';
 
 const CORS_PROXY = 'https://mongoose.world:9080/?url=';
 type CacophonySoundKind = NonNullable<Parameters<Cacophony['createSound']>[1]>;
@@ -90,11 +77,6 @@ export interface ClientMediaLoadPayload {
 export type MediaType = 'sound' | 'music' | 'video';
 
 export interface ClientMediaPlayPayload {
-  readonly mediaKind?: 'file' | 'score';
-  readonly contentId?: string;
-  readonly midi?: SequenceData;
-  readonly transport?: ScoreTransport | MediaTransport;
-  readonly cueWindows?: readonly MediaCueWindow[];
   readonly name: string;
   readonly url?: string;
   readonly type?: MediaType;
@@ -149,12 +131,6 @@ export interface ClientMediaStopPayload {
 }
 
 export interface ClientMediaUpdatePayload {
-  readonly contentId?: string;
-  readonly midi?: SequenceData;
-  readonly transport?: ScoreTransport | MediaTransport;
-  readonly cueWindows?: readonly MediaCueWindow[];
-  readonly replaceFromTick?: number;
-  readonly effectiveServerMs?: number;
   readonly name?: string;
   readonly url?: string;
   readonly type?: MediaType;
@@ -236,7 +212,6 @@ export interface ClientMediaListenerPositionPayload {
 }
 
 export interface ExtendedSound extends Sound, NamedRouteState {
-  sharedTransportPrepared?: boolean;
   ambisonicRenderer?: AmbisonicRenderer;
   positionalFoa?: PositionalFoaRenderer;
   inputChannels?: number;
@@ -278,20 +253,14 @@ export interface ExtendedSound extends Sound, NamedRouteState {
 
 /** A pending load's claim on a media key; a newer claim, Stop, or reset makes it stale. */
 interface KeyClaim {
-  updates?: Partial<ClientMediaPlayPayload>;
   readonly generation: number;
-  readonly abort: AbortController;
-  readonly sharedClockId?: string;
-  readonly sharedSourceId?: string;
   readonly name: string;
   readonly tag?: string;
   readonly type?: MediaType;
 }
 
 interface KeyTicket {
-  updates(): Partial<ClientMediaPlayPayload> | undefined;
   readonly generation: number;
-  readonly signal: AbortSignal;
   /** True while this claim is still the latest for its key and no reset intervened. */
   current(): boolean;
   /** Drop the pending-load record once the load has settled. */
@@ -327,107 +296,6 @@ export class MediaService {
   private readonly effects: MediaEffects;
   private readonly voices: MediaVoices;
   private readonly midiAudio: MidiAudioRoute;
-  private sequences?: SequenceService;
-  private sharedMedia?: SharedMediaService;
-  private unsubscribeSharedClaims?: () => void;
-  private sendSharedSourceError?: (report: MediaSourceError) => void;
-  configureSharedMedia(
-    clock: SharedClock,
-    sendSync: (request: MediaSyncRequest) => void,
-    sendError?: (report: MediaSourceError) => void,
-  ): void {
-    if (this.sharedMedia) return;
-    this.sendSharedSourceError = sendError;
-    this.sharedMedia = new SharedMediaService({
-      clock,
-      context: this.cacophony.context as BaseAudioContext,
-      sendSync,
-      correctionMs: () => usePreferences.getState().midi.outputTimingCorrectionMs ?? 0,
-      present: updateSharedMediaPresentation,
-      error: (key, message, transport, code = 'SEEK_UNAVAILABLE') => {
-        this.diagnostics.record({
-          stage: 'stopped',
-          key,
-          error: { code: code === 'SYNC_UNAVAILABLE' ? 'CAPABILITY_UNAVAILABLE' : code, message },
-        });
-        if (code === 'SEEK_UNAVAILABLE')
-          sendError?.({
-            key,
-            sourceId: transport.sourceId,
-            revision: transport.revision,
-            code: 'SEEK_UNAVAILABLE',
-          });
-      },
-    });
-    this.unsubscribeSharedClaims = clock.subscribe((change) => {
-      for (const [key, claim] of this.pendingLoads)
-        if (
-          claim.sharedClockId &&
-          (!clock.ready ||
-            (change.estimate.clockId && change.estimate.clockId !== claim.sharedClockId))
-        )
-          this.cancelKey(key);
-    });
-  }
-  receiveMediaSync(reply: MediaSyncReply): void {
-    this.sharedMedia?.receiveSync(reply);
-  }
-  pauseSharedMedia(key: string): void {
-    this.sharedMedia?.localPause(key);
-  }
-  async resumeSharedMedia(key: string): Promise<void> {
-    if (this.playbackPaused) await this.resumeAllSounds();
-    else await this.cacophony.resume();
-    await this.sharedMedia?.localResume(key);
-  }
-  private sequencePageHidden = false;
-  setSequencePageHidden(hidden: boolean): void {
-    this.sequencePageHidden = hidden;
-    this.sequences?.setSuspended(hidden || this.playbackPaused);
-    this.sharedMedia?.setSuspended(hidden || this.playbackPaused);
-  }
-  configureSequences(
-    clock: SequenceClock,
-    getOutput: () => Promise<SequenceOutput | null>,
-    loadScore?: ConstructorParameters<typeof SequenceService>[0]['loadScore'],
-  ): void {
-    if (this.sequences) return;
-    this.sequences = new SequenceService({
-      clock,
-      getOutput,
-      loadScore,
-      correctionMs: () => usePreferences.getState().midi.outputTimingCorrectionMs ?? 0,
-      createGraph: (mix) =>
-        SequenceGraph.create(this.cacophony, (id) => this.effects.getChain(id)?.bus, mix),
-      error: (key, message) => {
-        this.diagnostics.record({
-          stage: 'stopped',
-          key,
-          error: { code: 'CAPABILITY_UNAVAILABLE', message },
-        });
-        console.warn(`Shared score ${key}: ${message}`);
-      },
-    });
-  }
-  sequenceOutputChanged(): void {
-    this.sequences?.reset();
-  }
-  panicSequences(): void {
-    this.sequences?.reset();
-  }
-  outputTimingChanged(): void {
-    clearTimeout(this.outputTimingTimer);
-    this.outputTimingTimer = setTimeout(() => {
-      this.outputTimingTimer = undefined;
-      if (this.shutdownComplete) return;
-      this.sequences?.setSuspended(true);
-      this.sharedMedia?.setSuspended(true);
-      const paused = this.sequencePageHidden || this.playbackPaused;
-      this.sequences?.setSuspended(paused);
-      this.sharedMedia?.setSuspended(paused);
-    }, 200);
-  }
-  private outputTimingTimer?: ReturnType<typeof setTimeout>;
   private readonly mediaSession = new MediaSessionController();
   private readonly preloadedSoundKeys = new Set<string>();
   /** Latest claim generation per media key; every Play/Load/Stop for a key bumps it. */
@@ -435,8 +303,6 @@ export class MediaService {
   private nextKeyGeneration = 0;
   /** Loads that have claimed a key but not yet settled, so Stop can cancel them. */
   private readonly pendingLoads = new Map<string, KeyClaim>();
-  private readonly stagedSharedSounds = new Map<string, ExtendedSound>();
-  private readonly retiringSharedSounds = new Map<string, Set<ExtendedSound>>();
   /** Bumped by stop-all/reset: invalidates every pending load at once. */
   private epoch = 0;
   /** Bumped by every scene snapshot; each room has its own coordinate origin. */
@@ -463,22 +329,12 @@ export class MediaService {
   constructor(cacophony: Cacophony = new Cacophony(), options: MediaServiceOptions = {}) {
     this.cacophony = cacophony;
     this.effects = new MediaEffects(this.cacophony, {
-      chainCreated: (id) => {
-        this.voices.chainCreated(id);
-        this.midiAudio.chainCreated(id);
-        this.sequences?.chainChanged();
-      },
-      chainDestroying: (id) => {
-        this.voices.chainDestroying(id);
-        this.midiAudio.chainDestroying(id);
-        this.sequences?.chainChanged(id);
-      },
+      chainCreated: (id) => { this.voices.chainCreated(id); this.midiAudio.chainCreated(id); },
+      chainDestroying: (id) => { this.voices.chainDestroying(id); this.midiAudio.chainDestroying(id); },
     });
-    this.voices = new MediaVoices(this.cacophony, this.effects, () =>
-      this.transitionPlayback(async () => {
-        if (!this.playbackPaused) await this.cacophony.resume();
-      }),
-    );
+    this.voices = new MediaVoices(this.cacophony, this.effects, () => this.transitionPlayback(async () => {
+      if (!this.playbackPaused) await this.cacophony.resume();
+    }));
     this.midiAudio = new MidiAudioRoute(this.cacophony, (id) => this.effects.getChain(id)?.bus);
     this.manageFocus = options.manageFocus ?? true;
     this.motion = options.motion ?? new VectorTweener();
@@ -519,18 +375,12 @@ export class MediaService {
   setListenerPosition(position: Position | null | undefined): void {
     if (position?.length) {
       this.cacophony.listenerPosition = position;
-      const listenerSounds = new Set([
-        ...this.allSounds,
-        ...this.stagedSharedSounds.values(),
-        ...[...this.retiringSharedSounds.values()].flatMap((sounds) => [...sounds]),
-      ]);
-      for (const sound of listenerSounds) {
+      for (const sound of this.allSounds) {
         this.updateAmbisonicDistance(sound);
         this.updatePositionalSpatial(sound);
         this.applyLevels(sound);
       }
       this.voices.listenerMoved();
-      this.sequences?.updateMixes();
     }
   }
 
@@ -620,11 +470,7 @@ export class MediaService {
       return;
     }
     if (sound.effectChain) {
-      this.pointInlineChain(
-        sound.effectChain,
-        sound.namedChain,
-        this.sendGain(sound, sound.namedSend),
-      );
+      this.pointInlineChain(sound.effectChain, sound.namedChain, this.sendGain(sound, sound.namedSend));
     } else if (sound.chainRouted) {
       this.routeNamedChain(sound, sound.namedChain, sound.namedSend);
     }
@@ -644,11 +490,7 @@ export class MediaService {
       rolloffFactor: 0,
       maxDistance: profile.maxDistance,
       ...(orientation
-        ? {
-            orientationX: orientation[0],
-            orientationY: orientation[1],
-            orientationZ: orientation[2],
-          }
+        ? { orientationX: orientation[0], orientationY: orientation[1], orientationZ: orientation[2] }
         : {}),
     };
   }
@@ -749,12 +591,8 @@ export class MediaService {
   }
 
   /** MIDI shares the named effect buses and master overlay with media and live voices. */
-  getMidiAudioOutput() {
-    return this.midiAudio.getOutput();
-  }
-  setMidiRoute(route: MidiRoute): void {
-    this.midiAudio.setRoute(route);
-  }
+  getMidiAudioOutput() { return this.midiAudio.getOutput(); }
+  setMidiRoute(route: MidiRoute): void { this.midiAudio.setRoute(route); }
 
   removeChain(id: string): void {
     this.effects.removeChain(id);
@@ -882,17 +720,14 @@ export class MediaService {
    * every earlier claim for the key, so a later Play always wins over an
    * in-flight earlier load; Stop and reset invalidate it as well.
    */
-  private claimKey(key: string, meta: Omit<KeyClaim, 'generation' | 'abort'>): KeyTicket {
-    this.pendingLoads.get(key)?.abort.abort();
+  private claimKey(key: string, meta: Omit<KeyClaim, 'generation'>): KeyTicket {
     const generation = ++this.nextKeyGeneration;
     this.keyGenerations.set(key, generation);
-    const claim: KeyClaim = { ...meta, generation, abort: new AbortController() };
+    const claim: KeyClaim = { ...meta, generation };
     this.pendingLoads.set(key, claim);
     const epoch = this.epoch;
     return {
-      updates: () => claim.updates,
       generation,
-      signal: claim.abort.signal,
       current: () => this.keyGenerations.get(key) === generation && this.epoch === epoch,
       finish: () => {
         if (this.pendingLoads.get(key) === claim) {
@@ -906,7 +741,6 @@ export class MediaService {
   /** Supersede whatever claim holds `key`, so its pending load never plays. */
   private cancelKey(key: string): void {
     this.keyGenerations.delete(key);
-    this.pendingLoads.get(key)?.abort.abort();
     this.pendingLoads.delete(key);
   }
 
@@ -919,44 +753,6 @@ export class MediaService {
   }
 
   async play(data: ClientMediaPlayPayload): Promise<void> {
-    if (data.transport?.state === 'stopped') {
-      if (data.key) this.stop({ key: data.key });
-      return;
-    }
-    if (data.midi && data.transport?.kind === 'score' && data.key && data.contentId) {
-      this.sharedMedia?.stop({ key: data.key });
-      this.cancelKey(data.key);
-      for (const sound of this.soundsByKey(data.key)) this.stopSound(sound);
-      if (!this.sequences) throw new Error('Shared score playback is unavailable');
-      return this.sequences.play({
-        ...data,
-        key: data.key,
-        contentId: data.contentId,
-        midi: data.midi,
-        transport: data.transport,
-      });
-    }
-    if (data.key) this.sequences?.stop({ key: data.key });
-    if (
-      data.key &&
-      data.transport?.kind === 'media' &&
-      this.sharedMedia &&
-      !this.sharedMedia.acceptsTransport(data.key, data.transport)
-    )
-      return;
-    if (data.key && data.transport?.kind !== 'media') this.sharedMedia?.stop({ key: data.key });
-    if (data.key && data.transport?.kind === 'media' && this.sharedMedia?.has(data.key)) {
-      const sound = this.sounds[data.key];
-      if (
-        sound?.playPayload?.transport?.sourceId === data.transport.sourceId &&
-        sound.url === this.mediaUrl(data)
-      ) {
-        this.update({ ...data, start: undefined, loops: undefined });
-        return;
-      }
-      if (sound?.playPayload?.transport?.sourceId !== data.transport.sourceId)
-        this.sharedMedia.stop({ key: data.key });
-    }
     return this.claimAndPlay(data, false);
   }
 
@@ -971,13 +767,7 @@ export class MediaService {
     const soundKey = data.key;
     // Claim the key before any await: a later Play for this key, a Stop, or a
     // reset makes this call stale, and every continuation below checks that.
-    const ticket = this.claimKey(soundKey, {
-      name: data.name,
-      tag: data.tag,
-      type: data.type,
-      sharedClockId: data.transport?.kind === 'media' ? data.transport.clockId : undefined,
-      sharedSourceId: data.transport?.kind === 'media' ? data.transport.sourceId : undefined,
-    });
+    const ticket = this.claimKey(soundKey, { name: data.name, tag: data.tag, type: data.type });
     try {
       await this.playClaimed(data, soundKey, mediaUrl, ticket, continuing);
     } finally {
@@ -996,12 +786,7 @@ export class MediaService {
     let sound: ExtendedSound | undefined = this.sounds[soundKey];
     this.preloadedSoundKeys.delete(soundKey);
     const panType = data.is3d ? 'HRTF' : 'stereo';
-    const segment =
-      data.transport?.kind === 'media'
-        ? undefined
-        : continuing && sound
-          ? sound.segment
-          : this.requestedSegment(data);
+    const segment = continuing && sound ? sound.segment : this.requestedSegment(data);
     const isNewSound =
       !sound ||
       sound.url !== mediaUrl ||
@@ -1009,13 +794,7 @@ export class MediaService {
     // A playing voice in the other panning mode: audible until its replacement starts.
     let retiring: ExtendedSound | undefined;
     if (!sound || isNewSound) {
-      const previous = sound;
-      const sharedReplacement =
-        previous &&
-        data.transport?.kind === 'media' &&
-        previous.playPayload?.transport?.sourceId === data.transport.sourceId &&
-        this.sharedMedia?.has(soundKey);
-      if (sound && !sharedReplacement) {
+      if (sound) {
         this.releaseSound(sound, soundKey);
       }
       sound = await this.createMediaSound(data, soundKey, mediaUrl, panType, segment, ticket);
@@ -1023,18 +802,6 @@ export class MediaService {
         return;
       }
       sound.segment = segment;
-      if (previous && sharedReplacement) {
-        // Another accepted renewal can activate while this asset is loading.
-        const current = this.sounds[soundKey];
-        const live =
-          current &&
-          !this.cleanedSounds.has(current) &&
-          current.playPayload?.transport?.sourceId === data.transport?.sourceId
-            ? current
-            : undefined;
-        retiring = live ?? (!this.cleanedSounds.has(previous) ? previous : undefined);
-        if (retiring) this.carryVoiceState(retiring, sound);
-      }
     } else if (this.needsPanMode(sound, panType, data)) {
       // Cacophony fixes a source's panning mode at creation, so a kept voice
       // cannot change it: build the same source and region in the new mode.
@@ -1062,23 +829,10 @@ export class MediaService {
     }
 
     try {
-      if (data.transport?.kind === 'media') data = { ...data, ...ticket.updates() };
       await this.playPrepared(sound, data, soundKey, ticket, retiring);
-    } catch (error) {
-      if (
-        retiring &&
-        data.transport?.kind === 'media' &&
-        ticket.current() &&
-        !this.cleanedSounds.has(retiring)
-      ) {
-        if (this.sounds[soundKey] === sound) delete this.sounds[soundKey];
-        this.releaseSound(sound);
-        this.sounds[soundKey] = retiring;
-      }
-      throw error;
     } finally {
       // Never leave the replaced voice playing, however this Play ended.
-      if (retiring && (data.transport?.kind !== 'media' || !retiring.sharedTransportPrepared)) {
+      if (retiring) {
         this.releaseSound(retiring);
       }
     }
@@ -1132,19 +886,7 @@ export class MediaService {
     sound.playPayload = data;
     sound.generation = ticket.generation;
     this.assignSoundMetadata(sound, data);
-    const stagedShared = data.transport?.kind === 'media' && retiring !== undefined;
-    if (stagedShared) {
-      const previousStaged = this.stagedSharedSounds.get(soundKey);
-      this.stagedSharedSounds.set(soundKey, sound);
-      const retiringSounds = this.retiringSharedSounds.get(soundKey) ?? new Set<ExtendedSound>();
-      for (const owned of retiringSounds)
-        if (this.cleanedSounds.has(owned)) retiringSounds.delete(owned);
-      if (!this.cleanedSounds.has(retiring)) retiringSounds.add(retiring);
-      if (previousStaged && previousStaged !== sound && !this.cleanedSounds.has(previousStaged))
-        retiringSounds.add(previousStaged);
-      this.retiringSharedSounds.set(soundKey, retiringSounds);
-    }
-    if (!stagedShared) this.sounds[soundKey] = sound;
+    this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
     // A Play is full state: without the field the voice is clear, so a listener
     // who walks through the door and is re-Played the sound direct hears it open up.
@@ -1162,37 +904,16 @@ export class MediaService {
     if (data.chain) {
       await this.effects.whenChainReady(data.chain);
       if (!ticket.current()) {
-        this.tracePayload('routed', data, soundKey, ticket.generation, {
-          code: 'STALE_GENERATION',
-        });
-        if (stagedShared) this.releaseSound(sound);
+        this.tracePayload('routed', data, soundKey, ticket.generation, { code: 'STALE_GENERATION' });
         return;
       }
     }
-    await this.applyEffectRouting(sound, soundKey, sound.playPayload ?? data, 'play');
-    if (!ticket.current() || this.isSoundStale(sound, soundKey)) {
+    await this.applyEffectRouting(sound, soundKey, data, 'play');
+    if (!ticket.current() || this.sounds[soundKey] !== sound) {
       this.tracePayload('routed', data, soundKey, ticket.generation, { code: 'STALE_GENERATION' });
-      if (stagedShared) this.releaseSound(sound);
       return;
     }
     this.traceSound('routed', sound);
-
-    if (data.transport?.kind === 'media') {
-      if (!this.sharedMedia) throw new Error('Shared media playback unavailable');
-      if (!this.sharedMedia.acceptsTransport(soundKey, data.transport)) {
-        if (stagedShared) this.releaseSound(sound);
-        return;
-      }
-      await this.sharedMedia.attach(
-        { ...data, key: soundKey, transport: data.transport },
-        () => this.sharedVoice(sound, soundKey, data),
-        !sound.sharedTransportPrepared,
-      );
-      if (stagedShared && !sound.sharedTransportPrepared) this.releaseSound(sound);
-      if (data.type === 'music' && this.sounds[soundKey] === sound)
-        this.activateMusicSession(sound, data);
-      return;
-    }
 
     if (sound.isPlaying || this.pausedSounds.has(sound) || this.pendingStarts.has(sound)) {
       // Same key, source and region: keep the voice. An explicit start seeks,
@@ -1249,22 +970,12 @@ export class MediaService {
     this.tracePayload('loading', data, soundKey, ticket.generation);
     let sound: ExtendedSound;
     try {
-      sound = (await (data.transport?.kind === 'media'
-        ? this.cacophony.createSound(mediaUrl, kind, panType, ticket.signal)
-        : this.cacophony.createSound(mediaUrl, kind, panType))) as ExtendedSound;
+      sound = (await this.cacophony.createSound(mediaUrl, kind, panType)) as ExtendedSound;
     } catch (error) {
-      if (ticket.signal.aborted && !ticket.current()) return undefined;
       this.tracePayload('loading', data, soundKey, ticket.generation, {
         code: classifyLoadError(error),
         message: errorMessage(error),
       });
-      if (data.transport?.kind === 'media' && ticket.current())
-        this.sendSharedSourceError?.({
-          key: soundKey,
-          sourceId: data.transport.sourceId,
-          revision: data.transport.revision,
-          code: classifyLoadError(error),
-        });
       throw error;
     }
     if (ticket.current() && segment && kind === CACOPHONY_BUFFER) {
@@ -1302,10 +1013,7 @@ export class MediaService {
     const sample = 1 / (buffer.sampleRate || this.cacophony.context.sampleRate);
     const start = segment.start / 1000;
     const finish = segment.finish === undefined ? undefined : segment.finish / 1000;
-    if (
-      start > buffer.duration + sample ||
-      (finish !== undefined && finish > buffer.duration + sample)
-    ) {
+    if (start > buffer.duration + sample || (finish !== undefined && finish > buffer.duration + sample)) {
       return {
         code: 'REGION_OUT_OF_RANGE',
         message: `region ${segment.start}..${segment.finish ?? 'end'} ms exceeds decoded ${Math.round(buffer.duration * 1000)} ms`,
@@ -1344,10 +1052,7 @@ export class MediaService {
       try {
         playback.seek(offset);
       } catch (error) {
-        console.warn(
-          `Client.Media: cannot start '${soundKey}' at ${offset}s; starting at 0`,
-          error,
-        );
+        console.warn(`Client.Media: cannot start '${soundKey}' at ${offset}s; starting at 0`, error);
         this.traceSound('started', sound, soundKey, {
           code: 'SEEK_UNAVAILABLE',
           message: `cannot start at ${offset}s: ${errorMessage(error)}`,
@@ -1368,209 +1073,13 @@ export class MediaService {
     return playback;
   }
 
-  /** A shared grant owns one stopped voice; asynchronous HTML starts remain cancellable. */
-  private sharedVoice(
-    sound: ExtendedSound,
-    soundKey: string,
-    data: ClientMediaPlayPayload,
-  ): SharedMediaVoice {
-    if (this.cleanedSounds.has(sound)) throw new Error('Shared media asset was already released');
-    let playback: Playback;
-    try {
-      const voices = sound.preplay();
-      const first = voices[0];
-      if (!first) throw new Error('Unable to prepare shared media voice');
-      playback = first;
-      playback.loop(0);
-      this.renderOcclusion(sound, voices, 0);
-      sound.sharedTransportPrepared = true;
-    } catch (error) {
-      if (this.sounds[soundKey] === sound) delete this.sounds[soundKey];
-      this.releaseSound(sound, soundKey);
-      throw error;
-    }
-    let cancelStart: (() => void) | undefined;
-    let playbackGeneration = 0;
-    let spatialReady: Promise<void> | undefined;
-    let loopTopology: string | undefined;
-    const prepareSpatial = (): Promise<void> => {
-      spatialReady ??= (async () => {
-        if (data.upmix !== 'ambisonic') return;
-        const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
-        const target = await this.resolveAmbisonicTarget(sound, soundKey, data);
-        if (inputChannels === 4)
-          await this.configureAmbisonicPlayback(sound, playback, inputChannels, target, soundKey);
-        else
-          await this.configurePositionalFoa(
-            sound,
-            playback,
-            inputChannels >= 2 ? POSITIONAL_FOA_STEREO_WIDTH_RAD : 0,
-            target,
-            soundKey,
-          );
-      })();
-      return spatialReady;
-    };
-    const cancel = () => {
-      cancelStart?.();
-      cancelStart = undefined;
-    };
-    return {
-      get supportsClipLoop() {
-        return (
-          data.type !== 'music' &&
-          'supportsClipLoop' in playback &&
-          playback.supportsClipLoop === true
-        );
-      },
-      prepareTransport: (transport) => {
-        const topology = transport.loop ? `${transport.loop.startMs}:${transport.loop.endMs}` : '';
-        if (loopTopology !== undefined && topology !== loopTopology) {
-          playbackGeneration++;
-          cancel();
-          playback.stop();
-          playback.cleanup();
-          this.cleanupUpmix(sound);
-          const replacement = sound.preplay()[0];
-          if (!replacement) throw new Error('Unable to replace shared clip voice');
-          playback = replacement;
-          spatialReady = undefined;
-          this.renderOcclusion(sound, [playback], 0);
-        }
-        loopTopology = topology;
-        playback.loop(0);
-        if (transport.loop) {
-          if (!('setLoopRegion' in playback) || typeof playback.setLoopRegion !== 'function')
-            throw new MediaCapabilityUnavailable('Native clip-loop preparation unavailable');
-          playback.setLoopRegion(transport.loop.startMs / 1000, transport.loop.endMs / 1000);
-          playback.loop('infinite');
-        }
-      },
-      prepareSeek: async (seconds, signal) => {
-        await prepareSpatial();
-        if (signal.aborted) throw new DOMException('Shared preparation cancelled', 'AbortError');
-        if (data.type !== 'music') {
-          playback.seek(seconds);
-          return;
-        }
-        if (!('prepareSeek' in playback) || typeof playback.prepareSeek !== 'function')
-          throw new Error('Silent seek preparation unavailable');
-        await playback.prepareSeek(seconds, { signal, timeoutMs: 15000 });
-      },
-      currentTime: () => playback.currentTime,
-      start: async ({ at, rate, stopAt }) => {
-        const generation = ++playbackGeneration;
-        await prepareSpatial();
-        if (generation !== playbackGeneration)
-          throw new DOMException('Shared start cancelled', 'AbortError');
-        return new Promise<void>((resolve, reject) => {
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          let timeout: ReturnType<typeof setTimeout> | undefined;
-          const cleanups: (() => void)[] = [];
-          let started = false,
-            configured = false;
-          const cleanup = () => {
-            clearTimeout(timer);
-            clearTimeout(timeout);
-            for (const fn of cleanups.splice(0)) fn();
-            cancelStart = undefined;
-          };
-          const fail = (error: unknown) => {
-            cleanup();
-            reject(error);
-          };
-          const accepted = () => {
-            started = true;
-            if (configured) {
-              const finish = () => {
-                cleanup();
-                resolve();
-              };
-              const wait =
-                data.type !== 'music' && at !== undefined
-                  ? Math.max(0, (at - this.cacophony.context.currentTime) * 1000)
-                  : 0;
-              if (wait > 0) timer = setTimeout(finish, wait);
-              else finish();
-            }
-          };
-          cancelStart = () => fail(new DOMException('Shared playback cancelled', 'AbortError'));
-          cleanups.push(playback.eventEmitter.on('play', accepted));
-          cleanups.push(playback.eventEmitter.on('resume', accepted));
-          cleanups.push(playback.eventEmitter.on('error', (event) => fail(event.error)));
-          const begin = () => {
-            if (data.type === 'music')
-              timeout = setTimeout(() => fail(new Error('Shared media start timed out')), 15000);
-            try {
-              playback.playbackRate = rate;
-              playback.play({ ...(data.type === 'music' ? {} : { at }), fadeIn: 30 });
-              if (data.type !== 'music' && stopAt !== undefined) {
-                if (!('scheduleStop' in playback) || typeof playback.scheduleStop !== 'function')
-                  throw new Error('Native scheduled stop unavailable');
-                playback.scheduleStop(stopAt);
-              }
-              configured = true;
-              if (started) accepted();
-            } catch (error) {
-              playback.stop();
-              fail(error);
-            }
-          };
-          const delay =
-            data.type === 'music' && at !== undefined
-              ? Math.max(0, (at - this.cacophony.context.currentTime) * 1000)
-              : 0;
-          if (delay > 0) timer = setTimeout(begin, delay);
-          else begin();
-        });
-      },
-      pause: () => {
-        playbackGeneration++;
-        const starting = cancelStart !== undefined;
-        cancel();
-        if (playback.isPlaying) playback.pause();
-        else if (starting) playback.stop();
-      },
-      activate: () => {
-        if (this.cleanedSounds.has(sound)) return;
-        if (this.stagedSharedSounds.get(soundKey) === sound)
-          this.stagedSharedSounds.delete(soundKey);
-        const retiring = this.retiringSharedSounds.get(soundKey);
-        retiring?.delete(sound);
-        if (retiring?.size === 0) this.retiringSharedSounds.delete(soundKey);
-        this.sounds[soundKey] = sound;
-        if (data.type === 'music') this.activateMusicSession(sound, data);
-      },
-      retire: (at) =>
-        playback.fadeTo(0, 30, 'linear', {
-          startTime: Math.max(this.cacophony.context.currentTime, at),
-        }),
-      updateMix: (update) => {
-        this.applySoundState(sound, update);
-        if (update.occlusion !== undefined) {
-          sound.occlusion = update.occlusion;
-          this.renderOcclusion(sound, sound.playbacks, OCCLUSION_GLIDE_MS);
-        }
-      },
-      dispose: () => {
-        playbackGeneration++;
-        cancel();
-        if (this.sounds[soundKey] === sound) delete this.sounds[soundKey];
-        this.releaseSound(sound, soundKey);
-      },
-    };
-  }
-
   /**
    * Where a voice that is being replaced is playing now, as an absolute source
    * position in ms, so its replacement can continue from there. Undefined when
    * it is neither playing nor held by global pause, the engine reports no playhead, or the Play names a
    * cursor (`requestedStart`) further than the seek tolerance from it.
    */
-  private resumeCursor(
-    voice: ExtendedSound,
-    requestedStart: number | undefined,
-  ): number | undefined {
+  private resumeCursor(voice: ExtendedSound, requestedStart: number | undefined): number | undefined {
     const playhead = this.isActiveSound(voice) ? voice.playbacks[0]?.currentTime : undefined;
     if (typeof playhead !== 'number' || !Number.isFinite(playhead)) {
       return undefined;
@@ -1619,52 +1128,11 @@ export class MediaService {
   }
 
   update(data: ClientMediaUpdatePayload): void {
-    if (data.key && this.sequences?.has(data.key)) {
-      if (data.transport && data.transport.kind !== 'score') return;
-      this.sequences.update({ ...data, transport: data.transport });
-      return;
-    }
-    if (data.midi || data.transport?.kind === 'score') return;
-    const shared = data.key && this.sharedMedia?.has(data.key);
-    if (shared) {
-      if (data.pitchSemitones !== undefined)
-        throw new TypeError('Shared media pitch rate belongs in transport.rate');
-      if (data.transport && data.transport.kind !== 'media') return;
-      if (!this.sharedMedia?.update({ ...data, transport: data.transport })) return;
-      data = {
-        ...data,
-        start: undefined,
-        loopStart: undefined,
-        finish: undefined,
-        end: undefined,
-        loops: undefined,
-      };
-    } else if (data.transport?.kind === 'media') return;
-    if (shared && data.key) {
-      const claim = this.pendingLoads.get(data.key);
-      if (
-        claim?.sharedClockId &&
-        claim.sharedSourceId === this.sounds[data.key]?.playPayload?.transport?.sourceId
-      ) {
-        const mix = Object.fromEntries(
-          Object.entries(this.updateState(data)).filter(
-            ([field]) => field !== 'transport' && field !== 'cueWindows',
-          ),
-        );
-        claim.updates = { ...claim.updates, ...mix };
-      }
-    }
     const targetSounds = data.key
       ? this.soundsByKey(data.key)
       : data.name
         ? this.soundsByName(data.name)
         : [];
-    const staged = data.key ? this.stagedSharedSounds.get(data.key) : undefined;
-    if (staged && !this.isSoundStale(staged, data.key) && !targetSounds.includes(staged))
-      targetSounds.push(staged);
-    for (const retiring of data.key ? (this.retiringSharedSounds.get(data.key) ?? []) : [])
-      if (!this.cleanedSounds.has(retiring) && !targetSounds.includes(retiring))
-        targetSounds.push(retiring);
 
     targetSounds.forEach((sound) => {
       this.rememberUpdate(sound, data);
@@ -1703,8 +1171,9 @@ export class MediaService {
         this.cleanupUpmix(sound);
       }
       const soundKey = sound.key ?? data.key;
-      if (soundKey && this.sounds[soundKey] === sound) {
+      if (soundKey) {
         sound.key = soundKey;
+        this.sounds[soundKey] = sound;
       }
     });
   }
@@ -1714,8 +1183,6 @@ export class MediaService {
    * loads that have claimed a matching key but not yet started.
    */
   stop(data: ClientMediaStopPayload): void {
-    this.sharedMedia?.stop(data);
-    this.sequences?.stop(data);
     if (!data.name && !data.type && !data.tag && !data.key) {
       this.stopAllSounds();
       return;
@@ -1775,8 +1242,6 @@ export class MediaService {
     return this.transitionPlayback(async () => {
       if (this.playbackPaused) return;
       this.playbackPaused = true;
-      this.sharedMedia?.setSuspended(true);
-      this.sequences?.setSuspended(true);
       for (const sound of this.allSounds) this.parkSegmentTimer(sound);
       try {
         for (const sound of this.allSounds) {
@@ -1859,15 +1324,11 @@ export class MediaService {
     this.pausedSounds.clear();
     this.pendingStarts.clear();
     this.playbackPaused = false;
-    this.sharedMedia?.setSuspended(this.sequencePageHidden);
-    this.sequences?.setSuspended(this.sequencePageHidden);
     for (const sound of this.allSounds) {
       const timer = sound.segmentTimerState;
-      if (timer && sound.segmentTimer === undefined)
-        this.armSegmentTimer(sound, timer.callback, timer.remaining);
+      if (timer && sound.segmentTimer === undefined) this.armSegmentTimer(sound, timer.callback, timer.remaining);
     }
-    if (this.currentMusic)
-      this.mediaSession.setPlaybackState(this.currentMusic.isPlaying ? 'playing' : 'paused');
+    if (this.currentMusic) this.mediaSession.setPlaybackState(this.currentMusic.isPlaying ? 'playing' : 'paused');
     this.updateMusicPosition();
     this.notifyPlayback();
   }
@@ -1877,19 +1338,11 @@ export class MediaService {
   }
 
   private isActiveSound(sound: ExtendedSound): boolean {
-    return (
-      sound.isPlaying ||
-      this.pausedSounds.has(sound) ||
-      this.pendingStarts.has(sound) ||
-      Boolean(sound.key && this.sharedMedia?.has(sound.key))
-    );
+    return sound.isPlaying || this.pausedSounds.has(sound) || this.pendingStarts.has(sound);
   }
 
   stopAllSounds(): void {
-    this.sharedMedia?.reset();
-    this.sequences?.reset();
     this.epoch += 1;
-    for (const claim of this.pendingLoads.values()) claim.abort.abort();
     this.pendingLoads.clear();
     this.keyGenerations.clear();
     this.allSounds.forEach((sound) => {
@@ -1916,15 +1369,11 @@ export class MediaService {
   }
 
   shutdown(): void {
-    clearTimeout(this.outputTimingTimer);
     this.reset();
     if (this.shutdownComplete) {
       return;
     }
     this.shutdownComplete = true;
-    this.sequences?.shutdown();
-    this.sharedMedia?.shutdown();
-    this.unsubscribeSharedClaims?.();
     this.midiAudio.shutdown();
     if (this.manageFocus && typeof window !== 'undefined') {
       window.removeEventListener('focus', this.handleWindowFocus);
@@ -1948,11 +1397,7 @@ export class MediaService {
    * Route the sound to `chain` (primary, or an aux send at `send`), first
    * undoing a different named route. A no-op when that route is already live.
    */
-  private routeNamedChain(
-    sound: ExtendedSound,
-    chain: string | undefined,
-    send: number | undefined,
-  ): void {
+  private routeNamedChain(sound: ExtendedSound, chain: string | undefined, send: number | undefined): void {
     const error = routeNamedChain(
       sound,
       chain,
@@ -2046,7 +1491,10 @@ export class MediaService {
     const { EffectChain } = await import('./effects/EffectChain');
     const inline = await EffectChain.createAnonymous(this.cacophony, effects);
 
-    const stale = sound.effectGeneration !== generation || this.isSoundStale(sound, soundKey);
+    const stale =
+      sound.effectGeneration !== generation ||
+      this.cleanedSounds.has(sound) ||
+      this.sounds[soundKey] !== sound;
     if (stale) {
       if (master) {
         inline.destroy(master);
@@ -2066,11 +1514,7 @@ export class MediaService {
    * `send` is the gain for that feed ({@link sendGain}): the inline bus is
    * downstream of the sound's gain, so its feed is after the distance gain too.
    */
-  private pointInlineChain(
-    inline: EffectChain,
-    chain: string | undefined,
-    send: number | undefined,
-  ): void {
+  private pointInlineChain(inline: EffectChain, chain: string | undefined, send: number | undefined): void {
     const target = chain ? (this.effects.getChain(chain)?.bus ?? null) : null;
     if (target && send !== undefined) {
       inline.connectDownstream(null);
@@ -2142,25 +1586,10 @@ export class MediaService {
     if (this.cleanedSounds.has(sound)) {
       return true;
     }
-    if (soundKey === undefined || this.sounds[soundKey] === sound) return false;
-    if (this.stagedSharedSounds.get(soundKey) === sound) return false;
-    if (this.retiringSharedSounds.get(soundKey)?.has(sound)) return false;
-    return !(
-      sound.playPayload?.transport?.kind === 'media' &&
-      sound.generation === this.keyGenerations.get(soundKey) &&
-      this.pendingLoads.has(soundKey)
-    );
+    return soundKey !== undefined && this.sounds[soundKey] !== sound;
   }
 
   private releaseSound(sound: ExtendedSound, key?: string, reason?: AudioDiagnosticError): void {
-    if (sound.key) {
-      const retiring = this.retiringSharedSounds.get(sound.key);
-      retiring?.delete(sound);
-      if (retiring?.size === 0) this.retiringSharedSounds.delete(sound.key);
-    }
-    if (sound.key && this.stagedSharedSounds.get(sound.key) === sound)
-      this.stagedSharedSounds.delete(sound.key);
-    if (sound.key && this.sounds[sound.key] === sound) this.sharedMedia?.stop({ key: sound.key });
     this.pausedSounds.delete(sound);
     this.pendingStarts.delete(sound);
     if (!this.cleanedSounds.has(sound)) {
@@ -2186,8 +1615,7 @@ export class MediaService {
       }
     }
 
-    if (key !== undefined && !this.sounds[key] && !this.pendingLoads.has(key))
-      this.keyGenerations.delete(key);
+    if (key !== undefined && !this.sounds[key] && !this.pendingLoads.has(key)) this.keyGenerations.delete(key);
 
     this.destroyInlineChain(sound);
 
@@ -2296,7 +1724,7 @@ export class MediaService {
       });
       return;
     }
-    if (this.isSoundStale(sound, soundKey) || !sound.playbacks.includes(playback)) {
+    if (this.isSoundStale(sound, soundKey)) {
       renderer.cleanup();
       return;
     }
@@ -2341,7 +1769,7 @@ export class MediaService {
       });
       return;
     }
-    if (this.isSoundStale(sound, soundKey) || !sound.playbacks.includes(playback)) {
+    if (this.isSoundStale(sound, soundKey)) {
       renderer.cleanup();
       return;
     }
@@ -2428,7 +1856,7 @@ export class MediaService {
       sound.stereoPan = data.pan / 100;
     }
 
-    if (data.loops !== undefined && sound.playPayload?.transport?.kind !== 'media') {
+    if (data.loops !== undefined) {
       this.applyLoops(sound, data.loops);
     }
 
@@ -2521,10 +1949,7 @@ export class MediaService {
    * without it has no repeat window to compare: the voice is kept when its
    * region reaches back at least to the new cursor.
    */
-  private sameRegion(
-    current: MediaSegment | undefined,
-    requested: MediaSegment | undefined,
-  ): boolean {
+  private sameRegion(current: MediaSegment | undefined, requested: MediaSegment | undefined): boolean {
     if (current?.finish !== requested?.finish) {
       return false;
     }
@@ -2549,11 +1974,7 @@ export class MediaService {
     let apart = Math.abs(playhead - this.soundOffsetSeconds(sound, positionMs));
     const length = sound.region?.duration ?? sound.duration;
     const loops = sound.segmentLoops;
-    if (
-      (loops === -1 || (loops !== undefined && loops > 1)) &&
-      Number.isFinite(length) &&
-      length > 0
-    ) {
+    if ((loops === -1 || (loops !== undefined && loops > 1)) && Number.isFinite(length) && length > 0) {
       apart = Math.min(apart, Math.abs(length - apart));
     }
     // Compare in whole microseconds: 12.15 s - 12 s is not exactly 0.15 in binary.
@@ -2697,7 +2118,9 @@ export class MediaService {
       finish,
       occlusion,
       key: sound.key ?? original.key,
-    }).catch((error) => console.error('Client.Media.Update: resegment failed', error));
+    }).catch(
+      (error) => console.error('Client.Media.Update: resegment failed', error),
+    );
     return true;
   }
 
@@ -2710,15 +2133,12 @@ export class MediaService {
     if (!sound.playPayload) {
       return;
     }
-    sound.playPayload = { ...sound.playPayload, ...this.updateState(data) };
-  }
-
-  private updateState(data: ClientMediaUpdatePayload): Partial<ClientMediaPlayPayload> {
-    return Object.fromEntries(
+    const state = Object.fromEntries(
       Object.entries(data).filter(
         ([field, value]) => value !== undefined && !UPDATE_FIELDS_NOT_STATE.has(field),
       ),
     ) as Partial<ClientMediaPlayPayload>;
+    sound.playPayload = { ...sound.playPayload, ...state };
   }
 
   /**
@@ -2792,20 +2212,14 @@ export class MediaService {
     if (!sound) {
       return;
     }
-    if (sound.key && this.sharedMedia?.has(sound.key)) {
-      void this.resumeSharedMedia(sound.key);
-      return;
-    }
     if (this.playbackPaused) {
-      void this.resumeAllSounds()
-        .then(() => {
-          if (this.currentMusic === sound && !sound.isPlaying) {
-            sound.resume();
-            this.mediaSession.setPlaybackState('playing');
-            this.updateMusicPosition();
-          }
-        })
-        .catch((error) => console.error('Could not resume sounds:', error));
+      void this.resumeAllSounds().then(() => {
+        if (this.currentMusic === sound && !sound.isPlaying) {
+          sound.resume();
+          this.mediaSession.setPlaybackState('playing');
+          this.updateMusicPosition();
+        }
+      }).catch((error) => console.error('Could not resume sounds:', error));
       return;
     }
     sound.resume();
@@ -2818,11 +2232,6 @@ export class MediaService {
     if (!sound) {
       return;
     }
-    if (sound.key && this.sharedMedia?.has(sound.key)) {
-      this.pauseSharedMedia(sound.key);
-      this.mediaSession.setPlaybackState('paused');
-      return;
-    }
     sound.pause();
     this.mediaSession.setPlaybackState('paused');
     this.updateMusicPosition();
@@ -2830,10 +2239,6 @@ export class MediaService {
 
   private stopCurrentMusic(): void {
     const sound = this.currentMusic;
-    if (sound?.key && this.sharedMedia?.has(sound.key)) {
-      this.sharedMedia.localPause(sound.key);
-      return;
-    }
     if (sound) {
       this.releaseSound(sound, sound.key);
     }
@@ -2844,7 +2249,6 @@ export class MediaService {
     if (!sound) {
       return;
     }
-    if (sound.key && this.sharedMedia?.has(sound.key)) return;
     sound.seek(time);
     this.updateMusicPosition();
   }
