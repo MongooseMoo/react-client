@@ -276,15 +276,18 @@ export interface ExtendedSound extends Sound, NamedRouteState {
 
 /** A pending load's claim on a media key; a newer claim, Stop, or reset makes it stale. */
 interface KeyClaim {
+  updates?: Partial<ClientMediaPlayPayload>;
   readonly generation: number;
   readonly abort: AbortController;
   readonly sharedClockId?: string;
+  readonly sharedSourceId?: string;
   readonly name: string;
   readonly tag?: string;
   readonly type?: MediaType;
 }
 
 interface KeyTicket {
+  updates(): Partial<ClientMediaPlayPayload> | undefined;
   readonly generation: number;
   readonly signal: AbortSignal;
   /** True while this claim is still the latest for its key and no reset intervened. */
@@ -381,11 +384,12 @@ export class MediaService {
     this.sequences?.setSuspended(hidden || this.playbackPaused);
     this.sharedMedia?.setSuspended(hidden || this.playbackPaused);
   }
-  configureSequences(clock: SequenceClock, getOutput: () => Promise<SequenceOutput | null>): void {
+  configureSequences(clock: SequenceClock, getOutput: () => Promise<SequenceOutput | null>, loadScore?: ConstructorParameters<typeof SequenceService>[0]['loadScore']): void {
     if (this.sequences) return;
     this.sequences = new SequenceService({
       clock,
       getOutput,
+      loadScore,
       correctionMs: () => usePreferences.getState().midi.outputTimingCorrectionMs ?? 0,
       createGraph: (mix) =>
         SequenceGraph.create(this.cacophony, (id) => this.effects.getChain(id)?.bus, mix),
@@ -425,6 +429,8 @@ export class MediaService {
   private nextKeyGeneration = 0;
   /** Loads that have claimed a key but not yet settled, so Stop can cancel them. */
   private readonly pendingLoads = new Map<string, KeyClaim>();
+  private readonly stagedSharedSounds = new Map<string, ExtendedSound>();
+  private readonly retiringSharedSounds = new Map<string, Set<ExtendedSound>>();
   /** Bumped by stop-all/reset: invalidates every pending load at once. */
   private epoch = 0;
   /** Bumped by every scene snapshot; each room has its own coordinate origin. */
@@ -804,6 +810,7 @@ export class MediaService {
     this.pendingLoads.set(key, claim);
     const epoch = this.epoch;
     return {
+      updates: () => claim.updates,
       generation,
       signal: claim.abort.signal,
       current: () => this.keyGenerations.get(key) === generation && this.epoch === epoch,
@@ -889,6 +896,7 @@ export class MediaService {
       tag: data.tag,
       type: data.type,
       sharedClockId: data.transport?.kind === 'media' ? data.transport.clockId : undefined,
+      sharedSourceId: data.transport?.kind === 'media' ? data.transport.sourceId : undefined,
     });
     try {
       await this.playClaimed(data, soundKey, mediaUrl, ticket, continuing);
@@ -966,6 +974,7 @@ export class MediaService {
     }
 
     try {
+      if (data.transport?.kind === 'media') data = { ...data, ...ticket.updates() };
       await this.playPrepared(sound, data, soundKey, ticket, retiring);
     } catch (error) {
       if (
@@ -1036,6 +1045,12 @@ export class MediaService {
     sound.generation = ticket.generation;
     this.assignSoundMetadata(sound, data);
     const stagedShared = data.transport?.kind === 'media' && retiring !== undefined;
+    if (stagedShared) {
+      this.stagedSharedSounds.set(soundKey, sound);
+      const retiringSounds = this.retiringSharedSounds.get(soundKey) ?? new Set<ExtendedSound>();
+      retiringSounds.add(retiring);
+      this.retiringSharedSounds.set(soundKey, retiringSounds);
+    }
     if (!stagedShared) this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
     // A Play is full state: without the field the voice is clear, so a listener
@@ -1061,7 +1076,7 @@ export class MediaService {
         return;
       }
     }
-    await this.applyEffectRouting(sound, soundKey, data, 'play');
+    await this.applyEffectRouting(sound, soundKey, sound.playPayload ?? data, 'play');
     if (!ticket.current() || this.isSoundStale(sound, soundKey)) {
       this.tracePayload('routed', data, soundKey, ticket.generation, { code: 'STALE_GENERATION' });
       if (stagedShared) this.releaseSound(sound);
@@ -1416,6 +1431,8 @@ export class MediaService {
       },
       activate: () => {
         if (this.cleanedSounds.has(sound)) return;
+        if (this.stagedSharedSounds.get(soundKey) === sound)
+          this.stagedSharedSounds.delete(soundKey);
         this.sounds[soundKey] = sound;
         if (data.type === 'music') this.activateMusicSession(sound, data);
       },
@@ -1518,11 +1535,25 @@ export class MediaService {
         loops: undefined,
       };
     } else if (data.transport?.kind === 'media') return;
+    if (shared && data.key) {
+      const claim = this.pendingLoads.get(data.key);
+      if (claim?.sharedClockId && claim.sharedSourceId === this.sounds[data.key]?.playPayload?.transport?.sourceId) {
+        const mix = Object.fromEntries(Object.entries(this.updateState(data)).filter(
+          ([field]) => field !== 'transport' && field !== 'cueWindows',
+        ));
+        claim.updates = { ...claim.updates, ...mix };
+      }
+    }
     const targetSounds = data.key
       ? this.soundsByKey(data.key)
       : data.name
         ? this.soundsByName(data.name)
         : [];
+    const staged = data.key ? this.stagedSharedSounds.get(data.key) : undefined;
+    if (staged && !this.isSoundStale(staged, data.key) && !targetSounds.includes(staged))
+      targetSounds.push(staged);
+    for (const retiring of data.key ? this.retiringSharedSounds.get(data.key) ?? [] : [])
+      if (!this.cleanedSounds.has(retiring) && !targetSounds.includes(retiring)) targetSounds.push(retiring);
 
     targetSounds.forEach((sound) => {
       this.rememberUpdate(sound, data);
@@ -1561,9 +1592,8 @@ export class MediaService {
         this.cleanupUpmix(sound);
       }
       const soundKey = sound.key ?? data.key;
-      if (soundKey) {
+      if (soundKey && this.sounds[soundKey] === sound) {
         sound.key = soundKey;
-        this.sounds[soundKey] = sound;
       }
     });
   }
@@ -2002,6 +2032,7 @@ export class MediaService {
       return true;
     }
     if (soundKey === undefined || this.sounds[soundKey] === sound) return false;
+    if (this.retiringSharedSounds.get(soundKey)?.has(sound)) return false;
     return !(
       sound.playPayload?.transport?.kind === 'media' &&
       sound.generation === this.keyGenerations.get(soundKey) &&
@@ -2010,6 +2041,13 @@ export class MediaService {
   }
 
   private releaseSound(sound: ExtendedSound, key?: string, reason?: AudioDiagnosticError): void {
+    if (sound.key) {
+      const retiring = this.retiringSharedSounds.get(sound.key);
+      retiring?.delete(sound);
+      if (retiring?.size === 0) this.retiringSharedSounds.delete(sound.key);
+    }
+    if (sound.key && this.stagedSharedSounds.get(sound.key) === sound)
+      this.stagedSharedSounds.delete(sound.key);
     if (sound.key && this.sounds[sound.key] === sound) this.sharedMedia?.stop({ key: sound.key });
     this.pausedSounds.delete(sound);
     this.pendingStarts.delete(sound);
@@ -2559,12 +2597,15 @@ export class MediaService {
     if (!sound.playPayload) {
       return;
     }
-    const state = Object.fromEntries(
+    sound.playPayload = { ...sound.playPayload, ...this.updateState(data) };
+  }
+
+  private updateState(data: ClientMediaUpdatePayload): Partial<ClientMediaPlayPayload> {
+    return Object.fromEntries(
       Object.entries(data).filter(
         ([field, value]) => value !== undefined && !UPDATE_FIELDS_NOT_STATE.has(field),
       ),
     ) as Partial<ClientMediaPlayPayload>;
-    sound.playPayload = { ...sound.playPayload, ...state };
   }
 
   /**

@@ -195,7 +195,6 @@ export class SharedMediaService {
     const source = data.key ? this.sources.get(data.key) : undefined;
     if (!source) return false;
     const incoming = data.transport;
-    if (!incoming) source.retiringVoice?.updateMix?.(data);
     if (incoming) {
       const old = source.grant.transport;
       if (
@@ -226,7 +225,6 @@ export class SharedMediaService {
         }
         source.maxCueSeq = Math.max(source.maxCueSeq, data.cueWindows.at(-1)?.seq ?? -1);
       }
-      source.retiringVoice?.updateMix?.(data);
       if (incoming.revision === old.revision) {
         source.grant = { ...source.grant, cueWindows };
         if (data.cueWindows !== undefined) this.acceptCueCoverage(source);

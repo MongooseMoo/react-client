@@ -4,6 +4,73 @@ import { resolve } from 'node:path';
 import { createServer } from 'node:http';
 import type { BrowserContext, Page, Route } from '@playwright/test';
 const origin = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173';
+
+test('accepted locator renewal keeps updates received during loading and preparation', async ({ page, context }) => {
+  await fixture(page, context, async route => {
+    if (route.request().url().includes('renewed')) await new Promise(resolve => setTimeout(resolve, 800));
+    const bytes = wave(), range = route.request().headers().range;
+    const start = range ? Number(/bytes=(\d+)/.exec(range)?.[1] ?? 0) : 0;
+    await route.fulfill({
+      status: range ? 206 : 200,
+      headers: {
+        'Content-Type': 'audio/wav', 'Access-Control-Allow-Origin': '*', 'Accept-Ranges': 'bytes',
+        ...(range ? { 'Content-Range': `bytes ${start}-${bytes.length - 1}/${bytes.length}` } : {}),
+      },
+      body: bytes.subarray(start),
+    });
+  });
+  const result = await page.evaluate(async () => {
+    const media = globalThis.media;
+    const transport = {
+      version: 1, kind: 'media', clockId: 'browser', sourceId: 'mix-source', revision: 1,
+      state: 'playing', anchorServerMs: performance.now(), positionMs: 0,
+      rate: 1, mode: 'finite', durationMs: 8000,
+    };
+    globalThis.snapshot = transport;
+    await media.play({ key: 'mix', name: 'shared-tone.wav', url: location.origin + '/', type: 'music', is3d: true, position: [0, 0, 0], transport });
+    await media.setChain({ id: 'renew-route', effects: [] });
+    const audible = media.sounds.mix;
+    if (!audible || !audible.sharedTransportPrepared || !audible.playbacks[0].isPlaying)
+      throw new Error('Initial shared voice is not playing: ' + JSON.stringify(globalThis.mediaStore.getState().sources));
+    const replacing = media.play({ key: 'mix', name: 'shared-tone.wav?renewed=1', url: location.origin + '/', type: 'music', is3d: true, position: [0, 0, 0], transport });
+    media.update({ key: 'mix', volume: 60, occlusion: 0.2 });
+    const deadline = performance.now() + 4000;
+    while (!media.stagedSharedSounds.get('mix')) {
+      if (performance.now() > deadline) throw new Error('No staged renewal');
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    const candidate = media.stagedSharedSounds.get('mix');
+    const inherited = candidate.mediaVolume === audible.mediaVolume && candidate.occlusion === 0.2;
+    const applications = new Map();
+    const apply = media.applySoundState.bind(media);
+    media.applySoundState = (sound, payload) => {
+      if (payload.volume === 35) applications.set(sound, (applications.get(sound) ?? 0) + 1);
+      return apply(sound, payload);
+    };
+    media.update({ key: 'mix', volume: 35, occlusion: 0.7, position: [2, 0, 0], chain: 'renew-route', send: 0.25 });
+    while (media.sounds.mix === audible) {
+      if (performance.now() > deadline) throw new Error('Renewal did not activate');
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    const oldStillAudible = audible.playbacks[0].isPlaying;
+    media.update({ key: 'mix', volume: 45, occlusion: 0.5, position: [3, 0, 0] });
+    await replacing;
+    media.applySoundState = apply;
+    const active = media.sounds.mix;
+    const result = {
+      inherited,
+      oldStillAudible,
+      replaced: active !== audible,
+      playing: active.playbacks[0].isPlaying,
+      mixKept: active.mediaVolume === audible.mediaVolume && active.occlusion === 0.5 && audible.occlusion === 0.5 && active.namedChain === 'renew-route' && active.namedSend === 0.25 && active.playPayload.position[0] === 3,
+      appliedOnce: applications.get(audible) === 1 && applications.get(active) === 1,
+    };
+    media.shutdown();
+    globalThis.clock.shutdown();
+    return result;
+  });
+  expect(result).toEqual({ inherited: true, oldStillAudible: true, replaced: true, playing: true, mixKept: true, appliedOnce: true });
+});
 function wave(seconds = 8, clip = false): Buffer {
   const rate = 24000,
     length = rate * seconds,
