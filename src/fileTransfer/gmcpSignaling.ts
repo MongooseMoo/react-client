@@ -3,12 +3,18 @@ import type {
   FileOffer,
   OfferAttempt,
   PeerAddress,
+  SharedFile,
+  SharingHandlers,
+  SharingSignaling,
   SignalHandlers,
   TransferId,
   TransferSignaling,
 } from './types';
 
 type Fields = Record<string, unknown>;
+
+/** A `hash` as the protocol defines it: 64 lower-case hexadecimal characters. */
+const CONTENT_ID = /^[0-9a-f]{64}$/;
 
 /**
  * Carries transfer signalling over the `Client.FileTransfer` GMCP package.
@@ -18,17 +24,14 @@ type Fields = Record<string, unknown>;
  */
 export function createGmcpTransferSignaling(gmcp: GMCPClientFileTransfer): TransferSignaling {
   return {
-    // Offer has no field for the attempt and the server relays `offerSdp` opaquely, so
-    // a resume is marked inside it, beside the description's own keys.
     sendOffer(to, offer, description, attempt) {
       gmcp.sendOffer({
         recipient: to,
         filename: offer.name,
         filesize: offer.size,
-        offerSdp: JSON.stringify(
-          attempt === 'resume' ? { ...description, resume: true } : description,
-        ),
+        offerSdp: JSON.stringify(description),
         hash: offer.id,
+        resume: attempt === 'resume',
       });
     },
 
@@ -43,14 +46,10 @@ export function createGmcpTransferSignaling(gmcp: GMCPClientFileTransfer): Trans
       });
     },
 
-    // Candidate has no hash field and the server relays `candidate` opaquely, so the
-    // transfer id travels inside it. That is what keeps the candidates of several
+    // Each transfer has its own peer connection; `hash` keeps the candidates of several
     // transfers with the same peer apart.
     sendCandidate(to, id, candidate) {
-      gmcp.sendCandidate({
-        recipient: to,
-        candidate: JSON.stringify({ transfer: id, candidate }),
-      });
+      gmcp.sendCandidate({ recipient: to, hash: id, candidate: JSON.stringify(candidate) });
     },
 
     sendReject(to, id) {
@@ -61,8 +60,12 @@ export function createGmcpTransferSignaling(gmcp: GMCPClientFileTransfer): Trans
       gmcp.sendCancel({ recipient: to, hash: id });
     },
 
+    sendRequest(to, id) {
+      gmcp.sendRequest({ recipient: to, hash: id });
+    },
+
     subscribe(handlers: SignalHandlers) {
-      const detach = [
+      return attach([
         gmcp.on(
           'offer',
           checked('Offer', readOffer, ({ from, offer, description, attempt }) =>
@@ -89,12 +92,68 @@ export function createGmcpTransferSignaling(gmcp: GMCPClientFileTransfer): Trans
           'cancel',
           checked('Cancel', readTransferReference, ({ from, id }) => handlers.cancel(from, id)),
         ),
-      ];
-
-      return () => {
-        for (const remove of detach) remove();
-      };
+        gmcp.on(
+          'request',
+          checked('Request', readTransferReference, ({ from, id }) => handlers.request(from, id)),
+        ),
+      ]);
     },
+  };
+}
+
+/**
+ * Carries the sharing messages over the same package: Share, Browse, List, Search and
+ * Result. Arriving messages are checked as strictly as the transfer signals are.
+ */
+export function createGmcpSharingSignaling(gmcp: GMCPClientFileTransfer): SharingSignaling {
+  return {
+    sendShare(sharing) {
+      gmcp.sendShare({ sharing });
+    },
+
+    sendBrowse(to) {
+      gmcp.sendBrowse({ recipient: to });
+    },
+
+    sendList(to, files) {
+      gmcp.sendList({ recipient: to, files });
+    },
+
+    sendSearch(id, query) {
+      gmcp.sendSearch({ id, query });
+    },
+
+    sendResult(to, id, files) {
+      gmcp.sendResult({ recipient: to, id, files });
+    },
+
+    subscribe(handlers: SharingHandlers) {
+      return attach([
+        gmcp.on(
+          'browse',
+          checked('Browse', readBrowse, ({ from }) => handlers.browse(from)),
+        ),
+        gmcp.on(
+          'list',
+          checked('List', readList, ({ from, files }) => handlers.list(from, files)),
+        ),
+        gmcp.on(
+          'search',
+          checked('Search', readSearch, ({ from, id, query }) => handlers.search(from, id, query)),
+        ),
+        gmcp.on(
+          'result',
+          checked('Result', readResult, ({ from, id, files }) => handlers.result(from, id, files)),
+        ),
+      ]);
+    },
+  };
+}
+
+/** The function that removes every listener in `detach`. */
+function attach(detach: Array<() => void>): () => void {
+  return () => {
+    for (const remove of detach) remove();
   };
 }
 
@@ -127,18 +186,13 @@ function readOffer(payload: unknown): {
   attempt: OfferAttempt;
 } {
   const message = fields(payload, 'payload');
-  const size = message.filesize;
-  if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) {
-    throw new Error('filesize is not a non-negative safe integer');
-  }
-  const { resume, ...described } = description(message, 'offerSdp') as RTCSessionDescriptionInit & {
-    resume?: unknown;
-  };
+  const resume = message.resume;
+  if (typeof resume !== 'boolean') throw new Error('resume is not a boolean');
   return {
     from: text(message, 'sender'),
-    offer: { id: text(message, 'hash'), name: text(message, 'filename'), size },
-    description: described,
-    attempt: resume === true ? 'resume' : 'first',
+    offer: { id: text(message, 'hash'), name: text(message, 'filename'), size: size(message, 'filesize') },
+    description: description(message, 'offerSdp'),
+    attempt: resume ? 'resume' : 'first',
   };
 }
 
@@ -161,18 +215,47 @@ function readCandidate(payload: unknown): {
   candidate: RTCIceCandidateInit;
 } {
   const message = fields(payload, 'payload');
-  // A client on the old build sends the bare candidate here, without a transfer tag.
-  const tagged = fields(JSON.parse(text(message, 'candidate')), 'candidate');
   return {
     from: text(message, 'sender'),
-    id: text(tagged, 'transfer'),
-    candidate: fields(tagged.candidate, 'candidate.candidate') as RTCIceCandidateInit,
+    id: text(message, 'hash'),
+    candidate: fields(JSON.parse(text(message, 'candidate')), 'candidate') as RTCIceCandidateInit,
   };
 }
 
 function readTransferReference(payload: unknown): { from: PeerAddress; id: TransferId } {
   const message = fields(payload, 'payload');
   return { from: text(message, 'sender'), id: text(message, 'hash') };
+}
+
+function readBrowse(payload: unknown): { from: PeerAddress } {
+  return { from: text(fields(payload, 'payload'), 'sender') };
+}
+
+function readList(payload: unknown): { from: PeerAddress; files: SharedFile[] } {
+  const message = fields(payload, 'payload');
+  return { from: text(message, 'sender'), files: sharedFiles(message) };
+}
+
+function readSearch(payload: unknown): { from: PeerAddress; id: string; query: string } {
+  const message = fields(payload, 'payload');
+  return { from: text(message, 'sender'), id: text(message, 'id'), query: text(message, 'query') };
+}
+
+function readResult(payload: unknown): { from: PeerAddress; id: string; files: SharedFile[] } {
+  const message = fields(payload, 'payload');
+  return { from: text(message, 'sender'), id: text(message, 'id'), files: sharedFiles(message) };
+}
+
+/** The `files` of a List or Result; one entry out of shape makes the whole message so. */
+function sharedFiles(message: Fields): SharedFile[] {
+  const files = message.files;
+  if (!Array.isArray(files)) throw new Error('files is not a list');
+  return files.map((value, index) => {
+    const file = fields(value, `files[${index}]`);
+    const hash = text(file, 'hash');
+    if (!CONTENT_ID.test(hash)) throw new Error(`files[${index}].hash is not a content id`);
+    return { hash, name: text(file, 'name'), path: text(file, 'path'), size: size(file, 'size') };
+  });
 }
 
 function fields(value: unknown, name: string): Fields {
@@ -185,6 +268,14 @@ function fields(value: unknown, name: string): Fields {
 function text(source: Fields, name: string): string {
   const value = source[name];
   if (typeof value !== 'string') throw new Error(`${name} is not a string`);
+  return value;
+}
+
+function size(source: Fields, name: string): number {
+  const value = source[name];
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${name} is not a non-negative safe integer`);
+  }
   return value;
 }
 

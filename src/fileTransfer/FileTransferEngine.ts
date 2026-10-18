@@ -122,6 +122,8 @@ export class FileTransferEngine implements FileTransfers {
       candidate: (from, id, candidate) => this.linked(from, id)?.addCandidate(candidate),
       reject: (from, id) => this.outgoing(from, id)?.rejectedByPeer(),
       cancel: (from, id) => this.addressed(from, id)?.cancelledByPeer(),
+      // Nothing is shared, so every request is for a file this client does not share.
+      request: (from, id) => signaling.sendReject(from, id),
     });
   }
 

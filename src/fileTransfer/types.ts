@@ -54,6 +54,8 @@ export interface TransferSignaling {
   sendCandidate(to: PeerAddress, id: TransferId, candidate: RTCIceCandidateInit): void;
   sendReject(to: PeerAddress, id: TransferId): void;
   sendCancel(to: PeerAddress, id: TransferId): void;
+  /** Asks a sharer to offer one of their shared files. */
+  sendRequest(to: PeerAddress, id: TransferId): void;
   /** Returns the function that removes the handlers again. */
   subscribe(handlers: SignalHandlers): () => void;
 }
@@ -69,6 +71,38 @@ export interface SignalHandlers {
   candidate(from: PeerAddress, id: TransferId, candidate: RTCIceCandidateInit): void;
   reject(from: PeerAddress, id: TransferId): void;
   cancel(from: PeerAddress, id: TransferId): void;
+  request(from: PeerAddress, id: TransferId): void;
+}
+
+/**
+ * A file in a share. `path` is its folder inside the share with `/` separators, and
+ * `''` for the share's top level.
+ */
+export interface SharedFile {
+  hash: TransferId;
+  name: string;
+  path: string;
+  size: number;
+}
+
+/** The sharing messages: everything but the transfers themselves. */
+export interface SharingSignaling {
+  /** Tells the server whether this player shares. */
+  sendShare(sharing: boolean): void;
+  sendBrowse(to: PeerAddress): void;
+  sendList(to: PeerAddress, files: SharedFile[]): void;
+  /** Goes to every sharer the server relays it to; `id` matches their results to it. */
+  sendSearch(id: string, query: string): void;
+  sendResult(to: PeerAddress, id: string, files: SharedFile[]): void;
+  /** Returns the function that removes the handlers again. */
+  subscribe(handlers: SharingHandlers): () => void;
+}
+
+export interface SharingHandlers {
+  browse(from: PeerAddress): void;
+  list(from: PeerAddress, files: SharedFile[]): void;
+  search(from: PeerAddress, id: string, query: string): void;
+  result(from: PeerAddress, id: string, files: SharedFile[]): void;
 }
 
 /** A partially or fully received file is stored under the peer it came from and its id. */
