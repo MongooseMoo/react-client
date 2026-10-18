@@ -13,6 +13,8 @@ vi.mock('./AudioDiagnostics', () => ({ default: () => <span>Diagnostics</span> }
 vi.mock('./HelpPanel', () => ({ default: () => <span>Help contents</span> }));
 vi.mock('./TimersPanel', () => ({ default: () => <span>Timer contents</span> }));
 vi.mock('./MapPanel', () => ({ default: () => <span>Map contents</span> }));
+vi.mock('./SharedMediaPanel', () => ({ default: () => <span>Shared media contents</span> }));
+vi.mock('./MusicComposer', () => ({ default: () => <span>Music composer contents</span> }));
 
 beforeEach(() => {
   useRoomStore.getState().reset();
@@ -40,17 +42,19 @@ it('reaches active destinations repeatedly and keeps shortcut positions stable a
   expect(screen.getByRole('tab', { name: 'Users' })).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+3');
 });
 
-it('keeps Map and Help shortcut positions and appends Timers without a number shortcut', async () => {
+it('keeps Map and Help shortcut positions and appends Timers, Media and Music without number shortcuts', async () => {
   const client = { connected: false, gmcp: { handlers: {} }, media: { diagnostics: {} }, onFileTransferOffer: () => () => {} } as unknown as MudClient;
   act(() => useRoomStore.getState().setRoomInfo({ num: 1, name: 'Room', exits: {} }));
   render(<Sidebar client={client} collapsed={false} onToggleCollapse={vi.fn()} />);
-  const tabs = screen.getAllByRole('tab');
-  expect(tabs.at(-3)).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+0');
-  expect(tabs.at(-2)).toHaveAccessibleName('Help');
-  expect(tabs.at(-1)).toHaveAccessibleName('Timers');
-  expect(tabs.at(-1)).not.toHaveAttribute('aria-keyshortcuts');
-  fireEvent.click(tabs.at(-2) as HTMLElement);
+  expect(screen.getByRole('tab', { name: 'Map', exact: true })).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+0');
+  for (const name of ['Help', 'Timers', 'Media', 'Music']) expect(screen.getByRole('tab', { name, exact: true })).not.toHaveAttribute('aria-keyshortcuts');
+  expect(screen.queryByText('Music composer contents')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Help', exact: true }));
   expect(await screen.findByText('Help contents')).toBeInTheDocument();
-  fireEvent.click(tabs.at(-1) as HTMLElement);
+  fireEvent.click(screen.getByRole('tab', { name: 'Timers', exact: true }));
   expect(await screen.findByText('Timer contents')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Media', exact: true }));
+  expect(await screen.findByText('Shared media contents')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Music', exact: true }));
+  expect(await screen.findByText('Music composer contents')).toBeInTheDocument();
 });
