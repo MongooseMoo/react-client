@@ -10,9 +10,11 @@ preferences, a Keys tab in Preferences. No push, no PR.
 ## State
 
 - Done and committed: spec doc; `src/keystrokeChords.ts` (aliases, exact modifiers, event.code for
-  letters/digits, formatting); `src/reservedShortcuts.ts` (one list of client and browser keys).
-- In progress: rebinding storage in `preferencesStore` (`keystrokes` overrides), then
-  `src/stores/keystrokesStore.ts`, then rewrite `src/gmcp/Client/Keystrokes.ts`, then the Keys tab.
+  letters/digits, formatting); `src/reservedShortcuts.ts` (one list of client and browser keys);
+  `keystrokes` overrides in `preferencesStore`; `src/stores/keystrokesStore.ts` (layers, keys mode,
+  resolve/find/keyTakenBy); `src/gmcp/Client/Keystrokes.ts` rewritten (layers, legacy messages,
+  BindingsList with ids, focus zones, keys mode, announcements).
+- Next: Keys tab in Preferences with keyboard rebinding, Alt+Shift+K in the shortcut list.
 - Baseline before work: `npx vitest run` 159 files / 2191 tests passed; typecheck clean.
 
 ## Decisions and why
@@ -34,4 +36,4 @@ preferences, a Keys tab in Preferences. No push, no PR.
 
 ## Next step
 
-Finish the preferences overrides, then the keystrokes store and its tests.
+Keys tab (`src/components/KeystrokePreferences.tsx`) with tests, then full suite, typecheck, lint.
