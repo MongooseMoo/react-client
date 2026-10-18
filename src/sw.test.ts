@@ -77,6 +77,41 @@ describe('service worker activation', () => {
   });
 });
 
+describe('share target', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it('answers POSTs to the share target path with a redirect into the client', async () => {
+    vi.stubGlobal('self', {
+      __WB_MANIFEST: [],
+      addEventListener: vi.fn(),
+      skipWaiting: vi.fn(),
+      location: new URL('https://client.mongoose.world/sw.js'),
+    });
+    await import('./sw');
+
+    const route = workboxMocks.registerRoute.mock.calls.find(([, , method]) => method === 'POST');
+    expect(route).toBeDefined();
+    if (!route) return;
+    const [match, handler] = route;
+    expect(match({ url: new URL('https://client.mongoose.world/share-target') })).toBe(true);
+    expect(match({ url: new URL('https://other.example/share-target') })).toBe(false);
+    expect(match({ url: new URL('https://client.mongoose.world/') })).toBe(false);
+
+    // An empty multipart form: nothing shared, so the client opens with no launch item.
+    const request = new Request('https://client.mongoose.world/share-target', {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/form-data; boundary=b' },
+      body: '--b--\r\n',
+    });
+    const response: Response = await handler({ request });
+    expect(response.status).toBe(303);
+    expect(response.headers.get('Location')).toBe('https://client.mongoose.world/');
+  });
+});
+
 describe('legacy push quarantine', () => {
   afterEach(() => vi.unstubAllGlobals());
   it('keeps old lines and Stop URLs out of player storage and window messages', async () => {

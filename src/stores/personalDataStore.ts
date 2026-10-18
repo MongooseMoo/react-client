@@ -24,12 +24,22 @@ interface PersonalDataState {
   confirm: (owner: PersonalDataOwner) => void;
   clear: (reason?: 'reconnect' | 'identity-change') => void;
   forget: () => void;
+  /** Starts a connection while preserving a pending launch and same-owner draft. */
+  clearForConnect: () => void;
   setVisitor: (visitor: boolean) => void;
 }
 
-function clearTransientData(): void {
+/**
+ * Output and input on screen belonged to the previous owner. `forNewOwner`
+ * marks the resets where nobody's data is being protected from anyone yet (a
+ * connection starting, a sign-in with nobody before), which a draft from a launch link
+ * survives (see launch/placeLaunchText). Sign-out and visitor changes are
+ * privacy clears and discard everything.
+ */
+function clearTransientData(forNewOwner: boolean): void {
   useOutputStore.getState().reset();
-  useInputStore.getState().clear();
+  if (forNewOwner) useInputStore.getState().discardForNewOwner();
+  else useInputStore.getState().clear();
 }
 
 export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
@@ -43,7 +53,7 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
     const previous = get().owner;
     if (previous && ownerKey(previous) === ownerKey(owner) && get().identityState === 'confirmed')
       return;
-    clearTransientData();
+    clearTransientData(!previous);
     set({ owner, reconnectingIdentity: undefined, identityState: 'confirmed' });
   },
   clear(reason = 'identity-change') {
@@ -51,7 +61,7 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
       get().forget();
       return;
     }
-    clearTransientData();
+    clearTransientData(true);
     set({
       owner: undefined,
       reconnectingIdentity: get().owner ?? get().reconnectingIdentity,
@@ -59,7 +69,7 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
     });
   },
   forget() {
-    clearTransientData();
+    clearTransientData(false);
     set({
       owner: undefined,
       reconnectingIdentity: undefined,
@@ -67,9 +77,10 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
       forgetEpoch: get().forgetEpoch + 1,
     });
   },
+  clearForConnect() { get().clear('reconnect'); },
   setVisitor(visitor) {
     if (visitor === get().visitor) return;
-    clearTransientData();
+    clearTransientData(false);
     set({ visitor });
   },
 }));

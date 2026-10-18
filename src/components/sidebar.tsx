@@ -45,6 +45,8 @@ import ServerFeaturesPanel from './ServerFeaturesPanel';
 export type SidebarRef = {
   switchToTab: (index: number) => boolean;
   hasTab: (index: number) => boolean;
+  /** The position of the tab with this id, for switchToTab; -1 when there is none. */
+  indexOfTab: (id: string) => number;
 };
 
 export const MIN_SIDEBAR_WIDTH = 180;
@@ -331,6 +333,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       ref,
       () => ({
         hasTab: (index) => Boolean(allTabs[index] && (allTabs[index].condition ?? true)),
+        indexOfTab: (id) => allTabs.findIndex((tab) => tab.id === id),
         switchToTab: (index) => {
           const tab = allTabs[index];
           return Boolean(tab && (tab.condition ?? true) && tabsRef.current?.selectTab(tab.id, 'panel'));

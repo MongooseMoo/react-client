@@ -9,6 +9,7 @@ interface FileTransferControlsProps {
   selectedFile: File | null;
   selectedRecipient: TransferPeer | null;
   recipients: TransferPeer[];
+  recipientInputRef?: React.Ref<HTMLInputElement>;
 }
 
 const Controls: React.FC<FileTransferControlsProps> = ({
@@ -18,6 +19,7 @@ const Controls: React.FC<FileTransferControlsProps> = ({
   selectedFile,
   selectedRecipient,
   recipients,
+  recipientInputRef,
 }) => {
   const fileInputId = React.useId();
   const recipientInputId = React.useId();
@@ -135,6 +137,7 @@ const Controls: React.FC<FileTransferControlsProps> = ({
           Recipient
         </label>
         <input
+          ref={recipientInputRef}
           id={recipientInputId}
           type="text"
           role="combobox"

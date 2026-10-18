@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import LinkPickerDialog from "./LinkPickerDialog";
@@ -89,5 +89,16 @@ describe("LinkPickerDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("is not closed by a late close event after new links reopened it", async () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<LinkPickerDialog links={twoLinks} onClose={onClose} />);
+    rerender(<LinkPickerDialog links={null} onClose={onClose} />);
+    rerender(<LinkPickerDialog links={[...twoLinks]} onClose={onClose} />);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(screen.getByRole("dialog")).toHaveAttribute("open");
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

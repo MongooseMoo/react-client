@@ -45,7 +45,10 @@ export default function LinkPickerDialog({ links, onClose }: LinkPickerDialogPro
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const handleClose = () => onClose();
+    // A late `close` from a showing that has been reopened since changes nothing.
+    const handleClose = () => {
+      if (!dialog.open) onClose();
+    };
     dialog.addEventListener("close", handleClose);
     return () => dialog.removeEventListener("close", handleClose);
   }, [onClose]);

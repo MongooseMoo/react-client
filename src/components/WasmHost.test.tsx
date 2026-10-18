@@ -1,6 +1,8 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { polyfillBlobArrayBuffer } from "../fileTransfer/testHarness";
+import { useLaunchStore } from "../launch/launchStore";
 import WasmHost from "./WasmHost";
 
 const mocks = vi.hoisted(() => ({
@@ -138,5 +140,28 @@ describe("WasmHost lifecycle", () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Database parse failed'));
     fireEvent.click(screen.getByRole('button', { name: /Use default database/ }));
     await waitFor(() => expect(mocks.workers).toHaveLength(2));
+  });
+
+  it('boots a database the player confirmed hosting after the OS opened it', async () => {
+    polyfillBlobArrayBuffer();
+    render(<WasmHost dbUrl={null} isHostMode onClientReady={vi.fn()} />);
+    expect(useLaunchStore.getState().hostWaiting).toBe(true);
+    expect(mocks.workers).toHaveLength(0);
+
+    act(() => useLaunchStore.setState({ confirmedDatabase: new File(['moo'], 'World.db') }));
+
+    await waitFor(() => expect(mocks.workers).toHaveLength(1));
+    await waitFor(() => expect(mocks.workers[0].postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'start' }),
+    ));
+    expect(useLaunchStore.getState().confirmedDatabase).toBeUndefined();
+  });
+
+  it('leaves a database alone that nobody confirmed', async () => {
+    render(<WasmHost dbUrl={null} isHostMode onClientReady={vi.fn()} />);
+    act(() => useLaunchStore.setState({ database: new File(['moo'], 'World.db') }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.workers).toHaveLength(0);
+    useLaunchStore.setState({ database: undefined });
   });
 });

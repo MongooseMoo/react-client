@@ -13,6 +13,10 @@ interface InputStoreState {
   addVisibleCommands: (commands: string[]) => void;
   removeVisibleCommands: (commands: string[]) => void;
   clear: () => void;
+  /** Counts `discardForNewOwner` calls, so a watcher can tell them from the player emptying the input. */
+  ownerResets: number;
+  /** Empties the input for a connection starting or the first sign-in (personalDataStore). */
+  discardForNewOwner: () => void;
   resetCommands: () => void;
 }
 
@@ -39,6 +43,8 @@ export const useInputStore = create<InputStoreState>((set) => ({
       };
     }),
   clear: () => set({ text: "" }),
+  ownerResets: 0,
+  discardForNewOwner: () => set((state) => ({ text: "", ownerResets: state.ownerResets + 1 })),
   resetCommands: () => set({ visibleCommands: [] }),
 }));
 

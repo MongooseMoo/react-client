@@ -18,6 +18,8 @@ export type GeneralPreferences = {
   localEcho: boolean;
   syncTimezoneToServer: boolean;
   syncLocationToServer: boolean;
+  // Count missed notifications on the installed app's icon.
+  appBadge: boolean;
 };
 
 export type SpeechPreferences = {
@@ -31,6 +33,8 @@ export type SpeechPreferences = {
 export type SoundPreferences = {
   muteInBackground: boolean;
   volume: number;
+  // Turn the sound scene with the device's motion sensor (src/audio/headTracking.ts).
+  headTracking: boolean;
 };
 
 // "default" follows the Speech tab's Auto Read; the others override it for
@@ -123,6 +127,7 @@ function getInitialPreferences(): PrefState {
       localEcho: false,
       syncTimezoneToServer: true,
       syncLocationToServer: false,
+      appBadge: true,
     },
     speech: {
       autoreadMode: AutoreadMode.Off,
@@ -131,7 +136,7 @@ function getInitialPreferences(): PrefState {
       pitch: 1.0,
       volume: 1.0,
     },
-    sound: { muteInBackground: false, volume: 1.0 },
+    sound: { muteInBackground: false, volume: 1.0, headTracking: false },
     channels: {
       say_to_you: { autoreadMode: "default", voice: "", notify: true },
     },

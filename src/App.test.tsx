@@ -41,6 +41,7 @@ const {
       setEnabled: ReturnType<typeof vi.fn>;
     }>,
     mockPreferences: {
+      general: { appBadge: true },
       haptics: { enabled: false },
       midi: { enabled: false },
     },
@@ -73,6 +74,7 @@ vi.mock('./haptics/runtime', () => ({
 vi.mock('./stores/preferencesStore', () => {
   const usePreferences = () => mockPreferences;
   usePreferences.getState = () => mockPreferences;
+  usePreferences.subscribe = () => () => {};
   return { usePreferences };
 });
 

@@ -8,6 +8,8 @@ import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
 import ChannelPreferencesTab from "./ChannelPreferences";
 import KeystrokePreferencesTab from "./KeystrokePreferences";
 import SoundfontPicker from './SoundfontPicker';
+import HeadTrackingControls from './HeadTrackingControls';
+import AppIntegrationPreferences from '../launch/AppIntegrationPreferences';
 
 function PreferenceNumber({ id, label, value, min, max, onCommit }: {
   id: string; label: string; value: number; min: number; max: number;
@@ -81,6 +83,7 @@ const GeneralTab: React.FC = () => {
         />
         Sync browser location to server
       </label>
+      <AppIntegrationPreferences />
     </div>
   );
 };
@@ -313,6 +316,7 @@ const SoundsTab: React.FC = () => {
         />
         Mute sounds when in background
       </label>
+      <HeadTrackingControls />
     </div>
   );
 };
@@ -477,7 +481,7 @@ const KeyboardTab: React.FC = () => {
           <dt>Reviewed message</dt>
           <dd>Alt+Space repeats; Alt+Enter opens its link or offers a link choice; Alt+Shift+Space copies. Alt+Shift+1 through Alt+Shift+0 selects a numbered buffer. Alt+Shift+T toggles timestamps; Alt+Shift+Delete deletes the current buffer.</dd>
           <dt>Sounds</dt>
-          <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback.</dd>
+          <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback. Alt+Shift+O recenters head tracking.</dd>
           <dt>Server keys</dt>
           <dd>Alt+Shift+H turns keys mode on and off, so a game's or console's keys work on letters and other typing keys. The Keys section lists every key and lets you change it.</dd>
         </dl>

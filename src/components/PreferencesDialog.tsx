@@ -70,7 +70,9 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
       return;
     }
     const handleClose = () => {
-      setIsOpen(false);
+      // `close` arrives a task after the dialog closed; if it was opened again
+      // meanwhile, this event is about the earlier showing and changes nothing.
+      if (!dialog.open) setIsOpen(false);
     };
     dialog.addEventListener("close", handleClose);
     return () => {
