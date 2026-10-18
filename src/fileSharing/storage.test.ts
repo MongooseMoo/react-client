@@ -1,5 +1,5 @@
-import { IDBFactory } from 'fake-indexeddb';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StorageDatabase } from './storageDatabase';
 import { computeContentId } from '../fileTransfer/contentId';
 import { polyfillBlobArrayBuffer } from '../fileTransfer/testHarness';
@@ -19,6 +19,209 @@ const binding = async (bytes = new Uint8Array([1, 2, 3])) => ({
   }),
 });
 describe('Phase 1 storage owner', () => {
+  it('migrates a version-1 bitmap and retains its verified receipt and bytes', async () => {
+    const b = await binding();
+    await new Promise<void>((resolve, reject) => {
+      const r = indexedDB.open('file-sharing-v2:migrate', 1);
+      r.onupgradeneeded = () => {
+        const raw = r.result;
+        raw.createObjectStore('owner');
+        raw.createObjectStore('attempts', { keyPath: 't' });
+        raw.createObjectStore('offers');
+        raw.createObjectStore('exports', { keyPath: 'id' });
+        raw.createObjectStore('pieces', { keyPath: ['from', 'id', 'index'] });
+        raw.createObjectStore('transfers', { keyPath: ['from', 'id'] });
+        const tx = r.transaction;
+        if (!tx) throw new Error('No upgrade transaction');
+        tx.objectStore('transfers').put({
+          from: source.player,
+          id: b.meta.id,
+          size: 3,
+          bitmap: [0],
+          verified: true,
+          touchedAt: Date.now(),
+        });
+        tx.objectStore('pieces').put({
+          from: source.player,
+          id: b.meta.id,
+          index: 0,
+          bytes: new Uint8Array([1, 2, 3]).buffer,
+        });
+        tx.objectStore('offers').put(
+          {
+            sender: source,
+            offer: b.offer,
+            t: b.t,
+            meta: b.meta,
+            state: 'received',
+            outcome: 'verified',
+            touchedAt: Date.now(),
+          },
+          [JSON.stringify([source.player, source.endpoint, source.epoch]), b.offer],
+        );
+      };
+      r.onerror = () => reject(r.error);
+      r.onsuccess = () => {
+        r.result.close();
+        resolve();
+      };
+    });
+    const db = new StorageDatabase('migrate', true);
+    await db.open();
+    expect((await db.readForExport(source, b.offer)).size).toBe(3);
+    await db.close();
+  });
+  it('reserves receipt capacity before bytes and admits again when 24-hour history expires', async () => {
+    const db = new StorageDatabase('live-history', false);
+    await db.open();
+    const b = await binding(new Uint8Array());
+    for (let i = 0; i < 1023; i++) {
+      const t = i.toString(16).padStart(32, '0');
+      await db.reserve({ ...b, t, offer: t });
+      await db.verify(t, 1);
+      await db.saveReceipt({
+        sender: source,
+        offer: t,
+        t,
+        meta: b.meta,
+        state: 'received',
+        outcome: 'verified',
+        touchedAt: Date.now(),
+      });
+      await db.release(t);
+    }
+    await db.reserve(b);
+    const next = { ...b, t: 'e'.repeat(32), offer: 'f'.repeat(32) };
+    await expect(db.reserve(next)).rejects.toThrow('history');
+    const time = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 86400001);
+    try {
+      await expect(db.reserve(next)).resolves.toEqual([]);
+    } finally {
+      time.mockRestore();
+      await db.close();
+    }
+  }, 30000);
+  it('A: admits a verified receipt after 1024 cancelled tombstones without getAll on admission', async () => {
+    const db = new StorageDatabase('history', true);
+    await db.open();
+    const b = await binding();
+    const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll');
+    try {
+      for (let i = 0; i < 1030; i++)
+        await db.saveReceipt({
+          sender: source,
+          offer: i.toString(16).padStart(32, '0'),
+          t: b.t,
+          meta: b.meta,
+          state: 'cancelled',
+          outcome: 'verified',
+          touchedAt: Date.now(),
+        });
+      await db.reserve(b);
+      await db.put(b.t, 1, 0, new Uint8Array([1, 2, 3]).buffer);
+      await db.verify(b.t, 1);
+      await db.saveReceipt({
+        sender: source,
+        offer: b.offer,
+        t: b.t,
+        meta: b.meta,
+        state: 'received',
+        outcome: 'verified',
+        touchedAt: Date.now(),
+      });
+      expect(getAll).not.toHaveBeenCalled();
+      expect((await db.receipts()).length).toBeLessThanOrEqual(1024);
+    } finally {
+      getAll.mockRestore();
+      await db.close();
+    }
+  }, 30000);
+  it('prunes released attempts by count and expired history by age', async () => {
+    const db = new StorageDatabase('attempt-history', false);
+    await db.open();
+    const b = await binding();
+    for (let i = 0; i < 2050; i++) {
+      const t = i.toString(16).padStart(32, '0');
+      await db.reserve({ ...b, t });
+      await db.release(t);
+    }
+    await db.saveReceipt({
+      sender: source,
+      offer: b.offer,
+      t: b.t,
+      meta: b.meta,
+      state: 'cancelled',
+      outcome: 'verified',
+      touchedAt: Date.now() - 86400001,
+    });
+    await db.gc();
+    expect(await db.receipt(source, b.offer)).toBeUndefined();
+    await db.close();
+  });
+  it('B: releasing an exported copy after reload preserves another receipt and browser handoff bytes', async () => {
+    const db = new StorageDatabase('copies', true);
+    await db.open();
+    const b = await binding();
+    for (const t of ['c'.repeat(32), 'e'.repeat(32)]) {
+      await db.reserve({ ...b, t, offer: t });
+      await db.put(t, 1, 0, new Uint8Array([1, 2, 3]).buffer);
+      await db.verify(t, 1);
+      await db.saveReceipt({
+        sender: source,
+        offer: t,
+        t,
+        meta: b.meta,
+        state: 'received',
+        outcome: 'browser-download',
+        touchedAt: Date.now(),
+      });
+    }
+    await db.close();
+    const reloaded = new StorageDatabase('copies', true);
+    await reloaded.open();
+    await reloaded.releaseSaved(b.t);
+    expect((await reloaded.readForExport(source, 'e'.repeat(32))).size).toBe(3);
+    expect((await reloaded.readForExport(source, b.t)).size).toBe(3);
+    await reloaded.close();
+  });
+  it('F: releases an abandoned reservation and evicts unreferenced partials under pressure', async () => {
+    const db = new StorageDatabase('cancel-budget', false, 3);
+    await db.open();
+    const b = await binding();
+    await db.reserve(b);
+    await db.put(b.t, 1, 0, new Uint8Array([1, 2, 3]).buffer);
+    await db.release(b.t);
+    await expect(
+      db.reserve({ ...b, t: 'e'.repeat(32), meta: { ...b.meta, id: '0'.repeat(64) } }),
+    ).resolves.toEqual([]);
+    await db.close();
+  });
+  it('E: uses fixed-size piece metadata without rewriting attempt bitmaps on every put', async () => {
+    const db = new StorageDatabase('piece-cost', true);
+    await db.open();
+    const b = await binding();
+    await db.reserve({ ...b, meta: { ...b.meta, size: MAX_FILE } });
+    const writes: { store: string; row: { bitmap: unknown } }[] = [];
+    const original = IDBObjectStore.prototype.put;
+    const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (row, key) {
+      writes.push({ store: this.name, row: structuredClone(row) });
+      return original.call(this, row, key);
+    });
+    try {
+      for (let i = 0; i < 160; i++) await db.put(b.t, 1, i, new ArrayBuffer(16384));
+      const attempts = writes.filter((s) => s.store === 'attempts');
+      expect(attempts.length).toBeLessThanOrEqual(10);
+      const transfers = writes.filter((s) => s.store === 'transfers');
+      expect(
+        transfers.every(
+          ({ row }) => ArrayBuffer.isView(row.bitmap) && row.bitmap.byteLength <= 800,
+        ),
+      ).toBe(true);
+    } finally {
+      put.mockRestore();
+      await db.close();
+    }
+  });
   it('drops truncated retained pieces before have so retransmission can repair them', async () => {
     const b = await binding();
     const db = new StorageDatabase('truncated', true);
@@ -110,14 +313,14 @@ describe('Phase 1 storage owner', () => {
   beforeEach(() => {
     globalThis.indexedDB = new IDBFactory();
   });
-  it('creates exactly six v1 stores in its own namespace', async () => {
+  it('keeps exactly six stores and migrates indexes to version 2 in its own namespace', async () => {
     const db = new StorageDatabase('owner', true);
     await db.open();
     const raw = await new Promise<IDBDatabase>((resolve) => {
       const r = indexedDB.open('file-sharing-v2:owner');
       r.onsuccess = () => resolve(r.result);
     });
-    expect(raw.version).toBe(1);
+    expect(raw.version).toBe(2);
     expect([...raw.objectStoreNames]).toEqual([
       'attempts',
       'exports',

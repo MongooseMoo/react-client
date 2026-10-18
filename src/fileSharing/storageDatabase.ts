@@ -10,6 +10,8 @@ type Attempt = Binding & {
   active: boolean;
   fence: number;
   held: number[];
+  touchedAt: number;
+  live: number;
   reserved: number;
   writerGeneration: number;
   expiresAt: number;
@@ -20,7 +22,9 @@ type Partial = {
   size: number;
   algorithm: string;
   touchedAt: number;
-  bitmap: number[];
+  bitmap: Uint8Array;
+  committed: number;
+  charge: number;
   verified: boolean;
   fence: number;
 };
@@ -41,10 +45,11 @@ export type ExportRecord = {
   offer: string;
   t: string;
   state: 'exporting' | 'browser-download' | 'export-uncertain';
+  touchedAt?: number;
 };
 type Owner = {
   ownerKey: string;
-  schemaVersion: 1;
+  schemaVersion: 2;
   writerGeneration: number;
   reserved: number;
   committed: number;
@@ -65,10 +70,22 @@ function finished(tx: IDBTransaction): Promise<void> {
 function keyOf(store: Store, row: Record<string, unknown>, key?: IDBValidKey): IDBValidKey {
   if (key !== undefined) return key;
   if (store === 'pieces') return [String(row.from), String(row.id), Number(row.index)];
+  if (store === 'offers')
+    return [endpointKey((row as unknown as Receipt).sender), String(row.offer)];
   if (store === 'transfers') return [String(row.from), String(row.id)];
   return String(store === 'attempts' ? row.t : row.id);
 }
 /** Single writer, serialized by StorageOwner/worker. Cancel fences take effect immediately. */
+const DAY = 86400000;
+const HISTORY = 1024;
+const ATTEMPTS = 2048;
+function indices(p: Partial): number[] {
+  const result: number[] = [];
+  for (let i = 0; i < Math.ceil(p.size / PIECE); i++)
+    if (p.bitmap[i >> 3] & (1 << (i & 7))) result.push(i);
+  return result;
+}
+const content = (from: string, id: string) => [from, id];
 export class StorageDatabase {
   private quota?: OriginQuota;
   private db?: IDBDatabase;
@@ -86,15 +103,34 @@ export class StorageDatabase {
   async open(): Promise<void> {
     if (this.persistent) {
       this.db = await new Promise((resolve, reject) => {
-        const r = indexedDB.open(`file-sharing-v2:${this.ownerKey}`, 1);
+        const r = indexedDB.open(`file-sharing-v2:${this.ownerKey}`, 2);
         r.onupgradeneeded = () => {
           const d = r.result;
-          d.createObjectStore('owner');
-          d.createObjectStore('attempts', { keyPath: 't' });
-          d.createObjectStore('offers');
-          d.createObjectStore('exports', { keyPath: 'id' });
-          d.createObjectStore('pieces', { keyPath: ['from', 'id', 'index'] });
-          d.createObjectStore('transfers', { keyPath: ['from', 'id'] });
+          if (!d.objectStoreNames.contains('owner')) {
+            d.createObjectStore('owner');
+            d.createObjectStore('attempts', { keyPath: 't' });
+            d.createObjectStore('offers');
+            d.createObjectStore('exports', { keyPath: 'id' });
+            d.createObjectStore('pieces', { keyPath: ['from', 'id', 'index'] });
+            d.createObjectStore('transfers', { keyPath: ['from', 'id'] });
+          }
+          const tx = r.transaction;
+          check(tx);
+          for (const name of ['attempts', 'offers', 'exports', 'transfers']) {
+            const store = tx.objectStore(name);
+            store.createIndex('touchedAt', 'touchedAt');
+          }
+          tx.objectStore('attempts').createIndex('content', ['source.player', 'meta.id']);
+          tx.objectStore('attempts').createIndex('live', 'live');
+          tx.objectStore('attempts').createIndex('inactive', ['live', 'touchedAt']);
+          tx.objectStore('offers').createIndex('content', ['sender.player', 'meta.id']);
+          tx.objectStore('offers').createIndex('state', ['state', 'touchedAt']);
+          tx.objectStore('exports').createIndex('offer', [
+            'sender.player',
+            'sender.endpoint',
+            'sender.epoch',
+            'offer',
+          ]);
         };
         r.onsuccess = () => resolve(r.result);
         r.onerror = () => reject(r.error);
@@ -109,7 +145,7 @@ export class StorageDatabase {
     check(!old || old.ownerKey === this.ownerKey);
     this.owner = {
       ownerKey: this.ownerKey,
-      schemaVersion: 1,
+      schemaVersion: 2,
       writerGeneration: (old?.writerGeneration ?? 0) + 1,
       reserved: 0,
       committed: 0,
@@ -118,16 +154,37 @@ export class StorageDatabase {
     const attempts = await this.all<Attempt>('attempts');
     const exports = await this.all<ExportRecord>('exports');
     const partials = await this.all<Partial>('transfers');
+    // v1 arrays migrate once; v2 metadata has a fixed-size bitset (at most 800 bytes).
     for (const p of partials) {
-      this.owner.committed += p.bitmap.reduce((n, i) => n + pieceLength(p.size, i), 0);
-      this.owner.reserved += p.size;
+      if (Array.isArray(p.bitmap)) {
+        const old = p.bitmap as number[];
+        p.bitmap = new Uint8Array(Math.ceil(Math.ceil(p.size / PIECE) / 8));
+        for (const i of old) p.bitmap[i >> 3] |= 1 << (i & 7);
+      }
+      p.committed = indices(p).reduce((n, i) => n + pieceLength(p.size, i), 0);
+      p.charge = p.committed;
+      this.owner.committed += p.committed;
+      this.owner.reserved += p.charge;
     }
-    await this.write(['owner', 'attempts', 'exports', 'offers'], (tx) => {
+    await this.write(['owner', 'attempts', 'exports', 'transfers'], (tx) => {
       tx.put('owner', this.owner, 'owner');
+      for (const p of partials) tx.put('transfers', p);
       for (const a of attempts)
-        tx.put('attempts', { ...a, active: false, fence: a.fence + 1, reserved: 0, held: [] });
+        tx.put('attempts', {
+          ...a,
+          active: false,
+          live: 0,
+          touchedAt: a.touchedAt ?? Date.now(),
+          fence: a.fence + 1,
+          reserved: 0,
+          held: [],
+        });
       for (const e of exports)
-        if (e.state === 'exporting') tx.put('exports', { ...e, state: 'export-uncertain' });
+        tx.put('exports', {
+          ...e,
+          touchedAt: e.touchedAt ?? Date.now(),
+          state: e.state === 'exporting' ? 'export-uncertain' : e.state,
+        });
     });
     for (const e of exports)
       if (e.state === 'exporting') {
@@ -138,7 +195,7 @@ export class StorageDatabase {
     if (this.persistent && this.enforceQuota) {
       this.quota = new OriginQuota();
       await this.quota.open(this.ownerKey);
-      await this.quota.update(this.owner.reserved);
+      await this.quota.update(this.owner.reserved - this.owner.committed);
     }
   }
   private async get<T>(store: Store, key: IDBValidKey): Promise<T | undefined> {
@@ -148,9 +205,148 @@ export class StorageDatabase {
     return request(tx.objectStore(store).get(key));
   }
   private async all<T>(store: Store): Promise<T[]> {
+    return this.query(store);
+  }
+  /** Cursor reads are bounded on admission paths and scoped by content on reference paths. */
+  private async query<T>(
+    store: Store,
+    index?: string,
+    key?: IDBValidKey,
+    limit = Infinity,
+    before = Infinity,
+  ): Promise<T[]> {
     this.assert();
-    if (!this.db) return [...(this.memory.get(store)?.values() ?? [])] as T[];
-    return request(this.db.transaction(store).objectStore(store).getAll());
+    if (!this.db) {
+      const value = (row: unknown): IDBValidKey => {
+        const r = row as {
+          source: Endpoint;
+          sender: Endpoint;
+          meta: Metadata;
+          offer: string;
+          live: number;
+          touchedAt: number;
+          state: string;
+        };
+        if (index === 'content')
+          return store === 'attempts'
+            ? content(r.source.player, r.meta.id)
+            : content(r.sender.player, r.meta.id);
+        if (index === 'offer') return [r.sender.player, r.sender.endpoint, r.sender.epoch, r.offer];
+        if (index === 'live') return r.live;
+        if (index === 'inactive') return [r.live, r.touchedAt];
+        if (index === 'state') return [r.state, r.touchedAt];
+        return r.touchedAt;
+      };
+      return [...(this.memory.get(store)?.values() ?? [])]
+        .filter(
+          (r) =>
+            (key === undefined || JSON.stringify(value(r)) === JSON.stringify(key)) &&
+            Number((r as Partial).touchedAt) <= before,
+        )
+        .sort((a, b) => {
+          if (index === 'inactive')
+            return (
+              Number((a as Attempt).live) - Number((b as Attempt).live) ||
+              (a as Attempt).touchedAt - (b as Attempt).touchedAt
+            );
+          if (index === 'state')
+            return (
+              String((a as Receipt).state).localeCompare(String((b as Receipt).state)) ||
+              (a as Receipt).touchedAt - (b as Receipt).touchedAt
+            );
+          return index ? Number((a as Partial).touchedAt) - Number((b as Partial).touchedAt) : 0;
+        })
+        .slice(0, limit) as T[];
+    }
+    const tx = this.db.transaction(store);
+    const source = index ? tx.objectStore(store).index(index) : tx.objectStore(store);
+    return new Promise((resolve, reject) => {
+      const out: T[] = [];
+      const r = source.openCursor(key);
+      r.onerror = () => reject(r.error);
+      r.onsuccess = () => {
+        const c = r.result;
+        if (!c || out.length >= limit || (index === 'touchedAt' && Number(c.key) > before)) {
+          resolve(out);
+          return;
+        }
+        out.push(c.value);
+        c.continue();
+      };
+    });
+  }
+  private async count(store: Store): Promise<number> {
+    if (!this.db) return this.memory.get(store)?.size ?? 0;
+    return request(this.db.transaction(store).objectStore(store).count());
+  }
+  private async trimHistory(): Promise<void> {
+    const now = Date.now();
+    const receipts = await this.query<Receipt>(
+      'offers',
+      'touchedAt',
+      undefined,
+      HISTORY + 32,
+      now - DAY,
+    );
+    // A received offer pins its bytes for its 24-hour recovery/history lifetime,
+    // including browser handoffs, whose external save cannot be confirmed.
+    const expired = receipts.filter((r) => now - r.touchedAt >= DAY);
+    const attempts = await this.query<Attempt>(
+      'attempts',
+      'touchedAt',
+      undefined,
+      ATTEMPTS + 32,
+      now - DAY,
+    );
+    const dead = attempts.filter((a) => !a.active && now - a.touchedAt >= DAY);
+    const keys = new Set(expired.map((r) => JSON.stringify([endpointKey(r.sender), r.offer])));
+    const exports =
+      expired.length && (await this.count('exports'))
+        ? (await this.query<ExportRecord>('exports', 'touchedAt', undefined, HISTORY)).filter((e) =>
+            keys.has(JSON.stringify([endpointKey(e.sender), e.offer])),
+          )
+        : [];
+    if (expired.length || dead.length)
+      await this.write(['offers', 'attempts', 'exports'], (tx) => {
+        for (const r of expired) tx.delete('offers', [endpointKey(r.sender), r.offer]);
+        for (const a of dead) {
+          tx.delete('attempts', a.t);
+          this.fences.delete(a.t);
+        }
+        for (const e of exports) tx.delete('exports', e.id);
+      });
+  }
+  private async deleteExports(r: Receipt): Promise<void> {
+    const rows = await this.query<ExportRecord>('exports', 'offer', [
+      r.sender.player,
+      r.sender.endpoint,
+      r.sender.epoch,
+      r.offer,
+    ]);
+    if (rows.length)
+      await this.write(['exports'], (tx) => {
+        for (const e of rows) tx.delete('exports', e.id);
+      });
+  }
+  private async makeReceiptRoom(sender: Endpoint, offer: string): Promise<void> {
+    await this.trimHistory();
+    const slots = new Set<string>();
+    for (const a of await this.query<Attempt>('attempts', 'live', 1)) {
+      if (a.offer === offer && endpointKey(a.source) === endpointKey(sender)) continue;
+      if (!(await this.receipt(a.source, a.offer)))
+        slots.add(JSON.stringify([endpointKey(a.source), a.offer]));
+    }
+    const excess = (await this.count('offers')) + slots.size - HISTORY + 1;
+    if (excess <= 0) return;
+    const rows = await this.query<Receipt>('offers', 'state', undefined, excess);
+    const evict = rows.filter((r) => r.state === 'cancelled').slice(0, excess);
+    await this.write(['offers'], (tx) => {
+      for (const r of evict) tx.delete('offers', [endpointKey(r.sender), r.offer]);
+    });
+    check(
+      (await this.count('offers')) + slots.size < HISTORY,
+      'Recent received files fill history; retry after history expires',
+    );
   }
   private async write(
     stores: Store[],
@@ -235,14 +431,21 @@ export class StorageDatabase {
     );
     return row;
   }
-  async reserve(b: Binding): Promise<number[]> {
+  async reserve(b: Binding, current = () => true): Promise<number[]> {
     this.assert();
+    check(current(), 'Stale transfer reservation');
     check(b.meta.size <= MAX_FILE && b.meta.size >= 0, 'File exceeds the 100 MiB limit');
     const old = await this.get<Attempt>('attempts', b.t);
-    check(
-      old || (await this.all<Attempt>('attempts')).length < 2048,
-      'Transfer attempt history is full',
-    );
+    await this.trimHistory();
+    if (!old && (await this.count('attempts')) >= ATTEMPTS) {
+      const rows = await this.query<Attempt>('attempts', 'inactive', undefined, 1);
+      const evict = rows.find((a) => !a.active);
+      check(evict, 'Too many active transfer reservations');
+      await this.write(['attempts'], (tx) => tx.delete('attempts', evict.t));
+      this.fences.delete(evict.t);
+    }
+    // Reserve a receipt slot before accepting bytes, rather than failing after verification.
+    if (!(await this.receipt(b.source, b.offer))) await this.makeReceiptRoom(b.source, b.offer);
     if (old)
       check(
         old.offer === b.offer &&
@@ -252,44 +455,52 @@ export class StorageDatabase {
         'Attempt binding changed',
       );
     const key = [b.source.player, b.meta.id];
-    const partial = await this.get<Partial>('transfers', key);
+    let partial = await this.get<Partial>('transfers', key);
     check(!partial || partial.size === b.meta.size, 'Content size conflict');
+    if (this.owner.reserved + b.meta.size - (partial?.charge ?? 0) > this.budget) {
+      await this.evictFor(b.meta.size - (partial?.charge ?? 0), key);
+      partial = await this.get<Partial>('transfers', key);
+    }
     check(
-      this.owner.reserved + (partial ? 0 : b.meta.size) <= this.budget,
+      this.owner.reserved + b.meta.size - (partial?.charge ?? 0) <= this.budget,
       'File storage budget exceeded',
     );
     const held: number[] = [];
     if (partial)
-      for (const i of partial.bitmap) {
+      for (const i of indices(partial)) {
         const p = await this.get<Piece>('pieces', [b.source.player, b.meta.id, i]);
         if (p && p.bytes.byteLength === pieceLength(b.meta.size, i)) {
-          await digestPiece(p.bytes);
           this.assert();
           held.push(i);
         }
       }
+    check(current(), 'Stale transfer reservation');
     this.fences.delete(b.t);
-    const invalid = partial?.bitmap.filter((i) => !held.includes(i)) ?? [];
-    const references = invalid.length
-      ? (await this.all<Attempt>('attempts')).filter(
-          (a) => a.source.player === b.source.player && a.meta.id === b.meta.id,
-        )
-      : [];
+    const invalid = partial ? indices(partial).filter((i) => !held.includes(i)) : [];
+    const references = invalid.length ? await this.query<Attempt>('attempts', 'content', key) : [];
     for (const a of references) this.fence(a.t);
+    check(current(), 'Stale transfer reservation');
     this.fences.delete(b.t);
     const next: Attempt = {
       ...b,
       active: true,
+      live: 1,
+      touchedAt: Date.now(),
       fence: (old?.fence ?? 0) + 1,
       held,
-      reserved: partial ? 0 : b.meta.size,
+      reserved: b.meta.size - (partial?.committed ?? 0),
       writerGeneration: this.owner.writerGeneration,
       expiresAt: Date.now() + 30000,
     };
+    const bitmap = new Uint8Array(Math.ceil(Math.ceil(b.meta.size / PIECE) / 8));
+    for (const i of held) bitmap[i >> 3] |= 1 << (i & 7);
+    const committed = held.reduce((n, i) => n + pieceLength(b.meta.size, i), 0);
     const p: Partial = partial
       ? {
           ...partial,
-          bitmap: held,
+          bitmap,
+          committed,
+          charge: b.meta.size,
           verified: partial.verified && invalid.length === 0,
           touchedAt: Date.now(),
         }
@@ -299,33 +510,41 @@ export class StorageDatabase {
           size: b.meta.size,
           algorithm: b.meta.hash,
           touchedAt: Date.now(),
-          bitmap: held,
+          bitmap,
+          committed,
+          charge: b.meta.size,
           verified: false,
           fence: 1,
         };
     const owner = {
       ...this.owner,
-      reserved: this.owner.reserved + next.reserved,
+      reserved: this.owner.reserved + b.meta.size - (partial?.charge ?? 0),
       committed: Math.max(
         0,
         this.owner.committed - invalid.reduce((n, i) => n + pieceLength(b.meta.size, i), 0),
       ),
     };
     // Charge the registry first: a crash can over-reserve, never under-reserve.
-    if (next.reserved) await this.quota?.update(owner.reserved, true);
-    await this.write(['owner', 'attempts', 'transfers', 'pieces'], (tx) => {
-      for (const i of invalid) tx.delete('pieces', [b.source.player, b.meta.id, i]);
-      for (const a of references)
-        tx.put('attempts', {
-          ...a,
-          active: false,
-          held: a.held.filter((i) => !invalid.includes(i)),
-          fence: a.fence + 1,
-        });
-      tx.put('attempts', next);
-      tx.put('transfers', p);
-      tx.put('owner', owner, 'owner');
-    });
+    if (next.reserved) await this.quota?.update(owner.reserved - owner.committed, true);
+    await this.write(
+      ['owner', 'attempts', 'transfers', 'pieces'],
+      (tx) => {
+        check(current(), 'Stale transfer reservation');
+        for (const i of invalid) tx.delete('pieces', [b.source.player, b.meta.id, i]);
+        for (const a of references)
+          tx.put('attempts', {
+            ...a,
+            active: false,
+            live: 0,
+            held: a.held.filter((i) => !invalid.includes(i)),
+            fence: a.fence + 1,
+          });
+        tx.put('attempts', next);
+        tx.put('transfers', p);
+        tx.put('owner', owner, 'owner');
+      },
+      b.t,
+    );
     this.owner = owner;
     return held;
   }
@@ -347,17 +566,18 @@ export class StorageDatabase {
     await this.attempt(t, a);
     const next = {
       ...p,
-      bitmap: [...p.bitmap, index].sort((x, y) => x - y),
+      bitmap: p.bitmap.slice(),
+      committed: p.committed + bytes.byteLength,
       touchedAt: Date.now(),
     };
+    next.bitmap[index >> 3] |= 1 << (index & 7);
     const owner = { ...this.owner, committed: this.owner.committed + bytes.byteLength };
     await this.write(
-      ['owner', 'pieces', 'transfers', 'attempts'],
+      ['owner', 'pieces', 'transfers'],
       (tx) => {
         check(!this.fences.has(t));
         tx.put('pieces', { from: at.source.player, id: at.meta.id, index, bytes });
         tx.put('transfers', next);
-        tx.put('attempts', { ...at, held: next.bitmap, expiresAt: Date.now() + 30000 });
         tx.put('owner', owner, 'owner');
       },
       t,
@@ -416,52 +636,94 @@ export class StorageDatabase {
     return new Blob(parts);
   }
   private async purge(from: string, id: string): Promise<void> {
-    const ats = (await this.all<Attempt>('attempts')).filter(
-      (a) => a.source.player === from && a.meta.id === id,
-    );
+    const ats = await this.query<Attempt>('attempts', 'content', content(from, id));
     for (const a of ats) this.fence(a.t);
     const p = await this.get<Partial>('transfers', [from, id]);
     const owner = {
       ...this.owner,
-      reserved: Math.max(0, this.owner.reserved - (p?.size ?? 0)),
-      committed: Math.max(
-        0,
-        this.owner.committed - (p?.bitmap.reduce((n, i) => n + pieceLength(p.size, i), 0) ?? 0),
-      ),
+      reserved: Math.max(0, this.owner.reserved - (p?.charge ?? 0)),
+      committed: Math.max(0, this.owner.committed - (p?.committed ?? 0)),
     };
     await this.write(['pieces', 'transfers', 'attempts', 'owner'], (tx) => {
-      for (const i of p?.bitmap ?? []) tx.delete('pieces', [from, id, i]);
+      for (const i of p ? indices(p) : []) tx.delete('pieces', [from, id, i]);
       tx.delete('transfers', [from, id]);
       for (const a of ats)
-        tx.put('attempts', { ...a, active: false, held: [], reserved: 0, fence: a.fence + 1 });
+        tx.put('attempts', {
+          ...a,
+          active: false,
+          live: 0,
+          held: [],
+          reserved: 0,
+          fence: a.fence + 1,
+        });
       tx.put('owner', owner, 'owner');
     });
     this.owner = owner;
-    await this.quota?.update(owner.reserved);
+    await this.quota?.update(owner.reserved - owner.committed);
   }
   async release(t: string): Promise<void> {
     this.fence(t);
     const at = await this.get<Attempt>('attempts', t);
-    if (at)
-      await this.write(['attempts'], (tx) =>
-        tx.put('attempts', { ...at, active: false, reserved: 0, fence: at.fence + 1 }),
-      );
+    if (!at) {
+      this.fences.delete(t);
+      return;
+    }
+    const key = content(at.source.player, at.meta.id);
+    const p = await this.get<Partial>('transfers', key);
+    const others = (await this.query<Attempt>('attempts', 'content', key)).some(
+      (a) => a.t !== t && a.active,
+    );
+    const charge = p ? (others ? p.size : p.committed) : 0;
+    const owner = { ...this.owner, reserved: this.owner.reserved - (p?.charge ?? 0) + charge };
+    await this.write(['attempts', 'owner', 'transfers'], (tx) => {
+      tx.put('attempts', {
+        ...at,
+        active: false,
+        live: 0,
+        reserved: 0,
+        touchedAt: Date.now(),
+        fence: at.fence + 1,
+      });
+      if (p) tx.put('transfers', { ...p, charge });
+      tx.put('owner', owner, 'owner');
+    });
+    this.owner = owner;
+    await this.quota?.update(owner.reserved - owner.committed);
+  }
+  private async referenced(from: string, id: string): Promise<boolean> {
+    const key = content(from, id);
+    return (
+      (await this.query<Attempt>('attempts', 'content', key)).some((a) => a.active) ||
+      (await this.query<Receipt>('offers', 'content', key)).some((r) => r.state === 'received')
+    );
   }
   async releaseSaved(t: string): Promise<void> {
     await this.release(t);
     const at = await this.get<Attempt>('attempts', t);
-    if (!at) return;
-    const others = (await this.all<Attempt>('attempts')).filter(
-      (a) =>
-        a.t !== t && a.active && a.source.player === at.source.player && a.meta.id === at.meta.id,
-    );
-    if (!others.length) await this.purge(at.source.player, at.meta.id);
+    if (at && !(await this.referenced(at.source.player, at.meta.id)))
+      await this.purge(at.source.player, at.meta.id);
+  }
+  private async evictFor(bytes: number, except: IDBValidKey): Promise<void> {
+    // Expired data first, then verified LRU, then partial LRU. Never touch another consumer.
+    const rows = await this.query<Partial>('transfers', 'touchedAt');
+    const now = Date.now();
+    const rank = (p: Partial) =>
+      now - p.touchedAt >= (p.verified ? DAY : 7 * DAY) ? 0 : p.verified ? 1 : 2;
+    rows.sort((a, b) => rank(a) - rank(b) || a.touchedAt - b.touchedAt);
+    for (const p of rows) {
+      if (this.owner.reserved + bytes <= this.budget) break;
+      if (
+        JSON.stringify(content(p.from, p.id)) === JSON.stringify(except) ||
+        (await this.referenced(p.from, p.id))
+      )
+        continue;
+      await this.purge(p.from, p.id);
+    }
   }
   async saveReceipt(r: Receipt): Promise<void> {
     const previous = await this.receipt(r.sender, r.offer);
     if (previous?.state === 'received' && r.state === 'cancelled') return;
-    const all = await this.all<Receipt>('offers');
-    check(all.length < 1024 || (await this.receipt(r.sender, r.offer)), 'Receipt history is full');
+    if (!previous) await this.makeReceiptRoom(r.sender, r.offer);
     const newReceipt = r.state === 'received' && !(await this.receipt(r.sender, r.offer));
     if (newReceipt) {
       const at = await this.get<Attempt>('attempts', r.t);
@@ -481,39 +743,24 @@ export class StorageDatabase {
     return this.get('offers', [endpointKey(sender), offer]);
   }
   receipts(): Promise<Receipt[]> {
-    return this.all('offers');
+    return this.trimHistory().then(() => this.query('offers', 'touchedAt', undefined, HISTORY));
   }
   async exportRecord(e: ExportRecord): Promise<void> {
-    check(
-      (await this.get('exports', e.id)) || (await this.all<ExportRecord>('exports')).length < 1024,
-      'Export history is full',
-    );
-    await this.write(['exports'], (tx) => tx.put('exports', e));
+    // One latest export intent per receipt, rather than an ever-growing click history.
+    const receipt = await this.receipt(e.sender, e.offer);
+    check(receipt?.state === 'received', 'No verified receipt');
+    await this.deleteExports(receipt);
+    await this.write(['exports'], (tx) => tx.put('exports', { ...e, touchedAt: Date.now() }));
   }
   async gc(): Promise<void> {
+    await this.trimHistory();
     const now = Date.now();
-    const receipts = await this.all<Receipt>('offers');
-    const active = (await this.all<Attempt>('attempts')).filter(
-      (a) => a.active && a.expiresAt > now,
-    );
-    for (const p of await this.all<Partial>('transfers'))
+    for (const p of await this.query<Partial>('transfers', 'touchedAt'))
       if (
-        now - p.touchedAt > 7 * 86400000 &&
-        !receipts.some(
-          (r) =>
-            r.sender.player === p.from &&
-            r.meta.id === p.id &&
-            r.state === 'received' &&
-            r.outcome !== 'browser-download',
-        ) &&
-        !active.some((a) => a.source.player === p.from && a.meta.id === p.id)
+        now - p.touchedAt >= (p.verified ? DAY : 7 * DAY) &&
+        !(await this.referenced(p.from, p.id))
       )
         await this.purge(p.from, p.id);
-    await this.write(['offers'], (tx) => {
-      for (const r of receipts)
-        if (r.state === 'cancelled' && now - r.touchedAt > 86400000)
-          tx.delete('offers', [endpointKey(r.sender), r.offer]);
-    });
   }
   async close(): Promise<void> {
     this.alive = false;
