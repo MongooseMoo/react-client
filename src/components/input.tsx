@@ -234,6 +234,8 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       }
     } else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      // A held Enter must not send a time-limited voice command before the player has checked it.
+      if (e.repeat && useInputStore.getState().needsFreshEnter) return;
       handleSend();
     } else if (isPlainAlt && (
       e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight" ||
@@ -274,6 +276,11 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
           resetCompletionState();
         }}
         onKeyDown={handleKeyDown}
+        onKeyUp={(e) => {
+          if (e.key === "Enter" && useInputStore.getState().needsFreshEnter) {
+            useInputStore.getState().setNeedsFreshEnter(false);
+          }
+        }}
         id="command-input"
         aria-label="Command"
         ref={inputRef}

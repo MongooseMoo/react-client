@@ -15,8 +15,15 @@ interface InputStoreState {
   visibleCommands: string[];
   /** Set while a voice command is starting or listening; its text is not yet the player's. */
   dictation: DictationHandle | null;
+  /**
+   * A voice command cut off by its time limit was left for review while Enter
+   * may still be held: Enter's key repeat must not send it. Cleared by
+   * releasing Enter or by any change to the text.
+   */
+  needsFreshEnter: boolean;
   setText: (text: string) => void;
   setDictation: (dictation: DictationHandle | null) => void;
+  setNeedsFreshEnter: (needsFreshEnter: boolean) => void;
   setAutosay: (autosay: boolean) => void;
   setVisibleCommands: (commands: string[]) => void;
   addVisibleCommands: (commands: string[]) => void;
@@ -38,8 +45,11 @@ export const useInputStore = create<InputStoreState>((set) => ({
   autosay: false,
   visibleCommands: [],
   dictation: null,
-  setText: (text) => set({ text }),
+  needsFreshEnter: false,
+  setText: (text) =>
+    set((state) => ({ text, needsFreshEnter: state.needsFreshEnter && text === state.text })),
   setDictation: (dictation) => set({ dictation }),
+  setNeedsFreshEnter: (needsFreshEnter) => set({ needsFreshEnter }),
   setAutosay: (autosay) => set({ autosay }),
   setVisibleCommands: (commands) => set({ visibleCommands: sortedUnique(commands) }),
   addVisibleCommands: (commands) =>
@@ -53,9 +63,10 @@ export const useInputStore = create<InputStoreState>((set) => ({
         visibleCommands: state.visibleCommands.filter((command) => !removed.has(command)),
       };
     }),
-  clear: () => set({ text: "" }),
+  clear: () => set({ text: "", needsFreshEnter: false }),
   ownerResets: 0,
-  discardForNewOwner: () => set((state) => ({ text: "", ownerResets: state.ownerResets + 1 })),
+  discardForNewOwner: () =>
+    set((state) => ({ text: "", needsFreshEnter: false, ownerResets: state.ownerResets + 1 })),
   resetCommands: () => set({ visibleCommands: [] }),
 }));
 

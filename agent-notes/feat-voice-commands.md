@@ -254,5 +254,30 @@ lazily in a React effect instead of synchronously at the store.
   does not).
 - Playwright after login: all checks pass, including the 2 s stall.
 
+## Codex round 4 on 123a6060 (report: scratchpad codex-rereview4-voice-commands-report.md)
+1. P2 Enter held across a time-limit final: first keydown intercepted, final
+   left for review, then the autorepeat keydown (repeat:true) sent it.
+   Reproduced in Chromium (codex-rereview4-voice-held-enter-browser.cjs).
+   Fix (narrow): inputStore `needsFreshEnter`, set only when a time-limit
+   final is left for review; input.tsx ignores Enter keydowns with
+   e.repeat while it is set; cleared on Enter keyup, by any text change
+   (setText with different text), and by clear(). No other repeat
+   behaviour changed (guard tests: repeat Enter still sends after an
+   ordinary final and after an edit).
+2. P3 interim words but no final at the limit said "Nothing was heard".
+   Now `heardWords` picks "Time limit reached. No final words came back;
+   nothing was sent. Say it again."; "Nothing was heard." only for silence.
+   Help text: "Listening stops after 60 seconds; if the browser returns your
+   words by then they wait in the command box and are never sent on their own."
+
+## Verification (round 4, 2026-10-18)
+- Tests first: 2 failed (held-repeat send, interim-only timeout); 2 guard
+  tests passed before and after.
+- tsc exit 0; vitest 178 files / 2445 tests passed; biome 7 warnings, all
+  on master.
+- Codex held-Enter Chromium harness: repeat keydown -> sends [] (its case
+  label still names the old behaviour).
+- Playwright after login: all checks pass.
+
 ## Next step
 Committed; not pushed. Fresh Codex review follows (team lead).

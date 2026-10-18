@@ -130,6 +130,17 @@ describe("VoiceCommandButton", () => {
     expect(addCommandMock).toHaveBeenCalledWith("look at fountain");
   });
 
+  it("leaves Enter's key repeat alone outside a time-limit review", async () => {
+    const { onSend, textarea } = renderInput();
+    const recognition = await startListening();
+    act(() => recognition.hear(["look", true]));
+    fireEvent.keyDown(textarea, { key: "Enter", repeat: true });
+    expect(onSend.mock.calls).toEqual([["look"]]);
+    fireEvent.input(textarea, { target: { value: "north" } });
+    fireEvent.keyDown(textarea, { key: "Enter", repeat: true });
+    expect(onSend.mock.calls).toEqual([["look"], ["north"]]);
+  });
+
   it("sends the final transcript through the typed path when asked to", async () => {
     setVoice({ sendImmediately: true });
     const { onSend, textarea } = renderInput();
@@ -483,6 +494,54 @@ describe("VoiceCommandButton", () => {
       act(() => recognition.hear(["drop all", true]));
       expect(onSend).not.toHaveBeenCalled();
       expect(textarea).toHaveValue("drop all");
+    });
+
+    describe("Enter held across a time-limit final", () => {
+      async function reviewHeldAcrossDeadline() {
+        const rendered = renderInput();
+        const recognition = await startOnFakeTimers();
+        act(() => recognition.hear(["drop all", false]));
+        await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+        // Enter goes down during the grace period and stays down.
+        fireEvent.keyDown(rendered.textarea, { key: "Enter" });
+        act(() => recognition.hear(["drop all", true]));
+        expect(rendered.textarea).toHaveValue("drop all");
+        return rendered;
+      }
+
+      it("its key repeat does not send the final left for review", async () => {
+        const { onSend, textarea } = await reviewHeldAcrossDeadline();
+        fireEvent.keyDown(textarea, { key: "Enter", repeat: true });
+        fireEvent.keyDown(textarea, { key: "Enter", repeat: true });
+        expect(onSend).not.toHaveBeenCalled();
+        expect(addCommandMock).not.toHaveBeenCalled();
+        expect(textarea).toHaveValue("drop all");
+
+        // Let go, then a fresh press sends it exactly once.
+        fireEvent.keyUp(textarea, { key: "Enter" });
+        fireEvent.keyDown(textarea, { key: "Enter" });
+        expect(onSend.mock.calls).toEqual([["drop all"]]);
+        expect(addCommandMock).toHaveBeenCalledTimes(1);
+      });
+
+      it("an edit makes the text the player's again, so Enter works as usual", async () => {
+        const { onSend, textarea } = await reviewHeldAcrossDeadline();
+        fireEvent.input(textarea, { target: { value: "drop all but the sword" } });
+        fireEvent.keyDown(textarea, { key: "Enter", repeat: true });
+        expect(onSend.mock.calls).toEqual([["drop all but the sword"]]);
+      });
+    });
+
+    it("listening that heard words but got no final by the limit says nothing was sent", async () => {
+      const { onSend, textarea } = renderInput();
+      const recognition = await startOnFakeTimers();
+      act(() => recognition.hear(["drop all", false]));
+      await act(async () => { await vi.advanceTimersByTimeAsync(62000); });
+      expect(onSend).not.toHaveBeenCalled();
+      expect(textarea).toHaveValue("");
+      expect(announceMock).toHaveBeenCalledWith(
+        "Time limit reached. No final words came back; nothing was sent. Say it again.", "polite");
+      expect(announceMock).not.toHaveBeenCalledWith("Time limit reached. Nothing was heard.", "polite");
     });
 
     it("listening that hears nothing at all ends by sixty-two seconds and says so", async () => {

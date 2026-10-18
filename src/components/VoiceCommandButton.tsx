@@ -35,6 +35,7 @@ const START_LIMIT_MS = 10000;
 const NOTHING_SENT = "Nothing was sent. Say it again.";
 const TIME_LIMIT_REVIEW = "Time limit reached. Check the command box, then press Enter.";
 const TIME_LIMIT_NOTHING = "Time limit reached. Nothing was heard.";
+const TIME_LIMIT_NO_FINAL = "Time limit reached. No final words came back; nothing was sent. Say it again.";
 
 function voiceEnabled(): boolean {
   return usePreferences.getState().voiceInput.enabled;
@@ -78,6 +79,8 @@ interface Dictation {
   stopping: boolean;
   /** LISTEN_LIMIT_MS stopped it, so any final may be cut off: review it, never send it. */
   timeLimit: boolean;
+  /** Interim words have arrived, so ending without a final is not silence. */
+  heardWords: boolean;
   /** Enter or Send was pressed while listening: send the final result. */
   sendOnFinal: boolean;
   session: VoiceSession | null;
@@ -96,7 +99,7 @@ type Ending = { text: "final" | "discard" | "keep"; announce?: string; priority?
 
 /** What to say when a dictation ends without a final result. */
 function unsent(dictation: Dictation): string {
-  if (dictation.timeLimit) return TIME_LIMIT_NOTHING;
+  if (dictation.timeLimit) return dictation.heardWords ? TIME_LIMIT_NO_FINAL : TIME_LIMIT_NOTHING;
   return dictation.sendOnFinal ? NOTHING_SENT : "Stopped listening";
 }
 
@@ -201,6 +204,7 @@ const VoiceCommandButton = ({ onSend }: Props) => {
       },
       onInterim: (text) => {
         if (!isCurrent()) return;
+        if (text) dictation.heardWords = true;
         dictation.written = appendToDraft(dictation.draft, text);
         input().setText(dictation.written);
       },
@@ -218,6 +222,8 @@ const VoiceCommandButton = ({ onSend }: Props) => {
           onSendRef.current();
         } else {
           setInputTextAndFocus(command, command.length);
+          // Enter may be held from before the cutoff; its repeat must not send this unchecked.
+          if (dictation.timeLimit) input().setNeedsFreshEnter(true);
           announce(dictation.timeLimit ? TIME_LIMIT_REVIEW : `Heard ${text}`, "polite");
         }
       },
@@ -277,6 +283,7 @@ const VoiceCommandButton = ({ onSend }: Props) => {
       written: null,
       stopping: false,
       timeLimit: false,
+      heardWords: false,
       sendOnFinal: false,
       session: null,
       releaseSpeech: null,
