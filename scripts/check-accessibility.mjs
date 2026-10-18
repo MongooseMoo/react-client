@@ -168,6 +168,7 @@ try {
   await expect(diagnostics.getByRole('button', { name: 'Mark crackle', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(diagnostics.getByRole('status').filter({ hasText: 'Crackle marked.' })).toBeVisible();
+  await expect(diagnostics.getByText('Audio context', { exact: true })).toBeVisible();
   await page.keyboard.press('Shift+Tab');
   await expect(stopRecording).toBeFocused();
   await page.keyboard.press('Enter');

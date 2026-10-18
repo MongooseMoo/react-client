@@ -20,9 +20,6 @@ export default function AudioPerformance({ read }: Props) {
   const [status, setStatus] = useState('');
   useEffect(() => {
     if (!recording) return;
-    setSamples([]);
-    setMarkers([]);
-    setBaseline(null);
     let first = true;
     return captureAudioPerformance(read, (sample) => {
       if (first) {
@@ -39,6 +36,11 @@ export default function AudioPerformance({ read }: Props) {
       : null;
 
   const toggle = () => {
+    if (!recording) {
+      setSamples([]);
+      setMarkers([]);
+      setBaseline(null);
+    }
     setRecording(!recording);
     setStatus(
       recording
