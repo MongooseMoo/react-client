@@ -69,10 +69,12 @@ body). It never fires in the code editor, a dialog, the preferences, or any othe
 A binding with no Ctrl, Alt or Meta modifier would take away a key the player types with. Such
 bindings fire only in **keys mode**. Every other binding fires whenever focus allows.
 
-- **Alt+Shift+K** turns keys mode on and off. It belongs to the client and no layer can bind it.
+- **Alt+Shift+H** turns keys mode on and off. It belongs to the client and no layer can bind it.
+  (Not K: Firefox fires page access keys on Alt+Shift, and the player card's "Look" is K. Chrome keeps
+  Alt+Shift with A, I, N and T.)
 - Turning it on says "Keys mode on: Scrabble" (the labels of the modal layers). Turning it off says
   "Keys mode off".
-- When a modal layer arrives, the client says "Scrabble keys available. Alt+Shift+K for keys mode."
+- When a modal layer arrives, the client says "Scrabble keys available. Alt+Shift+H for keys mode."
   It does not switch keys mode on by itself.
 - When the last modal layer goes away, keys mode switches off and the client says so.
 - In keys mode, keys that no layer binds still type as usual, and Enter still sends.

@@ -46,7 +46,7 @@ function press(target: Element, init: KeyboardEventInit): KeyboardEvent {
 }
 
 const ctrlS = { key: "s", code: "KeyS", ctrlKey: true };
-const altShiftK = { key: "K", code: "KeyK", altKey: true, shiftKey: true };
+const altShiftH = { key: "H", code: "KeyH", altKey: true, shiftKey: true };
 
 function element(id: string): HTMLElement {
   const found = document.getElementById(id);
@@ -171,7 +171,7 @@ describe("GMCPClientKeystrokes", () => {
       handler.receiveRegisteredMessage("Layer", scrabbleLayer);
 
       expect(mockAnnounce).toHaveBeenCalledWith(
-        "Scrabble keys available. Alt+Shift+K for keys mode.",
+        "Scrabble keys available. Alt+Shift+H for keys mode.",
         "assertive",
         2000,
       );
@@ -202,7 +202,7 @@ describe("GMCPClientKeystrokes", () => {
     it("switches keys mode off when the last modal layer goes", () => {
       handler.receiveRegisteredMessage("Layer", scrabbleLayer);
       handler.receiveRegisteredMessage("Layer", { ...scrabbleLayer, id: "#5000", label: "Chess" });
-      press(element("command-input"), altShiftK);
+      press(element("command-input"), altShiftH);
       mockAnnounce.mockClear();
 
       handler.receiveRegisteredMessage("RemoveLayer", { id: "#4936" });
@@ -309,8 +309,8 @@ describe("GMCPClientKeystrokes", () => {
       expect(typed.defaultPrevented).toBe(false);
     });
 
-    it("turns on and off with Alt+Shift+K and says which layers it is for", () => {
-      const toggle = press(element("command-input"), altShiftK);
+    it("turns on and off with Alt+Shift+H and says which layers it is for", () => {
+      const toggle = press(element("command-input"), altShiftH);
       expect(toggle.defaultPrevented).toBe(true);
       expect(useKeystrokesStore.getState().keysMode).toBe(true);
       expect(mockAnnounce).toHaveBeenLastCalledWith("Keys mode on: Scrabble", "assertive", 2000);
@@ -318,26 +318,26 @@ describe("GMCPClientKeystrokes", () => {
       press(element("command-input"), { key: "p", code: "KeyP" });
       expect(client.sendCommand).toHaveBeenCalledWith("press p on #4936");
 
-      press(element("output"), altShiftK);
+      press(element("output"), altShiftH);
       expect(useKeystrokesStore.getState().keysMode).toBe(false);
       expect(mockAnnounce).toHaveBeenLastCalledWith("Keys mode off", "assertive", 2000);
     });
 
-    it("matches Alt+Shift+K by the physical key", () => {
-      press(document.body, { key: "˚", code: "KeyK", altKey: true, shiftKey: true });
+    it("matches Alt+Shift+H by the physical key", () => {
+      press(document.body, { key: "˙", code: "KeyH", altKey: true, shiftKey: true });
 
       expect(useKeystrokesStore.getState().keysMode).toBe(true);
     });
 
     it("does not toggle on auto-repeat or where keys do not work", () => {
-      press(document.body, { ...altShiftK, repeat: true });
-      press(element("notes"), altShiftK);
+      press(document.body, { ...altShiftH, repeat: true });
+      press(element("notes"), altShiftH);
 
       expect(useKeystrokesStore.getState().keysMode).toBe(false);
     });
 
     it("lets unbound keys type and Enter send in keys mode", () => {
-      press(document.body, altShiftK);
+      press(document.body, altShiftH);
 
       const typed = press(element("command-input"), { key: "x", code: "KeyX" });
       const enter = press(element("command-input"), { key: "Enter", code: "Enter" });
@@ -351,10 +351,10 @@ describe("GMCPClientKeystrokes", () => {
       handler.receiveRegisteredMessage("Layer", {
         id: "#9",
         label: "Greedy",
-        bindings: [{ key: "k", modifiers: ["alt", "shift"], command: "grab", label: "Grab" }],
+        bindings: [{ key: "h", modifiers: ["alt", "shift"], command: "grab", label: "Grab" }],
       });
 
-      press(document.body, altShiftK);
+      press(document.body, altShiftH);
 
       expect(client.sendCommand).not.toHaveBeenCalled();
       expect(useKeystrokesStore.getState().keysMode).toBe(true);

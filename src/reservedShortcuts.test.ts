@@ -6,7 +6,7 @@ const chord = (key: string, ...modifiers: Modifier[]): Chord => ({ key, modifier
 
 describe("reservedReason", () => {
   it("keeps the keys mode toggle", () => {
-    expect(reservedReason(KEYS_MODE_CHORD)).toBe("Alt+Shift+K turns keys mode on and off");
+    expect(reservedReason(KEYS_MODE_CHORD)).toBe("Alt+Shift+H turns keys mode on and off");
   });
 
   it("keeps the keys the browser will not give a page", () => {

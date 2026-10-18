@@ -198,7 +198,7 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         };
         if (!useKeystrokesStore.getState().putLayer(layer)) return;
         if (layer.modal) {
-            say(`${layer.label} keys available. Alt+Shift+K for keys mode.`);
+            say(`${layer.label} keys available. Alt+Shift+H for keys mode.`);
             return;
         }
         const installed = resolveLayer(layer, usePreferences.getState().keystrokes)

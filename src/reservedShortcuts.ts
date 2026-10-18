@@ -13,11 +13,13 @@ interface ReservedShortcut {
   reason: string;
 }
 
-export const KEYS_MODE_CHORD: Chord = { key: "k", modifiers: ["alt", "shift"] };
+// H: Firefox fires access keys on Alt+Shift (K is the player card's "Look"), and Chrome keeps
+// Alt+Shift with A, I, N and T.
+export const KEYS_MODE_CHORD: Chord = { key: "h", modifiers: ["alt", "shift"] };
 
-/** Alt+Shift+K by physical key, which Alt changes the character of on a Mac. */
+/** Alt+Shift+H by physical key, which Alt changes the character of on a Mac. */
 export function isKeysModeToggle(event: KeyboardEvent): boolean {
-  return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyK";
+  return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyH";
 }
 
 const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
@@ -31,7 +33,7 @@ const RESERVED_SHORTCUTS: readonly ReservedShortcut[] = [
   {
     keys: [KEYS_MODE_CHORD.key],
     modifiers: KEYS_MODE_CHORD.modifiers,
-    reason: "Alt+Shift+K turns keys mode on and off",
+    reason: "Alt+Shift+H turns keys mode on and off",
   },
   { keys: ["w", "t", "n", "tab"], modifiers: ["ctrl"], reason: "The browser keeps this key" },
   { keys: ["w", "t", "n", "tab"], modifiers: ["ctrl", "shift"], reason: "The browser keeps this key" },

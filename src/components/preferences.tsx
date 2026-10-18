@@ -477,7 +477,7 @@ const KeyboardTab: React.FC = () => {
           <dt>Sounds</dt>
           <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback.</dd>
           <dt>Server keys</dt>
-          <dd>Alt+Shift+K turns keys mode on and off, so a game's or console's keys work on letters and other typing keys. The Keys section lists every key and lets you change it.</dd>
+          <dd>Alt+Shift+H turns keys mode on and off, so a game's or console's keys work on letters and other typing keys. The Keys section lists every key and lets you change it.</dd>
         </dl>
         <p>Ctrl+Shift+number opens and focuses a sidebar destination. Numbers stay fixed when optional tabs appear; unavailable destinations do nothing.</p>
         <table>
