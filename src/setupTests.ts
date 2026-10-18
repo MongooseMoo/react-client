@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { afterAll, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 
 // jest-dom adds custom jest matchers for asserting on DOM nodes.
@@ -67,4 +67,13 @@ Object.defineProperty(window, 'localStorage', {
 Object.defineProperty(window, 'open', {
   value: vi.fn(),
   writable: true,
+});
+
+// The jsdom teardown removes `window` without the pagehide a browser fires, and
+// timers here are Node's, so a debounced save still pending (preferencesStore
+// persists 250 ms after a change) fired after teardown and threw "window is not
+// defined" into whichever file the worker ran next. Fire pagehide so those saves
+// flush and cancel their timers while the page still exists.
+afterAll(() => {
+  window.dispatchEvent(new Event('pagehide'));
 });
