@@ -9,16 +9,28 @@ Requested by Q on 2026-10-18 (via team lead). Worktree:
 Do not push or open a PR.
 
 ## State
-- Implemented and unit-tested:
-  - `src/audio/headYaw.ts` - heading from alpha/beta/gamma + screen angle, wrap, One Euro
-    filter, `turnAboutUp`.
-  - `src/audio/HeadTracker.ts` - deviceorientation -> relative head yaw, recenter,
-    0.05 degree step gate, zero yaw on stop.
-  - `src/audio/headTracking.ts` - controller singleton + `useHeadTrackingStore`: sensor
-    probe, iOS permission, follows `sound.headTracking` pref, announcements, Alt+Shift+O.
-  - `MediaService.setHeadYaw` + body pose in `setListenerOrientation`.
+- CURRENT (2026-10-18): Codex round 5 APPROVED the branch at 9549c61e (no P2 or worse);
+  its one P3 (prove a pending pause timer is cancelled by recenter) is fixed in the
+  commit after it, with two tests that fail when the cancel in HeadTracker.recenter is
+  removed (checked by mutation). Waiting on the team lead's browser check, then PR.
+- Files as they stand:
+  - `src/audio/headYaw.ts` - devicePose (quaternion from alpha/beta/gamma + screen
+    angle), yawFrom -> { yaw, conditioning } (twist from the reference pose), wrap, One
+    Euro HeadingFilter, turnAboutUp.
+  - `src/audio/HeadTracker.ts` - deviceorientation -> relative head yaw; 60 Hz output
+    frame; settles when readings stop; hold/pause near the flipped-over pose
+    (ILL_ENTER 0.5 / ILL_LEAVE 0.61, pause after 2 s, resume within 20 degrees);
+    recenter always wins; screen-angle changes recomputed; hasAllAngles.
+  - `src/audio/headTracking.ts` - controller singleton + `useHeadTrackingStore`: bounded
+    sensor probe + Check again, iOS permission, follows `sound.headTracking` pref,
+    announcements, Alt+Shift+O, pause/resume status.
+  - `src/audio/FoaYawRotator.ts` - our rampable FOA yaw rotator ahead of Omnitone.
+  - `MediaService.setHeadYaw` + `setHeadTracking` (listener tau 0.03 while on, exact
+    restore when off) + body pose in `setListenerOrientation`.
   - `src/components/HeadTrackingControls.tsx` in the Sounds preferences tab;
     `src/hooks/useHeadTracking.ts` called once from App.tsx.
+- History of the first build (the items below are kept as a record; the design has
+  changed since - see Decisions):
 - Settling fix (second commit): HeadTracker re-feeds the last heading every 1/60 s
   until the filter settles, because readings stop when the device holds still.
 - tsc clean; full vitest 179 files / 2406 tests passed; biome: no new findings
@@ -170,6 +182,8 @@ Do not push or open a PR.
   lines; resolve by keeping both.
 
 ## Next step
-- Fresh Codex review of the round 1 commit (team lead). Then on a phone with headphones:
-  feel (jitter, lag incl. the 0.03 s glide), any audible zipper on HRTF sources, iOS
-  permission flow. Not pushed, no PR.
+- Team lead's browser check, then PR (team lead's call; this agent does not push).
+- Still unverified and worth doing on a phone with headphones: feel (jitter, lag incl.
+  the 0.03 s glide), audible zipper on HRTF sources, whether real sensor noise near the
+  0.5 / 0.61 thresholds pauses too readily, iOS permission, FOA beds in the live app, and
+  the Check again path in a real browser.

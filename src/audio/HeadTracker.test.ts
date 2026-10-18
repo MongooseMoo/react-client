@@ -176,6 +176,18 @@ describe('HeadTracker near the flipped-over pose', () => {
     expect(onPausedChange).toHaveBeenCalledTimes(2);
   });
 
+  it('recentering while the pause timer is still pending cancels it (round 5)', () => {
+    const { tracker, turn, advance, onPausedChange } = setup();
+    tracker.start();
+    turn(0);
+    turn(300, FRAME_MS, INSIDE_BETA, 0); // held; the 2 s pause timer starts
+    advance(1000);
+    turn(300, FRAME_MS, null, null); // incomplete
+    expect(tracker.recenter()).toBe(false);
+    advance(3000); // well past when the pause would have fired
+    expect(onPausedChange).not.toHaveBeenCalled();
+  });
+
   it('a recenter with a complete latest reading takes effect at once', () => {
     const { tracker, turn, lastYawDegrees } = setup();
     tracker.start();

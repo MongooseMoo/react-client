@@ -328,6 +328,20 @@ describe('HeadTrackingController', () => {
       expect(announce).toHaveBeenLastCalledWith('Head tracking resumed.');
     });
 
+    it('recentering before the pause fires means no pause and no pause announcement', async () => {
+      const { controller, sink, reading, dispatch, advance, announce } = setup();
+      detach = controller.attach(sink);
+      await controller.enable();
+      reading(0);
+      dispatch({ alpha: 0, beta: 170, gamma: 0 }); // held; pause due in 2 s
+      advance(1000);
+      dispatch({ alpha: 0, beta: null, gamma: null });
+      controller.recenter();
+      advance(3000);
+      expect(useHeadTrackingStore.getState().status).toBe('tracking');
+      expect(announce.mock.calls.filter(([message]) => message === PAUSED)).toHaveLength(0);
+    });
+
     it('recentering while paused after an incomplete reading says it waits, then resumes', async () => {
       const { controller, sink, reading, dispatch, advance, announce } = setup();
       detach = controller.attach(sink);
