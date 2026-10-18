@@ -129,7 +129,11 @@ Files:
 - All seven .github/workflows/build-test.yml steps run locally after the
   lazy-check fix (the team lead's gate from now on): typecheck exit 0;
   npm test 178 files / 2458 tests passed; test:audio-cache exit 0 (4 PASS
-  lines); editor-ownership spec 1 passed; check-browser-sessions passed;
+  lines); editor-ownership spec 1 passed (rerun on port 5195, not the shared
+  5183: listener PID 113636 was my vite preview, served entry chunk
+  assets/index-CyE_hwY-.js matched local dist/index.html, preview stopped by
+  PID afterwards; the first run on 5183 never checked whose server it hit);
+  check-browser-sessions passed;
   check-client-recovery passed; test:a11y PASS (it opens the Speech tab).
 - `npx tsc --noEmit`: exit 0.
 - `npx biome lint` on all branch-changed src files: 7 warnings, all on master
