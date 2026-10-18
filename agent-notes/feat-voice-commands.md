@@ -174,6 +174,14 @@ Files:
   Files tab's file input). A probe replaying lines 101-137 against vite
   preview (scratchpad files-tab-probe.mjs) passed 18 of 18, so the cause is
   not established; the final gate run passed.
+- After rebasing onto origin/master 2aec1c80, all seven steps at 0b415ed6:
+  typecheck exit 0; npm test 189 files / 2673 tests passed; npm run
+  test:audio-cache exit 0 (4 PASS lines), then 5 direct runs of
+  check-audio-cache.mjs on that one build (entry assets/index-BOUSQrK4.js):
+  5 of 5 exit 0, 3 PASS lines each, about 8 s each; editor-ownership 1
+  passed on 5195 (listener PID 54616, parent cd'd into this worktree, served
+  and local entry assets/index-BOUSQrK4.js); check-browser-sessions passed;
+  check-client-recovery passed; test:a11y PASS.
 - `npx tsc --noEmit`: exit 0.
 - `npx biome lint` on all branch-changed src files: 7 warnings, all on master
   (client.test.ts:169-174 noUnusedImports, input.tsx:83).
