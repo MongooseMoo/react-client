@@ -20,6 +20,15 @@ export interface SharedClockChange {
   correction: 'ignore' | 'unsubmitted' | 'rejoin';
 }
 
+/** MOO generate_json prints floats with 15 significant decimal digits. */
+function matchesTimestampEcho(localMs: number, echoedMs: number): boolean {
+  if (!Number.isFinite(echoedMs) || echoedMs < 0) return false;
+  if (echoedMs === localMs) return true;
+  const decimalRounding = localMs === 0 ? 0 : 0.5 * 10 ** (Math.floor(Math.log10(localMs)) - 14);
+  const binaryRounding = 2 * Number.EPSILON * Math.max(localMs, echoedMs);
+  return Math.abs(echoedMs - localMs) <= decimalRounding + binaryRounding;
+}
+
 /** One connection clock shared by leased consumers; no timer survives the last lease. */
 export class SharedClock {
   get ready(): boolean {
@@ -141,16 +150,19 @@ export class SharedClock {
       this.mode !== 'network' ||
       !request ||
       reply.id !== request.id ||
-      reply.c1Ms !== request.c1Ms
+      !matchesTimestampEcho(request.c1Ms, reply.c1Ms)
     )
       return false;
     const c4Ms = this.now();
     if (c4Ms - request.c1Ms >= CLOCK_POLICY.replyTimeoutMs || c4Ms < request.c1Ms) return false;
-    const result = this.estimator.add({ ...reply, c4Ms });
+    // The ID correlates the reply. Never replace the original local send time
+    // with the server's less precise JSON echo when computing delay or offset.
+    const result = this.estimator.add({ ...reply, c1Ms: request.c1Ms, c4Ms });
     if (!result.accepted) return false;
     clearTimeout(this.replyTimer);
     this.replyTimer = undefined;
     this.outstanding = undefined;
+    if (result.clockChanged) this.publishedOffsetMs = null;
     const generation = this.generation;
     this.publish(result.clockChanged ? 'runtime' : 'sample', result.clockChanged);
     if (generation !== this.generation) return true;

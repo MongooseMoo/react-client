@@ -92,6 +92,57 @@ describe('leased connection clock', () => {
     expect(respond()).toBe(true);
   });
 
+  it.each([1234.567890123456, 1234567890.123456, 1234567890123.456])(
+    'accepts a 15-significant-digit echo of %s without degrading the local send timestamp',
+    (initialNow) => {
+      now = initialNow;
+      clock.acquire('music');
+      clock.setNetworkReady(true);
+      advance(0);
+      const request = sent[0];
+      const roundedEcho = Number(request.c1Ms.toPrecision(15));
+      expect(roundedEcho).not.toBe(request.c1Ms);
+      advance(20);
+      const reply = {
+        ...request,
+        c1Ms: roundedEcho,
+        clockId: 'runtime-a',
+        s2Ms: request.c1Ms + 5010,
+        s3Ms: request.c1Ms + 5010,
+      };
+      expect(clock.receive({ ...reply, id: 'wrong-id' })).toBe(false);
+      expect(clock.receive({ ...reply, c1Ms: Number.NaN })).toBe(false);
+      expect(clock.receive({ ...reply, c1Ms: Number.POSITIVE_INFINITY })).toBe(false);
+      expect(clock.receive({ ...reply, c1Ms: -1 })).toBe(false);
+      expect(clock.receive({ ...reply, c1Ms: request.c1Ms + 0.125 })).toBe(false);
+      expect(clock.receive(reply)).toBe(true);
+      // All timing uses the retained local value. At long uptimes even the
+      // tiny echo rounding error would otherwise shift this exact offset.
+      expect(clock.estimate()).toMatchObject({ offsetMs: 5000, uncertaintyMs: 10 });
+    },
+  );
+
+  it('does not compare a new runtime offset against the previous runtime correction baseline', () => {
+    const listener = vi.fn();
+    clock.subscribe(listener);
+    clock.acquire('music');
+    clock.setNetworkReady(true);
+    advance(0);
+    for (let i = 0; i < 3; i++) {
+      respond(5000, 'runtime-a');
+      advance(130);
+    }
+    respond(7000, 'runtime-b');
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: 'runtime', correction: 'rejoin' }),
+    );
+    advance(130);
+    respond(7000, 'runtime-b');
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: 'sample', correction: 'ignore' }),
+    );
+  });
+
   it('invalidates mappings on runtime change and page/audio restoration, reacquiring leased consumers', () => {
     const listener = vi.fn();
     clock.subscribe(listener);
