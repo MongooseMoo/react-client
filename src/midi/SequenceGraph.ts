@@ -1,5 +1,5 @@
 import type { Bus, Cacophony } from 'cacophony';
-import { EffectChain } from '../audio/effects/EffectChain';
+import type { EffectChain } from '../audio/effects/EffectChain';
 import type { EffectSpec } from '../audio/effects/types';
 import {
   DEFAULT_SPATIAL_PROFILE,
@@ -137,6 +137,7 @@ export class SequenceGraph {
     getChain: (id: string) => Bus | undefined,
     mix: SequenceMix,
   ): Promise<SequenceGraph> {
+    const { EffectChain } = await import('../audio/effects/EffectChain');
     const chain = await EffectChain.createAnonymous(engine, mix.effects ?? []);
     return new SequenceGraph(engine, chain, getChain, mix);
   }
