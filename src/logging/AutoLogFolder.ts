@@ -1,6 +1,6 @@
 import { announce } from "@react-aria/live-announcer";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import { openIndexedDatabase, requestToPromise, transactionDone, type IndexedDatabaseSchema } from "../persistence";
+import { requestToPromise, transactionDone } from "../persistence";
 import { ownerKey, type PersonalDataOwner, usePersonalDataStore } from "../stores/personalDataStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { autoLogEntryToPlainText } from "./AutoLogExport";
@@ -8,18 +8,18 @@ import { autoLogStore } from "./AutoLogStore";
 import type { AutoLogEntry, AutoLogSession, AutoLogSink } from "./AutoLogTypes";
 
 /**
- * Writes autolog sessions as text files into a folder the player picks with
- * the File System Access API. IndexedDB stays the authoritative store: this
- * sink only copies lines IndexedDB has already accepted, and whatever the
- * folder misses (disconnected, failing, or the tab closed mid-write) is
- * copied from IndexedDB later.
+ * Keeps a folder the player picked (File System Access API) holding each
+ * autolog session as text files. The files are a projection of IndexedDB:
+ * every file's bytes are a pure function of the session's IndexedDB record
+ * and its binding (character name and base file name), so any render can be
+ * repeated by any tab at any time and gives the same bytes. Nothing is
+ * appended; the session's current part is rewritten whole.
+ *
+ * Files: `<Character>/<YYYY-MM-DD HH-MM-SS> <id>.txt`, then `... part 2.txt`
+ * and so on, each at most maxPartBytes.
  *
  * Each signed-in character picks their own folder, and a session's lines only
  * go to the folder its own owner picked.
- *
- * A session's file is `<Character>/<YYYY-MM-DD HH-MM-SS> <id>.txt`, split into
- * `... part 2.txt` and so on at maxPartBytes: Chromium copies the whole file
- * for every keepExistingData write, so parts bound that copy.
  */
 
 export type LogFolderStatus =
@@ -30,47 +30,50 @@ export type LogFolderStatus =
   | { kind: "none" }
   | { kind: "needs-permission"; folderName: string }
   | { kind: "ready"; folderName: string; filePath?: string }
-  | { kind: "error"; folderName: string; message: string };
+  | { kind: "error"; folderName: string; message: string }
+  // The folder settings themselves could not be read.
+  | { kind: "storage-error"; message: string; blocked: boolean };
 
 export type StoredFolder = {
   handle: FileSystemDirectoryHandle;
-  // Changes every time the player chooses a folder; cursors made for an
-  // earlier choice are not continued in a new one.
+  // Changes every time the player chooses a folder; a session bound to an
+  // earlier choice is not continued in a new one.
   bindingId: string;
 };
 
-export type LogFileHeader = { title: string; startedAt: number; sanitizedUrl: string; character: string };
+// Where a session's current (last) part starts: its number, the first entry
+// in it, how many bytes of that entry's rendered line earlier parts hold, and
+// the day of the line before it (for the date separator).
+export type PartMark = { part: number; sequence: number; offset: number; day: string };
 
 /**
- * How far a session's copy has got, saved next to the folder handle so a
- * later page can finish it. `pending` is written before each commit: if the
- * file has grown to exactly `sizeAfter`, that commit landed even though the
- * cursor update after it did not.
+ * A session that belongs in a folder. Saved as soon as the session's owner has
+ * a folder, before any permission or file work, so a later page can find it.
+ * `mark` only saves re-reading earlier parts; without it a render starts
+ * from part 1 and produces the same bytes.
  */
-export type LogFileCursor = {
+export type LogFileBinding = {
   sessionId: string;
   ownerKey: string;
   bindingId: string;
   folderName: string;
+  character: string;
   baseName: string;
-  part: number;
-  // Bytes of the current part already committed by this session.
-  partBytes: number;
-  // Highest sequence number already in the files.
-  written: number;
-  // Local day of the last line written, for the date separator.
-  day: string;
-  header: LogFileHeader;
-  pending?: { part: number; sizeAfter: number; written: number; day: string };
+  // The base name has been checked against existing files and saved.
+  nameChecked: boolean;
+  mark: PartMark;
 };
+
+export type SessionSnapshot = { session: AutoLogSession; entries: AutoLogEntry[] };
 
 export interface LogFolderPersistence {
   getFolder(key: string): Promise<StoredFolder | undefined>;
   putFolder(key: string, folder: StoredFolder): Promise<void>;
   deleteFolder(key: string): Promise<void>;
-  listCursors(key: string): Promise<LogFileCursor[]>;
-  putCursor(cursor: LogFileCursor): Promise<void>;
-  deleteCursor(sessionId: string): Promise<void>;
+  listBindings(key: string): Promise<LogFileBinding[]>;
+  getBinding(sessionId: string): Promise<LogFileBinding | undefined>;
+  putBinding(binding: LogFileBinding): Promise<void>;
+  deleteBinding(sessionId: string): Promise<void>;
 }
 
 // The part of the Web Locks API used here; navigator.locks satisfies it.
@@ -78,39 +81,99 @@ export interface LockManagerLike {
   request(name: string, options: { ifAvailable?: boolean }, callback: (lock: unknown) => Promise<unknown>): Promise<unknown>;
 }
 
+export class StorageBlocked extends Error {
+  constructor() {
+    super("Another Mongoose tab is holding the log folder settings open");
+    this.name = "StorageBlocked";
+  }
+}
+
+const DATABASE_NAME = "mongoose-autolog-folders";
+// 1: bare handle per owner. 2: { handle, bindingId } and cursors. 3: bindings
+// replace cursors.
+const DATABASE_VERSION = 3;
 const FOLDER_STORE = "folders";
-const CURSOR_STORE = "cursors";
-const CURSOR_OWNER_INDEX = "ownerKey";
-// Version 1 kept only the bare handle per owner; version 2 wraps it in a
-// StoredFolder and adds the cursors store.
-const folderDatabaseSchema: IndexedDatabaseSchema = {
-  name: "mongoose-autolog-folders",
-  version: 2,
-  upgrade: (database, oldVersion, _newVersion, transaction) => {
-    if (!database.objectStoreNames.contains(FOLDER_STORE)) database.createObjectStore(FOLDER_STORE);
-    if (!database.objectStoreNames.contains(CURSOR_STORE)) {
-      database.createObjectStore(CURSOR_STORE, { keyPath: "sessionId" }).createIndex(CURSOR_OWNER_INDEX, "ownerKey", { unique: false });
-    }
-    if (oldVersion === 1) {
-      const request = transaction.objectStore(FOLDER_STORE).openCursor();
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) return;
-        cursor.update({ handle: cursor.value, bindingId: newBindingId() });
-        cursor.continue();
-      };
-    }
-  },
-};
+const BINDING_STORE = "bindings";
+const BINDING_OWNER_INDEX = "ownerKey";
+
+function upgradeFolderDatabase(database: IDBDatabase, oldVersion: number, transaction: IDBTransaction): void {
+  if (!database.objectStoreNames.contains(FOLDER_STORE)) database.createObjectStore(FOLDER_STORE);
+  if (database.objectStoreNames.contains("cursors")) database.deleteObjectStore("cursors");
+  if (!database.objectStoreNames.contains(BINDING_STORE)) {
+    database.createObjectStore(BINDING_STORE, { keyPath: "sessionId" }).createIndex(BINDING_OWNER_INDEX, "ownerKey", { unique: false });
+  }
+  if (oldVersion === 1) {
+    const request = transaction.objectStore(FOLDER_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      cursor.update({ handle: cursor.value, bindingId: newBindingId() });
+      cursor.continue();
+    };
+  }
+}
+
+// A blocked open is reported at once (another tab holds an older version
+// open) and not cached; if the request succeeds after that, the connection is
+// closed so the next attempt opens cleanly.
+function openFolderDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+    let settled = false;
+    request.onupgradeneeded = (event) => {
+      if (request.transaction) upgradeFolderDatabase(request.result, event.oldVersion, request.transaction);
+    };
+    request.onsuccess = () => {
+      if (settled) {
+        request.result.close();
+        return;
+      }
+      settled = true;
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      if (settled) return;
+      settled = true;
+      reject(request.error);
+    };
+    request.onblocked = () => {
+      if (settled) return;
+      settled = true;
+      reject(new StorageBlocked());
+    };
+  });
+}
 
 // Directory handles are structured-cloneable, so IndexedDB keeps them across
 // reloads; the browser asks again for permission when the page comes back.
 export class IndexedDbLogFolderPersistence implements LogFolderPersistence {
   private db: Promise<IDBDatabase> | undefined;
 
+  private open(): Promise<IDBDatabase> {
+    if (!this.db) {
+      const opening = openFolderDatabase().then((db) => {
+        // Never hold up a newer version in another tab.
+        db.onversionchange = () => {
+          db.close();
+          if (this.db === opening) this.db = undefined;
+        };
+        return db;
+      });
+      opening.catch(() => {
+        if (this.db === opening) this.db = undefined;
+      });
+      this.db = opening;
+    }
+    return this.db;
+  }
+
+  close(): void {
+    this.db?.then((db) => db.close(), () => {});
+    this.db = undefined;
+  }
+
   private async transaction(store: string, mode: IDBTransactionMode): Promise<IDBTransaction> {
-    this.db ??= openIndexedDatabase(folderDatabaseSchema);
-    return (await this.db).transaction(store, mode);
+    return (await this.open()).transaction(store, mode);
   }
 
   async getFolder(key: string): Promise<StoredFolder | undefined> {
@@ -132,55 +195,49 @@ export class IndexedDbLogFolderPersistence implements LogFolderPersistence {
     await transactionDone(transaction);
   }
 
-  async listCursors(key: string): Promise<LogFileCursor[]> {
-    const transaction = await this.transaction(CURSOR_STORE, "readonly");
-    const cursors = await requestToPromise<LogFileCursor[]>(transaction.objectStore(CURSOR_STORE).index(CURSOR_OWNER_INDEX).getAll(key));
+  async listBindings(key: string): Promise<LogFileBinding[]> {
+    const transaction = await this.transaction(BINDING_STORE, "readonly");
+    const bindings = await requestToPromise<LogFileBinding[]>(transaction.objectStore(BINDING_STORE).index(BINDING_OWNER_INDEX).getAll(key));
     await transactionDone(transaction);
-    return cursors;
+    return bindings;
   }
 
-  async putCursor(cursor: LogFileCursor): Promise<void> {
-    const transaction = await this.transaction(CURSOR_STORE, "readwrite");
-    transaction.objectStore(CURSOR_STORE).put(cursor);
+  async getBinding(sessionId: string): Promise<LogFileBinding | undefined> {
+    const transaction = await this.transaction(BINDING_STORE, "readonly");
+    const binding = await requestToPromise<LogFileBinding | undefined>(transaction.objectStore(BINDING_STORE).get(sessionId));
+    await transactionDone(transaction);
+    return binding;
+  }
+
+  async putBinding(binding: LogFileBinding): Promise<void> {
+    const transaction = await this.transaction(BINDING_STORE, "readwrite");
+    transaction.objectStore(BINDING_STORE).put(binding);
     await transactionDone(transaction);
   }
 
-  async deleteCursor(sessionId: string): Promise<void> {
-    const transaction = await this.transaction(CURSOR_STORE, "readwrite");
-    transaction.objectStore(CURSOR_STORE).delete(sessionId);
+  async deleteBinding(sessionId: string): Promise<void> {
+    const transaction = await this.transaction(BINDING_STORE, "readwrite");
+    transaction.objectStore(BINDING_STORE).delete(sessionId);
     await transactionDone(transaction);
   }
 }
 
-type FolderRecord = {
-  directory: FileSystemDirectoryHandle;
-  bindingId: string;
-  permission: PermissionState | "error";
-  message?: string;
-  // The "needs permission" notice is spoken once per page load per folder.
-  promptAnnounced?: boolean;
-};
-
-type TrackedSession = {
-  session: AutoLogSession;
-  key: string;
-  cursor?: LogFileCursor;
-  endedAt?: number;
-  releaseLock: () => void;
-};
-
-// Thrown when the folder a write started with is no longer the chosen one.
-class StaleFolder extends Error {}
-
 export const MAX_PART_BYTES = 1024 * 1024;
+// Kept free in every part for the footer (the longest is about 40 bytes), so
+// adding the footer never moves a part boundary or breaks the cap.
+const FOOTER_RESERVE = 64;
+const PAGE_CLOSED_FOOTER = "\nEnded: not recorded (the page closed)\n";
 const LOCK_PREFIX = "mongoose-autolog-folder:";
+
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 const byteLength = (text: string) => encoder.encode(text).length;
 
 const pad = (value: number) => String(value).padStart(2, "0");
 const localDay = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const localTime = (date: Date) => `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 const localStamp = (time: number) => `${localDay(new Date(time))} ${localTime(new Date(time))}`;
+const endedFooter = (endedAt: number) => `\nEnded: ${localStamp(endedAt)}\n`;
 
 const RESERVED_NAMES = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
 
@@ -196,31 +253,134 @@ function characterName(owner: PersonalDataOwner): string {
   return session.playerName && session.playerUuid === owner.playerUuid ? session.playerName : owner.playerRef;
 }
 
-// The id keeps two sessions that start in the same second apart.
+// The last 12 hex digits of a random UUID: collisions are not a practical
+// concern, and an existing name is still checked before the first write.
 function baseFileName(session: AutoLogSession): string {
-  const id = session.id.replace(/[^a-z0-9]/gi, "").slice(-8) || "session";
+  const id = session.id.replace(/[^a-z0-9]/gi, "").slice(-12) || "session";
   return `${localStamp(session.startedAt).replace(/:/g, "-")} ${id}`;
 }
 
-export function partFileName(cursor: Pick<LogFileCursor, "baseName" | "part">): string {
-  return `${cursor.baseName}${cursor.part > 1 ? ` part ${cursor.part}` : ""}.txt`;
+export function partFileName(baseName: string, part: number): string {
+  return `${baseName}${part > 1 ? ` part ${part}` : ""}.txt`;
 }
 
-function formatPartHeader(cursor: LogFileCursor): string {
-  const { header, part } = cursor;
+function partHeader(binding: LogFileBinding, session: AutoLogSession, part: number): string {
+  const title = session.title || "Mongoose Client";
   const lines = part === 1
-    ? [header.title, `Character: ${header.character}`, `Started: ${localStamp(header.startedAt)}`, ...(header.sanitizedUrl ? [`URL: ${header.sanitizedUrl}`] : [])]
-    : [`${header.title}, part ${part}`, `Character: ${header.character}`, `Started: ${localStamp(header.startedAt)}`, `Continues from: ${partFileName({ ...cursor, part: part - 1 })}`];
+    ? [title, `Character: ${binding.character}`, `Started: ${localStamp(session.startedAt)}`, ...(session.sanitizedUrl ? [`URL: ${session.sanitizedUrl}`] : [])]
+    : [`${title}, part ${part}`, `Character: ${binding.character}`, `Started: ${localStamp(session.startedAt)}`, `Continues from: ${partFileName(binding.baseName, part - 1)}`];
   return `${lines.join("\n")}\n\n`;
 }
 
-function formatEntry(entry: AutoLogEntry, day: string): { text: string; day: string } {
+function renderLine(entry: AutoLogEntry, day: string): { text: string; day: string } {
   const date = new Date(entry.timestamp);
   const entryDay = localDay(date);
   const separator = entryDay === day ? "" : `\n-- ${entryDay} --\n`;
   const line = autoLogEntryToPlainText(entry).replace(/\r?\n$/, "");
   return { text: `${separator}[${localTime(date)}] ${line}\n`, day: entryDay };
 }
+
+// The longest prefix of text that fits in maxBytes, cut between code points.
+// Always at least one code point, so splitting always makes progress.
+function utf8Prefix(text: string, maxBytes: number): string {
+  let bytes = 0;
+  let end = 0;
+  for (const char of text) {
+    const size = byteLength(char);
+    if (bytes + size > maxBytes && end > 0) break;
+    bytes += size;
+    end += char.length;
+  }
+  return text.slice(0, end);
+}
+
+/**
+ * Renders a session's parts from `binding.mark` on. Pure: the same inputs
+ * always give the same parts. Every part but the last is closed (no later
+ * entry can land in it); the last is the current part, with the footer if
+ * one is given. `entries` must start at `binding.mark.sequence`.
+ */
+export function renderLogParts(
+  binding: LogFileBinding,
+  session: AutoLogSession,
+  entries: AutoLogEntry[],
+  footer: string | undefined,
+  maxPartBytes: number,
+): { parts: Array<{ part: number; text: string }>; mark: PartMark } {
+  const budget = maxPartBytes - FOOTER_RESERVE;
+  const parts: Array<{ part: number; text: string }> = [];
+  let mark = binding.mark;
+  let text = partHeader(binding, session, mark.part);
+  let size = byteLength(text);
+  let hasContent = false;
+  let day = mark.day;
+
+  const close = (next: PartMark) => {
+    parts.push({ part: mark.part, text });
+    mark = next;
+    text = partHeader(binding, session, next.part);
+    size = byteLength(text);
+    hasContent = false;
+  };
+
+  entries.forEach((entry, index) => {
+    const dayBefore = day;
+    const line = renderLine(entry, day);
+    let offset = index === 0 ? binding.mark.offset : 0;
+    let rest = offset > 0 ? decoder.decode(encoder.encode(line.text).subarray(offset)) : line.text;
+    while (true) {
+      const restBytes = byteLength(rest);
+      if (size + restBytes <= budget) {
+        text += rest;
+        size += restBytes;
+        hasContent = true;
+        break;
+      }
+      if (hasContent) {
+        close({ part: mark.part + 1, sequence: entry.sequence, offset, day: dayBefore });
+        continue;
+      }
+      // Too big even for an empty part: fill this one and carry on in the next.
+      const chunk = utf8Prefix(rest, budget - size);
+      text += chunk;
+      offset += byteLength(chunk);
+      rest = rest.slice(chunk.length);
+      close({ part: mark.part + 1, sequence: entry.sequence, offset, day: dayBefore });
+    }
+    day = line.day;
+  });
+
+  if (footer) text += footer;
+  parts.push({ part: mark.part, text });
+  return { parts, mark };
+}
+
+const sameMark = (a: PartMark, b: PartMark) => a.part === b.part && a.sequence === b.sequence && a.offset === b.offset && a.day === b.day;
+
+type FolderRecord = {
+  directory: FileSystemDirectoryHandle;
+  bindingId: string;
+  permission: PermissionState | "error";
+  message?: string;
+  // The "needs permission" notice is spoken once per page load per folder.
+  promptAnnounced?: boolean;
+};
+
+// A session this page is logging. Bound (binding + lock) only once its
+// owner has a folder.
+type LiveSession = {
+  session: AutoLogSession;
+  key: string;
+  binding?: LogFileBinding;
+  releaseLock?: () => void;
+  ended: boolean;
+  queued: boolean;
+};
+
+type RenderMode = "live" | "orphan" | "orphan-if-ended";
+
+// Thrown when the folder a write started with is no longer the chosen one.
+class StaleFolder extends Error {}
 
 function errorMessage(error: unknown): string {
   // DOMException is not an Error in every environment.
@@ -241,13 +401,25 @@ function newBindingId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+async function nameTaken(directory: FileSystemDirectoryHandle, name: string): Promise<boolean> {
+  try {
+    await directory.getFileHandle(name);
+    return true;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "NotFoundError") return false;
+    // A folder with that name.
+    if (error instanceof DOMException && error.name === "TypeMismatchError") return true;
+    throw error;
+  }
+}
+
 export type AutoLogFolderOptions = {
   persistence: LogFolderPersistence;
-  readEntries: (sessionId: string) => Promise<AutoLogEntry[]>;
-  readSession: (sessionId: string) => Promise<AutoLogSession | undefined>;
+  // The session and its entries from a sequence on, in one consistent read.
+  readSnapshot: (sessionId: string, fromSequence: number) => Promise<SessionSnapshot | undefined>;
   pickDirectory?: () => Promise<FileSystemDirectoryHandle>;
-  // Without Web Locks a closed page's unfinished sessions are left alone:
-  // they cannot be told apart from another open tab's live ones.
+  // With Web Locks, a session another tab is writing is never recovered here.
+  // Without them, only sessions that have ended (or were pruned) are.
   locks?: LockManagerLike;
   maxPartBytes?: number;
 };
@@ -255,24 +427,23 @@ export type AutoLogFolderOptions = {
 export class AutoLogFolder implements AutoLogSink {
   readonly state: StoreApi<{ status: LogFolderStatus }>;
   private readonly persistence: LogFolderPersistence;
-  private readonly readEntries: (sessionId: string) => Promise<AutoLogEntry[]>;
-  private readonly readSession: (sessionId: string) => Promise<AutoLogSession | undefined>;
+  private readonly readSnapshot: AutoLogFolderOptions["readSnapshot"];
   private readonly pickDirectory?: () => Promise<FileSystemDirectoryHandle>;
   private readonly locks?: LockManagerLike;
   private readonly maxPartBytes: number;
   // A folder change replaces or clears the record; writes check theirs is
   // still the one here (assertLive) so they never land in a dropped folder.
   private readonly folders = new Map<string, FolderRecord | null>();
-  private readonly loading = new Map<string, Promise<FolderRecord | null>>();
-  private readonly sessions = new Map<string, TrackedSession>();
+  private readonly loading = new Map<string, Promise<FolderRecord | null | undefined>>();
+  private readonly storageErrors = new Map<string, { message: string; blocked: boolean }>();
+  private readonly live = new Map<string, LiveSession>();
   private currentKey: string | undefined;
   private queue: Promise<void> = Promise.resolve();
   private unsubscribeOwner: (() => void) | undefined;
 
   constructor(options: AutoLogFolderOptions) {
     this.persistence = options.persistence;
-    this.readEntries = options.readEntries;
-    this.readSession = options.readSession;
+    this.readSnapshot = options.readSnapshot;
     this.pickDirectory = options.pickDirectory;
     this.locks = options.locks;
     this.maxPartBytes = options.maxPartBytes ?? MAX_PART_BYTES;
@@ -299,6 +470,7 @@ export class AutoLogFolder implements AutoLogSink {
   dispose(): void {
     this.unsubscribeOwner?.();
     this.unsubscribeOwner = undefined;
+    for (const live of this.live.values()) this.unbind(live);
   }
 
   async syncOwner(): Promise<void> {
@@ -333,7 +505,7 @@ export class AutoLogFolder implements AutoLogSink {
     }
     const record: FolderRecord = { directory, bindingId: newBindingId(), permission: "granted" };
     this.folders.set(key, record);
-    for (const tracked of this.sessions.values()) if (tracked.key === key) tracked.cursor = undefined;
+    this.storageErrors.delete(key);
     this.publish();
     await this.run(async () => {
       try {
@@ -349,7 +521,7 @@ export class AutoLogFolder implements AutoLogSink {
 
   /**
    * Asks for permission again when the browser wants it (straight from a
-   * click: it needs the user's gesture), then copies everything missed.
+   * click: it needs the user's gesture), then renders everything owed.
    * After write errors it simply tries again.
    */
   async reconnect(): Promise<void> {
@@ -373,24 +545,35 @@ export class AutoLogFolder implements AutoLogSink {
     await this.run(async () => {});
   }
 
+  /** Reads the folder settings again after they could not be read. */
+  async retry(): Promise<void> {
+    const key = this.currentKey;
+    if (!key || !this.supported) return;
+    this.storageErrors.delete(key);
+    this.publish();
+    const record = await this.loadFolder(key);
+    this.publish();
+    if (record) this.catchUp(key, record);
+    await this.run(async () => {});
+  }
+
   /** Resolves once no write to the folder can start or finish any more. */
   async stopUsing(): Promise<void> {
     const key = this.currentKey;
     const record = key ? this.folders.get(key) : undefined;
     if (!key || !record) return;
     this.folders.set(key, null);
-    for (const tracked of [...this.sessions.values()]) {
-      if (tracked.key !== key) continue;
-      tracked.cursor = undefined;
-      // An ended session has nowhere left to finish.
-      if (tracked.endedAt !== undefined) this.forget(tracked);
+    for (const live of [...this.live.values()]) {
+      if (live.key !== key) continue;
+      this.unbind(live);
+      if (live.ended) this.live.delete(live.session.id);
     }
     this.publish();
     const name = record.directory.name;
     await this.run(async () => {
       try {
         await this.persistence.deleteFolder(key);
-        for (const cursor of await this.persistence.listCursors(key)) await this.persistence.deleteCursor(cursor.sessionId);
+        for (const binding of await this.persistence.listBindings(key)) await this.persistence.deleteBinding(binding.sessionId);
         announce(`Stopped saving logs to ${name}. Logs are still saved in the browser.`, "polite");
       } catch (error) {
         console.error("Failed to forget the log folder:", error);
@@ -399,38 +582,33 @@ export class AutoLogFolder implements AutoLogSink {
     });
   }
 
-  append(session: AutoLogSession, entries: AutoLogEntry[]): void {
-    const tracked = this.track(session);
-    if (!tracked) return;
-    this.enqueue(() => this.writeTracked(tracked, entries));
+  // The entries themselves are not needed: every render reads IndexedDB.
+  append(session: AutoLogSession, _entries: AutoLogEntry[]): void {
+    if (!this.supported || !session.owner) return;
+    let live = this.live.get(session.id);
+    if (!live) {
+      live = { session, key: ownerKey(session.owner), ended: false, queued: false };
+      this.live.set(session.id, live);
+    }
+    this.schedule(live);
   }
 
-  sessionEnded(session: AutoLogSession, endedAt: number): void {
-    const tracked = this.sessions.get(session.id);
-    if (!tracked) return;
-    tracked.endedAt = endedAt;
-    this.enqueue(() => this.writeTracked(tracked, []));
+  // Just one more render, queued after the earlier ones; it reads endedAt
+  // and every remaining line from IndexedDB.
+  sessionEnded(session: AutoLogSession, _endedAt: number): void {
+    const live = this.live.get(session.id);
+    if (!live) return;
+    live.ended = true;
+    this.schedule(live);
   }
 
-  private track(session: AutoLogSession): TrackedSession | undefined {
-    if (!this.supported || !session.owner) return undefined;
-    const existing = this.sessions.get(session.id);
-    if (existing) return existing;
-    let releaseLock = () => {};
-    const held = new Promise<void>((resolve) => { releaseLock = resolve; });
-    // Held for as long as this page owns the session, so another tab never
-    // mistakes it for one a closed page left unfinished.
-    this.locks?.request(LOCK_PREFIX + session.id, {}, () => held).catch((error) => {
-      console.error("Failed to lock the autolog session:", error);
+  private schedule(live: LiveSession): void {
+    if (live.queued) return;
+    live.queued = true;
+    this.enqueue(async () => {
+      live.queued = false;
+      await this.renderLive(live);
     });
-    const tracked: TrackedSession = { session, key: ownerKey(session.owner), releaseLock };
-    this.sessions.set(session.id, tracked);
-    return tracked;
-  }
-
-  private forget(tracked: TrackedSession): void {
-    tracked.releaseLock();
-    this.sessions.delete(tracked.session.id);
   }
 
   private run(task: () => Promise<void>): Promise<void> {
@@ -446,15 +624,16 @@ export class AutoLogFolder implements AutoLogSink {
 
   private catchUp(key: string, record: FolderRecord): void {
     this.publish();
-    for (const tracked of this.sessions.values()) {
-      if (tracked.key === key) this.enqueue(() => this.writeTracked(tracked, []));
-    }
-    this.reconcileOrphans(key, record);
+    for (const live of this.live.values()) if (live.key === key) this.schedule(live);
+    this.recover(key, record);
     this.enqueue(async () => this.publish());
   }
 
-  private async loadFolder(key: string): Promise<FolderRecord | null> {
+  // Undefined when the settings could not be read (kept until Try again);
+  // null when the owner has no folder.
+  private async loadFolder(key: string): Promise<FolderRecord | null | undefined> {
     if (this.folders.has(key)) return this.folders.get(key) ?? null;
+    if (this.storageErrors.has(key)) return undefined;
     let pending = this.loading.get(key);
     if (!pending) {
       pending = (async () => {
@@ -466,12 +645,15 @@ export class AutoLogFolder implements AutoLogSink {
           }
         } catch (error) {
           console.error("Failed to load the log folder:", error);
-          if (!this.folders.has(key)) this.folders.set(key, null);
+          if (!this.folders.has(key)) {
+            this.storageErrors.set(key, { message: errorMessage(error), blocked: error instanceof StorageBlocked });
+            return undefined;
+          }
         } finally {
           this.loading.delete(key);
         }
         const record = this.folders.get(key) ?? null;
-        if (record?.permission === "granted") this.reconcileOrphans(key, record);
+        if (record?.permission === "granted") this.recover(key, record);
         return record;
       })();
       this.loading.set(key, pending);
@@ -504,190 +686,204 @@ export class AutoLogFolder implements AutoLogSink {
     if (this.folders.get(key) !== record) throw new StaleFolder();
   }
 
-  private newCursor(session: AutoLogSession, key: string, bindingId: string): LogFileCursor {
+  // Takes the session's lock (so no other tab recovers it), then saves its
+  // binding: nobody can see the binding without the lock already held.
+  private async bind(live: LiveSession, record: FolderRecord): Promise<void> {
+    if (!live.releaseLock) {
+      let granted = () => {};
+      const lockHeld = new Promise<void>((resolve) => { granted = resolve; });
+      let release = () => {};
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      live.releaseLock = release;
+      if (this.locks) {
+        this.locks.request(LOCK_PREFIX + live.session.id, {}, () => {
+          granted();
+          return held;
+        }).catch((error) => {
+          console.error("Failed to lock the autolog session:", error);
+          granted();
+        });
+        await lockHeld;
+      }
+    }
+    const { session } = live;
     const character = session.owner ? characterName(session.owner) : "";
-    return {
+    const binding: LogFileBinding = {
       sessionId: session.id,
-      ownerKey: key,
-      bindingId,
+      ownerKey: live.key,
+      bindingId: record.bindingId,
       folderName: sanitizeFolderName(character, "Character"),
+      character,
       baseName: baseFileName(session),
-      part: 1,
-      partBytes: 0,
-      written: -1,
-      day: localDay(new Date(session.startedAt)),
-      header: { title: session.title || "Mongoose Client", startedAt: session.startedAt, sanitizedUrl: session.sanitizedUrl, character },
+      nameChecked: false,
+      mark: { part: 1, sequence: 0, offset: 0, day: localDay(new Date(session.startedAt)) },
     };
+    live.binding = binding;
+    try {
+      await this.persistence.putBinding(binding);
+    } catch (error) {
+      // This page still writes it; only recovery after a reload is lost.
+      console.error("Failed to save the log file binding:", error);
+    }
   }
 
-  private async writeTracked(tracked: TrackedSession, incoming: AutoLogEntry[]): Promise<void> {
-    if (this.sessions.get(tracked.session.id) !== tracked) return;
-    const record = await this.loadFolder(tracked.key);
-    if (!record || !this.writable(tracked.key, record)) return;
+  private unbind(live: LiveSession): void {
+    live.releaseLock?.();
+    live.releaseLock = undefined;
+    live.binding = undefined;
+  }
+
+  private drop(live: LiveSession): void {
+    this.unbind(live);
+    this.live.delete(live.session.id);
+  }
+
+  private async renderLive(live: LiveSession): Promise<void> {
+    if (this.live.get(live.session.id) !== live) return;
+    const record = await this.loadFolder(live.key);
+    // Settings unreadable: keep the session for Try again.
+    if (record === undefined) return;
+    if (record === null) {
+      // No folder: nothing is owed.
+      if (live.ended) this.drop(live);
+      return;
+    }
     try {
-      this.assertLive(tracked.key, record);
-      if (tracked.cursor && tracked.cursor.bindingId !== record.bindingId) tracked.cursor = undefined;
-      const cursor = tracked.cursor ?? this.newCursor(tracked.session, tracked.key, record.bindingId);
-      const next = incoming.find((entry) => entry.sequence > cursor.written);
-      // A gap means lines arrived while the folder was unavailable: read them
-      // back from IndexedDB, which has everything up to this flush.
-      const entries = next && next.sequence === cursor.written + 1 ? incoming : await this.readEntries(tracked.session.id);
-      const footer = tracked.endedAt === undefined ? undefined : `\nEnded: ${localStamp(tracked.endedAt)}\n`;
-      await this.writeEntries(cursor, record, entries, footer, (committed) => { tracked.cursor = committed; });
-      if (footer) {
-        this.forget(tracked);
-        await this.persistence.deleteCursor(tracked.session.id);
+      if (live.binding?.bindingId !== record.bindingId) await this.bind(live, record);
+      this.assertLive(live.key, record);
+      if (!this.writable(live.key, record) || !live.binding) return;
+      const result = await this.renderBinding(live.binding, record, "live", (claimed) => { live.binding = claimed; });
+      live.binding = result.binding;
+      if (result.outcome === "complete" || result.outcome === "gone") {
+        this.drop(live);
+        await this.forgetBinding(live.session.id);
       }
       this.recovered(record);
       this.publish();
     } catch (error) {
-      await this.handleWriteError(error, tracked.key, record);
+      await this.handleWriteError(error, live.key, record);
     }
   }
 
-  // Copies entries after the cursor (and the footer, if given) into the
-  // session's files, part by part. onCommit sees each committed cursor.
-  private async writeEntries(
-    start: LogFileCursor,
+  // Renders one session into the folder from IndexedDB. "gone": the session
+  // was pruned, files left as they are. "complete": the footer is written.
+  // onClaimed hears the claimed name at once, even if a write then fails, so
+  // a retry never mistakes the session's own file for someone else's.
+  private async renderBinding(
+    start: LogFileBinding,
     record: FolderRecord,
-    entries: AutoLogEntry[],
-    footer: string | undefined,
-    onCommit: (cursor: LogFileCursor) => void,
-  ): Promise<LogFileCursor> {
-    let cursor = start;
-    let remaining = entries;
-    let footerDone = footer === undefined;
-    while (true) {
-      const prepared = await this.prepare(cursor, record);
-      cursor = prepared.cursor;
-      const written = cursor.written;
-      remaining = remaining.filter((entry) => entry.sequence > written);
-      if (remaining.length === 0 && footerDone) return cursor;
+    mode: RenderMode,
+    onClaimed: (binding: LogFileBinding) => void = () => {},
+  ): Promise<{ binding: LogFileBinding; outcome: "written" | "complete" | "gone" | "skipped" }> {
+    let binding = start;
+    const key = binding.ownerKey;
+    const snapshot = await this.readSnapshot(binding.sessionId, binding.mark.sequence);
+    this.assertLive(key, record);
+    if (!snapshot) return { binding, outcome: "gone" };
+    const { endedAt } = snapshot.session;
+    if (mode === "orphan-if-ended" && endedAt === undefined) return { binding, outcome: "skipped" };
+    const footer = endedAt !== undefined ? endedFooter(endedAt) : mode === "orphan" ? PAGE_CLOSED_FOOTER : undefined;
 
-      let text = cursor.partBytes === 0 ? formatPartHeader(cursor) : "";
-      let size = cursor.partBytes + byteLength(text);
-      let day = cursor.day;
-      let last = cursor.written;
-      let taken = 0;
-      for (const entry of remaining) {
-        const formatted = formatEntry(entry, day);
-        const bytes = byteLength(formatted.text);
-        if (size + bytes > this.maxPartBytes && (taken > 0 || cursor.partBytes > 0)) break;
-        text += formatted.text;
-        size += bytes;
-        day = formatted.day;
-        last = entry.sequence;
-        taken++;
-      }
-      remaining = remaining.slice(taken);
-      const withFooter = remaining.length === 0 && footer !== undefined && !footerDone;
-      if (withFooter) text += footer;
-
-      if (text) {
-        cursor = await this.commit(prepared.file, prepared.size, cursor, record, text, last, day);
-        onCommit(cursor);
-      }
-      if (withFooter) footerDone = true;
-      if (remaining.length > 0) cursor = { ...cursor, part: cursor.part + 1, partBytes: 0, pending: undefined };
+    const folder = await record.directory.getDirectoryHandle(binding.folderName, { create: true });
+    this.assertLive(key, record);
+    if (!binding.nameChecked) {
+      binding = await this.claimName(binding, folder, record);
+      onClaimed(binding);
     }
+    const layout = renderLogParts(binding, snapshot.session, snapshot.entries, footer, this.maxPartBytes);
+    for (const part of layout.parts) {
+      await this.writeFile(folder, partFileName(binding.baseName, part.part), part.text, key, record);
+    }
+    if (!sameMark(layout.mark, binding.mark)) {
+      binding = { ...binding, mark: layout.mark };
+      try {
+        await this.persistence.putBinding(binding);
+      } catch (error) {
+        // Costs a longer render next time, never wrong output.
+        console.error("Failed to save the log file binding:", error);
+      }
+    }
+    return { binding, outcome: footer ? "complete" : "written" };
   }
 
-  // Opens the cursor's current part and squares the cursor with what the file
-  // really holds. A file that differs from both the cursor and its pending
-  // intent was changed by someone else: never write into it, use a new part.
-  private async prepare(start: LogFileCursor, record: FolderRecord): Promise<{ cursor: LogFileCursor; file: FileSystemFileHandle; size: number }> {
-    let cursor = start;
-    while (true) {
-      const folder = await record.directory.getDirectoryHandle(cursor.folderName, { create: true });
-      this.assertLive(cursor.ownerKey, record);
-      const file = await folder.getFileHandle(partFileName(cursor), { create: true });
-      this.assertLive(cursor.ownerKey, record);
-      const { size } = await file.getFile();
-      this.assertLive(cursor.ownerKey, record);
-      if (size === cursor.partBytes) return { cursor: { ...cursor, pending: undefined }, file, size };
-      const pending = cursor.pending;
-      if (pending && pending.part === cursor.part && size === pending.sizeAfter) {
-        return { cursor: { ...cursor, partBytes: size, written: pending.written, day: pending.day, pending: undefined }, file, size };
-      }
-      cursor = { ...cursor, part: cursor.part + 1, partBytes: 0, pending: undefined };
-    }
+  // Before a session's first file: never take over an existing file. The
+  // choice is saved before anything is written, so a later render (or
+  // another recoverer) reuses it instead of treating our file as someone's.
+  private async claimName(binding: LogFileBinding, folder: FileSystemDirectoryHandle, record: FolderRecord): Promise<LogFileBinding> {
+    const original = binding.baseName;
+    let baseName = original;
+    for (let copy = 2; await nameTaken(folder, partFileName(baseName, 1)); copy++) baseName = `${original} (${copy})`;
+    this.assertLive(binding.ownerKey, record);
+    const claimed = { ...binding, baseName, nameChecked: true };
+    await this.persistence.putBinding(claimed);
+    this.assertLive(binding.ownerKey, record);
+    return claimed;
   }
 
-  // One short closed-stream append. The cursor only moves on once close()
-  // has committed the text, so a failed write retries with the same header
-  // and date lines.
-  private async commit(
-    file: FileSystemFileHandle,
-    size: number,
-    cursor: LogFileCursor,
-    record: FolderRecord,
-    text: string,
-    written: number,
-    day: string,
-  ): Promise<LogFileCursor> {
-    const sizeAfter = size + byteLength(text);
-    await this.persistence.putCursor({ ...cursor, pending: { part: cursor.part, sizeAfter, written, day } });
-    this.assertLive(cursor.ownerKey, record);
-    // keepExistingData plus a seek appends; Chromium still copies the
-    // existing part into a swap file, which is why parts are capped.
-    const writable = await file.createWritable({ keepExistingData: true });
+  private async writeFile(folder: FileSystemDirectoryHandle, name: string, text: string, key: string, record: FolderRecord): Promise<void> {
+    const file = await folder.getFileHandle(name, { create: true });
+    this.assertLive(key, record);
+    const writable = await file.createWritable();
     try {
-      this.assertLive(cursor.ownerKey, record);
-      await writable.seek(size);
+      this.assertLive(key, record);
       await writable.write(text);
-      this.assertLive(cursor.ownerKey, record);
+      this.assertLive(key, record);
       await writable.close();
     } catch (error) {
       await writable.abort().catch(() => {});
       throw error;
     }
-    const committed: LogFileCursor = { ...cursor, partBytes: sizeAfter, written, day, pending: undefined };
-    try {
-      await this.persistence.putCursor(committed);
-    } catch (error) {
-      // The saved pending intent still describes this commit.
-      console.error("Failed to save the log file cursor:", error);
-    }
-    return committed;
   }
 
-  // Finishes sessions a closed page left part-copied, from IndexedDB. A
-  // session another open tab still holds the lock for is left alone.
-  private reconcileOrphans(key: string, record: FolderRecord): void {
+  private async forgetBinding(sessionId: string): Promise<void> {
+    try {
+      await this.persistence.deleteBinding(sessionId);
+    } catch (error) {
+      // A later page renders it again: the same bytes, then forgets it.
+      console.error("Failed to forget the log file binding:", error);
+    }
+  }
+
+  // Renders sessions bound to this folder that no page here is writing:
+  // ones a closed page left unfinished, or pruned ones to forget.
+  private recover(key: string, record: FolderRecord): void {
     const locks = this.locks;
-    if (!locks) return;
     this.enqueue(async () => {
-      if (this.folders.get(key) !== record) return;
-      for (const cursor of await this.persistence.listCursors(key)) {
-        if (this.sessions.has(cursor.sessionId) || this.folders.get(key) !== record) continue;
-        await locks.request(LOCK_PREFIX + cursor.sessionId, { ifAvailable: true }, async (lock) => {
-          if (!lock) return;
-          if (cursor.bindingId !== record.bindingId) {
-            await this.persistence.deleteCursor(cursor.sessionId);
-            return;
+      if (this.folders.get(key) !== record || !this.writable(key, record)) return;
+      let listed: LogFileBinding[];
+      try {
+        listed = await this.persistence.listBindings(key);
+      } catch (error) {
+        console.error("Failed to list log file bindings:", error);
+        return;
+      }
+      for (const { sessionId } of listed) {
+        if (this.live.has(sessionId) || this.folders.get(key) !== record) continue;
+        const recoverOne = async (mode: RenderMode) => {
+          try {
+            // Read again: another recoverer may have finished it meanwhile.
+            const binding = await this.persistence.getBinding(sessionId);
+            if (!binding || this.folders.get(key) !== record) return;
+            if (binding.bindingId !== record.bindingId) {
+              await this.forgetBinding(sessionId);
+              return;
+            }
+            const result = await this.renderBinding(binding, record, mode);
+            if (result.outcome === "complete" || result.outcome === "gone") await this.forgetBinding(sessionId);
+            this.recovered(record);
+          } catch (error) {
+            await this.handleWriteError(error, key, record);
           }
-          await this.finishOrphan(cursor, record);
-        });
+        };
+        if (locks) {
+          await locks.request(LOCK_PREFIX + sessionId, { ifAvailable: true }, async (lock) => {
+            if (lock) await recoverOne("orphan");
+          });
+        } else {
+          await recoverOne("orphan-if-ended");
+        }
       }
     });
-  }
-
-  private async finishOrphan(cursor: LogFileCursor, record: FolderRecord): Promise<void> {
-    try {
-      const session = await this.readSession(cursor.sessionId);
-      const entries = session ? await this.readEntries(cursor.sessionId) : [];
-      const footer = session?.endedAt !== undefined
-        ? `\nEnded: ${localStamp(session.endedAt)}\n`
-        : session
-          ? "\nEnded: not recorded (the page closed)\n"
-          // Pruned from IndexedDB before the folder got it.
-          : "\nThe rest of this session was removed from browser storage before it could be copied.\n";
-      await this.writeEntries(cursor, record, entries, footer, () => {});
-      await this.persistence.deleteCursor(cursor.sessionId);
-      this.recovered(record);
-    } catch (error) {
-      await this.handleWriteError(error, cursor.ownerKey, record);
-    }
   }
 
   private recovered(record: FolderRecord): void {
@@ -730,16 +926,17 @@ export class AutoLogFolder implements AutoLogSink {
     if (!this.supported) return { kind: "unsupported" };
     const key = this.currentKey;
     if (!key) return { kind: "unavailable" };
+    const storageError = this.storageErrors.get(key);
+    if (storageError) return { kind: "storage-error", ...storageError };
     if (!this.folders.has(key)) return { kind: "loading" };
     const record = this.folders.get(key);
     if (!record) return { kind: "none" };
     const folderName = record.directory.name;
     if (record.permission === "error") return { kind: "error", folderName, message: record.message ?? "Unknown error" };
     if (record.permission !== "granted") return { kind: "needs-permission", folderName };
-    const active = [...this.sessions.values()].find((tracked) =>
-      tracked.key === key && tracked.endedAt === undefined && tracked.cursor?.bindingId === record.bindingId);
-    const cursor = active?.cursor;
-    return { kind: "ready", folderName, ...(cursor ? { filePath: `${cursor.folderName}/${partFileName(cursor)}` } : {}) };
+    const binding = [...this.live.values()].find((live) =>
+      live.key === key && !live.ended && live.binding?.bindingId === record.bindingId && live.binding.nameChecked)?.binding;
+    return { kind: "ready", folderName, ...(binding ? { filePath: `${binding.folderName}/${partFileName(binding.baseName, binding.mark.part)}` } : {}) };
   }
 }
 
@@ -757,8 +954,7 @@ function defaultLocks(): LockManagerLike | undefined {
 
 export const autoLogFolder = new AutoLogFolder({
   persistence: new IndexedDbLogFolderPersistence(),
-  readEntries: (sessionId) => autoLogStore.getEntries(sessionId),
-  readSession: (sessionId) => autoLogStore.getSession(sessionId),
+  readSnapshot: (sessionId, fromSequence) => autoLogStore.getSessionSnapshot(sessionId, fromSequence),
   pickDirectory: defaultPicker(),
   locks: defaultLocks(),
 });

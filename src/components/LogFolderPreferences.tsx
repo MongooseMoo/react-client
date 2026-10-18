@@ -19,6 +19,10 @@ function describe(status: LogFolderStatus, loggingOn: boolean): { tone: Tone; te
       return { tone: "error", text: `Could not write: ${status.message}. It tries again with each new line.` };
     case "none":
       return { tone: "off", text: "No folder chosen." };
+    case "storage-error":
+      return status.blocked
+        ? { tone: "warn", text: "Another Mongoose tab is using older log folder settings. Close or reload your other Mongoose tabs, then choose Try again." }
+        : { tone: "error", text: `Could not read the log folder settings: ${status.message}.` };
     default:
       return { tone: "off", text: "Checking…" };
   }
@@ -29,7 +33,7 @@ function describe(status: LogFolderStatus, loggingOn: boolean): { tone: Tone; te
  * nothing where the browser has no folder access; status changes are spoken
  * by the folder sink itself, so this section has no live region of its own.
  */
-type FolderControls = Pick<AutoLogFolder, "state" | "syncOwner" | "choose" | "reconnect" | "stopUsing">;
+type FolderControls = Pick<AutoLogFolder, "state" | "syncOwner" | "choose" | "reconnect" | "retry" | "stopUsing">;
 
 const LogFolderPreferences: React.FC<{ folder?: FolderControls }> = ({ folder = autoLogFolder }) => {
   const status = useStore(folder.state, (state) => state.status);
@@ -65,8 +69,11 @@ const LogFolderPreferences: React.FC<{ folder?: FolderControls }> = ({ folder = 
     <section className="log-folder" aria-labelledby="log-folder-heading" ref={sectionRef}>
       <h3 id="log-folder-heading" tabIndex={-1} ref={headingRef}>Save logs to a folder</h3>
       <p className="log-folder-help" id="log-folder-help">
-        Each session is also written as a text file, line by line, in a folder you choose on this
-        computer, with a separate folder for each character. Logs are always kept in the browser as well.
+        Each session is also written as text files in a folder you choose on this computer, with a
+        separate folder for each character. Logs are always kept in the browser as well.
+      </p>
+      <p className="log-folder-help">
+        Mongoose rewrites the newest file of a session as lines arrive, so copy a log before you edit it.
       </p>
       {status.kind === "unavailable" ? (
         <p className="log-folder-help">Sign in to a character to choose a log folder.</p>
@@ -101,15 +108,21 @@ const LogFolderPreferences: React.FC<{ folder?: FolderControls }> = ({ folder = 
                 Try again
               </button>
             )}
-            <button
-              type="button"
-              className={hasFolder ? undefined : "btn-primary"}
-              disabled={status.kind === "loading"}
-              aria-describedby="log-folder-help"
-              onClick={run(() => folder.choose())}
-            >
-              {hasFolder ? "Choose a different folder…" : "Choose folder…"}
-            </button>
+            {status.kind === "storage-error" ? (
+              <button type="button" className="btn-primary" onClick={run(() => folder.retry())}>
+                Try again
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={hasFolder ? undefined : "btn-primary"}
+                disabled={status.kind === "loading"}
+                aria-describedby="log-folder-help"
+                onClick={run(() => folder.choose())}
+              >
+                {hasFolder ? "Choose a different folder…" : "Choose folder…"}
+              </button>
+            )}
             {hasFolder && (
               <button type="button" onClick={run(() => folder.stopUsing())}>
                 Stop using folder

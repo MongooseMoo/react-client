@@ -12,6 +12,7 @@ function fakeFolder(status: LogFolderStatus) {
     syncOwner: vi.fn(async () => {}),
     choose: vi.fn(async () => {}),
     reconnect: vi.fn(async () => {}),
+    retry: vi.fn(async () => {}),
     stopUsing: vi.fn(async () => {}),
   };
 }
@@ -19,6 +20,20 @@ function fakeFolder(status: LogFolderStatus) {
 describe("LogFolderPreferences", () => {
   beforeEach(() => {
     usePreferences.getState().setAutologging({ enabled: true, maxBytes: 1024 });
+  });
+
+  it("says another tab is blocking the folder settings and offers Try again", () => {
+    const folder = fakeFolder({ kind: "storage-error", blocked: true, message: "blocked" });
+    render(<LogFolderPreferences folder={folder} />);
+    expect(screen.getByText("Another Mongoose tab is using older log folder settings. Close or reload your other Mongoose tabs, then choose Try again.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Choose/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(folder.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells the player the newest file is rewritten", () => {
+    render(<LogFolderPreferences folder={fakeFolder({ kind: "none" })} />);
+    expect(screen.getByText("Mongoose rewrites the newest file of a session as lines arrive, so copy a log before you edit it.")).toBeInTheDocument();
   });
 
   it("renders nothing where the browser cannot write to folders", () => {

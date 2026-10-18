@@ -11,142 +11,119 @@ IndexedDB-only behaviour exactly, with no new storage access. Worktree:
 
 ## State
 
-- Round 1 committed: faed57ca (feature), 163c2810 (note).
-- Codex review of 163c2810 (report in the session scratchpad,
-  `codex-review-local-logs-report.md`) found 8 problems. I reran its repro
-  script against the worktree and reproduced 1, 2, 3, 4 and 8; 6 and 7 are
-  visible in the code. Round 2 fixes all eight (in progress, see Next step).
+- Round 1: faed57ca, 163c2810. Round 2 (cursor design): 03220d7f, 08abf38a,
+  134b4c86.
+- Codex review 1 (`codex-review-local-logs-report.md` in the session
+  scratchpad): 8 findings, all reproduced, fixed in round 2.
+- Codex review 2 (`codex-rereview-local-logs-report.md`): 11 new findings,
+  almost all in the cursor recovery machinery. I reran its repro script
+  against 134b4c86; every NEW case reproduced as reported.
+- Round 3 (in progress): replace the cursor design with an idempotent
+  projection of IndexedDB (lead's decision, below).
 
-## What round 1 got wrong (and why)
+## Why rounds 1 and 2 went wrong
 
-My tests only ever changed things after `whenIdle()` and only one tab, one
-failure at a time, so every concurrency and partial-failure path went
-untested and unthought:
+Round 1 tested only one tab, one failure, and changes after `whenIdle()`.
+Round 2 answered each finding with more machinery around an append-only
+mirror: cursors, write-ahead intents, size checks. An append-only copy into
+a filesystem that cannot be made transactional cannot be made exactly-once
+by bookkeeping, and every new piece of bookkeeping had its own gap: an end
+flag that overtook queued batches, a footer the cursor did not record, a
+stale cursor replayed by a second recoverer, no record for sessions that
+never reached a first write, a size check fooled by an equal-length edit.
+The fix is a design where replaying is always safe, not more bookkeeping.
 
-1. Same-second sessions (two tabs) picked the same file name: check, then
-   create, is not a reservation. One tab overwrote the other.
-2. `sessionEnded` dropped the session even when the folder was
-   disconnected or failing, so Reconnect said "ready" while lines were
-   missing for good. Nothing survived a reload.
-3. Stop returned while a write was mid-flight; that write then created and
-   wrote a file in the folder the player had just stopped using.
-4. Formatting state (header written, current day) advanced before the
-   write committed, so a failed first write lost the header and a failed
-   midnight write lost the date separator.
-5. `keepExistingData` makes Chromium copy the whole file per flush.
-6. The focus effect pulled focus back even when the player had moved it.
-7. Stop and Choose announced success before, and regardless of, the
-   IndexedDB delete/put.
-8. Unsupported browsers still opened the handle database from `syncOwner`.
+## Decisions and why (round 3 design)
 
-Also overstated in round 1's note: the sink never "mirrored" the viewer's
-full owner/visitor predicate. What it enforces is narrower and is stated
-below.
-
-## Decisions and why (round 2 design)
-
-- IndexedDB stays authoritative; the folder is a sink fed after IndexedDB
-  accepts a batch. Folder failures never reach the IndexedDB flush.
-- Owner scoping as actually enforced: a session's lines only go to the
-  folder its own owner chose (owner key on the session). Sessions with no
-  owner are never written. The sink does not re-check visitor/policy state
-  itself; App.tsx only creates sessions for a confirmed, non-visitor owner,
-  and AutoLogService's generation check drops late lines after a change.
-- File names carry the session id: `<Character>/<YYYY-MM-DD HH-MM-SS> <id8>.txt`,
-  then `... part 2.txt` and so on. Distinct sessions cannot collide.
-- Parts are capped at 1 MiB (finding 5, lead's decision), so each
-  keepExistingData copy is at most 1 MiB. Each part after the first opens
-  with a short header naming the session and the previous part. Writes stay
-  short closed-stream commits. Preferences shows the current part.
-- A per-session cursor is stored next to the folder handle (same database,
-  `cursors` store): file name, part, committed bytes, last committed
-  sequence, current day, end time, and a write-ahead `pending` intent
-  (size before/after, sequence, day) saved before each commit. Before every
-  commit the actual file size is compared: equal to the cursor means
-  nothing new; equal to `pending.sizeAfter` means the last commit landed
-  but the cursor update did not, so adopt it; anything else means someone
-  else changed the file, so never write into it and continue in a new
-  part. That makes replay idempotent without parsing the file.
-- Formatting state (header, day, sequence) lives in the cursor and is only
-  replaced after `close()` succeeds (finding 4).
-- Ended sessions stay tracked until their footer commits; Reconnect and
-  Choose finish them (finding 2).
-- After a reload, sessions a dead page left unfinished are finished from
-  IndexedDB. Web Locks (`navigator.locks`) tell a dead page's session from
-  one another tab is still writing: each tab holds a lock per live session,
-  and a cursor is only recovered under `ifAvailable`. Without Web Locks,
-  orphans are left alone rather than risk finishing another tab's session.
-  No beforeunload work.
-- Every folder change replaces or clears the in-memory folder record. A
-  write holds the record it started with and checks it is still current
-  after every await and before opening and before closing a writable;
-  stale writes abort (finding 3). Persistence of the change (put/delete)
-  goes through the same queue as writes, and Stop resolves only after it.
-- Announcements say what really happened (finding 7): "stopped" only after
-  the delete commits; a failed delete or put is announced as "this visit
-  only" with what happens on reload.
-- Focus: the UI uses the existing `useFocusRefuge` hook
-  (src/components/FileTransfer/useFocusRefuge.ts) with the section heading
-  as the refuge, so focus only moves when the focused button was removed
-  and focus fell to the body (finding 6).
-- No HTML copy at session end (round 1 Chromium run: a reload left a 0-byte
-  `.html`). The viewer's HTML export remains.
-- Session title is `Mongoose Client - <room>`, a poor folder name, so the
-  character folder uses `useSessionStore.playerName` when its playerUuid
-  matches the owner, else the playerRef.
+- IndexedDB stays authoritative. The folder is a projection of it: every
+  file's bytes are a pure function of the session's IndexedDB record plus
+  a small binding (character name, base file name). Rendering twice gives
+  identical bytes, so any write can be repeated, by any tab, at any time.
+- Part boundaries are a pure function of the entries: parts are filled
+  greedily up to maxPartBytes (1 MiB) counting the header, with a fixed
+  footer reserve kept free in every part, so the footer never moves a
+  boundary and never pushes a part over the cap. An entry too big for an
+  empty part is split into UTF-8-safe chunks across parts.
+- Each render reads the session and its entries from the start of the
+  current part in one IndexedDB transaction (`getSessionSnapshot`) and
+  writes the current part whole (createWritable without keepExistingData,
+  write, close: at most 1 MiB, the same cost keepExistingData already had).
+  Parts that close in that render are written once, completely.
+- The footer is part of the render: `Ended: <time>` when the session record
+  has endedAt; for a session recovered after its page died, `Ended: not
+  recorded (the page closed)`. Session end is just another queued render
+  after earlier ones, reading everything from IndexedDB.
+- A binding per session (database store `bindings`) is saved the moment a
+  session belongs to an owner who has a folder, before any permission or
+  file work, so a session that never got a single write is still found
+  after a reload. It holds the binding id of the folder choice, character
+  folder/name, base file name, and a mark: where the current part starts
+  (part, sequence, byte offset into that entry, previous day). The mark is
+  only an optimisation; losing it re-renders from part 1 with the same bytes.
+- Bindings are deleted when the session's footer is written, when its
+  session is gone from IndexedDB (pruned: the files are left exactly as
+  they are, no footer is invented), and on Stop.
+- Recovery on load / Choose / Reconnect: render every binding of the owner
+  that this page is not writing. With Web Locks, sessions another tab holds
+  are skipped (avoids wasted work and a premature page-closed footer, which
+  the live tab's next render would remove anyway). Without Web Locks only
+  ended or pruned sessions are finished; others are left for a later page.
+- Locks are only taken for sessions bound to a folder, released when the
+  session completes, the folder is stopped, or the sink is disposed.
+- File names use the last 12 hex characters of the session id; before the
+  first write, an existing file of that name gets ` (2)` etc., and the
+  chosen base name is saved in the binding.
+- The client owns these files: the newest part is rewritten as lines
+  arrive. The preferences help says so.
+- The database (`mongoose-autolog-folders`) moves to version 3: drops the
+  round 2 `cursors` store, adds `bindings`, still wraps v1 bare handles.
+  Its connection closes itself on versionchange; a rejected or blocked open
+  is not cached, so the next attempt retries; a late success after a block
+  is closed. "Blocked by another tab" shows in preferences with Try again.
+- Unchanged from round 2: owner scoping by the session's own owner key,
+  folder records checked after every await (Stop/Choose races), truthful
+  announcements, useFocusRefuge, no HTML copy, unsupported = no storage.
 
 ## Surprises
 
-- `createWritable({keepExistingData: true})` in Chromium copies the existing
-  file into a swap file before each write (Mac may clone instead). Round 1's
-  code comment implied appends avoid rewriting; only JS avoids re-sending.
+- `createWritable({keepExistingData: true})` in Chromium copies the whole
+  existing file into a swap file before each write (Mac may clone instead).
 - jsdom's DOMException is not an `Error`; `errorMessage` checks both.
-- A commit (close) is atomic, but an outstanding append does not survive
-  the tab closing; that is why recovery is cursor-based, not unload-based.
+- CDP `Page.crash` never resolves its send; race it with a timeout.
 
-## Verification
+- A bug the new tests caught: a first render that claimed the file name and
+  then failed to write left the live session holding the unclaimed binding,
+  so the retry saw its own empty file as someone else's and wrote ` (2)`.
+  renderBinding now reports the claimed binding to its caller at once.
 
-Round 1 (before review): Chromium via Playwright with an OPFS folder
-standing in for the picker.
+## Verification (round 3)
 
-Round 2 (after the rewrite):
-- `npx tsc --noEmit` exit 0; `npx vitest run` 177 files / 2392 tests passed;
-  `npx biome lint` on the changed files clean (9 checked; the .css is not
-  linted by biome).
-- Chromium, OPFS folder, live server as Solaris_Guest (scratchpad scripts
-  `log-folder-e2e.mjs`, `log-folder-crash.mjs`, not committed): files named
-  `Solaris_Guest/2026-10-18 02-08-21 f8f6f146.txt`; reload gives a new
-  session file and the old one ends `Ended: 2026-10-18 02:08:30`; after Stop
-  focus is on the "Save logs to a folder" heading. Renderer crash via CDP
-  `Page.crash` (no unload work at all), then a new page: the crashed
-  session's file gained `Ended: not recorded (the page closed)` and its
-  cursor was deleted; the only cursor left was the new live session's.
-- Not exercised in a browser: the OS picker, real `prompt` permission and
-  Reconnect, revoked permission, disk-full, two real tabs at once, part
-  rotation at the real 1 MiB size. Unit tests with fakes only.
-
-## Round 2 progress
-
-- Tests written first: `AutoLogFolder.test.ts` rewritten (27 tests) against a
-  persistence port (folders + cursors), a Web Locks port (fake tabs that can
-  "die"), and `maxPartBytes`. Ran red against the old code (API mismatch),
-  then green after the rewrite.
-- `AutoLogFolder.ts` rewritten to the design above. `IndexedDbLogFolderHandles`
-  became `IndexedDbLogFolderPersistence`. The database `mongoose-autolog-folders`
-  is version 2 (08abf38a): the upgrade adds the `cursors` store and wraps each
-  version 1 value (a bare handle) as `{ handle, bindingId }`, so a round 1
-  database keeps its remembered folders (test: "upgrades a version 1 database").
-- UI: `useFocusRefuge(section, heading)` replaced my effect; heading has
-  tabIndex -1. Error state gained "Try again" (calls `reconnect`, which
-  retries without a permission prompt when permission is already granted):
-  without it, a session that ended while writes failed had nothing left to
-  trigger a retry.
-- I did not rerun Codex's repro scripts after the rewrite: they construct
-  the old API (`handles:`). Each scenario they reproduced has a unit test.
+- `npx tsc --noEmit` exit 0. `npx vitest run`: 177 files, 2405 tests passed.
+  `npx biome lint` on the 6 changed source files: 3 warnings, all in lines
+  this branch did not write (AutoLogStore.ts:1, AutoLogStore.test.ts:3 and
+  the `!` in the existing prune test); the same 3 appear at HEAD.
+- Codex scenarios as tests in AutoLogFolder.test.ts: real AutoLogService with
+  a held folder (all three batches + one footer), footer once after a failed
+  binding delete and a recovery, two recoverers interleaved (one copy),
+  session that never got a write found after reload, pruned session left
+  alone, blocked v1 upgrade then retry (real IndexedDbLogFolderPersistence),
+  versionchange closes the connection, cap with a split entry and footer,
+  no-locks lifecycle, no locks/bindings without a folder, dispose releases
+  locks, 12-hex names and an existing name. Plus "re-rendering gives
+  identical bytes".
+- Chromium with an OPFS folder, live server, guest login:
+  - `Tangra_Guest/2026-10-18 02-55-42 8c7d831d5ae5.txt` written; status
+    "Writing" with the current file; reload with the same guest: folder
+    remembered, new session file, old file ends `Ended: 2026-10-18 02:56:45`;
+    after Stop focus is on the "Save logs to a folder" heading.
+  - A reload can sign in as a different random guest; that guest correctly
+    shows "No folder chosen" (folders are per character), seen once.
+  - Crash (CDP Page.crash) then a new page, same guest (Anadolu_Guest): the
+    crashed session's file gained `Ended: not recorded (the page closed)`,
+    its binding was removed, only the new live session's binding remained.
+- Not exercised in a browser: OS picker, real prompt/Reconnect, revoked
+  permission, disk full, two real tabs, a real blocked upgrade, 1 MiB parts.
 
 ## Next step
 
-Round 2 committed on the branch; reported to team-lead. A fresh Codex
-review follows. Known limits left as they are: pruning is not coordinated
-with recovery (a pruned session gets a footer saying the rest was removed
-from browser storage); without Web Locks, orphans are never finished.
+Committed; report to team-lead; Codex reviews again.

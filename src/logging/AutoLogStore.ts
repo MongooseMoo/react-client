@@ -161,6 +161,25 @@ export class AutoLogStore {
     return entries.sort((a, b) => a.sequence - b.sequence);
   }
 
+  /**
+   * The session and its entries from `fromSequence` on, read in one
+   * transaction so a prune cannot fall between them. Undefined once the
+   * session is gone.
+   */
+  async getSessionSnapshot(sessionId: string, fromSequence: number): Promise<{ session: AutoLogSession; entries: AutoLogEntry[] } | undefined> {
+    const db = await this.open();
+    const transaction = db.transaction([AUTOLOG_SESSIONS_STORE, AUTOLOG_ENTRIES_STORE], "readonly");
+    const sessionRequest = transaction.objectStore(AUTOLOG_SESSIONS_STORE).get(sessionId);
+    // The entry key is [sessionId, sequence], so a key range reads them in order.
+    const entriesRequest = transaction.objectStore(AUTOLOG_ENTRIES_STORE).getAll(IDBKeyRange.bound([sessionId, fromSequence], [sessionId, Infinity]));
+    const [session, entries] = await Promise.all([
+      requestToPromise<AutoLogSession | undefined>(sessionRequest),
+      requestToPromise<AutoLogEntry[]>(entriesRequest),
+    ]);
+    await transactionDone(transaction);
+    return session ? { session, entries } : undefined;
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     const db = await this.open();
     const transaction = db.transaction([AUTOLOG_ENTRIES_STORE, AUTOLOG_SESSIONS_STORE], "readwrite");
