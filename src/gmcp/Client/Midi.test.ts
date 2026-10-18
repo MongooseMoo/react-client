@@ -234,6 +234,7 @@ describe('Client.Midi 2', () => {
     const initial = ['Core.Supports 1', 'Client.Media 1', 'Core.Time 1', 'Client.Optional 3'];
     expect(supports.advertisedModules()).toEqual(initial);
     session.markReady();
+    setNetworkReady.mockClear();
 
     usePreferences.getState().setMidi({ enabled: true });
     midi.advertiseMidiSupport();
@@ -242,6 +243,7 @@ describe('Client.Midi 2', () => {
       ['Core.Supports.Set', JSON.stringify([...initial, 'Client.Midi 2'])],
     ]);
     expect(media.sendPlaybackSupport).toHaveBeenCalledOnce();
+    expect(setNetworkReady).toHaveBeenCalledOnce();
     expect(setNetworkReady).toHaveBeenLastCalledWith(true);
     expect(reset).not.toHaveBeenCalled();
 
@@ -259,6 +261,48 @@ describe('Client.Midi 2', () => {
     ]);
     expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(3);
     expect(reset).not.toHaveBeenCalled();
+  });
+  it('removes MIDI enabled in the initial session Set, including after a reconnect reset', () => {
+    class CoreFixture extends GMCPPackage {
+      readonly packageName = 'Core';
+      sendHello = vi.fn();
+    }
+    class AuthFixture extends GMCPPackage {
+      readonly packageName = 'Auth.Autologin';
+      sendStoredLogin = vi.fn();
+    }
+    class MediaFixture extends GMCPPackage {
+      readonly packageName = 'Client.Media';
+      publishEffectsSupport = vi.fn();
+      sendPlaybackSupport = vi.fn();
+    }
+    const sendGmcp = vi.fn();
+    const client = { connected: true, registerDisconnectReset: vi.fn() } as unknown as MudClient;
+    const session = new GmcpSession(client);
+    client.gmcp = session;
+    const transport = { sendGmcp } as unknown as TelnetParser;
+    session.attachTransport(transport);
+    session.register(CoreFixture);
+    session.register(GMCPCoreSupports);
+    session.register(AuthFixture);
+    session.register(MediaFixture);
+    const midi = session.register(GMCPClientMidi);
+    packages.push(midi);
+    for (let connection = 0; connection < 2; connection++) {
+      usePreferences.getState().setMidi({ enabled: true });
+      session.start();
+      const capabilitySet = sendGmcp.mock.calls.find(([name]) => name === 'Core.Supports.Set');
+      expect(JSON.parse(capabilitySet?.[1])).toContain('Client.Midi 2');
+      sendGmcp.mockClear();
+      usePreferences.getState().setMidi({ enabled: false });
+      midi.unadvertiseMidiSupport();
+      midi.unadvertiseMidiSupport();
+      expect(sendGmcp.mock.calls).toEqual([['Core.Supports.Remove', '["Client.Midi"]']]);
+      session.reset();
+      midi.reset();
+      session.attachTransport(transport);
+      sendGmcp.mockClear();
+    }
   });
 });
 

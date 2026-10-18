@@ -104,7 +104,8 @@ const GMCPClientMidiBase = GMCPPackage.with({
 export class GMCPClientMidi extends GMCPClientMidiBase {
   public packageVersion = 2;
   readonly world: WorldMusicClient;
-  private isAdvertised = false;
+  // The initial session Set can advertise MIDI before the runtime toggle runs.
+  private isAdvertised: boolean | undefined;
   private debugCallback?: (hex: string, type: string, gmcpMessage: string) => void;
   private midiServicePromise?: Promise<MidiService>;
   private serviceInitialized = false;
@@ -380,7 +381,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     this.releaseOutgoing();
     this.clearLive();
     const supports = this.client.gmcp.handlers['Core.Supports'];
-    if (this.isAdvertised && supports) {
+    if (this.isAdvertised !== false && supports) {
       supports.sendRemove(['Client.Midi']);
       this.isAdvertised = false;
     }
@@ -461,7 +462,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     this.outgoingTimers.clear();
     this.outgoing.clear();
     this.pedals.clear();
-    this.isAdvertised = false;
+    this.isAdvertised = undefined;
   }
   shutdown(): void {
     this.closed = true;
