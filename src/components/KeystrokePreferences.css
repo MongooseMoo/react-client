@@ -1,0 +1,17 @@
+.keystroke-preferences {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 1em;
+}
+
+.keystroke-preferences caption {
+  font-weight: bold;
+  text-align: left;
+}
+
+.keystroke-preferences th,
+.keystroke-preferences td {
+  padding: 0.25em 0.5em;
+  text-align: left;
+  vertical-align: middle;
+}

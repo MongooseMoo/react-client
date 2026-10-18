@@ -46,6 +46,14 @@ it('retains the valid timeout through an invalid edit and accepts a replacement 
   expect(usePreferences.getState().haptics.autoStopTimeout).toBe(30);
 });
 
+it('has a Keys section and lists Alt+Shift+K with the keyboard shortcuts', () => {
+  render(<Preferences />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Keys' }));
+  expect(screen.getByText(/No keys yet/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Keyboard' }));
+  expect(screen.getByText(/Alt\+Shift\+K turns keys mode on and off/)).toBeInTheDocument();
+});
+
 it('uses stable slider names and keeps disabled-feature help references valid', () => {
   render(<Preferences />);
   fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));

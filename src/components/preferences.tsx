@@ -6,6 +6,7 @@ import { useVoices } from "../hooks/useVoices";
 import Tabs, { type TabProps } from "./tabs";
 import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
 import ChannelPreferencesTab from "./ChannelPreferences";
+import KeystrokePreferencesTab from "./KeystrokePreferences";
 
 function PreferenceNumber({ id, label, value, min, max, onCommit }: {
   id: string; label: string; value: number; min: number; max: number;
@@ -475,6 +476,8 @@ const KeyboardTab: React.FC = () => {
           <dd>Alt+Space repeats; Alt+Enter opens its link or offers a link choice; Alt+Shift+Space copies. Alt+Shift+1 through Alt+Shift+0 selects a numbered buffer. Alt+Shift+T toggles timestamps; Alt+Shift+Delete deletes the current buffer.</dd>
           <dt>Sounds</dt>
           <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback.</dd>
+          <dt>Server keys</dt>
+          <dd>Alt+Shift+K turns keys mode on and off, so a game's or console's keys work on letters and other typing keys. The Keys section lists every key and lets you change it.</dd>
         </dl>
         <p>Ctrl+Shift+number opens and focuses a sidebar destination. Numbers stay fixed when optional tabs appear; unavailable destinations do nothing.</p>
         <table>
@@ -528,6 +531,7 @@ const Preferences: React.FC = () => {
     { id: "preferences-sounds-tab", label: "Sounds", content: <SoundsTab /> },
     { id: "preferences-editor-tab", label: "Editor", content: <EditorTab /> },
     { id: "preferences-keyboard-tab", label: "Keyboard", content: <KeyboardTab /> },
+    { id: "preferences-keys-tab", label: "Keys", content: <KeystrokePreferencesTab /> },
     { id: "preferences-midi-tab", label: "MIDI", content: <MidiTab /> },
     { id: "preferences-haptics-tab", label: "Haptics", content: <HapticsTab /> },
     { id: "preferences-autologging-tab", label: "Logging", content: <AutologgingTab /> },

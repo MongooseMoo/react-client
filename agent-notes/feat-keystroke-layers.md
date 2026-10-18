@@ -14,7 +14,10 @@ preferences, a Keys tab in Preferences. No push, no PR.
   `keystrokes` overrides in `preferencesStore`; `src/stores/keystrokesStore.ts` (layers, keys mode,
   resolve/find/keyTakenBy); `src/gmcp/Client/Keystrokes.ts` rewritten (layers, legacy messages,
   BindingsList with ids, focus zones, keys mode, announcements).
-- Next: Keys tab in Preferences with keyboard rebinding, Alt+Shift+K in the shortcut list.
+- Keys tab (`src/components/KeystrokePreferences.tsx`, a table per layer, a key button per
+  binding: Enter starts listening, next key is taken or refused with the reason, Escape cancels,
+  blur cancels) and Alt+Shift+K in the Keyboard tab's shortcut list: written, tests pass, being
+  committed.
 - Baseline before work: `npx vitest run` 159 files / 2191 tests passed; typecheck clean.
 
 ## Decisions and why
@@ -36,4 +39,4 @@ preferences, a Keys tab in Preferences. No push, no PR.
 
 ## Next step
 
-Keys tab (`src/components/KeystrokePreferences.tsx`) with tests, then full suite, typecheck, lint.
+Refactor pass (reserved list should use KEYS_MODE_CHORD), full suite, typecheck, lint, report.
