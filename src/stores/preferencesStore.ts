@@ -5,6 +5,7 @@ import {
   saveStoredValue,
   type LocalStorageSchema,
 } from "../persistence";
+import type { Chord } from "../keystrokeChords";
 
 export enum AutoreadMode {
   Off = "off",
@@ -85,6 +86,13 @@ export type PrefState = {
   midi: MidiPreferences;
   haptics: HapticsPreferences;
   autologging: AutologgingPreferences;
+  // Keys the player chose for server key layers, keyed by layer id and then by
+  // the binding's command.
+  keystrokes: KeystrokeOverrides;
+};
+
+export type KeystrokeOverrides = {
+  [layerId: string]: { [command: string]: Chord };
 };
 
 type PrefActions = {
@@ -99,6 +107,7 @@ type PrefActions = {
   setMidi: (data: MidiPreferences) => void;
   setHaptics: (data: HapticsPreferences) => void;
   setAutologging: (data: AutologgingPreferences) => void;
+  setKeystrokeOverride: (layerId: string, command: string, chord: Chord) => void;
 };
 
 const STORAGE_KEY = "preferences";
@@ -128,6 +137,7 @@ function getInitialPreferences(): PrefState {
     midi: { enabled: false },
     haptics: { enabled: false, intensityCap: 1.0, autoStopTimeout: 5 },
     autologging: { enabled: false, maxBytes: 100 * 1024 * 1024 },
+    keystrokes: {},
   };
 }
 
@@ -147,6 +157,7 @@ function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
     midi: { ...initial.midi, ...stored.midi },
     haptics: { ...initial.haptics, ...cleanHaptics },
     autologging: { ...initial.autologging, ...stored.autologging },
+    keystrokes: { ...initial.keystrokes, ...stored.keystrokes },
   };
 }
 
@@ -212,6 +223,13 @@ export const usePreferences = create<PrefState & PrefActions>()(
     setMidi: (data) => set({ midi: data }),
     setHaptics: (data) => set({ haptics: data }),
     setAutologging: (data) => set({ autologging: data }),
+    setKeystrokeOverride: (layerId, command, chord) =>
+      set((s) => ({
+        keystrokes: {
+          ...s.keystrokes,
+          [layerId]: { ...s.keystrokes[layerId], [command]: chord },
+        },
+      })),
   })),
 );
 
