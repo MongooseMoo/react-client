@@ -3,6 +3,43 @@ import { strictJson, validatePeer, validateFiles, validName } from './protocol';
 import { decodeFrame, encodeFrame } from './frames';
 
 describe('Phase 1 protocol boundaries', () => {
+  it('C: rejects fractional, exponent and negative-zero spellings of integer fields', () => {
+    for (const seq of ['1.0e0', '1.0', '1e0', '-0'])
+      expect(() => strictJson(`{"seq":${seq},"leaseMs":30000}`)).toThrow();
+  });
+  it('accepts spec feature subsets, including newer peer capabilities', () => {
+    const peer = { player: '#2', endpoint: 'a'.repeat(32), epoch: 'b'.repeat(32) };
+    for (const features of [
+      ['base', 'leaves'],
+      ['base', 'future'],
+    ]) {
+      expect(() =>
+        validatePeer('Capabilities', {
+          req: 'c'.repeat(32),
+          to: '#2',
+          online: true,
+          target: peer,
+          peer: 1,
+          files: 1,
+          data: 1,
+          features,
+          maxReceiveSize: 10737418240,
+          legacyV1: false,
+        }),
+      ).not.toThrow();
+      expect(() =>
+        validatePeer('Reserved', {
+          event: 'c'.repeat(32),
+          peer,
+          session: 'd'.repeat(32),
+          initiator: peer,
+          authorization: { kind: 'offer', offer: 'e'.repeat(32) },
+          capabilities: { data: 1, features, maxReceiveSize: 10737418240 },
+          negotiationMs: 30000,
+        }),
+      ).not.toThrow();
+    }
+  });
   it('rejects duplicate keys, escaped duplicates, null, surrogates and trailing data', () => {
     for (const raw of [
       '{"req":1,"req":2}',

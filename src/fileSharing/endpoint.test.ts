@@ -4,6 +4,55 @@ import { MemoryPort } from './testHarness';
 import type { PeerInbound, PeerOutbound } from './protocol';
 const owner = '["runtime","uuid","#1"]';
 describe('Files endpoint recovery', () => {
+  it('I: retries a failed lost callback and releases the election even if shutdown storage fails', async () => {
+    vi.useFakeTimers();
+    const tail = new Map<string, Promise<unknown>>();
+    const locks = {
+      request: (name: string, _options: LockOptions, work: (lock: Lock) => Promise<void>) => {
+        const pending = (tail.get(name) ?? Promise.resolve()).then(() =>
+          work({ name, mode: 'exclusive' }),
+        );
+        tail.set(
+          name,
+          pending.catch(() => {}),
+        );
+        return pending;
+      },
+    } as unknown as LockManager;
+    const first = new MemoryPort<PeerInbound, PeerOutbound>();
+    const second = new MemoryPort<PeerInbound, PeerOutbound>();
+    const lost = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('IndexedDB open failed'))
+      .mockResolvedValue(undefined);
+    const a = new EndpointController({
+      peer: first,
+      owner,
+      player: '#1',
+      locks,
+      acquire: async () => {},
+      lost,
+      random: () => 0,
+    });
+    const b = new EndpointController({
+      peer: second,
+      owner,
+      player: '#1',
+      locks,
+      acquire: async () => {},
+      lost: () => {},
+    });
+    await a.start();
+    await b.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(14000);
+    expect(first.sent.length).toBeGreaterThan(1);
+    lost.mockRejectedValue(new Error('Storage close failed'));
+    await expect(a.stop()).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(second.sent).toHaveLength(1);
+    await b.stop();
+  });
   it('queues exactly one exclusive election request and hands ownership to a waiting tab', async () => {
     const tail = new Map<string, Promise<unknown>>();
     const request = vi.fn(

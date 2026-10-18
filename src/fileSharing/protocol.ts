@@ -36,7 +36,7 @@ export type Ready = {
   peer: 1;
   files: 1;
   data: 1;
-  features: ['base'];
+  features: string[];
   maxReceiveSize: number;
   canShare: boolean;
   leaseMs: 30000;
@@ -50,7 +50,7 @@ export type Capabilities = {
   peer: 0 | 1;
   files: 0 | 1;
   data: 0 | 1;
-  features: [] | ['base'];
+  features: string[];
   maxReceiveSize: number;
   legacyV1: boolean;
 };
@@ -61,7 +61,7 @@ export type Reserved = {
   session: string;
   initiator: Endpoint;
   authorization: { kind: 'offer'; offer: string };
-  capabilities: { data: 1; features: ['base']; maxReceiveSize: number };
+  capabilities: { data: 1; features: string[]; maxReceiveSize: number };
   negotiationMs: 30000;
 };
 export type Candidate = {
@@ -279,7 +279,7 @@ export function strictJson(raw: string, maxBytes = 65536, maxDepth = 8, maxValue
     check(number);
     p += number[0].length;
     const n = Number(number[0]);
-    check(Number.isFinite(n));
+    check(Number.isSafeInteger(n) && /^-?(?:0|[1-9]\d*)$/.test(number[0]) && number[0] !== '-0');
     return n;
   };
   const out = value(1);
@@ -323,7 +323,14 @@ const endpoint = shape({ player, endpoint: id, epoch: id });
 const size = integer(0, MAX_FILE);
 const gen = integer(1, 2147483647);
 const time = integer(0, Number.MAX_SAFE_INTEGER);
-const base: Test = (v) => Array.isArray(v) && v.length === 1 && v[0] === 'base';
+// Unknown feature tokens are ignored locally; they never expand Phase 1 authority.
+export const validFeatures: Test = (v) =>
+  Array.isArray(v) &&
+  v.length <= 32 &&
+  v.every(
+    (x, i) =>
+      typeof x === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(x) && (i === 0 || v[i - 1] < x),
+  );
 const refs = shape({}, { offer: id, session: id, search: id });
 const ack = shape({ req: id, about: ascii(1, 32), refs });
 const error = shape(
@@ -364,8 +371,8 @@ const peerSchemas: Record<keyof PeerInbound, Test> = {
     peer: literal(1),
     files: literal(1),
     data: literal(1),
-    features: base,
-    maxReceiveSize: size,
+    features: (v) => validFeatures(v) && (v as string[]).includes('base'),
+    maxReceiveSize: integer(0, 10737418240),
     canShare: literal(true, false),
     leaseMs: literal(30000),
     heartbeatMs: literal(10000),
@@ -384,8 +391,8 @@ const peerSchemas: Record<keyof PeerInbound, Test> = {
       peer: literal(0, 1),
       files: literal(0, 1),
       data: literal(0, 1),
-      features: (v) => base(v) || (Array.isArray(v) && v.length === 0),
-      maxReceiveSize: size,
+      features: validFeatures,
+      maxReceiveSize: integer(0, 10737418240),
       legacyV1: literal(true, false),
     },
     { target: endpoint },
@@ -397,7 +404,11 @@ const peerSchemas: Record<keyof PeerInbound, Test> = {
       session: id,
       initiator: endpoint,
       authorization: auth,
-      capabilities: shape({ data: literal(1), features: base, maxReceiveSize: size }),
+      capabilities: shape({
+        data: literal(1),
+        features: validFeatures,
+        maxReceiveSize: integer(0, 10737418240),
+      }),
       negotiationMs: literal(30000),
     },
     { req: id },
@@ -454,6 +465,9 @@ const fileSchemas: Record<keyof FilesInbound, Test> = {
   Ack: ack,
   Error: error,
 };
+export function knownInbound(packageName: string, kind: string): boolean {
+  return Object.hasOwn(packageName === 'Client.Peer' ? peerSchemas : fileSchemas, kind);
+}
 export function validatePeer<K extends keyof PeerInbound>(kind: K, v: unknown): PeerInbound[K] {
   check(peerSchemas[kind]?.(v));
   const data = v as PeerInbound[K];
@@ -466,7 +480,7 @@ export function validatePeer<K extends keyof PeerInbound>(kind: K, v: unknown): 
             c.peer === 1 &&
             c.files === 1 &&
             c.data === 1 &&
-            base(c.features) &&
+            c.features.includes('base') &&
             !c.legacyV1
         : c.peer === 0 &&
             c.files === 0 &&

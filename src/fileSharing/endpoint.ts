@@ -221,10 +221,22 @@ export class EndpointController {
         Math.min(60000, 1000 * 2 ** Math.min(this.attempt++, 6)) * (1 + random() / 4),
       ),
     );
+    this.recoverStorage(reason, delay);
+  }
+  private recoverStorage(reason: string, delay: number): void {
     this.transition = this.transition
-      .then(() => this.options.lost(reason))
-      .then(() => {
-        if (this.active && this.elected) this.later(delay, () => this.hello());
+      .catch(() => {})
+      .then(async () => {
+        if (!this.active || !this.elected) return;
+        try {
+          await this.options.lost(reason);
+          if (this.active && this.elected) this.later(delay, () => this.hello());
+        } catch (error) {
+          this.status = `File storage unavailable; retrying: ${String(error)}`;
+          this.options.changed?.();
+          if (this.active && this.elected)
+            this.later(delay, () => this.recoverStorage(reason, Math.min(60000, delay * 2)));
+        }
       });
   }
   async activateThisTab(): Promise<void> {
@@ -252,11 +264,16 @@ export class EndpointController {
     for (const off of this.unsubscribe) off();
     this.unsubscribe = [];
     this.electionAbort?.abort();
-    await this.acquiring?.catch(() => {});
-    await this.transition;
-    await this.options.lost(this.parked ? 'superseded' : 'stopped');
-    this.unlock?.();
-    this.unlock = undefined;
-    this.options.changed?.();
+    try {
+      await this.acquiring?.catch(() => {});
+      await this.transition.catch(() => {});
+      await this.options.lost(this.parked ? 'superseded' : 'stopped');
+    } catch (error) {
+      this.status = `File storage unavailable: ${String(error)}`;
+    } finally {
+      this.unlock?.();
+      this.unlock = undefined;
+      this.options.changed?.();
+    }
   }
 }

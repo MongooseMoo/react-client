@@ -8,6 +8,7 @@ import {
   strictJson,
   utf8Length,
   validMetadata,
+  validFeatures,
   type Endpoint,
   type Metadata,
 } from './protocol';
@@ -19,7 +20,7 @@ export type Control =
       session: string;
       self: Endpoint;
       peer: Endpoint;
-      features: ['base'];
+      features: string[];
       maxFrame: number;
       slots: { free: number; total: number };
     }
@@ -54,7 +55,7 @@ export function parseControl(raw: string): Control {
         session: id,
         self: endpoint,
         peer: endpoint,
-        features: (x) => Array.isArray(x) && x.length === 1 && x[0] === 'base',
+        features: (x) => validFeatures(x) && (x as string[]).includes('base'),
         maxFrame: integer(16391, 32768),
         slots: shape({ free: integer(0, 3), total: integer(0, 3) }),
       })(v);

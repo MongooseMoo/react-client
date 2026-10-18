@@ -33,6 +33,32 @@ describe("createConfiguredClient", () => {
   let client: MudClient | undefined;
   const originalGeolocation = globalThis.navigator.geolocation;
 
+  it('isolates v2 listener exceptions and unknown later-phase messages', () => {
+    usePreferences
+      .getState()
+      .setGeneral({ ...usePreferences.getState().general, fileSharingV2: true });
+    client = createConfiguredClient();
+    const files = client.gmcp.require('Client.Files');
+    const diagnostic = vi.spyOn(client, 'fileSharingProtocolError');
+    const later = vi.fn();
+    files.on('Error', () => {
+      throw new Error('Operation failed');
+    });
+    files.on('Error', later);
+    client.gmcp.receive(
+      'Client.Files.Error',
+      JSON.stringify({ about: 'Outcome', code: 'unknown', refs: {} }),
+    );
+    expect(later).toHaveBeenCalledTimes(1);
+    client.gmcp.receive(
+      'Client.Files.Policy',
+      JSON.stringify({ event: 'a'.repeat(32), sharing: false }),
+    );
+    expect(diagnostic).toHaveBeenCalledTimes(2);
+  });
+
+
+
   it('keeps the master legacy engine and advertised bundle when v2 is off', async () => {
     usePreferences.getState().setGeneral({ ...usePreferences.getState().general,fileSharingV2:false });
     client = createConfiguredClient();
@@ -42,6 +68,17 @@ describe("createConfiguredClient", () => {
     expect(advertised).not.toContain('Client.Peer 1'); expect(advertised).not.toContain('Client.Files 1');
     const send = vi.spyOn(client.gmcp,'send').mockImplementation(() => {});
     client.gmcp.receive('Core.Supports.Get','{}');
+    const peer = vi.fn();
+    const files = vi.fn();
+    client.gmcp.require('Client.Peer').on('Ready', peer);
+    client.gmcp.require('Client.Files').on('Offer', files);
+    const diagnostic = vi.spyOn(client, 'fileSharingProtocolError');
+    for (const address of ['Client.Peer.Ready', 'Client.Files.Offer', 'Client.Files.Policy'])
+      client.gmcp.receive(address, '{"not":"v2 data","not":"still ignored"}');
+    expect(peer).not.toHaveBeenCalled();
+    expect(files).not.toHaveBeenCalled();
+    expect(diagnostic).not.toHaveBeenCalled();
+
     expect(send).not.toHaveBeenCalled();
     expect(send.mock.calls.some(([name]) => /^Client\.(Peer|Files)\./.test(name))).toBe(false);
   });

@@ -149,16 +149,20 @@ export class OwnerService implements FileTransfers {
           },
           lost: async (reason) => {
             if (endpoint.parked) this.client.fileSharingParked = true;
-            await this.fence();
-            if (this.eligible() && !['superseded', 'stopped'].includes(reason)) {
-              this.restoreLegacy();
-              await this.openStorage(key);
-            } else {
-              this.releaseStorage?.();
-              this.releaseStorage = undefined;
-              await this.storageLock;
-              this.storageLock = undefined;
+            try {
+              await this.fence();
+            } finally {
+              if (this.eligible()) this.restoreLegacy();
+              if (!this.eligible() || ['superseded', 'stopped'].includes(reason)) {
+                this.releaseStorage?.();
+                this.releaseStorage = undefined;
+                await this.storageLock;
+                this.storageLock = undefined;
+                this.persistent = false;
+              }
             }
+            if (this.eligible() && !['superseded', 'stopped'].includes(reason))
+              await this.openStorage(key);
           },
           changed: this.changed,
         });
@@ -175,7 +179,13 @@ export class OwnerService implements FileTransfers {
     if (this.disposed || this.storage) return;
     const storage = new StorageOwner(key, ++this.generation, this.persistent);
     this.storage = storage;
-    await storage.ready;
+    try {
+      await storage.ready;
+    } catch (error) {
+      this.storage = undefined;
+      await storage.close().catch(() => {});
+      throw error;
+    }
   }
   private restoreLegacy(): void {
     if (this.legacy || this.disposed) return;
@@ -280,7 +290,7 @@ export class OwnerService implements FileTransfers {
     this.offers.retry(key);
   }
   protocolFailure(): void {
-    this.endpoint?.invalidate('invalid hub message');
+    this.endpoint?.reportError();
   }
   transfers(): TransferSnapshot[] {
     return [...(this.legacy?.transfers() ?? []), ...(this.offers?.snapshots() ?? [])];

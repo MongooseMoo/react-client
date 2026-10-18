@@ -1,5 +1,5 @@
 import { GMCPPackage } from '../gmcp/package';
-import { strictJson, check } from './protocol';
+import { strictJson, check, knownInbound } from './protocol';
 /** Typed package port. Raw parsing in GmcpSession preserves duplicate-key detection. */
 export abstract class SharingPackage<I, O> extends GMCPPackage {
   private readonly listeners = new Map<keyof I, Set<(v: unknown) => void>>();
@@ -23,8 +23,18 @@ export abstract class SharingPackage<I, O> extends GMCPPackage {
   }
   override receiveRegisteredMessage(kind: string, payload: unknown): boolean {
     if (!this.enabled) return false;
+    if (!knownInbound(this.packageName, kind)) {
+      this.client.fileSharingProtocolError();
+      return true;
+    }
     const data = this.validate(kind as keyof I & string, payload);
-    for (const fn of this.listeners.get(kind as keyof I) ?? []) fn(data);
+    for (const fn of this.listeners.get(kind as keyof I) ?? []) {
+      try {
+        fn(data);
+      } catch {
+        this.client.fileSharingProtocolError();
+      }
+    }
     return true;
   }
 }
