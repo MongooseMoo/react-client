@@ -155,7 +155,7 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPCharPrompt);
   client.gmcp.register(GMCPCharStatusAffectedBy);
   client.gmcp.register(GMCPCharStatusConditions);
-  client.gmcp.register(GMCPCharStatusTimers);
+  const timers = client.gmcp.register(GMCPCharStatusTimers);
   client.gmcp.register(GMCPCharAfflictions);
   client.gmcp.register(GMCPCharDefences);
   client.gmcp.register(GMCPCharSkills);
@@ -180,6 +180,7 @@ export function createConfiguredClient(): MudClient {
     if (client.gmcp.markSessionReady()) {
       useConnectionStore.getState().setSessionReady(true);
     }
+    timers.requestSnapshot();
   });
   char.on("vitals", (data) => useCharacterStatusStore.getState().setVitals(data));
   clientHtml.on("addHtml", (data) => useOutputStore.getState().addHtml(data.data.join("\n")));

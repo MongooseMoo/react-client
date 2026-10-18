@@ -22,6 +22,9 @@ export interface SharedClockChange {
 
 /** One connection clock shared by leased consumers; no timer survives the last lease. */
 export class SharedClock {
+  get ready(): boolean {
+    return this.mode !== 'offline';
+  }
   private readonly estimator = new ClockEstimator();
   private readonly leases = new Set<symbol>();
   private readonly listeners = new Set<(change: SharedClockChange) => void>();

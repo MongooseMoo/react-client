@@ -9,6 +9,7 @@ import {
   FaMap,
   FaMapMarkerAlt,
   FaMusic,
+  FaClock,
   FaQuestionCircle,
   FaServer,
   FaUsers,
@@ -20,6 +21,7 @@ import AudioChatBoundary from './AudioChatBoundary';
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
 const MapPanel = React.lazy(() => import('./MapPanel'));
 const HelpPanel = React.lazy(() => import('./HelpPanel'));
+const TimersPanel = React.lazy(() => import('./TimersPanel'));
 import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
@@ -295,6 +297,14 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
             <HelpPanel client={client} />
           </Suspense>
         ),
+        mountOnSelect: true,
+        condition: true,
+      },
+      {
+        id: 'timers-tab',
+        label: 'Timers',
+        icon: <FaClock />,
+        content: <Suspense fallback={<p role="status">Loading timers…</p>}><TimersPanel client={client} /></Suspense>,
         mountOnSelect: true,
         condition: true,
       },
