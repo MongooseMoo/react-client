@@ -233,12 +233,14 @@ const mediaEffectsSupport = gmcpJsonMessage<
   never,
   ReturnType<typeof buildEffectsSupport>
 >('EffectsSupport');
-export function buildPlaybackSupport() {
+export function buildPlaybackSupport(sharedTransport = true) {
   return {
     version: 1,
-    sharedTransport: true,
-    presentationCues: { version: 1, maxCues: 512, maxBytes: 16384 },
-    midiSequences: midiService.sequenceOutputAvailable ? SEQUENCE_SUPPORT : false,
+    sharedTransport,
+    mediaLoops: sharedTransport ? { version: 1, buffer: true, html: false } : false,
+    presentationCues: sharedTransport ? { version: 1, maxCues: 512, maxBytes: 16384 } : false,
+    midiSequences:
+      sharedTransport && midiService.sequenceOutputAvailable ? SEQUENCE_SUPPORT : false,
   };
 }
 // Encoding reads the actual selected sink at publication time, including explicit false.
@@ -274,6 +276,8 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   private unsubscribeOutput: (() => void) | undefined;
   private unsubscribeMidiPreference: (() => void) | undefined;
   private unsubscribeTimingPreference: (() => void) | undefined;
+  private unsubscribeClockSupport: (() => void) | undefined;
+  private disposed = false;
 
   constructor(client: ConstructorParameters<typeof GMCPClientMediaBase>[0]) {
     super(client);
@@ -306,6 +310,7 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     );
     // Packages can be constructed before their client's media/clock properties.
     queueMicrotask(() => {
+      if (this.disposed) return;
       if (this.client.sharedClock && this.client.media) {
         this.client.media.configureSequences(this.client.sharedClock, () =>
           midiService.getSequenceOutput(),
@@ -315,6 +320,13 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
           (request) => this.sendSync(request),
           (report) => this.sendSourceError(report),
         );
+        let last: boolean | undefined;
+        this.unsubscribeClockSupport = this.client.sharedClock.subscribe(() => {
+          const ready = this.client.sharedClock.ready;
+          if (ready === last) return;
+          last = ready;
+          if (this.client.gmcp.ready) this.sendPlaybackSupport();
+        });
       }
     });
     if (typeof document !== 'undefined')
@@ -323,6 +335,14 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
 
   get sounds(): Record<string, ExtendedSound> {
     return this.client.media.sounds;
+  }
+  override sendData(messageName: string, data?: unknown): void {
+    super.sendData(
+      messageName,
+      messageName === 'PlaybackSupport'
+        ? buildPlaybackSupport(this.client.sharedClock?.ready ?? false)
+        : data,
+    );
   }
 
   /**
@@ -437,11 +457,13 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   }
 
   override shutdown(): void {
+    this.disposed = true;
     this.reset();
     this.unsubscribeSpatialStore?.();
     this.unsubscribeOutput?.();
     this.unsubscribeMidiPreference?.();
     this.unsubscribeTimingPreference?.();
+    this.unsubscribeClockSupport?.();
     if (typeof document !== 'undefined')
       document.removeEventListener('visibilitychange', this.visibilityChanged);
   }

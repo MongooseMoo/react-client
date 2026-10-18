@@ -331,18 +331,19 @@ export class MediaService {
       sendSync,
       correctionMs: () => usePreferences.getState().midi.outputTimingCorrectionMs ?? 0,
       present: updateSharedMediaPresentation,
-      error: (key, message, transport) => {
+      error: (key, message, transport, code = 'SEEK_UNAVAILABLE') => {
         this.diagnostics.record({
           stage: 'stopped',
           key,
-          error: { code: 'SEEK_UNAVAILABLE', message },
+          error: { code: code === 'SYNC_UNAVAILABLE' ? 'CAPABILITY_UNAVAILABLE' : code, message },
         });
-        sendError?.({
-          key,
-          sourceId: transport.sourceId,
-          revision: transport.revision,
-          code: 'SEEK_UNAVAILABLE',
-        });
+        if (code === 'SEEK_UNAVAILABLE')
+          sendError?.({
+            key,
+            sourceId: transport.sourceId,
+            revision: transport.revision,
+            code: 'SEEK_UNAVAILABLE',
+          });
       },
     });
   }
@@ -388,12 +389,18 @@ export class MediaService {
     this.sequences?.reset();
   }
   outputTimingChanged(): void {
-    this.sequences?.setSuspended(true);
-    this.sharedMedia?.setSuspended(true);
-    const paused = this.sequencePageHidden || this.playbackPaused;
-    this.sequences?.setSuspended(paused);
-    this.sharedMedia?.setSuspended(paused);
+    clearTimeout(this.outputTimingTimer);
+    this.outputTimingTimer = setTimeout(() => {
+      this.outputTimingTimer = undefined;
+      if (this.shutdownComplete) return;
+      this.sequences?.setSuspended(true);
+      this.sharedMedia?.setSuspended(true);
+      const paused = this.sequencePageHidden || this.playbackPaused;
+      this.sequences?.setSuspended(paused);
+      this.sharedMedia?.setSuspended(paused);
+    }, 200);
   }
+  private outputTimingTimer?: ReturnType<typeof setTimeout>;
   private readonly mediaSession = new MediaSessionController();
   private readonly preloadedSoundKeys = new Set<string>();
   /** Latest claim generation per media key; every Play/Load/Stop for a key bumps it. */
@@ -805,6 +812,10 @@ export class MediaService {
   }
 
   async play(data: ClientMediaPlayPayload): Promise<void> {
+    if (data.transport?.state === 'stopped') {
+      if (data.key) this.stop({ key: data.key });
+      return;
+    }
     if (data.midi && data.transport?.kind === 'score' && data.key && data.contentId) {
       this.sharedMedia?.stop({ key: data.key });
       this.cancelKey(data.key);
@@ -826,11 +837,11 @@ export class MediaService {
         sound?.playPayload?.transport?.sourceId === data.transport.sourceId &&
         sound.url === this.mediaUrl(data)
       ) {
-        this.sharedMedia.update({ ...data, transport: data.transport });
-        this.update({ ...data, transport: undefined, start: undefined, loops: undefined });
+        this.update({ ...data, start: undefined, loops: undefined });
         return;
       }
-      this.sharedMedia.stop({ key: data.key });
+      if (sound?.playPayload?.transport?.sourceId !== data.transport.sourceId)
+        this.sharedMedia.stop({ key: data.key });
     }
     return this.claimAndPlay(data, false);
   }
@@ -878,7 +889,13 @@ export class MediaService {
     // A playing voice in the other panning mode: audible until its replacement starts.
     let retiring: ExtendedSound | undefined;
     if (!sound || isNewSound) {
-      if (sound) {
+      const previous = sound;
+      const sharedReplacement =
+        previous &&
+        data.transport?.kind === 'media' &&
+        previous.playPayload?.transport?.sourceId === data.transport.sourceId &&
+        this.sharedMedia?.has(soundKey);
+      if (sound && !sharedReplacement) {
         this.releaseSound(sound, soundKey);
       }
       sound = await this.createMediaSound(data, soundKey, mediaUrl, panType, segment, ticket);
@@ -886,6 +903,10 @@ export class MediaService {
         return;
       }
       sound.segment = segment;
+      if (previous && sharedReplacement) {
+        retiring = previous;
+        this.carryVoiceState(previous, sound);
+      }
     } else if (this.needsPanMode(sound, panType, data)) {
       // Cacophony fixes a source's panning mode at creation, so a kept voice
       // cannot change it: build the same source and region in the new mode.
@@ -914,9 +935,16 @@ export class MediaService {
 
     try {
       await this.playPrepared(sound, data, soundKey, ticket, retiring);
+    } catch (error) {
+      if (retiring && data.transport?.kind === 'media' && !this.cleanedSounds.has(retiring)) {
+        if (this.sounds[soundKey] === sound) delete this.sounds[soundKey];
+        this.releaseSound(sound);
+        this.sounds[soundKey] = retiring;
+      }
+      throw error;
     } finally {
       // Never leave the replaced voice playing, however this Play ended.
-      if (retiring) {
+      if (retiring && (data.transport?.kind !== 'media' || !retiring.sharedTransportPrepared)) {
         this.releaseSound(retiring);
       }
     }
@@ -1222,6 +1250,13 @@ export class MediaService {
       cancelStart = undefined;
     };
     return {
+      get supportsClipLoop() {
+        return (
+          data.type !== 'music' &&
+          'supportsClipLoop' in playback &&
+          playback.supportsClipLoop === true
+        );
+      },
       prepareSeek: async (seconds, signal) => {
         await prepareSpatial();
         if (signal.aborted) throw new DOMException('Shared preparation cancelled', 'AbortError');
@@ -1234,7 +1269,7 @@ export class MediaService {
         await playback.prepareSeek(seconds, { signal, timeoutMs: 15000 });
       },
       currentTime: () => playback.currentTime,
-      start: async ({ at, rate }) => {
+      start: async ({ at, rate, loopRegion, stopAt }) => {
         const generation = ++playbackGeneration;
         await prepareSpatial();
         if (generation !== playbackGeneration)
@@ -1243,6 +1278,8 @@ export class MediaService {
           let timer: ReturnType<typeof setTimeout> | undefined;
           let timeout: ReturnType<typeof setTimeout> | undefined;
           const cleanups: (() => void)[] = [];
+          let started = false,
+            configured = false;
           const cleanup = () => {
             clearTimeout(timer);
             clearTimeout(timeout);
@@ -1253,29 +1290,49 @@ export class MediaService {
             cleanup();
             reject(error);
           };
+          const accepted = () => {
+            started = true;
+            if (configured) {
+              const finish = () => {
+                cleanup();
+                resolve();
+              };
+              const wait =
+                data.type !== 'music' && at !== undefined
+                  ? Math.max(0, (at - this.cacophony.context.currentTime) * 1000)
+                  : 0;
+              if (wait > 0) timer = setTimeout(finish, wait);
+              else finish();
+            }
+          };
           cancelStart = () => fail(new DOMException('Shared playback cancelled', 'AbortError'));
-          cleanups.push(
-            playback.eventEmitter.on('play', () => {
-              cleanup();
-              resolve();
-            }),
-          );
-          cleanups.push(
-            playback.eventEmitter.on('resume', () => {
-              cleanup();
-              resolve();
-            }),
-          );
+          cleanups.push(playback.eventEmitter.on('play', accepted));
+          cleanups.push(playback.eventEmitter.on('resume', accepted));
           cleanups.push(playback.eventEmitter.on('error', (event) => fail(event.error)));
           const begin = () => {
+            if (data.type === 'music')
+              timeout = setTimeout(() => fail(new Error('Shared media start timed out')), 15000);
             try {
               playback.playbackRate = rate;
+              if (loopRegion) {
+                if (!('setLoopRegion' in playback) || typeof playback.setLoopRegion !== 'function')
+                  throw new Error('Native clip-loop preparation unavailable');
+                playback.setLoopRegion(loopRegion.startSeconds, loopRegion.endSeconds);
+                playback.loop('infinite');
+              }
               playback.play({ ...(data.type === 'music' ? {} : { at }), fadeIn: 30 });
+              if (data.type !== 'music' && stopAt !== undefined) {
+                if (!('scheduleStop' in playback) || typeof playback.scheduleStop !== 'function')
+                  throw new Error('Native scheduled stop unavailable');
+                playback.scheduleStop(stopAt);
+              }
+              configured = true;
+              if (started) accepted();
             } catch (error) {
+              playback.stop();
               fail(error);
             }
           };
-          timeout = setTimeout(() => fail(new Error('Shared media start timed out')), 15000);
           const delay =
             data.type === 'music' && at !== undefined
               ? Math.max(0, (at - this.cacophony.context.currentTime) * 1000)
@@ -1291,9 +1348,26 @@ export class MediaService {
         if (playback.isPlaying) playback.pause();
         else if (starting) playback.stop();
       },
+      activate: () => {
+        if (this.cleanedSounds.has(sound)) return;
+        this.sounds[soundKey] = sound;
+        if (data.type === 'music') this.activateMusicSession(sound, data);
+      },
+      retire: (at) =>
+        playback.fadeTo(0, 30, 'linear', {
+          startTime: Math.max(this.cacophony.context.currentTime, at),
+        }),
+      updateMix: (update) => {
+        this.applySoundState(sound, update);
+        if (update.occlusion !== undefined) {
+          sound.occlusion = update.occlusion;
+          this.renderOcclusion(sound, sound.playbacks, OCCLUSION_GLIDE_MS);
+        }
+      },
       dispose: () => {
         playbackGeneration++;
         cancel();
+        if (this.sounds[soundKey] === sound) delete this.sounds[soundKey];
         this.releaseSound(sound, soundKey);
       },
     };
@@ -1365,8 +1439,10 @@ export class MediaService {
     if (data.midi || data.transport?.kind === 'score') return;
     const shared = data.key && this.sharedMedia?.has(data.key);
     if (shared) {
+      if (data.pitchSemitones !== undefined)
+        throw new TypeError('Shared media pitch rate belongs in transport.rate');
       if (data.transport && data.transport.kind !== 'media') return;
-      this.sharedMedia?.update({ ...data, transport: data.transport });
+      if (!this.sharedMedia?.update({ ...data, transport: data.transport })) return;
       data = {
         ...data,
         start: undefined,
@@ -1632,6 +1708,7 @@ export class MediaService {
   }
 
   shutdown(): void {
+    clearTimeout(this.outputTimingTimer);
     this.reset();
     if (this.shutdownComplete) {
       return;

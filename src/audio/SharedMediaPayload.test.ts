@@ -27,6 +27,15 @@ const window = {
   cues: [{ id: 'cue', startMs: 1000, endMs: 3000, text: 'A caption' }],
 };
 describe('shared media boundary', () => {
+  it('keeps shared rate authoritative while preserving legacy pitch control', () => {
+    expect(() =>
+      decodeMediaPlay({ key: 'tv', name: 'movie', transport, pitchSemitones: 1 }),
+    ).toThrow();
+    expect(() => decodeMediaUpdate({ key: 'tv', transport, pitchSemitones: 1 })).toThrow();
+    expect(decodeMediaPlay({ name: 'legacy', pitchSemitones: 1 })).toMatchObject({
+      pitchSemitones: 1,
+    });
+  });
   it('retains file transport/windows and rejects empty file names independently of score decoding', () => {
     expect(
       decodeMediaPlay({ key: 'tv', name: 'movie', transport, cueWindows: [window] }),

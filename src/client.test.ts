@@ -61,6 +61,7 @@ const {
 
 vi.mock('cacophony', () => ({
   Cacophony: class {
+    context = Object.assign(new EventTarget(), { state: 'suspended', currentTime: 0 });
     muted = false;
     setGlobalVolume = vi.fn();
 

@@ -14,11 +14,13 @@ describe('shared file transport', () => {
     presentations: (SharedMediaPresentation | { key: string; removed: true })[];
   let voice: SharedMediaVoice, cursor: number;
   let correction: number;
+  let errors: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     vi.useFakeTimers();
     now = 10000;
     cursor = 0;
     correction = 0;
+    errors = vi.fn();
     requests = [];
     presentations = [];
     clock = new SharedClock(
@@ -41,6 +43,7 @@ describe('shared file transport', () => {
       discontinuity: 0,
     };
     voice = {
+      supportsClipLoop: true,
       prepareSeek: vi.fn(async (seconds) => {
         cursor = seconds;
       }),
@@ -56,6 +59,7 @@ describe('shared file transport', () => {
       correctionMs: () => correction,
       sendSync: (r) => requests.push(r),
       present: (p) => presentations.push(p),
+      error: errors,
     });
   });
   afterEach(() => {
@@ -82,7 +86,7 @@ describe('shared file transport', () => {
     now = 12000;
     service.receiveSync({ ...requests[0], transport });
     await pending;
-    expect(cursor).toBe(12);
+    expect(cursor).toBe(12.25);
     expect(voice.start).toHaveBeenCalledOnce();
   });
   it('paused entry remains silent and displays only the current caption', async () => {
@@ -164,7 +168,7 @@ describe('shared file transport', () => {
     expect(requests).toHaveLength(2);
     service.receiveSync({ ...requests[1], transport });
     await resume;
-    expect(cursor).toBe(30);
+    expect(cursor).toBe(30.25);
     expect(voice.start).toHaveBeenCalledTimes(2);
   });
   it('new runtime revokes old source instead of reinterpreting monotonic time', async () => {
@@ -190,7 +194,9 @@ describe('shared file transport', () => {
     };
     await join();
     expect(cursor).toBe(5);
-    expect(voice.start).toHaveBeenLastCalledWith({ at: 6, rate: 1, offsetSeconds: 5 });
+    expect(voice.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({ at: 6, rate: 1, offsetSeconds: 5 }),
+    );
   });
   it('loop captions use unwrapped positions and no caption appears before a future anchor', async () => {
     transport = {
@@ -230,7 +236,7 @@ describe('shared file transport', () => {
     await flush();
     service.receiveSync({ ...requests[1], transport });
     await resume;
-    expect(cursor).toBe(30);
+    expect(cursor).toBe(30.25);
     expect(presentations.at(-1)).toMatchObject({ state: 'playing' });
   });
   it('a clock jump cancels queued work and seeks against a fresh snapshot in the same runtime', async () => {
@@ -242,7 +248,7 @@ describe('shared file transport', () => {
     expect(requests).toHaveLength(2);
     service.receiveSync({ ...requests[1], transport });
     await flush();
-    expect(cursor).toBe(12.05);
+    expect(cursor).toBe(12.3);
     expect(voice.start).toHaveBeenCalledTimes(2);
   });
   it('voice replacement retains its grant but stops and disposes only the replaced sink', async () => {
@@ -264,19 +270,20 @@ describe('shared file transport', () => {
     expect(voice.dispose).toHaveBeenCalledOnce();
     expect(replacement.start).toHaveBeenCalledOnce();
   });
-  it.each([-500, 500])(
-    'applies signed local correction %sms once at a late entry',
-    async (value) => {
-      correction = value;
-      await join();
-      expect(cursor).toBe(value < 0 ? 10.5 : 10);
-      expect(voice.start).toHaveBeenLastCalledWith({
-        at: value < 0 ? 5 : 5.5,
+  it.each([
+    -500, 500,
+  ])('applies signed local correction %sms once at a late entry', async (value) => {
+    correction = value;
+    await join();
+    expect(cursor).toBe(value < 0 ? 10.75 : 10.25);
+    expect(voice.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        at: value < 0 ? 5.25 : 5.75,
         rate: 1,
-        offsetSeconds: value < 0 ? 10.5 : 10,
-      });
-    },
-  );
+        offsetSeconds: value < 0 ? 10.75 : 10.25,
+      }),
+    );
+  });
   it('suspension cancels owned work and restoration rejoins the continuing cursor', async () => {
     await join();
     service.setSuspended(true);
@@ -286,7 +293,7 @@ describe('shared file transport', () => {
     await flush();
     service.receiveSync({ ...requests[1], transport });
     await flush();
-    expect(cursor).toBe(30);
+    expect(cursor).toBe(30.25);
     expect(voice.start).toHaveBeenCalledTimes(2);
   });
   it('recovers a missing cue-window baseline through one bounded correlated Sync', async () => {
@@ -356,5 +363,182 @@ describe('shared file transport', () => {
     service.receiveSync({ ...requests[1], transport: seek, cueWindows: [{ ...initial, seq: 1 }] });
     await flush();
     expect(presentations.at(-1)).toMatchObject({ discontinuity: 1, cues: [cue] });
+  });
+  it('preparation ticks neither erase preparing status nor publish captions early', async () => {
+    let prepared!: () => void;
+    voice.prepareSeek = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          prepared = resolve;
+        }),
+    );
+    const pending = service.attach(
+      {
+        ...grant(),
+        cueWindows: [
+          {
+            seq: 0,
+            fromMs: 0,
+            toMs: 30000,
+            cues: [{ id: 'now', startMs: 0, endMs: 30000, text: 'Do not read before ready' }],
+          },
+        ],
+      },
+      () => voice,
+    );
+    await flush();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(presentations.at(-1)).toMatchObject({ state: 'preparing', cues: [] });
+    service.stop({ key: 'tv' });
+    prepared();
+    await pending;
+  });
+  it('a paused preparation error survives display ticks', async () => {
+    transport = { ...transport, state: 'paused' };
+    voice.prepareSeek = vi.fn(async () => {
+      throw new Error('Seek unavailable');
+    });
+    await service.attach(grant(), () => voice);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(presentations.at(-1)).toMatchObject({
+      state: 'unavailable',
+      message: 'Seek unavailable',
+    });
+  });
+  it('retries a lost snapshot without classifying it as a seek failure', async () => {
+    const pending = service.attach(grant(), () => voice);
+    await flush();
+    now = 12000;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(requests).toHaveLength(2);
+    service.receiveSync({ ...requests[1], transport });
+    await pending;
+    expect(errors).not.toHaveBeenCalled();
+    expect(voice.start).toHaveBeenCalledOnce();
+  });
+  it('future anchors do not consume the preparation/start deadline', async () => {
+    let started!: () => void;
+    voice.start = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          started = resolve;
+        }),
+    );
+    transport = { ...transport, anchorServerMs: 40000 };
+    const pending = service.attach(grant(), () => voice);
+    await flush();
+    service.receiveSync({ ...requests[0], transport });
+    await flush();
+    now = 26000;
+    await vi.advanceTimersByTimeAsync(16000);
+    expect(presentations.at(-1)).toMatchObject({ state: 'preparing' });
+    expect(voice.pause).not.toHaveBeenCalled();
+    now = 40000;
+    started();
+    await pending;
+    expect(presentations.at(-1)).toMatchObject({ state: 'playing' });
+  });
+  it('retains an audible sink during replacement preparation and retires it after acceptance', async () => {
+    await join();
+    now = 12000;
+    let accept!: () => void;
+    const retirement = vi.fn(async () => {});
+    voice.retire = retirement;
+    const replacement = {
+      ...voice,
+      start: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            accept = resolve;
+          }),
+      ),
+      dispose: vi.fn(),
+    };
+    const pending = service.attach(grant(), () => replacement, true);
+    await flush();
+    expect(voice.pause).not.toHaveBeenCalled();
+    expect(voice.dispose).not.toHaveBeenCalled();
+    service.receiveSync({ ...requests[1], transport });
+    await flush();
+    expect(voice.dispose).not.toHaveBeenCalled();
+    accept();
+    await pending;
+    await flush();
+    expect(retirement).toHaveBeenCalledWith(5.25);
+    expect(voice.dispose).toHaveBeenCalledOnce();
+  });
+  it('failed replacement restores the still-audible sink without pausing it', async () => {
+    await join();
+    now = 12000;
+    const replacement = {
+      ...voice,
+      prepareSeek: vi.fn(async () => {
+        throw new Error('Replacement unavailable');
+      }),
+      pause: vi.fn(),
+      dispose: vi.fn(),
+    };
+    await service.attach(grant(), () => replacement, true);
+    expect(voice.pause).not.toHaveBeenCalled();
+    expect(voice.dispose).not.toHaveBeenCalled();
+    expect(replacement.dispose).toHaveBeenCalledOnce();
+    expect(presentations.at(-1)).toMatchObject({ state: 'playing' });
+  });
+  it('native loop boundaries and terminal stop are scheduled once rather than polled', async () => {
+    transport = {
+      ...transport,
+      anchorServerMs: now,
+      positionMs: 1500,
+      loop: { startMs: 1000, endMs: 3000, plays: 2 },
+    };
+    await join();
+    expect(voice.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        loopRegion: { startSeconds: 1, endSeconds: 3 },
+        stopAt: 8.5,
+      }),
+    );
+    now += 2100;
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(voice.start).toHaveBeenCalledOnce();
+    expect(voice.pause).not.toHaveBeenCalled();
+  });
+  it('explicitly refuses HTML clip loops before preparing or playing', async () => {
+    voice = { ...voice, supportsClipLoop: false };
+    transport = { ...transport, loop: { startMs: 1000, endMs: 3000, plays: -1 } };
+    await service.attach(grant(), () => voice);
+    expect(voice.prepareSeek).not.toHaveBeenCalled();
+    expect(voice.start).not.toHaveBeenCalled();
+    expect(errors).toHaveBeenCalledWith(
+      'tv',
+      expect.any(String),
+      transport,
+      'CAPABILITY_UNAVAILABLE',
+    );
+  });
+  it('resamples the output mapping after a slow seek and grows the future preparation lead', async () => {
+    service.shutdown();
+    const context = Object.assign(new EventTarget(), {
+      state: 'running',
+      currentTime: 5,
+    });
+    Object.defineProperty(context, 'currentTime', { get: () => 5 + (now - 10000) / 1000 });
+    service = new SharedMediaService({
+      clock,
+      context: context as unknown as BaseAudioContext,
+      now: () => now,
+      sendSync: (request) => requests.push(request),
+    });
+    voice.prepareSeek = vi.fn(async (seconds) => {
+      cursor = seconds;
+      now += 400;
+    });
+    await join();
+    expect(voice.prepareSeek).toHaveBeenCalledTimes(3);
+    expect(cursor).toBe(11.3);
+    expect(voice.start).toHaveBeenCalledWith(
+      expect.objectContaining({ at: 6.3, offsetSeconds: 11.3 }),
+    );
+    expect(6.3 - context.currentTime).toBeGreaterThan(0.02);
   });
 });

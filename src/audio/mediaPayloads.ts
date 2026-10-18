@@ -387,6 +387,7 @@ export function decodeMediaPlay(raw: unknown): DecodedMediaPlay {
     if (r.transport !== undefined) {
       const transport = decodeFileTransport(r.transport),
         key = mediaIdentity(r.key);
+      if (r.pitchSemitones !== undefined) fail('Shared media pitch rate belongs in transport.rate');
       if (transport.mode === 'live' && r.cueWindows !== undefined)
         fail('Live media cannot carry cue windows');
       if (r.cueWindows !== undefined && transport.discontinuity === undefined)
@@ -426,6 +427,8 @@ export function decodeMediaUpdate(raw: unknown): ClientMediaUpdatePayload {
     ) {
       try {
         const transport = decodeFileTransport(r.transport);
+        if (r.pitchSemitones !== undefined)
+          fail('Shared media pitch rate belongs in transport.rate');
         if (r.cues !== undefined || (transport.mode === 'live' && r.cueWindows !== undefined))
           fail('Invalid cue fields');
         if (r.cueWindows !== undefined && transport.discontinuity === undefined)
