@@ -11,6 +11,7 @@ import SoundfontPicker from './SoundfontPicker';
 import HeadTrackingControls from './HeadTrackingControls';
 import AppIntegrationPreferences from '../launch/AppIntegrationPreferences';
 import VoiceCommandPreferences from "./VoiceCommandPreferences";
+import { clientSpeechSuspended } from "../clientSpeechSuspension";
 
 function PreferenceNumber({ id, label, value, min, max, onCommit }: {
   id: string; label: string; value: number; min: number; max: number;
@@ -217,11 +218,22 @@ const PreviewButton: React.FC = () => {
 
   const handlePreview = () => {
     if (isPlaying) return; // Extra guard against concurrent calls
+    // A listening voice command would hear the preview as the command.
+    if (clientSpeechSuspended()) {
+      announce("No voice preview while a voice command is listening", "polite");
+      return;
+    }
     setIsPlaying(true);
     announce("Playing voice preview", "polite");
 
     const speakText = () => {
       if (!isMounted.current) return; // Don't proceed if unmounted
+      // The voices may load after a voice command has started listening.
+      if (clientSpeechSuspended()) {
+        setIsPlaying(false);
+        announce("No voice preview while a voice command is listening", "polite");
+        return;
+      }
 
       const utterance = new SpeechSynthesisUtterance("This is a preview of the selected voice settings.");
 

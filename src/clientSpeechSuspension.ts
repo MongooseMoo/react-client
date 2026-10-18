@@ -6,9 +6,12 @@
  */
 let holds = 0;
 
-/** Stop the client's speech now and keep it quiet until the returned release is called. */
+/**
+ * Keep the client quiet until the returned release is called. It does not stop
+ * speech already playing: store the release first, then cancel, so a
+ * cancellation that re-enters the caller can still release the hold.
+ */
 export function suspendClientSpeech(): () => void {
-  window.speechSynthesis?.cancel();
   holds++;
   let released = false;
   return () => {

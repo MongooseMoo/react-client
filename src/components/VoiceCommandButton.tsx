@@ -25,36 +25,72 @@ type Props = {
 
 type Phase = "idle" | "starting" | "listening";
 
+/** Longest a dictation listens before it is stopped. */
+const LISTEN_LIMIT_MS = 15000;
+/** How long a stopped recognizer gets to deliver its final result or end. */
+const STOP_GRACE_MS = 2000;
+
+const NOTHING_SENT = "Nothing was sent. Say it again.";
+
+interface Identity {
+  player: string;
+  gameSessionId: string;
+  connected: boolean;
+}
+
+function currentIdentity(): Identity {
+  const { owner, visitor, gameSessionId } = usePersonalDataStore.getState();
+  const { connected } = useConnectionStore.getState();
+  return { player: JSON.stringify([owner ? ownerKey(owner) : null, visitor]), gameSessionId, connected };
+}
+
+/** Why the identity changed, or nothing when it has not. */
+function identityChange(from: Identity, to: Identity): string | undefined {
+  if (from.connected !== to.connected) return to.connected ? "connected" : "disconnected";
+  if (from.player !== to.player) return "player changed";
+  if (from.gameSessionId !== to.gameSessionId) return "new game session";
+  return undefined;
+}
+
 /**
- * One press of the button. It is current until it ends or is cancelled; every
+ * One press of the button. It is current until terminate() ends it; every
  * callback checks it is still current before touching the input, so a late
  * result from an old dictation can never write or send.
  */
 interface Dictation {
   phase: "starting" | "listening";
-  /** The player, game session and connection it was started for. */
-  identity: string;
+  /** The player, game session and connection it was started under. */
+  identity: Identity;
   handle: DictationHandle;
   /** The input's text when listening began. */
   draft: string;
-  /** The text dictation last put in the input; any other text is the player's. */
-  written: string;
-  /** A final result has arrived; the recognizer has not ended yet. */
-  finalized: boolean;
+  /** The text dictation last put in the input, or null before it has written any. */
+  written: string | null;
+  /** stop() was called; the recognizer has STOP_GRACE_MS to finish. */
+  stopping: boolean;
   /** Enter or Send was pressed while listening: send the final result. */
   sendOnFinal: boolean;
   session: VoiceSession | null;
   releaseSpeech: (() => void) | null;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+/**
+ * How a dictation ends, which decides what happens to the text it wrote:
+ * - final: the final transcript is already in the input; leave it.
+ * - discard: remove what was heard. The draft comes back only for the same
+ *   player; for another player the input is emptied.
+ * - keep: something else changed the input; that text is the player's.
+ */
+type Ending = { text: "final" | "discard" | "keep"; announce?: string; priority?: "polite" | "assertive" };
+
+/** What to say when a dictation ends without a final result. */
+function unsent(dictation: Dictation): string {
+  return dictation.sendOnFinal ? NOTHING_SENT : "Stopped listening";
 }
 
 function appendToDraft(draft: string, heard: string): string {
   return draft.trim() ? `${draft.trimEnd()} ${heard}` : heard;
-}
-
-function currentIdentity(): string {
-  const { owner, visitor, gameSessionId } = usePersonalDataStore.getState();
-  const { connected } = useConnectionStore.getState();
-  return JSON.stringify([owner ? ownerKey(owner) : null, visitor, gameSessionId, connected]);
 }
 
 /**
@@ -63,8 +99,10 @@ function currentIdentity(): string {
  * but cannot be sent: Enter or Send finishes listening and sends the final
  * transcript. Otherwise the final transcript stays there to check, or is sent
  * at once if the player chose that. Typing, recalling history, or anything
- * else changing the input stops dictation and keeps that text. Renders
- * nothing where the browser has no speech recognition.
+ * else changing the input stops dictation and keeps that text. Every
+ * dictation ends within LISTEN_LIMIT_MS + STOP_GRACE_MS even if the browser
+ * stops sending events, and the client's speech comes back when it does.
+ * Renders nothing where the browser has no speech recognition.
  */
 const VoiceCommandButton = ({ onSend }: Props) => {
   const enabled = usePreferences((state) => state.voiceInput.enabled);
@@ -74,52 +112,65 @@ const VoiceCommandButton = ({ onSend }: Props) => {
   const onSendRef = useRef(onSend);
   onSendRef.current = onSend;
 
-  /** Stop treating this dictation as current. Its later callbacks do nothing. */
-  const retire = useCallback((dictation: Dictation) => {
+  /** The only way a dictation ends. Safe to call more than once. */
+  const terminate = useCallback((dictation: Dictation, ending: Ending) => {
     if (currentRef.current !== dictation) return;
     currentRef.current = null;
-    dictation.releaseSpeech?.();
-    if (useInputStore.getState().dictation === dictation.handle) {
-      useInputStore.getState().setDictation(null);
+    if (dictation.timer !== null) clearTimeout(dictation.timer);
+    dictation.timer = null;
+    const input = useInputStore.getState();
+    if (input.dictation === dictation.handle) input.setDictation(null);
+    const releaseSpeech = dictation.releaseSpeech;
+    dictation.releaseSpeech = null;
+    releaseSpeech?.();
+    try {
+      dictation.session?.abort();
+    } catch (error) {
+      console.warn("Speech recognition did not abort:", error);
+    }
+    if (ending.text === "discard" && dictation.written !== null && input.text === dictation.written) {
+      const samePlayer = currentIdentity().player === dictation.identity.player;
+      useInputStore.getState().setText(samePlayer ? dictation.draft : "");
     }
     setPhase("idle");
+    if (ending.announce) announce(ending.announce, ending.priority ?? "polite");
   }, []);
 
-  /**
-   * End this dictation now and discard what it heard.
-   * - player: Escape or a second press while starting; put the draft back.
-   * - edit: the player changed the input; keep their text.
-   * - quiet: preference off, unmount, a typed send, or a new player or
-   *   connection; touch nothing.
-   */
-  const cancel = useCallback((dictation: Dictation, reason: "player" | "edit" | "quiet") => {
-    if (currentRef.current !== dictation) return;
-    const listening = dictation.phase === "listening" && !dictation.finalized;
-    retire(dictation);
-    dictation.session?.abort();
-    // After a final result, what was heard is already the player's text.
-    if (reason === "quiet" || dictation.finalized) return;
-    if (reason === "player" && listening && useInputStore.getState().text === dictation.written) {
-      useInputStore.getState().setText(dictation.draft);
+  /** Ask the recognizer to finish, and end the dictation if it does not within the grace period. */
+  const requestStop = useCallback((dictation: Dictation) => {
+    if (currentRef.current !== dictation || dictation.stopping) return;
+    dictation.stopping = true;
+    if (dictation.timer !== null) clearTimeout(dictation.timer);
+    dictation.timer = setTimeout(() => {
+      terminate(dictation, { text: "discard", announce: unsent(dictation) });
+    }, STOP_GRACE_MS);
+    try {
+      dictation.session?.stop();
+    } catch (error) {
+      console.warn("Speech recognition did not stop:", error);
+      terminate(dictation, { text: "discard", announce: unsent(dictation) });
     }
-    announce("Stopped listening", "polite");
-  }, [retire]);
+  }, [terminate]);
 
   const listen = useCallback((dictation: Dictation, lang: string, processLocally: boolean) => {
     if (!recognizer) return;
     const { sendImmediately } = usePreferences.getState().voiceInput;
     const input = useInputStore.getState;
+    const isCurrent = () => currentRef.current === dictation;
     dictation.phase = "listening";
     dictation.draft = input().text;
     dictation.written = dictation.draft;
-    dictation.releaseSpeech = suspendClientSpeech();
     setPhase("listening");
-    const isCurrent = () => currentRef.current === dictation;
-    const restoreDraft = () => {
-      if (dictation.finalized || input().text !== dictation.written) return;
-      dictation.written = dictation.draft;
-      input().setText(dictation.draft);
-    };
+
+    // Hold the client's speech before stopping what is playing, so a stop that
+    // re-enters and cancels this dictation still finds the hold to release.
+    dictation.releaseSpeech = suspendClientSpeech();
+    window.speechSynthesis?.cancel();
+    if (!isCurrent()) return;
+    if (identityChange(dictation.identity, currentIdentity())) {
+      terminate(dictation, { text: "discard" });
+      return;
+    }
 
     const session = startVoiceSession(recognizer, { lang, processLocally }, {
       onStart: () => {
@@ -129,19 +180,19 @@ const VoiceCommandButton = ({ onSend }: Props) => {
         announce(inVoiceChat ? "Listening. Voice chat can hear you." : "Listening", "assertive");
       },
       onInterim: (text) => {
-        if (!isCurrent() || dictation.finalized) return;
+        if (!isCurrent()) return;
         dictation.written = appendToDraft(dictation.draft, text);
         input().setText(dictation.written);
       },
       onFinal: (text) => {
-        if (!isCurrent() || dictation.finalized) return;
+        if (!isCurrent()) return;
         const command = appendToDraft(dictation.draft, text);
-        dictation.finalized = true;
+        const send = sendImmediately || dictation.sendOnFinal;
         dictation.written = command;
-        // From here the text is the player's; the send path no longer asks.
-        if (input().dictation === dictation.handle) input().setDictation(null);
-        if (sendImmediately || dictation.sendOnFinal) {
-          input().setText(command);
+        input().setText(command);
+        // The text is the player's now; end before sending so the send path no longer asks.
+        terminate(dictation, { text: "final" });
+        if (send) {
           announce(`Sent ${text}`, "polite");
           onSendRef.current();
         } else {
@@ -151,29 +202,34 @@ const VoiceCommandButton = ({ onSend }: Props) => {
       },
       onError: (code) => {
         if (!isCurrent()) return;
-        restoreDraft();
-        retire(dictation);
-        announce(voiceErrorMessage(code), "assertive");
+        const message = voiceErrorMessage(code);
+        terminate(dictation, {
+          text: "discard",
+          announce: dictation.sendOnFinal ? `${message} ${NOTHING_SENT}` : message,
+          priority: "assertive",
+        });
       },
       onEnd: () => {
         if (!isCurrent()) return;
-        if (!dictation.finalized) {
-          restoreDraft();
-          announce("Stopped listening", "polite");
-        }
-        retire(dictation);
+        terminate(dictation, { text: "discard", announce: unsent(dictation) });
       },
     });
-    // A recognizer that refused to start has already ended and retired this dictation.
-    if (isCurrent()) dictation.session = session;
-  }, [recognizer, retire]);
+    if (!isCurrent()) {
+      // It ended while starting (a refusal, or a cancellation re-entering); free the recognizer.
+      session.abort();
+      return;
+    }
+    dictation.session = session;
+    dictation.timer = setTimeout(() => requestStop(dictation), LISTEN_LIMIT_MS);
+  }, [recognizer, terminate, requestStop]);
 
   const toggle = useCallback(async () => {
     if (!recognizer) return;
     const current = currentRef.current;
     if (current) {
-      if (current.phase === "starting") cancel(current, "player");
-      else if (!current.finalized) current.session?.stop();
+      if (current.phase === "listening" && !current.stopping) requestStop(current);
+      // Still starting, or already stopping and waiting on the browser: end it now.
+      else terminate(current, { text: "discard", announce: unsent(current) });
       return;
     }
 
@@ -185,56 +241,65 @@ const VoiceCommandButton = ({ onSend }: Props) => {
           if (currentRef.current !== dictation) return false;
           if (dictation.phase === "starting") {
             // Typed text was never dictation's; send it and drop the start.
-            cancel(dictation, "quiet");
+            terminate(dictation, { text: "keep" });
             return false;
           }
-          if (!dictation.sendOnFinal) {
-            dictation.sendOnFinal = true;
-            dictation.session?.stop();
-          }
+          dictation.sendOnFinal = true;
+          requestStop(dictation);
           return true;
         },
       },
       draft: "",
-      written: "",
-      finalized: false,
+      written: null,
+      stopping: false,
       sendOnFinal: false,
       session: null,
       releaseSpeech: null,
+      timer: null,
     };
     currentRef.current = dictation;
     useInputStore.getState().setDictation(dictation.handle);
     setPhase("starting");
 
-    const lang = recognitionLanguage(usePreferences.getState().voiceInput.language);
-    const availability = await checkAvailability(recognizer, lang);
-    // Escape, a second press, a typed send, turning the feature off, unmounting
-    // or a new player or connection may have cancelled it while the browser answered.
-    if (currentRef.current !== dictation) return;
-    if (!usePreferences.getState().voiceInput.enabled || currentIdentity() !== dictation.identity) {
-      cancel(dictation, "quiet");
-      return;
+    try {
+      const lang = recognitionLanguage(usePreferences.getState().voiceInput.language);
+      const availability = await checkAvailability(recognizer, lang);
+      // Escape, a second press, a typed send, turning the feature off, unmounting
+      // or a new player or connection may have ended it while the browser answered.
+      if (currentRef.current !== dictation) return;
+      if (!usePreferences.getState().voiceInput.enabled) {
+        terminate(dictation, { text: "discard" });
+        return;
+      }
+      if (availability === "unsupported-language") {
+        terminate(dictation, {
+          text: "discard",
+          announce: voiceErrorMessage("language-not-supported"),
+          priority: "assertive",
+        });
+        return;
+      }
+      listen(dictation, lang, availability === "on-device");
+    } catch (error) {
+      console.warn("Voice command failed:", error);
+      terminate(dictation, { text: "discard", announce: voiceErrorMessage("start-failed"), priority: "assertive" });
     }
-    if (availability === "unsupported-language") {
-      retire(dictation);
-      announce(voiceErrorMessage("language-not-supported"), "assertive");
-      return;
-    }
-    listen(dictation, lang, availability === "on-device");
-  }, [recognizer, cancel, retire, listen]);
+  }, [recognizer, terminate, requestStop, listen]);
 
   // Anything other than dictation changing the input makes the text the player's.
   useEffect(() => useInputStore.subscribe((state, previous) => {
     const dictation = currentRef.current;
-    if (dictation?.phase !== "listening" || dictation.finalized) return;
-    if (state.text !== previous.text && state.text !== dictation.written) cancel(dictation, "edit");
-  }), [cancel]);
+    if (dictation?.phase !== "listening" || state.text === previous.text) return;
+    if (state.text !== dictation.written) terminate(dictation, { text: "keep", announce: "Stopped listening" });
+  }), [terminate]);
 
   // A dictation belongs to the player, game session and connection it started under.
   useEffect(() => {
     const check = () => {
       const dictation = currentRef.current;
-      if (dictation && currentIdentity() !== dictation.identity) cancel(dictation, "quiet");
+      if (!dictation) return;
+      const reason = identityChange(dictation.identity, currentIdentity());
+      if (reason) terminate(dictation, { text: "discard", announce: `Dictation stopped: ${reason}` });
     };
     const unsubscribePersonal = usePersonalDataStore.subscribe(check);
     const unsubscribeConnection = useConnectionStore.subscribe(check);
@@ -242,7 +307,17 @@ const VoiceCommandButton = ({ onSend }: Props) => {
       unsubscribePersonal();
       unsubscribeConnection();
     };
-  }, [cancel]);
+  }, [terminate]);
+
+  // Turning the feature off ends any dictation; unmounting ends it silently.
+  useEffect(() => {
+    if (enabled) return;
+    if (currentRef.current) terminate(currentRef.current, { text: "discard", announce: "Dictation stopped" });
+  }, [enabled, terminate]);
+
+  useEffect(() => () => {
+    if (currentRef.current) terminate(currentRef.current, { text: "discard" });
+  }, [terminate]);
 
   useEffect(() => {
     if (!enabled || !recognizer) return;
@@ -254,16 +329,13 @@ const VoiceCommandButton = ({ onSend }: Props) => {
         void toggle();
       } else if (event.key === "Escape" && currentRef.current) {
         // Escape still pauses sounds too; App.tsx handles that.
-        cancel(currentRef.current, "player");
+        const dictation = currentRef.current;
+        terminate(dictation, { text: "discard", announce: unsent(dictation) });
       }
     };
     document.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown, true);
-      // Turning the feature off or unmounting ends any dictation, starting or listening.
-      if (currentRef.current) cancel(currentRef.current, "quiet");
-    };
-  }, [enabled, recognizer, toggle, cancel]);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [enabled, recognizer, toggle, terminate]);
 
   if (!recognizer || !enabled) return null;
 

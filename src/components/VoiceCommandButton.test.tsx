@@ -25,6 +25,13 @@ vi.mock("../CommandHistory", () => ({
 }));
 
 const announceMock = vi.mocked(announce);
+
+/** A recognizer that, like a stalled browser, sends no end event when aborted. */
+class NoEndOnAbort extends FakeRecognition {
+  override abort(): void {
+    this.aborted = true;
+  }
+}
 const OWNER_A = { runtime: "fixture", playerUuid: "a", playerRef: "#1" };
 const OWNER_B = { runtime: "fixture", playerUuid: "b", playerRef: "#2" };
 
@@ -336,37 +343,40 @@ describe("VoiceCommandButton", () => {
     expect(recognition.processLocally).toBe(true);
   });
 
-  it("holds the client's own speech for the whole session", async () => {
+  it("holds the client's own speech while listening and gives it back at the final result", async () => {
     const cancel = vi.fn();
     vi.stubGlobal("speechSynthesis", { cancel });
+    window.webkitSpeechRecognition = NoEndOnAbort;
     renderInput();
     const recognition = await startListening();
     expect(cancel).toHaveBeenCalled();
     expect(clientSpeechSuspended()).toBe(true);
+    // No end event follows; speech must not wait for one.
     act(() => recognition.hear(["look", true]));
-    expect(clientSpeechSuspended()).toBe(true);
-    act(() => recognition.end());
     expect(clientSpeechSuspended()).toBe(false);
+    expect(micButton()).toHaveAttribute("aria-pressed", "false");
     vi.unstubAllGlobals();
   });
 
-  it("releases the client's speech on error, abort and unmount", async () => {
-    const { view } = renderInput();
-    const recognition = await startListening();
-    act(() => recognition.fail("no-speech"));
-    act(() => recognition.end());
-    expect(clientSpeechSuspended()).toBe(false);
-
-    fireEvent.click(micButton());
-    await waitFor(() => expect(FakeRecognition.instances).toHaveLength(2));
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(clientSpeechSuspended()).toBe(false);
-
-    fireEvent.click(micButton());
-    await waitFor(() => expect(FakeRecognition.instances).toHaveLength(3));
-    expect(clientSpeechSuspended()).toBe(true);
-    view.unmount();
-    expect(clientSpeechSuspended()).toBe(false);
+  describe("gives the client's speech back without waiting for an end event", () => {
+    const endings: [string, (recognition: FakeRecognition, view: ReturnType<typeof render>) => void][] = [
+      ["an error", (recognition) => act(() => recognition.fail("no-speech"))],
+      ["Escape", () => fireEvent.keyDown(document.body, { key: "Escape" })],
+      ["unmounting", (_recognition, view) => view.unmount()],
+      ["turning voice commands off", () => act(() => setVoice({ enabled: false }))],
+      ["disconnecting", () => act(() => useConnectionStore.getState().setConnected(false))],
+    ];
+    for (const [name, end] of endings) {
+      it(`on ${name}`, async () => {
+        window.webkitSpeechRecognition = NoEndOnAbort;
+        const { view } = renderInput();
+        const recognition = await startListening();
+        expect(clientSpeechSuspended()).toBe(true);
+        end(recognition, view);
+        expect(clientSpeechSuspended()).toBe(false);
+        expect(useInputStore.getState().dictation).toBeNull();
+      });
+    }
   });
 
   it("warns that voice chat hears the command too", async () => {
@@ -384,5 +394,178 @@ describe("VoiceCommandButton", () => {
       expect(announceMock).toHaveBeenCalledWith("Speech recognition does not support this language.", "assertive"));
     expect(FakeRecognition.instances).toHaveLength(0);
     expect(micButton()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  describe("every dictation has a bounded lifetime", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      window.webkitSpeechRecognition = NoEndOnAbort;
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function startOnFakeTimers() {
+      fireEvent.click(micButton());
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      return FakeRecognition.latest();
+    }
+
+    it("a stop with no final and no end gives up after two seconds", async () => {
+      const { onSend, textarea } = renderInput();
+      fireEvent.input(textarea, { target: { value: "say" } });
+      const recognition = await startOnFakeTimers();
+      act(() => recognition.hear(["drop", false]));
+      fireEvent.keyDown(textarea, { key: "Enter" });
+      expect(recognition.stopped).toBe(true);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+      expect(clientSpeechSuspended()).toBe(true);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+
+      expect(recognition.aborted).toBe(true);
+      expect(clientSpeechSuspended()).toBe(false);
+      expect(useInputStore.getState().dictation).toBeNull();
+      expect(micButton()).toHaveAttribute("aria-pressed", "false");
+      expect(textarea).toHaveValue("say");
+      expect(onSend).not.toHaveBeenCalled();
+      expect(announceMock).toHaveBeenCalledWith("Nothing was sent. Say it again.", "polite");
+
+      // A late final from the abandoned recognizer does nothing.
+      act(() => recognition.hear(["drop all", true]));
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    it("listening stops after fifteen seconds, and a final in the grace period still counts", async () => {
+      const { textarea } = renderInput();
+      const recognition = await startOnFakeTimers();
+      await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+      expect(recognition.stopped).toBe(true);
+      expect(clientSpeechSuspended()).toBe(true);
+      act(() => recognition.hear(["look", true]));
+      expect(textarea).toHaveValue("look");
+      expect(clientSpeechSuspended()).toBe(false);
+    });
+
+    it("listening that hears nothing at all ends by seventeen seconds", async () => {
+      renderInput();
+      const recognition = await startOnFakeTimers();
+      await act(async () => { await vi.advanceTimersByTimeAsync(17000); });
+      expect(recognition.aborted).toBe(true);
+      expect(clientSpeechSuspended()).toBe(false);
+      expect(micButton()).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("a press while waiting for a stopped recognizer ends it at once", async () => {
+      renderInput();
+      const recognition = await startOnFakeTimers();
+      fireEvent.click(micButton());
+      expect(recognition.stopped).toBe(true);
+      fireEvent.click(micButton());
+      expect(recognition.aborted).toBe(true);
+      expect(clientSpeechSuspended()).toBe(false);
+      expect(micButton()).toHaveAttribute("aria-pressed", "false");
+      // And the next press starts a new one.
+      await startOnFakeTimers();
+      expect(FakeRecognition.instances).toHaveLength(2);
+    });
+  });
+
+  describe("cancelling before a final never leaves heard words to send", () => {
+    const cancellations: [string, string | null, () => void][] = [
+      ["turning voice commands off", "Dictation stopped", () => act(() => setVoice({ enabled: false }))],
+      ["disconnecting", "Dictation stopped: disconnected", () => act(() => useConnectionStore.getState().setConnected(false))],
+      ["a new game session", "Dictation stopped: new game session", () => act(() => usePersonalDataStore.setState({ gameSessionId: "s2" }))],
+    ];
+    for (const [name, message, cancel] of cancellations) {
+      it(`by ${name}`, async () => {
+        const { onSend, textarea } = renderInput();
+        fireEvent.input(textarea, { target: { value: "say" } });
+        const recognition = await startListening();
+        act(() => recognition.hear(["drop", false]));
+        cancel();
+        expect(recognition.aborted).toBe(true);
+        expect(useInputStore.getState().text).toBe("say");
+        if (message) expect(announceMock).toHaveBeenCalledWith(message, "polite");
+        act(() => useConnectionStore.getState().setConnected(true));
+        // Enter now sends only the player's own draft.
+        fireEvent.keyDown(textarea, { key: "Enter" });
+        expect(onSend.mock.calls).toEqual([["say"]]);
+      });
+    }
+
+    it("when the player changes, the old draft is not brought back either", async () => {
+      renderInput();
+      act(() => useInputStore.getState().setText("page Alice"));
+      const recognition = await startListening();
+      act(() => recognition.hear(["hello", false]));
+      act(() => usePersonalDataStore.setState({ owner: OWNER_B }));
+      expect(useInputStore.getState().text).toBe("");
+      expect(announceMock).toHaveBeenCalledWith("Dictation stopped: player changed", "polite");
+    });
+
+    it("unmounting removes the heard words without saying anything", async () => {
+      const { view, textarea } = renderInput();
+      fireEvent.input(textarea, { target: { value: "say" } });
+      const recognition = await startListening();
+      act(() => recognition.hear(["drop", false]));
+      announceMock.mockClear();
+      view.unmount();
+      expect(useInputStore.getState().text).toBe("say");
+      expect(announceMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("a held send that ends with no final says nothing was sent", async () => {
+    const { onSend, textarea } = renderInput();
+    const recognition = await startListening();
+    act(() => recognition.hear(["drop", false]));
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    act(() => recognition.end());
+    expect(onSend).not.toHaveBeenCalled();
+    expect(textarea).toHaveValue("");
+    expect(announceMock).toHaveBeenCalledWith("Nothing was sent. Say it again.", "polite");
+  });
+
+  it("says why when auto-login connecting stops an early dictation", async () => {
+    act(() => useConnectionStore.getState().setConnected(false));
+    renderInput();
+    const recognition = await startListening();
+    act(() => useConnectionStore.getState().setConnected(true));
+    expect(recognition.aborted).toBe(true);
+    expect(announceMock).toHaveBeenCalledWith("Dictation stopped: connected", "polite");
+  });
+
+  it("a recognizer that cannot even be created gives speech back and says so", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    window.webkitSpeechRecognition = class extends FakeRecognition {
+      constructor() {
+        super();
+        throw new Error("constructor refused");
+      }
+    };
+    renderInput();
+    fireEvent.click(micButton());
+    await waitFor(() =>
+      expect(announceMock).toHaveBeenCalledWith("Speech recognition failed.", "assertive"));
+    expect(clientSpeechSuspended()).toBe(false);
+    expect(useInputStore.getState().dictation).toBeNull();
+    expect(micButton()).toHaveAttribute("aria-pressed", "false");
+    warn.mockRestore();
+  });
+
+  it("a dictation cancelled while the client's speech is being stopped starts nothing and holds nothing", async () => {
+    // Stopping speech synchronously disconnects, as an injected re-entry.
+    vi.stubGlobal("speechSynthesis", {
+      cancel: () => useConnectionStore.getState().setConnected(false),
+    });
+    const { view } = renderInput();
+    fireEvent.click(micButton());
+    await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
+    expect(clientSpeechSuspended()).toBe(false);
+    expect(FakeRecognition.instances.every((recognition) => !recognition.started || recognition.aborted)).toBe(true);
+    view.unmount();
+    expect(clientSpeechSuspended()).toBe(false);
+    vi.unstubAllGlobals();
   });
 });

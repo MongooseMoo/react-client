@@ -112,61 +112,67 @@ export function startVoiceSession(
   options: { lang: string; processLocally: boolean },
   handlers: VoiceSessionHandlers,
 ): VoiceSession {
-  const recognition = new recognizer();
-  recognition.lang = options.lang;
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.maxAlternatives = 1;
-  if (options.processLocally) recognition.processLocally = true;
-
+  let recognition: Recognition | null = null;
   let finished = false;
   let ended = false;
 
-  recognition.onstart = () => handlers.onStart();
-  recognition.onresult = (event) => {
-    if (finished) return;
-    let finalText = "";
-    let interimText = "";
-    for (let index = 0; index < event.results.length; index++) {
-      const result = event.results[index];
-      const transcript = result[0]?.transcript ?? "";
-      if (result.isFinal) finalText += transcript;
-      else interimText += transcript;
-    }
-    if (finalText.trim()) {
-      finished = true;
-      handlers.onFinal(finalText.trim());
-    } else {
-      handlers.onInterim(`${finalText}${interimText}`.trim());
-    }
-  };
-  recognition.onerror = (event) => {
-    if (finished) return;
-    finished = true;
-    handlers.onError(event.error);
-  };
-  recognition.onend = () => {
-    if (ended) return;
-    ended = true;
-    handlers.onEnd();
-  };
-
   try {
-    recognition.start();
+    const created = new recognizer();
+    recognition = created;
+    created.lang = options.lang;
+    created.continuous = false;
+    created.interimResults = true;
+    created.maxAlternatives = 1;
+    if (options.processLocally) created.processLocally = true;
+
+    created.onstart = () => handlers.onStart();
+    created.onresult = (event) => {
+      if (finished) return;
+      let finalText = "";
+      let interimText = "";
+      for (let index = 0; index < event.results.length; index++) {
+        const result = event.results[index];
+        const transcript = result[0]?.transcript ?? "";
+        if (result.isFinal) finalText += transcript;
+        else interimText += transcript;
+      }
+      if (finalText.trim()) {
+        finished = true;
+        handlers.onFinal(finalText.trim());
+      } else {
+        handlers.onInterim(`${finalText}${interimText}`.trim());
+      }
+    };
+    created.onerror = (event) => {
+      if (finished) return;
+      finished = true;
+      handlers.onError(event.error);
+    };
+    created.onend = () => {
+      if (ended) return;
+      ended = true;
+      handlers.onEnd();
+    };
+    created.start();
   } catch (error) {
-    // start() throws when the recognizer is already running or cannot start.
+    // Creating, configuring or starting the recognizer can throw (already
+    // running, not allowed); report it as an ordinary failed session.
     console.warn("Speech recognition did not start:", error);
-    finished = true;
-    handlers.onError("start-failed");
-    ended = true;
-    handlers.onEnd();
+    if (!finished) {
+      finished = true;
+      handlers.onError("start-failed");
+    }
+    if (!ended) {
+      ended = true;
+      handlers.onEnd();
+    }
   }
 
   return {
-    stop: () => recognition.stop(),
+    stop: () => recognition?.stop(),
     abort: () => {
       finished = true;
-      recognition.abort();
+      recognition?.abort();
     },
   };
 }
