@@ -1,6 +1,7 @@
 import { duplex, inbound, outbound } from "../protocol/messages";
 import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
+import { usePreferences } from '../stores/preferencesStore';
 
 
 export class GMCPMessageCoreClient extends GMCPMessage {
@@ -87,7 +88,7 @@ const GMCPCoreSupportsBase = GMCPPackage.with({
 export class GMCPCoreSupports extends GMCPCoreSupportsBase {
   constructor(client: ConstructorParameters<typeof GMCPCoreSupportsBase>[0]) {
     super(client);
-    this.on('get', () => this.sendSet(this.advertisedModules()));
+    this.on('get', () => { if (usePreferences.getState().general.fileSharingV2 === true) this.sendSet(this.advertisedModules()); });
   }
   advertisedModules(): string[] {
     return Object.values(this.client.gmcp.handlers)

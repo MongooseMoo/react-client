@@ -21,10 +21,14 @@ export class GmcpSession {
   private _sessionReady = false;
   private identity = '';
   private _generation = 0;
+  private _identityRevision = 0;
 
   get generation(): number { return this._generation; }
+  get confirmedPlayer(): string { return this.identity ? (JSON.parse(this.identity) as string[])[0] : ''; }
+  get identityRevision(): number { return this._identityRevision; }
 
   confirmIdentity(playerRef: string, playerUuid: string): boolean {
+    this._identityRevision++;
     const identity = JSON.stringify([playerRef, playerUuid]);
     if (identity === this.identity) return false;
     const changed = this.identity !== '';
@@ -118,6 +122,7 @@ export class GmcpSession {
         ? strictJson(gmcpMessage ?? '') : parseGmcpPayload(gmcpMessage);
       handled = handler.receiveRegisteredMessage(address.messageType, payload);
     } catch {
+      if (handler.enabled && ['Client.Peer', 'Client.Files'].includes(address.packageName)) this.client.fileSharingProtocolError();
       console.error(
         `Error dispatching GMCP message for ${address.packageName}.${address.messageType}:`,
       );

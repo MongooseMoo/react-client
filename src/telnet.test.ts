@@ -54,6 +54,15 @@ const testEvent = async (eventName: string, data: Uint8Array, expected: any[]) =
 };
 
 describe('Telnet', () => {
+  it('rejects invalid UTF-8 for the new file packages while retaining other-package decoding', () => {
+    const parser = new TelnetParser(); const messages = vi.fn(); parser.on('gmcp', messages);
+    for (const name of ['Client.Peer.Ready','Client.Files.Offer']) {
+      parser.parse(new Uint8Array([255,250,201,...new TextEncoder().encode(`${name} {"name":"`),0xc0,0x80,...new TextEncoder().encode('"}'),255,240]));
+    }
+    expect(messages).not.toHaveBeenCalled();
+    parser.parse(new Uint8Array([255,250,201,...new TextEncoder().encode('Test.Old '),0xc0,0x80,255,240]));
+    expect(messages).toHaveBeenCalledWith('Test.Old','��');
+  });
   it('preserves sliced UTF-8 GMCP packets across every possible split, including IAC/SE', () => {
     const body = new TextEncoder().encode('Test.Unicode {"text":"café 🎵"}');
     const packet = new Uint8Array([255, 250, 201, ...body, 255, 240, 79, 75]);

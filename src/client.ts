@@ -89,6 +89,12 @@ class MudClient {
   private fileTransfers?: FileTransfers;
   private fileTransfersLoading?: Promise<FileTransfers>;
   private fileTransferGeneration = 0;
+  // Supersession parks Files across reconnects; game login is unaffected.
+  public fileSharingParked = false;
+  fileSharingProtocolError(): void {
+    const transfers = this.fileTransfers;
+    if (transfers && 'protocolFailure' in transfers && typeof transfers.protocolFailure === 'function') transfers.protocolFailure();
+  }
   // Kept here, not on the engine: they outlive each engine a disconnect disposes.
   private readonly fileTransferOfferWatchers = new Set<(transfer: TransferSnapshot) => void>();
   private _autosay: boolean = false;
@@ -161,6 +167,19 @@ class MudClient {
     this.registerDisconnectReset(resetFileTransfer);
     this.registerIdentityReset(resetFileTransfer);
     this.registerCleanup(resetFileTransfer);
+    const startV2 = () => {
+      if (usePreferences.getState().general.fileSharingV2 === true && usePersonalDataStore.getState().policyReady) {
+        void this.getFileTransfers().catch(error => console.error('File sharing initialization:', error));
+      }
+    };
+    this.registerCleanup(usePersonalDataStore.subscribe(startV2));
+    this.registerCleanup(usePreferences.subscribe((state, previous) => {
+      if (state.general.fileSharingV2 !== previous.general.fileSharingV2) {
+        resetFileTransfer();
+        if (this.gmcp.ready) this.gmcp.require('Core.Supports').sendSet(this.gmcp.require('Core.Supports').advertisedModules());
+        startV2();
+      }
+    }));
   }
 
   getFileTransfers(): Promise<FileTransfers> {
@@ -168,12 +187,14 @@ class MudClient {
     if (this.fileTransfers) return Promise.resolve(this.fileTransfers);
     if (this.fileTransfersLoading) return this.fileTransfersLoading;
     const generation = this.fileTransferGeneration;
-    const loading = import('./fileTransfer/createFileTransfers')
-      .then(({ createFileTransfers }) => {
+    const module = usePreferences.getState().general.fileSharingV2 === true
+      ? import('./fileSharing/ownerService').then(({ createOwnerService }) => () => createOwnerService(this,this.gmcp_fileTransfer))
+      : import('./fileTransfer/createFileTransfers').then(({ createFileTransfers }) => () => createFileTransfers(this.gmcp_fileTransfer));
+    const loading = module.then((create) => {
         if (this.shutdownComplete || generation !== this.fileTransferGeneration) {
           throw new Error('File transfer initialization cancelled');
         }
-        const transfers = createFileTransfers(this.gmcp_fileTransfer);
+        const transfers = create();
         for (const watcher of this.fileTransferOfferWatchers) transfers.on('change', watcher);
         this.fileTransfers = transfers;
         return transfers;

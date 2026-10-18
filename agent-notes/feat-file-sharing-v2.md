@@ -6,10 +6,8 @@ Implement client-only Phase 1 from final specification commit 37b5bbca. The task
 is codex-dcpp-phase1-client.md in the scratchpad below. Commit coherent steps;
 do not push. Keep v2 disabled by default and preserve the v1 engine/storage.
 
-Prior documentation task: Apply the final spec edits at 0da13297 after the third
-independent Claude review. Work only in C:/Users/Q/code/react-client-file-sharing; commit the four
-contracts and this note. Do not push, implement client/server code, or contact
-or modify the MOO. Original tasks/review are in
+The prior documentation task applied three independent reviews. Original
+tasks/review are in
 C:/Users/Q/AppData/Local/Temp/claude/C--Users-Q-code-react-client/4e69018f-42c3-4d90-a8d7-58e7d41e35bd/scratchpad/:
 codex-dcpp-spec-task.md, codex-dcpp-spec-revise.md, codex-dcpp-spec-revise2.md,
 codex-dcpp-spec-revise3.md, claude-spec-review-report.md,
@@ -18,20 +16,24 @@ This note and the linked contracts stand alone.
 
 ## State
 
-Client implementation in progress (2026-10-18). Strict Phase 1 schemas and
-binary codec, six-store worker storage, fresh-consent partial adoption/root
-purge, default-off package gates, endpoint election/recovery, and session pool
-have been added. First 10 protocol/storage/endpoint tests pass. The integration,
-offer/data lifecycle, UI, independent hub harness and full verification remain.
-No hub work or deployment is part of this task. No browser acceptance is claimed.
+Phase 1 client candidate implemented (2026-10-18): strict packages/parser and
+full-mode frames, endpoint election/lease/recovery, one multiplexed session per
+pair, consent and bind/ready, credits/cancellation/retries, durable receipts and
+explicit save, six-store worker persistence and origin quota registry, retained
+partial adoption after fresh consent, integrity purge, and complete isolated v1
+transport selection. Final checks are running; evidence will be recorded in
+reports/file-sharing-phase1-validation.md. v2 remains OFF by default through
+general.fileSharingV2. No hub code was changed or deployed and nothing was pushed.
 
 Implementation decisions: v1 source files remain untouched. Phase 1 creates
 only the specified six native version-1 stores. Ctl and frame validators reject
 later-phase operations. Workers own v2 database connections. End superseded
 parks the endpoint, including no-lock tabs, until a player action.
 
-Implementation surprises: none yet. Next implementation step: offer grants,
-bind/ready/credits/receipt, facade integration and accessible explicit save UI.
+Chromium flag-off live guest sends passed both directions after identifying each
+page from its own look me output. A separate local reference-hub browser fixture
+passed real WebRTC, dedicated workers/native IndexedDB, exact bytes, receipt and
+explicit download handoff. This is not live-v2 hub acceptance or AT speech proof.
 
 All original high, medium and low findings plus B1-B7 and L-new-1..6 from the
 re-review, plus C1-C3 and the final L1-L3, have specified resolutions below; no finding
@@ -176,6 +178,20 @@ handlers. Base leases, consent, revocation and direct-send parity remain require
 
 ## Surprises and practical limits
 
+- A received RTC channel can already be open when installed and subsequently
+  fire its open callback; hello needs an idempotence guard. The real browser
+  fixture caught this; fake RTC alone did not.
+- Hub receipt events can outrun final data-channel ready/credit/complete frames,
+  especially for zero bytes; terminal handling must allow this ordering.
+- Guest character names from look me use underscores, while the userlist's
+  selectable display labels use spaces. Browser acceptance selects the actual
+  option only after identifying both characters independently.
+- Origin reservations live in a separate minimal quota registry; the owner
+  database still has exactly the specified six version-1 stores. No later-phase
+  stores, OPFS, list/get/search/presence/Policy or range frames were introduced.
+- Real screen-reader speech, cross-browser/device runs and live-v2 hub acceptance
+  remain unverified. See the validation report for the complete pending matrix.
+
 - The native strict JSON helper exists, but current parse_json cannot select it.
   Hub schema validation must never depend on rejecting duplicates/permissive
   encodings; forwarding only reconstructed retained values avoids ambiguity.
@@ -191,17 +207,8 @@ handlers. Base leases, consent, revocation and direct-send parity remain require
 
 ## Next step
 
-The coordinator can review this final spec-only revision, obtain Phase 0 browser/live
-baseline evidence, then implement server-first Phase 1 and its complete direct
-send slice. Do not prebuild later-phase hub handlers. Phase exits must run the
-Architecture acceptance matrix; its rows are future requirements, not tests
-claimed by this documentation task. All three supplied independent Claude reports
-informed the revisions; no independent review of THIS resulting revision is claimed.
-
-Documentation validation passed for this revision: five Markdown files parsed
-with installed marked; 16 local links, 42 source-citation path/range groups,
-all 49 review-resolution IDs, the six final decisions and Phase 1 store/version/
-frame gates checked. Obsolete parser/election wording is absent; git diff
---check passed. The required commit hook runs typecheck and staged lint; successful
-commit requires both. No client runtime tests, live MOO probe or browser
-acceptance are claimed for this documentation-only task.
+Keep the preference off. Integrate the actual Phase 1 hub and run every applicable
+architecture acceptance row with the browser/client/hub revisions recorded before
+considering production v2 activation. The independent reference hub tests client
+contracts; it does not validate native MOO parsing, output pressure, server rate
+buckets or the deployed legacy observer. Later phases remain out of this task.

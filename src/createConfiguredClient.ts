@@ -15,6 +15,8 @@ import {
   GMCPCharStatusTimers,
   GMCPClientFile,
   GMCPClientFileTransfer,
+  GMCPClientPeer,
+  GMCPClientFiles,
   GMCPClientHaptics,
   GMCPClientHtml,
   GMCPClientKeystrokes,
@@ -131,6 +133,8 @@ export function createConfiguredClient(): MudClient {
   const client = new MudClient("mongoose.moo.mud.org", 8765);
   // GMCP packages
   const clientFileTransfer = client.gmcp.register(GMCPClientFileTransfer);
+  client.gmcp.register(GMCPClientPeer);
+  client.gmcp.register(GMCPClientFiles);
   client.configureFileTransfer(clientFileTransfer);
   client.configureLatency(client.gmcp.register(GMCPCore));
   client.gmcp.register(GMCPClientMedia);

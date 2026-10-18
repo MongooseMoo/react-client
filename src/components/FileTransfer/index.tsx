@@ -15,6 +15,7 @@ import { useFocusRefuge } from './useFocusRefuge';
 import { useTransferHistory } from './useTransferHistory';
 import { useTransfers } from './useTransfers';
 import './styles.css';
+import V2Status, { isV2Service } from './V2Status';
 
 interface FileTransferUIProps {
   client: MudClient;
@@ -103,6 +104,7 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
     <div ref={panel} className={`file-transfer-ui ${expanded ? 'expanded' : 'collapsed'}`}>
       {/* Focusable from code only: where focus goes when the row that held it is gone. */}
       <h3 ref={heading} tabIndex={-1}>File Transfer</h3>
+      {isV2Service(transfers) && <V2Status service={transfers} refuge={heading} />}
 
       <Controls
         onFileChange={setSelectedFile}
@@ -130,6 +132,7 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
           senderLabel={getPeerLabel(offer.peer)}
           onAccept={() => accept(offer)}
           onReject={() => reject(offer)}
+          warning={offer.key.startsWith('v2:') ? 'Accepting connects directly to this player and exposes your IP address. Files remain private.' : undefined}
         />
       ))}
 

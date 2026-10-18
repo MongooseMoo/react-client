@@ -20,6 +20,7 @@ import { useOutputStore } from "./stores/outputStore";
 import { useRoomStore } from "./stores/roomStore";
 import { useSessionStore } from "./stores/sessionStore";
 import { useSpatialStore } from "./stores/spatialStore";
+import { FileTransferEngine } from './fileTransfer/FileTransferEngine';
 
 vi.mock("cacophony", () => ({
   Cacophony: class {
@@ -31,6 +32,28 @@ vi.mock("cacophony", () => ({
 describe("createConfiguredClient", () => {
   let client: MudClient | undefined;
   const originalGeolocation = globalThis.navigator.geolocation;
+
+  it('keeps the master legacy engine and advertised bundle when v2 is off', async () => {
+    usePreferences.getState().setGeneral({ ...usePreferences.getState().general,fileSharingV2:false });
+    client = createConfiguredClient();
+    expect(await client.getFileTransfers()).toBeInstanceOf(FileTransferEngine);
+    const advertised = client.gmcp.require('Core.Supports').advertisedModules();
+    expect(advertised).toContain('Client.FileTransfer 1');
+    expect(advertised).not.toContain('Client.Peer 1'); expect(advertised).not.toContain('Client.Files 1');
+    const send = vi.spyOn(client.gmcp,'send').mockImplementation(() => {});
+    client.gmcp.receive('Core.Supports.Get','{}');
+    expect(send).not.toHaveBeenCalled();
+    expect(send.mock.calls.some(([name]) => /^Client\.(Peer|Files)\./.test(name))).toBe(false);
+  });
+  it('answers Supports.Get with the complete enabled bundle when v2 is enabled', () => {
+    usePreferences.getState().setGeneral({ ...usePreferences.getState().general,fileSharingV2:true });
+    client = createConfiguredClient();
+    const send = vi.spyOn(client.gmcp,'send').mockImplementation(() => {});
+    const modules = client.gmcp.require('Core.Supports').advertisedModules();
+    expect(modules).toContain('Client.Peer 1'); expect(modules).toContain('Client.Files 1');
+    client.gmcp.receive('Core.Supports.Get','{}');
+    expect(send).toHaveBeenCalledWith('Core.Supports.Set',JSON.stringify(modules));
+  });
 
   afterEach(() => {
     client?.shutdown();

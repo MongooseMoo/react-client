@@ -244,7 +244,13 @@ export class TelnetParser extends EventEmitter {
   }
 
   private handleGmcp(data: Uint8Array) {
-    const gmcpString = new TextDecoder("utf-8", { ignoreBOM: true }).decode(data);
+    // New file packages require strict UTF-8; other packages keep their decoder.
+    const prefix = String.fromCharCode(...data.subarray(0, 14));
+    const strictFiles = /^client\.(peer|files)(?:\.| |$)/i.test(prefix);
+    if (strictFiles && data.length > 65536 + 64) return;
+    let gmcpString: string;
+    try { gmcpString = new TextDecoder("utf-8", { ignoreBOM: true, fatal: strictFiles }).decode(data); }
+    catch { return; }
     const [gmcpPackage, dataString] = gmcpString.split(/ +(.+?)$/, 2);
     this.emit("gmcp", gmcpPackage, dataString);
   }

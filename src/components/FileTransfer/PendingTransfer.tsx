@@ -9,6 +9,7 @@ interface PendingTransferProps {
   senderLabel: string;
   onAccept: () => void;
   onReject: () => void;
+  warning?: string;
 }
 
 const PendingTransfer: React.FC<PendingTransferProps> = ({
@@ -17,6 +18,7 @@ const PendingTransfer: React.FC<PendingTransferProps> = ({
   senderLabel,
   onAccept,
   onReject,
+  warning,
 }) => {
   const descriptionId = React.useId();
   const offer = `${filename} from ${senderLabel}`;
@@ -27,6 +29,7 @@ const PendingTransfer: React.FC<PendingTransferProps> = ({
     <div className="incoming-transfer" role="group" aria-labelledby={descriptionId}>
       <p id={descriptionId}>
         Incoming file: {filename} ({formatFileSize(size)}) from {senderLabel}
+        {warning && <>. {warning}</>}
       </p>
       <button type="button" aria-label={`Accept ${offer}`} onClick={onAccept}>
         Accept
