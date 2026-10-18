@@ -186,7 +186,7 @@ change `.github`.
 
 ## Next step
 
-Rebased onto origin/master b9864e3d and reported; Codex reviews the rebased head.
+Round 8 committed and reported; Codex reviews again.
 
 ## Round 5 (Codex review 4 of aa9247be: 1 P2, 3 P3, lead's decisions)
 
@@ -306,3 +306,31 @@ steps on the rebased tree, full output kept: typecheck exit 0; `npm test` 188
 files / 2637 tests; test:audio-cache exit 0 (4 PASS); editor-ownership 1 passed
 on 5193 serving this build's `index-BhNaXO1s.js` (matches dist/index.html);
 check-browser-sessions, check-client-recovery, test:a11y exit 0.
+
+## Round 8 (Codex review 7 of 5acf2046: one P2, lead's decision)
+
+The rebuild cleanup checked a part's ownership and then called
+`removeEntry(name)`, which removes whatever is at that path; a writer outside
+Mongoose replacing the file between the two loses its data (Codex reproduced
+it in native OPFS). The folder API offers no exclusion against outside
+writers, so any check-then-remove keeps the race.
+
+- Zone repair is non-destructive: a binding with a missing or invalid zone
+  gets this browser's zone, `nameChecked: false` and `avoidBase: <old base>`,
+  and the whole session renders under a freshly claimed name (under the
+  destination lock). The old part files are never opened or removed.
+- `avoidBase` keeps the fresh claim off the old name even when the old first
+  part is gone (otherwise the claim could take the old name back and write
+  over old parts 2..N, which carry this session's header). The claim drops it.
+- `rebuildFrom` and the surplus-part removal are deleted, with their tests.
+  The only `removeEntry` left is the claim placeholder's rollback (a file this
+  page created moments earlier under the name lock), as decided.
+- Tests: no zone, an invalid zone, and an invalid zone with the old first part
+  gone: old files byte-identical with no new writes, `removed` empty, "base (2)"
+  holds exactly the fresh render with one footer, no binding left. All three
+  failed on 5acf2046.
+- CI, all 7 steps, full output kept (none failed): typecheck exit 0;
+  `npm test` 188 files / 2633 tests (fewer than 2637: the 5 removed cleanup
+  tests, 1 added variant); test:audio-cache exit 0 (4 PASS; build 20.11 s);
+  editor-ownership 1 passed on 5193 serving this build's `index-BBgaIr1Z.js`;
+  check-browser-sessions, check-client-recovery, test:a11y exit 0. Biome clean.

@@ -100,8 +100,6 @@ class FakeDirectory {
   holdCreate: Hold | undefined;
   // Fail the next lookup that would create a missing file.
   failCreate: DOMException | undefined;
-  // Fail the next removeEntry.
-  failRemove: DOMException | undefined;
   removed: string[] = [];
   // The first file created anywhere below fails its first write.
   failFirstWrite: DOMException | undefined;
@@ -157,11 +155,6 @@ class FakeDirectory {
   }
 
   async removeEntry(name: string) {
-    const failure = this.failRemove;
-    if (failure) {
-      this.failRemove = undefined;
-      throw failure;
-    }
     if (!this.files.delete(name)) throw new DOMException("missing", "NotFoundError");
     this.removed.push(name);
   }
@@ -757,11 +750,17 @@ describe("AutoLogFolder", () => {
     tabB.dispose();
   });
 
-  for (const stored of [undefined, "Not/A_Zone"] as const) {
-    it(`re-renders a session from part 1 when its saved binding has ${stored ? "an invalid" : "no"} time zone`, async () => {
+  const zoneRepairs: Array<{ label: string; zone: string | undefined; dropFirstPart: boolean }> = [
+    { label: "no time zone", zone: undefined, dropFirstPart: false },
+    { label: "an invalid time zone", zone: "Not/A_Zone", dropFirstPart: false },
+    { label: "an invalid time zone and its first old part gone", zone: "Not/A_Zone", dropFirstPart: true },
+  ];
+
+  for (const { label, zone, dropFirstPart } of zoneRepairs) {
+    it(`gives a session whose binding has ${label} a fresh name and leaves its old files untouched`, async () => {
       const cap = 300;
-      // A binding as the build before time zones saved it, with a mark that
-      // splits an entry, and parts rendered in some other zone.
+      // A binding as an earlier build saved it, with a mark that splits an
+      // entry, and parts rendered in some other zone.
       const late = { ...session(1), startedAt: Date.UTC(2026, 9, 18, 23, 50) };
       storedSessions.set(sid(1), late);
       store(entry(1, 0, "before midnight UTC", Date.UTC(2026, 9, 18, 23, 55)), entry(1, 1, `${"y".repeat(500)} end`, Date.UTC(2026, 9, 19, 0, 10)));
@@ -773,24 +772,39 @@ describe("AutoLogFolder", () => {
       expect(old.mark.offset).toBeGreaterThan(0);
       const ada = await root.getDirectoryHandle("Ada", { create: true });
       for (const part of old.parts) {
+        if (dropFirstPart && part.part === 1) continue;
         const file = await ada.getFileHandle(partName("base", part.part), { create: true });
         file.bytes = encoder.encode(part.text);
       }
+      const before = new Map([...ada.files].map(([name, file]) => [name, { text: file.text, writes: file.writableOptions.length }]));
       const { timeZone: _dropped, ...withoutZone } = { ...elsewhere, mark: old.mark };
-      persistence.bindings.set(sid(1), (stored === undefined ? withoutZone : { ...withoutZone, timeZone: stored }) as LogFileBinding);
+      persistence.bindings.set(sid(1), (zone === undefined ? withoutZone : { ...withoutZone, timeZone: zone }) as LogFileBinding);
       remember(ownerA, root);
 
       const folder = makeFolder({ maxPartBytes: cap });
       await folder.syncOwner();
       await folder.whenIdle();
 
-      // Every part is now the render in this machine's zone, footer included.
-      const expected = renderLogParts({ ...elsewhere, timeZone: ambientZone, mark: { part: 1, sequence: 0, offset: 0, day: zonedDay(late.startedAt) } },
+      // The old files are exactly as they were: same bytes, never opened for writing.
+      for (const [name, { text, writes }] of before) {
+        expect(ada.files.get(name)?.text).toBe(text);
+        expect(ada.files.get(name)?.writableOptions.length).toBe(writes);
+      }
+      expect(ada.removed).toEqual([]);
+      // The new name holds the whole session, in this machine's zone, with one footer.
+      const expected = renderLogParts(
+        { ...elsewhere, baseName: "base (2)", timeZone: ambientZone, mark: { part: 1, sequence: 0, offset: 0, day: zonedDay(late.startedAt) } },
         late, storedEntries(1), "\nEnded: not recorded (the page closed)\n", cap);
-      const files = root.all();
-      for (const part of expected.parts) expect(files[`Ada/${partName("base", part.part)}`]).toBe(part.text);
-      const body = expected.parts.map((p) => p.text.slice(p.text.indexOf("\n\n") + 2)).join("");
+      const newNames = expected.parts.map((part) => partName("base (2)", part.part));
+      expect([...ada.files.keys()].sort()).toEqual([...before.keys(), ...newNames].sort());
+      for (const part of expected.parts) expect(ada.files.get(partName("base (2)", part.part))?.text).toBe(part.text);
+      const body = newNames.map((name) => {
+        const text = ada.files.get(name)?.text ?? "";
+        return text.slice(text.indexOf("\n\n") + 2);
+      }).join("");
       expect(body).toContain(`${"y".repeat(500)} end`);
+      expect(lineTexts(body)[0]).toBe("before midnight UTC");
+      expect(footers(body)).toEqual(["Ended: not recorded (the page closed)"]);
       expect(persistence.bindings.size).toBe(0);
       folder.dispose();
     });
@@ -830,64 +844,12 @@ describe("AutoLogFolder", () => {
     folder.dispose();
   });
 
-  // Shared by the rebuild tests: parts written at a small cap in an earlier
-  // build, a binding with an invalid zone pointing at the last of them, and
-  // (optionally) one of those parts replaced by someone else's file.
-  async function staleRebuild(options: { foreignText?: string } = {}) {
-    const lines = Array.from({ length: 10 }, (_, i) => `line ${i} ${"a".repeat(30)}`);
-    store(...lines.map((text, sequence) => entry(1, sequence, text)));
-    const binding: LogFileBinding = {
-      sessionId: sid(1), ownerKey: ownerKey(ownerA), bindingId: "binding-1", folderName: "Ada", character: "Ada",
-      timeZone: ambientZone, baseName: "base", nameChecked: true, mark: { part: 1, sequence: 0, offset: 0, day: "2026-10-18" },
-    };
-    const old = renderLogParts(binding, session(1), storedEntries(1), undefined, 250);
-    const ada = await root.getDirectoryHandle("Ada", { create: true });
-    for (const part of old.parts) {
-      const file = await ada.getFileHandle(partName("base", part.part), { create: true });
-      file.bytes = encoder.encode(part.text);
-    }
-    let foreignName: string | undefined;
-    if (options.foreignText !== undefined) {
-      foreignName = partName("base", old.parts.length - 1);
-      const foreign = await ada.getFileHandle(foreignName, { create: true });
-      foreign.bytes = encoder.encode(options.foreignText);
-    }
-    persistence.bindings.set(sid(1), { ...binding, timeZone: "Not/A_Zone", mark: old.mark });
-    remember(ownerA, root);
-    const expected = renderLogParts({ ...binding, mark: { part: 1, sequence: 0, offset: 0, day: zonedDay(startedAt) } },
-      session(1), storedEntries(1), "\nEnded: not recorded (the page closed)\n", 300);
-    expect(expected.parts.length).toBeLessThan(old.parts.length - 1);
-    return { lines, ada, old, expected, foreignName };
-  }
-
   const foreignFiles: Array<[string, string]> = [
     ["another session's file", "Someone's notes\nSession: someone-else\n\nkeep me\n"],
     ["a file quoting our Session line in its body", `My notes\nabout the game\n\nSession: ${sid(1)}\nCharacter: Ada\nkeep me\n`],
     ["a file with our Session line second but not our layout", `Pasted\nSession: ${sid(1)}\nNotes: mine\nkeep me\n`],
     ["a file with our Session line first", `Session: ${sid(1)}\nCharacter: Ada\nkeep me\n`],
   ];
-
-  for (const [label, foreignText] of foreignFiles) {
-    it(`after a rebuild that needs fewer parts, removes its own leftovers but never ${label}`, async () => {
-      const { lines, ada, expected, foreignName } = await staleRebuild({ foreignText });
-      const folder = makeFolder({ maxPartBytes: 300 });
-      await folder.syncOwner();
-      await folder.whenIdle();
-
-      const names = expected.parts.map((part) => partName("base", part.part));
-      expect([...ada.files.keys()].sort()).toEqual([...names, foreignName].sort());
-      expect(ada.files.get(foreignName ?? "")?.text).toBe(foreignText);
-      expect(ada.removed).not.toContain(foreignName);
-      const joined = names.map((name) => {
-        const text = ada.files.get(name)?.text ?? "";
-        return text.slice(text.indexOf("\n\n") + 2);
-      }).join("");
-      expect(lineTexts(joined)).toEqual(lines);
-      expect(footers(joined)).toEqual(["Ended: not recorded (the page closed)"]);
-      expect(persistence.bindings.size).toBe(0);
-      folder.dispose();
-    });
-  }
 
   it("recognises its own parts, first and continuation, even with a title that tries to look like a header", async () => {
     const tricky = session(1, ownerA, { title: "Session: fake\nCharacter: nobody" });
@@ -908,25 +870,6 @@ describe("AutoLogFolder", () => {
     // Entries can be split across parts at this cap: join the bodies first.
     const bodies = parts.map((name) => files[name].slice(files[name].indexOf("\n\n") + 2)).join("");
     expect(lineTexts(bodies)).toEqual(Array.from({ length: 8 }, (_, i) => `line ${i} ${"b".repeat(30)}`));
-    folder.dispose();
-  });
-
-  it("keeps the cleanup owed when removing a leftover part fails, and finishes it on the next try", async () => {
-    const { lines, ada, old, expected } = await staleRebuild();
-    ada.failRemove = new DOMException("The file is in use", "NoModificationAllowedError");
-    const folder = makeFolder({ maxPartBytes: 300 });
-    await folder.syncOwner();
-    await folder.whenIdle();
-    expect(folder.state.getState().status.kind).toBe("error");
-    expect(persistence.bindings.get(sid(1))?.rebuildFrom).toEqual({ parts: old.parts.length });
-    expect(ada.files.size).toBeGreaterThan(expected.parts.length);
-
-    await folder.reconnect();
-    await folder.whenIdle();
-    const names = expected.parts.map((part) => partName("base", part.part));
-    expect([...ada.files.keys()].sort()).toEqual([...names].sort());
-    expect(lineTexts(names.map((name) => ada.files.get(name)?.text ?? "").join(""))).toEqual(lines);
-    expect(persistence.bindings.size).toBe(0);
     folder.dispose();
   });
 

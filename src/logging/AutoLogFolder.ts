@@ -64,10 +64,9 @@ export type LogFileBinding = {
   // The base name has been checked against existing files and saved.
   nameChecked: boolean;
   mark: PartMark;
-  // Set by a rebuild from part 1: how many parts the session had before.
-  // Parts above the rebuilt count are removed (only if they are this
-  // session's) before this is cleared, so a crash leaves the cleanup owed.
-  rebuildFrom?: { parts: number };
+  // Set by a time-zone repair: the old base name, which the fresh claim must
+  // not take again, so the old files are never written. Cleared by the claim.
+  avoidBase?: string;
 };
 
 export type SessionSnapshot = { session: AutoLogSession; entries: AutoLogEntry[] };
@@ -927,20 +926,19 @@ export class AutoLogFolder implements AutoLogSink {
     for (let attempt = 1; ; attempt++) {
       if (attempt > 3) throw new Error("The log file kept finding its name taken");
       // A binding saved before time zones were stored (or with a zone this
-      // browser does not know) has offsets measured in some other zone's
-      // text: give it this browser's zone and render the whole session
-      // again, owing the removal of any parts the rebuild no longer needs.
+      // browser does not know; only unreleased builds of this feature made
+      // those) has offsets measured in some other zone's text. It gets this
+      // browser's zone and a fresh name, and the whole session is rendered
+      // there. Its old files are left exactly as they are: removing them
+      // could race a writer outside Mongoose, and the folder API offers no
+      // way to exclude one.
       const repairZone = !validTimeZone(binding.timeZone);
       const snapshot = await this.readSnapshot(binding.sessionId, repairZone ? 0 : binding.mark.sequence);
       this.assertLive(key, record);
       if (!snapshot) return { binding, outcome: "gone" };
       const { startedAt, endedAt } = snapshot.session;
       if (repairZone) {
-        binding = await restart({
-          ...binding,
-          timeZone: ambientTimeZone(),
-          rebuildFrom: { parts: Math.max(binding.rebuildFrom?.parts ?? 0, binding.mark.part) },
-        }, startedAt);
+        binding = await restart({ ...binding, timeZone: ambientTimeZone(), nameChecked: false, avoidBase: binding.baseName }, startedAt);
       }
       const footer = endedAt !== undefined ? endedFooter(endedAt, binding.timeZone) : mode === "orphan" ? PAGE_CLOSED_FOOTER : undefined;
 
@@ -948,11 +946,11 @@ export class AutoLogFolder implements AutoLogSink {
       this.assertLive(key, record);
       // A claimed name only counts while its first part says it is ours. A
       // missing or someone else's first part means claiming again (perhaps
-      // " (2)") and writing the whole session there; leftovers of the old
-      // name are not this rebuild's to remove.
+      // " (2)") and writing the whole session there; any files left under
+      // the old name stay as they are.
       if (binding.nameChecked && (await partOwner(folder, partFileName(binding.baseName, 1), binding.sessionId)) !== "ours") {
         this.assertLive(key, record);
-        binding = await restart({ ...binding, nameChecked: false, rebuildFrom: undefined }, startedAt);
+        binding = await restart({ ...binding, nameChecked: false }, startedAt);
         continue;
       }
       if (!binding.nameChecked) {
@@ -967,32 +965,16 @@ export class AutoLogFolder implements AutoLogSink {
         }
       } catch (error) {
         if (!(error instanceof ForeignFile)) throw error;
-        binding = await restart({ ...binding, nameChecked: false, rebuildFrom: undefined }, startedAt);
+        binding = await restart({ ...binding, nameChecked: false }, startedAt);
         continue;
       }
 
-      let changed = !sameMark(layout.mark, binding.mark);
-      binding = { ...binding, mark: layout.mark };
-      const owed = binding.rebuildFrom;
-      if (owed) {
-        // Throws on any failure, leaving rebuildFrom saved for the next try.
-        const kept = layout.parts[layout.parts.length - 1].part;
-        for (let part = kept + 1; part <= owed.parts; part++) {
-          const name = partFileName(binding.baseName, part);
-          if ((await partOwner(folder, name, binding.sessionId)) === "ours") {
-            this.assertLive(key, record);
-            await folder.removeEntry(name);
-          }
-          this.assertLive(key, record);
-        }
-        binding = { ...binding, rebuildFrom: undefined };
-        changed = true;
-      }
-      if (changed) {
+      if (!sameMark(layout.mark, binding.mark)) {
+        binding = { ...binding, mark: layout.mark };
         try {
           await this.persistence.putBinding(binding);
         } catch (error) {
-          // Costs a longer render (or a repeated cleanup) next time, never wrong output.
+          // Costs a longer render next time, never wrong output.
           console.error("Failed to save the log file binding:", error);
         }
       }
@@ -1009,9 +991,14 @@ export class AutoLogFolder implements AutoLogSink {
     const original = binding.baseName;
     const claim = async (): Promise<LogFileBinding> => {
       let baseName = original;
-      for (let copy = 2; await nameTaken(folder, partFileName(baseName, 1)); copy++) baseName = `${original} (${copy})`;
+      // Never the name a time-zone repair moved away from, even if its first
+      // part has gone: its other parts would still be this session's files.
+      for (let copy = 2; baseName === binding.avoidBase || await nameTaken(folder, partFileName(baseName, 1)); copy++) {
+        baseName = `${original} (${copy})`;
+      }
       this.assertLive(binding.ownerKey, record);
-      const claimed = { ...binding, baseName, nameChecked: true };
+      const { avoidBase: _avoided, ...unclaimed } = binding;
+      const claimed = { ...unclaimed, baseName, nameChecked: true };
       await this.persistence.putBinding(claimed);
       const name = partFileName(baseName, 1);
       let created = false;
