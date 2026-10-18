@@ -27,6 +27,7 @@ import {
   GMCPCommLiveKit,
   GMCPCore,
   GMCPCoreSupports,
+  GMCPCoreTime,
   GmcPIRESound,
   GMCPGroup,
   GMCPHelp,
@@ -133,6 +134,7 @@ export function createConfiguredClient(): MudClient {
   const clientFileTransfer = client.gmcp.register(GMCPClientFileTransfer);
   client.configureFileTransfer(clientFileTransfer);
   client.configureLatency(client.gmcp.register(GMCPCore));
+  client.gmcp.register(GMCPCoreTime);
   client.gmcp.register(GMCPClientMedia);
   client.gmcp.register(GmcPIRESound);
   client.gmcp.register(GMCPClientSpatial);

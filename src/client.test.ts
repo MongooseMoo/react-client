@@ -233,6 +233,7 @@ class MockClientMediaPackage {
   packageName = 'Client.Media';
   packageVersion = 1;
   publishEffectsSupport = vi.fn();
+  sendPlaybackSupport = vi.fn();
   reset = vi.fn();
   shutdown = vi.fn();
 }

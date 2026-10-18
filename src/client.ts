@@ -9,6 +9,7 @@ import {
 import stripAnsi from "strip-ansi";
 import { EditorManager } from "./EditorManager";
 import { ConnectionLatency } from "./ConnectionLatency";
+import { SharedClock } from './timing/SharedClock';
 import type { GMCPCore } from "./gmcp/Core";
 import { type GMCPClientFileTransfer, GmcpSession } from "./gmcp";
 import {
@@ -82,6 +83,8 @@ class MudClient {
   private port: number;
   private telnetBuffer: string = "";
   public readonly gmcp: GmcpSession;
+  public readonly sharedClock: SharedClock;
+  get localConnection(): boolean { return this.localMode; }
   public readonly mcpSession: McpSession;
   private gmcp_fileTransfer!: GMCPClientFileTransfer;
   public media: MediaService;
@@ -116,6 +119,10 @@ class MudClient {
       sendLine: (line) => this.send(`${line}\r\n`),
     });
     this.gmcp = new GmcpSession(this);
+    this.sharedClock = new SharedClock((request) => this.gmcp.require('Core.Time').sendRequest(request));
+    this.registerDisconnectReset(() => this.sharedClock.setNetworkReady(false));
+    this.registerIdentityReset(() => this.sharedClock.invalidate());
+    this.registerCleanup(() => this.sharedClock.shutdown());
     this.media = new MediaService();
     this.registerCleanup(usePersonalDataStore.subscribe((state, previous) => {
       if (state.visitor !== previous.visitor) this.resetIdentityState();
@@ -346,6 +353,7 @@ class MudClient {
 
   private handleResume(): void {
     this.showAwayLines();
+    this.sharedClock.invalidate();
     if (this.shutdownComplete || this.intentionalDisconnect || this.localMode) {
       return;
     }
