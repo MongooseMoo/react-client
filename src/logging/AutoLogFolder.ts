@@ -81,11 +81,6 @@ export interface LogFolderPersistence {
   deleteBinding(sessionId: string): Promise<void>;
 }
 
-// The part of the Web Locks API used here; navigator.locks satisfies it.
-export interface LockManagerLike {
-  request(name: string, options: { ifAvailable?: boolean }, callback: (lock: unknown) => Promise<unknown>): Promise<unknown>;
-}
-
 export class StorageBlocked extends Error {
   constructor() {
     super("Another Mongoose tab is holding the log folder settings open");
@@ -232,8 +227,6 @@ export const MAX_PART_BYTES = 1024 * 1024;
 // adding the footer never moves a part boundary or breaks the cap.
 const FOOTER_RESERVE = 64;
 const PAGE_CLOSED_FOOTER = "\nEnded: not recorded (the page closed)\n";
-const LOCK_PREFIX = "mongoose-autolog-folder:";
-const NAME_LOCK_PREFIX = "mongoose-log-name:";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -459,15 +452,11 @@ type FolderRecord = {
   promptAnnounced?: boolean;
 };
 
-// A session this page is logging. Bound (binding + lock) only once its
-// owner has a folder.
+// A session this page is logging. Bound only once its owner has a folder.
 type LiveSession = {
   session: AutoLogSession;
   key: string;
   binding?: LogFileBinding;
-  releaseLock?: () => void;
-  // Settles once the browser has actually let the session lock go.
-  lockSettled?: Promise<unknown>;
   ended: boolean;
   queued: boolean;
 };
@@ -513,11 +502,6 @@ export type AutoLogFolderOptions = {
   // The session and its entries from a sequence on, in one consistent read.
   readSnapshot: (sessionId: string, fromSequence: number) => Promise<SessionSnapshot | undefined>;
   pickDirectory?: () => Promise<FileSystemDirectoryHandle>;
-  // With Web Locks, a session another tab is writing is never recovered here.
-  // Without them nothing is recovered at all: only this page's own live
-  // sessions are written, and orphans wait for a page that has Web Locks.
-  // (Every browser with the folder picker has Web Locks.)
-  locks?: LockManagerLike;
   maxPartBytes?: number;
 };
 
@@ -526,7 +510,6 @@ export class AutoLogFolder implements AutoLogSink {
   private readonly persistence: LogFolderPersistence;
   private readonly readSnapshot: AutoLogFolderOptions["readSnapshot"];
   private readonly pickDirectory?: () => Promise<FileSystemDirectoryHandle>;
-  private readonly locks?: LockManagerLike;
   private readonly maxPartBytes: number;
   // A folder change replaces or clears the record; writes check theirs is
   // still the one here (assertLive) so they never land in a dropped folder.
@@ -543,7 +526,6 @@ export class AutoLogFolder implements AutoLogSink {
     this.persistence = options.persistence;
     this.readSnapshot = options.readSnapshot;
     this.pickDirectory = options.pickDirectory;
-    this.locks = options.locks;
     this.maxPartBytes = options.maxPartBytes ?? MAX_PART_BYTES;
     const status: LogFolderStatus = this.supported ? { kind: "unavailable" } : { kind: "unsupported" };
     this.state = createStore(() => ({ status }));
@@ -573,8 +555,7 @@ export class AutoLogFolder implements AutoLogSink {
   /**
    * Stops taking work and invalidates every write under way (each checks
    * before opening and before committing). Resolves once the queue has
-   * drained; the session locks are released only then, so no other tab can
-   * recover a session while a write of this page's could still land.
+   * drained.
    */
   dispose(): Promise<void> {
     if (this.disposing) return this.disposing;
@@ -582,13 +563,8 @@ export class AutoLogFolder implements AutoLogSink {
     this.unsubscribeOwner = undefined;
     this.disposing = (async () => {
       await this.whenIdle();
-      const released = [...this.live.values()].map((live) => {
-        const settled = live.lockSettled;
-        this.unbind(live);
-        return settled;
-      });
+      for (const live of this.live.values()) this.unbind(live);
       this.live.clear();
-      await Promise.all(released);
     })();
     return this.disposing;
   }
@@ -812,27 +788,7 @@ export class AutoLogFolder implements AutoLogSink {
     if (this.disposing || this.folders.get(key) !== record) throw new StaleFolder();
   }
 
-  // Takes the session's lock (so no other tab recovers it), then saves its
-  // binding: nobody can see the binding without the lock already held.
   private async bind(live: LiveSession, record: FolderRecord): Promise<void> {
-    this.assertLive(live.key, record);
-    if (!live.releaseLock) {
-      let granted = () => {};
-      const lockHeld = new Promise<void>((resolve) => { granted = resolve; });
-      let release = () => {};
-      const held = new Promise<void>((resolve) => { release = resolve; });
-      live.releaseLock = release;
-      if (this.locks) {
-        live.lockSettled = this.locks.request(LOCK_PREFIX + live.session.id, {}, () => {
-          granted();
-          return held;
-        }).catch((error) => {
-          console.error("Failed to lock the autolog session:", error);
-          granted();
-        });
-        await lockHeld;
-      }
-    }
     this.assertLive(live.key, record);
     const { session } = live;
     const character = session.owner ? characterName(session.owner) : "";
@@ -858,9 +814,6 @@ export class AutoLogFolder implements AutoLogSink {
   }
 
   private unbind(live: LiveSession): void {
-    live.releaseLock?.();
-    live.releaseLock = undefined;
-    live.lockSettled = undefined;
     live.binding = undefined;
   }
 
@@ -898,7 +851,7 @@ export class AutoLogFolder implements AutoLogSink {
 
   // Renders one session into the folder from IndexedDB. "gone": the session
   // was pruned, files left as they are. "complete": the footer is written.
-  // Runs under the session's lock. onChanged hears every saved change to the
+  // onChanged hears every saved change to the
   // binding at once (a claimed name, a repaired time zone), even if a write
   // then fails, so a retry builds on it.
   private async renderBinding(
@@ -983,75 +936,56 @@ export class AutoLogFolder implements AutoLogSink {
   }
 
   // Before a session's first file: never take over an existing file. The
-  // check, saving the claim, and creating the first file happen under one
-  // Web Lock per name, so two tabs whose sessions share a base name cannot
-  // both find it free. The claim is saved before anything is written, so a
-  // later render reuses it instead of treating our file as someone else's.
+  // claim is saved before anything is written, so a later render reuses it
+  // instead of treating our file as someone else's. No other page claims in
+  // the same character folder: a character has at most one connection
+  // (#1414:login refuses a connected character; a second switch_player
+  // closes the old connection, toaststunt src/server.cc player_switched).
   private async claimName(binding: LogFileBinding, session: AutoLogSession, folder: FileSystemDirectoryHandle, record: FolderRecord): Promise<LogFileBinding> {
     const original = binding.baseName;
-    const claim = async (): Promise<LogFileBinding> => {
-      let baseName = original;
-      // Never the name a time-zone repair moved away from, even if its first
-      // part has gone: its other parts would still be this session's files.
-      for (let copy = 2; baseName === binding.avoidBase || await nameTaken(folder, partFileName(baseName, 1)); copy++) {
-        baseName = `${original} (${copy})`;
-      }
+    let baseName = original;
+    // Never the name a time-zone repair moved away from, even if its first
+    // part has gone: its other parts would still be this session's files.
+    for (let copy = 2; baseName === binding.avoidBase || await nameTaken(folder, partFileName(baseName, 1)); copy++) {
+      baseName = `${original} (${copy})`;
+    }
+    this.assertLive(binding.ownerKey, record);
+    const { avoidBase: _avoided, ...unclaimed } = binding;
+    const claimed = { ...unclaimed, baseName, nameChecked: true };
+    await this.persistence.putBinding(claimed);
+    const name = partFileName(baseName, 1);
+    try {
       this.assertLive(binding.ownerKey, record);
-      const { avoidBase: _avoided, ...unclaimed } = binding;
-      const claimed = { ...unclaimed, baseName, nameChecked: true };
-      await this.persistence.putBinding(claimed);
-      const name = partFileName(baseName, 1);
+      // The placeholder is the first part's header, so from here on the
+      // name is provably this session's; an empty file is nobody's.
+      const file = await folder.getFileHandle(name, { create: true });
+      const writable = await file.createWritable();
       try {
-        this.assertLive(binding.ownerKey, record);
-        // The placeholder is the first part's header, so from here on the
-        // name is provably this session's; an empty file is nobody's.
-        const file = await folder.getFileHandle(name, { create: true });
-        const writable = await file.createWritable();
-        try {
-          await writable.write(partHeader(claimed, session, 1));
-          await writable.close();
-        } catch (error) {
-          await writable.abort().catch(() => {});
-          throw error;
-        }
+        await writable.write(partHeader(claimed, session, 1));
+        await writable.close();
       } catch (error) {
-        // Take the claim back so the next try checks again. Whatever is at
-        // the path stays (an empty file of ours, or something another writer
-        // put there meanwhile): it now counts as taken, so the next claim
-        // moves on to another name. If taking the claim back fails too, the
-        // next render finds the first part missing or someone else's and
-        // claims again (see renderBinding).
-        await this.persistence.putBinding(binding).catch((saveError) => {
-          console.error("Failed to take back the log file name:", saveError);
-        });
+        await writable.abort().catch(() => {});
         throw error;
       }
-      return claimed;
-    };
-    if (!this.locks) return claim();
-    let claimed: LogFileBinding | undefined;
-    // Keyed on the destination: sessions of different owners can share a
-    // folder, and over-serialising distinct folders that share a name is fine.
-    await this.locks.request(`${NAME_LOCK_PREFIX}${record.directory.name}/${binding.folderName}/${original}`, {}, async () => {
-      claimed = await claim();
-    });
-    if (!claimed) throw new Error("The log file name lock was not granted");
+    } catch (error) {
+      // Take the claim back so the next try checks again. Whatever is at
+      // the path stays (an empty file of ours, or something another writer
+      // put there meanwhile): it now counts as taken, so the next claim
+      // moves on to another name. If taking the claim back fails too, the
+      // next render finds the first part missing or someone else's and
+      // claims again (see renderBinding).
+      await this.persistence.putBinding(binding).catch((saveError) => {
+        console.error("Failed to take back the log file name:", saveError);
+      });
+      throw error;
+    }
     return claimed;
   }
 
   // Writes a part, but never into an existing file that is not this session's.
   //
-  // What this guarantees, and what it cannot: when Web Locks are available,
-  // Mongoose writers never race each other (a session's renders hold its Web
-  // Lock, name claims hold the destination lock). Without Web Locks, one
-  // page's folder work is still serialised by its own queue, and there is no
-  // automatic recovery, so no two pages render the same session; but name
-  // claims are not serialised across tabs, so two tabs whose sessions share a
-  // base name (same start second, same 12-digit id suffix) could both claim
-  // it, and one tab's placeholder could replace the other's; that session
-  // then finds a foreign first part, claims a new name and renders again
-  // from IndexedDB. Apart from that placeholder, a file that does not open
-  // with this session's exact header is never written. But the File System
+  // A file that does not open with this session's exact header is never
+  // written. But the File System
   // Access API has no conditional or exclusive write, so if a program outside
   // Mongoose replaces this part between the ownership read and
   // createWritable, that replacement can be overwritten; moving the check
@@ -1086,13 +1020,12 @@ export class AutoLogFolder implements AutoLogSink {
     }
   }
 
-  // Renders sessions bound to this folder that no page here is writing:
-  // ones a closed page left unfinished, or pruned ones to forget. Only with
-  // Web Locks: without them a live tab's session cannot be told from a dead
-  // page's, so orphans wait for a page that has them.
+  // Renders this character's sessions that this page is not writing: ones a
+  // closed page left unfinished, or pruned ones to forget. No other page is
+  // writing them, because a character has at most one connection (see
+  // claimName).
   private recover(key: string, record: FolderRecord): void {
-    const locks = this.locks;
-    if (!locks || !this.active) return;
+    if (!this.active) return;
     this.enqueue(async () => {
       if (this.disposing || this.folders.get(key) !== record || !this.writable(key, record)) return;
       let listed: LogFileBinding[];
@@ -1104,25 +1037,19 @@ export class AutoLogFolder implements AutoLogSink {
       }
       for (const { sessionId } of listed) {
         if (this.live.has(sessionId) || this.folders.get(key) !== record) continue;
-        const recoverOne = async () => {
-          try {
-            // Read again: another recoverer may have finished it meanwhile.
-            const binding = await this.persistence.getBinding(sessionId);
-            if (!binding || this.folders.get(key) !== record) return;
-            if (binding.bindingId !== record.bindingId) {
-              await this.forgetBinding(sessionId);
-              return;
-            }
-            const result = await this.renderBinding(binding, record, "orphan");
-            if (result.outcome === "complete" || result.outcome === "gone") await this.forgetBinding(sessionId);
-            this.recovered(record);
-          } catch (error) {
-            await this.handleWriteError(error, key, record);
+        try {
+          const binding = await this.persistence.getBinding(sessionId);
+          if (!binding || this.folders.get(key) !== record) continue;
+          if (binding.bindingId !== record.bindingId) {
+            await this.forgetBinding(sessionId);
+            continue;
           }
-        };
-        await locks.request(LOCK_PREFIX + sessionId, { ifAvailable: true }, async (lock) => {
-          if (lock) await recoverOne();
-        });
+          const result = await this.renderBinding(binding, record, "orphan");
+          if (result.outcome === "complete" || result.outcome === "gone") await this.forgetBinding(sessionId);
+          this.recovered(record);
+        } catch (error) {
+          await this.handleWriteError(error, key, record);
+        }
       }
     });
   }
@@ -1187,15 +1114,8 @@ function defaultPicker(): (() => Promise<FileSystemDirectoryHandle>) | undefined
   return () => picker({ id: "mongoose-logs", mode: "readwrite", startIn: "documents" });
 }
 
-function defaultLocks(): LockManagerLike | undefined {
-  if (typeof navigator === "undefined" || !navigator.locks) return undefined;
-  const locks = navigator.locks;
-  return { request: (name, options, callback) => locks.request(name, options, callback) };
-}
-
 export const autoLogFolder = new AutoLogFolder({
   persistence: new IndexedDbLogFolderPersistence(),
   readSnapshot: (sessionId, fromSequence) => autoLogStore.getSessionSnapshot(sessionId, fromSequence),
   pickDirectory: defaultPicker(),
-  locks: defaultLocks(),
 });

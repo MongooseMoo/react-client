@@ -6,7 +6,6 @@ import { useSessionStore } from "../stores/sessionStore";
 import {
   AutoLogFolder,
   IndexedDbLogFolderPersistence,
-  type LockManagerLike,
   type LogFileBinding,
   type LogFolderPersistence,
   renderLogParts,
@@ -240,45 +239,6 @@ class MemoryPersistence implements LogFolderPersistence {
   }
 }
 
-// Web Locks shared by every "tab" in a test: contested requests wait their
-// turn, ifAvailable gets null. die() is the tab closing.
-class FakeLocks {
-  private holders = new Map<string, symbol>();
-  private waiters = new Map<string, Array<() => void>>();
-
-  get held(): number { return this.holders.size; }
-
-  forTab(): LockManagerLike & { die(): void } {
-    const tab = Symbol("tab");
-    const deaths: Array<() => void> = [];
-    const release = (name: string) => {
-      if (this.holders.get(name) !== tab) return;
-      this.holders.delete(name);
-      this.waiters.get(name)?.shift()?.();
-    };
-    const request: LockManagerLike["request"] = async (name, options, callback) => {
-      while (this.holders.has(name)) {
-        if (options.ifAvailable) return callback(null);
-        await new Promise<void>((resolve) => { this.waiters.set(name, [...(this.waiters.get(name) ?? []), resolve]); });
-      }
-      this.holders.set(name, tab);
-      const death = new Promise<void>((resolve) => { deaths.push(resolve); });
-      try {
-        return await Promise.race([callback({ name }), death]);
-      } finally {
-        release(name);
-      }
-    };
-    return {
-      request,
-      die: () => {
-        for (const [name, holder] of [...this.holders]) if (holder === tab) release(name);
-        for (const die of deaths) die();
-      },
-    };
-  }
-}
-
 const ownerA: PersonalDataOwner = { runtime: "live:test:1", playerUuid: "uuid-a", playerRef: "#10" };
 const ownerB: PersonalDataOwner = { runtime: "live:test:1", playerUuid: "uuid-b", playerRef: "#20" };
 const startedAt = new Date(2026, 9, 18, 14, 5, 12).getTime();
@@ -302,7 +262,6 @@ function entry(n: number, sequence: number, text: string, timestamp = startedAt 
 let stored: AutoLogEntry[] = [];
 let storedSessions: Map<string, AutoLogSession>;
 let persistence: MemoryPersistence;
-let locks: FakeLocks;
 let root: FakeDirectory;
 let picker: ReturnType<typeof vi.fn>;
 
@@ -322,8 +281,6 @@ function signIn(owner: PersonalDataOwner | undefined, visitor = false) {
 type MakeOptions = {
   pick?: boolean;
   maxPartBytes?: number;
-  tab?: LockManagerLike;
-  noLocks?: boolean;
   read?: (sessionId: string, fromSequence: number) => Promise<SessionSnapshot | undefined>;
 };
 function makeFolder(options: MakeOptions = {}) {
@@ -331,7 +288,6 @@ function makeFolder(options: MakeOptions = {}) {
     persistence,
     readSnapshot: options.read ?? readSnapshot,
     pickDirectory: options.pick === false ? undefined : picker,
-    locks: options.noLocks ? undefined : (options.tab ?? locks.forTab()),
     ...(options.maxPartBytes ? { maxPartBytes: options.maxPartBytes } : {}),
   });
 }
@@ -378,7 +334,6 @@ describe("AutoLogFolder", () => {
     stored = [];
     storedSessions = new Map();
     persistence = new MemoryPersistence();
-    locks = new FakeLocks();
     root = new FakeDirectory("Mongoose logs");
     picker = vi.fn(async () => root);
     useSessionStore.setState({ playerName: "Ada", playerUuid: "uuid-a", playerId: "#10" });
@@ -399,7 +354,6 @@ describe("AutoLogFolder", () => {
     await folder.whenIdle();
     expect(folder.state.getState().status).toEqual({ kind: "unsupported" });
     expect(persistence.operations).toBe(0);
-    expect(locks.held).toBe(0);
     folder.dispose();
   });
 
@@ -545,8 +499,7 @@ describe("AutoLogFolder", () => {
   });
 
   it("writes the footer once even when a recovery repeats the finished render", async () => {
-    const tab1 = locks.forTab();
-    const page1 = await chosen({ tab: tab1 });
+    const page1 = await chosen();
     page1.append(session(1), store(entry(1, 0, "zero")));
     await page1.whenIdle();
     persistence.failNextDeleteBinding = true;
@@ -554,8 +507,7 @@ describe("AutoLogFolder", () => {
     page1.sessionEnded(session(1), at(14, 5, 15));
     await page1.whenIdle();
     expect(persistence.bindings.size).toBe(1);
-    page1.dispose();
-    tab1.die();
+    await page1.dispose();
 
     const page2 = makeFolder();
     await page2.syncOwner();
@@ -567,51 +519,16 @@ describe("AutoLogFolder", () => {
     page2.dispose();
   });
 
-  it("two recoverers of the same session give one copy", async () => {
-    const tab1 = locks.forTab();
-    const page1 = await chosen({ tab: tab1 });
-    page1.append(session(1), store(entry(1, 0, "zero")));
-    await page1.whenIdle();
-    store(entry(1, 1, "one"));
-    endStored(1, at(14, 30, 0));
-    page1.dispose();
-    tab1.die();
-
-    // Page 3 looks while page 2 is part-way through recovering it.
-    const held = hold();
-    root.holdDirectory = held;
-    const page2 = makeFolder();
-    const page3 = makeFolder();
-    void page2.syncOwner();
-    await held.entered.promise;
-    await page3.syncOwner();
-    await page3.whenIdle();
-    held.release.resolve();
-    await page2.whenIdle();
-    // And once more after page 2 has finished and forgotten it.
-    await page3.retry();
-    await page3.whenIdle();
-
-    const files = root.all();
-    expect(Object.keys(files)).toEqual([fileOf(1)]);
-    expect(lineTexts(files[fileOf(1)])).toEqual(["zero", "one"]);
-    expect(footers(files[fileOf(1)])).toEqual(["Ended: 2026-10-18 14:30:00"]);
-    page2.dispose();
-    page3.dispose();
-  });
-
   it("finds after a reload a session that never got a single write", async () => {
     root.permission = "prompt";
     remember(ownerA, root);
-    const tab1 = locks.forTab();
-    const page1 = makeFolder({ tab: tab1 });
+    const page1 = makeFolder();
     await page1.syncOwner();
     page1.append(session(1), store(entry(1, 0, "while disconnected")));
     await page1.whenIdle();
     expect(root.all()).toEqual({});
     expect(persistence.bindings.size).toBe(1);
-    page1.dispose();
-    tab1.die();
+    await page1.dispose();
 
     root.permission = "granted";
     const page2 = makeFolder();
@@ -624,13 +541,11 @@ describe("AutoLogFolder", () => {
   });
 
   it("leaves the files alone and invents no footer when the session was pruned", async () => {
-    const tab1 = locks.forTab();
-    const page1 = await chosen({ tab: tab1 });
+    const page1 = await chosen();
     page1.append(session(1), store(entry(1, 0, "zero")));
     await page1.whenIdle();
     const before = root.file(fileOf(1)).text;
-    page1.dispose();
-    tab1.die();
+    await page1.dispose();
     storedSessions.delete(sid(1));
     stored = [];
 
@@ -642,7 +557,7 @@ describe("AutoLogFolder", () => {
     page2.dispose();
   });
 
-  it("without Web Locks, writes only its own sessions and leaves every orphan for a page that has them", async () => {
+  it("recovers a closed page's unfinished and pruned sessions without any locks", async () => {
     remember(ownerA, root);
     const base = { ownerKey: ownerKey(ownerA), bindingId: "binding-1", folderName: "Ada", character: "Ada", timeZone: ambientZone, nameChecked: false };
     const mark = { part: 1, sequence: 0, offset: 0, day: "2026-10-18" };
@@ -652,19 +567,16 @@ describe("AutoLogFolder", () => {
     endStored(1, at(14, 30, 0));
     bind(2); // pruned: no session in IndexedDB
 
-    const folder = makeFolder({ noLocks: true });
+    const folder = makeFolder();
     await folder.syncOwner();
     await folder.whenIdle();
-    expect(root.all()).toEqual({});
-    expect([...persistence.bindings.keys()]).toEqual([sid(1), sid(2)]);
-
-    folder.append(session(3), store(entry(3, 0, "this page's own")));
-    await folder.whenIdle();
-    expect(Object.keys(root.all())).toEqual([fileOf(3)]);
+    expect(Object.keys(root.all())).toEqual([fileOf(1)]);
+    expect(footers(root.file(fileOf(1)).text)).toEqual(["Ended: 2026-10-18 14:30:00"]);
+    expect(persistence.bindings.size).toBe(0);
     folder.dispose();
   });
 
-  it("takes no locks and keeps nothing for sessions when no folder is chosen", async () => {
+  it("keeps nothing for sessions when no folder is chosen", async () => {
     const folder = makeFolder();
     await folder.syncOwner();
     for (let n = 1; n <= 12; n++) {
@@ -673,26 +585,22 @@ describe("AutoLogFolder", () => {
       folder.sessionEnded(session(n), at(15, 0, 0));
     }
     await folder.whenIdle();
-    expect(locks.held).toBe(0);
     expect(persistence.bindings.size).toBe(0);
     folder.dispose();
   });
 
-  it("releases its locks when disposed, and takes on no new work", async () => {
+  it("takes on no new work once disposed", async () => {
     const folder = await chosen();
     folder.append(session(1), store(entry(1, 0, "line")));
     await folder.whenIdle();
-    expect(locks.held).toBe(1);
     await folder.dispose();
-    expect(locks.held).toBe(0);
     folder.append(session(2), store(entry(2, 0, "after dispose")));
     await folder.whenIdle();
-    expect(locks.held).toBe(0);
     expect(Object.keys(root.all())).toEqual([fileOf(1)]);
   });
 
   for (const stage of ["lookup", "write"] as const) {
-    it(`keeps its lock until a render caught mid-${stage} has stopped, then a recoverer finishes the session`, async () => {
+    it(`writes nothing more once disposed mid-${stage}, and a later page finishes the session`, async () => {
       const page1 = await chosen();
       page1.append(session(1), store(entry(1, 0, "zero")));
       await page1.whenIdle();
@@ -704,19 +612,12 @@ describe("AutoLogFolder", () => {
       await held.entered.promise;
       const disposing = page1.dispose();
       store(entry(1, 2, "two"));
-
-      // While the old render is still held, its session is not up for recovery.
-      const page2 = makeFolder();
-      await page2.syncOwner();
-      await page2.whenIdle();
-      expect(lineTexts(root.file(fileOf(1)).text)).toEqual(["zero"]);
-
       held.release.resolve();
       await disposing;
-      expect(locks.held).toBe(0);
       expect(lineTexts(root.file(fileOf(1)).text)).toEqual(["zero"]);
 
-      await page2.retry();
+      const page2 = makeFolder();
+      await page2.syncOwner();
       await page2.whenIdle();
       const text = root.file(fileOf(1)).text;
       expect(lineTexts(text)).toEqual(["zero", "one", "two"]);
@@ -724,36 +625,6 @@ describe("AutoLogFolder", () => {
       page2.dispose();
     });
   }
-
-  it("claims a file name under a lock, so two tabs with the same 12-digit suffix get separate files", async () => {
-    remember(ownerA, root);
-    const ada = await root.getDirectoryHandle("Ada", { create: true });
-    const tabA = makeFolder();
-    const tabB = makeFolder();
-    await tabA.syncOwner();
-    await tabB.syncOwner();
-    const a = session(1, ownerA, { id: "00000000-0000-4000-8000-000000000001" });
-    const b = session(1, ownerA, { id: "11111111-1111-4111-8111-000000000001" });
-    storedSessions.set(a.id, a);
-    storedSessions.set(b.id, b);
-    stored.push({ ...entry(1, 0, "TAB A"), sessionId: a.id }, { ...entry(1, 0, "TAB B"), sessionId: b.id });
-
-    // Tab A has checked the name is free and is about to create the file.
-    const held = hold();
-    ada.holdCreate = held;
-    tabA.append(a, []);
-    await held.entered.promise;
-    tabB.append(b, []);
-    await tick();
-    held.release.resolve();
-    await Promise.all([tabA.whenIdle(), tabB.whenIdle()]);
-
-    const files = root.all();
-    expect(Object.keys(files).sort()).toEqual(["Ada/2026-10-18 14-05-12 000000000001 (2).txt", "Ada/2026-10-18 14-05-12 000000000001.txt"]);
-    expect(Object.values(files).map(lineTexts).sort()).toEqual([["TAB A"], ["TAB B"]]);
-    tabA.dispose();
-    tabB.dispose();
-  });
 
   const zoneRepairs: Array<{ label: string; zone: string | undefined; dropFirstPart: boolean }> = [
     { label: "no time zone", zone: undefined, dropFirstPart: false },
@@ -831,24 +702,6 @@ describe("AutoLogFolder", () => {
     folder.dispose();
   });
 
-  it("keys the name lock on the destination folder, not the owner", async () => {
-    const requested: string[] = [];
-    const tab = locks.forTab();
-    const recording: LockManagerLike = {
-      request: (name, options, callback) => {
-        requested.push(name);
-        return tab.request(name, options, callback);
-      },
-    };
-    const folder = await chosen({ tab: recording });
-    folder.append(session(1), store(entry(1, 0, "line")));
-    await folder.whenIdle();
-    expect(requested.filter((name) => name.startsWith("mongoose-log-name:"))).toEqual([
-      `mongoose-log-name:Mongoose logs/Ada/2026-10-18 14-05-12 ${pad12(1)}`,
-    ]);
-    folder.dispose();
-  });
-
   const foreignFiles: Array<[string, string]> = [
     ["another session's file", "Someone's notes\nSession: someone-else\n\nkeep me\n"],
     ["a file quoting our Session line in its body", `My notes\nabout the game\n\nSession: ${sid(1)}\nCharacter: Ada\nkeep me\n`],
@@ -879,8 +732,7 @@ describe("AutoLogFolder", () => {
   });
 
   it("after a failed rollback and a rival taking the name, recovery writes under a new name and leaves the rival alone", async () => {
-    const tab1 = locks.forTab();
-    const page1 = await chosen({ tab: tab1 });
+    const page1 = await chosen();
     let claimSaved = false;
     persistence.failPutBinding = (binding) => {
       if (binding.nameChecked) {
@@ -897,8 +749,7 @@ describe("AutoLogFolder", () => {
     expect(persistence.bindings.get(sid(1))?.nameChecked).toBe(true);
     expect(root.all()).toEqual({});
     persistence.failPutBinding = undefined;
-    page1.dispose();
-    tab1.die();
+    await page1.dispose();
 
     const rivalText = "Rival title\nSession: rival-session\nCharacter: Ada\n\n[09:00:00] not yours\n";
     const rival = await ada.getFileHandle(fileOf(1).split("/")[1], { create: true });
@@ -1063,28 +914,6 @@ describe("AutoLogFolder", () => {
     folder.dispose();
   });
 
-  it("gives sessions that start in the same second in two tabs their own files", async () => {
-    remember(ownerA, root);
-    const tabA = makeFolder();
-    const tabB = makeFolder();
-    await tabA.syncOwner();
-    await tabB.syncOwner();
-
-    const held = hold();
-    root.holdDirectory = held;
-    tabA.append(session(1), store(entry(1, 0, "TAB A")));
-    await held.entered.promise;
-    tabB.append(session(2), store(entry(2, 0, "TAB B")));
-    await tick();
-    held.release.resolve();
-    await Promise.all([tabA.whenIdle(), tabB.whenIdle()]);
-
-    expect(lineTexts(root.file(fileOf(1)).text)).toEqual(["TAB A"]);
-    expect(lineTexts(root.file(fileOf(2)).text)).toEqual(["TAB B"]);
-    tabA.dispose();
-    tabB.dispose();
-  });
-
   it("routes each session only to the folder its own owner chose, with both owners' folders known", async () => {
     const rootB = new FakeDirectory("B logs");
     remember(ownerA, root);
@@ -1181,14 +1010,12 @@ describe("AutoLogFolder", () => {
   });
 
   it("after a crash, finishes the session from IndexedDB with its recorded end", async () => {
-    const tab1 = locks.forTab();
-    const page1 = await chosen({ tab: tab1 });
+    const page1 = await chosen();
     page1.append(session(1), store(entry(1, 0, "written before the crash")));
     await page1.whenIdle();
     store(entry(1, 1, "flushed to IndexedDB only"), entry(1, 2, "last line"));
     endStored(1, at(14, 30, 0));
-    page1.dispose();
-    tab1.die();
+    await page1.dispose();
 
     const page2 = makeFolder();
     await page2.syncOwner();
@@ -1197,24 +1024,6 @@ describe("AutoLogFolder", () => {
     expect(lineTexts(text)).toEqual(["written before the crash", "flushed to IndexedDB only", "last line"]);
     expect(text.endsWith("\nEnded: 2026-10-18 14:30:00\n")).toBe(true);
     expect(persistence.bindings.size).toBe(0);
-    page2.dispose();
-  });
-
-  it("leaves alone a session another open tab is still writing", async () => {
-    const page1 = await chosen();
-    page1.append(session(1), store(entry(1, 0, "tab one")));
-    await page1.whenIdle();
-
-    const page2 = makeFolder();
-    await page2.syncOwner();
-    await page2.whenIdle();
-    page1.append(session(1), store(entry(1, 1, "tab one again")));
-    await page1.whenIdle();
-
-    const text = root.file(fileOf(1)).text;
-    expect(footers(text)).toEqual([]);
-    expect(lineTexts(text)).toEqual(["tab one", "tab one again"]);
-    page1.dispose();
     page2.dispose();
   });
 
@@ -1234,7 +1043,6 @@ describe("AutoLogFolder", () => {
     expect(folder.state.getState().status).toEqual({ kind: "none" });
     expect(persistence.folders.size).toBe(0);
     expect(persistence.bindings.size).toBe(0);
-    expect(locks.held).toBe(0);
     expect(announce).toHaveBeenLastCalledWith("Stopped saving logs to Mongoose logs. Logs are still saved in the browser.", "polite");
     folder.dispose();
   });
