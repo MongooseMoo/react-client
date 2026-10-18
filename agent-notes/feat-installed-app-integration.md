@@ -91,6 +91,12 @@ Nothing a launch carries may ever be sent to the MOO without the player acting.
   4. PreferencesDialog / AutoLogDialog / LinkPickerDialog close listeners
      ignore a stale close when the dialog is open again; a rapid-reopen test
      for each fails on the old listeners.
+- Every step of .github/workflows/build-test.yml run locally on dabbed93
+  (2026-10-18), all exit 0: actionlint 1.7.12 and zizmor 1.30.1 (no
+  findings); typecheck; npm test (181 files / 2453 tests); test:audio-cache
+  (4 PASS lines); editor-ownership.spec.ts against vite preview 127.0.0.1:5183
+  (1 passed); check-browser-sessions.mjs; check-client-recovery.mjs;
+  test:a11y. Playwright leaves an empty, untracked `test-results/`.
 - Not verifiable here: real OS install, OS protocol/file/share/shortcut
   launches, whether Chromium honours focus-existing for these, badge on a real
   icon. Not pushed, no PR.
