@@ -113,6 +113,11 @@ export class HeadingFilter {
     this.speed = 0;
   }
 
+  /** Whether the output has caught up with the latest heading (within a hundredth of a degree). */
+  get settled(): boolean {
+    return this.lastRaw === null || Math.abs(this.unwrapped - this.value) < 0.01;
+  }
+
   /** Feed a heading in degrees taken at `timeMs`; returns the filtered unwrapped heading. */
   update(headingDegrees: number, timeMs: number): number {
     if (this.lastRaw === null) {

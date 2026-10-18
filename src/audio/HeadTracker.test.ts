@@ -9,12 +9,31 @@ function setup(screenAngle = 0) {
   let now = 0;
   let angle = screenAngle;
   const onYaw = vi.fn<(yaw: number) => void>();
+  const timers = new Map<number, () => void>();
+  let nextTimer = 1;
   const tracker = new HeadTracker({
     target,
     screenAngle: () => angle,
     now: () => now,
+    setTimer: (callback) => {
+      const id = nextTimer++;
+      timers.set(id, callback);
+      return id;
+    },
+    clearTimer: (id) => {
+      timers.delete(id);
+    },
     onYaw,
   });
+  /** Let `ms` pass with no readings, running timers as they come due (16 ms apart). */
+  const idle = (ms: number) => {
+    for (let elapsed = 0; elapsed < ms; elapsed += 16) {
+      now += 16;
+      const due = [...timers.values()];
+      timers.clear();
+      for (const callback of due) callback();
+    }
+  };
   /** A flat device whose alpha is `alpha`, after `ms` more milliseconds. */
   const turn = (alpha: number | null, ms = 16, beta: number | null = 0, gamma: number | null = 0) => {
     now += ms;
@@ -25,7 +44,18 @@ function setup(screenAngle = 0) {
     for (let i = 0; i < 120; i += 1) turn(alpha);
   };
   const lastYawDegrees = () => (onYaw.mock.lastCall?.[0] ?? Number.NaN) / DEG;
-  return { tracker, turn, hold, onYaw, lastYawDegrees, setAngle: (value: number) => { angle = value; } };
+  return {
+    tracker,
+    turn,
+    hold,
+    idle,
+    timers,
+    onYaw,
+    lastYawDegrees,
+    setAngle: (value: number) => {
+      angle = value;
+    },
+  };
 }
 
 describe('HeadTracker', () => {
@@ -65,6 +95,29 @@ describe('HeadTracker', () => {
       expect(Math.abs(yaws[i] - yaws[i - 1])).toBeLessThan(2);
     }
     expect(yaws.at(-1)).toBeGreaterThan(0);
+  });
+
+  it('settles on the true heading when readings stop with the device', () => {
+    // Chromium sends deviceorientation only when the reading changes, so a
+    // device held still goes quiet part-way through the filter's glide.
+    const { tracker, turn, idle, timers, lastYawDegrees } = setup();
+    tracker.start();
+    turn(0);
+    turn(330);
+    expect(lastYawDegrees()).toBeLessThan(29);
+    idle(1500);
+    expect(lastYawDegrees()).toBeCloseTo(30, 1);
+    expect(timers.size).toBe(0);
+  });
+
+  it('stop cancels the settling', () => {
+    const { tracker, turn, timers } = setup();
+    tracker.start();
+    turn(0);
+    turn(300);
+    expect(timers.size).toBe(1);
+    tracker.stop();
+    expect(timers.size).toBe(0);
   });
 
   it('recenter makes the current heading straight ahead', () => {

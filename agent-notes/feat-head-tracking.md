@@ -19,9 +19,20 @@ Do not push or open a PR.
   - `MediaService.setHeadYaw` + body pose in `setListenerOrientation`.
   - `src/components/HeadTrackingControls.tsx` in the Sounds preferences tab;
     `src/hooks/useHeadTracking.ts` called once from App.tsx.
-- tsc clean; full vitest 179 files / 2404 tests passed; biome: no new findings
+- Settling fix (second commit): HeadTracker re-feeds the last heading every 1/60 s
+  until the filter settles, because readings stop when the device holds still.
+- tsc clean; full vitest 179 files / 2406 tests passed; biome: no new findings
   (3 App.tsx warnings exist on master).
-- Browser (Playwright, synthetic events) check: see below once run.
+- Browser check done (Chromium 147 via Playwright `channel: 'chromium'`, CDP
+  `Emulation.setSensorOverrideReadings` type `relative-orientation`, which drives real
+  deviceorientation events). Script: scratchpad `head-tracking-check.mjs` (not committed).
+  Observed: sensor detected; with a server facing of 37.48 deg, turning +30 gave the
+  AudioListener (raw forwardX/Z AudioParams) 67.46 deg; Alt+Shift+O back to 37.48;
+  -45 across the alpha wrap gave -7.47; turning off restored exactly 37.48 and later
+  readings did nothing.
+- Not exercised in a browser: FOA/positional FOA renderers (no such sounds playing as
+  guest; unit-tested), iOS permission, screen.orientation changes, real sensor noise,
+  audible result.
 
 ## Decisions and why
 - Seam: `MediaService.setListenerOrientation` keeps the server's forward/up as the
@@ -50,6 +61,15 @@ Do not push or open a PR.
 - The readout needed a trailing timer: once the head settles, the step gate stops
   yaw callbacks, so a purely throttled readout stuck at a stale value.
 
+- Playwright's default headless shell sends only null deviceorientation readings, even
+  with overrides; full Chromium (`channel: 'chromium'`) with the sensor override set
+  before navigation works. The legacy `DeviceOrientation.setDeviceOrientationOverride`
+  also gave nulls.
+- Chromium dispatches deviceorientation only when the reading changes, which is what
+  exposed the settling defect.
+- Editing a module under a running Vite server gives a dynamic `import('/src/...')`
+  from the page a separate module instance (HMR timestamp), so its store reads stale.
+
 ## Next step
-- Playwright check in Chromium with synthetic deviceorientation events (dev server
-  `npx vite --port 5202`), confirm the AudioListener forward changes.
+- Team lead / Q: review; on a phone with headphones, check feel (jitter, lag, any
+  zipper noise from 60 Hz listener writes) and iOS permission flow. Not pushed, no PR.

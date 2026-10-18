@@ -79,6 +79,8 @@ export class HeadTrackingController {
       target: env.target,
       screenAngle: env.screenAngle,
       now: env.now,
+      setTimer: env.setTimer,
+      clearTimer: env.clearTimer,
       onYaw: (yaw) => this.handleYaw(yaw),
     });
   }

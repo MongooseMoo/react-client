@@ -4,6 +4,8 @@ const DEG = Math.PI / 180;
 
 /** A change smaller than this (degrees) is not sent on: below sensor noise and hearing. */
 const MIN_STEP_DEGREES = 0.05;
+/** How often the last heading is fed again while the filter catches up to it. */
+const SETTLE_MS = 1000 / 60;
 
 export interface HeadTrackerOptions {
   /** Where deviceorientation events arrive: the window. */
@@ -12,6 +14,8 @@ export interface HeadTrackerOptions {
   screenAngle: () => number;
   /** Milliseconds, for the filter's sample intervals. */
   now: () => number;
+  setTimer: (callback: () => void, ms: number) => number;
+  clearTimer: (id: number) => void;
   /** Receives the head yaw in radians, clockwise from straight ahead. */
   onYaw: (yaw: number) => void;
 }
@@ -35,6 +39,11 @@ export function orientationAngles(event: Event): OrientationAngles {
  * the current heading straight ahead again. Readings are filtered
  * ({@link HeadingFilter}) and only a change of at least
  * {@link MIN_STEP_DEGREES} is sent on.
+ *
+ * Browsers send a reading only when the device's pose changes (Chromium does),
+ * so a device held still goes quiet while the filter is still gliding toward
+ * its last heading. Until the filter settles, the last heading is fed again
+ * every {@link SETTLE_MS}, so the yaw always lands on where the device points.
  */
 export class HeadTracker {
   private readonly options: HeadTrackerOptions;
@@ -45,6 +54,9 @@ export class HeadTracker {
   /** The unwrapped heading that is straight ahead; null until a reading sets it. */
   private reference: number | null = null;
   private sentDegrees: number | null = null;
+  /** The latest raw heading, fed again while the filter settles. */
+  private rawHeading: number | null = null;
+  private settleTimer: number | null = null;
 
   constructor(options: HeadTrackerOptions) {
     this.options = options;
@@ -80,6 +92,8 @@ export class HeadTracker {
     }
     this.listening = false;
     this.options.target.removeEventListener('deviceorientation', this.handleOrientation);
+    this.clearSettleTimer();
+    this.rawHeading = null;
     this.heading = null;
     this.reference = null;
     this.sentDegrees = null;
@@ -99,10 +113,31 @@ export class HeadTracker {
     if (heading === null) {
       return;
     }
+    this.rawHeading = heading;
+    this.feed(heading);
+  };
+
+  private feed(heading: number): void {
+    this.clearSettleTimer();
     this.heading = this.filter.update(heading, this.options.now());
     this.reference ??= this.heading;
     this.send(false);
-  };
+    if (!this.filter.settled) {
+      this.settleTimer = this.options.setTimer(() => {
+        this.settleTimer = null;
+        if (this.rawHeading !== null) {
+          this.feed(this.rawHeading);
+        }
+      }, SETTLE_MS);
+    }
+  }
+
+  private clearSettleTimer(): void {
+    if (this.settleTimer !== null) {
+      this.options.clearTimer(this.settleTimer);
+      this.settleTimer = null;
+    }
+  }
 
   private send(force: boolean): void {
     const yaw = this.yawDegrees;
