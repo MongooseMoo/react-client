@@ -13,8 +13,16 @@ declare module "omnitone/build/omnitone.min.esm.js" {
     renderingMode?: "ambisonic" | "bypass" | "off";
   }
 
+  /** The rotator inside FOARenderer; it writes its matrix as gain.value. */
+  export interface FOARotator {
+    readonly input: AudioNode;
+    readonly output: AudioNode;
+    setRotationMatrix3(matrix: Float32Array): void;
+  }
+
   export interface OmnitoneModule {
     createFOARenderer(context: BaseAudioContext, config?: FOARendererConfig): FOARenderer;
+    createFOARotator(context: BaseAudioContext): FOARotator;
   }
 
   const Omnitone: OmnitoneModule;

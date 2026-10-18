@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  FacingHeading,
+  devicePose,
   HeadingFilter,
   type OrientationAngles,
   turnAboutUp,
   wrapDegrees,
   type Vector3,
+  yawFrom,
 } from './headYaw';
 
 /** Listener yaw as MediaService reads it from a forward vector. */
@@ -35,140 +36,158 @@ describe('wrapDegrees', () => {
 type Matrix = [Vector3, Vector3, Vector3];
 
 function multiply(a: Matrix, b: Matrix): Matrix {
-  const row = (r: number): Vector3 => [0, 1, 2].map((c) =>
-    a[r][0] * b[0][c] + a[r][1] * b[1][c] + a[r][2] * b[2][c]) as Vector3;
+  const row = (r: number): Vector3 => [
+    a[r][0] * b[0][0] + a[r][1] * b[1][0] + a[r][2] * b[2][0],
+    a[r][0] * b[0][1] + a[r][1] * b[1][1] + a[r][2] * b[2][1],
+    a[r][0] * b[0][2] + a[r][1] * b[1][2] + a[r][2] * b[2][2],
+  ];
   return [row(0), row(1), row(2)];
 }
 
 const D = Math.PI / 180;
-const rotZ = (deg: number): Matrix => {
+
+/** Rotation by `deg` about the unit `axis` (earth east, north, up), right-handed. */
+function rotAbout(axis: Vector3, deg: number): Matrix {
+  const [x, y, z] = axis;
   const c = Math.cos(deg * D);
   const s = Math.sin(deg * D);
-  return [[c, -s, 0], [s, c, 0], [0, 0, 1]];
-};
-const rotX = (deg: number): Matrix => {
-  const c = Math.cos(deg * D);
-  const s = Math.sin(deg * D);
-  return [[1, 0, 0], [0, c, -s], [0, s, c]];
-};
-const rotY = (deg: number): Matrix => {
-  const c = Math.cos(deg * D);
-  const s = Math.sin(deg * D);
-  return [[c, 0, s], [0, 1, 0], [-s, 0, c]];
-};
+  const t = 1 - c;
+  return [
+    [t * x * x + c, t * x * y - s * z, t * x * z + s * y],
+    [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
+    [t * x * z - s * y, t * y * z + s * x, t * z * z + c],
+  ];
+}
+const rotZ = (deg: number) => rotAbout([0, 0, 1], deg);
+const rotX = (deg: number) => rotAbout([1, 0, 0], deg);
+const rotY = (deg: number) => rotAbout([0, 1, 0], deg);
 
 /** The W3C alpha/beta/gamma of a device-to-earth rotation R = Rz(alpha) Rx(beta) Ry(gamma). */
 function anglesOf(r: Matrix): OrientationAngles {
+  if (Math.abs(r[2][1]) > 1 - 1e-12) {
+    // beta is +-90 (gimbal lock): alpha and gamma turn about the same axis, so take
+    // gamma 0, leaving R = Rz(alpha) Rx(beta) with alpha in the first column.
+    return { alpha: Math.atan2(r[1][0], r[0][0]) / D, beta: Math.sign(r[2][1]) * 90, gamma: 0 };
+  }
   return {
     alpha: Math.atan2(-r[0][1], r[1][1]) / D,
-    beta: Math.asin(r[2][1]) / D,
+    beta: Math.asin(Math.max(-1, Math.min(1, r[2][1]))) / D,
     gamma: Math.atan2(-r[2][0], r[2][2]) / D,
   };
 }
 
-/** One reading's heading from a fresh FacingHeading. */
-function deviceHeading(angles: OrientationAngles, screenAngle: number): number | null {
-  return new FacingHeading().read(angles, screenAngle);
+/** The head yaw from a reference pose to a current one, both given as rotations. */
+function yawBetween(reference: Matrix, current: Matrix, screenAngle = 0): number | null {
+  const from = devicePose(anglesOf(reference), screenAngle);
+  const to = devicePose(anglesOf(current), screenAngle);
+  if (!from || !to) throw new Error('no pose');
+  return yawFrom(from, to);
 }
 
-describe('FacingHeading', () => {
-  it('reads a flat device by where its top edge points, clockwise from the zero', () => {
-    expect(deviceHeading({ alpha: 0, beta: 0, gamma: 0 }, 0)).toBeCloseTo(0);
-    // alpha grows counter-clockwise, so a device turned left by 90 heads 270.
-    expect(deviceHeading({ alpha: 90, beta: 0, gamma: 0 }, 0)).toBeCloseTo(270);
-    expect(deviceHeading({ alpha: 270, beta: 0, gamma: 0 }, 0)).toBeCloseTo(90);
+/** Reference poses: flat, upright, pitched and rolled, facing various ways. */
+const REFERENCES: Array<[string, Matrix]> = [
+  ['flat, facing north', rotZ(0)],
+  ['flat, facing 75', rotZ(-75)],
+  ['upright, facing north', rotX(80)],
+  ['upright, facing 200', multiply(rotZ(-200), rotX(80))],
+  ['pitched 45, rolled 20, facing 30', multiply(multiply(rotZ(-30), rotX(45)), rotY(20))],
+  ['pitched 60, rolled -35', multiply(rotX(60), rotY(-35))],
+];
+
+/** Horizontal axes a head rolls or nods about. */
+const HORIZONTAL_AXES: Vector3[] = [0, 45, 90, 135].map((deg) => [Math.cos(deg * D), Math.sin(deg * D), 0]);
+
+describe('yawFrom (the head yaw from the recentered pose)', () => {
+  it('is 0 for the reference pose itself', () => {
+    for (const [, reference] of REFERENCES) {
+      expect(yawBetween(reference, reference)).toBeCloseTo(0, 9);
+    }
   });
 
-  it('reads an upright device by where its back points', () => {
-    expect(deviceHeading({ alpha: 0, beta: 90, gamma: 0 }, 0)).toBeCloseTo(0);
-    expect(deviceHeading({ alpha: 30, beta: 90, gamma: 0 }, 0)).toBeCloseTo(330);
-    // Tilting between flat and upright does not move the heading.
-    expect(deviceHeading({ alpha: 30, beta: 45, gamma: 0 }, 0)).toBeCloseTo(330);
+  it('reads a turn about the vertical as that turn, clockwise positive, from any pose', () => {
+    for (const [, reference] of REFERENCES) {
+      for (const turn of [-170, -45, 10, 90, 179]) {
+        // Rz(-turn) is a clockwise turn by `turn`, seen from above.
+        expect(yawBetween(reference, multiply(rotZ(-turn), reference))).toBeCloseTo(turn, 6);
+      }
+    }
   });
 
-  it('compensates for the screen angle, so turning the device to landscape keeps the heading', () => {
-    // Facing north, flat, in portrait.
-    const portrait = deviceHeading({ alpha: 0, beta: 0, gamma: 0 }, 0);
-    // Same facing; the device turned a quarter counter-clockwise into landscape
-    // (screen angle 90), so its alpha is now 90.
-    const landscape = deviceHeading({ alpha: 90, beta: 0, gamma: 0 }, 90);
-    expect(landscape).toBeCloseTo(portrait ?? Number.NaN);
-    // The other landscape (device turned clockwise, screen angle 270).
-    expect(deviceHeading({ alpha: 270, beta: 0, gamma: 0 }, 270)).toBeCloseTo(0);
-    // Upright in landscape (screen top along the device's +x, now pointing up),
-    // its back facing east.
-    expect(deviceHeading({ alpha: 0, beta: 0, gamma: -90 }, 90)).toBeCloseTo(90);
-  });
-
-  it('returns null when the reading has no angles', () => {
-    expect(deviceHeading({ alpha: null, beta: null, gamma: null }, 0)).toBeNull();
-    expect(deviceHeading({ alpha: 10, beta: null, gamma: 0 }, 0)).toBeNull();
-  });
-
-  it('ignores roll about the back of an upright device (the review case)', () => {
-    // Back still pointing north, rolled about 30 degrees sideways.
-    expect(deviceHeading({ alpha: 270, beta: 60, gamma: 89.999999 }, 0)).toBeCloseTo(0, 3);
-  });
-
-  it.each([0, 90, 270])('ignores pure roll of an upright device at screen angle %i', (screenAngle) => {
-    for (const facing of [0, 40, 200]) {
-      for (const pitch of [60, 80]) {
-        const upright = multiply(rotZ(-facing), rotX(pitch));
-        for (const roll of [-60, -30, 0, 30, 60]) {
-          // Roll is a turn about the device's own back axis (device z).
-          const heading = deviceHeading(anglesOf(multiply(upright, rotZ(roll))), screenAngle);
-          expect(wrapDegrees((heading ?? Number.NaN) - facing)).toBeCloseTo(0, 6);
+  it('ignores head roll and nod (turns about any horizontal axis) from any pose', () => {
+    for (const [, reference] of REFERENCES) {
+      for (const axis of HORIZONTAL_AXES) {
+        for (const tilt of [-60, -20, 30, 60]) {
+          expect(yawBetween(reference, multiply(rotAbout(axis, tilt), reference))).toBeCloseTo(0, 6);
         }
       }
     }
   });
 
-  it('ignores pure roll of a flat device about its screen-up axis, in portrait and landscape', () => {
-    for (const facing of [0, 75]) {
-      for (const roll of [-20, -10, 10, 20]) {
-        // Portrait: screen up is device +y.
-        const portrait = multiply(multiply(rotZ(-facing), rotY(0)), rotY(roll));
-        expect(wrapDegrees((deviceHeading(anglesOf(portrait), 0) ?? Number.NaN) - facing)).toBeCloseTo(0, 6);
-        // Landscape at angle 90: screen up is device +x, so the device is turned a
-        // quarter counter-clockwise; roll is about device x.
-        const landscape = multiply(rotZ(90 - facing), rotX(roll));
-        expect(wrapDegrees((deviceHeading(anglesOf(landscape), 90) ?? Number.NaN) - facing)).toBeCloseTo(0, 6);
+  it('reads the turn alone when the head turns and tilts together', () => {
+    for (const [, reference] of REFERENCES) {
+      for (const axis of HORIZONTAL_AXES) {
+        const pose = multiply(multiply(rotZ(-40), rotAbout(axis, 35)), reference);
+        expect(yawBetween(reference, pose)).toBeCloseTo(40, 6);
       }
     }
   });
 
-  it('stays continuous while pitching from flat to upright with a roll, and never loses the heading', () => {
-    const facing = new FacingHeading();
-    let previous: number | null = null;
-    // (anglesOf is degenerate at exactly 90 degrees of pitch, so stop at 85.)
-    // A rolled device's facing axis really does swing a little as it pitches
-    // (up to about 2 degrees per degree near flat here); the bound catches a
-    // jump at an axis switch, which would be tens of degrees.
-    for (let pitch = 0; pitch <= 85; pitch += 1) {
-      const heading = facing.read(anglesOf(multiply(multiply(rotZ(-20), rotX(pitch)), rotY(25))), 0);
-      expect(heading).not.toBeNull();
-      if (previous !== null && heading !== null) {
-        expect(Math.abs(wrapDegrees(heading - previous))).toBeLessThan(3);
+  it('ignores the review case: an upright device rolled about 30 degrees sideways', () => {
+    const upright = devicePose({ alpha: 0, beta: 90, gamma: 0 }, 0);
+    const rolled = devicePose({ alpha: 270, beta: 60, gamma: 89.999999 }, 0);
+    if (!upright || !rolled) throw new Error('no pose');
+    expect(yawFrom(upright, rolled)).toBeCloseTo(0, 4);
+  });
+
+  it.each([90, 270])('compensates a turn into landscape with the screen (angle %i)', (angle) => {
+    const portrait = devicePose({ alpha: 0, beta: 0, gamma: 0 }, 0);
+    // Flat, turned a quarter in the hand with the screen: the facing has not changed.
+    const landscape = devicePose({ alpha: angle, beta: 0, gamma: 0 }, angle);
+    if (!portrait || !landscape) throw new Error('no pose');
+    expect(yawFrom(portrait, landscape)).toBeCloseTo(0, 9);
+  });
+
+  it.each([0, 90, 270])('returns to exactly the start after repeated pitch cycles (screen angle %i)', (screenAngle) => {
+    for (const gamma of [20, 25, -35]) {
+      const start = devicePose({ alpha: 0, beta: 0, gamma }, screenAngle);
+      if (!start) throw new Error('no pose');
+      for (let cycle = 0; cycle < 3; cycle += 1) {
+        for (let beta = 0; beta <= 85; beta += 1) devicePose({ alpha: 0, beta, gamma }, screenAngle);
+        let end: number | null = null;
+        for (let beta = 85; beta >= 0; beta -= 1) {
+          const pose = devicePose({ alpha: 0, beta, gamma }, screenAngle);
+          if (pose) end = yawFrom(start, pose);
+        }
+        expect(end).toBeCloseTo(0, 9);
       }
-      previous = heading;
-    }
-    // And back again, through the other switch point.
-    for (let pitch = 85; pitch >= 0; pitch -= 1) {
-      const heading = facing.read(anglesOf(multiply(multiply(rotZ(-20), rotX(pitch)), rotY(25))), 0);
-      if (previous !== null && heading !== null) {
-        expect(Math.abs(wrapDegrees(heading - previous))).toBeLessThan(3);
-      }
-      previous = heading;
     }
   });
 
-  it('reads a turn after an axis switch as the full turn', () => {
-    const facing = new FacingHeading();
-    // Start flat (screen-up axis), pitch upright (switches to the back axis).
-    for (let pitch = 0; pitch <= 85; pitch += 5) facing.read(anglesOf(rotX(pitch)), 0);
-    const before = facing.read(anglesOf(rotX(85)), 0) ?? Number.NaN;
-    const after = facing.read(anglesOf(multiply(rotZ(-30), rotX(85))), 0) ?? Number.NaN;
-    expect(wrapDegrees(after - before)).toBeCloseTo(30, 6);
+  it('returns to exactly the start after a mixed pitch, roll and turn loop', () => {
+    const at = (t: number): OrientationAngles => ({
+      alpha: 30 * Math.sin(t),
+      beta: 40 + 40 * Math.sin(2 * t),
+      gamma: 50 * Math.cos(3 * t),
+    });
+    const start = devicePose(at(0), 0);
+    if (!start) throw new Error('no pose');
+    for (let cycle = 1; cycle <= 3; cycle += 1) {
+      const end = devicePose(at(cycle * 2 * Math.PI), 0);
+      if (!end) throw new Error('no pose');
+      expect(yawFrom(start, end)).toBeCloseTo(0, 9);
+    }
+  });
+
+  it('has no yaw for a half-turn flip about a horizontal axis (the one singular pose)', () => {
+    const flat = devicePose({ alpha: 0, beta: 0, gamma: 0 }, 0);
+    const flipped = devicePose({ alpha: 0, beta: 180, gamma: 0 }, 0);
+    if (!flat || !flipped) throw new Error('no pose');
+    expect(yawFrom(flat, flipped)).toBeNull();
+  });
+
+  it('has no pose for a reading without angles', () => {
+    expect(devicePose({ alpha: null, beta: null, gamma: null }, 0)).toBeNull();
+    expect(devicePose({ alpha: 10, beta: null, gamma: 0 }, 0)).toBeNull();
   });
 });
 
@@ -176,16 +195,6 @@ describe('HeadingFilter', () => {
   it('passes the first reading through unchanged', () => {
     const filter = new HeadingFilter();
     expect(filter.update(42, 0)).toBe(42);
-  });
-
-  it('snap lands on the latest heading, unwrapped, and stays settled there', () => {
-    const filter = new HeadingFilter();
-    filter.update(350, 0);
-    filter.update(20, 16); // 30 degrees on, through 360
-    expect(filter.settled).toBe(false);
-    expect(filter.snap()).toBe(380);
-    expect(filter.settled).toBe(true);
-    expect(filter.update(20, 32)).toBe(380);
   });
 
   it('unwraps across 0/360 instead of swinging the long way round', () => {

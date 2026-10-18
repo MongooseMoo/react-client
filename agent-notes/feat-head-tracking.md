@@ -52,6 +52,19 @@ Do not push or open a PR.
   CDP run (AUTOPLAY=1, context running): raw AudioListener yaw +29.99 after a 30
   degree turn, 0 after Alt+Shift+O, -44.99 after 45 left across the wrap, 0 after off;
   listener tau 0.03 while on, 0 after.
+- Codex round 2 (at c52b659b): round-1 fixes confirmed; new findings fixed (uncommitted
+  until the next commit): 1. closed-cycle drift -> reference-relative twist yaw (above).
+  2. probe retry: sensor 'none' shows "No motion sensor found." + "Check again"
+  (checkSensorAgain: announced bounded probe, state 'checking'; focus moves to the
+  checkbox if a sensor turns up). Desktops now show that small section. Test gaps:
+  FoaYawRotator vs real Omnitone FOARotator by tracing both recorded graphs; ramp-then-
+  step cancel test; Media restore tests split (tau 0 snaps; nonzero tau put back).
+- Round 2 verification: tsc exit 0; vitest 180 files / 2434 tests; biome on 14 changed
+  files: 0 errors, 0 warnings. Chromium CDP run: closed cycle (alpha 15, gamma 20, beta
+  0 -> 85 -> 0, three times) start -44.998, ends -45.009 / -45.009 / -45.010 (no
+  accumulation; the 0.011 start/end gap is unexplained, possibly sensor angle conversion
+  or unsettled start). Turn/recenter/wrap/off values as round 1. Rotator offline check
+  unchanged (max diff 0).
 
 ## Decisions and why
 - Seam: `MediaService.setListenerOrientation` keeps the server's forward/up as the
@@ -63,13 +76,21 @@ Do not push or open a PR.
   (`updatePositionalSpatial` reads cacophony forward). So one seam covers all three.
 - With head yaw 0, writes are exactly what the old code wrote (only the given fields),
   so turning tracking off restores server-driven behaviour.
-- Heading from DeviceOrientation (revised after review): full Z-X'-Y'' rotation; the
-  heading is the azimuth of ONE device axis - the back when upright (back horizontal
-  length > 0.6), screen-up when flat (< 0.4), hysteresis between. Roll about the axis in
-  use cannot move it. The axes are perpendicular, so the one in use is never near
-  vertical (no singularity). An offset carries the heading across an axis switch so the
-  output never jumps. The first version summed screen-up + back, which turned
-  sideways roll into yaw (27 degrees for a 30 degree roll).
+- Yaw (third design, after review round 2): `devicePose` turns alpha/beta/gamma
+  (W3C Z-X'-Y'') plus the screen angle into a quaternion; `yawFrom(reference, pose)` is
+  the twist about the earth's up axis of pose x reference^-1 (swing-twist). The
+  reference is the pose at the first reading / recenter. Pure function of pose +
+  reference: same pose, same yaw, whatever path (the round-2 bug was path state). Head
+  roll and nod are turns about horizontal axes and have zero twist however the device is
+  mounted. Singular only at a half turn about a horizontal axis (device flipped over):
+  yawFrom returns null and the tracker holds its last yaw.
+  History: v1 summed screen-up + back (roll leaked into yaw, 27 deg for 30 deg roll).
+  v2 picked one axis with hysteresis and carried an offset across switches; the offset
+  depended on the switch pose, so closed pitch cycles accumulated -25.78 deg each.
+  "Pure roll" in tests now means a turn about a horizontal (head) axis. A roll about the
+  device's own back axis is only a head roll when that axis is horizontal; v2's tests used
+  device-axis roll at 60 deg pitch, which v3 reads as partly yaw, and that is correct for a
+  head-mounted device.
 - The original tests only exercised poses and event orders I thought of (pitch with no
   roll, screen angle changing before readings, recenter after settling); the review
   cases were outside them. Tests now cover pure roll, recenter mid-glide, a screen change

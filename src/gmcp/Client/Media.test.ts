@@ -1526,10 +1526,16 @@ describe('GMCPClientMedia', () => {
       return mockAmbisonicRendererCreate.mock.results.at(-1)?.value;
     };
 
-    it('glides the listener and FOA beds while tracking, then restores the policy and pose exactly', async () => {
+    // The mock engine records the requested listener pose and smoothing; it does not
+    // model AudioParam glides. In cacophony, putting the smoothing back to 0 (this
+    // app's setting) snaps a glide in flight to its target, so the facing below is
+    // where the engine is. A nonzero previous smoothing is put back too, and then the
+    // engine listener glides to the server facing at that rate rather than landing at
+    // once: the second test asks only for the policy and the requested facing.
+    it('glides while tracking; off puts back no smoothing and the server facing exactly', async () => {
       const bed = await playBed();
       handler.handleListenerOrientation({ forward: [1, 0, 0] } as GMCPMessageClientMediaListenerOrientation);
-      client.media.cacophony.listenerSmoothingTau = 0.2;
+      expect(client.media.cacophony.listenerSmoothingTau).toBe(0);
 
       client.media.setHeadTracking(true);
       expect(client.media.cacophony.listenerSmoothingTau).toBe(SPATIAL_PARAM_TAU_S);
@@ -1538,15 +1544,24 @@ describe('GMCPClientMedia', () => {
       client.media.setHeadYaw(0.5);
       client.media.setHeadTracking(false);
 
-      // The previous policy, the server's facing exactly, and a final stepped write
-      // of the bed after its smoothing is off.
-      expect(client.media.cacophony.listenerSmoothingTau).toBe(0.2);
+      expect(client.media.cacophony.listenerSmoothingTau).toBe(0);
       expect(client.media.cacophony.listenerForwardOrientation).toEqual([-1, 0, 0]);
+      // The bed's final write is stepped: its smoothing went off first.
       expect(bed.setRotationSmoothing).toHaveBeenLastCalledWith(false);
       expect(bed.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(-Math.PI / 2);
       expect(bed.setRotationMatrixFromYaw.mock.invocationCallOrder.at(-1)).toBeGreaterThan(
         bed.setRotationSmoothing.mock.invocationCallOrder.at(-1),
       );
+    });
+
+    it('off puts back a nonzero smoothing it found and requests the server facing', async () => {
+      handler.handleListenerOrientation({ forward: [1, 0, 0] } as GMCPMessageClientMediaListenerOrientation);
+      client.media.cacophony.listenerSmoothingTau = 0.2;
+      client.media.setHeadTracking(true);
+      client.media.setHeadYaw(0.5);
+      client.media.setHeadTracking(false);
+      expect(client.media.cacophony.listenerSmoothingTau).toBe(0.2);
+      expect(client.media.cacophony.listenerForwardOrientation).toEqual([-1, 0, 0]);
     });
 
     it('starts a bed created during tracking with smoothing on', async () => {

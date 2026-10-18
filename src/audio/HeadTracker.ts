@@ -1,4 +1,11 @@
-import { FacingHeading, HeadingFilter, wrapDegrees, type OrientationAngles } from './headYaw';
+import {
+  devicePose,
+  HeadingFilter,
+  type OrientationAngles,
+  type Quaternion,
+  wrapDegrees,
+  yawFrom,
+} from './headYaw';
 
 const DEG = Math.PI / 180;
 
@@ -45,26 +52,29 @@ export function orientationAngles(event: Event): OrientationAngles {
  * {@link MIN_STEP_DEGREES} (or at all, once the filter has settled, so the
  * yaw lands exactly).
  *
+ * The raw yaw of a reading is {@link yawFrom} the straight-ahead pose: a
+ * function of that pose and the reading alone, so returning to a pose returns
+ * to its yaw. A reading with no yaw (the device flipped over) is skipped.
+ *
  * Browsers send a reading only when the device's pose changes (Chromium does),
  * so a device held still goes quiet while the filter is still gliding. A frame
- * with no new reading feeds the last heading again, until the filter settles
+ * with no new reading feeds the last raw yaw again, until the filter settles
  * and the frames stop. The latest raw angles are kept, so a screen rotation
  * that lands after the last reading is applied too.
  */
 export class HeadTracker {
   private readonly options: HeadTrackerOptions;
   private readonly filter = new HeadingFilter();
-  private readonly facing = new FacingHeading();
   private listening = false;
-  /** The filtered, unwrapped heading; null before a reading. */
+  /** The pose that is straight ahead; null until a reading (or a recenter) sets it. */
+  private reference: Quaternion | null = null;
+  /** The filtered, unwrapped yaw in degrees; null before a reading. */
   private heading: number | null = null;
-  /** The unwrapped heading that is straight ahead; null until a reading sets it. */
-  private reference: number | null = null;
   private sentDegrees: number | null = null;
   /** The latest reading's angles, kept to recompute when the screen turns. */
   private angles: OrientationAngles | null = null;
-  /** The latest raw heading, fed again while the filter settles. */
-  private rawHeading: number | null = null;
+  /** The latest raw yaw, fed again while the filter settles. */
+  private rawYaw: number | null = null;
   /** A reading arrived since the last frame. */
   private fresh = false;
   private frameTimer: number | null = null;
@@ -81,9 +91,7 @@ export class HeadTracker {
 
   /** The current head yaw in degrees, (-180, 180], positive to the right. */
   get yawDegrees(): number {
-    return this.heading === null || this.reference === null
-      ? 0
-      : wrapDegrees(this.heading - this.reference);
+    return this.heading === null ? 0 : wrapDegrees(this.heading);
   }
 
   start(): void {
@@ -109,17 +117,20 @@ export class HeadTracker {
   }
 
   /**
-   * Make where the device points now straight ahead (or the next reading,
-   * before there is one). The filter jumps to the latest heading first, so
-   * nothing left of its glide turns the scene after the recenter.
+   * Make the latest pose straight ahead (or the next reading's, before there
+   * is one). The filter starts again at 0, so nothing left of its glide turns
+   * the scene after the recenter.
    */
   recenter(): void {
-    if (this.rawHeading === null) {
+    const pose = this.angles ? devicePose(this.angles, this.options.screenAngle()) : null;
+    if (!pose || this.heading === null) {
       this.reference = null;
       return;
     }
-    this.heading = this.filter.snap();
-    this.reference = this.heading;
+    this.reference = pose;
+    this.filter.reset();
+    this.rawYaw = 0;
+    this.heading = this.filter.update(0, this.options.now());
     this.send(0);
   }
 
@@ -129,12 +140,11 @@ export class HeadTracker {
       this.frameTimer = null;
     }
     this.filter.reset();
-    this.facing.reset();
-    this.heading = null;
     this.reference = null;
+    this.heading = null;
     this.sentDegrees = null;
     this.angles = null;
-    this.rawHeading = null;
+    this.rawYaw = null;
     this.fresh = false;
   }
 
@@ -151,18 +161,20 @@ export class HeadTracker {
 
   /** Read the kept angles at the current screen angle into the filter. */
   private take(): void {
-    if (!this.angles) {
+    const pose = this.angles ? devicePose(this.angles, this.options.screenAngle()) : null;
+    if (!pose) {
       return;
     }
-    const heading = this.facing.read(this.angles, this.options.screenAngle());
-    if (heading === null) {
+    const first = this.reference === null;
+    this.reference ??= pose;
+    const yaw = yawFrom(this.reference, pose);
+    if (yaw === null) {
       return;
     }
-    this.rawHeading = heading;
-    this.heading = this.filter.update(heading, this.options.now());
+    this.rawYaw = yaw;
+    this.heading = this.filter.update(yaw, this.options.now());
     this.fresh = true;
-    if (this.reference === null) {
-      this.reference = this.heading;
+    if (first) {
       this.send(0);
     }
     this.frameTimer ??= this.options.setTimer(this.frame, FRAME_MS);
@@ -172,8 +184,8 @@ export class HeadTracker {
     this.frameTimer = null;
     const hadReading = this.fresh;
     this.fresh = false;
-    if (!hadReading && this.rawHeading !== null && !this.filter.settled) {
-      this.heading = this.filter.update(this.rawHeading, this.options.now());
+    if (!hadReading && this.rawYaw !== null && !this.filter.settled) {
+      this.heading = this.filter.update(this.rawYaw, this.options.now());
     }
     const settled = this.filter.settled;
     this.send(settled ? 0 : MIN_STEP_DEGREES);

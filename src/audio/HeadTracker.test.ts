@@ -129,6 +129,19 @@ describe('HeadTracker', () => {
     expect((onYaw.mock.lastCall?.[0] ?? Number.NaN) / DEG).toBeCloseTo(120, 1);
   });
 
+  it('comes back to zero after each closed pitch cycle with a roll (the round-2 review case)', () => {
+    const { tracker, turn, advance, lastYawDegrees, timers } = setup();
+    tracker.start();
+    turn(0, FRAME_MS, 0, 20);
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      for (let beta = 1; beta <= 85; beta += 1) turn(0, FRAME_MS, beta, 20);
+      for (let beta = 84; beta >= 0; beta -= 1) turn(0, FRAME_MS, beta, 20);
+      advance(2000);
+      expect(lastYawDegrees()).toBeCloseTo(0, 6);
+      expect(timers.size).toBe(0);
+    }
+  });
+
   it('recenter makes the current heading straight ahead', () => {
     const { tracker, turn, hold, lastYawDegrees } = setup();
     tracker.start();

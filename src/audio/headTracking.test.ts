@@ -122,6 +122,53 @@ describe('HeadTrackingController', () => {
       expect(useHeadTrackingStore.getState().sensor).toBe('none');
     });
 
+    it('checking again after a timeout finds a sensor that arrives late', () => {
+      const { controller, sink, reading, advance, announce, orientationListeners } = setup();
+      detach = controller.attach(sink);
+      advance(3000);
+      expect(useHeadTrackingStore.getState().sensor).toBe('none');
+      expect(announce).not.toHaveBeenCalled(); // the automatic check is silent
+
+      controller.checkSensorAgain();
+      expect(useHeadTrackingStore.getState().sensor).toBe('checking');
+      expect(announce).toHaveBeenLastCalledWith('Checking for a motion sensor.');
+      expect(orientationListeners.size).toBe(1);
+
+      reading(12);
+      expect(useHeadTrackingStore.getState().sensor).toBe('available');
+      expect(announce).toHaveBeenLastCalledWith('Motion sensor found. Head tracking is available.');
+      expect(orientationListeners.size).toBe(0);
+    });
+
+    it('checking again that finds nothing says so and stops listening', () => {
+      const { controller, sink, reading, advance, announce, orientationListeners, timers } = setup();
+      detach = controller.attach(sink);
+      advance(3000);
+      controller.checkSensorAgain();
+      reading(null);
+      advance(3000);
+      expect(useHeadTrackingStore.getState().sensor).toBe('none');
+      expect(announce).toHaveBeenLastCalledWith('No motion sensor found.');
+      expect(orientationListeners.size).toBe(0);
+      expect(timers.size).toBe(0);
+    });
+
+    it('checking again does nothing while a check runs or once a sensor is known', () => {
+      const { controller, sink, reading, advance, orientationListeners } = setup();
+      detach = controller.attach(sink);
+      controller.checkSensorAgain(); // the first check is still running
+      expect(useHeadTrackingStore.getState().sensor).toBe('unknown');
+      expect(orientationListeners.size).toBe(1);
+      advance(3000);
+      controller.checkSensorAgain();
+      controller.checkSensorAgain();
+      expect(orientationListeners.size).toBe(1);
+      reading(5);
+      controller.checkSensorAgain();
+      expect(useHeadTrackingStore.getState().sensor).toBe('available');
+      expect(orientationListeners.size).toBe(0);
+    });
+
     it('needs permission before it can tell, and does not listen before it is asked', () => {
       const { controller, sink, advance, orientationListeners, timers } = setup({
         permission: async () => 'granted',

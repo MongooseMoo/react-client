@@ -21,11 +21,42 @@ describe('HeadTrackingControls', () => {
     setPreference(false);
   });
 
-  it('is absent without a motion sensor', () => {
+  it('is absent while the first check runs', () => {
     const { container } = render(<HeadTrackingControls />);
     expect(container).toBeEmptyDOMElement();
-    act(() => useHeadTrackingStore.setState({ sensor: 'none' }));
-    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('after a timeout, checks again and offers the controls when a sensor turns up', () => {
+    vi.useFakeTimers();
+    const sink = { setHeadYaw: vi.fn(), setHeadTracking: vi.fn() };
+    const detach = headTracking.attach(sink);
+    try {
+      render(<HeadTrackingControls />);
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(screen.getByRole('group', { name: 'Head tracking' })).toHaveTextContent('No motion sensor found.');
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+
+      const checkAgain = screen.getByRole('button', { name: 'Check again' });
+      checkAgain.focus();
+      fireEvent.click(checkAgain);
+      expect(screen.getByRole('group', { name: 'Head tracking' })).toHaveTextContent(
+        'Checking for a motion sensor.',
+      );
+      // The button stays while checking, so focus has somewhere to be.
+      expect(screen.getByRole('button', { name: 'Check again' })).toHaveFocus();
+
+      act(() => {
+        window.dispatchEvent(Object.assign(new Event('deviceorientation'), { alpha: 12, beta: 0, gamma: 0 }));
+      });
+      const checkbox = screen.getByRole('checkbox', { name: 'Turn the sound scene with this device' });
+      expect(checkbox).toHaveFocus();
+      expect(screen.queryByRole('button', { name: 'Check again' })).not.toBeInTheDocument();
+    } finally {
+      detach();
+      vi.useRealTimers();
+    }
   });
 
   it('appears once the sensor is found, and turns on from the checkbox', () => {

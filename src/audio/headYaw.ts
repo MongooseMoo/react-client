@@ -1,5 +1,5 @@
 /**
- * Head-tracking math: the device's heading from a DeviceOrientationEvent, a
+ * Head-tracking math: the head's yaw from DeviceOrientationEvent poses, a
  * filter that removes its jitter, and turning the listener's facing by a head
  * yaw.
  *
@@ -13,12 +13,10 @@ export type Vector3 = [number, number, number];
 const DEG = Math.PI / 180;
 
 /**
- * Hysteresis for the facing axis, as the horizontal length of the device's
- * back: above BACK_ON the back is the facing, below SCREEN_UP_ON the screen's
- * up is. Between them the axis in use stays.
+ * Below this, a relative pose has no vertical part to read a turn from: it is
+ * (within a millionth) a half turn about a horizontal axis.
  */
-const BACK_ON = 0.6;
-const SCREEN_UP_ON = 0.4;
+const SINGULAR = 1e-6;
 
 /** Wrap an angle in degrees into (-180, 180]. */
 export function wrapDegrees(degrees: number): number {
@@ -33,89 +31,67 @@ export interface OrientationAngles {
   gamma: number | null;
 }
 
-/** A device vector in earth axes (east, north, up) under the W3C Z-X'-Y'' pose. */
-function toEarth(alpha: number, beta: number, gamma: number, v: Vector3): Vector3 {
-  const cA = Math.cos(alpha * DEG);
-  const sA = Math.sin(alpha * DEG);
-  const cB = Math.cos(beta * DEG);
-  const sB = Math.sin(beta * DEG);
-  const cG = Math.cos(gamma * DEG);
-  const sG = Math.sin(gamma * DEG);
-  // Rz(alpha) * Rx(beta) * Ry(gamma), applied to v.
+/** A rotation as a unit quaternion [w, x, y, z], in earth axes (x east, y north, z up). */
+export type Quaternion = [number, number, number, number];
+
+function multiply(a: Quaternion, b: Quaternion): Quaternion {
   return [
-    (cA * cG - sA * sB * sG) * v[0] - sA * cB * v[1] + (cA * sG + sA * sB * cG) * v[2],
-    (sA * cG + cA * sB * sG) * v[0] + cA * cB * v[1] + (sA * sG - cA * sB * cG) * v[2],
-    -cB * sG * v[0] + sB * v[1] + cB * cG * v[2],
+    a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+    a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+    a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+    a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
   ];
 }
 
-/** Compass azimuth of an earth vector, degrees clockwise from north. */
-function azimuth(v: Vector3): number {
-  return Math.atan2(v[0], v[1]) / DEG;
+/** A turn of `degrees` about the unit axis (x, y, z). */
+function turn(degrees: number, x: number, y: number, z: number): Quaternion {
+  const half = (degrees * DEG) / 2;
+  const s = Math.sin(half);
+  return [Math.cos(half), x * s, y * s, z * s];
 }
 
-type FacingAxis = 'back' | 'screen-up';
+/**
+ * The pose of what the player faces with: the device's W3C Z-X'-Y'' rotation
+ * (alpha about the earth's up axis, then beta about the device's x, then
+ * gamma about its y), turned in the device's plane by the screen angle so its
+ * "up" is the screen's up. Turning the device into landscape with the screen
+ * then leaves this pose, and the head's yaw, where they were. Null when the
+ * reading has no angles.
+ */
+export function devicePose(angles: OrientationAngles, screenAngle: number): Quaternion | null {
+  const { alpha, beta, gamma } = angles;
+  if (alpha === null || beta === null || gamma === null) {
+    return null;
+  }
+  return multiply(
+    multiply(multiply(turn(alpha, 0, 0, 1), turn(beta, 1, 0, 0)), turn(gamma, 0, 1, 0)),
+    turn(-screenAngle, 0, 0, 1),
+  );
+}
 
 /**
- * The device's heading in degrees [0, 360), clockwise from the sensor's zero.
+ * The head's yaw in degrees, (-180, 180], positive to the right: how far the
+ * pose has turned about the vertical since the `reference` pose (straight
+ * ahead, set by recentering).
  *
- * The pose is the W3C Z-X'-Y'' rotation (alpha about the earth's up axis,
- * then beta, then gamma). The heading is the compass direction of one device
- * axis, the facing: the device's back while it is held upright (its back's
- * horizontal length above {@link BACK_ON}), the screen's up while it lies
- * flat (below {@link SCREEN_UP_ON}), and between those, whichever was in use.
- * A roll about the facing axis cannot move where that axis points, so a head
- * tilted sideways does not turn the scene. The two axes are perpendicular, so
- * whichever is in use is at least 0.4 horizontal (the back) or 0.8 (the
- * screen's up): neither is ever read near vertical.
+ * It is the twist about the earth's up axis of the rotation from the
+ * reference to the pose (a swing-twist decomposition). A head that rolls or
+ * nods turns about a horizontal axis, which has no twist, so roll and nod add
+ * no yaw however the device is held or mounted; a turn about the vertical is
+ * read in full. It depends only on the two poses, so the same pose always
+ * gives the same yaw, whatever path led there.
  *
- * The screen's up is the device's +y turned by `screenAngle`
- * (screen.orientation.angle), so turning the device into landscape with the
- * screen does not move the heading. When the axis changes, an offset carries
- * the heading across, so the output never jumps; turns after it read in full.
- * The object keeps that axis and offset, so use one per tracking session.
+ * The one pose with no yaw is a half turn about a horizontal axis from the
+ * reference (the device flipped over): there every vertical turn is the same
+ * pose, so this returns null and the caller holds its last yaw.
  */
-export class FacingHeading {
-  private axis: FacingAxis | null = null;
-  private offset = 0;
-
-  reset(): void {
-    this.axis = null;
-    this.offset = 0;
+export function yawFrom(reference: Quaternion, pose: Quaternion): number | null {
+  const [w, , , z] = multiply(pose, [reference[0], -reference[1], -reference[2], -reference[3]]);
+  if (Math.hypot(w, z) < SINGULAR) {
+    return null;
   }
-
-  /** The heading of a reading, or null when it has no angles. */
-  read(angles: OrientationAngles, screenAngle: number): number | null {
-    const { alpha, beta, gamma } = angles;
-    if (alpha === null || beta === null || gamma === null) {
-      return null;
-    }
-    const back = toEarth(alpha, beta, gamma, [0, 0, -1]);
-    const screenUp = toEarth(alpha, beta, gamma, [
-      Math.sin(screenAngle * DEG),
-      Math.cos(screenAngle * DEG),
-      0,
-    ]);
-    const backHorizontal = Math.hypot(back[0], back[1]);
-    const headingOf = (axis: FacingAxis) => azimuth(axis === 'back' ? back : screenUp);
-
-    let axis: FacingAxis;
-    if (this.axis === null) {
-      axis = backHorizontal >= (BACK_ON + SCREEN_UP_ON) / 2 ? 'back' : 'screen-up';
-    } else if (this.axis === 'back' && backHorizontal < SCREEN_UP_ON) {
-      axis = 'screen-up';
-    } else if (this.axis === 'screen-up' && backHorizontal > BACK_ON) {
-      axis = 'back';
-    } else {
-      axis = this.axis;
-    }
-    if (this.axis !== null && axis !== this.axis) {
-      this.offset = wrapDegrees(this.offset + headingOf(this.axis) - headingOf(axis));
-    }
-    this.axis = axis;
-    const heading = (headingOf(axis) + this.offset) % 360;
-    return heading < 0 ? heading + 360 : heading;
-  }
+  // A right-handed twist about up is counter-clockwise; the yaw runs clockwise.
+  return wrapDegrees(0 - (2 * Math.atan2(z, w)) / DEG);
 }
 
 export interface HeadingFilterOptions {
@@ -163,13 +139,6 @@ export class HeadingFilter {
   reset(): void {
     this.lastRaw = null;
     this.speed = 0;
-  }
-
-  /** Jump the output to the latest heading (unwrapped) and return it: nothing left to glide. */
-  snap(): number {
-    this.value = this.unwrapped;
-    this.speed = 0;
-    return this.value;
   }
 
   /** Whether the output has caught up with the latest heading (within a hundredth of a degree). */

@@ -9,10 +9,11 @@ import { HeadTracker, orientationAngles } from './HeadTracker';
  * Whether this device can track the head: `available` once a reading with
  * angles has arrived, `needs-permission` where the browser sends none until
  * the player allows motion access (iOS), `none` when no such reading came,
- * `unknown` while still listening. Desktops define DeviceOrientationEvent and
- * may send one reading with null angles, so only real angles count.
+ * `unknown` while the first check listens, `checking` while a check the
+ * player asked for listens. Desktops define DeviceOrientationEvent and may
+ * send one reading with null angles, so only real angles count.
  */
-export type SensorAvailability = 'unknown' | 'available' | 'needs-permission' | 'none';
+export type SensorAvailability = 'unknown' | 'checking' | 'available' | 'needs-permission' | 'none';
 
 /**
  * `waiting`: on, no reading yet. `no-readings`: on, but none arrived in
@@ -100,8 +101,8 @@ export class HeadTrackingController {
     this.startProbe();
     return () => {
       unsubscribe();
+      // Stops a running availability check too.
       this.stopTracking();
-      this.stopProbe();
       this.sink = null;
     };
   }
@@ -203,8 +204,10 @@ export class HeadTrackingController {
     // server-driven smoothing and writes the server facing exactly.
     this.tracker.stop();
     this.sink?.setHeadTracking(false);
-    // Off means no sensor work at all, the availability probe included.
-    this.stopProbe();
+    // Off means no sensor work at all, a running availability check included.
+    if (this.probeTimer !== null) {
+      this.stopProbe();
+    }
     useHeadTrackingStore.setState((state) => ({
       status: state.status === 'blocked' ? 'blocked' : 'off',
       yawDegrees: 0,
@@ -268,19 +271,38 @@ export class HeadTrackingController {
     }
     this.probeTimer = this.env.setTimer(() => {
       this.probeTimer = null;
+      const asked = useHeadTrackingStore.getState().sensor === 'checking';
       this.stopProbe();
-      if (useHeadTrackingStore.getState().sensor === 'unknown') {
-        useHeadTrackingStore.setState({ sensor: 'none' });
+      if (asked) {
+        this.env.announce('No motion sensor found.');
       }
     }, PROBE_MS);
     this.env.target.addEventListener('deviceorientation', this.handleProbe);
   }
 
+  /**
+   * Check for a sensor again, after a check found none (the player's "Check
+   * again"): one more bounded listen, announced, as the automatic one is not.
+   */
+  checkSensorAgain(): void {
+    if (useHeadTrackingStore.getState().sensor !== 'none') {
+      return;
+    }
+    useHeadTrackingStore.setState({ sensor: 'checking' });
+    this.env.announce('Checking for a motion sensor.');
+    this.startProbe();
+  }
+
+  /** Stop listening; a check still undecided has found nothing. */
   private stopProbe(): void {
     this.env.target.removeEventListener('deviceorientation', this.handleProbe);
     if (this.probeTimer !== null) {
       this.env.clearTimer(this.probeTimer);
       this.probeTimer = null;
+    }
+    const { sensor } = useHeadTrackingStore.getState();
+    if (sensor === 'unknown' || sensor === 'checking') {
+      useHeadTrackingStore.setState({ sensor: 'none' });
     }
   }
 
@@ -288,8 +310,12 @@ export class HeadTrackingController {
     if (orientationAngles(event).alpha === null) {
       return;
     }
-    this.stopProbe();
+    const asked = useHeadTrackingStore.getState().sensor === 'checking';
     useHeadTrackingStore.setState({ sensor: 'available' });
+    this.stopProbe();
+    if (asked) {
+      this.env.announce('Motion sensor found. Head tracking is available.');
+    }
   };
 }
 
