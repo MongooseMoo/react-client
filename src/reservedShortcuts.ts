@@ -15,6 +15,11 @@ interface ReservedShortcut {
 
 export const KEYS_MODE_CHORD: Chord = { key: "k", modifiers: ["alt", "shift"] };
 
+/** Alt+Shift+K by physical key, which Alt changes the character of on a Mac. */
+export function isKeysModeToggle(event: KeyboardEvent): boolean {
+  return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyK";
+}
+
 const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const ARROWS = ["arrowleft", "arrowright", "arrowup", "arrowdown"];
 // Every scheme's letters: the input and output suppress all of them with Alt.
@@ -23,7 +28,11 @@ const BUFFER_LETTERS = ["i", "j", "k", "l", "w", "a", "s", "d", "c", "h", "t", "
 const ACCESS_KEYS = ["l", "c", "e", "p", "m", "v", "u", "g", "s", "k", "f"];
 
 const RESERVED_SHORTCUTS: readonly ReservedShortcut[] = [
-  { keys: ["k"], modifiers: ["alt", "shift"], reason: "Alt+Shift+K turns keys mode on and off" },
+  {
+    keys: [KEYS_MODE_CHORD.key],
+    modifiers: KEYS_MODE_CHORD.modifiers,
+    reason: "Alt+Shift+K turns keys mode on and off",
+  },
   { keys: ["w", "t", "n", "tab"], modifiers: ["ctrl"], reason: "The browser keeps this key" },
   { keys: ["w", "t", "n", "tab"], modifiers: ["ctrl", "shift"], reason: "The browser keeps this key" },
   { keys: DIGITS, modifiers: ["ctrl"], reason: "Reviews recent output" },

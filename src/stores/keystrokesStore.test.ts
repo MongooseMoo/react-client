@@ -48,6 +48,18 @@ describe("useKeystrokesStore", () => {
     ]);
   });
 
+  it("updates a layer where it stands, or adds it at the end", () => {
+    const store = useKeystrokesStore.getState();
+    store.updateLayer(scrabble);
+    store.putLayer(helm);
+    store.updateLayer({ ...scrabble, label: "Scrabble board" });
+
+    expect(useKeystrokesStore.getState().layers.map((layer) => layer.label)).toEqual([
+      "Scrabble board",
+      "Helm console",
+    ]);
+  });
+
   it("removes a layer and returns it, and ignores one that is not there", () => {
     const store = useKeystrokesStore.getState();
     store.putLayer(scrabble);

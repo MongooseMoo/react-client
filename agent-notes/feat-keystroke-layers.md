@@ -39,4 +39,5 @@ preferences, a Keys tab in Preferences. No push, no PR.
 
 ## Next step
 
-Refactor pass (reserved list should use KEYS_MODE_CHORD), full suite, typecheck, lint, report.
+Refactor pass done (Alt+Shift+K defined once in reservedShortcuts.ts; store `updateLayer` for the
+legacy layer). Run the full suite, typecheck, lint; report to the parent. Not pushed, no PR.

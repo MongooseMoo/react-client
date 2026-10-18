@@ -11,6 +11,7 @@ import {
 } from "../../stores/keystrokesStore";
 import { usePreferences } from "../../stores/preferencesStore";
 import { chordsEqual, parseChord } from "../../keystrokeChords";
+import { isKeysModeToggle } from "../../reservedShortcuts";
 import { gmcpJsonMessage } from "../messages";
 
 /** A binding as it arrives on the wire. */
@@ -110,11 +111,6 @@ function keysWorkAt(target: EventTarget | null): boolean {
     if (target === document.body || target === document.documentElement) return true;
     if (target.id === "command-input") return true;
     return target.closest('.output[role="region"]') !== null && !isTextField(target);
-}
-
-/** Alt+Shift+K by physical key, which Alt changes the character of on a Mac. */
-function isKeysModeToggle(event: KeyboardEvent): boolean {
-    return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyK";
 }
 
 function say(message: string): void {
@@ -235,16 +231,8 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         const store = useKeystrokesStore.getState();
         if (bindings.length === 0) {
             store.removeLayer(SERVER_KEYS_ID);
-            return;
-        }
-        const existing = store.layers.find((layer) => layer.id === SERVER_KEYS_ID);
-        const layer = { id: SERVER_KEYS_ID, label: SERVER_KEYS_LABEL, modal: false, bindings };
-        if (existing) {
-            useKeystrokesStore.setState({
-                layers: store.layers.map((current) => (current === existing ? layer : current)),
-            });
         } else {
-            store.putLayer(layer);
+            store.updateLayer({ id: SERVER_KEYS_ID, label: SERVER_KEYS_LABEL, modal: false, bindings });
         }
     }
 

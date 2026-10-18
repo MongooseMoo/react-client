@@ -42,6 +42,8 @@ interface KeystrokesState {
   keysMode: boolean;
   /** Adds or replaces a layer; true when its id is new. */
   putLayer: (layer: KeystrokeLayer) => boolean;
+  /** Replaces a layer where it stands, or adds it at the end. */
+  updateLayer: (layer: KeystrokeLayer) => void;
   removeLayer: (id: string) => KeystrokeLayer | undefined;
   clearLayers: () => void;
   setKeysMode: (on: boolean) => void;
@@ -55,6 +57,14 @@ export const useKeystrokesStore = create<KeystrokesState>((set, get) => ({
     const isNew = others.length === get().layers.length;
     set({ layers: [...others, layer] });
     return isNew;
+  },
+  updateLayer: (layer) => {
+    const { layers } = get();
+    set({
+      layers: layers.some((existing) => existing.id === layer.id)
+        ? layers.map((existing) => (existing.id === layer.id ? layer : existing))
+        : [...layers, layer],
+    });
   },
   removeLayer: (id) => {
     const removed = get().layers.find((layer) => layer.id === id);
