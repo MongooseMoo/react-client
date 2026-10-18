@@ -41,7 +41,11 @@ import type { SequenceOutput } from '../midi/SequenceOutput';
 import type { SequenceData } from '../midi/SequencePayload';
 import type { ScoreTransport, MediaTransport } from '../midi/score';
 import type { SharedClock } from '../timing/SharedClock';
-import { SharedMediaService, type SharedMediaVoice } from './SharedMediaService';
+import {
+  MediaCapabilityUnavailable,
+  SharedMediaService,
+  type SharedMediaVoice,
+} from './SharedMediaService';
 import type {
   MediaCueWindow,
   MediaSyncReply,
@@ -1219,14 +1223,15 @@ export class MediaService {
     data: ClientMediaPlayPayload,
   ): SharedMediaVoice {
     sound.sharedTransportPrepared = true;
-    const voices = sound.preplay(),
-      playback = voices[0];
+    const voices = sound.preplay();
+    let playback = voices[0];
     if (!playback) throw new Error('Unable to prepare shared media voice');
     playback.loop(0);
     this.renderOcclusion(sound, voices, 0);
     let cancelStart: (() => void) | undefined;
     let playbackGeneration = 0;
     let spatialReady: Promise<void> | undefined;
+    let loopTopology: string | undefined;
     const prepareSpatial = (): Promise<void> => {
       spatialReady ??= (async () => {
         if (data.upmix !== 'ambisonic') return;
@@ -1257,6 +1262,29 @@ export class MediaService {
           playback.supportsClipLoop === true
         );
       },
+      prepareTransport: (transport) => {
+        const topology = transport.loop ? `${transport.loop.startMs}:${transport.loop.endMs}` : '';
+        if (loopTopology !== undefined && topology !== loopTopology) {
+          playbackGeneration++;
+          cancel();
+          playback.stop();
+          playback.cleanup();
+          this.cleanupUpmix(sound);
+          const replacement = sound.preplay()[0];
+          if (!replacement) throw new Error('Unable to replace shared clip voice');
+          playback = replacement;
+          spatialReady = undefined;
+          this.renderOcclusion(sound, [playback], 0);
+        }
+        loopTopology = topology;
+        playback.loop(0);
+        if (transport.loop) {
+          if (!('setLoopRegion' in playback) || typeof playback.setLoopRegion !== 'function')
+            throw new MediaCapabilityUnavailable('Native clip-loop preparation unavailable');
+          playback.setLoopRegion(transport.loop.startMs / 1000, transport.loop.endMs / 1000);
+          playback.loop('infinite');
+        }
+      },
       prepareSeek: async (seconds, signal) => {
         await prepareSpatial();
         if (signal.aborted) throw new DOMException('Shared preparation cancelled', 'AbortError');
@@ -1269,7 +1297,7 @@ export class MediaService {
         await playback.prepareSeek(seconds, { signal, timeoutMs: 15000 });
       },
       currentTime: () => playback.currentTime,
-      start: async ({ at, rate, loopRegion, stopAt }) => {
+      start: async ({ at, rate, stopAt }) => {
         const generation = ++playbackGeneration;
         await prepareSpatial();
         if (generation !== playbackGeneration)
@@ -1314,12 +1342,6 @@ export class MediaService {
               timeout = setTimeout(() => fail(new Error('Shared media start timed out')), 15000);
             try {
               playback.playbackRate = rate;
-              if (loopRegion) {
-                if (!('setLoopRegion' in playback) || typeof playback.setLoopRegion !== 'function')
-                  throw new Error('Native clip-loop preparation unavailable');
-                playback.setLoopRegion(loopRegion.startSeconds, loopRegion.endSeconds);
-                playback.loop('infinite');
-              }
               playback.play({ ...(data.type === 'music' ? {} : { at }), fadeIn: 30 });
               if (data.type !== 'music' && stopAt !== undefined) {
                 if (!('scheduleStop' in playback) || typeof playback.scheduleStop !== 'function')
@@ -2076,7 +2098,7 @@ export class MediaService {
       });
       return;
     }
-    if (this.isSoundStale(sound, soundKey)) {
+    if (this.isSoundStale(sound, soundKey) || !sound.playbacks.includes(playback)) {
       renderer.cleanup();
       return;
     }
@@ -2120,7 +2142,7 @@ export class MediaService {
       });
       return;
     }
-    if (this.isSoundStale(sound, soundKey)) {
+    if (this.isSoundStale(sound, soundKey) || !sound.playbacks.includes(playback)) {
       renderer.cleanup();
       return;
     }

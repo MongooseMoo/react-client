@@ -14,6 +14,7 @@ import {
 
 export interface SharedMediaVoice {
   readonly supportsClipLoop?: boolean;
+  prepareTransport?(transport: MediaTransport): void;
   prepareSeek(seconds: number, signal: AbortSignal): Promise<void>;
   currentTime(): number;
   start(options: {
@@ -530,11 +531,11 @@ export class SharedMediaService {
         throw new MediaCapabilityUnavailable(
           'Shared clip loops require a prepared native buffer source; HTML clip loops are unsupported',
         );
+      voice.prepareTransport?.(source.grant.transport);
       if (source.grant.transport.mode === 'finite') {
-        await voice.prepareSeek(
-          mediaPosition(source.grant.transport, serverNow).positionMs / 1000,
-          signal,
-        );
+        const initialPosition = mediaPosition(source.grant.transport, serverNow);
+        if (!initialPosition.terminal)
+          await voice.prepareSeek(initialPosition.positionMs / 1000, signal);
         if (!this.current(source, operation)) return;
       }
       if (fresh) {
@@ -567,6 +568,11 @@ export class SharedMediaService {
           this.remove(source);
           return;
         }
+        if (transport.loop && voice.supportsClipLoop !== true)
+          throw new MediaCapabilityUnavailable(
+            'Shared clip loops require a prepared native buffer source; HTML clip loops are unsupported',
+          );
+        voice.prepareTransport?.(transport);
         if (transport.mode === 'finite') {
           await voice.prepareSeek(position.positionMs / 1000, signal);
           if (!this.current(source, operation)) return;

@@ -541,4 +541,33 @@ describe('shared file transport', () => {
     );
     expect(6.3 - context.currentTime).toBeGreaterThan(0.02);
   });
+  it('prepares a fresh snapshot loop topology before seeking beyond the previous clip', async () => {
+    transport = {
+      ...transport,
+      state: 'paused',
+      positionMs: 1500,
+      loop: { startMs: 1000, endMs: 3000, plays: -1 },
+    };
+    let clipEnd = Infinity;
+    voice.prepareTransport = vi.fn((next) => {
+      clipEnd = next.loop?.endMs ?? Infinity;
+    });
+    voice.prepareSeek = vi.fn(async (seconds) => {
+      if (seconds * 1000 >= clipEnd) throw new Error('Old clip bounds');
+      cursor = seconds;
+    });
+    const pending = service.attach(grant(), () => voice);
+    await flush();
+    const fresh = {
+      ...transport,
+      revision: 2,
+      positionMs: 4500,
+      loop: { startMs: 4000, endMs: 5000, plays: -1 },
+    };
+    service.receiveSync({ ...requests[0], transport: fresh });
+    await pending;
+    expect(cursor).toBe(4.5);
+    expect(errors).not.toHaveBeenCalled();
+    expect(presentations.at(-1)).toMatchObject({ state: 'paused' });
+  });
 });
