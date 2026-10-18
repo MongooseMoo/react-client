@@ -222,3 +222,39 @@ architecture acceptance row with the browser/client/hub revisions recorded befor
 considering production v2 activation. The independent reference hub tests client
 contracts; it does not validate native MOO parsing, output pressure, server rate
 buckets or the deployed legacy observer. Later phases remain out of this task.
+
+
+## Independent Phase 1 review fixes — 2026-10-18
+
+Implemented all P1/P2 findings from the independent review in local commits
+`af33ec89`, `2f219527`, `11bc6ba5`, `2d79185d`, plus audio-fixture repair `b45a69de`.
+No push. The rollout remains off; v1 and game-login source are unchanged.
+
+- Bounded indexed receipt/attempt/tombstone retention, reserved receipt capacity,
+  committed-byte/live-reservation accounting, content-scoped consumer protection,
+  fixed <=800-byte bitsets and worker cancellation fences. Six stores retained;
+  database version 2 migrates the version-1 indexes/bitmap layout.
+- Unsaved/uncertain exports remain pinned. Browser handoff keeps bytes and a
+  named Save again action for 24 hours; handoff is not disk-save confirmation.
+- Listener/validation faults are counted and isolated. Newer capability features
+  and remote limits cannot expand the local Phase 1 protocol/receive ceiling.
+  Recovery retries storage and always releases election/storage locks on stop.
+- Verification belongs to the offer; its receipt survives RTC loss. Outcome is
+  correlated and retried until Ack. Receive pacing withholds credits; a bad file
+  read or one failed push reservation stops only that operation.
+- Reference hub now parses/validates messages, generates ICE/end markers and
+  rate/busy errors. Added OwnerService and actual worker queue/fence tests, scoped
+  Revoke, reload/shared-copy, repeated Save, history-capacity and failure tests.
+
+Final checks: typecheck; 183 Vitest files / 2416 tests; production audio cache and
+soundfonts; editor ownership on strict 127.0.0.1:5301 preview with matching entry
+SHA-256; browser sessions; client recovery; a11y; both file-sharing browser scripts;
+actionlint/zizmor; staged lint — all passed. The reviewer E probe reports
+76 ms / 68 ms for successive 1600-put memory-mode batches.
+
+Full commands, literal result snippets, earlier failures, retention limits and
+remaining lower-priority/unverified items are in
+`reports/file-sharing-phase1-fix-validation.md`; preview proof is in
+`reports/file-sharing-phase1-fix-preview.json`. Live v2 hub acceptance, AT speech
+and cross-browser/device checks remain pending. Keep the flag off until that
+separate live acceptance work is complete.
