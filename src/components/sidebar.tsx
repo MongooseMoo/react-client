@@ -266,7 +266,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         icon: <FaWaveSquare />,
         content: (
           <Suspense fallback={<p role="status">Loading audio diagnostics…</p>}>
-            <AudioDiagnostics diagnostics={client.media.diagnostics} />
+            <AudioDiagnostics diagnostics={client.media.diagnostics} readPerformance={client.media.readPerformance} />
           </Suspense>
         ),
         mountOnSelect: true,
