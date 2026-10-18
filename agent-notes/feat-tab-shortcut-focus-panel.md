@@ -6,7 +6,7 @@ Q, 2026-10-17: invoking a sidebar tab with Ctrl+Shift+1–0 should focus the fir
 
 ## State (2026-10-17)
 
-Branch off `origin/master` `1ff15fe8`, worktree `../react-client-tab-focus`. Committed, not pushed, no PR.
+Branch off `origin/master` `1ff15fe8`, worktree `../react-client-tab-focus`. Pushed; PR opened 2026-10-17 on Q's go-ahead.
 
 - `Tabs.selectTab(id, focus)` takes `'tab' | 'panel' | false` (default `'tab'`). Click and arrow keys still focus the tab (APG). `Sidebar.switchToTab` (the Ctrl+Shift+number path) passes `'panel'`.
 - `'panel'`: first control Tab can reach (`tabbableControls`: not disabled, `tabIndex >= 0`, no hidden/inert ancestor inside the panel). None: the panel itself when it is a tab stop (static-text panels already are), else the tab button.
@@ -16,8 +16,6 @@ Branch off `origin/master` `1ff15fe8`, worktree `../react-client-tab-focus`. Com
 
 Tried in Chrome (vite on localhost:5198, guest login, real key presses): Ctrl+Shift+3 → Users listbox; 8 → Audio "Microphone" button; 4 → Server "Refresh"; 9 on a fresh load → "Pause" (before the lazy fix it stopped on the panel).
 
-Not done: no screen reader listening. Not checked what NVDA says when focus lands on the Users listbox directly instead of the tab (the tab name is no longer announced first; the panel's `aria-labelledby` may or may not be read on entry).
-
 ## Decisions and why
 
 - Only the shortcut goes into the panel; clicking/arrowing tabs keeps the standard tab pattern.
@@ -25,4 +23,4 @@ Not done: no screen reader listening. Not checked what NVDA says when focus land
 
 ## Next step
 
-1. Q: listen with NVDA; decide whether to push and open a PR.
+1. After the PR merges: remove this worktree and the branch.
