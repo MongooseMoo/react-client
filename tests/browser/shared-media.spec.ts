@@ -5,15 +5,22 @@ import { createServer } from 'node:http';
 import type { BrowserContext, Page, Route } from '@playwright/test';
 const origin = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173';
 
-test('accepted locator renewal keeps updates received during loading and preparation', async ({ page, context }) => {
-  await fixture(page, context, async route => {
-    if (route.request().url().includes('renewed')) await new Promise(resolve => setTimeout(resolve, 800));
-    const bytes = wave(), range = route.request().headers().range;
+test('accepted locator renewal keeps updates received during loading and preparation', async ({
+  page,
+  context,
+}) => {
+  await fixture(page, context, async (route) => {
+    if (route.request().url().includes('renewed'))
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    const bytes = wave(),
+      range = route.request().headers().range;
     const start = range ? Number(/bytes=(\d+)/.exec(range)?.[1] ?? 0) : 0;
     await route.fulfill({
       status: range ? 206 : 200,
       headers: {
-        'Content-Type': 'audio/wav', 'Access-Control-Allow-Origin': '*', 'Accept-Ranges': 'bytes',
+        'Content-Type': 'audio/wav',
+        'Access-Control-Allow-Origin': '*',
+        'Accept-Ranges': 'bytes',
         ...(range ? { 'Content-Range': `bytes ${start}-${bytes.length - 1}/${bytes.length}` } : {}),
       },
       body: bytes.subarray(start),
@@ -22,22 +29,49 @@ test('accepted locator renewal keeps updates received during loading and prepara
   const result = await page.evaluate(async () => {
     const media = globalThis.media;
     const transport = {
-      version: 1, kind: 'media', clockId: 'browser', sourceId: 'mix-source', revision: 1,
-      state: 'playing', anchorServerMs: performance.now(), positionMs: 0,
-      rate: 1, mode: 'finite', durationMs: 8000,
+      version: 1,
+      kind: 'media',
+      clockId: 'browser',
+      sourceId: 'mix-source',
+      revision: 1,
+      state: 'playing',
+      anchorServerMs: performance.now(),
+      positionMs: 0,
+      rate: 1,
+      mode: 'finite',
+      durationMs: 8000,
     };
     globalThis.snapshot = transport;
-    await media.play({ key: 'mix', name: 'shared-tone.wav', url: location.origin + '/', type: 'music', is3d: true, position: [0, 0, 0], transport });
+    await media.play({
+      key: 'mix',
+      name: 'shared-tone.wav',
+      url: location.origin + '/',
+      type: 'music',
+      is3d: true,
+      position: [0, 0, 0],
+      transport,
+    });
     await media.setChain({ id: 'renew-route', effects: [] });
     const audible = media.sounds.mix;
     if (!audible || !audible.sharedTransportPrepared || !audible.playbacks[0].isPlaying)
-      throw new Error('Initial shared voice is not playing: ' + JSON.stringify(globalThis.mediaStore.getState().sources));
-    const replacing = media.play({ key: 'mix', name: 'shared-tone.wav?renewed=1', url: location.origin + '/', type: 'music', is3d: true, position: [0, 0, 0], transport });
+      throw new Error(
+        'Initial shared voice is not playing: ' +
+          JSON.stringify(globalThis.mediaStore.getState().sources),
+      );
+    const replacing = media.play({
+      key: 'mix',
+      name: 'shared-tone.wav?renewed=1',
+      url: location.origin + '/',
+      type: 'music',
+      is3d: true,
+      position: [0, 0, 0],
+      transport,
+    });
     media.update({ key: 'mix', volume: 60, occlusion: 0.2 });
     const deadline = performance.now() + 4000;
     while (!media.stagedSharedSounds.get('mix')) {
       if (performance.now() > deadline) throw new Error('No staged renewal');
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await new Promise((resolve) => setTimeout(resolve, 5));
     }
     const candidate = media.stagedSharedSounds.get('mix');
     const inherited = candidate.mediaVolume === audible.mediaVolume && candidate.occlusion === 0.2;
@@ -47,10 +81,17 @@ test('accepted locator renewal keeps updates received during loading and prepara
       if (payload.volume === 35) applications.set(sound, (applications.get(sound) ?? 0) + 1);
       return apply(sound, payload);
     };
-    media.update({ key: 'mix', volume: 35, occlusion: 0.7, position: [2, 0, 0], chain: 'renew-route', send: 0.25 });
+    media.update({
+      key: 'mix',
+      volume: 35,
+      occlusion: 0.7,
+      position: [2, 0, 0],
+      chain: 'renew-route',
+      send: 0.25,
+    });
     while (media.sounds.mix === audible) {
       if (performance.now() > deadline) throw new Error('Renewal did not activate');
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await new Promise((resolve) => setTimeout(resolve, 5));
     }
     const oldStillAudible = audible.playbacks[0].isPlaying;
     media.update({ key: 'mix', volume: 45, occlusion: 0.5, position: [3, 0, 0] });
@@ -62,14 +103,27 @@ test('accepted locator renewal keeps updates received during loading and prepara
       oldStillAudible,
       replaced: active !== audible,
       playing: active.playbacks[0].isPlaying,
-      mixKept: active.mediaVolume === audible.mediaVolume && active.occlusion === 0.5 && audible.occlusion === 0.5 && active.namedChain === 'renew-route' && active.namedSend === 0.25 && active.playPayload.position[0] === 3,
+      mixKept:
+        active.mediaVolume === audible.mediaVolume &&
+        active.occlusion === 0.5 &&
+        audible.occlusion === 0.5 &&
+        active.namedChain === 'renew-route' &&
+        active.namedSend === 0.25 &&
+        active.playPayload.position[0] === 3,
       appliedOnce: applications.get(audible) === 1 && applications.get(active) === 1,
     };
     media.shutdown();
     globalThis.clock.shutdown();
     return result;
   });
-  expect(result).toEqual({ inherited: true, oldStillAudible: true, replaced: true, playing: true, mixKept: true, appliedOnce: true });
+  expect(result).toEqual({
+    inherited: true,
+    oldStillAudible: true,
+    replaced: true,
+    playing: true,
+    mixKept: true,
+    appliedOnce: true,
+  });
 });
 function wave(seconds = 8, clip = false): Buffer {
   const rate = 24000,
@@ -96,6 +150,320 @@ function wave(seconds = 8, clip = false): Buffer {
     );
   return bytes;
 }
+async function deliverWave(route: Route, seconds = 30): Promise<void> {
+  const bytes = wave(seconds),
+    range = route.request().headers().range;
+  const start = range ? Number(/bytes=(\d+)/.exec(range)?.[1] ?? 0) : 0;
+  await route.fulfill({
+    status: range ? 206 : 200,
+    headers: {
+      'Content-Type': 'audio/wav',
+      'Access-Control-Allow-Origin': '*',
+      'Accept-Ranges': 'bytes',
+      ...(range ? { 'Content-Range': `bytes ${start}-${bytes.length - 1}/${bytes.length}` } : {}),
+    },
+    body: bytes.subarray(start),
+  });
+}
+
+for (const type of ['music', 'sound']) {
+  test(`accepted ${type} renewal owns silent voices through pause, hiding and clock loss`, async ({
+    page,
+    context,
+  }) => {
+    await fixture(page, context, (route) => deliverWave(route));
+    const results = await page.evaluate(async (type) => {
+      const media = globalThis.media;
+      const wait = (promise, stage) =>
+        new Promise((resolve, reject) => {
+          const timer = setTimeout(
+            () =>
+              reject(
+                new Error(stage + ': ' + JSON.stringify(globalThis.mediaStore.getState().sources)),
+              ),
+            6000,
+          );
+          promise.then(
+            (value) => {
+              clearTimeout(timer);
+              resolve(value);
+            },
+            (error) => {
+              clearTimeout(timer);
+              reject(error);
+            },
+          );
+        });
+      await wait(
+        media.play({
+          key: 'radio',
+          name: 'shared-tone.wav',
+          url: location.origin + '/',
+          type: 'sound',
+        }),
+        'radio',
+      );
+      const results = [];
+      for (const reason of ['paused', 'hidden', 'clock']) {
+        const key = 'deferred-' + reason;
+        const transport = {
+          version: 1,
+          kind: 'media',
+          clockId: 'browser',
+          sourceId: key,
+          revision: 1,
+          state: 'playing',
+          anchorServerMs: performance.now(),
+          positionMs: 0,
+          rate: 1,
+          mode: 'finite',
+          durationMs: 30000,
+        };
+        globalThis.snapshot = transport;
+        await wait(
+          media.play({
+            key,
+            name: 'shared-tone.wav',
+            url: location.origin + '/',
+            type,
+            transport,
+          }),
+          reason + ' initial',
+        );
+        const old = media.sounds[key];
+        if (reason === 'paused') media.pauseSharedMedia(key);
+        else if (reason === 'hidden') media.setSequencePageHidden(true);
+        else globalThis.clock.invalidate();
+        await wait(
+          media.play({
+            key,
+            name: 'shared-tone.wav?renewed=' + reason,
+            url: location.origin + '/',
+            type,
+            transport,
+          }),
+          reason + ' renewal',
+        );
+        const candidate = media.stagedSharedSounds.get(key),
+          voice = candidate?.playbacks[0];
+        if (!candidate || !voice)
+          throw new Error('Accepted deferred renewal has no owned silent voice');
+        const silent =
+          !voice.isPlaying && candidate.sharedTransportPrepared && !media.pendingLoads.has(key);
+        media.update({ key, volume: 36, occlusion: 0.6 });
+        const mixKept = candidate.mediaVolume === old.mediaVolume && voice.occlusion === 0.6;
+        if (reason === 'hidden') media.setSequencePageHidden(false);
+        else if (reason === 'clock')
+          globalThis.clock.setLocalMapping({
+            clockId: 'browser',
+            serverNowMs: performance.now(),
+            performanceNowMs: performance.now(),
+          });
+        let resumed = reason === 'paused';
+        if (reason !== 'paused') {
+          const until = performance.now() + 5000;
+          while (globalThis.mediaStore.getState().sources[key]?.state !== 'playing') {
+            if (performance.now() > until) throw new Error('Deferred renewal did not resume');
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          resumed =
+            media.sounds[key] === candidate && voice.isPlaying && candidate.occlusion === 0.6;
+        }
+        media.stop({ key });
+        results.push({
+          silent,
+          mixKept,
+          resumed,
+          disposed: voice.source === undefined && candidate.playbacks.length === 0,
+          unowned: !media.stagedSharedSounds.has(key) && !media.retiringSharedSounds.has(key),
+          radioKept: media.sounds.radio.playbacks[0].isPlaying,
+        });
+      }
+      media.shutdown();
+      globalThis.clock.shutdown();
+      return results;
+    }, type);
+    expect(results).toEqual(
+      Array.from({ length: 3 }, () => ({
+        silent: true,
+        mixKept: true,
+        resumed: true,
+        disposed: true,
+        unowned: true,
+        radioKept: true,
+      })),
+    );
+  });
+}
+
+test('buffer renewal keeps ownership and listener mix through snapshot retry after Play settles', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(30000);
+  await fixture(page, context, (route) => deliverWave(route));
+  const result = await page.evaluate(async () => {
+    const media = globalThis.media;
+    const transport = {
+      version: 1,
+      kind: 'media',
+      clockId: 'browser',
+      sourceId: 'retry',
+      revision: 1,
+      state: 'playing',
+      anchorServerMs: performance.now(),
+      positionMs: 0,
+      rate: 1,
+      mode: 'finite',
+      durationMs: 30000,
+    };
+    globalThis.snapshot = transport;
+    await media.play({
+      key: 'retry',
+      name: 'shared-tone.wav',
+      url: location.origin + '/',
+      type: 'sound',
+      is3d: true,
+      position: [0, 0, 0],
+      transport,
+    });
+    const old = media.sounds.retry;
+    globalThis.holdSync = true;
+    await media.play({
+      key: 'retry',
+      name: 'shared-tone.wav?renewed=retry',
+      url: location.origin + '/',
+      type: 'sound',
+      is3d: true,
+      position: [0, 0, 0],
+      transport,
+    });
+    const candidate = media.stagedSharedSounds.get('retry'),
+      voice = candidate?.playbacks[0];
+    if (!candidate || !voice || media.pendingLoads.has('retry'))
+      throw new Error('Retry did not outlive the original Play claim');
+    media.update({ key: 'retry', volume: 31, occlusion: 0.8 });
+    media.setListenerPosition([15, 0, 0]);
+    const stagedMix =
+      candidate.mediaVolume === old.mediaVolume &&
+      voice.occlusion === 0.8 &&
+      candidate.volume === old.volume;
+    globalThis.holdSync = false;
+    const until = performance.now() + 7000;
+    while (
+      media.sounds.retry !== candidate ||
+      globalThis.mediaStore.getState().sources.retry?.state !== 'playing'
+    ) {
+      if (performance.now() > until) throw new Error('Snapshot retry did not activate');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const retained =
+      voice.isPlaying &&
+      voice.occlusion === 0.8 &&
+      candidate.mediaVolume === old.mediaVolume &&
+      voice.currentTime > 10;
+    media.stop({ key: 'retry' });
+    const disposed =
+      voice.source === undefined &&
+      !media.stagedSharedSounds.has('retry') &&
+      !media.retiringSharedSounds.has('retry');
+    media.shutdown();
+    globalThis.clock.shutdown();
+    return { stagedMix, retained, disposed };
+  });
+  expect(result).toEqual({ stagedMix: true, retained: true, disposed: true });
+});
+
+test('higher revision cancellation retains staged HTML ownership after its Play finishes', async ({
+  page,
+  context,
+}) => {
+  await fixture(page, context, (route) => deliverWave(route));
+  const result = await page.evaluate(async () => {
+    const media = globalThis.media;
+    const transport = {
+      version: 1,
+      kind: 'media',
+      clockId: 'browser',
+      sourceId: 'cancelled',
+      revision: 1,
+      state: 'playing',
+      anchorServerMs: performance.now(),
+      positionMs: 0,
+      rate: 1,
+      mode: 'finite',
+      durationMs: 30000,
+    };
+    globalThis.snapshot = transport;
+    await media.play({
+      key: 'cancelled',
+      name: 'shared-tone.wav',
+      url: location.origin + '/',
+      type: 'music',
+      transport,
+    });
+    globalThis.holdSync = true;
+    const replacement = media.play({
+      key: 'cancelled',
+      name: 'shared-tone.wav?renewed=cancelled',
+      url: location.origin + '/',
+      type: 'music',
+      transport,
+    });
+    const until = performance.now() + 5000;
+    while (!globalThis.heldSync || !media.stagedSharedSounds.get('cancelled')?.playbacks[0]) {
+      if (performance.now() > until)
+        throw new Error('Replacement did not reach snapshot preparation');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const candidate = media.stagedSharedSounds.get('cancelled'),
+      voice = candidate.playbacks[0];
+    const prepare = voice.prepareSeek.bind(voice);
+    let release,
+      gated = false;
+    voice.prepareSeek = async (...args) => {
+      if (!gated) {
+        gated = true;
+        await new Promise((resolve) => {
+          release = resolve;
+        });
+      }
+      return prepare(...args);
+    };
+    const paused = { ...transport, revision: 2, state: 'paused', positionMs: 2000 };
+    globalThis.snapshot = paused;
+    media.update({ key: 'cancelled', transport: paused });
+    await replacement;
+    if (media.pendingLoads.has('cancelled') || !release)
+      throw new Error('Cancelled Play has not yielded ownership to reconciliation');
+    media.update({ key: 'cancelled', volume: 27, occlusion: 0.65 });
+    const stagedMix = candidate.mediaVolume === 0.27 && voice.occlusion === 0.65;
+    release();
+    while (media.sounds.cancelled !== candidate) {
+      if (performance.now() > until) throw new Error('Paused candidate did not activate silently');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    globalThis.holdSync = false;
+    globalThis.snapshot = {
+      ...paused,
+      revision: 3,
+      state: 'playing',
+      anchorServerMs: performance.now(),
+    };
+    media.update({ key: 'cancelled', transport: globalThis.snapshot });
+    while (globalThis.mediaStore.getState().sources.cancelled?.state !== 'playing') {
+      if (performance.now() > until) throw new Error('Updated candidate did not play');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const retained = voice.isPlaying && voice.occlusion === 0.65 && candidate.mediaVolume === 0.27;
+    media.stop({ key: 'cancelled' });
+    const disposed = voice.source === undefined;
+    media.shutdown();
+    globalThis.clock.shutdown();
+    return { stagedMix, retained, disposed };
+  });
+  expect(result).toEqual({ stagedMix: true, retained: true, disposed: true });
+});
 async function fixture(
   page: Page,
   context: BrowserContext,
@@ -124,7 +492,7 @@ async function fixture(
     route.fulfill({ contentType: 'text/javascript', body: module.outputFiles[0].text }),
   );
   await context.route('https://mongoose.world:9080/**', deliver);
-  await context.route('**/shared-tone.wav', deliver);
+  await context.route('**/shared-tone.wav*', deliver);
   await page.goto(`${origin}/shared-media-fixture`);
   await page.evaluate(async () => {
     const { MediaService, SharedClock, useSharedMediaStore } = await import(
@@ -144,6 +512,10 @@ async function fixture(
     globalThis.syncCount = 0;
     media.configureSharedMedia(clock, (request) => {
       globalThis.syncCount++;
+      if (globalThis.holdSync) {
+        globalThis.heldSync = request;
+        return;
+      }
       queueMicrotask(() => media.receiveMediaSync({ ...request, transport: globalThis.snapshot }));
     });
     document.querySelector('#unlock').addEventListener('click', () => media.cacophony.resume());

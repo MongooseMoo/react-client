@@ -71,6 +71,79 @@ describe('shared file transport', () => {
     for (let i = 0; i < 10; i++) await Promise.resolve();
   };
   const grant = () => ({ key: 'tv', name: 'movie.mp4', type: 'music', transport });
+  it.each([
+    'paused',
+    'hidden',
+    'clock unavailable',
+  ])('owns a silent replacement while %s and disposes it on Stop', async (reason) => {
+    await join();
+    if (reason === 'paused') service.localPause('tv');
+    else if (reason === 'hidden') service.setSuspended(true);
+    else clock.invalidate();
+    const replacement = { ...voice, start: vi.fn(), pause: vi.fn(), dispose: vi.fn() };
+    const factory = vi.fn(() => replacement);
+    await service.attach(grant(), factory, true);
+    expect(factory).toHaveBeenCalledOnce();
+    expect(replacement.start).not.toHaveBeenCalled();
+    expect(replacement.dispose).not.toHaveBeenCalled();
+    service.stop({ key: 'tv' });
+    expect(replacement.dispose).toHaveBeenCalledOnce();
+    expect(voice.dispose).toHaveBeenCalledOnce();
+  });
+  it('resumes an accepted locally paused replacement using its existing silent voice', async () => {
+    await join();
+    service.localPause('tv');
+    const replacement = { ...voice, start: vi.fn(), pause: vi.fn(), dispose: vi.fn() };
+    const factory = vi.fn(() => replacement);
+    await service.attach(grant(), factory, true);
+    now = 12000;
+    const resumed = service.localResume('tv');
+    await flush();
+    service.receiveSync({ ...requests[1], transport });
+    await resumed;
+    expect(factory).toHaveBeenCalledOnce();
+    expect(replacement.start).toHaveBeenCalledOnce();
+    expect(voice.dispose).toHaveBeenCalledOnce();
+  });
+  it('restores an owned paused voice when replacement construction fails', async () => {
+    await join();
+    service.localPause('tv');
+    const factory = vi.fn(() => {
+      throw new Error('Replacement construction failed');
+    });
+    await service.attach(grant(), factory, true);
+    expect(factory).toHaveBeenCalledOnce();
+    expect(voice.dispose).not.toHaveBeenCalled();
+    expect(presentations.at(-1)).toMatchObject({ state: 'paused' });
+    now = 12000;
+    const resumed = service.localResume('tv');
+    await flush();
+    service.receiveSync({ ...requests[1], transport });
+    await resumed;
+    expect(voice.start).toHaveBeenCalledTimes(2);
+    expect(factory).toHaveBeenCalledOnce();
+  });
+  it('keeps one accepted replacement voice through exhausted snapshot attempts and retry', async () => {
+    await join();
+    now = 12000;
+    const replacement = { ...voice, start: vi.fn(), pause: vi.fn(), dispose: vi.fn() };
+    const factory = vi.fn(() => replacement);
+    const attached = service.attach(grant(), factory, true);
+    await flush();
+    for (let i = 0; i < 3; i++) {
+      now += 2000;
+      await vi.advanceTimersByTimeAsync(2000);
+    }
+    await attached;
+    expect(replacement.start).not.toHaveBeenCalled();
+    expect(replacement.dispose).not.toHaveBeenCalled();
+    now += 5000;
+    await vi.advanceTimersByTimeAsync(5000);
+    service.receiveSync({ ...requests[requests.length - 1], transport });
+    await flush();
+    expect(factory).toHaveBeenCalledOnce();
+    expect(replacement.start).toHaveBeenCalledOnce();
+  });
   async function join() {
     const pending = service.attach(grant(), () => voice);
     await flush();
@@ -270,21 +343,20 @@ describe('shared file transport', () => {
     expect(voice.dispose).toHaveBeenCalledOnce();
     expect(replacement.start).toHaveBeenCalledOnce();
   });
-  it.each([-500, 500])(
-    'applies signed local correction %sms once at a late entry',
-    async (value) => {
-      correction = value;
-      await join();
-      expect(cursor).toBe(value < 0 ? 10.75 : 10.25);
-      expect(voice.start).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          at: value < 0 ? 5.25 : 5.75,
-          rate: 1,
-          offsetSeconds: value < 0 ? 10.75 : 10.25,
-        }),
-      );
-    },
-  );
+  it.each([
+    -500, 500,
+  ])('applies signed local correction %sms once at a late entry', async (value) => {
+    correction = value;
+    await join();
+    expect(cursor).toBe(value < 0 ? 10.75 : 10.25);
+    expect(voice.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        at: value < 0 ? 5.25 : 5.75,
+        rate: 1,
+        offsetSeconds: value < 0 ? 10.75 : 10.25,
+      }),
+    );
+  });
   it('suspension cancels owned work and restoration rejoins the continuing cursor', async () => {
     await join();
     service.setSuspended(true);
@@ -571,41 +643,40 @@ describe('shared file transport', () => {
     expect(errors).not.toHaveBeenCalled();
     expect(presentations.at(-1)).toMatchObject({ state: 'paused' });
   });
-  it.each([1, 2])(
-    'accepts350ms output latency at rate%s while correcting a genuine stall',
-    async (rate) => {
-      service.shutdown();
-      const context = Object.assign(new EventTarget(), {
-        state: 'running',
-        currentTime: 5,
-        getOutputTimestamp: () => ({
-          contextTime: 5 + (now - 10000) / 1000 - 0.35,
-          performanceTime: now,
-        }),
-      });
-      Object.defineProperty(context, 'currentTime', { get: () => 5 + (now - 10000) / 1000 });
-      service = new SharedMediaService({
-        clock,
-        context: context as unknown as BaseAudioContext,
-        now: () => now,
-        sendSync: (request) => requests.push(request),
-      });
-      transport = { ...transport, rate };
-      await join();
-      now = 20000;
-      cursor = 20.35 * rate;
-      await vi.advanceTimersByTimeAsync(100);
-      service.receiveSync({ ...requests[1], transport });
-      await flush();
-      expect(voice.start).toHaveBeenCalledOnce();
-      now = 30000;
-      cursor = 29.35 * rate;
-      await vi.advanceTimersByTimeAsync(100);
-      service.receiveSync({ ...requests[2], transport });
-      await flush();
-      expect(voice.start).toHaveBeenCalledTimes(2);
-    },
-  );
+  it.each([
+    1, 2,
+  ])('accepts350ms output latency at rate%s while correcting a genuine stall', async (rate) => {
+    service.shutdown();
+    const context = Object.assign(new EventTarget(), {
+      state: 'running',
+      currentTime: 5,
+      getOutputTimestamp: () => ({
+        contextTime: 5 + (now - 10000) / 1000 - 0.35,
+        performanceTime: now,
+      }),
+    });
+    Object.defineProperty(context, 'currentTime', { get: () => 5 + (now - 10000) / 1000 });
+    service = new SharedMediaService({
+      clock,
+      context: context as unknown as BaseAudioContext,
+      now: () => now,
+      sendSync: (request) => requests.push(request),
+    });
+    transport = { ...transport, rate };
+    await join();
+    now = 20000;
+    cursor = 20.35 * rate;
+    await vi.advanceTimersByTimeAsync(100);
+    service.receiveSync({ ...requests[1], transport });
+    await flush();
+    expect(voice.start).toHaveBeenCalledOnce();
+    now = 30000;
+    cursor = 29.35 * rate;
+    await vi.advanceTimersByTimeAsync(100);
+    service.receiveSync({ ...requests[2], transport });
+    await flush();
+    expect(voice.start).toHaveBeenCalledTimes(2);
+  });
   it('rejects discontinuity and immutable cue edits before changing a retiring audible mix', async () => {
     const initial = {
       seq: 0,

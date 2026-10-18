@@ -496,43 +496,50 @@ export class SharedMediaService {
   private async reconcile(source: Source, fresh: boolean): Promise<void> {
     const operation = source.operation,
       signal = source.abort.signal;
-    if (this.suspended || source.localPaused || source.preparing === operation) return;
-    clearTimeout(source.retryTimer);
-    source.retryTimer = undefined;
-    const serverNow = this.options.clock.getServerNow();
-    if (serverNow === undefined) {
-      this.present(source, 'preparing', 'Measuring shared time');
-      return;
-    }
-    if (this.options.clock.estimate().clockId !== source.grant.transport.clockId) {
-      this.remove(source);
-      return;
-    }
+    if (source.preparing === operation) return;
     source.preparing = operation;
-    this.present(source, 'preparing');
-    const deadline = setTimeout(() => {
-      if (!this.current(source, operation)) return;
-      const previous = source.retiringActive ? source.retiringVoice : undefined,
-        previousFactory = source.retiringFactory;
-      if (previous) source.retiringVoice = undefined;
-      this.cancelOperation(source);
-      if (previous) {
-        source.voice?.dispose();
-        source.voice = previous;
-        source.factory = previousFactory ?? source.factory;
-        source.retiringFactory = undefined;
-        source.voice.activate?.();
-        source.rendering = true;
-        source.settled = true;
-        this.present(source, 'playing', 'Keeping the current source; its replacement timed out');
-        return;
-      }
-      source.settled = true;
-      this.present(source, 'unavailable', 'Shared media preparation timed out');
-    }, 15000);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
+      // Acceptance transfers ownership even when preparation must wait for Resume or a clock.
+      // The silent voice ensures remove() can always dispose the accepted asset.
       source.voice ??= source.factory();
       const voice = source.voice;
+      if (this.suspended || source.localPaused) {
+        this.present(source, 'paused');
+        return;
+      }
+      clearTimeout(source.retryTimer);
+      source.retryTimer = undefined;
+      const serverNow = this.options.clock.getServerNow();
+      if (serverNow === undefined) {
+        this.present(source, 'preparing', 'Measuring shared time');
+        return;
+      }
+      if (this.options.clock.estimate().clockId !== source.grant.transport.clockId) {
+        this.remove(source);
+        return;
+      }
+      this.present(source, 'preparing');
+      deadline = setTimeout(() => {
+        if (!this.current(source, operation)) return;
+        const previous = source.retiringActive ? source.retiringVoice : undefined,
+          previousFactory = source.retiringFactory;
+        if (previous) source.retiringVoice = undefined;
+        this.cancelOperation(source);
+        if (previous) {
+          source.voice?.dispose();
+          source.voice = previous;
+          source.factory = previousFactory ?? source.factory;
+          source.retiringFactory = undefined;
+          source.voice.activate?.();
+          source.rendering = true;
+          source.settled = true;
+          this.present(source, 'playing', 'Keeping the current source; its replacement timed out');
+          return;
+        }
+        source.settled = true;
+        this.present(source, 'unavailable', 'Shared media preparation timed out');
+      }, 15000);
       if (source.grant.transport.loop && voice.supportsClipLoop !== true)
         throw new MediaCapabilityUnavailable(
           'Shared clip loops require a prepared native buffer source; HTML clip loops are unsupported',
@@ -591,6 +598,7 @@ export class SharedMediaService {
         }
         source.occurrence = position.occurrence;
         if (position.state !== 'playing') {
+          voice.activate?.();
           this.retirePrevious(source, this.options.context.currentTime);
           source.settled = true;
           this.present(source, position.state === 'preparing' ? 'preparing' : 'paused');
@@ -671,11 +679,8 @@ export class SharedMediaService {
       source.voice?.pause();
       source.rendering = false;
       source.settled = true;
-      if (
-        source.retiringVoice &&
-        source.retiringActive &&
-        !(error instanceof MediaSyncUnavailable)
-      ) {
+      if (source.retiringVoice && !(error instanceof MediaSyncUnavailable)) {
+        const active = source.retiringActive ?? false;
         source.voice?.dispose();
         source.voice = source.retiringVoice;
         source.factory = source.retiringFactory ?? source.factory;
@@ -683,10 +688,10 @@ export class SharedMediaService {
         source.retiringFactory = undefined;
         source.retiringActive = false;
         source.voice.activate?.();
-        source.rendering = true;
+        source.rendering = active;
         this.present(
           source,
-          'playing',
+          active ? 'playing' : 'paused',
           'Keeping the current source; its replacement could not be prepared',
         );
         return;
