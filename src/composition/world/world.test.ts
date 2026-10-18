@@ -284,6 +284,50 @@ describe('verified bounded score delivery', () => {
 });
 
 describe('connection-owned editor requests', () => {
+  it.each([
+    false,
+    true,
+  ])('stages a whole-envelope boundary save (existing library %s) instead of rejecting the real UUID packet', async (existing) => {
+    vi.useFakeTimers();
+    const fields = {
+      name: 'n',
+      ...(existing ? { libraryId: 'lib', expectedLibraryRevision: 1 } : {}),
+    };
+    let boundary: CanonicalScore | undefined;
+    for (let count = 1000; count < 1600; count++) {
+      const candidate = {
+        ...score,
+        parts: [
+          {
+            ...score.parts[0],
+            notes: Array.from({ length: count }, () => [0, 1, 60, 100] as const),
+          },
+        ],
+      };
+      const scoreJson = asciiJson(candidate);
+      const previewSize = asciiJson({ ...fields, scoreJson, requestId: 'preview' }).length;
+      if (previewSize <= 16384 && previewSize + 29 > 16384) {
+        boundary = candidate;
+        break;
+      }
+    }
+    expect(boundary).toBeDefined();
+    const sent: string[] = [];
+    const client = new WorldMusicClient((name, payload) => {
+      sent.push(name);
+      client.receive({
+        requestId: JSON.parse(payload).requestId,
+        status: 'denied',
+        message: 'Upload selected',
+      });
+    });
+    const saving = client.save({ ...fields, score: boundary as CanonicalScore });
+    const failure = expect(saving).rejects.toThrow('Upload selected');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await failure;
+    expect(sent[0]).toBe('Client.Midi.EditorUploadBegin');
+    client.reset();
+  });
   it('does not let cancelled requests postpone future traffic indefinitely', async () => {
     vi.useFakeTimers();
     const send = vi.fn();

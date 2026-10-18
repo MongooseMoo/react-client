@@ -3,6 +3,9 @@ import { GMCPClientMidi } from './Midi';
 import type { LiveOriginRenderer } from '../../midi/LiveOriginRenderer';
 import type { MidiMessage } from '../../MidiService';
 import { usePreferences } from '../../stores/preferencesStore';
+import { GmcpSession } from '../session';
+import type MudClient from '../../client';
+import type { TelnetParser } from '../../telnet';
 
 const packages: GMCPClientMidi[] = [];
 const previous = usePreferences.getState().midi;
@@ -42,6 +45,40 @@ const input = (midi: GMCPClientMidi, message: Omit<MidiMessage, 'rawData'>) =>
   });
 
 describe('Client.Midi 2', () => {
+  it.each([
+    'unknown-status',
+    'oversized-message',
+  ])('rejects a malformed correlated %s reply through the real session without retrying', async (kind) => {
+    vi.useFakeTimers();
+    const sendGmcp = vi.fn();
+    const client = { connected: true, registerDisconnectReset: vi.fn() } as unknown as MudClient;
+    const session = new GmcpSession(client);
+    client.gmcp = session;
+    session.attachTransport({ sendGmcp } as unknown as TelnetParser);
+    session.markReady();
+    const midi = session.register(GMCPClientMidi);
+    packages.push(midi);
+    try {
+      const pending = midi.world.request('EditorPublish', {
+        libraryId: 'lib',
+        expectedLibraryRevision: 1,
+        published: true,
+      });
+      const failure = expect(pending).rejects.toThrow('Invalid world music protocol data');
+      await vi.advanceTimersByTimeAsync(1);
+      const { requestId } = JSON.parse(sendGmcp.mock.calls[0][1]);
+      const fields =
+        kind === 'unknown-status'
+          ? { status: 'bogus' }
+          : { status: 'ok', message: 'x'.repeat(257) };
+      session.receive('Client.Midi.EditorReply', JSON.stringify({ requestId, ...fields }));
+      await failure;
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(sendGmcp).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('network reset preserves private capture and its lease, while explicit panic still notifies', () => {
     const { midi, send } = setup();
     const panic = vi.fn();

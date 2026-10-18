@@ -223,7 +223,11 @@ export class WorldMusicClient {
       };
       let inline = true;
       try {
-        encodeEditorRequest(operation, { ...fields, scoreJson, requestId: 'preview' });
+        encodeEditorRequest(operation, {
+          ...fields,
+          scoreJson,
+          requestId: '00000000-0000-4000-8000-000000000000',
+        });
       } catch (error) {
         if (error instanceof RangeError) inline = false;
         else throw error;

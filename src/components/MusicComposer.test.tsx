@@ -382,6 +382,21 @@ describe('music composer keyboard controls and capture', () => {
     expect(screen.getByRole('textbox', { name: 'Composition name' })).toHaveValue('World copy');
     expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('C5 (72)');
     expect(mocks.start).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByRole('textbox', { name: 'Composition name' })).toHaveValue(
+      'Untitled composition',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(screen.getByRole('textbox', { name: 'Composition name' })).toHaveValue('World copy');
+    const pendingLoad = mocks.worldLoad;
+    fireEvent.input(screen.getByRole('textbox', { name: 'Composition name' }), {
+      target: { value: 'Newer edit' },
+    });
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Composition name' }));
+    expect(() => act(() => pendingLoad?.(loaded, 'Old response'))).toThrow(
+      'draft or editor operation changed',
+    );
+    expect(screen.getByRole('textbox', { name: 'Composition name' })).toHaveValue('Newer edit');
     act(() => usePersonalDataStore.getState().setVisitor(true));
     expect(screen.queryByText('World draft: World copy')).not.toBeInTheDocument();
     act(() => stale?.(loaded, 'Stale owner copy'));

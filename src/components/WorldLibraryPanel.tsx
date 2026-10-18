@@ -76,6 +76,8 @@ export default function WorldLibraryPanel({ client, draft, onLoad }: WorldLibrar
   const [error, setError] = useState('');
   const epoch = useRef(0);
   const pending = useRef<AbortController>();
+  const currentDraft = useRef(draft);
+  currentDraft.current = draft;
 
   const run = useCallback(
     async <T,>(work: (signal: AbortSignal) => Promise<T>, commit: (result: T) => void) => {
@@ -170,7 +172,7 @@ export default function WorldLibraryPanel({ client, draft, onLoad }: WorldLibrar
     void run(
       async (signal) => {
         const worldName = label(name);
-        const score = compileComposition(draft, undefined, true, crypto.randomUUID());
+        const score = compileComposition(draft, undefined, false, crypto.randomUUID());
         return world.save(
           {
             name: worldName,
@@ -308,10 +310,15 @@ export default function WorldLibraryPanel({ client, draft, onLoad }: WorldLibrar
           onClick={() => {
             if (!selected) return;
             const target = selected;
+            const previousDraft = draft;
             void run(
               (signal) => world.load({ libraryId: target.libraryId }, signal),
               ({ score, entry: loaded }) => {
                 accepted(loaded);
+                if (currentDraft.current !== previousDraft)
+                  throw new Error(
+                    'Load cancelled because the draft changed. Load again to replace it.',
+                  );
                 onLoad(score, typeof loaded.name === 'string' ? loaded.name : target.name);
                 setStatus('Loaded into the local composer. Save local edits explicitly.');
               },

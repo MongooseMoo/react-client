@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type MudClient from '../client';
-import { compileComposition, newComposition } from '../composition/model';
+import { compileComposition, newComposition, type CompositionDraft } from '../composition/model';
 import WorldLibraryPanel from './WorldLibraryPanel';
 
 const original = {
@@ -12,9 +12,9 @@ const original = {
   published: false,
   canEdit: true,
 };
-function setup() {
+function setup(initialDraft?: CompositionDraft) {
   let reset = () => {};
-  const draft = { ...newComposition(), name: 'Local café 🎹' };
+  const draft = initialDraft ?? { ...newComposition(), name: 'Local café 🎹' };
   draft.parts = draft.parts.map((part) => ({ ...part, name: 'Piano 🎹' }));
   const score = compileComposition(draft);
   const world = {
@@ -53,12 +53,14 @@ function setup() {
   };
   const client = { gmcp: { handlers: { 'Client.Midi': { world } } } } as unknown as MudClient;
   const onLoad = vi.fn();
-  render(<WorldLibraryPanel client={client} draft={draft} onLoad={onLoad} />);
+  const view = render(<WorldLibraryPanel client={client} draft={draft} onLoad={onLoad} />);
   return {
     world,
     draft,
     score,
     onLoad,
+    client,
+    view,
     reset: () => {
       world.generation++;
       reset();
@@ -75,6 +77,54 @@ async function select() {
 afterEach(cleanup);
 
 describe('world music library', () => {
+  it('saves every authored part regardless of audition mute and solo state', async () => {
+    const draft = newComposition();
+    draft.parts = ['muted', 'solo', 'other'].map((id, index) => ({
+      ...draft.parts[0],
+      id,
+      mute: index === 0,
+      solo: index === 1,
+    }));
+    draft.patterns = draft.patterns.map((pattern) => ({
+      ...pattern,
+      parts: draft.parts.map((part, index) => ({
+        ...pattern.parts[0],
+        partId: part.id,
+        notes: [[0, 480, 60 + index, 100]],
+      })),
+    }));
+    const { world } = setup(draft);
+    fireEvent.input(screen.getByRole('textbox', { name: 'World name (ASCII)' }), {
+      target: { value: 'Complete arrangement' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save as new private composition' }));
+    await waitFor(() => expect(world.save).toHaveBeenCalledOnce());
+    expect(world.save.mock.calls[0][0].score).toMatchObject({
+      parts: [
+        { id: 'muted', notes: [[0, 480, 60, 100]] },
+        { id: 'solo', notes: [[0, 480, 61, 100]] },
+        { id: 'other', notes: [[0, 480, 62, 100]] },
+      ],
+    });
+  });
+  it('keeps edits made during a delayed load and reports why it was cancelled', async () => {
+    const { world, view, client, draft, onLoad, score } = setup();
+    let finish: (reply: Awaited<ReturnType<typeof world.load>>) => void = () => {};
+    world.load.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await select();
+    fireEvent.click(screen.getByRole('button', { name: 'Load into composer' }));
+    const edited = { ...draft, name: 'New local edit' };
+    view.rerender(<WorldLibraryPanel client={client} draft={edited} onLoad={onLoad} />);
+    await act(async () => finish({ score, entry: { status: 'ok', ...original } }));
+    expect(onLoad).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('draft changed'));
+    expect(screen.getByText(/New local edit/)).toBeInTheDocument();
+  });
   it('sends only on explicit action and keeps Unicode local names separate from the ASCII label', async () => {
     const { world, draft } = setup();
     expect(world.list).not.toHaveBeenCalled();

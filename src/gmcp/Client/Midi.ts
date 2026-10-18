@@ -15,7 +15,7 @@ import type { LiveOriginRenderer } from '../../midi/LiveOriginRenderer';
 import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
 import { WorldMusicClient } from '../../composition/world/WorldMusicClient';
-import { decodeEditorReply } from '../../composition/world/protocol';
+import { object } from '../../composition/world/protocol';
 
 export class GMCPMessageClientMidiNote extends GMCPMessage {
   readonly note!: number;
@@ -76,13 +76,17 @@ const midiReleaseAll = gmcpJsonMessage<'NoteReleaseAll', { originId: string }>('
   decode: decodeLiveReleaseAll,
   encode: (value) => value,
 });
-const midiEditorReply = gmcpJsonMessage<'EditorReply', ReturnType<typeof decodeEditorReply>>(
+const midiEditorReply = gmcpJsonMessage<
   'EditorReply',
-  {
-    decode: (value: unknown) => decodeEditorReply(value),
-    encode: (value) => value,
+  Record<string, unknown> & { requestId: string }
+>('EditorReply', {
+  decode: (value: unknown) => {
+    const reply = object(value);
+    if (typeof reply.requestId !== 'string') throw new TypeError('Invalid editor reply identity');
+    return { ...reply, requestId: reply.requestId };
   },
-);
+  encode: (value) => value,
+});
 const GMCPClientMidiBase = GMCPPackage.with({
   packageName: 'Client.Midi',
   messages: [

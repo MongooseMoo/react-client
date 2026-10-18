@@ -212,6 +212,7 @@ export default function MusicComposer({ client }: { client: MudClient }) {
     [client, preferences.enabled, store],
   );
   const active = operation !== 'idle';
+  const worldLoadEpoch = epoch.current;
   const stop = useCallback(() => {
     epoch.current++;
     const recording = capture.current;
@@ -1677,8 +1678,28 @@ export default function MusicComposer({ client }: { client: MudClient }) {
                   ownerKey(current.owner) !== confirmedOwner
                 )
                   return;
+                const editor = store.getState();
+                if (editor.history.present !== draft || epoch.current !== worldLoadEpoch)
+                  throw new Error(
+                    'Load cancelled because the draft or editor operation changed. Load again.',
+                  );
+                if (
+                  capture.current ||
+                  editor.pendingTake ||
+                  operation === 'preparing' ||
+                  operation === 'recording'
+                )
+                  throw new Error(
+                    'Finish the current operation and commit or discard captured notes before loading.',
+                  );
+                const loaded = draftFromScore(score, name);
                 stop();
-                store.getState().replaceDraft(draftFromScore(score, name));
+                if (!store.getState().edit(() => loaded))
+                  throw new Error(
+                    store.getState().error || 'World composition could not be loaded.',
+                  );
+                store.getState().selectPattern(loaded.patterns[0]?.id ?? '');
+                store.getState().selectPart(loaded.parts[0]?.id ?? '');
               }}
             />
           </Suspense>
