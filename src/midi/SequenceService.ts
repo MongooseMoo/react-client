@@ -304,13 +304,20 @@ export class SequenceService {
     const contentId = data.contentId ?? source.active.contentId;
     const next: Material = { transport, contentId, data: data.midi ?? source.active.data };
     if (data.replaceFromTick !== undefined && data.effectiveServerMs !== undefined) {
-      if (!data.midi) return;
+      if (!data.midi) {
+        this.options.error?.(source.key, 'Replacement score content is missing');
+        return;
+      }
       const now = this.options.clock.getServerNow();
-      if (now === undefined) return;
+      if (now === undefined) {
+        this.options.error?.(source.key, 'Replacement requires a current shared clock');
+        return;
+      }
       const replaceTick = data.replaceFromTick;
-      const boundaryDocument = this.documents(source.active).find(
-        (doc) => !doc.window || (replaceTick >= doc.from && replaceTick < doc.window.toTick),
-      );
+      const boundaryDocument =
+        this.documents(source.active).find(
+          (doc) => !doc.window || (replaceTick >= doc.from && replaceTick < doc.window.toTick),
+        ) ?? this.documents(source.active).find((doc) => doc.window?.toTick === replaceTick);
       const nextDocument = this.documents(next).find(
         (doc) => !doc.window || (replaceTick >= doc.from && replaceTick < doc.window.toTick),
       );
@@ -332,7 +339,15 @@ export class SequenceService {
         },
         now,
       );
-      if (decision !== 'pending' && decision !== 'late-replacement') return;
+      if (decision !== 'pending' && decision !== 'late-replacement') {
+        if (decision === 'rejected')
+          this.options.error?.(
+            source.key,
+            'Replacement revision or boundary conflicts with the accepted edit',
+          );
+        return;
+      }
+      source.windowMaterial = undefined;
       const superseded = source.pending,
         oldBoundary = previousBoundary;
       source.pending = next;
@@ -372,11 +387,17 @@ export class SequenceService {
       if (data.midi && 'stream' in data.midi && 'stream' in source.active.data) {
         const material = this.mergeWindows(source, data.midi);
         if (!material) return;
+        const base = source.active;
         source.windowMaterial = material;
         const generation = source.generation;
         void this.prepareMaterial(source, material)
           .then(() => {
-            if (!this.current(source, generation) || source.windowMaterial !== material) return;
+            if (
+              !this.current(source, generation) ||
+              source.windowMaterial !== material ||
+              source.active !== base
+            )
+              return;
             source.active = material;
             source.windowMaterial = undefined;
             this.wake();
@@ -767,7 +788,6 @@ export class SequenceService {
       }, 25);
   }
   private render(source: Source, now: number): void {
-    if (source.ended) return;
     source.workRemaining = 20000;
     let pending = source.gate.pending;
     if (
@@ -787,6 +807,11 @@ export class SequenceService {
     const documents = this.documents(source.active);
     if (this.prepared.get(source.active) !== source.output) return;
     if (!documents.length) return;
+    if (source.ended) {
+      this.releaseVoices(source, documents);
+      if (!source.voices.size) this.park(source);
+      return;
+    }
     const current =
       documents.find(
         (doc) =>
@@ -1187,6 +1212,17 @@ export class SequenceService {
     source.submitted.clear();
     source.progress.clear();
     source.graph?.cancelFrom(source.output?.context.currentTime ?? 0);
+    if (source.ended) {
+      source.ready = false;
+      source.graph?.dispose();
+      source.graph = undefined;
+      source.output?.dispose?.();
+      source.output = undefined;
+      source.releaseClock?.();
+      source.releaseClock = undefined;
+      source.releaseAdmission?.();
+      source.releaseAdmission = undefined;
+    }
   }
   private park(source: Source): void {
     source.unsubscribeReady?.();

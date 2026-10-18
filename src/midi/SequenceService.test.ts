@@ -523,6 +523,97 @@ describe('shared score ownership', () => {
     expect(s.mix.dispose).toHaveBeenCalledOnce();
     s.service.shutdown();
   });
+  it('retires admission when a final release is interrupted by suspension', async () => {
+    const budget = new SequenceBudget();
+    const s = scheduler(
+      {
+        ...score,
+        durationTicks: 1920,
+        parts: [{ ...part, controls: [], notes: [[960, 960, 60, 100]] }],
+      },
+      budget,
+    );
+    await s.service.play(s.request);
+    s.time(1325);
+    s.time(2001);
+    s.service.setSuspended(true);
+    s.service.setSuspended(false);
+    await settled();
+    expect(s.mix.dispose).toHaveBeenCalledOnce();
+    const leases = Array.from({ length: 8 }, () => budget.acquireSource());
+    expect(leases.every(Boolean)).toBe(true);
+    for (const lease of leases) lease?.();
+    s.service.shutdown();
+  });
+  it('never lets an older window preparation undo a committed replacement', async () => {
+    const s = scheduler();
+    const window = (seq: number, contentId: string, revision: number, program: number) => ({
+      seq,
+      fromTick: seq * 3840,
+      toTick: (seq + 1) * 3840,
+      anchorServerMs: 1000 + seq * 2000,
+      contentId,
+      revision,
+      tempos: [{ tick: seq * 3840, bpm: 120 }],
+      meters: [{ tick: seq * 3840, numerator: 4, denominator: 4, barOriginTick: 0 }],
+      parts: [
+        {
+          ...part,
+          program,
+          controls: [],
+          notes: [[seq * 3840 + 960, 100, program === 50 ? 65 : 60, 100]],
+        },
+      ],
+    });
+    const midi = (seq: number, id: string, revision: number, program: number) =>
+      decodeSequenceData(
+        { version: 1, stream: true, windows: [window(seq, id, revision, program)] },
+        id,
+        revision,
+      );
+    await s.service.play({ ...s.request, midi: midi(0, 'content', 1, 0) });
+    let finishOld = () => {};
+    s.output.prepare.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishOld = resolve;
+        }),
+    );
+    s.service.update({ ...s.request, midi: midi(1, 'content', 1, 40) });
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: midi(1, 'new', 2, 50),
+      transport: { ...s.request.transport, revision: 2 },
+      replaceFromTick: 3840,
+      effectiveServerMs: 3000,
+    });
+    await settled();
+    s.time(3001);
+    finishOld();
+    await settled();
+    s.time(3325);
+    expect(s.starts.map((v) => [v.note.note, v.note.program])).toEqual([[65, 50]]);
+    expect(s.error).not.toHaveBeenCalled();
+    expect(s.service.version('music')?.revision).toBe(2);
+    s.service.shutdown();
+  });
+  it('reports a future edit received without a current clock instead of silently losing it', async () => {
+    const s = scheduler({ ...score, durationTicks: 7680 });
+    await s.service.play(s.request);
+    s.clock.getServerNow = () => undefined as unknown as number;
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: { version: 1, score: { ...score, contentId: 'new' } },
+      transport: { ...s.request.transport, revision: 2 },
+      replaceFromTick: 3840,
+      effectiveServerMs: 3000,
+    });
+    expect(s.error).toHaveBeenCalledWith('music', 'Replacement requires a current shared clock');
+    expect(s.service.version('music')?.revision).toBe(1);
+    s.service.shutdown();
+  });
   it('accepts a fractional boundary serialized with MOO precision', async () => {
     const material = {
       ...score,
