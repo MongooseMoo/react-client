@@ -2,6 +2,7 @@ import {
   useCallback,
   useId,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -12,7 +13,7 @@ import { useStore } from 'zustand';
 import type MudClient from '../client';
 import { midiService } from '../MidiService';
 import { usePreferences } from '../stores/preferencesStore';
-import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
+import { personalStorageKey, ownerKey, usePersonalDataStore } from '../stores/personalDataStore';
 import { createComposerStore } from '../stores/composerStore';
 import {
   compileComposition,
@@ -38,7 +39,7 @@ function CommitInput({
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
   value: string | number;
-  onChange: (event: { currentTarget: HTMLInputElement }) => void;
+  onChange: (event: { currentTarget: HTMLInputElement }) => boolean;
 }) {
   const [text, setText] = useState(String(value)),
     [error, setError] = useState('');
@@ -53,7 +54,11 @@ function CommitInput({
         throw new RangeError('Enter a number before committing this field.');
       if (!element.checkValidity())
         throw new RangeError('Enter a valid value within the field limits.');
-      onChange({ currentTarget: element });
+      if (onChange({ currentTarget: element }) === false) {
+        setText(String(value));
+        setError('Change rejected. Previous value restored.');
+        return;
+      }
       setError('');
     } catch (error) {
       setError(messageOf(error));
@@ -98,12 +103,22 @@ const eventText = (
     )
     .join('\n');
 
+const privateComposerStores = new WeakMap<MudClient, ReturnType<typeof createComposerStore>>();
+function composerStore(client: MudClient) {
+  let store = privateComposerStores.get(client);
+  if (!store) {
+    store = createComposerStore();
+    privateComposerStores.set(client, store);
+  }
+  return store;
+}
+
 export default function MusicComposer({ client }: { client: MudClient }) {
   const fieldPrefix = useId();
   const resources = useMemo(
     () => ({
       client,
-      store: createComposerStore(),
+      store: composerStore(client),
       worker: new SmfWorkerClient(),
       monitorId: `local:monitor:${crypto.randomUUID()}`,
     }),
@@ -119,6 +134,7 @@ export default function MusicComposer({ client }: { client: MudClient }) {
   const preferences = usePreferences((state) => state.midi);
   const personal = usePersonalDataStore();
   const owner = personalStorageKey('compositions', personal.owner);
+  const confirmedOwner = personal.owner ? ownerKey(personal.owner) : undefined;
   const midi = client.gmcp.handlers['Client.Midi'] as GMCPClientMidi | undefined;
   const liveStatus = useSyncExternalStore(
     midi?.subscribeLiveStatus ?? (() => () => {}),
@@ -149,14 +165,12 @@ export default function MusicComposer({ client }: { client: MudClient }) {
   const [programText, setProgramText] = useState('');
   const [now, setNow] = useState(0);
   const [deviceVersion, setDeviceVersion] = useState(0);
-  const [pendingTake, setPendingTake] = useState<{
-    result: ReturnType<CompositionCapture['finish']>;
-    overdub: boolean;
-  }>();
+  const { pendingTake, setPendingTake } = state;
   const capture = useRef<CompositionCapture>();
   const captureTimer = useRef<ReturnType<typeof setTimeout>>();
   const releaseRelay = useRef<() => void>();
   const captureStart = useRef(0);
+  const captureOverdub = useRef(true);
   const epoch = useRef(0);
   const finishRecording = useRef<() => void>(() => {});
   const audition = useMemo(
@@ -194,7 +208,17 @@ export default function MusicComposer({ client }: { client: MudClient }) {
   const active = operation !== 'idle';
   const stop = useCallback(() => {
     epoch.current++;
+    const recording = capture.current;
     capture.current = undefined;
+    if (recording && performance.now() >= captureStart.current) {
+      store.getState().setPendingTake({
+        result: recording.finish(performance.now()),
+        overdub: captureOverdub.current,
+      });
+      store
+        .getState()
+        .report('Recording interrupted. Captured notes retained for retry or explicit discard.');
+    }
     if (captureTimer.current !== undefined) clearTimeout(captureTimer.current);
     captureTimer.current = undefined;
     releaseRelay.current?.();
@@ -202,10 +226,10 @@ export default function MusicComposer({ client }: { client: MudClient }) {
     audition.stop();
     worker.dispose();
     setOperation('idle');
-  }, [audition, worker]);
+  }, [audition, worker, store]);
   const edit = (change: (draft: CompositionDraft) => CompositionDraft) => {
     audition.stop();
-    store.getState().edit(change);
+    return store.getState().edit(change);
   };
   const editMaterial = (change: (value: PatternPart) => PatternPart) => {
     if (!pattern || !part) return;
@@ -233,14 +257,15 @@ export default function MusicComposer({ client }: { client: MudClient }) {
       ),
     }));
   };
-  useEffect(() => {
-    stop();
-    worker.dispose();
-    monitorRenderer.reset();
-    monitorKeys.current.clear();
-    store.getState().setOwner(owner);
-    setPendingTake(undefined);
-  }, [owner, stop, worker, monitorRenderer, store]);
+  useLayoutEffect(() => {
+    const previous = store.getState().confirmedOwner;
+    if (confirmedOwner && previous && confirmedOwner !== previous) {
+      stop();
+      monitorRenderer.reset();
+      monitorKeys.current.clear();
+    }
+    store.getState().setOwner(owner, confirmedOwner);
+  }, [owner, confirmedOwner, stop, monitorRenderer, store]);
   useEffect(
     () => () => {
       stop();
@@ -364,6 +389,7 @@ export default function MusicComposer({ client }: { client: MudClient }) {
   );
   const commitRecording = (result: ReturnType<CompositionCapture['finish']>, append: boolean) => {
     const target = result.take;
+    capture.current = undefined;
     stop();
     let evictedTakes = 0;
     edit((value) => {
@@ -427,7 +453,7 @@ export default function MusicComposer({ client }: { client: MudClient }) {
       store
         .getState()
         .report(
-          `Recorded ${result.notes.length} notes. ${evictedTakes ? `${evictedTakes} oldest raw recording takes evicted to fit history limits; pattern notes retained.` : 'Original timestamps retained.'}`,
+          `Recorded ${result.notes.length} notes. ${evictedTakes ? `${evictedTakes} raw recording takes omitted to fit history limits; pattern notes retained.` : 'Original timestamps retained.'}`,
         );
     }
   };
@@ -479,6 +505,7 @@ export default function MusicComposer({ client }: { client: MudClient }) {
       const anchor = await audition.start(playbackScore, record ? countIn : 0);
       if (operationEpoch !== epoch.current) return;
       if (record && pattern && part) {
+        captureOverdub.current = overdub;
         capture.current = new CompositionCapture({
           score,
           partId: part.id,
@@ -994,7 +1021,7 @@ export default function MusicComposer({ client }: { client: MudClient }) {
                 value={beats(pattern.durationTicks)}
                 onChange={(event) => {
                   const durationTicks = ticks(event.currentTarget.value);
-                  edit((value) => ({
+                  return edit((value) => ({
                     ...value,
                     patterns: value.patterns.map((item) =>
                       item.id === pattern.id ? { ...item, durationTicks } : item,
@@ -1339,7 +1366,7 @@ export default function MusicComposer({ client }: { client: MudClient }) {
                   value={beats(section.lengthTicks)}
                   onChange={(event) => {
                     const lengthTicks = ticks(event.currentTarget.value);
-                    edit((value) => ({
+                    return edit((value) => ({
                       ...value,
                       sections: value.sections.map((item) =>
                         item.id === section.id ? { ...item, lengthTicks } : item,

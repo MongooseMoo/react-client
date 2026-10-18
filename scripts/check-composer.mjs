@@ -23,6 +23,8 @@ try {
   await page.keyboard.press('Enter');
   await page.getByRole('button',{name:'Undo',exact:true}).click();
   await expect(partName).toHaveValue('Piano');
+  await page.getByRole('textbox',{name:'Composition name'}).fill('Reconnect kept unsaved draft');
+  await page.keyboard.press('Enter');
   // Native keyboard submission, followed by editable linear note and undo controls.
   await page.getByRole('spinbutton', { name: 'Start beat', exact: true }).fill('0.25');
   await page.getByRole('spinbutton', { name: 'Velocity', exact: true }).focus();
@@ -65,7 +67,13 @@ try {
     await new Promise(resolve => setTimeout(resolve, 180));
     window.composerProbe.keyboard.emit([0x80, 64, 0]);
   });
+  await expect(page.getByRole('button',{name:'Save locally'})).toBeDisabled();
+  await expect(page.getByRole('textbox',{name:'Composition name'})).toHaveValue('Reconnect kept unsaved draft');
+  await expect(page.getByRole('button',{name:'Stop private playback or recording'})).toBeEnabled();
   await page.getByRole('button', { name: 'Stop private playback or recording' }).click();
+  await expect(page.getByRole('button',{name:'Save locally'})).toBeDisabled();
+  await page.evaluate(()=>window.composerProbe.confirmOwner());
+  await expect(page.getByRole('button',{name:'Save locally'})).toBeEnabled();
   await expect(page.getByText('1 original recording takes retained.')).toBeVisible();
   await expect(page.getByRole('list', { name: 'Pattern notes' })).toContainText('E4 (64)');
   assert.equal(await page.evaluate(() => window.composerProbe.sent.filter(([name]) => name === 'Client.Midi.Note').length), 0);

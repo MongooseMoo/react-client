@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   release: vi.fn(),
   suspend: vi.fn(),
   monitorNote: vi.fn(async () => {}),
+  outputChanged: undefined as (() => void) | undefined,
+  playbackChanged: undefined as (() => void) | undefined,
 }));
 vi.mock('../MidiService', () => ({
   midiService: {
@@ -24,7 +26,12 @@ vi.mock('../MidiService', () => ({
         mocks.input = undefined;
       };
     },
-    subscribeOutput: () => () => {},
+    subscribeOutput: (listener: () => void) => {
+      mocks.outputChanged = listener;
+      return () => {
+        mocks.outputChanged = undefined;
+      };
+    },
     subscribeInputConnection: () => () => {},
     onDeviceChange: () => () => {},
   },
@@ -52,6 +59,12 @@ vi.mock('../midi/LiveOriginRenderer', () => ({
 describe('music composer keyboard controls and capture', () => {
   let now = 0;
   let cleanup = () => {};
+  let media: {
+    cacophony: object;
+    paused: boolean;
+    subscribePlayback(listener: () => void): () => void;
+  };
+  let client: MudClient;
   beforeEach(() => {
     vi.useFakeTimers();
     vi.spyOn(performance, 'now').mockImplementation(() => now);
@@ -67,8 +80,18 @@ describe('music composer keyboard controls and capture', () => {
     now = 0;
     usePreferences.getState().setMidi({ ...usePreferences.getState().midi, enabled: true });
     usePersonalDataStore.setState({ owner: undefined, policyReady: true, visitor: false });
-    const client = {
-      media: { cacophony: {}, paused: false, subscribePlayback: () => () => {} },
+    media = {
+      cacophony: {},
+      paused: false,
+      subscribePlayback: (listener) => {
+        mocks.playbackChanged = listener;
+        return () => {
+          mocks.playbackChanged = undefined;
+        };
+      },
+    };
+    client = {
+      media,
       gmcp: {
         handlers: {
           'Client.Midi': {
@@ -110,6 +133,96 @@ describe('music composer keyboard controls and capture', () => {
     if (!form) throw new Error('The note editor must be a native form');
     fireEvent.submit(form);
   }
+
+  const alice = { runtime: 'runtime', playerUuid: 'alice', playerRef: '#1' },
+    bob = { runtime: 'runtime', playerUuid: 'bob', playerRef: '#2' };
+  const confirm = (owner = alice) => act(() => usePersonalDataStore.getState().confirm(owner));
+
+  it('preserves an unsaved draft and active capture through real owner clear and same-character confirmation', async () => {
+    confirm();
+    submitNote();
+    const name = screen.getByRole('textbox', { name: 'Composition name' });
+    fireEvent.input(name, { target: { value: 'Unsaved private arrangement' } });
+    fireEvent.blur(name);
+    await record();
+    input(true, 64, 1200);
+    act(() => usePersonalDataStore.getState().clear());
+    expect(screen.getByRole('button', { name: 'Save locally' })).toBeDisabled();
+    expect(name).toHaveValue('Unsaved private arrangement');
+    expect(
+      screen.getByRole('button', { name: 'Stop private playback or recording' }),
+    ).toBeEnabled();
+    expect(mocks.release).not.toHaveBeenCalled();
+    confirm();
+    input(false, 64, 1500);
+    stop();
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('C4 (60)');
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('E4 (64)');
+    expect(name).toHaveValue('Unsaved private arrangement');
+    expect(screen.getByRole('button', { name: 'Save locally' })).toBeEnabled();
+  });
+
+  it.each(['pause', 'output'] as const)(
+    'finishes capture into an owner-private pending take after %s and restores it only to that owner',
+    async (interruption) => {
+      confirm();
+      await record();
+      input(true, 67, 1200);
+      now = 1500;
+      act(() => {
+        if (interruption === 'pause') {
+          media.paused = true;
+          mocks.playbackChanged?.();
+        } else mocks.outputChanged?.();
+      });
+      expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+      expect(screen.getByText(/1 recorded notes are retained in memory/)).toBeInTheDocument();
+      act(() => usePersonalDataStore.getState().clear());
+      confirm();
+      expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+      act(() => usePersonalDataStore.getState().clear());
+      confirm(bob);
+      expect(screen.queryByRole('button', { name: 'Retry captured take' })).not.toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+      act(() => usePersonalDataStore.getState().clear());
+      confirm();
+      fireEvent.click(screen.getByRole('button', { name: 'Retry captured take' }));
+      expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('G4 (67)');
+    },
+  );
+
+  it('quarantines a running capture before exposing a different confirmed or visitor identity', async () => {
+    confirm();
+    submitNote();
+    await record();
+    input(true, 64, 1200);
+    now = 1600;
+    act(() => {
+      usePersonalDataStore.getState().setVisitor(true);
+      usePersonalDataStore.getState().confirm(bob);
+    });
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+    expect(screen.queryByRole('button', { name: 'Retry captured take' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save locally' })).toBeDisabled();
+    act(() => {
+      usePersonalDataStore.getState().setVisitor(false);
+      usePersonalDataStore.getState().confirm(alice);
+    });
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('C4 (60)');
+    expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+  });
+  it('retains an interrupted take when the editor unmounts and remounts for the same client', async () => {
+    confirm();
+    await record();
+    input(true, 69, 1200);
+    now = 1500;
+    cleanup();
+    const view = render(<MusicComposer client={client} />);
+    cleanup = view.unmount;
+    expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry captured take' }));
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('A4 (69)');
+  });
 
   it('offers named native form controls for editing, pattern copy/delete and undo', async () => {
     const start = screen.getByRole('spinbutton', { name: 'Start beat' });
@@ -163,6 +276,22 @@ describe('music composer keyboard controls and capture', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     expect(length).toHaveValue(4);
+  });
+  it('restores the model value in a committed field when the draft rejects a shorter pattern', () => {
+    fireEvent.input(screen.getByRole('spinbutton', { name: 'Start beat' }), {
+      target: { value: '3' },
+    });
+    submitNote();
+    const length = screen.getByRole('spinbutton', { name: 'Pattern length (quarter-note beats)' });
+    fireEvent.input(length, { target: { value: '1' } });
+    fireEvent.blur(length);
+    expect(length).toHaveValue(4);
+    expect(
+      screen
+        .getAllByRole('alert')
+        .some((alert) => alert.textContent?.includes('Previous value restored')),
+    ).toBe(true);
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('Beat 3');
   });
 
   it('replace recording mutes only the selected part in private playback', async () => {

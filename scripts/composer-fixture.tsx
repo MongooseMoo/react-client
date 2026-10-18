@@ -29,7 +29,8 @@ const client = {
 const midi = new GMCPClientMidi(client);
 client.gmcp.handlers['Client.Midi'] = midi;
 usePreferences.getState().setMidi({ enabled: true, outputTimingCorrectionMs: 0 });
-usePersonalDataStore.setState({ owner: { runtime: 'browser-probe', playerUuid: 'composer', playerRef: '#1' }, policyReady: true, visitor: false });
+const probeOwner={ runtime: 'browser-probe', playerUuid: 'composer', playerRef: '#1' };
+usePersonalDataStore.setState({ owner: probeOwner, policyReady: true, visitor: false });
 await virtualMidiService.setAudioOutput({ context, destination: engine.getBus('master')!.input as unknown as AudioNode });
 await midi.ensureInitialized();
 if (!await midi.connectInputDevice('Composer browser keyboard') || !await midi.connectOutputDevice('virtual-synth')) throw new Error('Browser MIDI setup failed');
@@ -37,7 +38,9 @@ const target = document.createElement('main'); document.body.append(target);
 render(h(MusicComposer, { client }), target);
 Object.assign(window, { composerProbe: {
   context, engine, sent, keyboard,
-  networkReset() { midi.reset(); },
+  // Models connect()'s actual owner-clear and GMCP reset; this fixture opens no game socket.
+  networkReset() { usePersonalDataStore.getState().clear(); midi.reset(); },
+  confirmOwner() { usePersonalDataStore.getState().confirm(probeOwner); },
   manual(note:number,on:boolean) { midi.sendManualNote(note,on?100:0,on); },
   amplitude() { analyser.getFloatTimeDomainData(frames); return Math.max(...frames.map(Math.abs)); },
   destroy() { render(null, target); midi.shutdown(); return context.close(); },

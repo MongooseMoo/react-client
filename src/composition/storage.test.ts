@@ -7,6 +7,26 @@ beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
 });
 describe('owner-scoped composition persistence', () => {
+  it('suspends storage through unknown identity without replacing the unsaved draft, then quarantines different owners', async () => {
+    const store = createComposerStore();
+    store.getState().setOwner('alice-storage', 'alice');
+    store.getState().edit((draft) => ({ ...draft, name: 'Alice unsaved' }));
+    const alice = store.getState().history;
+    store.getState().setOwner();
+    expect(store.getState().history).toBe(alice);
+    await store.getState().save();
+    expect(store.getState().error).toContain('Sign in');
+    store.getState().setOwner('alice-storage', 'alice');
+    expect(store.getState().history).toBe(alice);
+    store.getState().setOwner(undefined, 'bob');
+    expect(store.getState().history.present.name).toBe('Untitled composition');
+    store.getState().edit((draft) => ({ ...draft, name: 'Bob private' }));
+    store.getState().setOwner('alice-storage', 'alice');
+    expect(store.getState().history).toBe(alice);
+    expect(store.getState().history.present.name).toBe('Alice unsaved');
+    store.getState().setOwner(undefined, 'bob');
+    expect(store.getState().history.present.name).toBe('Bob private');
+  });
   it('evicts the oldest raw takes before committing a newer recording without removing pattern notes', () => {
     const draft = newComposition(),
       partId = draft.parts[0].id,

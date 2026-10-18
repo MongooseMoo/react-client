@@ -8,17 +8,31 @@ import {
   type CompositionHistory,
 } from '../composition/model';
 import { CompositionStorage, validateDraft, type SavedComposition } from '../composition/storage';
+import type { CompositionCapture } from '../composition/capture';
+export interface PendingCapture {
+  result: ReturnType<CompositionCapture['finish']>;
+  overdub: boolean;
+}
+interface PrivateDraft {
+  history: CompositionHistory;
+  selectedPatternId: string;
+  selectedPartId: string;
+  pendingTake?: PendingCapture;
+}
 interface ComposerState {
   history: CompositionHistory;
   selectedPatternId: string;
   selectedPartId: string;
   saved: readonly SavedComposition[];
   owner?: string;
+  confirmedOwner?: string;
+  pendingTake?: PendingCapture;
   busy: boolean;
   status: string;
   error: string;
-  setOwner(owner?: string): void;
-  edit(change: (draft: CompositionDraft) => CompositionDraft): void;
+  setOwner(owner?: string, confirmedIdentity?: string): void;
+  setPendingTake(take?: PendingCapture): void;
+  edit(change: (draft: CompositionDraft) => CompositionDraft): boolean;
   selectPattern(id: string): void;
   selectPart(id: string): void;
   replaceDraft(draft: CompositionDraft): void;
@@ -33,6 +47,8 @@ interface ComposerState {
 export function createComposerStore() {
   let ownerEpoch = 0;
   let storage: CompositionStorage | undefined;
+  // At most four previous confirmed identities remain private to this editor/client.
+  const privateDrafts = new Map<string, PrivateDraft>();
   const first = newComposition();
   return createStore<ComposerState>((set, get) => ({
     history: { present: first, past: [], future: [] },
@@ -42,20 +58,59 @@ export function createComposerStore() {
     busy: false,
     status: 'Local draft',
     error: '',
-    setOwner(owner) {
-      if (get().owner === owner) return;
-      const epoch = ++ownerEpoch,
-        draft = newComposition();
+    setOwner(owner, identity = owner) {
+      if (get().owner === owner && (!identity || get().confirmedOwner === identity)) return;
+      const epoch = ++ownerEpoch;
       storage = owner ? new CompositionStorage(owner) : undefined;
+      if (!identity) {
+        set({
+          owner: undefined,
+          saved: [],
+          busy: false,
+          error: '',
+          status: 'Draft retained in memory. Reconnect to the same character to save.',
+        });
+        return;
+      }
+      const current = get(),
+        previousOwner = current.confirmedOwner;
+      let next: PrivateDraft = current;
+      if (previousOwner && previousOwner !== identity) {
+        const restored = privateDrafts.get(identity);
+        privateDrafts.delete(identity);
+        privateDrafts.delete(previousOwner);
+        privateDrafts.set(previousOwner, {
+          history: current.history,
+          selectedPatternId: current.selectedPatternId,
+          selectedPartId: current.selectedPartId,
+          pendingTake: current.pendingTake,
+        });
+        while (privateDrafts.size > 4) {
+          const oldest = privateDrafts.keys().next().value;
+          if (oldest !== undefined) privateDrafts.delete(oldest);
+        }
+        const draft = newComposition();
+        next = restored ?? {
+          history: { present: draft, past: [], future: [] },
+          selectedPatternId: draft.patterns[0].id,
+          selectedPartId: draft.parts[0].id,
+        };
+      }
       set({
+        history: next.history,
+        selectedPatternId: next.selectedPatternId,
+        selectedPartId: next.selectedPartId,
+        pendingTake: next.pendingTake,
         owner,
+        confirmedOwner: identity,
         saved: [],
         busy: false,
         error: '',
-        status: owner ? 'Local drafts belong to this character.' : 'Sign in to save local drafts.',
-        history: { present: draft, past: [], future: [] },
-        selectedPatternId: draft.patterns[0].id,
-        selectedPartId: draft.parts[0].id,
+        status: !owner
+          ? 'Draft retained in memory. Saving is unavailable for this identity.'
+          : previousOwner === identity
+            ? 'Reconnected. Unsaved draft retained.'
+            : 'Local drafts belong to this character.',
       });
       if (storage)
         void storage
@@ -68,6 +123,9 @@ export function createComposerStore() {
               set({ error: error instanceof Error ? error.message : String(error) });
           });
     },
+    setPendingTake(pendingTake) {
+      set({ pendingTake });
+    },
     edit(change) {
       try {
         const next = change(get().history.present);
@@ -77,8 +135,10 @@ export function createComposerStore() {
           status: 'Unsaved local changes',
           error: '',
         });
+        return true;
       } catch (error) {
         set({ error: error instanceof Error ? error.message : String(error) });
+        return false;
       }
     },
     selectPattern(id) {
