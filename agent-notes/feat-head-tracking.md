@@ -32,8 +32,12 @@ Do not push or open a PR.
   test:audio-cache (build + audio, soundfont and editor checks: 4 PASS lines);
   editor-ownership spec (1 passed); check-browser-sessions; check-client-recovery;
   test:a11y (PASS). Port trap: 5183 (the CI port) was held by another agent's preview,
-  so the first editor-ownership "pass" ran against someone else's build; rerun against
-  this worktree's own preview on 5287. Check the port's owner before trusting that step.
+  so the first editor-ownership "pass" ran against someone else's build. This worktree's
+  port for that step is 5194 (team lead): check 5194 is free, start
+  `vite preview --host 127.0.0.1 --port 5194 --strictPort`, confirm the listener PID is
+  yours and the served index's entry chunk equals dist/index.html's, run with
+  PLAYWRIGHT_BASE_URL=http://127.0.0.1:5194, stop the preview by PID. Done that way at
+  d472395a: entry /assets/index-BD7pYGHd.js matched, 1 passed (7.6s).
   Waiting on the team lead's browser check, then PR.
 - Files as they stand:
   - `src/audio/headYaw.ts` - devicePose (quaternion from alpha/beta/gamma + screen
