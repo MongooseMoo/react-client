@@ -132,8 +132,10 @@ Round 2 (after the rewrite):
   "die"), and `maxPartBytes`. Ran red against the old code (API mismatch),
   then green after the rewrite.
 - `AutoLogFolder.ts` rewritten to the design above. `IndexedDbLogFolderHandles`
-  became `IndexedDbLogFolderPersistence` (same database name, version 1, now
-  with a `cursors` store; the round 1 database was never released).
+  became `IndexedDbLogFolderPersistence`. The database `mongoose-autolog-folders`
+  is version 2 (08abf38a): the upgrade adds the `cursors` store and wraps each
+  version 1 value (a bare handle) as `{ handle, bindingId }`, so a round 1
+  database keeps its remembered folders (test: "upgrades a version 1 database").
 - UI: `useFocusRefuge(section, heading)` replaced my effect; heading has
   tabIndex -1. Error state gained "Try again" (calls `reconnect`, which
   retries without a permission prompt when permission is already granted):
