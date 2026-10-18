@@ -11,6 +11,7 @@ import { chromium, expect } from '@playwright/test';
 import WebSocket from 'ws';
 
 const selfTest = process.argv.includes('--self-test');
+const deployedClient = process.env.MONGOOSE_WORLD_DEPLOYED_CLIENT === '1';
 if (!selfTest && process.env.MONGOOSE_LIVE_WORLD_MUSIC_CHECK !== '1')
   throw new Error('Explicit live world music acceptance is required');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,6 +25,7 @@ const contexts = [];
 const documents = new Map();
 let fixtureRoom, browser, bundle;
 let failure;
+let observedClientRevision;
 const ascii = (value) =>
   JSON.stringify(value).replace(
     /[~\u007f-\uffff]/g,
@@ -96,7 +98,8 @@ function telnetFilter(observe) {
           // Auth packages may contain secrets. Do not parse, retain or diagnose them.
           if (
             split > 0 &&
-            /^(Client\.Midi\.Editor|Client\.Media\.(Play|Update|Stop)|Core\.Time\.)/.test(name)
+            (name === 'Core.Hello' ||
+              /^(Client\.Midi\.Editor|Client\.Media\.(Play|Update|Stop)|Core\.Time\.)/.test(name))
           ) {
             const data = JSON.parse(payload.slice(split + 1));
             drop = observe(name, data, payload) === false;
@@ -132,8 +135,19 @@ function wireState() {
     dropPublish: false,
     dropped: undefined,
     transport: undefined,
+    clientRevision: undefined,
   };
   state.outbound = telnetFilter((name, data, payload) => {
+    if (name === 'Core.Hello') {
+      // This public build identifier comes from the running bundle's virtual:commit-hash.
+      if (
+        data?.client === 'Mongoose Client' &&
+        typeof data.version === 'string' &&
+        /^[a-zA-Z0-9._%+-]{1,256}$/.test(data.version)
+      )
+        state.clientRevision = data.version;
+      return;
+    }
     if (!name.startsWith('Client.Midi.Editor')) return;
     let request = state.requests.get(data.requestId);
     if (!request) {
@@ -272,6 +286,38 @@ async function newPage() {
     });
     socket.onClose(() => upstream.close());
   });
+  await configureClientAssets(context, deployedClient);
+  const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Network.enable');
+  cdp.on('Network.requestWillBeSent', (event) => {
+    if (
+      event.request.method === 'OPTIONS' &&
+      event.request.url.startsWith('https://mongoose.world/api/midi/')
+    )
+      wire.preflights++;
+  });
+  await page.goto(origin);
+  await expect
+    .poll(() => page.evaluate(() => !!window.mudClient?.connected), { timeout: 20000 })
+    .toBe(true);
+  return { page, wire, context };
+}
+
+function reportClientRevision(wire) {
+  const revision = wire.clientRevision ?? 'unavailable';
+  if (observedClientRevision === undefined) {
+    observedClientRevision = revision;
+    console.log(
+      `World music client: ${JSON.stringify({ mode: deployedClient ? 'deployed' : 'built', origin, revision })}`,
+    );
+  } else {
+    assert.equal(revision, observedClientRevision, 'Client build changed between browser contexts');
+  }
+}
+
+async function configureClientAssets(context, useDeployedClient) {
+  if (useDeployedClient) return;
   await context.route(`${origin}/**`, async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const file = resolve(bundle, `.${pathname === '/' ? '/index.html' : pathname}`);
@@ -291,26 +337,12 @@ async function newPage() {
       await route.abort();
     }
   });
-  const page = await context.newPage();
-  const cdp = await context.newCDPSession(page);
-  await cdp.send('Network.enable');
-  cdp.on('Network.requestWillBeSent', (event) => {
-    if (
-      event.request.method === 'OPTIONS' &&
-      event.request.url.startsWith('https://mongoose.world/api/midi/')
-    )
-      wire.preflights++;
-  });
-  await page.goto(origin);
-  await expect
-    .poll(() => page.evaluate(() => !!window.mudClient?.connected), { timeout: 20000 })
-    .toBe(true);
-  return { page, wire, context };
 }
 async function ready(actor) {
   await expect
     .poll(() => actor.page.evaluate(() => window.mudClient.gmcp.sessionReady), { timeout: 20000 })
     .toBe(true);
+  reportClientRevision(actor.wire);
   const identity = await actor.page.evaluate(() => JSON.parse(window.mudClient.gmcp.identity));
   actor.ref = ref(identity[0]);
   actor.uuid = identity[1];
@@ -587,6 +619,39 @@ if (selfTest) {
     frame('Client.Midi.EditorReply', { requestId: 'r', status: 'ok' }),
     Buffer.from('suffix'),
   ]);
+  let assetRoutes = 0;
+  const fakeContext = {
+    route: async () => {
+      assetRoutes++;
+    },
+  };
+  await configureClientAssets(fakeContext, true);
+  assert.equal(assetRoutes, 0, 'Deployed mode must leave site assets on the real network');
+  await configureClientAssets(fakeContext, false);
+  assert.equal(assetRoutes, 1, 'Built mode must retain its local asset interception');
+  const revisionWire = wireState();
+  revisionWire.outbound(
+    frame('Core.Hello', { client: 'Mongoose Client', version: 'abc123-dirty' }),
+  );
+  assert.equal(revisionWire.clientRevision, 'abc123-dirty');
+  revisionWire.outbound(frame('Core.Hello', { client: 'Other', version: 'not-a-build' }));
+  revisionWire.outbound(frame('Core.Hello', { client: 'Mongoose Client', version: 'bad\nvalue' }));
+  assert.equal(
+    revisionWire.clientRevision,
+    'abc123-dirty',
+    'Untrusted diagnostic text is not retained',
+  );
+  assert.equal(revisionWire.requests.size, 0, 'Build observation must not create editor requests');
+  const hello = frame('Core.Hello', { client: 'Mongoose Client', version: 'abc123-dirty' });
+  for (let split = 0; split <= hello.length; split++) {
+    const wire = wireState();
+    assert.deepEqual(
+      Buffer.concat([wire.outbound(hello.subarray(0, split)), wire.outbound(hello.subarray(split))]),
+      hello,
+      'Build observation must preserve every byte across transport splits',
+    );
+    assert.equal(wire.clientRevision, 'abc123-dirty');
+  }
   for (let split = 0; split <= expected.length; split++) {
     let seen = 0;
     const filter = telnetFilter(() => {
@@ -624,12 +689,14 @@ if (selfTest) {
 }
 
 try {
-  bundle = await mkdtemp(resolve(tmpdir(), 'mongoose-live-world-'));
-  await cp(
-    process.env.BUNDLE_DIST ? resolve(process.env.BUNDLE_DIST) : resolve(root, 'dist'),
-    bundle,
-    { recursive: true },
-  );
+  if (!deployedClient) {
+    bundle = await mkdtemp(resolve(tmpdir(), 'mongoose-live-world-'));
+    await cp(
+      process.env.BUNDLE_DIST ? resolve(process.env.BUNDLE_DIST) : resolve(root, 'dist'),
+      bundle,
+      { recursive: true },
+    );
+  }
   browser = await chromium.launch({ channel: 'chromium', headless: true });
   const guest = await newPage();
   await guest.page.evaluate(() => window.mudClient.send('guest\r\n'));
