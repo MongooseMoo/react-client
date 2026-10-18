@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readEnrollmentState } from '../browserInstallation';
 import { revokeBrowserSession } from '../browserSessionLogout';
 import type MudClient from '../client';
+import { placeLaunchText } from '../launch/placeLaunchText';
 import { useConnectionStore } from '../stores/connectionStore';
+import { useInputStore } from '../stores/inputStore';
+import { usePersonalDataStore } from '../stores/personalDataStore';
 import { GMCPAutoLogin } from './Auth';
 
 vi.mock('../browserSessionLogout', () => ({ revokeBrowserSession: vi.fn(async () => {}) }));
@@ -183,5 +186,32 @@ describe('player-pinned tab authentication', () => {
     expect(send).toHaveBeenCalledOnce();
     expect(auth.currentGrant).toBeUndefined();
     expect(endpoint.close).toHaveBeenCalledOnce();
+  });
+
+  describe('a draft from a launch link', () => {
+    const owner = { runtime: 'live', playerUuid: 'player-a', playerRef: '#10' };
+    beforeEach(() => {
+      usePersonalDataStore.setState({ owner: undefined, visitor: false });
+      useInputStore.getState().clear();
+    });
+
+    it('is discarded by sign-out before anyone signed in, and does not come back at sign-in', () => {
+      const { auth } = client();
+      placeLaunchText('private anonymous draft');
+      auth.signOut();
+      expect(useInputStore.getState().text).toBe('');
+      usePersonalDataStore.getState().clearForConnect();
+      usePersonalDataStore.getState().confirm(owner);
+      expect(useInputStore.getState().text).toBe('');
+    });
+
+    it('is discarded by sign-out after sign-in', () => {
+      const { auth } = client();
+      placeLaunchText('private draft');
+      usePersonalDataStore.getState().confirm(owner);
+      expect(useInputStore.getState().text).toBe('private draft');
+      auth.signOut();
+      expect(useInputStore.getState().text).toBe('');
+    });
   });
 });

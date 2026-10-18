@@ -4,6 +4,7 @@ import { createConfiguredClient } from '../createConfiguredClient';
 import { WorkerStream } from '../WorkerStream';
 import { saveCheckpoint, loadCheckpoint, deleteCheckpoint, hashDbBytes } from '../dbStorage';
 import DbUploadDialog from './DbUploadDialog';
+import { useLaunchStore } from '../launch/launchStore';
 import type { MultiUserManager } from '../MultiUserManager';
 import type { PeerService } from '../PeerService';
 
@@ -248,10 +249,32 @@ const WasmHost: React.FC<WasmHostProps> = ({ dbUrl, isHostMode, onClientReady, o
         return cleanupWasmResources;
     }, [cleanupWasmResources]);
 
+    // A database the OS opened with the client, once the player confirmed hosting it.
+    const waitingHere = !clientReady && waitingForDb;
+    const confirmedDatabase = useLaunchStore((state) => state.confirmedDatabase);
+    const [launchLoading, setLaunchLoading] = useState('');
+    useEffect(() => {
+        useLaunchStore.setState({ hostWaiting: waitingHere });
+        return () => useLaunchStore.setState({ hostWaiting: false });
+    }, [waitingHere]);
+    useEffect(() => {
+        if (!confirmedDatabase || !waitingHere) return;
+        useLaunchStore.setState({ confirmedDatabase: undefined });
+        setBootError('');
+        setLaunchLoading(`Loading ${confirmedDatabase.name}…`);
+        confirmedDatabase.arrayBuffer()
+            .then((data) => bootWithDb(data))
+            .catch(() => {
+                if (!disposedRef.current) setBootError(`Could not start ${confirmedDatabase.name}. Choose a database or try again.`);
+            })
+            .finally(() => setLaunchLoading(''));
+    }, [confirmedDatabase, waitingHere, bootWithDb]);
+
     // Before client is ready: show upload dialog if waiting for DB
     if (!clientReady && waitingForDb) {
         return <>
             {bootError && <p role="alert">{bootError}</p>}
+            <p role="status">{launchLoading}</p>
             <DbUploadDialog onDbSelected={(data) => { setBootError(''); return bootWithDb(data); }} />
         </>;
     }

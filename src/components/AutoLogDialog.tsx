@@ -48,7 +48,8 @@ const AutoLogDialog = React.forwardRef<AutoLogDialogRef>((_, ref) => {
       onKeyDownCapture={() => { interacted.current = true; }}
       onPointerDownCapture={() => { interacted.current = true; }}
       onClose={(event) => {
-        if (event.target === event.currentTarget) setIsOpen(false);
+        // A late `close` from a showing that has been reopened since changes nothing.
+        if (event.target === event.currentTarget && !event.currentTarget.open) setIsOpen(false);
       }}>
       <div className="autolog-dialog-header">
         <h2>Autologs</h2>

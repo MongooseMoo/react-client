@@ -2,6 +2,7 @@ import { IncomingTransfer } from './incomingTransfer';
 import { OutgoingTransfer } from './outgoingTransfer';
 import { isFinished, type Transfer, type TransferContext, type TransferLimits } from './transfer';
 import {
+  DEFAULT_MAX_FILE_SIZE,
   FileTransferError,
   type FileOffer,
   type FileTransferEvents,
@@ -61,7 +62,7 @@ export interface FileTransferEngineOptions {
 }
 
 const DEFAULT_LIMITS: TransferLimits = {
-  maxFileSize: 100 * 1024 * 1024,
+  maxFileSize: DEFAULT_MAX_FILE_SIZE,
   offerTimeoutMs: 5 * 60 * 1000,
   idleTimeoutMs: 30 * 1000,
   verificationTimeoutMs: 5 * 60 * 1000,

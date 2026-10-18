@@ -9,6 +9,7 @@ import ChannelPreferencesTab from "./ChannelPreferences";
 import KeystrokePreferencesTab from "./KeystrokePreferences";
 import SoundfontPicker from './SoundfontPicker';
 import HeadTrackingControls from './HeadTrackingControls';
+import AppIntegrationPreferences from '../launch/AppIntegrationPreferences';
 
 function PreferenceNumber({ id, label, value, min, max, onCommit }: {
   id: string; label: string; value: number; min: number; max: number;
@@ -82,6 +83,7 @@ const GeneralTab: React.FC = () => {
         />
         Sync browser location to server
       </label>
+      <AppIntegrationPreferences />
     </div>
   );
 };

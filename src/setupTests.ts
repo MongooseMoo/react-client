@@ -24,11 +24,14 @@ if (dialogPrototype) {
       configurable: true,
       writable: true,
       value: function close(this: HTMLDialogElement, returnValue?: string) {
+        if (!this.hasAttribute('open')) return;
         if (returnValue !== undefined) {
           this.returnValue = returnValue;
         }
         this.removeAttribute('open');
-        this.dispatchEvent(new Event('close'));
+        // As in browsers, `close` fires in a later task, not inside close():
+        // code that waits for the event sees what happens in between.
+        setTimeout(() => this.dispatchEvent(new Event('close')), 0);
       },
     });
   }

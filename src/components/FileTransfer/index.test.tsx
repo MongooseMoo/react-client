@@ -1,5 +1,5 @@
 import { announce } from '@react-aria/live-announcer';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type MudClient from '../../client';
 import {
@@ -17,6 +17,8 @@ import { FileTransferError } from '../../fileTransfer/types';
 import type { ReceivedFile, TransferState } from '../../fileTransfer/types';
 import { PIECE_SIZE } from '../../fileTransfer/wire';
 import type { UserlistPlayer } from '../../mcp';
+import { offerSharedFiles, useLaunchStore } from '../../launch/launchStore';
+import { useConnectionStore } from '../../stores/connectionStore';
 import FileTransferPanel from './index';
 
 vi.mock('@react-aria/live-announcer', () => ({ announce: vi.fn() }));
@@ -478,5 +480,150 @@ describe('FileTransferPanel', () => {
     render(<FileTransferPanel client={client} expanded users={users} />);
 
     expect((await screen.findByRole('alert')).textContent).toBe('Client has shut down');
+  });
+});
+
+describe('files shared from another app', () => {
+  afterEach(() => {
+    useLaunchStore.setState({ sharedFiles: [], stagedShare: undefined, filesRequest: 0 });
+    useConnectionStore.setState({ connected: false });
+  });
+
+  /** Sends the chosen file to Alice through the panel. */
+  function sendToAlice(): void {
+    fireEvent.focus(screen.getByLabelText('Recipient'));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Alice' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send File' }));
+  }
+
+  it('keeps a shared file whose offer failed chosen, ahead of the next one, and says why', async () => {
+    const me = player(ME);
+    const alice = player(ALICE);
+    const map = fileOf(1, 'map.png');
+    offerSharedFiles([map, fileOf(1, 'notes.txt')]);
+    network.failing = (_link, step) => step === 'createOffer';
+    await openPanel(me);
+    await screen.findByText(/^Shared file ready: map\.png/);
+
+    sendToAlice();
+    await reaches(me, 'failed');
+    await waitFor(() => expect(history().some((line) => line.includes('map.png'))).toBe(true));
+    expect(vi.mocked(announce).mock.calls.some(([text]) => String(text).includes('map.png'))).toBe(true);
+    expect(useLaunchStore.getState().stagedShare).toBe(map);
+    expect(screen.getByText(/^Shared file ready: map\.png.* 1 more shared after this one\.$/)).not.toBeNull();
+
+    // Fixed, the same file goes on the next try, and only then does the next one come up.
+    network.failing = () => false;
+    sendToAlice();
+    await waitFor(() => expect(alice.transfers().map((transfer) => transfer.name)).toEqual(['map.png']));
+    expect(await screen.findByText(/^Shared file ready: notes\.txt/)).not.toBeNull();
+  });
+
+  it('keeps a shared file whose offer failed through a connection change', async () => {
+    const me = player(ME);
+    const map = fileOf(1, 'map.png');
+    offerSharedFiles([map]);
+    network.failing = (_link, step) => step === 'createOffer';
+    await openPanel(me);
+    await screen.findByText(/^Shared file ready: map\.png/);
+    sendToAlice();
+    await reaches(me, 'failed');
+
+    act(() => useConnectionStore.setState({ connected: true }));
+    await screen.findByRole('button', { name: 'Send File' });
+    expect(await screen.findByText(/^Shared file ready: map\.png/)).not.toBeNull();
+    expect(useLaunchStore.getState().stagedShare).toBe(map);
+    network.failing = () => false;
+  });
+
+  it.each([
+    ['a lone shared file', [] as string[]],
+    ['a shared file with another waiting', ['notes.txt']],
+  ])('keeps %s whose send the connection ended while it was still preparing', async (_case, waitingNames) => {
+    // The engine goes with the connection (client.ts disposes it on disconnect),
+    // and its pending send settles later, halted in 'preparing', unoffered.
+    const old = player(ME);
+    const replacement = player(ME);
+    let current = old;
+    const client = { getFileTransfers: async () => current } as unknown as MudClient;
+    const map = fileOf(1, 'map.png');
+    offerSharedFiles([map, ...waitingNames.map((name) => fileOf(1, name))]);
+    render(<FileTransferPanel client={client} expanded users={users} />);
+    await screen.findByText(/^Shared file ready: map\.png/);
+
+    const release = network.holdNegotiation();
+    const send = vi.spyOn(old, 'send');
+    sendToAlice();
+    // Past hashing: the send is waiting in negotiation, on a link of its own.
+    await waitFor(() => expect(network.linksOf(ME)).toHaveLength(1));
+    expect(statesOf(old)).toEqual(['preparing']);
+    old.dispose();
+    current = replacement;
+    act(() => useConnectionStore.setState({ connected: true }));
+    await screen.findByRole('button', { name: 'Send File' });
+
+    release();
+    // The old send settles only now, after the replacement panel has loaded.
+    let settled: TransferState | undefined;
+    await act(async () => { settled = (await send.mock.results[0].value).state; });
+    expect(settled).toBe('preparing');
+    expect(useLaunchStore.getState().stagedShare).toBe(map);
+    expect(useLaunchStore.getState().sharedFiles.map((file) => file.name)).toEqual(waitingNames);
+    expect(screen.getByText(/^Shared file ready: map\.png/)).not.toBeNull();
+    expect(statesOf(replacement)).toEqual([]);
+  });
+
+  it('keeps the shared file chosen when the connection changes and the panel reloads', async () => {
+    const me = player(ME);
+    const alice = player(ALICE);
+    useConnectionStore.setState({ connected: false });
+    offerSharedFiles([fileOf(1, 'map.png')]);
+    await openPanel(me);
+    await screen.findByText(/^Shared file ready: map\.png/);
+
+    act(() => useConnectionStore.setState({ connected: true }));
+    await screen.findByRole('button', { name: 'Send File' });
+    expect(await screen.findByText(/^Shared file ready: map\.png/)).not.toBeNull();
+
+    fireEvent.focus(screen.getByLabelText('Recipient'));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Alice' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send File' }));
+    await reaches(alice, 'offered');
+    expect(alice.transfers()[0].name).toBe('map.png');
+    await waitFor(() => expect(screen.queryByText(/^Shared file ready/)).toBeNull());
+    expect(useLaunchStore.getState().stagedShare).toBeUndefined();
+  });
+
+  it('waits as the chosen file until the player picks a recipient and sends it', async () => {
+    const me = player(ME);
+    const alice = player(ALICE);
+    offerSharedFiles([fileOf(1, 'map.png'), fileOf(1, 'notes.txt')]);
+    await openPanel(me);
+
+    expect(await screen.findByText(
+      'Shared file ready: map.png, 16.0 KB. Choose a recipient, then Send. 1 more shared after this one.',
+    )).not.toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText('Recipient'));
+    expect(statesOf(me)).toEqual([]);
+
+    fireEvent.focus(screen.getByLabelText('Recipient'));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Alice' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send File' }));
+    await reaches(alice, 'offered');
+    expect(alice.transfers()[0].name).toBe('map.png');
+    expect(await screen.findByText(/^Shared file ready: notes\.txt/)).not.toBeNull();
+  });
+
+  it('sets the remaining shared files aside when the player chooses a file of their own', async () => {
+    offerSharedFiles([fileOf(1, 'map.png'), fileOf(1, 'notes.txt')]);
+    await openPanel(player(ME));
+    await screen.findByText(/^Shared file ready: map\.png/);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [fileOf(1, 'mine.txt')] } });
+
+    await waitFor(() => expect(screen.queryByText(/^Shared file ready/)).toBeNull());
+    expect(useLaunchStore.getState().sharedFiles).toEqual([]);
+    expect(useLaunchStore.getState().stagedShare).toBeUndefined();
   });
 });

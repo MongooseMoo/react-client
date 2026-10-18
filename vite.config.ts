@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import { CommitHashPlugin } from 'vite-plugin-commit-hash';
 import { VitePWA } from 'vite-plugin-pwa';
 import { optionalChunks } from './src/build/optionalChunks';
+import { webAppManifest } from './src/build/webAppManifest';
 
 let deferredChunks = new Set<string>();
 
@@ -36,9 +37,7 @@ export default defineConfig({
           }),
         ],
       },
-      manifest: {
-        theme_color: '#000000',
-      },
+      manifest: webAppManifest,
     }),
   ],
   build: {

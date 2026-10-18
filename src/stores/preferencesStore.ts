@@ -18,6 +18,8 @@ export type GeneralPreferences = {
   localEcho: boolean;
   syncTimezoneToServer: boolean;
   syncLocationToServer: boolean;
+  // Count missed notifications on the installed app's icon.
+  appBadge: boolean;
 };
 
 export type SpeechPreferences = {
@@ -124,6 +126,7 @@ function getInitialPreferences(): PrefState {
       localEcho: false,
       syncTimezoneToServer: true,
       syncLocationToServer: false,
+      appBadge: true,
     },
     speech: {
       autoreadMode: AutoreadMode.Off,
