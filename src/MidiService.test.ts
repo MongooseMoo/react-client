@@ -122,6 +122,40 @@ describe('MidiService device changes', () => {
     expect(midiService.connectionStatus.inputConnected).toBe(false);
     unsubscribe();
   });
+
+  it('keeps timestamped capture subscribers independent from the ordinary relay callback', async () => {
+    await midiService.initialize();
+    const relay = vi.fn(), capture = vi.fn();
+    const unsubscribe = midiService.subscribeInput(capture);
+    await midiService.connectInputDevice('keyboard-1', relay);
+    const receive = jzzState.inputPort.connect.mock.calls[0][0];
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1234.5);
+    receive([0x90, 60, 100]);
+    expect(relay).toHaveBeenCalledOnce();
+    expect(capture).toHaveBeenCalledWith(expect.objectContaining({ note: { note: 60, velocity: 100, on: true, channel: 0 } }), 1234.5);
+    unsubscribe(); receive([0x80,60,0]); expect(capture).toHaveBeenCalledOnce(); expect(relay).toHaveBeenCalledTimes(2);
+    clock.mockRestore();
+  });
+
+  it('notifies input connection consumers after intentional disconnect', async () => {
+    await midiService.initialize(); await midiService.connectInputDevice('keyboard-1', vi.fn());
+    const states: boolean[] = [];
+    const unsubscribe = midiService.subscribeInputConnection(() => states.push(midiService.hasInputDevice));
+    midiService.disconnectDevice('input');
+    expect(states).toEqual([false]); unsubscribe();
+  });
+
+  it('drops malformed channel frames before relay and independent capture subscribers', async () => {
+    await midiService.initialize();
+    const relay = vi.fn(), capture = vi.fn();
+    const unsubscribe = midiService.subscribeInput(capture);
+    await midiService.connectInputDevice('keyboard-1', relay);
+    const receive = jzzState.inputPort.connect.mock.calls[0][0];
+    for (const data of [[], [0x90, 60], [0x90, 128, 100], [0xc0, 0, 100], [0x40, 60, 100]]) receive(data);
+    expect(relay).not.toHaveBeenCalled(); expect(capture).not.toHaveBeenCalled();
+    receive([0x90, 60, 100]); expect(relay).toHaveBeenCalledOnce(); expect(capture).toHaveBeenCalledOnce();
+    unsubscribe();
+  });
 });
 
 describe('MidiService soundfont connections', () => {

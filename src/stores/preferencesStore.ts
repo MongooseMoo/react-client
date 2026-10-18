@@ -60,6 +60,7 @@ export type KeyboardPreferences = {
 
 export type MidiPreferences = {
   enabled: boolean;
+  outputTimingCorrectionMs?: number;
   midiJsSoundfont?: SoundfontId;
   lastInputDeviceId?: string;
   lastOutputDeviceId?: string;
@@ -136,7 +137,7 @@ function getInitialPreferences(): PrefState {
     },
     editor: { autocompleteEnabled: true, accessibilityMode: true, lineComments: false },
     keyboard: { navigationKeyScheme: "jkli" },
-    midi: { enabled: false },
+    midi: { enabled: false, outputTimingCorrectionMs: 0 },
     haptics: { enabled: false, intensityCap: 1.0, autoStopTimeout: 5 },
     autologging: { enabled: false, maxBytes: 100 * 1024 * 1024 },
     keystrokes: {},
@@ -156,7 +157,9 @@ function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
     channels: { ...initial.channels, ...stored.channels },
     editor: { ...initial.editor, ...stored.editor },
     keyboard: { ...initial.keyboard, ...stored.keyboard },
-    midi: { ...initial.midi, ...stored.midi, midiJsSoundfont: getSoundfont(stored.midi?.midiJsSoundfont).id },
+    midi: { ...initial.midi, ...stored.midi, midiJsSoundfont: getSoundfont(stored.midi?.midiJsSoundfont).id,
+      outputTimingCorrectionMs: typeof stored.midi?.outputTimingCorrectionMs === 'number' && Number.isFinite(stored.midi.outputTimingCorrectionMs)
+        ? Math.max(-500, Math.min(500, stored.midi.outputTimingCorrectionMs)) : 0 },
     haptics: { ...initial.haptics, ...cleanHaptics },
     autologging: { ...initial.autologging, ...stored.autologging },
     keystrokes: { ...initial.keystrokes, ...stored.keystrokes },
