@@ -4,6 +4,7 @@ import type { SharedClock, SharedClockChange } from '../timing/SharedClock';
 import { performanceToAudioTime } from '../timing/outputClock';
 import {
   mergeMediaCueWindows,
+  MediaCueGap,
   type MediaCue,
   type MediaCueWindow,
   type MediaSyncReply,
@@ -29,6 +30,8 @@ export interface SharedMediaGrant {
 export interface SharedMediaPresentation {
   key: string;
   sourceId: string;
+  discontinuity: number;
+  retainedCueIds: readonly string[];
   title: string;
   state: 'preparing' | 'playing' | 'paused' | 'unavailable';
   cues: readonly MediaCue[];
@@ -49,6 +52,8 @@ interface Source {
   preparing?: number;
   settled?: boolean;
   reportedError?: boolean;
+  maxCueSeq: number;
+  cueSyncPending?: Promise<void>;
 }
 interface Pending {
   source: Source;
@@ -109,7 +114,13 @@ export class SharedMediaService {
     if (grant.transport.state === 'stopped') return;
     if (this.sources.size >= 16) throw new RangeError('Shared media source limit reached');
     const source: Source = {
-      grant,
+      grant: {
+        ...grant,
+        cueWindows:
+          grant.cueWindows === undefined
+            ? undefined
+            : mergeMediaCueWindows([], grant.cueWindows, { replace: true }),
+      },
       factory,
       abort: new AbortController(),
       operation: 0,
@@ -119,6 +130,7 @@ export class SharedMediaService {
       occurrence: -1,
       cueSignature: '',
       lastCues: [],
+      maxCueSeq: grant.cueWindows?.at(-1)?.seq ?? -1,
     };
     this.sources.set(grant.key, source);
     if (!this.release) this.release = this.options.clock.acquire('shared file media');
@@ -141,15 +153,28 @@ export class SharedMediaService {
         incoming.revision < old.revision
       )
         return true;
-      const now = this.options.clock.getServerNow();
-      const cueWindows =
-        incoming.revision === old.revision
-          ? mergeMediaCueWindows(
-              source.grant.cueWindows ?? [],
-              data.cueWindows ?? [],
-              now === undefined ? 0 : mediaPosition(old, now).unwrappedMs,
-            )
-          : (data.cueWindows ?? source.grant.cueWindows);
+      if (
+        (incoming.discontinuity ?? 0) < (old.discontinuity ?? 0) ||
+        (incoming.revision === old.revision &&
+          (incoming.discontinuity ?? 0) !== (old.discontinuity ?? 0))
+      )
+        throw new TypeError('Invalid transport discontinuity');
+      let cueWindows = source.grant.cueWindows;
+      if (data.cueWindows !== undefined) {
+        try {
+          cueWindows = mergeMediaCueWindows(cueWindows ?? [], data.cueWindows, {
+            replace: incoming.revision > old.revision,
+            maxSeq: source.maxCueSeq,
+          });
+        } catch (error) {
+          if (error instanceof MediaCueGap) {
+            this.syncCues(source);
+            return true;
+          }
+          throw error;
+        }
+        source.maxCueSeq = Math.max(source.maxCueSeq, data.cueWindows.at(-1)?.seq ?? -1);
+      }
       if (incoming.revision === old.revision) {
         source.grant = { ...source.grant, cueWindows };
         this.cues(source);
@@ -172,10 +197,50 @@ export class SharedMediaService {
     const current = p.source.grant.transport;
     if (reply.transport.clockId !== current.clockId || reply.transport.revision < current.revision)
       return false;
+    if (
+      (reply.transport.discontinuity ?? 0) < (current.discontinuity ?? 0) ||
+      (reply.transport.revision === current.revision &&
+        (reply.transport.discontinuity ?? 0) !== (current.discontinuity ?? 0))
+    )
+      return false;
+    const cueWindows =
+      reply.cueWindows === undefined
+        ? undefined
+        : mergeMediaCueWindows(p.source.grant.cueWindows ?? [], reply.cueWindows, {
+            replace: true,
+            maxSeq: p.source.maxCueSeq,
+          });
     this.pending.delete(reply.requestId);
     clearTimeout(p.timer);
-    p.resolve(reply);
+    p.resolve({ ...reply, ...(cueWindows === undefined ? {} : { cueWindows }) });
     return true;
+  }
+  private applySnapshot(source: Source, reply: MediaSyncReply): void {
+    source.grant = {
+      ...source.grant,
+      transport: reply.transport,
+      ...(reply.cueWindows === undefined ? {} : { cueWindows: reply.cueWindows }),
+    };
+    source.maxCueSeq = Math.max(source.maxCueSeq, reply.cueWindows?.at(-1)?.seq ?? -1);
+    if (reply.transport.state === 'stopped') this.remove(source);
+  }
+  private syncCues(source: Source): void {
+    if (source.cueSyncPending) return;
+    const operation = source.operation;
+    source.cueSyncPending = this.snapshot(source)
+      .then((reply) => {
+        if (!reply || !this.current(source, operation)) return;
+        const changed = reply.transport.revision > source.grant.transport.revision;
+        this.applySnapshot(source, reply);
+        if (this.sources.get(source.grant.key) !== source) return;
+        if (changed) {
+          this.cancelOperation(source);
+          void this.reconcile(source, false);
+        } else this.cues(source);
+      })
+      .finally(() => {
+        source.cueSyncPending = undefined;
+      });
   }
   localPause(key: string): void {
     const source = this.sources.get(key);
@@ -227,6 +292,7 @@ export class SharedMediaService {
       this.cancelOperation(source);
       if (this.options.context.state === 'running' && !this.suspended && !source.localPaused)
         void this.reconcile(source, true);
+      else if (this.suspended || source.localPaused) this.present(source, 'paused');
       else this.present(source, 'preparing', 'Audio requires Resume');
     }
   };
@@ -341,7 +407,8 @@ export class SharedMediaService {
         const reply = await this.snapshot(source);
         if (!this.current(source, operation)) return;
         if (!reply) throw new Error('Shared media snapshot unavailable');
-        source.grant = { ...source.grant, transport: reply.transport };
+        this.applySnapshot(source, reply);
+        if (this.sources.get(source.grant.key) !== source) return;
       }
       for (let attempt = 0; attempt < 3; attempt++) {
         const now = this.options.clock.getServerNow();
@@ -374,7 +441,7 @@ export class SharedMediaService {
         source.occurrence = position.occurrence;
         if (position.state !== 'playing') {
           source.settled = true;
-          this.present(source, 'paused');
+          this.present(source, position.state === 'preparing' ? 'preparing' : 'paused');
           this.cues(source);
           return;
         }
@@ -489,7 +556,8 @@ export class SharedMediaService {
         void this.snapshot(source).then((reply) => {
           if (!reply || this.sources.get(source.grant.key) !== source) return;
           if (reply.transport.revision < source.grant.transport.revision) return;
-          source.grant = { ...source.grant, transport: reply.transport };
+          this.applySnapshot(source, reply);
+          if (this.sources.get(source.grant.key) !== source) return;
           const current = this.options.clock.getServerNow();
           if (
             current !== undefined &&
@@ -511,6 +579,7 @@ export class SharedMediaService {
     }
   }
   private cues(source: Source): void {
+    if (source.localPaused || this.suspended) return;
     const now = this.options.clock.getServerNow();
     if (now === undefined) return;
     const p = mediaPosition(source.grant.transport, now);
@@ -518,17 +587,18 @@ export class SharedMediaService {
     const eligible =
       transport.state === 'paused' ||
       (transport.state === 'playing' && now >= transport.anchorServerMs);
-    const cues = eligible
-      ? (source.grant.cueWindows ?? [])
-          .flatMap((window) => window.cues)
-          .filter((cue) => cue.startMs <= p.unwrappedMs && cue.endMs > p.unwrappedMs)
-      : [];
-    const signature = `${source.grant.transport.revision}:${p.occurrence}:${cues.map((c) => c.id).join(',')}`;
+    const distinct = new Map<string, MediaCue>();
+    if (eligible)
+      for (const window of source.grant.cueWindows ?? [])
+        for (const cue of window.cues)
+          if (cue.startMs <= p.unwrappedMs && cue.endMs > p.unwrappedMs) distinct.set(cue.id, cue);
+    const cues = [...distinct.values()];
+    const signature = `${transport.discontinuity ?? 0}:${cues.map((c) => c.id).join(',')}`;
     if (signature === source.cueSignature) return;
     source.cueSignature = signature;
     this.present(
       source,
-      source.localPaused ? 'paused' : source.rendering ? 'playing' : 'paused',
+      transport.state === 'preparing' ? 'preparing' : source.rendering ? 'playing' : 'paused',
       undefined,
       cues,
     );
@@ -541,11 +611,18 @@ export class SharedMediaService {
   ): void {
     const currentCues =
       cues ?? (state === 'preparing' || state === 'unavailable' ? [] : source.lastCues);
-    if (state === 'preparing' || state === 'unavailable') source.cueSignature = '';
+    if ((state === 'preparing' || state === 'unavailable') && cues === undefined)
+      source.cueSignature = '';
     source.lastCues = currentCues;
     this.options.present?.({
       key: source.grant.key,
       sourceId: source.grant.transport.sourceId,
+      discontinuity: source.grant.transport.discontinuity ?? 0,
+      retainedCueIds: [
+        ...new Set(
+          (source.grant.cueWindows ?? []).flatMap((window) => window.cues.map((cue) => cue.id)),
+        ),
+      ],
       title: source.grant.title ?? source.grant.name,
       state,
       cues: currentCues,

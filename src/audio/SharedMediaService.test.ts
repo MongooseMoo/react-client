@@ -38,6 +38,7 @@ describe('shared file transport', () => {
       durationMs: 600000,
       rate: 1,
       mode: 'finite',
+      discontinuity: 0,
     };
     voice = {
       prepareSeek: vi.fn(async (seconds) => {
@@ -287,5 +288,54 @@ describe('shared file transport', () => {
     await flush();
     expect(cursor).toBe(30);
     expect(voice.start).toHaveBeenCalledTimes(2);
+  });
+  it('recovers a missing cue-window baseline through one bounded correlated Sync', async () => {
+    const initial = { seq: 0, fromMs: 0, toMs: 10000, cues: [] };
+    const pending = service.attach({ ...grant(), cueWindows: [initial] }, () => voice);
+    await flush();
+    service.receiveSync({ ...requests[0], transport, cueWindows: [initial] });
+    await pending;
+    now = 22000;
+    const current = {
+      seq: 2,
+      fromMs: 20000,
+      toMs: 30000,
+      cues: [{ id: 'current', startMs: 22000, endMs: 23000, text: 'Current line' }],
+    };
+    service.update({ key: 'tv', transport, cueWindows: [current] });
+    service.update({ key: 'tv', transport, cueWindows: [current] });
+    await flush();
+    expect(requests).toHaveLength(2);
+    expect(presentations.at(-1)).not.toMatchObject({ cues: [{ id: 'current' }] });
+    service.receiveSync({ ...requests[1], transport, cueWindows: [current] });
+    await flush();
+    expect(presentations.at(-1)).toMatchObject({ cues: [{ id: 'current' }] });
+    expect(voice.start).toHaveBeenCalledOnce();
+  });
+  it('pause revisions carry cue windows; a seek replaces windows under a new discontinuity', async () => {
+    transport = { ...transport, state: 'paused', positionMs: 5000 };
+    const cue = { id: 'current', startMs: 4000, endMs: 6000, text: 'Current line' };
+    const initial = { seq: 0, fromMs: 0, toMs: 10000, cues: [cue] };
+    const pending = service.attach({ ...grant(), cueWindows: [initial] }, () => voice);
+    await flush();
+    service.receiveSync({ ...requests[0], transport });
+    await pending;
+    service.update({ key: 'tv', transport: { ...transport, revision: 2 } });
+    await flush();
+    expect(presentations.at(-1)).toMatchObject({
+      discontinuity: 0,
+      cues: [cue],
+      retainedCueIds: ['current'],
+    });
+    service.update({
+      key: 'tv',
+      transport: { ...transport, revision: 3, discontinuity: 1 },
+      cueWindows: [{ ...initial, seq: 1 }],
+    });
+    await flush();
+    expect(presentations.at(-1)).toMatchObject({ discontinuity: 1, cues: [cue] });
+    service.update({ key: 'tv', transport, cueWindows: [initial] });
+    await flush();
+    expect(presentations.at(-1)).toMatchObject({ discontinuity: 1 });
   });
 });

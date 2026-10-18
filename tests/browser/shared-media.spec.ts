@@ -11,7 +11,7 @@ function wave():Buffer{
 }
 test('native finite HTML joins silently at the current cursor; cancelled future buffer remains silent',async({page,context})=>{
   test.setTimeout(45000);
-  const module=await build({bundle:true,write:false,format:'esm',target:'es2022',platform:'browser',stdin:{contents:'export {MediaService} from "./src/audio/MediaService.ts"; export {SharedClock} from "./src/timing/SharedClock.ts";',resolveDir:resolve('.'),loader:'ts'}});
+  const module=await build({bundle:true,write:false,format:'esm',target:'es2022',platform:'browser',stdin:{contents:'export {MediaService} from "./src/audio/MediaService.ts"; export {SharedClock} from "./src/timing/SharedClock.ts"; export {useSharedMediaStore} from "./src/stores/sharedMediaStore.ts";',resolveDir:resolve('.'),loader:'ts'}});
   await context.route('**/shared-media-fixture',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><button id="unlock">Unlock</button>'}));
   await context.route('**/shared-media-fixture.js',route=>route.fulfill({contentType:'text/javascript',body:module.outputFiles[0].text}));
   const bytes=wave();
@@ -26,30 +26,32 @@ test('native finite HTML joins silently at the current cursor; cancelled future 
   await context.route('**/shared-tone.wav',deliver);
   await page.goto(`${origin}/shared-media-fixture`);
   await page.evaluate(async()=>{
-    const {MediaService,SharedClock}=await import('/shared-media-fixture.js');
+    const {MediaService,SharedClock,useSharedMediaStore}=await import('/shared-media-fixture.js');
     const media=new MediaService(undefined,{manageFocus:false});
     const clock=new SharedClock(()=>{});clock.setLocalMapping({clockId:'browser',serverNowMs:performance.now(),performanceNowMs:performance.now()});
-    globalThis.media=media;globalThis.clock=clock;globalThis.snapshot=undefined;
+    globalThis.media=media;globalThis.clock=clock;globalThis.snapshot=undefined;globalThis.mediaStore=useSharedMediaStore;
     media.configureSharedMedia(clock,request=>queueMicrotask(()=>media.receiveMediaSync({...request,transport:globalThis.snapshot})));
     document.querySelector('#unlock').addEventListener('click',()=>media.cacophony.resume());
   });
   await page.click('#unlock');
   const paused=await page.evaluate(async()=>{
-    const transport={version:1,kind:'media',clockId:'browser',sourceId:'paused',revision:1,state:'paused',anchorServerMs:performance.now(),positionMs:2000,durationMs:8000,rate:1,mode:'finite'};
+    const transport={version:1,kind:'media',clockId:'browser',sourceId:'paused',revision:1,discontinuity:0,state:'paused',anchorServerMs:performance.now(),positionMs:2000,durationMs:8000,rate:1,mode:'finite'};
     globalThis.snapshot=transport;
-    await globalThis.media.play({key:'tv',name:'shared-tone.wav',url:location.origin+'/',type:'music',transport});
+    await globalThis.media.play({key:'tv',name:'shared-tone.wav',url:location.origin+'/',type:'music',transport,cueWindows:[{seq:0,fromMs:0,toMs:8000,cues:[{id:'current',startMs:2000,endMs:3000,text:'Current caption'}]}]});
     const playback=globalThis.media.sounds.tv.playbacks[0];
-    return {cursor:playback.currentTime,playing:playback.isPlaying};
+    return {cursor:playback.currentTime,playing:playback.isPlaying,captions:globalThis.mediaStore.getState().sources.tv.cues.map(cue=>cue.text)};
   });
   expect(paused.playing).toBe(false);expect(paused.cursor).toBeCloseTo(2,2);
+  expect(paused.captions).toEqual(['Current caption']);
   const joined=await page.evaluate(async()=>{
     const transport={...globalThis.snapshot,revision:2,state:'playing',anchorServerMs:performance.now(),positionMs:3000};
     globalThis.snapshot=transport;globalThis.media.update({key:'tv',transport});
     await new Promise(resolve=>setTimeout(resolve,350));
     const playback=globalThis.media.sounds.tv.playbacks[0];
-    return {playing:playback.isPlaying,errorMs:Math.abs(playback.currentTime*1000-(3000+performance.now()-transport.anchorServerMs))};
+    return {playing:playback.isPlaying,errorMs:Math.abs(playback.currentTime*1000-(3000+performance.now()-transport.anchorServerMs)),captions:globalThis.mediaStore.getState().sources.tv.cues};
   });
   expect(joined.playing).toBe(true);expect(joined.errorMs).toBeLessThan(250);
+  expect(joined.captions).toEqual([]);
   const late=await page.evaluate(async()=>{
     globalThis.media.stop({key:'tv'});
     const transport={...globalThis.snapshot,sourceId:'late',revision:1,state:'playing',anchorServerMs:performance.now(),positionMs:1000};

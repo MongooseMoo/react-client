@@ -91,6 +91,7 @@ export interface ScoreTransport extends TransportIdentity {
   readonly loop?: ScoreLoop;
 }
 export interface MediaTransport extends TransportIdentity {
+  readonly discontinuity?: number;
   readonly kind: 'media';
   readonly state: TransportState;
   readonly anchorServerMs: number;

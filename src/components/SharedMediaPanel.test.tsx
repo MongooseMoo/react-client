@@ -21,6 +21,8 @@ describe('shared media presentation', () => {
       updateSharedMediaPresentation({
         key: 'tv',
         sourceId: 'source',
+        discontinuity: 0,
+        retainedCueIds: ['current'],
         title: 'A film',
         state: 'paused',
         cues: [{ id: 'current', startMs: 0, endMs: 1000, text: 'The door opens.' }],
@@ -42,6 +44,8 @@ describe('shared media presentation', () => {
     const value = {
       key: 'tv',
       sourceId: 'source',
+      discontinuity: 0,
+      retainedCueIds: ['current'],
       title: 'A film',
       state: 'playing' as const,
       cues: [{ id: 'current', startMs: 0, endMs: 1000, text: 'The door opens.' }],
@@ -50,6 +54,11 @@ describe('shared media presentation', () => {
     act(() => updateSharedMediaPresentation({ ...value, title: 'A film, quieter' }));
     expect(announce).toHaveBeenCalledOnce();
     expect(announce).toHaveBeenCalledWith('The door opens.', 'polite');
+    act(() => updateSharedMediaPresentation({ ...value, state: 'paused', cues: [] }));
+    act(() => updateSharedMediaPresentation({ ...value, state: 'paused' }));
+    expect(announce).toHaveBeenCalledOnce();
+    act(() => updateSharedMediaPresentation({ ...value, discontinuity: 1 }));
+    expect(announce).toHaveBeenCalledTimes(2);
     act(() => updateSharedMediaPresentation({ key: 'tv', removed: true }));
     expect(screen.queryByLabelText('Current captions')).not.toBeInTheDocument();
   });

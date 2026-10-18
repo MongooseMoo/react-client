@@ -16,25 +16,23 @@ export default function SharedMediaPanel({ client }: { client: MudClient }) {
   const [error, setError] = useState('');
   const readIds = useRef(new Set<string>());
   useEffect(() => {
-    const current = new Set<string>();
+    const retained = new Set<string>();
+    const identityFor = (source: (typeof sources)[string], id: string) =>
+      JSON.stringify([source.sourceId, source.discontinuity, id]);
+    for (const source of Object.values(sources))
+      for (const id of source.retainedCueIds) retained.add(identityFor(source, id));
+    for (const id of readIds.current) if (!retained.has(id)) readIds.current.delete(id);
     for (const source of Object.values(sources))
       for (const cue of source.cues) {
-        const identity = JSON.stringify([
-          source.key,
-          source.sourceId,
-          cue.id,
-          cue.startMs,
-          cue.endMs,
-        ]);
-        current.add(identity);
+        const identity = identityFor(source, cue.id);
         if (
           read &&
           !readIds.current.has(identity) &&
           shouldSpeak(usePreferences.getState().speech.autoreadMode, document.hasFocus())
         )
           announce(cue.text, 'polite');
+        readIds.current.add(identity);
       }
-    readIds.current = current;
   }, [sources, read]);
   return (
     <section aria-label="Shared media">

@@ -389,6 +389,8 @@ export function decodeMediaPlay(raw: unknown): DecodedMediaPlay {
         key = mediaIdentity(r.key);
       if (transport.mode === 'live' && r.cueWindows !== undefined)
         fail('Live media cannot carry cue windows');
+      if (r.cueWindows !== undefined && transport.discontinuity === undefined)
+        fail('Cue transport requires discontinuity');
       if (r.cues !== undefined) fail('Use cueWindows');
       return {
         ...common,
@@ -426,6 +428,8 @@ export function decodeMediaUpdate(raw: unknown): ClientMediaUpdatePayload {
         const transport = decodeFileTransport(r.transport);
         if (r.cues !== undefined || (transport.mode === 'live' && r.cueWindows !== undefined))
           fail('Invalid cue fields');
+        if (r.cueWindows !== undefined && transport.discontinuity === undefined)
+          fail('Cue transport requires discontinuity');
         return {
           ...decoded,
           key: mediaIdentity(r.key),
