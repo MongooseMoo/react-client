@@ -10,6 +10,13 @@ import {
 } from '../midi/score';
 
 type TrackEvent = WebAudioTinySynth.MIDITrackEvent;
+function trackName(data: readonly number[]): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(data));
+  } catch {
+    return data.map((byte) => String.fromCharCode(byte)).join('');
+  }
+}
 export interface SmfImport {
   score: CanonicalScore;
   warnings: string[];
@@ -141,11 +148,12 @@ export function importSmf(bytes: ArrayBuffer): SmfImport {
           else bends.push({ tick: position, value: first + second * 128 });
         }
       }
+      const name = metadata.filter((event) => event.type === 3).at(-1);
       parts.push({
         id: `smf:${trackIndex}:${channel}`,
-        name:
-          track.name ||
-          `Track ${trackIndex + 1}${channels.length > 1 ? ` channel ${channel + 1}` : ''}`,
+        name: name
+          ? trackName(name.data)
+          : `Track ${trackIndex + 1}${channels.length > 1 ? ` channel ${channel + 1}` : ''}`,
         kind: channel === 9 ? 'percussion' : 'melodic',
         program: programs.find((event) => event.tick === 0)?.program ?? 0,
         channelHint: channel,
@@ -179,15 +187,27 @@ export function exportSmf(score: CanonicalScore, sourceFormat?: 0 | 1): ArrayBuf
   const checked = validateScore(score);
   if (!checked.ok) throw new TypeError(checked.error);
   const tracks = new Map<string, WebAudioTinySynth.MIDITrack>();
+  const trackIdentity = (part: ScorePart) => {
+    const original = /^smf:(\d+):\d+$/.exec(part.id);
+    return sourceFormat === 0 ? 'merged' : original ? `track:${original[1]}` : `part:${part.id}`;
+  };
+  const renamedTracks = new Map<string, string>();
+  for (const part of score.parts) {
+    const originalName = part.metadata?.filter((event) => event.type === 3).at(-1);
+    if (!originalName || part.name === trackName(originalName.data)) continue;
+    const key = trackIdentity(part),
+      previous = renamedTracks.get(key);
+    if (previous !== undefined && previous !== part.name)
+      throw new TypeError('Parts sharing one MIDI track need the same exported track name.');
+    renamedTracks.set(key, part.name);
+  }
   const usedChannels = new Set<number>(
     score.parts.flatMap((part) =>
       part.kind === 'percussion' ? [9] : part.channelHint === undefined ? [] : [part.channelHint],
     ),
   );
   for (const part of score.parts) {
-    const original = /^smf:(\d+):\d+$/.exec(part.id);
-    const trackId =
-      sourceFormat === 0 ? 'merged' : original ? `track:${original[1]}` : `part:${part.id}`;
+    const trackId = trackIdentity(part);
     let track = tracks.get(trackId);
     if (!track) {
       track = { endTick: 0, events: [] };
@@ -229,11 +249,17 @@ export function exportSmf(score: CanonicalScore, sourceFormat?: 0 | 1): ArrayBuf
         event.kind === 'meta' ? [key(event.t, event.type, event.data)] : [],
       ),
     );
+    const lastName = part.metadata?.filter((event) => event.type === 3).at(-1);
     for (const event of part.metadata ?? []) {
       if (event.type === 0x2f) continue;
-      const identity = key(event.tick, event.type, event.data);
+      const replacement = renamedTracks.get(trackId);
+      const data =
+        event === lastName && replacement !== undefined
+          ? [...new TextEncoder().encode(replacement)]
+          : [...event.data];
+      const identity = key(event.tick, event.type, data);
       if (!existing.has(identity)) {
-        track.events.push({ t: event.tick, kind: 'meta', type: event.type, data: [...event.data] });
+        track.events.push({ t: event.tick, kind: 'meta', type: event.type, data });
         existing.add(identity);
       }
     }

@@ -61,6 +61,7 @@ export interface CaptureTake {
 export interface CompositionDraft {
   version: 1;
   id: string;
+  revisionId?: string;
   name: string;
   parts: readonly ComposerPart[];
   patterns: readonly Pattern[];
@@ -86,6 +87,7 @@ export function newComposition(): CompositionDraft {
   return {
     version: 1,
     id: id(),
+    revisionId: id(),
     name: 'Untitled composition',
     parts: [
       {
@@ -121,11 +123,14 @@ const integer = (value: number, min: number, max = Number.MAX_SAFE_INTEGER) => {
     throw new RangeError('Composition value outside bounds');
   return value;
 };
-/** Materializes explicit section repeats; pattern trailing silence remains part of its span. */
+const compiledIds = new WeakMap<CompositionDraft, Map<string, string>>();
+/** Materializes explicit section repeats. Publication supplies a frozen UUID contentId;
+ * private variants cache their own UUID for this immutable draft object. */
 export function compileComposition(
   draft: CompositionDraft,
   patternId?: string,
   applyAuditionMix = true,
+  contentId?: string,
 ): CanonicalScore {
   if (
     draft.parts.length > 16 ||
@@ -239,9 +244,20 @@ export function compileComposition(
     }
   }
   const durationTicks = cursor;
+  let identities = compiledIds.get(draft);
+  if (!identities) {
+    identities = new Map();
+    compiledIds.set(draft, identities);
+  }
+  const variant = JSON.stringify([patternId, applyAuditionMix]);
+  if (!identities.has(variant)) identities.set(variant, id());
   const score = {
     version: 1,
-    contentId: id(),
+    contentId:
+      contentId ??
+      (!patternId && !applyAuditionMix && draft.revisionId
+        ? draft.revisionId
+        : identities.get(variant)),
     ppq: SCORE_PPQ,
     durationTicks,
     tempos: draft.tempos.filter((event) => event.tick <= durationTicks),
@@ -285,13 +301,27 @@ export function compileComposition(
 export function updateComposition(
   history: CompositionHistory,
   next: CompositionDraft,
+  alreadyValidated = false,
 ): CompositionHistory {
-  compileComposition(next);
+  if (!alreadyValidated) compileComposition(next);
   return {
-    present: { ...next, updatedAt: Date.now() },
+    present: { ...next, revisionId: id(), updatedAt: Date.now() },
     past: [...history.past, history.present].slice(-20),
     future: [],
   };
+}
+/** Preserve an imported EOT until an authored event actually needs a later end. */
+export function extendPartEnd(material: PatternPart): PatternPart {
+  if (material.endTick === undefined) return material;
+  const endTick = Math.max(
+    material.endTick,
+    ...material.notes.map(([tick, duration]) => tick + duration),
+    ...material.controls.map((event) => event.tick),
+    ...material.programs.map((event) => event.tick),
+    ...(material.bends ?? []).map((event) => event.tick),
+    ...(material.metadata ?? []).map((event) => event.tick),
+  );
+  return endTick === material.endTick ? material : { ...material, endTick };
 }
 export function undoComposition(history: CompositionHistory): CompositionHistory {
   const previous = history.past.at(-1);
@@ -349,6 +379,7 @@ export function draftFromScore(
   return {
     version: 1,
     id: id(),
+    revisionId: id(),
     name,
     updatedAt: Date.now(),
     sourceFormat,

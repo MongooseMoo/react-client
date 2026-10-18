@@ -50,8 +50,18 @@ export class LiveOriginRenderer {
   }
   private state(id: string): Origin | undefined {
     let state = this.origins.get(id);
+    if (!state && this.origins.size >= 64) {
+      const idle = [...this.origins].find(([, origin]) => origin.notes.size === 0);
+      if (idle) this.releaseAll(idle[0]);
+      else
+        this.options.error?.('Live MIDI origin limit reached; all 64 performers still own voices.');
+    }
     if (!state && this.origins.size < 64) {
       state = { channels: new Map(), notes: new Map(), lastOnId: -1 };
+      this.origins.set(id, state);
+    }
+    if (state) {
+      this.origins.delete(id);
       this.origins.set(id, state);
     }
     return state;
@@ -103,7 +113,7 @@ export class LiveOriginRenderer {
   }
   async note(data: LiveNote): Promise<void> {
     const id = data.originId ?? LEGACY_SERVER_ORIGIN;
-    const state = this.state(id);
+    const state = data.on ? this.state(id) : this.origins.get(id);
     if (!state) return;
     const channel = this.channel(state, data.channel);
     const key = `${data.channel}:${data.note}`;

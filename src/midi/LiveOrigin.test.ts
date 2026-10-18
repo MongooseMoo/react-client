@@ -58,17 +58,30 @@ function setup(prepare = async (_: unknown, _signal: AbortSignal) => {}) {
     }),
     dispose: vi.fn(),
   };
+  const error = vi.fn();
   const renderer = new LiveOriginRenderer({
     getOutput: async () => output,
     getDestination: () => ({}) as AudioNode,
     budget: new SequenceBudget(),
+    error,
   });
   renderers.push(renderer);
-  return { renderer, output, voices };
+  return { renderer, output, voices, error };
 }
 const note = { note: 60, velocity: 100, on: true, channel: 0, originId: 'origin-a', eventId: 1 };
 
 describe('strict live protocol', () => {
+  it.each([
+    'server:legacy',
+    'server:other',
+  ])('rejects reserved server origins across all relay messages: %s', (originId) => {
+    expect(() => decodeLiveNote({ ...note, originId })).toThrow('origin');
+    expect(() => decodeLiveControl({ originId, channel: 0, controller: 7, value: 100 })).toThrow(
+      'origin',
+    );
+    expect(() => decodeLiveProgram({ originId, channel: 0, program: 0 })).toThrow('origin');
+    expect(() => decodeLiveReleaseAll({ originId })).toThrow('origin');
+  });
   it('preserves program/channel zero and only normalizes legacy integer booleans', () => {
     expect(decodeLiveNote({ note: 60, velocity: 100, on: 1 })).toMatchObject({
       on: true,
@@ -102,6 +115,25 @@ describe('strict live protocol', () => {
 });
 
 describe('origin-owned live voices', () => {
+  it('evicts idle origins in least-recent-use order without stealing active notes', async () => {
+    const { renderer, voices, error } = setup();
+    for (let i = 0; i < 64; i++)
+      renderer.program({ originId: `idle-${i}`, channel: 0, program: 40 });
+    renderer.program({ originId: 'idle-0', channel: 0, program: 41 });
+    await renderer.note({ ...note, originId: 'new' });
+    await renderer.note({ ...note, originId: 'idle-0' });
+    await renderer.note({ ...note, originId: 'idle-1' });
+    expect(voices.map((v) => v.program)).toEqual([0, 41, 0]);
+    expect(voices.every((v) => !v.stop.mock.calls.length)).toBe(true);
+    expect(error).not.toHaveBeenCalled();
+  });
+  it('reports saturated active origin admission instead of silently refusing', async () => {
+    const { renderer, voices, error } = setup();
+    for (let i = 0; i < 65; i++) await renderer.note({ ...note, originId: `active-${i}` });
+    expect(voices).toHaveLength(64);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('origin limit'));
+    expect(voices.every((v) => !v.stop.mock.calls.length)).toBe(true);
+  });
   it('replaces only the same origin key and stale releases cannot cut the new voice', async () => {
     const { renderer, voices } = setup();
     await renderer.note(note);

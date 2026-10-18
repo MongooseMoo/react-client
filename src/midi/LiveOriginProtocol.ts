@@ -33,7 +33,11 @@ const integer = (value: unknown, min: number, max: number): number => {
 };
 function origin(value: unknown): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== 'string' || !/^[A-Za-z0-9:_-]{1,128}$/.test(value))
+  if (
+    typeof value !== 'string' ||
+    !/^[A-Za-z0-9:_-]{1,128}$/.test(value) ||
+    value.startsWith('server:')
+  )
     throw new TypeError('Invalid MIDI origin');
   return value;
 }

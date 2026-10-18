@@ -33,12 +33,15 @@ export class CompositionCapture {
   input(message: MidiMessage, performanceTimeMs: number): void {
     if (
       !Number.isFinite(performanceTimeMs) ||
-      performanceTimeMs < this.options.startPerformanceMs ||
+      performanceTimeMs < this.options.startPerformanceMs - 5 ||
       performanceTimeMs > this.endPerformanceMs
     )
       return;
     const data = [...message.rawData.data];
     const type = data[0] & 0xf0;
+    // Only an early key attack gets the five-ms beat-one grace; count-in CCs stay excluded.
+    if (performanceTimeMs < this.options.startPerformanceMs && !(type === 0x90 && data[2] > 0))
+      return;
     if (this.options.channel !== undefined && (data[0] & 15) !== this.options.channel) return;
     if (
       data.length < 2 ||
@@ -71,7 +74,9 @@ export class CompositionCapture {
           this.startTick,
           Math.round(
             this.timeline.tickAtTime(
-              this.timeline.timeAtTick(this.startTick) + ms - this.options.startPerformanceMs,
+              this.timeline.timeAtTick(this.startTick) +
+                Math.max(ms, this.options.startPerformanceMs) -
+                this.options.startPerformanceMs,
             ),
           ),
         ),

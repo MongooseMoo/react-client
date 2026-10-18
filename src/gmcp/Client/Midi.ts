@@ -393,6 +393,8 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
       ...(duration === undefined ? {} : { duration }),
     });
     if (!this.enabled) return;
+    if (this.relaySuspensions.size) return;
+    if (!on && !this.outgoing.has(`${channel}:${note}`)) return;
     if (on && !this.outgoing.has(`${channel}:${note}`) && this.outgoing.size >= 128)
       throw new RangeError('Too many outstanding MIDI notes');
     this.trackOutgoing(data, duration);
@@ -438,13 +440,12 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     this.outgoingTimers.clear();
     this.outgoing.clear();
     this.pedals.clear();
-    this.relaySuspensions.clear();
     this.isAdvertised = false;
-    for (const listener of this.panicListeners) listener();
   }
   shutdown(): void {
     this.closed = true;
     this.reset();
+    this.relaySuspensions.clear();
     for (const release of this.releases.splice(0)) release();
     this.panicListeners.clear();
     this.statusListeners.clear();

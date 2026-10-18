@@ -133,6 +133,85 @@ describe('music composer keyboard controls and capture', () => {
     expect(screen.getByRole('button', { name: 'Save locally' })).toBeDisabled();
   });
 
+  it('commits a long text edit once on blur or Enter and keeps earlier musical undo steps', () => {
+    submitNote();
+    const name = screen.getByRole('textbox', { name: 'Part name' });
+    for (let i = 1; i <= 30; i++) fireEvent.input(name, { target: { value: 'A'.repeat(i) } });
+    expect(screen.getByRole('combobox', { name: 'Part' })).toHaveTextContent('Piano');
+    fireEvent.blur(name);
+    expect(screen.getByRole('combobox', { name: 'Part' })).toHaveTextContent('A'.repeat(30));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(name).toHaveValue('Piano');
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('C4');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+    fireEvent.input(name, { target: { value: 'One field commit' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+    fireEvent.blur(name);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(name).toHaveValue('Piano');
+  });
+
+  it('keeps incomplete numeric text local and reports invalid committed lengths without throwing', () => {
+    const length = screen.getByRole('spinbutton', { name: 'Pattern length (quarter-note beats)' });
+    fireEvent.input(length, { target: { value: '-' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.blur(length);
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a number');
+    fireEvent.input(length, { target: { value: '8' } });
+    fireEvent.keyDown(length, { key: 'Enter' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(length).toHaveValue(4);
+  });
+
+  it('replace recording mutes only the selected part in private playback', async () => {
+    submitNote();
+    fireEvent.click(screen.getByRole('button', { name: 'Add part' }));
+    submitNote();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Overdub existing notes' }));
+    await record();
+    const playback = mocks.start.mock.calls.at(-1)?.[0];
+    expect(playback.parts.map((part: { notes: unknown[] }) => part.notes.length)).toEqual([1, 0]);
+    now = 1500;
+    stop();
+  });
+
+  it('retains a take rejected by the score budget and retries it after earlier event material is cleared', async () => {
+    const controls = () =>
+      act(() => {
+        for (let i = 0; i < 10000; i++)
+          mocks.input?.(
+            {
+              rawData: { data: new Uint8Array([0xb0, 1, i % 128]), hex: '', type: '' },
+              controlChange: { channel: 0, controller: 1, value: i % 128 },
+            },
+            1200,
+          );
+      });
+    await record();
+    controls();
+    input(true, 60, 1250);
+    input(false, 60, 1500);
+    stop();
+    expect(screen.getByText('1 original recording takes retained.')).toBeInTheDocument();
+    await record();
+    controls();
+    input(true, 64, 1250);
+    input(false, 64, 1500);
+    stop();
+    expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record selected pattern' })).toBeDisabled();
+    fireEvent.input(screen.getByRole('textbox', { name: 'Controller events' }), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply event edits' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry captured take' }));
+    expect(screen.queryByRole('button', { name: 'Retry captured take' })).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('E4 (64)');
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('C4 (60)');
+  });
+
   it('captures during a private relay lease, ignores count-in and overdubs without enabling monitoring', async () => {
     expect(screen.getByRole('checkbox', { name: 'Monitor keyboard locally' })).not.toBeChecked();
     expect(

@@ -73,7 +73,7 @@ export function createComposerStore() {
         const next = change(get().history.present);
         validateDraft(next);
         set({
-          history: updateComposition(get().history, next),
+          history: updateComposition(get().history, next, true),
           status: 'Unsaved local changes',
           error: '',
         });

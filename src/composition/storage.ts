@@ -10,6 +10,26 @@ export interface SavedComposition {
 const MAX_DRAFT_BYTES = 2 * 1048576;
 const MAX_TOTAL_BYTES = 16 * 1048576;
 const MAX_DRAFTS = 16;
+/** Evict bounded raw take history; the edited pattern's notes remain untouched. */
+export function retainCaptureHistory(draft: CompositionDraft): {
+  draft: CompositionDraft;
+  evictedTakes: number;
+} {
+  let takes = [...draft.takes],
+    inputs = takes.reduce((sum, take) => sum + take.events.length, 0),
+    evictedTakes = 0;
+  while (
+    takes.length &&
+    (takes.length > 64 ||
+      inputs > 20000 ||
+      new TextEncoder().encode(JSON.stringify({ ...draft, takes })).byteLength > MAX_DRAFT_BYTES)
+  ) {
+    inputs -= takes[0].events.length;
+    takes = takes.slice(1);
+    evictedTakes++;
+  }
+  return { draft: { ...draft, takes }, evictedTakes };
+}
 export function validateDraft(value: unknown): CompositionDraft {
   if (!value || typeof value !== 'object') throw new TypeError('Invalid composition draft');
   const draft = value as CompositionDraft;
@@ -18,6 +38,11 @@ export function validateDraft(value: unknown): CompositionDraft {
     typeof draft.id !== 'string' ||
     !draft.id ||
     draft.id.length > 128 ||
+    (draft.revisionId !== undefined &&
+      (typeof draft.revisionId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+          draft.revisionId,
+        ))) ||
     typeof draft.name !== 'string' ||
     draft.name.length > 256 ||
     !Number.isFinite(draft.updatedAt) ||

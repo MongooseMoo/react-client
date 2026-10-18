@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createServer as createViteServer } from 'vite';
 import { chromium, expect } from '@playwright/test';
 
-const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'custom' });
+const vite = await createViteServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
 const server = createServer((request, response) => {
   if (request.url === '/probe') {
     response.setHeader('Content-Type', 'text/html');
@@ -18,6 +18,11 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/probe`);
   await expect(page.getByRole('button', { name: 'Record selected pattern' })).toBeEnabled({ timeout: 15000 });
+  const partName=page.getByRole('textbox',{name:'Part name'});
+  await partName.fill('One complete keyboard edit');
+  await page.keyboard.press('Enter');
+  await page.getByRole('button',{name:'Undo',exact:true}).click();
+  await expect(partName).toHaveValue('Piano');
   // Native keyboard submission, followed by editable linear note and undo controls.
   await page.getByRole('spinbutton', { name: 'Start beat', exact: true }).fill('0.25');
   await page.getByRole('spinbutton', { name: 'Velocity', exact: true }).focus();
@@ -54,6 +59,8 @@ try {
   await expect(page.getByRole('status')).toHaveText('Recording armed.');
   await page.evaluate(async () => {
     await new Promise(resolve => setTimeout(resolve, 1650));
+    window.composerProbe.networkReset();
+    window.composerProbe.manual(70,true);window.composerProbe.manual(70,false);
     window.composerProbe.keyboard.emit([0x90, 64, 100]);
     await new Promise(resolve => setTimeout(resolve, 180));
     window.composerProbe.keyboard.emit([0x80, 64, 0]);

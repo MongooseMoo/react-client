@@ -37,6 +37,8 @@ const target = document.createElement('main'); document.body.append(target);
 render(h(MusicComposer, { client }), target);
 Object.assign(window, { composerProbe: {
   context, engine, sent, keyboard,
+  networkReset() { midi.reset(); },
+  manual(note:number,on:boolean) { midi.sendManualNote(note,on?100:0,on); },
   amplitude() { analyser.getFloatTimeDomainData(frames); return Math.max(...frames.map(Math.abs)); },
   destroy() { render(null, target); midi.shutdown(); return context.close(); },
 } });

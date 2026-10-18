@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useId,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type InputHTMLAttributes,
+} from 'react';
 import { useStore } from 'zustand';
 import type MudClient from '../client';
 import { midiService } from '../MidiService';
@@ -9,6 +18,7 @@ import {
   compileComposition,
   draftFromScore,
   quantizeNotes,
+  extendPartEnd,
   type CompositionDraft,
   type PatternPart,
 } from '../composition/model';
@@ -19,6 +29,55 @@ import { LiveOriginRenderer } from '../midi/LiveOriginRenderer';
 import type { GMCPClientMidi } from '../gmcp/Client/Midi';
 import type { ScoreNote } from '../midi/score';
 import { programs as MIDI_PROGRAMS } from '../midi/programs';
+import { retainCaptureHistory } from '../composition/storage';
+
+/** Keep unfinished typing local; a field commit is one validated undo step. */
+function CommitInput({
+  value,
+  onChange,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  value: string | number;
+  onChange: (event: { currentTarget: HTMLInputElement }) => void;
+}) {
+  const [text, setText] = useState(String(value)),
+    [error, setError] = useState('');
+  useEffect(() => {
+    setText(String(value));
+    setError('');
+  }, [value]);
+  const commit = (element: HTMLInputElement) => {
+    if (element.value === String(value)) return;
+    try {
+      if (props.type === 'number' && !element.value.trim())
+        throw new RangeError('Enter a number before committing this field.');
+      if (!element.checkValidity())
+        throw new RangeError('Enter a valid value within the field limits.');
+      onChange({ currentTarget: element });
+      setError('');
+    } catch (error) {
+      setError(messageOf(error));
+    }
+  };
+  return (
+    <>
+      <input
+        {...props}
+        value={text}
+        onChange={(event) => setText(event.currentTarget.value)}
+        onBlur={(event) => commit(event.currentTarget)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit(event.currentTarget);
+          }
+        }}
+        aria-invalid={Boolean(error)}
+      />
+      {error && <span role="alert">{error}</span>}
+    </>
+  );
+}
 
 const beats = (tick: number) => Number((tick / 960).toFixed(6));
 function ticks(value: string): number {
@@ -40,6 +99,7 @@ const eventText = (
     .join('\n');
 
 export default function MusicComposer({ client }: { client: MudClient }) {
+  const fieldPrefix = useId();
   const resources = useMemo(
     () => ({
       client,
@@ -89,6 +149,10 @@ export default function MusicComposer({ client }: { client: MudClient }) {
   const [programText, setProgramText] = useState('');
   const [now, setNow] = useState(0);
   const [deviceVersion, setDeviceVersion] = useState(0);
+  const [pendingTake, setPendingTake] = useState<{
+    result: ReturnType<CompositionCapture['finish']>;
+    overdub: boolean;
+  }>();
   const capture = useRef<CompositionCapture>();
   const captureTimer = useRef<ReturnType<typeof setTimeout>>();
   const releaseRelay = useRef<() => void>();
@@ -154,13 +218,15 @@ export default function MusicComposer({ client }: { client: MudClient }) {
               ...item,
               parts: [
                 ...item.parts.filter((item) => item.partId !== part.id),
-                change(
-                  item.parts.find((item) => item.partId === part.id) ?? {
-                    partId: part.id,
-                    notes: [],
-                    controls: [],
-                    programs: [],
-                  },
+                extendPartEnd(
+                  change(
+                    item.parts.find((item) => item.partId === part.id) ?? {
+                      partId: part.id,
+                      notes: [],
+                      controls: [],
+                      programs: [],
+                    },
+                  ),
                 ),
               ],
             },
@@ -173,6 +239,7 @@ export default function MusicComposer({ client }: { client: MudClient }) {
     monitorRenderer.reset();
     monitorKeys.current.clear();
     store.getState().setOwner(owner);
+    setPendingTake(undefined);
   }, [owner, stop, worker, monitorRenderer, store]);
   useEffect(
     () => () => {
@@ -295,6 +362,75 @@ export default function MusicComposer({ client }: { client: MudClient }) {
       }),
     [monitor, part, monitorId, monitorRenderer, preferences.enabled, client, store],
   );
+  const commitRecording = (result: ReturnType<CompositionCapture['finish']>, append: boolean) => {
+    const target = result.take;
+    stop();
+    let evictedTakes = 0;
+    edit((value) => {
+      if (
+        !value.patterns.some((pattern) => pattern.id === target.patternId) ||
+        !value.parts.some((part) => part.id === target.partId)
+      )
+        throw new Error('The recorded part or pattern no longer exists.');
+      const retained = retainCaptureHistory({
+        ...value,
+        takes: [...value.takes, target],
+        patterns: value.patterns.map((pattern) =>
+          pattern.id !== target.patternId
+            ? pattern
+            : {
+                ...pattern,
+                parts: [
+                  ...pattern.parts.filter((item) => item.partId !== target.partId),
+                  (() => {
+                    const previous = pattern.parts.find(
+                      (item) => item.partId === target.partId,
+                    ) ?? {
+                      partId: target.partId,
+                      notes: [],
+                      controls: [],
+                      programs: [],
+                    };
+                    return extendPartEnd({
+                      ...previous,
+                      notes: [...(append ? previous.notes : []), ...result.notes].sort(
+                        (a, b) => a[0] - b[0],
+                      ),
+                      controls: [...(append ? previous.controls : []), ...result.controls].sort(
+                        (a, b) => a.tick - b.tick,
+                      ),
+                      programs: [...(append ? previous.programs : []), ...result.programs].sort(
+                        (a, b) => a.tick - b.tick,
+                      ),
+                      bends: [...(append ? (previous.bends ?? []) : []), ...result.bends].sort(
+                        (a, b) => a.tick - b.tick,
+                      ),
+                    });
+                  })(),
+                ],
+              },
+        ),
+      });
+      evictedTakes = retained.evictedTakes;
+      return retained.draft;
+    });
+    if (store.getState().error) {
+      setPendingTake({ result, overdub: append });
+      store
+        .getState()
+        .report(
+          'Recording retained for retry. Free score space, then retry or explicitly discard this take.',
+          store.getState().error,
+        );
+    } else {
+      setPendingTake(undefined);
+      store
+        .getState()
+        .report(
+          `Recorded ${result.notes.length} notes. ${evictedTakes ? `${evictedTakes} oldest raw recording takes evicted to fit history limits; pattern notes retained.` : 'Original timestamps retained.'}`,
+        );
+    }
+  };
   finishRecording.current = () => {
     const recording = capture.current;
     if (!recording) {
@@ -306,53 +442,13 @@ export default function MusicComposer({ client }: { client: MudClient }) {
       state.report('Recording cancelled during count-in.');
       return;
     }
-    const result = recording.finish(performance.now());
-    const target = result.take;
-    stop();
-    edit((value) => ({
-      ...value,
-      takes: [...value.takes, target].slice(-64),
-      patterns: value.patterns.map((pattern) =>
-        pattern.id !== target.patternId
-          ? pattern
-          : {
-              ...pattern,
-              parts: [
-                ...pattern.parts.filter((item) => item.partId !== target.partId),
-                (() => {
-                  const previous = pattern.parts.find((item) => item.partId === target.partId) ?? {
-                    partId: target.partId,
-                    notes: [],
-                    controls: [],
-                    programs: [],
-                  };
-                  return {
-                    ...previous,
-                    endTick: pattern.durationTicks,
-                    notes: [...(overdub ? previous.notes : []), ...result.notes].sort(
-                      (a, b) => a[0] - b[0],
-                    ),
-                    controls: [...(overdub ? previous.controls : []), ...result.controls].sort(
-                      (a, b) => a.tick - b.tick,
-                    ),
-                    programs: [...(overdub ? previous.programs : []), ...result.programs].sort(
-                      (a, b) => a.tick - b.tick,
-                    ),
-                    bends: [...(overdub ? (previous.bends ?? []) : []), ...result.bends].sort(
-                      (a, b) => a.tick - b.tick,
-                    ),
-                  };
-                })(),
-              ],
-            },
-      ),
-    }));
-    if (!store.getState().error)
-      store
-        .getState()
-        .report(`Recorded ${result.notes.length} notes. Original timestamps retained.`);
+    commitRecording(recording.finish(performance.now()), overdub);
   };
   const start = async (record: boolean, wholeArrangement = false) => {
+    if (record && pendingTake) {
+      state.report('', 'Commit or discard the retained take before recording again.');
+      return;
+    }
     stop();
     const operationEpoch = epoch.current;
     if (!preferences.enabled) {
@@ -372,7 +468,12 @@ export default function MusicComposer({ client }: { client: MudClient }) {
       );
       const playbackScore =
         record && !overdub
-          ? { ...score, parts: score.parts.map((item) => ({ ...item, notes: [] })) }
+          ? {
+              ...score,
+              parts: score.parts.map((item) =>
+                item.id === part?.id ? { ...item, notes: [] } : item,
+              ),
+            }
           : score;
       if (record && !sendToRoom) releaseRelay.current = midi?.suspendInputRelay();
       const anchor = await audition.start(playbackScore, record ? countIn : 0);
@@ -529,9 +630,11 @@ export default function MusicComposer({ client }: { client: MudClient }) {
       </label>
       <fieldset disabled={active || state.busy}>
         <legend>Local drafts</legend>
-        <label>
+        <label htmlFor={`${fieldPrefix}-composition-name`}>
           Composition name
-          <input
+          <CommitInput
+            id={`${fieldPrefix}-composition-name`}
+            key={draft.id}
             maxLength={256}
             value={draft.name}
             onChange={(event) => edit((value) => ({ ...value, name: event.currentTarget.value }))}
@@ -688,9 +791,11 @@ export default function MusicComposer({ client }: { client: MudClient }) {
         </button>
         {part && (
           <>
-            <label>
+            <label htmlFor={`${fieldPrefix}-part-name`}>
               Part name
-              <input
+              <CommitInput
+                id={`${fieldPrefix}-part-name`}
+                key={part.id}
                 maxLength={256}
                 value={part.name}
                 onChange={(event) =>
@@ -743,9 +848,11 @@ export default function MusicComposer({ client }: { client: MudClient }) {
                 ))}
               </select>
             </label>
-            <label>
+            <label htmlFor={`${fieldPrefix}-part-gain`}>
               Initial volume (0–127)
-              <input
+              <CommitInput
+                id={`${fieldPrefix}-part-gain`}
+                key={part.id}
                 type="number"
                 min={0}
                 max={127}
@@ -762,9 +869,11 @@ export default function MusicComposer({ client }: { client: MudClient }) {
                 }
               />
             </label>
-            <label>
+            <label htmlFor={`${fieldPrefix}-part-pan`}>
               Initial pan (0 left, 64 centre, 127 right)
-              <input
+              <CommitInput
+                id={`${fieldPrefix}-part-pan`}
+                key={part.id}
                 type="number"
                 min={0}
                 max={127}
@@ -857,9 +966,11 @@ export default function MusicComposer({ client }: { client: MudClient }) {
         </button>
         {pattern && (
           <>
-            <label>
+            <label htmlFor={`${fieldPrefix}-pattern-name`}>
               Pattern name
-              <input
+              <CommitInput
+                id={`${fieldPrefix}-pattern-name`}
+                key={pattern.id}
                 maxLength={256}
                 value={pattern.name}
                 onChange={(event) =>
@@ -872,9 +983,11 @@ export default function MusicComposer({ client }: { client: MudClient }) {
                 }
               />
             </label>
-            <label>
+            <label htmlFor={`${fieldPrefix}-pattern-length`}>
               Pattern length (quarter-note beats)
-              <input
+              <CommitInput
+                id={`${fieldPrefix}-pattern-length`}
+                key={pattern.id}
                 type="number"
                 min={1 / 960}
                 step="any"
@@ -908,7 +1021,6 @@ export default function MusicComposer({ client }: { client: MudClient }) {
               ];
               editMaterial((value) => ({
                 ...value,
-                endTick: pattern.durationTicks,
                 notes: [...value.notes.filter((_, index) => index !== selectedNote), row].sort(
                   (a, b) => a[0] - b[0],
                 ),
@@ -1104,7 +1216,6 @@ export default function MusicComposer({ client }: { client: MudClient }) {
                   : [];
                 editMaterial((value) => ({
                   ...value,
-                  endTick: pattern.durationTicks,
                   controls,
                   programs,
                 }));
@@ -1217,9 +1328,11 @@ export default function MusicComposer({ client }: { client: MudClient }) {
                   ))}
                 </select>
               </label>
-              <label>
+              <label htmlFor={`${fieldPrefix}-section-${section.id}-length`}>
                 Section {index + 1} length in beats
-                <input
+                <CommitInput
+                  id={`${fieldPrefix}-section-${section.id}-length`}
+                  key={section.id}
                   type="number"
                   min={1 / 960}
                   step="any"
@@ -1235,9 +1348,11 @@ export default function MusicComposer({ client }: { client: MudClient }) {
                   }}
                 />
               </label>
-              <label>
+              <label htmlFor={`${fieldPrefix}-section-${section.id}-repeats`}>
                 Section {index + 1} repeats
-                <input
+                <CommitInput
+                  id={`${fieldPrefix}-section-${section.id}-repeats`}
+                  key={section.id}
                   type="number"
                   min={1}
                   max={64}
@@ -1424,7 +1539,9 @@ export default function MusicComposer({ client }: { client: MudClient }) {
         </label>
         <button
           type="button"
-          disabled={active || !preferences.enabled || !midiService.hasInputDevice}
+          disabled={
+            active || Boolean(pendingTake) || !preferences.enabled || !midiService.hasInputDevice
+          }
           onClick={() => {
             void start(true);
           }}
@@ -1442,6 +1559,31 @@ export default function MusicComposer({ client }: { client: MudClient }) {
           </p>
         )}
         <p>{draft.takes.length} original recording takes retained.</p>
+        {pendingTake && (
+          <div>
+            <p>
+              {pendingTake.result.notes.length} recorded notes are retained in memory until
+              committed or discarded. They are not yet saved.
+            </p>
+            <button
+              type="button"
+              disabled={active}
+              onClick={() => commitRecording(pendingTake.result, pendingTake.overdub)}
+            >
+              Retry captured take
+            </button>
+            <button
+              type="button"
+              disabled={active}
+              onClick={() => {
+                setPendingTake(undefined);
+                state.report('Uncommitted captured take discarded.');
+              }}
+            >
+              Discard captured take
+            </button>
+          </div>
+        )}
       </fieldset>
     </section>
   );

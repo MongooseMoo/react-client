@@ -42,6 +42,27 @@ const input = (midi: GMCPClientMidi, message: Omit<MidiMessage, 'rawData'>) =>
   });
 
 describe('Client.Midi 2', () => {
+  it('network reset preserves private capture and its lease, while explicit panic still notifies', () => {
+    const { midi, send } = setup();
+    const panic = vi.fn();
+    midi.subscribePanic(panic);
+    const release = midi.suspendInputRelay();
+    midi.reset();
+    expect(panic).not.toHaveBeenCalled();
+    input(midi, { note: { note: 60, velocity: 100, on: true, channel: 0 } });
+    midi.sendManualNote(62, 100, true);
+    midi.sendManualNote(62, 0, false);
+    expect(send).not.toHaveBeenCalled();
+    release();
+    release();
+    midi.sendManualNote(64, 100, true);
+    expect(send).toHaveBeenCalledWith(
+      'Client.Midi.Note',
+      JSON.stringify({ note: 64, velocity: 100, on: true, channel: 0 }),
+    );
+    midi.sendAllNotesOff();
+    expect(panic).toHaveBeenCalledOnce();
+  });
   it('routes validated CC/program to independent origin state, preserving zero values', async () => {
     const { midi, renderer } = setup();
     midi.receiveRegisteredMessage('ControlChange', {

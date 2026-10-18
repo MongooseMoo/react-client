@@ -7,6 +7,7 @@ import {
   undoComposition,
   redoComposition,
   draftFromScore,
+  extendPartEnd,
 } from './model';
 import { CompositionCapture } from './capture';
 import { importSmf, exportSmf } from './smf';
@@ -117,6 +118,43 @@ function fixture() {
   ]).buffer;
 }
 describe('musical pattern arrangement', () => {
+  it('has stable UUID content identities per immutable variant and accepts a frozen publication identity', () => {
+    const draft = newComposition(),
+      score = compileComposition(draft);
+    expect(compileComposition(draft).contentId).toBe(score.contentId);
+    expect(compileComposition(draft, draft.patterns[0].id).contentId).not.toBe(score.contentId);
+    const publicationId = crypto.randomUUID();
+    expect(compileComposition(draft, undefined, false, publicationId).contentId).toBe(
+      publicationId,
+    );
+    expect(publicationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    const history = updateComposition(
+      { present: draft, past: [], future: [] },
+      { ...draft, name: 'Reviewed change' },
+    );
+    expect(history.present.revisionId).not.toBe(draft.revisionId);
+    expect(compileComposition(history.present).contentId).not.toBe(score.contentId);
+    expect(compileComposition(undoComposition(history).present).contentId).toBe(score.contentId);
+  });
+  it('keeps distinct imported EOT and extends it only as far as an edited event requires', () => {
+    const draft = newComposition(),
+      original = {
+        ...draft.patterns[0].parts[0],
+        endTick: 1100,
+        notes: [[600, 500, 60, 100] as const],
+      };
+    expect(extendPartEnd(original).endTick).toBe(1100);
+    const edited = extendPartEnd({
+      ...original,
+      notes: quantizeNotes(original.notes, 960, 0, 3840),
+    });
+    expect(edited.endTick).toBe(1920);
+    const value = { ...draft, patterns: [{ ...draft.patterns[0], parts: [edited] }] };
+    expect(compileComposition(value).parts[0].endTick).toBe(1920);
+    expect(extendPartEnd({ ...edited, notes: [] }).endTick).toBe(1920);
+  });
   it('fills or truncates explicit section lengths without losing rests or trailing silence', () => {
     const base = newComposition(),
       pattern = base.patterns[0],
@@ -178,6 +216,25 @@ describe('musical pattern arrangement', () => {
   });
 });
 describe('timestamped capture', () => {
+  it('snaps a key attack within five ms before beat one while excluding count-in controls', () => {
+    const draft = newComposition(),
+      capture = new CompositionCapture({
+        score: compileComposition(draft),
+        partId: draft.parts[0].id,
+        patternId: draft.patterns[0].id,
+        startPerformanceMs: 1000,
+      });
+    const input = (data: number[], time: number) =>
+      capture.input({ rawData: { data: new Uint8Array(data), hex: '', type: '' } }, time);
+    input([0x90, 48, 100], 994);
+    input([0xb0, 64, 127], 998);
+    input([0x90, 60, 100], 997.5);
+    input([0x80, 60, 0], 1100);
+    const result = capture.finish(1200);
+    expect(result.notes).toEqual([[0, 192, 60, 100]]);
+    expect(result.controls).toEqual([]);
+    expect(result.take.events[0].performanceTimeMs).toBe(997.5);
+  });
   it('maps real timestamps across tempo changes and retains original receipt timing for overdub', () => {
     const draft = newComposition();
     const score = {
@@ -222,6 +279,66 @@ describe('timestamped capture', () => {
   });
 });
 describe('bounded faithful SMF authoring', () => {
+  it('preserves untouched track-name bytes including empty names and shares an explicit rename across physical-track channels', () => {
+    for (const name of [[], [0xc3, 0xa9], [0xff]]) {
+      const bytes = WebAudioTinySynth.writeMIDI({
+        format: 1,
+        timebase: 3840,
+        maxTick: 960,
+        tempo: 120,
+        copyright: '',
+        text: '',
+        ev: [],
+        tracks: [
+          {
+            endTick: 960,
+            events: [
+              { t: 0, kind: 'meta', type: 3, data: name },
+              { t: 0, kind: 'midi', message: [0xc0, 0] },
+              { t: 0, kind: 'midi', message: [0xc1, 0] },
+            ],
+          },
+        ],
+      });
+      const imported = importSmf(bytes),
+        draft = draftFromScore(imported.score, 'Names', 1);
+      const unchanged = WebAudioTinySynth.parseMIDI(
+        exportSmf(compileComposition(draft, undefined, false), 1),
+      );
+      expect(unchanged.tracks[0].events).toContainEqual({
+        t: 0,
+        kind: 'meta',
+        type: 3,
+        data: name,
+      });
+      const edited = {
+        ...draft,
+        parts: draft.parts.map((part, index) =>
+          index === 0 ? { ...part, name: 'Renamed é' } : part,
+        ),
+      };
+      const output = exportSmf(compileComposition(edited, undefined, false), 1);
+      expect(importSmf(output).score.parts.map((part) => part.name)).toEqual([
+        'Renamed é',
+        'Renamed é',
+      ]);
+    }
+  });
+  it('exports an edited imported part name while retaining later metadata and EOT', () => {
+    const imported = importSmf(fixture()),
+      draft = draftFromScore(imported.score, 'Renamed', 1);
+    const edited = {
+      ...draft,
+      parts: draft.parts.map((part, index) =>
+        index === 1 ? { ...part, name: 'New piano' } : part,
+      ),
+    };
+    const result = WebAudioTinySynth.parseMIDI(
+      exportSmf(compileComposition(edited, undefined, false), 1),
+    );
+    expect(result.tracks[1].name).toBe('New piano');
+    expect(result.tracks[1].endTick).toBe(1920);
+  });
   it('pairs note releases by channel across physical tracks, preserving onset ownership', () => {
     const bytes = WebAudioTinySynth.writeMIDI({
       format: 1,
