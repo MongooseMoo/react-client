@@ -52,6 +52,13 @@ export interface AutoLogSessionDraft {
   sanitizedUrl: string;
 }
 
+// A second destination for lines IndexedDB has already stored. Its failures
+// are its own: they never reach the IndexedDB flush.
+export interface AutoLogSink {
+  append(session: AutoLogSession, entries: AutoLogEntry[]): void;
+  sessionEnded(session: AutoLogSession, endedAt: number): void;
+}
+
 export const AUTOLOG_DB_NAME = "mongoose-autologs";
 export const AUTOLOG_DB_VERSION = 1;
 export const AUTOLOG_SESSIONS_STORE = "sessions";

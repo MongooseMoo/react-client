@@ -5,6 +5,7 @@ import { usePreferences } from "../stores/preferencesStore";
 import { useVoices } from "../hooks/useVoices";
 import Tabs, { type TabProps } from "./tabs";
 import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
+import LogFolderPreferences from "./LogFolderPreferences";
 import ChannelPreferencesTab from "./ChannelPreferences";
 import KeystrokePreferencesTab from "./KeystrokePreferences";
 import SoundfontPicker from './SoundfontPicker';
@@ -541,6 +542,7 @@ const AutologgingTab: React.FC = () => {
       <br />
       <button type="button" onClick={() => dialogRef.current?.open()}>Manage Autologs</button>
       <AutoLogDialog ref={dialogRef} />
+      <LogFolderPreferences />
     </div>
   );
 };

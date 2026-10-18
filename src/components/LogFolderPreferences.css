@@ -1,0 +1,106 @@
+.log-folder {
+  margin-top: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--gradient-panel);
+}
+
+.log-folder h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+}
+
+.log-folder-help {
+  margin: 0 0 var(--space-3);
+  max-width: 60ch;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+
+.log-folder-status {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-deep);
+}
+
+.log-folder-status > div {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.log-folder-status dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.log-folder-status dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.log-folder-name {
+  font-weight: var(--font-weight-medium);
+}
+
+.log-folder-path {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+}
+
+/* The dot repeats what the status text already says; it is never the only cue. */
+.log-folder-dot {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-text-muted);
+  vertical-align: 0.05em;
+}
+
+.log-folder-status[data-tone="on"] .log-folder-dot {
+  background: var(--color-success);
+  box-shadow: var(--shadow-glow-success);
+}
+
+.log-folder-status[data-tone="warn"] .log-folder-dot {
+  background: var(--color-warning);
+}
+
+.log-folder-status[data-tone="error"] .log-folder-dot {
+  background: var(--color-danger);
+}
+
+.log-folder-status[data-tone="warn"] {
+  box-shadow: inset 3px 0 0 var(--color-warning);
+}
+
+.log-folder-status[data-tone="error"] {
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+
+.log-folder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (forced-colors: active) {
+  .log-folder-dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  .log-folder-status[data-tone="warn"],
+  .log-folder-status[data-tone="error"] {
+    border-left: 3px solid CanvasText;
+  }
+}
