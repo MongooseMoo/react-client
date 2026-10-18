@@ -11,6 +11,12 @@ export interface AudioTimeMapping {
   acousticOffsetKnown: boolean;
 }
 
+/** Rendered samples lead heard output; an unavailable output clock implies no measurable lead. */
+export function outputDelaySeconds(snapshot: OutputClockSnapshot): number {
+  const heard = performanceToAudioTime(snapshot.performanceNowMs, snapshot);
+  return heard?.clock === 'output' ? Math.max(0, snapshot.currentTime - heard.audioTime) : 0;
+}
+
 /** Read a new snapshot on every scheduler wake; apply the user's correction once. */
 export function performanceToAudioTime(
   targetPerformanceMs: number,

@@ -270,20 +270,21 @@ describe('shared file transport', () => {
     expect(voice.dispose).toHaveBeenCalledOnce();
     expect(replacement.start).toHaveBeenCalledOnce();
   });
-  it.each([
-    -500, 500,
-  ])('applies signed local correction %sms once at a late entry', async (value) => {
-    correction = value;
-    await join();
-    expect(cursor).toBe(value < 0 ? 10.75 : 10.25);
-    expect(voice.start).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        at: value < 0 ? 5.25 : 5.75,
-        rate: 1,
-        offsetSeconds: value < 0 ? 10.75 : 10.25,
-      }),
-    );
-  });
+  it.each([-500, 500])(
+    'applies signed local correction %sms once at a late entry',
+    async (value) => {
+      correction = value;
+      await join();
+      expect(cursor).toBe(value < 0 ? 10.75 : 10.25);
+      expect(voice.start).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          at: value < 0 ? 5.25 : 5.75,
+          rate: 1,
+          offsetSeconds: value < 0 ? 10.75 : 10.25,
+        }),
+      );
+    },
+  );
   it('suspension cancels owned work and restoration rejoins the continuing cursor', async () => {
     await join();
     service.setSuspended(true);
@@ -569,5 +570,70 @@ describe('shared file transport', () => {
     expect(cursor).toBe(4.5);
     expect(errors).not.toHaveBeenCalled();
     expect(presentations.at(-1)).toMatchObject({ state: 'paused' });
+  });
+  it.each([1, 2])(
+    'accepts350ms output latency at rate%s while correcting a genuine stall',
+    async (rate) => {
+      service.shutdown();
+      const context = Object.assign(new EventTarget(), {
+        state: 'running',
+        currentTime: 5,
+        getOutputTimestamp: () => ({
+          contextTime: 5 + (now - 10000) / 1000 - 0.35,
+          performanceTime: now,
+        }),
+      });
+      Object.defineProperty(context, 'currentTime', { get: () => 5 + (now - 10000) / 1000 });
+      service = new SharedMediaService({
+        clock,
+        context: context as unknown as BaseAudioContext,
+        now: () => now,
+        sendSync: (request) => requests.push(request),
+      });
+      transport = { ...transport, rate };
+      await join();
+      now = 20000;
+      cursor = 20.35 * rate;
+      await vi.advanceTimersByTimeAsync(100);
+      service.receiveSync({ ...requests[1], transport });
+      await flush();
+      expect(voice.start).toHaveBeenCalledOnce();
+      now = 30000;
+      cursor = 29.35 * rate;
+      await vi.advanceTimersByTimeAsync(100);
+      service.receiveSync({ ...requests[2], transport });
+      await flush();
+      expect(voice.start).toHaveBeenCalledTimes(2);
+    },
+  );
+  it('rejects discontinuity and immutable cue edits before changing a retiring audible mix', async () => {
+    const initial = {
+      seq: 0,
+      fromMs: 0,
+      toMs: 30000,
+      cues: [{ id: 'line', startMs: 0, endMs: 30000, text: 'Original' }],
+    };
+    const joined = service.attach({ ...grant(), cueWindows: [initial] }, () => voice);
+    await flush();
+    service.receiveSync({ ...requests[0], transport });
+    await joined;
+    voice.updateMix = vi.fn();
+    now = 12000;
+    const candidate = { ...voice, updateMix: vi.fn(), pause: vi.fn(), dispose: vi.fn() };
+    const pending = service.attach(grant(), () => candidate, true);
+    await flush();
+    expect(() =>
+      service.update({ key: 'tv', transport: { ...transport, discontinuity: 1 } }),
+    ).toThrow();
+    expect(() =>
+      service.update({
+        key: 'tv',
+        transport,
+        cueWindows: [{ ...initial, cues: [{ ...initial.cues[0], text: 'Edited' }] }],
+      }),
+    ).toThrow();
+    expect(voice.updateMix).not.toHaveBeenCalled();
+    service.stop({ key: 'tv' });
+    await pending;
   });
 });

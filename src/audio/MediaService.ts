@@ -850,6 +850,13 @@ export class MediaService {
       });
     }
     if (data.key) this.sequences?.stop({ key: data.key });
+    if (
+      data.key &&
+      data.transport?.kind === 'media' &&
+      this.sharedMedia &&
+      !this.sharedMedia.acceptsTransport(data.key, data.transport)
+    )
+      return;
     if (data.key && data.transport?.kind !== 'media') this.sharedMedia?.stop({ key: data.key });
     if (data.key && data.transport?.kind === 'media' && this.sharedMedia?.has(data.key)) {
       const sound = this.sounds[data.key];
@@ -961,7 +968,12 @@ export class MediaService {
     try {
       await this.playPrepared(sound, data, soundKey, ticket, retiring);
     } catch (error) {
-      if (retiring && data.transport?.kind === 'media' && !this.cleanedSounds.has(retiring)) {
+      if (
+        retiring &&
+        data.transport?.kind === 'media' &&
+        ticket.current() &&
+        !this.cleanedSounds.has(retiring)
+      ) {
         if (this.sounds[soundKey] === sound) delete this.sounds[soundKey];
         this.releaseSound(sound);
         this.sounds[soundKey] = retiring;
@@ -1023,7 +1035,8 @@ export class MediaService {
     sound.playPayload = data;
     sound.generation = ticket.generation;
     this.assignSoundMetadata(sound, data);
-    this.sounds[soundKey] = sound;
+    const stagedShared = data.transport?.kind === 'media' && retiring !== undefined;
+    if (!stagedShared) this.sounds[soundKey] = sound;
     this.applySoundState(sound, data);
     // A Play is full state: without the field the voice is clear, so a listener
     // who walks through the door and is re-Played the sound direct hears it open up.
@@ -1044,23 +1057,30 @@ export class MediaService {
         this.tracePayload('routed', data, soundKey, ticket.generation, {
           code: 'STALE_GENERATION',
         });
+        if (stagedShared) this.releaseSound(sound);
         return;
       }
     }
     await this.applyEffectRouting(sound, soundKey, data, 'play');
-    if (!ticket.current() || this.sounds[soundKey] !== sound) {
+    if (!ticket.current() || this.isSoundStale(sound, soundKey)) {
       this.tracePayload('routed', data, soundKey, ticket.generation, { code: 'STALE_GENERATION' });
+      if (stagedShared) this.releaseSound(sound);
       return;
     }
     this.traceSound('routed', sound);
 
     if (data.transport?.kind === 'media') {
       if (!this.sharedMedia) throw new Error('Shared media playback unavailable');
+      if (!this.sharedMedia.acceptsTransport(soundKey, data.transport)) {
+        if (stagedShared) this.releaseSound(sound);
+        return;
+      }
       await this.sharedMedia.attach(
         { ...data, key: soundKey, transport: data.transport },
         () => this.sharedVoice(sound, soundKey, data),
         !sound.sharedTransportPrepared,
       );
+      if (stagedShared && !sound.sharedTransportPrepared) this.releaseSound(sound);
       if (data.type === 'music' && this.sounds[soundKey] === sound)
         this.activateMusicSession(sound, data);
       return;
@@ -1885,10 +1905,7 @@ export class MediaService {
     const { EffectChain } = await import('./effects/EffectChain');
     const inline = await EffectChain.createAnonymous(this.cacophony, effects);
 
-    const stale =
-      sound.effectGeneration !== generation ||
-      this.cleanedSounds.has(sound) ||
-      this.sounds[soundKey] !== sound;
+    const stale = sound.effectGeneration !== generation || this.isSoundStale(sound, soundKey);
     if (stale) {
       if (master) {
         inline.destroy(master);
@@ -1984,7 +2001,12 @@ export class MediaService {
     if (this.cleanedSounds.has(sound)) {
       return true;
     }
-    return soundKey !== undefined && this.sounds[soundKey] !== sound;
+    if (soundKey === undefined || this.sounds[soundKey] === sound) return false;
+    return !(
+      sound.playPayload?.transport?.kind === 'media' &&
+      sound.generation === this.keyGenerations.get(soundKey) &&
+      this.pendingLoads.has(soundKey)
+    );
   }
 
   private releaseSound(sound: ExtendedSound, key?: string, reason?: AudioDiagnosticError): void {

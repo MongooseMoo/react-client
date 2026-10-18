@@ -251,6 +251,56 @@ test('native finite HTML joins silently at the current cursor; cancelled future 
   expect(renewed.errorMs).toBeLessThan(250);
   expect(renewed.frames).toBeGreaterThan(100);
   expect(renewed.maxSilence).toBeLessThan(0.04);
+  const stale = await page.evaluate(async () => {
+    const sound = globalThis.media.sounds.late;
+    const old = globalThis.snapshot;
+    globalThis.snapshot = { ...old, revision: old.revision + 1 };
+    globalThis.media.update({ key: 'late', transport: globalThis.snapshot });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const volume = sound.volume;
+    await globalThis.media.play({
+      key: 'late',
+      name: 'shared-tone.wav?stale=1',
+      url: location.origin + '/',
+      type: 'music',
+      transport: old,
+      volume: 0,
+      chain: 'stale-route',
+    });
+    const rejected =
+      globalThis.media.sounds.late === sound &&
+      sound.volume === volume &&
+      sound.namedChain !== 'stale-route';
+    globalThis.media.update({ key: 'late', volume: 25 });
+    const mixVolume = sound.volume;
+    const racing = globalThis.media.play({
+      key: 'late',
+      name: 'shared-tone.wav?renewed-race=1',
+      url: location.origin + '/',
+      type: 'music',
+      transport: globalThis.snapshot,
+      volume: 0,
+      chain: 'stale-route',
+    });
+    globalThis.snapshot = { ...globalThis.snapshot, revision: globalThis.snapshot.revision + 1 };
+    globalThis.media.update({ key: 'late', transport: globalThis.snapshot });
+    await racing;
+    return {
+      rejected,
+      activeMixChanged: sound.volume !== volume,
+      audible: sound.playbacks[0].isPlaying,
+      racedRejected:
+        globalThis.media.sounds.late === sound &&
+        sound.volume === mixVolume &&
+        sound.namedChain !== 'stale-route',
+    };
+  });
+  expect(stale).toEqual({
+    rejected: true,
+    activeMixChanged: true,
+    audible: true,
+    racedRejected: true,
+  });
   await page.evaluate(async () => {
     await globalThis.media.cacophony.context.suspend();
     await new Promise((resolve) => setTimeout(resolve, 200));

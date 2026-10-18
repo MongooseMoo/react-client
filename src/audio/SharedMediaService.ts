@@ -2,7 +2,7 @@ import type { MediaTransport } from '../midi/score';
 import type { ClientMediaUpdatePayload } from './MediaService';
 import { mediaPosition } from '../midi/score';
 import type { SharedClock, SharedClockChange } from '../timing/SharedClock';
-import { performanceToAudioTime } from '../timing/outputClock';
+import { outputDelaySeconds, performanceToAudioTime } from '../timing/outputClock';
 import {
   mergeMediaCueWindows,
   MediaCueGap,
@@ -120,6 +120,14 @@ export class SharedMediaService {
   has(key: string): boolean {
     return this.sources.has(key);
   }
+  acceptsTransport(key: string, transport: MediaTransport): boolean {
+    const current = this.sources.get(key)?.grant.transport;
+    return (
+      !current ||
+      current.sourceId !== transport.sourceId ||
+      (current.clockId === transport.clockId && transport.revision >= current.revision)
+    );
+  }
   async attach(
     grant: SharedMediaGrant,
     factory: () => SharedMediaVoice,
@@ -132,7 +140,7 @@ export class SharedMediaService {
         grant.transport.revision < old.grant.transport.revision
       )
         return;
-      this.update(grant, replaceVoice);
+      if (!this.update(grant, replaceVoice)) return;
       if (replaceVoice && this.sources.get(grant.key) === old) {
         const audible = old.retiringVoice ?? old.voice;
         const previousFactory = old.retiringFactory ?? old.factory;
@@ -196,7 +204,6 @@ export class SharedMediaService {
         incoming.revision < old.revision
       )
         return false;
-      source.retiringVoice?.updateMix?.(data);
       if (
         (incoming.discontinuity ?? 0) < (old.discontinuity ?? 0) ||
         (incoming.revision === old.revision &&
@@ -213,12 +220,13 @@ export class SharedMediaService {
         } catch (error) {
           if (error instanceof MediaCueGap) {
             this.syncCues(source);
-            return true;
+            return false;
           }
           throw error;
         }
         source.maxCueSeq = Math.max(source.maxCueSeq, data.cueWindows.at(-1)?.seq ?? -1);
       }
+      source.retiringVoice?.updateMix?.(data);
       if (incoming.revision === old.revision) {
         source.grant = { ...source.grant, cueWindows };
         if (data.cueWindows !== undefined) this.acceptCueCoverage(source);
@@ -761,6 +769,24 @@ export class SharedMediaService {
           this.applySnapshot(source, reply);
           if (this.sources.get(source.grant.key) !== source) return;
           const current = this.options.clock.getServerNow();
+          const context = this.options.context;
+          const timestamp =
+            'getOutputTimestamp' in context && typeof context.getOutputTimestamp === 'function'
+              ? (context.getOutputTimestamp() as AudioTimestamp)
+              : undefined;
+          const outputDelayMs =
+            outputDelaySeconds({
+              running: context.state === 'running',
+              currentTime: context.currentTime,
+              performanceNowMs: this.now(),
+              outputTimestamp:
+                timestamp?.contextTime !== undefined && timestamp.performanceTime !== undefined
+                  ? {
+                      contextTime: timestamp.contextTime,
+                      performanceTime: timestamp.performanceTime,
+                    }
+                  : undefined,
+            }) * 1000;
           if (
             current !== undefined &&
             (reply.transport.state !== 'playing' ||
@@ -768,7 +794,7 @@ export class SharedMediaService {
                 Math.abs(
                   mediaPosition(
                     reply.transport,
-                    Math.max(0, current - (this.options.correctionMs?.() ?? 0)),
+                    Math.max(0, current - (this.options.correctionMs?.() ?? 0) + outputDelayMs),
                   ).positionMs -
                     (source.voice?.currentTime() ?? 0) * 1000,
                 ) > 250))
