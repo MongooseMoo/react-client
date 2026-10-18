@@ -612,6 +612,7 @@ describe("Output frozen history resilience", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     localStorage.clear();
     useOutputStore.getState().reset();
@@ -664,43 +665,53 @@ describe("Output frozen history resilience", () => {
 
   it("keeps rendering and saving when the frozen container falls out of sync", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const { container } = render(<Output client={{ sendCommand: vi.fn() } as unknown as MudClient} />);
-    for (let index = 0; index < 1500; index += 1) {
-      useOutputStore.getState().addMessage(`old ${index}`);
+    // Fake only the save debounce. Waiting it out in real time inside act()
+    // held Preact's global act scope open; a timeout during that wait left
+    // every later test's renders unflushed.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    // A small exposure cap reaches the aria-hidden path with few lines, so the
+    // test does not freeze and rebuild over a thousand rendered lines.
+    const exposedFrozenLines = Output.A11Y_EXPOSED_FROZEN_LINES;
+    Output.A11Y_EXPOSED_FROZEN_LINES = 20;
+    try {
+      const { container } = render(<Output client={{ sendCommand: vi.fn() } as unknown as MudClient} />);
+      for (let index = 0; index < Output.LIVE_WINDOW_SIZE + 60; index += 1) {
+        useOutputStore.getState().addMessage(`old ${index}`);
+      }
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const frozen = container.querySelector(".output > div:not(.output-line):not(.history-exposure-toggle)")!;
+      expect(frozen.children).toHaveLength(60);
+      expect(frozen.querySelectorAll(':scope > [aria-hidden="true"]')).toHaveLength(40);
+
+      // The state seen in production: the counters describe more frozen lines
+      // (and hidden lines) than the container holds, so freezeOverflow indexed
+      // past its end.
+      while (frozen.children.length > 10) frozen.lastElementChild!.remove();
+
+      // Run the save scheduled by the initial burst so only saves caused by
+      // the post-drift update are observed below.
+      vi.advanceTimersByTime(Output.SAVE_DEBOUNCE_MS);
+      const setItem = vi.spyOn(window.localStorage, "setItem");
+      useOutputStore.getState().addMessage("after drift");
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      vi.advanceTimersByTime(Output.SAVE_DEBOUNCE_MS);
+
+      const rendered = [...container.querySelectorAll(".output > .output-line")].map((line) => line.textContent);
+      expect(rendered.at(-1)).toBe("after drift");
+      const lastWrite = setItem.mock.calls.filter(([key]) => key === personalStorageKey('output')).at(-1);
+      expect(lastWrite).toBeDefined();
+      const saved = JSON.parse(lastWrite![1]).data;
+      expect(saved.at(-1).sourceContent).toBe("after drift");
+      expect(frozen.children).toHaveLength(61);
+    } finally {
+      Output.A11Y_EXPOSED_FROZEN_LINES = exposedFrozenLines;
     }
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const frozen = container.querySelector(".output > div:not(.output-line):not(.history-exposure-toggle)")!;
-    expect(frozen.children).toHaveLength(1300);
-
-    // The state seen in production: the counters describe more frozen lines
-    // than the container holds, so freezeOverflow indexed past its end.
-    while (frozen.children.length > 100) frozen.lastElementChild!.remove();
-
-    // Let the save scheduled by the initial burst finish so only saves caused
-    // by the post-drift update are observed below.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, Output.SAVE_DEBOUNCE_MS + 50));
-    });
-    const setItem = vi.spyOn(window.localStorage, "setItem");
-    useOutputStore.getState().addMessage("after drift");
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, Output.SAVE_DEBOUNCE_MS + 50));
-    });
-
-    const rendered = [...container.querySelectorAll(".output > .output-line")].map((line) => line.textContent);
-    expect(rendered.at(-1)).toBe("after drift");
-    const lastWrite = setItem.mock.calls.filter(([key]) => key === personalStorageKey('output')).at(-1);
-    expect(lastWrite).toBeDefined();
-    const saved = JSON.parse(lastWrite![1]).data;
-    expect(saved.at(-1).sourceContent).toBe("after drift");
-    expect(frozen.children).toHaveLength(1301);
   });
 });
 
