@@ -108,6 +108,11 @@ Nothing a launch carries may ever be sent to the MOO without the player acting.
 - CI step 4 must use its own port (several worktrees run it): preview on
   127.0.0.1:5196, check it started and that the served entry chunk is this
   worktree's dist, stop it by PID after.
+- CI gate on cb223424 (2026-10-18), all exit 0: actionlint, zizmor (no
+  findings), typecheck, npm test 181 / 2455, test:audio-cache 4 PASS,
+  editor-ownership on 5196 (served entry index-a0R8Am52.js = local dist;
+  pid 97440 stopped) 1 passed, check-browser-sessions, check-client-recovery,
+  test:a11y.
 - Not verifiable here: real OS install, OS protocol/file/share/shortcut
   launches, whether Chromium honours focus-existing for these, badge on a real
   icon. Not pushed, no PR.
