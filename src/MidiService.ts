@@ -1,6 +1,7 @@
 import { virtualMidiService, type MidiOutputSink } from './VirtualMidiService';
 import JZZ from 'jzz';
 import { usePreferences } from './stores/preferencesStore';
+import { getSoundfont, SOUNDFONT_OUTPUT } from './midi/soundfonts';
 
 export interface MidiDevice {
   id: string;
@@ -85,6 +86,21 @@ class MidiService {
   private inputCallback: MidiInputCallback | null = null;
   private deviceChangeCallbacks: Set<DeviceChangeCallback> = new Set();
   private deviceWatcher: JzzWatcher | null = null;
+  private outputGeneration = 0;
+  private pendingOutput: MidiOutputSink | null = null;
+  private soundfontMessage = '';
+  private readonly soundfontListeners = new Set<() => void>();
+
+  getSoundfontMessage = (): string => this.soundfontMessage;
+  subscribeSoundfont = (listener: () => void): (() => void) => {
+    this.soundfontListeners.add(listener);
+    return () => { this.soundfontListeners.delete(listener); };
+  };
+
+  private reportSoundfont(message: string): void {
+    this.soundfontMessage = message;
+    for (const listener of this.soundfontListeners) listener();
+  }
   private connectionState: {
     inputConnected: boolean;
     outputConnected: boolean;
@@ -150,7 +166,7 @@ class MidiService {
   }
 
   getOutputDevices(): MidiDevice[] {
-    const devices: MidiDevice[] = [];
+    const devices: MidiDevice[] = [{ id: SOUNDFONT_OUTPUT, name: 'Soundfont Synthesizer' }];
     
     // Add virtual synthesizer if initialized
     if (virtualMidiService.initialized) {
@@ -270,16 +286,47 @@ class MidiService {
   }
 
   async connectOutputDevice(deviceId: string): Promise<boolean> {
+    const generation = ++this.outputGeneration;
+    this.pendingOutput?.close();
+    this.pendingOutput = null;
     try {
-      // Disconnect previous device
-      if (this.outputDevice) {
-        this.outputDevice.close?.();
+      if (deviceId === SOUNDFONT_OUTPUT) {
+        const font = getSoundfont(usePreferences.getState().midi.midiJsSoundfont);
+        this.reportSoundfont(`Loading ${font.name}…`);
+        const { SoundfontOutput } = await import('./midi/SoundfontOutput');
+        if (generation !== this.outputGeneration) return false;
+        const fallback = await virtualMidiService.getVirtualPort();
+        if (!fallback) throw new Error('Built-in synth is unavailable.');
+        if (generation !== this.outputGeneration) { fallback.close(); return false; }
+        const output = new SoundfontOutput(font.id, () => virtualMidiService.getAudioOutput(), fallback,
+          (message) => { if (generation === this.outputGeneration) this.reportSoundfont(message); },
+          (listener) => virtualMidiService.subscribeAudioOutput(listener),
+          () => {
+            if (generation === this.outputGeneration) this.disconnectDevice('output');
+          });
+        this.pendingOutput = output;
+        await output.ready();
+        if (generation !== this.outputGeneration) { output.close(); return false; }
+        this.pendingOutput = null;
+        this.outputDevice?.close();
+        this.outputDevice = output;
+        this.connectionState.outputConnected = true;
+        this.connectionState.outputDeviceId = deviceId;
+        this.connectionState.outputDeviceName = `Soundfont Synthesizer · ${font.name}`;
+        usePreferences.getState().setMidi({ ...usePreferences.getState().midi, lastOutputDeviceId: deviceId });
+        this.intentionalDisconnectFlags.output = false;
+        return true;
       }
+
+      this.reportSoundfont('');
+      // Commit a replacement only after it opens successfully.
 
       // Handle virtual synthesizer connection
       if (deviceId === 'virtual-synth') {
         const virtualPort = await virtualMidiService.getVirtualPort();
         if (virtualPort) {
+          if (generation !== this.outputGeneration) { virtualPort.close(); return false; }
+          this.outputDevice?.close();
           this.outputDevice = virtualPort;
           this.connectionState.outputConnected = true;
           this.connectionState.outputDeviceId = deviceId;
@@ -303,7 +350,10 @@ class MidiService {
       // Handle hardware MIDI device connection using JZZ
       if (!this.jzz) return false;
 
-      this.outputDevice = await this.jzz.openMidiOut(deviceId);
+      const output = await this.jzz.openMidiOut(deviceId);
+      if (generation !== this.outputGeneration) { output.close(); return false; }
+      this.outputDevice?.close();
+      this.outputDevice = output;
       
       // Update connection state
       this.connectionState.outputConnected = true;
@@ -326,6 +376,11 @@ class MidiService {
       console.log(`Connected to MIDI output: ${this.connectionState.outputDeviceName}`);
       return true;
     } catch (error) {
+      if (generation === this.outputGeneration) {
+        this.pendingOutput?.close();
+        this.pendingOutput = null;
+        if (deviceId === SOUNDFONT_OUTPUT) this.reportSoundfont('Soundfont could not load. Check your connection and try Connect again, or choose Virtual Synthesizer.');
+      }
       console.error("Failed to connect to MIDI output:", error);
       return false;
     }
@@ -384,6 +439,9 @@ class MidiService {
       this.connectionState.inputDeviceName = undefined;
       console.log("Disconnected input device");
     } else if (deviceType === 'output') {
+      this.outputGeneration++;
+      this.pendingOutput?.close();
+      this.pendingOutput = null;
       if (this.outputDevice) {
         this.outputDevice.close?.();
         this.outputDevice = null;
@@ -391,6 +449,7 @@ class MidiService {
       this.connectionState.outputConnected = false;
       this.connectionState.outputDeviceId = undefined;
       this.connectionState.outputDeviceName = undefined;
+      this.reportSoundfont('');
       console.log("Disconnected output device");
     }
   }
@@ -410,6 +469,9 @@ class MidiService {
   }
 
   disconnect(): void {
+    this.outputGeneration++;
+    this.pendingOutput?.close();
+    this.pendingOutput = null;
     if (this.inputDevice) {
       this.inputDevice.close?.();
       this.inputDevice = null;
@@ -427,6 +489,7 @@ class MidiService {
     this.connectionState.outputDeviceId = undefined;
     this.connectionState.inputDeviceName = undefined;
     this.connectionState.outputDeviceName = undefined;
+    this.reportSoundfont('');
   }
 
   get isSupported(): boolean {

@@ -6,6 +6,9 @@ import { midiService, type MidiDevice } from "../MidiService";
 import { usePreferences } from "../stores/preferencesStore";
 import type { GMCPClientMidi } from "../gmcp/Client/Midi";
 import { virtualMidiService } from "../VirtualMidiService";
+import { SOUNDFONT_OUTPUT } from '../midi/soundfonts';
+import SoundfontPicker from './SoundfontPicker';
+import './MidiStatus.css';
 
 interface MidiStatusProps {
   client: MudClient;
@@ -43,7 +46,15 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   useFocusRefuge(inputGroup, inputAction);
   useFocusRefuge(outputGroup, outputAction);
   const [outcome, setOutcome] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [soundfontMessage, setSoundfontMessage] = useState(midiService.getSoundfontMessage);
+  useEffect(() => midiService.subscribeSoundfont(() => {
+    setSoundfontMessage(midiService.getSoundfontMessage());
+    refreshConnectionState();
+  }), []);
   const operation = async (label: string, action: () => Promise<boolean>) => {
+    if (busy) return false;
+    setBusy(true);
     setOutcome('');
     try {
       const success = await action();
@@ -52,7 +63,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     } catch {
       setOutcome(`${label.split(' ')[0]} device could not connect. Try another device or refresh devices.`);
       return false;
-    }
+    } finally { setBusy(false); }
   };
   const midiPreferences = usePreferences((state) => state.midi);
   const [midiPackage, setMidiPackage] = useState<GMCPClientMidi | null>(null);
@@ -439,11 +450,11 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   }
 
   return (
-    <div style={{ padding: "10px", color: "var(--color-text)", overflowWrap: "anywhere" }}>
-      <h3>MIDI Status</h3>
-      <p role="status">{outcome}</p>
+    <div className="midi-status">
+      <header className="midi-heading"><span className="midi-eyebrow">PLAY & CONNECT</span><h3>MIDI studio</h3><p>Your instruments, in the browser.</p></header>
+      <p className="midi-outcome" role="status">{busy ? (soundfontMessage || 'Connecting device…') : [outcome, soundfontMessage].filter(Boolean).join(' ')}</p>
 
-      <div ref={inputGroup} style={{ marginBottom: "15px" }}>
+      <div ref={inputGroup} className="midi-device-card">
         <div style={{ marginBottom: "8px" }}>
           <label htmlFor={inputId}>Input device</label>
         </div>
@@ -508,13 +519,13 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           type="button"
           aria-label={connectionState.inputConnected ? 'Disconnect input device' : 'Connect input device'}
           onClick={connectionState.inputConnected ? handleDisconnectInput : handleConnectInput}
-          disabled={!connectionState.inputConnected && !selectedInputId}
+          disabled={busy || (!connectionState.inputConnected && !selectedInputId)}
         >
           {connectionState.inputConnected ? 'Disconnect' : 'Connect'}
         </button>
       </div>
 
-      <div ref={outputGroup} style={{ marginBottom: "15px" }}>
+      <div ref={outputGroup} className="midi-device-card">
         <div style={{ marginBottom: "8px" }}>
           <label htmlFor={outputId}>Output device</label>
         </div>
@@ -579,10 +590,28 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
           type="button"
           aria-label={connectionState.outputConnected ? 'Disconnect output device' : 'Connect output device'}
           onClick={connectionState.outputConnected ? handleDisconnectOutput : handleConnectOutput}
-          disabled={!connectionState.outputConnected && !selectedOutputId}
+          disabled={busy || (!connectionState.outputConnected && !selectedOutputId)}
         >
           {connectionState.outputConnected ? 'Disconnect' : 'Connect'}
         </button>
+      </div>
+
+      <div className="midi-device-card midi-soundfont-card">
+        <h4>Sampled instruments</h4>
+        <SoundfontPicker />
+        {connectionState.outputDeviceId === SOUNDFONT_OUTPUT && <button type="button" disabled={busy} onClick={async () => {
+          if (!midiPackage) return;
+          await operation('Output device connected.', () => midiPackage.connectOutputDevice(SOUNDFONT_OUTPUT));
+          refreshConnectionState();
+        }}>Reconnect soundfont</button>}
+        {connectionState.outputConnected && connectionState.outputDeviceId === SOUNDFONT_OUTPUT && <button type="button" className="midi-preview" disabled={busy} onClick={() => {
+          for (const note of [60, 64, 67]) {
+            const message = { note, velocity: 80, on: true, channel: 0 };
+            midiService.sendNote(message);
+            midiService.scheduleNoteOff(message, 600);
+          }
+          setOutcome(client.media.paused ? 'Preview queued. Use Resume sounds to hear it.' : 'Playing a short C major chord on the connected soundfont.');
+        }}>Preview soundfont</button>}
       </div>
 
       <div style={{ marginBottom: "15px" }}>

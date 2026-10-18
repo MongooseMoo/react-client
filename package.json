@@ -42,7 +42,7 @@
     "build": "vite build",
     "serve": "vite preview",
     "test": "vitest run",
-    "test:audio-cache": "npm run build && node scripts/check-audio-cache.mjs",
+    "test:audio-cache": "npm run build && node scripts/check-audio-cache.mjs && node scripts/check-soundfonts.mjs",
     "test:a11y": "node scripts/check-accessibility.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:watch": "tsc --noEmit --watch --preserveWatchOutput",

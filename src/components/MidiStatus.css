@@ -1,0 +1,25 @@
+.midi-status { padding: var(--space-4); color: var(--color-text); overflow-wrap: anywhere; }
+.midi-heading { margin-bottom: var(--space-4); padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-separator); }
+.midi-eyebrow { color: var(--color-primary); letter-spacing: .12em; font-size: var(--font-size-xs); font-weight: 700; }
+.midi-heading h3 { margin: var(--space-1) 0; font-size: 1.5rem; font-weight: 650; letter-spacing: -.025em; }
+.midi-heading p { color: var(--color-text-secondary); margin: 0; font-size: var(--font-size-sm); }
+.midi-status .midi-device-card { margin-bottom: var(--space-4); padding: var(--space-3); background: var(--gradient-panel); border: 1px solid var(--color-separator); border-radius: var(--radius-md); min-width: 0; }
+.midi-device-card > div:first-child { font-weight: 600; }
+.midi-device-card select { width: 100%; min-width: 0; margin: 0 0 var(--space-2) !important; }
+.midi-soundfont-card h4 { margin: 0 0 var(--space-3); color: var(--color-primary); font-size: 1rem; }
+.midi-outcome { color: var(--color-text-secondary); line-height: 1.6; font-size: var(--font-size-sm); }
+.midi-outcome:empty { display: none; }
+.midi-status button, .midi-status select { min-height: 44px; max-width: 100%; white-space: normal; }
+.midi-status button, .midi-status select, .midi-status input[type="number"] { background: var(--color-bg-surface); color: var(--color-text); border: 1px solid var(--color-separator); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); font-family: inherit; font-size: var(--font-size-sm); box-sizing: border-box; }
+.midi-status button { cursor: pointer; font-weight: 600; }
+.midi-status button:hover:enabled { background: var(--color-bg-hover); border-color: var(--color-primary); }
+.midi-status .midi-device-card > button { margin-top: var(--space-2); width: 100%; background: var(--color-primary); color: var(--color-text-button); border-color: var(--color-primary); }
+.midi-status .midi-device-card > button:hover:enabled { background: var(--color-primary-hover); }
+.midi-status .midi-device-card > button.midi-preview { background: var(--color-bg-surface); color: var(--color-primary); }
+.midi-status button:disabled { opacity: .55; cursor: default; }
+.midi-status input[type="range"] { accent-color: var(--color-primary); }
+.midi-status button:focus-visible, .midi-status select:focus-visible, .soundfont-picker select:focus-visible, .soundfont-picker a:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 3px; }
+.midi-status details { border-top: 1px solid var(--color-separator); padding: var(--space-3) 0; }
+.midi-status summary { cursor: pointer; line-height: 1.6; }
+.midi-status details input { max-width: 100%; box-sizing: border-box; }
+@media (forced-colors: active) { .midi-status .midi-device-card { background: Canvas; border-color: CanvasText; } .midi-status .midi-device-card > button { border-color: ButtonText; } }

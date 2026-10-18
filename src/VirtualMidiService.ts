@@ -30,6 +30,12 @@ export class VirtualMidiService {
   private playbackPaused = false;
   private unsubscribePlayback: (() => void) | null = null;
   private readonly playbackWaiters = new Set<() => void>();
+  private readonly audioOutputListeners = new Set<() => void>();
+
+  subscribeAudioOutput = (listener: () => void): (() => void) => {
+    this.audioOutputListeners.add(listener);
+    return () => { this.audioOutputListeners.delete(listener); };
+  };
   private initialization: Promise<boolean> | null = null;
   private continuation: Promise<void> | null = null;
   private generation = 0;
@@ -68,6 +74,7 @@ export class VirtualMidiService {
         this.playbackPaused = this.paused;
         this.playbackSource = null;
         this.unsubscribePlayback = null;
+        for (const listener of this.audioOutputListeners) listener();
       }
     };
   }
@@ -138,6 +145,7 @@ export class VirtualMidiService {
       return;
     }
     this.output = output;
+    for (const listener of this.audioOutputListeners) listener();
     if (this.synth) {
       // setAudioContext also dispatches priming notes and unlocks the context.
       this.outputPending = true;
@@ -245,7 +253,13 @@ export class VirtualMidiService {
     return this.synth !== null;
   }
 
+  /** Shared client graph for optional sample-based outputs. Never resumes it. */
+  getAudioOutput(): SynthAudioOutput | null {
+    return this.output;
+  }
+
   async dispose(): Promise<void> {
+    for (const listener of this.audioOutputListeners) listener();
     this.generation++;
     this.unsubscribePlayback?.();
     this.unsubscribePlayback = null;
