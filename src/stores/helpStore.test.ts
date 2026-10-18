@@ -41,6 +41,15 @@ describe("helpStore", () => {
     expect(useHelpStore.getState().history).toEqual([]);
   });
 
+  it("counts every change of the result shown, so a repeat of the same topic is still new", () => {
+    const start = useHelpStore.getState().serial;
+    useHelpStore.getState().show(topic("money"));
+    useHelpStore.getState().show(topic("money"));
+    useHelpStore.getState().back();
+
+    expect(useHelpStore.getState().serial).toBe(start + 3);
+  });
+
   it("back with no history changes nothing", () => {
     useHelpStore.getState().show(topic("money"));
 
