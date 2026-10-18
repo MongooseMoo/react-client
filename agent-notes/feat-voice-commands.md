@@ -8,9 +8,9 @@ lead takes the branch to PR.
 
 ## State (2026-10-18)
 Done. Codex reviewed five rounds; round 5 approved 28f011ab with no P2 or
-worse; its two P3s are fixed in the final commit. Commits on the branch:
-7062014b (feature), b8595957 (round 1), 58889e69 (round 2), 123a6060
-(round 3), 28f011ab (round 4), then the round-5 P3 commit.
+worse. Commits on the branch: 7062014b (feature), b8595957 (round 1),
+58889e69 (round 2), 123a6060 (round 3), 28f011ab (round 4), b3fc117b
+(round-5 P3s), 3a6d8293 (language names), then this note update.
 
 Files:
 - `src/voiceInput.ts`: recognizer typings (TS DOM lib lacks the constructor),
@@ -94,13 +94,27 @@ Files:
   connects (identity binding), announced "Dictation stopped: connected".
 - `TaskStop` on a backgrounded `npx vite` leaves the vite node process on
   :5203; kill it by PID after checking its command line.
+- Stubbing the whole `Intl` global in a test (`vi.stubGlobal("Intl",
+  {...Intl, DisplayNames: undefined})`, which also drops every other Intl
+  member because they are non-enumerable) made 6 tests in output.test.tsx fail
+  in two full runs (a 5000 ms timeout, then empty output), while that file
+  passed alone and the suite passed with the change stashed. Replacing only
+  `Intl.DisplayNames` and restoring it in `finally` gave two clean full runs.
+  How the stub reached another file under default isolation was not worked out.
+- Intl.DisplayNames' default `languageDisplay: "dialect"` names en-US
+  "American English"; "standard" gives "English (United States)".
 - Codex harness artifacts seen while verifying: round 2's PreviewButton case
   pasted the old source; round 3's lifecycle harness virtualizes only 15000 and
   2000 ms timers; round 4's held-Enter case label names the old behaviour.
 
 ## Verification (final, 2026-10-18)
+- Team lead's real Chrome 155 check: real available() returned
+  "downloadable" and the text matched; button label, shortcut and
+  aria-pressed correct; no console errors. It showed the raw tag ("en"), so
+  3a6d8293 names the language with Intl.DisplayNames ("English (United
+  States)"), falling back to the tag, in every availability and download sentence.
 - `npx tsc --noEmit`: exit 0.
-- `npx vitest run`: 178 files, 2445 tests passed.
+- `npx vitest run`: 178 files, 2450 tests passed (two consecutive runs).
 - `npx biome lint` on all branch-changed src files: 7 warnings, all on master
   (client.test.ts:169-174 noUnusedImports, input.tsx:83).
 - Codex harnesses for rounds 1-4 all show the fixed behaviour (last run at
