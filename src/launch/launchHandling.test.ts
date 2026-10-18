@@ -72,15 +72,41 @@ describe('drafts placed before sign-in', () => {
 
   it('survive the clears of connecting and signing in, then are kept no longer', () => {
     placeLaunchText('look at fountain');
-    usePersonalDataStore.getState().clear(); // client.connect()
+    usePersonalDataStore.getState().clearForConnect(); // client.connect()
     expect(useInputStore.getState().text).toBe('look at fountain');
     usePersonalDataStore.getState().confirm(owner);
     expect(useInputStore.getState().text).toBe('look at fountain');
 
     useInputStore.getState().clear();
-    usePersonalDataStore.getState().clear();
+    usePersonalDataStore.getState().clearForConnect();
     expect(useInputStore.getState().text).toBe('');
     expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('are discarded by a sign-out-style clear and stay gone', () => {
+    placeLaunchText('private anonymous draft');
+    usePersonalDataStore.getState().clear();
+    expect(useInputStore.getState().text).toBe('');
+    usePersonalDataStore.getState().clearForConnect();
+    usePersonalDataStore.getState().confirm(owner);
+    expect(useInputStore.getState().text).toBe('');
+  });
+
+  it.each([true, false])('are discarded when visitor mode turns %s and stay gone', (visitor) => {
+    usePersonalDataStore.setState({ visitor: !visitor });
+    placeLaunchText('private anonymous draft');
+    usePersonalDataStore.getState().setVisitor(visitor);
+    expect(useInputStore.getState().text).toBe('');
+    usePersonalDataStore.getState().confirm(owner);
+    expect(useInputStore.getState().text).toBe('');
+    usePersonalDataStore.setState({ visitor: false });
+  });
+
+  it('are discarded when one owner gives way to another', () => {
+    usePersonalDataStore.setState({ owner });
+    placeLaunchText('mine');
+    usePersonalDataStore.getState().confirm({ ...owner, playerUuid: 'someone-else' });
+    expect(useInputStore.getState().text).toBe('');
   });
 
   it('are not put back once the player deleted them', () => {
@@ -102,7 +128,7 @@ describe('drafts placed before sign-in', () => {
     placeLaunchText('look at fountain');
     noteCommandSent();
     useInputStore.getState().clear();
-    usePersonalDataStore.getState().clear();
+    usePersonalDataStore.getState().clearForConnect();
     expect(useInputStore.getState().text).toBe('');
   });
 });
@@ -186,7 +212,7 @@ describe('shortcuts reaching an open window', () => {
   it.each([['/?mode=host', 'host'], ['/?mode=local', 'local']] as const)('asks before opening %s in a window of its own', (target, mode) => {
     const launch = startWithQueue('/');
     launch(target);
-    expect(useLaunchStore.getState().modeRequest).toBe(mode);
+    expect(useLaunchStore.getState().modeRequest).toEqual({ mode });
   });
 
   it('does nothing more when the window is already in that mode', () => {

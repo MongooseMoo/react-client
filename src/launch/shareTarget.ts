@@ -9,7 +9,7 @@ import { MAX_LAUNCH_TEXT, sanitizeLaunchText } from './launchText';
 import { SHARE_PARAM } from './launchUrls';
 
 /** Why a share was not kept, given to the page in place of a launch item id. */
-export type ShareRefusal = 'too-many' | 'too-large' | 'inbox-full' | 'failed';
+export type ShareRefusal = 'too-many' | 'too-large' | 'inbox-full' | 'busy' | 'failed';
 
 /** Room in a request body for multipart boundaries, headers and the text fields. */
 const FORM_OVERHEAD_BYTES = 1024 * 1024;
@@ -31,10 +31,64 @@ function field(form: SharedForm, name: string): string {
   return typeof value === 'string' ? value.slice(0, MAX_LAUNCH_TEXT * 4) : '';
 }
 
+/** The most of a request body read; past it the stream is cancelled unread. */
+export const MAX_SHARE_BODY_BYTES = MAX_SHARE_BYTES + FORM_OVERHEAD_BYTES;
+
+/**
+ * The body's bytes, or undefined once more than `limit` arrive. Counted as
+ * they come, so neither a missing Content-Length nor a false one lets an
+ * unbounded body be parsed.
+ */
+export async function readBoundedBody(
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<Uint8Array<ArrayBuffer> | undefined> {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => {});
+      return undefined;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+/** One body is read at a time, so concurrent posts cannot hold many bounded bodies at once. */
+let reading = false;
+
 async function keepShare(request: SharedRequest): Promise<string | ShareRefusal | undefined> {
-  const declared = Number(request.headers?.get('Content-Length') ?? Number.NaN);
-  if (declared > MAX_SHARE_BYTES + FORM_OVERHEAD_BYTES) return 'too-large';
-  const form = await request.formData();
+  const declared = Number(request.headers.get('Content-Length') ?? Number.NaN);
+  if (declared > MAX_SHARE_BODY_BYTES) return 'too-large';
+  if (reading) {
+    await request.body?.cancel().catch(() => {});
+    return 'busy';
+  }
+  reading = true;
+  try {
+    const bytes = await readBoundedBody(request.body, MAX_SHARE_BODY_BYTES);
+    if (!bytes) return 'too-large';
+    const form = await new Response(bytes, { headers: { 'Content-Type': request.headers.get('Content-Type') ?? '' } }).formData();
+    return await keepParsedShare(form);
+  } finally {
+    reading = false;
+  }
+}
+
+/** The share's limits on files and text, once its body is known to be bounded. */
+export async function keepParsedShare(form: SharedForm): Promise<string | ShareRefusal | undefined> {
   const files = form.getAll('files').filter((value): value is File => typeof value !== 'string' && value.size > 0);
   if (files.length > MAX_SHARED_FILES) return 'too-many';
   const total = files.reduce((sum, file) => sum + file.size, 0);
@@ -50,8 +104,8 @@ async function keepShare(request: SharedRequest): Promise<string | ShareRefusal 
 }
 
 interface SharedRequest {
-  headers?: Pick<Headers, 'get'>;
-  formData(): Promise<SharedForm>;
+  headers: Pick<Headers, 'get'>;
+  body: ReadableStream<Uint8Array> | null;
 }
 
 /**

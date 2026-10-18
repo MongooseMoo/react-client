@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { formatFileSize } from '../components/FileTransfer/formatFileSize';
 import { discardLaunchItem, putLaunchItem } from './launchInbox';
 import { useLaunchStore } from './launchStore';
 import { FILE_HANDLER_URL, HOST_DATABASE_PARAM } from './launchUrls';
+import { useOfferDialog } from './useOfferDialog';
 import './LaunchDatabaseDialog.css';
 
 /**
@@ -14,40 +15,20 @@ import './LaunchDatabaseDialog.css';
 export default function LaunchDatabaseDialog() {
   const database = useLaunchStore((state) => state.database);
   const hostWaiting = useLaunchStore((state) => state.hostWaiting);
-  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const clearOffer = useCallback((shown: File) => {
+    useLaunchStore.setState((state) => (state.database === shown ? { database: undefined } : {}));
+  }, []);
+  // Each Host press belongs to the offer on show; once that is revoked or
+  // replaced, the press may neither open a window nor touch the offer.
+  const { dialogRef, generation, dismiss } = useOfferDialog(database, clearOffer);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  // Each Host press is one attempt. Closing, a new offer, or unmounting ends
-  // it, and an ended attempt may neither open a window nor touch the offer.
-  const attempt = useRef(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new offer starts with no error and no Host pending.
   useEffect(() => {
-    attempt.current += 1;
+    setError('');
     setBusy(false);
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (database) {
-      setError('');
-      if (!dialog.open) dialog.showModal();
-    } else if (dialog.open) {
-      dialog.close();
-    }
   }, [database]);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const dismiss = () => {
-      attempt.current += 1;
-      setBusy(false);
-      useLaunchStore.setState({ database: undefined });
-    };
-    dialog.addEventListener('close', dismiss);
-    return () => {
-      attempt.current += 1;
-      dialog.removeEventListener('close', dismiss);
-    };
-  }, []);
 
   const host = async () => {
     if (!database || busy) return;
@@ -55,8 +36,8 @@ export default function LaunchDatabaseDialog() {
       useLaunchStore.setState({ confirmedDatabase: database, database: undefined });
       return;
     }
-    const mine = ++attempt.current;
-    const current = () => attempt.current === mine && useLaunchStore.getState().database === database;
+    const mine = generation.current;
+    const current = () => generation.current === mine && useLaunchStore.getState().database === database;
     setBusy(true);
     let id: string | undefined;
     try {
@@ -76,7 +57,7 @@ export default function LaunchDatabaseDialog() {
       if (current()) setError('The database could not be handed to a new window. Try again.');
     } finally {
       if (id) void discardLaunchItem(id).catch(() => {});
-      if (attempt.current === mine) setBusy(false);
+      if (generation.current === mine) setBusy(false);
     }
   };
 
@@ -99,7 +80,7 @@ export default function LaunchDatabaseDialog() {
         <button type="button" aria-disabled={busy} onClick={() => void host()}>
           Host
         </button>
-        <button type="button" onClick={() => dialogRef.current?.close()}>
+        <button type="button" onClick={dismiss}>
           Cancel
         </button>
       </div>

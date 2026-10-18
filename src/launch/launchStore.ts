@@ -3,6 +3,11 @@ import { create } from 'zustand';
 /** Modes a manifest shortcut opens; each runs in a window of its own. */
 export type LaunchMode = 'host' | 'local';
 
+/** One shortcut launch; a fresh object each time, so dismissing an old one can never clear a new one. */
+export interface ModeRequest {
+  mode: LaunchMode;
+}
+
 interface LaunchState {
   /** Files shared from another app, oldest first, waiting their turn. */
   sharedFiles: File[];
@@ -21,7 +26,7 @@ interface LaunchState {
   /** True while this window's WasmHost is waiting for a database. */
   hostWaiting: boolean;
   /** A shortcut asked for a mode this window is not in, awaiting the player's answer. */
-  modeRequest?: LaunchMode;
+  modeRequest?: ModeRequest;
 }
 
 /** Hand-off between launches (links, shares, opened files) and the parts of the client that show them. */

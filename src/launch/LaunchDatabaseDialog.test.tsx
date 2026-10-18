@@ -117,6 +117,30 @@ describe('LaunchDatabaseDialog', () => {
     expect(inbox.discard).toHaveBeenCalledWith('abandoned-id');
   });
 
+  it('opens nothing when Escape comes while the hand-off is still being stored', async () => {
+    open.mockReturnValue({});
+    const finish = holdNextWrite();
+    offer(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Host' }));
+    const dialog = screen.getByRole('dialog', { name: 'Host World.db?' });
+    // A browser fires `cancel`, then closes, then fires `close` in a later task.
+    fireEvent(dialog, new Event('cancel'));
+    dialog.close();
+    await finish('abandoned-id');
+    expect(open).not.toHaveBeenCalled();
+    expect(inbox.discard).toHaveBeenCalledWith('abandoned-id');
+  });
+
+  it('keeps a newer offer that arrives before the cancelled one has finished closing', async () => {
+    offer(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const other = new File(['moo'], 'Other.db');
+    act(() => useLaunchStore.setState({ database: other }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(useLaunchStore.getState().database).toBe(other);
+    expect(screen.getByRole('dialog', { name: 'Host Other.db?' })).toHaveAttribute('open');
+  });
+
   it('discards the stored hand-off when the new window is blocked', async () => {
     open.mockReturnValue(null);
     offer(false);

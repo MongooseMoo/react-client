@@ -47,7 +47,7 @@ const schema = {
   name: 'mongoose-launch',
   version: 2,
   upgrade(database: IDBDatabase): void {
-    // Version 1 kept payload and time together; its items are long expired.
+    // Version 1 (payload and time together) never shipped; discarded on purpose.
     if (database.objectStoreNames.contains('items')) database.deleteObjectStore('items');
     if (!database.objectStoreNames.contains(PAYLOADS)) database.createObjectStore(PAYLOADS);
     if (!database.objectStoreNames.contains(META)) {
@@ -56,10 +56,31 @@ const schema = {
   },
 };
 
-export function launchItemBytes(item: LaunchItem): number {
+/** Longest file name and media type kept; a sender chooses both. */
+export const MAX_FILE_NAME_LENGTH = 255;
+export const MAX_FILE_TYPE_LENGTH = 127;
+
+/** The file as kept: an overlong name or type is cut, never stored whole. */
+function boundedFile(file: File): File {
+  if (file.name.length <= MAX_FILE_NAME_LENGTH && file.type.length <= MAX_FILE_TYPE_LENGTH) return file;
+  return new File([file], file.name.slice(0, MAX_FILE_NAME_LENGTH), {
+    type: file.type.slice(0, MAX_FILE_TYPE_LENGTH),
+    lastModified: file.lastModified,
+  });
+}
+
+export function boundedLaunchItem(item: LaunchItem): LaunchItem {
   return item.kind === 'database'
-    ? item.file.size
-    : item.text.length * 2 + item.files.reduce((total, file) => total + file.size, 0);
+    ? { kind: 'database', file: boundedFile(item.file) }
+    : { kind: 'share', text: item.text, files: item.files.map(boundedFile) };
+}
+
+/** What an item takes in storage, strings at two bytes a character. */
+export function launchItemBytes(item: LaunchItem): number {
+  const fileBytes = (file: File) => file.size + (file.name.length + file.type.length) * 2;
+  return item.kind === 'database'
+    ? fileBytes(item.file)
+    : item.text.length * 2 + item.files.reduce((total, file) => total + fileBytes(file), 0);
 }
 
 /** Deletes every abandoned item, walking the time index only. */
@@ -94,7 +115,8 @@ async function withInbox<T>(work: (tx: IDBTransaction) => Promise<T>): Promise<T
 }
 
 /** Keeps the item for one read, or refuses it when it would take the inbox past its bounds. */
-export function putLaunchItem(item: LaunchItem, now = Date.now()): Promise<string> {
+export function putLaunchItem(offered: LaunchItem, now = Date.now()): Promise<string> {
+  const item = boundedLaunchItem(offered);
   const bytes = launchItemBytes(item);
   if (bytes > MAX_INBOX_BYTES) return Promise.reject(new LaunchInboxError('too-large'));
   return withInbox(async (tx) => {

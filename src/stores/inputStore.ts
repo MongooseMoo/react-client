@@ -15,7 +15,7 @@ interface InputStoreState {
   clear: () => void;
   /** Counts `discardForNewOwner` calls, so a watcher can tell them from the player emptying the input. */
   ownerResets: number;
-  /** Empties the input because it belonged to the previous owner (connect, sign-in, visitor change). */
+  /** Empties the input for a connection starting or the first sign-in (personalDataStore). */
   discardForNewOwner: () => void;
   resetCommands: () => void;
 }

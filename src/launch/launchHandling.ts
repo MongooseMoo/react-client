@@ -21,6 +21,7 @@ const REFUSALS: Record<ShareRefusal, string> = {
   'too-many': `Nothing was shared: the client takes at most ${MAX_SHARED_FILES} files at a time.`,
   'too-large': `Nothing was shared: each file may be at most ${MAX_SHARED_FILE_BYTES / MIB} MB, and a share ${MAX_SHARE_BYTES / MIB} MB.`,
   'inbox-full': `Nothing was shared: ${MAX_INBOX_ITEMS} shares or their files are already waiting to be opened. Try again in ten minutes.`,
+  busy: 'Nothing was shared: another share was still being read. Share it again.',
   failed: 'The share could not be read.',
 };
 
@@ -114,7 +115,7 @@ export function startLaunchHandling(win: Window = window): void {
       // but its dialog already answers that.
       const mode = launchMode(target);
       if (mode && mode !== launchMode(initial) && params.files.length === 0) {
-        useLaunchStore.setState({ modeRequest: mode });
+        useLaunchStore.setState({ modeRequest: { mode } });
       }
     }
     if (params.files.length > 0) void handleLaunchFiles(params.files).catch(report);

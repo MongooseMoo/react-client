@@ -43,6 +43,30 @@ Nothing a launch carries may ever be sent to the MOO without the player acting.
      personalDataStore.clearTransientData) tells lifecycle resets from player
      edits; any player edit, emptying included, retires the kept draft.
   6. watchAppBadge clears at once when focused or the pref is off.
+- Codex round 2 on 452fb2d2 (scratchpad codex-rereview-app-integration-report.md),
+  fixed in the third commit. Verified after: tsc clean; vitest 181 files /
+  2445 tests; biome 19 warnings on the 40 changed files (same pre-existing set;
+  the two new dialog reset effects carry biome-ignore with a reason); build ok;
+  check-launch.mjs 18/18, check-launch-queue.mjs 17/17; Codex
+  rereview-browser.cjs: native Cancel race 0/30 opens, mode close race keeps
+  the newer request 3/3, unstated-length 202 MiB stream cancelled after
+  210,763,776 bytes with `?share=too-large`, cross-origin long-name flood 5
+  rows / 1275 name chars / 7910 counted bytes. Also added: one share body read
+  at a time (`?share=busy`). Fixes:
+  1. Dialog dismissal decided synchronously (`useOfferDialog`: Cancel and the
+     `cancel` event revoke before close; a late `close` from an earlier
+     showing is ignored; `modeRequest` is an object so an old dismissal can't
+     match a new one). setupTests' dialog.close() shim now fires `close` in a
+     later task, as browsers do; 3 dialog tests failed first, and the 4 new
+     database-dialog tests fail on the 452fb2d2 dialog.
+  2. Share body read through a byte counter, stream cancelled past
+     MAX_SHARE_BYTES + 1 MiB, then parsed from the buffered bytes.
+  3. File name capped at 255, type at 127, both counted in the budget.
+  4. `personalDataStore.clear()` is the privacy clear (sign-out): plain input
+     clear, which retires a kept launch draft. New `clearForConnect()` for
+     client.connect/connectLocal keeps the restorable reset. `confirm()` is
+     restorable only with no previous owner; `setVisitor` discards.
+  5. v1 inbox comment: never shipped, discarded on purpose.
 - Not verifiable here: real OS install, OS protocol/file/share/shortcut
   launches, whether Chromium honours focus-existing for these, badge on a real
   icon. Not pushed, no PR.

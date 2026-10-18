@@ -100,7 +100,13 @@ describe('share target', () => {
     expect(match({ url: new URL('https://other.example/share-target') })).toBe(false);
     expect(match({ url: new URL('https://client.mongoose.world/') })).toBe(false);
 
-    const response: Response = await handler({ request: { formData: async () => ({ get: () => null, getAll: () => [] }) } });
+    // An empty multipart form: nothing shared, so the client opens with no launch item.
+    const request = new Request('https://client.mongoose.world/share-target', {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/form-data; boundary=b' },
+      body: '--b--\r\n',
+    });
+    const response: Response = await handler({ request });
     expect(response.status).toBe(303);
     expect(response.headers.get('Location')).toBe('https://client.mongoose.world/');
   });

@@ -223,7 +223,7 @@ class MudClient {
   }
 
   public connect() {
-    usePersonalDataStore.getState().clear();
+    usePersonalDataStore.getState().clearForConnect();
     const generation = ++this.transportGeneration;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
@@ -389,7 +389,7 @@ class MudClient {
    * creating a WebSocket.
    */
   public connectLocal(stream: Stream) {
-    usePersonalDataStore.getState().clear();
+    usePersonalDataStore.getState().clearForConnect();
     const generation = ++this.transportGeneration;
     const current = () => generation === this.transportGeneration && !this.shutdownComplete;
     this.awayChannel = false;
