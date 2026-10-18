@@ -1,12 +1,11 @@
 import { GMCPPackage } from '../gmcp/package';
-import { usePreferences } from '../stores/preferencesStore';
 import { strictJson, check } from './protocol';
 /** Typed package port. Raw parsing in GmcpSession preserves duplicate-key detection. */
 export abstract class SharingPackage<I, O> extends GMCPPackage {
   private readonly listeners = new Map<keyof I, Set<(v: unknown) => void>>();
   abstract validate<K extends keyof I & string>(kind: K, data: unknown): I[K];
   override get enabled(): boolean {
-    return usePreferences.getState().general.fileSharingV2 === true;
+    return this.client.fileSharingV2Enabled;
   }
   send<K extends keyof O & string>(kind: K, data: O[K]): void {
     check(this.enabled);

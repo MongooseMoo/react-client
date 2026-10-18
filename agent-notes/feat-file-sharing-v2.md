@@ -24,6 +24,8 @@ partial adoption after fresh consent, integrity purge, and complete isolated v1
 transport selection. Final checks are running; evidence will be recorded in
 reports/file-sharing-phase1-validation.md. v2 remains OFF by default through
 general.fileSharingV2. No hub code was changed or deployed and nothing was pushed.
+The rollout flag is sampled when MudClient is created; preference edits require
+reload. This preserves active v1 transfers rather than hot-swapping their engine.
 
 Implementation decisions: v1 source files remain untouched. Phase 1 creates
 only the specified six native version-1 stores. Ctl and frame validators reject

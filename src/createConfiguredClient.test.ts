@@ -54,6 +54,13 @@ describe("createConfiguredClient", () => {
     client.gmcp.receive('Core.Supports.Get','{}');
     expect(send).toHaveBeenCalledWith('Core.Supports.Set',JSON.stringify(modules));
   });
+  it('keeps an existing legacy transport when the rollout preference is edited', async () => {
+    usePreferences.getState().setGeneral({ ...usePreferences.getState().general,fileSharingV2:false });
+    client = createConfiguredClient(); const engine = await client.getFileTransfers();
+    usePreferences.getState().setGeneral({ ...usePreferences.getState().general,fileSharingV2:true });
+    expect(await client.getFileTransfers()).toBe(engine); expect(engine).toBeInstanceOf(FileTransferEngine);
+    expect(client.gmcp.require('Core.Supports').advertisedModules()).not.toContain('Client.Files 1');
+  });
 
   afterEach(() => {
     client?.shutdown();

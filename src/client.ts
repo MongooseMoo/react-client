@@ -49,6 +49,8 @@ function resetMidiIntentionalDisconnectFlags(): void {
 }
 
 class MudClient {
+  /** Rollout flag is sampled at startup; changing it requires reload and never interrupts v1. */
+  public readonly fileSharingV2Enabled = usePreferences.getState().general.fileSharingV2 === true;
   private ws!: WebSocket;
   private decoder = new TextDecoder("utf8");
   private reconnectTimer?: ReturnType<typeof setTimeout>;
@@ -168,18 +170,11 @@ class MudClient {
     this.registerIdentityReset(resetFileTransfer);
     this.registerCleanup(resetFileTransfer);
     const startV2 = () => {
-      if (usePreferences.getState().general.fileSharingV2 === true && usePersonalDataStore.getState().policyReady) {
+      if (this.fileSharingV2Enabled && usePersonalDataStore.getState().policyReady) {
         void this.getFileTransfers().catch(error => console.error('File sharing initialization:', error));
       }
     };
     this.registerCleanup(usePersonalDataStore.subscribe(startV2));
-    this.registerCleanup(usePreferences.subscribe((state, previous) => {
-      if (state.general.fileSharingV2 !== previous.general.fileSharingV2) {
-        resetFileTransfer();
-        if (this.gmcp.ready) this.gmcp.require('Core.Supports').sendSet(this.gmcp.require('Core.Supports').advertisedModules());
-        startV2();
-      }
-    }));
   }
 
   getFileTransfers(): Promise<FileTransfers> {
@@ -187,7 +182,7 @@ class MudClient {
     if (this.fileTransfers) return Promise.resolve(this.fileTransfers);
     if (this.fileTransfersLoading) return this.fileTransfersLoading;
     const generation = this.fileTransferGeneration;
-    const module = usePreferences.getState().general.fileSharingV2 === true
+    const module = this.fileSharingV2Enabled
       ? import('./fileSharing/ownerService').then(({ createOwnerService }) => () => createOwnerService(this,this.gmcp_fileTransfer))
       : import('./fileTransfer/createFileTransfers').then(({ createFileTransfers }) => () => createFileTransfers(this.gmcp_fileTransfer));
     const loading = module.then((create) => {
