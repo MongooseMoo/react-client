@@ -133,7 +133,7 @@ try {
   await expect(roomTab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('tabpanel', { name: 'Room', exact: true })).toBeFocused();
   await page.evaluate(() => window.mudClient.gmcp.handlers.Room.handleInfo({ num: 1, name: 'Fixture room', area: 'Fixture', exits: { n: 2 } }));
-  const northExit = page.getByRole('button', { name: 'Go n', exact: true });
+  const northExit = page.getByRole('button', { name: 'Go north', exact: true });
   await expect(northExit).toBeFocused();
   await command.focus();
   await page.keyboard.press('Control+Shift+1');

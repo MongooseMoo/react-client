@@ -54,6 +54,8 @@ import { useCharacterStatusStore } from "./stores/characterStatusStore";
 import { useOutputStore } from "./stores/outputStore";
 import { useItemsStore } from "./stores/itemsStore";
 import { useRoomStore } from "./stores/roomStore";
+import { useMapStore } from "./stores/mapStore";
+import { walkArrived, walkBlocked } from "./map/walker";
 
 /**
  * How long the player's room and inventory must hold still before the command
@@ -157,10 +159,18 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPGroup);
   client.gmcp.register(GMCPLogging);
   client.gmcp.register(GMCPRedirect);
-  client.gmcp.register(GMCPRoom);
+  const room = client.gmcp.register(GMCPRoom);
   client.gmcp.register(GMCPClientHaptics);
 
+  // The automap learns each room as the player enters it and drives map walks.
+  room.on("info", (data) => {
+    useMapStore.getState().recordVisit(data);
+    walkArrived(client, data.num);
+  });
+  room.on("wrongDir", (direction) => walkBlocked(direction));
+
   char.on("name", (data) => {
+    useMapStore.getState().setOwner(`${client.runtimeNamespace}|${data.uuid || data.name}`);
     client.gmcp.require('Auth.Autologin').confirmPlayer(data.uuid ?? '');
     useConnectionStore.getState().setStatusText(`Logged in as ${data.fullname}`);
     if (client.gmcp.markSessionReady()) {
