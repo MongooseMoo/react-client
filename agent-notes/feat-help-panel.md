@@ -19,8 +19,11 @@ Contract read from the live server 2026-10-18 (given in the assignment, not rech
 - `biome lint src/components/sidebar.tsx` shows 4 warnings, all in code this branch did not touch
   (resize effect deps, useImperativeHandle deps, the separator role).
 - Full suite: 171 files, 2326 tests, all passed. Typecheck clean.
-- Not done: never run against the live server or in a browser; never heard with a screen reader.
-  Not pushed, no PR (as assigned).
+- Tried in Chrome against mongoose.world as a guest (2026-10-18): front page (15 links), following
+  "help starting-out" (focus to heading, Back enabled), ambiguous "lo" (look, looking), a miss. That
+  found and fixed: each choice was offered twice; "no help on" linked a topic "on"; "help search
+  <words>" linked a placeholder. Ambiguous results now announce "N topics match". Full suite 2331/2331.
+- Not done: never heard with a screen reader; a "shown" (old-style) topic not found to try.
 
 ## Decisions and why
 
@@ -44,5 +47,4 @@ Contract read from the live server 2026-10-18 (given in the assignment, not rech
 
 ## Next step
 
-Try it in a browser against mongoose.world as a guest (front page, a link, an ambiguous word, an
-old-style topic for "shown"), then push and open a PR when asked.
+PR, merge when hosted checks pass.
