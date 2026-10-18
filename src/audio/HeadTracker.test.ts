@@ -155,7 +155,37 @@ describe('HeadTracker near the flipped-over pose', () => {
     expect(onPausedChange).toHaveBeenCalledTimes(1);
   });
 
-  it('resumes smoothly when it comes out near the yaw it held', () => {
+  it('recentering while paused after an incomplete reading resumes at 0 on the next complete one (round 4)', () => {
+    const { tracker, turn, advance, lastYawDegrees, onPausedChange, timers } = setup();
+    tracker.start();
+    turn(0);
+    turn(300); // a turn right: 60
+    advance(2000);
+    turn(300, FRAME_MS, INSIDE_BETA, 0);
+    advance(2500);
+    expect(onPausedChange).toHaveBeenLastCalledWith(true);
+    turn(300, FRAME_MS, null, null); // incomplete: no pose to recenter on
+    expect(tracker.recenter()).toBe(false); // not done yet: waits for a complete reading
+    expect(onPausedChange).toHaveBeenLastCalledWith(false);
+    expect(timers.size).toBeLessThanOrEqual(1); // no pause timer left (a frame may be pending)
+    turn(200, FRAME_MS, 0, 0); // complete, 100 degrees from the held 60
+    expect(lastYawDegrees()).toBe(0);
+    turn(170, FRAME_MS, 0, 0); // and it tracks from there: 30 right
+    advance(2000);
+    expect(lastYawDegrees()).toBeCloseTo(30, 1);
+    expect(onPausedChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('a recenter with a complete latest reading takes effect at once', () => {
+    const { tracker, turn, lastYawDegrees } = setup();
+    tracker.start();
+    turn(0);
+    turn(300);
+    expect(tracker.recenter()).toBe(true);
+    expect(lastYawDegrees()).toBe(0);
+  });
+
+  it('comes out near the held yaw: resumes, then settles on where the device points', () => {
     const { tracker, turn, advance, lastYawDegrees, onPausedChange, timers } = setup();
     tracker.start();
     turn(0);

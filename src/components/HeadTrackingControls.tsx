@@ -17,7 +17,7 @@ const STATUS_TEXT: Record<HeadTrackingStatus, string> = {
   off: 'Off.',
   waiting: 'Waiting for the motion sensor.',
   tracking: 'Tracking.',
-  paused: 'Paused: hold the phone the way you started, or recenter.',
+  paused: 'Head tracking paused. Recenter to resume, or turn back to where you were facing.',
   'no-readings': 'No motion readings yet.',
   blocked: 'Motion access was not allowed.',
 };

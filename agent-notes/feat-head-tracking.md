@@ -84,6 +84,14 @@ Do not push or open a PR.
   files clean. Chromium run (server facing 37.48): +30 -> 67.47; recenter 37.48; -45
   across wrap -7.51; cycles -7.53 x3; flip of rolled phone held at 37.48 with status
   "Paused..."; back near start 42.47 and "Tracking"; off 37.48.
+- Codex round 4 (at 49ea6775): round-3 fixes confirmed. Fixed in the next commit:
+  recenter always wins (HeadTracker.recenter returns false when the latest reading has no
+  complete pose; the hold and pause end at once and the next complete reading is
+  straight ahead at 0, bypassing the 20 degree gate; the controller then says
+  "Recentering on the next reading."); pause text, spoken and visible, is now "Head
+  tracking paused. Recenter to resume, or turn back to where you were facing." (recovery
+  is within 20 degrees of where the player was facing, not of the start); this note's
+  design section corrected; the "resumes smoothly" test renamed.
 
 ## Decisions and why
 - Seam: `MediaService.setListenerOrientation` keeps the server's forward/up as the
@@ -99,17 +107,23 @@ Do not push or open a PR.
   (W3C Z-X'-Y'') plus the screen angle into a quaternion; `yawFrom(reference, pose)` is
   the twist about the earth's up axis of pose x reference^-1 (swing-twist). The
   reference is the pose at the first reading / recenter. Pure function of pose +
-  reference: same pose, same yaw, whatever path (the round-2 bug was path state). Head
-  roll and nod are turns about horizontal axes and have zero twist however the device is
-  mounted. Singular only at a half turn about a horizontal axis (device flipped over):
-  yawFrom returns null and the tracker holds its last yaw.
+  reference: same pose, same yaw, whatever path (the round-2 bug was path state).
+  What it ignores, exactly: a turn about an EARTH-HORIZONTAL axis (nodding or rolling
+  while level) adds no yaw, however the device is held or mounted. What it does not: a
+  roll about an axis that is not horizontal (rolling sideways while tipped forward)
+  couples partly into yaw - tipped 30 and rolled 30 reads -15.26 (recentered tipped) or
+  -8.21 (recentered upright); pinned by a documented-behaviour test, kept by the team
+  lead's decision (a fixed facing axis brings back rounds 1-2's singularities and
+  switching), and stated in the preference help.
+  yawFrom returns { yaw, conditioning }; conditioning = cos(swing / 2), 0 when the device
+  is flipped over from the reference (yaw undefined there). HeadTracker holds readings
+  below conditioning 0.5 until above 0.61 (see ILL_ENTER), pauses after 2 s held or on
+  leaving more than 20 degrees from the held yaw, and resumes within 20 degrees or on
+  recenter. Recenter always wins: with no complete latest reading it clears the hold and
+  pause and the next complete reading becomes straight ahead at 0.
   History: v1 summed screen-up + back (roll leaked into yaw, 27 deg for 30 deg roll).
   v2 picked one axis with hysteresis and carried an offset across switches; the offset
   depended on the switch pose, so closed pitch cycles accumulated -25.78 deg each.
-  "Pure roll" in tests now means a turn about a horizontal (head) axis. A roll about the
-  device's own back axis is only a head roll when that axis is horizontal; v2's tests used
-  device-axis roll at 60 deg pitch, which v3 reads as partly yaw, and that is correct for a
-  head-mounted device.
 - The original tests only exercised poses and event orders I thought of (pitch with no
   roll, screen angle changing before readings, recenter after settling); the review
   cases were outside them. Tests now cover pure roll, recenter mid-glide, a screen change

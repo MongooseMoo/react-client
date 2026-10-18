@@ -308,7 +308,42 @@ describe('HeadTrackingController', () => {
   });
 
   describe('near the flipped-over pose', () => {
-    const PAUSED = 'Head tracking paused: hold the phone the way you started, or recenter.';
+    const PAUSED = 'Head tracking paused. Recenter to resume, or turn back to where you were facing.';
+
+    it('after a turn, resumes by turning back to where the player was facing, not to the start', async () => {
+      const { controller, sink, reading, dispatch, advance, announce } = setup();
+      detach = controller.attach(sink);
+      await controller.enable();
+      reading(0);
+      reading(320); // turned 40 right
+      advance(2000);
+      dispatch({ alpha: 320, beta: 170, gamma: 0 });
+      advance(2500);
+      expect(useHeadTrackingStore.getState().status).toBe('paused');
+      expect(announce).toHaveBeenLastCalledWith(PAUSED);
+      reading(0); // the way it started: 40 from where it was facing, so still paused
+      expect(useHeadTrackingStore.getState().status).toBe('paused');
+      reading(325); // back within 20 of where it was facing
+      expect(useHeadTrackingStore.getState().status).toBe('tracking');
+      expect(announce).toHaveBeenLastCalledWith('Head tracking resumed.');
+    });
+
+    it('recentering while paused after an incomplete reading says it waits, then resumes', async () => {
+      const { controller, sink, reading, dispatch, advance, announce } = setup();
+      detach = controller.attach(sink);
+      await controller.enable();
+      reading(300);
+      dispatch({ alpha: 300, beta: 170, gamma: 0 });
+      advance(2500);
+      dispatch({ alpha: 300, beta: null, gamma: null });
+      announce.mockClear();
+      controller.recenter();
+      expect(announce.mock.calls.map(([message]) => message)).toEqual(['Recentering on the next reading.']);
+      reading(200);
+      expect(useHeadTrackingStore.getState().status).toBe('tracking');
+      expect(sink.setHeadYaw).toHaveBeenLastCalledWith(0);
+      expect(announce.mock.calls.map(([message]) => message)).toEqual(['Recentering on the next reading.']);
+    });
 
     it('pauses after two seconds there, says so once, and resumes when the phone comes back', async () => {
       const { controller, sink, reading, dispatch, advance, announce } = setup();

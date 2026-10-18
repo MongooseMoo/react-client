@@ -157,10 +157,12 @@ export class HeadTrackingController {
       return;
     }
     this.quietResume = true;
-    this.tracker.recenter();
+    const done = this.tracker.recenter();
     this.quietResume = false;
     this.publishReadout(true);
-    this.env.announce('Recentered. Straight ahead is the way you face now.');
+    this.env.announce(
+      done ? 'Recentered. Straight ahead is the way you face now.' : 'Recentering on the next reading.',
+    );
   }
 
   /** The app-wide keydown handler's share: Alt+Shift+O recenters. */
@@ -239,7 +241,7 @@ export class HeadTrackingController {
   private handlePausedChange(paused: boolean): void {
     if (paused) {
       useHeadTrackingStore.setState({ status: 'paused' });
-      this.env.announce('Head tracking paused: hold the phone the way you started, or recenter.');
+      this.env.announce('Head tracking paused. Recenter to resume, or turn back to where you were facing.');
       return;
     }
     useHeadTrackingStore.setState({ status: 'tracking' });

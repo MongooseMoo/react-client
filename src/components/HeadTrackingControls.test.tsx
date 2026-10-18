@@ -82,6 +82,16 @@ describe('HeadTrackingControls', () => {
     expect(disable).toHaveBeenCalledOnce();
   });
 
+  it('says how to resume while paused, with Recenter at hand', () => {
+    setPreference(true);
+    useHeadTrackingStore.setState({ sensor: 'available', status: 'paused' });
+    render(<HeadTrackingControls />);
+    expect(
+      screen.getByText('Status: Head tracking paused. Recenter to resume, or turn back to where you were facing.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Recenter' })).toBeInTheDocument();
+  });
+
   it('offers to ask for motion access again after a refusal', () => {
     useHeadTrackingStore.setState({ sensor: 'needs-permission', status: 'blocked' });
     render(<HeadTrackingControls />);

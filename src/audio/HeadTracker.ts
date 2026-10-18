@@ -161,25 +161,28 @@ export class HeadTracker {
   }
 
   /**
-   * Make the latest pose straight ahead (or the next reading's, before there
-   * is one). The filter starts again at 0, so nothing left of its glide turns
-   * the scene after the recenter.
+   * Make the latest pose straight ahead. The filter starts again at 0, so
+   * nothing left of its glide turns the scene after the recenter. A recenter
+   * always wins over a hold or a pause: they end here. Returns false when the
+   * latest reading has no complete pose (or there is none yet): then the next
+   * complete reading becomes straight ahead, at 0, whatever the held yaw was.
    */
-  recenter(): void {
+  recenter(): boolean {
+    this.holding = false;
+    this.clearPauseTimer();
     const pose = this.angles ? devicePose(this.angles, this.options.screenAngle()) : null;
     if (!pose || this.heading === null) {
       this.reference = null;
-      return;
+      this.setPaused(false);
+      return false;
     }
-    // The latest pose is level with itself: any hold or pause is over.
     this.reference = pose;
-    this.holding = false;
-    this.clearPauseTimer();
     this.filter.reset();
     this.rawYaw = 0;
     this.heading = this.filter.update(0, this.options.now());
     this.send(0);
     this.setPaused(false);
+    return true;
   }
 
   private clear(): void {
@@ -216,7 +219,12 @@ export class HeadTracker {
     if (!pose) {
       return;
     }
+    // No reference: the first reading, or one after a recenter that had no pose to
+    // use. This pose is straight ahead and the filter starts again from it.
     const first = this.reference === null;
+    if (first) {
+      this.filter.reset();
+    }
     this.reference ??= pose;
     const { yaw, conditioning } = yawFrom(this.reference, pose);
     if (conditioning < (this.holding ? ILL_LEAVE : ILL_ENTER)) {
