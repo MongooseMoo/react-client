@@ -1,6 +1,6 @@
 import { performanceToAudioTime } from '../timing/outputClock';
 import type { SequenceMix } from './SequenceGraph';
-import type { SequenceOutput, SequenceVoice } from './SequenceOutput';
+import { SequenceOutputNotReady, type SequenceOutput, type SequenceVoice } from './SequenceOutput';
 import type { SequenceData, SequenceWindow } from './SequencePayload';
 import {
   ScoreTimeline,
@@ -77,6 +77,8 @@ interface OwnedVoice {
   keyEndServerMs?: number;
 }
 interface Source {
+  clockConfirmed: boolean;
+  ended?: boolean;
   key: string;
   tag?: string;
   gate: SourceRevisionGate;
@@ -89,6 +91,7 @@ interface Source {
   graph?: SequenceMixer;
   releaseClock?: () => void;
   preparing?: Promise<void>;
+  unsubscribeReady?: () => void;
   offset?: number;
   releaseAdmission?: () => void;
   joinServerMs?: number;
@@ -212,6 +215,7 @@ export class SequenceService {
   private closed = false;
   private readonly budget: SequenceBudget;
   private readonly documentCache = new WeakMap<Material, Document[]>();
+  private readonly prepared = new WeakMap<Material, SequenceOutput>();
   private context: BaseAudioContext | undefined;
   private readonly retiring = new Set<() => void>();
   private readonly now: () => number;
@@ -238,15 +242,19 @@ export class SequenceService {
       transport: data.transport,
     };
     const previous = this.sources.get(data.key);
-    if (previous?.active.transport.sourceId === data.transport.sourceId) {
+    if (
+      previous?.active.transport.sourceId === data.transport.sourceId &&
+      previous.active.transport.clockId === data.transport.clockId
+    ) {
       this.update(data);
       return;
     }
     if (previous) this.remove(previous);
     const gate = new SourceRevisionGate();
-    const runtime = this.options.clock.estimate().clockId ?? data.transport.clockId;
-    if (gate.play(this.identity(material), runtime) === 'rejected') return;
+    const runtime = this.options.clock.estimate().clockId;
+    if (gate.play(this.identity(material), data.transport.clockId) === 'rejected') return;
     const source: Source = {
+      clockConfirmed: runtime === data.transport.clockId,
       key: data.key,
       tag: data.tag,
       gate,
@@ -294,6 +302,20 @@ export class SequenceService {
       if (!data.midi) return;
       const now = this.options.clock.getServerNow();
       if (now === undefined) return;
+      const replaceTick = data.replaceFromTick;
+      const boundaryDocument = this.documents(source.active).find(
+        (doc) => !doc.window || (replaceTick >= doc.from && replaceTick <= doc.window.toTick),
+      );
+      const nextDocument = this.documents(next).find(
+        (doc) => !doc.window || (replaceTick >= doc.from && replaceTick <= doc.window.toTick),
+      );
+      if (
+        !boundaryDocument ||
+        !nextDocument ||
+        this.serverAt(boundaryDocument, data.replaceFromTick) !== data.effectiveServerMs ||
+        this.serverAt(nextDocument, data.replaceFromTick) !== data.effectiveServerMs
+      )
+        return;
       const previousBoundary = source.gate.pending?.effectiveServerMs;
       const decision = source.gate.replaceFuture(
         {
@@ -325,6 +347,8 @@ export class SequenceService {
       void this.prepareMaterial(source, next)
         .then(() => {
           if (source.pending !== next || !this.current(source)) return;
+          if ((this.options.clock.getServerNow() ?? Infinity) >= (data.effectiveServerMs ?? now))
+            source.pendingLate = true;
           if (!source.pendingLate)
             for (const doc of this.documents(next))
               this.chase(source, doc, data.effectiveServerMs ?? now);
@@ -341,7 +365,7 @@ export class SequenceService {
     if (decision === 'unchanged') {
       // Generated retransmission adds immutable windows without resetting the prefix.
       if (data.midi && 'stream' in data.midi && 'stream' in source.active.data) {
-        this.mergeWindows(source, data.midi);
+        if (!this.mergeWindows(source, data.midi)) return;
         const material = source.active;
         void this.prepareMaterial(source, material)
           .then(() => this.wake())
@@ -355,11 +379,14 @@ export class SequenceService {
       return;
     }
     this.cancelWork(source);
+    source.unsubscribeReady?.();
+    source.unsubscribeReady = undefined;
     source.generation++;
     source.abort.abort();
     source.abort = new AbortController();
     source.preparing = undefined;
     source.ready = false;
+    source.ended = false;
     source.pending = undefined;
     source.pendingLate = false;
     source.active = next;
@@ -377,14 +404,14 @@ export class SequenceService {
     void this.prepare(source).catch((error) => this.fail(source, error));
   }
 
-  private mergeWindows(source: Source, data: Extract<SequenceData, { stream: true }>): void {
-    if (!('stream' in source.active.data)) return;
+  private mergeWindows(source: Source, data: Extract<SequenceData, { stream: true }>): boolean {
+    if (!('stream' in source.active.data)) return false;
     const windows = new Map(source.active.data.windows.map((window) => [window.seq, window]));
     for (const window of data.windows) {
       const existing = windows.get(window.seq);
       if (existing && JSON.stringify(existing) !== JSON.stringify(window)) {
         this.fail(source, new Error('Changed retransmitted music window'));
-        return;
+        return false;
       }
       windows.set(window.seq, window);
     }
@@ -393,13 +420,13 @@ export class SequenceService {
       new Set(retained.flatMap((window) => window.score.parts.map((part) => part.id))).size > 16
     ) {
       this.fail(source, new Error('Stream part limit exceeded'));
-      return;
+      return false;
     }
     if (
       retained.some((window, index) => index > 0 && window.fromTick < retained[index - 1].toTick)
     ) {
       this.fail(source, new Error('Overlapping generated music windows'));
-      return;
+      return false;
     }
     const bytes = new TextEncoder().encode(JSON.stringify(retained)).byteLength;
     const events = retained.reduce(
@@ -416,12 +443,14 @@ export class SequenceService {
     );
     if (bytes > 65536 || events > 8000) {
       this.fail(source, new Error('Music window ring limit exceeded'));
-      return;
+      return false;
     }
     source.active = { ...source.active, data: { version: 1, stream: true, windows: retained } };
+    return true;
   }
 
   private async prepare(source: Source): Promise<void> {
+    if (source.ended || this.suspended) return;
     if (source.preparing) return source.preparing;
     if (!source.releaseClock)
       source.releaseClock = this.options.clock.acquire(`score:${source.key}`);
@@ -443,7 +472,12 @@ export class SequenceService {
           this.context.addEventListener('statechange', this.contextChanged);
         }
       }
-      await this.prepareMaterial(source, source.active);
+      let material: Material;
+      do {
+        material = source.active;
+        await this.prepareMaterial(source, material);
+      } while (this.current(source, generation) && material !== source.active);
+      if (source.pending) await this.prepareMaterial(source, source.pending);
       if (!this.current(source, generation)) return;
       if (!source.graph) {
         const graph = await this.options.createGraph(source.mix);
@@ -464,17 +498,31 @@ export class SequenceService {
     try {
       await work;
     } catch (error) {
-      if (this.current(source, generation)) this.fail(source, error);
+      if (this.current(source, generation)) {
+        if (error instanceof SequenceOutputNotReady) {
+          source.releaseAdmission?.();
+          source.releaseAdmission = undefined;
+          source.unsubscribeReady?.();
+          source.unsubscribeReady = error.subscribeReady(() => {
+            source.unsubscribeReady?.();
+            source.unsubscribeReady = undefined;
+            if (this.current(source, generation))
+              void Promise.resolve().then(() => this.prepare(source));
+          });
+        } else this.fail(source, error);
+      }
     } finally {
       if (source.preparing === work) source.preparing = undefined;
     }
   }
   private async prepareMaterial(source: Source, material: Material): Promise<void> {
+    if (source.output && this.prepared.get(material) === source.output) return;
     if ('content' in material.data)
       throw new Error(
         'Score asset delivery is unavailable until its authenticated endpoint is configured',
       );
-    for (const document of this.documents(material)) {
+    const documents = this.documents(material);
+    for (const document of documents) {
       for (const part of document.score.parts) {
         if (
           part.bends?.length ||
@@ -482,8 +530,40 @@ export class SequenceService {
         )
           throw new Error('Score requires unsupported pitch bend or controller');
       }
-      await source.output?.prepare(document.score.parts, source.abort.signal);
     }
+    const output = source.output,
+      generation = source.generation;
+    if (!output) return;
+    for (const document of documents) {
+      let ready = false;
+      while (!ready) {
+        try {
+          await output.prepare(document.score.parts, source.abort.signal);
+          ready = true;
+        } catch (error) {
+          if (!(error instanceof SequenceOutputNotReady)) throw error;
+          await new Promise<void>((resolve, reject) => {
+            const signal = source.abort.signal;
+            const cleanup = () => {
+              unsubscribe();
+              signal.removeEventListener('abort', abort);
+            };
+            const abort = () => {
+              cleanup();
+              reject(new Error('Score preparation cancelled'));
+            };
+            const unsubscribe = error.subscribeReady(() => {
+              cleanup();
+              resolve();
+            });
+            signal.addEventListener('abort', abort, { once: true });
+            if (signal.aborted) abort();
+          });
+        }
+      }
+    }
+    if (this.current(source, generation) && source.output === output)
+      this.prepared.set(material, output);
   }
   private current(source: Source, generation = source.generation): boolean {
     return (
@@ -559,10 +639,16 @@ export class SequenceService {
     if (this.closed) return;
     const estimate = this.options.clock.estimate();
     for (const source of [...this.sources.values()]) {
-      if (estimate.clockId && estimate.clockId !== source.active.transport.clockId) {
+      if (
+        estimate.clockId &&
+        estimate.clockId !== source.active.transport.clockId &&
+        source.clockConfirmed
+      ) {
         this.remove(source);
         continue;
       }
+      if (estimate.clockId !== source.active.transport.clockId) continue;
+      source.clockConfirmed = true;
       if (estimate.status !== 'current' || estimate.offsetMs === null) {
         this.cancelWork(source);
         source.needsJoin = true;
@@ -600,7 +686,12 @@ export class SequenceService {
     if (!suspended) {
       this.options.clock.invalidate?.();
       for (const source of this.sources.values())
-        if (source.active.transport.state === 'playing' && !source.ready) void this.prepare(source);
+        if (
+          ['playing', 'preparing'].includes(source.active.transport.state) &&
+          !source.ready &&
+          !source.ended
+        )
+          void this.prepare(source);
     }
     this.wake();
   }
@@ -625,9 +716,10 @@ export class SequenceService {
       )
         continue;
       if (estimate.clockId !== source.active.transport.clockId) {
-        this.remove(source);
+        if (source.clockConfirmed) this.remove(source);
         continue;
       }
+      source.clockConfirmed = true;
       source.offset ??= estimate.offsetMs;
       rendering = true;
       try {
@@ -645,7 +737,12 @@ export class SequenceService {
   private render(source: Source, now: number): void {
     source.workRemaining = 20000;
     let pending = source.gate.pending;
-    if (pending && source.pending && source.gate.advance(now)) {
+    if (
+      pending &&
+      source.pending &&
+      this.prepared.get(source.pending) === source.output &&
+      source.gate.advance(now)
+    ) {
       source.active = source.pending;
       source.pending = undefined;
       if (source.pendingLate) {
@@ -655,6 +752,7 @@ export class SequenceService {
       pending = undefined;
     }
     const documents = this.documents(source.active);
+    if (this.prepared.get(source.active) !== source.output) return;
     if (!documents.length) return;
     const current =
       documents.find(
@@ -672,6 +770,7 @@ export class SequenceService {
       current.timeline.terminalTick !== undefined &&
       now >= this.serverAt(current, current.timeline.terminalTick)
     ) {
+      source.ended = true;
       this.park(source);
       return;
     }
@@ -690,8 +789,8 @@ export class SequenceService {
           current.window && meter.tick === 0
             ? current.window.barOriginTick - current.from
             : meter.tick;
-        const boundaryAt = (unit: 'bar' | 'beat') =>
-          current.window
+        const boundaryAt = (unit: 'bar' | 'beat') => {
+          const grid = current.window
             ? phase +
               Math.ceil(
                 (local - phase) /
@@ -699,6 +798,11 @@ export class SequenceService {
               ) *
                 (((4 * 960) / meter.denominator) * (unit === 'bar' ? meter.numerator : 1))
             : nextMeterBoundary(local, current.score.meters, unit);
+          const nextMeter =
+            current.score.meters.find((entry) => entry.tick > local)?.tick ?? Infinity;
+          const loopEnd = current.material.transport.loop?.endTick ?? Infinity;
+          return Math.min(grid, nextMeter, loopEnd);
+        };
         let boundary = boundaryAt('bar');
         let unwrapped = tick + (boundary - local);
         if (this.serverAt(current, unwrapped) - now > 4000) {
@@ -716,7 +820,12 @@ export class SequenceService {
       high = now + 200;
     for (const doc of documents)
       this.submit(source, doc, low, Math.min(high, pending?.effectiveServerMs ?? Infinity));
-    if (source.pending && pending && !source.pendingLate)
+    if (
+      source.pending &&
+      pending &&
+      !source.pendingLate &&
+      this.prepared.get(source.pending) === source.output
+    )
       for (const doc of this.documents(source.pending))
         this.submit(source, doc, Math.max(low, pending.effectiveServerMs), high);
     this.releaseVoices(source, [
@@ -782,11 +891,10 @@ export class SequenceService {
     const firstOccurrence =
       loop && firstTick >= loop.startTick ? Math.floor((firstTick - loop.startTick) / length) : 0;
     const lastOccurrence = loop
-      ? Math.min(
-          firstOccurrence + 255,
-          Math.max(firstOccurrence, Math.floor((lastTick - loop.startTick) / length)),
-        )
+      ? Math.max(firstOccurrence, Math.floor((lastTick - loop.startTick) / length))
       : 0;
+    if (lastOccurrence - firstOccurrence > 255)
+      throw new Error('Score occurrence density exceeds the render budget');
     for (let occurrence = firstOccurrence; occurrence <= lastOccurrence; occurrence++) {
       const offset = loop ? occurrence * length : 0;
       const minimum = Math.max(
@@ -1041,6 +1149,8 @@ export class SequenceService {
     source.graph?.cancelFrom(source.output?.context.currentTime ?? 0);
   }
   private park(source: Source): void {
+    source.unsubscribeReady?.();
+    source.unsubscribeReady = undefined;
     this.cancelWork(source);
     source.ready = false;
     source.graph?.dispose();
@@ -1064,6 +1174,8 @@ export class SequenceService {
     this.wake();
   }
   private remove(source: Source): void {
+    source.unsubscribeReady?.();
+    source.unsubscribeReady = undefined;
     this.sources.delete(source.key);
     source.generation++;
     source.abort.abort();

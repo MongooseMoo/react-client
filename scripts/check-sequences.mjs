@@ -28,7 +28,7 @@ try{
     const {virtualMidiService}=await import('/src/VirtualMidiService.ts');
     const {SoundfontOutput}=await import('/src/midi/SoundfontOutput.ts');
     const {SequencePartGraph}=await import('/src/midi/SequenceGraph.ts');
-    async function render(kind,stopLeft){
+    async function render(kind,stopLeft,percussion=false){
       const context=new OfflineAudioContext(2,48000*2,48000);
       await virtualMidiService.setAudioOutput({context,destination:context.destination});
       const port=await virtualMidiService.getVirtualPort();
@@ -41,12 +41,12 @@ try{
       }
       const output=font?font.getSequenceOutput():await virtualMidiService.getSequenceOutput();
       if(!output)throw new Error('Independent output unavailable');
-      await output.prepare([{id:'p',name:'Piano',kind:'melodic',program:kind==='soundfont'?0:73,notes:[],controls:[],programs:[]}],new AbortController().signal);
+      await output.prepare([{id:'p',name:'Piano',kind:percussion?'percussion':'melodic',program:kind==='soundfont'?0:73,notes:[],controls:[],programs:[]}],new AbortController().signal);
       const left=context.createStereoPanner(),right=context.createStereoPanner();left.pan.value=-1;right.pan.value=1;
       left.connect(context.destination);right.connect(context.destination);
       const partLeft=new SequencePartGraph(context,left),partRight=new SequencePartGraph(context,right);
       partLeft.control(7,127,0);partRight.control(7,127,0);
-      const options={program:kind==='soundfont'?0:73,percussion:false,note:60,velocity:100,startTime:0.25};
+      const options={program:kind==='soundfont'?0:73,percussion,note:percussion?81:60,velocity:100,startTime:0.25};
       const a=output.playNote({...options,destination:partLeft.input});
       const b=output.playNote({...options,destination:partRight.input});
       a.release(0.6);b.release(0.6);
@@ -67,13 +67,15 @@ try{
     }
     const results={};
     for(const kind of ['virtual','soundfont']){
-      const base=await render(kind,false),stopped=await render(kind,true);
-      results[kind]={
+      for(const percussion of [false,true]){
+      const base=await render(kind,false,percussion),stopped=await render(kind,true,percussion);
+      results[`${kind}-${percussion?'percussion':'melodic'}`]={
         onsetSilent:base.every(ch=>ch.slice(0,12000).every(value=>Math.abs(value)<1e-7)),
         audible:base.every(ch=>ch.slice(12500,16000).some(value=>Math.abs(value)>0.001)),
         cancelled:stopped[0].slice(18000).every(value=>Math.abs(value)<1e-7),
         isolated:base[1].every((value,index)=>value===stopped[1][index]),
       };
+      }
     }
     return results;
   });

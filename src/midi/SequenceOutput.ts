@@ -1,5 +1,12 @@
 import type { ScorePart } from './score';
 
+/** A supported output is awaiting its owner's Resume or graph attachment. */
+export class SequenceOutputNotReady extends Error {
+  constructor(readonly subscribeReady: (listener: () => void) => () => void) {
+    super('MIDI output is awaiting playback readiness');
+  }
+}
+
 export interface SequenceVoice {
   readonly state: 'scheduled' | 'playing' | 'releasing' | 'ended';
   readonly ended: Promise<void>;

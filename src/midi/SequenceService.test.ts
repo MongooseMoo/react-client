@@ -9,6 +9,11 @@ import { ScoreTimeline } from './score';
 import type { CanonicalScore, ScorePart } from './score';
 import type { SequenceVoice, SequenceNote } from './SequenceOutput';
 import { decodeSequenceData } from './SequencePayload';
+import { SequenceOutputNotReady } from './SequenceOutput';
+
+async function settled() {
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+}
 
 const part: ScorePart = {
   id: 'p',
@@ -128,9 +133,10 @@ function scheduler(material: CanonicalScore = score, budget = new SequenceBudget
     targetServerToPerformance: (time: number) => time,
   };
   const error = vi.fn();
+  const getOutput = vi.fn(async () => output);
   const service = new SequenceService({
     clock,
-    getOutput: async () => output,
+    getOutput,
     createGraph: async () => mix,
     now: () => now,
     budget,
@@ -152,6 +158,10 @@ function scheduler(material: CanonicalScore = score, budget = new SequenceBudget
     mix,
     request,
     error,
+    output,
+    getOutput,
+    clock,
+    context,
     time: (value: number) => {
       now = value;
       service.wake();
@@ -160,6 +170,316 @@ function scheduler(material: CanonicalScore = score, budget = new SequenceBudget
 }
 
 describe('shared score ownership', () => {
+  it('retires every old output handle on output switch and requires a fresh Play grant', async () => {
+    const s = scheduler();
+    await s.service.play(s.request);
+    s.time(850);
+    expect(s.starts).toHaveLength(1);
+    s.service.reset();
+    expect(s.starts[0].stop).toHaveBeenCalled();
+    s.time(875);
+    s.service.update(s.request);
+    await settled();
+    expect(s.service.has('music')).toBe(false);
+    expect(s.starts).toHaveLength(1);
+    await s.service.play(s.request);
+    expect(s.starts).toHaveLength(2);
+    s.service.shutdown();
+  });
+  it('joins at an authored meter change inside a window instead of skipping to the old bar grid', async () => {
+    const s = scheduler();
+    s.time(1200);
+    const midi = decodeSequenceData(
+      {
+        version: 1,
+        stream: true,
+        windows: [
+          {
+            seq: 0,
+            fromTick: 0,
+            toTick: 7680,
+            anchorServerMs: 1000,
+            contentId: 'content',
+            revision: 1,
+            tempos: [{ tick: 0, bpm: 120 }],
+            meters: [
+              { tick: 0, numerator: 4, denominator: 4, barOriginTick: 0 },
+              { tick: 960, numerator: 3, denominator: 4, barOriginTick: 960 },
+            ],
+            parts: [{ ...part, controls: [], notes: [[960, 100, 65, 100]] }],
+          },
+        ],
+      },
+      'content',
+      1,
+    );
+    await s.service.play({ ...s.request, midi });
+    s.time(1325);
+    expect(s.starts.map((v) => v.note.note)).toEqual([65]);
+    expect(s.starts[0].note.startTime).toBe(1.5);
+    s.service.shutdown();
+  });
+  it('joins at a non-bar-aligned loop reset before the following meter-grid boundary', async () => {
+    const s = scheduler({
+      ...score,
+      parts: [{ ...part, notes: [[0, 100, 65, 100]], controls: [] }],
+    });
+    s.time(1200);
+    await s.service.play({
+      ...s.request,
+      transport: { ...s.request.transport, loop: { startTick: 0, endTick: 1920, plays: -1 } },
+    });
+    s.time(1825);
+    expect(s.starts.map((v) => v.note.note)).toEqual([65]);
+    expect(s.starts[0].note.startTime).toBe(2);
+    s.service.shutdown();
+  });
+  it('validates every window capability before preparing or submitting any window', async () => {
+    const s = scheduler();
+    const windows = [0, 1].map((seq) => ({
+      seq,
+      fromTick: seq * 1920,
+      toTick: (seq + 1) * 1920,
+      anchorServerMs: 1000 + seq * 1000,
+      contentId: 'content',
+      revision: 1,
+      tempos: [{ tick: seq * 1920, bpm: 120 }],
+      meters: [{ tick: seq * 1920, numerator: 4, denominator: 4, barOriginTick: 0 }],
+      parts: [
+        {
+          ...part,
+          notes: seq ? [] : [[0, 100, 60, 100]],
+          controls: seq ? [{ tick: 1920, controller: 1, value: 127 }] : [],
+        },
+      ],
+    }));
+    await s.service.play({
+      ...s.request,
+      midi: decodeSequenceData({ version: 1, stream: true, windows }, 'content', 1),
+    });
+    expect(s.output.prepare).not.toHaveBeenCalled();
+    expect(s.starts).toHaveLength(0);
+    expect(s.service.has('music')).toBe(false);
+    s.service.shutdown();
+  });
+  it('waits for an added window instrument and does not prepare again after a failed retransmission', async () => {
+    const s = scheduler();
+    const window = (seq: number, program: number) => ({
+      seq,
+      fromTick: seq * 1920,
+      toTick: (seq + 1) * 1920,
+      anchorServerMs: 1000 + seq * 1000,
+      contentId: 'content',
+      revision: 1,
+      tempos: [{ tick: seq * 1920, bpm: 120 }],
+      meters: [{ tick: seq * 1920, numerator: 4, denominator: 4, barOriginTick: 0 }],
+      parts: [{ ...part, program, controls: [], notes: [[seq * 1920, 100, 64, 100]] }],
+    });
+    const midi = (seq: number, program: number) =>
+      decodeSequenceData(
+        { version: 1, stream: true, windows: [window(seq, program)] },
+        'content',
+        1,
+      );
+    await s.service.play({ ...s.request, midi: midi(0, 0) });
+    let finish = () => {};
+    s.output.prepare.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    s.service.update({ ...s.request, midi: midi(1, 40) });
+    s.time(1825);
+    expect(s.starts).toHaveLength(0);
+    finish();
+    await settled();
+    finish();
+    await settled();
+    s.time(1850);
+    expect(s.starts.map((v) => v.note.program)).toEqual([40]);
+    const count = s.output.prepare.mock.calls.length;
+    s.service.update({ ...s.request, midi: midi(1, 41) });
+    await settled();
+    expect(s.service.has('music')).toBe(false);
+    expect(s.output.prepare).toHaveBeenCalledTimes(count);
+    s.service.shutdown();
+  });
+  it('cancels old scheduled handles on context interruption and rejoins after running resumes', async () => {
+    const s = scheduler();
+    await s.service.play(s.request);
+    s.time(850);
+    expect(s.starts).toHaveLength(1);
+    const changed = (s.context.addEventListener as ReturnType<typeof vi.fn>).mock
+      .calls[0][1] as () => void;
+    Object.defineProperty(s.context, 'state', { value: 'suspended', configurable: true });
+    changed();
+    expect(s.starts[0].stop).toHaveBeenCalled();
+    Object.defineProperty(s.context, 'state', { value: 'running', configurable: true });
+    changed();
+    s.time(875);
+    expect(s.starts).toHaveLength(2);
+    s.service.shutdown();
+  });
+  it('waits for all replacement programs and percussion before submitting their voices', async () => {
+    const s = scheduler({ ...score, durationTicks: 7680 });
+    await s.service.play(s.request);
+    let finish = () => {};
+    s.output.prepare.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: {
+        version: 1,
+        score: {
+          ...score,
+          contentId: 'new',
+          durationTicks: 7680,
+          parts: [
+            {
+              ...part,
+              kind: 'percussion',
+              notes: [[3840, 100, 38, 100]],
+              programs: [{ tick: 3840, program: 40 }],
+            },
+          ],
+        },
+      },
+      transport: { ...s.request.transport, revision: 2 },
+      replaceFromTick: 3840,
+      effectiveServerMs: 3000,
+    });
+    s.time(2801);
+    expect(s.starts).toHaveLength(0);
+    expect(s.error).not.toHaveBeenCalled();
+    finish();
+    await settled();
+    s.time(2825);
+    expect(s.starts.map((v) => [v.note.program, v.note.percussion, v.note.note])).toEqual([
+      [40, true, 38],
+    ]);
+    s.service.shutdown();
+  });
+  it('rejects a replacement mapping mismatch without cancelling the accepted prefix or suffix', async () => {
+    const s = scheduler({
+      ...score,
+      durationTicks: 7680,
+      parts: [{ ...part, notes: [[3840, 100, 64, 100]] }],
+    });
+    await s.service.play(s.request);
+    s.time(2801);
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: { version: 1, score: { ...score, contentId: 'new' } },
+      transport: { ...s.request.transport, revision: 2 },
+      replaceFromTick: 3840,
+      effectiveServerMs: 3001,
+    });
+    expect(s.starts[0].stop).not.toHaveBeenCalled();
+    s.time(3000);
+    expect(s.service.version('music')?.revision).toBe(1);
+    s.service.shutdown();
+  });
+  it('treats a same-source Play under a new runtime as a fresh silent grant until that clock is current', async () => {
+    const s = scheduler();
+    await s.service.play(s.request);
+    s.time(850);
+    await s.service.play({ ...s.request, transport: { ...s.request.transport, clockId: 'next' } });
+    expect(s.starts[0].stop).toHaveBeenCalled();
+    expect(s.service.version('music')?.clockId).toBe('next');
+    s.time(875);
+    expect(s.service.has('music')).toBe(true);
+    expect(s.starts).toHaveLength(1);
+    s.clock.estimate = () => ({ clockId: 'next', status: 'current', offsetMs: 0 });
+    s.time(900);
+    expect(s.starts).toHaveLength(2);
+    s.service.shutdown();
+  });
+  it('retains a supported but temporarily unavailable output and retries exactly on readiness', async () => {
+    const s = scheduler();
+    let ready = () => {};
+    const unsubscribe = vi.fn();
+    s.getOutput.mockRejectedValueOnce(
+      new SequenceOutputNotReady((listener) => {
+        ready = listener;
+        return unsubscribe;
+      }),
+    );
+    await s.service.play(s.request);
+    expect(s.service.has('music')).toBe(true);
+    expect(s.error).not.toHaveBeenCalled();
+    s.time(850);
+    expect(s.starts).toHaveLength(0);
+    ready();
+    await settled();
+    s.time(875);
+    expect(s.starts).toHaveLength(1);
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    s.service.shutdown();
+  });
+  it('does not readmit a completed finite source after page resume', async () => {
+    const s = scheduler();
+    await s.service.play(s.request);
+    s.time(3001);
+    expect(s.getOutput).toHaveBeenCalledOnce();
+    s.service.setSuspended(true);
+    s.service.setSuspended(false);
+    await settled();
+    expect(s.getOutput).toHaveBeenCalledOnce();
+    s.service.shutdown();
+  });
+  it('prepares a preparing-state grant received while the page was suspended', async () => {
+    const s = scheduler();
+    s.service.setSuspended(true);
+    await s.service.play({
+      ...s.request,
+      transport: { ...s.request.transport, state: 'preparing' },
+    });
+    expect(s.getOutput).not.toHaveBeenCalled();
+    s.service.setSuspended(false);
+    await settled();
+    expect(s.getOutput).toHaveBeenCalledOnce();
+    expect(s.starts).toHaveLength(0);
+    s.service.shutdown();
+  });
+  it('admits eight sources, refuses the ninth, and reuses only released admission', async () => {
+    const budget = new SequenceBudget();
+    const players = Array.from({ length: 9 }, () => scheduler(score, budget));
+    for (const s of players) await s.service.play(s.request);
+    expect(players.map((s) => s.service.has('music'))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+    players[0].service.shutdown();
+    await players[8].service.play(players[8].request);
+    expect(players[8].service.has('music')).toBe(true);
+    for (const s of players) s.service.shutdown();
+  });
+  it('fails explicitly when a tiny loop exceeds the occurrence work budget', async () => {
+    const s = scheduler({ ...score, parts: [] });
+    await s.service.play({
+      ...s.request,
+      transport: { ...s.request.transport, loop: { startTick: 0, endTick: 1, plays: -1 } },
+    });
+    s.time(850);
+    s.time(1000);
+    expect(s.error).toHaveBeenCalledWith('music', expect.stringContaining('density'));
+    expect(s.service.has('music')).toBe(false);
+    s.service.shutdown();
+  });
   it('a paused listener gets a silent grant without opening output or clock timers', async () => {
     const { service, output, acquire } = setup();
     await service.play(play);
@@ -329,7 +649,7 @@ describe('shared score ownership', () => {
       replaceFromTick: 3840,
       effectiveServerMs: 3000,
     });
-    await Promise.resolve();
+    await settled();
     time(2801);
     expect(starts.map((v) => v.note.note)).toEqual([60, 67]);
     time(3000);
@@ -371,6 +691,7 @@ describe('shared score ownership', () => {
       transport: request.transport,
       midi: decodeSequenceData({ version: 1, stream: true, windows: [window(1)] }, 'content', 1),
     });
+    await settled();
     time(1801);
     expect(starts[0].release).toHaveBeenCalledWith(2);
     service.update({
@@ -428,6 +749,7 @@ describe('shared score ownership', () => {
     expect(starts[1].stop).toHaveBeenCalled();
     expect(starts[0].stop).not.toHaveBeenCalled();
     expect(mix.cancelFrom).toHaveBeenLastCalledWith(3);
+    await settled();
     time(3000);
     time(4801);
     expect(starts.map((v) => v.note.note)).toEqual([60, 64, 69]);
