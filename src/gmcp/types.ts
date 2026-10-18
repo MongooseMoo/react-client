@@ -22,6 +22,7 @@ import type { GMCPClientWebPush } from "./Client/WebPush";
 import type { GMCPCommChannel } from "./Comm/Channel";
 import type { GMCPCommLiveKit } from "./Comm/LiveKit";
 import type { GMCPCore, GMCPCoreSupports } from "./Core";
+import type { GMCPCoreTime } from './Core/Time';
 import type { GMCPGroup } from "./Group";
 import type { GMCPHelp } from "./Help";
 import type { GmcPIRECombatMessage } from "./IRE/CombatMessage";
@@ -64,6 +65,7 @@ export interface KnownGMCPPackageMap {
   "Comm.LiveKit": GMCPCommLiveKit;
   "Core": GMCPCore;
   "Core.Supports": GMCPCoreSupports;
+  'Core.Time': GMCPCoreTime;
   "Group": GMCPGroup;
   "Help": GMCPHelp;
   "IRE.CombatMessage": GmcPIRECombatMessage;

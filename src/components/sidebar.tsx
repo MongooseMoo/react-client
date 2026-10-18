@@ -9,6 +9,7 @@ import {
   FaMap,
   FaMapMarkerAlt,
   FaMusic,
+  FaClock,
   FaQuestionCircle,
   FaServer,
   FaUsers,
@@ -20,6 +21,9 @@ import AudioChatBoundary from './AudioChatBoundary';
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
 const MapPanel = React.lazy(() => import('./MapPanel'));
 const HelpPanel = React.lazy(() => import('./HelpPanel'));
+const TimersPanel = React.lazy(() => import('./TimersPanel'));
+const SharedMediaPanel = React.lazy(() => import('./SharedMediaPanel'));
+const MusicComposer = React.lazy(() => import('./MusicComposer'));
 import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
@@ -299,6 +303,24 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         ),
         mountOnSelect: true,
         condition: true,
+      },
+      {
+        id: 'timers-tab',
+        label: 'Timers',
+        icon: <FaClock />,
+        content: <Suspense fallback={<p role="status">Loading timers…</p>}><TimersPanel client={client} /></Suspense>,
+        mountOnSelect: true,
+        condition: true,
+      },
+      {
+        id: 'shared-media-tab', label: 'Media', icon: <FaHeadphones />,
+        content: <Suspense fallback={<p role="status">Loading media…</p>}><SharedMediaPanel client={client} /></Suspense>,
+        mountOnSelect: true, condition: true,
+      },
+      {
+        id: 'music-composer-tab', label: 'Music', icon: <FaMusic />,
+        content: <Suspense fallback={<p role="status">Loading music composer…</p>}><MusicComposer client={client} /></Suspense>,
+        mountOnSelect: true, condition: true,
       },
     ];
 

@@ -83,6 +83,16 @@ const GMCPCoreSupportsBase = GMCPPackage.with({
 });
 
 export class GMCPCoreSupports extends GMCPCoreSupportsBase {
+  override sendData(messageName: string, data?: unknown): void {
+    super.sendData(messageName, data);
+    if (!this.client.gmcp.ready) return;
+    if ((messageName === 'Add' || messageName === 'Remove' || messageName === 'Set') && Array.isArray(data)) {
+      const hasClock = data.some((entry) => typeof entry === 'string' && entry.split(' ')[0] === 'Core.Time');
+      if (messageName === 'Set' || hasClock) this.client.sharedClock?.setNetworkReady(messageName !== 'Remove' && hasClock && !this.client.localConnection);
+      this.client.gmcp.require('Client.Media').sendPlaybackSupport();
+    }
+  }
+
   advertisedModules(): string[] {
     return Object.values(this.client.gmcp.handlers)
       .filter(isAdvertisedGMCPPackage)

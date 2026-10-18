@@ -172,6 +172,8 @@ describe('player-pinned tab authentication', () => {
     expect(() => auth.signOut()).toThrow('closed transport');
     expect(auth.currentGrant).toBeUndefined();
     expect(endpoint.close).toHaveBeenCalledOnce();
+    expect(usePersonalDataStore.getState().identityState).toBe('forgotten');
+    expect(usePersonalDataStore.getState().owner).toBeUndefined();
   });
 
   it('revokes the pinned tab through HTTP when its game socket is disconnected', async () => {

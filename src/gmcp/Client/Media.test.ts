@@ -30,6 +30,7 @@ import { MEDIA_SEEK_TOLERANCE_MS, MediaService } from '../../audio/MediaService'
 import { MediaPayloadError } from '../../audio/mediaPayloads';
 import { VectorTweener } from '../../audio/vectorTween';
 import { useSpatialStore } from '../../stores/spatialStore';
+import { SharedClock } from '../../timing/SharedClock';
 import {
   GMCPClientMedia,
   type GMCPMessageClientMediaLoad,
@@ -1894,6 +1895,34 @@ describe('GMCPClientMedia', () => {
   });
 
   describe('per-key generations (chunk 02)', () => {
+    it.each(['stop', 'reset', 'clock removal', 'runtime replacement'] as const)('aborts a shared pending asset on %s', async (reason) => {
+      const clock = new SharedClock(() => {});
+      clock.setLocalMapping({ clockId: 'runtime', performanceNowMs: 0, serverNowMs: 0 });
+      client.media.configureSharedMedia(clock, () => {});
+      const radio = createMockSound('https://media.example/radio.ogg');
+      mockCreateSound.mockResolvedValueOnce(radio);
+      await client.media.play({ key: 'radio', name: 'radio.ogg', type: 'music' });
+      let signal: AbortSignal | undefined;
+      mockCreateSound.mockImplementationOnce((_url, _kind, _pan, requestSignal: AbortSignal) => new Promise((_resolve, reject) => {
+        signal = requestSignal;
+        requestSignal.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true });
+      }));
+      const pending = client.media.play({ key: 'shared', name: 'asset.ogg', type: 'sound', transport: {
+        version: 1, kind: 'media', clockId: 'runtime', sourceId: 'source', revision: 1,
+        state: 'playing', anchorServerMs: 0, positionMs: 0, durationMs: 10000, rate: 1, mode: 'finite',
+      } });
+      expect(signal?.aborted).toBe(false);
+      if (reason === 'stop') client.media.stop({ key: 'shared' });
+      else if (reason === 'reset') client.media.reset();
+      else if (reason === 'clock removal') clock.setNetworkReady(false);
+      else clock.setLocalMapping({ clockId: 'new-runtime', performanceNowMs: 0, serverNowMs: 0 });
+      await pending;
+      expect(signal?.aborted).toBe(true);
+      expect(client.media.sounds.shared).toBeUndefined();
+      if (reason !== 'reset') expect(client.media.sounds.radio).toBe(radio);
+      client.media.shutdown();
+      clock.shutdown();
+    });
     function deferred<T>() {
       let resolve: (value: T) => void = () => undefined;
       const promise = new Promise<T>((done) => {

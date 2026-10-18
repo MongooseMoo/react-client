@@ -1,4 +1,5 @@
 import WebAudioTinySynth from '@xrnavigation/webaudio-tinysynth';
+import { SequenceOutputNotReady, type SequenceOutput } from './midi/SequenceOutput';
 
 /** Where the synth renders: an AudioContext and a node on that context. */
 export interface SynthAudioOutput {
@@ -20,6 +21,7 @@ export interface MidiOutputSink {
   /** Send `data` `secondsFromNow` later on the sink's own clock. */
   sendAt?(data: number[], secondsFromNow: number): void;
   close(): void;
+  getSequenceOutput?(): SequenceOutput;
 }
 
 export class VirtualMidiService {
@@ -31,10 +33,27 @@ export class VirtualMidiService {
   private unsubscribePlayback: (() => void) | null = null;
   private readonly playbackWaiters = new Set<() => void>();
   private readonly audioOutputListeners = new Set<() => void>();
+  private readonly sequenceReadyListeners = new Set<() => void>();
+  private readonly subscribeSequenceReady = (listener: () => void): (() => void) => {
+    this.sequenceReadyListeners.add(listener);
+    // Readiness can settle between an async provider rejection and subscription.
+    void Promise.resolve().then(() => {
+      if (this.sequenceReadyListeners.has(listener)) this.notifySequenceReady();
+    });
+    return () => {
+      this.sequenceReadyListeners.delete(listener);
+    };
+  };
+  private notifySequenceReady(): void {
+    if (this.output && !this.paused && !this.outputPending)
+      for (const listener of [...this.sequenceReadyListeners]) listener();
+  }
 
   subscribeAudioOutput = (listener: () => void): (() => void) => {
     this.audioOutputListeners.add(listener);
-    return () => { this.audioOutputListeners.delete(listener); };
+    return () => {
+      this.audioOutputListeners.delete(listener);
+    };
   };
   private initialization: Promise<boolean> | null = null;
   private continuation: Promise<void> | null = null;
@@ -129,6 +148,7 @@ export class VirtualMidiService {
         if (!this.paused) await this.continuePlayback();
       }
       console.log(`Virtual MIDI synthesizer ready: ${this.portName}`);
+      this.notifySequenceReady();
       return true;
     } catch (error) {
       console.error('Failed to initialize virtual MIDI synthesizer:', error);
@@ -151,6 +171,7 @@ export class VirtualMidiService {
       this.outputPending = true;
       if (!this.paused) await this.continuePlayback();
     }
+    this.notifySequenceReady();
   }
 
   async getVirtualPort(): Promise<MidiOutputSink | null> {
@@ -243,6 +264,7 @@ export class VirtualMidiService {
       if (this.synth === message.synth) message.synth.send(message.data, message.time);
       this.pendingMessages.shift();
     }
+    this.notifySequenceReady();
   }
 
   getPortName(): string {
@@ -256,6 +278,36 @@ export class VirtualMidiService {
   /** Shared client graph for optional sample-based outputs. Never resumes it. */
   getAudioOutput(): SynthAudioOutput | null {
     return this.output;
+  }
+
+  /** Score voices use only the attached client context and independently owned handles. */
+  async getSequenceOutput(): Promise<SequenceOutput | null> {
+    if (!this.output || this.paused || this.outputPending)
+      throw new SequenceOutputNotReady(this.subscribeSequenceReady);
+    if (!(await this.initialize())) return null;
+    const synth = this.synth,
+      output = this.output;
+    if (!synth || synth.getAudioContext() !== output.context)
+      throw new SequenceOutputNotReady(this.subscribeSequenceReady);
+    return {
+      context: output.context,
+      prepare: async (_parts, signal) => {
+        if (signal.aborted || this.synth !== synth) throw new Error('Score output cancelled');
+      },
+      playNote: (note) => {
+        if (this.synth !== synth || this.paused || this.outputPending)
+          throw new Error('Score output unavailable');
+        const common = {
+          note: note.note,
+          velocity: note.velocity,
+          startTime: note.startTime,
+          destination: note.destination,
+        };
+        return synth.playNote(
+          note.percussion ? { ...common, percussion: true } : { ...common, program: note.program },
+        );
+      },
+    };
   }
 
   async dispose(): Promise<void> {

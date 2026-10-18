@@ -27,6 +27,7 @@ import {
   GMCPCommLiveKit,
   GMCPCore,
   GMCPCoreSupports,
+  GMCPCoreTime,
   GmcPIRESound,
   GMCPGroup,
   GMCPHelp,
@@ -133,6 +134,7 @@ export function createConfiguredClient(): MudClient {
   const clientFileTransfer = client.gmcp.register(GMCPClientFileTransfer);
   client.configureFileTransfer(clientFileTransfer);
   client.configureLatency(client.gmcp.register(GMCPCore));
+  client.gmcp.register(GMCPCoreTime);
   client.gmcp.register(GMCPClientMedia);
   client.gmcp.register(GmcPIRESound);
   client.gmcp.register(GMCPClientSpatial);
@@ -153,7 +155,7 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPCharPrompt);
   client.gmcp.register(GMCPCharStatusAffectedBy);
   client.gmcp.register(GMCPCharStatusConditions);
-  client.gmcp.register(GMCPCharStatusTimers);
+  const timers = client.gmcp.register(GMCPCharStatusTimers);
   client.gmcp.register(GMCPCharAfflictions);
   client.gmcp.register(GMCPCharDefences);
   client.gmcp.register(GMCPCharSkills);
@@ -178,6 +180,7 @@ export function createConfiguredClient(): MudClient {
     if (client.gmcp.markSessionReady()) {
       useConnectionStore.getState().setSessionReady(true);
     }
+    timers.requestSnapshot();
   });
   char.on("vitals", (data) => useCharacterStatusStore.getState().setVitals(data));
   clientHtml.on("addHtml", (data) => useOutputStore.getState().addHtml(data.data.join("\n")));

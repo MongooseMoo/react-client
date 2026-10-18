@@ -45,7 +45,11 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify lazy audio caching in the production build
         run: npm run test:audio-cache
-      - name: Verify editor ownership across game sessions
+      - name: Verify native sequence rendering and composer capture
+        run: |
+          npm run test:sequences
+          npm run test:composer
+      - name: Verify editor ownership and native shared media timing
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:5183
         run: |
@@ -58,7 +62,7 @@ jobs:
             fi
             sleep 1
           done
-          node node_modules/@playwright/test/cli.js test tests/browser/editor-ownership.spec.ts --workers=1 --reporter=line
+          node node_modules/@playwright/test/cli.js test tests/browser/editor-ownership.spec.ts tests/browser/shared-media.spec.ts --workers=1 --reporter=line --output=test-results/browser
       - name: Verify browser session ownership and visitor privacy in the production build
         run: |
           node scripts/check-browser-sessions.mjs

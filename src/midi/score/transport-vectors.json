@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "description": "Independent milliseconds/tick fixtures shared by client and MOO; finite plays means total passes, with no implicit outro.",
+  "tempos": [{"tick":0,"bpm":120},{"tick":960,"bpm":60},{"tick":2880,"bpm":240}],
+  "durationTicks": 5760,
+  "tempoCases": [
+    {"tick":0,"ms":0},
+    {"tick":480,"ms":250},
+    {"tick":960,"ms":500},
+    {"tick":1920,"ms":1500},
+    {"tick":2880,"ms":2500},
+    {"tick":3840,"ms":2750},
+    {"tick":5760,"ms":3250}
+  ],
+  "loop": {"startTick":960,"endTick":3840,"plays":3},
+  "loopCases": [
+    {"unwrappedTick":480,"ms":250,"contentTick":480,"occurrence":0,"terminal":false},
+    {"unwrappedTick":960,"ms":500,"contentTick":960,"occurrence":0,"terminal":false},
+    {"unwrappedTick":2880,"ms":2500,"contentTick":2880,"occurrence":0,"terminal":false},
+    {"unwrappedTick":3840,"ms":2750,"contentTick":960,"occurrence":1,"terminal":false},
+    {"unwrappedTick":4800,"ms":3750,"contentTick":1920,"occurrence":1,"terminal":false},
+    {"unwrappedTick":6720,"ms":5000,"contentTick":960,"occurrence":2,"terminal":false},
+    {"unwrappedTick":9600,"ms":7250,"contentTick":3840,"occurrence":2,"terminal":true}
+  ],
+  "scoreCases": [
+    {"name":"future anchor freezes","anchorTick":1920,"anchorServerMs":20000,"nowMs":15000,"state":"playing","looped":false,"unwrappedTick":1920,"contentTick":1920,"terminal":false},
+    {"name":"tempo boundary","anchorTick":1920,"anchorServerMs":10000,"nowMs":11000,"state":"playing","looped":false,"unwrappedTick":2880,"contentTick":2880,"terminal":false},
+    {"name":"pause ignores elapsed","anchorTick":1920,"anchorServerMs":10000,"nowMs":11000,"state":"paused","looped":false,"unwrappedTick":1920,"contentTick":1920,"terminal":false},
+    {"name":"loop second pass tempo","anchorTick":3840,"anchorServerMs":10000,"nowMs":11000,"state":"playing","looped":true,"unwrappedTick":4800,"contentTick":1920,"terminal":false},
+    {"name":"loop terminal","anchorTick":3840,"anchorServerMs":10000,"nowMs":14500,"state":"playing","looped":true,"unwrappedTick":9600,"contentTick":3840,"terminal":true},
+    {"name":"ordinary terminal","anchorTick":0,"anchorServerMs":10000,"nowMs":14000,"state":"playing","looped":false,"unwrappedTick":5760,"contentTick":5760,"terminal":true}
+  ]
+}

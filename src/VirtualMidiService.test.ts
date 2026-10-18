@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { virtualMidiService } from './VirtualMidiService';
+import { SequenceOutputNotReady } from './midi/SequenceOutput';
 
 interface TestContext {
   currentTime: number;
@@ -84,15 +85,65 @@ describe('VirtualMidiService', () => {
       pause: () => {
         source.paused = true;
         context.state = 'suspended';
-        listeners.forEach((listener) => { listener(); });
+        listeners.forEach((listener) => {
+          listener();
+        });
       },
       resume: () => {
         context.state = 'running';
         source.paused = false;
-        listeners.forEach((listener) => { listener(); });
+        listeners.forEach((listener) => {
+          listener();
+        });
       },
     };
   }
+
+  it('reports paused sequence output as transient and notifies after explicit resume', async () => {
+    const playback = pausedOutput();
+    await virtualMidiService.setAudioOutput(playback.attached);
+    await virtualMidiService.initialize();
+    playback.pause();
+    const error = await virtualMidiService.getSequenceOutput().catch((error) => error);
+    expect(error).toBeInstanceOf(SequenceOutputNotReady);
+    const ready = vi.fn();
+    const release = error.subscribeReady(ready);
+    await Promise.resolve();
+    expect(ready).not.toHaveBeenCalled();
+    playback.resume();
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+    expect(ready).toHaveBeenCalled();
+    release();
+    expect(await virtualMidiService.getSequenceOutput()).not.toBeNull();
+    playback.cleanup();
+  });
+
+  it('waits for pending graph attachment and closes the readiness subscription race', async () => {
+    const playback = pausedOutput();
+    await virtualMidiService.setAudioOutput(playback.attached);
+    await virtualMidiService.initialize();
+    let finish = () => {};
+    synthState.instances[0].setAudioContext.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const attachment = virtualMidiService.setAudioOutput({
+      ...playback.attached,
+      destination: {} as AudioNode,
+    });
+    const error = await virtualMidiService.getSequenceOutput().catch((error) => error);
+    expect(error).toBeInstanceOf(SequenceOutputNotReady);
+    finish();
+    await attachment;
+    const ready = vi.fn();
+    const release = error.subscribeReady(ready);
+    await Promise.resolve();
+    expect(ready).toHaveBeenCalled();
+    release();
+    playback.cleanup();
+  });
 
   it('holds incoming and scheduled MIDI on the frozen audio clock until explicit resume', async () => {
     const playback = pausedOutput();
