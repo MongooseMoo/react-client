@@ -83,6 +83,7 @@ export class SharedMediaService {
   constructor(private readonly options: Options) {
     this.now = options.now ?? (() => performance.now());
     this.unsubscribe = options.clock.subscribe((change) => this.clockChanged(change));
+    options.context.addEventListener?.('statechange', this.contextChanged);
   }
   has(key: string): boolean {
     return this.sources.has(key);
@@ -219,7 +220,16 @@ export class SharedMediaService {
   shutdown(): void {
     this.reset();
     this.unsubscribe();
+    this.options.context.removeEventListener?.('statechange', this.contextChanged);
   }
+  private readonly contextChanged = (): void => {
+    for (const source of this.sources.values()) {
+      this.cancelOperation(source);
+      if (this.options.context.state === 'running' && !this.suspended && !source.localPaused)
+        void this.reconcile(source, true);
+      else this.present(source, 'preparing', 'Audio requires Resume');
+    }
+  };
   private current(source: Source, operation: number): boolean {
     return (
       this.sources.get(source.grant.key) === source &&

@@ -384,6 +384,9 @@ export class MediaService {
   sequenceOutputChanged(): void {
     this.sequences?.reset();
   }
+  panicSequences(): void {
+    this.sequences?.reset();
+  }
   outputTimingChanged(): void {
     this.sequences?.setSuspended(true);
     this.sharedMedia?.setSuspended(true);
@@ -1194,12 +1197,34 @@ export class MediaService {
     playback.loop(0);
     this.renderOcclusion(sound, voices, 0);
     let cancelStart: (() => void) | undefined;
+    let playbackGeneration = 0;
+    let spatialReady: Promise<void> | undefined;
+    const prepareSpatial = (): Promise<void> => {
+      spatialReady ??= (async () => {
+        if (data.upmix !== 'ambisonic') return;
+        const inputChannels = this.resolveAmbisonicInputChannels(sound, data);
+        const target = await this.resolveAmbisonicTarget(sound, soundKey, data);
+        if (inputChannels === 4)
+          await this.configureAmbisonicPlayback(sound, playback, inputChannels, target, soundKey);
+        else
+          await this.configurePositionalFoa(
+            sound,
+            playback,
+            inputChannels >= 2 ? POSITIONAL_FOA_STEREO_WIDTH_RAD : 0,
+            target,
+            soundKey,
+          );
+      })();
+      return spatialReady;
+    };
     const cancel = () => {
       cancelStart?.();
       cancelStart = undefined;
     };
     return {
       prepareSeek: async (seconds, signal) => {
+        await prepareSpatial();
+        if (signal.aborted) throw new DOMException('Shared preparation cancelled', 'AbortError');
         if (data.type !== 'music') {
           playback.seek(seconds);
           return;
@@ -1209,8 +1234,12 @@ export class MediaService {
         await playback.prepareSeek(seconds, { signal, timeoutMs: 15000 });
       },
       currentTime: () => playback.currentTime,
-      start: ({ at, rate }) =>
-        new Promise<void>((resolve, reject) => {
+      start: async ({ at, rate }) => {
+        const generation = ++playbackGeneration;
+        await prepareSpatial();
+        if (generation !== playbackGeneration)
+          throw new DOMException('Shared start cancelled', 'AbortError');
+        return new Promise<void>((resolve, reject) => {
           let timer: ReturnType<typeof setTimeout> | undefined;
           let timeout: ReturnType<typeof setTimeout> | undefined;
           const cleanups: (() => void)[] = [];
@@ -1253,14 +1282,17 @@ export class MediaService {
               : 0;
           if (delay > 0) timer = setTimeout(begin, delay);
           else begin();
-        }),
+        });
+      },
       pause: () => {
+        playbackGeneration++;
         const starting = cancelStart !== undefined;
         cancel();
         if (playback.isPlaying) playback.pause();
         else if (starting) playback.stop();
       },
       dispose: () => {
+        playbackGeneration++;
         cancel();
         this.releaseSound(sound, soundKey);
       },
