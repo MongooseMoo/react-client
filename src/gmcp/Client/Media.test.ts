@@ -24,6 +24,7 @@ vi.mock('../../audio/PositionalFoaRenderer', () => ({
   },
 }));
 
+import { SPATIAL_PARAM_TAU_S } from '../../audio/audioParamSmoothing';
 import { MAX_SEND_DISTANCE_BOOST } from '../../audio/distanceModel';
 import { MEDIA_SEEK_TOLERANCE_MS, MediaService } from '../../audio/MediaService';
 import { MediaPayloadError } from '../../audio/mediaPayloads';
@@ -248,6 +249,7 @@ function createMockClient() {
     listenerForwardOrientation: [0, 0, -1],
     listenerUpOrientation: [0, 1, 0],
     listenerPosition: [0, 0, 0],
+    listenerSmoothingTau: 0,
     muted: false,
     pause: vi.fn(async () => {}),
     resume: vi.fn(async () => {}),
@@ -298,6 +300,7 @@ describe('GMCPClientMedia', () => {
       attachPlayback: vi.fn(),
       cleanup: vi.fn(),
       setRotationMatrixFromYaw: vi.fn(),
+      setRotationSmoothing: vi.fn(),
       setDistanceGain: vi.fn(),
     });
     mockPositionalFoaRendererCreate.mockResolvedValue({
@@ -532,6 +535,7 @@ describe('GMCPClientMedia', () => {
         attachPlayback: vi.fn(),
         cleanup: vi.fn(),
         setRotationMatrixFromYaw: vi.fn(),
+        setRotationSmoothing: vi.fn(),
         setDistanceGain: vi.fn(),
       };
       mockAmbisonicRendererCreate.mockResolvedValue(renderer);
@@ -1372,6 +1376,7 @@ describe('GMCPClientMedia', () => {
         attachPlayback: vi.fn(),
         cleanup: vi.fn(),
         setRotationMatrixFromYaw: vi.fn(),
+        setRotationSmoothing: vi.fn(),
         setDistanceGain: vi.fn(),
       };
       let resolveRenderer!: (value: typeof renderer) => void;
@@ -1506,6 +1511,60 @@ describe('GMCPClientMedia', () => {
       client.media.cacophony.listenerForwardOrientation = [0.6, 0, -0.8];
       client.media.setHeadYaw(0);
       expect(client.media.cacophony.listenerForwardOrientation).toEqual([0.6, 0, -0.8]);
+    });
+
+    const playBed = async () => {
+      mockCreateSound.mockResolvedValueOnce(createMockSound('https://media.example/bed.ogg'));
+      await handler.handlePlay({
+        channels: 4,
+        key: 'bed',
+        name: 'bed.ogg',
+        type: 'music',
+        upmix: 'ambisonic',
+        volume: 50,
+      } as GMCPMessageClientMediaPlay);
+      return mockAmbisonicRendererCreate.mock.results.at(-1)?.value;
+    };
+
+    it('glides the listener and FOA beds while tracking, then restores the policy and pose exactly', async () => {
+      const bed = await playBed();
+      handler.handleListenerOrientation({ forward: [1, 0, 0] } as GMCPMessageClientMediaListenerOrientation);
+      client.media.cacophony.listenerSmoothingTau = 0.2;
+
+      client.media.setHeadTracking(true);
+      expect(client.media.cacophony.listenerSmoothingTau).toBe(SPATIAL_PARAM_TAU_S);
+      expect(bed.setRotationSmoothing).toHaveBeenLastCalledWith(true);
+
+      client.media.setHeadYaw(0.5);
+      client.media.setHeadTracking(false);
+
+      // The previous policy, the server's facing exactly, and a final stepped write
+      // of the bed after its smoothing is off.
+      expect(client.media.cacophony.listenerSmoothingTau).toBe(0.2);
+      expect(client.media.cacophony.listenerForwardOrientation).toEqual([-1, 0, 0]);
+      expect(bed.setRotationSmoothing).toHaveBeenLastCalledWith(false);
+      expect(bed.setRotationMatrixFromYaw).toHaveBeenLastCalledWith(-Math.PI / 2);
+      expect(bed.setRotationMatrixFromYaw.mock.invocationCallOrder.at(-1)).toBeGreaterThan(
+        bed.setRotationSmoothing.mock.invocationCallOrder.at(-1),
+      );
+    });
+
+    it('starts a bed created during tracking with smoothing on', async () => {
+      client.media.setHeadTracking(true);
+      const bed = await playBed();
+      expect(bed.setRotationSmoothing).toHaveBeenLastCalledWith(true);
+      expect(bed.setRotationSmoothing.mock.invocationCallOrder[0]).toBeLessThan(
+        bed.setRotationMatrixFromYaw.mock.invocationCallOrder[0],
+      );
+      client.media.setHeadTracking(false);
+    });
+
+    it('leaves the listener policy alone when tracking was never on', async () => {
+      const bed = await playBed();
+      client.media.cacophony.listenerSmoothingTau = 0.2;
+      client.media.setHeadTracking(false);
+      expect(client.media.cacophony.listenerSmoothingTau).toBe(0.2);
+      expect(bed.setRotationSmoothing).toHaveBeenLastCalledWith(false);
     });
   });
 

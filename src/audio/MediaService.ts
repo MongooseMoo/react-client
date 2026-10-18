@@ -34,6 +34,7 @@ import {
 import { clearNamedRoute, type NamedRouteState, routeNamedChain } from './namedRoute';
 import { hasOcclusion, OCCLUSION_GLIDE_MS } from './occlusion';
 import { turnAboutUp } from './headYaw';
+import { SPATIAL_PARAM_TAU_S } from './audioParamSmoothing';
 import { VectorTweener } from './vectorTween';
 import type { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
@@ -321,6 +322,9 @@ export class MediaService {
   private bodyForward: Position | null = null;
   private bodyUp: Position | null = null;
   private headYaw = 0;
+  private headTracking = false;
+  /** cacophony's listener smoothing when head tracking turned on, put back when it stops. */
+  private listenerTauBeforeTracking = 0;
 
   constructor(cacophony: Cacophony = new Cacophony(), options: MediaServiceOptions = {}) {
     this.cacophony = cacophony;
@@ -523,6 +527,33 @@ export class MediaService {
     this.headYaw = yaw;
     // Facing the server never set is whatever the engine listener faces now.
     this.bodyForward ??= [...this.cacophony.listenerForwardOrientation];
+    this.applyListenerOrientation();
+  }
+
+  /**
+   * Head tracking on or off. While it is on, the head turns many times a
+   * second, so every listener-facing path glides with the same time constant
+   * ({@link SPATIAL_PARAM_TAU_S}, which positional FOA already uses): the
+   * engine listener through cacophony's listener smoothing (which also glides
+   * listener position meanwhile), FOA beds through their rotators. Off puts
+   * back the listener smoothing it found, steps the beds again, and writes the
+   * server's facing exactly (restoring a tau of 0 snaps any glide in flight).
+   */
+  setHeadTracking(active: boolean): void {
+    if (active === this.headTracking) {
+      return;
+    }
+    this.headTracking = active;
+    if (active) {
+      this.listenerTauBeforeTracking = this.cacophony.listenerSmoothingTau;
+      this.cacophony.listenerSmoothingTau = SPATIAL_PARAM_TAU_S;
+    } else {
+      this.headYaw = 0;
+      this.cacophony.listenerSmoothingTau = this.listenerTauBeforeTracking;
+    }
+    for (const sound of this.allSounds) {
+      sound.ambisonicRenderer?.setRotationSmoothing(active);
+    }
     this.applyListenerOrientation();
   }
 
@@ -1698,6 +1729,7 @@ export class MediaService {
       return;
     }
     renderer.attachPlayback(playback, outputTarget);
+    renderer.setRotationSmoothing(this.headTracking);
     renderer.setRotationMatrixFromYaw(this.currentListenerYaw());
     sound.ambisonicRenderer = renderer;
     this.updateAmbisonicDistance(sound);

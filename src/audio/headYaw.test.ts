@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { deviceHeading, HeadingFilter, turnAboutUp, wrapDegrees, type Vector3 } from './headYaw';
+import {
+  FacingHeading,
+  HeadingFilter,
+  type OrientationAngles,
+  turnAboutUp,
+  wrapDegrees,
+  type Vector3,
+} from './headYaw';
 
 /** Listener yaw as MediaService reads it from a forward vector. */
 function listenerYaw(forward: Vector3): number {
@@ -25,7 +32,46 @@ describe('wrapDegrees', () => {
   });
 });
 
-describe('deviceHeading', () => {
+type Matrix = [Vector3, Vector3, Vector3];
+
+function multiply(a: Matrix, b: Matrix): Matrix {
+  const row = (r: number): Vector3 => [0, 1, 2].map((c) =>
+    a[r][0] * b[0][c] + a[r][1] * b[1][c] + a[r][2] * b[2][c]) as Vector3;
+  return [row(0), row(1), row(2)];
+}
+
+const D = Math.PI / 180;
+const rotZ = (deg: number): Matrix => {
+  const c = Math.cos(deg * D);
+  const s = Math.sin(deg * D);
+  return [[c, -s, 0], [s, c, 0], [0, 0, 1]];
+};
+const rotX = (deg: number): Matrix => {
+  const c = Math.cos(deg * D);
+  const s = Math.sin(deg * D);
+  return [[1, 0, 0], [0, c, -s], [0, s, c]];
+};
+const rotY = (deg: number): Matrix => {
+  const c = Math.cos(deg * D);
+  const s = Math.sin(deg * D);
+  return [[c, 0, s], [0, 1, 0], [-s, 0, c]];
+};
+
+/** The W3C alpha/beta/gamma of a device-to-earth rotation R = Rz(alpha) Rx(beta) Ry(gamma). */
+function anglesOf(r: Matrix): OrientationAngles {
+  return {
+    alpha: Math.atan2(-r[0][1], r[1][1]) / D,
+    beta: Math.asin(r[2][1]) / D,
+    gamma: Math.atan2(-r[2][0], r[2][2]) / D,
+  };
+}
+
+/** One reading's heading from a fresh FacingHeading. */
+function deviceHeading(angles: OrientationAngles, screenAngle: number): number | null {
+  return new FacingHeading().read(angles, screenAngle);
+}
+
+describe('FacingHeading', () => {
   it('reads a flat device by where its top edge points, clockwise from the zero', () => {
     expect(deviceHeading({ alpha: 0, beta: 0, gamma: 0 }, 0)).toBeCloseTo(0);
     // alpha grows counter-clockwise, so a device turned left by 90 heads 270.
@@ -58,12 +104,88 @@ describe('deviceHeading', () => {
     expect(deviceHeading({ alpha: null, beta: null, gamma: null }, 0)).toBeNull();
     expect(deviceHeading({ alpha: 10, beta: null, gamma: 0 }, 0)).toBeNull();
   });
+
+  it('ignores roll about the back of an upright device (the review case)', () => {
+    // Back still pointing north, rolled about 30 degrees sideways.
+    expect(deviceHeading({ alpha: 270, beta: 60, gamma: 89.999999 }, 0)).toBeCloseTo(0, 3);
+  });
+
+  it.each([0, 90, 270])('ignores pure roll of an upright device at screen angle %i', (screenAngle) => {
+    for (const facing of [0, 40, 200]) {
+      for (const pitch of [60, 80]) {
+        const upright = multiply(rotZ(-facing), rotX(pitch));
+        for (const roll of [-60, -30, 0, 30, 60]) {
+          // Roll is a turn about the device's own back axis (device z).
+          const heading = deviceHeading(anglesOf(multiply(upright, rotZ(roll))), screenAngle);
+          expect(wrapDegrees((heading ?? Number.NaN) - facing)).toBeCloseTo(0, 6);
+        }
+      }
+    }
+  });
+
+  it('ignores pure roll of a flat device about its screen-up axis, in portrait and landscape', () => {
+    for (const facing of [0, 75]) {
+      for (const roll of [-20, -10, 10, 20]) {
+        // Portrait: screen up is device +y.
+        const portrait = multiply(multiply(rotZ(-facing), rotY(0)), rotY(roll));
+        expect(wrapDegrees((deviceHeading(anglesOf(portrait), 0) ?? Number.NaN) - facing)).toBeCloseTo(0, 6);
+        // Landscape at angle 90: screen up is device +x, so the device is turned a
+        // quarter counter-clockwise; roll is about device x.
+        const landscape = multiply(rotZ(90 - facing), rotX(roll));
+        expect(wrapDegrees((deviceHeading(anglesOf(landscape), 90) ?? Number.NaN) - facing)).toBeCloseTo(0, 6);
+      }
+    }
+  });
+
+  it('stays continuous while pitching from flat to upright with a roll, and never loses the heading', () => {
+    const facing = new FacingHeading();
+    let previous: number | null = null;
+    // (anglesOf is degenerate at exactly 90 degrees of pitch, so stop at 85.)
+    // A rolled device's facing axis really does swing a little as it pitches
+    // (up to about 2 degrees per degree near flat here); the bound catches a
+    // jump at an axis switch, which would be tens of degrees.
+    for (let pitch = 0; pitch <= 85; pitch += 1) {
+      const heading = facing.read(anglesOf(multiply(multiply(rotZ(-20), rotX(pitch)), rotY(25))), 0);
+      expect(heading).not.toBeNull();
+      if (previous !== null && heading !== null) {
+        expect(Math.abs(wrapDegrees(heading - previous))).toBeLessThan(3);
+      }
+      previous = heading;
+    }
+    // And back again, through the other switch point.
+    for (let pitch = 85; pitch >= 0; pitch -= 1) {
+      const heading = facing.read(anglesOf(multiply(multiply(rotZ(-20), rotX(pitch)), rotY(25))), 0);
+      if (previous !== null && heading !== null) {
+        expect(Math.abs(wrapDegrees(heading - previous))).toBeLessThan(3);
+      }
+      previous = heading;
+    }
+  });
+
+  it('reads a turn after an axis switch as the full turn', () => {
+    const facing = new FacingHeading();
+    // Start flat (screen-up axis), pitch upright (switches to the back axis).
+    for (let pitch = 0; pitch <= 85; pitch += 5) facing.read(anglesOf(rotX(pitch)), 0);
+    const before = facing.read(anglesOf(rotX(85)), 0) ?? Number.NaN;
+    const after = facing.read(anglesOf(multiply(rotZ(-30), rotX(85))), 0) ?? Number.NaN;
+    expect(wrapDegrees(after - before)).toBeCloseTo(30, 6);
+  });
 });
 
 describe('HeadingFilter', () => {
   it('passes the first reading through unchanged', () => {
     const filter = new HeadingFilter();
     expect(filter.update(42, 0)).toBe(42);
+  });
+
+  it('snap lands on the latest heading, unwrapped, and stays settled there', () => {
+    const filter = new HeadingFilter();
+    filter.update(350, 0);
+    filter.update(20, 16); // 30 degrees on, through 360
+    expect(filter.settled).toBe(false);
+    expect(filter.snap()).toBe(380);
+    expect(filter.settled).toBe(true);
+    expect(filter.update(20, 32)).toBe(380);
   });
 
   it('unwraps across 0/360 instead of swinging the long way round', () => {

@@ -36,11 +36,15 @@ export const useHeadTrackingStore = create<HeadTrackingState>()(() => ({
 /** Where the head yaw goes: MediaService. */
 export interface HeadYawSink {
   setHeadYaw(yaw: number): void;
+  /** Tracking on (glide every listener path) or off (the server-driven policy, exactly). */
+  setHeadTracking(active: boolean): void;
 }
 
 export interface HeadTrackingEnvironment {
   target: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
   screenAngle: () => number;
+  /** Subscribe to screen-angle changes; returns the unsubscribe. */
+  onScreenChange: (listener: () => void) => () => void;
   now: () => number;
   /** DeviceOrientationEvent.requestPermission where the browser has one. */
   permissionRequest: () => (() => Promise<string>) | undefined;
@@ -78,6 +82,7 @@ export class HeadTrackingController {
     this.tracker = new HeadTracker({
       target: env.target,
       screenAngle: env.screenAngle,
+      onScreenChange: env.onScreenChange,
       now: env.now,
       setTimer: env.setTimer,
       clearTimer: env.clearTimer,
@@ -87,12 +92,12 @@ export class HeadTrackingController {
 
   attach(sink: HeadYawSink): () => void {
     this.sink = sink;
-    this.startProbe();
     const unsubscribe = usePreferences.subscribe(
       (state) => state.sound.headTracking,
       (enabled) => (enabled ? this.startTracking() : this.stopTracking()),
       { fireImmediately: true },
     );
+    this.startProbe();
     return () => {
       unsubscribe();
       this.stopTracking();
@@ -116,6 +121,7 @@ export class HeadTrackingController {
         result = 'denied';
       }
       if (result !== 'granted') {
+        this.stopProbe();
         this.setPreference(false);
         useHeadTrackingStore.setState({ status: 'blocked' });
         this.env.announce('Motion access was not allowed, so head tracking is off.');
@@ -170,6 +176,7 @@ export class HeadTrackingController {
       return;
     }
     useHeadTrackingStore.setState({ status: 'waiting', yawDegrees: 0 });
+    this.sink.setHeadTracking(true);
     this.tracker.start();
     this.clearNoReadingTimer();
     this.noReadingTimer = this.env.setTimer(() => {
@@ -192,8 +199,12 @@ export class HeadTrackingController {
     this.clearNoReadingTimer();
     this.clearReadoutTimer();
     this.startedByPlayer = false;
-    // The tracker hands back a zero yaw as it stops, which restores the server facing.
+    // The tracker hands back a zero yaw as it stops; the sink then puts back the
+    // server-driven smoothing and writes the server facing exactly.
     this.tracker.stop();
+    this.sink?.setHeadTracking(false);
+    // Off means no sensor work at all, the availability probe included.
+    this.stopProbe();
     useHeadTrackingStore.setState((state) => ({
       status: state.status === 'blocked' ? 'blocked' : 'off',
       yawDegrees: 0,
@@ -241,22 +252,27 @@ export class HeadTrackingController {
     }
   }
 
+  /**
+   * Find out whether there is a sensor, listening for at most {@link PROBE_MS}.
+   * Where the browser asks for motion access first, nothing is sent before it
+   * is asked, so nothing is listened for: the toggle shows, and tracking finds
+   * out once the player allows it.
+   */
   private startProbe(): void {
-    const sensor = useHeadTrackingStore.getState().sensor;
-    if (sensor === 'available') {
+    if (useHeadTrackingStore.getState().sensor === 'available') {
       return;
     }
     if (this.env.permissionRequest()) {
       useHeadTrackingStore.setState({ sensor: 'needs-permission' });
-    } else {
-      this.probeTimer = this.env.setTimer(() => {
-        this.probeTimer = null;
-        if (useHeadTrackingStore.getState().sensor === 'unknown') {
-          useHeadTrackingStore.setState({ sensor: 'none' });
-        }
-      }, PROBE_MS);
+      return;
     }
-    // Keep listening past the timer: a reading that comes late still counts.
+    this.probeTimer = this.env.setTimer(() => {
+      this.probeTimer = null;
+      this.stopProbe();
+      if (useHeadTrackingStore.getState().sensor === 'unknown') {
+        useHeadTrackingStore.setState({ sensor: 'none' });
+      }
+    }, PROBE_MS);
     this.env.target.addEventListener('deviceorientation', this.handleProbe);
   }
 
@@ -299,10 +315,22 @@ function screenAngle(): number {
   return typeof legacy === 'number' ? legacy : 0;
 }
 
+/** screen.orientation's change event, and the older orientationchange where that is missing (iOS). */
+function onScreenChange(listener: () => void): () => void {
+  const orientation = window.screen?.orientation;
+  orientation?.addEventListener('change', listener);
+  window.addEventListener('orientationchange', listener);
+  return () => {
+    orientation?.removeEventListener('change', listener);
+    window.removeEventListener('orientationchange', listener);
+  };
+}
+
 /** The app's head tracking, bound to the browser. */
 export const headTracking = new HeadTrackingController({
   target: typeof window === 'undefined' ? new EventTarget() : window,
   screenAngle,
+  onScreenChange,
   now: () => performance.now(),
   permissionRequest,
   setTimer: (callback, ms) => window.setTimeout(callback, ms),

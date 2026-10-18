@@ -12,8 +12,13 @@ export type Vector3 = [number, number, number];
 
 const DEG = Math.PI / 180;
 
-/** Below this horizontal length the device's facing is too close to vertical to read. */
-const MIN_HORIZONTAL = 1e-3;
+/**
+ * Hysteresis for the facing axis, as the horizontal length of the device's
+ * back: above BACK_ON the back is the facing, below SCREEN_UP_ON the screen's
+ * up is. Between them the axis in use stays.
+ */
+const BACK_ON = 0.6;
+const SCREEN_UP_ON = 0.4;
 
 /** Wrap an angle in degrees into (-180, 180]. */
 export function wrapDegrees(degrees: number): number {
@@ -28,42 +33,89 @@ export interface OrientationAngles {
   gamma: number | null;
 }
 
-/**
- * The device's heading in degrees [0, 360), clockwise from the sensor's zero,
- * or null when the reading has no angles or the device faces straight up or
- * down.
- *
- * The device's pose is the W3C Z-X'-Y'' rotation (alpha about the earth's
- * up axis, then beta, then gamma). The facing it reads is the screen's up
- * direction plus the device's back, flattened onto the ground: a device held
- * flat faces where the top of its screen points, a device held upright faces
- * where its back points, and anything between agrees with both. The screen's
- * up is the device's +y turned by `screenAngle` (screen.orientation.angle),
- * so turning the device into landscape does not move the heading.
- */
-export function deviceHeading(angles: OrientationAngles, screenAngle: number): number | null {
-  const { alpha, beta, gamma } = angles;
-  if (alpha === null || beta === null || gamma === null) {
-    return null;
-  }
+/** A device vector in earth axes (east, north, up) under the W3C Z-X'-Y'' pose. */
+function toEarth(alpha: number, beta: number, gamma: number, v: Vector3): Vector3 {
   const cA = Math.cos(alpha * DEG);
   const sA = Math.sin(alpha * DEG);
   const cB = Math.cos(beta * DEG);
   const sB = Math.sin(beta * DEG);
   const cG = Math.cos(gamma * DEG);
   const sG = Math.sin(gamma * DEG);
-  // Facing in device axes: screen up (+y turned by the screen angle) plus back (-z).
-  const vx = Math.sin(screenAngle * DEG);
-  const vy = Math.cos(screenAngle * DEG);
-  const vz = -1;
-  // First two rows of Rz(alpha) * Rx(beta) * Ry(gamma): earth east and north.
-  const east = (cA * cG - sA * sB * sG) * vx - sA * cB * vy + (cA * sG + sA * sB * cG) * vz;
-  const north = (sA * cG + cA * sB * sG) * vx + cA * cB * vy + (sA * sG - cA * sB * cG) * vz;
-  if (Math.hypot(east, north) < MIN_HORIZONTAL) {
-    return null;
+  // Rz(alpha) * Rx(beta) * Ry(gamma), applied to v.
+  return [
+    (cA * cG - sA * sB * sG) * v[0] - sA * cB * v[1] + (cA * sG + sA * sB * cG) * v[2],
+    (sA * cG + cA * sB * sG) * v[0] + cA * cB * v[1] + (sA * sG - cA * sB * cG) * v[2],
+    -cB * sG * v[0] + sB * v[1] + cB * cG * v[2],
+  ];
+}
+
+/** Compass azimuth of an earth vector, degrees clockwise from north. */
+function azimuth(v: Vector3): number {
+  return Math.atan2(v[0], v[1]) / DEG;
+}
+
+type FacingAxis = 'back' | 'screen-up';
+
+/**
+ * The device's heading in degrees [0, 360), clockwise from the sensor's zero.
+ *
+ * The pose is the W3C Z-X'-Y'' rotation (alpha about the earth's up axis,
+ * then beta, then gamma). The heading is the compass direction of one device
+ * axis, the facing: the device's back while it is held upright (its back's
+ * horizontal length above {@link BACK_ON}), the screen's up while it lies
+ * flat (below {@link SCREEN_UP_ON}), and between those, whichever was in use.
+ * A roll about the facing axis cannot move where that axis points, so a head
+ * tilted sideways does not turn the scene. The two axes are perpendicular, so
+ * whichever is in use is at least 0.4 horizontal (the back) or 0.8 (the
+ * screen's up): neither is ever read near vertical.
+ *
+ * The screen's up is the device's +y turned by `screenAngle`
+ * (screen.orientation.angle), so turning the device into landscape with the
+ * screen does not move the heading. When the axis changes, an offset carries
+ * the heading across, so the output never jumps; turns after it read in full.
+ * The object keeps that axis and offset, so use one per tracking session.
+ */
+export class FacingHeading {
+  private axis: FacingAxis | null = null;
+  private offset = 0;
+
+  reset(): void {
+    this.axis = null;
+    this.offset = 0;
   }
-  const heading = Math.atan2(east, north) / DEG;
-  return heading < 0 ? heading + 360 : heading;
+
+  /** The heading of a reading, or null when it has no angles. */
+  read(angles: OrientationAngles, screenAngle: number): number | null {
+    const { alpha, beta, gamma } = angles;
+    if (alpha === null || beta === null || gamma === null) {
+      return null;
+    }
+    const back = toEarth(alpha, beta, gamma, [0, 0, -1]);
+    const screenUp = toEarth(alpha, beta, gamma, [
+      Math.sin(screenAngle * DEG),
+      Math.cos(screenAngle * DEG),
+      0,
+    ]);
+    const backHorizontal = Math.hypot(back[0], back[1]);
+    const headingOf = (axis: FacingAxis) => azimuth(axis === 'back' ? back : screenUp);
+
+    let axis: FacingAxis;
+    if (this.axis === null) {
+      axis = backHorizontal >= (BACK_ON + SCREEN_UP_ON) / 2 ? 'back' : 'screen-up';
+    } else if (this.axis === 'back' && backHorizontal < SCREEN_UP_ON) {
+      axis = 'screen-up';
+    } else if (this.axis === 'screen-up' && backHorizontal > BACK_ON) {
+      axis = 'back';
+    } else {
+      axis = this.axis;
+    }
+    if (this.axis !== null && axis !== this.axis) {
+      this.offset = wrapDegrees(this.offset + headingOf(this.axis) - headingOf(axis));
+    }
+    this.axis = axis;
+    const heading = (headingOf(axis) + this.offset) % 360;
+    return heading < 0 ? heading + 360 : heading;
+  }
 }
 
 export interface HeadingFilterOptions {
@@ -111,6 +163,13 @@ export class HeadingFilter {
   reset(): void {
     this.lastRaw = null;
     this.speed = 0;
+  }
+
+  /** Jump the output to the latest heading (unwrapped) and return it: nothing left to glide. */
+  snap(): number {
+    this.value = this.unwrapped;
+    this.speed = 0;
+    return this.value;
   }
 
   /** Whether the output has caught up with the latest heading (within a hundredth of a degree). */
