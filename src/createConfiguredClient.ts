@@ -29,6 +29,7 @@ import {
   GMCPCoreSupports,
   GmcPIRESound,
   GMCPGroup,
+  GMCPHelp,
   GMCPLogging,
   GMCPRedirect,
   GMCPRoom,
@@ -161,6 +162,7 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPRedirect);
   const room = client.gmcp.register(GMCPRoom);
   client.gmcp.register(GMCPClientHaptics);
+  client.gmcp.register(GMCPHelp);
 
   // The automap learns each room as the player enters it and drives map walks.
   room.on("info", (data) => {

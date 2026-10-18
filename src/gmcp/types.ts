@@ -23,6 +23,7 @@ import type { GMCPCommChannel } from "./Comm/Channel";
 import type { GMCPCommLiveKit } from "./Comm/LiveKit";
 import type { GMCPCore, GMCPCoreSupports } from "./Core";
 import type { GMCPGroup } from "./Group";
+import type { GMCPHelp } from "./Help";
 import type { GmcPIRECombatMessage } from "./IRE/CombatMessage";
 import type { GmcPIREComposer } from "./IRE/Composer";
 import type { GmcPIREDisplay } from "./IRE/Display";
@@ -64,6 +65,7 @@ export interface KnownGMCPPackageMap {
   "Core": GMCPCore;
   "Core.Supports": GMCPCoreSupports;
   "Group": GMCPGroup;
+  "Help": GMCPHelp;
   "IRE.CombatMessage": GmcPIRECombatMessage;
   "IRE.Composer": GmcPIREComposer;
   "IRE.Display": GmcPIREDisplay;

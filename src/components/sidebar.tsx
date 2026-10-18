@@ -9,6 +9,7 @@ import {
   FaMap,
   FaMapMarkerAlt,
   FaMusic,
+  FaQuestionCircle,
   FaServer,
   FaUsers,
   FaWaveSquare,
@@ -18,6 +19,7 @@ const FileTransferUI = React.lazy(() => import('./FileTransfer'));
 import AudioChatBoundary from './AudioChatBoundary';
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
 const MapPanel = React.lazy(() => import('./MapPanel'));
+const HelpPanel = React.lazy(() => import('./HelpPanel'));
 import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
@@ -46,6 +48,11 @@ const KEYBOARD_RESIZE_STEP = 24;
 
 function maxSidebarWidth(): number {
   return Math.max(MIN_SIDEBAR_WIDTH, Math.round(window.innerWidth * 0.6));
+}
+
+/** Ctrl+Shift+1 to 9, then 0, for the first ten tabs; later tabs have none. */
+function shortcutForTab(index: number): string | undefined {
+  return index < 10 ? `Control+Shift+${(index + 1) % 10}` : undefined;
 }
 
 export function clampSidebarWidth(width: number): number {
@@ -278,10 +285,23 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         mountOnSelect: true,
         condition: hasRoomData,
       },
+      {
+        // After Map so earlier tabs keep their numbers; past the tenth there is no number shortcut.
+        id: 'help-tab',
+        label: 'Help',
+        icon: <FaQuestionCircle />,
+        content: (
+          <Suspense fallback={<p role="status">Loading help…</p>}>
+            <HelpPanel client={client} />
+          </Suspense>
+        ),
+        mountOnSelect: true,
+        condition: true,
+      },
     ];
 
     // Reserve each destination's number even when optional data is absent.
-    const visibleTabs = allTabs.map((tab, index) => ({ ...tab, shortcut: `Control+Shift+${index + 1}` }))
+    const visibleTabs = allTabs.map((tab, index) => ({ ...tab, shortcut: shortcutForTab(index) }))
       .filter((tab) => tab.condition ?? true);
 
     // Expose switchToTab function via useImperativeHandle
