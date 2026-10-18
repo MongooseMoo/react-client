@@ -32,10 +32,19 @@ import {
   mongooseToWebAudioOrientation,
 } from '../../audio/mongooseCoordinates';
 import type { EffectSpec } from '../../audio/effects/types';
-import { inbound, outbound } from '../../protocol/messages';
+import { midiService } from '../../MidiService';
+import { SEQUENCE_SUPPORT } from '../../midi/SequenceOutput';
+import { usePreferences } from '../../stores/preferencesStore';
+import { duplex, inbound, outbound } from '../../protocol/messages';
 import { useSpatialStore } from '../../stores/spatialStore';
 import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
+import {
+  decodeMediaSync,
+  type MediaSyncReply,
+  type MediaSyncRequest,
+  type MediaSourceError,
+} from '../../audio/SharedMediaPayload';
 
 export class GMCPMessageClientMediaLoad extends GMCPMessage implements ClientMediaLoadPayload {
   public readonly url?: string;
@@ -194,6 +203,11 @@ const mediaStop = gmcpJsonMessage<'Stop', ClientMediaStopPayload>(
   'Stop',
   inboundCodec(decodeMediaStop),
 );
+const mediaSync = gmcpJsonMessage<'Sync', MediaSyncReply, MediaSyncRequest>('Sync', {
+  decode: decodeMediaSync,
+  encode: (value) => value,
+});
+const mediaSourceError = gmcpJsonMessage<'SourceError', never, MediaSourceError>('SourceError');
 
 /** Log an async Client.Media failure as one bounded line (never an unhandled rejection). */
 function logMediaFailure(
@@ -219,6 +233,20 @@ const mediaEffectsSupport = gmcpJsonMessage<
   never,
   ReturnType<typeof buildEffectsSupport>
 >('EffectsSupport');
+export function buildPlaybackSupport() {
+  return {
+    version: 1,
+    sharedTransport: true,
+    midiSequences: midiService.sequenceOutputAvailable ? SEQUENCE_SUPPORT : false,
+  };
+}
+// Encoding reads the actual selected sink at publication time, including explicit false.
+const mediaPlaybackSupport = gmcpJsonMessage<'PlaybackSupport', never, void>('PlaybackSupport', {
+  encode: () => buildPlaybackSupport(),
+  decode: () => {
+    throw new TypeError('PlaybackSupport is outbound only');
+  },
+});
 
 const GMCPClientMediaBase = GMCPPackage.with({
   packageName: 'Client.Media',
@@ -231,14 +259,19 @@ const GMCPClientMediaBase = GMCPPackage.with({
     inbound(mediaPlay),
     inbound(mediaUpdate),
     inbound(mediaStop),
+    duplex(mediaSync),
+    outbound(mediaSourceError),
     inbound(mediaListenerPosition),
     inbound(mediaListenerOrientation),
     outbound(mediaEffectsSupport),
+    outbound(mediaPlaybackSupport),
   ] as const,
 });
 
 export class GMCPClientMedia extends GMCPClientMediaBase {
   private unsubscribeSpatialStore: (() => void) | undefined;
+  private unsubscribeOutput: (() => void) | undefined;
+  private unsubscribeMidiPreference: (() => void) | undefined;
 
   constructor(client: ConstructorParameters<typeof GMCPClientMediaBase>[0]) {
     super(client);
@@ -256,9 +289,30 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
     });
     this.on('update', (data) => this.handleUpdate(data));
     this.on('stop', (data) => this.handleStop(data));
+    this.on('sync', (data) => this.client.media.receiveMediaSync(data));
     this.on('listenerPosition', (data) => this.handleListenerPosition(data));
     this.on('listenerOrientation', (data) => this.handleListenerOrientation(data));
     this.unsubscribeSpatialStore = useSpatialStore.subscribe(this.handleSpatialStoreChange);
+    this.unsubscribeOutput = midiService.subscribeOutput(this.outputChanged);
+    this.unsubscribeMidiPreference = usePreferences.subscribe(
+      (state) => state.midi.enabled,
+      this.outputChanged,
+    );
+    // Packages can be constructed before their client's media/clock properties.
+    queueMicrotask(() => {
+      if (this.client.sharedClock && this.client.media) {
+        this.client.media.configureSequences(this.client.sharedClock, () =>
+          midiService.getSequenceOutput(),
+        );
+        this.client.media.configureSharedMedia(
+          this.client.sharedClock,
+          (request) => this.sendSync(request),
+          (report) => this.sendSourceError(report),
+        );
+      }
+    });
+    if (typeof document !== 'undefined')
+      document.addEventListener('visibilitychange', this.visibilityChanged);
   }
 
   get sounds(): Record<string, ExtendedSound> {
@@ -379,7 +433,18 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
   override shutdown(): void {
     this.reset();
     this.unsubscribeSpatialStore?.();
+    this.unsubscribeOutput?.();
+    this.unsubscribeMidiPreference?.();
+    if (typeof document !== 'undefined')
+      document.removeEventListener('visibilitychange', this.visibilityChanged);
   }
+  private readonly outputChanged = (): void => {
+    this.client.media?.sequenceOutputChanged();
+    if (this.client.sharedClock?.ready) this.sendPlaybackSupport();
+  };
+  private readonly visibilityChanged = (): void => {
+    this.client.media?.setSequencePageHidden(document.hidden);
+  };
 
   private readonly handleSpatialStoreChange = (): void => {
     this.client.media.syncAmbisonicRendererYaw();
