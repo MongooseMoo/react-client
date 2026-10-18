@@ -276,7 +276,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         hasTab: (index) => Boolean(allTabs[index] && (allTabs[index].condition ?? true)),
         switchToTab: (index) => {
           const tab = allTabs[index];
-          return Boolean(tab && (tab.condition ?? true) && tabsRef.current?.selectTab(tab.id));
+          return Boolean(tab && (tab.condition ?? true) && tabsRef.current?.selectTab(tab.id, 'panel'));
         },
       }),
       [visibleTabs],

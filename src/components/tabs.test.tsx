@@ -1,7 +1,77 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { useEffect } from 'react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import React, { useEffect } from 'react';
 import { expect, it, vi } from 'vitest';
-import Tabs from './tabs';
+import Tabs, { type TabsRef } from './tabs';
+
+it('moves focus to the first control Tab can reach when asked to focus the panel', () => {
+  const ref = React.createRef<TabsRef>();
+  render(<Tabs ref={ref} tabs={[
+    { id: 'main', label: 'Main', content: <span>Main content</span> },
+    { id: 'files', label: 'Files', content: <>
+      <button type="button" disabled>Disabled</button>
+      <button type="button" tabIndex={-1}>Skipped</button>
+      <div hidden><button type="button">Hidden</button></div>
+      <input aria-label="Filter" />
+      <button type="button">Send</button>
+    </> },
+  ]} />);
+  act(() => { ref.current?.selectTab('files', 'panel'); });
+  expect(screen.getByRole('textbox', { name: 'Filter' })).toHaveFocus();
+  screen.getByRole('button', { name: 'Send' }).focus();
+  act(() => { ref.current?.selectTab('files', 'panel'); });
+  expect(screen.getByRole('textbox', { name: 'Filter' })).toHaveFocus();
+});
+
+it('moves focus from the panel to its first control when lazy content arrives', async () => {
+  const ref = React.createRef<TabsRef>();
+  let resolve!: () => void;
+  const loaded = new Promise<void>((done) => { resolve = done; });
+  const Lazy = React.lazy(async () => {
+    await loaded;
+    return { default: () => <button type="button">Pause</button> };
+  });
+  render(<Tabs ref={ref} tabs={[
+    { id: 'main', label: 'Main', content: <button type="button">Refresh</button> },
+    { id: 'diag', label: 'Diagnostics', mountOnSelect: true,
+      content: <React.Suspense fallback={<span>Loading</span>}><Lazy /></React.Suspense> },
+  ]} />);
+  act(() => { ref.current?.selectTab('diag', 'panel'); });
+  expect(screen.getByRole('tabpanel')).toHaveFocus();
+  await act(async () => { resolve(); await loaded; });
+  await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toHaveFocus());
+});
+
+it('leaves focus alone when it moves away before lazy content arrives', async () => {
+  const ref = React.createRef<TabsRef>();
+  let resolve!: () => void;
+  const loaded = new Promise<void>((done) => { resolve = done; });
+  const Lazy = React.lazy(async () => {
+    await loaded;
+    return { default: () => <button type="button">Pause</button> };
+  });
+  render(<><button type="button">Elsewhere</button><Tabs ref={ref} tabs={[
+    { id: 'main', label: 'Main', content: <button type="button">Refresh</button> },
+    { id: 'diag', label: 'Diagnostics', mountOnSelect: true,
+      content: <React.Suspense fallback={<span>Loading</span>}><Lazy /></React.Suspense> },
+  ]} /></>);
+  act(() => { ref.current?.selectTab('diag', 'panel'); });
+  screen.getByRole('button', { name: 'Elsewhere' }).focus();
+  await act(async () => { resolve(); await loaded; });
+  await screen.findByRole('button', { name: 'Pause' });
+  expect(screen.getByRole('button', { name: 'Elsewhere' })).toHaveFocus();
+});
+
+it('focuses a panel with no controls itself, and keeps tab focus for clicks', () => {
+  const ref = React.createRef<TabsRef>();
+  render(<Tabs ref={ref} tabs={[
+    { id: 'main', label: 'Main', content: <button type="button">Refresh</button> },
+    { id: 'info', label: 'Info', content: <span>Room information</span> },
+  ]} />);
+  act(() => { ref.current?.selectTab('info', 'panel'); });
+  expect(screen.getByRole('tabpanel')).toHaveFocus();
+  fireEvent.click(screen.getByRole('tab', { name: 'Main' }));
+  expect(screen.getByRole('tab', { name: 'Main' })).toHaveFocus();
+});
 
 it('preserves selected panel and focus when earlier tabs arrive or disappear', () => {
   const users = { id: 'users', label: 'Users', content: <button type="button">User action</button> };
