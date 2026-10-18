@@ -58,7 +58,7 @@ describe("LogFolderPreferences", () => {
     expect(screen.queryByText("Ada/x.txt")).toBeNull();
   });
 
-  it("keeps focus in the controls after a successful reconnect removes the Reconnect button", async () => {
+  it("moves focus to the section heading when a successful reconnect removes the Reconnect button", async () => {
     const folder = fakeFolder({ kind: "needs-permission", folderName: "Mongoose logs" });
     folder.reconnect.mockImplementation(async () => {
       folder.state.setState({ status: { kind: "ready", folderName: "Mongoose logs" } });
@@ -71,21 +71,50 @@ describe("LogFolderPreferences", () => {
     await act(async () => { fireEvent.click(reconnect); });
 
     expect(screen.queryByRole("button", { name: "Reconnect Mongoose logs" })).toBeNull();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Choose a different folder…" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Save logs to a folder" })).toHaveFocus());
   });
 
-  it("keeps focus in the controls after Stop using folder", async () => {
+  it("moves focus to the section heading after Stop using folder", async () => {
     const folder = fakeFolder({ kind: "error", folderName: "Mongoose logs", message: "The disk is full" });
     folder.stopUsing.mockImplementation(async () => {
       folder.state.setState({ status: { kind: "none" } });
     });
     render(<LogFolderPreferences folder={folder} />);
-    expect(screen.getByText("Could not write: The disk is full. It tries again with the next line.")).toBeInTheDocument();
+    expect(screen.getByText("Could not write: The disk is full. It tries again with each new line.")).toBeInTheDocument();
 
     const stop = screen.getByRole("button", { name: "Stop using folder" });
     stop.focus();
     await act(async () => { fireEvent.click(stop); });
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Choose folder…" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Save logs to a folder" })).toHaveFocus());
+  });
+
+  it("leaves focus where the player moved it while an action was still running", async () => {
+    let finish = () => {};
+    const folder = fakeFolder({ kind: "needs-permission", folderName: "Mongoose logs" });
+    folder.reconnect.mockImplementation(() => new Promise<void>((resolve) => {
+      finish = () => {
+        folder.state.setState({ status: { kind: "ready", folderName: "Mongoose logs" } });
+        resolve();
+      };
+    }));
+    render(<><LogFolderPreferences folder={folder} /><button type="button">Other preference</button></>);
+
+    const reconnect = screen.getByRole("button", { name: "Reconnect Mongoose logs" });
+    reconnect.focus();
+    fireEvent.click(reconnect);
+    const other = screen.getByRole("button", { name: "Other preference" });
+    other.focus();
+    await act(async () => { finish(); });
+
+    expect(screen.queryByRole("button", { name: "Reconnect Mongoose logs" })).toBeNull();
+    expect(other).toHaveFocus();
+  });
+
+  it("offers Try again after a write error", () => {
+    const folder = fakeFolder({ kind: "error", folderName: "Mongoose logs", message: "The disk is full" });
+    render(<LogFolderPreferences folder={folder} />);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(folder.reconnect).toHaveBeenCalledTimes(1);
   });
 });
