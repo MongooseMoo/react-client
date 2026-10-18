@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { announce } from "@react-aria/live-announcer";
 import CommandInput from "./input";
 import { clientSpeechSuspended } from "../clientSpeechSuspension";
+import { placeLaunchText } from "../launch/placeLaunchText";
 import { useConnectionStore } from "../stores/connectionStore";
 import { useInputStore } from "../stores/inputStore";
 import { useLiveKitStore } from "../stores/liveKitStore";
@@ -315,6 +316,45 @@ describe("VoiceCommandButton", () => {
   });
 
   describe("a session belongs to the player and connection that started it", () => {
+    it("signing out stops it and nothing heard is written or sent afterwards", async () => {
+      setVoice({ sendImmediately: true });
+      const { onSend } = renderInput();
+      const recognition = await startListening();
+      act(() => recognition.hear(["page Alice", false]));
+      act(() => usePersonalDataStore.getState().clear());
+      expect(recognition.aborted).toBe(true);
+      expect(useInputStore.getState().text).toBe("");
+      // The handle is cleared just after the store notification; until then it no longer intercepts.
+      expect(useInputStore.getState().dictation?.interceptSend() ?? false).toBe(false);
+      await act(async () => { await Promise.resolve(); });
+      expect(useInputStore.getState().dictation).toBeNull();
+      act(() => recognition.hear(["page Alice hello", true]));
+      expect(onSend).not.toHaveBeenCalled();
+      expect(useInputStore.getState().text).toBe("");
+    });
+
+    it("a new connection stops it, and a launched draft is still put back", async () => {
+      usePersonalDataStore.setState({ owner: undefined });
+      renderInput();
+      act(() => placeLaunchText("page Bob"));
+      const recognition = await startListening();
+      expect(useInputStore.getState().text).toBe("page Bob");
+      act(() => usePersonalDataStore.getState().clearForConnect());
+      expect(recognition.aborted).toBe(true);
+      expect(useInputStore.getState().text).toBe("page Bob");
+      act(() => recognition.hear(["hello", true]));
+      expect(useInputStore.getState().text).toBe("page Bob");
+    });
+
+    it("a reset for a new owner also clears the held-Enter guard", () => {
+      act(() => {
+        useInputStore.getState().setText("drop all");
+        useInputStore.getState().setNeedsFreshEnter(true);
+        useInputStore.getState().discardForNewOwner();
+      });
+      expect(useInputStore.getState().needsFreshEnter).toBe(false);
+    });
+
     it("disconnecting stops it, and a later final sends nothing as the next owner", async () => {
       setVoice({ sendImmediately: true });
       const { onSend } = renderInput();

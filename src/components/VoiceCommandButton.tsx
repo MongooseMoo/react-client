@@ -95,7 +95,19 @@ interface Dictation {
  *   player; for another player the input is emptied.
  * - keep: something else changed the input; that text is the player's.
  */
-type Ending = { text: "final" | "discard" | "keep"; announce?: string; priority?: "polite" | "assertive" };
+type Ending = {
+  text: "final" | "discard" | "keep";
+  announce?: string;
+  priority?: "polite" | "assertive";
+  /**
+   * Ended from inside an input-store notification. The send handle is then
+   * cleared after it, not during it: a write in the middle of a notification
+   * makes later subscribers (the launched-draft keeper in
+   * launch/placeLaunchText) see a nested change before the one in progress.
+   * Until then the handle answers false, since the dictation is not current.
+   */
+  inInputNotification?: boolean;
+};
 
 /** What to say when a dictation ends without a final result. */
 function unsent(dictation: Dictation): string {
@@ -133,7 +145,11 @@ const VoiceCommandButton = ({ onSend }: Props) => {
     if (dictation.timer !== null) clearTimeout(dictation.timer);
     dictation.timer = null;
     const input = useInputStore.getState();
-    if (input.dictation === dictation.handle) input.setDictation(null);
+    const clearHandle = () => {
+      if (useInputStore.getState().dictation === dictation.handle) useInputStore.getState().setDictation(null);
+    };
+    if (ending.inInputNotification) queueMicrotask(clearHandle);
+    else clearHandle();
     const releaseSpeech = dictation.releaseSpeech;
     dictation.releaseSpeech = null;
     releaseSpeech?.();
@@ -330,7 +346,9 @@ const VoiceCommandButton = ({ onSend }: Props) => {
   useEffect(() => useInputStore.subscribe((state, previous) => {
     const dictation = currentRef.current;
     if (dictation?.phase !== "listening" || state.text === previous.text) return;
-    if (state.text !== dictation.written) terminate(dictation, { text: "keep", announce: "Stopped listening" });
+    if (state.text !== dictation.written) {
+      terminate(dictation, { text: "keep", announce: "Stopped listening", inInputNotification: true });
+    }
   }), [terminate]);
 
   // A dictation belongs to the player, game session and connection it started under.

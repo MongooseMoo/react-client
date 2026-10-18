@@ -125,6 +125,23 @@ Files:
   cleanly. A reservedShortcuts test now checks both chords stay reserved and
   neither shortcut matches the other's key; Alt+Shift+O's own tests are in
   src/audio/headTracking.test.ts (from master).
+- Rebased again onto origin/master 2aec1c80 (app integration merged).
+  Conflicts: preferences.tsx and client.ts imports (both kept), inputStore
+  clear/discardForNewOwner (both kept; discardForNewOwner also clears
+  needsFreshEnter). The send path: handleSend asks the dictation handle
+  first; App's handleCommand (the onSend) calls noteCommandSent, so a send
+  held by dictation does not count as sent for the launched draft.
+- Interplay bug found by a new test and fixed: clearForConnect with a
+  dictation listening over a launched draft lost the draft. Traced (a
+  temporary test, deleted): my input-store subscriber ended the dictation and
+  wrote setDictation(null) inside the store's own notification, so the
+  launch watcher saw a nested change (ownerResets 1->1, text "") first,
+  dropped the draft as player-edited, then had nothing to restore on the real
+  reset (0->1). Fix: when ended from inside an input-store notification, the
+  dictation dies at once in memory but the handle is cleared in a microtask;
+  meanwhile interceptSend answers false. Tests: sign-out cancels and nothing
+  is written or sent later; clearForConnect cancels and the launched draft is
+  put back; discardForNewOwner clears the held-Enter guard.
 - Codex harness artifacts seen while verifying: round 2's PreviewButton case
   pasted the old source; round 3's lifecycle harness virtualizes only 15000 and
   2000 ms timers; round 4's held-Enter case label names the old behaviour.
