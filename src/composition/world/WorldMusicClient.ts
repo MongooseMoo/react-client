@@ -132,16 +132,21 @@ export class WorldMusicClient {
           abort();
           return;
         }
-        const now = Date.now(),
-          chunk = operation === 'EditorUploadChunk';
-        const target = Math.max(now, chunk ? this.chunkAt : this.normalAt);
-        if (chunk) this.chunkAt = target + 65;
-        else this.normalAt = target + 260;
-        cadence = setTimeout(() => {
+        const sendWhenReady = () => {
           if (sessionSignal.aborted || signal?.aborted) {
             abort();
             return;
           }
+          const now = Date.now(),
+            chunk = operation === 'EditorUploadChunk';
+          const wait = (chunk ? this.chunkAt : this.normalAt) - now;
+          if (wait > 0) {
+            cadence = setTimeout(sendWhenReady, wait);
+            return;
+          }
+          // Charge only packets actually sent; cancelled queue entries reserve no future slots.
+          if (chunk) this.chunkAt = now + 65;
+          else this.normalAt = now + 260;
           try {
             this.send(`Client.Midi.${operation}`, payload);
           } catch (error) {
@@ -159,7 +164,8 @@ export class WorldMusicClient {
             },
             operation === 'EditorUploadCommit' ? 30000 : 5000,
           );
-        }, target - now);
+        };
+        cadence = setTimeout(sendWhenReady, 0);
       };
       this.pending.set(requestId, { operation, resolve, reject, cleanup });
       signal?.addEventListener('abort', abort, { once: true });

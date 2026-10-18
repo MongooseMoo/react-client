@@ -284,6 +284,22 @@ describe('verified bounded score delivery', () => {
 });
 
 describe('connection-owned editor requests', () => {
+  it('does not let cancelled requests postpone future traffic indefinitely', async () => {
+    vi.useFakeTimers();
+    const send = vi.fn();
+    const client = new WorldMusicClient(send);
+    for (let i = 0; i < 40; i++) {
+      const abort = new AbortController();
+      const pending = client.request('EditorList', {}, abort.signal).catch(() => undefined);
+      abort.abort();
+      await pending;
+    }
+    const pending = client.request('EditorList', {}).catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(260);
+    expect(send).toHaveBeenCalledOnce();
+    client.reset();
+    await pending;
+  });
   it('retries a lost mutation acknowledgement with identical ID and bytes, once', async () => {
     vi.useFakeTimers();
     const send = vi.fn();
