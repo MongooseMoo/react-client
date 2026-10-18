@@ -26,6 +26,9 @@ interface FileTransferUIProps {
 
 const UNDER_WAY: readonly TransferState[] = ['connecting', 'transferring', 'verifying'];
 
+/** States a sent transfer reaches only after its offer went to the peer. */
+const OFFER_WAS_MADE: readonly TransferState[] = ['offered', ...UNDER_WAY, 'complete', 'rejected'];
+
 /** A file of ours the peer has not answered for yet. */
 const awaitsPeer = ({ direction, state }: TransferSnapshot) =>
   direction === 'send' && (state === 'preparing' || state === 'offered');
@@ -102,9 +105,10 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
       const sending = selectedFile;
       void attempt(`Error sending file ${sending.name}`, async () => {
         const transfer = await transfers.send(sending, selectedRecipient.transferAddress);
-        // A shared file gives way to the next only once it is really offered.
-        // One that failed, or was cancelled before its offer, stays chosen to try again.
-        if (transfer.state !== 'cancelled' && transfer.state !== 'failed') finishStagedShare(sending);
+        // A shared file gives way to the next only once its offer is known to be
+        // out. A send that failed, was cancelled, or was halted while still
+        // preparing (the engine went with the connection) leaves it chosen.
+        if (OFFER_WAS_MADE.includes(transfer.state)) finishStagedShare(sending);
       });
     }
   };

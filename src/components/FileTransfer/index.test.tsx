@@ -536,6 +536,38 @@ describe('files shared from another app', () => {
     network.failing = () => false;
   });
 
+  it.each([
+    ['a lone shared file', [] as string[]],
+    ['a shared file with another waiting', ['notes.txt']],
+  ])('keeps %s whose send the connection ended while it was still preparing', async (_case, waitingNames) => {
+    // The engine goes with the connection (client.ts disposes it on disconnect),
+    // and its pending send settles later, halted in 'preparing', unoffered.
+    const old = player(ME);
+    const replacement = player(ME);
+    let current = old;
+    const client = { getFileTransfers: async () => current } as unknown as MudClient;
+    const map = fileOf(1, 'map.png');
+    offerSharedFiles([map, ...waitingNames.map((name) => fileOf(1, name))]);
+    render(<FileTransferPanel client={client} expanded users={users} />);
+    await screen.findByText(/^Shared file ready: map\.png/);
+
+    const release = network.holdNegotiation();
+    sendToAlice();
+    await waitFor(() => expect(statesOf(old)).toEqual(['preparing']));
+    old.dispose();
+    current = replacement;
+    act(() => useConnectionStore.setState({ connected: true }));
+    await screen.findByRole('button', { name: 'Send File' });
+
+    release();
+    // Let the old send settle after the replacement panel has loaded.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(useLaunchStore.getState().stagedShare).toBe(map);
+    expect(useLaunchStore.getState().sharedFiles.map((file) => file.name)).toEqual(waitingNames);
+    expect(screen.getByText(/^Shared file ready: map\.png/)).not.toBeNull();
+    expect(statesOf(replacement)).toEqual([]);
+  });
+
   it('keeps the shared file chosen when the connection changes and the panel reloads', async () => {
     const me = player(ME);
     const alice = player(ALICE);

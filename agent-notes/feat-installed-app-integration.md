@@ -97,6 +97,17 @@ Nothing a launch carries may ever be sent to the MOO without the player acting.
   (4 PASS lines); editor-ownership.spec.ts against vite preview 127.0.0.1:5183
   (1 passed); check-browser-sessions.mjs; check-client-recovery.mjs;
   test:a11y. Playwright leaves an empty, untracked `test-results/`.
+- Codex round 4 on dabbed93: one P2. A disconnect disposes the engine while
+  a send is still 'preparing'; `start()` then resolves halted, still
+  'preparing', and the panel retired the share. Now a share is retired only
+  on a state that comes after the offer (`OFFER_WAS_MADE`: offered,
+  connecting, transferring, verifying, complete, rejected), same-File guard
+  kept. Regression (lone file, and one with another waiting) holds
+  negotiation, disposes, loads a replacement engine, then lets the old send
+  settle; both fail on dabbed93's panel.
+- CI step 4 must use its own port (several worktrees run it): preview on
+  127.0.0.1:5196, check it started and that the served entry chunk is this
+  worktree's dist, stop it by PID after.
 - Not verifiable here: real OS install, OS protocol/file/share/shortcut
   launches, whether Chromium honours focus-existing for these, badge on a real
   icon. Not pushed, no PR.
