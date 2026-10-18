@@ -20,8 +20,14 @@ export const LAUNCH_ITEM_LIFETIME_MS = 10 * 60 * 1000;
 export const MAX_SHARED_FILES = 10;
 /** A shared file is offered for transfer, so it may be no larger than a transfer allows. */
 export const MAX_SHARED_FILE_BYTES = DEFAULT_MAX_FILE_SIZE;
-/** All files of one share together. */
-export const MAX_SHARE_BYTES = 200 * 1024 * 1024;
+/**
+ * All files of one share together; the request body may be this plus a little.
+ * No more than one file's limit: the browser's form parser holds a text part
+ * in memory at 1.4 to 2 times its size (measured in Chromium 147: 32 MiB of
+ * text -> 64 MiB, 99 MiB -> 136 MiB), and a share target cannot refuse a part
+ * early. File parts cost far less (99 MiB -> 37 MiB).
+ */
+export const MAX_SHARE_BYTES = MAX_SHARED_FILE_BYTES;
 /** Items kept at once, and their bytes together, whatever their kind. */
 export const MAX_INBOX_ITEMS = 5;
 export const MAX_INBOX_BYTES = 200 * 1024 * 1024;

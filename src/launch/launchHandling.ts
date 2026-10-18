@@ -3,7 +3,6 @@ import { focusCommandInput } from '../inputFocus';
 import {
   MAX_INBOX_ITEMS,
   MAX_SHARE_BYTES,
-  MAX_SHARED_FILE_BYTES,
   MAX_SHARED_FILES,
   pruneLaunchItems,
   takeLaunchItem,
@@ -19,7 +18,7 @@ const MIB = 1024 * 1024;
 
 const REFUSALS: Record<ShareRefusal, string> = {
   'too-many': `Nothing was shared: the client takes at most ${MAX_SHARED_FILES} files at a time.`,
-  'too-large': `Nothing was shared: each file may be at most ${MAX_SHARED_FILE_BYTES / MIB} MB, and a share ${MAX_SHARE_BYTES / MIB} MB.`,
+  'too-large': `Nothing was shared: a share may be at most ${MAX_SHARE_BYTES / MIB} MB in all.`,
   'inbox-full': `Nothing was shared: ${MAX_INBOX_ITEMS} shares or their files are already waiting to be opened. Try again in ten minutes.`,
   busy: 'Nothing was shared: another share was still being read. Share it again.',
   failed: 'The share could not be read.',

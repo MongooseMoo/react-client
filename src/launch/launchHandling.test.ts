@@ -180,7 +180,9 @@ describe('shares', () => {
     expect(stageNextSharedFile()).toBe(files[0]);
     expect(stageNextSharedFile()).toBeUndefined(); // one at a time
     expect(useLaunchStore.getState()).toMatchObject({ stagedShare: files[0], sharedFiles: [files[1]] });
-    finishStagedShare();
+    finishStagedShare(files[1]); // not the staged one: nothing moves
+    expect(stageNextSharedFile()).toBeUndefined();
+    finishStagedShare(files[0]);
     expect(stageNextSharedFile()).toBe(files[1]);
     useLaunchStore.setState({ stagedShare: undefined });
   });

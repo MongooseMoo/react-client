@@ -489,6 +489,53 @@ describe('files shared from another app', () => {
     useConnectionStore.setState({ connected: false });
   });
 
+  /** Sends the chosen file to Alice through the panel. */
+  function sendToAlice(): void {
+    fireEvent.focus(screen.getByLabelText('Recipient'));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Alice' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send File' }));
+  }
+
+  it('keeps a shared file whose offer failed chosen, ahead of the next one, and says why', async () => {
+    const me = player(ME);
+    const alice = player(ALICE);
+    const map = fileOf(1, 'map.png');
+    offerSharedFiles([map, fileOf(1, 'notes.txt')]);
+    network.failing = (_link, step) => step === 'createOffer';
+    await openPanel(me);
+    await screen.findByText(/^Shared file ready: map\.png/);
+
+    sendToAlice();
+    await reaches(me, 'failed');
+    await waitFor(() => expect(history().some((line) => line.includes('map.png'))).toBe(true));
+    expect(vi.mocked(announce).mock.calls.some(([text]) => String(text).includes('map.png'))).toBe(true);
+    expect(useLaunchStore.getState().stagedShare).toBe(map);
+    expect(screen.getByText(/^Shared file ready: map\.png.* 1 more shared after this one\.$/)).not.toBeNull();
+
+    // Fixed, the same file goes on the next try, and only then does the next one come up.
+    network.failing = () => false;
+    sendToAlice();
+    await waitFor(() => expect(alice.transfers().map((transfer) => transfer.name)).toEqual(['map.png']));
+    expect(await screen.findByText(/^Shared file ready: notes\.txt/)).not.toBeNull();
+  });
+
+  it('keeps a shared file whose offer failed through a connection change', async () => {
+    const me = player(ME);
+    const map = fileOf(1, 'map.png');
+    offerSharedFiles([map]);
+    network.failing = (_link, step) => step === 'createOffer';
+    await openPanel(me);
+    await screen.findByText(/^Shared file ready: map\.png/);
+    sendToAlice();
+    await reaches(me, 'failed');
+
+    act(() => useConnectionStore.setState({ connected: true }));
+    await screen.findByRole('button', { name: 'Send File' });
+    expect(await screen.findByText(/^Shared file ready: map\.png/)).not.toBeNull();
+    expect(useLaunchStore.getState().stagedShare).toBe(map);
+    network.failing = () => false;
+  });
+
   it('keeps the shared file chosen when the connection changes and the panel reloads', async () => {
     const me = player(ME);
     const alice = player(ALICE);

@@ -99,11 +99,13 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
 
   const handleSendFile = () => {
     if (selectedFile && selectedRecipient) {
-      void attempt(`Error sending file ${selectedFile.name}`, () =>
-        transfers.send(selectedFile, selectedRecipient.transferAddress),
-      );
-      // The next shared file, if any, takes its place.
-      if (selectedFile === sharedFile) finishStagedShare();
+      const sending = selectedFile;
+      void attempt(`Error sending file ${sending.name}`, async () => {
+        const transfer = await transfers.send(sending, selectedRecipient.transferAddress);
+        // A shared file gives way to the next only once it is really offered.
+        // One that failed, or was cancelled before its offer, stays chosen to try again.
+        if (transfer.state !== 'cancelled' && transfer.state !== 'failed') finishStagedShare(sending);
+      });
     }
   };
 

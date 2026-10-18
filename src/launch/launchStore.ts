@@ -53,9 +53,9 @@ export function stageNextSharedFile(): File | undefined {
   return next;
 }
 
-/** The staged shared file was sent; the next one may take its place. */
-export function finishStagedShare(): void {
-  useLaunchStore.setState({ stagedShare: undefined });
+/** `sent` was offered; if it is still the staged shared file, the next one may take its place. */
+export function finishStagedShare(sent: File): void {
+  useLaunchStore.setState((state) => (state.stagedShare === sent ? { stagedShare: undefined } : {}));
 }
 
 /** The player chose a file of their own: every shared file is set aside. */

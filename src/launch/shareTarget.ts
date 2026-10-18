@@ -35,55 +35,85 @@ function field(form: SharedForm, name: string): string {
 export const MAX_SHARE_BODY_BYTES = MAX_SHARE_BYTES + FORM_OVERHEAD_BYTES;
 
 /**
- * The body's bytes, or undefined once more than `limit` arrive. Counted as
- * they come, so neither a missing Content-Length nor a false one lets an
- * unbounded body be parsed.
+ * The body as the parser reads it, counted as it goes: past `limit` the
+ * stream errors and its source is cancelled, so neither a missing
+ * Content-Length nor a false one lets an unbounded body be parsed. The bytes
+ * go straight to the parser; nothing here keeps a copy.
  */
-export async function readBoundedBody(
-  body: ReadableStream<Uint8Array> | null,
-  limit: number,
-): Promise<Uint8Array<ArrayBuffer> | undefined> {
-  if (!body) return new Uint8Array(0);
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
+export function boundedBody(body: ReadableStream<Uint8Array> | null, limit: number) {
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > limit) {
-      await reader.cancel().catch(() => {});
-      return undefined;
-    }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
+  let overflowed = false;
+  const counted = body?.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        total += chunk.byteLength;
+        if (total > limit) {
+          overflowed = true;
+          controller.error(new RangeError('The share is larger than allowed'));
+          return;
+        }
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+  return { stream: counted ?? null, overflowed: () => overflowed };
 }
 
-/** One body is read at a time, so concurrent posts cannot hold many bounded bodies at once. */
+/**
+ * Shares are read one body at a time, so concurrent posts cannot hold many
+ * bounded bodies at once. A few more wait their turn, briefly; past that a
+ * share is turned away as busy and the page asks for it again.
+ */
+export const MAX_WAITING_SHARES = 2;
+export const SHARE_WAIT_LIMIT_MS = 30_000;
 let reading = false;
+const waiting: Array<() => void> = [];
+
+/** Resolves true with this share's turn, or false when the queue is full or the wait ran out. */
+function awaitTurn(): Promise<boolean> {
+  if (!reading) {
+    reading = true;
+    return Promise.resolve(true);
+  }
+  if (waiting.length >= MAX_WAITING_SHARES) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const takeTurn = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      waiting.splice(waiting.indexOf(takeTurn), 1);
+      resolve(false);
+    }, SHARE_WAIT_LIMIT_MS);
+    waiting.push(takeTurn);
+  });
+}
+
+function endTurn(): void {
+  const next = waiting.shift();
+  if (next) next();
+  else reading = false;
+}
 
 async function keepShare(request: SharedRequest): Promise<string | ShareRefusal | undefined> {
   const declared = Number(request.headers.get('Content-Length') ?? Number.NaN);
   if (declared > MAX_SHARE_BODY_BYTES) return 'too-large';
-  if (reading) {
+  if (!(await awaitTurn())) {
     await request.body?.cancel().catch(() => {});
     return 'busy';
   }
-  reading = true;
   try {
-    const bytes = await readBoundedBody(request.body, MAX_SHARE_BODY_BYTES);
-    if (!bytes) return 'too-large';
-    const form = await new Response(bytes, { headers: { 'Content-Type': request.headers.get('Content-Type') ?? '' } }).formData();
+    const body = boundedBody(request.body, MAX_SHARE_BODY_BYTES);
+    let form: SharedForm;
+    try {
+      form = await new Response(body.stream, { headers: { 'Content-Type': request.headers.get('Content-Type') ?? '' } }).formData();
+    } catch (error) {
+      if (body.overflowed()) return 'too-large';
+      throw error;
+    }
     return await keepParsedShare(form);
   } finally {
-    reading = false;
+    endTurn();
   }
 }
 

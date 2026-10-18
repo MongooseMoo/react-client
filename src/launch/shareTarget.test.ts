@@ -1,5 +1,5 @@
 import { File as NodeFile } from 'node:buffer';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LAUNCH_ITEM_LIFETIME_MS,
   LaunchInboxError,
@@ -19,7 +19,15 @@ import {
 } from './launchInbox';
 import { MAX_LAUNCH_TEXT } from './launchText';
 import { SHARE_PARAM } from './launchUrls';
-import { MAX_SHARE_BODY_BYTES, handleShareTarget, keepParsedShare, readBoundedBody, sharedDraft } from './shareTarget';
+import {
+  MAX_SHARE_BODY_BYTES,
+  MAX_WAITING_SHARES,
+  SHARE_WAIT_LIMIT_MS,
+  boundedBody,
+  handleShareTarget,
+  keepParsedShare,
+  sharedDraft,
+} from './shareTarget';
 
 const ORIGIN = 'https://client.mongoose.world';
 const MIB = 1024 * 1024;
@@ -194,18 +202,57 @@ describe('share target', () => {
     expect(seen.bytes).toBeLessThanOrEqual(MAX_SHARE_BODY_BYTES + MIB);
   });
 
-  it('reads one body at a time and turns away a share posted meanwhile', async () => {
+  it('accepts two shares posted at once, reading them in turn', async () => {
+    const [first, second] = await Promise.all([
+      handleShareTarget(post(streamOf(multipart({ text: 'first' }))), ORIGIN),
+      handleShareTarget(post(streamOf(multipart({ text: 'second' }))), ORIGIN),
+    ]);
+    const texts = await Promise.all([first, second].map(async (response) => {
+      const item = await takeLaunchItem(shareId(response) ?? '');
+      return item?.kind === 'share' ? item.text : undefined;
+    }));
+    expect(texts).toEqual(['first', 'second']);
+  });
+
+  describe('while a body is being read', () => {
     let release: () => void = () => {};
-    const held = new ReadableStream<Uint8Array>({
-      start(controller) {
-        release = () => { controller.enqueue(multipart({ text: 'first' })); controller.close(); };
-      },
+    let first: Promise<Response>;
+    beforeEach(() => {
+      const held = new ReadableStream<Uint8Array>({
+        start(controller) {
+          let released = false;
+          release = () => {
+            if (released) return;
+            released = true;
+            controller.enqueue(multipart({ text: 'first' }));
+            controller.close();
+          };
+        },
+      });
+      first = handleShareTarget(post(held), ORIGIN);
     });
-    const first = handleShareTarget(post(held), ORIGIN);
-    const second = shareId(await handleShareTarget(post(streamOf(multipart({ text: 'second' }))), ORIGIN));
-    release();
-    expect(second).toBe('busy');
-    expect(shareId(await first)).toMatch(/^[0-9a-f-]{36}$/);
+    afterEach(async () => {
+      vi.useRealTimers();
+      release();
+      await first;
+    });
+
+    it(`lets ${MAX_WAITING_SHARES} more wait their turn and turns away the next as busy`, async () => {
+      const queued = Array.from({ length: MAX_WAITING_SHARES }, (_, i) =>
+        handleShareTarget(post(streamOf(multipart({ text: `waiting ${i}` }))), ORIGIN));
+      const overflow = shareId(await handleShareTarget(post(streamOf(multipart({ text: 'one too many' }))), ORIGIN));
+      expect(overflow).toBe('busy');
+      release();
+      expect(shareId(await first)).toMatch(/^[0-9a-f-]{36}$/);
+      for (const waiting of queued) expect(shareId(await waiting)).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
+    it('turns a waiting share away as busy once it has waited too long', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const waiting = handleShareTarget(post(streamOf(multipart({ text: 'patient' }))), ORIGIN);
+      await vi.advanceTimersByTimeAsync(SHARE_WAIT_LIMIT_MS);
+      expect(shareId(await waiting)).toBe('busy');
+    });
   });
 
   it('says the inbox is full when shares keep arriving unopened', async () => {
@@ -242,14 +289,23 @@ describe('limits on a parsed share', () => {
   });
 });
 
-describe('readBoundedBody', () => {
-  it('returns the whole body when it fits', async () => {
-    const bytes = await readBoundedBody(streamOf(encoder.encode('hello')), 5);
-    expect(bytes && new TextDecoder().decode(bytes)).toBe('hello');
+describe('boundedBody', () => {
+  it('passes the whole body when it fits', async () => {
+    const body = boundedBody(streamOf(encoder.encode('hello')), 5);
+    expect(await new Response(body.stream).text()).toBe('hello');
+    expect(body.overflowed()).toBe(false);
   });
 
-  it('gives up one byte past the limit', async () => {
-    expect(await readBoundedBody(streamOf(encoder.encode('hello!')), 5)).toBeUndefined();
+  it('fails one byte past the limit and cancels the source', async () => {
+    let cancelled = false;
+    const source = new ReadableStream<Uint8Array>({
+      pull(controller) { controller.enqueue(encoder.encode('hello!')); },
+      cancel() { cancelled = true; },
+    });
+    const body = boundedBody(source, 5);
+    await expect(new Response(body.stream).text()).rejects.toThrow();
+    expect(body.overflowed()).toBe(true);
+    await vi.waitFor(() => expect(cancelled).toBe(true));
   });
 });
 

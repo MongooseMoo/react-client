@@ -67,6 +67,30 @@ Nothing a launch carries may ever be sent to the MOO without the player acting.
      client.connect/connectLocal keeps the restorable reset. `confirm()` is
      restorable only with no previous owner; `setVisitor` discards.
   5. v1 inbox comment: never shipped, discarded on purpose.
+- Codex round 3 on 45f5f1de (scratchpad codex-rereview3-app-integration-report.md),
+  fixed in the fourth commit. Verified after: tsc clean; vitest 181 files /
+  2453 tests; biome on the 46 changed files 19 warnings (pre-existing set);
+  build ok; check-launch.mjs 18/18, check-launch-queue.mjs 17/17.
+  Memory (scratchpad mine-memory.cjs: real handler in a fresh Chromium 147
+  page, CDP backingStorageSize peak above baseline, streamed multipart):
+  45f5f1de text 32/99/128 MiB -> 96/198/256, file 32/99 -> 64/198;
+  now text 32/99 -> 64/136, file 32/99 -> 32/37, text 128 refused at 40.
+  Text parts still cost 1.4-2x in the native parser, so MAX_SHARE_BYTES was
+  lowered from 200 MiB to 100 MiB (= per-file max); worst case about 136 MiB.
+  Fixes:
+  1. FileTransfer: the staged share is finished only after `transfers.send`
+     resolves with a transfer that is not cancelled/failed, and only if it is
+     still the staged file (`finishStagedShare(sent)`). 2 new panel tests fail
+     on 45f5f1de, pass now.
+  2. Share intake: one body at a time, FIFO of at most 2 waiting, each waiting
+     at most 30 s; `busy` only past that.
+  3. Body counted by a TransformStream piped straight into
+     `new Response(stream).formData()`; no copies of ours. Native formData
+     cannot drop large text parts while parsing; text is still sliced after.
+     Share limit lowered to 100 MiB on the measurements above.
+  4. PreferencesDialog / AutoLogDialog / LinkPickerDialog close listeners
+     ignore a stale close when the dialog is open again; a rapid-reopen test
+     for each fails on the old listeners.
 - Not verifiable here: real OS install, OS protocol/file/share/shortcut
   launches, whether Chromium honours focus-existing for these, badge on a real
   icon. Not pushed, no PR.
