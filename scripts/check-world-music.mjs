@@ -498,6 +498,7 @@ async function checkPrivateHttp(actor, entry) {
       if (url.href !== `https://mongoose.world/api/midi/content/${contentId}`)
         throw new Error('Unexpected private path');
       const options = {
+        signal: AbortSignal.timeout(10000),
         headers: { Authorization: `Bearer ${asset.bearer}` },
         credentials: 'omit',
         redirect: 'error',
@@ -511,6 +512,7 @@ async function checkPrivateHttp(actor, entry) {
         (byte) => byte.toString(16).padStart(2, '0'),
       ).join('');
       const absent = await fetch(url, {
+        signal: AbortSignal.timeout(10000),
         credentials: 'omit',
         redirect: 'error',
         cache: 'no-store',
@@ -780,14 +782,24 @@ try {
   const publicLoad = await checked(listener, 'EditorLoad', { contentId: large.contentId });
   assert.ok(publicLoad.asset && !publicLoad.asset.bearer);
   const publicResponse = await fetch(new URL(publicLoad.asset.url, 'https://mongoose.world'), {
+    signal: AbortSignal.timeout(10000),
     redirect: 'error',
   });
   assert.equal(publicResponse.status, 200);
   assert.equal(await publicResponse.text(), `${documents.get(large.contentId)}\r\n`);
+  const publicBrowser = await listener.page.evaluate(async (contentId) => {
+    const loaded = await window.mudClient.gmcp.require('Client.Midi').world.load({ contentId });
+    return {
+      contentId: loaded.score.contentId,
+      notes: loaded.score.parts.reduce((sum, part) => sum + part.notes.length, 0),
+    };
+  }, large.contentId);
+  assert.deepEqual(publicBrowser, { contentId: large.contentId, notes: 2000 });
   await transport(owner, 'Unpublish selected composition', 'Removed from the public library.');
   assert.equal(
     (
       await fetch(`https://mongoose.world/api/midi/published/${large.contentId}`, {
+        signal: AbortSignal.timeout(10000),
         cache: 'no-store',
         redirect: 'error',
       })
@@ -800,6 +812,9 @@ try {
     'denied',
   );
 
+  await listener.page.evaluate(() =>
+    window.mudClient.gmcp.require('Client.Midi').world.assets.clear(),
+  );
   await ops(`move(${ref(listener.ref)},${ref(fixtureRoom)});${result('["moved"->1]')}`);
   await transport(
     owner,
@@ -884,6 +899,7 @@ try {
         });
         delete window.worldProbe.redemptionReady;
         const response = await fetch(url, {
+          signal: AbortSignal.timeout(10000),
           headers: { Authorization: `Bearer ${asset.bearer}` },
           credentials: 'omit',
           redirect: 'error',
