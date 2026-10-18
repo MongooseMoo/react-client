@@ -117,6 +117,15 @@ Nothing a launch carries may ever be sent to the MOO without the player acting.
   waited a fixed 20 ms) is done: the test now waits for the old engine's link
   (past hashing) and awaits the spied `send()` promise; with the round-4
   predicate swapped back in, both cases fail.
+- Rebased onto origin/master 7d5181f5 (head tracking merged). One conflict:
+  preferences.tsx imports (HeadTrackingControls + AppIntegrationPreferences,
+  both kept). Gate on the rebased head 61617efe, all exit 0: actionlint,
+  zizmor (no findings), typecheck, npm test 186 / 2566, test:audio-cache
+  4 PASS, editor-ownership on 5196 (served entry index-CYbqwVaW.js = local
+  dist; pid 66996 stopped) 1 passed, check-browser-sessions,
+  check-client-recovery, test:a11y; check-launch.mjs 18/18 and
+  check-launch-queue.mjs 17/17 on 5204 (same entry; pid 98712 stopped).
+  PR description: session scratchpad pr-app-integration.md.
 - Not verifiable here: real OS install, OS protocol/file/share/shortcut
   launches, whether Chromium honours focus-existing for these, badge on a real
   icon. Not pushed, no PR.
@@ -183,6 +192,6 @@ Nothing a launch carries may ever be sent to the MOO without the player acting.
   or a temporary Edit that is reverted.
 
 ## Next step
-Fresh Codex review of the branch. Then a real installed-app test on Windows
+Team lead opens the PR. Then a real installed-app test on Windows
 Chrome/Edge: install, `web+mongoose:` link, "Open with" a .db, the Host/Local
 shortcuts with a window open, a share from another app, the badge.
