@@ -1,3 +1,4 @@
+import type { Cacophony } from 'cacophony';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockCreateFOARenderer } = vi.hoisted(() => ({
@@ -27,9 +28,39 @@ function createGainNode() {
   };
 }
 
-/** A context whose createGain hands back a single, inspectable gain node. */
+function createRampableGainNode() {
+  return {
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    gain: { value: 1, setTargetAtTime: vi.fn(), cancelScheduledValues: vi.fn() },
+  };
+}
+
+/**
+ * A context for one renderer. `create` builds the yaw rotator first (its four
+ * gains, splitter and merger); `attachPlayback` then asks for the distance
+ * gain, which is the inspectable `gainNode`.
+ */
 function createContext(gainNode = createGainNode()) {
-  return { createGain: vi.fn(() => gainNode) };
+  const rotatorGains: ReturnType<typeof createRampableGainNode>[] = [];
+  const splitter = createNode();
+  const merger = createNode();
+  return {
+    currentTime: 5,
+    rotatorGains,
+    splitter,
+    merger,
+    createChannelSplitter: vi.fn(() => splitter),
+    createChannelMerger: vi.fn(() => merger),
+    createGain: vi.fn(() => {
+      if (rotatorGains.length < 4) {
+        const gain = createRampableGainNode();
+        rotatorGains.push(gain);
+        return gain;
+      }
+      return gainNode;
+    }),
+  };
 }
 
 describe('AmbisonicRenderer', () => {
@@ -66,12 +97,12 @@ describe('AmbisonicRenderer', () => {
     const ambisonicRenderer = await AmbisonicRenderer.create(cacophony as any, 2);
     ambisonicRenderer.attachPlayback(playback as any);
 
-    expect(cacophony.context.createGain).toHaveBeenCalledOnce();
     expect(playback.disconnect).toHaveBeenCalledOnce();
-    // playback → distanceGain → encoder → renderer.input
+    // playback → distanceGain → encoder → yaw rotator → renderer.input
     expect(playback.connect).toHaveBeenCalledWith(gainNode);
     expect(gainNode.connect).toHaveBeenCalledWith(encoder);
-    expect(encoder.connect).toHaveBeenCalledWith(input);
+    expect(encoder.connect).toHaveBeenCalledWith(cacophony.context.splitter);
+    expect(cacophony.context.merger.connect).toHaveBeenCalledWith(input);
     expect(output.connect).toHaveBeenCalledWith(cacophony.globalGainNode);
   });
 
@@ -105,10 +136,48 @@ describe('AmbisonicRenderer', () => {
 
     expect(cacophony.createStereoToBFormatNode).not.toHaveBeenCalled();
     expect(playback.disconnect).toHaveBeenCalledOnce();
-    // playback → distanceGain → renderer.input
+    // playback → distanceGain → yaw rotator → renderer.input
     expect(playback.connect).toHaveBeenCalledWith(gainNode);
-    expect(gainNode.connect).toHaveBeenCalledWith(input);
+    expect(gainNode.connect).toHaveBeenCalledWith(cacophony.context.splitter);
+    expect(cacophony.context.merger.connect).toHaveBeenCalledWith(input);
     expect(output.connect).toHaveBeenCalledWith(cacophony.globalGainNode);
+  });
+
+  it('turns the field with its own rotator, leaving the renderer matrix alone', async () => {
+    const renderer = {
+      initialize: vi.fn().mockResolvedValue(undefined),
+      input: createNode(),
+      output: createNode(),
+      setRenderingMode: vi.fn(),
+      setRotationMatrix3: vi.fn(),
+      setRotationMatrix4: vi.fn(),
+    };
+    mockCreateFOARenderer.mockReturnValue(renderer);
+    const cacophony = {
+      context: createContext(),
+      loadStereoToBFormatWorklet: vi.fn().mockResolvedValue(undefined),
+      createStereoToBFormatNode: vi.fn(),
+      globalGainNode: createNode(),
+    };
+    const ambisonicRenderer = await AmbisonicRenderer.create(cacophony as unknown as Cacophony, 4);
+    const [yToY, xToY] = cacophony.context.rotatorGains;
+
+    ambisonicRenderer.setRotationMatrixFromYaw(Math.PI / 2);
+    expect(renderer.setRotationMatrix3).not.toHaveBeenCalled();
+    // Instant by default (the server-driven behaviour).
+    expect(yToY.gain.value).toBeCloseTo(0, 12);
+    expect(xToY.gain.value).toBeCloseTo(1, 12);
+    expect(xToY.gain.setTargetAtTime).not.toHaveBeenCalled();
+
+    // Ramped while head tracking asks for it.
+    ambisonicRenderer.setRotationSmoothing(true);
+    ambisonicRenderer.setRotationMatrixFromYaw(0);
+    expect(xToY.gain.setTargetAtTime).toHaveBeenLastCalledWith(0, 5, expect.any(Number));
+
+    ambisonicRenderer.setRotationSmoothing(false);
+    ambisonicRenderer.setRotationMatrixFromYaw(0.5);
+    expect(xToY.gain.setTargetAtTime).toHaveBeenCalledTimes(1);
+    expect(xToY.gain.value).toBeCloseTo(Math.sin(0.5), 12);
   });
 
   it('routes the binaural output to an explicit target instead of master (V11)', async () => {

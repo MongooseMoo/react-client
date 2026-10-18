@@ -2,6 +2,7 @@ import type { Cacophony, AudioNode as CacophonyAudioNode, Playback } from 'cacop
 import type { FOARenderer } from 'omnitone/build/omnitone.min.esm.js';
 
 import { smoothParamTo } from './audioParamSmoothing';
+import { FoaYawRotator } from './FoaYawRotator';
 
 const IDENTITY_ROTATION = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 type AmbisonicInputMode = 'stereo-upmix' | 'foa-passthrough';
@@ -10,26 +11,38 @@ export class AmbisonicRenderer {
   private attachedPlayback?: Playback;
   /** Pre-encoder gain that attenuates the source by listener distance (ambisonic has no panner). */
   private distanceGain?: GainNode;
+  /** Ramp yaw changes (head tracking) instead of stepping them (the server's turns). */
+  private smoothRotation = false;
 
+  /**
+   * The field turns in `rotator`, ahead of the renderer, whose own matrix
+   * stays at identity: Omnitone's rotator can only step its coefficients.
+   */
   private constructor(
     private readonly cacophony: Cacophony,
     private readonly renderer: FOARenderer,
+    private readonly rotator: FoaYawRotator,
     private readonly mode: AmbisonicInputMode,
     private readonly encoder?: CacophonyAudioNode,
-  ) {}
+  ) {
+    (rotator.output as unknown as CacophonyAudioNode).connect(
+      renderer.input as unknown as CacophonyAudioNode,
+    );
+  }
 
   static async create(cacophony: Cacophony, inputChannels: number): Promise<AmbisonicRenderer> {
     const { default: Omnitone } = await import('omnitone/build/omnitone.min.esm.js');
-    const renderer = Omnitone.createFOARenderer(cacophony.context as unknown as BaseAudioContext);
+    const context = cacophony.context as unknown as BaseAudioContext;
+    const renderer = Omnitone.createFOARenderer(context);
     await renderer.initialize();
     renderer.setRenderingMode('ambisonic');
     if (inputChannels === 2) {
       await cacophony.loadStereoToBFormatWorklet();
       const encoder = await cacophony.createStereoToBFormatNode();
-      return new AmbisonicRenderer(cacophony, renderer, 'stereo-upmix', encoder);
+      return new AmbisonicRenderer(cacophony, renderer, new FoaYawRotator(context), 'stereo-upmix', encoder);
     }
     if (inputChannels === 4) {
-      return new AmbisonicRenderer(cacophony, renderer, 'foa-passthrough');
+      return new AmbisonicRenderer(cacophony, renderer, new FoaYawRotator(context), 'foa-passthrough');
     }
     throw new Error(`Unsupported ambisonic input channel count: ${inputChannels}`);
   }
@@ -53,9 +66,9 @@ export class AmbisonicRenderer {
         throw new Error('Stereo ambisonic upmix requires an encoder node');
       }
       distanceNode.connect(this.encoder);
-      this.encoder.connect(this.renderer.input as unknown as CacophonyAudioNode);
+      this.encoder.connect(this.rotator.input as unknown as CacophonyAudioNode);
     } else {
-      distanceNode.connect(this.renderer.input as unknown as CacophonyAudioNode);
+      distanceNode.connect(this.rotator.input as unknown as CacophonyAudioNode);
     }
     (this.renderer.output as unknown as CacophonyAudioNode).connect(
       outputTarget ?? this.cacophony.globalGainNode,
@@ -78,6 +91,7 @@ export class AmbisonicRenderer {
 
   cleanup(): void {
     this.renderer.output.disconnect();
+    this.rotator.disconnect();
     this.distanceGain?.disconnect();
     this.distanceGain = undefined;
     if (!this.attachedPlayback) {
@@ -92,10 +106,17 @@ export class AmbisonicRenderer {
     this.attachedPlayback = undefined;
   }
 
+  /** Turn the field to the listener yaw: the rotation `rotationMatrixFromYaw` describes. */
   setRotationMatrixFromYaw(yaw: number): void {
-    this.renderer.setRotationMatrix3(AmbisonicRenderer.rotationMatrixFromYaw(yaw));
+    this.rotator.setYaw(yaw, this.smoothRotation);
   }
 
+  /** Ramp later yaw changes (true, while head tracking) or step them (false). */
+  setRotationSmoothing(smooth: boolean): void {
+    this.smoothRotation = smooth;
+  }
+
+  /** The 3x3 yaw matrix in Omnitone's convention, which FoaYawRotator reproduces. */
   static rotationMatrixFromYaw(yaw: number): Float32Array {
     if (!Number.isFinite(yaw)) {
       return new Float32Array(IDENTITY_ROTATION);
