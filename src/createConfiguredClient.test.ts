@@ -14,6 +14,7 @@ import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
 import { useChannelHistoryStore } from "./stores/channelHistoryStore";
 import { useChannelsStore } from "./stores/channelsStore";
+import { useHelpStore } from "./stores/helpStore";
 import { useLiveKitStore } from "./stores/liveKitStore";
 import { useOutputStore } from "./stores/outputStore";
 import { useRoomStore } from "./stores/roomStore";
@@ -37,6 +38,7 @@ describe("createConfiguredClient", () => {
     useCharacterStatusStore.getState().reset();
     useChannelHistoryStore.getState().reset();
     useConnectionStore.getState().reset();
+    useHelpStore.getState().reset();
     useLiveKitStore.getState().reset();
     useOutputStore.getState().reset();
     useRoomStore.getState().reset();
@@ -86,6 +88,23 @@ describe("createConfiguredClient", () => {
       fadeout: 0,
       loops: 0,
     });
+  });
+
+  it("registers Help, advertises Help 1 and stores Help.Topic", () => {
+    client = createConfiguredClient();
+
+    expect(client.gmcp.require("Core.Supports").advertisedModules()).toContain("Help 1");
+    client.gmcp.receive("Help.Topic", JSON.stringify({
+      topic: "money",
+      query: "money",
+      db: "game",
+      audience: "player",
+      status: "ok",
+      lines: ["Money"],
+      choices: [],
+    }));
+
+    expect(useHelpStore.getState().current?.topic).toBe("money");
   });
 
   it("wires Char.Vitals to the character status store", () => {
