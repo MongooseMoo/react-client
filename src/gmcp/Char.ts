@@ -50,8 +50,6 @@ export class GMCPChar extends GMCPCharBase {
       if (personal.owner || personal.reconnectingIdentity) personal.forget();
     }
     previous.setPlayer(data.name, data.fullname, data.uuid);
-    if (this.client.connected && this.client.gmcp.ready && !this.client.localConnection)
-      this.client.gmcp.require('Core.Supports').refreshCurrentSupport();
   }
   // --- Vitals ---
   handleVitals(data: Record<string, unknown>): void {

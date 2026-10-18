@@ -102,7 +102,6 @@ class MudClient {
   private disconnectResetCallbacks: Array<() => void> = [];
   private identityResetCallbacks: Array<() => void> = [];
   private transportGeneration = 0;
-  get currentTransportGeneration(): number { return this.transportGeneration; }
   private latencyRecoveryAttempted = false;
   private cleanupCallbacks: Array<() => void> = [];
 

@@ -4,78 +4,14 @@ import { useSessionStore } from '../stores/sessionStore';
 import { GmcpSession } from './session';
 import type MudClient from '../client';
 import { usePersonalDataStore } from '../stores/personalDataStore';
-import { GMCPPackage } from './package';
-import type { TelnetParser } from '../telnet';
-import { GMCPCoreSupports } from './Core';
-
-class MediaFixture extends GMCPPackage {
-  readonly packageName = 'Client.Media';
-  sendPlaybackSupport = vi.fn();
-}
 
 describe('confirmed character ownership', () => {
   beforeEach(() => useSessionStore.getState().reset());
-
-  it('reports after every accepted identity, including identical notifications, A-B-A and guests without an Auth session', () => {
-    const reset = vi.fn();
-    const setNetworkReady = vi.fn();
-    const sendGmcp = vi.fn();
-    const client = {
-      liveServer: true,
-      connected: true,
-      resetIdentityState: reset,
-      registerDisconnectReset: vi.fn(),
-      sharedClock: { setNetworkReady },
-    } as unknown as MudClient;
-    client.gmcp = new GmcpSession(client);
-    client.gmcp.attachTransport({ sendGmcp } as unknown as TelnetParser);
-    const media = client.gmcp.register(MediaFixture);
-    const supports = client.gmcp.register(GMCPCoreSupports);
-    client.gmcp.register(GMCPChar);
-    client.gmcp.markReady();
-    setNetworkReady.mockClear();
-    const reported: string[] = [];
-    media.sendPlaybackSupport.mockImplementation(() => {
-      reported.push(useSessionStore.getState().playerUuid || useSessionStore.getState().playerId);
-    });
-    for (const identity of [
-      { name: '#10', fullname: 'A', uuid: 'a' },
-      { name: '#10', fullname: 'A', uuid: 'a' },
-      { name: '#11', fullname: 'B', uuid: 'b' },
-      { name: '#10', fullname: 'A', uuid: 'a' },
-      { name: '#guest', fullname: 'Guest' },
-      { name: '#guest', fullname: 'Guest' },
-    ]) client.gmcp.receive('Char.Name', JSON.stringify(identity));
-    expect(reported).toEqual(['a', 'a', 'b', 'a', '#guest', '#guest']);
-    expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(6);
-    expect(reset).toHaveBeenCalledTimes(3);
-    expect(sendGmcp.mock.calls).toEqual(Array.from({ length: 6 }, () =>
-      ['Core.Supports.Set', JSON.stringify(supports.advertisedModules())]));
-  });
-
-  it('rejects invalid identity payloads without publishing support or changing identity', () => {
-    const client = { registerDisconnectReset: vi.fn() } as unknown as MudClient;
-    client.gmcp = new GmcpSession(client);
-    const media = client.gmcp.register(MediaFixture);
-    client.gmcp.register(GMCPChar);
-    client.gmcp.receive('Char.Name', '{"name":"#10","fullname":"A","uuid":"a"}');
-    media.sendPlaybackSupport.mockClear();
-    const generation = client.gmcp.generation;
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    for (const payload of ['null', '[]', '{}', '{bad', '{"name":""}', '{"name":10}', '{"name":"#10","uuid":false}']) {
-      client.gmcp.receive('Char.Name', payload);
-    }
-    expect(media.sendPlaybackSupport).not.toHaveBeenCalled();
-    expect(useSessionStore.getState().playerId).toBe('#10');
-    expect(useSessionStore.getState().playerUuid).toBe('a');
-    expect(client.gmcp.generation).toBe(generation);
-    error.mockRestore();
-  });
   it('forgets retained account identity when a reconnect resolves to a live guest without UUID', () => {
     const client = {
       liveServer: true,
       runtimeNamespace: 'live:test',
-      gmcp: { confirmIdentity: vi.fn(), require: vi.fn(() => ({ sendPlaybackSupport: vi.fn() })) },
+      gmcp: { confirmIdentity: vi.fn() },
     } as unknown as MudClient;
     const handler = new GMCPChar(client);
     usePersonalDataStore
@@ -95,9 +31,8 @@ describe('confirmed character ownership', () => {
 
   it('retains the wire identity and invalidates editors on an in-place switch', () => {
     const reset = vi.fn();
-    const client = { resetIdentityState: reset, registerDisconnectReset: vi.fn() } as unknown as MudClient;
+    const client = { resetIdentityState: reset } as unknown as MudClient;
     Object.assign(client, { gmcp: new GmcpSession(client) });
-    client.gmcp.register(MediaFixture);
     const handler = new GMCPChar(client);
     handler.handleName({ name: '#10', fullname: 'A', uuid: 'opaque-a' });
     expect(useSessionStore.getState().playerUuid).toBe('opaque-a');
