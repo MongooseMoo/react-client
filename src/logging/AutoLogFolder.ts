@@ -314,21 +314,29 @@ function utf8Prefix(text: string, maxBytes: number): string {
   return text.slice(0, end);
 }
 
-// Header fields come from the server and the URL, so they are bounded.
+// Header fields come from the server and the URL, so each is kept to one line
+// and bounded: nothing in a field can add or move a header line.
 function boundField(text: string): string {
-  return byteLength(text) <= HEADER_FIELD_BYTES ? text : `${utf8Prefix(text, HEADER_FIELD_BYTES - byteLength("…"))}…`;
+  const line = text.replace(/[\r\n\p{Zl}\p{Zp}]+/gu, " ");
+  return byteLength(line) <= HEADER_FIELD_BYTES ? line : `${utf8Prefix(line, HEADER_FIELD_BYTES - byteLength("…"))}…`;
 }
 
-// Every part names its session on its second line, after a title of at most
-// 256 bytes, so the first OWNERSHIP_READ_BYTES of a file say whose it is.
-// Nothing is ever written into a file that does not carry this session's line.
+// Every part opens with exactly this layout: a title line that does not
+// start with SESSION_PREFIX, then `Session: <id>`, then `Character: …`. Only
+// a file opening that way, with this session's id, counts as this session's
+// (see partOwner); a Session line anywhere else, or a different layout, is
+// someone else's file and is never written or removed. The title is at most
+// about 270 bytes, so all three lines start within OWNERSHIP_READ_BYTES.
 const SESSION_PREFIX = "Session: ";
+const CHARACTER_PREFIX = "Character: ";
 const OWNERSHIP_READ_BYTES = 512;
 
 function partHeader(binding: LogFileBinding, session: AutoLogSession, part: number): string {
-  const title = boundField(session.title || "Mongoose Client");
+  const titleText = boundField(session.title ?? "").trim() || "Mongoose Client";
+  // A title can never pass for the Session line.
+  const title = boundField(titleText.startsWith(SESSION_PREFIX) ? `Title: ${titleText}` : titleText);
   const owner = `${SESSION_PREFIX}${boundField(session.id)}`;
-  const character = `Character: ${boundField(binding.character)}`;
+  const character = `${CHARACTER_PREFIX}${boundField(binding.character)}`;
   const started = `Started: ${zonedStamp(session.startedAt, binding.timeZone)}`;
   const lines = part === 1
     ? [title, owner, character, started, ...(session.sanitizedUrl ? [`URL: ${boundField(session.sanitizedUrl)}`] : [])]
@@ -336,7 +344,8 @@ function partHeader(binding: LogFileBinding, session: AutoLogSession, part: numb
   return `${lines.join("\n")}\n\n`;
 }
 
-// "missing", "ours" (its Session line names this session) or "foreign".
+// "missing", "ours" (it opens with this session's exact header layout) or
+// "foreign".
 async function partOwner(folder: FileSystemDirectoryHandle, name: string, sessionId: string): Promise<"missing" | "ours" | "foreign"> {
   let file: FileSystemFileHandle;
   try {
@@ -347,8 +356,11 @@ async function partOwner(folder: FileSystemDirectoryHandle, name: string, sessio
     throw error;
   }
   const head = await (await file.getFile()).slice(0, OWNERSHIP_READ_BYTES).text();
-  const line = head.split("\n").find((candidate) => candidate.startsWith(SESSION_PREFIX));
-  return line === `${SESSION_PREFIX}${boundField(sessionId)}` ? "ours" : "foreign";
+  const [title, owner, character] = head.split("\n");
+  const ours = !!title && !title.startsWith(SESSION_PREFIX)
+    && owner === `${SESSION_PREFIX}${boundField(sessionId)}`
+    && character?.startsWith(CHARACTER_PREFIX) === true;
+  return ours ? "ours" : "foreign";
 }
 
 // A part file at the session's name that belongs to someone else.
@@ -944,7 +956,7 @@ export class AutoLogFolder implements AutoLogSink {
         continue;
       }
       if (!binding.nameChecked) {
-        binding = await this.claimName(binding, folder, record);
+        binding = await this.claimName(binding, snapshot.session, folder, record);
         onChanged(binding);
       }
 
@@ -993,7 +1005,7 @@ export class AutoLogFolder implements AutoLogSink {
   // Web Lock per name, so two tabs whose sessions share a base name cannot
   // both find it free. The claim is saved before anything is written, so a
   // later render reuses it instead of treating our file as someone else's.
-  private async claimName(binding: LogFileBinding, folder: FileSystemDirectoryHandle, record: FolderRecord): Promise<LogFileBinding> {
+  private async claimName(binding: LogFileBinding, session: AutoLogSession, folder: FileSystemDirectoryHandle, record: FolderRecord): Promise<LogFileBinding> {
     const original = binding.baseName;
     const claim = async (): Promise<LogFileBinding> => {
       let baseName = original;
@@ -1005,13 +1017,13 @@ export class AutoLogFolder implements AutoLogSink {
       let created = false;
       try {
         this.assertLive(binding.ownerKey, record);
-        // The placeholder already carries the Session line: from here on the
-        // name is provably this session's, and an empty file is nobody's.
+        // The placeholder is the first part's header, so from here on the
+        // name is provably this session's; an empty file is nobody's.
         const file = await folder.getFileHandle(name, { create: true });
         created = true;
         const writable = await file.createWritable();
         try {
-          await writable.write(`${SESSION_PREFIX}${boundField(binding.sessionId)}\n`);
+          await writable.write(partHeader(claimed, session, 1));
           await writable.close();
         } catch (error) {
           await writable.abort().catch(() => {});

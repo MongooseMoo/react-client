@@ -833,7 +833,7 @@ describe("AutoLogFolder", () => {
   // Shared by the rebuild tests: parts written at a small cap in an earlier
   // build, a binding with an invalid zone pointing at the last of them, and
   // (optionally) one of those parts replaced by someone else's file.
-  async function staleRebuild(options: { foreignPart?: boolean } = {}) {
+  async function staleRebuild(options: { foreignText?: string } = {}) {
     const lines = Array.from({ length: 10 }, (_, i) => `line ${i} ${"a".repeat(30)}`);
     store(...lines.map((text, sequence) => entry(1, sequence, text)));
     const binding: LogFileBinding = {
@@ -847,10 +847,10 @@ describe("AutoLogFolder", () => {
       file.bytes = encoder.encode(part.text);
     }
     let foreignName: string | undefined;
-    if (options.foreignPart) {
+    if (options.foreignText !== undefined) {
       foreignName = partName("base", old.parts.length - 1);
       const foreign = await ada.getFileHandle(foreignName, { create: true });
-      foreign.bytes = encoder.encode("Someone's notes\nSession: someone-else\n\nkeep me\n");
+      foreign.bytes = encoder.encode(options.foreignText);
     }
     persistence.bindings.set(sid(1), { ...binding, timeZone: "Not/A_Zone", mark: old.mark });
     remember(ownerA, root);
@@ -860,22 +860,54 @@ describe("AutoLogFolder", () => {
     return { lines, ada, old, expected, foreignName };
   }
 
-  it("removes its own leftover parts after a rebuild that needs fewer of them, and only its own", async () => {
-    const { lines, ada, expected, foreignName } = await staleRebuild({ foreignPart: true });
-    const folder = makeFolder({ maxPartBytes: 300 });
-    await folder.syncOwner();
-    await folder.whenIdle();
+  const foreignFiles: Array<[string, string]> = [
+    ["another session's file", "Someone's notes\nSession: someone-else\n\nkeep me\n"],
+    ["a file quoting our Session line in its body", `My notes\nabout the game\n\nSession: ${sid(1)}\nCharacter: Ada\nkeep me\n`],
+    ["a file with our Session line second but not our layout", `Pasted\nSession: ${sid(1)}\nNotes: mine\nkeep me\n`],
+    ["a file with our Session line first", `Session: ${sid(1)}\nCharacter: Ada\nkeep me\n`],
+  ];
 
-    const names = expected.parts.map((part) => partName("base", part.part));
-    expect([...ada.files.keys()].sort()).toEqual([...names, foreignName].sort());
-    expect(ada.files.get(foreignName ?? "")?.text).toBe("Someone's notes\nSession: someone-else\n\nkeep me\n");
-    const joined = names.map((name) => {
-      const text = ada.files.get(name)?.text ?? "";
-      return text.slice(text.indexOf("\n\n") + 2);
-    }).join("");
-    expect(lineTexts(joined)).toEqual(lines);
-    expect(footers(joined)).toEqual(["Ended: not recorded (the page closed)"]);
-    expect(persistence.bindings.size).toBe(0);
+  for (const [label, foreignText] of foreignFiles) {
+    it(`after a rebuild that needs fewer parts, removes its own leftovers but never ${label}`, async () => {
+      const { lines, ada, expected, foreignName } = await staleRebuild({ foreignText });
+      const folder = makeFolder({ maxPartBytes: 300 });
+      await folder.syncOwner();
+      await folder.whenIdle();
+
+      const names = expected.parts.map((part) => partName("base", part.part));
+      expect([...ada.files.keys()].sort()).toEqual([...names, foreignName].sort());
+      expect(ada.files.get(foreignName ?? "")?.text).toBe(foreignText);
+      expect(ada.removed).not.toContain(foreignName);
+      const joined = names.map((name) => {
+        const text = ada.files.get(name)?.text ?? "";
+        return text.slice(text.indexOf("\n\n") + 2);
+      }).join("");
+      expect(lineTexts(joined)).toEqual(lines);
+      expect(footers(joined)).toEqual(["Ended: not recorded (the page closed)"]);
+      expect(persistence.bindings.size).toBe(0);
+      folder.dispose();
+    });
+  }
+
+  it("recognises its own parts, first and continuation, even with a title that tries to look like a header", async () => {
+    const tricky = session(1, ownerA, { title: "Session: fake\nCharacter: nobody" });
+    storedSessions.set(tricky.id, tricky);
+    const folder = await chosen({ maxPartBytes: 300 });
+    for (let sequence = 0; sequence < 8; sequence++) {
+      folder.append(tricky, store(entry(1, sequence, `line ${sequence} ${"b".repeat(30)}`)));
+      await folder.whenIdle();
+    }
+    const files = root.all();
+    const parts = sortedParts(files);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.every((name) => !name.includes("(2)"))).toBe(true);
+    expect(files[parts[0]].split("\n").slice(0, 3)).toEqual([
+      "Title: Session: fake Character: nobody", `Session: ${sid(1)}`, "Character: Ada",
+    ]);
+    expect(files[parts[1]].split("\n")[1]).toBe(`Session: ${sid(1)}`);
+    // Entries can be split across parts at this cap: join the bodies first.
+    const bodies = parts.map((name) => files[name].slice(files[name].indexOf("\n\n") + 2)).join("");
+    expect(lineTexts(bodies)).toEqual(Array.from({ length: 8 }, (_, i) => `line ${i} ${"b".repeat(30)}`));
     folder.dispose();
   });
 
@@ -936,22 +968,23 @@ describe("AutoLogFolder", () => {
     page2.dispose();
   });
 
-  it("never writes into a file at its name that another session owns", async () => {
-    const folder = await chosen();
-    folder.append(session(1), store(entry(1, 0, "one")));
-    await folder.whenIdle();
-    const file = root.file(fileOf(1));
-    const foreignText = "Not ours\nSession: another-session\n\nhands off\n";
-    file.bytes = encoder.encode(foreignText);
-    const writes = file.writableOptions.length;
+  for (const [label, foreignText] of foreignFiles) {
+    it(`never writes into ${label} sitting at its name`, async () => {
+      const folder = await chosen();
+      folder.append(session(1), store(entry(1, 0, "one")));
+      await folder.whenIdle();
+      const file = root.file(fileOf(1));
+      file.bytes = encoder.encode(foreignText);
+      const writes = file.writableOptions.length;
 
-    folder.append(session(1), store(entry(1, 1, "two")));
-    await folder.whenIdle();
-    expect(file.text).toBe(foreignText);
-    expect(file.writableOptions.length).toBe(writes);
-    expect(lineTexts(root.file(fileOf(1).replace(".txt", " (2).txt")).text)).toEqual(["one", "two"]);
-    folder.dispose();
-  });
+      folder.append(session(1), store(entry(1, 1, "two")));
+      await folder.whenIdle();
+      expect(file.text).toBe(foreignText);
+      expect(file.writableOptions.length).toBe(writes);
+      expect(lineTexts(root.file(fileOf(1).replace(".txt", " (2).txt")).text)).toEqual(["one", "two"]);
+      folder.dispose();
+    });
+  }
 
   it("abandons a Choose that is still open when the sink is disposed", async () => {
     let pick = (_directory: FakeDirectory) => {};

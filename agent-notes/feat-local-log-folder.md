@@ -184,7 +184,7 @@ change `.github`.
 
 ## Next step
 
-Round 6 committed and reported; Codex reviews again.
+Round 7 committed and reported; Codex reviews again.
 
 ## Round 5 (Codex review 4 of aa9247be: 1 P2, 3 P3, lead's decisions)
 
@@ -255,3 +255,40 @@ only logged, leaving a trusted claim with no file. Lead's root fix:
   consecutive reruns (4 PASS lines each); editor-ownership 1 passed on 5183
   serving this build's `index-CKbJpyFf.js`; check-browser-sessions exit 0;
   check-client-recovery exit 0; test:a11y exit 0. Biome clean.
+
+## Round 7 (Codex review 6 was cut off; lead confirmed one defect from its probes)
+
+`partOwner` took the first line starting with "Session: " anywhere in the
+first 512 bytes, so another file quoting our Session line in its body
+counted as ours and could be overwritten or removed by rebuild cleanup
+(Codex native probe: "foreignPreserved": false). Also found while fixing:
+header fields were not newline-normalised, so a title with a newline could
+have injected a line; and the claim placeholder (`Session: <id>` alone) had
+the Session line first.
+
+- Ownership now requires the exact opening layout: line 1 a non-empty title
+  not starting with "Session: ", line 2 exactly `Session: <id>`, line 3
+  starting "Character: ". Anything else is foreign.
+- boundField collapses CR/LF/U+2028/U+2029 runs to a space, so no field can
+  add or move a header line; a title starting with "Session: " is rendered
+  as "Title: …"; an empty or whitespace title becomes "Mongoose Client".
+- The claim placeholder is the real part-1 header.
+- Surprise: writing ` ` through the Edit tool put the raw U+2028 and
+  U+2029 characters into the regex, which TypeScript reads as line breaks
+  ("Unterminated regular expression literal"). The regex now uses
+  `\p{Zl}\p{Zp}` with the u flag; a byte scan shows no raw separators left.
+- Tests: four foreign shapes (another session's; our Session line in the
+  body at line 4; our Session line second with a different line 3; our
+  Session line first), each both as a leftover in a shrinking rebuild (kept,
+  never removed) and at part 1 mid-session (never written, session goes to
+  " (2)"); plus a header-mimicking title whose first and continuation parts
+  are recognised as ours. 7 failed on 412c06f8 before the fix.
+- CI, all 7 steps on the round 7 tree: typecheck exit 0; `npm test` first
+  run 6 failures, all in src/components/output.test.tsx (frozen history,
+  line markup, provisional away lines); I filtered the output again and lost
+  the error text, so the cause is unknown. output.test.tsx alone: 36/36; two
+  full reruns: no failures, then 177 files / 2426 tests. test:audio-cache
+  exit 0 first try (4 PASS); editor-ownership 1 passed on 5183 serving this
+  build's `index-lQtquXuo.js`; check-browser-sessions, check-client-recovery
+  and test:a11y exit 0. From now on each step keeps its full output and
+  prints it on failure.
