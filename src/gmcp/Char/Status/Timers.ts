@@ -31,6 +31,8 @@ export class GMCPCharStatusTimers extends TimersBase {
   private pendingRequestId?: string;
   private serial = 0;
   private refreshTimer?: ReturnType<typeof setTimeout>;
+  private replyTimer?: ReturnType<typeof setTimeout>;
+  private retryAttempt = 0;
 
   get snapshot(): TimerSnapshot {
     return this.current;
@@ -64,9 +66,30 @@ export class GMCPCharStatusTimers extends TimersBase {
     if (!this.client.gmcp.ready || !this.client.gmcp.sessionReady) return false;
     const now = performance.now();
     if (now - this.lastRequestMs < 1000) return false;
+    this.retryAttempt = 0;
+    return this.sendSnapshotAttempt();
+  }
+
+  private sendSnapshotAttempt(): boolean {
+    if (!this.client.gmcp.ready || !this.client.gmcp.sessionReady) return false;
+    clearTimeout(this.refreshTimer);
+    this.refreshTimer = undefined;
+    clearTimeout(this.replyTimer);
+    const now = performance.now();
     this.lastRequestMs = now;
     const requestId = `timers:${this.client.gmcp.generation}:${++this.serial}`;
     this.pendingRequestId = requestId;
+    this.replyTimer = setTimeout(() => {
+      this.replyTimer = undefined;
+      this.pendingRequestId = undefined;
+      if (this.retryAttempt >= 3 || !this.client.gmcp.ready || !this.client.gmcp.sessionReady)
+        return;
+      const backoffMs = 1250 * 2 ** this.retryAttempt++;
+      this.refreshTimer = setTimeout(() => {
+        this.refreshTimer = undefined;
+        this.sendSnapshotAttempt();
+      }, backoffMs);
+    }, 2000);
     this.sendRequest({ requestId });
     return true;
   }
@@ -77,9 +100,11 @@ export class GMCPCharStatusTimers extends TimersBase {
       return false;
     const clock = this.client.sharedClock.estimate();
     if (clock.status === 'current' && clock.clockId !== update.clockId) return false;
-    if (this.current.clockId === update.clockId && update.revision <= this.current.revision)
+    if (this.current.clockId === update.clockId && update.revision <= this.current.revision) {
+      if (update.requestId !== undefined) this.finishRequest();
       return false;
-    if (update.requestId !== undefined) this.pendingRequestId = undefined;
+    }
+    this.finishRequest();
     this.current = Object.freeze({
       clockId: update.clockId,
       revision: update.revision,
@@ -102,13 +127,20 @@ export class GMCPCharStatusTimers extends TimersBase {
   }
 
   private clearSnapshot(): void {
-    clearTimeout(this.refreshTimer);
-    this.refreshTimer = undefined;
+    this.finishRequest();
+    this.retryAttempt = 0;
     this.current = emptySnapshot();
-    this.pendingRequestId = undefined;
     this.releaseClock?.();
     this.releaseClock = undefined;
     this.publish();
+  }
+
+  private finishRequest(): void {
+    clearTimeout(this.refreshTimer);
+    this.refreshTimer = undefined;
+    clearTimeout(this.replyTimer);
+    this.replyTimer = undefined;
+    this.pendingRequestId = undefined;
   }
 
   private scheduleSnapshot(): void {

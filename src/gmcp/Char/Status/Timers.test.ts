@@ -85,6 +85,63 @@ describe('authenticated connection deadline projection', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('recovers a dropped reply with a new bounded request ID and backoff, ignoring the late old reply', () => {
+    vi.useFakeTimers();
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      const { handler, send } = setup();
+      handler.requestSnapshot();
+      now += 2000;
+      vi.advanceTimersByTime(2000);
+      expect(handler.handleUpdate({ ...update, requestId: 'timers:2:1' })).toBe(false);
+      now += 1249;
+      vi.advanceTimersByTime(1249);
+      expect(send).toHaveBeenCalledTimes(1);
+      now += 1;
+      vi.advanceTimersByTime(1);
+      expect(send).toHaveBeenLastCalledWith(
+        'Char.Status.Timers.Request',
+        '{"requestId":"timers:2:2"}',
+      );
+      expect(handler.handleUpdate({ ...update, requestId: 'timers:2:1' })).toBe(false);
+      expect(handler.handleUpdate({ ...update, requestId: 'timers:2:2' })).toBe(true);
+      now += 60000;
+      vi.advanceTimersByTime(60000);
+      expect(send).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops after three automatic retries and cancels all retry work on reset', () => {
+    vi.useFakeTimers();
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      const { handler, send } = setup();
+      handler.requestSnapshot();
+      for (const backoff of [1250, 2500, 5000]) {
+        now += 2000;
+        vi.advanceTimersByTime(2000);
+        now += backoff;
+        vi.advanceTimersByTime(backoff);
+      }
+      expect(send).toHaveBeenCalledTimes(4);
+      now += 60000;
+      vi.advanceTimersByTime(60000);
+      expect(send).toHaveBeenCalledTimes(4);
+      handler.requestSnapshot();
+      handler.reset();
+      now += 60000;
+      vi.advanceTimersByTime(60000);
+      expect(send).toHaveBeenCalledTimes(5);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reacquires a snapshot after restoration or clock capability return without exceeding request rate', () => {
     vi.useFakeTimers();
     let now = 1000;
