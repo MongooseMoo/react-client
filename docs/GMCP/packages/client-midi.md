@@ -84,6 +84,13 @@ Kite, FluidR3 and FatBoy load instruments from MIDI.js Soundfonts. Sampled
 melodic instruments and the built-in percussion renderer provide their actual
 programs; hardware devices retain their own sound and audio controls.
 
+Sample loading is bounded to four encoded instruments totaling 32 MiB, 32 MiB of
+decoded cache, four concurrent decodes and two instrument downloads. Downloads
+are limited to 16 MiB each and time out after 20 seconds. Raw device preview has
+its own 64-sample voice bound; independent live/score voices use the shared
+limits above. Closest decoded samples can be pitch-shifted while an exact note
+decodes. Reconnect to apply a changed collection or retry a failed instrument.
+
 Both browser synths share client volume, mute, Escape/Resume and master effects.
 `Client.Midi.Route` is a complete route description:
 

@@ -19,10 +19,11 @@ afterEach(() => {
   usePreferences.getState().setMidi(previous);
   vi.useRealTimers();
 });
-function setup() {
+function setup(connected = false) {
   const send = vi.fn(),
     setMidiRoute = vi.fn(),
-    sendSet = vi.fn();
+    sendSet = vi.fn(),
+    sendRemove = vi.fn();
   const renderer = {
     note: vi.fn(async () => {}),
     control: vi.fn(),
@@ -32,10 +33,12 @@ function setup() {
   };
   const midi = new GMCPClientMidi(
     {
+      connected,
       gmcp: {
+        ready: connected,
         send,
         handlers: {
-          'Core.Supports': { sendSet, advertisedModules: () => ['Client.Midi 1'] },
+          'Core.Supports': { sendSet, sendRemove, advertisedModules: () => ['Client.Midi 1'] },
         },
       },
       media: { setMidiRoute },
@@ -43,7 +46,7 @@ function setup() {
     async () => renderer as unknown as LiveOriginRenderer,
   );
   packages.push(midi);
-  return { midi, renderer, send, setMidiRoute, sendSet };
+  return { midi, renderer, send, setMidiRoute, sendSet, sendRemove };
 }
 const rawData = { hex: '90 3C 64', type: 'Note On', data: new Uint8Array([0x90, 60, 100]) };
 const input = (midi: GMCPClientMidi, message: Omit<MidiMessage, 'rawData'>) =>
@@ -74,6 +77,20 @@ describe('Client.Midi 1', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(JSON.parse(send.mock.calls[1][1])).toEqual({ note: 60, velocity: 0, on: false, channel: 0 });
     midi.sendAllNotesOff();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+  it('connected preference disable sends the real release before removing support and cancels its timer', async () => {
+    vi.useFakeTimers();
+    const { midi, send, sendRemove } = setup(true);
+    midi.sendManualNote(60, 100, true, 0, 50);
+    usePreferences.getState().setMidi({ enabled: false });
+    expect(send.mock.calls).toEqual([
+      ['Client.Midi.Note', JSON.stringify({ note: 60, velocity: 100, on: true, channel: 0 })],
+      ['Client.Midi.Note', JSON.stringify({ note: 60, velocity: 0, on: false, channel: 0 })],
+    ]);
+    expect(sendRemove).toHaveBeenCalledWith(['Client.Midi']);
+    expect(send.mock.invocationCallOrder[1]).toBeLessThan(sendRemove.mock.invocationCallOrder[0]);
+    await vi.advanceTimersByTimeAsync(100);
     expect(send).toHaveBeenCalledTimes(2);
   });
   it.each(['manual-off', 'retrigger', 'private-capture', 'disable', 'reset', 'shutdown'])(
