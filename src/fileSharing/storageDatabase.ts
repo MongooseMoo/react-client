@@ -37,6 +37,7 @@ export type Receipt = {
   state: 'received' | 'cancelled';
   outcome: 'verified' | 'browser-download' | 'export-uncertain';
   touchedAt: number;
+  expiresAt?: number;
 };
 export type ExportRecord = {
   id: string;
@@ -123,6 +124,7 @@ export class StorageDatabase {
           tx.objectStore('attempts').createIndex('content', ['source.player', 'meta.id']);
           tx.objectStore('attempts').createIndex('live', 'live');
           tx.objectStore('attempts').createIndex('inactive', ['live', 'touchedAt']);
+          tx.objectStore('offers').createIndex('expiresAt', 'expiresAt');
           tx.objectStore('offers').createIndex('content', ['sender.player', 'meta.id']);
           tx.objectStore('offers').createIndex('state', ['state', 'touchedAt']);
           tx.objectStore('exports').createIndex('offer', [
@@ -154,6 +156,7 @@ export class StorageDatabase {
     const attempts = await this.all<Attempt>('attempts');
     const exports = await this.all<ExportRecord>('exports');
     const partials = await this.all<Partial>('transfers');
+    const receipts = await this.all<Receipt>('offers');
     // v1 arrays migrate once; v2 metadata has a fixed-size bitset (at most 800 bytes).
     for (const p of partials) {
       if (Array.isArray(p.bitmap)) {
@@ -166,8 +169,10 @@ export class StorageDatabase {
       this.owner.committed += p.committed;
       this.owner.reserved += p.charge;
     }
-    await this.write(['owner', 'attempts', 'exports', 'transfers'], (tx) => {
+    await this.write(['owner', 'attempts', 'exports', 'transfers', 'offers'], (tx) => {
       tx.put('owner', this.owner, 'owner');
+      for (const r of receipts)
+        tx.put('offers', this.withExpiry(r), [endpointKey(r.sender), r.offer]);
       for (const p of partials) tx.put('transfers', p);
       for (const a of attempts)
         tx.put('attempts', {
@@ -225,6 +230,7 @@ export class StorageDatabase {
           offer: string;
           live: number;
           touchedAt: number;
+          expiresAt?: number;
           state: string;
         };
         if (index === 'content')
@@ -233,6 +239,7 @@ export class StorageDatabase {
             : content(r.sender.player, r.meta.id);
         if (index === 'offer') return [r.sender.player, r.sender.endpoint, r.sender.epoch, r.offer];
         if (index === 'live') return r.live;
+        if (index === 'expiresAt') return r.expiresAt ?? Infinity;
         if (index === 'inactive') return [r.live, r.touchedAt];
         if (index === 'state') return [r.state, r.touchedAt];
         return r.touchedAt;
@@ -241,9 +248,13 @@ export class StorageDatabase {
         .filter(
           (r) =>
             (key === undefined || JSON.stringify(value(r)) === JSON.stringify(key)) &&
-            Number((r as Partial).touchedAt) <= before,
+            (index === 'expiresAt'
+              ? Number((r as Receipt).expiresAt)
+              : Number((r as Partial).touchedAt)) <= before,
         )
         .sort((a, b) => {
+          if (index === 'expiresAt')
+            return ((a as Receipt).expiresAt ?? Infinity) - ((b as Receipt).expiresAt ?? Infinity);
           if (index === 'inactive')
             return (
               Number((a as Attempt).live) - Number((b as Attempt).live) ||
@@ -266,7 +277,11 @@ export class StorageDatabase {
       r.onerror = () => reject(r.error);
       r.onsuccess = () => {
         const c = r.result;
-        if (!c || out.length >= limit || (index === 'touchedAt' && Number(c.key) > before)) {
+        if (
+          !c ||
+          out.length >= limit ||
+          (['touchedAt', 'expiresAt'].includes(index ?? '') && Number(c.key) > before)
+        ) {
           resolve(out);
           return;
         }
@@ -281,16 +296,14 @@ export class StorageDatabase {
   }
   private async trimHistory(): Promise<void> {
     const now = Date.now();
-    const receipts = await this.query<Receipt>(
-      'offers',
-      'touchedAt',
-      undefined,
-      HISTORY + 32,
-      now - DAY,
+    const receipts = await this.query<Receipt>('offers', 'expiresAt', undefined, HISTORY + 32, now);
+    // Browser handoffs retain a retryable payload for 24 hours. Unsaved/uncertain
+    // receipts pin their bytes while the user still needs to finish exporting.
+    const expired = receipts.filter(
+      (r) =>
+        now - r.touchedAt >= DAY && (r.state === 'cancelled' || r.outcome === 'browser-download'),
     );
-    // A received offer pins its bytes for its 24-hour recovery/history lifetime,
-    // including browser handoffs, whose external save cannot be confirmed.
-    const expired = receipts.filter((r) => now - r.touchedAt >= DAY);
+    // Verified and uncertain saves remain durable consumer references until an explicit handoff.
     const attempts = await this.query<Attempt>(
       'attempts',
       'touchedAt',
@@ -720,7 +733,15 @@ export class StorageDatabase {
       await this.purge(p.from, p.id);
     }
   }
+  private withExpiry(r: Receipt): Receipt {
+    return {
+      ...r,
+      expiresAt:
+        r.state === 'cancelled' || r.outcome === 'browser-download' ? r.touchedAt + DAY : undefined,
+    };
+  }
   async saveReceipt(r: Receipt): Promise<void> {
+    r = this.withExpiry(r);
     const previous = await this.receipt(r.sender, r.offer);
     if (previous?.state === 'received' && r.state === 'cancelled') return;
     if (!previous) await this.makeReceiptRoom(r.sender, r.offer);

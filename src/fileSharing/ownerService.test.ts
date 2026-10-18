@@ -10,6 +10,7 @@ import { OwnerService } from './ownerService';
 const mocks = vi.hoisted(() => ({
   engines: [] as { dispose: ReturnType<typeof vi.fn> }[],
   failOpen: 0,
+  failClose: 0,
 }));
 vi.mock('./legacyService', () => ({
   createLegacyService: () => {
@@ -22,12 +23,15 @@ vi.mock('./storage', () => ({
   StorageOwner: class {
     ready =
       mocks.failOpen-- > 0 ? Promise.reject(new Error('IndexedDB open failed')) : Promise.resolve();
-    close = vi.fn(async () => {});
+    close = vi.fn(async () => {
+      if (mocks.failClose-- > 0) throw new Error('Storage close failed');
+    });
     adoptEphemeral = vi.fn();
     receipts = async () => [];
   },
 }));
 let service: OwnerService | undefined;
+const originalLocks = navigator.locks;
 afterEach(async () => {
   service?.dispose();
   await Promise.resolve();
@@ -36,6 +40,8 @@ afterEach(async () => {
   useSessionStore.getState().reset();
   mocks.engines.length = 0;
   mocks.failOpen = 0;
+  mocks.failClose = 0;
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: originalLocks });
   vi.useRealTimers();
 });
 async function start() {
@@ -58,6 +64,50 @@ async function start() {
   return { hub, port, client };
 }
 describe('OwnerService lifecycle', () => {
+  it('hands both election and storage locks to a waiting tab even when storage close fails', async () => {
+    const tail = new Map<string, Promise<unknown>>();
+    const held = new Set<string>();
+    const locks = {
+      request: (name: string, options: LockOptions, work: (lock: Lock | null) => Promise<void>) => {
+        if (options.ifAvailable && held.has(name)) return work(null);
+        const pending = (tail.get(name) ?? Promise.resolve()).then(async () => {
+          held.add(name);
+          try {
+            return await work({ name, mode: 'exclusive' });
+          } finally {
+            held.delete(name);
+          }
+        });
+        tail.set(
+          name,
+          pending.catch(() => {}),
+        );
+        return pending;
+      },
+    } as unknown as LockManager;
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: locks });
+    const first = await start();
+    const firstService = service;
+    const secondHub = new Phase1Hub();
+    const second = secondHub.peer('#1');
+    service = new OwnerService(
+      {
+        ...first.client,
+        gmcp: {
+          ready: true,
+          confirmedPlayer: '#1',
+          identityRevision: 1,
+          require: (name: string) => (name === 'Client.Peer' ? second.peer : second.files),
+        },
+      } as unknown as MudClient,
+      {} as GMCPClientFileTransfer,
+    );
+    expect(second.peer.sent).toHaveLength(0);
+    mocks.failClose = 1;
+    firstService?.dispose();
+    await vi.waitFor(() => expect(second.ready).toBeDefined());
+    expect(second.peer.sent.filter((m) => m.kind === 'Hello')).toHaveLength(1);
+  });
   it('keeps a v1 receiver while a superseded visitor is parked', async () => {
     const { hub, port, client } = await start();
     hub.end(port, 'superseded');

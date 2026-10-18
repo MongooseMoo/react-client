@@ -21,8 +21,16 @@ export class OriginQuota {
     check(this.db);
     const db = this.db;
     const rows: { digest: string; bytes: number }[] = await new Promise((resolve, reject) => {
-      const r = db.transaction('owners').objectStore('owners').getAll();
-      r.onsuccess = () => resolve(r.result);
+      const result: { digest: string; bytes: number }[] = [];
+      const r = db.transaction('owners').objectStore('owners').openCursor();
+      r.onsuccess = () => {
+        if (!r.result) {
+          resolve(result);
+          return;
+        }
+        result.push(r.result.value);
+        r.result.continue();
+      };
       r.onerror = () => reject(r.error);
     });
     if (admit) {
@@ -44,7 +52,8 @@ export class OriginQuota {
     }
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('owners', 'readwrite');
-      tx.objectStore('owners').put({ digest: this.digest, bytes });
+      if (bytes) tx.objectStore('owners').put({ digest: this.digest, bytes });
+      else tx.objectStore('owners').delete(this.digest);
       tx.oncomplete = () => resolve();
       tx.onerror = tx.onabort = () => reject(tx.error);
     });

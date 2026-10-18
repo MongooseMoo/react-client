@@ -19,6 +19,37 @@ const binding = async (bytes = new Uint8Array([1, 2, 3])) => ({
   }),
 });
 describe('Phase 1 storage owner', () => {
+  it('keeps unsaved and uncertain export consumers pinned across ordinary cache GC', async () => {
+    const db = new StorageDatabase('awaiting-save', false);
+    await db.open();
+    const b = await binding();
+    await db.reserve(b);
+    await db.put(b.t, 1, 0, new Uint8Array([1, 2, 3]).buffer);
+    await db.verify(b.t, 1);
+    await db.saveReceipt({
+      sender: source,
+      offer: b.offer,
+      t: b.t,
+      meta: b.meta,
+      state: 'received',
+      outcome: 'verified',
+      touchedAt: Date.now(),
+    });
+    await db.release(b.t);
+    const time = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 8 * 86400000);
+    try {
+      await db.gc();
+      expect((await db.readForExport(source, b.offer)).size).toBe(3);
+      const receipt = await db.receipt(source, b.offer);
+      if (!receipt) throw new Error('Missing receipt');
+      await db.saveReceipt({ ...receipt, outcome: 'export-uncertain' });
+      await db.gc();
+      expect((await db.readForExport(source, b.offer)).size).toBe(3);
+    } finally {
+      time.mockRestore();
+      await db.close();
+    }
+  });
   it('migrates a version-1 bitmap and retains its verified receipt and bytes', async () => {
     const b = await binding();
     await new Promise<void>((resolve, reject) => {
@@ -85,7 +116,7 @@ describe('Phase 1 storage owner', () => {
         t,
         meta: b.meta,
         state: 'received',
-        outcome: 'verified',
+        outcome: 'browser-download',
         touchedAt: Date.now(),
       });
       await db.release(t);
