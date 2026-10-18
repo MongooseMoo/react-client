@@ -5,6 +5,9 @@ import type { MidiMessage, TimestampedMidiInputCallback } from '../MidiService';
 import { usePreferences } from '../stores/preferencesStore';
 import { usePersonalDataStore } from '../stores/personalDataStore';
 import MusicComposer from './MusicComposer';
+import { GMCPAutoLogin } from '../gmcp/Auth';
+import { GMCPChar } from '../gmcp/Char';
+import type { CanonicalScore } from '../midi/score';
 
 const mocks = vi.hoisted(() => ({
   input: undefined as TimestampedMidiInputCallback | undefined,
@@ -13,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   release: vi.fn(),
   suspend: vi.fn(),
   monitorNote: vi.fn(async () => {}),
+  export: vi.fn(async (_score: CanonicalScore) => new ArrayBuffer(0)),
+  worldLoad: undefined as ((score: CanonicalScore, name: string) => void) | undefined,
   outputChanged: undefined as (() => void) | undefined,
   playbackChanged: undefined as (() => void) | undefined,
 }));
@@ -45,6 +50,7 @@ vi.mock('../composition/audition', () => ({
 vi.mock('../composition/SmfWorkerClient', () => ({
   SmfWorkerClient: class {
     dispose() {}
+    export = mocks.export;
   },
 }));
 vi.mock('../midi/LiveOriginRenderer', () => ({
@@ -53,6 +59,18 @@ vi.mock('../midi/LiveOriginRenderer', () => ({
     program() {}
     control() {}
     note = mocks.monitorNote;
+  },
+}));
+vi.mock('./WorldLibraryPanel', () => ({
+  default: ({
+    onLoad,
+    draft,
+  }: {
+    onLoad: (score: CanonicalScore, name: string) => void;
+    draft: { name: string };
+  }) => {
+    mocks.worldLoad = onLoad;
+    return <p>World draft: {draft.name}</p>;
   },
 }));
 
@@ -77,6 +95,7 @@ describe('music composer keyboard controls and capture', () => {
     mocks.release.mockClear();
     mocks.suspend.mockReset().mockReturnValue(mocks.release);
     mocks.monitorNote.mockClear();
+    mocks.export.mockClear();
     now = 0;
     usePreferences.getState().setMidi({ ...usePreferences.getState().midi, enabled: true });
     usePersonalDataStore.setState({ owner: undefined, policyReady: true, visitor: false });
@@ -146,7 +165,7 @@ describe('music composer keyboard controls and capture', () => {
     fireEvent.blur(name);
     await record();
     input(true, 64, 1200);
-    act(() => usePersonalDataStore.getState().clear());
+    act(() => usePersonalDataStore.getState().clear('reconnect'));
     expect(screen.getByRole('button', { name: 'Save locally' })).toBeDisabled();
     expect(name).toHaveValue('Unsaved private arrangement');
     expect(
@@ -162,34 +181,34 @@ describe('music composer keyboard controls and capture', () => {
     expect(screen.getByRole('button', { name: 'Save locally' })).toBeEnabled();
   });
 
-  it.each(['pause', 'output'] as const)(
-    'finishes capture into an owner-private pending take after %s and restores it only to that owner',
-    async (interruption) => {
-      confirm();
-      await record();
-      input(true, 67, 1200);
-      now = 1500;
-      act(() => {
-        if (interruption === 'pause') {
-          media.paused = true;
-          mocks.playbackChanged?.();
-        } else mocks.outputChanged?.();
-      });
-      expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
-      expect(screen.getByText(/1 recorded notes are retained in memory/)).toBeInTheDocument();
-      act(() => usePersonalDataStore.getState().clear());
-      confirm();
-      expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
-      act(() => usePersonalDataStore.getState().clear());
-      confirm(bob);
-      expect(screen.queryByRole('button', { name: 'Retry captured take' })).not.toBeInTheDocument();
-      expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
-      act(() => usePersonalDataStore.getState().clear());
-      confirm();
-      fireEvent.click(screen.getByRole('button', { name: 'Retry captured take' }));
-      expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('G4 (67)');
-    },
-  );
+  it.each([
+    'pause',
+    'output',
+  ] as const)('finishes capture into an owner-private pending take after %s and restores it only to that owner', async (interruption) => {
+    confirm();
+    await record();
+    input(true, 67, 1200);
+    now = 1500;
+    act(() => {
+      if (interruption === 'pause') {
+        media.paused = true;
+        mocks.playbackChanged?.();
+      } else mocks.outputChanged?.();
+    });
+    expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+    expect(screen.getByText(/1 recorded notes are retained in memory/)).toBeInTheDocument();
+    act(() => usePersonalDataStore.getState().clear('reconnect'));
+    confirm();
+    expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+    act(() => usePersonalDataStore.getState().clear('reconnect'));
+    confirm(bob);
+    expect(screen.queryByRole('button', { name: 'Retry captured take' })).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+    act(() => usePersonalDataStore.getState().clear('reconnect'));
+    confirm();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry captured take' }));
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('G4 (67)');
+  });
 
   it('quarantines a running capture before exposing a different confirmed or visitor identity', async () => {
     confirm();
@@ -210,6 +229,166 @@ describe('music composer keyboard controls and capture', () => {
     });
     expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('C4 (60)');
     expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+  });
+  it.each([
+    'visitor',
+    'policy-failed',
+  ] as const)('hides the current owner on %s alone and restores only under eligible owner policy', async (transition) => {
+    confirm();
+    submitNote();
+    const name = screen.getByRole('textbox', { name: 'Composition name' });
+    fireEvent.input(name, { target: { value: 'Alice private' } });
+    fireEvent.blur(name);
+    await record();
+    input(true, 64, 1200);
+    now = 1500;
+    act(() => {
+      if (transition === 'visitor') usePersonalDataStore.getState().setVisitor(true);
+      else usePersonalDataStore.setState({ policyReady: false, visitor: true });
+    });
+    expect(usePersonalDataStore.getState().owner).toEqual(alice);
+    expect(screen.getByRole('textbox', { name: 'Composition name' })).toHaveValue(
+      'Untitled composition',
+    );
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+    expect(screen.queryByRole('button', { name: 'Retry captured take' })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Stop private playback or recording' }),
+    ).toBeDisabled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Export MIDI' }));
+    });
+    expect(
+      mocks.export.mock.calls
+        .at(-1)?.[0]
+        .parts.every((part: { notes: unknown[] }) => part.notes.length === 0),
+    ).toBe(true);
+    act(() => usePersonalDataStore.setState({ visitor: false, policyReady: false }));
+    expect(screen.getByRole('textbox', { name: 'Composition name' })).toHaveValue(
+      'Untitled composition',
+    );
+    act(() => usePersonalDataStore.setState({ policyReady: true }));
+    expect(screen.getByRole('textbox', { name: 'Composition name' })).toHaveValue('Alice private');
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('C4 (60)');
+    expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+  });
+  it('forgets private drafts and pending takes through actual Auth.signOut before a no-UUID guest login', async () => {
+    confirm();
+    submitNote();
+    await record();
+    input(true, 67, 1200);
+    now = 1500;
+    act(() => mocks.outputChanged?.());
+    expect(screen.getByRole('button', { name: 'Retry captured take' })).toBeInTheDocument();
+    Object.assign(client, {
+      liveServer: true,
+      connected: true,
+      close: vi.fn(),
+      runtimeNamespace: 'runtime',
+    });
+    Object.assign(client.gmcp, { confirmIdentity: vi.fn() });
+    const auth = new GMCPAutoLogin(client);
+    act(() => auth.signOut());
+    auth.shutdown();
+    expect(usePersonalDataStore.getState().identityState).toBe('forgotten');
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+    expect(screen.queryByRole('button', { name: 'Retry captured take' })).not.toBeInTheDocument();
+    const char = new GMCPChar(client);
+    act(() => char.handleName({ name: '#guest', fullname: 'Guest' }));
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+    confirm();
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+    expect(screen.queryByRole('button', { name: 'Retry captured take' })).not.toBeInTheDocument();
+  });
+  it('restores only the owner take when leaving a visitor recording', async () => {
+    confirm();
+    await record();
+    input(true, 64, 1200);
+    now = 1500;
+    act(() => usePersonalDataStore.getState().setVisitor(true));
+    await record();
+    input(true, 72, 1700);
+    now = 1900;
+    act(() => usePersonalDataStore.getState().setVisitor(false));
+    expect(
+      screen.getByRole('button', { name: 'Stop private playback or recording' }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry captured take' }));
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('E4 (64)');
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).not.toHaveTextContent('C5 (72)');
+  });
+  it('starts a fresh private draft for the first confirmed owner instead of adopting guest material', () => {
+    submitNote();
+    confirm();
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+  });
+  it('forgets retained private state when a reconnect resolves to a live character without UUID', () => {
+    confirm();
+    submitNote();
+    act(() => usePersonalDataStore.getState().clear('reconnect'));
+    Object.assign(client, { liveServer: true, runtimeNamespace: 'runtime' });
+    Object.assign(client.gmcp, { confirmIdentity: vi.fn() });
+    const char = new GMCPChar(client);
+    act(() => char.handleName({ name: '#guest', fullname: 'Guest' }));
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+    expect(usePersonalDataStore.getState().identityState).toBe('forgotten');
+  });
+  it('applies explicit sign-out forgetting before restoring an editor that was unmounted', () => {
+    confirm();
+    submitNote();
+    cleanup();
+    Object.assign(client, { liveServer: true, connected: true, close: vi.fn() });
+    const auth = new GMCPAutoLogin(client);
+    act(() => auth.signOut());
+    auth.shutdown();
+    confirm();
+    const view = render(<MusicComposer client={client} />);
+    cleanup = view.unmount;
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
+    expect(screen.queryByRole('button', { name: 'Retry captured take' })).not.toBeInTheDocument();
+  });
+  it('loads the lazy world library into a private editable draft, retains ordinary hidden state, and rejects a stale owner callback', async () => {
+    vi.useRealTimers();
+    confirm();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'World library' }));
+    });
+    const panel = await screen.findByText('World draft: Untitled composition');
+    fireEvent.click(screen.getByRole('button', { name: 'World library' }));
+    expect(panel).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'World library' }));
+    expect(screen.getByText('World draft: Untitled composition')).toBe(panel);
+    const loaded: CanonicalScore = {
+      version: 1,
+      contentId: crypto.randomUUID(),
+      ppq: 960,
+      durationTicks: 3840,
+      tempos: [{ tick: 0, bpm: 120 }],
+      meters: [{ tick: 0, numerator: 4, denominator: 4 }],
+      parts: [
+        {
+          id: 'world-part',
+          name: 'World piano',
+          kind: 'melodic',
+          program: 0,
+          notes: [[0, 480, 72, 100]],
+          controls: [],
+          programs: [],
+        },
+      ],
+    };
+    const stale = mocks.worldLoad;
+    act(() => mocks.worldLoad?.(loaded, 'World copy'));
+    expect(screen.getByRole('textbox', { name: 'Composition name' })).toHaveValue('World copy');
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toHaveTextContent('C5 (72)');
+    expect(mocks.start).not.toHaveBeenCalled();
+    act(() => usePersonalDataStore.getState().setVisitor(true));
+    expect(screen.queryByText('World draft: World copy')).not.toBeInTheDocument();
+    act(() => stale?.(loaded, 'Stale owner copy'));
+    expect(screen.getByRole('textbox', { name: 'Composition name' })).toHaveValue(
+      'Untitled composition',
+    );
+    expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();
   });
   it('retains an interrupted take when the editor unmounts and remounts for the same client', async () => {
     confirm();

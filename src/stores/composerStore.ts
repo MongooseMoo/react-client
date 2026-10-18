@@ -20,6 +20,8 @@ interface PrivateDraft {
   pendingTake?: PendingCapture;
 }
 interface ComposerState {
+  quarantined: boolean;
+  personalForgetEpoch: number;
   history: CompositionHistory;
   selectedPatternId: string;
   selectedPartId: string;
@@ -32,6 +34,8 @@ interface ComposerState {
   error: string;
   setOwner(owner?: string, confirmedIdentity?: string): void;
   setPendingTake(take?: PendingCapture): void;
+  quarantine(): void;
+  forget(epoch: number): void;
   edit(change: (draft: CompositionDraft) => CompositionDraft): boolean;
   selectPattern(id: string): void;
   selectPart(id: string): void;
@@ -58,8 +62,15 @@ export function createComposerStore() {
     busy: false,
     status: 'Local draft',
     error: '',
+    quarantined: false,
+    personalForgetEpoch: 0,
     setOwner(owner, identity = owner) {
-      if (get().owner === owner && (!identity || get().confirmedOwner === identity)) return;
+      if (
+        get().owner === owner &&
+        (!identity || get().confirmedOwner === identity) &&
+        !get().quarantined
+      )
+        return;
       const epoch = ++ownerEpoch;
       storage = owner ? new CompositionStorage(owner) : undefined;
       if (!identity) {
@@ -75,16 +86,18 @@ export function createComposerStore() {
       const current = get(),
         previousOwner = current.confirmedOwner;
       let next: PrivateDraft = current;
-      if (previousOwner && previousOwner !== identity) {
+      if (previousOwner !== identity) {
         const restored = privateDrafts.get(identity);
         privateDrafts.delete(identity);
-        privateDrafts.delete(previousOwner);
-        privateDrafts.set(previousOwner, {
-          history: current.history,
-          selectedPatternId: current.selectedPatternId,
-          selectedPartId: current.selectedPartId,
-          pendingTake: current.pendingTake,
-        });
+        if (previousOwner) {
+          privateDrafts.delete(previousOwner);
+          privateDrafts.set(previousOwner, {
+            history: current.history,
+            selectedPatternId: current.selectedPatternId,
+            selectedPartId: current.selectedPartId,
+            pendingTake: current.pendingTake,
+          });
+        }
         while (privateDrafts.size > 4) {
           const oldest = privateDrafts.keys().next().value;
           if (oldest !== undefined) privateDrafts.delete(oldest);
@@ -103,6 +116,7 @@ export function createComposerStore() {
         pendingTake: next.pendingTake,
         owner,
         confirmedOwner: identity,
+        quarantined: false,
         saved: [],
         busy: false,
         error: '',
@@ -125,6 +139,59 @@ export function createComposerStore() {
     },
     setPendingTake(pendingTake) {
       set({ pendingTake });
+    },
+    quarantine() {
+      const current = get();
+      if (current.quarantined) return;
+      if (current.confirmedOwner) {
+        privateDrafts.delete(current.confirmedOwner);
+        privateDrafts.set(current.confirmedOwner, {
+          history: current.history,
+          selectedPatternId: current.selectedPatternId,
+          selectedPartId: current.selectedPartId,
+          pendingTake: current.pendingTake,
+        });
+        while (privateDrafts.size > 4) {
+          const oldest = privateDrafts.keys().next().value;
+          if (oldest !== undefined) privateDrafts.delete(oldest);
+        }
+      }
+      ownerEpoch++;
+      storage = undefined;
+      const draft = newComposition();
+      set({
+        history: { present: draft, past: [], future: [] },
+        selectedPatternId: draft.patterns[0].id,
+        selectedPartId: draft.parts[0].id,
+        pendingTake: undefined,
+        owner: undefined,
+        confirmedOwner: undefined,
+        saved: [],
+        busy: false,
+        error: '',
+        status: 'Local draft',
+        quarantined: true,
+      });
+    },
+    forget(personalForgetEpoch) {
+      privateDrafts.clear();
+      ownerEpoch++;
+      storage = undefined;
+      const draft = newComposition();
+      set({
+        history: { present: draft, past: [], future: [] },
+        selectedPatternId: draft.patterns[0].id,
+        selectedPartId: draft.parts[0].id,
+        pendingTake: undefined,
+        owner: undefined,
+        confirmedOwner: undefined,
+        saved: [],
+        busy: false,
+        error: '',
+        status: 'Local draft',
+        quarantined: true,
+        personalForgetEpoch,
+      });
     },
     edit(change) {
       try {

@@ -77,6 +77,13 @@ try {
   await expect(page.getByText('1 original recording takes retained.')).toBeVisible();
   await expect(page.getByRole('list', { name: 'Pattern notes' })).toContainText('E4 (64)');
   assert.equal(await page.evaluate(() => window.composerProbe.sent.filter(([name]) => name === 'Client.Midi.Note').length), 0);
+  // A visitor-only policy transition keeps the same owner record but hides its private draft.
+  await page.evaluate(()=>window.composerProbe.visitor(true));
+  await expect(page.getByRole('list',{name:'Pattern notes'})).toBeEmpty();
+  await expect(page.getByRole('textbox',{name:'Composition name'})).toHaveValue('Untitled composition');
+  await page.evaluate(()=>window.composerProbe.visitor(false));
+  await expect(page.getByRole('list',{name:'Pattern notes'})).toContainText('E4 (64)');
+  await expect(page.getByRole('textbox',{name:'Composition name'})).toHaveValue('Reconnect kept unsaved draft');
 
   // A real module worker exports and reimports the shared dependency's SMF codec.
   const worker = await page.evaluate(async () => {

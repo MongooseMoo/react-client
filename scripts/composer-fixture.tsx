@@ -38,9 +38,10 @@ const target = document.createElement('main'); document.body.append(target);
 render(h(MusicComposer, { client }), target);
 Object.assign(window, { composerProbe: {
   context, engine, sent, keyboard,
-  // Models connect()'s actual owner-clear and GMCP reset; this fixture opens no game socket.
-  networkReset() { usePersonalDataStore.getState().clear(); midi.reset(); },
+  // Models disconnect's MIDI reset, then connect()'s transient owner clear. No game socket is opened.
+  networkReset() { midi.reset(); usePersonalDataStore.getState().clear('reconnect'); },
   confirmOwner() { usePersonalDataStore.getState().confirm(probeOwner); },
+  visitor(value:boolean) { usePersonalDataStore.getState().setVisitor(value); },
   manual(note:number,on:boolean) { midi.sendManualNote(note,on?100:0,on); },
   amplitude() { analyser.getFloatTimeDomainData(frames); return Math.max(...frames.map(Math.abs)); },
   destroy() { render(null, target); midi.shutdown(); return context.close(); },

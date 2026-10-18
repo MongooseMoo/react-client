@@ -45,6 +45,9 @@ export class GMCPChar extends GMCPCharBase {
     if (data.uuid || !this.client.liveServer) {
       usePersonalDataStore.getState().confirm({ runtime: this.client.runtimeNamespace,
         playerUuid: data.uuid ?? '', playerRef: data.name });
+    } else {
+      const personal = usePersonalDataStore.getState();
+      if (personal.owner || personal.reconnectingIdentity) personal.forget();
     }
     previous.setPlayer(data.name, data.fullname, data.uuid);
   }

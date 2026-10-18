@@ -229,7 +229,7 @@ class MudClient {
   }
 
   public connect() {
-    usePersonalDataStore.getState().clear();
+    usePersonalDataStore.getState().clear('reconnect');
     const generation = ++this.transportGeneration;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;

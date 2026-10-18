@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useId,
   useEffect,
@@ -31,6 +33,8 @@ import type { GMCPClientMidi } from '../gmcp/Client/Midi';
 import type { ScoreNote } from '../midi/score';
 import { programs as MIDI_PROGRAMS } from '../midi/programs';
 import { retainCaptureHistory } from '../composition/storage';
+
+const WorldLibraryPanel = lazy(() => import('./WorldLibraryPanel'));
 
 /** Keep unfinished typing local; a field commit is one validated undo step. */
 function CommitInput({
@@ -145,6 +149,8 @@ export default function MusicComposer({ client }: { client: MudClient }) {
     'idle',
   );
   const [monitor, setMonitor] = useState(false);
+  const [worldLibraryOpen, setWorldLibraryOpen] = useState(false);
+  const [worldLibraryOpened, setWorldLibraryOpened] = useState(false);
   const [sendToRoom, setSendToRoom] = useState(false);
   const [overdub, setOverdub] = useState(true);
   const [countIn, setCountIn] = useState(4);
@@ -258,14 +264,47 @@ export default function MusicComposer({ client }: { client: MudClient }) {
     }));
   };
   useLayoutEffect(() => {
-    const previous = store.getState().confirmedOwner;
-    if (confirmedOwner && previous && confirmedOwner !== previous) {
+    const retire = () => {
       stop();
+      setWorldLibraryOpen(false);
+      setWorldLibraryOpened(false);
       monitorRenderer.reset();
       monitorKeys.current.clear();
+    };
+    if (store.getState().personalForgetEpoch !== personal.forgetEpoch) {
+      retire();
+      store.getState().forget(personal.forgetEpoch);
+    }
+    if (
+      personal.visitor ||
+      !personal.policyReady ||
+      (!personal.owner &&
+        personal.identityState !== 'reconnecting' &&
+        store.getState().confirmedOwner)
+    ) {
+      if (!store.getState().quarantined) {
+        retire();
+        store.getState().quarantine();
+      }
+      return;
+    }
+    const previous = store.getState().confirmedOwner;
+    if (confirmedOwner && confirmedOwner !== previous) {
+      retire();
     }
     store.getState().setOwner(owner, confirmedOwner);
-  }, [owner, confirmedOwner, stop, monitorRenderer, store]);
+  }, [
+    owner,
+    confirmedOwner,
+    personal.forgetEpoch,
+    personal.visitor,
+    personal.policyReady,
+    personal.owner,
+    personal.identityState,
+    stop,
+    monitorRenderer,
+    store,
+  ]);
   useEffect(
     () => () => {
       stop();
@@ -1612,6 +1651,39 @@ export default function MusicComposer({ client }: { client: MudClient }) {
           </div>
         )}
       </fieldset>
+      <button
+        type="button"
+        aria-expanded={worldLibraryOpen}
+        disabled={!owner || personal.visitor || !personal.policyReady}
+        onClick={() => {
+          setWorldLibraryOpened(true);
+          setWorldLibraryOpen((open) => !open);
+        }}
+      >
+        World library
+      </button>
+      {worldLibraryOpened && (
+        <div hidden={!worldLibraryOpen}>
+          <Suspense fallback={<p role="status">Loading world library…</p>}>
+            <WorldLibraryPanel
+              client={client}
+              draft={draft}
+              onLoad={(score, name) => {
+                const current = usePersonalDataStore.getState();
+                if (
+                  !current.owner ||
+                  current.visitor ||
+                  !current.policyReady ||
+                  ownerKey(current.owner) !== confirmedOwner
+                )
+                  return;
+                stop();
+                store.getState().replaceDraft(draftFromScore(score, name));
+              }}
+            />
+          </Suspense>
+        </div>
+      )}
     </section>
   );
 }

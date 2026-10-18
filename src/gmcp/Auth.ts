@@ -135,7 +135,7 @@ export class GMCPAutoLogin extends GMCPAutoLoginBase {
     } finally {
       if (grant) void clearBrowserAwaySession('https://mongoose.world', grant.installationId, grant.playerUuid, grant.sessionId)
         .catch(() => console.error('Browser tab credentials could not be cleared'));
-      usePersonalDataStore.getState().clear();
+      usePersonalDataStore.getState().forget();
       this.tab.forgetGrant();
       this.reset();
       this.client.close();
