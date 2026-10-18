@@ -15,7 +15,7 @@ frames below are new requirements.
 
 ## Sessions, ctl and feature negotiation
 
-One current RTCPeerConnection per reserved endpoint pair/generation, carrying
+One current RTCPeerConnection per reserved endpoint pair/session Id, carrying
 only reliable ordered data channels (`ordered:true`, neither maxRetransmits nor
 maxPacketLifeTime set, `negotiated:false`). Session initiator creates `ctl` before
 its SDP offer; other endpoint receives it. Exactly one ctl is permitted. Set
@@ -26,11 +26,11 @@ duplicate ctl cause session protocol closure.
 Both sides send this as their first ctl message within five seconds of open:
 
 ```text
-{op:"hello",v:1,session:Id,generation:Generation,self:Endpoint,peer:Endpoint,
+{op:"hello",v:1,session:Id,self:Endpoint,peer:Endpoint,
  features:Features,maxFrame:integer,slots:Slots}
 ```
 
-Session/generation and endpoint tuples must equal authenticated hub reservation
+Session Id and endpoint tuples must equal authenticated hub reservation
 state in both directions. Do not adopt an identity asserted by hello. Features
 must be a subset of that endpoint's latest hub-discovered features; use their
 intersection for this session. base is mandatory. maxFrame is 16391..32768, and
@@ -57,7 +57,7 @@ No id itself grants read/write authority.
 
 ```text
 {op:"list",q:Id,t:Id,a:Generation,revision:Revision}
-{op:"get",q:Id,t:Id,a:Generation,revision:Revision,id:Hash,size:Size,mode:"full"|"ranges"}
+{op:"get",q:Id,t:Id,a:Generation,id:Hash,size:Size,mode:"full"|"ranges"}
 {op:"push",q:Id,t:Id,a:Generation,offer:Id,mode:"full"|"ranges"}
 {op:"accepted",q:Id,t:Id,a:Generation,mode:"full"|"ranges",meta:Metadata}
 {op:"error",q:Id,t:Id,a:Generation,
@@ -68,9 +68,13 @@ No id itself grants read/write authority.
 ```
 
 list needs lists feature, current uploader sharing at the requested nonzero
-revision, no gag, live lease. The responder is uploader. get has the same policy
-checks and must resolve id AND size solely in the uploader's approved current
-share index, pinned to a readable local File. It cannot read a private cache
+revision, no gag, live lease. The responder is uploader. get requires sharing
+currently on, no gag and live lease; it resolves id AND size solely in the
+uploader's approved CURRENT index, pinned to a readable local File. Its authority
+is id/size still present, not an exact snapshot revision. On index changes
+revalidate presence/readability before further reads; unaffected files continue.
+Removing the last approved path for that content, changing/unreading the pinned
+File or turning sharing off cancels that get. List/search remain exact-revision. It cannot read a private cache
 entry just because its hash exists. A get never authorizes uploads in the other
 direction. push requires an exact accepted, unexpired hub offer from requester
 to responder; the responder is downloader and its accepted metadata supplies
@@ -105,7 +109,7 @@ unsigned decimal without leading zeros. Do not use a path or content hash as
 the label. The requester's first channel message is text:
 
 ```text
-{op:"bind",q:Id,t:Id,a:Generation,session:Id,generation:Generation,meta:Metadata}
+{op:"bind",q:Id,t:Id,a:Generation,session:Id,meta:Metadata}
 ```
 
 The responder already has the reservation made before sending accepted. It
@@ -168,7 +172,7 @@ piece and stored retain the old byte shape.
 | 1 | piece, uploader -> downloader | `[0]=1`, `[1..4]=index:u32`, `[5..]=payload`. Length `5 + pieceLength(size,index)`, at most 16389. |
 | 2 | ready, downloader -> uploader | `[0]=2`, `[1]=mode:u8` (0 full, 1 ranges), `[2..3]=haveCount:u16`, followed by haveCount `(start:u32,end:u32)` pairs. Length `4+8*haveCount`, count 0..512. |
 | 3 | complete, downloader -> uploader | `[0]=3`, `[1]=outcome:u8`: 0 range-stream-done, 1 verified, 2 saved, 3 browser-download, 4 export-uncertain. Exactly 2 bytes. |
-| 4 | abort, either | `[0]=4`, `[1]=reason:u8`: 1 integrity, 2 storage, 3 protocol, 4 unreadable, 5 cancelled, 6 revoked, 7 timeout, 8 busy. Exactly 2 bytes. |
+| 4 | abort, either | `[0]=4`, `[1]=reason:u8`: 1 integrity, 2 storage, 3 protocol, 4 unreadable, 5 cancelled, 6 revoked, 7 timeout, 8 busy, 9 limit. Exactly 2 bytes. |
 | 5 | stored, downloader -> uploader | `[0]=5`, `[1..4]=count:u32`. Exactly 5 bytes. |
 | 6 | want, downloader -> uploader | `[0]=6`, `[1..4]=batch:u32`, `[5..6]=rangeCount:u16`, then rangeCount `(start:u32,end:u32)` pairs. Length `7+8*rangeCount`, count 1..512. |
 | 7 | leavesRequest, downloader -> uploader | `[0]=7`, `[1..4]=start:u32`, `[5..6]=count:u16`. Exactly 7 bytes; count 1..512. |
@@ -221,7 +225,10 @@ before use. Serving leaves is limited to that pinned authorized File/index,
 never any arbitrary private cache entry.
 
 Without leaves, only full mode is allowed, at most one source. Received bytes
-remain in attempt-specific provisional storage. At the end re-read every exact
+remain in logical-operation provisional storage keyed by t, with immutable
+source Endpoint, offer (for push), kind, id and size. The current a is the
+exclusive writer fence, not a storage directory. Fence and finish old writes
+before assigning the next a; no stale callback can publish or overwrite bytes. At the end re-read every exact
 piece, compute all piece digests and the root, compare to expected id, and only
 then promote content to verified. Resume have can describe provisional pieces
 of that same still-authorized immutable operation, but does not assert they are
@@ -238,8 +245,9 @@ subset of held ranges; omitted ranges will be resent and safely deduplicated.
 The uploader iterates all missing indices in ascending order, with flow control.
 It does not allocate an array of every missing piece. If N=0 or have covers all
 pieces, it sends no pieces and waits for the receiving outcome. With leaves,
-have includes only durable verified pieces; otherwise only that attempt's
-provisional pieces. No batchEnd/rangeAck/want is valid in full mode.
+have includes only durable verified pieces; otherwise only that logical t's durable provisional pieces, including those
+from its earlier a values under the SAME still-live source/offer authority.
+This preserves partial resume in Phases 1-3, before leaves exists. No batchEnd/rangeAck/want is valid in full mode.
 The uploader's full-mode indices must be strictly ascending and absent from
 ready.have; repeating an index on the same attempt is protocol failure. A valid
 piece may nevertheless be deduplicated if another consumer made it durable
@@ -308,11 +316,14 @@ bufferedAmount. A page must yield to control/revocation between bounded jobs.
 ## Completion, cancellation and reconnect
 
 After all bytes are verified, the receiver records an operation receipt BEFORE
-sending complete 1 or Files.Outcome verified. It can then close this transfer
+sending complete 1 or the receipt-only Files.Outcome. It can then close this transfer
 while exporting separately; do not hold an upload slot or idle RTC connection
 open for a save picker. For push, send Files.Outcome even if the data connection
-has failed, while the hub epoch still permits the record. Export updates use
-Files.Outcome later. The UI must distinguish verified, saved and handed to the
+has failed, while the hub epoch still permits the record. Export updates stay
+in local receipts and ctl outcome, never the hub. A push receiver may send ctl
+outcome with the original opening q/t/current a and exact metadata while ctl
+is live; repeated push requests recover the latest recorded outcome without
+opening a channel. Do not retain an idle session merely to report a save. The UI must distinguish verified, saved and handed to the
 browser; the exact crash/once-only rule is in architecture.md. An already
 received push never causes automatic re-export on recovery.
 
@@ -341,13 +352,13 @@ owner/id content used by another consumer. User deletion is a separate explicit
 action checked by the storage manager.
 
 Session loss fences all old channel callbacks and writes. A stable t is reused
-with fresh q and a+1 on the next authorized session generation; no old a can
+with fresh q and a+1 on a new authorized session Id; no old a can
 write into the new attempt. Keep immutable kind/offer/id/size pinned. A push
 resumes automatically only while both original hub endpoint epochs and accepted
 offer grant remain live; a known received operation returns outcome even if its
 payload was cleaned up. Cancelled/rejected/revoked records never resume. A get
-is initiated again by the downloader queue only after a current share revision
-and online authority check. Persisting a queue grants local intent, not remote
+is initiated again by the downloader queue only after current sharing/id/size
+and online authority checks; revision need not equal its earlier snapshot. Persisting a queue grants local intent, not remote
 upload rights. After a hub disconnect/reload, obtain a fresh endpoint; old
 direct consent is gone and a new Offer asks the receiver again. Existing
 verified content can satisfy that newly accepted operation without retransfer,
@@ -358,18 +369,12 @@ shows `receipt unknown`, not saved/failed integrity. Recover using the same push
 grant and t/a+1; received returns outcome. If the receiver is still verifying,
 it may accept recovery and then ready with all held pieces; it continues its
 single verification task and sends outcome when done. Wait at most five minutes
-with progress events as below. If the receipt record/authority is unknown,
-return denied/expired; the sender cannot infer delivery or automatically make
-a fresh offer. Its user may send a new one.
+from the original verification start, without progress messages or a reset on
+reconnect. If receipt/authority is unknown, return denied/expired; the sender
+cannot infer delivery or automatically make a fresh offer. Its user may send a
+new one. There is no ctl progress message in this version.
 
-```text
-{op:"progress",t:Id,a:Generation,phase:"manifest"|"verifying",done:integer,total:integer}
-```
-
-Progress is unsolicited, at most once per ten seconds per attempt; it requires
-a current known t/a, `0 <= done <= total`, and immutable bounded total (manifest
-bytes <=20971520; verifying bytes <=size). It does not grant credits/authority or
-reset retry counters. Manifest has the separate 120-second deadline. Verifying
+Manifest keeps its separate absolute 120-second deadline. Verifying
 has an absolute five-minute deadline from starting verification; regular pieces
 have a 30-second inactivity timeout reset only by a newly admitted piece or valid
 stored advancement. Exhaustion pauses the logical download for user retry with
@@ -398,8 +403,9 @@ authorized snapshot only if it still exactly reflects local policy, otherwise
 stop sharing and tell the owner to reduce the selection. Do not silently publish
 a partial list.
 
-Path rules apply identically to published local indexes, remote lists and hub
-search results:
+Clients apply these complete Path rules to published indexes, remote lists and
+search results. The hub applies ONLY Client.Peer's byte/component/count subset
+to search results; it cannot perform NFC/category checks:
 
 1. NFC Unicode, 1..1024 UTF-8 bytes, at most 16 slash-separated components,
    each 1..255 UTF-8 bytes; no empty, dot or dot-dot component.
@@ -432,7 +438,7 @@ All limits apply before public sharing is enabled, in addition to hub limits.
 
 | Resource | Bound / reaction |
 | --- | --- |
-| Session pool | 8 sessions/owner, 2 negotiating; matches hub cap. Evict idle first, otherwise busy. |
+| Session pool | 8 sessions/owner, 2 not-established, with share-only <=6 total/1 not-established and <=4 as downloader/player hub-wide; same offer-only partition as hub. Evict idle first, otherwise busy. |
 | Transfer channels | 8 bound/opening per session, 32 per owner; unbound cap two/session; close/reject excess before allocating storage. |
 | Active uploads | 4/owner: at most 3 shared files plus 1 reserved direct-send slot; any unused capacity may serve direct sends, never a fourth shared file. File-list uploads count as shared. |
 | Active downloads | 8 source channels/owner, at most 3 sources/content after Phase 6; earlier one source/content. |

@@ -1,347 +1,388 @@
 # Client.Peer 1
 
-Status: normative v2 file-sharing contract; specification only. Implement together
-with [Client.Files 1](client-files.md), the [data protocol](../../file-sharing/peer-protocol.md),
-and the [architecture and rollout](../../file-sharing/architecture.md). This does
-not change `Client.FileTransfer 1`.
+Status: normative v2 file-sharing contract; specification only. Implement with
+[Client.Files 1](client-files.md), the [data protocol](../../file-sharing/peer-protocol.md)
+and [architecture and rollout](../../file-sharing/architecture.md).
+`Client.FileTransfer 1` remains in service.
 
 The hub authenticates endpoints and reserves one session per unordered endpoint
-pair. It relays SDP and ICE, never file lists, piece requests, manifests or bytes.
-Only `purpose:"files"` is supported. This version has no media tracks or generic
-application-purpose escape hatch.
+pair. It relays SDP and ICE, never lists, manifests, piece requests or file bytes.
+Only `purpose:"files"` is supported; no media tracks or generic-purpose channel.
 
 ## Types and validation shared by both packages
 
-The words MUST, SHOULD and MAY express requirements. A schema written
-`{a:T,b?:U}` is a JSON object with exactly those fields; `?` means omission is
-allowed, not null. All other fields are forbidden. Numbers are finite safe
-integers, never numeric strings. JSON duplicate keys, invalid UTF-8, lone
-surrogates and trailing data are invalid. Measure limits on UTF-8 serialized
-payload bytes before parsing, excluding GMCP address and Telnet framing. Encoders
-use ordinary compact JSON; decoders also accept insignificant whitespace within
-the byte cap. Limits apply to actual encodings, including JSON escapes.
-Unicode normalization/category/whitespace and search folding use Unicode 15.1
-tables as pinned in Client.Files, so client and hub validators agree.
+MUST, SHOULD and MAY express requirements. `{a:T,b?:U}` has exactly those fields;
+`?` permits omission, never null. All other fields are forbidden. Numbers are
+finite safe integers, never numeric strings. Encoders use compact standard JSON.
+Clients reject duplicate keys, invalid UTF-8, lone surrogates, comments and
+trailing data. Client parsers enforce the depth/value limits below.
+
+The hub validates only byte-level and structural rules: string byte lengths,
+ASCII/hex shapes, integer ranges, exact allowed key sets, counts, and forbidden
+bytes/components. It performs NO Unicode normalization, category lookup, case
+folding or text matching. Clients enforce Unicode 15.1 rules in Client.Files.
+For names/paths the hub rejects NUL, C0 bytes 0..31, DEL 127, backslash and colon;
+slash is forbidden in Name and allowed only as Path's component separator.
+It checks component counts/byte lengths and exact `.`/`..` components as well.
+
+The supplied fork merges duplicate/case-differing map keys first-wins
+(`C:/Users/Q/src/toaststunt-prod-6d6d2ef/src/json.cc:369`;
+`C:/Users/Q/src/toaststunt-prod-6d6d2ef/src/map.cc:344-348`), confirmed by the
+coordinator's production probe. Hub validation, replay comparison and whitelist-forwarding
+MUST use that SAME parsed value, never raw fragments or a second parse. Require
+retained keys to have exact canonical spelling, comparing bytes with `equal()`
+or `strcmp()`; never rely on MOO's case-insensitive `==`, `in` or map lookup for
+key spelling, lowercase hex validation or path uniqueness. Build new outgoing
+maps with literal canonical keys. A merged-away field can neither change a role
+nor introduce an unchecked forwarded value. The hub cannot reject duplicates;
+clients must not assume that it did. Reject embedded-type mode and any parsed
+ERR (including null/E_NONE), OBJ or other non-schema type. Null parses as ERR E_NONE but generate_json emits ERR as a string
+(`C:/Users/Q/src/toaststunt-prod-6d6d2ef/src/json.cc:219-225,491-496`). Never emit JSON null;
+absent values are omitted, including candidate optionals and error correlation.
+
+### Raw ingress on #3838
+
+In `#3838:parse_gmcp_message`, immediately AFTER splitting the GMCP address from
+raw `data` and BEFORE the existing `parse_json(data)` call or any parse-error
+fallback, recognize the ASCII package boundaries `Client.Peer.` and
+`Client.Files.` (also their exact package roots). Select this capped path using
+ASCII CASE-INSENSITIVE address comparison so alternate casing cannot bypass it;
+after the raw cap reject noncanonical address spelling before decoding. For
+these addresses only:
+
+1. Bind the server connection context before deferred work. Charge admission
+   using that context even if the payload is invalid.
+2. Test `length(data) <= 65536`; MOO length is bytes
+   (`C:/Users/Q/src/toaststunt-prod-6d6d2ef/src/list.cc:666-668`). Above this bound do NOT
+   call parse_json, forward, allocate a record or echo input. Send a bounded
+   package Error with `about` the recognized suffix (or Unknown), `code:"too-large"`,
+   empty refs and NO req, because the payload was not decoded.
+3. Within the cap call `parse_json(data,"common-subset")` in an error trap.
+   On failure send the same bounded Error with `code:"malformed"`, no req/refs,
+   and RETURN; do not pass the raw string to handle_message. Require a map root.
+4. Walk the parsed structure, stopping at depth >8 or >2048 total values
+   (root and each map value/array item count; keys do not). Reject malformed
+   before dispatch. A valid canonical top-level req may be echoed in errors
+   after successful parse, otherwise omit it. Drop decoded values after failure.
+5. Continue through the ctx-bound v2 dispatch only after these checks. Other
+   GMCP packages retain their existing parsing and routing behavior.
+
+The raw cap precedes allocation by parse_json; depth/value checks are POST-parse.
+The parser's global `json_max_parse_depth` still protects native recursion; no
+per-package native depth limit or strict mode is claimed. In the supplied fork,
+`bf_parse_json` calls `json_parse_string(...,strict=0)`; strict mode's config
+`{strict ? 0U : 1U,1}` is not exposed by this builtin
+(`C:/Users/Q/src/toaststunt-prod-6d6d2ef/src/json.cc:570-573,685-713`). Do not
+silently request a nonexistent strict argument or change the server's global
+policy. Hub ingress accepts the builtin's first parsed value, including its
+permissive syntax, and never forwards the raw encoding. Clients emit strict
+JSON and validate the reconstructed strict hub messages. This acceptance cannot
+bypass schema/identity checks on the retained parsed value.
 
 | Type | Exact definition |
 | --- | --- |
 | `Id` | Cryptographically random 128 bits, 32 lowercase hexadecimal characters. Never reuse for a different operation. |
-| `Hash` | 64 lowercase hexadecimal characters; `sha256-leaves-16384` as defined in the data protocol. |
-| `Player` | Canonical string matching `^#(0|[1-9][0-9]{0,9})$`, value at most 2147483647, resolving to the authenticated online player. Never a display name or serialized MOO OBJ. |
-| `Endpoint` | `{player:Player,endpoint:Id,epoch:Id}`. Full tuple equality is required. |
-| `Generation` | Integer 1..2147483647. |
-| `Size` | Integer 0..10737418240 (10 GiB). Phase and endpoint ceilings can be lower. |
-| `Revision` | Integer 0..2147483647, monotonic in one endpoint epoch. Zero means no published share. |
-| `Features` | Sorted unique subset of `["base","leaves","lists","ranges","search"]`, at most five strings. `base` required; `ranges` requires `leaves`; `search` requires `lists`. |
-| `Legacy` | `"sha256-leaves-16384-core1"` or null. This is a compatibility assertion, not the package version. |
+| `Hash` | 64 lowercase hexadecimal characters; sha256-leaves-16384 as in the data protocol. |
+| `Player` | Canonical string matching `^#(0|[1-9][0-9]{0,9})$`, numeric value <=2147483647, resolving to the authenticated online player. No display name or serialized MOO OBJ. |
+| `Endpoint` | `{player:Player,endpoint:Id,epoch:Id}`; compare the entire tuple exactly. |
+| `Generation` | Integer 1..2147483647; used for transfer attempt a and Lease seq, not session negotiation. |
+| `Size` | Integer 0..10737418240 (10 GiB); phase/endpoint ceilings may be lower. |
+| `Revision` | Integer 0..2147483647, monotonic in an endpoint epoch; zero means no published share. |
+| `Features` | Sorted unique subset of `["base","leaves","lists","ranges","search"]`; base required, ranges requires leaves, search requires lists. |
+| `FeaturesWithoutBaseRequirement` | Same allowed set/order/dependencies; may be empty for a target with no ready v2 bundle. |
 
-Every client command has a fresh `req:Id`, scoped to the authenticated source
-endpoint (Hello is scoped to its underlying connection). Retrying the identical
-command with the same req is idempotent. Reusing it with different content yields
-`conflict`. Keep replies for 120 seconds, at most 512 per endpoint, and reject new
-mutations with `busy` rather than evict an unexpired reply. Offer/session/search
-records independently prevent replay after that window. An exact replay does not
-repeat forwarding or notification. Replay traffic still consumes rate tokens.
+Every command has a fresh `req:Id`, scoped to source endpoint (Hello to the
+underlying connection). Cache canonical parsed requests and replies ONLY for
+Hello, Reserve, Offer, Respond, enabling Status, Search and Sharers, for 120 seconds;
+512 entries/endpoint, at most 32768 hub-wide, maximum 8 MiB encoded request/reply
+storage hub-wide. Check record AND byte capacity before any new cached mutation;
+return busy rather than evict an unexpired entry. A replay returns the stored
+reply/current authoritative state without forwarding again; changed canonical
+content for that req is conflict. Enforce 32 cached-command admissions per
+10 seconds/player in addition to general buckets, so one full two-minute
+window admits at most 416 distinct records including an initial burst.
+Store/replay checks for Hello precede supersession, so retrying an old Hello
+can never roll an endpoint back. Cache may return closed/stale current state,
+never revive authority in an old reply.
 
-Hub responses to the requester echo `req`. Forwarded commands echo the source
-req, replace the client routing fields with `from:Endpoint`, and contain only
-whitelisted fields. A req received from a peer is scoped to that peer; it is not
-a reply to one's own request. Hub-generated unsolicited events carry `event:Id`
-instead. Reject client-supplied `from`, `self`, `event`, `epoch` or other hub-owned
-top-level fields, then construct forwarded payloads afresh. No client identity is
-taken from SDP, candidate strings or a data-channel message.
+Other commands have NO reply cache. Capabilities is a fresh read; Candidate is
+a relay (clients do not retry it), Connect/Answer are one-shot per session,
+Connected/Close and file cancellation/receipt/disabling Status are state-idempotent.
+Disabling Status is uncached so a full reply cache cannot postpone revocation. Repeated
+Connect/Answer returns state/current Ack without forwarding; changed SDP is
+conflict. Result admits only one reply per recorded target/search; duplicates
+never forward again. Retransmit the same req only for cached commands. Other
+lost-Ack recovery uses authoritative state or a new session, never another offer.
+Offer/session/search records independently fence replay after cache expiry.
+All requests, including replays and failures, consume rate tokens.
 
-Every targeted client command uses `to:Player` and `target:Endpoint`; their player
-fields must agree. No implicit retargeting after lookup, login or reconnect. A
-discovery query is the sole command that uses only `to`.
+Replies echo req. Forwarded commands echo source req, replace routing with
+`from:Endpoint`, and contain only whitelisted fields. Peer req is scoped to that
+peer, not a reply to one's own request. Unsolicited hub events use `event:Id`.
+Reject client-supplied `from`, `self`, `event`, `epoch` or other hub-owned fields.
+No identity is taken from SDP, ICE or ctl. Targeted commands use `to:Player` and
+`target:Endpoint` whose player fields agree; never retarget after a reconnect.
+Capabilities alone uses only to.
 
 ## Endpoint registration and capability discovery
 
-Existing advertisement selects enabled, versioned packages
-(`src/gmcp/Core.ts:85-102`), and startup sends that list with Core.Supports.Set
-(`src/gmcp/session.ts:75-81`). The following explicit exchange is new; advertising
-a package alone is insufficient evidence for this contract.
-
-Client sends after its player identity is confirmed:
+Enabled versioned packages are advertised by `src/gmcp/Core.ts:85-102`; startup
+sends Core.Hello and Core.Supports.Set before login
+(`src/gmcp/session.ts:74-81`). The NEW registration trigger is authenticated
+current player identity AND personalDataStore.policyReady with either a confirmed
+owner or confirmed visitor classification; these store fields are defined in
+`src/stores/personalDataStore.ts:15-22`. A visitor still needs the hub-confirmed
+current player, not a stale store owner. Core.Supports must already include both
+packages. Acquire the endpoint-election lock in architecture.md before Hello.
 
 ```text
 Client.Peer.Hello {
-  req:Id, endpoint:Id, peer:1, files:1, data:1, features:Features,
-  maxReceiveSize:Size, legacy:Legacy
+  req:Id,endpoint:Id,peer:1,files:1,data:1,features:Features,maxReceiveSize:Size
 }
-```
-
-The client chooses endpoint once per page service lifetime, not from a player
-name. The hub requires both package versions 1 in the connection's current
-Core.Supports list, both implemented hub packages, and supported data version 1.
-It assigns a fresh epoch; the same Hello replay returns the same epoch. Another
-Hello from the same connection with different endpoint is `conflict`. Maximum
-receive size reflects storage AND export capabilities, not a wish to allocate.
-Same connection/endpoint/advertisement with a new req returns its current Ready
-without changing epoch. Changing any advertisement field is conflict; reconnect
-with a new endpoint to change capabilities or re-register after counter exhaustion.
-
-```text
 Client.Peer.Ready {
-  req:Id, hub:Id, self:Endpoint, peer:1, files:1, data:1,
-  features:Features, maxReceiveSize:Size,
-  leaseMs:30000, heartbeatMs:10000
+  req:Id,hub:Id,self:Endpoint,peer:1,files:1,data:1,
+  features:Features,maxReceiveSize:Size,canShare:boolean,
+  leaseMs:30000,heartbeatMs:10000
 }
 ```
 
-`hub` is regenerated on hub process start or loss of the in-memory registry.
-Ready.features is the intersection with hub deployment features. Phase 1 has
-only base; later phases enable features according to the architecture. A client
-must not advertise disabled product features. A version mismatch is `unsupported`.
-Wait at most 10 seconds for Ready; silence is a deployment/connection error and
-does not authorize fallback. Deploy the hub first.
+Use a fresh endpoint Id for each NEW Hello, including re-advertisement on the
+SAME game connection. Retrying the identical req is the sole exception. The hub
+requires both advertised packages, both implemented hub packages and data 1.
+Ready.maxReceiveSize is min(Hello.maxReceiveSize,current deployment ceiling);
+clients apply any stricter current quota/export ceiling before acceptance.
+It assigns a new epoch. Atomically supersede any old endpoint: invalidate its
+offers/sessions/search/presence, send End, then activate the new Ready. This
+allows receive ceilings/capabilities to change without logging the player out.
+A new req with an already used endpoint Id is conflict; never reuse old ids.
+Clients pause new work and fence old work before a capability re-advertisement.
+Quota/export limits must be rechecked at accept/get even before a new Hello.
 
-There is exactly one active file endpoint per player. Registering a new
-connection supersedes the previous endpoint: revoke its offers, close its
-sessions, withdraw its presence/search state, send `Client.Peer.End`, then
-activate the new epoch. Multi-tab coordination must prevent background tabs from
-continually registering. A legacy-only player has no v2 endpoint. Removing either
-package from Core.Supports is equivalent to endpoint disconnect. Player object
-reuse, principal change, logout, disconnect and hub reset invalidate the epoch.
+`hub` changes on process start or registry loss. Ready.features is the enabled
+hub/client intersection (base only in Phase 1); no disabled feature may be
+advertised. canShare is the hub's authenticated non-guest eligibility; false
+suppresses share setup/publishing but permits direct send, browse and download.
+Version mismatch is unsupported. Wait 10 seconds for Ready; silence is a
+connection/deployment error, never fallback evidence. Deploy the hub first.
+
+There is one active file endpoint/player. Another connection's valid Hello also
+supersedes the previous endpoint; background tabs must not send Hello. Removing
+either package, logout, principal/object reuse, disconnect or hub reset ends the
+epoch. Legacy-only players have no v2 endpoint.
 
 ```text
 Client.Peer.Capabilities {req:Id,to:Player}
 Client.Peer.Capabilities {
-  req:Id,to:Player,online:boolean,target:Endpoint|null,
+  req:Id,to:Player,online:boolean,target?:Endpoint,
   peer:0|1,files:0|1,data:0|1,features:FeaturesWithoutBaseRequirement,
-  maxReceiveSize:Size,legacy:Legacy
+  maxReceiveSize:Size,legacyV1:boolean
 }
 ```
 
-This response is hub-originated. `target` is non-null only for a ready v2 bundle;
-then all versions are 1 and features contains base. Otherwise versions are zero,
-features empty and maxReceiveSize zero. `legacy` may still identify a tested
-legacy-only connection. Offline yields online false and legacy null. For a
-gagged pair return the identical unavailable representation (online false,
-target null, zero versions/size, empty features, legacy null). Capabilities do
-not disclose an endpoint behind a gag or promise future authorization. Recheck
-target epoch on every mutation. Refresh a cached result before a new offer if it
-is older than 10 seconds; any stale-endpoint error invalidates it immediately.
+A ready target has target, versions 1 and base. Otherwise omit target, set
+versions/size zero and features empty. legacyV1 is true ONLY for an online,
+ungagged target whose current connection explicitly advertises
+`Client.FileTransfer 1` and does NOT advertise `Client.Files` at any version.
+No build hash/describe string/allowlist participates. If Core.Supports is not
+known, the hub sends `Core.Supports.Get {}` (a NEW query) requesting the connection's complete
+current package list, waits up to five seconds for `Core.Supports.Set ["Package N",...]`, and then
+replies. Do not confuse an incomplete/unknown list with absence of Client.Files.
+At most one pending query per requesting endpoint, 256 hub-wide; concurrent
+requests get busy. New clients implement inbound Core.Supports.Get by resending their current
+complete Supports.Set; baseline Supports has only outbound Set/Add/Remove
+(`src/gmcp/Core.ts:70-81`), so no old-client query support is assumed. Use the
+connection's already captured complete Set for old clients whenever available.
+A timeout is Error unavailable, never legacyV1 true.
+A known list without an eligible bundle yields legacyV1 false. Offline or a
+gagged pair yields the identical unavailable representation: online false,
+no target, zero versions/size, empty features and legacyV1 false. The hub checks
+either-direction gag before querying, so blocked users cause no target probes.
 
-For legacy-only connections, legacy is non-null ONLY when both
-Client.FileTransfer 1 is advertised and Core.Hello.version exactly matches a
-hub-maintained tested-build allowlist. Entries match the EXACT Core.Hello.version
-string, not merely a commit substring. Initial baseline commit is
-`03a193ba2add2cb0d40bd9b21b508006f7512c96`; the clean local describe candidate is
-`v0.8.0-591-g03a193ba2add2cb0d40bd9b21b508006f7512c96`. The client imports that
-build string (`src/gmcp/session.ts:1,75-78`; `vite.config.ts:10-12`); the pinned
-plugin uses URI-encoded git describe (`node_modules/vite-plugin-commit-hash/dist/index.mjs:6-10`).
-Phase 0 must record the actual tested browser's exact string and enable only
-that entry (a build that reports the full hash alone needs its own exact entry).
-Never accept arbitrary tag/dirty suffixes by extracting a hash. New clients may
-assert the same legacy label in Hello
-only while shipping the intact compatible legacy engine. Hash ordering, missing
-packages and timeout are not compatibility evidence. See the fallback rule in
-architecture.md. Store capability/connection association on the hub, not a
-browser-wide name cache.
+Capabilities is the sole fallback decision surface. It promises no future
+authorization; recheck target epoch on every mutation. Refresh results older
+than 10 seconds before a new offer; stale-endpoint invalidates immediately.
+Do not infer compatibility from build age, package silence or an RTC failure.
 
 ## Online lease
 
 ```text
 Client.Peer.Lease {event:Id,hub:Id,self:Endpoint,seq:Generation,leaseMs:30000}
-Client.Peer.End {event:Id,self:Endpoint,reason:"superseded"|"identity"|"shutdown"}
+Client.Peer.End {
+  event:Id,self:Endpoint,reason:"superseded"|"identity"|"shutdown"|"overload"
+}
 ```
 
-Send Lease every 10 seconds, starting immediately after Ready. It renews only
-the addressed self epoch, for 30 seconds from local monotonic receipt time. No
-peer-supplied heartbeat renews authority. On GMCP transport loss, End, hub change
-or lease expiration the client immediately stops all peer work and closes RTC;
-it cannot keep sharing over a surviving connection. No Pong is required: the
-hub must invalidate endpoints on its connection-disconnect hook. Lease events
-are small dedicated priority traffic. At seq exhaustion end/re-register instead
-of wrapping. The hub must not renew a logically disconnected connection.
+Lease every ten seconds, starting immediately after Ready, renews only that
+epoch for 30 seconds from local monotonic receipt. No peer heartbeat renews it.
+On transport loss, End, hub change or lease expiry, stop all peer work and close
+RTC. No Pong; the hub disconnect hook must invalidate authority. On seq
+exhaustion re-register without wrapping. Never renew a disconnected/invalid
+endpoint. File-sharing failure must NEVER boot/logout the MOO game connection.
 
 ## Session reservation and arbitration
 
-An unordered key consists of the sorted complete Endpoint tuples. Comparison is
-lexicographic on their compact JSON arrays `[player,endpoint,epoch]`; comparison
-does not assign negotiation roles. A reservation transaction has no suspension
-between checking and storing. It is authoritative for all requests in both
-directions, including simultaneous opposite-direction direct sends.
+The unordered pair key sorts complete Endpoint tuples lexicographically by
+compact JSON arrays `[player,endpoint,epoch]`. Reservation checking/storing is
+atomic without suspension, including opposite-direction simultaneous offers.
 
 ```text
 Auth = {kind:"offer",offer:Id} | {kind:"share",uploader:Player,revision:Revision}
 Client.Peer.Reserve {req:Id,to:Player,target:Endpoint,purpose:"files",auth:Auth}
 Client.Peer.Reserved {
-  req?:Id,event:Id,peer:Endpoint,session:Id,generation:Generation,
-  initiator:Endpoint,authorization:Auth,
+  req?:Id,event:Id,peer:Endpoint,session:Id,initiator:Endpoint,authorization:Auth,
   capabilities:{data:1,features:Features,maxReceiveSize:Size},negotiationMs:30000
 }
 ```
 
-Files.authorize_session must check current online epochs, both package bundles,
-no gag in either direction, and either an accepted, unexpired offer binding
-these exact endpoints or a currently sharing uploader at the supplied revision.
-For Reserve with share auth, uploader MUST be the TARGET: only the downloader
-may initiate a sharing connection. A sharer cannot initiate a new unsolicited
-connection to a non-sharing downloader. The downloader's Reserve must result
-from an explicit browse/download action or its persisted user-created queue.
-The hub can verify the sharer's policy, not the downloader's UI action. Both
-clients enforce the operation rules too. Each reservation records the share
-directions explicitly requested by their downloader (at most two); an offer
-grant need not make either endpoint sharing.
+Files.authorize_session checks online current epochs, package bundles, symmetric
+gag, and an accepted unexpired exact-endpoint offer OR a currently sharing
+target uploader at the supplied revision. Only the downloader may Reserve with
+share auth; explicit browse/download or its user-created queue initiates this.
+The hub cannot prove UI intent. Record each explicitly requested sharing
+direction (at most two); offer consent does not enable sharing.
 
-If no record exists, choose a hub session Id and generation 1, with the first
-requester as initiator. Notify both endpoints; only the requester gets req. If a
-record exists and is authorized for this request, return it to the requester,
-without renegotiating or changing initiator. Reuse it even when originally
-authorized for a different operation. Session existence grants no list/get/push
-rights. Each endpoint knows its accepted offers from Files events and its
-partner's sharing policy from Files.Policy, which the hub sends before Reserved
-on that endpoint's ordered GMCP transport. No SDP is sent before reservation.
-Reserved.capabilities describes its peer's registered effective capabilities,
-so an unsolicited reservation recipient can validate ctl hello without guessing.
-authorization is the auth which admitted this reservation/restart response;
-it does not extend authority to unrelated operations.
+If absent, choose a never-reused session Id and requester as initiator; notify
+both, req only to requester. If an authorized pair session exists, return it
+without renegotiation or changing initiator. The session grants no operation
+rights. From Phase 2 send current Files.Policy to both before Reserved; Phase 1
+has no shares/Policy dependency. Reserved.capabilities is that recipient's peer's
+effective registration. authorization describes this admission, not unrelated
+operations. On accepted OfferState the OFFER SENDER sends Reserve; the receiver
+waits for Reserved. Joining an existing session also makes its offer eligibility
+known to the hub even if transport already exists.
 
-State is `reserved -> offering -> answering -> established -> closed`; failed
-negotiation may instead enter the next generation. The initiator alone sends
-Connect; the other endpoint alone sends Answer:
+Admission protects direct sends: per endpoint at most 8 total sessions and 2
+not-established, of which share-only sessions may consume at most 6 total and
+1 not-established. At most 4 share-only sessions per downloader player hub-wide.
+Reserve 2 total and 1 not-established slots per endpoint for offer-authorized
+sessions; globally share-only may use at most 3072 total/128 not-established of
+4096/256. Classify a record with any admitted live accepted offer as offer-class;
+share-only cannot consume its reserved capacity. On its last offer grant ending,
+retain as share-class only if ALL share caps fit, otherwise close it. Offer
+replays/reservations joining a pair allocate no second record. Apply the same
+partition in the client session pool, including unsolicited reservations.
+
+Hub and client use `reserved -> offering -> answering -> established -> closed`;
+established means both ctl hello handshakes reported Connected. The initiator
+alone sends Connect, the other alone Answer:
 
 ```text
-SignalRef = {req:Id,to:Player,target:Endpoint,session:Id,generation:Generation}
+SignalRef = {req:Id,to:Player,target:Endpoint,session:Id}
 Client.Peer.Connect SignalRef + {sdp:string}
 Client.Peer.Answer SignalRef + {sdp:string}
 Client.Peer.Candidate SignalRef + {
-  candidate:null|{candidate:string,sdpMid:string|null,sdpMLineIndex:integer|null,usernameFragment:string|null}
+  candidate?:{candidate:string,sdpMid?:string,sdpMLineIndex?:integer,usernameFragment?:string},
+  end?:true
 }
 Client.Peer.Connected SignalRef
 Client.Peer.Close SignalRef + {reason:"done"|"cancelled"|"failed"|"protocol"}
-```
-
-`+` denotes object field union, not a nested object. For Connect/Answer/Candidate,
-hub forwards the same suffix and signal fields, replacing `to,target` by
-`from:Endpoint`. SDP is the literal offer/answer string, UTF-8 1..32768 bytes,
-not JSON inside JSON. Only data-channel SDP is accepted by clients; reject any
-audio/video track or inconsistent remote fingerprint; never rewrite a supplied
-fingerprint. Candidate string is 1..2048 bytes, sdpMid null or 1..32 ASCII bytes,
-index null or 0..15, usernameFragment null or 1..256 ASCII bytes. At least one of
-mid/index must be non-null for a non-null candidate. Null marks end-of-candidates
-and occurs at most once per endpoint/generation; no candidates follow it.
-
-The initiator creates only the reliable ordered `ctl` data channel before
-createOffer. Additional negotiated transfer channels use the same SCTP
-association and do not trigger new SDP. Neither endpoint sends unsolicited
-renegotiation. The hub admits one Connect and one Answer per generation (exact
-req replays aside); Answer requires a forwarded Connect. It accepts candidates
-from an endpoint only after that endpoint's own SDP was admitted. The client
-buffers early local ICE until its SDP Ack and early remote ICE until
-setRemoteDescription, at most 64 candidates/128 KiB, then fails that generation.
-The hub forwards at most 128 candidates/256 KiB per endpoint/generation.
-
-Each endpoint sends Connected after ctl hello negotiation succeeds. Hub Acks
-each independently and marks established after both. All these commands check
-the authenticated source is one of the exact two endpoints and target is the
-other; generation equals current; and pair authorization is still live.
-Connected requires Answer admitted. Close is permitted for a participant even
-after operation authority expires, and closes the ENTIRE session and all its
-channels; cancelling one transfer must use Files.Cancel/data cancellation.
-
-```text
-Client.Peer.Restart SignalRef + {auth:Auth}
 Client.Peer.Closed {
-  event:Id,peer:Endpoint,session:Id,generation:Generation,
+  event:Id,peer:Endpoint,session:Id,
   reason:"done"|"cancelled"|"failed"|"protocol"|"timeout"|"revoked"|"offline"
 }
 ```
 
-On a failed RTC generation with remaining authorized operations, either endpoint
-may request Restart with the old current generation and renewed Files
-authorization. A share-based Restart may come from the uploader ONLY if this
-session already records the opposite endpoint's downloader-initiated share
-direction and that same revision is still live; it cannot invent a new
-direction. An offer-based Restart requires its still-accepted record. Atomically
-increment generation and make that requester the new
-initiator; send Reserved for the new generation to both (req only to requester).
-Both close the old PC and fence its asynchronous callbacks BEFORE creating the
-new PC. Concurrent Restart with the prior generation returns `stale-generation`
-and current generation/session; it never creates another session. A future or
-old candidate/answer cannot mutate the current PC. A request for an already
-closed session returns closed/stale; reserve a new session Id if still allowed.
-No in-place ICE restart or SDP glare algorithm is used in this version.
+`+` is field union. Connect/Answer/Candidate forwards the suffix and fields,
+replacing to,target with from. SDP is a literal 1..32768 UTF-8 byte string.
+Clients permit only data-channel SDP, reject audio/video and SDP with zero
+`a=fingerprint` lines or multiple differing fingerprint values (identical
+repetition is allowed). A new session PC may legitimately have a new fingerprint;
+never rewrite it or compare it to an earlier session's fingerprint.
 
-Negotiation must finish in 30 seconds from Reserved. On timeout hub sends Closed
-and releases the record. Restart resets that deadline. Clients retry at most
-three generations without a newly stored piece or completed list, with delays
-1, 3, 9 seconds plus independently sampled 0..500 ms jitter. After that pause
-the logical operation for user retry. Do not keep restarting merely because
-the peer accepts SDP. Idle established sessions with no open requests/channels
-close after 60 seconds locally. The hub expires a session after 24 hours or
-endpoint loss, regardless of RTC activity. Session Ids are never recycled.
-The downloader can observe newly durable pieces directly; its uploader may use
-valid stored-count advancement as the remote progress proxy. Neither SDP nor
-repeated equal stored counts qualify. The data protocol's absolute 20-attempt
-cap applies even when progress resets the consecutive-three counter.
+Candidate requires exactly one of candidate or end:true. Candidate string is
+1..2048 bytes; optional sdpMid 1..32 ASCII bytes, index 0..15, usernameFragment
+1..256 ASCII bytes. At least mid or index is present. Clients omit browser-null
+optional properties. Browser null candidate OR candidate.candidate=="" maps to
+end:true, with candidate omitted. Coalesce these notifications into at most one
+end marker per endpoint/session, sent after all nonempty candidates; none follow
+it. Never forward browser JSON null to the hub.
+
+Create only reliable ordered ctl before createOffer; later transfer channels
+use the same SCTP association, without new SDP. No unsolicited renegotiation.
+Admit one Connect and one Answer/session; Answer requires forwarded Connect.
+Candidates follow the endpoint's admitted SDP. Buffer local ICE until SDP Ack,
+remote ICE until setRemoteDescription, at most 64/128 KiB; excess fails session.
+Hub forwards at most 128/256 KiB per endpoint/session. Connected requires Answer
+and successful ctl hello; Ack each, mark established after both. Check exact
+source/target membership, current session and live pair authority on all signals.
+Close remains allowed after operation authority ends; it closes every channel
+in that session. Cancelling one transfer instead uses Files.Cancel/data cancel.
+
+There is no Restart command or mutable session generation. Any local teardown
+(idle, protocol failure, abandoned negotiation, RTC failure without retry, or
+retry) fences callbacks, sends Close when GMCP is usable, and releases local
+resources. Close is state-idempotent; hub Acks and emits Closed to both. Do not
+send Close in response to an already authoritative Closed/End. On retry wait
+for Closed (up to five seconds; after timeout pause and diagnose) before a NEW
+Reserve with fresh req; require a NEW session Id. The offer sender re-reserves
+pushes, the downloader re-reserves share operations. Opposite simultaneous
+retries still join one atomic pair record. Stable logical t survives; a increases.
+Delayed old-session signals never affect a new PC. No in-place ICE restart.
+
+Hub negotiation timeout is 30 seconds from Reserved; expire and send Closed.
+Idle established sessions with no requests/channels close after 60 seconds
+locally AND send Close. Hub expiry is 24 hours or endpoint loss. Retry at most
+three times without newly durable data/completed list, delays 1,3,9 seconds plus
+0..500 ms jitter, then pause for user retry. Advancing stored counts are the
+uploader's progress proxy; SDP/equal counts do not reset retries. Absolute cap:
+20 automatic attempts per logical operation per ten minutes, even with progress.
 
 ## Replies, errors and hub limits
 
 ```text
-Refs = {offer?:Id,search?:Id,session?:Id,generation?:Generation}
+Refs = {offer?:Id,search?:Id,session?:Id}
 Client.Peer.Ack {req:Id,about:string,refs:Refs}
 Client.Peer.Error {
-  req:Id|null,about:string,code:ErrorCode,refs:Refs,retryAfterMs?:integer
+  req?:Id,about:string,code:ErrorCode,refs:Refs,retryAfterMs?:integer
 }
 ```
 
-Ack is sent after successful forwarding/mutation for Connect, Answer, Candidate,
-Connected and Close. Reserve/Restart succeed with Reserved; Hello with Ready;
-Capabilities with Capabilities. For Close, send Ack to requester and Closed to
-both. `about` is the exact suffix (ASCII, at most 32 bytes), or `"Unknown"` when
-unparseable. Refs contain only well-formed ids actually present in the request;
-for stale-generation return the hub's current generation with the same session.
-Never echo SDP, candidates, query text or arbitrary malformed values in errors.
-Null req is allowed only when the incoming req cannot be validated; clients
-display a connection-level diagnostic and never use it to select a transfer.
+Connect/Answer/Candidate/Connected/Close succeed with Ack; Reserve with Reserved,
+Hello with Ready, Capabilities with Capabilities. about is exact ASCII suffix
+<=32 bytes or Unknown. Reflect only validated ids in refs, never raw SDP, ICE,
+query or malformed values. Omit req when it cannot safely be validated (including
+pre-parse rejection); show a connection-level diagnostic, never choose a transfer.
 
-ErrorCode is `malformed`, `too-large`, `unsupported`, `unavailable`, `denied`,
-`rate`, `busy`, `conflict`, `stale-endpoint`, `stale-generation`, `unknown`,
-`expired`, or `closed`. A target which is offline, missing the bundle, or gagged
-is `unavailable` on targeted mutations, to avoid disclosing a gag. The explicit
-Capabilities response is the only fallback decision surface. `denied` is an
-operation-policy denial without target discovery. `rate` and `busy` include
-retryAfterMs 1000..60000; no automatic retry for other errors. Requests that
-cannot fit byte/rate budgets are rejected before allocating records.
+ErrorCode is malformed, too-large, unsupported, unavailable, denied, rate, busy,
+conflict, stale-endpoint, unknown, expired or closed. Offline/missing bundle/gag
+is unavailable on targeted mutation without revealing gag. denied is operation
+policy denial. rate/busy require retryAfterMs 1000..60000; no automatic retries
+for other errors. Reject before record allocation when capacity is unavailable.
 
-These limits apply from Phase 1. All token buckets start full, refill
-continuously against monotonic time, and charge authenticated player across
-connections (not just endpoint). A row is `capacity / refill period`; one token
-per command unless specified. All applicable buckets must permit admission.
-Do not refund for rejected/malformed/replayed commands.
+Buckets start full, refill continuously by monotonic time, and charge player
+across all connections. One token/command; failures/replays consume it. Phase 1
+has only general, Offer and control buckets, plus the bounded reply-cache
+admission count above. Later phases add only the bounded search fanout budget.
 
 | Surface | Hard bound |
 | --- | --- |
-| Any GMCP payload in either new package | 65536 encoded bytes; parser depth 8; at most 2048 total JSON values. Reject before decode above cap. |
-| Hello/Capabilities | 10 commands / 10 seconds combined per player. |
-| Reserve/Restart | 6 / 10 seconds per player, 60 / 10 seconds hub-wide. |
-| Connect/Answer/Connected | Separate reserved bucket 12 / 10 seconds per player. |
-| Candidate | 128 / 10 seconds per player plus per-generation count/byte limits above. |
-| Close/Files.Cancel/Withdraw/Outcome/SearchCancel and disabling Status | Dedicated 32 / 10 seconds per player, independent of candidate/search buckets. |
-| All commands combined | 256 / 10 seconds per player, except the dedicated control commands above use their separate bucket so bulk cannot exhaust it. |
-| Active v2 endpoints | 1024 hub-wide, one per player. |
-| Sessions including reservations | 8 per endpoint, at most 2 not established; 4096 hub-wide, at most 256 not established. |
-| Output | 128 KiB/s per endpoint, burst 256 KiB; search/presence use at most half; 8 MiB/s hub-wide, burst 16 MiB. |
+| Either package payload | 65536 raw bytes before parse; depth 8/2048 values after hub parse and in client parser. |
+| Ordinary client commands | 256 / 10 seconds/player. |
+| Offer | Also 10 / 60 seconds/player. |
+| Close/Files.Cancel/Withdraw/Outcome/SearchCancel and disabling Status | Separate 32 / 10 seconds/player; does not spend ordinary tokens. |
+| Cached state-creating commands | Also <=32 admissions/10 seconds/player, excluding exact req replays. |
+| Active endpoints | 1024 hub-wide, one/player. |
+| Sessions/reservations | 8 total/2 not-established per endpoint, 4096/256 hub-wide; offer-only reserved partition and downloader share caps above. |
 
-Close, revocation, End and Lease traffic has priority over discovery/search.
-Reserve at least 16 KiB/s of each endpoint output allowance for these small
-events. If that control reserve cannot deliver an authority update within one
-second, invalidate the affected endpoint, cease leases and close its hub
-transport. Do not silently drop a revocation while renewing its lease. Reject
-new work with busy when the global record/output budgets are unavailable.
+There is no application-level output pacing/priority reserve in the MOO. Send
+bounded directed control events immediately; cap input/records/fanout instead.
+Check current destination and `buffered_output_length` before emission. If its
+queued transport output exceeds 262144 bytes, or a safety update cannot be
+queued, invalidate that FILE endpoint, stop leases and all ordinary v2 output,
+and revoke its partners; attempt one small End overload only if queueable. The
+client fences on local loss/End or within its 30-second lease. Never keep
+renewing authority while dropping safety events. This does not promise delivery
+within one second. Do not call boot_player, close the transport or log out the
+game player. A rejected Hello while output is overloaded creates no endpoint.
 
-Validation order for every handler: raw size/parser bound; known suffix and
-schema; source connection/epoch/package registration; rate budgets; target
-canonicalization and exact endpoint check; pair gag/policy; record state/role;
-bounded allocation; whitelist-forward; Ack. Rate accounting for invalid schemas
-uses source connection/player when available. Errors are themselves limited to
-10 per second per connection; above that disconnect rather than amplify.
+Validation: raw cap/parse; bounded post-parse structure; known suffix/schema;
+source ctx/epoch/bundle; rate/cache admission; exact target; gag/policy; state/
+role; bounded allocation; canonical forwarding; reply. Rate-account malformed
+traffic by source connection/player. Emit at most 10 errors/second/connection;
+above this suppress errors and invalidate that v2 endpoint, never disconnect
+the game. Unknown suffixes return unsupported; outbound-only events from clients
+are malformed. Phase 1 need not install later-phase handlers.
 
-Disconnect and policy hooks must invalidate records before notifying peers.
-`Client.Files.Revoke{scope:"peer"}` precedes Peer.Closed on a pair-wide revocation.
-See client-files.md for accepted-offer and share checks; see architecture.md for
-the exact proposed MOO verb entry points. No claim here asserts that these new
-MOO verbs are already deployed.
+Disconnect/policy hooks invalidate before notifications. Files.Revoke peer
+precedes Closed on pair revocation. See Client.Files and architecture.md for
+operation checks and exact proposed MOO entry points; none are claimed deployed.

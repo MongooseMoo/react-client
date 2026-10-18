@@ -17,16 +17,18 @@ share root. Consent to a direct send grants no browse or pull access.
 Every targeted command includes `{req:Id,to:Player,target:Endpoint}`; the hub
 requires the exact endpoint and stamps forwarded `from`. Commands without a
 target are explicitly listed below. The hub never routes by an offer field's
-claimed sender or a name. `Name` is a nonempty NFC Unicode string, at most 255
-UTF-8 bytes, with no slash, backslash, colon, NUL, Unicode Cc/Cf characters, or
-dot/dot-dot value; otherwise preserve spaces/case. A remote Name is display
+claimed sender or a name. Client-validated `Name` is a nonempty NFC Unicode
+string, at most 255 UTF-8 bytes, with no slash, backslash, colon, NUL, Unicode
+Cc/Cf characters, or dot/dot-dot value; otherwise preserve spaces/case. The hub
+checks only its 1..255 byte length and the forbidden byte/component rules in
+Client.Peer; it does not check NFC or Unicode categories. A remote Name is display
 metadata; the user/save API chooses the destination filename. `Path` uses the
 stricter virtual-path rules in peer-protocol.md. `Slots` is
 `{free:integer,total:integer}`, with `0 <= free <= total <= 3`.
 
 ```text
 Client.Files.Ack {req:Id,about:string,refs:Refs}
-Client.Files.Error {req:Id|null,about:string,code:ErrorCode,refs:Refs,retryAfterMs?:integer}
+Client.Files.Error {req?:Id,about:string,code:ErrorCode,refs:Refs,retryAfterMs?:integer}
 ```
 
 These have exactly the same constraints and codes as Peer.Ack/Error. Additional
@@ -54,8 +56,7 @@ Client.Files.Respond {req:Id,to:Player,target:Endpoint,offer:Id,accept:boolean}
 Client.Files.Withdraw {req:Id,to:Player,target:Endpoint,offer:Id}
 Client.Files.Cancel {req:Id,to:Player,target:Endpoint,offer:Id}
 Client.Files.Outcome {
-  req:Id,to:Player,target:Endpoint,offer:Id,
-  outcome:"verified"|"saved"|"browser-download"|"export-uncertain"
+  req:Id,to:Player,target:Endpoint,offer:Id
 }
 ```
 
@@ -84,7 +85,7 @@ no sharing policy. A preexisting session may remain but cannot carry this push.
 Client.Files.OfferState {
   event:Id,offer:Id,sender:Endpoint,receiver:Endpoint,
   state:"pending"|"accepted"|"rejected"|"withdrawn"|"cancelled"|"expired"|"received"|"revoked",
-  expiresAt:integer,outcome?:"verified"|"saved"|"browser-download"|"export-uncertain"
+  expiresAt:integer
 }
 ```
 
@@ -107,30 +108,26 @@ and the retention deadline in a terminal state.
 | pending | Respond accept false by exact receiver | rejected. |
 | pending | Withdraw by exact sender | withdrawn. |
 | pending | Cancel by receiver | rejected; sender cancellation uses Withdraw. |
+| pending | Cancel by sender | state error; use Withdraw. |
 | pending | five-minute deadline | expired. |
 | accepted | Cancel by either endpoint | cancelled; both stop the bound push immediately. |
-| accepted | Outcome by exact receiver | received, with the reported outcome. |
+| accepted | Outcome by exact receiver | received; verified receipt only, no export state on the hub. |
 | accepted | Withdraw | state error; sender uses Cancel for an active offer. |
 | accepted | Respond accept true replay | remains accepted, never grants a second push. |
 | accepted | 24-hour deadline | expired. |
-| received | Outcome verified -> saved/browser-download/export-uncertain by receiver | received with updated export state. |
-| received with export-uncertain | Outcome saved/browser-download after explicit user retry | received with updated export state. |
+| received | Outcome by exact receiver | received; idempotent Ack, no new side effect. |
 | any pending/accepted | gag, endpoint loss/supersession, logout or identity change | revoked. |
 | any terminal state | exact replay of the command which produced that state | return current state, no effects. |
 | any terminal state | conflicting decision, new push or cancel | state error/current state; never resurrect. |
 
-Received is terminal for transfer/authorization; export substate may advance as
-above, never regress from saved/browser-download to verified. Repeated identical
-Outcome is idempotent. Received bytes do not become public. The receiver is the
-authority on its own receipt/export report; the hub cannot inspect its disk.
-`verified` means all bytes verified and retained, `saved` means a destination
-writable stream closed successfully, `browser-download` means handed to the
-bounded browser-download mechanism (no OS save confirmation), and
-`export-uncertain` means a crash/ambiguous export attempt. Either of the latter
-two must be displayed with that qualification. Cancel cannot retract a file
-already received. If cancellation races receipt, hub order chooses terminal
-offer state; a receiver that already committed receipt never undelivers it, and
-reports the local fact without automatically retrying or saving again.
+Received is terminal for transfer/authorization. Outcome reports only that the
+receiver verified and committed its operation receipt; the hub stores no export
+substate. The receiver cannot retract receipt, and repeated Outcome is idempotent.
+Detailed verified/saved/browser-download/export-uncertain reporting stays in the
+local receipt and peer ctl outcome (see data protocol). The hub cannot inspect
+disk or confirm an OS save. Received bytes never become public. If Cancel races
+receipt, hub order selects the terminal offer state; already committed local
+receipt is not undone or automatically exported again.
 
 Respond rechecks metadata/capability ceilings, endpoint pair and gag, pending
 deadline, and actor role. The receiving client must first reserve storage/export
@@ -138,8 +135,11 @@ capacity, show the immutable sender/name/size and warn that accepting exposes
 its IP, then send accept true from that user action. Session establishment can
 begin only after the authoritative accepted event, not an optimistic click.
 
-An accepted offer authorizes either participant to Reserve a session using
-`auth:{kind:"offer",offer}`. On ctl it authorizes only `push` from its sender to
+On authoritative accepted OfferState, the OFFER SENDER sends Reserve using
+`auth:{kind:"offer",offer}`; the receiver waits for Reserved. Only the sender
+automatically re-reserves after session loss; simultaneous opposite sends still
+join one pair session. Either participant remains authorized to join with that
+grant, but must not wait for the other to initiate. On ctl it authorizes only `push` from its sender to
 its receiver with that offer's metadata. The receiver binds at most one logical
 transfer t to the grant, remembers channel-attempt numbers, and permits recovery
 of that logical transfer, never a second independent push. It also checks the
@@ -147,15 +147,17 @@ grant on every bind and before sending ready. A known received push returns its
 outcome without a channel; unknown/rejected/cancelled pushes are denied. A
 private content-cache entry is never an implicit get grant.
 
-Retain terminal hub offer tombstones for 24 hours from termination, including
-received export substate. Pending and accepted records are never LRU-evicted.
-Maximum per endpoint: 4 pending from one other endpoint, 64 pending overall,
-32 accepted (both directions together), and 1024 total including terminal
-records. Hub-wide maximum is 32768 records. Apply symmetric receiver/sender
-capacity checks before creating a record; busy on exhaustion. At expiration of
-a tombstone a replay becomes unknown, not fresh consent. Clients never reuse
-offer ids and retain local received/cancelled tombstones for at least 24 hours;
-an unknown incoming push always requires a NEW GMCP Offer and user decision.
+Keep terminal offer tombstones for up to 24 hours from termination in a
+SEPARATE LRU cache: at most 1024/endpoint and 32768 hub-wide, evict oldest on
+pressure, including before a new live admission. Terminal records NEVER count
+against pending/accepted capacity. Live caps: 4 pending from one other endpoint,
+64 pending overall and 32 accepted per endpoint (both directions), at most 32768
+live records hub-wide. Check both endpoints atomically before allocating; busy
+on LIVE capacity exhaustion. Pending/accepted records are not LRU-evicted.
+Tombstone eviction cannot grant consent: an unknown push is denied; a replayed
+old Offer may create a new pending prompt, never accepted authority. Clients
+never reuse offer ids and retain local received/cancelled tombstones at least
+24 hours. A new decision remains required if the hub forgot terminal metadata.
 
 ## Presence and live sharing policy
 
@@ -163,11 +165,11 @@ an unknown incoming push always requires a NEW GMCP Offer and user decision.
 Client.Files.Status {
   req:Id,sharing:boolean,revision:Revision,files:integer,bytes:integer,slots:Slots
 }
-Client.Files.Sharers {req:Id,cursor:Id|null}
+Client.Files.Sharers {req:Id,cursor?:Id}
 Client.Files.Sharers {
   req:Id,snapshot:Id,sharers:[{
     peer:Endpoint,revision:Revision,files:integer,bytes:integer,slots:Slots
-  }],next:Id|null
+  }],next?:Id
 }
 Client.Files.Presence {event:Id,changed:true}
 Client.Files.Policy {event:Id,peer:Endpoint,sharing:boolean,revision:Revision}
@@ -184,7 +186,8 @@ First true Status requires revision at least 1 and a locally ready bounded share
 index. Changing enabled state, any root membership or content/path availability
 increments revision. A slots-only update for the identical published snapshot
 must retain its counts and revision; content/path/count changes may not. Revision cannot
-decrease or wrap; re-register at exhaustion. True -> false must increment it.
+decrease or wrap; re-register at exhaustion. True -> false must increment it. Disabling Status is state-idempotent and
+uncached; replay of the identical disabled revision/counts Acks without effects.
 Repeating identical Status is allowed. Counts reflect the published snapshot,
 not scanning progress. There is no partial automatic publishing while scanning.
 
@@ -196,7 +199,7 @@ their OWN live policy on every list/get/bind, not wait for a loopback Policy.
 No Policy or presence event can enable sharing in a browser that has not been
 configured by its user. Policy from a peer's ctl is not authoritative.
 
-Sharers(cursor null) creates a 15-second immutable filtered snapshot for that
+Sharers(with cursor omitted) creates a 15-second immutable filtered snapshot for that
 requester. Return at most 32 entries per page, sorted by numeric player ref then
 endpoint string, and at most 16384 encoded bytes. next is an opaque hub Id bound
 to requester epoch and snapshot position. A cursor is single-use except exact
@@ -205,7 +208,7 @@ snapshot. At most one snapshot per viewer, at most 1024 entries/1 MiB captured;
 reject limit if exceeded, never allocate an unbounded list. The global endpoint
 cap makes 1024 sufficient. Recheck gag/online/current-epoch/sharing for each
 entry at page delivery and omit any revoked entries. Do not insert newly
-eligible entries into the captured snapshot. `next:null` ends it.
+eligible entries into the captured snapshot. Omitted next ends it; never emit null.
 
 Presence contains no player identifiers; it invalidates the viewer's cached
 list. Send at most one per viewer per two seconds, only if that viewer's visible
@@ -219,37 +222,39 @@ an offline catalogue. A shared folder with no readable handles is not sharing.
 ```text
 Client.Files.Revoke {
   event:Id,peer:Endpoint,scope:"peer"|"share"|"offer",
-  revision?:Revision,offer?:Id,
+  revision?:Revision,sharing?:boolean,offer?:Id,
   reason:"policy"|"offline"|"identity"|"expired"
 }
 ```
 
 These are hub-only pushes over the online GMCP connection. For scope peer, omit
-revision/offer; for share, require revision and omit offer; for offer, require
-offer and omit revision. Revoke is idempotent and processed ahead of queued
+revision/sharing/offer; for share, require revision and sharing and omit offer;
+for offer, require offer and omit revision/sharing. Revoke is idempotent and processed ahead of queued
 data work. Stop/fence affected reads, pending frames, writes, manifests, search
 replies and channel creation; then close affected transfer channels. Never
 promote late provisional bytes or automatically export from a revoked operation.
-Previously verified content remains owned locally; a later explicit user export
+An enabled-share revision change stops stale list/search work and removed gets
+as below, while unaffected current-index gets remain authorized. Previously
+verified content remains owned locally; a later explicit user export
 under that same current owner does not restore any remote authority.
 
 | Trigger | Hub action | Client action |
 | --- | --- | --- |
 | Either player gags the other (including any effective gag-list change) | Atomically mark pair blocked; revoke both-direction pending/accepted offers and recorded search targets; send scope peer to both endpoints, then Peer.Closed for all pair sessions; suppress future discovery/signals/results. Reason policy deliberately does not disclose who gagged whom. | Close all pair sessions and operations, including separately accepted direct sends. Neither side reconnects from a saved queue while blocked. |
-| Sharing off or published revision changes (including removed roots) | Replace status; send scope share with NEW revision to all session partners, then Policy; cancel that sharer's outstanding search targets. | Sharer immediately stops old-revision list/shared-get uploads locally. Partners cancel those operations and discard stale lists. Other independently accepted direct sends survive; session may remain for them. Conservative invalidation cancels all old-revision shared transfers, even unaffected roots. |
+| Sharing off or published revision changes (including removed roots) | Replace status; send scope share with NEW revision and current sharing flag, then Policy; cancel old-revision search targets. | Discard stale lists/search work. Off stops every shared list/get. While still on, the uploader immediately rechecks each active get's pinned id/size in its approved current index and stops only removed/changed/unreadable content; an unaffected pinned File continues across revision changes. The downloader retains those gets while current policy stays on. Independently accepted direct sends survive. |
 | One offer cancelled/expired | Transition its record; send scope offer to both endpoints in addition to OfferState. | Stop only that push; release its content lease. Other channels remain. |
 | Endpoint logout/disconnect/supersession, principal change or hub reset | Invalidate old epoch, all grants/search/presence, scope peer to partners then Peer.Closed. | Stop all old-epoch work. New epoch never inherits direct consent. |
 | Local hub disconnect or lease expires | Hub disconnect hook performs above when detected. | Stop immediately on local transport loss, or at latest 30 seconds since last Lease. No offline P2P continuation. |
 
 Removal of a gag does not resurrect operations. Future user actions may query
-capabilities and obtain fresh authority. A revision change may permit a new
-list/get at that revision. Already disclosed bytes and addresses cannot be
+capabilities and obtain fresh authority. A revision change may permit a fresh list at that revision or a get for
+content still in the current index. Already disclosed bytes and addresses cannot be
 retracted; enforcement concerns future work by compliant clients. The hub's
 control path must bypass ordinary gag-filtered application delivery to deliver
 Revoke/Closed to both authenticated connections. It must not rely on relaying a
-message from the blocked player. Apply the priority/lease-failure rule in Peer.
+message from the blocked player. Apply the endpoint-invalidation/lease-failure rule in Peer; never boot the game connection.
 For compatible legacy-only connections there is no v2 Endpoint to address;
-the legacy observation/canonical policy-Cancel path in architecture.md is
+the legacy observation/exact-address policy-Cancel path in architecture.md is
 mandatory from Phase 1. It reaches established v1 transfers without inventing
 a v2 registration for an old client or changing its wire format.
 
@@ -283,13 +288,19 @@ allowed only with id. Compare NFC full paths using Unicode default case folding,
 literal substring AND for all tokens; no regex, glob or fuzzy evaluation.
 Pin folding/whitespace/categories to Unicode 15.1: use full default case folding
 (CaseFolding.txt statuses C and F, excluding Turkic T), then NFC, for path and
-tokens. Split using that version's White_Space property. Ship the same table
-with client matcher and hub filter; do not depend on locale-specific lowercasing.
+tokens. Split using that version's White_Space property. Ship pinned tables with
+client matchers only; do not depend on locale-specific lowercasing or ask the hub to match Unicode text.
 The data version is the [Unicode 15.1 UCD](https://www.unicode.org/versions/Unicode15.1.0/).
 If id is present require exact equality as well; sizes are inclusive bounds,
 defaults 0 and deployment ceiling, and minSize <= maxSize. Empty/invalid query
-is malformed. Result validation on hub and requester applies these same
-predicates; the hub cannot verify whether a claimed entry really is shared.
+is malformed on clients. Sharer and requester apply all Unicode/filter predicates.
+The hub checks query <=400 bytes and no forbidden C0/DEL/NUL bytes, path/component
+byte rules, counts, exact optional hash, inclusive size ranges and routing/state,
+not NFC, scalar/token counts or text matching. A byte-valid Unicode-invalid query
+gets an empty Result from a sharer; invalid/nonmatching result entries are rejected
+by the requester before display. The hub cannot verify an entry is really shared.
+The search UI says: “Your search text and player identity are sent to online
+players who are sharing files.”
 
 The hub keys a search by `(requester Endpoint,search)`, records immutable filters,
 actual target endpoints with their current share revisions, response-seen bits,
@@ -302,14 +313,17 @@ Commit target membership before each send. SearchStarted comes after dispatch
 admission. No durable search catalogue exists on the MOO.
 
 Each target may reply once (including an empty result array), at most 10 unique
-paths, at most 16384 encoded bytes total. Results must match filters, bounded
-path/name/size rules, target revision and original requester epoch. Hub checks
+paths (byte-exact uniqueness), at most 16384 encoded bytes total. Clients require
+all filters and Unicode path/name rules. Hub requires byte/structural path rules,
+optional exact hash, size bounds, target revision and original requester epoch. Hub checks
 the authenticated Result sender is a recorded target, still sharing at that
 revision, requester is online, both directions ungagged, deadline live, response
 not previously seen, and search result budgets permit it. Then whitelist-forward
 and Ack. Arbitrary to/search guesses, duplicate replies with a new req, expired
-searches and changed revisions get state/expired/denied errors. Replays of the
-same req return Ack without forwarding. Empty replies also consume the slot.
+searches and changed revisions get state/expired/denied errors. The same req
+repeated by an already-seen target gets Ack without re-forwarding; a new req
+for that target/search gets state. Retain only its first req in the search
+record, not a relay reply cache. Empty replies also consume the slot.
 
 At most 100 results and 131072 encoded result bytes are delivered per search.
 When either is exhausted stop forwarding and send SearchEnd limit; at expiry
@@ -329,16 +343,16 @@ record mutation; a deferred fanout must recheck before each delivery.
 
 | Surface | Limit and mandatory checks beyond shared admission |
 | --- | --- |
-| Offer | 10 / 60 seconds, 8192-byte payload; role/immutable metadata/pending/total table caps and receiver maximum. |
-| Respond | 16 / 10 seconds; exact receiver and outstanding undecided/accepted state, no gag, unexpired. |
-| Withdraw/Cancel/Outcome | Peer dedicated control bucket; exact role/offer record and permitted transition; Outcome receiver only. |
-| Status | 4 / 10 seconds; true requires non-guest and lists feature; revision/count/slot consistency. Apply false/revocation immediately even when ordinary Status budget is exhausted, charging the dedicated control bucket instead. |
-| Sharers | 4 / 10 seconds; requester epoch, single snapshot, cursor binding/expiry and per-entry permission at delivery. |
-| Search | 1 / 10 seconds; at most 2 live per endpoint, 256 hub-wide. Search id cannot replace a live or retained record. |
-| Fanout | 256 target deliveries / second hub-wide, burst 256; total queued search payloads at most 1 MiB. Skip excess targets and set limited; never unbounded deferred fanout. |
-| Result | 16 / 10 seconds per target player, plus one reply per target/search and 100/128 KiB totals; charge actual bytes to shared output budget. |
-| SearchCancel | Dedicated control bucket; only source search owner. |
-| Presence snapshot storage | At most 16 MiB hub-wide, at most 1 MiB per viewer; busy until capacity frees. |
+| Offer | Separate 10/60-second Offer bucket plus ordinary bucket, 8192-byte payload; immutable metadata, LIVE offer caps and receiver maximum. |
+| Respond | Ordinary bucket plus cached-command admission; exact receiver, pending/accepted state, no gag, unexpired. |
+| Withdraw/Cancel/Outcome | Dedicated control bucket; exact role/record/transition; Outcome receiver only and receipt only. |
+| Status (Phase 2) | Ordinary bucket plus cached-command admission; true requires canShare and lists; revision/count/slots consistency. False uses control instead of ordinary tokens and applies invalidation immediately. |
+| Sharers (Phase 2) | Ordinary bucket plus cached-command admission; requester epoch, snapshot/cursor binding/expiry and per-entry permission. |
+| Search (Phase 3) | Ordinary bucket plus cached-command admission; <=2 live/endpoint, 256 hub-wide. Do not replace a live/retained search id. |
+| Fanout (Phase 3) | 256 target deliveries/second hub-wide, burst 256; <=1 MiB queued search payloads. Skip excess and set limited. |
+| Result (Phase 3) | Ordinary bucket; one response/target/search, <=100 results/128 KiB total/search. No output pacing budget. |
+| SearchCancel (Phase 3) | Dedicated control bucket; source search owner only. |
+| Presence snapshot storage (Phase 2) | <=16 MiB hub-wide, <=1 MiB/viewer; busy until freed. |
 
 Retain closed search ids for 60 seconds after deadline/end (at most 16 per
 endpoint); if capacity is full reject new searches rather than dropping replay

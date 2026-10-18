@@ -2,127 +2,150 @@
 
 ## Goal
 
-Author a complete implementable v2 wire/storage/migration contract, commit it on
-`feat/file-sharing-v2` in `C:\Users\Q\code\react-client-file-sharing`, and do not
-push, implement client code or contact/change the MOO. A non-Codex reviewer will
-review the result. Original task and inputs are under
-`C:\Users\Q\AppData\Local\Temp\claude\C--Users-Q-code-react-client\4e69018f-42c3-4d90-a8d7-58e7d41e35bd\scratchpad\`:
-`codex-dcpp-spec-task.md`, `dcpp-design.md` (revision 2), and
-`codex-dcpp-design-report.md`. This note and the four linked contracts are enough
-to continue without those temporary files.
+Revise the spec at 63062e06 on feat/file-sharing-v2 after the independent Claude
+review. Work only in C:/Users/Q/code/react-client-file-sharing; commit the four
+contracts and this note. Do not push, implement client/server code, or contact
+or modify the MOO. Original tasks/review are in
+C:/Users/Q/AppData/Local/Temp/claude/C--Users-Q-code-react-client/4e69018f-42c3-4d90-a8d7-58e7d41e35bd/scratchpad/:
+codex-dcpp-spec-task.md, codex-dcpp-spec-revise.md and
+claude-spec-review-report.md. This note and the linked contracts stand alone.
 
 ## State
 
-Specification written against baseline
-`03a193ba2add2cb0d40bd9b21b508006f7512c96`; no implementation or live acceptance.
+All high, medium and low findings have specified resolutions below; no finding
+is rejected or left for an implementer to choose. This remains SPECIFICATION
+ONLY: no implementation, deployment, browser acceptance or author-run live MOO
+probe is claimed. Source baseline is 03a193ba2add2cb0d40bd9b21b508006f7512c96.
 Task-owned files:
 
-- [Client.Peer](../docs/GMCP/packages/client-peer.md): strict common types,
-  endpoint epochs/capabilities/leases, hub reservation and signaling generations,
-  correlated errors, validation and admission/output limits.
-- [Client.Files](../docs/GMCP/packages/client-files.md): offer consent/state,
-  operation authority, presence, bounded search, established-session revocation.
-- [Data protocol](../docs/file-sharing/peer-protocol.md): ctl request/response,
-  kind envelope, bind/bound/ready ordering, exact binary layouts, authenticated
-  digest manifests, finite ranges, credits, cancellation and receipt recovery.
-- [Architecture](../docs/file-sharing/architecture.md): owner/session/offer/
-  content model, leases/OPFS/export, v1 choice, exact proposed MOO verbs per
-  phase and direct-send acceptance matrix.
+- [Client.Peer](../docs/GMCP/packages/client-peer.md): common types, exact raw
+  ingress, endpoint epochs/leases/capabilities, pair reservation, SDP/ICE,
+  state-creating reply cache and input/record limits.
+- [Client.Files](../docs/GMCP/packages/client-files.md): private offer consent,
+  receipt-only hub completion, sharing/presence/search and revocation.
+- [Data protocol](../docs/file-sharing/peer-protocol.md): ctl and channel binding,
+  binary layouts, manifests, provisional resume, ranges, receipt recovery,
+  cancellation, paths and bounded client resources.
+- [Architecture](../docs/file-sharing/architecture.md): owner/content/storage
+  boundaries, tab election, OPFS/export, v1 choice/observer, exact MOO phase
+  inventory, bucket timers and direct-send acceptance matrix.
 
-Phase 0 relay repairs are assigned separately to an in-MOO agent; their live
-deployment/result was not inspected here. All MOO verbs in architecture.md are
-required target work or the explicitly supplied Phase 0 dependency, not claims
-that they exist in production. Do not enable a compatible-build allowlist entry
-until its Phase 0 two-browser direct-send baseline passes.
+The coordinator supplied live production evidence: generate_json emits E_NONE
+as a string, parse_json maps null to E_NONE, and duplicate/case-differing keys
+merge first-wins. The supplied server checkout is
+C:/Users/Q/src/toaststunt-prod-6d6d2ef; its json.cc was inspected for the parser
+signature/config and null/bool handling. The existing parse_json builtin calls
+strict=0 and exposes only the common-subset/embedded-types option, not strict
+mode. The revised spec does not require a server-native change or Unicode MOO
+implementation. Phase 0 relay repairs remain a separately assigned dependency;
+their deployment is not verified here.
 
 ## Decisions and why
 
-- One hub reservation per unordered complete endpoint pair. First reserver
-  initiates SDP; Restart atomically advances generation. No dual opposite
-  sessions, unsolicited renegotiation or ambiguous glare behavior.
-- One active file endpoint/player, bound to an authenticated underlying
-  connection key and fresh hub epoch. This prevents multiple tabs answering
-  one offer/session and fences delayed old-login work. Persistent owner remains
-  runtime + player UUID + object ref; an epoch is not a cache owner.
-- Separate private offer consent, shared transport, source transfer attempts,
-  verified content and export outcome. An accepted push grants no browse/get;
-  a cached hash never grants upload authority. Every distinct private offer
-  still asks, even with sharing on or an open connection.
-- Sharing is off by default, public to online ungagged players when enabled.
-  Guests consume/direct-send but cannot share. Standing sharing intent resumes
-  after login only once handles/permissions/index are ready. Firefox/Safari
-  re-pick each visit. Warn plainly about IP exposure and permit direct ICE.
-- Revocation is authoritative GMCP push; either-direction gag closes the pair,
-  share revision invalidates shared operations only, direct-offer cancellation
-  stops only its push. Hub disconnect/lease expiry ends online authority.
-  Legacy relay observation and hub-synthesized canonical Cancel reach old
-  compatible established transfers on gag; those Phase 1 hooks are additional
-  to the separate Phase 0 repair, and do not change the v1 wire.
-- Requester creates a transfer channel after accepted; responder checks bind
-  and returns bound on that same channel before ready. This removes dependency
-  on ordering across ctl and independently ordered transfer channels.
-- Keep SHA256 of raw ordered 16 KiB piece digests. Authenticate the COMPLETE
-  manifest before trusting pieces; chunks are not Merkle proofs. Binary leaves
-  are <=16391 bytes, range requests finite with explicit batch acknowledgements.
-- Owner/id cache has one writer, serialized writes, verified bitmap, per-consumer
-  leases and reservations. Old attempts cannot overwrite verified bytes or
-  erase another offer/download's data. Retain v1 storage separately; any import
-  requires verification and grants no consent.
-- Verified download, closed destination stream and browser handoff are different
-  outcomes. Persist receipt before sending complete. Crash during export is
-  export-uncertain and needs user retry; a replay never automatically saves twice.
-- v1 choice requires explicit tested capability evidence BEFORE remote offer.
-  No downgrade on timeout, rejection, denied/gag, ICE failure or unknown receipt.
-  Keep the full v1 engine/storage/RTC owner. Retirement is out of scope.
-- Public sharing ships with resource limits. Sequence is 0 baseline repair,
-  1 v2 direct-send parity, 2 bounded share/list/get, 3 bounded hub search,
-  4 owner/id cache + manifest verification, 5 REQUIRED OPFS/streamed multi-GB
-  export/recovery, 6 multi-source. Keep 100 MiB until Phase 5; then 10 GiB maximum
-  on capable v2 receivers and 100 MiB bounded fallback elsewhere.
+- Every settled product requirement remains: off-by-default public online
+  sharing, symmetric gag per coordinator, explicit IP warning/direct ICE,
+  non-sharing guests, usable-root login resume, Firefox/Safari re-pick,
+  multi-GB streamed receive/export in required Phase 5, retained v1, and direct
+  send with both shares off at the end of EVERY phase.
+- First hub reserver initiates SDP. There is one pair session, no Restart or
+  mutable session generation; Close releases it before a fresh Reserve/Id.
+  Transfer a remains a writer/channel fence and stable t retains partial bytes.
+- Offer sender initiates Reserve on accepted OfferState. Session and upload
+  partitions preserve capacity for direct send when public shares are busy.
+  Terminal offers are separate evictable LRU entries, never admission load.
+- Hub validates byte shapes/structural state, uses first retained parsed values
+  consistently and reconstructs outgoing messages. Clients own Unicode and
+  text matching. Null is absent everywhere. Errors can omit untrusted req.
+- New Hello/new endpoint on the same connection replaces the old epoch without
+  logging the game player out. canShare comes from hub guest classification.
+  File overload invalidates file authority, never the game connection.
+- v1 fallback follows explicit current packages: Client.FileTransfer 1 present,
+  Client.Files absent, reported by the hub. Query unknown capability, fail on
+  unanswered query, and never infer it from a build string or timeout. The
+  former exact-build allowlist has been removed. Historical clients reusing v1
+  for incompatible wire may still fail visibly; build lists do not decide this.
+- Receipt, verified content and export stay separate. Hub records received only;
+  ctl/local receipts describe export outcome. Saved payload can be released
+  immediately without losing the receipt needed to avoid automatic second save.
+- Shared get stays authorized while its pinned id/size is readable in the
+  current approved index; list/search retain exact revision. New unrelated files
+  do not abort active downloads. Gag, share off, removal or unreadable data do.
+- Tabs elect one endpoint owner before Hello/automatic reconnect; losers show
+  another-tab status without a proxy. Dedicated storage worker owns a second
+  exclusive lock and actual sync access handle. No sync handle means bounded
+  memory fallback, never a swap-file imitation of per-piece flush durability.
+- Timer work uses bounded due buckets, not full registry scans. Input/cache/
+  fanout/record bounds replace application output pacing. Leases remain.
 
-## Surprises
+## Review resolution
 
-- Baseline storage already preserves runtime/account ownership; only its
-  within-owner peer dimension should disappear (`src/fileTransfer/storage.ts:28-35,50-56`;
-  `src/stores/personalDataStore.ts:5-13`). Blind id-only browser storage regresses
-  that boundary.
-- The legacy version number does not uniquely identify compatible encodings
-  (`docs/GMCP/packages/client-file-transfer.md:238-240`). Initial compatibility
-  evidence identifies a tested baseline build, not package presence or hash ordering.
-  More precisely the allowlist matches the exact advertised version string:
-  startup imports the virtual build string (`src/gmcp/session.ts:1,75-78`), and
-  the pinned plugin uses encoded git describe
-  (`node_modules/vite-plugin-commit-hash/dist/index.mjs:6-10`). A commit substring
-  alone must not admit arbitrary tag/dirty versions.
-- Existing full-mode sender/verifier assumes whole-file completion
-  (`src/fileTransfer/outgoingTransfer.ts:173-193,205-230`;
-  `src/fileTransfer/incomingTransfer.ts:250-297`). Adding want alone cannot finish
-  subset-source work; the new rangeAck/stream completion is separate.
-- Existing code explicitly confirms a missed complete without redelivery
-  (`src/fileTransfer/incomingTransfer.ts:137-147`). The replacement must preserve
-  that receipt behavior and explicitly handle browser export's crash window.
-- Raising the size cap requires more than OPFS: baseline digest concatenation,
-  missing-index arrays and range Set expansion also need bounded replacements
-  (`src/fileTransfer/contentId.ts:25-31,59-65`;
-  `src/fileTransfer/outgoingTransfer.ts:178-181`;
-  `src/fileTransfer/wire.ts:190-219`).
+| Finding | Resolution and contract location |
+| --- | --- |
+| H1 | Peer validation explicitly limits hub to bytes/structure. Files Name/Search and data Path rules assign NFC, categories, scalar/token counts, folding and matching only to clients. |
+| H2 | Peer Raw ingress names #3838:parse_gmcp_message immediately after address/data split and before parse_json: reject >65536 bytes without decoding, trapped common-subset parse, no raw fallback, post-parse depth/value walk. First-wins duplicates cannot change validation vs forwarding/replay; canonical retained key spelling is checked. Oversize/parse failure omits untrusted req. Current builtin strict-mode limitation is explicit. |
+| H3 | No null fields: optional target/req/cursor/next/ICE properties; end:true with candidate omitted. Hub never serializes E_NONE as a missing value. Legacy label removed for explicit legacyV1 boolean. |
+| H4 | Files terminal offer LRU is separate from live pending/accepted caps and freely evicted; unknown push cannot revive consent. Legacy observer drops pending tracking under pressure and never rejects an Offer for tombstone/pending load; accepted cancellation records remain live and bounded separately. |
+| H5 | Peer/Data reserve 2 total and 1 not-established session slots/endpoint for offer auth; share-only <=6 total/1 not-established, <=4/downloader player hub-wide. Global offer partition and classification changes are defined. |
+| H6 | Data manifest/ready/reconnect and Architecture attempts/OPFS key provisional bytes by logical t, pin source/offer/id/size, fence writes by current a, and reuse earlier-a held pieces before Phase 4. |
+| H7 | New Hello with new endpoint/req on the SAME game connection supersedes old authority and returns a new epoch. No logout needed to lower/refresh advertised receive capability. |
+| H8 | Removed exact-build allowlist. Peer Capabilities legacyV1 and Architecture fallback use explicit FileTransfer 1 and absent Client.Files; unknown list triggers a bounded capability query, silence never fallback. |
+| M1 | Files accepted event and Peer reservation require offer SENDER to send Reserve; receiver waits. |
+| M2 | Every local session teardown sends Close if GMCP usable; idle timeout and unretried RTC failure release hub state. Authoritative Closed/End does not provoke another Close. |
+| M3 | Overload/error flood stops only the v2 endpoint/leases, optionally End overload; no boot_player, transport close or game logout. No promise of a one-second delivery acknowledgment. |
+| M4 | Cache only Hello/Reserve/Offer/Respond/enabling Status/Search/Sharers; relay/Ack-only/state-idempotent commands are uncached. Bound cache records/bytes globally and cached admissions/player to fit the 120-second 512-entry window. |
+| M5 | Architecture timer index uses cancellable per-record expiry nodes, 128-node slices and separate ten-second lease buckets; no per-second full walk. |
+| M6 | OPFS requires an actual createSyncAccessHandle in the dedicated worker and flush before bitmap commit. Otherwise <=100 MiB memory mode. No createWritable durability substitute. |
+| M7 | Get has no exact-revision field; uploader checks pinned id/size against current approved readable index. Revision Revoke includes sharing, stops stale lists/search, retains unaffected gets while still on. |
+| M8 | Ready.canShare boolean reflects authenticated guest eligibility; client hides publishing for false. |
+| M9 | Architecture defines endpoint Web Lock election, status-only followers, pre-reconnect ownership, transport-loss release, storage lock and explicit takeover fallback; no unspecified tab proxy. |
+| M10 | Coordinator explicitly settled symmetric gag. Both directions blocked for offers, discovery/search, sessions and established transfers; ungag does not resurrect old consent. |
+| M11 | Binary abort reason 9 is limit, matching hard-cap error/abort wording. |
+| L1 | Peer and Architecture use the same reserved/offering/answering/established/closed session states. |
+| L2 | Defined FeaturesWithoutBaseRequirement, including empty no-bundle capability result. |
+| L3 | Reject SDP with zero fingerprint lines or multiple differing values; a new session may legitimately have a different fingerprint. |
+| L4 | Browser empty candidate strings and null candidate notifications coalesce to one end:true marker after candidates; no wire null. |
+| L5 | Peer requires byte-exact equal/strcmp for canonical keys, lowercase hex, identity/path equality and uniqueness; no implicit case-insensitive MOO comparisons. |
+| L6 | Manifest root uses one bounded <=20 MiB raw digest buffer with worker WebCrypto; no incremental WebCrypto claim. |
+| L7 | Legacy observer captures each destination's EXACT peer-key string from actual Offer forwarding and uses it in policy Cancel; compact per-pair routing survives pending-detail pressure, never assumes canonical #ref equality. |
+| L8 | Files state table explicitly makes pending sender Cancel a state error; use Withdraw. |
+| L9 | Files Search and Architecture require a UI statement that query text and requester identity are sent to online sharers. |
+| L10 | Call storage.persist before large receive; explain temporary roughly 2x disk need. Release saved payload immediately if no other consumer/queue/lease holds it, retaining receipt/tombstone. |
+| L11 | Peer names authenticated player plus personalDataStore.policyReady and confirmed owner/visitor as registration trigger, after both packages are advertised and election held. Startup Supports alone is not login confirmation. |
+
+The review's small-Phase-1 cuts are applied: no Restart/session generations,
+export hub substate, ctl progress, nine independent rate buckets, MOO output
+pacing/reserve, hub Unicode work, or premature list/search/presence/Policy/share
+handlers. Base leases, consent, revocation and direct-send parity remain required.
+
+## Surprises and practical limits
+
+- The native strict JSON helper exists, but current parse_json cannot select it.
+  Hub schema validation must never depend on rejecting duplicates/permissive
+  encodings; forwarding only reconstructed retained values avoids ambiguity.
+- Unchanged approved shared content need not inherit a list snapshot's lifetime.
+  Uploader checks are the authority because the hub has no content index.
+- v1 has neither revocation nor online leases. Directed exact-address Cancel
+  reaches responsive compatible clients; if output cannot be queued, bounded
+  retry reports unconfirmed cancellation, never claims proof a remote stream
+  stopped. Installing the observer requires draining/reconnecting pre-observer
+  streams before live acceptance. File overload must not boot game players.
+- No protocol makes external save and IndexedDB atomic; export-uncertain after
+  crash remains explicit. No automatic re-save for a known receipt.
 
 ## Next step
 
-Have the designated non-Codex reviewer review all four documents together against
-the task's settled decisions and P1 review list. Incorporate any corrections as
-spec-only changes before implementation. Then obtain Phase 0 baseline evidence,
-implement the Phase 1 server contracts first, and build the complete v2
-direct-send vertical slice while keeping compatible v1 operational. Exact verb
-inventory and connection/gag integration are in architecture.md. Its acceptance
-matrix is a required future gate, not a record of tests run by this task.
+The coordinator can review this spec-only revision, obtain Phase 0 browser/live
+baseline evidence, then implement server-first Phase 1 and its complete direct
+send slice. Do not prebuild later-phase hub handlers. Phase exits must run the
+Architecture acceptance matrix; its rows are future requirements, not tests
+claimed by this documentation task. The independent Claude report informed this
+revision; no second independent review is claimed.
 
-Validation completed while drafting: Markdown parsed with the installed marked
-renderer, all local links resolved, source citation paths/ranges checked, and
-frame vectors/10 GiB digest/bitmap/boundary arithmetic checked in Node. Manual
-cross-document review corrected share initiation consent, exact build-string
-matching, range slot release and established-v1 gag cancellation. Before commit
-also run git diff checks and the repository commit hook. Final chat reports the
-resulting commit and checks;
-do not edit this note just to embed its own commit hash. No unresolved product
-choice is intentionally left to the implementer.
+Documentation validation passed: all five files parsed with installed marked;
+16 local links and 39 source-citation path/range groups checked; all 30 finding
+IDs accounted for; no stale session-generation/Restart or null wire schema;
+frame vectors, 10 GiB piece/manifest/bitmap arithmetic, boundary sizes and reply
+cache admission arithmetic checked in Node. git diff --check passed and edits
+are limited to the four contracts and this note, with tracked LF endings. The
+required repository commit hook runs typecheck and staged lint; a successful
+commit must pass both. No client runtime tests are claimed for a docs-only task.
