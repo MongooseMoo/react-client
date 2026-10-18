@@ -1,7 +1,13 @@
-import React, { useCallback, useEffect, useState, useMemo } from "react";
-import MudClient from "../client";
-import { GMCPMessageRoomInfo, RoomPlayer } from "../gmcp/Room";
-import { Item, ItemLocation, GMCPCharItems } from "../gmcp/Char/Items"; // Import Item, ItemLocation, GMCPCharItems
+import type React from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
+import type MudClient from "../client";
+import type { RoomPlayer } from "../gmcp/Room";
+import { useRoomStore } from "../stores/roomStore";
+import type { Item } from "../gmcp/Char/Items";
+import { type ItemAction, performItemAction } from "../itemActions";
+import { useItemsStore } from "../stores/itemsStore";
+import { stripMudAnsiTags } from "../stripMudAnsiTags";
+import { compareDirections, directionLabel } from "../map/directions";
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
 import ItemCard from "./ItemCard"; // Import ItemCard
 import PlayerCard from "./PlayerCard"; // Import PlayerCard
@@ -11,17 +17,17 @@ interface RoomInfoDisplayProps {
   client: MudClient;
 }
 
-const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
-  // Initialize state directly from the client's stored info
-  const [roomInfo, setRoomInfo] = useState<GMCPMessageRoomInfo | null>(
-    client.currentRoomInfo
-  );
-  const [roomItems, setRoomItems] = useState<Item[]>([]);
-  const [selectedRoomItem, setSelectedRoomItem] = useState<Item | null>(null);
-  const [roomPlayers, setRoomPlayers] = useState<RoomPlayer[]>(client.worldData.roomPlayers || []);
-  const [selectedPlayer, setSelectedPlayer] = useState<RoomPlayer | null>(null);
+const EMPTY_ITEMS: Item[] = [];
 
-  const charItemsHandler = client.gmcpHandlers['Char.Items'] as GMCPCharItems | undefined;
+const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
+  // Room info and players come from the room store (single source of truth).
+  const roomInfo = useRoomStore((state) => state.roomInfo);
+  const roomPlayers = useRoomStore((state) => state.roomPlayers);
+  const roomItems = useItemsStore((state) => state.itemsByLocation.room ?? EMPTY_ITEMS);
+  const [selectedRoomItemId, setSelectedRoomItemId] = useState<string | null>(null);
+  const [selectedPlayerName, setSelectedPlayerName] = useState<string | null>(null);
+
+  const charItemsHandler = client.gmcp.handlers['Char.Items'];
 
   // Helper function to check if an item name matches a player name
   const isPlayerItem = useCallback((item: Item, players: RoomPlayer[]): boolean => {
@@ -34,107 +40,32 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   const filteredRoomItems = useMemo(() => {
     return roomItems.filter(item => !isPlayerItem(item, roomPlayers));
   }, [roomItems, roomPlayers, isPlayerItem]);
+  const selectedRoomItem = filteredRoomItems.find((item) => item.id === selectedRoomItemId) ?? null;
+  const selectedPlayer = roomPlayers.find((player) => player.name === selectedPlayerName) ?? null;
 
-  const handleRoomInfo = useCallback((data: GMCPMessageRoomInfo) => {
-    setRoomInfo(data);
-  }, []);
-
+  // Request the room's item list once on mount. Room info/players are now
+  // subscribed from the room store above rather than fed by client events.
   useEffect(() => {
-    client.on("roomInfo", handleRoomInfo);
-    if (charItemsHandler?.sendRoomRequest) {
-      charItemsHandler.sendRoomRequest();
+    if (charItemsHandler) {
+      charItemsHandler.sendRoom("");
     }
-    return () => {
-      client.off("roomInfo", handleRoomInfo);
-    };
-  }, [client, charItemsHandler, handleRoomInfo]);
+  }, [charItemsHandler]);
 
-
-  const updateRoomItemsList = useCallback((location: ItemLocation, newItems: Item[]) => {
-    if (location === 'room') {
-      setRoomItems(newItems);
-      if (selectedRoomItem && !newItems.find(item => item.id === selectedRoomItem.id)) {
-        setSelectedRoomItem(null);
-      }
-    }
-  }, [selectedRoomItem]);
-
-  const addRoomItem = useCallback((location: ItemLocation, item: Item) => {
-    if (location === 'room') {
-      setRoomItems(prev => prev.some(i => i.id === item.id) ? prev : [...prev, item]);
-    }
-  }, []);
-
-  const removeRoomItem = useCallback((location: ItemLocation, itemToRemove: Item) => {
-    if (location === 'room') {
-      setRoomItems(prev => prev.filter(item => item.id !== itemToRemove.id));
-      if (selectedRoomItem?.id === itemToRemove.id) {
-        setSelectedRoomItem(null);
-      }
-    }
-  }, [selectedRoomItem]);
-
-  useEffect(() => {
-    const handleList = (data: { location: ItemLocation, items: Item[] }) => updateRoomItemsList(data.location, data.items);
-    const handleAdd = (data: { location: ItemLocation, item: Item }) => addRoomItem(data.location, data.item);
-    const handleRemove = (data: { location: ItemLocation, item: Item }) => removeRoomItem(data.location, data.item);
-
-    client.on('itemsList', handleList);
-    client.on('itemAdd', handleAdd);
-    client.on('itemRemove', handleRemove);
-
-    return () => {
-      client.off('itemsList', handleList);
-      client.off('itemAdd', handleAdd);
-      client.off('itemRemove', handleRemove);
-    };
-  }, [client, updateRoomItemsList, addRoomItem, removeRoomItem]);
-
-  // Player event handlers
-  const handleRoomPlayers = useCallback((players: RoomPlayer[]) => {
-    setRoomPlayers(players);
-    if (selectedPlayer && !players.find(p => p.name === selectedPlayer.name)) {
-      setSelectedPlayer(null);
-    }
-  }, [selectedPlayer]);
-
-  const handleAddPlayer = useCallback((player: RoomPlayer) => {
-    setRoomPlayers(prev => prev.some(p => p.name === player.name) ? prev : [...prev, player]);
-  }, []);
-
-  const handleRemovePlayer = useCallback((playerName: string) => {
-    setRoomPlayers(prev => prev.filter(p => p.name !== playerName));
-    if (selectedPlayer?.name === playerName) {
-      setSelectedPlayer(null);
-    }
-  }, [selectedPlayer]);
-
-  useEffect(() => {
-    client.on('roomPlayers', handleRoomPlayers);
-    client.on('roomAddPlayer', handleAddPlayer);
-    client.on('roomRemovePlayer', handleRemovePlayer);
-
-    return () => {
-      client.off('roomPlayers', handleRoomPlayers);
-      client.off('roomAddPlayer', handleAddPlayer);
-      client.off('roomRemovePlayer', handleRemovePlayer);
-    };
-  }, [client, handleRoomPlayers, handleAddPlayer, handleRemovePlayer]);
 
   const handleExitClick = (direction: string) => {
     client.sendCommand(direction); 
   };
 
   const handleSelectItemFromRoom = (index: number) => {
-    setSelectedRoomItem(index > -1 && filteredRoomItems[index] ? filteredRoomItems[index] : null);
+    setSelectedRoomItemId(filteredRoomItems[index]?.id ?? null);
   };
 
-  const handleGetItem = useCallback((itemToGet: Item) => {
-    client.sendCommand(`get ${itemToGet.id}`);
+  const handleItemAction = useCallback((action: ItemAction) => {
+    performItemAction(client, action);
   }, [client]);
 
   const handleSelectPlayer = (index: number) => {
-    setSelectedPlayer(index > -1 && roomPlayers[index] ? roomPlayers[index] : null);
+    setSelectedPlayerName(roomPlayers[index]?.name ?? null);
   };
 
 
@@ -173,7 +104,11 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     );
   }
 
-  const exits = roomInfo?.exits ? Object.entries(roomInfo.exits).sort(([dirA], [dirB]) => dirA.localeCompare(dirB)) : [];
+  const exits = roomInfo?.exits ? Object.entries(roomInfo.exits).sort(([dirA], [dirB]) => compareDirections(dirA, dirB)) : [];
+  // Strip before the fallback checks so a name that is only markup still
+  // renders the placeholder rather than an empty heading.
+  const roomName = roomInfo?.name ? stripMudAnsiTags(roomInfo.name) : "";
+  const roomArea = roomInfo?.area ? stripMudAnsiTags(roomInfo.area) : "";
 
   return (
     <div
@@ -183,8 +118,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     >
       {roomInfo && (
         <>
-          <h4 id={headingId}>{roomInfo.name || "Current Room"}</h4>
-          {roomInfo.area && <p className="room-area">Area: {roomInfo.area}</p>}
+          <h4 id={headingId}>{roomName || "Current Room"}</h4>
+          {roomArea && <p className="room-area">Area: {roomArea}</p>}
           {exits.length > 0 && (
             <div className="room-exits">
               <h5>Exits</h5>
@@ -192,11 +127,12 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
                 {exits.map(([direction, roomId]) => (
                   <li key={direction}>
                     <button
+                      type="button"
                       onClick={() => handleExitClick(direction)}
-                      title={`Go ${direction} (to room ${roomId})`}
-                      aria-label={`Go ${direction}`}
+                      title={`Go ${directionLabel(direction)} (to room ${roomId})`}
+                      aria-label={`Go ${directionLabel(direction)}`}
                     >
-                      {direction.toUpperCase()}
+                      {directionLabel(direction)}
                     </button>
                   </li>
                 ))}
@@ -220,6 +156,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
             itemClassName={getRoomItemClassName}
             getItemTextValue={getRoomItemTextValue}
             onSelectedIndexChange={handleSelectItemFromRoom}
+            focusReturnId={contentsHeadingId}
           />
         )}
       </div>
@@ -228,8 +165,9 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
         <div className="selected-room-item-card-container" style={{ marginTop: '1rem' }}>
           <ItemCard
             item={selectedRoomItem}
-            onGet={handleGetItem}
-            // No onDrop, onWear, onRemove for items on the ground via RoomInfoDisplay
+            onAction={handleItemAction}
+            focusReturnId={contentsListId}
+            focusFallbackId={contentsHeadingId}
           />
         </div>
       )}
@@ -248,6 +186,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
             itemClassName={getPlayerItemClassName}
             getItemTextValue={getPlayerTextValue}
             onSelectedIndexChange={handleSelectPlayer}
+            focusReturnId={playersHeadingId}
           />
         )}
       </div>
@@ -258,6 +197,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
             player={selectedPlayer}
             onLook={handleLookAtPlayer}
             onFollow={handleFollowPlayer}
+            focusReturnId={playersListId}
+            focusFallbackId={playersHeadingId}
           />
         </div>
       )}

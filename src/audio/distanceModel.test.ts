@@ -1,0 +1,157 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  DEFAULT_SPATIAL_PROFILE,
+  distanceBetween,
+  distanceCompensatedSend,
+  inverseDistanceGain,
+  MAX_SEND_DISTANCE_BOOST,
+  profileDistanceGain,
+  profilePannerDistance,
+  SPATIAL_DISTANCE_MODEL,
+  type SpatialProfile,
+} from './distanceModel';
+
+describe('inverseDistanceGain', () => {
+  it('is full volume at or inside the reference distance', () => {
+    expect(inverseDistanceGain(0)).toBe(1);
+    expect(inverseDistanceGain(SPATIAL_DISTANCE_MODEL.refDistance)).toBe(1);
+    expect(inverseDistanceGain(SPATIAL_DISTANCE_MODEL.refDistance - 0.5)).toBe(1);
+  });
+
+  it('matches the Web Audio inverse model beyond the reference distance', () => {
+    // refDistance 1, rolloff 1 → pressure amplitude falls as 1 / distance:
+    // -6 dB for each doubling of distance, corresponding to inverse-square intensity.
+    expect(inverseDistanceGain(58)).toBeCloseTo(1 / 58, 6);
+    expect(inverseDistanceGain(8)).toBeCloseTo(1 / 8, 6);
+  });
+
+  it('falls off monotonically with distance', () => {
+    const a = inverseDistanceGain(10);
+    const b = inverseDistanceGain(40);
+    const c = inverseDistanceGain(120);
+    expect(a).toBeGreaterThan(b);
+    expect(b).toBeGreaterThan(c);
+    expect(c).toBeGreaterThan(0);
+  });
+
+  it('clamps distance at maxDistance so far sources settle to a floor', () => {
+    const atMax = inverseDistanceGain(SPATIAL_DISTANCE_MODEL.maxDistance);
+    expect(inverseDistanceGain(SPATIAL_DISTANCE_MODEL.maxDistance + 500)).toBeCloseTo(atMax, 9);
+    expect(inverseDistanceGain(99999)).toBeCloseTo(atMax, 9);
+  });
+
+  it('treats non-finite distance as full volume', () => {
+    expect(inverseDistanceGain(NaN)).toBe(1);
+    expect(inverseDistanceGain(Infinity)).toBe(1);
+  });
+
+  it('honours a custom model', () => {
+    const model = { refDistance: 1, rolloffFactor: 1, maxDistance: 10000 };
+    expect(inverseDistanceGain(2, model)).toBeCloseTo(1 / 2, 6);
+    expect(inverseDistanceGain(10, model)).toBeCloseTo(1 / 10, 6);
+  });
+});
+
+describe('profileDistanceGain', () => {
+  // sounds-todo/contract-cases.json "inverseDistance"
+  const catalogProfile: SpatialProfile = {
+    model: 'inverse',
+    refDistance: 1,
+    maxDistance: 50,
+    rolloff: 1,
+    coneInnerAngle: 360,
+    coneOuterAngle: 360,
+    coneOuterGain: 1,
+  };
+
+  it('matches the contract inverse vectors, with max distance as a clamp', () => {
+    const distances = [1, 2, 10, 50, 100];
+    const expected = [1, 0.5, 0.1, 0.02, 0.02];
+    distances.forEach((distance, i) => {
+      expect(profileDistanceGain(distance, catalogProfile)).toBeCloseTo(expected[i], 9);
+    });
+  });
+
+  it('implements the linear and none models', () => {
+    const linear: SpatialProfile = { ...catalogProfile, model: 'linear', maxDistance: 11 };
+    expect(profileDistanceGain(1, linear)).toBe(1);
+    expect(profileDistanceGain(6, linear)).toBeCloseTo(0.5, 9);
+    expect(profileDistanceGain(11, linear)).toBeCloseTo(0, 9);
+    expect(profileDistanceGain(50, linear)).toBeCloseTo(0, 9);
+    expect(profileDistanceGain(40, { ...catalogProfile, model: 'none' })).toBe(1);
+  });
+
+  it('keeps the legacy default curve for sounds without a profile', () => {
+    expect(profileDistanceGain(58, DEFAULT_SPATIAL_PROFILE)).toBeCloseTo(inverseDistanceGain(58), 12);
+  });
+});
+
+describe('distanceBetween', () => {
+  it('computes Euclidean distance', () => {
+    expect(distanceBetween([0, 0, 0], [3, 4, 0])).toBeCloseTo(5, 9);
+    expect(distanceBetween([1, 2, 3], [1, 2, 3])).toBe(0);
+    expect(distanceBetween([-5, -5, 0], [-88, -29, 0])).toBeCloseTo(
+      Math.sqrt(83 * 83 + 24 * 24),
+      6,
+    );
+  });
+
+  it('returns 0 for missing or short vectors', () => {
+    expect(distanceBetween(undefined, [1, 2, 3])).toBe(0);
+    expect(distanceBetween([1, 2, 3], null)).toBe(0);
+    expect(distanceBetween([1, 2], [1, 2, 3])).toBe(0);
+  });
+});
+
+describe('profilePannerDistance', () => {
+  it('gives the panner the default profile as its own inverse model', () => {
+    expect(profilePannerDistance(DEFAULT_SPATIAL_PROFILE)).toEqual({
+      distanceModel: 'inverse',
+      refDistance: DEFAULT_SPATIAL_PROFILE.refDistance,
+      rolloffFactor: DEFAULT_SPATIAL_PROFILE.rolloff,
+      maxDistance: DEFAULT_SPATIAL_PROFILE.maxDistance,
+    });
+  });
+
+  it('maps a linear profile to the linear model and none to no rolloff', () => {
+    const profile = { ...DEFAULT_SPATIAL_PROFILE, refDistance: 2, maxDistance: 40, rolloff: 0.5 };
+    expect(profilePannerDistance({ ...profile, model: 'linear' })).toEqual({
+      distanceModel: 'linear',
+      refDistance: 2,
+      rolloffFactor: 0.5,
+      maxDistance: 40,
+    });
+    expect(profilePannerDistance({ ...profile, model: 'none' })).toMatchObject({
+      distanceModel: 'inverse',
+      rolloffFactor: 0,
+    });
+  });
+});
+
+describe('distanceCompensatedSend', () => {
+  it('undoes the distance gain, so gain x send is the requested send', () => {
+    expect(distanceCompensatedSend(0.3, 0.25)).toBeCloseTo(1.2, 12);
+    expect(0.25 * distanceCompensatedSend(0.3, 0.25)).toBeCloseTo(0.3, 12);
+    expect(distanceCompensatedSend(0.3, 0.5)).toBeCloseTo(0.6, 12);
+  });
+
+  it('leaves the send alone at full distance gain', () => {
+    expect(distanceCompensatedSend(0.3, 1)).toBe(0.3);
+    expect(distanceCompensatedSend(0, 0.25)).toBe(0);
+  });
+
+  it('caps the boost, so the reverb falls with the direct sound beyond the cap', () => {
+    const atCap = 1 / MAX_SEND_DISTANCE_BOOST;
+    expect(distanceCompensatedSend(0.3, atCap)).toBeCloseTo(0.3 * MAX_SEND_DISTANCE_BOOST, 12);
+    expect(distanceCompensatedSend(0.3, atCap / 10)).toBeCloseTo(0.3 * MAX_SEND_DISTANCE_BOOST, 12);
+    // The floor of the default curve (10 km) would otherwise ask for 10 000 x.
+    const floor = profileDistanceGain(Number.MAX_VALUE, DEFAULT_SPATIAL_PROFILE);
+    expect(distanceCompensatedSend(1, floor)).toBe(MAX_SEND_DISTANCE_BOOST);
+  });
+
+  it('stays finite where a linear curve reaches silence', () => {
+    expect(distanceCompensatedSend(0.3, 0)).toBeCloseTo(0.3 * MAX_SEND_DISTANCE_BOOST, 12);
+    expect(distanceCompensatedSend(0.3, Number.NaN)).toBeCloseTo(0.3 * MAX_SEND_DISTANCE_BOOST, 12);
+  });
+});

@@ -1,13 +1,37 @@
-import Editor from "@monaco-editor/react";
-import React, { useEffect, useMemo, useState } from "react";
-import { useBeforeunload } from "react-beforeunload";
-import { useLocation } from "react-router-dom";
-import { useTitle } from "react-use";
-import { usePreferences } from "../../hooks/usePreferences";
-import { EditorSession } from "../../mcp";
+import Editor from '../../editor/MonacoEditor';
+import type * as MonacoApi from 'monaco-editor/esm/vs/editor/editor.api';
+import { announce } from '@react-aria/live-announcer';
+import type { editor as MonacoEditor } from 'monaco-editor';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useBeforeunload } from 'react-beforeunload';
+import { useTitle } from 'react-use';
+import {
+  getMooQuickFixes,
+  type MooQuickFix,
+  type MooQuickFixDiagnostic,
+  type MooQuickFixEdit,
+} from '../../editor/moocode/codeActions';
+import { toMonacoMarkers } from '../../editor/moocode/diagnostics';
+import {
+  getEditorLanguageForSessionType,
+  MOO_LANGUAGE_ID,
+  registerMooLanguage,
+} from '../../editor/moocode/language';
+import { MOO_CODE_ACTION_FIX_ALL_KIND } from '../../editor/moocode/contract';
+import {
+  lineCommentsToStringStatements,
+  stringStatementsToLineComments,
+} from '../../editor/moocode/lineComments';
+import { MOO_EDITOR_THEME_NAME } from '../../editor/moocode/theme';
+import { toMonacoTreeSitterMarkers } from '../../editor/moocode/treeSitter';
+import { usePreferences } from '../../stores/preferencesStore';
+import type { EditorSession } from '../../mcp';
+import { canUseBrowserWindow, initializeBrowserPolicy, useBrowserPolicy } from '../../browserPolicy';
 import EditorToolbar from './toolbar';
-import { EditorStatusBar } from "./statusbar";
+import { EditorStatusBar } from './statusbar';
 import './editor.css'; // Import the new CSS file
+
+type Monaco = typeof MonacoApi;
 
 export enum DocumentState {
   Unchanged,
@@ -15,33 +39,157 @@ export enum DocumentState {
   Saved,
 }
 
-function EditorWindow() {
-  const location = useLocation();
-  const editorInstance = React.useRef<any>(null);
-  const [clientId, setClientId] = useState<string>("");
-  const [code, setCode] = useState<string>("");
-  const [originalCode, setOriginalCode] = useState<string>("");
-  const [documentState, setDocumentState] = useState<DocumentState>(
-    DocumentState.Unchanged
-  );
+type MooDiagnosticTarget = {
+  lineNumber: number;
+  column: number;
+};
+
+type MooDiagnosticCounts = {
+  errorCount: number;
+  warningCount: number;
+};
+
+type MooProblemFilter = 'all' | 'error' | 'warning';
+
+// Debounce the entire diagnostics pipeline. While the user is typing we must not
+// touch model markers, the role="status" live region, or the aria-describedby
+// problems panel — every such mutation interrupts the screen reader and yanks it
+// out of the editor textarea. Diagnostics recompute (and announce) only once the
+// user pauses, which is how an accessible editor is supposed to behave.
+const MOO_DIAGNOSTIC_DEBOUNCE_MS = 400;
+const MONACO_WARNING_MARKER_SEVERITY = 4;
+const EDITOR_STATUSBAR_ID = 'editor-statusbar';
+const EDITOR_PROBLEMS_ID = 'editor-moo-problems';
+const MOO_PROBLEMS_QUICK_FIX_EDIT_SOURCE = 'moo-problems-quick-fix';
+
+function EditorWindow({ search = window.location.search }: { search?: string }) {
+  const editorInstance = React.useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const monacoInstance = React.useRef<Monaco | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
+  // Set when a document is loaded; consumed exactly once to focus the editor as
+  // soon as the editor instance is ready (deterministic, no timer). Focus may be
+  // requested before the editor has mounted (load arrives first) or after (editor
+  // mounts first); whichever happens second performs the focus.
+  const pendingFocusOnReady = React.useRef<boolean>(false);
+  const [clientId, setClientId] = useState<string>('');
+  const [sessionActive, setSessionActive] = useState(false);
+  const [code, setCode] = useState<string>('');
+  const [originalCode, setOriginalCode] = useState<string>('');
+  const [documentState, setDocumentState] = useState<DocumentState>(DocumentState.Unchanged);
+  const [mooDiagnosticCounts, setMooDiagnosticCounts] = useState<MooDiagnosticCounts>({
+    errorCount: 0,
+    warningCount: 0,
+  });
+  const [mooDiagnosticMarkers, setMooDiagnosticMarkers] = useState<MonacoEditor.IMarkerData[]>([]);
+  const [mooDiagnosticTarget, setMooDiagnosticTarget] = useState<MooDiagnosticTarget | null>(null);
   const [session, setSession] = useState<EditorSession>({
-    name: "none",
+    name: 'none',
     contents: [],
-    reference: "",
-    type: "",
+    reference: '',
+    type: '',
   });
 
-  const handleEditorMount = (editor: any, monaco: any) => {
-    editorInstance.current = editor;
-  };
-  const [prefState, dispatch] = usePreferences();
-  console.log(prefState);
-  const accessibilityMode = prefState.editor.accessibilityMode;
-  const autocompleteEnabled = prefState.editor.autocompleteEnabled
+  // Focus the editor once, when both the editor instance is ready and a document
+  // has been loaded. Safe to call from either the load handler or the editor's
+  // mount callback; it no-ops unless a focus is pending and the instance exists,
+  // and it clears the pending flag so focus fires exactly once.
+  const focusEditorOnReady = React.useCallback(() => {
+    if (!pendingFocusOnReady.current) {
+      return;
+    }
+    const editor = editorInstance.current;
+    if (!editor) {
+      return;
+    }
+    pendingFocusOnReady.current = false;
+    editor.focus();
+  }, []);
 
+  const handleEditorMount = (editor: MonacoEditor.IStandaloneCodeEditor, monaco: Monaco) => {
+    editorInstance.current = editor;
+    monacoInstance.current = monaco;
+    setEditorReady(true);
+    // If a document already loaded before the editor mounted, focus it now.
+    focusEditorOnReady();
+  };
+  const handleEditorBeforeMount = (monaco: Monaco) => {
+    registerMooLanguage(monaco);
+  };
+  const editorPreferences = usePreferences((state) => state.editor);
+  const accessibilityMode = editorPreferences.accessibilityMode;
+  const autocompleteEnabled = editorPreferences.autocompleteEnabled;
+  const editorLanguage = getEditorLanguageForSessionType(session.type);
+  const updateMooDiagnostics = React.useCallback((markers: MonacoEditor.IMarkerData[]) => {
+    setMooDiagnosticMarkers(markers);
+    setMooDiagnosticCounts(getMooDiagnosticCounts(markers));
+    setMooDiagnosticTarget(getFirstMooDiagnosticTarget(markers));
+  }, []);
+
+  useEffect(() => {
+    const monaco = monacoInstance.current;
+    if (!editorReady || !monaco || !editorInstance.current?.getModel()) {
+      return;
+    }
+
+    let cancelled = false;
+
+    // Recompute lexical + tree-sitter diagnostics together, once. Run only after
+    // the debounce fires so a burst of keystrokes produces a single update rather
+    // than one marker/live-region/describedby churn per character.
+    const computeDiagnostics = () => {
+      const model = editorInstance.current?.getModel();
+      if (cancelled || !model) {
+        return;
+      }
+
+      const markers =
+        editorLanguage === MOO_LANGUAGE_ID
+          ? toMonacoMarkers(
+              code,
+              {
+                error: monaco.MarkerSeverity.Error,
+                warning: monaco.MarkerSeverity.Warning,
+              },
+              model.uri,
+            )
+          : [];
+
+      monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, markers);
+      updateMooDiagnostics(markers);
+
+      if (editorLanguage !== MOO_LANGUAGE_ID) {
+        return;
+      }
+
+      const parserModelVersion = model.getVersionId();
+      void toMonacoTreeSitterMarkers(code, monaco.MarkerSeverity.Error)
+        .then((treeSitterMarkers) => {
+          if (
+            cancelled ||
+            editorInstance.current?.getModel() !== model ||
+            model.getVersionId() !== parserModelVersion
+          ) {
+            return;
+          }
+
+          const allMarkers = [...markers, ...treeSitterMarkers];
+          monaco.editor.setModelMarkers(model, MOO_LANGUAGE_ID, allMarkers);
+          updateMooDiagnostics(allMarkers);
+        })
+        .catch((error: unknown) => {
+          console.warn('MOO Tree-sitter diagnostics failed', error);
+        });
+    };
+
+    const debounceTimer = window.setTimeout(computeDiagnostics, MOO_DIAGNOSTIC_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(debounceTimer);
+    };
+  }, [code, editorLanguage, editorReady, updateMooDiagnostics]);
 
   useBeforeunload((event) => {
-    channel.postMessage({ type: "close", id });
     if (documentState === DocumentState.Changed) {
       event.preventDefault();
     }
@@ -50,101 +198,211 @@ function EditorWindow() {
   // Update the title
 
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
-  const title = isLoaded
-    ? `${session.name} - Mongoose Editor`
-    : "Mongoose Editor";
+  const [loadError, setLoadError] = useState('');
+  const policy = useBrowserPolicy();
+  const ownerMetadata = useMemo(() => {
+    const params = new URLSearchParams(search);
+    return { sessionId: params.get('parentSession') ?? '', purpose: params.get('purpose') === 'visitor' ? 'visitor' as const : 'owner' as const };
+  }, [search]);
+  const paused = !policy.ready || !canUseBrowserWindow(policy.policy, ownerMetadata.sessionId, ownerMetadata.purpose);
+  useEffect(() => { void initializeBrowserPolicy().catch(() => {}); }, []);
+  const title = paused ? 'Mongoose Editor paused' : isLoaded ? `${session.name} - Mongoose Editor` : 'Mongoose Editor';
   useTitle(title);
   const docstate = useMemo(() => {
     switch (documentState) {
       case DocumentState.Unchanged:
-        return "Unchanged";
+        return 'Unchanged';
       case DocumentState.Changed:
-        return "Changed";
+        return 'Changed';
       case DocumentState.Saved:
-        return "Saved";
+        return 'Saved';
     }
   }, [documentState]);
-  const channel = useMemo(() => new BroadcastChannel("editor"), []);
-  const params = new URLSearchParams(location.search);
-  const id = decodeURIComponent(params.get("reference") || "");
-
-  useEffect(() => {
-    if (!id) {
+  const mooDiagnosticsSummary =
+    editorLanguage === MOO_LANGUAGE_ID
+      ? formatMooDiagnosticsSummary(mooDiagnosticCounts)
+      : undefined;
+  const mooDiagnosticProblems = useMemo(
+    () =>
+      editorLanguage === MOO_LANGUAGE_ID
+        ? [...mooDiagnosticMarkers].sort(compareMooDiagnosticMarkers)
+        : [],
+    [editorLanguage, mooDiagnosticMarkers],
+  );
+  const mooQuickFixes = useMemo(
+    () =>
+      editorLanguage === MOO_LANGUAGE_ID
+        ? getMooQuickFixes(code, getMooParserQuickFixDiagnostics(mooDiagnosticMarkers))
+        : [],
+    [code, editorLanguage, mooDiagnosticMarkers],
+  );
+  const editorAriaLabel = formatEditorAriaLabel(session.reference, editorLanguage);
+  const editorOptions = useMemo(
+    () =>
+      createEditorOptions({
+        accessibilityMode,
+        autocompleteEnabled,
+        ariaLabel: editorAriaLabel,
+        language: editorLanguage,
+      }),
+    [accessibilityMode, autocompleteEnabled, editorAriaLabel, editorLanguage],
+  );
+  const showFirstMooDiagnostic = React.useCallback(() => {
+    if (!mooDiagnosticTarget) {
       return;
     }
-    console.log("ID: " + id);
-    console.log("Sending ready message");
-    channel.postMessage({ type: "ready", id });
+
+    editorInstance.current?.setPosition(mooDiagnosticTarget);
+    editorInstance.current?.revealPositionInCenter(mooDiagnosticTarget);
+    editorInstance.current?.focus();
+  }, [mooDiagnosticTarget]);
+  const showMooDiagnostic = React.useCallback((marker: MonacoEditor.IMarkerData) => {
+    const target = getMooDiagnosticTarget(marker);
+
+    editorInstance.current?.setPosition(target);
+    editorInstance.current?.revealPositionInCenter(target);
+    editorInstance.current?.focus();
+  }, []);
+  const applyMooQuickFix = React.useCallback(
+    (quickFix: MooQuickFix) => {
+      const updatedCode = applyMooQuickFixEdits(code, quickFix);
+
+      editorInstance.current?.pushUndoStop();
+      editorInstance.current?.executeEdits(
+        MOO_PROBLEMS_QUICK_FIX_EDIT_SOURCE,
+        getMooQuickFixEditOperations(quickFix),
+      );
+      editorInstance.current?.pushUndoStop();
+      setCode(updatedCode);
+      setDocumentState(getDocumentStateForCode(updatedCode, originalCode));
+      setIsLoaded(true);
+      announce(formatMooQuickFixAnnouncement(quickFix), 'polite', 2000);
+      editorInstance.current?.focus();
+    },
+    [code, originalCode],
+  );
+  const params = new URLSearchParams(search);
+  const id = params.get('reference') || '';
+  const openingOwner = params.get('owner') || '';
+  const channel = useMemo(
+    () => new BroadcastChannel(`editor:${new URLSearchParams(search).get('owner') || crypto.randomUUID()}`),
+    [search],
+  );
+
+  useEffect(() => {
+    const closed = () => channel.postMessage({ type: 'close', id });
+    window.addEventListener('pagehide', closed);
+    return () => {
+      window.removeEventListener('pagehide', closed);
+      closed();
+      channel.close();
+    };
+  }, [channel, id]);
+
+  useEffect(() => {
+    if (!id || !openingOwner) {
+      return;
+    }
+    const timeout = isLoaded ? undefined : window.setTimeout(() => setLoadError('The game tab did not load this document. Reopen the editor from your connected game tab.'), 8000);
 
     const handleMessage = (event: MessageEvent) => {
-      console.log(event.data);
+      if (!event.data || event.data.id !== id) return;
       switch (event.data.type) {
-        case "load":
-          if (clientId !== "") {
+        case 'load': {
+          if (event.data.id !== id) {
+            return; // This load is addressed to a different window
+          }
+          if (clientId !== '') {
             return; // We already have a session
           }
-          const contents = event.data.session.contents.join("\n");
+          const loaded: EditorSession = event.data.session;
+          window.clearTimeout(timeout);
+          setLoadError('');
+          const lines =
+            getEditorLanguageForSessionType(loaded.type) === MOO_LANGUAGE_ID &&
+            usePreferences.getState().editor.lineComments
+              ? stringStatementsToLineComments(loaded.contents)
+              : loaded.contents;
+          const contents = lines.join('\n');
           setCode(contents);
           setOriginalCode(contents);
-          setSession(event.data.session);
+          setSession({ ...loaded, contents: lines });
           setDocumentState(DocumentState.Unchanged);
-          setClientId(event.data.clientId);
+          setClientId(id);
+          setSessionActive(true);
           setIsLoaded(true); // Add this line to set isLoaded to true when content is loaded
-          setTimeout(focusEditor, 100);
+          // Focus the code editor on open, deterministically and exactly once.
+          // If the editor instance is already mounted, this focuses now; if the
+          // editor mounts later, handleEditorMount performs the focus. No timer.
+          pendingFocusOnReady.current = true;
+          focusEditorOnReady();
           break;
-        case "shutdown":
-          console.log("Received shutdown message");
+        }
+        case 'shutdown':
+          setSessionActive(false);
           if (documentState === DocumentState.Changed) {
-            const shouldClose = window.confirm("You have unsaved changes. Are you sure you want to close this editor?");
+            const shouldClose = window.confirm(
+              'You have unsaved changes. Are you sure you want to close this editor?',
+            );
             if (!shouldClose) {
               return;
             }
           }
-          channel.close();
           window.close();
           break;
         default:
-          console.warn("Unknown message type received", event.data.type);
+          console.warn('Unknown message type received', event.data.type);
       }
     };
 
-    channel.addEventListener("message", handleMessage);
+    channel.addEventListener('message', handleMessage);
+    if (!isLoaded) channel.postMessage({ type: 'ready', id });
     return () => {
-      channel.removeEventListener("message", handleMessage);
-      channel.postMessage({ type: "close", id });
+      window.clearTimeout(timeout);
+      channel.removeEventListener('message', handleMessage);
     };
-  }, [channel, clientId, id, documentState]);
+  }, [channel, clientId, id, openingOwner, isLoaded, documentState, focusEditorOnReady]);
 
   const revert = () => {
+    const editor = editorInstance.current;
+    const model = editor?.getModel();
+    if (editor && model) {
+      editor.pushUndoStop();
+      editor.executeEdits('revert', [{ range: model.getFullModelRange(), text: originalCode }]);
+      editor.pushUndoStop();
+      editor.focus();
+    }
     setCode(originalCode);
     setDocumentState(DocumentState.Unchanged);
   };
 
   // Save the code
-  const onSave = (event: any
-  ) => {
-    const contents = code.split(/\r\n|\r|\n/); // Split the code into lines
+  const onSave = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!sessionActive || paused) {
+      event.preventDefault();
+      return;
+    }
+    const lines = (editorInstance.current?.getValue() ?? code).split(/\r\n|\r|\n/);
+    // The server does not know `//`; send what the core's own rewrite would.
+    const contents =
+      editorLanguage === MOO_LANGUAGE_ID ? lineCommentsToStringStatements(lines) : lines;
     const sessionData = { ...session, contents };
-    channel.postMessage({ type: "save", session: sessionData, id });
+    channel.postMessage({ type: 'save', session: sessionData, id });
     setDocumentState(DocumentState.Saved);
-    focusEditor();
     event.preventDefault();
-
+    // Saving from the toolbar (button click or Alt+S) leaves focus on the Save
+    // button, stranding a screen-reader user away from their code. Put focus back
+    // in the editor so typing continues immediately. The concise status region
+    // also exposes the Saved state; this handler adds no separate announcement.
+    editorInstance.current?.focus();
   };
-
 
   const onChanges = (value: string | undefined) => {
     if (value === undefined) {
       return;
     }
-    console.log("Original: " + originalCode);
-    console.log("New: " + value);
     setCode(value);
-    if (value.split(/\r\n|\r|\n/).join("\n") !== originalCode) {
-      setDocumentState(DocumentState.Changed);
-    } else {
-      setDocumentState(DocumentState.Unchanged);
-    }
+    setDocumentState(getDocumentStateForCode(value, originalCode));
 
     if (!isLoaded) {
       setIsLoaded(true);
@@ -153,13 +411,14 @@ function EditorWindow() {
 
   // Download code to text file
   const downloadText = () => {
-    const blob = new Blob([code], { type: "text/plain" });
+    if (paused) return;
+    const blob = new Blob([editorInstance.current?.getValue() ?? code], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const link = document.createElement('a');
 
     const date = new Date();
-    const dateString = date.toLocaleDateString().replace(/\//g, "-");
-    const timeString = date.toLocaleTimeString().replace(/:/g, "-");
+    const dateString = date.toLocaleDateString().replace(/\//g, '-');
+    const timeString = date.toLocaleTimeString().replace(/:/g, '-');
     // file name could use session.name for object.verb or session.reference for obj#.verb
     const filename = `${session.name}-${dateString}-${timeString}.txt`;
 
@@ -173,31 +432,539 @@ function EditorWindow() {
 
   return (
     // Use the ID for CSS targeting
-    <div id="editor-window">
-      <EditorToolbar
-        onSave={onSave}
-        onRevert={revert}
-        onDownload={downloadText}
-      />
-      <Editor
+    <>
+    {!openingOwner && <p role="alert">This editor was opened by an older game tab. Reload that game tab, then reopen the editor to load and save your document.</p>}
+    {loadError && <p role="alert">{loadError}</p>}
+    {(!openingOwner || loadError) && window.opener && <button type="button" onClick={() => window.opener?.focus()}>Return to game tab</button>}
+    {paused && <p role="status">{policy.policy.phase === 'visitor'
+      ? 'This editor is paused during the temporary visit. Your work is kept for the owner.'
+      : 'Saved editor data is paused. Sign in and resume your saved character in the game tab.'}</p>}
+    <div id="editor-window" hidden={paused}>
+      <EditorToolbar onSave={onSave} onRevert={revert} onDownload={downloadText} saveDisabled={!sessionActive} />
+      {isLoaded && <Editor
         height="80vh"
-        defaultLanguage="lambdamoo"
-        value={code}
+        language={editorLanguage}
+        theme={MOO_EDITOR_THEME_NAME}
+        defaultValue={session.contents.join('\n')}
         onChange={onChanges}
-        options={{ wordWrap: "on", accessibilitySupport: accessibilityMode ? "on" : "off", quickSuggestions: autocompleteEnabled }}
+        options={{ ...editorOptions, readOnly: paused }}
+        ariaDescribedBy={EDITOR_STATUSBAR_ID}
+        beforeMount={handleEditorBeforeMount}
         onMount={handleEditorMount}
         path={session.reference}
+      />}
+      {editorLanguage === MOO_LANGUAGE_ID ? (
+        <MooProblemsPanel
+          id={EDITOR_PROBLEMS_ID}
+          markers={mooDiagnosticProblems}
+          onProblemClick={showMooDiagnostic}
+          onQuickFixClick={applyMooQuickFix}
+          quickFixes={mooQuickFixes}
+        />
+      ) : null}
+      <EditorStatusBar
+        id={EDITOR_STATUSBAR_ID}
+        onDiagnosticsClick={mooDiagnosticTarget ? showFirstMooDiagnostic : undefined}
+        diagnosticsSummary={mooDiagnosticsSummary}
+        diagnosticsEnabled={editorLanguage === MOO_LANGUAGE_ID}
+        docstate={isLoaded && !sessionActive
+          ? `${docstate}. Game session ended. Download your edits before closing or reopen from the game to save.`
+          : docstate}
+        session={session}
       />
-      <EditorStatusBar docstate={docstate} session={session} />
     </div>
+    </>
   );
+}
 
-  function focusEditor() {
-    if (editorInstance.current !== null) {
-      editorInstance.current.focus();
+type MooProblemsPanelProps = {
+  id: string;
+  markers: MonacoEditor.IMarkerData[];
+  onProblemClick: (marker: MonacoEditor.IMarkerData) => void;
+  onQuickFixClick: (quickFix: MooQuickFix) => void;
+  quickFixes: MooQuickFix[];
+};
+
+function MooProblemsPanel({
+  id,
+  markers,
+  onProblemClick,
+  onQuickFixClick,
+  quickFixes,
+}: MooProblemsPanelProps) {
+  const [filter, setFilter] = useState<MooProblemFilter>('all');
+  const [activeToolbarButton, setActiveToolbarButton] = useState(0);
+  const toolbarRef = React.useRef<HTMLDivElement>(null);
+
+  const counts = getMooDiagnosticCounts(markers);
+  const visibleMarkers = markers.filter((marker) => mooProblemFilterIncludesMarker(filter, marker));
+  const fixAllQuickFixes = quickFixes.filter(isMooFixAllQuickFix);
+
+  return (
+    <section aria-label="MOO problems" className="editor-problems" id={id}>
+      {markers.length === 0 ? (
+        <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage('all')}</p>
+      ) : (
+        <>
+          <div aria-label="MOO problem filters" className="editor-problems-filters" role="toolbar" ref={toolbarRef}
+            onFocusCapture={event => {
+              if (!(event.target instanceof HTMLButtonElement)) return;
+              const buttons = Array.from(toolbarRef.current?.querySelectorAll('button') ?? []);
+              const index = buttons.indexOf(event.target);
+              if (index >= 0) setActiveToolbarButton(index);
+            }}
+            onKeyDown={event => {
+              if (!(event.target instanceof HTMLButtonElement)) return;
+              const buttons = Array.from(toolbarRef.current?.querySelectorAll('button') ?? []);
+              const index = buttons.indexOf(event.target);
+              if (index < 0) return;
+              let next: number;
+              switch (event.key) {
+                case 'ArrowRight': next = (index + 1) % buttons.length; break;
+                case 'ArrowLeft': next = (index + buttons.length - 1) % buttons.length; break;
+                case 'Home': next = 0; break;
+                case 'End': next = buttons.length - 1; break;
+                default: return;
+              }
+              event.preventDefault();
+              buttons[next]?.focus();
+            }}>
+            {mooProblemFilterOptions(markers.length, counts).map((option, index) => (
+              <button
+                aria-label={option.ariaLabel}
+                aria-pressed={filter === option.filter}
+                className="editor-problems-filter"
+                key={option.filter}
+                onClick={() => setFilter(option.filter)}
+                type="button"
+                tabIndex={index === Math.min(activeToolbarButton, 2 + fixAllQuickFixes.length) ? 0 : -1}
+              >
+                {option.label}
+              </button>
+            ))}
+            {fixAllQuickFixes.map((quickFix, index) => (
+              <button
+                aria-label={`Apply MOO fix all: ${quickFix.title}`}
+                className="editor-problems-fix-all-button"
+                key={quickFix.title}
+                onClick={() => onQuickFixClick(quickFix)}
+                type="button"
+                tabIndex={index + 3 === Math.min(activeToolbarButton, 2 + fixAllQuickFixes.length) ? 0 : -1}
+              >
+                Fix all
+              </button>
+            ))}
+          </div>
+          {visibleMarkers.length > 0 ? (
+            <ol className="editor-problems-list">
+              {visibleMarkers.map((marker, index) => {
+                const severity = formatMooProblemSeverity(marker);
+                const code = formatMooProblemCode(marker);
+                const target = getMooDiagnosticTarget(marker);
+                const label = `MOO ${severity.toLowerCase()} ${code} on line ${
+                  target.lineNumber
+                }, column ${target.column}: ${marker.message}`;
+                const quickFix = findMooQuickFixForMarker(quickFixes, marker);
+
+                return (
+                  <li className="editor-problem" key={formatMooProblemKey(marker, index)}>
+                    <div className="editor-problem-row">
+                      <button
+                        aria-label={label}
+                        className="editor-problem-button"
+                        onClick={() => onProblemClick(marker)}
+                        type="button"
+                      >
+                        <span
+                          className={`editor-problem-severity editor-problem-severity-${severity.toLowerCase()}`}
+                        >
+                          {severity}
+                        </span>{' '}
+                        <span className="editor-problem-code">{code}</span>{' '}
+                        <span className="editor-problem-location">
+                          Ln {target.lineNumber}, Col {target.column}
+                        </span>{' '}
+                        <span className="editor-problem-message">{marker.message}</span>
+                      </button>
+                      {quickFix ? (
+                        <button
+                          aria-label={`Apply quick fix: ${quickFix.title}`}
+                          className="editor-problem-fix-button"
+                          onClick={() => onQuickFixClick(quickFix)}
+                          type="button"
+                        >
+                          Fix
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <p className="editor-problems-empty">{formatEmptyMooProblemsFilterMessage(filter)}</p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+type EditorOptionInputs = {
+  accessibilityMode: boolean;
+  autocompleteEnabled: boolean;
+  ariaLabel: string;
+  language: string;
+};
+
+function createEditorOptions({
+  accessibilityMode,
+  autocompleteEnabled,
+  ariaLabel,
+  language,
+}: EditorOptionInputs): MonacoEditor.IStandaloneEditorConstructionOptions {
+  // Auto-popping the suggest widget on every keystroke is hostile to a screen
+  // reader: Monaco moves aria-activedescendant onto a suggestion per character, so
+  // the SR is yanked off the user's text onto "try", "this", "if block"... on each
+  // letter (verified live with a focus/activedescendant trace). In accessibility
+  // mode we therefore only offer suggestions on explicit request (Ctrl+Space, which
+  // is unaffected by these flags); autocomplete stays fully available, it just stops
+  // shouting while you type.
+  const autoSuggestWhileTyping = autocompleteEnabled && !accessibilityMode;
+
+  const baseOptions: MonacoEditor.IStandaloneEditorConstructionOptions = {
+    wordWrap: 'on',
+    ariaLabel,
+    // Never pass Monaco 'off': in this standalone build that blanks the
+    // screen-reader textarea and overrides ariaLabel with an error string.
+    // 'auto' is the safe floor; 'on' forces full screen-reader optimization.
+    accessibilitySupport: accessibilityMode ? 'on' : 'auto',
+    // Monaco's SR-optimized default; pages a full MOO verb (~hundreds of lines)
+    // into the hidden screen-reader element instead of the ~10-line default window.
+    // Set unconditionally: at 500 there is no perf cost beyond Monaco's own SR
+    // default, and it does not depend on runtime SR detection.
+    accessibilityPageSize: 500,
+    quickSuggestions: autoSuggestWhileTyping,
+  };
+
+  if (language !== MOO_LANGUAGE_ID) {
+    return baseOptions;
+  }
+
+  return {
+    ...baseOptions,
+    'semanticHighlighting.enabled': true,
+    acceptSuggestionOnCommitCharacter: autocompleteEnabled,
+    codeLens: true,
+    folding: true,
+    foldingStrategy: 'auto',
+    hover: {
+      enabled: true,
+    },
+    inlayHints: {
+      enabled: 'on',
+      padding: true,
+    },
+    inlineSuggest: {
+      enabled: autocompleteEnabled,
+      syntaxHighlightingEnabled: true,
+    },
+    lightbulb: {
+      enabled: 'onCode' as MonacoEditor.ShowLightbulbIconMode,
+    },
+    links: true,
+    occurrencesHighlight: 'singleFile',
+    screenReaderAnnounceInlineSuggestion: true,
+    showFoldingControls: 'always',
+    stickyScroll: {
+      enabled: true,
+      defaultModel: 'foldingProviderModel',
+    },
+    suggestOnTriggerCharacters: autoSuggestWhileTyping,
+  };
+}
+
+function formatEditorAriaLabel(sessionReference: string, language: string): string {
+  const target = sessionReference || 'current session';
+
+  return language === MOO_LANGUAGE_ID
+    ? `MOO code editor for ${target}`
+    : `Text editor for ${target}`;
+}
+
+function getDocumentStateForCode(value: string, originalCode: string): DocumentState {
+  return normalizeEditorCode(value) === originalCode
+    ? DocumentState.Unchanged
+    : DocumentState.Changed;
+}
+
+function normalizeEditorCode(value: string): string {
+  return value.split(/\r\n|\r|\n/).join('\n');
+}
+
+function getMooParserQuickFixDiagnostics(
+  markers: MonacoEditor.IMarkerData[],
+): MooQuickFixDiagnostic[] {
+  return markers
+    .filter((marker) => formatMooProblemCode(marker) === 'missing-node')
+    .map((marker) => {
+      const markerWithMissingText = marker as MonacoEditor.IMarkerData & {
+        missingText?: string;
+      };
+
+      return {
+        code: 'missing-node',
+        lineNumber: marker.startLineNumber,
+        startColumn: marker.startColumn,
+        endColumn: marker.endColumn,
+        message: marker.message,
+        missingText: markerWithMissingText.missingText,
+      };
+    });
+}
+
+function findMooQuickFixForMarker(
+  quickFixes: MooQuickFix[],
+  marker: MonacoEditor.IMarkerData,
+): MooQuickFix | null {
+  const markerCode = formatMooProblemCode(marker);
+
+  return (
+    quickFixes.find((quickFix) =>
+      quickFix.diagnostics.some((diagnostic) =>
+        mooQuickFixDiagnosticMatchesMarker(diagnostic, marker, markerCode),
+      ),
+    ) ?? null
+  );
+}
+
+function isMooFixAllQuickFix(quickFix: MooQuickFix): boolean {
+  return quickFix.kind === MOO_CODE_ACTION_FIX_ALL_KIND;
+}
+
+function formatMooQuickFixAnnouncement(quickFix: MooQuickFix): string {
+  return `Applied MOO ${isMooFixAllQuickFix(quickFix) ? 'fix all' : 'quick fix'}: ${
+    quickFix.title
+  }.`;
+}
+
+function mooQuickFixDiagnosticMatchesMarker(
+  diagnostic: MooQuickFixDiagnostic,
+  marker: MonacoEditor.IMarkerData,
+  markerCode: string,
+): boolean {
+  return (
+    diagnostic.code === markerCode &&
+    diagnostic.lineNumber === marker.startLineNumber &&
+    diagnostic.startColumn === marker.startColumn &&
+    diagnostic.endColumn === marker.endColumn
+  );
+}
+
+function applyMooQuickFixEdits(source: string, quickFix: MooQuickFix): string {
+  return applyMooTextEdits(source, quickFix.edits ?? [quickFix.edit]);
+}
+
+function getMooQuickFixEditOperations(
+  quickFix: MooQuickFix,
+): MonacoEditor.IIdentifiedSingleEditOperation[] {
+  return (quickFix.edits ?? [quickFix.edit]).map((edit) => ({
+    forceMoveMarkers: true,
+    range: edit.range,
+    text: edit.text,
+  }));
+}
+
+function applyMooTextEdits(source: string, edits: readonly MooQuickFixEdit[]): string {
+  return [...edits]
+    .map((edit) => ({
+      ...edit,
+      startOffset: offsetAtEditorPosition(
+        source,
+        edit.range.startLineNumber,
+        edit.range.startColumn,
+      ),
+      endOffset: offsetAtEditorPosition(source, edit.range.endLineNumber, edit.range.endColumn),
+    }))
+    .sort((left, right) => right.startOffset - left.startOffset)
+    .reduce(
+      (updated, edit) =>
+        `${updated.slice(0, edit.startOffset)}${edit.text}${updated.slice(edit.endOffset)}`,
+      source,
+    );
+}
+
+function offsetAtEditorPosition(source: string, lineNumber: number, column: number): number {
+  const lineStarts = getEditorLineStartOffsets(source);
+  const lineStart = lineStarts[lineNumber - 1] ?? source.length;
+
+  return Math.min(source.length, lineStart + Math.max(0, column - 1));
+}
+
+function getEditorLineStartOffsets(source: string): number[] {
+  const offsets = [0];
+
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === '\n') {
+      offsets.push(index + 1);
     }
+  }
+
+  return offsets;
+}
+
+function formatMooDiagnosticsSummary(counts: MooDiagnosticCounts): string | undefined {
+  const parts: string[] = [];
+
+  if (counts.errorCount > 0) {
+    parts.push(`${counts.errorCount} MOO ${pluralize(counts.errorCount, 'error')}`);
+  }
+
+  if (counts.warningCount > 0) {
+    const warningKind = pluralize(counts.warningCount, 'warning');
+    const warningLabel = `${counts.warningCount} ${warningKind}`;
+    parts.push(counts.errorCount > 0 ? warningLabel : `${counts.warningCount} MOO ${warningKind}`);
+  }
+
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+function getFirstMooDiagnosticTarget(
+  markers: MonacoEditor.IMarkerData[],
+): MooDiagnosticTarget | null {
+  const firstMarker = [...markers].sort(compareMooDiagnosticMarkers)[0];
+  if (!firstMarker) {
+    return null;
+  }
+
+  return getMooDiagnosticTarget(firstMarker);
+}
+
+function getMooDiagnosticTarget(marker: MonacoEditor.IMarkerData): MooDiagnosticTarget {
+  return {
+    lineNumber: marker.startLineNumber,
+    column: marker.startColumn,
+  };
+}
+
+function getMooDiagnosticCounts(markers: MonacoEditor.IMarkerData[]): MooDiagnosticCounts {
+  return markers.reduce<MooDiagnosticCounts>(
+    (counts, marker) => {
+      if (marker.severity === MONACO_WARNING_MARKER_SEVERITY) {
+        counts.warningCount += 1;
+      } else {
+        counts.errorCount += 1;
+      }
+
+      return counts;
+    },
+    { errorCount: 0, warningCount: 0 },
+  );
+}
+
+function mooProblemFilterOptions(totalCount: number, counts: MooDiagnosticCounts) {
+  return [
+    {
+      filter: 'all' as const,
+      label: `All (${totalCount})`,
+      ariaLabel: `Show all MOO problems (${totalCount})`,
+    },
+    {
+      filter: 'error' as const,
+      label: `Errors (${counts.errorCount})`,
+      ariaLabel: `Show MOO errors (${counts.errorCount})`,
+    },
+    {
+      filter: 'warning' as const,
+      label: `Warnings (${counts.warningCount})`,
+      ariaLabel: `Show MOO warnings (${counts.warningCount})`,
+    },
+  ];
+}
+
+function mooProblemFilterIncludesMarker(
+  filter: MooProblemFilter,
+  marker: MonacoEditor.IMarkerData,
+): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'error':
+      return marker.severity !== MONACO_WARNING_MARKER_SEVERITY;
+    case 'warning':
+      return marker.severity === MONACO_WARNING_MARKER_SEVERITY;
   }
 }
 
-export default EditorWindow;
+function formatEmptyMooProblemsFilterMessage(filter: MooProblemFilter): string {
+  switch (filter) {
+    case 'all':
+      return 'No MOO problems.';
+    case 'error':
+      return 'No MOO errors.';
+    case 'warning':
+      return 'No MOO warnings.';
+  }
+}
 
+function compareMooDiagnosticMarkers(
+  left: MonacoEditor.IMarkerData,
+  right: MonacoEditor.IMarkerData,
+): number {
+  const severityDifference = getMooDiagnosticPriority(right) - getMooDiagnosticPriority(left);
+  if (severityDifference !== 0) {
+    return severityDifference;
+  }
+
+  const lineDifference = left.startLineNumber - right.startLineNumber;
+  if (lineDifference !== 0) {
+    return lineDifference;
+  }
+
+  return left.startColumn - right.startColumn;
+}
+
+function getMooDiagnosticPriority(marker: MonacoEditor.IMarkerData): number {
+  return marker.severity === MONACO_WARNING_MARKER_SEVERITY ? 1 : 2;
+}
+
+function formatMooProblemSeverity(marker: MonacoEditor.IMarkerData): 'Error' | 'Warning' {
+  return marker.severity === MONACO_WARNING_MARKER_SEVERITY ? 'Warning' : 'Error';
+}
+
+function formatMooProblemCode(marker: MonacoEditor.IMarkerData): string {
+  if (typeof marker.code === 'string' && marker.code.length > 0) {
+    return marker.code;
+  }
+
+  if (
+    marker.code &&
+    typeof marker.code === 'object' &&
+    'value' in marker.code &&
+    typeof marker.code.value === 'string' &&
+    marker.code.value.length > 0
+  ) {
+    return marker.code.value;
+  }
+
+  return marker.source || 'diagnostic';
+}
+
+function formatMooProblemKey(marker: MonacoEditor.IMarkerData, index: number): string {
+  return [
+    marker.startLineNumber,
+    marker.startColumn,
+    marker.endLineNumber,
+    marker.endColumn,
+    marker.severity,
+    formatMooProblemCode(marker),
+    marker.message,
+    index,
+  ].join(':');
+}
+
+function pluralize(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`;
+}
+
+export default EditorWindow;

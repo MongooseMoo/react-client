@@ -1,86 +1,78 @@
 import React from 'react';
+import type { IconType } from 'react-icons';
+import {
+    FaArrowDown,
+    FaBed,
+    FaBox,
+    FaBoxOpen,
+    FaChair,
+    FaGift,
+    FaHandRock,
+    FaLock,
+    FaLockOpen,
+    FaSignInAlt,
+} from 'react-icons/fa';
 import { Item } from '../gmcp/Char/Items'; // Assuming Item interface is here
+import { type ItemAction, itemActions } from '../itemActions';
 import './ItemCard.css';
+import { useFocusRecovery } from '../hooks/useFocusRecovery';
+
+// The server names the verbs, so only the ones listed here get an icon.
+const ACTION_ICONS = new Map<string, IconType>([
+    ['sit', FaChair],
+    ['lie', FaBed],
+    ['take', FaHandRock],
+    ['remove', FaHandRock],
+    ['put', FaSignInAlt],
+    ['open', FaBoxOpen],
+    ['close', FaBox],
+    ['give', FaGift],
+    ['drop', FaArrowDown],
+    ['bolt', FaLock],
+    ['unbolt', FaLockOpen],
+]);
 
 interface ItemCardProps {
     item: Item;
-    onDrop: (item: Item) => void;
-    onWear?: (item: Item) => void;
-    onRemove?: (item: Item) => void;
-    onGet?: (item: Item) => void; // Added onGet prop
+    onAction: (action: ItemAction) => void;
+    focusReturnId?: string;
+    focusFallbackId?: string;
     // isSelected is no longer needed as card is only shown for the selected item
     // detailsId is no longer needed
 }
 
-const ItemCard: React.FC<ItemCardProps> = ({ item, onDrop, onWear, onRemove, onGet }) => {
+const ItemCard: React.FC<ItemCardProps> = ({ item, onAction, focusReturnId, focusFallbackId }) => {
+    const cardRef = React.useRef<HTMLDivElement>(null);
+    useFocusRecovery(cardRef, focusReturnId, focusFallbackId);
     // const attributes = parseAttributes(item.Attrib); // Removed attribute parsing
     const itemTitle = item.name; // Title is just the item name for now
 
-    const isWearable = item.Attrib?.includes('W');
-    const isWorn = item.Attrib?.includes('w');
-
-    const handleDropClick = (e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent click from propagating to parent elements if any
-        if (onDrop) onDrop(item);
-    };
-
-    const handleGetClick = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (onGet) onGet(item);
-    };
-
     return (
-        <div className="item-card" title={itemTitle} data-item-id={item.id}>
+        <div ref={cardRef} className="item-card" title={itemTitle} data-item-id={item.id}>
             {item.icon && <img src={item.icon} alt="" className="item-icon" />}
             <div className="item-details"> {/* The id attribute, which previously used detailsId, was removed here */}
                 <div className="item-name">{item.name}</div>
                 {/* Attribute display removed for now */}
             </div>
             <div className="item-actions">
-                {item.location === 'room' && onGet && (
-                    <button
-                        className="item-get-button" // New class for styling
-                        onClick={handleGetClick}
-                        aria-label={`Get ${item.name}`}
-                        tabIndex={0}
-                        accessKey="g" 
-                    >
-                        Get
-                    </button>
-                )}
-                {item.location === 'inv' && isWearable && !isWorn && onWear && (
-                    <button
-                        className="item-wear-button"
-                        onClick={() => onWear(item)}
-                        aria-label={`Wear ${item.name}`}
-                        tabIndex={0}
-                        accessKey="w"
-                    >
-                        Wear
-                    </button>
-                )}
-                {item.location === 'inv' && isWorn && onRemove && (
-                    <button
-                        className="item-remove-button"
-                        onClick={() => onRemove(item)}
-                        aria-label={`Remove ${item.name}`}
-                        tabIndex={0}
-                        accessKey="r"
-                    >
-                        Remove
-                    </button>
-                )}
-                {item.location === 'inv' && onDrop && (
-                    <button
-                        className="item-drop-button"
-                        onClick={handleDropClick}
-                        aria-label={`Drop ${item.name}`}
-                        tabIndex={0} 
-                        accessKey="d"
-                    >
-                        {/* Visual symbol for this button is rendered using a CSS ::before pseudo-element */}
-                    </button>
-                )}
+                {itemActions(item).map((action) => {
+                    const Icon = ACTION_ICONS.get(action.verb);
+                    return (
+                        <button
+                            key={action.command}
+                            type="button"
+                            className="item-action-button"
+                            onClick={(e) => {
+                                e.stopPropagation(); // Prevent click from propagating to parent elements if any
+                                onAction(action);
+                            }}
+                            aria-label={action.description}
+                        >
+                            {Icon && <Icon aria-hidden="true" />}
+                            {action.label}
+                        </button>
+                    );
+                })}
             </div>
         </div>
     );

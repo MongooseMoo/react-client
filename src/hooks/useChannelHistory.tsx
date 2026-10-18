@@ -1,0 +1,781 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { announce } from "@react-aria/live-announcer";
+import { useChannelHistoryStore, type ChannelTextEntry } from "../stores/channelHistoryStore";
+import { usePreferences, type NavigationKeyScheme } from "../stores/preferencesStore";
+import { extractLinks, openLink, type ExtractedLink } from "../messageLinks";
+import {
+  CHANNEL_READ_MODE_LABELS,
+  channelPreferencesFor,
+  nextChannelReadMode,
+} from "../channelReading";
+import {
+  loadStoredValue,
+  saveStoredValue,
+  type LocalStorageSchema,
+} from "../persistence";
+
+const navigationKeyMaps: Record<NavigationKeyScheme, { up: string; down: string; left: string; right: string }> = {
+  jkli: { up: "i", down: "k", left: "j", right: "l" },
+  wasd: { up: "w", down: "s", left: "a", right: "d" },
+  "dvorak-rh": { up: "c", down: "t", left: "h", right: "n" },
+  "dvorak-lh": { up: ",", down: "o", left: "a", right: "e" },
+};
+
+/** Match a key event against a navigation key, using e.code as fallback for macOS Option+letter */
+function matchesNavKey(e: KeyboardEvent, navKey: string): boolean {
+  if (e.key.toLowerCase() === navKey) return true;
+  if (navKey === ",") return e.code === "Comma";
+  if (navKey.length === 1) return e.code === `Key${navKey.toUpperCase()}`;
+  return false;
+}
+
+/** Extract digit 0-9 from a key event, using e.code as fallback for macOS Option+number */
+function getDigit(e: KeyboardEvent): number | null {
+  const fromKey = parseInt(e.key);
+  if (!isNaN(fromKey) && fromKey >= 0 && fromKey <= 9) return fromKey;
+  // macOS Option+number produces special chars, fall back to physical key
+  const match = e.code.match(/^Digit(\d)$/);
+  if (match) return parseInt(match[1]);
+  return null;
+}
+
+interface Message {
+  id: number;
+  message: string;
+  timestamp: number;
+  channel?: string;
+  talker?: string;
+}
+
+interface Buffer {
+  name: string;
+  messages: Message[];
+  currentIndex: number;
+}
+
+const CHANNEL_HISTORY_STORAGE_KEY = "channelHistory";
+const CHANNEL_HISTORY_STORAGE_VERSION = 1;
+const ALL_BUFFER_NAME = "all";
+
+type StoredChannelHistory = {
+  buffers?: Record<string, Partial<Buffer>>;
+  bufferOrder?: unknown[];
+  currentBufferIndex?: number;
+  timestampsEnabled?: boolean;
+};
+
+const channelHistorySchema: LocalStorageSchema<StoredChannelHistory> = {
+  key: CHANNEL_HISTORY_STORAGE_KEY,
+  version: CHANNEL_HISTORY_STORAGE_VERSION,
+  migrate: (data, storedVersion) => {
+    if (
+      storedVersion > CHANNEL_HISTORY_STORAGE_VERSION ||
+      typeof data !== "object" ||
+      data === null
+    ) {
+      return undefined;
+    }
+    return data as StoredChannelHistory;
+  },
+};
+
+// Coalesce bursts of channel messages into one write instead of
+// re-serializing + persisting the whole history on every message. Mirrors
+// output.tsx's SAVE_DEBOUNCE_MS.
+const SAVE_DEBOUNCE_MS = 500;
+
+export const MAX_ALL_BUFFER_MESSAGES = 1000;
+export const MAX_CHANNEL_BUFFER_MESSAGES = 500;
+export const MAX_PERSISTED_ALL_MESSAGES = 200;
+export const MAX_PERSISTED_CHANNEL_MESSAGES = 100;
+
+const createEmptyBuffer = (name: string): Buffer => ({
+  name,
+  messages: [],
+  currentIndex: 0,
+});
+
+const getMemoryLimitForBuffer = (bufferName: string): number =>
+  bufferName === ALL_BUFFER_NAME ? MAX_ALL_BUFFER_MESSAGES : MAX_CHANNEL_BUFFER_MESSAGES;
+
+const getPersistenceLimitForBuffer = (bufferName: string): number =>
+  bufferName === ALL_BUFFER_NAME ? MAX_PERSISTED_ALL_MESSAGES : MAX_PERSISTED_CHANNEL_MESSAGES;
+
+const clampCurrentIndex = (currentIndex: number, droppedMessages: number, messageCount: number): number => {
+  if (currentIndex <= 0 || messageCount === 0) {
+    return 0;
+  }
+
+  return Math.min(Math.max(currentIndex - droppedMessages, 1), messageCount);
+};
+
+const limitBufferMessages = (buffer: Buffer, messageLimit: number): Buffer => {
+  if (buffer.messages.length <= messageLimit) {
+    return buffer;
+  }
+
+  const droppedMessages = buffer.messages.length - messageLimit;
+  const messages = buffer.messages.slice(droppedMessages);
+
+  return {
+    ...buffer,
+    messages,
+    currentIndex: clampCurrentIndex(buffer.currentIndex, droppedMessages, messages.length),
+  };
+};
+
+const appendMessage = (buffer: Buffer, message: Message): Buffer =>
+  limitBufferMessages(
+    {
+      ...buffer,
+      messages: [...buffer.messages, message],
+    },
+    getMemoryLimitForBuffer(buffer.name)
+  );
+
+const normalizeLoadedBuffer = (bufferName: string, storedBuffer: Partial<Buffer> | undefined): Buffer => {
+  const messages = Array.isArray(storedBuffer?.messages) ? storedBuffer.messages : [];
+  const currentIndex = typeof storedBuffer?.currentIndex === "number" ? storedBuffer.currentIndex : 0;
+
+  return limitBufferMessages(
+    {
+      name: bufferName,
+      messages,
+      currentIndex,
+    },
+    getMemoryLimitForBuffer(bufferName)
+  );
+};
+
+const serializeBuffersForStorage = (buffers: Map<string, Buffer>): Record<string, Buffer> => {
+  const buffersObj: Record<string, Buffer> = {};
+
+  buffers.forEach((buffer, name) => {
+    buffersObj[name] = limitBufferMessages(buffer, getPersistenceLimitForBuffer(name));
+  });
+
+  return buffersObj;
+};
+
+export function formatAnnouncementMessage(message: Message): string {
+  const plainText = message.message;
+
+  if (!message.talker) {
+    return plainText;
+  }
+
+  return `${message.talker}. ${plainText}`;
+}
+
+export const useChannelHistory = () => {
+  const [buffers, setBuffers] = useState<Map<string, Buffer>>(
+    new Map([["all", { name: "all", messages: [], currentIndex: 0 }]])
+  );
+  const [bufferOrder, setBufferOrder] = useState<string[]>(["all"]);
+  const [currentBufferIndex, setCurrentBufferIndex] = useState(0);
+  const [timestampsEnabled, setTimestampsEnabled] = useState(true);
+  // Non-null while the link picker modal is open (only opened for 2+ links).
+  const [linkPickerLinks, setLinkPickerLinks] = useState<ExtractedLink[] | null>(null);
+  const lastKeyPress = useRef<{ key: string; time: number; count: number } | null>(null);
+  const lastProcessedChannelEntryId = useRef(0);
+  const saveTimerRef = useRef<number | undefined>(undefined);
+  // Always holds the latest live state so the debounced timer callback and
+  // the unmount flush never persist stale values. Serialization happens in
+  // flushSave, not per change — that's the expensive half of the work.
+  const latestStateRef = useRef<{
+    buffers: Map<string, Buffer>;
+    bufferOrder: string[];
+    currentBufferIndex: number;
+    timestampsEnabled: boolean;
+  } | null>(null);
+
+  const cancelScheduledSave = useCallback(() => {
+    if (saveTimerRef.current !== undefined) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = undefined;
+    }
+  }, []);
+
+  const flushSave = useCallback(() => {
+    const latest = latestStateRef.current;
+    if (!latest) {
+      return;
+    }
+    saveStoredValue(channelHistorySchema, {
+      buffers: serializeBuffersForStorage(latest.buffers),
+      bufferOrder: latest.bufferOrder,
+      currentBufferIndex: latest.currentBufferIndex,
+      timestampsEnabled: latest.timestampsEnabled,
+    });
+  }, []);
+
+  const flushPendingSave = useCallback(() => {
+    if (saveTimerRef.current !== undefined) {
+      cancelScheduledSave();
+      flushSave();
+    }
+  }, [cancelScheduledSave, flushSave]);
+
+  // Load state through the shared versioned persistence owner on mount.
+  useEffect(() => {
+    const parsed = loadStoredValue<StoredChannelHistory>(
+      channelHistorySchema,
+      {},
+    );
+    const storedOrder = Array.isArray(parsed.bufferOrder) ? parsed.bufferOrder : [];
+    const loadedOrder = [
+      ALL_BUFFER_NAME,
+      ...storedOrder.filter((name: unknown): name is string => typeof name === "string" && name !== ALL_BUFFER_NAME),
+    ];
+    const storedBuffers = parsed.buffers && typeof parsed.buffers === "object" ? parsed.buffers : {};
+    const loadedBuffers = new Map<string, Buffer>(
+      loadedOrder.map((name: string): [string, Buffer] => [
+        name,
+        normalizeLoadedBuffer(name, storedBuffers[name])
+      ])
+    );
+    setBuffers(loadedBuffers);
+    setBufferOrder(loadedOrder);
+    setCurrentBufferIndex(
+      Math.min(Math.max(parsed.currentBufferIndex || 0, 0), loadedOrder.length - 1)
+    );
+    setTimestampsEnabled(parsed.timestampsEnabled ?? true);
+  }, []);
+
+  // Save state through the same schema whenever it changes, debounced so a
+  // burst of channel messages coalesces into one write instead of
+  // re-serializing the whole history on every message.
+  useEffect(() => {
+    latestStateRef.current = {
+      buffers,
+      bufferOrder,
+      currentBufferIndex,
+      timestampsEnabled,
+    };
+
+    cancelScheduledSave();
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = undefined;
+      flushSave();
+    }, SAVE_DEBOUNCE_MS);
+  }, [buffers, bufferOrder, currentBufferIndex, timestampsEnabled, cancelScheduledSave, flushSave]);
+
+  // React root cleanup is not guaranteed during a reload or tab close, so
+  // synchronously flush pending history from the browser lifecycle as well as
+  // on unmount. The pending-timer check keeps consecutive lifecycle events
+  // (for example, beforeunload followed by pagehide) idempotent.
+  useEffect(() => {
+    window.addEventListener("pagehide", flushPendingSave);
+    window.addEventListener("beforeunload", flushPendingSave);
+
+    return () => {
+      window.removeEventListener("pagehide", flushPendingSave);
+      window.removeEventListener("beforeunload", flushPendingSave);
+      flushPendingSave();
+    };
+  }, [flushPendingSave]);
+
+  // Handle channel messages. The "all" buffer is the aggregate of every
+  // channel, so each channel message is appended both to its own channel
+  // buffer and to "all". Non-channel traffic (the generic "message" event) is
+  // shown in the main output terminal and deliberately does NOT enter "all".
+  const handleChannelText = useCallback((data: ChannelTextEntry) => {
+    const { channel, talker, text } = data;
+    const newMessage: Message = {
+      id: data.id,
+      message: text,
+      timestamp: Date.now(),
+      channel,
+      talker,
+    };
+
+    setBuffers(prev => {
+      const newBuffers = new Map(prev);
+      const channelBuffer = newBuffers.get(channel) || createEmptyBuffer(channel);
+      newBuffers.set(channel, appendMessage(channelBuffer, newMessage));
+      const allBuffer = newBuffers.get(ALL_BUFFER_NAME) || createEmptyBuffer(ALL_BUFFER_NAME);
+      newBuffers.set(ALL_BUFFER_NAME, appendMessage(allBuffer, newMessage));
+      return newBuffers;
+    });
+
+    setBufferOrder(prev => prev.includes(channel) ? prev : [...prev, channel]);
+  }, []);
+
+  useEffect(() => {
+    const processChannelEntries = () => {
+      for (const entry of useChannelHistoryStore.getState().entries) {
+        if (entry.id <= lastProcessedChannelEntryId.current) continue;
+        handleChannelText(entry);
+        lastProcessedChannelEntryId.current = entry.id;
+      }
+    };
+
+    processChannelEntries();
+    return useChannelHistoryStore.subscribe(processChannelEntries);
+  }, [handleChannelText]);
+
+  const getCurrentBuffer = (): Buffer | undefined => {
+    return buffers.get(bufferOrder[currentBufferIndex]);
+  };
+
+  const changeBuffer = (direction: number) => {
+    const newIndex = (currentBufferIndex + direction + bufferOrder.length) % bufferOrder.length;
+    setCurrentBufferIndex(newIndex);
+
+    const buffer = buffers.get(bufferOrder[newIndex]);
+    if (buffer) {
+      const messageCount = buffer.messages.length;
+      const currentIdx = buffer.currentIndex;
+      announce(
+        `${buffer.name}: ${currentIdx > 0 ? currentIdx : messageCount > 0 ? messageCount : 0} of ${messageCount}`,
+        "assertive", 2000
+      );
+    }
+  };
+
+  const jumpToBuffer = (bufferIndex: number) => {
+    if (bufferIndex < 0 || bufferIndex >= bufferOrder.length) {
+      announce("That buffer doesn't exist yet.", "assertive", 2000);
+      return;
+    }
+
+    setCurrentBufferIndex(bufferIndex);
+    const buffer = buffers.get(bufferOrder[bufferIndex]);
+    if (buffer) {
+      announce(`${buffer.name}: ${buffer.currentIndex || buffer.messages.length} of ${buffer.messages.length}`, "assertive", 2000);
+    }
+  };
+
+  const calculateRelativeTime = (milliseconds: number): string => {
+    const seconds = Math.floor(milliseconds / 1000);
+
+    if (seconds < 1) return "just now";
+    if (seconds < 60) return `${seconds} seconds ago`;
+
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) {
+      const remainingSeconds = seconds % 60;
+      return `${minutes} minutes ${remainingSeconds > 0 ? remainingSeconds + " seconds " : ""}ago`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) {
+      const remainingMinutes = minutes % 60;
+      return `${hours} hours ${remainingMinutes} minutes ago`;
+    }
+
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    const remainingMinutes = minutes % 60;
+    return `${days} days, ${remainingHours} hours, and ${remainingMinutes} minutes ago`;
+  };
+
+  const announceMessage = (message: Message, prefix: string = "") => {
+    let announcement = prefix + formatAnnouncementMessage(message);
+
+    if (timestampsEnabled) {
+      const relativeTime = calculateRelativeTime(Date.now() - message.timestamp);
+      const lastChar = announcement.slice(-1);
+      if (/[a-zA-Z0-9]/.test(lastChar)) {
+        announcement += ".";
+      }
+      announcement += " " + relativeTime;
+    }
+
+    announce(announcement, "assertive", 2000);
+  };
+
+  const readMessage = (messageNumber: number, isFromAllBuffer: boolean = false) => {
+    const bufferName = isFromAllBuffer ? "all" : bufferOrder[currentBufferIndex];
+    const buffer = buffers.get(bufferName);
+
+    if (!buffer || buffer.messages.length === 0) {
+      announce("No messages", "assertive", 2000);
+      return;
+    }
+
+    if (messageNumber > buffer.messages.length) {
+      announce("No message", "assertive", 2000);
+      return;
+    }
+
+    const realIndex = buffer.messages.length - messageNumber;
+    const message = buffer.messages[realIndex];
+
+    if (!message) {
+      announce("No message", "assertive", 2000);
+      return;
+    }
+
+    announceMessage(message);
+  };
+
+  const navigateMessage = (offset: number) => {
+    const buffer = getCurrentBuffer();
+
+    if (!buffer || buffer.messages.length === 0) {
+      announce("No messages", "assertive", 2000);
+      return;
+    }
+
+    setBuffers(prev => {
+      const newBuffers = new Map(prev);
+      const currentBuffer = newBuffers.get(bufferOrder[currentBufferIndex]);
+
+      if (!currentBuffer) return prev;
+
+      let newIndex = currentBuffer.currentIndex + offset;
+      let prefix = "";
+
+      if (currentBuffer.currentIndex === 0) {
+        newIndex = currentBuffer.messages.length;
+      }
+
+      if (newIndex < 1) {
+        newIndex = 1;
+        prefix = "Top: ";
+      } else if (newIndex > currentBuffer.messages.length) {
+        newIndex = currentBuffer.messages.length;
+        prefix = "Bottom: ";
+      }
+
+      newBuffers.set(bufferOrder[currentBufferIndex], {
+        ...currentBuffer,
+        currentIndex: newIndex,
+      });
+
+      const message = currentBuffer.messages[newIndex - 1];
+      if (message) {
+        announceMessage(message, prefix);
+      }
+
+      return newBuffers;
+    });
+  };
+
+  const copyCurrentMessage = () => {
+    const buffer = getCurrentBuffer();
+    if (!buffer || buffer.currentIndex === 0) {
+      announce("No message selected", "assertive", 2000);
+      return;
+    }
+
+    const message = buffer.messages[buffer.currentIndex - 1];
+    if (message) {
+      navigator.clipboard.writeText(message.message).then(() => {
+        announce("Copied", "assertive", 2000);
+      });
+    }
+  };
+
+  // Alt+Enter: activate the link(s) in the currently-reviewed message. Messages
+  // are plain text, so only URLs and emails are recoverable. One link opens
+  // immediately; several open the picker modal so the user can choose.
+  const activateLinksInCurrentMessage = () => {
+    const buffer = getCurrentBuffer();
+    if (!buffer || buffer.currentIndex === 0) {
+      announce("No message selected", "assertive", 2000);
+      return;
+    }
+
+    const message = buffer.messages[buffer.currentIndex - 1];
+    if (!message) {
+      announce("No message selected", "assertive", 2000);
+      return;
+    }
+
+    const links = extractLinks(message.message);
+    if (links.length === 0) {
+      announce("No links in this message", "assertive", 2000);
+      return;
+    }
+
+    if (links.length === 1) {
+      openLink(links[0]);
+      return;
+    }
+
+    announce(`${links.length} links. Choose one.`, "assertive", 2000);
+    setLinkPickerLinks(links);
+  };
+
+  const toggleTimestamps = () => {
+    setTimestampsEnabled(prev => {
+      const enabled = !prev;
+      announce(
+        enabled
+          ? "You will now hear an approximate time after every message."
+          : "Timestamps will no longer be spoken after messages.",
+        "assertive", 2000
+      );
+      return enabled;
+    });
+  };
+
+  // Alt+Shift+R: step the current channel's reading rule (the same setting as
+  // the Channels tab in Preferences) and say what it now is.
+  const cycleCurrentChannelReading = () => {
+    const channel = bufferOrder[currentBufferIndex];
+    if (channel === ALL_BUFFER_NAME) {
+      announce("Move to a channel to change how it is read.", "assertive", 2000);
+      return;
+    }
+
+    const current = channelPreferencesFor(channel);
+    const autoreadMode = nextChannelReadMode(current.autoreadMode);
+    usePreferences.getState().setChannelPreferences(channel, { ...current, autoreadMode });
+    announce(
+      `${channel} read aloud: ${CHANNEL_READ_MODE_LABELS[autoreadMode]}`,
+      "assertive", 2000
+    );
+  };
+
+  const deleteCurrentBuffer = () => {
+    const currentBufferName = bufferOrder[currentBufferIndex];
+
+    if (currentBufferName === "all") {
+      announce("Cannot delete the all buffer", "assertive", 2000);
+      return;
+    }
+
+    if (bufferOrder.length === 1) {
+      announce("Cannot delete the last buffer", "assertive", 2000);
+      return;
+    }
+
+    setBuffers(prev => {
+      const newBuffers = new Map(prev);
+      newBuffers.delete(currentBufferName);
+      return newBuffers;
+    });
+
+    setBufferOrder(prev => {
+      const newOrder = prev.filter(name => name !== currentBufferName);
+      const newIndex = currentBufferIndex >= newOrder.length ? 0 : currentBufferIndex;
+      setCurrentBufferIndex(newIndex);
+
+      const newBuffer = buffers.get(newOrder[newIndex]);
+      if (newBuffer) {
+        announce(newBuffer.name, "assertive", 2000);
+      }
+
+      return newOrder;
+    });
+  };
+
+  const clearBuffer = (bufferName: string) => {
+    setBuffers(prev => {
+      const newBuffers = new Map(prev);
+      const buffer = newBuffers.get(bufferName);
+      if (buffer) {
+        newBuffers.set(bufferName, {
+          ...buffer,
+          messages: [],
+          currentIndex: 0,
+        });
+      }
+      return newBuffers;
+    });
+  };
+
+  const clearAllBuffers = () => {
+    // Delete all buffers except "all", then clear "all"
+    setBuffers(new Map([[ALL_BUFFER_NAME, createEmptyBuffer(ALL_BUFFER_NAME)]]));
+    setBufferOrder([ALL_BUFFER_NAME]);
+    setCurrentBufferIndex(0);
+  };
+
+  // Global keyboard handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const now = Date.now();
+      const key = `${e.altKey ? "alt+" : ""}${e.ctrlKey ? "ctrl+" : ""}${e.shiftKey ? "shift+" : ""}${e.key}`;
+      const isPlainAlt = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
+
+      let pressCount = 1;
+      if (lastKeyPress.current && lastKeyPress.current.key === key && now - lastKeyPress.current.time < 500) {
+        pressCount = lastKeyPress.current.count + 1;
+      }
+
+      lastKeyPress.current = { key, time: now, count: pressCount };
+
+      // Alt+Arrow keys: always work regardless of scheme
+      if (e.key === "ArrowLeft" && isPlainAlt) {
+        e.preventDefault();
+        changeBuffer(-1);
+        return;
+      }
+
+      if (e.key === "ArrowRight" && isPlainAlt) {
+        e.preventDefault();
+        changeBuffer(1);
+        return;
+      }
+
+      if (isPlainAlt && e.key === "ArrowUp") {
+        e.preventDefault();
+        navigateMessage(-1);
+        return;
+      }
+
+      if (isPlainAlt && e.key === "ArrowDown") {
+        e.preventDefault();
+        navigateMessage(1);
+        return;
+      }
+
+      // Alt+letter: change buffers (using configured key scheme)
+      const scheme = usePreferences.getState().keyboard.navigationKeyScheme;
+      const navKeys = navigationKeyMaps[scheme];
+
+      if (matchesNavKey(e, navKeys.left) && isPlainAlt) {
+        e.preventDefault();
+        changeBuffer(-1);
+        return;
+      }
+
+      if (matchesNavKey(e, navKeys.right) && isPlainAlt) {
+        e.preventDefault();
+        changeBuffer(1);
+        return;
+      }
+
+      // Alt+1-0: Read from current buffer
+      if (isPlainAlt) {
+        const digit = getDigit(e);
+        if (digit !== null) {
+          e.preventDefault();
+          const messageNum = digit === 0 ? 10 : digit;
+          if (pressCount >= 2) {
+            // Double-press copies the message
+            readMessage(messageNum, false);
+            const buffer = getCurrentBuffer();
+            if (buffer) {
+              const realIndex = buffer.messages.length - messageNum;
+              const message = buffer.messages[realIndex];
+              if (message) {
+                navigator.clipboard.writeText(message.message).then(() => {
+                  announce("Copied", "assertive", 2000);
+                });
+              }
+            }
+          } else {
+            readMessage(messageNum, false);
+          }
+          return;
+        }
+      }
+
+      // Alt+Shift+1-0: Jump to buffer
+      if (e.altKey && e.shiftKey && !e.ctrlKey) {
+        const digit = getDigit(e);
+        if (digit !== null && digit >= 1 && digit <= 9) {
+          e.preventDefault();
+          jumpToBuffer(digit - 1);
+          return;
+        }
+        if (digit === 0) {
+          e.preventDefault();
+          jumpToBuffer(9);
+          return;
+        }
+      }
+
+      // Alt+letter: Navigate within buffer (using configured key scheme)
+      if (isPlainAlt && matchesNavKey(e, navKeys.up)) {
+        e.preventDefault();
+        navigateMessage(-1);
+        return;
+      }
+
+      if (isPlainAlt && matchesNavKey(e, navKeys.down)) {
+        e.preventDefault();
+        navigateMessage(1);
+        return;
+      }
+
+      // Alt+PageUp/PageDown: Navigate 10 messages
+      if (e.altKey && e.key === "PageUp") {
+        e.preventDefault();
+        navigateMessage(-10);
+        return;
+      }
+
+      if (e.altKey && e.key === "PageDown") {
+        e.preventDefault();
+        navigateMessage(10);
+        return;
+      }
+
+      // Alt+Home/End: Navigate to start/end
+      if (e.altKey && e.key === "Home") {
+        e.preventDefault();
+        navigateMessage(-2000);
+        return;
+      }
+
+      if (e.altKey && e.key === "End") {
+        e.preventDefault();
+        navigateMessage(2000);
+        return;
+      }
+
+      // Alt+Space: Repeat current message
+      if (isPlainAlt && e.key === " ") {
+        e.preventDefault();
+        navigateMessage(0);
+        return;
+      }
+
+      // Alt+Enter: Activate link(s) in current message
+      if (isPlainAlt && e.key === "Enter") {
+        e.preventDefault();
+        activateLinksInCurrentMessage();
+        return;
+      }
+
+      // Alt+Shift+Space: Copy current message
+      if (e.altKey && e.shiftKey && e.key === " ") {
+        e.preventDefault();
+        copyCurrentMessage();
+        return;
+      }
+
+      // Alt+Shift+T: Toggle timestamps
+      if (e.altKey && e.shiftKey && e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        toggleTimestamps();
+        return;
+      }
+
+      // Alt+Shift+R: Cycle how the current channel is read aloud
+      if (e.altKey && e.shiftKey && !e.ctrlKey && (e.key.toLowerCase() === "r" || e.code === "KeyR")) {
+        e.preventDefault();
+        cycleCurrentChannelReading();
+        return;
+      }
+
+      // Alt+Shift+Delete: Delete current buffer
+      if (e.altKey && e.shiftKey && e.key === "Delete") {
+        e.preventDefault();
+        deleteCurrentBuffer();
+        return;
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [buffers, bufferOrder, currentBufferIndex, timestampsEnabled]);
+
+  return {
+    buffers,
+    currentBufferIndex,
+    bufferOrder,
+    getCurrentBuffer,
+    clearAllBuffers,
+    linkPickerLinks,
+    closeLinkPicker: () => setLinkPickerLinks(null),
+  };
+};

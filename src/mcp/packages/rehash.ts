@@ -1,0 +1,88 @@
+import { identityCodec, inbound, messageEnvelope, outbound } from '../../protocol/messages';
+import { useInputStore } from '../../stores/inputStore';
+import { MCPPackage } from '../package';
+import type { McpMessage } from '../types';
+
+export interface AwnsRehashCommandUpdate {
+  list: string;
+  commands: string[];
+}
+
+const rehashGetcommands = messageEnvelope('getcommands', identityCodec<undefined>());
+const rehashCommands = messageEnvelope('commands', identityCodec<AwnsRehashCommandUpdate>());
+const rehashAdd = messageEnvelope('add', identityCodec<AwnsRehashCommandUpdate>());
+const rehashRemove = messageEnvelope('remove', identityCodec<AwnsRehashCommandUpdate>());
+
+const McpAwnsRehashBase = MCPPackage.with({
+  packageName: 'dns-com-awns-rehash',
+  messages: [
+    outbound(rehashGetcommands),
+    inbound(rehashCommands),
+    inbound(rehashAdd),
+    inbound(rehashRemove),
+  ] as const,
+});
+
+export class McpAwnsRehash extends McpAwnsRehashBase {
+  public commands: string[] = [];
+
+  handle(message: McpMessage): void {
+    switch (message.name) {
+      case 'dns-com-awns-rehash-commands': {
+        const update = commandUpdateFrom(message.keyvals.list ?? '');
+        this.commands = [...update.commands];
+        this.emitRegisteredMessage(rehashCommands.wireName, update);
+        break;
+      }
+
+      case 'dns-com-awns-rehash-add': {
+        const update = commandUpdateFrom(message.keyvals.list ?? '');
+        const known = new Set(this.commands);
+        for (const command of update.commands) {
+          if (!known.has(command)) {
+            this.commands.push(command);
+            known.add(command);
+          }
+        }
+        this.emitRegisteredMessage(rehashAdd.wireName, update);
+        break;
+      }
+
+      case 'dns-com-awns-rehash-remove': {
+        const update = commandUpdateFrom(message.keyvals.list ?? '');
+        const removed = new Set(update.commands);
+        this.commands = this.commands.filter((command) => !removed.has(command));
+        this.emitRegisteredMessage(rehashRemove.wireName, update);
+        break;
+      }
+
+      default:
+        break;
+    }
+  }
+
+  requestCommands(): void {
+    this.sendGetcommands(undefined);
+  }
+
+  override reset(): void {
+    this.commands = [];
+    useInputStore.getState().resetCommands();
+  }
+}
+
+/**
+ * The server lists verb names, where a "*" marks how far a name can be
+ * abbreviated ("r*ead"). A command here is the full name ("read"): completion
+ * matches by prefix, which already covers every abbreviation.
+ */
+function commandUpdateFrom(list: string): AwnsRehashCommandUpdate {
+  return {
+    list,
+    commands: list
+      .trim()
+      .split(/\s+/)
+      .map((name) => name.replaceAll('*', ''))
+      .filter(Boolean),
+  };
+}

@@ -1,14 +1,15 @@
 .room-info-display {
-    padding: 0.5rem;
+    padding: 0;
     font-size: 0.9em;
+    line-height: 1.6;
 }
 
 .room-info-display h4 {
     margin-top: 0;
-    margin-bottom: 0.3rem;
+    margin-bottom: 12px;
     border-bottom: 1px solid var(--color-border);
-    padding-bottom: 0.25rem;
-    font-size: 1.1em; /* Slightly larger heading */
+    padding-bottom: 6px;
+    font-size: 1.1em;
 }
 
 .room-info-display .room-area {
@@ -17,10 +18,18 @@
     margin-bottom: 0.8rem;
 }
 
+.room-info-display .room-exits {
+    margin-top: var(--space-4, 16px);
+}
+
 .room-info-display .room-exits h5 {
-    margin-top: 0.5rem;
-    margin-bottom: 0.3rem;
-    font-weight: bold;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .room-info-display .room-exits ul {
@@ -37,22 +46,22 @@
 }
 
 .room-info-display .room-exits button {
-    background-color: var(--color-button-bg, #e0e0e0);
-    color: var(--color-button-text, #333);
-    border: 1px solid var(--color-border-light, #ccc);
-    border-radius: var(--border-radius-small, 4px);
+    background-color: var(--color-bg-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm, 4px);
     padding: 0.3rem 0.6rem;
     cursor: pointer;
     font-size: 0.9em;
     transition: background-color 0.2s ease;
-    min-width: 40px; /* Ensure buttons have some minimum width */
+    min-width: 40px;
     text-align: center;
 }
 
 .room-info-display .room-exits button:hover,
 .room-info-display .room-exits button:focus {
-    background-color: var(--color-button-hover-bg, #d0d0d0);
-    outline: 2px solid var(--color-focus-ring, blue);
+    background-color: rgba(255, 255, 255, 0.06);
+    outline: 2px solid var(--color-focus-ring);
     outline-offset: 1px;
 }
 
@@ -62,15 +71,19 @@
 }
 
 .room-contents-section {
-    margin-top: 1rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--color-border-light, #eee);
+    margin-top: var(--space-6, 24px);
+    padding-top: var(--space-3, 12px);
+    border-top: 1px solid var(--color-border);
 }
 
 .room-contents-section h5 {
     margin-top: 0;
-    margin-bottom: 0.3rem;
-    font-weight: bold;
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .room-contents-section p { /* For "Nothing on the ground." message */
@@ -81,33 +94,45 @@
 
 .room-items-accessible-list {
     font-size: 0.9em;
+    line-height: 1.5; /* Better readability for wrapped text */
     /* max-height: 150px; */ /* Optional: if the list can be very long */
     /* overflow-y: auto;   */
 }
 
-.room-item-li { /* Style for <li> elements in the room items list */
-    padding: 0.3rem 0.5rem;
+.room-item-li {
+    padding: var(--space-1) var(--space-2);
     cursor: default;
-    border-radius: var(--border-radius-small, 2px);
-    color: var(--color-text, black);
+    border-radius: var(--radius-sm, 3px);
+    color: var(--color-text);
+    margin-bottom: var(--space-1);
+    line-height: 1.5;
+    transition: background-color 0.15s ease;
+}
+
+.room-item-li:hover {
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .selected-room-item-card-container {
     margin-top: 1rem;
-    border-top: 1px solid var(--color-border-subtle, #eee);
+    border-top: 1px solid var(--color-border);
     padding-top: 1rem;
 }
 
 .room-players-section {
-    margin-top: 1rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--color-border-light, #eee);
+    margin-top: var(--space-6, 24px);
+    padding-top: var(--space-3, 12px);
+    border-top: 1px solid var(--color-border);
 }
 
 .room-players-section h5 {
     margin-top: 0;
-    margin-bottom: 0.3rem;
-    font-weight: bold;
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .room-players-section p {
@@ -118,17 +143,25 @@
 
 .room-players-accessible-list {
     font-size: 0.9em;
+    line-height: 1.5; /* Better readability for wrapped text */
 }
 
 .room-player-li {
-    padding: 0.3rem 0.5rem;
+    padding: var(--space-1) var(--space-2);
     cursor: default;
-    border-radius: var(--border-radius-small, 2px);
-    color: var(--color-text, black);
+    border-radius: var(--radius-sm, 3px);
+    color: var(--color-text);
+    margin-bottom: var(--space-1);
+    line-height: 1.5;
+    transition: background-color 0.15s ease;
+}
+
+.room-player-li:hover {
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .selected-player-card-container {
     margin-top: 1rem;
-    border-top: 1px solid var(--color-border-subtle, #eee);
+    border-top: 1px solid var(--color-border);
     padding-top: 1rem;
 }

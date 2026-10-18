@@ -1,3 +1,6 @@
+import { inbound, outbound } from "../../protocol/messages";
+import { useItemsStore } from "../../stores/itemsStore";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
 export interface Item {
@@ -6,6 +9,11 @@ export interface Item {
   icon?: string;
   Attrib?: string; // wWlgctmdx
   location?: ItemLocation; // Added location
+  /**
+   * Mongoose addition: what the player can do to the item from the command line.
+   * Each entry is the verb's names followed by its arguments; see `itemActions`.
+   */
+  verbs?: string[][];
 }
 
 export type ItemLocation = "inv" | "room" | string; // "repNUMBER" for containers
@@ -34,47 +42,59 @@ export class GMCPMessageCharItemsUpdate extends GMCPMessage {
 }
 
 
-export class GMCPCharItems extends GMCPPackage {
-  public packageName: string = "Char.Items";
+const itemsList = gmcpJsonMessage<"List", GMCPMessageCharItemsList>("List");
+const itemsAdd = gmcpJsonMessage<"Add", GMCPMessageCharItemsAdd>("Add");
+const itemsRemove = gmcpJsonMessage<"Remove", GMCPMessageCharItemsRemove>("Remove");
+const itemsUpdate = gmcpJsonMessage<"Update", GMCPMessageCharItemsUpdate>("Update");
+const itemsContents = gmcpJsonMessage<"Contents", never, string>("Contents");
+const itemsInv = gmcpJsonMessage<"Inv", never, string>("Inv");
+const itemsRoom = gmcpJsonMessage<"Room", never, string>("Room");
+
+const GMCPCharItemsBase = GMCPPackage.with({
+  packageName: "Char.Items",
+  messages: [
+    inbound(itemsList),
+    inbound(itemsAdd),
+    inbound(itemsRemove),
+    inbound(itemsUpdate),
+    outbound(itemsContents),
+    outbound(itemsInv),
+    outbound(itemsRoom),
+  ] as const,
+});
+
+export class GMCPCharItems extends GMCPCharItemsBase {
+  constructor(client: ConstructorParameters<typeof GMCPCharItemsBase>[0]) {
+    super(client);
+    this.on("list", (data) => this.handleList(data));
+    this.on("add", (data) => this.handleAdd(data));
+    this.on("remove", (data) => this.handleRemove(data));
+    this.on("update", (data) => this.handleUpdate(data));
+  }
 
   // --- Server Messages ---
 
   handleList(data: GMCPMessageCharItemsList): void {
     console.log(`Received Char.Items.List for ${data.location}:`, data.items);
-    const itemsWithLocation = data.items.map(item => ({ ...item, location: data.location }));
-    this.client.emit("itemsList", { ...data, items: itemsWithLocation });
+    useItemsStore.getState().setLocationItems(data.location, data.items);
   }
 
   handleAdd(data: GMCPMessageCharItemsAdd): void {
     console.log(`Received Char.Items.Add for ${data.location}:`, data.item);
-    const itemWithLocation = { ...data.item, location: data.location };
-    this.client.emit("itemAdd", { ...data, item: itemWithLocation });
+    useItemsStore.getState().addItem(data.location, data.item);
   }
 
   handleRemove(data: GMCPMessageCharItemsRemove): void {
     console.log(`Received Char.Items.Remove for ${data.location}:`, data.item);
-    const itemWithLocationDetails = { ...data.item, location: data.location };
-    this.client.emit("itemRemove", { ...data, item: itemWithLocationDetails });
+    useItemsStore.getState().removeItem(data.location, data.item);
   }
 
   handleUpdate(data: GMCPMessageCharItemsUpdate): void {
     console.log(`Received Char.Items.Update for ${data.location}:`, data.item);
-    const itemWithLocation = { ...data.item, location: data.location };
-    this.client.emit("itemUpdate", { ...data, item: itemWithLocation });
+    useItemsStore.getState().updateItem(data.location, data.item);
   }
 
-  // --- Client Messages ---
-
-  sendContentsRequest(itemId: string): void {
-    // Docs say number, but let's use string for consistency if IDs can be non-numeric
-    this.sendData("Contents", itemId);
-  }
-
-  sendInventoryRequest(): void {
-    this.sendData("Inv", ""); // Empty body as per docs
-  }
-
-  sendRoomRequest(): void {
-    this.sendData("Room", ""); // Empty body as per docs
+  override reset(): void {
+    useItemsStore.getState().reset();
   }
 }

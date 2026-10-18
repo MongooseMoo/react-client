@@ -1,0 +1,908 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type React from "react";
+
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type MudClient from "../client";
+import { useConnectionStore } from "../stores/connectionStore";
+import { useOutputStore } from "../stores/outputStore";
+import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
+import Output, { type OutputLine, OutputType } from "./output";
+
+const { mockAnnounce, mockClipboardWriteText } = vi.hoisted(() => ({
+  mockAnnounce: vi.fn(),
+  mockClipboardWriteText: vi.fn(),
+}));
+
+beforeEach(() => {
+  usePersonalDataStore.setState({ policyReady: true, visitor: false, owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
+});
+
+vi.mock("@react-aria/live-announcer", () => ({
+  announce: mockAnnounce,
+}));
+
+const makeKeyboardEvent = (
+  init: Pick<React.KeyboardEvent<HTMLDivElement>, "altKey" | "code" | "key"> &
+    Partial<Pick<React.KeyboardEvent<HTMLDivElement>, "ctrlKey" | "metaKey" | "shiftKey">>
+): React.KeyboardEvent<HTMLDivElement> => ({
+  altKey: init.altKey,
+  code: init.code,
+  ctrlKey: init.ctrlKey ?? false,
+  key: init.key,
+  metaKey: init.metaKey ?? false,
+  preventDefault: vi.fn(),
+  shiftKey: init.shiftKey ?? false,
+} as unknown as React.KeyboardEvent<HTMLDivElement>);
+
+describe("Output keyboard handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockClipboardWriteText.mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: mockClipboardWriteText },
+    });
+  });
+
+  it("reviews recent output lines from the end", () => {
+    const output = new Output({ client: {} as MudClient });
+    const lines: OutputLine[] = [
+      {
+        id: 1,
+        sourceContent: "first line",
+        sourceType: "test",
+        type: OutputType.ServerMessage,
+      },
+      {
+        id: 2,
+        sourceContent: "second line",
+        sourceType: "test",
+        type: OutputType.ServerMessage,
+      },
+    ];
+    Object.defineProperty(output, "allLines", { value: lines });
+
+    output.reviewRecentOutputLine(1);
+    output.reviewRecentOutputLine(2);
+    output.reviewRecentOutputLine(3);
+
+    expect(mockAnnounce).toHaveBeenNthCalledWith(1, "second line", "polite");
+    expect(mockAnnounce).toHaveBeenNthCalledWith(2, "first line", "polite");
+    expect(mockAnnounce).toHaveBeenNthCalledWith(3, "No line", "polite");
+  });
+
+  it("copies the rendered text of a recent output line", async () => {
+    const output = new Output({ client: {} as MudClient });
+    const lines: OutputLine[] = [
+      {
+        id: 1,
+        sourceContent: "<p>copy this text</p>",
+        sourceType: "html",
+        type: OutputType.ServerMessage,
+      },
+    ];
+    Object.defineProperty(output, "allLines", { value: lines });
+
+    await output.copyRecentOutputLine(1);
+
+    expect(mockClipboardWriteText).toHaveBeenCalledWith("copy this text");
+    expect(mockAnnounce).toHaveBeenCalledWith("Copied", "polite");
+  });
+
+  it("only suppresses plain Alt navigation keys", () => {
+    const output = new Output({ client: {} as MudClient });
+    const plainAltArrow = makeKeyboardEvent({
+      altKey: true,
+      code: "ArrowLeft",
+      key: "ArrowLeft",
+    });
+    const metaAltArrow = makeKeyboardEvent({
+      altKey: true,
+      code: "ArrowLeft",
+      key: "ArrowLeft",
+      metaKey: true,
+    });
+
+    output.handleOutputKeyDown(plainAltArrow);
+    output.handleOutputKeyDown(metaAltArrow);
+
+    expect(plainAltArrow.preventDefault).toHaveBeenCalled();
+    expect(metaAltArrow.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('leaves nested controls and modified review keys alone', () => {
+    const output = new Output({ client: {} as MudClient });
+    const root = document.createElement('div');
+    const input = document.createElement('input');
+    const nested = { ...makeKeyboardEvent({ key: 'Home', code: 'Home', altKey: false }), target: input, currentTarget: root };
+    const modified = { ...makeKeyboardEvent({ key: 'ArrowUp', code: 'ArrowUp', altKey: false, ctrlKey: true }), target: root, currentTarget: root };
+    output.state.liveOutput = [{ id: 1, sourceType: 'plain', sourceContent: 'message', type: OutputType.ServerMessage }];
+    output.handleOutputKeyDown(nested as unknown as React.KeyboardEvent<HTMLDivElement>);
+    output.handleOutputKeyDown(modified as unknown as React.KeyboardEvent<HTMLDivElement>);
+    expect(nested.preventDefault).not.toHaveBeenCalled();
+    expect(modified.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('gives automatic ANSI speech one owner while retaining manual review and errors', () => {
+    const output = new Output({ client: {} as MudClient });
+    output.handleMessage('spoken by browser TTS', false, true);
+    expect(mockAnnounce).not.toHaveBeenCalled();
+    output.reviewRecentOutputLine(1);
+    expect(mockAnnounce).toHaveBeenCalledWith('spoken by browser TTS', 'polite');
+    output.addError(new Error('connection lost'));
+    expect(mockAnnounce.mock.calls.at(-1)?.[0].trim()).toBe('Error: connection lost');
+  });
+
+  it('retains the emit-time speech owner through asynchronous output delivery', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    render(<Output client={{ willSpeakIncomingMessages: () => false } as MudClient} />);
+    mockAnnounce.mockClear();
+    useOutputStore.getState().addMessage('already read aloud', false, true);
+    await act(async () => { await Promise.resolve(); });
+    expect(mockAnnounce).not.toHaveBeenCalled();
+    expect(screen.getByText('already read aloud')).toBeTruthy();
+    useOutputStore.getState().reset();
+  });
+
+  it('provides a native unread action and keeps focus after activation', () => {
+    let output: Output | null = null;
+    const { container } = render(<Output ref={(value) => { output = value; }} client={{} as MudClient} />);
+    act(() => { output!.setState({ newLinesCount: 8 }); });
+    const button = screen.getByRole('button', { name: 'Show 8 new messages' });
+    expect(button.tagName).toBe('BUTTON');
+    button.focus();
+    fireEvent.click(button);
+    expect(screen.queryByRole('button', { name: 'Show 8 new messages' })).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('.output'));
+  });
+
+  it('starts review at current output after activating the unread jump', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    let output: Output | null = null;
+    const { container } = render(<Output ref={value => { output = value; }} client={{} as MudClient} />);
+    for (const text of ['old', 'current', 'latest']) useOutputStore.getState().addMessage(text);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'Home' });
+    act(() => output!.setState({ newLinesCount: 2 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 new messages' }));
+    mockAnnounce.mockClear();
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'ArrowUp' });
+    expect(mockAnnounce).toHaveBeenCalledWith('current', 'polite');
+    useOutputStore.getState().reset();
+  });
+
+  it('copies actual log content with concise feedback and keeps failures available', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    let output: Output | null = null;
+    render(<Output ref={value => { output = value; }} client={{} as MudClient} />);
+    useOutputStore.getState().addHtml('<blockquote>quotation</blockquote>');
+    useOutputStore.getState().addMessage('next line');
+    useOutputStore.getState().addHtml('<p>paragraph one</p><p>paragraph two</p>');
+    useOutputStore.getState().addMessage('first physical line\r\nsecond physical line');
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await output!.copyLog(); });
+    expect(mockClipboardWriteText).toHaveBeenLastCalledWith('quotation\nnext line\nparagraph one\nparagraph two\nfirst physical line\r\nsecond physical line');
+    expect(mockAnnounce).toHaveBeenCalledWith('Log copied', 'polite');
+    mockClipboardWriteText.mockRejectedValueOnce(new Error('Permission denied'));
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+    try {
+      await act(async () => { await output!.copyLog(); });
+      await screen.findByText('Could not copy log. Select the text to copy it.');
+      expect(alert).not.toHaveBeenCalled();
+      expect(mockAnnounce).toHaveBeenCalledWith('Could not copy log', 'polite');
+    } finally { alert.mockRestore(); }
+    useOutputStore.getState().reset();
+  });
+
+  it('keeps routine connection and error messages out of heading navigation', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    const { container } = render(<Output client={{} as MudClient} />);
+    useOutputStore.getState().addError(new Error('Network unavailable'));
+    useOutputStore.getState().addHtml('<h2>Room description</h2>');
+    await act(async () => { await Promise.resolve(); });
+    expect([...container.querySelectorAll('h2')].map(node => node.textContent)).toEqual(['Room description']);
+    useOutputStore.getState().reset();
+  });
+
+  it('reviews the same message after it ages into frozen history', async () => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    let output: Output | null = null;
+    const { container } = render(<Output ref={(value) => { output = value; }} client={{} as MudClient} />);
+    useOutputStore.getState().addMessage('first');
+    useOutputStore.getState().addMessage('selected');
+    useOutputStore.getState().addMessage('next');
+    await act(async () => { await Promise.resolve(); });
+    const root = container.querySelector('.output')!;
+    fireEvent.keyDown(root, { key: 'Home' });
+    fireEvent.keyDown(root, { key: 'ArrowDown' });
+    for (let index = 0; index < 205; index++) useOutputStore.getState().addMessage(`later ${index}`);
+    await act(async () => { await Promise.resolve(); });
+    mockAnnounce.mockClear();
+    fireEvent.keyDown(root, { key: 'ArrowDown' });
+    expect(mockAnnounce).toHaveBeenCalledWith('next', 'polite');
+    act(() => { output!.clearLog(); });
+    useOutputStore.getState().reset();
+  });
+});
+
+describe("Output store delivery", () => {
+  beforeEach(() => {
+    useOutputStore.getState().reset();
+  });
+
+  afterEach(() => {
+    useOutputStore.getState().reset();
+  });
+
+  it("processes an oversized same-tick burst before the retained snapshot is capped", async () => {
+    const output = new Output({ client: {} as MudClient });
+    const handleOutputEntry = vi
+      .spyOn(output, "handleOutputEntry")
+      .mockImplementation(() => undefined);
+    const unsubscribe = useOutputStore.subscribe(output.handleOutputStoreEntries);
+
+    for (let index = 0; index < 501; index += 1) {
+      useOutputStore.getState().addMessage(`line ${index}`);
+    }
+    await Promise.resolve();
+
+    unsubscribe();
+    expect(handleOutputEntry).toHaveBeenCalledTimes(501);
+    expect(useOutputStore.getState().entries).toHaveLength(500);
+    expect(useOutputStore.getState().entries[0]).toMatchObject({
+      id: 2,
+      message: "line 1",
+    });
+  });
+});
+
+describe("Output initial scroll position", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    vi.unstubAllGlobals();
+  });
+
+  it("starts at the bottom when mounting persisted output history", () => {
+    localStorage.setItem(personalStorageKey('output') ?? '', JSON.stringify({
+      version: 2,
+      data: [{
+        type: OutputType.ServerMessage,
+        sourceType: "ansi",
+        sourceContent: "previous session line",
+      }],
+    }));
+    const output = new Output({ client: {} as MudClient });
+    vi.spyOn(output, "setState").mockImplementation(() => undefined);
+    const outputElement = document.createElement("div");
+    Object.defineProperties(outputElement, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 1_000 },
+      scrollTop: { configurable: true, value: 350, writable: true },
+    });
+    Object.defineProperty(output.outputRef, "current", { value: outputElement });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+
+    output.componentDidMount();
+
+    expect(outputElement.scrollTop).toBe(outputElement.scrollHeight);
+    output.componentWillUnmount();
+  });
+});
+
+describe("Output persistence", () => {
+  const makeLines = (count: number): OutputLine[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: i,
+      sourceContent: `line ${i}`,
+      sourceType: "test",
+      type: OutputType.ServerMessage,
+    }));
+
+  // Instantiate an Output with a known set of history lines, bypassing the
+  // constructor's localStorage load so tests control exactly what is persisted.
+  const makeOutput = (lines: OutputLine[]): Output => {
+    const output = new Output({ client: {} as MudClient });
+    Object.defineProperty(output, "allLines", { value: lines, writable: true });
+    return output;
+  };
+
+  const parsePayload = (raw: unknown) =>
+    JSON.parse(raw as string) as { version: number; data: unknown[] };
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does not throw when setItem hits a quota error; trims and retries once", () => {
+    const output = makeOutput(makeLines(10));
+    const setItemSpy = vi
+      .spyOn(window.localStorage, "setItem")
+      .mockImplementationOnce(() => {
+        throw new DOMException("quota", "QuotaExceededError");
+      });
+
+    expect(() => output.saveOutput()).not.toThrow();
+
+    // First (failed) attempt writes all 10 lines; the retry writes the recent half.
+    expect(setItemSpy).toHaveBeenCalledTimes(2);
+    expect(parsePayload(setItemSpy.mock.calls[0][1]).data).toHaveLength(10);
+    expect(parsePayload(setItemSpy.mock.calls[1][1]).data).toHaveLength(5);
+
+    // Component still functions: a subsequent save succeeds without throwing.
+    expect(() => output.saveOutput()).not.toThrow();
+  });
+
+  it("warns without throwing when the trimmed retry also fails", () => {
+    const output = makeOutput(makeLines(10));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+
+    expect(() => output.saveOutput()).not.toThrow();
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it("debounces rapid updates into a single write reflecting the latest lines", () => {
+    vi.useFakeTimers();
+    const output = makeOutput(makeLines(1));
+    const setItemSpy = vi.spyOn(window.localStorage, "setItem");
+
+    // Three rapid updates while totals stay equal (no setState side effects).
+    output.componentDidUpdate(output.props, output.state, false);
+    output.componentDidUpdate(output.props, output.state, false);
+    Object.defineProperty(output, "allLines", { value: makeLines(3), writable: true });
+    output.componentDidUpdate(output.props, output.state, false);
+
+    expect(setItemSpy).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(500);
+
+    expect(setItemSpy).toHaveBeenCalledTimes(1);
+    expect(parsePayload(setItemSpy.mock.calls[0][1]).data).toHaveLength(3);
+  });
+
+  it("flushes the pending save synchronously on unmount", () => {
+    vi.useFakeTimers();
+    const output = makeOutput(makeLines(2));
+    const setItemSpy = vi.spyOn(window.localStorage, "setItem");
+
+    output.componentDidUpdate(output.props, output.state, false);
+    expect(setItemSpy).not.toHaveBeenCalled();
+
+    output.componentWillUnmount();
+
+    // Written synchronously, before any timer advances.
+    expect(setItemSpy).toHaveBeenCalledTimes(1);
+    expect(parsePayload(setItemSpy.mock.calls[0][1]).data).toHaveLength(2);
+  });
+
+  it("cancels a pending save on clearLog so stale data is not re-persisted", () => {
+    vi.useFakeTimers();
+    const output = makeOutput(makeLines(5));
+    vi.spyOn(output, "setState").mockImplementation(() => {});
+    const setItemSpy = vi.spyOn(window.localStorage, "setItem");
+    const removeItemSpy = vi.spyOn(window.localStorage, "removeItem");
+
+    output.componentDidUpdate(output.props, output.state, false);
+    output.clearLog();
+
+    vi.advanceTimersByTime(500);
+
+    expect(removeItemSpy).toHaveBeenCalled();
+    expect(setItemSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("Output accessibility-tree exposure cap", () => {
+  const makeLines = (count: number): OutputLine[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: i,
+      sourceContent: `line ${i}`,
+      sourceType: "test",
+      type: OutputType.ServerMessage,
+    }));
+
+  // Instantiate an Output with history and a real frozen container so
+  // freezeOverflow/trimFrozen operate on actual DOM.
+  const makeOutput = (lines: OutputLine[]): Output => {
+    const output = new Output({ client: {} as MudClient });
+    Object.defineProperty(output, "allLines", { value: lines, writable: true });
+    const frozenDiv = document.createElement("div");
+    Object.defineProperty(output, "frozenRef", { value: { current: frozenDiv } });
+    return output;
+  };
+
+  const frozen = (output: Output): HTMLDivElement =>
+    (output as unknown as { frozenRef: { current: HTMLDivElement } }).frozenRef.current;
+
+  const freeze = (output: Output) =>
+    (output as unknown as { freezeOverflow: () => void }).freezeOverflow();
+
+  const hiddenCount = (output: Output): number =>
+    frozen(output).querySelectorAll('[aria-hidden="true"]').length;
+
+  it("hides frozen lines beyond the exposure cap, oldest first", () => {
+    const total = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES + 50;
+    const output = makeOutput(makeLines(total));
+
+    freeze(output);
+
+    const frozenDiv = frozen(output);
+    expect(frozenDiv.children.length).toBe(total - Output.LIVE_WINDOW_SIZE);
+    expect(hiddenCount(output)).toBe(50);
+    expect(frozenDiv.children[0].hasAttribute('inert')).toBe(true);
+    // The oldest lines are hidden; the most recent frozen lines are exposed.
+    expect(frozenDiv.children[0].getAttribute("aria-hidden")).toBe("true");
+    expect(frozenDiv.children[49].getAttribute("aria-hidden")).toBe("true");
+    expect(frozenDiv.children[50].hasAttribute("aria-hidden")).toBe(false);
+    expect(
+      frozenDiv.children[frozenDiv.children.length - 1].hasAttribute("aria-hidden")
+    ).toBe(false);
+  });
+
+  it("exposes everything while under the cap", () => {
+    const output = makeOutput(
+      makeLines(Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES)
+    );
+
+    freeze(output);
+
+    expect(frozen(output).children.length).toBe(Output.A11Y_EXPOSED_FROZEN_LINES);
+    expect(hiddenCount(output)).toBe(0);
+  });
+
+  it("hides incrementally as more lines freeze", () => {
+    const start = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES;
+    const output = makeOutput(makeLines(start));
+    freeze(output);
+    expect(hiddenCount(output)).toBe(0);
+
+    (output as unknown as { allLines: OutputLine[] }).allLines = makeLines(start + 10);
+    freeze(output);
+
+    expect(hiddenCount(output)).toBe(10);
+  });
+
+  it("keeps the hidden count consistent across trims from the front", () => {
+    const total = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES + 30;
+    const output = makeOutput(makeLines(total));
+    freeze(output);
+    expect(hiddenCount(output)).toBe(30);
+
+    (output as unknown as { trimFrozen: (n: number) => void }).trimFrozen(30);
+
+    // The 30 hidden (oldest) lines were removed; nothing exposed got hidden.
+    expect(hiddenCount(output)).toBe(0);
+    expect(frozen(output).children.length).toBe(Output.A11Y_EXPOSED_FROZEN_LINES);
+
+    // Freezing more lines re-hides from the new front, incrementally.
+    (output as unknown as { allLines: OutputLine[] }).allLines = makeLines(total - 30 + 5);
+    freeze(output);
+    expect(hiddenCount(output)).toBe(5);
+  });
+});
+
+describe("Output history exposure toggle", () => {
+  const makeLines = (count: number): OutputLine[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: i,
+      sourceContent: `line ${i}`,
+      sourceType: "test",
+      type: OutputType.ServerMessage,
+    }));
+
+  const makeOutput = (lines: OutputLine[]): Output => {
+    const output = new Output({ client: {} as MudClient });
+    Object.defineProperty(output, "allLines", { value: lines, writable: true });
+    const frozenDiv = document.createElement("div");
+    Object.defineProperty(output, "frozenRef", { value: { current: frozenDiv } });
+    return output;
+  };
+
+  const frozen = (output: Output): HTMLDivElement =>
+    (output as unknown as { frozenRef: { current: HTMLDivElement } }).frozenRef.current;
+
+  const freeze = (output: Output) =>
+    (output as unknown as { freezeOverflow: () => void }).freezeOverflow();
+
+  const hiddenCount = (output: Output): number =>
+    frozen(output).querySelectorAll('[aria-hidden="true"]').length;
+
+  const setRevealed = (output: Output, historyRevealed: boolean) => {
+    Object.assign(output.state, { historyRevealed });
+  };
+
+  it("exposes all frozen lines while revealed, including new arrivals", () => {
+    const total = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES + 40;
+    const output = makeOutput(makeLines(total));
+    freeze(output);
+    expect(hiddenCount(output)).toBe(40);
+
+    setRevealed(output, true);
+    freeze(output);
+    expect(hiddenCount(output)).toBe(0);
+
+    // New lines freezing while revealed stay exposed too.
+    (output as unknown as { allLines: OutputLine[] }).allLines = makeLines(total + 10);
+    freeze(output);
+    expect(hiddenCount(output)).toBe(0);
+  });
+
+  it("re-hides everything beyond the cap when revealed is switched off", () => {
+    const total = Output.LIVE_WINDOW_SIZE + Output.A11Y_EXPOSED_FROZEN_LINES + 40;
+    const output = makeOutput(makeLines(total));
+    setRevealed(output, true);
+    freeze(output);
+    expect(hiddenCount(output)).toBe(0);
+
+    setRevealed(output, false);
+    freeze(output);
+
+    const frozenDiv = frozen(output);
+    expect(hiddenCount(output)).toBe(40);
+    expect(frozenDiv.children[0].getAttribute("aria-hidden")).toBe("true");
+    expect(frozenDiv.children[40].hasAttribute("aria-hidden")).toBe(false);
+  });
+});
+
+describe("Output delivery resilience", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  it("keeps delivering output after one entry fails to render", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let output!: Output;
+    render(
+      <Output
+        ref={(instance: Output | null) => { if (instance) output = instance; }}
+        client={{ sendCommand: vi.fn() } as unknown as MudClient}
+      />,
+    );
+    const handleMessage = output.handleMessage;
+    output.handleMessage = (message: string) => {
+      if (message === "poison") throw new Error("render failed");
+      handleMessage(message);
+    };
+    const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const rendered = () =>
+      [...document.querySelectorAll(".output > .output-line")].map((line) => line.textContent);
+
+    useOutputStore.getState().addMessage("before");
+    useOutputStore.getState().addMessage("poison");
+    await flush();
+    useOutputStore.getState().addMessage("after");
+    await flush();
+
+    expect(rendered()).toEqual(["before", "poison", "after"]);
+  });
+});
+
+describe("Output frozen history resilience", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  it('keeps quotation copy available after the live window rolls over', async () => {
+    const { container } = render(<Output client={{} as MudClient} />);
+    useOutputStore.getState().addHtml('<blockquote>keep this quotation</blockquote>');
+    await act(async () => { await Promise.resolve(); });
+    screen.getByRole('button', { name: 'Copy blockquote content' }).focus();
+    for (let index = 0; index < 201; index++) useOutputStore.getState().addMessage(`later ${index}`);
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement).toBe(container.querySelector('.output'));
+    const quote = [...container.querySelectorAll('blockquote')].find(node => node.textContent === 'keep this quotation')!;
+    const button = quote.parentElement!.querySelector('button')!;
+    expect(button).not.toBeNull();
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: mockClipboardWriteText } });
+    mockClipboardWriteText.mockResolvedValue(undefined);
+    await act(async () => { fireEvent.click(button); });
+    expect(mockClipboardWriteText).toHaveBeenCalledWith('keep this quotation');
+    await waitFor(() => expect(mockAnnounce).toHaveBeenCalledWith('Copied', 'polite'));
+  });
+
+  it('shows the reviewed line indicator in frozen history', async () => {
+    const { container } = render(<Output client={{} as MudClient} />);
+    for (let index = 0; index < 205; index++) useOutputStore.getState().addMessage(`review ${index}`);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'Home' });
+    const firstLine = screen.getByText('review 0').closest('[data-line-id]')!;
+    expect(firstLine.classList.contains('focused-line')).toBe(true);
+    fireEvent.keyDown(container.querySelector('.output')!, { key: 'ArrowDown' });
+    expect(firstLine.classList.contains('focused-line')).toBe(false);
+    expect(screen.getByText('review 1').closest('[data-line-id]')!.classList.contains('focused-line')).toBe(true);
+  });
+
+  it('does not animate review scrolling when reduced motion is requested', async () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+    try {
+      const { container } = render(<Output client={{} as MudClient} />);
+      useOutputStore.getState().addMessage('review quietly');
+      await act(async () => { await Promise.resolve(); });
+      fireEvent.keyDown(container.querySelector('.output')!, { key: 'Home' });
+      await waitFor(() => expect(scroll).toHaveBeenCalledWith({ behavior: 'auto', block: 'nearest' }));
+    } finally {
+      vi.unstubAllGlobals();
+      scroll.mockRestore();
+    }
+  });
+
+  it("keeps rendering and saving when the frozen container falls out of sync", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { container } = render(<Output client={{ sendCommand: vi.fn() } as unknown as MudClient} />);
+    for (let index = 0; index < 1500; index += 1) {
+      useOutputStore.getState().addMessage(`old ${index}`);
+    }
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const frozen = container.querySelector(".output > div:not(.output-line):not(.history-exposure-toggle)")!;
+    expect(frozen.children).toHaveLength(1300);
+
+    // The state seen in production: the counters describe more frozen lines
+    // than the container holds, so freezeOverflow indexed past its end.
+    while (frozen.children.length > 100) frozen.lastElementChild!.remove();
+
+    // Let the save scheduled by the initial burst finish so only saves caused
+    // by the post-drift update are observed below.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, Output.SAVE_DEBOUNCE_MS + 50));
+    });
+    const setItem = vi.spyOn(window.localStorage, "setItem");
+    useOutputStore.getState().addMessage("after drift");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, Output.SAVE_DEBOUNCE_MS + 50));
+    });
+
+    const rendered = [...container.querySelectorAll(".output > .output-line")].map((line) => line.textContent);
+    expect(rendered.at(-1)).toBe("after drift");
+    const lastWrite = setItem.mock.calls.filter(([key]) => key === personalStorageKey('output')).at(-1);
+    expect(lastWrite).toBeDefined();
+    const saved = JSON.parse(lastWrite![1]).data;
+    expect(saved.at(-1).sourceContent).toBe("after drift");
+    expect(frozen.children).toHaveLength(1301);
+  });
+});
+
+describe("Output line markup rendering", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    mockClipboardWriteText.mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: mockClipboardWriteText },
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useOutputStore.getState().reset();
+  });
+
+  it("reviewing and copying live lines does not corrupt them for later renders", async () => {
+    const errors: unknown[] = [];
+    const recordError = (error: unknown) => errors.push(error);
+    process.on("uncaughtException", recordError);
+    process.on("unhandledRejection", recordError);
+    let output: Output | undefined;
+    const { container } = render(
+      <Output
+        ref={(instance: Output | null) => { if (instance) output = instance; }}
+        client={{ sendCommand: vi.fn() } as unknown as MudClient}
+      />,
+    );
+    const flush = () => act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const store = useOutputStore.getState();
+    store.addMessage("\x1b[31mred 0\x1b[0m and \x1b[1mbold\x1b[0m text");
+    store.addMessage("see https://example.com/a and http://example.org/b ok");
+    store.addHtml("<p>before</p><blockquote data-content-type=\"text/markdown\"><p>quoted</p></blockquote><p>after</p>");
+    store.addHtml("<p>plain <b>html</b> <a href=\"https://x.y\">link</a></p>");
+    store.addCommand("page claude fix teardown");
+    store.addMessage("It pages, \"Checked Midgaard #4905 first. Go?\"");
+    await flush();
+    for (let lineNumber = 1; lineNumber <= 8; lineNumber += 1) {
+      output?.reviewRecentOutputLine(lineNumber);
+      await output?.copyRecentOutputLine(lineNumber);
+    }
+
+    // Push the reviewed lines out of the live window so they unmount.
+    for (let index = 0; index < Output.LIVE_WINDOW_SIZE + 50; index += 1) {
+      useOutputStore.getState().addMessage(`\x1b[32mfiller ${index}\x1b[0m`);
+      if (index % 20 === 0) await flush();
+    }
+    await flush();
+    process.off("uncaughtException", recordError);
+    process.off("unhandledRejection", recordError);
+
+    expect(errors).toEqual([]);
+    const text = container.querySelector(".output")?.textContent ?? "";
+    expect(text).toContain("red 0 and bold text");
+    // The multi-part HTML message is one line, frozen once, not once per part.
+    expect(text.split("quoted").length - 1).toBe(1);
+    expect(text).toContain(`filler ${Output.LIVE_WINDOW_SIZE + 49}`);
+  });
+
+  it("history lines hold no mounted elements that pin earlier render trees", async () => {
+    let output: Output | undefined;
+    render(
+      <Output
+        ref={(instance: Output | null) => { if (instance) output = instance; }}
+        client={{ sendCommand: vi.fn() } as unknown as MudClient}
+      />,
+    );
+    const flush = () => act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    for (let index = 0; index < 5; index += 1) {
+      useOutputStore.getState().addMessage(`\x1b[31mline ${index}\x1b[0m`);
+      await flush();
+    }
+
+    // A mounted Preact vnode keeps `__` (its parent) from the render that
+    // mounted it. Reachable from long-lived history, that pointer pins the
+    // whole app tree of that render; with thousands of lines this grew the
+    // live client's heap past 1.4 GB.
+    const mounted: unknown[] = [];
+    const seen = new Set<unknown>();
+    const visit = (value: unknown) => {
+      if (value === null || typeof value !== "object" || seen.has(value) || value instanceof Node) return;
+      seen.add(value);
+      const record = value as Record<string, unknown>;
+      if ("props" in record && "type" in record && record.__ != null) mounted.push(value);
+      for (const key of Object.keys(record)) visit(record[key]);
+    };
+    visit((output as unknown as { allLines: OutputLine[] }).allLines);
+
+    expect(mounted).toEqual([]);
+  });
+});
+
+describe("Output provisional away lines", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    useConnectionStore.getState().reset();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    useOutputStore.getState().reset();
+    useConnectionStore.getState().reset();
+  });
+
+  const mount = () =>
+    render(<Output client={{ sendCommand: vi.fn() } as unknown as MudClient} />);
+  const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  // Server lines in order, frozen or live. A frozen line nests the same class
+  // inside its wrapper, so only the innermost match counts.
+  const rendered = () =>
+    [...document.querySelectorAll(".output .output-line-serverMessage")]
+      .filter((line) => !line.querySelector(".output-line-serverMessage"))
+      .map((line) => line.textContent);
+
+  it("announces a provisional line exactly as it announces a normal line", async () => {
+    mount();
+
+    useOutputStore.getState().addMessage("Bob waves.");
+    useOutputStore.getState().addMessage("Bob waves.", true);
+    await flush();
+
+    expect(rendered()).toEqual(["Bob waves.", "Bob waves."]);
+    const announcements = mockAnnounce.mock.calls.filter(([text]) => text === "Bob waves.");
+    expect(announcements).toHaveLength(2);
+    expect(announcements[1]).toEqual(announcements[0]);
+  });
+
+  it("keeps provisional lines when the socket opens but nobody is logged in yet", async () => {
+    mount();
+    useOutputStore.getState().addMessage("missed one", true);
+    await flush();
+
+    await act(async () => {
+      useConnectionStore.getState().setConnected(true);
+    });
+    await flush();
+
+    expect(rendered()).toEqual(["missed one"]);
+  });
+
+  it("removes provisional lines at login and keeps the rest", async () => {
+    mount();
+    useOutputStore.getState().addMessage("before");
+    useOutputStore.getState().addMessage("missed one", true);
+    useOutputStore.getState().addMessage("missed two", true);
+    await flush();
+    expect(rendered()).toEqual(["before", "missed one", "missed two"]);
+
+    await act(async () => {
+      useConnectionStore.getState().setConnected(true);
+      useConnectionStore.getState().setSessionReady(true);
+    });
+    useOutputStore.getState().addMessage("replayed");
+    await flush();
+
+    expect(rendered()).toEqual(["before", "replayed"]);
+  });
+
+  it("removes provisional lines that were already frozen out of the live window", async () => {
+    mount();
+    useOutputStore.getState().addMessage("missed early", true);
+    for (let index = 0; index < Output.LIVE_WINDOW_SIZE; index += 1) {
+      useOutputStore.getState().addMessage(`line ${index}`);
+    }
+    await flush();
+    expect(rendered()).toContain("missed early");
+
+    await act(async () => {
+      useConnectionStore.getState().setConnected(true);
+      useConnectionStore.getState().setSessionReady(true);
+    });
+    await flush();
+
+    expect(rendered()).not.toContain("missed early");
+    expect(rendered()).toHaveLength(Output.LIVE_WINDOW_SIZE);
+    expect(rendered()[0]).toBe("line 0");
+  });
+
+  it("drops a provisional line that is delivered after login", async () => {
+    mount();
+    await act(async () => {
+      useConnectionStore.getState().setConnected(true);
+      useConnectionStore.getState().setSessionReady(true);
+    });
+
+    useOutputStore.getState().addMessage("too late", true);
+    await flush();
+
+    expect(rendered()).toEqual([]);
+  });
+});

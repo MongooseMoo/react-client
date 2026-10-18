@@ -1,65 +1,164 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
-import MudClient from "./client";
+import type MudClient from "./client";
+import AutoLogDialog, {
+  type AutoLogDialogRef,
+} from "./components/AutoLogDialog";
+import { useFileTransferNotifications } from "./components/FileTransfer/useFileTransferNotifications";
+import HostPanel from "./components/HostPanel";
 import CommandInput from "./components/input";
 import OutputWindow from "./components/output";
 import PreferencesDialog, {
-  PreferencesDialogRef,
+  type PreferencesDialogRef,
 } from "./components/PreferencesDialog";
-// Import SidebarRef type along with the component
-import Sidebar, { SidebarRef } from "./components/sidebar";
+import LinkPickerDialog from "./components/LinkPickerDialog";
+import Sidebar, { clampSidebarWidth, type SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
+import UpdateNotice from "./components/UpdateNotice";
+import WasmGuest from "./components/WasmGuest";
+import type { WasmHostState } from "./components/WasmHost";
+import WasmHost from "./components/WasmHost";
+import { createConfiguredClient } from "./createConfiguredClient";
+import type { GMCPMessageRoomInfo } from "./gmcp/Room";
+import type { HapticsRuntime } from "./haptics/runtime";
+import { useChannelHistory } from "./hooks/useChannelHistory";
 import {
-  GMCPAutoLogin,
-  GMCPChar, // Added
-  GMCPCharAfflictions, // Added
-  GMCPCharDefences,
-  GMCPCharItems, // Added
-  GMCPCharOffer, // Added
-  GMCPCharPrompt, // Added
-  GMCPCharSkills,
-  GMCPCharStatus, // Added
-  GMCPCharStatusAffectedBy, // Added
-  GMCPCharStatusConditions, // Added
-  GMCPCharStatusTimers,
-  GMCPClientFileTransfer,
-  GMCPClientHtml,
-  GMCPClientKeystrokes,
-  GMCPClientMedia,
-  GMCPClientMidi,
-  GMCPClientSpeech,
-  GMCPCommChannel,
-  GMCPCommLiveKit,
-  GMCPCore,
-  GMCPCoreSupports, // Added
-  GMCPGroup, // Added
-  GMCPLogging, // Added
-  GMCPRedirect, // Added
-  GMCPRoom, // Added
-} from "./gmcp";
-import { FileTransferOffer, useClientEvent } from "./hooks/useClientEvent";
+  autoLogService,
+  createAutoLogSessionDraft,
+} from "./logging/AutoLogService";
 import {
-  McpAwnsPing,
-  McpAwnsStatus,
-  McpSimpleEdit,
-  McpVmooUserlist,
-} from "./mcp";
+  loadStoredValue,
+  saveStoredValue,
+  type LocalStorageSchema,
+} from "./persistence";
+import { usePreferences } from "./stores/preferencesStore";
+import { useRoomStore } from "./stores/roomStore";
+import { useConnectionStore } from "./stores/connectionStore";
+import { useOutputStore } from "./stores/outputStore";
+import { usePersonalDataStore } from './stores/personalDataStore';
+import { stripMudAnsiTags } from "./stripMudAnsiTags";
+import { enrollBrowserNotifications, useBrowserNotifications } from './browserNotifications';
+import BrowserSessions from './components/BrowserSessions';
+import { canUseGameConnection, useBrowserPolicy } from './browserPolicy';
+
+const WINDOW_TITLE = "Mongoose Client";
+const DOUBLE_PRESS_WINDOW_MS = 500;
+
+// User-chosen sidebar width in px; absent until the user first resizes.
+const sidebarWidthSchema: LocalStorageSchema<number> = {
+  key: "sidebarWidth",
+  version: 1,
+  migrate: (data) =>
+    typeof data === "number" && Number.isFinite(data) ? data : undefined,
+};
+
+function loadSidebarWidth(): number | null {
+  const stored = loadStoredValue<number | null>(sidebarWidthSchema, null);
+  return stored === null ? null : clampSidebarWidth(stored);
+}
+
+function setWindowSubtitle(subtitle?: string) {
+  document.title = subtitle ? `${WINDOW_TITLE} - ${subtitle}` : WINDOW_TITLE;
+}
+
+function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
+  // Strip before composing: a field that is nothing but markup has to read as
+  // empty here, or it drags an orphaned separator into the title.
+  const area = roomInfo.area ? stripMudAnsiTags(roomInfo.area) : "";
+  const name = roomInfo.name ? stripMudAnsiTags(roomInfo.name) : "";
+
+  if (area && name) {
+    return `${area}: ${name}`;
+  }
+
+  return name || area || undefined;
+}
+
+function getShortcutDigit(event: KeyboardEvent): number | null {
+  // Shift changes KeyboardEvent.key to punctuation on many layouts.
+  const value = /^Digit([0-9])$/.exec(event.code)?.[1] ?? (/^[0-9]$/.test(event.key) ? event.key : null);
+  return value === null ? null : Number(value);
+}
+
+function getOutputReviewLineNumber(event: KeyboardEvent): number | null {
+  if (!event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) {
+    return null;
+  }
+
+  const digit = getShortcutDigit(event);
+  if (digit === null) {
+    return null;
+  }
+
+  return digit === 0 ? 10 : digit;
+}
+
+function getSidebarShortcutIndex(event: KeyboardEvent): number | null {
+  if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) {
+    return null;
+  }
+
+  const digit = getShortcutDigit(event);
+  if (digit === null) {
+    return null;
+  }
+
+  return (digit === 0 ? 10 : digit) - 1;
+}
 
 function App() {
+  const browserPolicy = useBrowserPolicy();
+  usePersonalDataStore();
+  const browserPaused = !canUseGameConnection();
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
-  const [showFileTransfer, setShowFileTransfer] = useState<boolean>(false);
-  const [fileTransferExpanded, setFileTransferExpanded] =
-    useState<boolean>(false);
-  const players = useClientEvent<"userlist">(client, "userlist", []) || [];
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [sidebarFocusRequest, setSidebarFocusRequest] = useState<{ index: number } | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState<number | null>(loadSidebarWidth);
+
+  // Persist the user-chosen sidebar width, debounced so drags don't
+  // write localStorage on every pointer move
+  useEffect(() => {
+    if (sidebarWidth === null) return;
+    const timer = window.setTimeout(
+      () => saveStoredValue(sidebarWidthSchema, sidebarWidth),
+      250,
+    );
+    return () => window.clearTimeout(timer);
+  }, [sidebarWidth]);
+  const [hostState, setHostState] = useState<WasmHostState>({
+    roomId: null,
+    guestCount: 0,
+  });
+  const { clearAllBuffers, linkPickerLinks, closeLinkPicker } = useChannelHistory();
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);
-  const sidebarRef = React.useRef<SidebarRef | null>(null); // Add ref for Sidebar
+  const autoLogDialogRef = React.useRef<AutoLogDialogRef | null>(null);
+  useEffect(() => {
+    if (!browserPaused) return;
+    prefsDialogRef.current?.close();
+    autoLogDialogRef.current?.close();
+    const frame = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('.browser-sessions > summary')?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [browserPaused]);
+  const sidebarRef = React.useRef<SidebarRef | null>(null);
+  const autoLoginAttempted = useRef(false);
+  const lastOutputReviewShortcut = useRef<{
+    lineNumber: number;
+    time: number;
+  } | null>(null);
 
   const clientInitialized = useRef(false);
+  const hapticsRuntimeRef = useRef<HapticsRuntime | null>(null);
+  const midiEnabled = usePreferences((state) => state.midi.enabled);
+  const hapticsEnabled = usePreferences((state) => state.haptics.enabled);
+  const connected = useConnectionStore((state) => state.connected);
+  useFileTransferNotifications(client);
 
   const saveLog = () => {
     if (outRef.current) {
@@ -71,6 +170,7 @@ function App() {
     if (outRef.current) {
       outRef.current.clearLog();
     }
+    clearAllBuffers();
   };
 
   const copyLog = () => {
@@ -79,123 +179,291 @@ function App() {
     }
   };
 
+  const handleAppKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (!client) {
+        return;
+      }
+
+      if (event.key === "Control") {
+        client.cancelSpeech();
+      }
+
+      if (event.key === "Escape") {
+        void client.pauseAllSounds().catch(() => {
+          useOutputStore.getState().addError(new Error('Could not pause sounds. Try again.'));
+        });
+        hapticsRuntimeRef.current?.emergencyStop();
+      }
+
+      if (browserPaused) return;
+
+      const outputReviewLineNumber = getOutputReviewLineNumber(event);
+      if (outputReviewLineNumber !== null) {
+        event.preventDefault();
+        const now = Date.now();
+        const isDoublePress =
+          lastOutputReviewShortcut.current?.lineNumber === outputReviewLineNumber &&
+          now - lastOutputReviewShortcut.current.time < DOUBLE_PRESS_WINDOW_MS;
+        lastOutputReviewShortcut.current = {
+          lineNumber: outputReviewLineNumber,
+          time: now,
+        };
+        outRef.current?.reviewRecentOutputLine(outputReviewLineNumber);
+        if (isDoublePress) {
+          void outRef.current?.copyRecentOutputLine(outputReviewLineNumber);
+        }
+        return;
+      }
+
+      const targetIndex = getSidebarShortcutIndex(event);
+      if (targetIndex !== null && sidebarRef.current?.hasTab(targetIndex)) {
+        if (!(event.target instanceof Element && event.target.closest('dialog[open], [role="dialog"][aria-modal="true"]'))) {
+          event.preventDefault();
+          setShowSidebar(true);
+          setSidebarCollapsed(false);
+          setSidebarFocusRequest({ index: targetIndex });
+        }
+      }
+    },
+    [client, browserPaused],
+  );
+
+  useLayoutEffect(() => {
+    if (sidebarFocusRequest && showSidebar && !sidebarCollapsed) {
+      sidebarRef.current?.switchToTab(sidebarFocusRequest.index);
+      setSidebarFocusRequest(null);
+    }
+  }, [sidebarFocusRequest, showSidebar, sidebarCollapsed]);
+
   // are we on mobile?
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
+  // Determine mode from URL params (available to both effect and JSX)
+  const urlModeParams = React.useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get("mode");
+    const dbUrl = params.get("db");
+    const roomParam = params.get("room");
+    const isHostMode = mode === "host";
+    const isJoinMode = mode === "join";
+    const isLocalMode =
+      mode === "local" || (dbUrl !== null && !isHostMode && !isJoinMode);
+    return { mode, dbUrl, roomParam, isHostMode, isJoinMode, isLocalMode };
+  }, []);
+
+  const isWasmMode = urlModeParams.isLocalMode || urlModeParams.isHostMode;
+  const isGuestMode = urlModeParams.isJoinMode;
+  const isDefaultMode = !isWasmMode && !isGuestMode;
+
+  // Callback for WASM components to deliver their client
+  const handleClientReady = useCallback(
+    (newClient: MudClient) => {
+      setClient(newClient);
+      setShowSidebar(!isMobile);
+      window.mudClient = newClient;
+    },
+    [isMobile],
+  );
+
+  // Default telnet mode: create client and connect via WebSocket
   useEffect(() => {
+    if (!isDefaultMode) return;
     if (clientInitialized.current) return;
-    const newClient = new MudClient("mongoose.moo.mud.org", 8765);
-    newClient.registerGMCPPackage(GMCPCore);
-    newClient.registerGMCPPackage(GMCPClientMedia);
-    newClient.registerGMCPPackage(GMCPClientMidi);
-    newClient.registerGMCPPackage(GMCPClientSpeech);
-    newClient.registerGMCPPackage(GMCPClientKeystrokes);
-    newClient.registerGMCPPackage(GMCPCoreSupports);
-    newClient.registerGMCPPackage(GMCPCommChannel);
-    newClient.registerGMCPPackage(GMCPCommLiveKit);
-    newClient.registerGMCPPackage(GMCPAutoLogin);
-    newClient.registerGMCPPackage(GMCPClientHtml);
-    newClient.registerGMCPPackage(GMCPClientFileTransfer);
-    newClient.registerGMCPPackage(GMCPCharItems);
-    newClient.registerGMCPPackage(GMCPCharStatus); // Removed duplicate below
-    // Added missing GMCP packages
-    newClient.registerGMCPPackage(GMCPChar);
-    newClient.registerGMCPPackage(GMCPCharOffer);
-    newClient.registerGMCPPackage(GMCPCharPrompt);
-    newClient.registerGMCPPackage(GMCPCharStatusAffectedBy);
-    newClient.registerGMCPPackage(GMCPCharStatusConditions);
-    newClient.registerGMCPPackage(GMCPCharStatusTimers);
-    newClient.registerGMCPPackage(GMCPCharAfflictions);
-    newClient.registerGMCPPackage(GMCPCharDefences);
-    newClient.registerGMCPPackage(GMCPCharSkills);
-    newClient.registerGMCPPackage(GMCPGroup);
-    newClient.registerGMCPPackage(GMCPLogging);
-    newClient.registerGMCPPackage(GMCPRedirect);
-    newClient.registerGMCPPackage(GMCPRoom);
-    // MCP Packages
-    newClient.registerMcpPackage(McpAwnsStatus);
-    newClient.registerMcpPackage(McpSimpleEdit);
-    newClient.registerMcpPackage(McpVmooUserlist);
-    newClient.registerMcpPackage(McpAwnsPing);
+    clientInitialized.current = true;
+
+    const newClient = createConfiguredClient();
     newClient.connect();
-    newClient.requestNotificationPermission();
+
     setClient(newClient);
     setShowSidebar(!isMobile);
     window.mudClient = newClient;
-    clientInitialized.current = true;
-    
-    // Virtual MIDI synthesizers are now initialized with MidiService
+  }, [isDefaultMode, isMobile]);
 
-    // Listen to 'keydown' event
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!newClient) return;
+  // Mark clientInitialized when WASM/guest components deliver a client
+  useEffect(() => {
+    if (client && !clientInitialized.current) {
+      clientInitialized.current = true;
+    }
+  }, [client]);
 
-      if (event.key === "Control") {
-        newClient.cancelSpeech(); // Cancel the speech when control key is pressed
-      }
-      if (event.key === "Escape") {
-        newClient.stopAllSounds();
-        // Also send MIDI all notes off if MIDI is enabled
-        const midiPackage = newClient.gmcpHandlers["Client.Midi"];
-        if (midiPackage) {
-          (midiPackage as any).sendAllNotesOff();
-        }
-      }
+  useEffect(() => {
+    if (!client) {
+      autoLogService.configureSession(null);
+      return;
+    }
+
+    const configureAutologSession = () => {
+      const { owner, visitor, policyReady } = usePersonalDataStore.getState();
+      autoLogService.configureSession(owner && policyReady && !visitor
+        ? { ...createAutoLogSessionDraft(document.title || WINDOW_TITLE), owner: { ...owner } }
+        : null);
+    };
+    const startAutologSession = () => {
+      configureAutologSession();
+      autoLogService.startSession().catch((error) => {
+        console.error("Failed to start autolog session:", error);
+      });
+    };
+    const endAutologSession = () => {
+      autoLogService.endSession().catch((error) => {
+        console.error("Failed to end autolog session:", error);
+      });
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    configureAutologSession();
+    const unsubscribeOwner = usePersonalDataStore.subscribe(() => { startAutologSession(); });
+    if (connected) {
+      startAutologSession();
+    } else {
+      endAutologSession();
+    }
+
+    return () => {
+      unsubscribeOwner();
+      autoLogService.endSession().catch((error) => {
+        console.error("Failed to end autolog session during cleanup:", error);
+      });
+      autoLogService.configureSession(null);
+    };
+  }, [client, connected]);
+
+  useEffect(() => {
+    if (!client?.liveServer) return;
+    const auth = client.gmcp.require('Auth.Autologin');
+    const enroll = () => { void enrollBrowserNotifications(client); };
+    const unsubscribeToken = auth.on('sessionToken', enroll);
+    const unsubscribeContext = useBrowserNotifications.subscribe((state) => client.setBrowserNotificationContext(state.context));
+    const unsubscribeOwner = usePersonalDataStore.subscribe((state) => {
+      const current = useBrowserNotifications.getState().context;
+      if (state.visitor || !state.owner || state.owner.playerUuid !== current?.recipient.playerUuid) {
+        useBrowserNotifications.setState({ context: undefined, busy: false, error: '' });
+      }
+    });
+    const unsubscribePolicy = useBrowserPolicy.subscribe((state, previous) => {
+      if (state.ready && state.policy.phase === 'owner' && previous.policy.phase !== 'owner') enroll();
+    });
+    enroll();
+    return () => { unsubscribeToken(); unsubscribeContext(); unsubscribeOwner(); unsubscribePolicy(); client.setBrowserNotificationContext(undefined); };
+  }, [client]);
+
+  useEffect(() => {
+    if (!client || !connected || autoLoginAttempted.current) return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const username = urlParams.get("username");
+    const password = urlParams.get("password");
+    if (!username || !password) return;
+
+    autoLoginAttempted.current = true;
+    console.log("Auto-logging in with URL params...");
+    setTimeout(() => {
+      client.sendCommand(username);
+      setTimeout(() => {
+        client.sendCommand(password);
+      }, 500);
+    }, 1000);
+  }, [client, connected]);
+
+  // Common client setup: notifications, auto-login, MIDI, haptics, focus handlers
+  useEffect(() => {
+    if (!client) return;
 
     // on focus, focus the input
     const handleFocus = () => {
       inRef.current?.focus();
     };
-
     document.addEventListener("focus", handleFocus);
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focus", handleFocus);
     };
-  }, [isMobile]); // Keep client initialization separate
+  }, [client]);
 
-  // Effect for CTRL + Number shortcut
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Only act if sidebar is shown and CTRL is pressed
-      if (!showSidebar || !event.ctrlKey) {
-        return;
-      }
-
-      // Check if key is a digit 1-9
-      const digit = parseInt(event.key, 10);
-      if (!isNaN(digit) && digit >= 1 && digit <= 9) {
-        const targetIndex = digit - 1; // 0-based index
-
-        // Prevent browser default action (like switching browser tabs)
-        event.preventDefault();
-
-        // Call the function exposed by Sidebar via ref
-        console.log(
-          `App: Detected CTRL+${digit}, calling switchToTab(${targetIndex})`
-        );
-        sidebarRef.current?.switchToTab(targetIndex);
-      }
-    };
-
-    // Add the event listener in the capture phase
-    document.addEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("keydown", handleAppKeyDown, true);
     return () => {
-      // Remove the event listener also specifying the capture phase
-      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("keydown", handleAppKeyDown, true);
     };
-    // Re-run if sidebar visibility changes
-  }, [showSidebar]); // Dependency: showSidebar
+  }, [handleAppKeyDown]);
 
-  const fileTransferOffer = useClientEvent<"fileTransferOffer">(
-    client,
-    "fileTransferOffer",
-    null as unknown as FileTransferOffer
-  );
+  useEffect(() => {
+    if (!midiEnabled) return;
+
+    let cancelled = false;
+    let releasePlayback: (() => void) | undefined;
+    import("./VirtualMidiService")
+      .then(async ({ virtualMidiService }) => {
+        if (cancelled) return false;
+        releasePlayback = virtualMidiService.setPlaybackSource(client?.media ?? null);
+        if (client) {
+          // Render into the client's master gain so the synth shares its
+          // clock, volume, mute, and autoplay unlock.
+          const { cacophony } = client.media;
+          await virtualMidiService.setAudioOutput({
+            context: cacophony.context as unknown as BaseAudioContext,
+            destination: cacophony.globalGainNode as unknown as AudioNode,
+          });
+        }
+        if (cancelled) return false;
+        return virtualMidiService.initialize();
+      })
+      .then((success) => {
+        if (cancelled) return;
+        if (success) {
+          console.log("Virtual MIDI synthesizer initialized");
+        } else {
+          console.log("Failed to initialize virtual MIDI synthesizer");
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Error initializing virtual MIDI synthesizer:", error);
+      });
+
+    return () => {
+      cancelled = true;
+      releasePlayback?.();
+    };
+  }, [midiEnabled, client]);
+
+  // Window subtitle tracks the current room from the room store. On disconnect
+  // the client resets the store, which clears roomInfo and so clears the subtitle.
+  const roomInfo = useRoomStore((state) => state.roomInfo);
+  useEffect(() => {
+    if (browserPaused) { document.title = 'Mongoose Client – paused'; return; }
+    if (!client) {
+      setWindowSubtitle();
+      return;
+    }
+    setWindowSubtitle(roomInfo ? getRoomSubtitle(roomInfo) : undefined);
+    return () => {
+      setWindowSubtitle();
+    };
+  }, [client, roomInfo, browserPaused]);
+
+  useEffect(() => {
+    if (!client || !hapticsEnabled) return;
+    let cancelled = false;
+    let runtime: HapticsRuntime | undefined;
+    import('./haptics/runtime').then(({ createHapticsRuntime }) => {
+      if (cancelled) return;
+      runtime = createHapticsRuntime();
+      hapticsRuntimeRef.current = runtime;
+      runtime.setEnabled(true);
+    }).catch((error) => {
+      console.error('Failed to initialize haptics runtime:', error);
+    });
+    return () => {
+      cancelled = true;
+      if (!runtime) return;
+      if (hapticsRuntimeRef.current === runtime) hapticsRuntimeRef.current = null;
+      runtime.emergencyStop();
+      void runtime.dispose().catch((error) => {
+        console.error('Failed to dispose haptics runtime:', error);
+      });
+    };
+  }, [client, hapticsEnabled]);
 
   const handleCommand = useCallback(
     (text: string) => {
@@ -203,82 +471,132 @@ function App() {
         client.sendCommand(text);
       }
     },
-    [client]
+    [client],
   );
 
-  // Function to focus the input element
   const focusInput = useCallback(() => {
     inRef.current?.focus();
-  }, []); // No dependencies, so the function reference is stable
-
-  useEffect(() => {
-    if (fileTransferOffer !== null) {
-      setFileTransferExpanded(true);
-      setShowFileTransfer(true);
-      client?.sendNotification(
-        "File Transfer Offer",
-        `${fileTransferOffer.sender} wants to send you ${
-          fileTransferOffer.filename
-        } (${Math.round(fileTransferOffer.filesize / 1024)} KB)`
-      );
-    }
-  }, [fileTransferOffer, client]);
+  }, []);
 
   useBeforeunload((event) => {
     if (client) {
       client.shutdown();
     }
+    autoLogService.flush().catch((error) => {
+      console.error("Failed to flush autolog entries before unload:", error);
+    });
+    // Best-effort checkpoint on tab close
+    const wasmWorker = (window as any).wasmWorker;
+    if (wasmWorker) {
+      wasmWorker.postMessage({ type: "save" });
+    }
   });
 
   useEffect(() => {
     inRef.current?.focus();
-  }, []);
+  }, [client]);
 
-  if (!client) return null; // or some loading component
+  // --- Render ---
+  // The WASM/guest components are always in the tree (when active) to avoid
+  // remounting. They show their own UI (upload/join dialog) when client is not
+  // yet ready, and render HostPanel (or null) once booted.
 
   return (
-    // Add conditional 'sidebar-shown' class based on showSidebar state
-    <div className={`App ${showSidebar ? "sidebar-shown" : ""}`}>
-      <header role="banner" style={{ gridArea: "header" }}>
-        <Toolbar
-          client={client}
-          onSaveLog={saveLog}
-          onClearLog={clearLog}
-          onCopyLog={copyLog} // <-- Pass copyLog function
-          onToggleSidebar={() => setShowSidebar(!showSidebar)}
-          onOpenPrefs={() => prefsDialogRef.current?.open()}
-          showSidebar={showSidebar}
+    <>
+      {client && <BrowserSessions client={client} />}
+      {browserPaused && <p role="status">{browserPolicy.policy.phase === 'visitor'
+        ? 'This game window is paused while someone else uses this browser.'
+        : 'Saved game data is paused. Use Browser sessions to resume after signing in.'}</p>}
+      {/* Mode components — always mounted in stable tree position */}
+      {isWasmMode && (
+        <WasmHost
+          key="wasm-host"
+          dbUrl={urlModeParams.dbUrl}
+          isHostMode={urlModeParams.isHostMode}
+          onClientReady={handleClientReady}
+          onHostStateChange={setHostState}
+          clientReady={!!client}
         />
-      </header>
-      <main role="main" style={{ gridArea: "main" }}>
-        {/* Pass the focusInput function down to OutputWindow */}
-        <OutputWindow client={client} ref={outRef} focusInput={focusInput} />
-      </main>
-      <div
-        role="region"
-        aria-label="Command input"
-        style={{ gridArea: "input" }}
-      >
-        {/* Pass the client prop to CommandInput */}
-        <CommandInput onSend={handleCommand} inputRef={inRef} client={client} />
-      </div>
-      {/* Conditionally render the aside element */}
-      {showSidebar && (
-        <aside
-          role="complementary"
-          aria-roledescription="Sidebar"
-          style={{ gridArea: "sidebar" }}
-          // className is no longer needed here for visibility
-        >
-          {/* Pass the ref and client prop */}
-          <Sidebar ref={sidebarRef} client={client} />
-        </aside>
       )}
-      <footer role="contentinfo" style={{ gridArea: "status" }}>
-        <Statusbar client={client} />
-      </footer>
-      <PreferencesDialog ref={prefsDialogRef} />
-    </div>
+      {isGuestMode && !client && (
+        <WasmGuest
+          roomId={urlModeParams.roomParam}
+          onClientReady={handleClientReady}
+        />
+      )}
+      {/* UI shell — only renders when client is ready */}
+      {client && (
+        <div
+          hidden={browserPaused}
+          className={`App ${showSidebar ? (sidebarCollapsed ? "sidebar-collapsed" : "sidebar-shown") : ""}`}
+          style={
+            sidebarWidth !== null
+              ? ({ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties)
+              : undefined
+          }
+        >
+          <header style={{ gridArea: "header" }}>
+            <Toolbar
+              client={client}
+              onSaveLog={saveLog}
+              onClearLog={clearLog}
+              onCopyLog={copyLog}
+              onToggleSidebar={() => setShowSidebar(!showSidebar)}
+              onOpenPrefs={() => prefsDialogRef.current?.open()}
+              onOpenLogs={() => autoLogDialogRef.current?.open()}
+              showSidebar={showSidebar}
+            />
+            <UpdateNotice />
+          </header>
+          {urlModeParams.isHostMode && (
+            <HostPanel
+              roomId={hostState.roomId}
+              guestCount={hostState.guestCount}
+            />
+          )}
+          <main style={{ gridArea: "main" }}>
+            <OutputWindow
+              client={client}
+              ref={outRef}
+              focusInput={focusInput}
+            />
+          </main>
+          <section aria-label="Command input" style={{ gridArea: "input" }}>
+            <CommandInput
+              onSend={handleCommand}
+              inputRef={inRef}
+              client={client}
+            />
+          </section>
+          <aside
+            aria-roledescription="Sidebar"
+            hidden={!showSidebar}
+            style={{ gridArea: "sidebar" }}
+          >
+            <Sidebar
+              ref={sidebarRef}
+              client={client}
+              collapsed={sidebarCollapsed}
+              onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+              width={sidebarWidth}
+              onWidthChange={setSidebarWidth}
+            />
+          </aside>
+          <footer style={{ gridArea: "status" }}>
+            <Statusbar />
+          </footer>
+          <PreferencesDialog ref={prefsDialogRef} />
+          <AutoLogDialog ref={autoLogDialogRef} />
+        </div>
+      )}
+      {/* Link picker for Alt+Enter over an Alt+Arrow-reviewed message with 2+ links */}
+      <LinkPickerDialog
+        links={browserPaused ? null : linkPickerLinks ?? null}
+        onClose={closeLinkPicker ?? (() => {})}
+      />
+      {/* Default mode with no client yet — blank */}
+      {isDefaultMode && !client && null}
+    </>
   );
 }
 

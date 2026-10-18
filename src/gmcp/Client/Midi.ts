@@ -1,6 +1,8 @@
+import type { MidiMessage, MidiNote } from "../../MidiService";
+import { usePreferences } from "../../stores/preferencesStore";
+import { duplex } from "../../protocol/messages";
+import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
-import { midiService, MidiNote, MidiMessage } from "../../MidiService";
-import { preferencesStore } from "../../PreferencesStore";
 
 export class GMCPMessageClientMidiNote extends GMCPMessage {
   public readonly note!: number;
@@ -36,37 +38,94 @@ export class GMCPMessageClientMidiEnable extends GMCPMessage {
   public readonly enabled!: boolean;
 }
 
-export class GMCPClientMidi extends GMCPPackage {
-  public packageName: string = "Client.Midi";
-  public packageVersion?: number = 1; // Use standard version
+type MidiService = typeof import("../../MidiService").midiService;
+
+const midiNote = gmcpJsonMessage<"Note", GMCPMessageClientMidiNote>("Note");
+const midiControlChange = gmcpJsonMessage<
+  "ControlChange",
+  GMCPMessageClientMidiControlChange
+>("ControlChange");
+const midiProgramChange = gmcpJsonMessage<
+  "ProgramChange",
+  GMCPMessageClientMidiProgramChange
+>("ProgramChange");
+const midiSystemMessage = gmcpJsonMessage<
+  "SystemMessage",
+  GMCPMessageClientMidiSystemMessage
+>("SystemMessage");
+const midiRawMessage = gmcpJsonMessage<"RawMessage", GMCPMessageClientMidiRawMessage>("RawMessage");
+const midiEnable = gmcpJsonMessage<"Enable", GMCPMessageClientMidiEnable>("Enable");
+
+const GMCPClientMidiBase = GMCPPackage.with({
+  packageName: "Client.Midi",
+  messages: [
+    duplex(midiNote),
+    duplex(midiControlChange),
+    duplex(midiProgramChange),
+    duplex(midiSystemMessage),
+    duplex(midiRawMessage),
+    duplex(midiEnable),
+  ] as const,
+});
+
+export class GMCPClientMidi extends GMCPClientMidiBase {
+  public packageVersion?: number = 1;
   private activeNotes: Map<string, NodeJS.Timeout> = new Map();
   private isAdvertised: boolean = false;
   private debugCallback?: (hex: string, type: string, gmcpMessage: string) => void;
+  private midiServicePromise: Promise<MidiService> | null = null;
+  private serviceInitialized = false;
+  private hasInputDeviceConnected = false;
+  private hasOutputDeviceConnected = false;
 
   get enabled(): boolean {
-    return preferencesStore.getState().midi.enabled;
+    return usePreferences.getState().midi.enabled;
   }
 
-  constructor(client: any) {
+  constructor(client: ConstructorParameters<typeof GMCPClientMidiBase>[0]) {
     super(client);
-    // Don't initialize MIDI automatically - wait for user to enable it
+    this.on("note", (data) => this.handleNote(data));
+    this.on("controlChange", (data) => this.handleControlChange(data));
+    this.on("programChange", (data) => this.handleProgramChange(data));
+    this.on("systemMessage", (data) => this.handleSystemMessage(data));
+    this.on("rawMessage", (data) => this.handleRawMessage(data));
+    this.on("enable", (data) => this.handleEnable(data));
+  }
+
+  private loadMidiService(): Promise<MidiService> {
+    if (!this.midiServicePromise) {
+      this.midiServicePromise = import("../../MidiService").then(({ midiService }) => midiService);
+    }
+    return this.midiServicePromise;
+  }
+
+  private syncConnectionState(midiService: MidiService): void {
+    const status = midiService.connectionStatus;
+    this.hasInputDeviceConnected = status.inputConnected;
+    this.hasOutputDeviceConnected = status.outputConnected;
   }
 
   async ensureInitialized(): Promise<boolean> {
-    if (this.isInitialized) {
+    if (!this.enabled) {
+      return false;
+    }
+
+    if (this.serviceInitialized) {
       return true;
     }
 
+    const midiService = await this.loadMidiService();
     if (!midiService.isSupported) {
       console.log("MIDI not supported in this browser");
       return false;
     }
 
     const success = await midiService.initialize();
+    this.serviceInitialized = midiService.isInitialized;
+    this.syncConnectionState(midiService);
     if (success) {
       console.log("MIDI service initialized");
-      
-      // Try to auto-reconnect to last used input device now that we have a callback available
+
       await midiService.attemptAutoReconnectInput((message) => {
         this.handleInputMessage(message);
       });
@@ -75,187 +134,182 @@ export class GMCPClientMidi extends GMCPPackage {
   }
 
   get isInitialized(): boolean {
-    return midiService.isInitialized;
+    return this.serviceInitialized;
   }
 
   public async connectInputDevice(deviceId: string): Promise<boolean> {
     const initialized = await this.ensureInitialized();
     if (!initialized) return false;
 
-    return await midiService.connectInputDevice(deviceId, (message: MidiMessage) => {
-      // Route different message types to appropriate handlers
+    const midiService = await this.loadMidiService();
+    const connected = await midiService.connectInputDevice(deviceId, (message: MidiMessage) => {
       this.handleInputMessage(message);
     });
+    this.syncConnectionState(midiService);
+    return connected;
   }
 
   public async connectOutputDevice(deviceId: string): Promise<boolean> {
     const initialized = await this.ensureInitialized();
     if (!initialized) return false;
 
-    return await midiService.connectOutputDevice(deviceId);
+    const midiService = await this.loadMidiService();
+    const connected = await midiService.connectOutputDevice(deviceId);
+    this.syncConnectionState(midiService);
+    return connected;
   }
 
   private handleInputMessage(message: MidiMessage): void {
     let gmcpMessage = "";
-    
-    // Always have raw data for debugging
+
     const hex = message.rawData.hex;
     const type = message.rawData.type;
-    
+
     if (message.note) {
-      // Send note message
       const noteData = {
         note: message.note.note,
         velocity: message.note.velocity,
         on: message.note.on,
-        channel: message.note.channel
+        channel: message.note.channel,
       };
-      this.sendData("Note", noteData);
+      this.sendNote(noteData);
       gmcpMessage = `Client.Midi.Note ${JSON.stringify(noteData)}`;
     } else if (message.controlChange) {
-      // Send control change message
       const ccData = {
         controller: message.controlChange.controller,
         value: message.controlChange.value,
-        channel: message.controlChange.channel
+        channel: message.controlChange.channel,
       };
-      this.sendData("ControlChange", ccData);
+      this.sendControlChange(ccData);
       gmcpMessage = `Client.Midi.ControlChange ${JSON.stringify(ccData)}`;
     } else if (message.programChange) {
-      // Send program change message
       const pcData = {
         program: message.programChange.program,
-        channel: message.programChange.channel
+        channel: message.programChange.channel,
       };
-      this.sendData("ProgramChange", pcData);
+      this.sendProgramChange(pcData);
       gmcpMessage = `Client.Midi.ProgramChange ${JSON.stringify(pcData)}`;
     } else if (message.systemMessage) {
-      // Send system message
       const sysData = {
         type: message.systemMessage.type,
-        data: message.systemMessage.data
+        data: message.systemMessage.data,
       };
-      this.sendData("SystemMessage", sysData);
+      this.sendSystemMessage(sysData);
       gmcpMessage = `Client.Midi.SystemMessage ${JSON.stringify(sysData)}`;
     } else if (message.raw) {
-      // Send raw message for uncategorized types
       const rawData = {
         hex: message.raw.hex,
         data: Array.from(message.raw.data),
-        type: message.raw.type
+        type: message.raw.type,
       };
-      this.sendData("RawMessage", rawData);
+      this.sendRawMessage(rawData);
       gmcpMessage = `Client.Midi.RawMessage ${JSON.stringify(rawData)}`;
     }
-    
-    // Call debug callback with raw hex and GMCP message info
+
     if (this.debugCallback && gmcpMessage) {
       this.debugCallback(hex, type, gmcpMessage);
     }
   }
 
   private sendNoteToServer(note: MidiNote, duration?: number): void {
-    const noteData: any = {
+    const noteData: GMCPMessageClientMidiNote = {
       note: note.note,
       velocity: note.velocity,
       on: note.on,
-      channel: note.channel
+      channel: note.channel,
+      ...(duration === undefined ? {} : { duration }),
     };
 
-    // Include duration if provided
-    if (duration !== undefined) {
-      noteData.duration = duration;
-    }
-
-    this.sendData("Note", noteData);
+    this.sendNote(noteData);
   }
 
-  // Handle incoming MIDI messages from server
   handleNote(data: GMCPMessageClientMidiNote): void {
+    if (!this.enabled) return;
+    void this.handleNoteAsync(data);
+  }
+
+  private async handleNoteAsync(data: GMCPMessageClientMidiNote): Promise<void> {
+    const midiService = await this.loadMidiService();
     const note: MidiNote = {
       note: data.note,
       velocity: data.velocity,
       on: data.on,
-      channel: data.channel
+      channel: data.channel,
     };
 
-    // Clear any existing timeout for this note
     const noteKey = `${data.note}_${data.channel || 0}`;
-    if (this.activeNotes.has(noteKey)) {
-      clearTimeout(this.activeNotes.get(noteKey)!);
+    const activeNoteTimeout = this.activeNotes.get(noteKey);
+    if (activeNoteTimeout) {
+      clearTimeout(activeNoteTimeout);
       this.activeNotes.delete(noteKey);
     }
 
-    // Send the note
     midiService.sendNote(note);
 
-    // If it's a note on with duration, schedule note off
     if (data.on && data.duration) {
+      // The virtual synth schedules the release on its audio clock; hardware
+      // ports have no clock we can target, so they keep a timer.
+      if (midiService.scheduleNoteOff(note, data.duration)) return;
+
       const timeout = setTimeout(() => {
         midiService.sendNote({
           ...note,
           on: false,
-          velocity: 0
+          velocity: 0,
         });
         this.activeNotes.delete(noteKey);
       }, data.duration);
-      
+
       this.activeNotes.set(noteKey, timeout);
     }
   }
 
-  // Handle incoming control change from server
   handleControlChange(data: GMCPMessageClientMidiControlChange): void {
-    if (midiService.hasOutputDevice) {
-      const status = 0xB0 | data.channel;
-      midiService.sendRawMessage([status, data.controller, data.value]);
-    }
+    if (!this.enabled) return;
+    void this.sendRawIfOutputConnected([0xB0 | data.channel, data.controller, data.value]);
   }
 
-  // Handle incoming program change from server
   handleProgramChange(data: GMCPMessageClientMidiProgramChange): void {
-    if (midiService.hasOutputDevice) {
-      const status = 0xC0 | data.channel;
-      midiService.sendRawMessage([status, data.program]);
-    }
+    if (!this.enabled) return;
+    void this.sendRawIfOutputConnected([0xC0 | data.channel, data.program]);
   }
 
-  // Handle incoming system message from server
   handleSystemMessage(data: GMCPMessageClientMidiSystemMessage): void {
-    if (midiService.hasOutputDevice) {
-      midiService.sendRawMessage(data.data);
-    }
+    if (!this.enabled) return;
+    void this.sendRawIfOutputConnected(data.data);
   }
 
-  // Handle incoming raw message from server
   handleRawMessage(data: GMCPMessageClientMidiRawMessage): void {
+    if (!this.enabled) return;
+    void this.sendRawIfOutputConnected(data.data);
+  }
+
+  private async sendRawIfOutputConnected(data: number[]): Promise<void> {
+    const midiService = await this.loadMidiService();
+    this.syncConnectionState(midiService);
     if (midiService.hasOutputDevice) {
-      midiService.sendRawMessage(data.data);
+      midiService.sendRawMessage(data);
     }
   }
 
-  // Handle MIDI capability announcement
   handleEnable(data: GMCPMessageClientMidiEnable): void {
-    // Server is asking about MIDI capability or confirming support
     console.log("Server MIDI enable status:", data.enabled);
   }
 
-  // Advertise MIDI support to server
   advertiseMidiSupport(): void {
     if (!this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcp.handlers["Core.Supports"];
       if (coreSupports) {
-        coreSupports.sendAdd([{ name: "Client.Midi", version: this.packageVersion || 1 }]);
+        coreSupports.sendAdd([`Client.Midi ${this.packageVersion || 1}`]);
         this.isAdvertised = true;
         console.log("Advertised MIDI support to server");
       }
     }
   }
 
-  // Remove MIDI support advertisement from server
   unadvertiseMidiSupport(): void {
     if (this.isAdvertised) {
-      const coreSupports = this.client.gmcpHandlers["Core.Supports"];
+      const coreSupports = this.client.gmcp.handlers["Core.Supports"];
       if (coreSupports) {
         coreSupports.sendRemove(["Client.Midi"]);
         this.isAdvertised = false;
@@ -264,69 +318,83 @@ export class GMCPClientMidi extends GMCPPackage {
     }
   }
 
-  // Send MIDI capability to server
   sendMidiCapability(): void {
-    this.sendData("Enable", {
-      enabled: midiService.isSupported && midiService.isInitialized
+    if (!this.enabled) {
+      this.sendEnable({ enabled: false });
+      return;
+    }
+
+    void this.loadMidiService().then((midiService) => {
+      this.sendEnable({
+        enabled: midiService.isSupported && midiService.isInitialized,
+      });
     });
   }
 
-  // Send manual note with optional duration to server
   sendManualNote(note: number, velocity: number, on: boolean, channel?: number, duration?: number): void {
     const noteData = {
       note,
       velocity,
       on,
-      channel: channel || 0
+      channel: channel || 0,
     };
-    
+
     this.sendNoteToServer(noteData, duration);
   }
 
-  // Send all notes off
   sendAllNotesOff(): void {
-    midiService.sendAllNotesOff();
-    
-    // Clear all active note timers
+    if (this.enabled) {
+      void this.loadMidiService().then((midiService) => {
+        midiService.sendAllNotesOff();
+      });
+    }
+
     this.activeNotes.forEach((timeout) => {
       clearTimeout(timeout);
     });
     this.activeNotes.clear();
   }
 
-  // Get available devices
   async getInputDevices() {
     const initialized = await this.ensureInitialized();
     if (!initialized) return [];
+
+    const midiService = await this.loadMidiService();
     return midiService.getInputDevices();
   }
 
   async getOutputDevices() {
     const initialized = await this.ensureInitialized();
     if (!initialized) return [];
+
+    const midiService = await this.loadMidiService();
     return midiService.getOutputDevices();
   }
 
-  // Connection status
   get hasInputDevice(): boolean {
-    return midiService.hasInputDevice;
+    return this.hasInputDeviceConnected;
   }
 
   get hasOutputDevice(): boolean {
-    return midiService.hasOutputDevice;
+    return this.hasOutputDeviceConnected;
   }
 
-  // Set debug callback for UI display
   setDebugCallback(callback: (hex: string, type: string, gmcpMessage: string) => void): void {
     this.debugCallback = callback;
   }
 
+  override reset(): void {
+    this.sendAllNotesOff();
+    this.isAdvertised = false;
+  }
 
   shutdown(): void {
-    midiService.disconnect();
-    this.activeNotes.forEach((timeout) => {
-      clearTimeout(timeout);
-    });
-    this.activeNotes.clear();
+    this.reset();
+    if (this.midiServicePromise) {
+      void this.midiServicePromise.then((midiService) => {
+        midiService.disconnect();
+        this.syncConnectionState(midiService);
+      });
+    }
   }
 }

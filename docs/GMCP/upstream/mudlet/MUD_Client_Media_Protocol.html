@@ -1,0 +1,765 @@
+
+<!DOCTYPE html>
+<html class="client-nojs" lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8"/>
+<title>Standards:MUD Client Media Protocol - Mudlet</title>
+<script>document.documentElement.className="client-js";RLCONF={"wgBreakFrames":!1,"wgSeparatorTransformTable":["",""],"wgDigitTransformTable":["",""],"wgDefaultDateFormat":"dmy","wgMonthNames":["","January","February","March","April","May","June","July","August","September","October","November","December"],"wgRequestId":"aDoX1jJvEK-VLt5exQuGkQAAAAQ","wgCSPNonce":!1,"wgCanonicalNamespace":"","wgCanonicalSpecialPageName":!1,"wgNamespaceNumber":0,"wgPageName":"Standards:MUD_Client_Media_Protocol","wgTitle":"Standards:MUD Client Media Protocol","wgCurRevisionId":22342,"wgRevisionId":22342,"wgArticleId":854,"wgIsArticle":!0,"wgIsRedirect":!1,"wgAction":"view","wgUserName":null,"wgUserGroups":["*"],"wgCategories":["Pages with syntax highlighting errors"],"wgPageContentLanguage":"en","wgPageContentModel":"wikitext","wgRelevantPageName":"Standards:MUD_Client_Media_Protocol","wgRelevantArticleId":854,"wgIsProbablyEditable":!1,"wgRelevantPageIsProbablyEditable":!1,"wgRestrictionEdit"
+:[],"wgRestrictionMove":[],"wgULSAcceptLanguageList":["en-us","en"],"wgULSCurrentAutonym":"English","wgVisualEditor":{"pageLanguageCode":"en","pageLanguageDir":"ltr","pageVariantFallbacks":"en"},"wgULSPosition":"personal","wgEditSubmitButtonLabelPublish":!1,"wgTranslatePageTranslation":"source"};RLSTATE={"site.styles":"ready","noscript":"ready","user.styles":"ready","user":"ready","user.options":"loading","ext.translate":"ready","ext.pygments":"ready","skins.vector.styles.legacy":"ready","mediawiki.toc.styles":"ready","ext.uls.pt":"ready","ext.DarkMode.styles":"ready","ext.visualEditor.desktopArticleTarget.noscript":"ready"};RLPAGEMODULES=["site","mediawiki.page.startup","mediawiki.page.ready","mediawiki.toc","skins.vector.legacy.js","ext.uls.interface","ext.moderation.notify","ext.moderation.notify.desktop","ext.moderation.ve","ext.moderation.ajaxhook","ext.DarkMode","ext.visualEditor.desktopArticleTarget.init","ext.visualEditor.targetLoader","ext.translate.pagetranslation.uls"];</script>
+<script>(RLQ=window.RLQ||[]).push(function(){mw.loader.implement("user.options@1hzgi",function($,jQuery,require,module){/*@nomin*/mw.user.tokens.set({"patrolToken":"+\\","watchToken":"+\\","csrfToken":"+\\"});
+});});</script>
+<link rel="stylesheet" href="/load.php?lang=en&amp;modules=ext.DarkMode.styles%7Cext.pygments%2Ctranslate%7Cext.uls.pt%7Cext.visualEditor.desktopArticleTarget.noscript%7Cmediawiki.toc.styles%7Cskins.vector.styles.legacy&amp;only=styles&amp;skin=vector"/>
+<script async="" src="/load.php?lang=en&amp;modules=startup&amp;only=scripts&amp;raw=1&amp;skin=vector"></script>
+<meta name="ResourceLoaderDynamicStyles" content=""/>
+<link rel="stylesheet" href="/load.php?lang=en&amp;modules=site.styles&amp;only=styles&amp;skin=vector"/>
+<meta name="generator" content="MediaWiki 1.35.0"/>
+<meta name="description" content="This memo describes the addition of a standardized namespace of the Generic Mud Communication Protocol (GMCP) telnet sub-negotiation protocol (201) that provides syntax and usage guidance for sending JSON formatted messages from game servers to text-based game clients to load, play and stop media files."/>
+<link rel="shortcut icon" href="/favicon.ico"/>
+<link rel="search" type="application/opensearchdescription+xml" href="/opensearch_desc.php" title="Mudlet (en)"/>
+<link rel="EditURI" type="application/rsd+xml" href="https://wiki.mudlet.org/api.php?action=rsd"/>
+<link rel="alternate" type="application/atom+xml" title="Mudlet Atom feed" href="/index.php?title=Special:RecentChanges&amp;feed=atom"/>
+	<meta property="og:type" content="article"/>
+
+	<meta property="og:site_name" content="Mudlet"/>
+
+	<meta property="og:title" content="Standards:MUD Client Media Protocol"/>
+
+	<meta property="og:description" content="This memo describes the addition of a standardized namespace of the Generic Mud Communication Protocol (GMCP) telnet sub-negotiation protocol (201) that provides syntax and usage guidance for sending JSON formatted messages from game servers to text-based game clients to load, play and stop media files."/>
+
+	<meta property="og:url" content="https://wiki.mudlet.org/w/Standards:MUD_Client_Media_Protocol"/>
+
+<!--[if lt IE 9]><script src="/resources/lib/html5shiv/html5shiv.js"></script><![endif]-->
+</head>
+<body class="mediawiki ltr sitedir-ltr mw-hide-empty-elt ns-0 ns-subject page-Standards_MUD_Client_Media_Protocol rootpage-Standards_MUD_Client_Media_Protocol skin-vector action-view skin-vector-legacy">
+<div id="mw-page-base" class="noprint"></div>
+<div id="mw-head-base" class="noprint"></div>
+<div id="content" class="mw-body" role="main">
+	<a id="top"></a>
+	<div id="siteNotice" class="mw-body-content"></div>
+	<div class="mw-indicators mw-body-content">
+	</div>
+	<h1 id="firstHeading" class="firstHeading" lang="en">Standards:MUD Client Media Protocol</h1>
+	<div id="bodyContent" class="mw-body-content">
+		<div id="siteSub" class="noprint">From Mudlet</div>
+		<div id="contentSub"></div>
+		<div id="contentSub2"></div>
+		
+		<div id="jump-to-nav"></div>
+		<a class="mw-jump-link" href="#mw-head">Jump to navigation</a>
+		<a class="mw-jump-link" href="#searchInput">Jump to search</a>
+		<div id="mw-content-text" lang="en" dir="ltr" class="mw-content-ltr"><div class="mw-pt-translate-header noprint nomobile" dir="ltr" lang="en">This page contains <span class="plainlinks"><a rel="nofollow" class="external text" href="https://wiki.mudlet.org/index.php?title=Standards:MUD_Client_Media_Protocol&amp;diff=22342">changes</a></span> which are not marked for translation.</div><div class="mw-parser-output"><div id="toc" class="toc" role="navigation" aria-labelledby="mw-toc-heading"><input type="checkbox" role="button" id="toctogglecheckbox" class="toctogglecheckbox" style="display:none" /><div class="toctitle" lang="en" dir="ltr"><h2 id="mw-toc-heading">Contents</h2><span class="toctogglespan"><label class="toctogglelabel" for="toctogglecheckbox"></label></span></div>
+<ul>
+<li class="toclevel-1 tocsection-1"><a href="#MUD_Client_Media_Protocol_.28MCMP.29"><span class="tocnumber">1</span> <span class="toctext">MUD Client Media Protocol (MCMP)</span></a>
+<ul>
+<li class="toclevel-2 tocsection-2"><a href="#A_Standard_for_Loading.2C_Playing_and_Stopping_Media_Files_with_MUD_Clients_over_GMCP"><span class="tocnumber">1.1</span> <span class="toctext">A Standard for Loading, Playing and Stopping Media Files with MUD Clients over GMCP</span></a></li>
+<li class="toclevel-2 tocsection-3"><a href="#Status_of_this_Memo"><span class="tocnumber">1.2</span> <span class="toctext">Status of this Memo</span></a></li>
+<li class="toclevel-2 tocsection-4"><a href="#Overview_and_Rationale"><span class="tocnumber">1.3</span> <span class="toctext">Overview and Rationale</span></a></li>
+<li class="toclevel-2 tocsection-5"><a href="#Overview_of_the_GMCP_.28201.29_Sub-negotiation_Protocol"><span class="tocnumber">1.4</span> <span class="toctext">Overview of the GMCP (201) Sub-negotiation Protocol</span></a></li>
+<li class="toclevel-2 tocsection-6"><a href="#Update_to_namespace:_Client..2A_for_Client.Media"><span class="tocnumber">1.5</span> <span class="toctext">Update to namespace: Client.* for Client.Media</span></a></li>
+<li class="toclevel-2 tocsection-7"><a href="#Video_Demonstration_of_Client.Media"><span class="tocnumber">1.6</span> <span class="toctext">Video Demonstration of Client.Media</span></a></li>
+<li class="toclevel-2 tocsection-8"><a href="#Specification_for_Client.Media"><span class="tocnumber">1.7</span> <span class="toctext">Specification for Client.Media</span></a>
+<ul>
+<li class="toclevel-3 tocsection-9"><a href="#Commands_-_Server.5Bedit_.7C_edit_source.5D"><span class="tocnumber">1.7.1</span> <span class="toctext"><span>Commands - Server</span><span><span>[</span>edit<span> | </span>edit source<span>]</span></span></span></a>
+<ul>
+<li class="toclevel-4 tocsection-10"><a href="#Client.Media.Default.5Bedit_.7C_edit_source.5D"><span class="tocnumber">1.7.1.1</span> <span class="toctext"><span>Client.Media.Default</span><span><span>[</span>edit<span> | </span>edit source<span>]</span></span></span></a></li>
+<li class="toclevel-4 tocsection-11"><a href="#Client.Media.Load.5Bedit_.7C_edit_source.5D"><span class="tocnumber">1.7.1.2</span> <span class="toctext"><span>Client.Media.Load</span><span><span>[</span>edit<span> | </span>edit source<span>]</span></span></span></a></li>
+<li class="toclevel-4 tocsection-12"><a href="#Client.Media.Play"><span class="tocnumber">1.7.1.3</span> <span class="toctext">Client.Media.Play</span></a></li>
+<li class="toclevel-4 tocsection-13"><a href="#Client.Media.Stop"><span class="tocnumber">1.7.1.4</span> <span class="toctext">Client.Media.Stop</span></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toclevel-2 tocsection-14"><a href="#Best_Practices_for_Server_Implementors"><span class="tocnumber">1.8</span> <span class="toctext">Best Practices for Server Implementors</span></a></li>
+<li class="toclevel-2 tocsection-15"><a href="#Notes_for_Web_Client_Developers"><span class="tocnumber">1.9</span> <span class="toctext">Notes for Web Client Developers</span></a></li>
+<li class="toclevel-2 tocsection-16"><a href="#Versions"><span class="tocnumber">1.10</span> <span class="toctext">Versions</span></a></li>
+<li class="toclevel-2 tocsection-17"><a href="#Advertise_Support_for_MCMP"><span class="tocnumber">1.11</span> <span class="toctext">Advertise Support for MCMP</span></a></li>
+<li class="toclevel-2 tocsection-18"><a href="#Authors"><span class="tocnumber">1.12</span> <span class="toctext">Authors</span></a></li>
+<li class="toclevel-2 tocsection-19"><a href="#Clients"><span class="tocnumber">1.13</span> <span class="toctext">Clients</span></a></li>
+</ul>
+</li>
+</ul>
+</div>
+
+<h1><span id="MUD_Client_Media_Protocol_(MCMP)"></span><span class="mw-headline" id="MUD_Client_Media_Protocol_.28MCMP.29">MUD Client Media Protocol (MCMP)</span></h1>
+<h2><span id="A_Standard_for_Loading,_Playing_and_Stopping_Media_Files_with_MUD_Clients_over_GMCP"></span><span class="mw-headline" id="A_Standard_for_Loading.2C_Playing_and_Stopping_Media_Files_with_MUD_Clients_over_GMCP">A Standard for Loading, Playing and Stopping Media Files with MUD Clients over GMCP</span></h2>
+<h2><span class="mw-headline" id="Status_of_this_Memo">Status of this Memo</span></h2>
+<p>This memo describes the addition of a standardized namespace of the Generic Mud Communication Protocol (GMCP) telnet sub-negotiation protocol (201) that provides syntax and usage guidance for sending JSON formatted messages from game servers to text-based game clients to load, play and stop media files.
+</p><p><br />
+</p>
+<h2><span class="mw-headline" id="Overview_and_Rationale">Overview and Rationale</span></h2>
+<p>With renewed interest in the MUD genre of gaming, expectations are high to provide sight and sound content that competes for audience with other gaming platforms. The purpose of the MUD Client Media Protocol (MCMP) is to establish a method of delivering media, such as game sounds, background music and video snippets, to text-based game clients via their widely accepted messaging platform, GMCP, which uses JSON as its data-interchange format. The intended return for introducing this protocol is to improve the MUD gaming experience and accessibility through standardized messaging between game servers and game clients. MUD Client Media Protocol (MCMP) is inspired by its predecessor <a rel="nofollow" class="external text" href="https://www.zuggsoft.com/zmud/msp.htm">Mud Sound Protocol</a> (MSP).
+</p><p><br />
+</p>
+<h2><span id="Overview_of_the_GMCP_(201)_Sub-negotiation_Protocol"></span><span class="mw-headline" id="Overview_of_the_GMCP_.28201.29_Sub-negotiation_Protocol">Overview of the GMCP (201) Sub-negotiation Protocol</span></h2>
+<p>To recap, the GMCP protocol is a bidirectional telnet sub-negotiation protocol (See RFC 854) which fulfills the following conditions:
+</p>
+<ul><li>GMCP is separated into several ‘namespaces’, which may be enabled or disabled by the client at any time. The ‘Core’ namespace is always enabled and may not be disabled. Namespaces should consist of case-insensitive alphabetical characters and stop characters (. - ASCII 46/0x2E), representable as [A-Za-z.].</li>
+<li>GMCP messages consist of the namespace and a command (case insensitive alpha characters) delineated by a stop character, and optionally a space character and JSON-encoded payload.</li>
+<li>GMCP messages may be sent by both the client or server at any time with no warning.</li></ul>
+<p><br />
+</p>
+<h2><span id="Update_to_namespace:_Client.*_for_Client.Media"></span><span class="mw-headline" id="Update_to_namespace:_Client..2A_for_Client.Media">Update to namespace: Client.* for Client.Media</span></h2>
+<p>We are proposing an addition to the Client.* meta-namespace for Client.Media. This serves the purpose of reserving this namespace for handling game client media operations and supporting future expansion and integration.
+</p><p><br />
+</p>
+<h2><span class="mw-headline" id="Video_Demonstration_of_Client.Media">Video Demonstration of Client.Media</span></h2>
+<p><video src="https://wiki.mudlet.org/images/e/e6/MCMP_Background_Music_Demo_with_Mudlet.mp4" width="300" height="169" style="max-width: 100%; max-height: 100%; width: 300px; height: 169px;" controls=""><a href="https://wiki.mudlet.org/w/File:MCMP_Background_Music_Demo_with_Mudlet.mp4">https://wiki.mudlet.org/w/File:MCMP_Background_Music_Demo_with_Mudlet.mp4</a></video>
+</p>
+<h2><span class="mw-headline" id="Specification_for_Client.Media">Specification for Client.Media</span></h2>
+<p>The Client.Media family of GMCP packages provide a way for games to send sound, music and video events. GMCP media events are sent in one direction: from game server to to game client. Media files may be downloaded manually by the user and/or automatically via the game client. Game clients should advertise to servers that Client.Media is supported with a Core.Supports message from game client to server.
+</p>
+<div class="mw-highlight mw-highlight-lang-json mw-content-ltr" dir="ltr"><pre>Core.Supports.Set ["Client.Media 1", ...]</pre></div>
+<h3><span id="Commands_-_Server[edit_|_edit_source]"></span><span class="mw-headline" id="Commands_-_Server.5Bedit_.7C_edit_source.5D"><span class="mw-headline" id="Commands_-_Server">Commands - Server</span><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=/index.php%3Ftitle%3DStandards:MUD_Client_Media_Protocol%26veaction%3Dedit%26section%3D1&amp;action=edit&amp;redlink=1" class="new" title="/index.php?title=Standards:MUD Client Media Protocol&amp;veaction=edit&amp;section=1 (page does not exist)">edit</a><span class="mw-editsection-divider"> | </span><a href="/index.php?title=/index.php%3Ftitle%3DStandards:MUD_Client_Media_Protocol%26action%3Dedit%26section%3D1&amp;action=edit&amp;redlink=1" class="new" title="/index.php?title=Standards:MUD Client Media Protocol&amp;action=edit&amp;section=1 (page does not exist)">edit source</a><span class="mw-editsection-bracket">]</span></span></span></h3>
+<p><span></span>
+Due to the limitations for legacy gaming platforms supporting all JSON data types, such as boolean (<i>true</i> and <i>false</i>), game clients should support parsing of values within the Client.Media namespace also as strings (surrounded by quotes).
+</p><p><span></span>
+</p>
+<h4><span id="Client.Media.Default[edit_|_edit_source]"></span><span class="mw-headline" id="Client.Media.Default.5Bedit_.7C_edit_source.5D"><span class="mw-headline" id="Client.Media.Default">Client.Media.Default</span><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=/index.php%3Ftitle%3DStandards:MUD_Client_Media_Protocol%26veaction%3Dedit%26section%3D2&amp;action=edit&amp;redlink=1" class="new" title="/index.php?title=Standards:MUD Client Media Protocol&amp;veaction=edit&amp;section=2 (page does not exist)">edit</a><span class="mw-editsection-divider"> | </span><a href="/index.php?title=/index.php%3Ftitle%3DStandards:MUD_Client_Media_Protocol%26action%3Dedit%26section%3D2&amp;action=edit&amp;redlink=1" class="new" title="/index.php?title=Standards:MUD Client Media Protocol&amp;action=edit&amp;section=2 (page does not exist)">edit source</a><span class="mw-editsection-bracket">]</span></span></span></h4>
+<p><span></span>
+</p>
+<ul><li>Package: Client.Media.Default</li>
+<li>Purpose: Identify to the game client a default URL directory to load media files from an external resource.</li>
+<li>Guidance: For games that automatically download media files, perform a Client.Media.Default GMCP event once upon player login.</li></ul>
+<p><span></span>
+</p><p>Syntax:
+</p>
+<p><span></span></p><div class="mw-highlight mw-highlight-lang-json mw-content-ltr" dir="ltr">
+<pre><span></span><span class="err">Client.Media.Default</span> <span class="p">{</span><span class="nt">"url"</span><span class="p">:</span> <span class="s2">"hxxps://www.example.com/media/"</span><span class="p">}</span>
+</pre>
+</div><p><span></span>
+</p><p>Usage:
+<span></span>
+</p>
+<table class="wikitable">
+
+<tbody><tr>
+<th>Required
+</th>
+<th>Key
+</th>
+<th>Value
+</th>
+<th style="text-align:left;">Purpose
+</th></tr>
+<tr style="color: green;">
+<td style="text-align:center;">Yes
+</td>
+<td>"url"
+</td>
+<td>&lt;url&gt;
+</td>
+<td style="text-align:left;">
+<ul><li>Resource location where the media file may be downloaded.</li>
+<li>Last character must be a / (slash).</li></ul>
+</td></tr></tbody></table><p><span></span>
+</p><p><img alt="Note" src="/images/6/60/Bulbgraph.png" decoding="async" title="Note" width="18" height="22" /> <b>Note:</b> 
+</p><p><span></span> Some examples are shown <a href="/w/Special:MyLanguage/Manual:Scripting#Loading_Media" title="Special:MyLanguage/Manual:Scripting">here</a>.
+</p>
+<h4><span id="Client.Media.Load[edit_|_edit_source]"></span><span class="mw-headline" id="Client.Media.Load.5Bedit_.7C_edit_source.5D"><span class="mw-headline" id="Client.Media.Load">Client.Media.Load</span><span class="mw-editsection"><span class="mw-editsection-bracket">[</span><a href="/index.php?title=/index.php%3Ftitle%3DStandards:MUD_Client_Media_Protocol%26veaction%3Dedit%26section%3D1&amp;action=edit&amp;redlink=1" class="new" title="/index.php?title=Standards:MUD Client Media Protocol&amp;veaction=edit&amp;section=1 (page does not exist)">edit</a><span class="mw-editsection-divider"> | </span><a href="/index.php?title=/index.php%3Ftitle%3DStandards:MUD_Client_Media_Protocol%26action%3Dedit%26section%3D1&amp;action=edit&amp;redlink=1" class="new" title="/index.php?title=Standards:MUD Client Media Protocol&amp;action=edit&amp;section=1 (page does not exist)">edit source</a><span class="mw-editsection-bracket">]</span></span></span></h4>
+<p><span></span>
+</p>
+<ul><li>Package: Client.Media.Load</li>
+<li>Purpose: Load media files from an external source.</li>
+<li>Guidance: For games that automatically download media files and have the capability to cache with the game client.</li></ul>
+<p><span></span>
+</p><p>Syntax:
+</p>
+<p><span></span></p><div class="mw-highlight mw-highlight-lang-json mw-content-ltr" dir="ltr">
+<pre><span></span><span class="err">Client.Media.Load</span> <span class="p">{</span>
+  <span class="nt">"name"</span><span class="p">:</span> <span class="s2">"sword1.mp3"</span><span class="p">,</span>
+  <span class="nt">"url"</span><span class="p">:</span> <span class="s2">"hxxps://www.example.com/media/"</span>
+<span class="p">}</span>
+</pre>
+</div><p><span></span>
+</p><p>Usage:
+<span></span>
+</p>
+<table class="wikitable">
+
+<tbody><tr>
+<th>Required
+</th>
+<th>Key
+</th>
+<th>Value
+</th>
+<th style="text-align:left;">Purpose
+</th></tr>
+<tr style="color: green;">
+<td style="text-align:center;">Yes
+</td>
+<td>"name"
+</td>
+<td>&lt;file name&gt;
+</td>
+<td style="text-align:left;">
+<ul><li>Name of the media file.</li>
+<li>May contain directory information (i.e. weather/lightning.mp3).</li></ul>
+</td></tr>
+<tr style="color: blue;">
+<td style="text-align:center;">Maybe
+</td>
+<td>"url"
+</td>
+<td>&lt;url&gt;
+</td>
+<td style="text-align:left;">
+<ul><li>Resource location where the media file may be downloaded.</li>
+<li>Last character must be a / (slash).</li>
+<li>Only required if a url was not set with Client.Media.Default.</li></ul>
+</td></tr></tbody></table><p><span></span>
+</p><p><img alt="Note" src="/images/6/60/Bulbgraph.png" decoding="async" title="Note" width="18" height="22" /> <b>Note:</b> 
+</p>
+<pre>Some examples are shown <a href="/w/Special:MyLanguage/Manual:Scripting#Loading_Media" title="Special:MyLanguage/Manual:Scripting">here</a>.
+</pre>
+<p><br />
+</p>
+<h4><span class="mw-headline" id="Client.Media.Play">Client.Media.Play</span></h4>
+<ul><li>Package: Client.Media.Play</li>
+<li>Purpose: Play media files.</li>
+<li>Guidance: Game clients could choose whether to play only one media file at one time or multiple files at one time.</li></ul>
+<p>Syntax:
+</p>
+<div class="mw-highlight mw-highlight-lang-json mw-content-ltr" dir="ltr"><pre>Client.Media.Play {
+  "name": "80_Blacksmith_Shoppe.mp3",
+  "url": "hxxps://www.example.com/media/",
+  "type": "music",
+  "tag": "environment",
+  "volume": 25,
+  "fadein": 5000,
+  "fadeout": 7000,
+  "start": 1000,
+  "finish": 20000,
+  "loops": 3,
+  "priority": 60,
+  "continue": true,
+  "key": "area-background-music",
+  "caption": "Blacksmith Hammering"
+}</pre></div>
+<p>Usage:
+</p>
+<table class="wikitable">
+<tbody><tr>
+<th>Required
+</th>
+<th>Key
+</th>
+<th>Value
+</th>
+<th>Default
+</th>
+<th style="text-align:left;">Purpose
+</th></tr>
+<tr style="color: green;">
+<td style="text-align:center;">Yes
+</td>
+<td>"name"
+</td>
+<td>&lt;file name&gt;
+</td>
+<td>&#160;
+</td>
+<td style="text-align:left;">
+<ul><li>Name of the media file.</li>
+<li>May contain directory information (i.e. weather/lightning.mp3).</li></ul>
+</td></tr>
+<tr style="color: blue;">
+<td style="text-align:center;">Maybe
+</td>
+<td>"url"
+</td>
+<td>&lt;url&gt;
+</td>
+<td>&#160;
+</td>
+<td style="text-align:left;">
+<ul><li>Resource location where the media file may be downloaded.</li>
+<li>Last character must be a / (slash).</li>
+<li>Only required if the file is to be downloaded remotely and a url was not set above with Client.Media.Default or Client.Media.Load.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"type"
+</td>
+<td>"sound", "music" or "video"
+</td>
+<td>"sound"
+</td>
+<td style="text-align:left;">
+<ul><li>Identifies the type of media.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"tag"
+</td>
+<td>&lt;tag&gt;
+</td>
+<td>&#160;
+</td>
+<td style="text-align:left;">
+<ul><li>Helps categorize media.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"volume"
+</td>
+<td>1 to 100
+</td>
+<td>50
+</td>
+<td style="text-align:left;">
+<ul><li>Relative to the volume set on the player's client.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"fadein"
+</td>
+<td>&lt;msec&gt;
+</td>
+<td>&#160;
+</td>
+<td style="text-align:left;">
+<ul><li>Volume increases, or fades in, ranged across a linear pattern from one to the volume set with the "volume" key.</li>
+<li>Start position: Start of media.</li>
+<li>End position: Start of media plus the number of milliseconds (msec) specified.</li>
+<li>1000 milliseconds = 1 second.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"fadeout"
+</td>
+<td>&lt;msec&gt;
+</td>
+<td>&#160;
+</td>
+<td style="text-align:left;">
+<ul><li>Volume decreases, or fades out, ranged across a linear pattern from the volume set with the "volume" key to one.</li>
+<li>Start position: End of the media minus the number of milliseconds (msec) specified.</li>
+<li>End position: End of the media.</li>
+<li>1000 milliseconds = 1 second.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"start"
+</td>
+<td>&lt;msec&gt;
+</td>
+<td>0
+</td>
+<td style="text-align:left;">
+<ul><li>Begin play at the specified position in milliseconds.</li>
+<li>1000 milliseconds = 1 second.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"finish"
+</td>
+<td>&lt;msec&gt;
+</td>
+<td>0
+</td>
+<td style="text-align:left;">
+<ul><li>End play at the specified position in milliseconds.</li>
+<li>1000 milliseconds = 1 second.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"loops"
+</td>
+<td>-1, or &gt;= 1
+</td>
+<td>1
+</td>
+<td style="text-align:left;">
+<ul><li>Number of iterations that the media plays.</li>
+<li>A value of -1 allows the sound or music to loop indefinitely.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"priority"
+</td>
+<td>1 to 100
+</td>
+<td>&#160;
+</td>
+<td style="text-align:left;">
+<ul><li>Halts the play of current or future played media files with a lower priority while this media plays.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"continue"
+</td>
+<td>true or false
+</td>
+<td>true
+</td>
+<td style="text-align:left;">
+<ul><li>Continues playing matching new music files when true.</li>
+<li>Restarts matching new music files when false.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"key"
+</td>
+<td>&lt;key&gt;
+</td>
+<td>&#160;
+</td>
+<td style="text-align:left;">
+<ul><li>Uniquely identifies media files with a "key" that is bound to their "name" or "url".</li>
+<li>Halts the play of current media files with the same "key" that have a different "name" or "url" while this media plays.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"caption"
+</td>
+<td>&lt;text&gt;
+</td>
+<td>&#160;
+</td>
+<td style="text-align:left;">
+<ul><li>Caption-friendly textual representation of the media, such as onomatopoeia or sound cues (e.g., `thunderclap`, `whoosh`), enabling accessibility.</li></ul>
+</td></tr>
+</tbody></table>
+<p><br />
+<img alt="Note" src="/images/6/60/Bulbgraph.png" decoding="async" title="Note" width="18" height="22" /> <b>Note:</b> 
+</p>
+<pre>To support players with hearing impairments or who prefer captioned media, the caption field may be used to provide contextual and caption-style text. For best practices, see <a rel="nofollow" class="external text" href="https://dcmp.org/learn/602-captioning-key---sound-effects-and-music%7CDCMP">Captioning Key: Sound Effects and Music</a>.
+</pre>
+<p><img alt="Note" src="/images/6/60/Bulbgraph.png" decoding="async" title="Note" width="18" height="22" /> <b>Note:</b> 
+</p>
+<pre>Some examples are shown <a href="/w/Special:MyLanguage/Manual:Scripting#Playing_Media" title="Special:MyLanguage/Manual:Scripting">here</a>.
+</pre>
+<h4><span class="mw-headline" id="Client.Media.Stop">Client.Media.Stop</span></h4>
+<ul><li>Package: Client.Media.Stop</li>
+<li>Purpose: Stop playing media files.</li>
+<li>Guidance: An empty body will stop all media.</li></ul>
+<p>Syntax:
+</p>
+<div class="mw-highlight mw-highlight-lang-json mw-content-ltr" dir="ltr"><pre>Client.Media.Stop {
+  "name": "city.mp3",
+  "type": "music",
+  "tag": "environment",
+  "priority": 60,
+  "key": "area-background-music",
+  "fadeaway": true,
+  "fadeout": 7000
+}</pre></div>
+<p>Usage:
+</p>
+<table class="wikitable">
+<tbody><tr>
+<th>Required
+</th>
+<th>Key
+</th>
+<th>Value
+</th>
+<th style="text-align:left;">Purpose
+</th></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"name"
+</td>
+<td>&lt;file name&gt;
+</td>
+<td style="text-align:left;">
+<ul><li>Stops playing media by name matching the value specified.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"type"
+</td>
+<td>"sound", "music" or "video"
+</td>
+<td style="text-align:left;">
+<ul><li>Stops playing media by type matching the value specified.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"tag"
+</td>
+<td>&lt;tag&gt;
+</td>
+<td style="text-align:left;">
+<ul><li>Stops playing media by tag matching the value specified.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"priority"
+</td>
+<td>1 to 100
+</td>
+<td style="text-align:left;">
+<ul><li>Stops playing media with priority less than or equal to the value.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"key"
+</td>
+<td>&lt;key&gt;
+</td>
+<td style="text-align:left;">
+<ul><li>Stops playing media by key matching the value specified.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"fadeaway"
+</td>
+<td>true or false
+</td>
+<td style="text-align:left;">
+<ul><li>Decrease volume from the current position for a given duration, then stops the track.</li>
+<li>Given duration is the lesser of the remaining track duration or the fadeout specified in Client.Media.Play.</li>
+<li>If fadeout was not specified in Client.Media.Play, then the optional fadeout parameter from Client.Media.Stop or a default of 5000 milliseconds will be applied.</li></ul>
+</td></tr>
+<tr>
+<td style="text-align:center;">No
+</td>
+<td>"fadeout"
+</td>
+<td>&lt;msec&gt;
+</td>
+<td style="text-align:left;">
+<ul><li>Default duration in milliseconds to decrease volume to the end of the track.</li>
+<li>Only used if fadeout was not defined in Client.Media.Play.</li></ul>
+</td></tr>
+</tbody></table>
+<p><br />
+<img alt="Note" src="/images/6/60/Bulbgraph.png" decoding="async" title="Note" width="18" height="22" /> <b>Note:</b> 
+</p>
+<pre>Some examples are shown <a href="/w/Special:MyLanguage/Manual:Scripting#Stopping_Media" title="Special:MyLanguage/Manual:Scripting">here</a>.
+</pre>
+<h2><span class="mw-headline" id="Best_Practices_for_Server_Implementors">Best Practices for Server Implementors</span></h2>
+<p>In keeping with best practices widely adopted in modern web applications and browsers, server-side implementors of the `Client.Media` protocol are advised to consider the following:
+</p>
+<ul><li><b>Avoid Autoplay Before User Interaction</b>: Media files should not be played immediately upon client connection, especially before the user has had an opportunity to interact with the game environment. Autoplaying media without user initiation may be blocked or suppressed by some clients, particularly web-based ones, and can create a disruptive experience for players.</li></ul>
+<ul><li><b>Use Secure Media URLs</b>: Whenever possible, media files should be served via secure HTTPS URLs. Serving media over insecure HTTP links may trigger mixed content security warnings or result in blocked requests in web-based clients or modern operating systems with strict security policies.</li></ul>
+<h2><span class="mw-headline" id="Notes_for_Web_Client_Developers">Notes for Web Client Developers</span></h2>
+<p>Developers of web-based Mud clients should be aware of the following constraints that may impact media playback behavior:
+</p>
+<ul><li>Most browsers impose restrictions on media autoplay unless the user has interacted with the page. This may prevent `Client.Media.Play` messages sent immediately after connection from functioning as intended.</li></ul>
+<ul><li>Serving media over non-HTTPS URLs may result in blocked requests or mixed content warnings, depending on the browser and hosting setup.</li></ul>
+<p>These limitations are imposed by browser security models and are not under the control of the game server or client developers. Where possible, client developers may want to inform users or log these situations for debugging.
+</p>
+<h2><span class="mw-headline" id="Versions">Versions</span></h2>
+<ul><li>Version 1.0: Initial specification.</li>
+<li>Version 1.0.1: fadein, fadeout and start added to Client.Media.Play by Mike Conley (mike.conley[at]stickmud.com) on 22-DEC-2021.</li>
+<li>Version 1.0.2: finish added to Client.Media.Play and fadeaway and fadeout added to Client.Media.Stop by Mike Conley (mike.conley[at]stickmud.com) on 10-DEC-2023.</li>
+<li>Version 1.0.3: caption added to Client.Media.Play for improved accessibility by Mike Conley (mike.conley[at]stickmud.com) on 10-MAY-2025.</li></ul>
+<h2><span class="mw-headline" id="Advertise_Support_for_MCMP">Advertise Support for MCMP</span></h2>
+<p>Consider advertising your games support of MCMP (and GMCP) to mud lists via the Mud Server Status Protocol, <a href="/w/Special:MyLanguage/Manual:Supported_Protocols#MSSP" title="Special:MyLanguage/Manual:Supported Protocols">MSSP</a>, by providing a MSSP variable of "MCMP" and value of "1".
+</p>
+<h2><span class="mw-headline" id="Authors">Authors</span></h2>
+<ul><li>Mike Conley (Tamarindo, Co-Administrator at StickMUD and Mudlet contributor) mike.conley[at]stickmud.com</li>
+<li>Eric Oestrich (Developer of ExVenture and Grapevine) eric[at]oestrich.org</li></ul>
+<h2><span class="mw-headline" id="Clients">Clients</span></h2>
+<ul><li>Known clients implementing this specification:
+<ul><li>Mudlet version 4.4+. See <a href="/w/Special:MyLanguage/Manual:Scripting#MUD_Client_Media_Protocol" title="Special:MyLanguage/Manual:Scripting">documentation</a>.</li>
+<li>BeipMU version 4.00.298 implements basic load/play/stop commands.</li>
+<li>LociTerm version 2.5.1 and beyond.</li></ul></li></ul>
+<!-- 
+NewPP limit report
+Cached time: 20250530201913
+Cache expiry: 86400
+Dynamic content: false
+Complications: []
+CPU time usage: 0.058 seconds
+Real time usage: 0.105 seconds
+Preprocessor visited node count: 135/1000000
+Post‐expand include size: 293/2097152 bytes
+Template argument size: 0/2097152 bytes
+Highest expansion depth: 4/40
+Expensive parser function count: 0/100
+Unstrip recursion depth: 0/20
+Unstrip post‐expand size: 990/5000000 bytes
+-->
+<!--
+Transclusion expansion time report (%,ms,calls,template)
+100.00%   36.696      1 -total
+ 13.30%    4.880      5 Template:Note
+-->
+
+<!-- Saved in parser cache with key wikidb:pcache:idhash:854-0!canonical and timestamp 20250530201923 and revision id 22342
+ -->
+</div></div><div class="printfooter">Retrieved from "<a dir="ltr" href="https://wiki.mudlet.org/index.php?title=Standards:MUD_Client_Media_Protocol&amp;oldid=22342">https://wiki.mudlet.org/index.php?title=Standards:MUD_Client_Media_Protocol&amp;oldid=22342</a>"</div>
+		<div id="catlinks" class="catlinks" data-mw="interface"><div id="mw-normal-catlinks" class="mw-normal-catlinks"><a href="/w/Special:Categories" title="Special:Categories">Category</a>: <ul><li><a href="/w/Category:Pages_with_syntax_highlighting_errors" title="Category:Pages with syntax highlighting errors">Pages with syntax highlighting errors</a></li></ul></div></div>
+	</div>
+</div>
+
+<div id="mw-navigation">
+	<h2>Navigation menu</h2>
+	<div id="mw-head">
+		<!-- Please do not use role attribute as CSS selector, it is deprecated. -->
+<nav id="p-personal" class="vector-menu" aria-labelledby="p-personal-label" role="navigation" 
+	 >
+	<h3 id="p-personal-label">
+		<span>Personal tools</span>
+	</h3>
+	<!-- Please do not use the .body class, it is deprecated. -->
+	<div class="body vector-menu-content">
+		<!-- Please do not use the .menu class, it is deprecated. -->
+		<ul class="vector-menu-content-list"><li id="pt-uls" class="active"><a href="#" class="uls-trigger">English</a></li><li id="pt-createaccount"><a href="/index.php?title=Special:CreateAccount&amp;returnto=Standards%3AMUD+Client+Media+Protocol" title="You are encouraged to create an account and log in; however, it is not mandatory">Create account</a></li><li id="pt-login"><a href="/index.php?title=Special:UserLogin&amp;returnto=Standards%3AMUD+Client+Media+Protocol" title="You are encouraged to log in; however, it is not mandatory [o]" accesskey="o">Log in</a></li></ul>
+		
+	</div>
+</nav>
+
+
+		<div id="left-navigation">
+			<!-- Please do not use role attribute as CSS selector, it is deprecated. -->
+<nav id="p-namespaces" class="vector-menu vector-menu-tabs vectorTabs" aria-labelledby="p-namespaces-label" role="navigation" 
+	 >
+	<h3 id="p-namespaces-label">
+		<span>Namespaces</span>
+	</h3>
+	<!-- Please do not use the .body class, it is deprecated. -->
+	<div class="body vector-menu-content">
+		<!-- Please do not use the .menu class, it is deprecated. -->
+		<ul class="vector-menu-content-list"><li id="ca-nstab-main" class="selected"><a href="/w/Standards:MUD_Client_Media_Protocol" title="View the content page [c]" accesskey="c">Page</a></li><li id="ca-talk" class="new"><a href="/index.php?title=Talk:Standards:MUD_Client_Media_Protocol&amp;action=edit&amp;redlink=1" rel="discussion" title="Discussion about the content page (page does not exist) [t]" accesskey="t">Discussion</a></li></ul>
+		
+	</div>
+</nav>
+
+
+			<!-- Please do not use role attribute as CSS selector, it is deprecated. -->
+<nav id="p-variants" class="vector-menu-empty emptyPortlet vector-menu vector-menu-dropdown vectorMenu" aria-labelledby="p-variants-label" role="navigation" 
+	 >
+	<input type="checkbox" class="vector-menu-checkbox vectorMenuCheckbox" aria-labelledby="p-variants-label" />
+	<h3 id="p-variants-label">
+		<span>Variants</span>
+	</h3>
+	<!-- Please do not use the .body class, it is deprecated. -->
+	<div class="body vector-menu-content">
+		<!-- Please do not use the .menu class, it is deprecated. -->
+		<ul class="menu vector-menu-content-list"></ul>
+		
+	</div>
+</nav>
+
+
+		</div>
+		<div id="right-navigation">
+			<!-- Please do not use role attribute as CSS selector, it is deprecated. -->
+<nav id="p-views" class="vector-menu vector-menu-tabs vectorTabs" aria-labelledby="p-views-label" role="navigation" 
+	 >
+	<h3 id="p-views-label">
+		<span>Views</span>
+	</h3>
+	<!-- Please do not use the .body class, it is deprecated. -->
+	<div class="body vector-menu-content">
+		<!-- Please do not use the .menu class, it is deprecated. -->
+		<ul class="vector-menu-content-list"><li id="ca-view" class="collapsible selected"><a href="/w/Standards:MUD_Client_Media_Protocol">Read</a></li><li id="ca-viewsource" class="collapsible"><a href="/index.php?title=Standards:MUD_Client_Media_Protocol&amp;action=edit" title="This page is protected.&#10;You can view its source [e]" accesskey="e">View source</a></li><li id="ca-history" class="collapsible"><a href="/index.php?title=Standards:MUD_Client_Media_Protocol&amp;action=history" title="Past revisions of this page [h]" accesskey="h">View history</a></li></ul>
+		
+	</div>
+</nav>
+
+
+			<!-- Please do not use role attribute as CSS selector, it is deprecated. -->
+<nav id="p-cactions" class="vector-menu-empty emptyPortlet vector-menu vector-menu-dropdown vectorMenu" aria-labelledby="p-cactions-label" role="navigation" 
+	 >
+	<input type="checkbox" class="vector-menu-checkbox vectorMenuCheckbox" aria-labelledby="p-cactions-label" />
+	<h3 id="p-cactions-label">
+		<span>More</span>
+	</h3>
+	<!-- Please do not use the .body class, it is deprecated. -->
+	<div class="body vector-menu-content">
+		<!-- Please do not use the .menu class, it is deprecated. -->
+		<ul class="menu vector-menu-content-list"></ul>
+		
+	</div>
+</nav>
+
+
+			<div id="p-search" role="search">
+	<h3 >
+		<label for="searchInput">Search</label>
+	</h3>
+	<form action="/index.php" id="searchform">
+		<div id="simpleSearch">
+			<input type="search" name="search" placeholder="Search Mudlet" title="Search Mudlet [f]" accesskey="f" id="searchInput"/>
+			<input type="hidden" name="title" value="Special:Search">
+			<input type="submit" name="fulltext" value="Search" title="Search the pages for this text" id="mw-searchButton" class="searchButton mw-fallbackSearchButton"/>
+			<input type="submit" name="go" value="Go" title="Go to a page with this exact name if it exists" id="searchButton" class="searchButton"/>
+		</div>
+	</form>
+</div>
+
+		</div>
+	</div>
+	
+<div id="mw-panel">
+	<div id="p-logo" role="banner">
+		<a  title="Visit the main page" class="mw-wiki-logo" href="/w/Main_Page"></a>
+	</div>
+	<!-- Please do not use role attribute as CSS selector, it is deprecated. -->
+<nav id="p-navigation" class="vector-menu vector-menu-portal portal portal-first" aria-labelledby="p-navigation-label" role="navigation" 
+	 >
+	<h3 id="p-navigation-label">
+		<span>Navigation</span>
+	</h3>
+	<!-- Please do not use the .body class, it is deprecated. -->
+	<div class="body vector-menu-content">
+		<!-- Please do not use the .menu class, it is deprecated. -->
+		<ul class="vector-menu-content-list"><li id="n-Wiki-home"><a href="/w/Main_Page">Wiki home</a></li><li id="n-Mudlet-home"><a href="http://mudlet.org" rel="nofollow">Mudlet home</a></li><li id="n-Mudlet-forums"><a href="http://forums.mudlet.org" rel="nofollow">Mudlet forums</a></li><li id="n-recentchanges"><a href="/w/Special:RecentChanges" title="A list of recent changes in the wiki [r]" accesskey="r">Recent changes</a></li><li id="n-randompage"><a href="/w/Special:Random" title="Load a random page [x]" accesskey="x">Random page</a></li><li id="n-help"><a href="https://www.mediawiki.org/wiki/Special:MyLanguage/Help:Contents" title="The place to find out">Help</a></li></ul>
+		
+	</div>
+</nav>
+
+
+	<!-- Please do not use role attribute as CSS selector, it is deprecated. -->
+<nav id="p-tb" class="vector-menu vector-menu-portal portal" aria-labelledby="p-tb-label" role="navigation" 
+	 >
+	<h3 id="p-tb-label">
+		<span>Tools</span>
+	</h3>
+	<!-- Please do not use the .body class, it is deprecated. -->
+	<div class="body vector-menu-content">
+		<!-- Please do not use the .menu class, it is deprecated. -->
+		<ul class="vector-menu-content-list"><li id="t-whatlinkshere"><a href="/w/Special:WhatLinksHere/Standards:MUD_Client_Media_Protocol" title="A list of all wiki pages that link here [j]" accesskey="j">What links here</a></li><li id="t-recentchangeslinked"><a href="/w/Special:RecentChangesLinked/Standards:MUD_Client_Media_Protocol" rel="nofollow" title="Recent changes in pages linked from this page [k]" accesskey="k">Related changes</a></li><li id="t-specialpages"><a href="/w/Special:SpecialPages" title="A list of all special pages [q]" accesskey="q">Special pages</a></li><li id="t-print"><a href="javascript:print();" rel="alternate" title="Printable version of this page [p]" accesskey="p">Printable version</a></li><li id="t-permalink"><a href="/index.php?title=Standards:MUD_Client_Media_Protocol&amp;oldid=22342" title="Permanent link to this revision of the page">Permanent link</a></li><li id="t-info"><a href="/index.php?title=Standards:MUD_Client_Media_Protocol&amp;action=info" title="More information about this page">Page information</a></li></ul>
+		
+	</div>
+</nav>
+
+
+	
+</div>
+
+</div>
+
+<footer id="footer" class="mw-footer" role="contentinfo" >
+	<ul id="footer-info" >
+		<li id="footer-info-lastmod"> This page was last edited on 30 May 2025, at 20:19.</li>
+	</ul>
+	<ul id="footer-places" >
+		<li id="footer-places-privacy"><a href="https://www.mudlet.org/terms-of-service/" title="Mudlet.org Terms of Service and Privacy Policy">Terms &amp; Privacy</a></li>
+		<li id="footer-places-about"><a href="https://www.mudlet.org/about/" title="About Mudlet">About Mudlet</a></li>
+	</ul>
+	<ul id="footer-icons" class="noprint">
+		<li id="footer-poweredbyico"><a href="https://www.mediawiki.org/"><img src="/resources/assets/poweredby_mediawiki_88x31.png" alt="Powered by MediaWiki" srcset="/resources/assets/poweredby_mediawiki_132x47.png 1.5x, /resources/assets/poweredby_mediawiki_176x62.png 2x" width="88" height="31" loading="lazy"/></a></li>
+	</ul>
+	<div style="clear: both;"></div>
+</footer>
+
+
+
+<script>(RLQ=window.RLQ||[]).push(function(){mw.config.set({"wgPageParseReport":{"limitreport":{"cputime":"0.058","walltime":"0.105","ppvisitednodes":{"value":135,"limit":1000000},"postexpandincludesize":{"value":293,"limit":2097152},"templateargumentsize":{"value":0,"limit":2097152},"expansiondepth":{"value":4,"limit":40},"expensivefunctioncount":{"value":0,"limit":100},"unstrip-depth":{"value":0,"limit":20},"unstrip-size":{"value":990,"limit":5000000},"timingprofile":["100.00%   36.696      1 -total"," 13.30%    4.880      5 Template:Note"]},"cachereport":{"timestamp":"20250530201913","ttl":86400,"transientcontent":false}}});mw.config.set({"wgBackendResponseTime":75});});</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0816b3bea16e76d',t:'MTc4MDg1Mzc4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"472ef602c5b04a73879a07b6f0414d9d","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body><!-- Cached/compressed 20250530204054 -->
+</html>

@@ -1,40 +1,346 @@
-import { it, describe, expect } from 'vitest';
-import { parseMcpMessage, parseMcpMultiline } from "./mcp";
+import { describe, expect, it, vi } from 'vitest';
+import {
+  MCPPackage,
+  McpAwnsGetSet,
+  McpAwnsStatus,
+  McpSession,
+  McpSimpleEdit,
+  McpVmooUserlist,
+  encodeMcpMessage,
+  parseMcpLine,
+  parseMcpMessage,
+  parseMcpMultiline,
+} from './mcp';
+import type { EditorSession, McpMessage } from './mcp';
 
-describe("parseMcpMessage", () => {
-  it("should parse a message", () => {
-    const message = "#$#MCP version: 2.1 to: 2.1";
-    const parsed = parseMcpMessage(message);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.name).toBe("MCP");
-    expect(parsed!.authKey).toBeUndefined();
-    expect(parsed!.keyvals).toEqual({ version: "2.1", to: "2.1" });
+function expectMessage(value: McpMessage | null): McpMessage {
+  expect(value).not.toBeNull();
+  return value as McpMessage;
+}
+
+describe('MCP codec', () => {
+  it('parses a handshake message without an auth key', () => {
+    const parsed = expectMessage(parseMcpMessage('#$#MCP version: 2.1 to: 2.1'));
+
+    expect(parsed.name).toBe('MCP');
+    expect(parsed.authKey).toBeUndefined();
+    expect(parsed.keyvals).toEqual({ version: '2.1', to: '2.1' });
   });
-  it("should parse an authkey", () => {
-    const message = "#$#say 123456 what: \"Hi there!\" from: Biff to: Betty";
-    const parsed = parseMcpMessage(message);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.name).toBe("say");
-    expect(parsed!.authKey).toBe("123456");
-    expect(parsed!.keyvals).toEqual({ what: "Hi there!", from: "Biff", to: "Betty" });
+
+  it('parses auth keys and quoted values with escapes', () => {
+    const parsed = expectMessage(
+      parseMcpMessage('#$#say 123456 what: "Hi \\"there\\"!" path: "C:\\\\tmp" to: Betty'),
+    );
+
+    expect(parsed.name).toBe('say');
+    expect(parsed.authKey).toBe('123456');
+    expect(parsed.keyvals).toEqual({
+      what: 'Hi "there"!',
+      path: 'C:\\tmp',
+      to: 'Betty',
+    });
+  });
+
+  it('rejects duplicate keys and trailing garbage', () => {
+    expect(parseMcpMessage('#$#say 123456 what: hi what: bye')).toBeNull();
+    expect(parseMcpMessage('#$#say 123456 what: hi garbage')).toBeNull();
+  });
+
+  it('parses multiline continuations and closures', () => {
+    const continuation = expectMessage(
+      parseMcpMultiline("#$#* 9b76 text: Note that you don't need to quote strings"),
+    );
+    const parsedContinuation = parseMcpLine('#$#* 9b76 text: Line with spaces');
+    const parsedClosure = parseMcpLine('#$#: 9b76');
+
+    expect(continuation.name).toBe('9b76');
+    expect(continuation.keyvals).toEqual({
+      text: "Note that you don't need to quote strings",
+    });
+    expect(parsedContinuation).toEqual({
+      type: 'multiline-continuation',
+      continuation: {
+        tag: '9b76',
+        key: 'text',
+        value: 'Line with spaces',
+        keyvals: { text: 'Line with spaces' },
+      },
+    });
+    expect(parsedClosure).toEqual({
+      type: 'multiline-close',
+      closure: { tag: '9b76', keyvals: {} },
+    });
+  });
+
+  it('preserves multiline continuation indentation and trailing whitespace', () => {
+    const line = '#$#* 9b76 content:     if (x > 1)  ';
+
+    expect(parseMcpLine(line)).toEqual({
+      type: 'multiline-continuation',
+      continuation: {
+        tag: '9b76',
+        key: 'content',
+        value: '    if (x > 1)  ',
+        keyvals: { content: '    if (x > 1)  ' },
+      },
+    });
+    expect(parseMcpMultiline(line)).toEqual({
+      name: '9b76',
+      keyvals: { content: '    if (x > 1)  ' },
+    });
+  });
+
+  it('encodes outbound values without dropping falsy data', () => {
+    expect(
+      encodeMcpMessage('package-message', 'auth01', {
+        empty: '',
+        falseValue: false,
+        zero: 0,
+        spaced: 'hello world',
+        quoted: 'say "hi"',
+      }),
+    ).toBe(
+      '#$#package-message auth01 empty: "" falseValue: false zero: 0 spaced: "hello world" quoted: "say \\"hi\\""',
+    );
   });
 });
 
-describe("parseMcpMultiline", () => {
-  it("should parse a message", () => {
-    const message = "#$#* 9b76 text: Note that you don't need to quote strings";
-    const parsed = parseMcpMultiline(message);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.name).toBe("9b76");
-    expect(parsed!.authKey).toBeUndefined();
-    expect(parsed!.keyvals).toEqual({ text: "Note that you don't need to quote strings" });
+class RecordingPackage extends MCPPackage {
+  public packageName = 'dns-org-mud-moo-simpleedit';
+  public handle = vi.fn();
+  public handleMultiline = vi.fn();
+  public closeMultiline = vi.fn();
+}
+
+describe('McpSession', () => {
+  it('performs authentication and advertises registered packages', () => {
+    const sent: string[] = [];
+    const session = new McpSession(
+      {
+        sendLine: (line) => sent.push(line),
+      },
+      () => 'auth01',
+    );
+    session.registerPackage(RecordingPackage);
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+
+    expect(sent).toEqual([
+      '#$#mcp authentication-key: auth01 version: 2.1 to: 2.1',
+      '#$#mcp-negotiate-can auth01 package: dns-org-mud-moo-simpleedit min-version: 1.0 max-version: 1.0',
+      '#$#mcp-negotiate-end auth01',
+    ]);
   });
-  it("should parse a closure", () => {
-    const message = "#$#: 9b76";
-    const parsed = parseMcpMultiline(message);
-    expect(parsed).not.toBeNull();
-    expect(parsed!.name).toBe("9b76");
-    expect(parsed!.authKey).toBeUndefined();
-    expect(parsed!.keyvals).toEqual({});
+
+  it('routes authenticated messages by longest package prefix and tracks multiline tags', () => {
+    const session = new McpSession(
+      {
+        sendLine: vi.fn(),
+      },
+      () => 'auth01',
+    );
+    const handler = session.registerPackage(RecordingPackage);
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    session.receiveLine(
+      '#$#dns-org-mud-moo-simpleedit-content auth01 _data-tag: ml1 name: editor reference: ref type: moo-code',
+    );
+    session.receiveLine('#$#* ml1 content: line one');
+    session.receiveLine('#$#: ml1');
+
+    expect(handler.handle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'dns-org-mud-moo-simpleedit-content',
+      }),
+    );
+    expect(handler.handleMultiline).toHaveBeenCalledWith({
+      name: 'ml1',
+      keyvals: { content: 'line one' },
+    });
+    expect(handler.closeMultiline).toHaveBeenCalledWith({ name: 'ml1', keyvals: {} });
+    expect(session.multilineHandlers).toEqual({});
+  });
+
+  it('keeps interleaved simpleedit multiline sessions separate', () => {
+    const opened: EditorSession[] = [];
+    const session = new McpSession(
+      {
+        sendLine: vi.fn(),
+      },
+      () => 'auth01',
+    );
+    const simpleEdit = session.registerPackage(McpSimpleEdit);
+    simpleEdit.on('openSession', (editorSession) => opened.push(editorSession));
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    session.receiveLine(
+      '#$#dns-org-mud-moo-simpleedit-content auth01 _data-tag: one name: first reference: ref1 type: moo-code',
+    );
+    session.receiveLine(
+      '#$#dns-org-mud-moo-simpleedit-content auth01 _data-tag: two name: second reference: ref2 type: string',
+    );
+    session.receiveLine('#$#* two content: second line');
+    session.receiveLine('#$#* one content: first line');
+    session.receiveLine('#$#: one');
+    session.receiveLine('#$#: two');
+
+    expect(opened).toEqual([
+      {
+        name: 'first',
+        reference: 'ref1',
+        type: 'moo-code',
+        contents: ['first line'],
+      },
+      {
+        name: 'second',
+        reference: 'ref2',
+        type: 'string',
+        contents: ['second line'],
+      },
+    ]);
+  });
+
+  it('drops partial simpleedit sessions on disconnect reset', () => {
+    const opened: EditorSession[] = [];
+    const session = new McpSession(
+      {
+        sendLine: vi.fn(),
+      },
+      () => 'auth01',
+    );
+    const simpleEdit = session.registerPackage(McpSimpleEdit);
+    simpleEdit.on('openSession', (editorSession) => opened.push(editorSession));
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    session.receiveLine(
+      '#$#dns-org-mud-moo-simpleedit-content auth01 _data-tag: one name: first reference: ref1 type: moo-code',
+    );
+    session.receiveLine('#$#* one content: partial line');
+
+    simpleEdit.reset();
+    session.receiveLine('#$#: one');
+
+    expect(opened).toEqual([]);
+  });
+
+  it('sends multiline payloads without mutating caller keyvals', () => {
+    const sent: string[] = [];
+    const tags = ['auth01', 'mltag1'];
+    const session = new McpSession(
+      {
+        sendLine: (line) => sent.push(line),
+      },
+      () => tags.shift() ?? 'fallback',
+    );
+    const keyvals = {
+      reference: 'obj 1',
+      type: 'moo-code',
+      'content*': '',
+    };
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    sent.length = 0;
+    const simpleEdit = session.registerPackage(McpSimpleEdit);
+    simpleEdit.sendSet({
+      reference: keyvals.reference,
+      type: keyvals.type,
+      contents: ['line one', 'line two'],
+      name: 'obj 1',
+    });
+
+    expect(keyvals).toEqual({
+      reference: 'obj 1',
+      type: 'moo-code',
+      'content*': '',
+    });
+    expect(sent).toEqual([
+      '#$#dns-org-mud-moo-simpleedit-set auth01 reference: "obj 1" type: moo-code content*: "" _data-tag: mltag1',
+      '#$#* mltag1 content: line one',
+      '#$#* mltag1 content: line two',
+      '#$#: mltag1',
+    ]);
+  });
+
+  it('emits AWNS status text through the status package', () => {
+    const statusTexts: string[] = [];
+    const session = new McpSession(
+      {
+        sendLine: vi.fn(),
+      },
+      () => 'auth01',
+    );
+    const status = session.registerPackage(McpAwnsStatus);
+    status.on('statustext', (text) => statusTexts.push(text));
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    session.receiveLine('#$#dns-com-awns-status auth01 text: "Standing by"');
+
+    expect(statusTexts).toEqual(['Standing by']);
+  });
+
+  it('emits AWNS get/set acknowledgements through the getset package', () => {
+    const values: Array<{ key: string; value: string }> = [];
+    const sent: string[] = [];
+    const session = new McpSession(
+      {
+        sendLine: (line) => sent.push(line),
+      },
+      () => 'auth01',
+    );
+    const getSet = session.registerPackage(McpAwnsGetSet);
+    getSet.on('getset', (payload) => values.push(payload));
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    sent.length = 0;
+    getSet.requestGet('theme');
+    session.receiveLine('#$#dns-com-awns-getset-ack auth01 id: 1 value: dark');
+
+    expect(sent).toEqual([
+      '#$#dns-com-awns-getset-get auth01 id: 1 property: theme',
+    ]);
+    expect(values).toEqual([{ key: 'theme', value: 'dark' }]);
+
+    getSet.reset();
+    sent.length = 0;
+    getSet.requestGet('font');
+
+    expect(getSet.LocalCache).toEqual({});
+    expect(sent).toEqual([
+      '#$#dns-com-awns-getset-get auth01 id: 1 property: font',
+    ]);
+  });
+
+  it('removes userlist players whose MOO object ids parse as numbers', () => {
+    const userlists: unknown[][] = [];
+    const session = new McpSession(
+      {
+        sendLine: vi.fn(),
+      },
+      () => 'auth01',
+    );
+    const userlist = session.registerPackage(McpVmooUserlist);
+    userlist.on('userlist', (players) => userlists.push(players));
+
+    session.receiveLine('#$#MCP version: 2.1 to: 2.1');
+    session.receiveLine('#$#dns-com-vmoo-userlist-content auth01 _data-tag: users');
+    session.receiveLine('#$#* users fields: {"Object","Name","Icon"}');
+    session.receiveLine('#$#* users d: ={{1234,"Alice",4},{5678,"Bob",5}}');
+    session.receiveLine('#$#* users d: -{1234}');
+
+    expect(userlists.at(-1)).toEqual([
+      {
+        Object: '5678',
+        Name: 'Bob',
+        Icon: 5,
+        away: false,
+        idle: false,
+      },
+    ]);
+
+    userlist.reset();
+
+    expect(userlist.player).toBeUndefined();
+    expect(userlist.fields).toEqual(['Object', 'Name', 'Icon']);
+    expect(userlist.players).toEqual([]);
   });
 });

@@ -1,0 +1,265 @@
+import { create } from "zustand";
+import { subscribeWithSelector } from "zustand/middleware";
+import {
+  loadStoredValue,
+  saveStoredValue,
+  type LocalStorageSchema,
+} from "../persistence";
+import type { Chord } from "../keystrokeChords";
+
+export enum AutoreadMode {
+  Off = "off",
+  Unfocused = "unfocused",
+  All = "all",
+}
+
+export type GeneralPreferences = {
+  localEcho: boolean;
+  syncTimezoneToServer: boolean;
+  syncLocationToServer: boolean;
+};
+
+export type SpeechPreferences = {
+  autoreadMode: AutoreadMode;
+  voice: string;
+  rate: number;
+  pitch: number;
+  volume: number;
+};
+
+export type SoundPreferences = {
+  muteInBackground: boolean;
+  volume: number;
+};
+
+// "default" follows the Speech tab's Auto Read; the others override it for
+// one channel.
+export type ChannelReadMode = AutoreadMode | "default";
+
+export type ChannelPreferences = {
+  autoreadMode: ChannelReadMode;
+  // A speechSynthesis voice name; "" is the Speech tab's voice.
+  voice: string;
+  notify: boolean;
+};
+
+export type EditorPreferences = {
+  autocompleteEnabled: boolean;
+  accessibilityMode: boolean;
+  // Show `"text";` statements as `// text` when opening MOO code. Saving always
+  // turns `//` lines back into statements, whatever this says.
+  lineComments: boolean;
+};
+
+export type NavigationKeyScheme = "jkli" | "wasd" | "dvorak-rh" | "dvorak-lh";
+
+export type KeyboardPreferences = {
+  navigationKeyScheme: NavigationKeyScheme;
+};
+
+export type MidiPreferences = {
+  enabled: boolean;
+  lastInputDeviceId?: string;
+  lastOutputDeviceId?: string;
+};
+
+export type HapticsPreferences = {
+  enabled: boolean;
+  intensityCap: number;
+  autoStopTimeout: number;
+};
+
+export type AutologgingPreferences = {
+  enabled: boolean;
+  maxBytes: number;
+};
+
+export type PrefState = {
+  general: GeneralPreferences;
+  speech: SpeechPreferences;
+  sound: SoundPreferences;
+  // Keyed by the channel name the server uses in Comm.Channel.Text. A channel
+  // with no entry follows Auto Read, the Speech voice, and does not notify.
+  channels: { [channelName: string]: ChannelPreferences };
+  editor: EditorPreferences;
+  keyboard: KeyboardPreferences;
+  midi: MidiPreferences;
+  haptics: HapticsPreferences;
+  autologging: AutologgingPreferences;
+  // Keys the player chose for server key layers, keyed by layer id and then by
+  // the binding's command.
+  keystrokes: KeystrokeOverrides;
+};
+
+export type KeystrokeOverrides = {
+  [layerId: string]: { [command: string]: Chord };
+};
+
+type PrefActions = {
+  setGeneral: (data: GeneralPreferences) => void;
+  setSpeech: (data: SpeechPreferences) => void;
+  setSound: (data: SoundPreferences) => void;
+  setChannelPreferences: (channelName: string, data: ChannelPreferences) => void;
+  setEditorAutocompleteEnabled: (value: boolean) => void;
+  setEditorAccessibilityMode: (value: boolean) => void;
+  setEditorLineComments: (value: boolean) => void;
+  setKeyboard: (data: KeyboardPreferences) => void;
+  setMidi: (data: MidiPreferences) => void;
+  setHaptics: (data: HapticsPreferences) => void;
+  setAutologging: (data: AutologgingPreferences) => void;
+  setKeystrokeOverride: (layerId: string, command: string, chord: Chord) => void;
+};
+
+const STORAGE_KEY = "preferences";
+const STORAGE_VERSION = 2;
+const PERSIST_DEBOUNCE_MS = 250;
+
+function getInitialPreferences(): PrefState {
+  return {
+    general: {
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    },
+    speech: {
+      autoreadMode: AutoreadMode.Off,
+      voice: "",
+      rate: 1.0,
+      pitch: 1.0,
+      volume: 1.0,
+    },
+    sound: { muteInBackground: false, volume: 1.0 },
+    channels: {
+      say_to_you: { autoreadMode: "default", voice: "", notify: true },
+    },
+    editor: { autocompleteEnabled: true, accessibilityMode: true, lineComments: false },
+    keyboard: { navigationKeyScheme: "jkli" },
+    midi: { enabled: false },
+    haptics: { enabled: false, intensityCap: 1.0, autoStopTimeout: 5 },
+    autologging: { enabled: false, maxBytes: 100 * 1024 * 1024 },
+    keystrokes: {},
+  };
+}
+
+function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
+  // Deep-merge stored values onto defaults so newly-added preferences appear,
+  // and strip removed haptics fields from old localStorage data.
+  const storedHaptics = (stored.haptics ?? {}) as Record<string, unknown>;
+  const { intifaceUrl, autoConnect, ...cleanHaptics } = storedHaptics;
+  return {
+    ...initial,
+    general: { ...initial.general, ...stored.general },
+    speech: { ...initial.speech, ...stored.speech },
+    sound: { ...initial.sound, ...stored.sound },
+    channels: { ...initial.channels, ...stored.channels },
+    editor: { ...initial.editor, ...stored.editor },
+    keyboard: { ...initial.keyboard, ...stored.keyboard },
+    midi: { ...initial.midi, ...stored.midi },
+    haptics: { ...initial.haptics, ...cleanHaptics },
+    autologging: { ...initial.autologging, ...stored.autologging },
+    keystrokes: { ...initial.keystrokes, ...stored.keystrokes },
+  };
+}
+
+const preferencesSchema: LocalStorageSchema<PrefState> = {
+  key: STORAGE_KEY,
+  version: STORAGE_VERSION,
+  migrate: (data, storedVersion) => {
+    if (
+      storedVersion > STORAGE_VERSION ||
+      typeof data !== "object" ||
+      data === null
+    ) {
+      return undefined;
+    }
+
+    const parsed = data as PrefState & { general?: { volume?: number } };
+
+    // Version 0 stored the raw preference object. Move the old general volume
+    // into sound before normalizing every version against current defaults.
+    if (storedVersion === 0 && parsed.general?.volume !== undefined && parsed.sound) {
+      if (!parsed.sound.volume) {
+        parsed.sound.volume = parsed.general.volume;
+      }
+      delete parsed.general.volume;
+    }
+
+    // Before version 2 nothing read or wrote channel settings; the only stored
+    // entry was a default under "sayto", a name the server never sends.
+    if (storedVersion < 2) {
+      delete (parsed as Partial<PrefState>).channels;
+    }
+
+    return mergePreferences(getInitialPreferences(), parsed);
+  },
+};
+
+function loadPreferences(): PrefState {
+  const initial = getInitialPreferences();
+  return loadStoredValue(preferencesSchema, initial);
+}
+
+/**
+ * Reactive preferences store. Read in React with selectors
+ * (`usePreferences((s) => s.speech)`) and imperatively elsewhere
+ * (`usePreferences.getState()`). Persisted to localStorage in the same raw
+ * shape used before the Zustand migration, so existing saved preferences load.
+ */
+export const usePreferences = create<PrefState & PrefActions>()(
+  subscribeWithSelector((set) => ({
+    ...loadPreferences(),
+    setGeneral: (data) => set({ general: data }),
+    setSpeech: (data) => set({ speech: data }),
+    setSound: (data) => set({ sound: data }),
+    setChannelPreferences: (channelName, data) =>
+      set((s) => ({ channels: { ...s.channels, [channelName]: data } })),
+    setEditorAutocompleteEnabled: (value) =>
+      set((s) => ({ editor: { ...s.editor, autocompleteEnabled: value } })),
+    setEditorAccessibilityMode: (value) =>
+      set((s) => ({ editor: { ...s.editor, accessibilityMode: value } })),
+    setEditorLineComments: (value) =>
+      set((s) => ({ editor: { ...s.editor, lineComments: value } })),
+    setKeyboard: (data) => set({ keyboard: data }),
+    setMidi: (data) => set({ midi: data }),
+    setHaptics: (data) => set({ haptics: data }),
+    setAutologging: (data) => set({ autologging: data }),
+    setKeystrokeOverride: (layerId, command, chord) =>
+      set((s) => ({
+        keystrokes: {
+          ...s.keystrokes,
+          [layerId]: { ...s.keystrokes[layerId], [command]: chord },
+        },
+      })),
+  })),
+);
+
+let pendingPersistState: PrefState & PrefActions | undefined;
+let persistTimer: number | undefined;
+
+function flushPendingPreferences(): void {
+  if (!pendingPersistState) return;
+
+  if (persistTimer !== undefined) {
+    window.clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+
+  // JSON.stringify drops the action functions, leaving the PrefState data
+  // inside the shared versioned persistence envelope.
+  if (saveStoredValue(preferencesSchema, pendingPersistState) === "saved") {
+    pendingPersistState = undefined;
+  }
+}
+
+usePreferences.subscribe((state) => {
+  pendingPersistState = state;
+  if (persistTimer !== undefined) {
+    window.clearTimeout(persistTimer);
+  }
+  persistTimer = window.setTimeout(
+    flushPendingPreferences,
+    PERSIST_DEBOUNCE_MS,
+  );
+});
+
+window.addEventListener("pagehide", flushPendingPreferences);

@@ -1,0 +1,183 @@
+import commitHash from 'virtual:commit-hash';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type MudClient from '../client';
+import { identityCodec, inbound, messageEnvelope } from '../protocol/messages';
+import type { TelnetParser } from '../telnet';
+import { GMCPPackage } from './package';
+import { GmcpSession } from './session';
+
+const registryThing = messageEnvelope('Thing', identityCodec<{ ok: boolean }>());
+
+const RegistryPackageBase = GMCPPackage.with({
+  packageName: 'Registry',
+  messages: [inbound(registryThing)] as const,
+});
+
+class RegistryPackage extends RegistryPackageBase {}
+
+class MockCorePackage extends GMCPPackage {
+  packageName = 'Core';
+  sendHello = vi.fn();
+}
+
+class MockCoreSupportsPackage extends GMCPPackage {
+  packageName = 'Core.Supports';
+  advertisedModules = vi.fn(() => ['Core 1', 'Core.Supports 1']);
+  sendSet = vi.fn();
+}
+
+class MockAutoLoginPackage extends GMCPPackage {
+  packageName = 'Auth.Autologin';
+  sendStoredLogin = vi.fn();
+}
+
+class MockClientMediaPackage extends GMCPPackage {
+  packageName = 'Client.Media';
+  publishEffectsSupport = vi.fn();
+}
+
+function createSession() {
+  const disconnectResets: Array<() => void> = [];
+  const client = {
+    registerDisconnectReset: (reset: () => void) => disconnectResets.push(reset),
+  } as unknown as MudClient;
+  const session = new GmcpSession(client);
+  return { disconnectResets, session };
+}
+
+describe('GmcpSession', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('registers typed packages and dispatches inbound GMCP messages', () => {
+    const { session } = createSession();
+    const handler = session.register(RegistryPackage);
+    const listener = vi.fn();
+    handler.on('thing', listener);
+
+    session.receive('Registry.Thing', '{"ok":true}');
+
+    expect(listener).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('automatically registers package disconnect resets', () => {
+    const { disconnectResets, session } = createSession();
+    const handler = session.register(RegistryPackage);
+    const reset = vi.spyOn(handler, 'reset');
+
+    expect(disconnectResets).toHaveLength(1);
+
+    disconnectResets[0]();
+
+    expect(reset).toHaveBeenCalledOnce();
+  });
+
+  it('logs malformed registered GMCP messages without throwing', () => {
+    const { session } = createSession();
+    session.register(RegistryPackage);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => session.receive('Registry.Thing', '{bad')).not.toThrow();
+
+    expect(consoleError).toHaveBeenCalledWith(
+      'Error dispatching GMCP message for Registry.Thing:',
+    );
+  });
+
+  it('logs registered GMCP listener errors without throwing', () => {
+    const { session } = createSession();
+    const handler = session.register(RegistryPackage);
+    const error = new Error('listener failed');
+    handler.on('thing', () => {
+      throw error;
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => session.receive('Registry.Thing', '{"ok":true}')).not.toThrow();
+
+    expect(consoleError).toHaveBeenCalledWith(
+      'Error dispatching GMCP message for Registry.Thing:',
+    );
+  });
+
+  it('keeps credential payloads out of inbound/outbound diagnostics', () => {
+    const { session } = createSession();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    session.attachTransport({ sendGmcp: vi.fn() } as unknown as TelnetParser);
+    session.send('Auth.Autologin.Login', 'synthetic-private-login');
+    session.receive('Client.WebPush.Token', '{"token":"synthetic-private-push"}');
+    const diagnostics = JSON.stringify(log.mock.calls);
+    expect(diagnostics).not.toContain('synthetic-private-login');
+    expect(diagnostics).not.toContain('synthetic-private-push');
+  });
+
+  it('encodes outbound messages through the attached telnet transport', () => {
+    const { session } = createSession();
+    const telnet = {
+      sendGmcp: vi.fn(),
+    } as unknown as TelnetParser;
+    session.attachTransport(telnet);
+
+    session.send('Test.Thing', { ok: true });
+
+    expect(telnet.sendGmcp).toHaveBeenCalledWith('Test.Thing', '{"ok":true}');
+  });
+
+  it('runs GMCP startup packages and marks GMCP ready once', () => {
+    const { session } = createSession();
+    const core = session.register(MockCorePackage);
+    const supports = session.register(MockCoreSupportsPackage);
+    const autoLogin = session.register(MockAutoLoginPackage);
+    const media = session.register(MockClientMediaPackage);
+
+    expect(session.start()).toBe(true);
+    expect(session.start()).toBe(false);
+
+    expect(core.sendHello).toHaveBeenCalledTimes(2);
+    expect(commitHash).not.toBe('');
+    expect(core.sendHello).toHaveBeenCalledWith({ client: 'Mongoose Client', version: commitHash });
+    expect(supports.sendSet).toHaveBeenCalledTimes(2);
+    expect(supports.sendSet).toHaveBeenCalledWith(['Core 1', 'Core.Supports 1']);
+    expect(autoLogin.sendStoredLogin).toHaveBeenCalledTimes(2);
+    expect(media.publishEffectsSupport).toHaveBeenCalledTimes(2);
+    expect(session.ready).toBe(true);
+  });
+
+  it('owns session readiness and reset state', () => {
+    const { session } = createSession();
+
+    expect(session.markReady()).toBe(true);
+    expect(session.markReady()).toBe(false);
+    expect(session.markSessionReady()).toBe(true);
+    expect(session.markSessionReady()).toBe(false);
+
+    expect(session.ready).toBe(true);
+    expect(session.sessionReady).toBe(true);
+
+    session.reset();
+
+    expect(session.ready).toBe(false);
+    expect(session.sessionReady).toBe(false);
+  });
+
+  it('treats a same-socket player or lifetime change as a new identity generation', () => {
+    const resetOwned = vi.fn();
+    const client = { registerDisconnectReset: vi.fn(), resetIdentityState: resetOwned } as unknown as MudClient;
+    const session = new GmcpSession(client);
+    const handler = session.register(RegistryPackage);
+    const reset = vi.spyOn(handler, 'reset');
+    expect(session.confirmIdentity('#10', 'player-a')).toBe(true);
+    const generation = session.generation;
+    expect(session.confirmIdentity('#10', 'player-a')).toBe(false);
+    expect(session.generation).toBe(generation);
+    expect(reset).not.toHaveBeenCalled();
+    expect(session.confirmIdentity('#11', 'player-b')).toBe(true);
+    expect(reset).toHaveBeenCalledOnce();
+    expect(resetOwned).toHaveBeenCalledOnce();
+    expect(session.generation).toBeGreaterThan(generation);
+    session.confirmIdentity('#11', 'replacement-lifetime');
+    expect(resetOwned).toHaveBeenCalledTimes(2);
+  });
+});

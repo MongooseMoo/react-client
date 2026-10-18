@@ -1,24 +1,16 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
-import App from "./App";
-import EditorWindow from "./components/editor/editorWindow";
-import "./index.css";
-import reportWebVitals from "./reportWebVitals";
-import { registerSW } from 'virtual:pwa-register'
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import './tokens.css';
+import './index.css';
+import reportWebVitals from './reportWebVitals';
+import { registerSW } from 'virtual:pwa-register';
+import { AppRoutes } from './routes';
 
-const router = createBrowserRouter([
-  { path: "/", element: <App /> },
-  { path: "/editor", element: <EditorWindow /> },
-]);
-
-const root = ReactDOM.createRoot(
-  document.getElementById("root") as HTMLElement
-);
+const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <React.StrictMode>
-    <RouterProvider router={router} />
-  </React.StrictMode>
+    <AppRoutes />
+  </React.StrictMode>,
 );
 
 // If you want to start measuring performance in your app, pass a function
@@ -27,6 +19,4 @@ root.render(
 reportWebVitals(console.log);
 
 // Register service worker for PWA support
-if (import.meta.env.PROD) {
-  registerSW()
-}
+registerSW();

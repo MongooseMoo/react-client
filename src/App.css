@@ -1,13 +1,9 @@
-:root {
-  --sidebar-width: clamp(250px, 25vw, 300px);
-  --spacing-unit: 1rem;
-  --border-radius: 5px;
-  --font-family-base: "Helvetica Neue", sans-serif;
-  --font-family-mono: Monaco, Consolas, "Liberation Mono", "Courier New", Courier, monospace;
-  --color-bg: #f5f5f5;
-  --color-text: #333;
-  --color-border: #ccc;
-}
+/*
+  Design tokens (--color-*, --space-*, --radius-*, etc.) now live in
+  src/tokens.css, imported globally from index.tsx so every route — including
+  the standalone /editor window that renders outside <App> — can use them.
+  Consume tokens here with var(--token); do not redefine them.
+*/
 
 .sr-only {
 	border: 0 !important;
@@ -47,7 +43,11 @@ body {
   margin: 0;
   background-color: var(--color-bg);
   font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
   color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* LiveKit UI classes that we override or hide */
@@ -124,6 +124,10 @@ body {
   box-sizing: border-box; /* Ensure padding/border included if App has them */
 }
 
+.App[hidden] {
+  display: none;
+}
+
 /* Grid layout when sidebar is shown */
 .App.sidebar-shown {
   grid-template-areas:
@@ -135,6 +139,16 @@ body {
   /* Rows remain the same */
 }
 
+/* Grid layout when sidebar is collapsed */
+.App.sidebar-collapsed {
+  grid-template-areas:
+    "header header"
+    "main sidebar"
+    "input input"
+    "status status";
+  grid-template-columns: 1fr 50px;
+}
+
 
 /* Add back some spacing using padding on grid items if needed */
 main {
@@ -142,6 +156,7 @@ main {
   /* Ensure main area doesn't get spacing when sidebar is hidden */
   padding-right: 0;
   min-height: 0;
+  min-width: 0; /* Prevent grid child from overflowing its column track */
   display: flex;
   flex-direction: column;
 }
@@ -220,4 +235,181 @@ footer[role="contentinfo"] {
     div[role="region"][aria-label="Command input"] {
         padding-bottom: 0;
     }
+
+    /* Shorter sidebar on small phones */
+    @media (max-height: 700px) {
+        aside {
+            max-height: 30vh;
+        }
+    }
+}
+
+/* === BUTTON SYSTEM === */
+.btn {
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium, 500);
+  line-height: 1;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--gradient-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+  box-shadow: var(--shadow-glow-primary);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: var(--color-bg-surface);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.btn-secondary:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-primary);
+}
+
+.btn-success {
+  background: var(--gradient-success);
+  color: #ffffff;
+  border-color: var(--color-success);
+}
+
+.btn-success:hover {
+  background: var(--color-success-hover);
+  box-shadow: var(--shadow-glow-success);
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  color: #ffffff;
+  border-color: var(--color-danger);
+}
+
+.btn-danger:hover {
+  background: var(--color-danger-hover);
+  box-shadow: var(--shadow-glow-danger);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* === INPUT SYSTEM === */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+textarea,
+select {
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-sm);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-deep);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-subtle);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* === PANEL SYSTEM === */
+.panel {
+  background: var(--gradient-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+}
+
+.panel-elevated {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-md);
+}
+
+.panel-header {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+/* Custom scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.25);
 }

@@ -1,0 +1,254 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AutoreadMode, usePreferences } from "./preferencesStore";
+
+describe("preferencesStore", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Reset to known defaults between tests.
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    usePreferences.getState().setSound({ muteInBackground: false, volume: 1.0 });
+    usePreferences.getState().setMidi({ enabled: false });
+    usePreferences.getState().setAutologging({
+      enabled: false,
+      maxBytes: 100 * 1024 * 1024,
+    });
+    localStorage.removeItem("preferences");
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it("exposes default preferences", () => {
+    expect(usePreferences.getState().general.localEcho).toBe(false);
+    expect(usePreferences.getState().general.syncTimezoneToServer).toBe(true);
+    expect(usePreferences.getState().general.syncLocationToServer).toBe(false);
+    expect(usePreferences.getState().speech.autoreadMode).toBe(AutoreadMode.Off);
+  });
+
+  it("setSound replaces the sound section", () => {
+    usePreferences.getState().setSound({ muteInBackground: true, volume: 0.5 });
+    expect(usePreferences.getState().sound).toEqual({
+      muteInBackground: true,
+      volume: 0.5,
+    });
+  });
+
+  it("setEditorAutocompleteEnabled updates only that field", () => {
+    const before = usePreferences.getState().editor.accessibilityMode;
+    usePreferences.getState().setEditorAutocompleteEnabled(false);
+    expect(usePreferences.getState().editor.autocompleteEnabled).toBe(false);
+    // other editor fields untouched
+    expect(usePreferences.getState().editor.accessibilityMode).toBe(before);
+  });
+
+  it("persists changes in the shared versioned envelope", () => {
+    // localStorage is a no-op mock in the test setup, so assert on the write.
+    const setItem = vi.mocked(localStorage.setItem);
+    setItem.mockClear();
+    usePreferences.getState().setGeneral({
+      localEcho: true,
+      syncTimezoneToServer: false,
+      syncLocationToServer: true,
+    });
+    expect(setItem).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(setItem).toHaveBeenCalledWith("preferences", expect.any(String));
+    const lastCall = setItem.mock.calls.at(-1);
+    const stored = JSON.parse(lastCall?.[1] as string);
+    expect(stored.version).toBe(2);
+    expect(stored.data.general.localEcho).toBe(true);
+    expect(stored.data.general.syncTimezoneToServer).toBe(false);
+    expect(stored.data.general.syncLocationToServer).toBe(true);
+    // action functions are not serialized by JSON.stringify
+    expect(stored.data.setGeneral).toBeUndefined();
+  });
+
+  it("notifies subscribers on change", () => {
+    let calls = 0;
+    const unsub = usePreferences.subscribe(() => {
+      calls += 1;
+    });
+    usePreferences.getState().setMidi({ enabled: true });
+    unsub();
+    expect(calls).toBe(1);
+  });
+
+  it("notifies selector subscribers only when their preference domain changes", () => {
+    const listener = vi.fn();
+    const unsub = usePreferences.subscribe(
+      (state) => state.autologging,
+      listener,
+    );
+
+    usePreferences.getState().setGeneral({
+      localEcho: true,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    expect(listener).not.toHaveBeenCalled();
+
+    const autologging = { enabled: true, maxBytes: 2048 };
+    usePreferences.getState().setAutologging(autologging);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith(
+      autologging,
+      expect.objectContaining({ enabled: false }),
+    );
+
+    unsub();
+  });
+
+  it("debounces a burst of preference persistence writes", () => {
+    const setItem = vi.mocked(localStorage.setItem);
+    setItem.mockClear();
+
+    usePreferences.getState().setSpeech({
+      ...usePreferences.getState().speech,
+      rate: 1.1,
+    });
+    usePreferences.getState().setSpeech({
+      ...usePreferences.getState().speech,
+      rate: 1.2,
+    });
+    usePreferences.getState().setSpeech({
+      ...usePreferences.getState().speech,
+      rate: 1.3,
+    });
+
+    expect(setItem).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(setItem).toHaveBeenCalledOnce();
+
+    const stored = JSON.parse(setItem.mock.calls[0][1]);
+    expect(stored.data.speech.rate).toBe(1.3);
+  });
+
+  it("flushes pending preference persistence before the page is discarded", () => {
+    const setItem = vi.mocked(localStorage.setItem);
+    setItem.mockClear();
+
+    usePreferences.getState().setSound({
+      muteInBackground: true,
+      volume: 0.5,
+    });
+    expect(setItem).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event("pagehide"));
+    expect(setItem).toHaveBeenCalledOnce();
+
+    const stored = JSON.parse(setItem.mock.calls[0][1]);
+    expect(stored.data.sound).toEqual({
+      muteInBackground: true,
+      volume: 0.5,
+    });
+  });
+
+  it("does not throw when preference storage is blocked", () => {
+    vi.mocked(localStorage.setItem).mockImplementationOnce(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+
+    usePreferences.getState().setMidi({ enabled: true });
+
+    expect(() => vi.runAllTimers()).not.toThrow();
+  });
+
+  it("notifies for say_to_you by default and reads no channel specially", () => {
+    expect(usePreferences.getState().channels).toEqual({
+      say_to_you: { autoreadMode: "default", voice: "", notify: true },
+    });
+  });
+
+  it("setChannelPreferences sets one channel and leaves the others", () => {
+    usePreferences.getState().setChannelPreferences("mongoose", {
+      autoreadMode: AutoreadMode.All,
+      voice: "Robot",
+      notify: false,
+    });
+
+    expect(usePreferences.getState().channels).toEqual({
+      say_to_you: { autoreadMode: "default", voice: "", notify: true },
+      mongoose: { autoreadMode: AutoreadMode.All, voice: "Robot", notify: false },
+    });
+  });
+
+  it("remembers a changed key per layer id and binding command", () => {
+    usePreferences.setState({ keystrokes: {} });
+    usePreferences.getState().setKeystrokeOverride("#4936", "press p on #4936", {
+      key: "q",
+      modifiers: [],
+    });
+    usePreferences.getState().setKeystrokeOverride("#4936", "status", {
+      key: "s",
+      modifiers: ["alt"],
+    });
+    usePreferences.getState().setKeystrokeOverride("#12", "status", {
+      key: "x",
+      modifiers: ["ctrl"],
+    });
+
+    expect(usePreferences.getState().keystrokes).toEqual({
+      "#4936": {
+        "press p on #4936": { key: "q", modifiers: [] },
+        status: { key: "s", modifiers: ["alt"] },
+      },
+      "#12": { status: { key: "x", modifiers: ["ctrl"] } },
+    });
+  });
+
+  describe("stored preferences", () => {
+    afterEach(() => {
+      vi.mocked(localStorage.getItem).mockReset();
+      vi.mocked(localStorage.getItem).mockImplementation(() => null);
+      vi.resetModules();
+    });
+
+    async function loadWith(stored: unknown) {
+      vi.mocked(localStorage.getItem).mockImplementation((key: string) =>
+        key === "preferences" ? JSON.stringify(stored) : null,
+      );
+      vi.resetModules();
+      return (await import("./preferencesStore")).usePreferences.getState();
+    }
+
+    it("drops the version 1 sayto entry, which no server channel is named", async () => {
+      const loaded = await loadWith({
+        version: 1,
+        data: { channels: { sayto: { autoreadMode: "off", notify: true } } },
+      });
+
+      expect(loaded.channels).toEqual({
+        say_to_you: { autoreadMode: "default", voice: "", notify: true },
+      });
+    });
+
+    it("keeps version 2 channel settings", async () => {
+      const loaded = await loadWith({
+        version: 2,
+        data: { channels: { mongoose: { autoreadMode: "all", voice: "Robot", notify: false } } },
+      });
+
+      expect(loaded.channels).toEqual({
+        say_to_you: { autoreadMode: "default", voice: "", notify: true },
+        mongoose: { autoreadMode: "all", voice: "Robot", notify: false },
+      });
+    });
+
+    it("keeps changed keys and starts with none", async () => {
+      const empty = await loadWith({ version: 2, data: {} });
+      expect(empty.keystrokes).toEqual({});
+
+      const loaded = await loadWith({
+        version: 2,
+        data: { keystrokes: { "#4936": { status: { key: "s", modifiers: ["alt"] } } } },
+      });
+      expect(loaded.keystrokes).toEqual({ "#4936": { status: { key: "s", modifiers: ["alt"] } } });
+    });
+  });
+});

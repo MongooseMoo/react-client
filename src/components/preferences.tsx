@@ -1,45 +1,102 @@
-import React, { useState, useEffect } from "react";
-import { PrefActionType } from "../PreferencesStore";
-import { usePreferences } from "../hooks/usePreferences";
+import React, { useState } from "react";
+import { announce } from "@react-aria/live-announcer";
+import type { AutoreadMode, NavigationKeyScheme } from "../stores/preferencesStore";
+import { usePreferences } from "../stores/preferencesStore";
 import { useVoices } from "../hooks/useVoices";
-import { midiService, MidiDevice } from "../MidiService";
-import Tabs from "./tabs";
+import Tabs, { type TabProps } from "./tabs";
+import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
+import ChannelPreferencesTab from "./ChannelPreferences";
+import KeystrokePreferencesTab from "./KeystrokePreferences";
+
+function PreferenceNumber({ id, label, value, min, max, onCommit }: {
+  id: string; label: string; value: number; min: number; max: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const [error, setError] = useState('');
+  React.useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const next = Number(draft);
+    if (!draft.trim() || !Number.isInteger(next) || next < min || next > max) {
+      setError(`Enter a whole number from ${min} to ${max}.`);
+      return;
+    }
+    setError('');
+    onCommit(next);
+  };
+  return <>
+    <label htmlFor={id}>{label}</label>
+    <input id={id} type="number" min={min} max={max} step="1" value={draft}
+      aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined}
+      onChange={event => { setDraft(event.currentTarget.value); setError(''); }}
+      onBlur={commit} onKeyDown={event => {
+        if (event.key === 'Enter') { event.preventDefault(); commit(); }
+      }} />
+    {error && <p id={`${id}-error`} role="alert">{error}</p>}
+  </>;
+}
 
 const GeneralTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const general = usePreferences((state) => state.general);
+  const setGeneral = usePreferences((state) => state.setGeneral);
 
   return (
-    <label>
-      <input
-        type="checkbox"
-        checked={state.general.localEcho}
-        onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetGeneral,
-            data: { ...state.general, localEcho: e.target.checked },
-          })
-        }
-      />
-      Local Echo
-    </label>
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={general.localEcho}
+          onChange={(e) =>
+            setGeneral({ ...general, localEcho: e.target.checked })
+          }
+        />
+        Local Echo
+      </label>
+      <br />
+      <label>
+        <input
+          type="checkbox"
+          checked={general.syncTimezoneToServer}
+          onChange={(e) =>
+            setGeneral({
+              ...general,
+              syncTimezoneToServer: e.target.checked,
+            })
+          }
+        />
+        Sync timezone to server
+      </label>
+      <br />
+      <label>
+        <input
+          type="checkbox"
+          checked={general.syncLocationToServer}
+          onChange={(e) =>
+            setGeneral({
+              ...general,
+              syncLocationToServer: e.target.checked,
+            })
+          }
+        />
+        Sync browser location to server
+      </label>
+    </div>
   );
 };
 
 const AutoRead: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const speech = usePreferences((state) => state.speech);
+  const setSpeech = usePreferences((state) => state.setSpeech);
 
   return (
     <label>
       Auto Read:
       <select
-        value={state.speech.autoreadMode}
+        value={speech.autoreadMode}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: {
-              ...state.speech,
-              autoreadMode: e.target.value as any,
-            },
+          setSpeech({
+            ...speech,
+            autoreadMode: e.target.value as AutoreadMode,
           })
         }
       >
@@ -52,19 +109,17 @@ const AutoRead: React.FC = () => {
 };
 
 const VoiceSelection: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const speech = usePreferences((state) => state.speech);
+  const setSpeech = usePreferences((state) => state.setSpeech);
   const voices = useVoices();
 
   return (
     <label>
       Voice:
       <select
-        value={state.speech.voice}
+        value={speech.voice}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: { ...state.speech, voice: e.target.value },
-          })
+          setSpeech({ ...speech, voice: e.target.value })
         }
       >
         {voices.map((voice) => (
@@ -78,22 +133,20 @@ const VoiceSelection: React.FC = () => {
 };
 
 const RateSelection: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const speech = usePreferences((state) => state.speech);
+  const setSpeech = usePreferences((state) => state.setSpeech);
 
   return (
     <label>
-      Rate (0.1 - 10.0):
+      Rate
       <input
         type="range"
         min="0.1"
         max="10.0"
         step="0.1"
-        value={state.speech.rate}
+        value={speech.rate}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: { ...state.speech, rate: parseFloat(e.target.value) },
-          })
+          setSpeech({ ...speech, rate: parseFloat(e.target.value) })
         }
       />
     </label>
@@ -101,22 +154,20 @@ const RateSelection: React.FC = () => {
 };
 
 const PitchSelection: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const speech = usePreferences((state) => state.speech);
+  const setSpeech = usePreferences((state) => state.setSpeech);
 
   return (
     <label>
-      Pitch (0 - 2):
+      Pitch
       <input
         type="range"
         min="0"
         max="2"
         step="0.1"
-        value={state.speech.pitch}
+        value={speech.pitch}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: { ...state.speech, pitch: parseFloat(e.target.value) },
-          })
+          setSpeech({ ...speech, pitch: parseFloat(e.target.value) })
         }
       />
     </label>
@@ -124,22 +175,20 @@ const PitchSelection: React.FC = () => {
 };
 
 const VolumeSelection: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const speech = usePreferences((state) => state.speech);
+  const setSpeech = usePreferences((state) => state.setSpeech);
 
   return (
     <label>
-      Volume (0 - 1):
+      Volume
       <input
         type="range"
-        min="0.1"
+        min="0"
         max="1"
         step="0.1"
-        value={state.speech.volume}
+        value={speech.volume}
         onChange={(e) =>
-          dispatch({
-            type: PrefActionType.SetSpeech,
-            data: { ...state.speech, volume: parseFloat(e.target.value) },
-          })
+          setSpeech({ ...speech, volume: parseFloat(e.target.value) })
         }
       />
     </label>
@@ -147,7 +196,7 @@ const VolumeSelection: React.FC = () => {
 };
 
 const PreviewButton: React.FC = () => {
-  const [state] = usePreferences();
+  const speech = usePreferences((state) => state.speech);
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Add a ref to track if component is mounted
@@ -164,41 +213,33 @@ const PreviewButton: React.FC = () => {
   const handlePreview = () => {
     if (isPlaying) return; // Extra guard against concurrent calls
     setIsPlaying(true);
-    console.log("Preview button clicked");
+    announce("Playing voice preview", "polite");
 
     const speakText = () => {
       if (!isMounted.current) return; // Don't proceed if unmounted
 
       const utterance = new SpeechSynthesisUtterance("This is a preview of the selected voice settings.");
-      
+
       // Find the selected voice
       const voices = speechSynthesis.getVoices();
-      console.log("Available voices:", voices.map(v => v.name));
-      const selectedVoice = voices.find(voice => voice.name === state.speech.voice);
-      console.log("Selected voice:", selectedVoice ? selectedVoice.name : "Not found");
+      const selectedVoice = voices.find(voice => voice.name === speech.voice);
       utterance.voice = selectedVoice || null;
 
-      utterance.rate = state.speech.rate;
-      utterance.pitch = state.speech.pitch;
-      utterance.volume = state.speech.volume;
-
-      console.log("Utterance settings:", {
-        voice: utterance.voice ? utterance.voice.name : "Default",
-        rate: utterance.rate,
-        pitch: utterance.pitch,
-        volume: utterance.volume
-      });
+      utterance.rate = speech.rate;
+      utterance.pitch = speech.pitch;
+      utterance.volume = speech.volume;
 
       utterance.onend = () => {
         if (isMounted.current) {
-          console.log("Speech ended");
           setIsPlaying(false);
+          announce("Voice preview finished", "polite");
         }
       };
       utterance.onerror = (event) => {
         if (isMounted.current) {
           console.error('Speech synthesis error:', event);
           setIsPlaying(false);
+          announce("Voice preview finished", "polite");
         }
       };
 
@@ -207,7 +248,6 @@ const PreviewButton: React.FC = () => {
 
       // Speak the new utterance
       speechSynthesis.speak(utterance);
-      console.log("Speech started");
     };
 
     // Check if voices are loaded
@@ -227,22 +267,11 @@ const PreviewButton: React.FC = () => {
 
       // Set up the handler
       speechSynthesis.onvoiceschanged = voicesChangedHandler;
-
-      // Clean up the handler if component unmounts while waiting for voices
-      const cleanup = () => {
-        if (voicesChangedHandler) {
-          speechSynthesis.onvoiceschanged = null;
-          voicesChangedHandler = null;
-        }
-      };
-
-      // Add cleanup to effect
-      React.useEffect(() => cleanup, []);
     }
   };
 
   return (
-    <button onClick={handlePreview} disabled={isPlaying}>
+    <button type="button" onClick={handlePreview}>
       {isPlaying ? "Playing..." : "Preview Voice"}
     </button>
   );
@@ -268,19 +297,17 @@ const SpeechTab: React.FC = () => {
 
 
 const SoundsTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const sound = usePreferences((state) => state.sound);
+  const setSound = usePreferences((state) => state.setSound);
 
   return (
     <div>
       <label>
         <input
           type="checkbox"
-          checked={state.sound.muteInBackground}
+          checked={sound.muteInBackground}
           onChange={(e) =>
-            dispatch({
-              type: PrefActionType.SetSound,
-              data: { ...state.sound, muteInBackground: e.target.checked },
-            })
+            setSound({ ...sound, muteInBackground: e.target.checked })
           }
         />
         Mute sounds when in background
@@ -290,21 +317,25 @@ const SoundsTab: React.FC = () => {
 };
 
 const EditorTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
-  const editor = state.editor;
+  const editor = usePreferences((state) => state.editor);
+  const setEditorAutocompleteEnabled = usePreferences(
+    (state) => state.setEditorAutocompleteEnabled,
+  );
+  const setEditorAccessibilityMode = usePreferences(
+    (state) => state.setEditorAccessibilityMode,
+  );
+  const setEditorLineComments = usePreferences((state) => state.setEditorLineComments);
 
   const handleAutocompleteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    dispatch({
-      type: PrefActionType.SetEditorAutocompleteEnabled,
-      data: e.target.checked,
-    });
+    setEditorAutocompleteEnabled(e.target.checked);
   };
 
   const handleAccessibilityModeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    dispatch({
-      type: PrefActionType.SetEditorAccessibilityMode,
-      data: e.target.checked,
-    });
+    setEditorAccessibilityMode(e.target.checked);
+  };
+
+  const handleLineCommentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditorLineComments(e.target.checked);
   };
 
   return (
@@ -319,94 +350,194 @@ const EditorTab: React.FC = () => {
         Enable Accessibility Mode
       </label>
       <br />
+      <label>
+        <input type="checkbox" checked={editor.lineComments} onChange={handleLineCommentsChange} />
+        Show "comment"; lines in MOO code as {'//'} comments
+      </label>
+      <br />
     </div>
   );
 };
 
 const MidiTab: React.FC = () => {
-  const [state, dispatch] = usePreferences();
+  const midi = usePreferences((state) => state.midi);
+  const setMidi = usePreferences((state) => state.setMidi);
 
   const handleMidiEnabledChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    dispatch({
-      type: PrefActionType.SetMidi,
-      data: { ...state.midi, enabled: e.target.checked },
-    });
+    setMidi({ enabled: e.target.checked });
   };
-
-  const handleMidiJsSoundfontChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newSoundfont = e.target.value;
-    dispatch({
-      type: PrefActionType.SetMidi,
-      data: { ...state.midi, midiJsSoundfont: newSoundfont },
-    });
-    // Reload synthesizers with new soundfont
-    if (midiService.isInitialized) {
-      await midiService.reloadSynthesizers();
-    }
-  };
-
-
-  if (!midiService.isSupported) {
-    return (
-      <div>
-        <p>MIDI is not supported in this browser.</p>
-        <p>MIDI support is available in Chrome, Edge, Opera, and Brave.</p>
-      </div>
-    );
-  }
 
   return (
     <div>
       <label>
         <input
           type="checkbox"
-          checked={state.midi.enabled}
+          checked={midi.enabled}
           onChange={handleMidiEnabledChange}
+          aria-describedby="midi-help"
         />
         Enable MIDI
       </label>
       <br />
       <br />
-      
-      {state.midi.enabled && (
+
+        <p id="midi-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
+          Device selection and management is available in the MIDI tab when connected to a server.
+        </p>
+    </div>
+  );
+};
+
+const HapticsTab: React.FC = () => {
+  const haptics = usePreferences((state) => state.haptics);
+  const setHaptics = usePreferences((state) => state.setHaptics);
+
+  const handleHapticsEnabledChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setHaptics({ ...haptics, enabled: e.target.checked });
+  };
+
+  return (
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={haptics.enabled}
+          onChange={handleHapticsEnabledChange}
+          aria-describedby="haptics-bluetooth-help"
+        />
+        Enable Haptics
+      </label>
+
+      {haptics.enabled && (
         <div>
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              MIDI.js Soundfont:
-            </label>
-            <select 
-              value={state.midi.midiJsSoundfont || 'MusyngKite'}
-              onChange={handleMidiJsSoundfontChange}
-              style={{ padding: '5px', minWidth: '200px' }}
-            >
-              <option value="FatBoy">FatBoy</option>
-              <option value="FluidR3">FluidR3 GM</option>
-              <option value="MusyngKite">MusyngKite (Default)</option>
-            </select>
-            <p style={{ color: '#666', fontSize: '0.8em', margin: '5px 0' }}>
-              Soundfont used by the MIDI.js Synthesizer port.
-            </p>
-          </div>
-          
-          <p style={{ color: "#666", fontSize: "0.9em" }}>
-            Device selection and management is available in the MIDI tab when connected to a server.
-          </p>
+          <br />
+          <label>
+            Intensity Cap
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={haptics.intensityCap}
+              aria-valuetext={`${Math.round(haptics.intensityCap * 100)}%`}
+              onChange={(e) =>
+                setHaptics({ ...haptics, intensityCap: parseFloat(e.target.value) })
+              }
+            />
+          </label>
+          <br />
+          <PreferenceNumber id="haptics-timeout" label="Auto-Stop Timeout (seconds):"
+            min={1} max={60} value={haptics.autoStopTimeout}
+            onCommit={autoStopTimeout => setHaptics({ ...haptics, autoStopTimeout })} />
+          <br />
         </div>
       )}
+      <p id="haptics-bluetooth-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "8px" }}>
+        Bluetooth device support requires Chrome, Edge, or another Chromium-based browser.
+      </p>
+    </div>
+  );
+};
+
+const KeyboardTab: React.FC = () => {
+  const keyboard = usePreferences((state) => state.keyboard);
+  const setKeyboard = usePreferences((state) => state.setKeyboard);
+
+  return (
+    <div>
+      <label>
+        Buffer Navigation Keys:
+        <select
+          value={keyboard.navigationKeyScheme}
+          onChange={(e) =>
+            setKeyboard({ navigationKeyScheme: e.target.value as NavigationKeyScheme })
+          }
+          aria-describedby="keyboard-nav-help"
+        >
+          <option value="jkli">JKLI (QWERTY right-hand)</option>
+          <option value="wasd">WASD (QWERTY left-hand)</option>
+          <option value="dvorak-rh">HTNC (Dvorak right-hand)</option>
+          <option value="dvorak-lh">,OAE (Dvorak left-hand)</option>
+        </select>
+      </label>
+      <p id="keyboard-nav-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em", marginTop: "0.5em" }}>
+        Alt+arrow keys always work in addition to the selected scheme.
+      </p>
+      <details>
+        <summary>Keyboard shortcuts</summary>
+        <dl>
+          <dt>Command</dt>
+          <dd>Enter sends; Shift+Enter adds a line. Tab completes a matching command or name; with no match or after a space, Tab leaves. Shift+Tab always leaves without changing your draft. Up/Down recalls history for a single-line draft.</dd>
+          <dt>Recent output</dt>
+          <dd>Ctrl+1 through Ctrl+0 reviews the newest ten lines (0 is tenth). Repeat the same shortcut within half a second to copy the line.</dd>
+          <dt>Buffers</dt>
+          <dd>Alt+Left/Right changes buffer; Alt+Up/Down reviews messages. The selected letter scheme works with Alt too. Alt+PageUp/PageDown moves ten messages; Alt+Home/End moves to the first/last message.</dd>
+          <dt>Reviewed message</dt>
+          <dd>Alt+Space repeats; Alt+Enter opens its link or offers a link choice; Alt+Shift+Space copies. Alt+Shift+1 through Alt+Shift+0 selects a numbered buffer. Alt+Shift+T toggles timestamps; Alt+Shift+Delete deletes the current buffer.</dd>
+          <dt>Sounds</dt>
+          <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback.</dd>
+          <dt>Server keys</dt>
+          <dd>Alt+Shift+H turns keys mode on and off, so a game's or console's keys work on letters and other typing keys. The Keys section lists every key and lets you change it.</dd>
+        </dl>
+        <p>Ctrl+Shift+number opens and focuses a sidebar destination. Numbers stay fixed when optional tabs appear; unavailable destinations do nothing.</p>
+        <table>
+          <caption>Sidebar destinations</caption>
+          <thead><tr><th scope="col">Number</th><th scope="col">Destination</th></tr></thead>
+          <tbody>
+            {['Room', 'Inventory', 'Users', 'Server', 'MIDI', 'Haptics', 'Files', 'Audio', 'Audio diagnostics'].map((label, index) =>
+              <tr key={label}><td>{index + 1}</td><td>{label}</td></tr>)}
+          </tbody>
+        </table>
+        <p>Browser access keys: L Save log, C Copy log, E Clear log, P Preferences, M Mute, V Volume, U Sidebar. Selected player: G Page, S Say to, K Look, F Follow. The activation modifier depends on your browser and operating system.</p>
+      </details>
+    </div>
+  );
+};
+
+const AutologgingTab: React.FC = () => {
+  const autologging = usePreferences((state) => state.autologging);
+  const setAutologging = usePreferences((state) => state.setAutologging);
+  const dialogRef = React.useRef<AutoLogDialogRef | null>(null);
+  const maxMegabytes = Math.round(autologging.maxBytes / 1024 / 1024);
+
+  return (
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={autologging.enabled}
+          onChange={(e) =>
+            setAutologging({ ...autologging, enabled: e.target.checked })
+          }
+        />
+        Enable Autologging
+      </label>
+      <br />
+      <PreferenceNumber id="autolog-storage-cap" label="Storage Cap (MB):"
+        min={1} max={2048} value={maxMegabytes}
+        onCommit={megabytes => setAutologging({ ...autologging, maxBytes: megabytes * 1024 * 1024 })} />
+      <br />
+      <button type="button" onClick={() => dialogRef.current?.open()}>Manage Autologs</button>
+      <AutoLogDialog ref={dialogRef} />
     </div>
   );
 };
 
 const Preferences: React.FC = () => {
-  const tabs = [
-    { label: "General", content: <GeneralTab /> },
-    { label: "Speech", content: <SpeechTab /> },
-    { label: "Sounds", content: <SoundsTab /> },
-    { label: "Editor", content: <EditorTab /> },
-    { label: "MIDI", content: <MidiTab /> },
+  const tabs: TabProps[] = [
+    { id: "preferences-general-tab", label: "General", content: <GeneralTab /> },
+    { id: "preferences-speech-tab", label: "Speech", content: <SpeechTab /> },
+    { id: "preferences-channels-tab", label: "Channels", content: <ChannelPreferencesTab /> },
+    { id: "preferences-sounds-tab", label: "Sounds", content: <SoundsTab /> },
+    { id: "preferences-editor-tab", label: "Editor", content: <EditorTab /> },
+    { id: "preferences-keyboard-tab", label: "Keyboard", content: <KeyboardTab /> },
+    { id: "preferences-keys-tab", label: "Keys", content: <KeystrokePreferencesTab /> },
+    { id: "preferences-midi-tab", label: "MIDI", content: <MidiTab /> },
+    { id: "preferences-haptics-tab", label: "Haptics", content: <HapticsTab /> },
+    { id: "preferences-autologging-tab", label: "Logging", content: <AutologgingTab /> },
   ];
 
-  return <Tabs tabs={tabs} />;
+  return <Tabs tabs={tabs} ariaLabel="Preferences sections" />;
 };
 
 export default Preferences;

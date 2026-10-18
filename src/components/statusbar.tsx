@@ -1,62 +1,18 @@
-import React, { useState, useEffect, useCallback } from "react";
-import MudClient from "../client";
-// import { TimeInfo } from "../gmcp/IRE/Time"; // Removed IRE.Time import
+import { useCharacterStatusStore } from "../stores/characterStatusStore";
+import { useConnectionStore } from "../stores/connectionStore";
 import './statusbar.css'; // Ensure CSS is imported
 
-export interface StatusbarProps {
-  client: MudClient;
-}
+const Statusbar: React.FC = () => {
+  const statusText = useConnectionStore((state) => state.statusText);
+  const latency = useConnectionStore((state) => state.latency);
+  const vitals = useCharacterStatusStore((state) => state.vitals);
 
-// Define an interface for Vitals data if possible, using 'any' for now
-interface VitalsData {
-  hp?: string;
-  maxhp?: string;
-  mp?: string;
-  maxmp?: string;
-  ep?: string;
-  maxep?: string;
-  wp?: string;
-  maxwp?: string;
-  nl?: string; // Next level percentage?
-  [key: string]: any; // Allow other vitals
-}
-
-const Statusbar: React.FC<StatusbarProps> = ({ client }) => {
-  const [statusText, setStatusText] = useState<string>("Not connected");
-  const [vitals, setVitals] = useState<VitalsData | null>(null);
-  // const [timeInfo, setTimeInfo] = useState<TimeInfo | null>(null); // Removed timeInfo state
-
-  const handleStatusText = useCallback((text: string) => setStatusText(text), []);
-  const handleConnect = useCallback(() => setStatusText("Connected"), []);
-  const handleDisconnect = useCallback(() => {
-    setStatusText("Disconnected");
-    setVitals(null); // Clear vitals on disconnect
-    // setTimeInfo(null); // Removed timeInfo clear
-  }, []);
-  const handleVitals = useCallback((data: VitalsData) => setVitals(data), []);
-  // const handleTime = useCallback((data: TimeInfo | Partial<TimeInfo>) => { // Removed handleTime
-  //   setTimeInfo(prev => ({ ...(prev ?? {} as TimeInfo), ...data }));
-  // }, []);
-
-  useEffect(() => {
-    client.on("statustext", handleStatusText);
-    client.on("connect", handleConnect);
-    client.on("disconnect", handleDisconnect);
-    client.on("vitals", handleVitals); // Listen for vitals updates
-    // client.on("timeList", handleTime); // Removed time listeners
-    // client.on("timeUpdate", handleTime); // Removed time listeners
-
-    // Removed initial time request
-
-    return () => {
-      client.off("statustext", handleStatusText);
-      client.off("connect", handleConnect);
-      client.off("disconnect", handleDisconnect);
-      client.off("vitals", handleVitals);
-      // client.off("timeList", handleTime); // Removed time listeners
-      // client.off("timeUpdate", handleTime); // Removed time listeners
-    };
-  }, [client, handleStatusText, handleConnect, handleDisconnect, handleVitals]); // Removed handleTime dependency
+  // Derive connection state for the status dot
+  const connectionState = statusText === "Connected"
+    ? "connected"
+    : statusText === "Disconnected" || statusText === "Not connected"
+      ? "disconnected"
+      : "connecting";
 
   // Helper to format vitals
   const formatVital = (current?: string, max?: string): string | null => {
@@ -64,23 +20,38 @@ const Statusbar: React.FC<StatusbarProps> = ({ client }) => {
     return `${current}/${max}`;
   };
 
+  // Helper to get vital color class based on HP ratio
+  const getVitalClass = (current?: string, max?: string): string => {
+    if (current === undefined || max === undefined) return "";
+    const cur = parseFloat(current);
+    const mx = parseFloat(max);
+    if (mx <= 0) return "";
+    const ratio = cur / mx;
+    if (ratio > 0.66) return "vital-good";
+    if (ratio > 0.33) return "vital-warning";
+    return "vital-danger";
+  };
+
   const hp = formatVital(vitals?.hp, vitals?.maxhp);
   const mp = formatVital(vitals?.mp, vitals?.maxmp);
-  // Add other vitals as needed (e.g., ep, wp)
-
-  // Removed time formatting
-
+  const hpClass = getVitalClass(vitals?.hp, vitals?.maxhp);
+  const mpClass = getVitalClass(vitals?.mp, vitals?.maxmp);
   return (
     <div className="statusbar">
+      <span className={`status-dot ${connectionState}`} />
       <span className="status-connection">{statusText}</span>
-      {vitals && (
-        <span className="status-vitals">
-          {hp && ` HP: ${hp}`}
-          {mp && ` MP: ${mp}`}
-          {/* Add other vitals here */}
+      {latency.status !== 'unavailable' && (
+        <span className="status-latency" title="Round-trip time to the game, including network and server processing">
+          {latency.status === 'current' ? `Ping: ${latency.rttMs} ms` :
+            latency.status === 'stale' ? 'Ping: no reply' : 'Ping: measuring'}
         </span>
       )}
-      {/* Removed time display span */}
+      {vitals && (
+        <span className="status-vitals">
+          {hp && <> HP: <span className={hpClass}>{hp}</span></>}
+          {mp && <> MP: <span className={mpClass}>{mp}</span></>}
+        </span>
+      )}
     </div>
   );
 };

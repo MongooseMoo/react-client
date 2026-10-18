@@ -1,0 +1,653 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type MudClient from "./client";
+import { COMMAND_REFRESH_DELAY_MS, createConfiguredClient } from "./createConfiguredClient";
+import type { Stream } from "./telnet";
+import { useInputStore } from "./stores/inputStore";
+import { useItemsStore } from "./stores/itemsStore";
+import { usePreferences } from "./stores/preferencesStore";
+import { useServerLinksStore } from "./stores/serverLinksStore";
+import { useSkillsStore } from "./stores/skillsStore";
+import { useUserlistStore } from "./stores/userlistStore";
+import { useWorldMapStore } from "./stores/worldMapStore";
+import { useConnectionStore } from "./stores/connectionStore";
+import { useCharacterStatusStore } from "./stores/characterStatusStore";
+import { useChannelHistoryStore } from "./stores/channelHistoryStore";
+import { useChannelsStore } from "./stores/channelsStore";
+import { useLiveKitStore } from "./stores/liveKitStore";
+import { useOutputStore } from "./stores/outputStore";
+import { useRoomStore } from "./stores/roomStore";
+import { useSessionStore } from "./stores/sessionStore";
+import { useSpatialStore } from "./stores/spatialStore";
+
+vi.mock("cacophony", () => ({
+  Cacophony: class {
+    muted = false;
+    setGlobalVolume = vi.fn();
+  },
+}));
+
+describe("createConfiguredClient", () => {
+  let client: MudClient | undefined;
+  const originalGeolocation = globalThis.navigator.geolocation;
+
+  afterEach(() => {
+    client?.shutdown();
+    client = undefined;
+    useCharacterStatusStore.getState().reset();
+    useChannelHistoryStore.getState().reset();
+    useConnectionStore.getState().reset();
+    useLiveKitStore.getState().reset();
+    useOutputStore.getState().reset();
+    useRoomStore.getState().reset();
+    useSessionStore.getState().reset();
+    useSpatialStore.getState().reset();
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: originalGeolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    useInputStore.getState().clear();
+    useInputStore.getState().resetCommands();
+    useItemsStore.getState().reset();
+    useServerLinksStore.getState().reset();
+    useSkillsStore.getState().reset();
+    useUserlistStore.getState().reset();
+    useWorldMapStore.getState().reset();
+  });
+
+  it("wires Char.Name to connection session state", () => {
+    client = createConfiguredClient();
+
+    const char = client.gmcp.require("Char");
+    char.receiveRegisteredMessage("Name", { fullname: "Q", name: "q" });
+    char.receiveRegisteredMessage("Name", { fullname: "Q", name: "q" });
+
+    expect(client.gmcp.sessionReady).toBe(true);
+    expect(useConnectionStore.getState().sessionReady).toBe(true);
+    expect(useConnectionStore.getState().statusText).toBe("Logged in as Q");
+  });
+
+  it("registers IRE.Sound so server sound events reach the media service", () => {
+    client = createConfiguredClient();
+    const play = vi.spyOn(client.media, "play").mockResolvedValue(undefined);
+
+    client.gmcp.receive("IRE.Sound.Play", JSON.stringify({ name: "attack.ogg", volume: 65 }));
+
+    expect(play).toHaveBeenCalledWith({
+      name: "attack.ogg",
+      type: "sound",
+      volume: 65,
+      fadein: 0,
+      fadeout: 0,
+      loops: 0,
+    });
+  });
+
+  it("wires Char.Vitals to the character status store", () => {
+    client = createConfiguredClient();
+
+    const char = client.gmcp.require("Char");
+    char.receiveRegisteredMessage("Vitals", { hp: "10", maxhp: "20" });
+
+    expect(useCharacterStatusStore.getState().vitals).toEqual({ hp: "10", maxhp: "20" });
+  });
+
+  it("wires AWNS MCP packages to semantic stores", () => {
+    client = createConfiguredClient();
+
+    client.mcpSession.packageHandlers["dns-com-awns-displayurl"].handle({
+      name: "dns-com-awns-displayurl",
+      keyvals: { url: "https://example.test/help" },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-serverinfo"].handle({
+      name: "dns-com-awns-serverinfo",
+      keyvals: {
+        home_url: "https://example.test/",
+        help_url: "https://example.test/help",
+      },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-rehash"].handle({
+      name: "dns-com-awns-rehash-commands",
+      keyvals: { list: "open r*ead" },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-visual"].handle({
+      name: "dns-com-awns-visual-location",
+      keyvals: { id: "#100" },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-visual"].handle({
+      name: "dns-com-awns-visual-self",
+      keyvals: { id: "#42" },
+    });
+
+    expect(useServerLinksStore.getState().recentUrls.map((entry) => entry.url)).toEqual([
+      "https://example.test/help",
+    ]);
+    expect(useServerLinksStore.getState().homeUrl).toBe("https://example.test/");
+    expect(useServerLinksStore.getState().helpUrl).toBe("https://example.test/help");
+    expect(useInputStore.getState().visibleCommands).toEqual(["open", "read"]);
+    expect(useWorldMapStore.getState().locationId).toBe("#100");
+    expect(useWorldMapStore.getState().selfId).toBe("#42");
+  });
+
+  it("wires Char.Skills GMCP messages to the skills store", () => {
+    client = createConfiguredClient();
+
+    const skills = client.gmcp.require("Char.Skills");
+    skills.receiveRegisteredMessage("Groups", [{ name: "Combat", rank: "Novice" }]);
+    skills.receiveRegisteredMessage("List", {
+      group: "Combat",
+      list: ["Punch"],
+      descs: ["Hit the target."],
+    });
+
+    expect(useSkillsStore.getState().groups).toEqual([{ name: "Combat", rank: "Novice" }]);
+    expect(useSkillsStore.getState().skillsByGroup.Combat).toEqual({
+      group: "Combat",
+      list: ["Punch"],
+      descs: ["Hit the target."],
+      isLoading: false,
+    });
+  });
+
+  it("wires Char.Items GMCP messages to the items store", () => {
+    client = createConfiguredClient();
+
+    const items = client.gmcp.require("Char.Items");
+    items.receiveRegisteredMessage("List", {
+      location: "inv",
+      items: [{ id: "coin", name: "a coin" }],
+    });
+    items.receiveRegisteredMessage("Add", {
+      location: "inv",
+      item: { id: "key", name: "a brass key" },
+    });
+    items.receiveRegisteredMessage("Update", {
+      location: "inv",
+      item: { id: "key", name: "a polished brass key" },
+    });
+    items.receiveRegisteredMessage("Remove", {
+      location: "inv",
+      item: { id: "coin", name: "a coin" },
+    });
+
+    expect(useItemsStore.getState().itemsByLocation.inv).toEqual([
+      { id: "key", name: "a polished brass key", location: "inv" },
+    ]);
+    expect(useItemsStore.getState().hasReceivedList).toBe(true);
+  });
+
+  it("wires Comm.Channel.Text GMCP messages to the channel history store", async () => {
+    client = createConfiguredClient();
+
+    const channel = client.gmcp.require("Comm.Channel");
+    channel.receiveRegisteredMessage("Text", {
+      channel: "chat",
+      talker: "Alice",
+      text: "Hello",
+    });
+
+    // channelHistoryStore batches appends into a microtask flush; let it run.
+    await Promise.resolve();
+    expect(useChannelHistoryStore.getState().entries).toEqual([
+      { id: 1, channel: "chat", talker: "Alice", text: "Hello" },
+    ]);
+  });
+
+  it("wires VMOO userlist MCP messages to the userlist store", () => {
+    client = createConfiguredClient();
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+
+    client.mcpSession.receiveLine(`#$#dns-com-vmoo-userlist-content ${authKey} _data-tag: users`);
+    client.mcpSession.receiveLine('#$#* users fields: {"Object","Name","Icon"}');
+    client.mcpSession.receiveLine('#$#* users d: ={{1234,"Alice",4}}');
+
+    expect(useUserlistStore.getState().players).toEqual([
+      {
+        Object: "1234",
+        Name: "Alice",
+        Icon: 4,
+        away: false,
+        idle: false,
+      },
+    ]);
+    expect(useUserlistStore.getState().hasReceivedList).toBe(true);
+  });
+
+  it("resets session-owned feature state while preserving user history and input", async () => {
+    client = createConfiguredClient();
+    const closeListeners: Array<() => void> = [];
+    const stream = {
+      close: vi.fn(() => {
+        closeListeners.forEach((listener) => {
+          listener();
+        });
+      }),
+      on: vi.fn((event: string, callback: () => void) => {
+        if (event === "close") closeListeners.push(callback);
+      }),
+      write: vi.fn(),
+    } as unknown as Stream & { close(): void };
+    client.connectLocal(stream);
+
+    client.gmcp.require("Char").receiveRegisteredMessage("Name", {
+      fullname: "Q",
+      name: "q",
+    });
+    client.gmcp.require("Char").receiveRegisteredMessage("Vitals", { hp: "10" });
+    client.gmcp.require("Room").receiveRegisteredMessage("Info", {
+      num: 101,
+      name: "The Test Chamber",
+    });
+    client.gmcp.require("Char.Items").receiveRegisteredMessage("List", {
+      location: "inv",
+      items: [{ id: "coin", name: "a coin" }],
+    });
+    client.gmcp.require("Char.Skills").receiveRegisteredMessage("Groups", [
+      { name: "Combat", rank: "Novice" },
+    ]);
+    client.gmcp.require("Comm.LiveKit").receiveRegisteredMessage("room_token", {
+      token: "token-a",
+    });
+    const channel = client.gmcp.require("Comm.Channel");
+    channel.receiveRegisteredMessage("List", [
+      { name: "chat", caption: "Chat", command: "xchat", kind: "channel", listening: true },
+    ]);
+    channel.receiveRegisteredMessage("Text", {
+      channel: "chat",
+      talker: "Alice",
+      text: "Remember me",
+    });
+    const keystrokes = client.gmcp.require("Client.Keystrokes");
+    keystrokes.receiveRegisteredMessage("Bind", {
+      key: "F1",
+      modifiers: [],
+      command: "look",
+      autosend: true,
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-displayurl"].handle({
+      name: "dns-com-awns-displayurl",
+      keyvals: { url: "https://example.test/help" },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-serverinfo"].handle({
+      name: "dns-com-awns-serverinfo",
+      keyvals: {
+        home_url: "https://example.test/",
+        help_url: "https://example.test/help",
+      },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-rehash"].handle({
+      name: "dns-com-awns-rehash-commands",
+      keyvals: { list: "look" },
+    });
+    client.mcpSession.packageHandlers["dns-com-awns-visual"].handle({
+      name: "dns-com-awns-visual-location",
+      keyvals: { id: "#100" },
+    });
+    useInputStore.getState().setText("unfinished command");
+    client.autosay = true;
+    useOutputStore.getState().addMessage("connection history");
+
+    client.close();
+    // History stores batch appends into a microtask flush; let them run.
+    await Promise.resolve();
+
+    expect(useCharacterStatusStore.getState().vitals).toBeNull();
+    expect(useItemsStore.getState().itemsByLocation).toEqual({});
+    expect(useLiveKitStore.getState().rooms).toEqual([]);
+    expect(useRoomStore.getState().roomInfo).toBeNull();
+    expect(useSessionStore.getState()).toMatchObject({
+      playerId: "",
+      playerName: "",
+      roomId: "",
+    });
+    expect(useSkillsStore.getState().groups).toEqual([]);
+    expect(useSpatialStore.getState().spatialEntities).toEqual({});
+    expect(useServerLinksStore.getState()).toMatchObject({
+      homeUrl: "",
+      helpUrl: "",
+      recentUrls: [],
+    });
+    expect(useInputStore.getState().visibleCommands).toEqual([]);
+    expect(useWorldMapStore.getState().locationId).toBe("");
+    expect(useUserlistStore.getState().players).toEqual([]);
+    expect(useChannelsStore.getState().channels).toEqual([]);
+    expect(keystrokes.listBindings()).toEqual([]);
+
+    expect(useChannelHistoryStore.getState().entries).toEqual([
+      { id: 1, channel: "chat", talker: "Alice", text: "Remember me" },
+    ]);
+    expect(useInputStore.getState().text).toBe("unfinished command");
+    expect(useInputStore.getState().autosay).toBe(true);
+    expect(useOutputStore.getState().entries).toEqual([
+      { id: 1, type: "message", message: "connection history" },
+    ]);
+  });
+
+  it("requests AWNS MCP data after MCP negotiation ends", () => {
+    client = createConfiguredClient();
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+
+    expect(
+      sent.some((line) =>
+        line.includes(
+          `#$#dns-com-awns-timezone ${authKey} timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"}`,
+        ),
+      ),
+    ).toBe(true);
+    expect(sent.some((line) => line.includes(`#$#dns-com-awns-serverinfo-get ${authKey}`))).toBe(
+      true,
+    );
+    expect(sent.some((line) => line.includes(`#$#dns-com-awns-rehash-getcommands ${authKey}`))).toBe(
+      true,
+    );
+    expect(sent.some((line) => line.includes(`#$#dns-com-awns-visual-getself ${authKey}`))).toBe(
+      true,
+    );
+    expect(sent.some((line) => line.includes(`#$#dns-com-awns-visual-getlocation ${authKey}`))).toBe(
+      true,
+    );
+    expect(sent.some((line) => line.includes(`#$#dns-com-awns-visual-getusers ${authKey}`))).toBe(
+      true,
+    );
+  });
+
+  describe("command list refresh", () => {
+    const getcommands = (sent: string[]) =>
+      sent.filter((line) => line.includes("#$#dns-com-awns-rehash-getcommands")).length;
+
+    function connectedClient() {
+      vi.useFakeTimers();
+      client = createConfiguredClient();
+      vi.spyOn(client, "connected", "get").mockReturnValue(true);
+      const sent: string[] = [];
+      vi.spyOn(client, "send").mockImplementation((line: string) => {
+        sent.push(line);
+      });
+      client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+      return { client, sent };
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("asks once after the player has stopped moving between rooms", () => {
+      const { client, sent } = connectedClient();
+      const room = client.gmcp.require("Room");
+
+      room.receiveRegisteredMessage("Info", { num: 101, name: "Hall" });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(0);
+
+      room.receiveRegisteredMessage("Info", { num: 102, name: "Stairs" });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS - 1);
+      room.receiveRegisteredMessage("Info", { num: 103, name: "Landing" });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS - 1);
+      expect(getcommands(sent)).toBe(0);
+
+      vi.advanceTimersByTime(1);
+      expect(getcommands(sent)).toBe(1);
+
+      room.receiveRegisteredMessage("Info", { num: 103, name: "Landing" });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(1);
+    });
+
+    it("asks when what the player carries changes, not when the same list arrives again", () => {
+      const { client, sent } = connectedClient();
+      const items = client.gmcp.require("Char.Items");
+      const coin = { id: "#1", name: "a coin" };
+
+      items.receiveRegisteredMessage("List", { location: "inv", items: [coin] });
+      items.receiveRegisteredMessage("List", { location: "inv", items: [coin] });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(0);
+
+      items.receiveRegisteredMessage("Add", { location: "inv", item: { id: "#2", name: "a key" } });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(1);
+
+      items.receiveRegisteredMessage("Remove", { location: "inv", item: coin });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+      expect(getcommands(sent)).toBe(2);
+    });
+
+    it("does not ask when something arrives in or leaves the room", () => {
+      const { client, sent } = connectedClient();
+      const items = client.gmcp.require("Char.Items");
+
+      items.receiveRegisteredMessage("List", { location: "room", items: [{ id: "#3", name: "a table" }] });
+      items.receiveRegisteredMessage("Add", { location: "room", item: { id: "#4", name: "Guest" } });
+      items.receiveRegisteredMessage("Remove", { location: "room", item: { id: "#4", name: "Guest" } });
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+
+      expect(getcommands(sent)).toBe(0);
+    });
+
+    it("does not ask after the client has disconnected", () => {
+      const { client, sent } = connectedClient();
+      const room = client.gmcp.require("Room");
+
+      room.receiveRegisteredMessage("Info", { num: 101, name: "Hall" });
+      room.receiveRegisteredMessage("Info", { num: 102, name: "Stairs" });
+      vi.spyOn(client, "connected", "get").mockReturnValue(false);
+      vi.advanceTimersByTime(COMMAND_REFRESH_DELAY_MS);
+
+      expect(getcommands(sent)).toBe(0);
+    });
+  });
+
+  it("does not send timezone when syncTimezoneToServer is disabled", () => {
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: false,
+      syncLocationToServer: false,
+    });
+    client = createConfiguredClient();
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+
+    expect(sent.some((line) => line.includes("#$#dns-com-awns-timezone"))).toBe(false);
+    expect(sent.some((line) => line.includes(`#$#dns-com-awns-serverinfo-get ${authKey}`))).toBe(
+      true,
+    );
+  });
+
+  it("sends browser location when syncLocationToServer is enabled", () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      success({
+        coords: {
+          latitude: 39.7392,
+          longitude: -104.9903,
+        },
+      } as GeolocationPosition);
+    });
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: true,
+    });
+    client = createConfiguredClient();
+    vi.spyOn(client, "connected", "get").mockReturnValue(true);
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+
+    expect(getCurrentPosition).toHaveBeenCalledOnce();
+    expect(
+      sent.some(
+        (line) =>
+          line.startsWith(`#$#world.mongoose.location ${authKey} `) &&
+          line.includes("lat: 39.7392") &&
+          line.includes("lon: -104.9903"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not send browser location if syncLocationToServer is disabled before geolocation resolves", () => {
+    let resolvePosition: PositionCallback | undefined;
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      resolvePosition = success;
+    });
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: true,
+    });
+    client = createConfiguredClient();
+    vi.spyOn(client, "connected", "get").mockReturnValue(true);
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    if (!resolvePosition) {
+      throw new Error("Expected browser geolocation to be requested");
+    }
+    resolvePosition({
+      coords: {
+        latitude: 39.7392,
+        longitude: -104.9903,
+      },
+    } as GeolocationPosition);
+
+    expect(getCurrentPosition).toHaveBeenCalledOnce();
+    expect(sent.some((line) => line.includes("#$#world.mongoose.location"))).toBe(false);
+  });
+
+  it("does not send browser location if the client disconnects before geolocation resolves", () => {
+    let resolvePosition: PositionCallback | undefined;
+    const getCurrentPosition = vi.fn((success: PositionCallback) => {
+      resolvePosition = success;
+    });
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: true,
+    });
+    client = createConfiguredClient();
+    const connected = vi.spyOn(client, "connected", "get").mockReturnValue(true);
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+    connected.mockReturnValue(false);
+    if (!resolvePosition) {
+      throw new Error("Expected browser geolocation to be requested");
+    }
+    resolvePosition({
+      coords: {
+        latitude: 39.7392,
+        longitude: -104.9903,
+      },
+    } as GeolocationPosition);
+
+    expect(getCurrentPosition).toHaveBeenCalledOnce();
+    expect(sent.some((line) => line.includes("#$#world.mongoose.location"))).toBe(false);
+  });
+
+  it("does not request browser location when syncLocationToServer is disabled", () => {
+    const getCurrentPosition = vi.fn();
+    Object.defineProperty(globalThis.navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition,
+      } as Geolocation,
+    });
+    usePreferences.getState().setGeneral({
+      localEcho: false,
+      syncTimezoneToServer: true,
+      syncLocationToServer: false,
+    });
+    client = createConfiguredClient();
+    const sent: string[] = [];
+    vi.spyOn(client, "send").mockImplementation((line: string) => {
+      sent.push(line);
+    });
+
+    client.mcpSession.receiveLine("#$#MCP version: 2.1 to: 2.1");
+    const authKey = sent[0]?.match(/authentication-key: (\S+)/)?.[1];
+    expect(authKey).toBeTruthy();
+    sent.length = 0;
+
+    client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
+
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    expect(sent.some((line) => line.includes("#$#world.mongoose.location"))).toBe(false);
+  });
+});

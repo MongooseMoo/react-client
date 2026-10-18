@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useSyncExternalStore } from 'react';
 import {
   FaCog,
   FaCommentDots,
@@ -9,10 +9,15 @@ import {
   FaVolumeUp,
   FaChevronRight,
   FaChevronLeft,
-} from "react-icons/fa";
-import type MudClient from "../client";
-import { preferencesStore, PrefActionType } from "../PreferencesStore";
-import { useClientEvent } from "../hooks/useClientEvent";
+  FaHistory,
+  FaPause,
+  FaPlay,
+} from 'react-icons/fa';
+import type MudClient from '../client';
+import { usePreferences } from '../stores/preferencesStore';
+import { useConnectionStore } from '../stores/connectionStore';
+import { useInputStore } from '../stores/inputStore';
+import './toolbar.css';
 
 export interface ToolbarProps {
   client: MudClient;
@@ -21,6 +26,7 @@ export interface ToolbarProps {
   onCopyLog: () => void; // <-- Add onCopyLog prop
   onToggleSidebar: () => void;
   onOpenPrefs: () => void;
+  onOpenLogs?: () => void;
   showSidebar?: boolean;
 }
 
@@ -31,35 +37,51 @@ const Toolbar = ({
   onCopyLog, // <-- Destructure onCopyLog
   onToggleSidebar,
   onOpenPrefs,
+  onOpenLogs,
   showSidebar,
 }: ToolbarProps) => {
-  const connected = useClientEvent(client, 'connectionChange', client.connected);
-  const [muted, setMuted] = React.useState(client.cacophony.muted);
-  const autosay = useClientEvent(client, 'autosayChanged', client.autosay) || false;
-  const [volume, setVolume] = React.useState(preferencesStore.getState().sound.volume);
+  const connected = useConnectionStore((state) => state.connected);
+  const [muted, setMuted] = React.useState(client.media.muted);
+  const autosay = useInputStore((state) => state.autosay);
+  const [volume, setVolume] = React.useState(usePreferences.getState().sound.volume);
+  const paused = useSyncExternalStore(client.media.subscribePlayback, () => client.media.paused);
+  const [playbackError, setPlaybackError] = React.useState('');
+
+  const handlePlaybackToggle = useCallback(async () => {
+    setPlaybackError('');
+    try {
+      if (client.media.paused) await client.resumeAllSounds();
+      else await client.pauseAllSounds();
+    } catch {
+      setPlaybackError(client.media.paused ? 'Could not resume sounds. Try again.' : 'Could not pause sounds. Try again.');
+    }
+  }, [client]);
 
   const handleMuteToggle = useCallback(() => {
     const newMutedState = !muted;
     setMuted(newMutedState);
-    client.setGlobalMute(newMutedState);
+    client.media.setGlobalMute(newMutedState);
   }, [muted, client]);
 
-  const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVolume = Number(e.target.value) / 100;
-    setVolume(newVolume);
-    client.cacophony.setGlobalVolume(newVolume);
-    preferencesStore.dispatch({
-      type: PrefActionType.SetSound,
-      data: {
-        ...preferencesStore.getState().sound,
-        volume: newVolume
-      }
-    });
-  }, [client]);
+  const handleVolumeChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newVolume = Number(e.target.value) / 100;
+      setVolume(newVolume);
+      client.media.setGlobalVolume(newVolume);
+      usePreferences.getState().setSound({
+        ...usePreferences.getState().sound,
+        volume: newVolume,
+      });
+    },
+    [client],
+  );
 
-  const handleAutosayChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    client.autosay = e.target.checked;
-  }, [client]);
+  const handleAutosayChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      client.autosay = e.target.checked;
+    },
+    [client],
+  );
 
   const handleConnectionToggle = useCallback(() => {
     if (connected) {
@@ -71,62 +93,145 @@ const Toolbar = ({
 
   return (
     <div className="toolbar">
-      <button onClick={onSaveLog} accessKey="l">
-        <FaSave />
-        Save Log (Alt+L)
-      </button>
-      {/* Note: accessKey="C" typically maps to Alt+C or Alt+Shift+C depending on browser/OS */}
-      <button onClick={onCopyLog} accessKey="C">
-        <FaCopy />
-        Copy Log (Alt+Shift+C)
-      </button>
-      <button onClick={onClearLog} accessKey="E"> {/* Changed accessKey to avoid conflict */}
-        <FaEraser />
-        Clear Log (Alt+E)
-      </button>
-      <button onClick={onOpenPrefs} accessKey="p">
-        <FaCog />
-        Preferences (Alt+P)
-      </button>
+      {/* Log buttons group */}
+      <div className="toolbar-group">
+        <button
+          type="button"
+          onClick={onSaveLog}
+          accessKey="l"
+          aria-label="Save Log"
+          title="Save Log"
+        >
+          <FaSave />
+          <span className="toolbar-label">Save Log</span>
+        </button>
+        <button
+          type="button"
+          onClick={onCopyLog}
+          accessKey="C"
+          aria-label="Copy Log"
+          title="Copy Log"
+        >
+          <FaCopy />
+          <span className="toolbar-label">Copy Log</span>
+        </button>
+        <button
+          type="button"
+          onClick={onClearLog}
+          accessKey="E"
+          aria-label="Clear Log"
+          title="Clear Log"
+        >
+          <FaEraser />
+          <span className="toolbar-label">Clear Log</span>
+        </button>
+        {onOpenLogs && (
+          <button type="button" onClick={onOpenLogs} aria-label="Autologs" title="Autologs">
+            <FaHistory />
+            <span className="toolbar-label">Autologs</span>
+          </button>
+        )}
+      </div>
+
+      <div className="toolbar-separator" />
+
+      {/* Preferences group */}
+      <div className="toolbar-group">
+        <button
+          type="button"
+          onClick={onOpenPrefs}
+          accessKey="p"
+          aria-label="Preferences"
+          title="Preferences"
+        >
+          <FaCog />
+          <span className="toolbar-label">Preferences</span>
+        </button>
+      </div>
+
+      <div className="toolbar-separator" />
+
+      {/* Mute + Volume group */}
+      <div className="toolbar-group">
+        <button
+          type="button"
+          onClick={handlePlaybackToggle}
+          aria-label={paused ? 'Resume sounds' : 'Pause sounds'}
+          title={paused ? 'Resume sounds' : 'Pause sounds (Escape)'}
+        >
+          {paused ? <FaPlay aria-hidden="true" /> : <FaPause aria-hidden="true" />}
+          <span className="toolbar-label">{paused ? 'Resume sounds' : 'Pause sounds'}</span>
+        </button>
+        <span role="status">{playbackError}</span>
+        <button
+          type="button"
+          onClick={handleMuteToggle}
+          accessKey="M"
+          aria-label={muted ? 'Unmute' : 'Mute'}
+          title={muted ? 'Unmute' : 'Mute'}
+        >
+          {muted ? <FaVolumeUp /> : <FaVolumeMute />}
+          <span className="toolbar-label">{muted ? 'Unmute' : 'Mute'}</span>
+        </button>
+        <label className="toolbar-volume">
+          <span className="toolbar-label">Volume</span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={volume * 100}
+            onChange={handleVolumeChange}
+            accessKey="V"
+            aria-label="Volume"
+          />
+        </label>
+      </div>
+
+      <div className="toolbar-separator" />
+
+      {/* Autosay group */}
+      <div className="toolbar-group">
+        <label className="toolbar-toggle">
+          <FaCommentDots />
+          <span className="toolbar-label">Autosay</span>
+          <input
+            type="checkbox"
+            checked={autosay}
+            onChange={handleAutosayChange}
+            aria-label="Toggle autosay"
+          />
+        </label>
+      </div>
+
+      <div className="toolbar-separator" />
+
+      {/* Connect/Disconnect group */}
+      <div className="toolbar-group toolbar-connection">
+        <button
+          type="button"
+          className={connected ? 'btn-disconnect' : 'btn-connect'}
+          onClick={handleConnectionToggle}
+          aria-label={connected ? 'Disconnect' : 'Connect'}
+          title={connected ? 'Disconnect' : 'Connect'}
+        >
+          <span className="toolbar-label">{connected ? 'Disconnect' : 'Connect'}</span>
+        </button>
+      </div>
+
+      <div className="toolbar-spacer" />
+
+      {/* Sidebar toggle */}
       <button
-        onClick={handleMuteToggle}
-        accessKey="M" // Changed accessKey to avoid conflict if needed, or keep 'm'
-      >
-        {muted ? <FaVolumeUp /> : <FaVolumeMute />}
-        {muted ? "Unmute" : "Mute"}
-      </button>
-      <label>
-        Volume
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={volume * 100}
-          onChange={handleVolumeChange}
-          accessKey="V" // Changed accessKey to avoid conflict if needed, or keep 'v'
-        />
-      </label>
-      <label>
-        <FaCommentDots/>
-        Autosay
-        <input type="checkbox"
-          checked={autosay}
-          onChange={handleAutosayChange}
-        />
-      </label>
-      <button onClick={handleConnectionToggle}>
-        {connected ? 'Disconnect' : 'Connect'}
-      </button>
-      <button
+        type="button"
+        className="toolbar-sidebar-toggle"
         onClick={onToggleSidebar}
         accessKey="U"
-        title={showSidebar ? "Hide Sidebar (Alt+U)" : "Show Sidebar (Alt+U)"} // Add title attribute
-        aria-label={showSidebar ? "Hide Sidebar" : "Show Sidebar"} // Add aria-label for clarity
-        aria-expanded={showSidebar} // Indicate expanded state
+        title={showSidebar ? 'Hide Sidebar (Alt+U)' : 'Show Sidebar (Alt+U)'}
+        aria-label={showSidebar ? 'Hide Sidebar' : 'Show Sidebar'}
+        aria-expanded={showSidebar}
       >
         {showSidebar ? <FaChevronRight /> : <FaChevronLeft />}
-        {/* Keep concise text, title/aria-label provide details */}
-        {showSidebar ? "Hide Sidebar" : "Show Sidebar"}
+        <span className="toolbar-label">{showSidebar ? 'Hide' : 'Show'}</span>
       </button>
     </div>
   );

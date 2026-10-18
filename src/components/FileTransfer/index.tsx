@@ -1,256 +1,169 @@
-import React, { useCallback, useEffect, useState } from "react";
-import MudClient from "../../client";
-import Controls from "./Controls";
-import ProgressBar from "./ProgressBar";
-import PendingTransfer from "./PendingTransfer";
-import History from "./History";
-import "./styles.css";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type MudClient from '../../client';
+import { FileTransferError } from '../../fileTransfer/types';
+import type { FileTransfers, TransferSnapshot, TransferState } from '../../fileTransfer/types';
+import { useConnectionStore } from '../../stores/connectionStore';
+import type { UserlistPlayer } from '../../mcp';
+import { findTransferPeerByAddress, userlistPlayersToTransferPeers } from '../../fileTransferPeers';
+import type { TransferPeer } from '../../fileTransferPeers';
+import Controls from './Controls';
+import ProgressBar from './ProgressBar';
+import PendingTransfer from './PendingTransfer';
+import OutgoingTransfer from './OutgoingTransfer';
+import History from './History';
+import { useFocusRefuge } from './useFocusRefuge';
+import { useTransferHistory } from './useTransferHistory';
+import { useTransfers } from './useTransfers';
+import './styles.css';
 
 interface FileTransferUIProps {
   client: MudClient;
   expanded: boolean;
+  users: UserlistPlayer[];
 }
 
-interface PendingOffer {
-  sender: string;
-  filename: string;
-  filesize: number;
-  hash: string;
-}
+const UNDER_WAY: readonly TransferState[] = ['connecting', 'transferring', 'verifying'];
 
-const FileTransferUI: React.FC<FileTransferUIProps> = ({
-  client,
-  expanded,
-}) => {
+/** A file of ours the peer has not answered for yet. */
+const awaitsPeer = ({ direction, state }: TransferSnapshot) =>
+  direction === 'send' && (state === 'preparing' || state === 'offered');
+
+/** A peer's file the user has not answered for yet. */
+const awaitsUser = ({ direction, state }: TransferSnapshot) =>
+  direction === 'receive' && state === 'offered';
+
+const isUnderWay = ({ state }: TransferSnapshot) => UNDER_WAY.includes(state);
+
+const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { transfers: FileTransfers }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [recipient, setRecipient] = useState<string>("");
-  const [sendProgress, setSendProgress] = useState<number>(0);
-  const [receiveProgress, setReceiveProgress] = useState<number>(0);
-  const [pendingOffers, setPendingOffers] = useState<PendingOffer[]>([]);
-  const [transferHistory, setTransferHistory] = useState<string[]>([]);
+  const [selectedRecipient, setSelectedRecipient] = useState<TransferPeer | null>(null);
+  const recipients = useMemo(() => userlistPlayersToTransferPeers(users), [users]);
 
-  const addToTransferHistory = useCallback((message: string) => {
-    setTransferHistory((prevHistory) => [...prevHistory, message].slice(-10));
-  }, []);
-
-  const handleFileSendProgress = useCallback(
-    (data: { filename: string; sentBytes: number; totalBytes: number }) => {
-      const progress = (data.sentBytes / data.totalBytes) * 100;
-      setSendProgress(progress);
-    },
-    []
+  const getPeerLabel = useCallback(
+    (address: string) => findTransferPeerByAddress(recipients, address)?.label ?? address,
+    [recipients],
   );
 
-  const handleFileReceiveProgress = useCallback(
-    (data: { filename: string; receivedBytes: number; totalBytes: number }) => {
-      const progress = (data.receivedBytes / data.totalBytes) * 100;
-      setReceiveProgress(progress);
-    },
-    []
-  );
+  const snapshots = useTransfers(transfers);
+  const history = useTransferHistory(transfers, getPeerLabel);
 
-  const handleFileSendComplete = useCallback(
-    (data: { filename: string; hash: string }) => {
-      addToTransferHistory(`File sent successfully: ${data.filename}`);
-      setSendProgress(0);
-    },
-    [addToTransferHistory]
-  );
-
-  const handleFileReceiveComplete = useCallback(
-    (data: { filename: string; file: Blob }) => {
-      addToTransferHistory(`File received successfully: ${data.filename}`);
-      setReceiveProgress(0);
-      // Optionally handle the received file blob here (e.g., prompt download)
-    },
-    [addToTransferHistory]
-  );
-
-  const handleFileTransferError = useCallback(
-    (data: {
-      filename: string;
-      direction: "send" | "receive";
-      error: string;
-    }) => {
-      addToTransferHistory(
-        `Error ${data.direction}ing file ${data.filename}: ${data.error}`
-      );
-      if (data.direction === "send") {
-        setSendProgress(0);
-      } else {
-        setReceiveProgress(0);
-      }
-    },
-    [addToTransferHistory]
-  );
-
-  const handleFileTransferCancelled = useCallback(
-    (data: { filename: string; direction: "send" | "receive" }) => {
-      addToTransferHistory(
-        `File transfer cancelled: ${data.filename} (${data.direction})`
-      );
-      if (data.direction === "send") {
-        setSendProgress(0);
-      } else {
-        setReceiveProgress(0);
-      }
-    },
-    [addToTransferHistory]
-  );
-
-  const handleFileTransferRejected = useCallback(
-    (data: { sender: string; filename: string }) => {
-      addToTransferHistory(
-        `File transfer rejected: ${data.filename} from ${data.sender}`
-      );
-    },
-    [addToTransferHistory]
-  );
-
-  const handleFileTransferAccepted = useCallback(
-    (data: { sender: string; filename: string }) => {
-      // Just log acceptance; actual sending is handled internally by FileTransferManager.
-      addToTransferHistory(
-        `File transfer accepted: ${data.filename} by ${data.sender}`
-      );
-    },
-    [addToTransferHistory]
-  );
-
-  const handleFileTransferOffer = useCallback(
-    (data: PendingOffer) => {
-      setPendingOffers((prevOffers) => [...prevOffers, data]);
-      addToTransferHistory(
-        `Incoming file offer: ${data.filename} from ${data.sender}`
-      );
-    },
-    [addToTransferHistory]
-  );
+  const panel = useRef<HTMLDivElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useFocusRefuge(panel, heading);
 
   useEffect(() => {
-    // Set up event listeners
-    client.on("fileTransferOffer", handleFileTransferOffer);
-    client.on("fileTransferAccepted", handleFileTransferAccepted);
-    client.fileTransferManager.on("fileSendProgress", handleFileSendProgress);
-    client.fileTransferManager.on(
-      "fileReceiveProgress",
-      handleFileReceiveProgress
-    );
-    client.on("fileTransferError", handleFileTransferError);
-    client.on("fileTransferCancelled", handleFileTransferCancelled);
-    client.on("fileTransferRejected", handleFileTransferRejected);
-    client.on("fileSendComplete", handleFileSendComplete);
-    client.fileTransferManager.on(
-      "fileReceiveComplete",
-      handleFileReceiveComplete
-    );
+    if (
+      selectedRecipient &&
+      !recipients.some((recipient) => recipient.id === selectedRecipient.id)
+    ) {
+      setSelectedRecipient(null);
+    }
+  }, [recipients, selectedRecipient]);
 
-    return () => {
-      // Clean up event listeners
-      client.off("fileTransferOffer", handleFileTransferOffer);
-      client.off("fileTransferAccepted", handleFileTransferAccepted);
-      client.fileTransferManager.off(
-        "fileSendProgress",
-        handleFileSendProgress
-      );
-      client.fileTransferManager.off(
-        "fileReceiveProgress",
-        handleFileReceiveProgress
-      );
-      client.off("fileTransferError", handleFileTransferError);
-      client.off("fileTransferCancelled", handleFileTransferCancelled);
-      client.off("fileTransferRejected", handleFileTransferRejected);
-      client.off("fileSendComplete", handleFileSendComplete);
-      client.fileTransferManager.off(
-        "fileReceiveComplete",
-        handleFileReceiveComplete
-      );
-    };
-  }, [
-    client,
-    handleFileTransferOffer,
-    handleFileTransferAccepted,
-    handleFileSendProgress,
-    handleFileReceiveProgress,
-    handleFileTransferError,
-    handleFileTransferCancelled,
-    handleFileTransferRejected,
-    handleFileSendComplete,
-    handleFileReceiveComplete,
-  ]);
+  /**
+   * Runs something the user asked of the engine. A failure that ended a transfer is in
+   * the history through that transfer; any other is noted here, as `failure`.
+   */
+  const attempt = async (failure: string, action: () => unknown) => {
+    try {
+      await action();
+    } catch (error) {
+      if (transfers.transfers().some((transfer) => transfer.error === error)) return;
+      history.note(`${failure}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
 
   const handleSendFile = () => {
-    if (selectedFile && recipient) {
-      client
-        .sendFile(selectedFile, recipient)
-        .then(() => {
-          addToTransferHistory(`Sending ${selectedFile.name} to ${recipient}`);
-        })
-        .catch((error) => {
-          addToTransferHistory(`Error sending file: ${error.message}`);
-        });
-    }
-  };
-
-  const handleAcceptTransfer = (sender: string, hash: string) => {
-    // Accepting an offer triggers FileTransferManager to handle the rest
-    client.acceptTransfer(sender, hash);
-    const offer = pendingOffers.find((o) => o.hash === hash);
-    if (offer) {
-      addToTransferHistory(
-        `Accepting file transfer: ${offer.filename} from ${sender}`
+    if (selectedFile && selectedRecipient) {
+      void attempt(`Error sending file ${selectedFile.name}`, () =>
+        transfers.send(selectedFile, selectedRecipient.transferAddress),
       );
     }
-    // Remove the offer from pendingOffers
-    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 
-  const handleRejectTransfer = (sender: string, hash: string) => {
-    client.rejectTransfer(sender, hash);
-    const offer = pendingOffers.find((o) => o.hash === hash);
-    if (offer) {
-      addToTransferHistory(
-        `Rejected file transfer: ${offer.filename} from ${sender}`
-      );
+  const accept = ({ key, name }: TransferSnapshot) =>
+    void attempt(`Error accepting file ${name}`, () => transfers.accept(key));
+
+  /** Turning down what the peer has just withdrawn is no failure: the row was a moment stale. */
+  const unlessGone = (action: () => void) => () => {
+    try {
+      action();
+    } catch (error) {
+      if (!(error instanceof FileTransferError && error.code === 'unknown-transfer')) throw error;
     }
-    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
   };
 
-  const handleCancelTransfer = (hash: string) => {
-    client.cancelTransfer(hash);
-    setPendingOffers((prevOffers) => prevOffers.filter((o) => o.hash !== hash));
-  };
+  const reject = ({ key, name }: TransferSnapshot) =>
+    void attempt(`Error rejecting file ${name}`, unlessGone(() => transfers.reject(key)));
+
+  const cancel = ({ key, name }: TransferSnapshot) =>
+    void attempt(`Error cancelling file ${name}`, unlessGone(() => transfers.cancel(key)));
 
   return (
-    <div className={`file-transfer-ui ${expanded ? "expanded" : "collapsed"}`}>
-      <h3>File Transfer</h3>
+    <div ref={panel} className={`file-transfer-ui ${expanded ? 'expanded' : 'collapsed'}`}>
+      {/* Focusable from code only: where focus goes when the row that held it is gone. */}
+      <h3 ref={heading} tabIndex={-1}>File Transfer</h3>
 
       <Controls
         onFileChange={setSelectedFile}
-        onRecipientChange={setRecipient}
+        onRecipientChange={setSelectedRecipient}
         onSendFile={handleSendFile}
         selectedFile={selectedFile}
-        recipient={recipient}
+        selectedRecipient={selectedRecipient}
+        recipients={recipients}
       />
 
-      {(sendProgress > 0 || receiveProgress > 0) && (
-        <ProgressBar
-          progress={sendProgress > 0 ? sendProgress : receiveProgress}
-        />
-      )}
-
-      {pendingOffers.map((offer) => (
-        <PendingTransfer
-          key={`${offer.sender}-${offer.filename}`}
-          offer={offer}
-          onAccept={handleAcceptTransfer}
-          onReject={handleRejectTransfer}
+      {snapshots.filter(awaitsPeer).map((transfer) => (
+        <OutgoingTransfer
+          key={transfer.key}
+          filename={transfer.name}
+          recipientLabel={getPeerLabel(transfer.peer)}
+          onCancel={() => cancel(transfer)}
         />
       ))}
 
-      <History history={transferHistory} />
+      {snapshots.filter(awaitsUser).map((offer) => (
+        <PendingTransfer
+          key={offer.key}
+          filename={offer.name}
+          size={offer.size}
+          senderLabel={getPeerLabel(offer.peer)}
+          onAccept={() => accept(offer)}
+          onReject={() => reject(offer)}
+        />
+      ))}
+
+      {snapshots.filter(isUnderWay).map((transfer) => (
+        <ProgressBar
+          key={transfer.key}
+          transfer={transfer}
+          peerLabel={getPeerLabel(transfer.peer)}
+          onCancel={() => cancel(transfer)}
+        />
+      ))}
+
+      <History history={history.entries} />
     </div>
   );
 };
 
-export default FileTransferUI;
+export default function FileTransferPanel(props: FileTransferUIProps) {
+  const [transfers, setTransfers] = useState<FileTransfers | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const connected = useConnectionStore((state) => state.connected);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Disconnect replaces the engine without changing client identity.
+  useEffect(() => {
+    let cancelled = false;
+    setTransfers(null);
+    setError(null);
+    void props.client.getFileTransfers().then((loaded) => {
+      if (!cancelled) setTransfers(loaded);
+    }).catch((error) => {
+      if (!cancelled) setError(error instanceof Error ? error.message : 'Unable to load file transfers');
+    });
+    return () => { cancelled = true; };
+  }, [props.client, connected]);
+  if (error) return <p role="alert">{error}</p>;
+  if (!transfers) return <p role="status">Loading file transfers…</p>;
+  return <FileTransferUI {...props} transfers={transfers} />;
+}

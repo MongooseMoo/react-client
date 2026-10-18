@@ -1,19 +1,28 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent, screen, createEvent } from '@testing-library/react';
 import CommandInput from './input';
-import { CommandHistory } from '../CommandHistory';
+import { useInputStore } from '../stores/inputStore';
+import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
+
+// Shared spy so tests can assert which commands were replayed into history
+const { addCommandMock, navigateDownMock, navigateUpMock, getHistoryMock } = vi.hoisted(() => ({
+  addCommandMock: vi.fn(),
+  navigateDownMock: vi.fn(),
+  navigateUpMock: vi.fn(),
+  getHistoryMock: vi.fn((): string[] => []),
+}));
 
 // Mock CommandHistory
 vi.mock('../CommandHistory', () => ({
   CommandHistory: class MockCommandHistory {
     private history: string[] = [];
     private index: number = -1;
-    
-    addCommand = vi.fn();
-    navigateUp = vi.fn();
-    navigateDown = vi.fn();
-    getHistory = vi.fn(() => []);
+
+    addCommand = addCommandMock;
+    navigateUp = navigateUpMock;
+    navigateDown = navigateDownMock;
+    getHistory = getHistoryMock;
   }
 }));
 
@@ -24,6 +33,9 @@ const localStorageMock = (() => {
     getItem: vi.fn((key: string) => store[key] || null),
     setItem: vi.fn((key: string, value: string) => {
       store[key] = value.toString();
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key];
     }),
     clear: vi.fn(() => {
       store = {};
@@ -38,7 +50,12 @@ describe('CommandInput Component', () => {
   
   beforeEach(() => {
     vi.clearAllMocks();
+    useInputStore.getState().clear();
+    navigateUpMock.mockReturnValue('');
+    navigateDownMock.mockReturnValue('');
+    getHistoryMock.mockReturnValue([]);
     localStorageMock.clear();
+    usePersonalDataStore.setState({ policyReady: true, visitor: false, owner: { runtime: 'fixture', playerUuid: 'a', playerRef: '#1' } });
   });
   
   it('renders a textarea and a button', () => {
@@ -47,12 +64,57 @@ describe('CommandInput Component', () => {
     expect(screen.getByRole('textbox')).toBeTruthy();
     expect(screen.getByRole('button', { name: /send/i })).toBeTruthy();
   });
+
+  it('names the command field and leaves nonmatching drafts intact when traversing', () => {
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+    const textarea = screen.getByRole('textbox', { name: 'Command' });
+    for (const value of ['unknown-prefix', 'look ']) {
+      fireEvent.input(textarea, { target: { value } });
+      const tab = createEvent.keyDown(textarea, { key: 'Tab' });
+      fireEvent(textarea, tab);
+      expect(tab.defaultPrevented).toBe(false);
+      expect(textarea).toHaveValue(value);
+    }
+  });
+
+  it('allows reverse traversal during matching completion without changing the draft', () => {
+    useInputStore.setState({ visibleCommands: ['look', 'lock'] });
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+    const textarea = screen.getByRole('textbox');
+    fireEvent.input(textarea, { target: { value: 'lo' } });
+    const tab = createEvent.keyDown(textarea, { key: 'Tab' });
+    fireEvent(textarea, tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(textarea).toHaveValue('look');
+    const reverse = createEvent.keyDown(textarea, { key: 'Tab', shiftKey: true });
+    fireEvent(textarea, reverse);
+    expect(reverse.defaultPrevented).toBe(false);
+    expect(textarea).toHaveValue('look');
+  });
+
+  it('preserves multiline and modified caret navigation instead of replacing drafts from history', () => {
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+    const textarea = screen.getByRole('textbox');
+    fireEvent.input(textarea, { target: { value: 'first\nsecond' } });
+    for (const key of ['ArrowUp', 'ArrowDown']) {
+      const event = createEvent.keyDown(textarea, { key });
+      fireEvent(textarea, event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    fireEvent.input(textarea, { target: { value: 'draft' } });
+    for (const modifier of ['shiftKey', 'ctrlKey', 'metaKey']) {
+      fireEvent.keyDown(textarea, { key: 'ArrowUp', [modifier]: true });
+    }
+    expect(navigateUpMock).not.toHaveBeenCalled();
+    expect(navigateDownMock).not.toHaveBeenCalled();
+    expect(textarea).toHaveValue('draft');
+  });
   
   it('updates input value when user types', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'hello world' } });
+    fireEvent.input(textarea, { target: { value: 'hello world' } });
     
     expect((textarea as HTMLTextAreaElement).value).toBe('hello world');
   });
@@ -61,7 +123,7 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'look' } });
+    fireEvent.input(textarea, { target: { value: 'look' } });
     
     const sendButton = screen.getByRole('button', { name: /send/i });
     fireEvent.click(sendButton);
@@ -74,21 +136,21 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'examine sword' } });
+    fireEvent.input(textarea, { target: { value: 'examine sword' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
     expect(onSendMock).toHaveBeenCalledWith('examine sword');
     expect((textarea as HTMLTextAreaElement).value).toBe(''); // Input should clear after sending
   });
   
-  it('does not send empty input', () => {
+  it('sends blank lines to the MOO', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
-    
+
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: '   ' } }); // Just spaces
+    fireEvent.input(textarea, { target: { value: '   ' } }); // Just spaces
     fireEvent.keyDown(textarea, { key: 'Enter' });
-    
-    expect(onSendMock).not.toHaveBeenCalled();
+
+    expect(onSendMock).toHaveBeenCalledWith('   ');
   });
   
   it('adds command to history when sent', () => {
@@ -97,7 +159,7 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'look' } });
+    fireEvent.input(textarea, { target: { value: 'look' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
     expect(onSendMock).toHaveBeenCalledWith('look');
@@ -112,7 +174,7 @@ describe('CommandInput Component', () => {
     const textarea = screen.getByRole('textbox');
     
     // First send a command
-    fireEvent.change(textarea, { target: { value: 'command1' } });
+    fireEvent.input(textarea, { target: { value: 'command1' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
     // Verify no errors when navigating with arrow keys
@@ -120,6 +182,40 @@ describe('CommandInput Component', () => {
       fireEvent.keyDown(textarea, { key: 'ArrowUp' });
       fireEvent.keyDown(textarea, { key: 'ArrowDown' });
     }).not.toThrow();
+  });
+
+  it('only suppresses plain Alt navigation keys', () => {
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+
+    const textarea = screen.getByRole('textbox');
+    const plainAltArrow = createEvent.keyDown(textarea, {
+      altKey: true,
+      code: 'ArrowLeft',
+      key: 'ArrowLeft',
+    });
+    const metaAltArrow = createEvent.keyDown(textarea, {
+      altKey: true,
+      code: 'ArrowLeft',
+      key: 'ArrowLeft',
+      metaKey: true,
+    });
+
+    fireEvent(textarea, plainAltArrow);
+    fireEvent(textarea, metaAltArrow);
+
+    expect(plainAltArrow.defaultPrevented).toBe(true);
+    expect(metaAltArrow.defaultPrevented).toBe(false);
+  });
+
+  it('never routes Alt+Arrow to command history', () => {
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+
+    const textarea = screen.getByRole('textbox');
+    fireEvent.keyDown(textarea, { altKey: true, key: 'ArrowUp' });
+    fireEvent.keyDown(textarea, { altKey: true, ctrlKey: true, key: 'ArrowDown' });
+
+    expect(navigateUpMock).not.toHaveBeenCalled();
+    expect(navigateDownMock).not.toHaveBeenCalled();
   });
   
   it('loads command history from localStorage on mount', () => {
@@ -129,34 +225,67 @@ describe('CommandInput Component', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     // Check that localStorage was accessed with the correct key
-    expect(localStorageMock.getItem).toHaveBeenCalledWith('command_history');
+    expect(localStorageMock.getItem).toHaveBeenCalledWith(personalStorageKey('commands'));
+  });
+
+  it('replays a valid JSON array from localStorage into history on mount', () => {
+    localStorageMock.getItem.mockReturnValueOnce(JSON.stringify(['command1', 'command2']));
+
+    render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
+
+    expect(addCommandMock).toHaveBeenCalledWith('command1');
+    expect(addCommandMock).toHaveBeenCalledWith('command2');
+    expect(localStorageMock.removeItem).not.toHaveBeenCalled();
+  });
+
+  it('recovers from corrupt (non-JSON) command_history without throwing and clears the bad key', () => {
+    localStorageMock.getItem.mockReturnValueOnce('this is not json {[');
+
+    expect(() =>
+      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />)
+    ).not.toThrow();
+
+    // History stays empty and the corrupt key is removed.
+    expect(addCommandMock).not.toHaveBeenCalled();
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(personalStorageKey('commands'));
+  });
+
+  it('treats a valid non-array JSON value as empty history without throwing', () => {
+    localStorageMock.getItem.mockReturnValueOnce(JSON.stringify({ not: 'an array' }));
+
+    expect(() =>
+      render(<CommandInput onSend={onSendMock} inputRef={inputRef} />)
+    ).not.toThrow();
+
+    expect(addCommandMock).not.toHaveBeenCalled();
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(personalStorageKey('commands'));
   });
   
   it('saves command history to localStorage', () => {
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'save this command' } });
+    fireEvent.input(textarea, { target: { value: 'save this command' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('command_history', expect.any(String));
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(personalStorageKey('commands'), expect.any(String));
   });
   
   it('limits command history size when saving', () => {
     // Mock getHistory to return a large array
     const largeMockHistory = Array(1010).fill(0).map((_, i) => `command${i}`);
-    const mockCommandHistory = new CommandHistory();
-    vi.spyOn(mockCommandHistory, 'getHistory').mockReturnValue(largeMockHistory);
-    vi.spyOn(React, 'useRef').mockReturnValue({ current: mockCommandHistory });
+    getHistoryMock.mockReturnValue(largeMockHistory);
     
     render(<CommandInput onSend={onSendMock} inputRef={inputRef} />);
     
     const textarea = screen.getByRole('textbox');
-    fireEvent.change(textarea, { target: { value: 'one more command' } });
+    fireEvent.input(textarea, { target: { value: 'one more command' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     
     // Should have saved only the last 1000 commands
     const savedValue = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
-    expect(savedValue.length).toBeLessThanOrEqual(1000);
+    expect(savedValue.version).toBe(1);
+    expect(savedValue.data).toEqual(largeMockHistory.slice(-1000));
   });
+
 });

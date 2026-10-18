@@ -189,6 +189,29 @@ describe('BlockquoteCopyButton', () => {
     expect(mockWriteText).toHaveBeenCalledWith('Test content');
   });
 
+  it('starts a promise-backed clipboard write before lazy conversion finishes', async () => {
+    let itemData: Record<string, Promise<Blob>> = {};
+    vi.stubGlobal('ClipboardItem', class {
+      constructor(data: Record<string, Promise<Blob>>) { itemData = data; }
+    });
+    const write = vi.fn(async () => { await itemData['text/plain']; });
+    Object.defineProperty(navigator.clipboard, 'write', { configurable: true, value: write });
+    try {
+      render(<BlockquoteCopyButton blockquoteElement={mockBlockquoteElement} contentType="text/markdown" />);
+      fireEvent.click(screen.getByRole('button'));
+      expect(write).toHaveBeenCalledOnce();
+      expect(itemData['text/plain']).toBeInstanceOf(Promise);
+      const blob = await itemData['text/plain'];
+      expect(blob.type).toBe('text/plain');
+      expect(blob.size).toBe('Test content'.length);
+      await screen.findByText('Copied!');
+      expect(mockWriteText).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(navigator.clipboard, 'write');
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('has correct accessibility attributes', () => {
     render(
       <BlockquoteCopyButton blockquoteElement={mockBlockquoteElement} />

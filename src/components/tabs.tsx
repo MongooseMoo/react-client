@@ -1,115 +1,169 @@
-import React, { useEffect, useRef, useState } from "react";
-import './tabs.css'; // Ensure CSS is imported
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { useFocusRecovery } from '../hooks/useFocusRecovery';
+import './tabs.css';
 
-// Add id and optional condition to TabProps
 export interface TabProps {
-  id: string; // Unique ID for the tab and panel
+  id: string;
   label: string;
+  icon?: React.ReactNode;
   content: JSX.Element;
-  condition?: boolean; // Condition is now handled in parent, but keep for potential future use
+  condition?: boolean;
+  mountOnSelect?: boolean;
+  shortcut?: string;
 }
 
 export interface TabsProps {
-  tabs: TabProps[]; // Expecting already filtered tabs
+  tabs: TabProps[];
+  trailingElement?: React.ReactNode;
+  ariaLabel?: string;
 }
 
-const Tabs: React.FC<TabsProps> = ({ tabs }) => {
-  const [selectedTab, setSelectedTab] = useState(0);
-  const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
-  const userInteractedRef = useRef(false);
+/** Where focus lands after selecting a tab: its tab button, the panel's first control, or nowhere. */
+export type TabFocusTarget = 'tab' | 'panel' | false;
 
-  useEffect(() => {
-    tabsRef.current = tabsRef.current.slice(0, tabs.length);
-  }, [tabs]);
+export interface TabsRef {
+  /** Select a known destination and optionally move focus to it, including reselection. */
+  selectTab: (id: string, focus?: TabFocusTarget) => boolean;
+}
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      switch (event.key) {
-        case "ArrowLeft":
-          userInteractedRef.current = true;
-          setSelectedTab((prevTab) =>
-            prevTab > 0 ? prevTab - 1 : tabs.length - 1
-          );
-          break;
-        case "ArrowRight":
-          userInteractedRef.current = true;
-          setSelectedTab((prevTab) =>
-            prevTab < tabs.length - 1 ? prevTab + 1 : 0
-          );
-          break;
-        case "Home":
-          userInteractedRef.current = true;
-          setSelectedTab(0);
-          break;
-        case "End":
-          userInteractedRef.current = true;
-          setSelectedTab(tabs.length - 1);
-          break;
-        default:
-          break;
-      }
-    };
+const CONTROL_SELECTOR = 'button:not([disabled]), input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]';
 
-    const currentTabRef = tabsRef.current[selectedTab];
-    currentTabRef?.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      currentTabRef?.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [tabs.length, selectedTab]);
-
-  useEffect(() => {
-    if (userInteractedRef.current) {
-      tabsRef.current[selectedTab]?.focus();
+/** Controls in a panel that Tab can reach, in document order. */
+function tabbableControls(panel: HTMLElement): HTMLElement[] {
+  return Array.from(panel.querySelectorAll<HTMLElement>(CONTROL_SELECTOR)).filter((element) => {
+    if (element.tabIndex < 0) return false;
+    for (let ancestor: HTMLElement | null = element; ancestor && ancestor !== panel; ancestor = ancestor.parentElement) {
+      if (ancestor.hidden || ancestor.hasAttribute('inert')) return false;
     }
-  }, [selectedTab]);
+    return true;
+  });
+}
+
+const Tabs = React.forwardRef<TabsRef, TabsProps>(({ tabs, trailingElement, ariaLabel }, ref) => {
+  const [selectedId, setSelectedId] = useState<string | null>(() => tabs[0]?.id ?? null);
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set());
+  const [focusRequest, setFocusRequest] = useState<{ id: string; target: 'tab' | 'panel' } | null>(null);
+  const previousIndex = useRef(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttons = useRef(new Map<string, HTMLButtonElement>());
+  const panels = useRef(new Map<string, HTMLDivElement>());
+  const retainedIndex = tabs.findIndex((tab) => tab.id === selectedId);
+  const selectedIndex = retainedIndex >= 0 ? retainedIndex : Math.min(previousIndex.current, tabs.length - 1);
+  const resolvedId = tabs[selectedIndex]?.id ?? null;
+  useFocusRecovery(rootRef, resolvedId ?? undefined);
+
+  useLayoutEffect(() => {
+    if (selectedId !== resolvedId) setSelectedId(resolvedId);
+    if (selectedIndex >= 0) previousIndex.current = selectedIndex;
+    if (resolvedId) setVisitedTabs((previous) => previous.has(resolvedId) ? previous : new Set([...previous, resolvedId]));
+  }, [selectedId, resolvedId, selectedIndex]);
+
+  const selectTab = (id: string, focus: TabFocusTarget = 'tab') => {
+    if (!tabs.some((tab) => tab.id === id)) return false;
+    setSelectedId(id);
+    if (focus) setFocusRequest({ id, target: focus });
+    return true;
+  };
+  React.useImperativeHandle(ref, () => ({ selectTab }), [tabs]);
+  useLayoutEffect(() => {
+    if (!focusRequest || focusRequest.id !== resolvedId) return;
+    const button = buttons.current.get(resolvedId);
+    if (focusRequest.target !== 'panel') {
+      button?.focus();
+      return;
+    }
+    const panel = panels.current.get(resolvedId);
+    const control = panel && tabbableControls(panel)[0];
+    if (control) {
+      control.focus();
+      return;
+    }
+    if (!panel || panel.tabIndex < 0) {
+      button?.focus();
+      return;
+    }
+    // A panel with no reachable control yet takes focus itself. Lazy content
+    // arrives after this, so move on to its first control if focus is still here.
+    panel.focus();
+    const stop = () => {
+      observer.disconnect();
+      panel.removeEventListener('focusout', stop);
+    };
+    const observer = new MutationObserver(() => {
+      const arrived = tabbableControls(panel)[0];
+      if (!arrived) return;
+      stop();
+      arrived.focus();
+    });
+    observer.observe(panel, { childList: true, subtree: true, attributes: true });
+    panel.addEventListener('focusout', stop);
+    return stop;
+  }, [focusRequest, resolvedId]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    let index: number;
+    switch (event.key) {
+      case 'ArrowLeft': index = (selectedIndex - 1 + tabs.length) % tabs.length; break;
+      case 'ArrowRight': index = (selectedIndex + 1) % tabs.length; break;
+      case 'Home': index = 0; break;
+      case 'End': index = tabs.length - 1; break;
+      default: return;
+    }
+    event.preventDefault();
+    const tab = tabs[index];
+    if (tab) selectTab(tab.id);
+  };
 
   return (
-    // Add the tabs-container class here
-    <div className="tabs-container">
-      <div role="tablist">
-        {tabs.map((tab, index) => (
-          <button
-            key={index}
-            ref={(el) => (tabsRef.current[index] = el)}
-            role="tab"
-            aria-selected={selectedTab === index}
-            // Use the provided id for the tab button
-            id={tab.id}
-            // Use the provided id to link to the panel
-            aria-controls={`${tab.id}-panel`}
-            onClick={() => {
-              console.log(`Tab onClick triggered for: ${tab.label} (Index: ${index})`);
-              userInteractedRef.current = true; // Keep track of user interaction for focus management
-              setSelectedTab(index);
-              console.log(`Tab state updated to index: ${index}`);
-            }}
-            tabIndex={selectedTab === index ? undefined : -1}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      {tabs.map((tab, index) => (
-        // Use a container div for the panel content for better structure
-        <div
-          key={tab.id} // Use tab.id as key
-          role="tabpanel"
-          // Use the provided id for the panel
-          id={`${tab.id}-panel`}
-          // Link back to the tab button
-          aria-labelledby={tab.id}
-          hidden={selectedTab !== index}
-          // Panel itself should handle flex sizing (from tabs.css)
-        >
-          {/* Inner div handles padding and content overflow */}
-          <div className="sidebar-tab-content">
-            {tab.content}
-          </div>
+    <div className="tabs-container" ref={rootRef}>
+      <div className="tab-bar-row">
+        <div role="tablist" aria-label={ariaLabel}>
+          {tabs.map((tab) => (
+            <button key={tab.id} type="button" role="tab" id={tab.id}
+              ref={(element) => { if (element) buttons.current.set(tab.id, element); else buttons.current.delete(tab.id); }}
+              aria-selected={resolvedId === tab.id} aria-controls={`${tab.id}-panel`}
+              aria-keyshortcuts={tab.shortcut}
+              onClick={() => selectTab(tab.id)} onKeyDown={handleKeyDown}
+              tabIndex={resolvedId === tab.id ? 0 : -1} title={tab.shortcut ? `${tab.label} (${tab.shortcut.replace('Control', 'Ctrl')})` : tab.icon ? tab.label : undefined}>
+              {tab.icon && <span className="tab-icon" aria-hidden="true">{tab.icon}</span>}
+              <span className={tab.icon ? 'tab-label' : undefined}>{tab.label}</span>
+            </button>
+          ))}
         </div>
+        {trailingElement}
+      </div>
+      {tabs.map((tab) => (
+        <TabPanel key={tab.id} tab={tab} selected={resolvedId === tab.id}
+          onElement={(element) => { if (element) panels.current.set(tab.id, element); else panels.current.delete(tab.id); }}>
+          {(!tab.mountOnSelect || resolvedId === tab.id || visitedTabs.has(tab.id)) && tab.content}
+        </TabPanel>
       ))}
     </div>
   );
-};
+});
+
+function TabPanel({ tab, selected, onElement, children }: {
+  tab: TabProps;
+  selected: boolean;
+  onElement: (element: HTMLDivElement | null) => void;
+  children: React.ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [hasControls, setHasControls] = useState(true);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const update = () => setHasControls(tabbableControls(panel).length > 0);
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(panel, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'tabindex', 'hidden', 'inert', 'href'] });
+    return () => observer.disconnect();
+  }, []);
+  return <div ref={(element) => { panelRef.current = element; onElement(element); }} role="tabpanel" id={`${tab.id}-panel`} aria-labelledby={tab.id}
+    hidden={!selected} tabIndex={hasControls ? undefined : 0}>
+    <div className="sidebar-tab-content">{children}</div>
+  </div>;
+}
 
 export default Tabs;

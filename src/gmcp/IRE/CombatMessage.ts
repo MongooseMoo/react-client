@@ -1,4 +1,4 @@
-import { GMCPMessage, GMCPPackage } from "../package";
+import { GMCPPackage } from "../package";
 
 // Structure based on Starmourn example: { ["skill name"] = { target="...", message="...", caster="..." } }
 // This is Lua table syntax, translating to JSON is tricky.
@@ -13,15 +13,18 @@ export interface CombatMessageData {
     caster: string;
 }
 
-export class GmcPIRECombatMessage extends GMCPPackage {
-    public packageName: string = "IRE.CombatMessage";
+const GmcPIRECombatMessageBase = GMCPPackage.with({
+    packageName: "IRE.CombatMessage",
+    messages: [] as const,
+});
+
+export class GmcPIRECombatMessage extends GmcPIRECombatMessageBase {
 
     // This handler might need adjustment depending on how the server actually sends the data.
     // It assumes the skill name is part of the GMCP message name handled dynamically.
     handleSkillAttack(skillName: string, data: CombatMessageData): void {
         console.log(`Received IRE.CombatMessage for ${skillName}:`, data);
         // TODO: Process combat message (e.g., display, trigger reflexes)
-        this.client.emit("combatMessage", { skill: skillName, ...data });
     }
 
     // Override handleGmcp to dynamically handle skill names if needed

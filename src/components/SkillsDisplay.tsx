@@ -1,35 +1,20 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import MudClient from '../client';
-import { SkillGroupInfo, GMCPMessageCharSkillsList } from '../gmcp/Char/Skills';
+import type React from 'react';
+import { useEffect, useState } from 'react';
+import type MudClient from '../client';
+import { useSkillsStore } from '../stores/skillsStore';
 import './SkillsDisplay.css'; // We'll create this CSS file next
 
 interface SkillsDisplayProps {
     client: MudClient;
 }
 
-interface SkillDetails extends GMCPMessageCharSkillsList {
-    isLoading?: boolean;
-}
-
 const SkillsDisplay: React.FC<SkillsDisplayProps> = ({ client }) => {
-    const [groups, setGroups] = useState<SkillGroupInfo[]>([]);
+    const groups = useSkillsStore((state) => state.groups);
+    const skillsData = useSkillsStore((state) => state.skillsByGroup);
+    const setGroupLoading = useSkillsStore((state) => state.setGroupLoading);
     const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
-    const [skillsData, setSkillsData] = useState<{ [groupName: string]: SkillDetails }>({});
 
-    const charSkillsHandler = client.gmcpHandlers['Char.Skills'] as any; // Cast for method access
-
-    // --- Handlers for GMCP Messages ---
-    const handleGroups = useCallback((groupList: SkillGroupInfo[]) => {
-        setGroups(groupList);
-        client.emit('skillsDataReceived'); // Signal data received for sidebar tab
-    }, [client]);
-
-    const handleList = useCallback((data: GMCPMessageCharSkillsList) => {
-        setSkillsData(prev => ({
-            ...prev,
-            [data.group]: { ...data, isLoading: false }
-        }));
-    }, []);
+    const charSkillsHandler = client.gmcp.handlers['Char.Skills'];
 
     // --- Component Logic ---
     const toggleGroup = (groupName: string) => {
@@ -38,32 +23,24 @@ const SkillsDisplay: React.FC<SkillsDisplayProps> = ({ client }) => {
 
         // Fetch skills for the group if it's being expanded and not already loaded/loading
         if (newExpandedGroup === groupName && !skillsData[groupName]?.list && !skillsData[groupName]?.isLoading) {
-            if (charSkillsHandler?.sendGetRequest) {
-                setSkillsData(prev => ({ ...prev, [groupName]: { group: groupName, list: [], isLoading: true } }));
-                charSkillsHandler.sendGetRequest(groupName);
+            if (charSkillsHandler) {
+                setGroupLoading(groupName);
+                charSkillsHandler.sendGet({ group: groupName });
             } else {
-                console.warn("Char.Skills handler or sendGetRequest method not found.");
+                console.warn("Char.Skills handler not found.");
             }
         }
     };
 
     useEffect(() => {
-        client.on('skillGroups', handleGroups);
-        client.on('skillList', handleList);
-
         // Request initial skill groups when component mounts
-        if (charSkillsHandler?.sendGetRequest) {
+        if (charSkillsHandler) {
             console.log("Requesting initial skill groups...");
-            charSkillsHandler.sendGetRequest(); // Request groups (no args)
+            charSkillsHandler.sendGet({});
         } else {
-            console.warn("Char.Skills handler or sendGetRequest method not found.");
+            console.warn("Char.Skills handler not found.");
         }
-
-        return () => {
-            client.off('skillGroups', handleGroups);
-            client.off('skillList', handleList);
-        };
-    }, [client, handleGroups, handleList, charSkillsHandler]);
+    }, [charSkillsHandler]);
 
     const headingId = "skills-heading";
 

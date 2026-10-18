@@ -1,0 +1,344 @@
+import MudClient from "./client";
+import { marked } from "marked";
+import {
+  GMCPAutoLogin,
+  GMCPChar,
+  GMCPCharAfflictions,
+  GMCPCharDefences,
+  GMCPCharItems,
+  GMCPCharOffer,
+  GMCPCharPrompt,
+  GMCPCharSkills,
+  GMCPCharStatus,
+  GMCPCharStatusAffectedBy,
+  GMCPCharStatusConditions,
+  GMCPCharStatusTimers,
+  GMCPClientFile,
+  GMCPClientFileTransfer,
+  GMCPClientHaptics,
+  GMCPClientHtml,
+  GMCPClientKeystrokes,
+  GMCPClientMedia,
+  GMCPClientMidi,
+  GMCPClientSpatial,
+  GMCPClientSpeech,
+  GMCPClientWebPush,
+  GMCPCommChannel,
+  GMCPCommLiveKit,
+  GMCPCore,
+  GMCPCoreSupports,
+  GmcPIRESound,
+  GMCPGroup,
+  GMCPLogging,
+  GMCPRedirect,
+  GMCPRoom,
+} from "./gmcp";
+import {
+  DEFAULT_MCP_PACKAGES,
+  McpAwnsDisplayUrl,
+  McpAwnsRehash,
+  McpAwnsServerInfo,
+  McpAwnsStatus,
+  McpAwnsTimezone,
+  McpAwnsVisual,
+  McpWorldMongooseLocation,
+  McpNegotiate,
+  McpSimpleEdit,
+} from "./mcp/index";
+import { usePreferences } from "./stores/preferencesStore";
+import { useInputStore } from "./stores/inputStore";
+import { useServerLinksStore } from "./stores/serverLinksStore";
+import { useWorldMapStore } from "./stores/worldMapStore";
+import { useConnectionStore } from "./stores/connectionStore";
+import { useCharacterStatusStore } from "./stores/characterStatusStore";
+import { useOutputStore } from "./stores/outputStore";
+import { useItemsStore } from "./stores/itemsStore";
+import { useRoomStore } from "./stores/roomStore";
+import { useMapStore } from "./stores/mapStore";
+import { walkArrived, walkBlocked } from "./map/walker";
+
+/**
+ * How long the player's room and inventory must hold still before the command
+ * list is asked for again. Building it costs the server a few hundred
+ * milliseconds, so walking through several rooms asks once, at the end.
+ */
+export const COMMAND_REFRESH_DELAY_MS = 1500;
+
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
+
+function itemIds(items: { id: string }[]): string {
+  return items.map((item) => item.id).join(" ");
+}
+
+function getLocalTimezoneIdentifier(): string {
+  return new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function syncTimezoneToServer(timezonePackage?: McpAwnsTimezone): void {
+  if (!timezonePackage) {
+    return;
+  }
+  if (!usePreferences.getState().general.syncTimezoneToServer) {
+    return;
+  }
+  timezonePackage.sendTimezone({ timezone: getLocalTimezoneIdentifier() });
+}
+
+function syncLocationToServer(client: MudClient, locationPackage?: McpWorldMongooseLocation): void {
+  if (!locationPackage) {
+    return;
+  }
+  if (!usePreferences.getState().general.syncLocationToServer) {
+    return;
+  }
+  const geolocation = globalThis.navigator?.geolocation;
+  if (!geolocation?.getCurrentPosition) {
+    return;
+  }
+  geolocation.getCurrentPosition(
+    (position) => {
+      if (!usePreferences.getState().general.syncLocationToServer) {
+        return;
+      }
+      if (!client.connected) {
+        return;
+      }
+      locationPackage.sendLocation({
+        lat: position.coords.latitude,
+        lon: position.coords.longitude,
+      });
+    },
+    (error) => {
+      console.warn("Unable to read browser geolocation for MCP sync", error);
+    },
+    {
+      enableHighAccuracy: false,
+      maximumAge: 300000,
+      timeout: 10000,
+    },
+  );
+}
+
+/**
+ * Create a MudClient with all GMCP and MCP packages registered.
+ * Shared across all modes (telnet, WASM local, WASM host, guest).
+ */
+export function createConfiguredClient(): MudClient {
+  const client = new MudClient("mongoose.moo.mud.org", 8765);
+  // GMCP packages
+  const clientFileTransfer = client.gmcp.register(GMCPClientFileTransfer);
+  client.configureFileTransfer(clientFileTransfer);
+  client.configureLatency(client.gmcp.register(GMCPCore));
+  client.gmcp.register(GMCPClientMedia);
+  client.gmcp.register(GmcPIRESound);
+  client.gmcp.register(GMCPClientSpatial);
+  client.gmcp.register(GMCPClientMidi);
+  client.gmcp.register(GMCPClientSpeech);
+  client.gmcp.register(GMCPClientWebPush);
+  client.gmcp.register(GMCPClientKeystrokes);
+  client.gmcp.register(GMCPCoreSupports);
+  client.gmcp.register(GMCPCommChannel);
+  client.gmcp.register(GMCPCommLiveKit);
+  client.gmcp.register(GMCPAutoLogin);
+  const clientHtml = client.gmcp.register(GMCPClientHtml);
+  client.gmcp.register(GMCPClientFile);
+  client.gmcp.register(GMCPCharItems);
+  client.gmcp.register(GMCPCharStatus);
+  const char = client.gmcp.register(GMCPChar);
+  client.gmcp.register(GMCPCharOffer);
+  client.gmcp.register(GMCPCharPrompt);
+  client.gmcp.register(GMCPCharStatusAffectedBy);
+  client.gmcp.register(GMCPCharStatusConditions);
+  client.gmcp.register(GMCPCharStatusTimers);
+  client.gmcp.register(GMCPCharAfflictions);
+  client.gmcp.register(GMCPCharDefences);
+  client.gmcp.register(GMCPCharSkills);
+  client.gmcp.register(GMCPGroup);
+  client.gmcp.register(GMCPLogging);
+  client.gmcp.register(GMCPRedirect);
+  const room = client.gmcp.register(GMCPRoom);
+  client.gmcp.register(GMCPClientHaptics);
+
+  // The automap learns each room as the player enters it and drives map walks.
+  room.on("info", (data) => {
+    useMapStore.getState().recordVisit(data);
+    walkArrived(client, data.num);
+  });
+  room.on("wrongDir", (direction) => walkBlocked(direction));
+
+  char.on("name", (data) => {
+    useMapStore.getState().setOwner(`${client.runtimeNamespace}|${data.uuid || data.name}`);
+    client.gmcp.require('Auth.Autologin').confirmPlayer(data.uuid ?? '');
+    useConnectionStore.getState().setStatusText(`Logged in as ${data.fullname}`);
+    if (client.gmcp.markSessionReady()) {
+      useConnectionStore.getState().setSessionReady(true);
+    }
+  });
+  char.on("vitals", (data) => useCharacterStatusStore.getState().setVitals(data));
+  clientHtml.on("addHtml", (data) => useOutputStore.getState().addHtml(data.data.join("\n")));
+  clientHtml.on("addMarkdown", (data) => {
+    const generation = client.gmcp.generation;
+    const html = marked(data.data.join("\n"));
+    if (typeof html === "string") {
+      useOutputStore.getState().addHtml(html.trimEnd());
+      return;
+    }
+    html.then((renderedHtml) => {
+      if (generation !== client.gmcp.generation) return;
+      useOutputStore.getState().addHtml(renderedHtml.trimEnd());
+    });
+  });
+  // MCP packages
+  let negotiatePackage: McpNegotiate | undefined;
+  let serverInfoPackage: McpAwnsServerInfo | undefined;
+  let visualPackage: McpAwnsVisual | undefined;
+  let rehashPackage: McpAwnsRehash | undefined;
+  let timezonePackage: McpAwnsTimezone | undefined;
+  let locationPackage: McpWorldMongooseLocation | undefined;
+
+  for (const PackageConstructor of DEFAULT_MCP_PACKAGES) {
+    const mcpPackage = client.registerMcpPackage(PackageConstructor);
+    if (mcpPackage instanceof McpNegotiate) {
+      negotiatePackage = mcpPackage;
+    }
+    if (mcpPackage instanceof McpSimpleEdit) {
+      client.configureEditors(mcpPackage);
+    }
+    if (mcpPackage instanceof McpAwnsDisplayUrl) {
+      mcpPackage.on("displayUrl", (url) => {
+        useServerLinksStore.getState().addRecentUrl(url);
+        useConnectionStore.getState().setStatusText(`Server sent URL: ${url}`);
+      });
+    }
+    if (mcpPackage instanceof McpAwnsServerInfo) {
+      serverInfoPackage = mcpPackage;
+      mcpPackage.on("serverInfo", (info) => {
+        useServerLinksStore.getState().setServerInfo(info);
+      });
+    }
+    if (mcpPackage instanceof McpAwnsVisual) {
+      visualPackage = mcpPackage;
+      mcpPackage.on("location", ({ id }) => {
+        useWorldMapStore.getState().setLocation(id);
+      });
+      mcpPackage.on("self", ({ id }) => {
+        useWorldMapStore.getState().setSelf(id);
+      });
+      mcpPackage.on("users", (users) => {
+        useWorldMapStore.getState().setUsers(
+          users.map((user) => ({
+            id: user.id,
+            name: user.name,
+            locationId: user.location,
+            idleSeconds: Number.isFinite(Number(user.idle)) ? Number(user.idle) : null,
+          })),
+        );
+      });
+      mcpPackage.on("topology", (rooms) => {
+        useWorldMapStore.getState().setRooms(
+          rooms.map((room) => ({
+            id: room.id,
+            name: room.name,
+            exits: room.exit,
+          })),
+        );
+      });
+    }
+    if (mcpPackage instanceof McpAwnsRehash) {
+      rehashPackage = mcpPackage;
+      mcpPackage.on("commands", ({ commands }) => {
+        useInputStore.getState().setVisibleCommands(commands);
+      });
+      mcpPackage.on("add", ({ commands }) => {
+        useInputStore.getState().addVisibleCommands(commands);
+      });
+      mcpPackage.on("remove", ({ commands }) => {
+        useInputStore.getState().removeVisibleCommands(commands);
+      });
+    }
+    if (mcpPackage instanceof McpAwnsTimezone) {
+      timezonePackage = mcpPackage;
+    }
+    if (mcpPackage instanceof McpWorldMongooseLocation) {
+      locationPackage = mcpPackage;
+    }
+    if (mcpPackage instanceof McpAwnsStatus) {
+      mcpPackage.on("statustext", (text) =>
+        useConnectionStore.getState().setStatusText(text),
+      );
+    }
+  }
+
+  const unsubscribeGeneralPreferences = usePreferences.subscribe(
+    (state) => state.general,
+    (nextGeneralPreferences, previousGeneralPreferences) => {
+      if (
+        nextGeneralPreferences.syncTimezoneToServer !==
+          previousGeneralPreferences.syncTimezoneToServer &&
+        nextGeneralPreferences.syncTimezoneToServer &&
+        client.connected
+      ) {
+        syncTimezoneToServer(timezonePackage);
+      }
+      if (
+        nextGeneralPreferences.syncLocationToServer !==
+          previousGeneralPreferences.syncLocationToServer &&
+        nextGeneralPreferences.syncLocationToServer &&
+        client.connected
+      ) {
+        syncLocationToServer(client, locationPackage);
+      }
+    },
+  );
+  client.registerCleanup(unsubscribeGeneralPreferences);
+
+  negotiatePackage?.on("end", () => {
+    syncTimezoneToServer(timezonePackage);
+    syncLocationToServer(client, locationPackage);
+    serverInfoPackage?.requestServerInfo();
+    rehashPackage?.requestCommands();
+    visualPackage?.requestSelf();
+    visualPackage?.requestLocation();
+    visualPackage?.requestUsers();
+  });
+
+  // The commands a player can type depend on the room they stand in and on
+  // what they carry, so a change to either asks for the list again. Things
+  // arriving in the room are not followed: in a busy room that would ask
+  // every time someone walked through.
+  let commandRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshCommandsSoon = () => {
+    clearTimeout(commandRefreshTimer);
+    commandRefreshTimer = setTimeout(() => {
+      if (client.connected) {
+        rehashPackage?.requestCommands();
+      }
+    }, COMMAND_REFRESH_DELAY_MS);
+  };
+  // The first room and the first inventory of a session are covered by the
+  // request made when MCP negotiation ends.
+  const unsubscribeRoom = useRoomStore.subscribe((state, previous) => {
+    const room = state.roomInfo?.num;
+    const previousRoom = previous.roomInfo?.num;
+    if (room !== undefined && previousRoom !== undefined && room !== previousRoom) {
+      refreshCommandsSoon();
+    }
+  });
+  const unsubscribeInventory = useItemsStore.subscribe((state, previous) => {
+    const carried = state.itemsByLocation.inv;
+    const previouslyCarried = previous.itemsByLocation.inv;
+    if (carried && previouslyCarried && itemIds(carried) !== itemIds(previouslyCarried)) {
+      refreshCommandsSoon();
+    }
+  });
+  client.registerCleanup(() => {
+    unsubscribeRoom();
+    unsubscribeInventory();
+    clearTimeout(commandRefreshTimer);
+  });
+
+  return client;
+}

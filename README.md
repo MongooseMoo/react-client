@@ -19,8 +19,9 @@ With support for a variety of MUD protocols, including GMCP, MCMP, and MCP, the 
 
 ## Official Build
 
-The official build of the Mongoose React Client can be found at [https://client.rustytelephone.net.](https://client.rustytelephone.net)
-This instance of the client updates automatically any time code is committed to the master branch.
+The official build of the Mongoose React Client can be found at [https://client.mongoose.world.](https://client.mongoose.world)
+This instance updates after CI validates a commit on the master branch. Deployment
+publishes the same production build that passed the browser checks.
 
 ## Installation for Local Development
 
@@ -34,9 +35,9 @@ git clone https://github.com/MongooseMOO/react-client.git
 ```bash
 cd react-client
 ```
-3. Install dependencies using npm:
+3. Use Node.js 22 (see `.node-version`) and install the locked dependencies:
 ```bash
-npm install
+npm ci
 ```
 4. Start the development server:
 ```bash
@@ -46,11 +47,34 @@ npm start
 
 ## Usage
 
-To use the Mongoose React Client, visit the official build at [https://client.rustytelephone.net](https://client.rustytelephone.net) or run the app on your local machine following the installation steps. Connect to the Project Mongoose server and enjoy an unparalleled gaming experience with advanced features like ANSI color, 3D audio, and desktop notifications. Additionally, you can save session logs for future reference or analysis.
+To use the Mongoose React Client, visit the official build at [https://client.mongoose.world](https://client.mongoose.world) or run the app on your local machine following the installation steps. Connect to the Project Mongoose server and enjoy an unparalleled gaming experience with advanced features like ANSI color, 3D audio, and desktop notifications. Additionally, you can save session logs for future reference or analysis.
 
 ## Contributing
 
 We welcome contributions from the community. If you're interested in contributing to the Mongoose React Client, please feel free to submit pull requests or open issues on the GitHub repository.
+
+### CI checks
+
+Pull requests, merge queues, and pushes to `master` run type checking, the full
+Vitest suite, and the production browser check on Linux with Node.js 22. To run
+the application checks locally after `npm ci`:
+
+```bash
+npm run typecheck
+npm test
+npx playwright install chromium
+npm run test:audio-cache
+```
+
+The last command builds the application and checks lazy feature loading, the
+real Monaco editor, and service-worker audio caching in Chromium. CI also runs
+actionlint 1.7.12 and zizmor 1.30.1 (offline) over the workflows. The existing
+`npm run lint` command only checks staged files; it is not a CI-wide lint gate.
+
+Only successful `master` pushes can publish to the existing `gh-pages` branch.
+PR checks have read-only repository permissions. Deployment alone has write
+permission, downloads the checked build, and skips superseded master revisions.
+Dependabot maintains the pinned action revisions weekly.
 
 ## Acknowledgments
 

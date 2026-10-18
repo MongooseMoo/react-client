@@ -1,3 +1,5 @@
+import { duplex, inbound, outbound } from "../protocol/messages";
+import { gmcpJsonMessage } from "./messages";
 import { GMCPMessage, GMCPPackage } from "./package";
 
 
@@ -13,30 +15,48 @@ export class GMCPMessageCoreClient extends GMCPMessage {
 }
 
 
-export class GMCPCore extends GMCPPackage {
-  public packageName: string = "Core";
+const coreHello = gmcpJsonMessage<
+  "Hello",
+  never,
+  { client: string; version: string }
+>("Hello");
+const coreKeepAlive = gmcpJsonMessage<"KeepAlive", never, void>("KeepAlive");
+const corePing = gmcpJsonMessage<"Ping", undefined, number | undefined>("Ping", {
+  encode(payload: number | undefined): unknown {
+    return payload;
+  },
+  decode(): undefined {
+    return undefined;
+  },
+});
+const coreGoodbye = gmcpJsonMessage<"Goodbye", string>("Goodbye");
 
-  sendHello(): void {
-    this.sendData("Hello", { client: "Mongoose Client", version: "0.1" });
+const GMCPCoreBase = GMCPPackage.with({
+  packageName: "Core",
+  messages: [
+    outbound(coreHello),
+    outbound(coreKeepAlive),
+    duplex(corePing),
+    inbound(coreGoodbye),
+  ] as const,
+});
+
+export class GMCPCore extends GMCPCoreBase {
+  override sendData(messageName: string, data?: unknown): void {
+    if (messageName === 'Ping' && data === undefined) {
+      this.client.gmcp.send('Core.Ping', '');
+      return;
+    }
+    super.sendData(messageName, data);
   }
 
-  sendKeepAlive(): void {
-    this.sendData("KeepAlive");
-  }
-
-  sendPing(avgPing?: number): void {
-    this.sendData("Ping", avgPing);
-  }
-
-  handlePing(): void {
-    // Server replied to our ping, potentially update latency metrics
-    console.log("Received Core.Ping response from server.");
-    this.client.emit("corePing"); // Example event
+  constructor(client: ConstructorParameters<typeof GMCPCoreBase>[0]) {
+    super(client);
+    this.on("goodbye", (reason) => this.handleGoodbye(reason));
   }
 
   handleGoodbye(reason: string): void {
     console.log(`Server sent Core.Goodbye: ${reason}`);
-    this.client.emit("coreGoodbye", reason);
     // Optionally trigger disconnect logic here or let the main client handle it
   }
 }
@@ -47,27 +67,37 @@ export interface GMCPMessageCoreSupportsSet extends GMCPMessage {
   modules: string[];
 }
 
-export class GMCPCoreSupports extends GMCPPackage {
-  packageName = "Core.Supports";
+type AdvertisedGMCPPackage = GMCPPackage & { packageVersion: number };
 
-  // Sends the initial list of supported packages
-  sendSet(): void {
-    const packages = Object.values(this.client.gmcpHandlers)
-      .filter(p => p.packageName && p.packageVersion && p.enabled) // Ensure package has name, version, and is enabled
-      .map(p => `${p.packageName} ${p.packageVersion!.toString()}`);
-    this.sendData("Set", packages);
-  }
+const supportsSet = gmcpJsonMessage<"Set", never, string[]>("Set");
+const supportsAdd = gmcpJsonMessage<"Add", never, string[]>("Add");
+const supportsRemove = gmcpJsonMessage<"Remove", never, string[]>("Remove");
 
-  // Adds packages to the supported list
-  sendAdd(packagesToAdd: { name: string; version: number }[]): void {
-    const packageStrings = packagesToAdd.map(p => `${p.name} ${p.version}`);
-    this.sendData("Add", packageStrings);
-  }
+const GMCPCoreSupportsBase = GMCPPackage.with({
+  packageName: "Core.Supports",
+  messages: [
+    outbound(supportsSet),
+    outbound(supportsAdd),
+    outbound(supportsRemove),
+  ] as const,
+});
 
-  // Removes packages from the supported list
-  sendRemove(packagesToRemove: string[]): void {
-    this.sendData("Remove", packagesToRemove); // Version number is optional/ignored
+export class GMCPCoreSupports extends GMCPCoreSupportsBase {
+  advertisedModules(): string[] {
+    return Object.values(this.client.gmcp.handlers)
+      .filter(isAdvertisedGMCPPackage)
+      .map(p => `${p.packageName} ${p.packageVersion.toString()}`);
   }
 
   // Note: Server doesn't send Core.Supports messages to the client according to IRE docs.
+}
+
+function isAdvertisedGMCPPackage(
+  gmcpPackage: GMCPPackage | undefined,
+): gmcpPackage is AdvertisedGMCPPackage {
+  return Boolean(
+    gmcpPackage?.packageName &&
+      gmcpPackage.packageVersion !== undefined &&
+      gmcpPackage.enabled,
+  );
 }

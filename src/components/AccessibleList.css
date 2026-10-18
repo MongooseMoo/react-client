@@ -7,22 +7,22 @@
 
 /* Default styling for list items */
 .accessible-list-ul li {
-    padding: 0.25rem 0.5rem; /* Example padding, adjust as needed */
+    padding: var(--space-1) var(--space-2);
     margin: 0;
-    cursor: default; /* Indicate items are not directly clickable unless intended */
-    outline: none; /* Remove default outline, focus is managed on container */
+    cursor: default;
+    outline: none;
+    transition: background-color var(--transition-fast);
 }
 
 /* Styling for the currently selected/focused item */
 .accessible-list-ul li.selected {
-    background-color: var(--color-selected-bg, #bde4ff); /* Use CSS variable */
-    /* Ensure text contrast, fallback to --color-text or black if --color-selected-text is not defined */
-    color: var(--color-selected-text, var(--color-text, black)); 
-    border-radius: var(--border-radius-small, 2px);
+    background-color: var(--color-selected-bg);
+    color: var(--color-selected-text);
+    border-radius: var(--radius-sm);
 }
 
 /* Styling for the container when focused */
 .accessible-list-container:focus {
-    outline: 2px solid var(--color-focus-ring, blue); /* Standard focus ring */
+    outline: 2px solid var(--color-focus-ring);
     outline-offset: 1px;
 }

@@ -1,206 +1,352 @@
-import React, { useEffect, useState } from "react"; // Import useState, useEffect
-import FileTransferUI from "./FileTransfer";
-import AudioChat from "./audioChat";
-import Tabs, { TabProps } from "./tabs";
-import Userlist from "./userlist";
+import React, { Suspense, useEffect, useRef, useState } from 'react'; // Import useState, useEffect
+import {
+  FaBoxOpen,
+  FaChevronLeft,
+  FaChevronRight,
+  FaFolderOpen,
+  FaGamepad,
+  FaHeadphones,
+  FaMap,
+  FaMapMarkerAlt,
+  FaMusic,
+  FaServer,
+  FaUsers,
+  FaWaveSquare,
+} from 'react-icons/fa';
+const AudioDiagnostics = React.lazy(() => import('./AudioDiagnostics'));
+const FileTransferUI = React.lazy(() => import('./FileTransfer'));
+import AudioChatBoundary from './AudioChatBoundary';
+const MidiStatus = React.lazy(() => import('./MidiStatus'));
+const MapPanel = React.lazy(() => import('./MapPanel'));
+import Tabs, { type TabProps, type TabsRef } from './tabs';
+import './sidebar.css';
+import Userlist from './userlist';
 // import AfflictionsList from "./AfflictionsList"; // Removed
 // import DefencesList from "./DefencesList"; // Removed
-// import TargetInfoDisplay from "./TargetInfo"; // Removed
-import Inventory from "./inventory"; // Changed from InventoryList to Inventory
+import Inventory from './inventory'; // Changed from InventoryList to Inventory
 // import SkillsDisplay from "./SkillsDisplay"; // Removed
-import MudClient from "../client";
-import { useClientEvent } from "../hooks/useClientEvent"; // Import useClientEvent
-import { UserlistPlayer } from "../mcp";
-import RoomInfoDisplay from "./RoomInfoDisplay"; // Import new component
-import MidiStatus from "./MidiStatus"; // Import MIDI component
-import { usePreferences } from "../hooks/usePreferences";
-import { GMCPClientMidi } from "../gmcp/Client/Midi";
+import type MudClient from '../client';
+import RoomInfoDisplay from './RoomInfoDisplay'; // Import new component
+const HapticsStatus = React.lazy(() => import('./HapticsStatus'));
+import { usePreferences } from '../stores/preferencesStore';
+import { useRoomStore } from '../stores/roomStore';
+import { useItemsStore } from '../stores/itemsStore';
+import { useUserlistStore } from '../stores/userlistStore';
+import { hapticsService } from '../HapticsService';
+import ServerFeaturesPanel from './ServerFeaturesPanel';
 
 // Define the type for the imperative handle
 export type SidebarRef = {
-  switchToTab: (index: number) => void;
+  switchToTab: (index: number) => boolean;
+  hasTab: (index: number) => boolean;
 };
+
+export const MIN_SIDEBAR_WIDTH = 180;
+const KEYBOARD_RESIZE_STEP = 24;
+
+function maxSidebarWidth(): number {
+  return Math.max(MIN_SIDEBAR_WIDTH, Math.round(window.innerWidth * 0.6));
+}
+
+export function clampSidebarWidth(width: number): number {
+  return Math.min(Math.max(Math.round(width), MIN_SIDEBAR_WIDTH), maxSidebarWidth());
+}
 
 interface SidebarProps {
   client: MudClient;
-  // showSidebar prop is removed
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  /** Custom width in px (null = default CSS width). */
+  width?: number | null;
+  /** Called with the new width as the user drags or arrow-keys the resize handle. */
+  onWidthChange?: (width: number) => void;
 }
 
 // Wrap component with forwardRef
-const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(({ client }, ref) => {
-  const users = useClientEvent(client, "userlist", [] as UserlistPlayer[]);
-  const [preferences] = usePreferences(); // Add preferences hook
-  const [fileTransferExpanded, setFileTransferExpanded] = useState(true); // Example state
+const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
+  ({ client, collapsed, onToggleCollapse, width = null, onWidthChange }, ref) => {
+    const users = useUserlistStore((state) => state.players);
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const tabsRef = useRef<TabsRef>(null);
+    const [isResizing, setIsResizing] = useState(false);
+    const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+    const midiPreferences = usePreferences((state) => state.midi);
+    const hapticsPreferences = usePreferences((state) => state.haptics);
+    const [fileTransferExpanded, setFileTransferExpanded] = useState(true);
 
-  // State to track if data has been received for optional tabs
-  // const [hasTargetData, setHasTargetData] = useState(false); // Removed
-  // const [hasAfflictionsData, setHasAfflictionsData] = useState(false); // Removed
-  // const [hasDefencesData, setHasDefencesData] = useState(false); // Removed
-  const [hasInventoryData, setHasInventoryData] = useState(false); // Keep state for inventory as example
-  // const [hasSkillsData, setHasSkillsData] = useState(false); // Removed
-  // Initial check for room data directly from client
-  const [hasRoomData, setHasRoomData] = useState(!!client.currentRoomInfo);
+    // State to track if data has been received for optional tabs
+    // const [hasAfflictionsData, setHasAfflictionsData] = useState(false); // Removed
+    // const [hasDefencesData, setHasDefencesData] = useState(false); // Removed
+    const hasInventoryData = useItemsStore((state) => state.hasReceivedList);
+    // const [hasSkillsData, setHasSkillsData] = useState(false); // Removed
+    // Show the Room tab once room info has arrived (from the room store).
+    const hasRoomData = useRoomStore((state) => state.roomInfo !== null);
 
-  // Handle MIDI support advertisement based on preferences
-  useEffect(() => {
-    const midiPackage = client.gmcpHandlers["Client.Midi"] as GMCPClientMidi;
-    if (!midiPackage) return;
+    // Handle MIDI support advertisement based on preferences
+    useEffect(() => {
+      const midiPackage = client.gmcp.handlers['Client.Midi'];
+      if (!midiPackage) return;
 
-    // Only handle runtime preference changes - initial advertisement handled by Core.Supports
-    if (client.connected) {
-      if (preferences.midi.enabled) {
-        midiPackage.advertiseMidiSupport();
-      } else {
-        midiPackage.unadvertiseMidiSupport();
-      }
-    }
-  }, [preferences.midi.enabled, client]);
-
-  // Effect to check for inventory data
-  useEffect(() => {
-    // Listen for the custom event emitted by InventoryList when data arrives
-    const handleInventoryData = () => setHasInventoryData(true);
-    client.on("itemsList", handleInventoryData);
-    return () => {
-      client.off("itemsList", handleInventoryData);
-    };
-  }, [client]);
-
-  // Effect to update room data state if it arrives *after* initial render
-  useEffect(() => {
-    const handleRoomData = () => {
-      if (!hasRoomData) {
-        // Only update state if it wasn't already true
-        setHasRoomData(true);
-      }
-    };
-    client.on("roomInfo", handleRoomData);
-    return () => {
-      client.off("roomInfo", handleRoomData);
-    };
-  }, [client, hasRoomData]); // Add hasRoomData dependency
-
-  // Define all possible tabs
-  const allTabs: TabProps[] = [
-    {
-      id: "room-tab",
-      label: "Room",
-      content: <RoomInfoDisplay client={client} />,
-      condition: hasRoomData, // Condition to show tab
-    },
-    {
-      id: "inventory-tab",
-      label: "Inventory",
-      content: <Inventory client={client} />, // Changed to use Inventory component
-      condition: hasInventoryData,
-    },
-    {
-      id: "users-tab", // Add unique IDs
-      label: "Users",
-      content: <Userlist users={users} />,
-      condition: true,
-    },
-    {
-      id: "midi-tab",
-      label: "MIDI",
-      content: <MidiStatus client={client} />,
-      condition: preferences.midi.enabled,
-    },
-
-    // { // Removed Skills Tab
-    //   id: "skills-tab",
-    //   label: "Skills",
-    //   content: <SkillsDisplay client={client} />,
-    //   condition: hasSkillsData,
-    // },
-    // { // Removed Target Tab
-    //   id: "target-tab",
-    //   label: "Target",
-    //   content: <TargetInfoDisplay client={client} />,
-    //   condition: hasTargetData,
-    // },
-    // { // Removed Afflictions Tab
-    //   id: "afflictions-tab",
-    //   label: "Afflictions",
-    //   content: <AfflictionsList client={client} />,
-    //   condition: hasAfflictionsData,
-    // },
-    // { // Removed Defences Tab
-    //   id: "defences-tab",
-    //   label: "Defences",
-    //   content: <DefencesList client={client} />,
-    //   condition: hasDefencesData,
-    // },
-    {
-      id: "files-tab",
-      label: "Files",
-      content: (
-        <FileTransferUI client={client} expanded={fileTransferExpanded} />
-      ),
-      condition: true, // Always show Files tab
-    },
-    {
-      id: "audio-tab",
-      label: "Audio",
-      content: <AudioChat client={client} />,
-      condition: true, // Always show Audio tab (or add condition if needed)
-    },
-  ];
-
-  // Memoize visibleTabs to prevent unnecessary effect re-runs if conditions don't change
-  // Note: If tab conditions become more dynamic, add them to the dependency array.
-  const visibleTabs = React.useMemo(() => {
-    return allTabs.filter((tab) => tab.condition ?? true); // Default condition to true
-  }, [hasRoomData, hasInventoryData, preferences.midi.enabled]); // Add dependencies based on actual conditions used
-
-  // Expose switchToTab function via useImperativeHandle
-  React.useImperativeHandle(ref, () => ({
-    switchToTab: (targetIndex: number) => {
-      if (targetIndex >= 0 && targetIndex < visibleTabs.length) {
-        const targetTabId = visibleTabs[targetIndex]?.id;
-        if (targetTabId) {
-          console.log(`switchToTab: Trying index ${targetIndex}, ID: ${targetTabId}`);
-          const buttonElement = document.getElementById(targetTabId);
-          if (buttonElement) {
-            console.log(`switchToTab: Found button element, attempting click...`);
-            buttonElement.click(); // Simulate click
-            console.log(`switchToTab: Click simulation finished.`);
-          } else {
-            console.error(`switchToTab: Could not find button element with ID: ${targetTabId}`);
-          }
+      // Only handle runtime preference changes - initial advertisement handled by Core.Supports
+      if (client.connected) {
+        if (midiPreferences.enabled) {
+          midiPackage.advertiseMidiSupport();
         } else {
-          console.warn(`switchToTab: Could not determine targetTabId for index ${targetIndex}. Visible tabs:`, visibleTabs);
+          midiPackage.unadvertiseMidiSupport();
         }
-      } else {
-         console.warn(`switchToTab: Invalid targetIndex ${targetIndex}. Visible tabs count: ${visibleTabs.length}`);
       }
-    }
-  }), [visibleTabs]); // Dependency: visibleTabs
+    }, [midiPreferences.enabled, client]);
 
+    // Handle Haptics support advertisement based on preferences
+    useEffect(() => {
+      const hapticsPackage = client.gmcp.handlers['Client.Haptics'];
+      if (!hapticsPackage) return;
+      if (client.connected) {
+        if (hapticsPreferences.enabled) {
+          hapticsPackage.advertiseHapticsSupport();
+        } else {
+          hapticsPackage.unadvertiseHapticsSupport();
+        }
+      }
+    }, [hapticsPreferences.enabled, client]);
 
-  // Example effect to toggle file transfer based on activity
-  useEffect(() => {
-    const handleActivity = () => setFileTransferExpanded(true);
-    client.on("fileTransferOffer", handleActivity);
-    // Add listeners for other relevant events like progress, complete, error
-    return () => {
-      client.off("fileTransferOffer", handleActivity);
-      // Remove other listeners
+    // Wire haptics preferences to the service
+    useEffect(() => {
+      hapticsService.intensityCap = hapticsPreferences.intensityCap;
+      hapticsService.autoStopTimeoutSecs = hapticsPreferences.autoStopTimeout;
+    }, [hapticsPreferences.intensityCap, hapticsPreferences.autoStopTimeout]);
+
+    // Resize handle behavior: pointer drag plus arrow keys (ARIA window
+    // splitter). The sidebar sits on the right, so ArrowLeft grows it.
+    const currentWidth = width ?? measuredWidth;
+
+    useEffect(() => {
+      if (collapsed) return;
+      setMeasuredWidth(containerRef.current?.offsetWidth ?? null);
+    }, [collapsed, width]);
+
+    const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!onWidthChange) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsResizing(true);
     };
-  }, [client]);
 
-  // If no tabs are visible (e.g., only Users tab exists but no users yet),
-  // you might want to render nothing or a placeholder.
-  // For now, we assume at least one tab will always be potentially visible.
+    const handleResizePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!isResizing || !onWidthChange) return;
+      const right = containerRef.current?.getBoundingClientRect().right;
+      if (right === undefined) return;
+      onWidthChange(clampSidebarWidth(right - event.clientX));
+    };
 
-  return (
-    <div className="sidebar"> {/* Add the main sidebar container */}
-      <div className="sidebar-content">
-        {/* Removed the redundant sidebar-tabs div */}
-        <Tabs tabs={visibleTabs} /> {/* Pass the filtered tabs */}
+    const handleResizePointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      setIsResizing(false);
+    };
+
+    const handleResizeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!onWidthChange || currentWidth === null) return;
+      let next: number | null = null;
+      switch (event.key) {
+        case 'ArrowLeft':
+          next = currentWidth + KEYBOARD_RESIZE_STEP;
+          break;
+        case 'ArrowRight':
+          next = currentWidth - KEYBOARD_RESIZE_STEP;
+          break;
+        case 'Home':
+          next = MIN_SIDEBAR_WIDTH;
+          break;
+        case 'End':
+          next = maxSidebarWidth();
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+      onWidthChange(clampSidebarWidth(next));
+    };
+
+    // Define all possible tabs
+    const allTabs: TabProps[] = [
+      {
+        id: 'room-tab',
+        label: 'Room',
+        icon: <FaMapMarkerAlt />,
+        content: <RoomInfoDisplay client={client} />,
+        condition: hasRoomData, // Condition to show tab
+      },
+      {
+        id: 'inventory-tab',
+        label: 'Inventory',
+        icon: <FaBoxOpen />,
+        content: <Inventory client={client} />, // Changed to use Inventory component
+        condition: hasInventoryData,
+      },
+      {
+        id: 'users-tab', // Add unique IDs
+        label: 'Users',
+        icon: <FaUsers />,
+        content: <Userlist users={users} />,
+        condition: true,
+      },
+      {
+        id: 'server-tab',
+        label: 'Server',
+        icon: <FaServer />,
+        content: <ServerFeaturesPanel client={client} />,
+        condition: true,
+      },
+      {
+        id: 'midi-tab',
+        label: 'MIDI',
+        icon: <FaMusic />,
+        content: (
+          <Suspense fallback={null}>
+            <MidiStatus client={client} />
+          </Suspense>
+        ),
+        condition: midiPreferences.enabled,
+      },
+      {
+        id: 'haptics-tab',
+        label: 'Haptics',
+        icon: <FaGamepad />,
+        content: <Suspense fallback={<p role="status">Loading haptics…</p>}><HapticsStatus client={client} /></Suspense>,
+        mountOnSelect: true,
+        condition: hapticsPreferences.enabled,
+      },
+
+      // { // Removed Skills Tab
+      //   id: "skills-tab",
+      //   label: "Skills",
+      //   content: <SkillsDisplay client={client} />,
+      //   condition: hasSkillsData,
+      // },
+      // { // Removed Afflictions Tab
+      //   id: "afflictions-tab",
+      //   label: "Afflictions",
+      //   content: <AfflictionsList client={client} />,
+      //   condition: hasAfflictionsData,
+      // },
+      // { // Removed Defences Tab
+      //   id: "defences-tab",
+      //   label: "Defences",
+      //   content: <DefencesList client={client} />,
+      //   condition: hasDefencesData,
+      // },
+      {
+        id: 'files-tab',
+        label: 'Files',
+        icon: <FaFolderOpen />,
+        content: <Suspense fallback={<p role="status">Loading file transfers…</p>}><FileTransferUI client={client} expanded={fileTransferExpanded} users={users} /></Suspense>,
+        mountOnSelect: true,
+        condition: true, // Always show Files tab
+      },
+      {
+        id: 'audio-tab',
+        label: 'Audio',
+        icon: <FaHeadphones />,
+        content: <AudioChatBoundary client={client} />,
+        condition: true, // Always show Audio tab (or add condition if needed)
+      },
+      {
+        // Last, so the Ctrl+Shift+number shortcuts of existing tabs keep their positions.
+        id: 'audio-diagnostics-tab',
+        label: 'Audio diagnostics',
+        icon: <FaWaveSquare />,
+        content: (
+          <Suspense fallback={<p role="status">Loading audio diagnostics…</p>}>
+            <AudioDiagnostics diagnostics={client.media.diagnostics} />
+          </Suspense>
+        ),
+        mountOnSelect: true,
+        condition: true,
+      },
+      {
+        // After Audio diagnostics so earlier tabs keep their numbers; this one is Ctrl+Shift+0.
+        id: 'map-tab',
+        label: 'Map',
+        icon: <FaMap />,
+        content: (
+          <Suspense fallback={<p role="status">Loading map…</p>}>
+            <MapPanel client={client} />
+          </Suspense>
+        ),
+        mountOnSelect: true,
+        condition: hasRoomData,
+      },
+    ];
+
+    // Reserve each destination's number even when optional data is absent.
+    const visibleTabs = allTabs.map((tab, index) => ({ ...tab, shortcut: `Control+Shift+${index + 1}` }))
+      .filter((tab) => tab.condition ?? true);
+
+    // Expose switchToTab function via useImperativeHandle
+    React.useImperativeHandle(
+      ref,
+      () => ({
+        hasTab: (index) => Boolean(allTabs[index] && (allTabs[index].condition ?? true)),
+        switchToTab: (index) => {
+          const tab = allTabs[index];
+          return Boolean(tab && (tab.condition ?? true) && tabsRef.current?.selectTab(tab.id, 'panel'));
+        },
+      }),
+      [visibleTabs],
+    ); // Dependency: visibleTabs
+
+    // A newly offered file expands the file transfer panel.
+    useEffect(() => client.onFileTransferOffer(() => setFileTransferExpanded(true)), [client]);
+
+    // If no tabs are visible (e.g., only Users tab exists but no users yet),
+    // you might want to render nothing or a placeholder.
+    // For now, we assume at least one tab will always be potentially visible.
+
+    const collapseButton = (
+      <button
+        type="button"
+        className="sidebar-collapse-btn"
+        onClick={onToggleCollapse}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {collapsed ? <FaChevronLeft /> : <FaChevronRight />}
+        {collapsed && <span>Expand</span>}
+      </button>
+    );
+
+    return (
+      <div
+        ref={containerRef}
+        className={`sidebar ${collapsed ? 'collapsed' : ''}`}
+        data-resizing={isResizing || undefined}
+      >
+        {!collapsed && onWidthChange && (
+          <div
+            className="sidebar-resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuemin={MIN_SIDEBAR_WIDTH}
+            aria-valuemax={maxSidebarWidth()}
+            aria-valuenow={currentWidth ?? undefined}
+            tabIndex={0}
+            onPointerDown={handleResizePointerDown}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={handleResizePointerEnd}
+            onPointerCancel={handleResizePointerEnd}
+            onKeyDown={handleResizeKeyDown}
+          />
+        )}
+        {collapsed && collapseButton}
+        <div className="sidebar-content" hidden={collapsed}>
+          <Tabs ref={tabsRef} tabs={visibleTabs} ariaLabel="Sidebar" trailingElement={!collapsed ? collapseButton : undefined} />
+        </div>
       </div>
-    </div>
-  );
-}); // Close the forwardRef
+    );
+  },
+); // Close the forwardRef
 
 export default Sidebar;
