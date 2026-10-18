@@ -38,6 +38,42 @@ describe('GMCPClientMidi ControlChange', () => {
   });
 });
 
+describe('GMCPClientMidi Song', () => {
+  const previous = usePreferences.getState().midi;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    usePreferences.getState().setMidi({ ...previous, enabled: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    usePreferences.getState().setMidi(previous);
+  });
+
+  it('plays each note of one Song message at its offset', async () => {
+    const midi = new GMCPClientMidi({ gmcp: { send: vi.fn() } } as never);
+    const played: number[] = [];
+    vi.spyOn(midi as never, 'handleNoteAsync').mockImplementation(((note: { note: number }) => {
+      played.push(note.note);
+      return Promise.resolve();
+    }) as never);
+    midi.receiveRegisteredMessage('Song', { notes: [
+      { note: 60, offset: 0, duration: 250 },
+      { note: 64, offset: 500, duration: 250, velocity: 90, channel: 9 },
+    ] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(played).toEqual([60]);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(played).toEqual([60]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(played).toEqual([60, 64]);
+    expect((midi as never as { handleNoteAsync: ReturnType<typeof vi.fn> }).handleNoteAsync).toHaveBeenLastCalledWith(
+      { note: 64, velocity: 90, on: true, channel: 9, duration: 250 });
+  });
+});
+
 describe('GMCPClientMidi effects route', () => {
   it('routes browser synths through the media chain system without loading a synth', () => {
     const previous = usePreferences.getState().midi;
