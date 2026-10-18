@@ -83,6 +83,7 @@ interface Source {
   tag?: string;
   gate: SourceRevisionGate;
   active: Material;
+  windowMaterial?: Material;
   pending?: Material;
   pendingLate?: boolean;
   generation: number;
@@ -250,6 +251,10 @@ export class SequenceService {
       return;
     }
     if (previous) this.remove(previous);
+    if ([...this.sources.values()].filter((source) => !source.ended).length >= 8) {
+      this.options.error?.(data.key, 'Music source limit reached');
+      return;
+    }
     const gate = new SourceRevisionGate();
     const runtime = this.options.clock.estimate().clockId;
     if (gate.play(this.identity(material), data.transport.clockId) === 'rejected') return;
@@ -304,18 +309,20 @@ export class SequenceService {
       if (now === undefined) return;
       const replaceTick = data.replaceFromTick;
       const boundaryDocument = this.documents(source.active).find(
-        (doc) => !doc.window || (replaceTick >= doc.from && replaceTick <= doc.window.toTick),
+        (doc) => !doc.window || (replaceTick >= doc.from && replaceTick < doc.window.toTick),
       );
       const nextDocument = this.documents(next).find(
-        (doc) => !doc.window || (replaceTick >= doc.from && replaceTick <= doc.window.toTick),
+        (doc) => !doc.window || (replaceTick >= doc.from && replaceTick < doc.window.toTick),
       );
       if (
         !boundaryDocument ||
         !nextDocument ||
-        this.serverAt(boundaryDocument, data.replaceFromTick) !== data.effectiveServerMs ||
-        this.serverAt(nextDocument, data.replaceFromTick) !== data.effectiveServerMs
-      )
+        Math.abs(this.serverAt(boundaryDocument, replaceTick) - data.effectiveServerMs) > 0.01 ||
+        Math.abs(this.serverAt(nextDocument, replaceTick) - data.effectiveServerMs) > 0.01
+      ) {
+        this.options.error?.(source.key, 'Replacement boundary does not match its score timeline');
         return;
+      }
       const previousBoundary = source.gate.pending?.effectiveServerMs;
       const decision = source.gate.replaceFuture(
         {
@@ -349,9 +356,7 @@ export class SequenceService {
           if (source.pending !== next || !this.current(source)) return;
           if ((this.options.clock.getServerNow() ?? Infinity) >= (data.effectiveServerMs ?? now))
             source.pendingLate = true;
-          if (!source.pendingLate)
-            for (const doc of this.documents(next))
-              this.chase(source, doc, data.effectiveServerMs ?? now);
+          if (!source.pendingLate) this.chase(source, nextDocument, data.effectiveServerMs ?? now);
           this.wake();
         })
         .catch((error) => {
@@ -365,12 +370,19 @@ export class SequenceService {
     if (decision === 'unchanged') {
       // Generated retransmission adds immutable windows without resetting the prefix.
       if (data.midi && 'stream' in data.midi && 'stream' in source.active.data) {
-        if (!this.mergeWindows(source, data.midi)) return;
-        const material = source.active;
+        const material = this.mergeWindows(source, data.midi);
+        if (!material) return;
+        source.windowMaterial = material;
+        const generation = source.generation;
         void this.prepareMaterial(source, material)
-          .then(() => this.wake())
+          .then(() => {
+            if (!this.current(source, generation) || source.windowMaterial !== material) return;
+            source.active = material;
+            source.windowMaterial = undefined;
+            this.wake();
+          })
           .catch((error) => {
-            if (source.active === material) this.fail(source, error);
+            if (source.windowMaterial === material) this.fail(source, error);
           });
       }
       source.mix = { ...source.mix, ...data };
@@ -388,6 +400,7 @@ export class SequenceService {
     source.ready = false;
     source.ended = false;
     source.pending = undefined;
+    source.windowMaterial = undefined;
     source.pendingLate = false;
     source.active = next;
     source.needsJoin = true;
@@ -404,14 +417,18 @@ export class SequenceService {
     void this.prepare(source).catch((error) => this.fail(source, error));
   }
 
-  private mergeWindows(source: Source, data: Extract<SequenceData, { stream: true }>): boolean {
-    if (!('stream' in source.active.data)) return false;
-    const windows = new Map(source.active.data.windows.map((window) => [window.seq, window]));
+  private mergeWindows(
+    source: Source,
+    data: Extract<SequenceData, { stream: true }>,
+  ): Material | undefined {
+    const base = source.windowMaterial ?? source.active;
+    if (!('stream' in base.data)) return undefined;
+    const windows = new Map(base.data.windows.map((window) => [window.seq, window]));
     for (const window of data.windows) {
       const existing = windows.get(window.seq);
       if (existing && JSON.stringify(existing) !== JSON.stringify(window)) {
         this.fail(source, new Error('Changed retransmitted music window'));
-        return false;
+        return undefined;
       }
       windows.set(window.seq, window);
     }
@@ -420,13 +437,13 @@ export class SequenceService {
       new Set(retained.flatMap((window) => window.score.parts.map((part) => part.id))).size > 16
     ) {
       this.fail(source, new Error('Stream part limit exceeded'));
-      return false;
+      return undefined;
     }
     if (
       retained.some((window, index) => index > 0 && window.fromTick < retained[index - 1].toTick)
     ) {
       this.fail(source, new Error('Overlapping generated music windows'));
-      return false;
+      return undefined;
     }
     const bytes = new TextEncoder().encode(JSON.stringify(retained)).byteLength;
     const events = retained.reduce(
@@ -443,10 +460,9 @@ export class SequenceService {
     );
     if (bytes > 65536 || events > 8000) {
       this.fail(source, new Error('Music window ring limit exceeded'));
-      return false;
+      return undefined;
     }
-    source.active = { ...source.active, data: { version: 1, stream: true, windows: retained } };
-    return true;
+    return { ...base, data: { version: 1, stream: true, windows: retained } };
   }
 
   private async prepare(source: Source): Promise<void> {
@@ -454,6 +470,7 @@ export class SequenceService {
     if (source.preparing) return source.preparing;
     if (!source.releaseClock)
       source.releaseClock = this.options.clock.acquire(`score:${source.key}`);
+    if (this.options.clock.estimate().clockId !== source.active.transport.clockId) return;
     const generation = source.generation;
     const work = (async () => {
       if (!source.output) {
@@ -649,6 +666,13 @@ export class SequenceService {
       }
       if (estimate.clockId !== source.active.transport.clockId) continue;
       source.clockConfirmed = true;
+      if (
+        !source.ready &&
+        !source.preparing &&
+        !source.ended &&
+        ['playing', 'preparing'].includes(source.active.transport.state)
+      )
+        void this.prepare(source);
       if (estimate.status !== 'current' || estimate.offsetMs === null) {
         this.cancelWork(source);
         source.needsJoin = true;
@@ -708,6 +732,14 @@ export class SequenceService {
     let rendering = false;
     for (const source of [...this.sources.values()]) {
       if (
+        !source.ready &&
+        !source.preparing &&
+        !source.ended &&
+        estimate.clockId === source.active.transport.clockId &&
+        ['playing', 'preparing'].includes(source.active.transport.state)
+      )
+        void this.prepare(source);
+      if (
         !source.ready ||
         !source.output ||
         !source.graph ||
@@ -735,6 +767,7 @@ export class SequenceService {
       }, 25);
   }
   private render(source: Source, now: number): void {
+    if (source.ended) return;
     source.workRemaining = 20000;
     let pending = source.gate.pending;
     if (
@@ -771,7 +804,8 @@ export class SequenceService {
       now >= this.serverAt(current, current.timeline.terminalTick)
     ) {
       source.ended = true;
-      this.park(source);
+      this.releaseVoices(source, documents);
+      if (!source.voices.size) this.park(source);
       return;
     }
     if (source.needsJoin) {
@@ -801,7 +835,12 @@ export class SequenceService {
           const nextMeter =
             current.score.meters.find((entry) => entry.tick > local)?.tick ?? Infinity;
           const loopEnd = current.material.transport.loop?.endTick ?? Infinity;
-          return Math.min(grid, nextMeter, loopEnd);
+          return Math.min(
+            grid,
+            nextMeter,
+            loopEnd,
+            current.window ? current.window.toTick - current.from : Infinity,
+          );
         };
         let boundary = boundaryAt('bar');
         let unwrapped = tick + (boundary - local);
@@ -985,6 +1024,7 @@ export class SequenceService {
             if (source.voices.get(id) === owned) {
               source.voices.delete(id);
               releaseBudget();
+              if (source.ended && !source.voices.size && this.current(source)) this.park(source);
             }
           });
         }

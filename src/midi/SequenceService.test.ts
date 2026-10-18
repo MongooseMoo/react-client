@@ -88,6 +88,7 @@ function scheduler(material: CanonicalScore = score, budget = new SequenceBudget
     voice: SequenceVoice;
     stop: ReturnType<typeof vi.fn>;
     release: ReturnType<typeof vi.fn>;
+    finish: () => void;
   }[] = [];
   const output = {
     context,
@@ -111,7 +112,16 @@ function scheduler(material: CanonicalScore = score, budget = new SequenceBudget
         stop,
         release,
       };
-      starts.push({ note, voice, stop, release });
+      starts.push({
+        note,
+        voice,
+        stop,
+        release,
+        finish: () => {
+          ended = true;
+          resolve();
+        },
+      });
       return voice;
     },
   };
@@ -398,7 +408,156 @@ describe('shared score ownership', () => {
     expect(s.starts).toHaveLength(1);
     s.clock.estimate = () => ({ clockId: 'next', status: 'current', offsetMs: 0 });
     s.time(900);
+    await settled();
     expect(s.starts).toHaveLength(2);
+    s.service.shutdown();
+  });
+  it('keeps prepared stream notes audible while a future instrument loads', async () => {
+    const s = scheduler();
+    const window = (seq: number, program: number) => ({
+      seq,
+      fromTick: seq * 1920,
+      toTick: (seq + 1) * 1920,
+      anchorServerMs: 1000 + seq * 1000,
+      contentId: 'content',
+      revision: 1,
+      tempos: [{ tick: seq * 1920, bpm: 120 }],
+      meters: [{ tick: seq * 1920, numerator: 4, denominator: 4, barOriginTick: 0 }],
+      parts: [{ ...part, program, controls: [], notes: [[seq * 1920 + 960, 100, 60 + seq, 100]] }],
+    });
+    const midi = (seq: number, program: number) =>
+      decodeSequenceData(
+        { version: 1, stream: true, windows: [window(seq, program)] },
+        'content',
+        1,
+      );
+    await s.service.play({ ...s.request, midi: midi(0, 0) });
+    let finish = () => {};
+    s.output.prepare.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    s.service.update({ ...s.request, midi: midi(1, 40) });
+    s.time(1325);
+    expect(s.starts.map((v) => [v.note.note, v.note.program])).toEqual([[60, 0]]);
+    finish();
+    await settled();
+    s.time(2325);
+    expect(s.starts.map((v) => [v.note.note, v.note.program])).toEqual([
+      [60, 0],
+      [61, 40],
+    ]);
+    s.service.shutdown();
+  });
+  it('chases only the window containing a future replacement boundary', async () => {
+    const s = scheduler({ ...score, durationTicks: 7680 });
+    await s.service.play(s.request);
+    const control = vi.fn();
+    vi.spyOn(s.mix, 'part').mockImplementation(() => ({ input: {} as AudioNode, control }));
+    const windows = [1, 2].map((seq) => ({
+      seq,
+      fromTick: seq * 1920,
+      toTick: (seq + 1) * 1920,
+      anchorServerMs: 1000 + seq * 1000,
+      contentId: 'new',
+      revision: 2,
+      tempos: [{ tick: seq * 1920, bpm: 120 }],
+      meters: [{ tick: seq * 1920, numerator: 4, denominator: 4, barOriginTick: 0 }],
+      parts: [
+        {
+          ...part,
+          notes: [],
+          controls: [{ tick: seq * 1920, controller: 7, value: seq === 1 ? 50 : 10 }],
+        },
+      ],
+    }));
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: decodeSequenceData({ version: 1, stream: true, windows }, 'new', 2),
+      transport: { ...s.request.transport, revision: 2 },
+      replaceFromTick: 1920,
+      effectiveServerMs: 2000,
+    });
+    await settled();
+    expect(control.mock.calls.filter((call) => call[0] === 7)).toEqual([[7, 50, 2]]);
+    s.service.shutdown();
+  });
+  it('joins at a window boundary rather than extrapolating its meter past the window', async () => {
+    const s = scheduler();
+    const windows = [0, 1].map((seq) => ({
+      seq,
+      fromTick: seq * 480,
+      toTick: (seq + 1) * 480,
+      anchorServerMs: 1000 + seq * 250,
+      contentId: 'content',
+      revision: 1,
+      tempos: [{ tick: seq * 480, bpm: 120 }],
+      meters: [{ tick: seq * 480, numerator: 4, denominator: 4, barOriginTick: 0 }],
+      parts: [{ ...part, controls: [], notes: [[seq * 480, 100, 60 + seq, 100]] }],
+    }));
+    s.time(1100);
+    await s.service.play({
+      ...s.request,
+      midi: decodeSequenceData({ version: 1, stream: true, windows }, 'content', 1),
+    });
+    expect(s.starts.map((v) => [v.note.note, v.note.startTime])).toEqual([[61, 1.25]]);
+    s.service.shutdown();
+  });
+  it('preserves the final release until its owned voice ends naturally', async () => {
+    const s = scheduler({
+      ...score,
+      durationTicks: 1920,
+      parts: [{ ...part, controls: [], notes: [[960, 960, 60, 100]] }],
+    });
+    await s.service.play(s.request);
+    s.time(1325);
+    s.time(2001);
+    expect(s.starts[0].release).toHaveBeenCalledOnce();
+    expect(s.starts[0].stop).not.toHaveBeenCalled();
+    expect(s.mix.dispose).not.toHaveBeenCalled();
+    s.starts[0].finish();
+    await settled();
+    expect(s.mix.dispose).toHaveBeenCalledOnce();
+    s.service.shutdown();
+  });
+  it('accepts a fractional boundary serialized with MOO precision', async () => {
+    const material = {
+      ...score,
+      durationTicks: 7680,
+      tempos: [{ tick: 0, bpm: 90 }],
+      parts: [{ ...part, controls: [], notes: [[3840, 100, 64, 100]] as ScorePart['notes'] }],
+    };
+    const s = scheduler(material);
+    await s.service.play(s.request);
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: { version: 1, score: { ...material, contentId: 'new' } },
+      transport: { ...s.request.transport, revision: 2 },
+      replaceFromTick: 3840,
+      effectiveServerMs: Number((1000 + (4 * 60000) / 90).toPrecision(15)),
+    });
+    await settled();
+    s.time(3667);
+    expect(s.service.version('music')?.revision).toBe(2);
+    expect(s.error).not.toHaveBeenCalled();
+    s.service.shutdown();
+  });
+  it('does not reserve an output admission while an unconfirmed runtime waits', async () => {
+    const s = scheduler();
+    for (let index = 0; index < 8; index++)
+      await s.service.play({
+        ...s.request,
+        key: `waiting-${index}`,
+        transport: { ...s.request.transport, clockId: 'unconfirmed' },
+      });
+    expect(s.getOutput).not.toHaveBeenCalled();
+    await s.service.play({ ...s.request, key: 'overflow' });
+    expect(s.service.has('overflow')).toBe(false);
+    expect(s.error).toHaveBeenCalledWith('overflow', 'Music source limit reached');
     s.service.shutdown();
   });
   it('retains a supported but temporarily unavailable output and retries exactly on readiness', async () => {
