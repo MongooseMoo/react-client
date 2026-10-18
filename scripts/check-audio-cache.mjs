@@ -113,7 +113,11 @@ try {
   const ui = await browser.newContext({ serviceWorkers: 'block' });
   await ui.route('**/*', (route) =>
     route.request().url().startsWith(origin) ? route.continue() : route.abort());
-  await ui.routeWebSocket('**/*', (socket) => socket.close());
+  // Keep the mocked socket open. A closed one makes the client reconnect after
+  // 1, 2, 5 and 10 s, and every reconnect forgets the signed-in owner and
+  // restarts file transfers, so on a slow machine Autologs or the Files tab
+  // changed underneath the steps below.
+  await ui.routeWebSocket('**/*', () => {});
   const uiPage = await ui.newPage();
   await uiPage.goto(origin, { waitUntil: 'networkidle' });
   await uiPage.evaluate(() => window.mudClient.gmcp.handlers.Char.receiveRegisteredMessage('Name', {
