@@ -25,12 +25,20 @@ type Props = {
 
 type Phase = "idle" | "starting" | "listening";
 
-/** Longest a dictation listens before it is stopped. */
-const LISTEN_LIMIT_MS = 15000;
+/** Longest a dictation listens before it is stopped. A final cut off by this is never sent. */
+const LISTEN_LIMIT_MS = 60000;
 /** How long a stopped recognizer gets to deliver its final result or end. */
 const STOP_GRACE_MS = 2000;
+/** How long the browser gets to say where speech is recognized before listening starts. */
+const START_LIMIT_MS = 10000;
 
 const NOTHING_SENT = "Nothing was sent. Say it again.";
+const TIME_LIMIT_REVIEW = "Time limit reached. Check the command box, then press Enter.";
+const TIME_LIMIT_NOTHING = "Time limit reached. Nothing was heard.";
+
+function voiceEnabled(): boolean {
+  return usePreferences.getState().voiceInput.enabled;
+}
 
 interface Identity {
   player: string;
@@ -68,6 +76,8 @@ interface Dictation {
   written: string | null;
   /** stop() was called; the recognizer has STOP_GRACE_MS to finish. */
   stopping: boolean;
+  /** LISTEN_LIMIT_MS stopped it, so any final may be cut off: review it, never send it. */
+  timeLimit: boolean;
   /** Enter or Send was pressed while listening: send the final result. */
   sendOnFinal: boolean;
   session: VoiceSession | null;
@@ -86,6 +96,7 @@ type Ending = { text: "final" | "discard" | "keep"; announce?: string; priority?
 
 /** What to say when a dictation ends without a final result. */
 function unsent(dictation: Dictation): string {
+  if (dictation.timeLimit) return TIME_LIMIT_NOTHING;
   return dictation.sendOnFinal ? NOTHING_SENT : "Stopped listening";
 }
 
@@ -137,9 +148,10 @@ const VoiceCommandButton = ({ onSend }: Props) => {
   }, []);
 
   /** Ask the recognizer to finish, and end the dictation if it does not within the grace period. */
-  const requestStop = useCallback((dictation: Dictation) => {
+  const requestStop = useCallback((dictation: Dictation, timeLimit = false) => {
     if (currentRef.current !== dictation || dictation.stopping) return;
     dictation.stopping = true;
+    dictation.timeLimit = timeLimit;
     if (dictation.timer !== null) clearTimeout(dictation.timer);
     dictation.timer = setTimeout(() => {
       terminate(dictation, { text: "discard", announce: unsent(dictation) });
@@ -156,7 +168,15 @@ const VoiceCommandButton = ({ onSend }: Props) => {
     if (!recognizer) return;
     const { sendImmediately } = usePreferences.getState().voiceInput;
     const input = useInputStore.getState;
-    const isCurrent = () => currentRef.current === dictation;
+    // Still the live dictation, and voice commands still on. The preference
+    // subscription below ends it when they go off, but a recognizer callback
+    // can arrive first in the same task; it must not write or send either.
+    const isCurrent = () => {
+      if (currentRef.current !== dictation) return false;
+      if (voiceEnabled()) return true;
+      terminate(dictation, { text: "discard", announce: "Dictation stopped" });
+      return false;
+    };
     dictation.phase = "listening";
     dictation.draft = input().text;
     dictation.written = dictation.draft;
@@ -187,7 +207,8 @@ const VoiceCommandButton = ({ onSend }: Props) => {
       onFinal: (text) => {
         if (!isCurrent()) return;
         const command = appendToDraft(dictation.draft, text);
-        const send = sendImmediately || dictation.sendOnFinal;
+        // A final after the time limit may be cut off mid-sentence: the player checks it first.
+        const send = !dictation.timeLimit && (sendImmediately || dictation.sendOnFinal);
         dictation.written = command;
         input().setText(command);
         // The text is the player's now; end before sending so the send path no longer asks.
@@ -197,7 +218,7 @@ const VoiceCommandButton = ({ onSend }: Props) => {
           onSendRef.current();
         } else {
           setInputTextAndFocus(command, command.length);
-          announce(`Heard ${text}`, "polite");
+          announce(dictation.timeLimit ? TIME_LIMIT_REVIEW : `Heard ${text}`, "polite");
         }
       },
       onError: (code) => {
@@ -220,12 +241,15 @@ const VoiceCommandButton = ({ onSend }: Props) => {
       return;
     }
     dictation.session = session;
-    dictation.timer = setTimeout(() => requestStop(dictation), LISTEN_LIMIT_MS);
+    // Replaces the start timer.
+    if (dictation.timer !== null) clearTimeout(dictation.timer);
+    dictation.timer = setTimeout(() => requestStop(dictation, true), LISTEN_LIMIT_MS);
   }, [recognizer, terminate, requestStop]);
 
   const toggle = useCallback(async () => {
     if (!recognizer) return;
     const current = currentRef.current;
+    if (!current && !voiceEnabled()) return;
     if (current) {
       if (current.phase === "listening" && !current.stopping) requestStop(current);
       // Still starting, or already stopping and waiting on the browser: end it now.
@@ -252,6 +276,7 @@ const VoiceCommandButton = ({ onSend }: Props) => {
       draft: "",
       written: null,
       stopping: false,
+      timeLimit: false,
       sendOnFinal: false,
       session: null,
       releaseSpeech: null,
@@ -260,6 +285,14 @@ const VoiceCommandButton = ({ onSend }: Props) => {
     currentRef.current = dictation;
     useInputStore.getState().setDictation(dictation.handle);
     setPhase("starting");
+    // The browser may never answer where speech is recognized; do not wait forever.
+    dictation.timer = setTimeout(() => {
+      terminate(dictation, {
+        text: "discard",
+        announce: "Speech recognition did not start. Try again.",
+        priority: "assertive",
+      });
+    }, START_LIMIT_MS);
 
     try {
       const lang = recognitionLanguage(usePreferences.getState().voiceInput.language);
@@ -267,7 +300,7 @@ const VoiceCommandButton = ({ onSend }: Props) => {
       // Escape, a second press, a typed send, turning the feature off, unmounting
       // or a new player or connection may have ended it while the browser answered.
       if (currentRef.current !== dictation) return;
-      if (!usePreferences.getState().voiceInput.enabled) {
+      if (!voiceEnabled()) {
         terminate(dictation, { text: "discard" });
         return;
       }
@@ -309,12 +342,17 @@ const VoiceCommandButton = ({ onSend }: Props) => {
     };
   }, [terminate]);
 
-  // Turning the feature off ends any dictation; unmounting ends it silently.
-  useEffect(() => {
-    if (enabled) return;
-    if (currentRef.current) terminate(currentRef.current, { text: "discard", announce: "Dictation stopped" });
-  }, [enabled, terminate]);
+  // Turning the feature off ends any dictation the moment the preference
+  // changes, not after React re-renders: a result arriving in between must not send.
+  useEffect(() => usePreferences.subscribe(
+    (state) => state.voiceInput.enabled,
+    (enabledNow) => {
+      const dictation = currentRef.current;
+      if (!enabledNow && dictation) terminate(dictation, { text: "discard", announce: "Dictation stopped" });
+    },
+  ), [terminate]);
 
+  // Unmounting ends any dictation silently.
   useEffect(() => () => {
     if (currentRef.current) terminate(currentRef.current, { text: "discard" });
   }, [terminate]);

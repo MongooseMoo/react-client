@@ -206,5 +206,53 @@ disposal; release depended on onend.
   during interim, no final, no end) -> after 2.5 s idle, aborted, input "",
   nothing sent, "Nothing was sent. Say it again." announced.
 
+## Codex round 3 on 58889e69: changes requested (all reproduced)
+Report: scratchpad codex-rereview3-voice-commands-report.md; harnesses
+codex-rereview3-voice-{harness,lifecycle,browser}.cjs.
+1. P2 Preference-off cancel ran in a passive useEffect; in Chromium a final
+   0-1 ms after unchecking sent "drop all" with enabled=false.
+2. P2 15 s deadline reused requestStop, so a grace-period final auto-sent a
+   cut-off command. Lead's decision: LISTEN_LIMIT_MS = 60 s; a deadline stop
+   never sends (final stays for review, even with send at once); announce
+   "Time limit reached. Check the command box, then press Enter." or
+   "Time limit reached. Nothing was heard."; state 60 s in help.
+3. P3 available() never settling left Starting forever; give Starting a
+   10 s timeout: "Speech recognition did not start. Try again."
+Cause of 1: the same mistake as round 1's identity bug, authority checked
+lazily in a React effect instead of synchronously at the store.
+
+## Rework for round 3 (tests first: 6 failed; interim test rewritten to
+## assert inside the act, then confirmed failing on the old component)
+- `usePreferences.subscribe(s => s.voiceInput.enabled, ...)` terminates
+  (discard, "Dictation stopped") synchronously on true->false; the passive
+  enabled effect is gone. Recognizer callbacks' isCurrent() also checks the
+  preference and terminates if off; toggle refuses to start when off.
+- LISTEN_LIMIT_MS 60000; deadline calls requestStop(d, true) -> d.timeLimit.
+  A final with timeLimit is never sent (even send at once or a held Enter):
+  placed in the input, focused, "Time limit reached. Check the command box,
+  then press Enter." No final -> "Time limit reached. Nothing was heard."
+  Help text states the 60 s limit.
+- START_LIMIT_MS 10000 timer set when Starting begins, replaced by the
+  listen timer: "Speech recognition did not start. Try again." (assertive).
+- Test fixes Codex asked for: zero-instance assertion in the re-entry test;
+  pending typed send with "inventory" sent exactly once; old "no final
+  follows Enter" renamed to its error path.
+
+## Verification (round 3, 2026-10-18)
+- tsc exit 0; vitest 178 files / 2441 tests passed; biome 7 warnings, all
+  on master.
+- Round-3 browser harness (real Chromium, real preferences checkbox):
+  final at 0/1/5/20 ms after unchecking -> sends [] in every case.
+- Round-3 lifecycle harness: timer cleanup cases all timers []; final after
+  disable (same task / microtask / next task) sends nothing. Its "limit at
+  15s", "cutoff final" and "unresolved availability after 17s" cases are
+  artifacts: line 51 virtualizes only 15000/2000 ms timers, so the 60000
+  and 10000 ms timers never fire in its virtual time; covered by fake-timer
+  unit tests instead.
+- Round-3, round-2, round-1 harnesses otherwise all correct (round-2's
+  pasted PreviewButton copy still speaks, as before; round-3's imported one
+  does not).
+- Playwright after login: all checks pass, including the 2 s stall.
+
 ## Next step
 Committed; not pushed. Fresh Codex review follows (team lead).

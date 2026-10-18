@@ -162,7 +162,7 @@ describe("VoiceCommandButton", () => {
       }
     }
 
-    it("sends nothing when no final result follows Enter", async () => {
+    it("sends nothing when Enter is followed by a recognition error", async () => {
       const { onSend, textarea } = renderInput();
       const recognition = await startListening();
       act(() => recognition.hear(["drop", false]));
@@ -278,6 +278,19 @@ describe("VoiceCommandButton", () => {
         expect(screen.queryByRole("button", { name: "Voice command", pressed: true })).toBeNull();
       });
     }
+
+    it("by a typed send, which sends the typed text exactly once", async () => {
+      const slow = slowRecognizer();
+      window.webkitSpeechRecognition = slow.recognizer;
+      const { onSend, textarea } = renderInput();
+      fireEvent.input(textarea, { target: { value: "inventory" } });
+      fireEvent.click(micButton());
+      fireEvent.keyDown(textarea, { key: "Enter" });
+      expect(onSend.mock.calls).toEqual([["inventory"]]);
+      await settle(slow.resolve);
+      expect(onSend.mock.calls).toEqual([["inventory"]]);
+      expect(FakeRecognition.instances).toHaveLength(0);
+    });
 
     it("by unmounting", async () => {
       const slow = slowRecognizer();
@@ -436,24 +449,66 @@ describe("VoiceCommandButton", () => {
       expect(onSend).not.toHaveBeenCalled();
     });
 
-    it("listening stops after fifteen seconds, and a final in the grace period still counts", async () => {
-      const { textarea } = renderInput();
-      const recognition = await startOnFakeTimers();
-      await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
-      expect(recognition.stopped).toBe(true);
-      expect(clientSpeechSuspended()).toBe(true);
-      act(() => recognition.hear(["look", true]));
-      expect(textarea).toHaveValue("look");
-      expect(clientSpeechSuspended()).toBe(false);
-    });
-
-    it("listening that hears nothing at all ends by seventeen seconds", async () => {
+    it("keeps listening past fifteen seconds; the limit is sixty", async () => {
       renderInput();
       const recognition = await startOnFakeTimers();
-      await act(async () => { await vi.advanceTimersByTimeAsync(17000); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(59999); });
+      expect(recognition.stopped).toBe(false);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(recognition.stopped).toBe(true);
+    });
+
+    it("a final cut off by the time limit is never sent, even with send at once on", async () => {
+      setVoice({ sendImmediately: true });
+      const { onSend, textarea } = renderInput();
+      const recognition = await startOnFakeTimers();
+      act(() => recognition.hear(["drop all", false]));
+      await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+      expect(recognition.stopped).toBe(true);
+      act(() => recognition.hear(["drop all", true]));
+      expect(onSend).not.toHaveBeenCalled();
+      expect(addCommandMock).not.toHaveBeenCalled();
+      expect(textarea).toHaveValue("drop all");
+      expect(textarea).toHaveFocus();
+      expect(clientSpeechSuspended()).toBe(false);
+      expect(announceMock).toHaveBeenCalledWith("Time limit reached. Check the command box, then press Enter.", "polite");
+    });
+
+    it("Enter pressed after the time limit still does not send the cut-off final", async () => {
+      const { onSend, textarea } = renderInput();
+      const recognition = await startOnFakeTimers();
+      act(() => recognition.hear(["drop all", false]));
+      await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+      fireEvent.keyDown(textarea, { key: "Enter" });
+      act(() => recognition.hear(["drop all", true]));
+      expect(onSend).not.toHaveBeenCalled();
+      expect(textarea).toHaveValue("drop all");
+    });
+
+    it("listening that hears nothing at all ends by sixty-two seconds and says so", async () => {
+      renderInput();
+      const recognition = await startOnFakeTimers();
+      await act(async () => { await vi.advanceTimersByTimeAsync(62000); });
       expect(recognition.aborted).toBe(true);
       expect(clientSpeechSuspended()).toBe(false);
       expect(micButton()).toHaveAttribute("aria-pressed", "false");
+      expect(announceMock).toHaveBeenCalledWith("Time limit reached. Nothing was heard.", "polite");
+    });
+
+    it("a start whose availability check never answers gives up after ten seconds", async () => {
+      let answer = () => {};
+      window.webkitSpeechRecognition = fakeRecognizer(() => new Promise((done) => { answer = () => done("available"); }));
+      renderInput();
+      fireEvent.click(micButton());
+      await act(async () => { await vi.advanceTimersByTimeAsync(9999); });
+      expect(micButton()).toHaveAttribute("aria-pressed", "true");
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(micButton()).toHaveAttribute("aria-pressed", "false");
+      expect(useInputStore.getState().dictation).toBeNull();
+      expect(announceMock).toHaveBeenCalledWith("Speech recognition did not start. Try again.", "assertive");
+      // A late answer is ignored.
+      await act(async () => { answer(); await vi.advanceTimersByTimeAsync(0); });
+      expect(FakeRecognition.instances).toHaveLength(0);
     });
 
     it("a press while waiting for a stopped recognizer ends it at once", async () => {
@@ -516,6 +571,51 @@ describe("VoiceCommandButton", () => {
     });
   });
 
+  describe("turning voice commands off takes effect at once", () => {
+    it("a final arriving before React has re-rendered is not sent or written", async () => {
+      setVoice({ sendImmediately: true });
+      const { onSend, textarea } = renderInput();
+      fireEvent.input(textarea, { target: { value: "say" } });
+      const recognition = await startListening();
+      act(() => recognition.hear(["drop", false]));
+      // One act: the preference changes and the final arrives before any effect runs.
+      act(() => {
+        setVoice({ enabled: false });
+        recognition.hear(["drop all", true]);
+      });
+      expect(onSend).not.toHaveBeenCalled();
+      expect(addCommandMock).not.toHaveBeenCalled();
+      expect(useInputStore.getState().text).toBe("say");
+      expect(recognition.aborted).toBe(true);
+      expect(clientSpeechSuspended()).toBe(false);
+    });
+
+    it("an interim arriving before React has re-rendered is not written", async () => {
+      renderInput();
+      const recognition = await startListening();
+      let textBeforeEffects = "unset";
+      act(() => {
+        setVoice({ enabled: false });
+        recognition.hear(["drop", false]);
+        textBeforeEffects = useInputStore.getState().text;
+      });
+      expect(textBeforeEffects).toBe("");
+    });
+
+    it("a start whose availability answers after the preference went off starts nothing", async () => {
+      const slow = slowRecognizer();
+      window.webkitSpeechRecognition = slow.recognizer;
+      renderInput();
+      fireEvent.click(micButton());
+      await act(async () => {
+        setVoice({ enabled: false });
+        slow.resolve();
+        await new Promise((done) => setTimeout(done, 0));
+      });
+      expect(FakeRecognition.instances).toHaveLength(0);
+    });
+  });
+
   it("a held send that ends with no final says nothing was sent", async () => {
     const { onSend, textarea } = renderInput();
     const recognition = await startListening();
@@ -563,7 +663,7 @@ describe("VoiceCommandButton", () => {
     fireEvent.click(micButton());
     await act(async () => { await new Promise((done) => setTimeout(done, 0)); });
     expect(clientSpeechSuspended()).toBe(false);
-    expect(FakeRecognition.instances.every((recognition) => !recognition.started || recognition.aborted)).toBe(true);
+    expect(FakeRecognition.instances).toHaveLength(0);
     view.unmount();
     expect(clientSpeechSuspended()).toBe(false);
     vi.unstubAllGlobals();

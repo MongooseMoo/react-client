@@ -107,6 +107,7 @@ const VoiceCommandPreferences = () => {
         Press Alt+Shift+D or the microphone button by the command box, then speak one command.
         Listening stops when you pause; press again or press Enter to stop sooner, or Escape to discard.
         Typing in the command box also stops it. The client does not speak while listening.
+        Listening stops after 60 seconds at most; anything heard by then waits in the command box and is never sent on its own.
       </p>
       <label>
         <input
