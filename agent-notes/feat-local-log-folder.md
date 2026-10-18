@@ -207,7 +207,15 @@ the serialisation claim for the no-Web-Locks fallback (per-page queue, no
 recovery, but name claims not serialised across tabs, so one tab's
 placeholder can replace another's and that session re-renders under a new
 name); PR description written to the session scratchpad
-(`pr-local-logs.md`). Then the 7-step gate on the final head and report.
+(`pr-local-logs.md`). Gate on ac095080, full output kept: typecheck exit 0;
+`npm test` 191 files / 2743 tests; test:audio-cache first run exit 1,
+`locator.waitFor` timeout for `input[type="file"]` at
+scripts/check-audio-cache.mjs:137 (the Files tab after a reconnect). That is
+the flake fixed on master by PR #192 (c574bfd2, keeps the mocked socket
+open), which this branch's base 3cd0ff55 lacks. The rerun passed (4 PASS).
+editor-ownership 1 passed on 5193 serving this build's `index-DU2tmgtf.js`;
+check-browser-sessions, check-client-recovery, test:a11y exit 0. Not
+rebased onto c455f855 (team-lead said to work on the branch as it is).
 Ready for team-lead to open the PR; do not push from here.
 
 Round 9 (Codex review 8 of 930b2ad8) committed and reported: the claim
