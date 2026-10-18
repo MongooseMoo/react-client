@@ -81,6 +81,8 @@ export class HeadTrackingController {
   private startedByPlayer = false;
   /** A recenter or stop ends a pause; what it announces itself is enough. */
   private quietResume = false;
+  /** Motion access was granted in this session (a permission-gated browser). */
+  private permissionGranted = false;
 
   constructor(env: HeadTrackingEnvironment) {
     this.env = env;
@@ -133,6 +135,7 @@ export class HeadTrackingController {
         this.env.announce('Motion access was not allowed, so head tracking is off.');
         return;
       }
+      this.permissionGranted = true;
     }
     this.env.announce('Head tracking on. Straight ahead is the way you face now.');
     if (usePreferences.getState().sound.headTracking) {
@@ -194,13 +197,23 @@ export class HeadTrackingController {
       if (this.tracker.hasReading) {
         return;
       }
-      useHeadTrackingStore.setState({ status: 'no-readings' });
-      if (this.startedByPlayer) {
-        this.env.announce(
-          this.env.permissionRequest()
-            ? 'No motion readings yet. Use Allow motion access to try again.'
-            : 'No motion readings from this device, so head tracking is waiting.',
-        );
+      const announceIt = this.startedByPlayer;
+      if (this.env.permissionRequest() && !this.permissionGranted) {
+        // Behind a permission gate not yet passed this session (iOS forgets it across
+        // reloads): no readings means no permission yet, so ask again rather than give up.
+        useHeadTrackingStore.setState({ status: 'no-readings' });
+        if (announceIt) {
+          this.env.announce('No motion readings yet. Use Allow motion access to try again.');
+        }
+        return;
+      }
+      // Nothing gated it and still no complete reading: there is no sensor to wait for.
+      // Off, with "Check again" in the controls; said aloud only when the player turned
+      // it on, not when a saved preference restored it at load.
+      useHeadTrackingStore.setState({ sensor: 'none' });
+      this.setPreference(false);
+      if (announceIt) {
+        this.env.announce('No motion sensor found. Head tracking is off.');
       }
     }, NO_READING_MS);
   }
@@ -343,13 +356,25 @@ export class HeadTrackingController {
   };
 }
 
-function permissionRequest(): (() => Promise<string>) | undefined {
-  const eventClass = typeof window === 'undefined' ? undefined : window.DeviceOrientationEvent;
-  if (!eventClass || !('requestPermission' in eventClass)) {
+/** The parts of the window the permission gate reads. */
+export interface PermissionWindow {
+  DeviceOrientationEvent?: unknown;
+  matchMedia?: (query: string) => { matches: boolean };
+}
+
+/**
+ * DeviceOrientationEvent.requestPermission, where motion readings really wait
+ * for it: a touch-first device (iOS). Desktop Chrome has the method too, and it
+ * resolves "granted" on a machine with no sensor, so the method alone says
+ * nothing; there the ordinary bounded check decides.
+ */
+export function browserPermissionRequest(win: PermissionWindow | undefined): (() => Promise<string>) | undefined {
+  const eventClass = win?.DeviceOrientationEvent;
+  if (typeof eventClass !== 'function' || !('requestPermission' in eventClass)) {
     return undefined;
   }
   const request = eventClass.requestPermission;
-  if (typeof request !== 'function') {
+  if (typeof request !== 'function' || !win?.matchMedia?.('(pointer: coarse)').matches) {
     return undefined;
   }
   return async () => String(await request.call(eventClass));
@@ -382,7 +407,7 @@ export const headTracking = new HeadTrackingController({
   screenAngle,
   onScreenChange,
   now: () => performance.now(),
-  permissionRequest,
+  permissionRequest: () => browserPermissionRequest(typeof window === 'undefined' ? undefined : window),
   setTimer: (callback, ms) => window.setTimeout(callback, ms),
   clearTimer: (id) => window.clearTimeout(id),
   announce: (message) => announce(message, 'polite'),

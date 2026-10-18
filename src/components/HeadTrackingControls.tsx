@@ -34,46 +34,62 @@ const HeadTrackingControls: React.FC = () => {
   const yawDegrees = useHeadTrackingStore((state) => state.yawDegrees);
   const checkAgainRef = useRef<HTMLButtonElement>(null);
   const checkboxRef = useRef<HTMLInputElement>(null);
-  /** "Check again" had focus when the sensor turned up, so its replacement takes it. */
-  const focusCheckbox = useRef(false);
+  /** Focus is somewhere in this section, so a swap of its view must not drop it. */
+  const focusInside = useRef(false);
 
+  const view: 'retry' | 'hidden' | 'controls' =
+    !enabled && (sensor === 'none' || sensor === 'checking')
+      ? 'retry'
+      : !enabled && sensor !== 'available' && sensor !== 'needs-permission'
+        ? 'hidden'
+        : 'controls';
+
+  // A swap of views (a sensor found by Check again; giving up after no readings)
+  // removes the focused control. If focus fell to the page with it, the new
+  // view's main control takes it; focus the player moved elsewhere stays there.
   useEffect(() => {
-    if (sensor === 'available' && focusCheckbox.current) {
-      focusCheckbox.current = false;
+    const active = document.activeElement;
+    if (!focusInside.current || (active && active !== document.body)) {
+      return;
+    }
+    if (view === 'retry') {
+      checkAgainRef.current?.focus();
+    } else if (view === 'controls') {
       checkboxRef.current?.focus();
     }
-  }, [sensor]);
+  }, [view]);
 
-  if (!enabled && (sensor === 'none' || sensor === 'checking')) {
+  const trackFocus = {
+    onFocus: () => {
+      focusInside.current = true;
+    },
+    onBlur: (event: React.FocusEvent<HTMLFieldSetElement>) => {
+      if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) {
+        focusInside.current = false;
+      }
+    },
+  };
+
+  if (view === 'retry') {
     return (
-      <fieldset className="head-tracking">
+      <fieldset className="head-tracking" {...trackFocus}>
         <legend>Head tracking</legend>
         <p>{sensor === 'checking' ? 'Checking for a motion sensor.' : 'No motion sensor found.'}</p>
-        <button
-          ref={checkAgainRef}
-          type="button"
-          onClick={() => headTracking.checkSensorAgain()}
-          onBlur={() => {
-            focusCheckbox.current = false;
-          }}
-          onFocus={() => {
-            focusCheckbox.current = true;
-          }}
-        >
+        <button ref={checkAgainRef} type="button" onClick={() => headTracking.checkSensorAgain()}>
           Check again
         </button>
       </fieldset>
     );
   }
 
-  if (!enabled && sensor !== 'available' && sensor !== 'needs-permission') {
+  if (view === 'hidden') {
     return null;
   }
 
   const askAgain = status === 'blocked' || (enabled && status === 'no-readings' && sensor !== 'available');
 
   return (
-    <fieldset className="head-tracking">
+    <fieldset className="head-tracking" {...trackFocus}>
       <legend>Head tracking</legend>
       <label>
         <input

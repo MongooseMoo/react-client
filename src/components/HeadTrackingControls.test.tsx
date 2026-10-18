@@ -82,6 +82,38 @@ describe('HeadTrackingControls', () => {
     expect(disable).toHaveBeenCalledOnce();
   });
 
+  it('keeps focus when giving up swaps the controls for Check again', () => {
+    setPreference(true);
+    useHeadTrackingStore.setState({ sensor: 'available', status: 'waiting' });
+    render(<HeadTrackingControls />);
+    screen.getByRole('checkbox', { name: 'Turn the sound scene with this device' }).focus();
+    // What the controller does after 3 s without a complete reading.
+    act(() => {
+      useHeadTrackingStore.setState({ sensor: 'none', status: 'off' });
+      setPreference(false);
+    });
+    expect(screen.getByRole('group', { name: 'Head tracking' })).toHaveTextContent('No motion sensor found.');
+    expect(screen.getByRole('button', { name: 'Check again' })).toHaveFocus();
+  });
+
+  it('does not take focus for Check again when it was elsewhere', () => {
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    try {
+      setPreference(true);
+      useHeadTrackingStore.setState({ sensor: 'available', status: 'waiting' });
+      render(<HeadTrackingControls />);
+      outside.focus();
+      act(() => {
+        useHeadTrackingStore.setState({ sensor: 'none', status: 'off' });
+        setPreference(false);
+      });
+      expect(outside).toHaveFocus();
+    } finally {
+      outside.remove();
+    }
+  });
+
   it('says how to resume while paused, with Recenter at hand', () => {
     setPreference(true);
     useHeadTrackingStore.setState({ sensor: 'available', status: 'paused' });

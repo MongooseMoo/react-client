@@ -10,9 +10,24 @@ Do not push or open a PR.
 
 ## State
 - CURRENT (2026-10-18): Codex round 5 APPROVED the branch at 9549c61e (no P2 or worse);
-  its one P3 (prove a pending pause timer is cancelled by recenter) is fixed in the
-  commit after it, with two tests that fail when the cancel in HeadTracker.recenter is
-  removed (checked by mutation). Waiting on the team lead's browser check, then PR.
+  its one P3 (prove a pending pause timer is cancelled by recenter) is fixed in
+  4862755b, with two tests that fail when the cancel in HeadTracker.recenter is
+  removed (checked by mutation).
+- The team lead's real-browser check then found a merge blocker, fixed in the commit
+  after 4862755b: desktop Chrome 155 (Windows, no sensor) HAS
+  DeviceOrientationEvent.requestPermission, resolving "granted", and sends one all-null
+  reading. Treating the method as an iOS-style gate showed every desktop the full toggle,
+  which then waited forever. Now `browserPermissionRequest` gates only when the method
+  exists AND `(pointer: coarse)` matches; elsewhere the bounded passive probe decides
+  ("No motion sensor found." + Check again). Defence in depth: turned on, with no gate
+  or with permission granted this session, and no complete reading within 3 s -> sensor
+  'none', preference off, "No motion sensor found. Head tracking is off." (silent when a
+  saved preference restored it at load). Behind an unpassed gate (iOS after a reload)
+  it still asks for motion access instead. Focus moves to Check again (or back to the
+  checkbox) when a view swap removes the focused control. Desktop check in Chromium,
+  with and without an injected requestPermission resolving "granted": "No motion sensor
+  found. Check again", no toggle (scratchpad desktop-check.mjs).
+  Waiting on the team lead's browser check, then PR.
 - Files as they stand:
   - `src/audio/headYaw.ts` - devicePose (quaternion from alpha/beta/gamma + screen
     angle), yawFrom -> { yaw, conditioning } (twist from the reference pose), wrap, One

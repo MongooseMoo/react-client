@@ -2,7 +2,39 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { isHeadRecenterShortcut, reservedReason } from '../reservedShortcuts';
 import { usePreferences } from '../stores/preferencesStore';
-import { HeadTrackingController, type HeadTrackingEnvironment, useHeadTrackingStore } from './headTracking';
+import {
+  browserPermissionRequest,
+  HeadTrackingController,
+  type HeadTrackingEnvironment,
+  useHeadTrackingStore,
+} from './headTracking';
+
+describe('browserPermissionRequest', () => {
+  const windowWith = (requestPermission: unknown, coarse: boolean) => ({
+    DeviceOrientationEvent: requestPermission === undefined ? class {} : Object.assign(class {}, { requestPermission }),
+    matchMedia: (query: string) => ({ matches: query === '(pointer: coarse)' && coarse }),
+  });
+
+  it('is none where the browser has no requestPermission', () => {
+    expect(browserPermissionRequest(windowWith(undefined, true))).toBeUndefined();
+  });
+
+  it('is none on a fine pointer even with requestPermission (desktop Chrome has it, and no sensor)', () => {
+    expect(browserPermissionRequest(windowWith(async () => 'granted', false))).toBeUndefined();
+  });
+
+  it('asks on a touch-first device with requestPermission (iOS)', async () => {
+    const request = vi.fn(async () => 'granted');
+    const ask = browserPermissionRequest(windowWith(request, true));
+    expect(ask).toBeTypeOf('function');
+    await expect(ask?.()).resolves.toBe('granted');
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it('is none without DeviceOrientationEvent at all', () => {
+    expect(browserPermissionRequest({ matchMedia: () => ({ matches: true }) })).toBeUndefined();
+  });
+});
 
 const DEG = Math.PI / 180;
 
@@ -286,13 +318,51 @@ describe('HeadTrackingController', () => {
     expect(timers.size).toBe(0);
   });
 
-  it('says so when no readings arrive after turning on', async () => {
-    const { controller, sink, advance, announce } = setup();
+  const GAVE_UP = 'No motion sensor found. Head tracking is off.';
+
+  it('gives up after 3 s without a complete reading: no sensor, off, said aloud', async () => {
+    const { controller, sink, dispatch, advance, announce, orientationListeners, timers } = setup();
+    detach = controller.attach(sink);
+    await controller.enable();
+    dispatch({ alpha: null, beta: null, gamma: null }); // what a desktop sends
+    dispatch({ alpha: 10, beta: null, gamma: null }); // incomplete counts for nothing
+    advance(3000);
+    expect(useHeadTrackingStore.getState()).toMatchObject({ sensor: 'none', status: 'off' });
+    expect(headTrackingPreference()).toBe(false);
+    expect(announce).toHaveBeenLastCalledWith(GAVE_UP);
+    expect(sink.setHeadTracking).toHaveBeenLastCalledWith(false);
+    expect(orientationListeners.size).toBe(0);
+    expect(timers.size).toBe(0);
+  });
+
+  it('gives up the same way when permission was granted but no complete reading comes (desktop Chrome)', async () => {
+    const { controller, sink, advance, announce } = setup({ permission: async () => 'granted' });
     detach = controller.attach(sink);
     await controller.enable();
     advance(3000);
+    expect(useHeadTrackingStore.getState()).toMatchObject({ sensor: 'none', status: 'off' });
+    expect(headTrackingPreference()).toBe(false);
+    expect(announce).toHaveBeenLastCalledWith(GAVE_UP);
+  });
+
+  it('restored at load behind a permission gate, without readings, asks for access instead of giving up', () => {
+    // iOS forgets motion access across reloads: no readings here means no permission yet.
+    setPreference(true);
+    const { controller, sink, advance } = setup({ permission: async () => 'granted' });
+    detach = controller.attach(sink);
+    advance(3000);
     expect(useHeadTrackingStore.getState().status).toBe('no-readings');
-    expect(announce).toHaveBeenLastCalledWith(expect.stringContaining('No motion readings'));
+    expect(headTrackingPreference()).toBe(true);
+  });
+
+  it('restored at load without a gate and without readings, turns off without saying so at load', () => {
+    setPreference(true);
+    const { controller, sink, advance, announce } = setup();
+    detach = controller.attach(sink);
+    advance(3000);
+    expect(useHeadTrackingStore.getState()).toMatchObject({ sensor: 'none', status: 'off' });
+    expect(headTrackingPreference()).toBe(false);
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it('recenters at once, announcing it', async () => {
