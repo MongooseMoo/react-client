@@ -517,8 +517,11 @@ describe("VoiceCommandButton", () => {
         expect(addCommandMock).not.toHaveBeenCalled();
         expect(textarea).toHaveValue("drop all");
 
-        // Let go, then a fresh press sends it exactly once.
+        // Let go: releasing Enter clears the guard. Then a fresh press sends it exactly once.
+        expect(useInputStore.getState().needsFreshEnter).toBe(true);
         fireEvent.keyUp(textarea, { key: "Enter" });
+        expect(useInputStore.getState().needsFreshEnter).toBe(false);
+        expect(onSend).not.toHaveBeenCalled();
         fireEvent.keyDown(textarea, { key: "Enter" });
         expect(onSend.mock.calls).toEqual([["drop all"]]);
         expect(addCommandMock).toHaveBeenCalledTimes(1);
