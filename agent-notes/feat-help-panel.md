@@ -18,7 +18,9 @@ Contract read from the live server 2026-10-18 (given in the assignment, not rech
   only to the first ten tabs (`shortcutForTab`), so Help carries no `aria-keyshortcuts`.
 - `biome lint src/components/sidebar.tsx` shows 4 warnings, all in code this branch did not touch
   (resize effect deps, useImperativeHandle deps, the separator role).
-- Next: full suite.
+- Full suite: 171 files, 2326 tests, all passed. Typecheck clean.
+- Not done: never run against the live server or in a browser; never heard with a screen reader.
+  Not pushed, no PR (as assigned).
 
 ## Decisions and why
 
@@ -42,4 +44,5 @@ Contract read from the live server 2026-10-18 (given in the assignment, not rech
 
 ## Next step
 
-Write `src/stores/helpStore.test.ts` and `src/gmcp/Help.test.ts`.
+Try it in a browser against mongoose.world as a guest (front page, a link, an ambiguous word, an
+old-style topic for "shown"), then push and open a PR when asked.
