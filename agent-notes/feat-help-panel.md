@@ -14,7 +14,11 @@ Contract read from the live server 2026-10-18 (given in the assignment, not rech
 - Done: `src/components/helpLinks.ts` (`splitHelpLine`): one-word topic after `help `, trailing
   punctuation dropped; `help search ...` takes words up to a comma; a known choice wins whole.
 - Done: `src/components/HelpPanel.tsx` + `.css`, 13 tests.
-- Next: the sidebar tab, then full suite.
+- Done: Help tab, last in `allTabs` (after Map), lazy, mountOnSelect. Sidebar shortcuts now go
+  only to the first ten tabs (`shortcutForTab`), so Help carries no `aria-keyshortcuts`.
+- `biome lint src/components/sidebar.tsx` shows 4 warnings, all in code this branch did not touch
+  (resize effect deps, useImperativeHandle deps, the separator role).
+- Next: full suite.
 
 ## Decisions and why
 

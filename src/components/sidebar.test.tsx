@@ -10,6 +10,8 @@ import { usePreferences } from '../stores/preferencesStore';
 vi.mock('./AudioChatBoundary', () => ({ default: () => <span>Audio controls</span> }));
 vi.mock('./ServerFeaturesPanel', () => ({ default: () => <span>Server information</span> }));
 vi.mock('./AudioDiagnostics', () => ({ default: () => <span>Diagnostics</span> }));
+vi.mock('./HelpPanel', () => ({ default: () => <span>Help contents</span> }));
+vi.mock('./MapPanel', () => ({ default: () => <span>Map contents</span> }));
 
 beforeEach(() => {
   useRoomStore.getState().reset();
@@ -35,4 +37,16 @@ it('reaches active destinations repeatedly and keeps shortcut positions stable a
   act(() => { ref.current?.switchToTab(2); });
   expect(usersPanel()).toContainElement(document.activeElement as HTMLElement);
   expect(screen.getByRole('tab', { name: 'Users' })).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+3');
+});
+
+it('puts Help last, after Map, with no number shortcut of its own', async () => {
+  const client = { connected: false, gmcp: { handlers: {} }, media: { diagnostics: {} }, onFileTransferOffer: () => () => {} } as unknown as MudClient;
+  act(() => useRoomStore.getState().setRoomInfo({ num: 1, name: 'Room', exits: {} }));
+  render(<Sidebar client={client} collapsed={false} onToggleCollapse={vi.fn()} />);
+  const tabs = screen.getAllByRole('tab');
+  expect(tabs.at(-2)).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+0');
+  expect(tabs.at(-1)).toHaveAccessibleName('Help');
+  expect(tabs.at(-1)).not.toHaveAttribute('aria-keyshortcuts');
+  fireEvent.click(tabs.at(-1) as HTMLElement);
+  expect(await screen.findByText('Help contents')).toBeInTheDocument();
 });
