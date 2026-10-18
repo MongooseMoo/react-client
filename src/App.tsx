@@ -43,6 +43,11 @@ import { stripMudAnsiTags } from "./stripMudAnsiTags";
 import { enrollBrowserNotifications, useBrowserNotifications } from './browserNotifications';
 import BrowserSessions from './components/BrowserSessions';
 import { canUseGameConnection, useBrowserPolicy } from './browserPolicy';
+import { watchAppBadge } from './launch/appBadge';
+import LaunchDatabaseDialog from './launch/LaunchDatabaseDialog';
+import { startLaunchHandling } from './launch/launchHandling';
+import { useLaunchStore } from './launch/launchStore';
+import { noteCommandSent } from './launch/placeLaunchText';
 
 const WINDOW_TITLE = "Mongoose Client";
 const DOUBLE_PRESS_WINDOW_MS = 500;
@@ -230,6 +235,23 @@ function App() {
     },
     [client, browserPaused],
   );
+
+  // Links, shares and opened files that launched or reached this window.
+  useEffect(() => {
+    startLaunchHandling();
+    return watchAppBadge();
+  }, []);
+
+  // Shared files wait in the Files tab; bring it up for them.
+  const filesRequest = useLaunchStore((state) => state.filesRequest);
+  useEffect(() => {
+    if (!filesRequest || !client) return;
+    const index = sidebarRef.current?.indexOfTab('files-tab') ?? -1;
+    if (index < 0) return;
+    setShowSidebar(true);
+    setSidebarCollapsed(false);
+    setSidebarFocusRequest({ index });
+  }, [filesRequest, client]);
 
   useLayoutEffect(() => {
     if (sidebarFocusRequest && showSidebar && !sidebarCollapsed) {
@@ -465,6 +487,7 @@ function App() {
 
   const handleCommand = useCallback(
     (text: string) => {
+      noteCommandSent();
       if (client) {
         client.sendCommand(text);
       }
@@ -592,6 +615,8 @@ function App() {
         links={browserPaused ? null : linkPickerLinks ?? null}
         onClose={closeLinkPicker ?? (() => {})}
       />
+      {/* A database the OS opened with the client, before anything boots it */}
+      <LaunchDatabaseDialog />
       {/* Default mode with no client yet — blank */}
       {isDefaultMode && !client && null}
     </>

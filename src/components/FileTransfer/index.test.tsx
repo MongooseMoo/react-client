@@ -17,6 +17,7 @@ import { FileTransferError } from '../../fileTransfer/types';
 import type { ReceivedFile, TransferState } from '../../fileTransfer/types';
 import { PIECE_SIZE } from '../../fileTransfer/wire';
 import type { UserlistPlayer } from '../../mcp';
+import { offerSharedFiles, useLaunchStore } from '../../launch/launchStore';
 import FileTransferPanel from './index';
 
 vi.mock('@react-aria/live-announcer', () => ({ announce: vi.fn() }));
@@ -478,5 +479,41 @@ describe('FileTransferPanel', () => {
     render(<FileTransferPanel client={client} expanded users={users} />);
 
     expect((await screen.findByRole('alert')).textContent).toBe('Client has shut down');
+  });
+});
+
+describe('files shared from another app', () => {
+  afterEach(() => useLaunchStore.setState({ sharedFiles: [], filesRequest: 0 }));
+
+  it('waits as the chosen file until the player picks a recipient and sends it', async () => {
+    const me = player(ME);
+    const alice = player(ALICE);
+    offerSharedFiles([fileOf(1, 'map.png'), fileOf(1, 'notes.txt')]);
+    await openPanel(me);
+
+    expect(await screen.findByText(
+      'Shared file ready: map.png, 16.0 KB. Choose a recipient, then Send. 1 more shared after this one.',
+    )).not.toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText('Recipient'));
+    expect(statesOf(me)).toEqual([]);
+
+    fireEvent.focus(screen.getByLabelText('Recipient'));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Alice' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send File' }));
+    await reaches(alice, 'offered');
+    expect(alice.transfers()[0].name).toBe('map.png');
+    expect(await screen.findByText(/^Shared file ready: notes\.txt/)).not.toBeNull();
+  });
+
+  it('sets the remaining shared files aside when the player chooses a file of their own', async () => {
+    offerSharedFiles([fileOf(1, 'map.png'), fileOf(1, 'notes.txt')]);
+    await openPanel(player(ME));
+    await screen.findByText(/^Shared file ready: map\.png/);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [fileOf(1, 'mine.txt')] } });
+
+    await waitFor(() => expect(screen.queryByText(/^Shared file ready/)).toBeNull());
+    expect(useLaunchStore.getState().sharedFiles).toEqual([]);
   });
 });

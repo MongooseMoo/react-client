@@ -73,6 +73,7 @@ vi.mock('./haptics/runtime', () => ({
 vi.mock('./stores/preferencesStore', () => {
   const usePreferences = () => mockPreferences;
   usePreferences.getState = () => mockPreferences;
+  usePreferences.subscribe = () => () => {};
   return { usePreferences };
 });
 

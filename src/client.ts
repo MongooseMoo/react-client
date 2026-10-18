@@ -31,6 +31,7 @@ import { reconnectDelay } from "./reconnectBackoff";
 import { closeAwayStream, readAwayStream, sameRecipient, takeAwayLines } from './awayV2';
 import { browserNotificationTag, sendBrowserAwayCommand } from './browserAway';
 import type { BrowserNotificationContext } from './browserNotifications';
+import { noteMissedActivity } from './launch/appBadge';
 
 // How long an open socket may stay silent after a resume ping before it is
 // treated as dead.
@@ -773,6 +774,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
 
   /** Whether a desktop notification was requested, not proof of delivery or speech. */
   sendNotification(title: string, body: string): boolean {
+    // Counted whether or not notifications are allowed: the player still missed it.
+    noteMissedActivity();
     if (!("Notification" in window)) {
       console.log("This browser does not support desktop notification");
       return false;

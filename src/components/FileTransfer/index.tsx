@@ -3,6 +3,7 @@ import type MudClient from '../../client';
 import { FileTransferError } from '../../fileTransfer/types';
 import type { FileTransfers, TransferSnapshot, TransferState } from '../../fileTransfer/types';
 import { useConnectionStore } from '../../stores/connectionStore';
+import { takeSharedFile, useLaunchStore } from '../../launch/launchStore';
 import type { UserlistPlayer } from '../../mcp';
 import { findTransferPeerByAddress, userlistPlayersToTransferPeers } from '../../fileTransferPeers';
 import type { TransferPeer } from '../../fileTransferPeers';
@@ -11,6 +12,7 @@ import ProgressBar from './ProgressBar';
 import PendingTransfer from './PendingTransfer';
 import OutgoingTransfer from './OutgoingTransfer';
 import History from './History';
+import { formatFileSize } from './formatFileSize';
 import { useFocusRefuge } from './useFocusRefuge';
 import { useTransferHistory } from './useTransferHistory';
 import { useTransfers } from './useTransfers';
@@ -51,6 +53,27 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
   const heading = useRef<HTMLHeadingElement>(null);
   useFocusRefuge(panel, heading);
 
+  // Files shared from another app, one at a time: each waits as the chosen
+  // file until the player picks a recipient and sends it. Nothing goes by itself.
+  const queuedShares = useLaunchStore((state) => state.sharedFiles);
+  const [sharedFile, setSharedFile] = useState<File | null>(null);
+  const recipientInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (sharedFile || queuedShares.length === 0) return;
+    const next = takeSharedFile();
+    if (!next) return;
+    setSharedFile(next);
+    setSelectedFile(next);
+    recipientInput.current?.focus();
+  }, [queuedShares, sharedFile]);
+
+  const chooseFile = (file: File) => {
+    // Choosing a file of one's own sets the remaining shared files aside.
+    if (sharedFile) useLaunchStore.setState({ sharedFiles: [] });
+    setSharedFile(null);
+    setSelectedFile(file);
+  };
+
   useEffect(() => {
     if (
       selectedRecipient &&
@@ -78,6 +101,8 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
       void attempt(`Error sending file ${selectedFile.name}`, () =>
         transfers.send(selectedFile, selectedRecipient.transferAddress),
       );
+      // The next shared file, if any, takes its place.
+      if (selectedFile === sharedFile) setSharedFile(null);
     }
   };
 
@@ -104,13 +129,22 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
       {/* Focusable from code only: where focus goes when the row that held it is gone. */}
       <h3 ref={heading} tabIndex={-1}>File Transfer</h3>
 
+      {/* Present before it has anything to say, so that what it says is announced. */}
+      <p role="status" className="file-transfer-shared">
+        {sharedFile
+          ? `Shared file ready: ${sharedFile.name}, ${formatFileSize(sharedFile.size)}. Choose a recipient, then Send.` +
+            (queuedShares.length > 0 ? ` ${queuedShares.length} more shared after this one.` : '')
+          : ''}
+      </p>
+
       <Controls
-        onFileChange={setSelectedFile}
+        onFileChange={chooseFile}
         onRecipientChange={setSelectedRecipient}
         onSendFile={handleSendFile}
         selectedFile={selectedFile}
         selectedRecipient={selectedRecipient}
         recipients={recipients}
+        recipientInputRef={recipientInput}
       />
 
       {snapshots.filter(awaitsPeer).map((transfer) => (
