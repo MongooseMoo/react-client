@@ -1024,8 +1024,16 @@ export class MediaService {
       }
       sound.segment = segment;
       if (previous && sharedReplacement) {
-        retiring = previous;
-        this.carryVoiceState(previous, sound);
+        // Another accepted renewal can activate while this asset is loading.
+        const current = this.sounds[soundKey];
+        const live =
+          current &&
+          !this.cleanedSounds.has(current) &&
+          current.playPayload?.transport?.sourceId === data.transport?.sourceId
+            ? current
+            : undefined;
+        retiring = live ?? (!this.cleanedSounds.has(previous) ? previous : undefined);
+        if (retiring) this.carryVoiceState(retiring, sound);
       }
     } else if (this.needsPanMode(sound, panType, data)) {
       // Cacophony fixes a source's panning mode at creation, so a kept voice
@@ -1129,8 +1137,11 @@ export class MediaService {
       const previousStaged = this.stagedSharedSounds.get(soundKey);
       this.stagedSharedSounds.set(soundKey, sound);
       const retiringSounds = this.retiringSharedSounds.get(soundKey) ?? new Set<ExtendedSound>();
-      retiringSounds.add(retiring);
-      if (previousStaged && previousStaged !== sound) retiringSounds.add(previousStaged);
+      for (const owned of retiringSounds)
+        if (this.cleanedSounds.has(owned)) retiringSounds.delete(owned);
+      if (!this.cleanedSounds.has(retiring)) retiringSounds.add(retiring);
+      if (previousStaged && previousStaged !== sound && !this.cleanedSounds.has(previousStaged))
+        retiringSounds.add(previousStaged);
       this.retiringSharedSounds.set(soundKey, retiringSounds);
     }
     if (!stagedShared) this.sounds[soundKey] = sound;

@@ -150,6 +150,152 @@ function wave(seconds = 8, clip = false): Buffer {
     );
   return bytes;
 }
+
+for (const outcome of ['starts', 'fails']) {
+  test(`overlapping renewal refreshes its predecessor after load when the second voice ${outcome}`, async ({
+    page,
+    context,
+  }) => {
+    await fixture(page, context, (route) => deliverWave(route));
+    const result = await page.evaluate(async (outcome) => {
+      const media = globalThis.media;
+      const transport = {
+        version: 1,
+        kind: 'media',
+        clockId: 'browser',
+        sourceId: 'overlap',
+        revision: 1,
+        state: 'playing',
+        anchorServerMs: performance.now(),
+        positionMs: 0,
+        rate: 1,
+        mode: 'finite',
+        durationMs: 30000,
+      };
+      globalThis.snapshot = transport;
+      await media.play({
+        key: 'radio',
+        name: 'shared-tone.wav',
+        url: location.origin + '/',
+        type: 'sound',
+      });
+      await media.play({
+        key: 'overlap',
+        name: 'shared-tone.wav',
+        url: location.origin + '/',
+        type: 'music',
+        is3d: true,
+        position: [0, 0, 0],
+        transport,
+      });
+      const original = media.sounds.overlap;
+      globalThis.holdSync = true;
+      const first = media.play({
+        key: 'overlap',
+        name: 'shared-tone.wav?overlapA=1',
+        url: location.origin + '/',
+        type: 'music',
+        is3d: true,
+        position: [0, 0, 0],
+        transport,
+      });
+      const until = performance.now() + 6000;
+      const waitFor = async (predicate) => {
+        while (!predicate()) {
+          if (performance.now() > until)
+            throw new Error('Overlapping renewal did not reach its controlled boundary');
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+      };
+      await waitFor(
+        () => globalThis.heldSync && media.stagedSharedSounds.get('overlap')?.playbacks[0],
+      );
+      const a = media.stagedSharedSounds.get('overlap'),
+        voiceA = a.playbacks[0];
+      let releaseLoad, finishStart;
+      const create = media.cacophony.createSound.bind(media.cacophony);
+      media.cacophony.createSound = async (...args) => {
+        if (!args[0].includes('overlapB')) return create(...args);
+        await new Promise((resolve) => {
+          releaseLoad = resolve;
+        });
+        const sound = await create(...args),
+          preplay = sound.preplay.bind(sound);
+        sound.preplay = () => {
+          const voices = preplay(),
+            voice = voices[0],
+            play = voice.play.bind(voice);
+          voice.play = (options) => {
+            finishStart = () =>
+              outcome === 'starts'
+                ? play(options)
+                : voice.eventEmitter.emit('error', {
+                    error: new Error('Controlled replacement start failure'),
+                    timestamp: performance.now(),
+                  });
+          };
+          return voices;
+        };
+        return sound;
+      };
+      const second = media.play({
+        key: 'overlap',
+        name: 'shared-tone.wav?overlapB=1',
+        url: location.origin + '/',
+        type: 'music',
+        is3d: true,
+        position: [0, 0, 0],
+        transport,
+      });
+      await waitFor(() => releaseLoad);
+      globalThis.holdSync = false;
+      media.receiveMediaSync({ ...globalThis.heldSync, transport });
+      await first;
+      await waitFor(() => media.sounds.overlap === a && original.playbacks.length === 0);
+      releaseLoad();
+      await waitFor(() => media.sounds.overlap !== a && finishStart);
+      const b = media.sounds.overlap,
+        voiceB = b.playbacks[0];
+      media.update({ key: 'overlap', volume: 34, occlusion: 0.72, position: [2, 0, 0] });
+      media.setListenerPosition([17, 0, 0]);
+      const tracked = media.retiringSharedSounds.get('overlap');
+      const livePredecessor = tracked?.has(a) && !tracked.has(original) && voiceA.isPlaying;
+      const mixed =
+        a.mediaVolume === 0.34 &&
+        b.mediaVolume === 0.34 &&
+        voiceA.occlusion === 0.72 &&
+        voiceB.occlusion === 0.72 &&
+        a.volume === b.volume &&
+        a.playPayload.position[0] === 2;
+      finishStart();
+      await second;
+      const active = media.sounds.overlap;
+      const settled =
+        active === (outcome === 'starts' ? b : a) &&
+        active.playbacks[0].isPlaying &&
+        active.mediaVolume === 0.34 &&
+        active.occlusion === 0.72;
+      media.stop({ key: 'overlap' });
+      const disposed =
+        voiceA.source === undefined &&
+        voiceB.source === undefined &&
+        !media.stagedSharedSounds.has('overlap') &&
+        !media.retiringSharedSounds.has('overlap');
+      const radioKept = media.sounds.radio.playbacks[0].isPlaying;
+      media.cacophony.createSound = create;
+      media.shutdown();
+      globalThis.clock.shutdown();
+      return { livePredecessor, mixed, settled, disposed, radioKept };
+    }, outcome);
+    expect(result).toEqual({
+      livePredecessor: true,
+      mixed: true,
+      settled: true,
+      disposed: true,
+      radioKept: true,
+    });
+  });
+}
 async function deliverWave(route: Route, seconds = 30): Promise<void> {
   const bytes = wave(seconds),
     range = route.request().headers().range;
