@@ -16,12 +16,14 @@ This note and the linked contracts stand alone.
 
 ## State
 
-Phase 1 client candidate implemented (2026-10-18): strict packages/parser and
+Phase 1 client implemented and locally verified (2026-10-18): strict packages/parser and
 full-mode frames, endpoint election/lease/recovery, one multiplexed session per
 pair, consent and bind/ready, credits/cancellation/retries, durable receipts and
 explicit save, six-store worker persistence and origin quota registry, retained
 partial adoption after fresh consent, integrity purge, and complete isolated v1
-transport selection. Final checks are running; evidence will be recorded in
+transport selection. Runtime head e499bfc3 passes typecheck, 181 Vitest files /
+2386 tests, lint on all 37 changed TS/TSX files (0 errors; existing telnet warnings),
+and production build. Evidence and every pending acceptance item are recorded in
 reports/file-sharing-phase1-validation.md. v2 remains OFF by default through
 general.fileSharingV2. No hub code was changed or deployed and nothing was pushed.
 The rollout flag is sampled when MudClient is created; preference edits require
@@ -67,6 +69,12 @@ implementation. Phase 0 relay repairs remain a separately assigned dependency;
 their deployment is not verified here.
 
 ## Decisions and why
+
+Implementation decisions: the rollout flag is fixed per MudClient lifetime,
+requires reload to change, and never hot-swaps an active legacy engine. Browser
+handoff is an explicit user Save action after a durable verified receipt; it is
+reported as browser-download, never proof of an OS save. Persistent storage is
+worker-owned under the storage lock; no-lock sessions remain memory-only.
 
 - Every settled product requirement remains: off-by-default public online
   sharing, symmetric gag per coordinator, explicit IP warning/direct ICE,
