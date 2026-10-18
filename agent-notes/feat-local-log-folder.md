@@ -6,8 +6,10 @@ Q asked (2026-10-18, "make it beautiful"): auto-logs saved to a real folder on
 the player's computer via the File System Access API (`showDirectoryPicker`).
 Where the API is missing (Firefox, Safari) the client keeps today's
 IndexedDB-only behaviour exactly, with no new storage access. Worktree:
-`C:\Users\Q\code\react-client-local-logs`, branch `feat/local-log-folder` off
-`origin/master` (03a193ba). Do not push or open a PR; report to team-lead.
+`C:\Users\Q\code\react-client-local-logs`, branch `feat/local-log-folder`,
+started off `origin/master` 03a193ba, rebased 2026-10-18 onto b9864e3d (PR #190,
+the output.test act() flake fix; also head tracking and app integration).
+Do not push or open a PR; report to team-lead.
 
 ## State
 
@@ -184,7 +186,7 @@ change `.github`.
 
 ## Next step
 
-Round 7 committed and reported; Codex reviews again.
+Rebased onto origin/master b9864e3d and reported; Codex reviews the rebased head.
 
 ## Round 5 (Codex review 4 of aa9247be: 1 P2, 3 P3, lead's decisions)
 
@@ -292,3 +294,15 @@ the Session line first.
   build's `index-lQtquXuo.js`; check-browser-sessions, check-client-recovery
   and test:a11y exit 0. From now on each step keeps its full output and
   prints it on failure.
+- team-lead: those 6 output.test.tsx failures are a known flake (a timed-out
+  test leaves a Preact act() scope open), fixed on master by PR #190.
+
+## Rebase onto origin/master b9864e3d
+
+`git rebase origin/master`: all 11 commits applied with no conflicts.
+preferences.tsx keeps master's AppIntegrationPreferences (General) and
+HeadTrackingControls (Sounds) next to LogFolderPreferences (Logging). All 7 CI
+steps on the rebased tree, full output kept: typecheck exit 0; `npm test` 188
+files / 2637 tests; test:audio-cache exit 0 (4 PASS); editor-ownership 1 passed
+on 5193 serving this build's `index-BhNaXO1s.js` (matches dist/index.html);
+check-browser-sessions, check-client-recovery, test:a11y exit 0.
