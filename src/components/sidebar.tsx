@@ -6,6 +6,7 @@ import {
   FaFolderOpen,
   FaGamepad,
   FaHeadphones,
+  FaMap,
   FaMapMarkerAlt,
   FaMusic,
   FaServer,
@@ -16,6 +17,7 @@ const AudioDiagnostics = React.lazy(() => import('./AudioDiagnostics'));
 const FileTransferUI = React.lazy(() => import('./FileTransfer'));
 import AudioChatBoundary from './AudioChatBoundary';
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
+const MapPanel = React.lazy(() => import('./MapPanel'));
 import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
@@ -263,6 +265,19 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         mountOnSelect: true,
         condition: true,
       },
+      {
+        // After Audio diagnostics so earlier tabs keep their numbers; this one is Ctrl+Shift+0.
+        id: 'map-tab',
+        label: 'Map',
+        icon: <FaMap />,
+        content: (
+          <Suspense fallback={<p role="status">Loading map…</p>}>
+            <MapPanel client={client} />
+          </Suspense>
+        ),
+        mountOnSelect: true,
+        condition: hasRoomData,
+      },
     ];
 
     // Reserve each destination's number even when optional data is absent.
@@ -276,7 +291,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         hasTab: (index) => Boolean(allTabs[index] && (allTabs[index].condition ?? true)),
         switchToTab: (index) => {
           const tab = allTabs[index];
-          return Boolean(tab && (tab.condition ?? true) && tabsRef.current?.selectTab(tab.id));
+          return Boolean(tab && (tab.condition ?? true) && tabsRef.current?.selectTab(tab.id, 'panel'));
         },
       }),
       [visibleTabs],

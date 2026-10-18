@@ -7,6 +7,7 @@ import type { Item } from "../gmcp/Char/Items";
 import { type ItemAction, performItemAction } from "../itemActions";
 import { useItemsStore } from "../stores/itemsStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
+import { compareDirections, directionLabel } from "../map/directions";
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
 import ItemCard from "./ItemCard"; // Import ItemCard
 import PlayerCard from "./PlayerCard"; // Import PlayerCard
@@ -103,7 +104,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
     );
   }
 
-  const exits = roomInfo?.exits ? Object.entries(roomInfo.exits).sort(([dirA], [dirB]) => dirA.localeCompare(dirB)) : [];
+  const exits = roomInfo?.exits ? Object.entries(roomInfo.exits).sort(([dirA], [dirB]) => compareDirections(dirA, dirB)) : [];
   // Strip before the fallback checks so a name that is only markup still
   // renders the placeholder rather than an empty heading.
   const roomName = roomInfo?.name ? stripMudAnsiTags(roomInfo.name) : "";
@@ -128,10 +129,10 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
                     <button
                       type="button"
                       onClick={() => handleExitClick(direction)}
-                      title={`Go ${direction} (to room ${roomId})`}
-                      aria-label={`Go ${direction}`}
+                      title={`Go ${directionLabel(direction)} (to room ${roomId})`}
+                      aria-label={`Go ${directionLabel(direction)}`}
                     >
-                      {direction.toUpperCase()}
+                      {directionLabel(direction)}
                     </button>
                   </li>
                 ))}

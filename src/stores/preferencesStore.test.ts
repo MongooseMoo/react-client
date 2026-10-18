@@ -178,6 +178,30 @@ describe("preferencesStore", () => {
     });
   });
 
+  it("remembers a changed key per layer id and binding command", () => {
+    usePreferences.setState({ keystrokes: {} });
+    usePreferences.getState().setKeystrokeOverride("#4936", "press p on #4936", {
+      key: "q",
+      modifiers: [],
+    });
+    usePreferences.getState().setKeystrokeOverride("#4936", "status", {
+      key: "s",
+      modifiers: ["alt"],
+    });
+    usePreferences.getState().setKeystrokeOverride("#12", "status", {
+      key: "x",
+      modifiers: ["ctrl"],
+    });
+
+    expect(usePreferences.getState().keystrokes).toEqual({
+      "#4936": {
+        "press p on #4936": { key: "q", modifiers: [] },
+        status: { key: "s", modifiers: ["alt"] },
+      },
+      "#12": { status: { key: "x", modifiers: ["ctrl"] } },
+    });
+  });
+
   describe("stored preferences", () => {
     afterEach(() => {
       vi.mocked(localStorage.getItem).mockReset();
@@ -214,6 +238,17 @@ describe("preferencesStore", () => {
         say_to_you: { autoreadMode: "default", voice: "", notify: true },
         mongoose: { autoreadMode: "all", voice: "Robot", notify: false },
       });
+    });
+
+    it("keeps changed keys and starts with none", async () => {
+      const empty = await loadWith({ version: 2, data: {} });
+      expect(empty.keystrokes).toEqual({});
+
+      const loaded = await loadWith({
+        version: 2,
+        data: { keystrokes: { "#4936": { status: { key: "s", modifiers: ["alt"] } } } },
+      });
+      expect(loaded.keystrokes).toEqual({ "#4936": { status: { key: "s", modifiers: ["alt"] } } });
     });
   });
 });

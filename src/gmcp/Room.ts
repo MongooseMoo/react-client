@@ -1,3 +1,4 @@
+import { useMapStore } from "../stores/mapStore";
 import { useRoomStore } from "../stores/roomStore";
 import { useSessionStore } from "../stores/sessionStore";
 import { inbound } from "../protocol/messages";
@@ -91,5 +92,6 @@ export class GMCPRoom extends GMCPRoomBase {
     this.exits = [];
     this.people = [];
     useRoomStore.getState().reset();
+    useMapStore.getState().reset();
   }
 }
