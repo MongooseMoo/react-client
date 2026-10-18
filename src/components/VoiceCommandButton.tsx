@@ -345,7 +345,16 @@ const VoiceCommandButton = ({ onSend }: Props) => {
   // Anything other than dictation changing the input makes the text the player's.
   useEffect(() => useInputStore.subscribe((state, previous) => {
     const dictation = currentRef.current;
-    if (dictation?.phase !== "listening" || state.text === previous.text) return;
+    if (!dictation) return;
+    // A reset for a new owner (a connection starting, a first sign-in) ends any
+    // dictation, whatever the text is now: the launched-draft keeper may already
+    // have put its draft back in this same notification, so comparing text
+    // cannot tell. Keep whatever the reset or the keeper left.
+    if (state.ownerResets !== previous.ownerResets) {
+      terminate(dictation, { text: "keep", announce: "Dictation stopped", inInputNotification: true });
+      return;
+    }
+    if (dictation.phase !== "listening" || state.text === previous.text) return;
     if (state.text !== dictation.written) {
       terminate(dictation, { text: "keep", announce: "Stopped listening", inInputNotification: true });
     }

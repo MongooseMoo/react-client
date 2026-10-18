@@ -325,7 +325,9 @@ describe("VoiceCommandButton", () => {
       expect(recognition.aborted).toBe(true);
       expect(useInputStore.getState().text).toBe("");
       // The handle is cleared just after the store notification; until then it no longer intercepts.
-      expect(useInputStore.getState().dictation?.interceptSend() ?? false).toBe(false);
+      const staleHandle = useInputStore.getState().dictation;
+      expect(staleHandle).not.toBeNull();
+      expect(staleHandle?.interceptSend()).toBe(false);
       await act(async () => { await Promise.resolve(); });
       expect(useInputStore.getState().dictation).toBeNull();
       act(() => recognition.hear(["page Alice hello", true]));
@@ -334,8 +336,9 @@ describe("VoiceCommandButton", () => {
     });
 
     it("a new connection stops it, and a launched draft is still put back", async () => {
+      setVoice({ sendImmediately: true });
       usePersonalDataStore.setState({ owner: undefined });
-      renderInput();
+      const { onSend } = renderInput();
       act(() => placeLaunchText("page Bob"));
       const recognition = await startListening();
       expect(useInputStore.getState().text).toBe("page Bob");
@@ -344,6 +347,41 @@ describe("VoiceCommandButton", () => {
       expect(useInputStore.getState().text).toBe("page Bob");
       act(() => recognition.hear(["hello", true]));
       expect(useInputStore.getState().text).toBe("page Bob");
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    // At startup App.tsx starts launch handling before the input exists, so the
+    // launched-draft keeper subscribes to the input store before dictation does.
+    describe("when the launched-draft keeper subscribed before the input", () => {
+      async function listenOverLaunchedDraft() {
+        setVoice({ sendImmediately: true });
+        usePersonalDataStore.setState({ owner: undefined });
+        act(() => placeLaunchText("page Bob"));
+        const rendered = renderInput();
+        const recognition = await startListening();
+        expect(useInputStore.getState().text).toBe("page Bob");
+        return { ...rendered, recognition };
+      }
+
+      it("the first sign-in stops dictation and keeps the launched draft", async () => {
+        const { onSend, recognition } = await listenOverLaunchedDraft();
+        act(() => usePersonalDataStore.getState().confirm(OWNER_A));
+        expect(recognition.aborted).toBe(true);
+        expect(useInputStore.getState().text).toBe("page Bob");
+        act(() => recognition.hear(["hello", true]));
+        expect(useInputStore.getState().text).toBe("page Bob");
+        expect(onSend).not.toHaveBeenCalled();
+      });
+
+      it("a new connection stops dictation at once and keeps the launched draft", async () => {
+        const { onSend, recognition } = await listenOverLaunchedDraft();
+        act(() => usePersonalDataStore.getState().clearForConnect());
+        expect(recognition.aborted).toBe(true);
+        expect(clientSpeechSuspended()).toBe(false);
+        expect(useInputStore.getState().text).toBe("page Bob");
+        act(() => recognition.hear(["hello", true]));
+        expect(onSend).not.toHaveBeenCalled();
+      });
     });
 
     it("a reset for a new owner also clears the held-Enter guard", () => {

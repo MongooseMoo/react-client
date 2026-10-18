@@ -142,6 +142,20 @@ Files:
   meanwhile interceptSend answers false. Tests: sign-out cancels and nothing
   is written or sent later; clearForConnect cancels and the launched draft is
   put back; discardForNewOwner clears the held-Enter guard.
+- Codex round 7 (P2, reproduced with its harness r7-interplay.test.tsx): when
+  the launched-draft keeper subscribed before the input (startup order:
+  App.tsx starts launch handling before the UI), a reset with no transcript
+  went wrong: the keeper restored "page Bob" in the same notification, my
+  subscriber saw text equal and returned, then confirm(firstOwner) ended the
+  dictation with "discard" and erased the draft; an anonymous clearForConnect
+  did not abort at once. Cause: "foreign change" was judged by text only, and
+  an owner reset is an event a text comparison cannot see. Fix: the input
+  subscriber checks ownerResets first and ends any dictation (starting or
+  listening) with "keep" + inInputNotification, announcing "Dictation
+  stopped". Regression tests install the keeper before rendering the input.
+  Its harness case "an actual connection transition still invalidates
+  dictation" asserts at its line 156 that clearForConnect does NOT abort;
+  that is the pre-fix behaviour the team lead asked to change.
 - Codex harness artifacts seen while verifying: round 2's PreviewButton case
   pasted the old source; round 3's lifecycle harness virtualizes only 15000 and
   2000 ms timers; round 4's held-Enter case label names the old behaviour.
