@@ -74,6 +74,7 @@ interface Source {
   retiringVoice?: SharedMediaVoice;
   retiringFactory?: () => SharedMediaVoice;
   retiringActive?: boolean;
+  fadingVoices: Set<SharedMediaVoice>;
 }
 interface Pending {
   source: Source;
@@ -177,6 +178,7 @@ export class SharedMediaService {
       occurrence: -1,
       cueSignature: '',
       lastCues: [],
+      fadingVoices: new Set(),
       maxCueSeq: grant.cueWindows?.at(-1)?.seq ?? -1,
     };
     this.sources.set(grant.key, source);
@@ -396,6 +398,7 @@ export class SharedMediaService {
     source.abort = new AbortController();
     source.voice?.pause();
     source.retiringVoice?.pause();
+    for (const voice of source.fadingVoices) voice.pause();
     source.retiringActive = false;
     source.rendering = false;
     source.settled = false;
@@ -411,6 +414,8 @@ export class SharedMediaService {
     this.sources.delete(source.grant.key);
     source.voice?.dispose();
     source.retiringVoice?.dispose();
+    for (const voice of source.fadingVoices) voice.dispose();
+    source.fadingVoices.clear();
     source.retiringVoice = undefined;
     source.retiringFactory = undefined;
     this.options.present?.({ key: source.grant.key, removed: true });
@@ -424,13 +429,12 @@ export class SharedMediaService {
   private retirePrevious(source: Source, at: number): void {
     const previous = source.retiringVoice;
     if (!previous) return;
+    source.retiringVoice = undefined;
+    source.retiringFactory = undefined;
+    source.retiringActive = false;
+    source.fadingVoices.add(previous);
     const finish = () => {
-      previous.dispose();
-      if (source.retiringVoice === previous) {
-        source.retiringVoice = undefined;
-        source.retiringFactory = undefined;
-        source.retiringActive = false;
-      }
+      if (source.fadingVoices.delete(previous)) previous.dispose();
     };
     if (previous.retire) void previous.retire(at).then(finish, finish);
     else {

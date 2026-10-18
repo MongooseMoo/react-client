@@ -71,6 +71,33 @@ describe('shared file transport', () => {
     for (let i = 0; i < 10; i++) await Promise.resolve();
   };
   const grant = () => ({ key: 'tv', name: 'movie.mp4', type: 'music', transport });
+  it('Stop disposes a detached fading predecessor immediately and ignores later fade completion', async () => {
+    await join();
+    now = 12000;
+    let finishFade!: () => void;
+    voice.retire = () =>
+      new Promise<void>((resolve) => {
+        finishFade = resolve;
+      });
+    const replacement = {
+      ...voice,
+      retire: undefined,
+      start: vi.fn(),
+      pause: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const pending = service.attach(grant(), () => replacement, true);
+    await flush();
+    service.receiveSync({ ...requests[1], transport });
+    await pending;
+    expect(voice.dispose).not.toHaveBeenCalled();
+    service.stop({ key: 'tv' });
+    expect(voice.dispose).toHaveBeenCalledOnce();
+    expect(replacement.dispose).toHaveBeenCalledOnce();
+    finishFade();
+    await flush();
+    expect(voice.dispose).toHaveBeenCalledOnce();
+  });
   it.each([
     'paused',
     'hidden',

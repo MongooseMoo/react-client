@@ -1535,6 +1535,9 @@ export class MediaService {
         if (this.cleanedSounds.has(sound)) return;
         if (this.stagedSharedSounds.get(soundKey) === sound)
           this.stagedSharedSounds.delete(soundKey);
+        const retiring = this.retiringSharedSounds.get(soundKey);
+        retiring?.delete(sound);
+        if (retiring?.size === 0) this.retiringSharedSounds.delete(soundKey);
         this.sounds[soundKey] = sound;
         if (data.type === 'music') this.activateMusicSession(sound, data);
       },
