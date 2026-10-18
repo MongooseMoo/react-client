@@ -2,6 +2,7 @@ import { performanceToAudioTime } from '../timing/outputClock';
 import type { SequenceMix } from './SequenceGraph';
 import { SequenceOutputNotReady, type SequenceOutput, type SequenceVoice } from './SequenceOutput';
 import type { SequenceData, SequenceWindow } from './SequencePayload';
+import type { MediaScoreRequest } from '../composition/world/WorldMusicClient';
 import {
   ScoreTimeline,
   SourceRevisionGate,
@@ -110,6 +111,7 @@ interface Options {
   clock: SequenceClock;
   getOutput(): Promise<SequenceOutput | null>;
   createGraph(mix: SequenceMix): Promise<SequenceMixer>;
+  loadScore?(request: MediaScoreRequest): Promise<CanonicalScore>;
   now?: () => number;
   correctionMs?: () => number;
   error?: (key: string, message: string) => void;
@@ -601,10 +603,21 @@ export class SequenceService {
   }
   private async prepareMaterial(source: Source, material: Material): Promise<void> {
     if (source.output && this.prepared.get(material) === source.output) return;
-    if ('content' in material.data)
-      throw new Error(
-        'Score asset delivery is unavailable until its authenticated endpoint is configured',
-      );
+    if ('content' in material.data && !this.assetScores.has(material)) {
+      if (!this.options.loadScore) throw new Error('Score asset delivery is unavailable');
+      const generation = source.generation;
+      const score = await this.options.loadScore({
+        key: source.key,
+        sourceId: material.transport.sourceId,
+        contentId: material.contentId,
+        descriptor: material.data.content,
+        signal: source.abort.signal,
+      });
+      if (!this.current(source, generation)) return;
+      if (score.contentId !== material.contentId) throw new Error('Score asset identity mismatch');
+      this.assetScores.set(material, score);
+      this.documentCache.delete(material);
+    }
     const documents = this.documents(material);
     for (const document of documents) {
       for (const part of document.score.parts) {
@@ -657,15 +670,17 @@ export class SequenceService {
     );
   }
 
+  private readonly assetScores = new WeakMap<Material, CanonicalScore>();
   private documents(material: Material): Document[] {
     const cached = this.documentCache.get(material);
     if (cached) return cached;
     let documents: Document[] = [];
-    if ('score' in material.data)
+    const score = 'score' in material.data ? material.data.score : this.assetScores.get(material);
+    if (score)
       documents = [
         {
-          score: material.data.score,
-          timeline: new ScoreTimeline(material.data.score, material.transport.loop),
+          score,
+          timeline: new ScoreTimeline(score, material.transport.loop),
           from: 0,
           seq: -1,
           material,

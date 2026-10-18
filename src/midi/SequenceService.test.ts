@@ -72,7 +72,11 @@ const play = {
 };
 afterEach(() => vi.useRealTimers());
 
-function scheduler(material: CanonicalScore = score, budget = new SequenceBudget()) {
+function scheduler(
+  material: CanonicalScore = score,
+  budget = new SequenceBudget(),
+  loadScore?: ConstructorParameters<typeof SequenceService>[0]['loadScore'],
+) {
   vi.useFakeTimers();
   let now = 0;
   const context = {
@@ -151,6 +155,7 @@ function scheduler(material: CanonicalScore = score, budget = new SequenceBudget
     now: () => now,
     budget,
     error,
+    loadScore,
   });
   const request = {
     ...play,
@@ -180,6 +185,70 @@ function scheduler(material: CanonicalScore = score, budget = new SequenceBudget
 }
 
 describe('shared score ownership', () => {
+  it('loads immutable assets through the exact source context before output preparation', async () => {
+    const contentId = '7f1a0010-0000-4000-8000-000000000001';
+    const authored = { ...score, contentId };
+    let resolve: (score: CanonicalScore) => void = () => {};
+    const loadScore = vi.fn(
+      () =>
+        new Promise<CanonicalScore>((done) => {
+          resolve = done;
+        }),
+    );
+    const s = scheduler(authored, new SequenceBudget(), loadScore);
+    const descriptor = {
+      url: `https://mongoose.world/api/midi/content/${contentId}`,
+      sha256: 'a'.repeat(64),
+      byteLength: 100,
+    };
+    const loading = s.service.play({
+      ...s.request,
+      contentId,
+      midi: { version: 1, content: descriptor },
+    });
+    await settled();
+    expect(loadScore).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'music',
+        sourceId: 'source',
+        contentId,
+        descriptor,
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(s.output.prepare).not.toHaveBeenCalled();
+    resolve(authored);
+    await loading;
+    s.time(850);
+    expect(s.output.prepare).toHaveBeenCalledOnce();
+    expect(s.starts).toHaveLength(1);
+    s.service.shutdown();
+  });
+  it('aborts a stopped source asset load and refuses its late result', async () => {
+    let resolve: (score: CanonicalScore) => void = () => {};
+    const loadScore = vi.fn(
+      () =>
+        new Promise<CanonicalScore>((done) => {
+          resolve = done;
+        }),
+    );
+    const s = scheduler(score, new SequenceBudget(), loadScore);
+    const loading = s.service.play({
+      ...s.request,
+      midi: { version: 1, content: { url: '/unused', sha256: 'a'.repeat(64), byteLength: 100 } },
+    });
+    await settled();
+    const signal = loadScore.mock.calls[0]?.[0]?.signal;
+    s.service.stop('music');
+    expect(signal.aborted).toBe(true);
+    resolve(score);
+    await loading;
+    s.time(850);
+    expect(s.output.prepare).not.toHaveBeenCalled();
+    expect(s.starts).toHaveLength(0);
+    expect(s.service.has('music')).toBe(false);
+    s.service.shutdown();
+  });
   it('retires every old output handle on output switch and requires a fresh Play grant', async () => {
     const s = scheduler();
     await s.service.play(s.request);
@@ -602,111 +671,111 @@ describe('shared score ownership', () => {
     expect(s.service.version('music')?.revision).toBe(2);
     s.service.shutdown();
   });
-  it.each([false, true])(
-    'merges pending revision resends with replacement fields %s',
-    async (withBoundary) => {
-      const s = scheduler();
-      const window = (seq: number, id: string, revision: number) => ({
-        seq,
-        fromTick: seq * 3840,
-        toTick: (seq + 1) * 3840,
-        anchorServerMs: 1000 + seq * 2000,
-        contentId: id,
+  it.each([
+    false,
+    true,
+  ])('merges pending revision resends with replacement fields %s', async (withBoundary) => {
+    const s = scheduler();
+    const window = (seq: number, id: string, revision: number) => ({
+      seq,
+      fromTick: seq * 3840,
+      toTick: (seq + 1) * 3840,
+      anchorServerMs: 1000 + seq * 2000,
+      contentId: id,
+      revision,
+      tempos: [{ tick: seq * 3840, bpm: 120 }],
+      meters: [{ tick: seq * 3840, numerator: 4, denominator: 4, barOriginTick: 0 }],
+      parts: [{ ...part, controls: [], notes: [[seq * 3840 + 960, 100, 60 + seq, 100]] }],
+    });
+    const midi = (seq: number, id: string, revision: number) =>
+      decodeSequenceData(
+        { version: 1, stream: true, windows: [window(seq, id, revision)] },
+        id,
         revision,
-        tempos: [{ tick: seq * 3840, bpm: 120 }],
-        meters: [{ tick: seq * 3840, numerator: 4, denominator: 4, barOriginTick: 0 }],
-        parts: [{ ...part, controls: [], notes: [[seq * 3840 + 960, 100, 60 + seq, 100]] }],
-      });
-      const midi = (seq: number, id: string, revision: number) =>
-        decodeSequenceData(
-          { version: 1, stream: true, windows: [window(seq, id, revision)] },
-          id,
-          revision,
-        );
-      await s.service.play({ ...s.request, midi: midi(0, 'content', 1) });
-      const boundary = { replaceFromTick: 3840, effectiveServerMs: 3000 };
-      s.service.update({
-        key: 'music',
-        contentId: 'new',
-        midi: midi(1, 'new', 2),
-        transport: { ...s.request.transport, revision: 2 },
-        ...boundary,
-      });
-      await settled();
-      s.service.update({
-        key: 'music',
-        contentId: 'new',
-        midi: midi(2, 'new', 2),
-        transport: { ...s.request.transport, revision: 2 },
-        ...(withBoundary ? boundary : {}),
-      });
-      await settled();
-      s.time(3325);
-      s.time(5325);
-      expect(s.starts.map((v) => v.note.note)).toEqual([61, 62]);
-      expect(s.error).not.toHaveBeenCalled();
-      s.service.shutdown();
-    },
-  );
-  it.each([false, true])(
-    'handles a pending window load across the boundary with failure %s',
-    async (fails) => {
-      const s = scheduler();
-      const window = (seq: number, id: string, revision: number) => ({
-        seq,
-        fromTick: seq * 3840,
-        toTick: (seq + 1) * 3840,
-        anchorServerMs: 1000 + seq * 2000,
-        contentId: id,
-        revision,
-        tempos: [{ tick: seq * 3840, bpm: 120 }],
-        meters: [{ tick: seq * 3840, numerator: 4, denominator: 4, barOriginTick: 0 }],
-        parts: [{ ...part, controls: [], notes: [[seq * 3840 + 960, 100, 60 + seq, 100]] }],
-      });
-      const midi = (seq: number, id: string, revision: number) =>
-        decodeSequenceData(
-          { version: 1, stream: true, windows: [window(seq, id, revision)] },
-          id,
-          revision,
-        );
-      await s.service.play({ ...s.request, midi: midi(0, 'content', 1) });
-      s.service.update({
-        key: 'music',
-        contentId: 'new',
-        midi: midi(1, 'new', 2),
-        transport: { ...s.request.transport, revision: 2 },
-        replaceFromTick: 3840,
-        effectiveServerMs: 3000,
-      });
-      await settled();
-      let finish = () => {};
-      s.output.prepare.mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve, reject) => {
-            finish = () => (fails ? reject(new Error('Instrument fetch failed')) : resolve());
-          }),
       );
-      s.service.update({
-        key: 'music',
-        contentId: 'new',
-        midi: midi(2, 'new', 2),
-        transport: { ...s.request.transport, revision: 2 },
-      });
-      s.time(3001);
-      finish();
-      await settled();
-      s.time(5325);
-      if (fails) {
-        expect(s.starts).toHaveLength(0);
-        expect(s.error).toHaveBeenCalledWith('music', 'Instrument fetch failed');
-        expect(s.service.has('music')).toBe(false);
-      } else {
-        expect(s.starts.map((v) => v.note.note)).toEqual([62]);
-        expect(s.error).not.toHaveBeenCalled();
-      }
-      s.service.shutdown();
-    },
-  );
+    await s.service.play({ ...s.request, midi: midi(0, 'content', 1) });
+    const boundary = { replaceFromTick: 3840, effectiveServerMs: 3000 };
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: midi(1, 'new', 2),
+      transport: { ...s.request.transport, revision: 2 },
+      ...boundary,
+    });
+    await settled();
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: midi(2, 'new', 2),
+      transport: { ...s.request.transport, revision: 2 },
+      ...(withBoundary ? boundary : {}),
+    });
+    await settled();
+    s.time(3325);
+    s.time(5325);
+    expect(s.starts.map((v) => v.note.note)).toEqual([61, 62]);
+    expect(s.error).not.toHaveBeenCalled();
+    s.service.shutdown();
+  });
+  it.each([
+    false,
+    true,
+  ])('handles a pending window load across the boundary with failure %s', async (fails) => {
+    const s = scheduler();
+    const window = (seq: number, id: string, revision: number) => ({
+      seq,
+      fromTick: seq * 3840,
+      toTick: (seq + 1) * 3840,
+      anchorServerMs: 1000 + seq * 2000,
+      contentId: id,
+      revision,
+      tempos: [{ tick: seq * 3840, bpm: 120 }],
+      meters: [{ tick: seq * 3840, numerator: 4, denominator: 4, barOriginTick: 0 }],
+      parts: [{ ...part, controls: [], notes: [[seq * 3840 + 960, 100, 60 + seq, 100]] }],
+    });
+    const midi = (seq: number, id: string, revision: number) =>
+      decodeSequenceData(
+        { version: 1, stream: true, windows: [window(seq, id, revision)] },
+        id,
+        revision,
+      );
+    await s.service.play({ ...s.request, midi: midi(0, 'content', 1) });
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: midi(1, 'new', 2),
+      transport: { ...s.request.transport, revision: 2 },
+      replaceFromTick: 3840,
+      effectiveServerMs: 3000,
+    });
+    await settled();
+    let finish = () => {};
+    s.output.prepare.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          finish = () => (fails ? reject(new Error('Instrument fetch failed')) : resolve());
+        }),
+    );
+    s.service.update({
+      key: 'music',
+      contentId: 'new',
+      midi: midi(2, 'new', 2),
+      transport: { ...s.request.transport, revision: 2 },
+    });
+    s.time(3001);
+    finish();
+    await settled();
+    s.time(5325);
+    if (fails) {
+      expect(s.starts).toHaveLength(0);
+      expect(s.error).toHaveBeenCalledWith('music', 'Instrument fetch failed');
+      expect(s.service.has('music')).toBe(false);
+    } else {
+      expect(s.starts.map((v) => v.note.note)).toEqual([62]);
+      expect(s.error).not.toHaveBeenCalled();
+    }
+    s.service.shutdown();
+  });
   it('reports a future edit received without a current clock instead of silently losing it', async () => {
     const s = scheduler({ ...score, durationTicks: 7680 });
     await s.service.play(s.request);

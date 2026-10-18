@@ -4,6 +4,8 @@ import {
   type CanonicalScore,
   type ScoreTransport,
 } from './score';
+import { asciiJson, decodeCanonicalScore } from '../composition/world/canonicalAscii';
+import { decodeAsset } from '../composition/world/protocol';
 
 export interface SequenceWindow {
   readonly seq: number;
@@ -43,14 +45,6 @@ export const sequenceId = (input: unknown): string => {
     throw new TypeError('Invalid sequence identity');
   return input;
 };
-function unsafePath(value: string): boolean {
-  for (let index = 0; index < value.length; index++) {
-    const code = value.charCodeAt(index);
-    if (code < 32 || code === 127 || code === 92) return true;
-  }
-  return false;
-}
-
 function window(
   input: unknown,
   contentId: string,
@@ -173,10 +167,21 @@ export function decodeSequenceData(
   const raw = record(input);
   if (
     raw.version !== 1 ||
-    [raw.score !== undefined, raw.stream !== undefined, raw.content !== undefined].filter(Boolean)
-      .length !== 1
+    [
+      raw.score !== undefined,
+      raw.scoreJson !== undefined,
+      raw.stream !== undefined,
+      raw.content !== undefined,
+    ].filter(Boolean).length !== 1
   )
     throw new TypeError('Conflicting or unsupported sequence variants');
+  if (raw.scoreJson !== undefined) {
+    if (typeof raw.scoreJson !== 'string' || asciiJson(raw).length > 16384)
+      throw new TypeError('Inline canonical score exceeds its envelope budget');
+    const score = decodeCanonicalScore(raw.scoreJson);
+    if (score.contentId !== contentId) throw new TypeError('Inline score identity mismatch');
+    return { version: 1, score };
+  }
   if (raw.score !== undefined) {
     const result = validateScore(raw.score);
     if (!result.ok) throw new TypeError(result.error);
@@ -186,24 +191,14 @@ export function decodeSequenceData(
   }
   if (raw.content !== undefined) {
     const content = record(raw.content);
-    if (
-      typeof content.sha256 !== 'string' ||
-      !/^[a-f0-9]{64}$/i.test(content.sha256) ||
-      typeof content.url !== 'string' ||
-      !content.url.startsWith('/') ||
-      content.url.startsWith('//') ||
-      content.url.length > 2048 ||
-      unsafePath(content.url) ||
-      new URL(content.url, 'https://mongoose.world').origin !== 'https://mongoose.world' ||
-      !Number.isSafeInteger(content.byteLength) ||
-      typeof content.byteLength !== 'number' ||
-      content.byteLength < 1 ||
-      content.byteLength > 1048576
-    )
-      throw new TypeError('Invalid sequence content locator');
+    const descriptor = decodeAsset({ ...content, contentId }, contentId, false);
     return {
       version: 1,
-      content: { sha256: content.sha256, url: content.url, byteLength: content.byteLength },
+      content: {
+        sha256: descriptor.sha256,
+        url: descriptor.url,
+        byteLength: descriptor.byteLength,
+      },
     };
   }
   if (raw.stream !== true || !Array.isArray(raw.windows) || raw.windows.length > 5)

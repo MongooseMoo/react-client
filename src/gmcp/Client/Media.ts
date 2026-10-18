@@ -314,6 +314,11 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
       if (this.client.sharedClock && this.client.media) {
         this.client.media.configureSequences(this.client.sharedClock, () =>
           midiService.getSequenceOutput(),
+          (request) => {
+            const midi = this.client.gmcp.handlers['Client.Midi'];
+            if (!midi) throw new Error('World score delivery is unavailable');
+            return midi.world.loadMediaScore(request);
+          },
         );
         this.client.media.configureSharedMedia(
           this.client.sharedClock,

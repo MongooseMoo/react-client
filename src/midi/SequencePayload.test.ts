@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { decodeMediaPlay } from '../audio/mediaPayloads';
 import { decodeSequenceData } from './SequencePayload';
 import { SequenceLane } from './SequenceGraph';
+import { encodeCanonicalScore } from '../composition/world/canonicalAscii';
+import type { CanonicalScore } from './score';
 const score = {
   version: 1,
   contentId: 'content',
@@ -104,8 +106,13 @@ describe('sequence wire decoder', () => {
     ).toThrow();
   });
   it('validates public same-origin asset references without fetching them', () => {
-    const content = { sha256: 'a'.repeat(64), url: '/api/music/content', byteLength: 100 };
-    expect(decodeSequenceData({ version: 1, content }, 'content', 1)).toEqual({
+    const contentId = '7f1a0010-0000-4000-8000-000000000001';
+    const content = {
+      sha256: 'a'.repeat(64),
+      url: `https://mongoose.world/api/midi/published/${contentId}`,
+      byteLength: 1048578,
+    };
+    expect(decodeSequenceData({ version: 1, content }, contentId, 1)).toEqual({
       version: 1,
       content,
     });
@@ -116,8 +123,32 @@ describe('sequence wire decoder', () => {
       '/\n/evil.invalid/a',
     ])
       expect(() =>
-        decodeSequenceData({ version: 1, content: { ...content, url } }, 'content', 1),
+        decodeSequenceData({ version: 1, content: { ...content, url } }, contentId, 1),
       ).toThrow();
+  });
+  it('decodes canonical authored strings and rejects conflicting variants or identity', () => {
+    const contentId = '7f1a0010-0000-4000-8000-000000000001';
+    const authored = {
+      ...score,
+      contentId,
+      parts: [{ ...score.parts[0], name: 'Tilde ~7E and café 🎹' }],
+    } as CanonicalScore;
+    const scoreJson = encodeCanonicalScore(authored);
+    expect(decodeSequenceData({ version: 1, scoreJson }, contentId, 1)).toEqual({
+      version: 1,
+      score: authored,
+    });
+    expect(() =>
+      decodeSequenceData({ version: 1, scoreJson, score: authored }, contentId, 1),
+    ).toThrow();
+    expect(() => decodeSequenceData({ version: 1, scoreJson }, 'another', 1)).toThrow();
+    expect(() =>
+      decodeSequenceData(
+        { version: 1, scoreJson: scoreJson.replace('\\u007e', '~') },
+        contentId,
+        1,
+      ),
+    ).toThrow();
   });
   it('recalls suffix automation and restores the actual prefix value at large timestamps', () => {
     const applied: { value: number; time: number }[] = [];

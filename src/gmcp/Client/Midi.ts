@@ -14,6 +14,8 @@ import {
 import type { LiveOriginRenderer } from '../../midi/LiveOriginRenderer';
 import { gmcpJsonMessage } from '../messages';
 import { GMCPMessage, GMCPPackage } from '../package';
+import { WorldMusicClient } from '../../composition/world/WorldMusicClient';
+import { decodeEditorReply } from '../../composition/world/protocol';
 
 export class GMCPMessageClientMidiNote extends GMCPMessage {
   readonly note!: number;
@@ -74,6 +76,13 @@ const midiReleaseAll = gmcpJsonMessage<'NoteReleaseAll', { originId: string }>('
   decode: decodeLiveReleaseAll,
   encode: (value) => value,
 });
+const midiEditorReply = gmcpJsonMessage<'EditorReply', ReturnType<typeof decodeEditorReply>>(
+  'EditorReply',
+  {
+    decode: (value: unknown) => decodeEditorReply(value),
+    encode: (value) => value,
+  },
+);
 const GMCPClientMidiBase = GMCPPackage.with({
   packageName: 'Client.Midi',
   messages: [
@@ -83,12 +92,14 @@ const GMCPClientMidiBase = GMCPPackage.with({
     duplex(midiEnable),
     inbound(midiRoute),
     inbound(midiReleaseAll),
+    inbound(midiEditorReply),
   ] as const,
 });
 
 /** Version 2 relays only validated notes, whitelisted controls and programs. */
 export class GMCPClientMidi extends GMCPClientMidiBase {
   public packageVersion = 2;
+  readonly world: WorldMusicClient;
   private isAdvertised = false;
   private debugCallback?: (hex: string, type: string, gmcpMessage: string) => void;
   private midiServicePromise?: Promise<MidiService>;
@@ -115,6 +126,11 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     private readonly rendererFactory?: () => Promise<LiveOriginRenderer>,
   ) {
     super(client);
+    this.world = new WorldMusicClient(
+      (name, payload) => this.client.gmcp.send(name, payload),
+      () => this.client.connected && this.client.gmcp.ready,
+    );
+    this.on('editorReply', (reply) => this.world.receive(reply));
     this.on('note', (data) => this.handleNote(data));
     this.on('controlChange', (data) => this.handleControlChange(data));
     this.on('programChange', (data) => this.handleProgramChange(data));
@@ -435,6 +451,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
     this.debugCallback = callback;
   }
   override reset(): void {
+    this.world.reset();
     this.clearLive();
     for (const timer of this.outgoingTimers.values()) clearTimeout(timer);
     this.outgoingTimers.clear();
