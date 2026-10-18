@@ -42,15 +42,16 @@ const VoiceCommandPreferences = () => {
   // request may set it, so a slow answer never describes another language.
   const [checked, setChecked] = useState<{ lang: string; availability: VoiceAvailability } | null>(null);
   const [installing, setInstalling] = useState(false);
-  // Asking the browser is left until the player wants the answer: Check this
+  // Asking the browser is left until the player acts: pressing Check this
   // browser, or turning voice commands on. Some browsers (headless Chromium 147)
   // crash the page when asked about on-device recognition, which no catch can
-  // stop, so opening Preferences or the Speech tab must never be what asks.
+  // stop, so opening Preferences or the Speech tab never asks, not even with
+  // voice commands already on: a crash there would come back on every opening
+  // and keep the player from the switch that turns them off.
   const [checkRequested, setCheckRequested] = useState(false);
-  const shouldCheck = checkRequested || voiceInput.enabled;
   const requestRef = useRef(0);
   const lang = recognitionLanguage(voiceInput.language);
-  const availability = !shouldCheck ? "unchecked" : checked?.lang === lang ? checked.availability : "checking";
+  const availability = !checkRequested ? "unchecked" : checked?.lang === lang ? checked.availability : "checking";
 
   const refresh = useCallback(async (forLang: string) => {
     if (!recognizer) return;
@@ -65,8 +66,8 @@ const VoiceCommandPreferences = () => {
   }, [recognizer]);
 
   useEffect(() => {
-    if (shouldCheck) void refresh(lang);
-  }, [refresh, lang, shouldCheck]);
+    if (checkRequested) void refresh(lang);
+  }, [refresh, lang, checkRequested]);
 
   if (!recognizer) {
     return (
@@ -120,7 +121,10 @@ const VoiceCommandPreferences = () => {
           type="checkbox"
           checked={voiceInput.enabled}
           aria-describedby="voice-command-privacy voice-command-help"
-          onChange={(event) => setVoiceInput({ ...voiceInput, enabled: event.target.checked })}
+          onChange={(event) => {
+            setVoiceInput({ ...voiceInput, enabled: event.target.checked });
+            if (event.target.checked) setCheckRequested(true);
+          }}
         />
         Voice commands
       </label>

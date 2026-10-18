@@ -60,11 +60,18 @@ describe("VoiceCommandPreferences", () => {
       expect(available).toHaveBeenCalled();
     });
 
-    it("asks at once when voice commands are already on", async () => {
+    it("does not ask on opening even when voice commands are already on", async () => {
+      // A browser that crashes on the question would otherwise crash every
+      // time Preferences opened, and the player could never reach the switch.
       usePreferences.getState().setVoiceInput({ ...usePreferences.getState().voiceInput, enabled: true });
-      window.webkitSpeechRecognition = fakeRecognizer(async () => "available");
+      const available = vi.fn(async () => "available" as const);
+      window.webkitSpeechRecognition = fakeRecognizer(available);
       render(<VoiceCommandPreferences />);
-      await waitFor(() => expect(screen.getByText(/does not leave your computer/)).toBeTruthy());
+      expect(available).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Check this browser" })).toBeTruthy();
+      fireEvent.click(screen.getByRole("checkbox", { name: "Voice commands" }));
+      expect(usePreferences.getState().voiceInput.enabled).toBe(false);
+      expect(available).not.toHaveBeenCalled();
     });
 
     it("treats a check that throws as unknown", async () => {

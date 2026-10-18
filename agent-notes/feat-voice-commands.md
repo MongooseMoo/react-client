@@ -112,10 +112,19 @@ Files:
   when the dialog opens, so opening Preferences crashed the page. A crash is
   not catchable, and scripts/check-accessibility.mjs:220 opens the Speech tab,
   so probing "when the Speech tab is shown" would crash test:a11y too.
-  Fix: never probe on render. Probe only on player intent: "Check this
-  browser" button, voice commands turned on (or already on), or a mic press.
-  Before that the privacy line says where speech may go and invites the
-  check. A check that throws is "unknown"; no answer in 10 s is "unknown".
+  Fix: never probe on render. Probe only on player action: "Check this
+  browser" button, the act of turning voice commands on, or a mic press.
+  Not on opening with voice commands already on (Codex round 6 P3): in a
+  browser that crashes on the probe that would crash every opening and keep
+  the player from the switch. Before a check the privacy line says where
+  speech may go and invites it. A check that throws is "unknown"; no answer
+  in 10 s is "unknown".
+- Rebased onto origin/master 7d5181f5 (head tracking merged). Conflicts in
+  reservedShortcuts.ts (Alt+Shift+O and Alt+Shift+D, both kept) and the
+  preferences.tsx imports (both kept); Keyboard list and tests merged
+  cleanly. A reservedShortcuts test now checks both chords stay reserved and
+  neither shortcut matches the other's key; Alt+Shift+O's own tests are in
+  src/audio/headTracking.test.ts (from master).
 - Codex harness artifacts seen while verifying: round 2's PreviewButton case
   pasted the old source; round 3's lifecycle harness virtualizes only 15000 and
   2000 ms timers; round 4's held-Enter case label names the old behaviour.
