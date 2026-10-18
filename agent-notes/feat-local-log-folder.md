@@ -124,6 +124,48 @@ The fix is a design where replaying is always safe, not more bookkeeping.
 - Not exercised in a browser: OS picker, real prompt/Reconnect, revoked
   permission, disk full, two real tabs, a real blocked upgrade, 1 MiB parts.
 
+## Round 4 (Codex review 3 of c0adc02a: six edge cases, lead's decisions)
+
+I reran `codex-rereview3-local-logs-repro.cjs` against c0adc02a first; the
+time-zone, header-hang, dispose, both no-lock and 12-digit cases all
+reproduced as reported. Against the round 4 code the time-zone cases give
+equal bytes (565 = 565) and the disposed writer no longer overwrites; the
+script then stalls at its no-lock two-recoverer case, which waits for a
+no-lock recovery that no longer exists (decision 4/5), so its later cases
+did not run there; my own tests cover them.
+
+- Time zone: the binding stores the IANA zone at bind time and every render
+  formats in it (Intl.DateTimeFormat with that timeZone), so a zone change
+  can no longer move date lines and shift saved offsets. Node in vitest does
+  not reliably switch its ambient zone when process.env.TZ changes mid-run
+  (got hour 18 for an LA expectation of 17), so the test renders in UTC and
+  Pacific/Kiritimati and checks both dates and the resumed render.
+- Headers: title, character and URL are bounded to 256 UTF-8 bytes with an
+  ellipsis at a code-point boundary. renderLogParts throws if a part cannot
+  hold its header + footer reserve + one 4-byte code point; utf8Prefix no
+  longer forces a code point, and the split branch throws rather than loop
+  without consuming input.
+- dispose() is async: it refuses new work, makes every write under way fail
+  its next liveness check, waits for the queue, then releases the session
+  locks and waits until the browser has let them go.
+- No Web Locks: no automatic recovery at all; only the page's own live
+  sessions are written, orphans wait for a page with Web Locks. The
+  conditional no-lock recovery path is deleted.
+- Names are claimed under the Web Lock `mongoose-log-name:<owner>/<char>/<base>`,
+  held across the existence check, saving the claim and creating the first
+  file. 12 hex digits kept. The first version of its test held the wrong
+  step (before the check) and passed on the old code; it now holds the
+  create, and fails on the old code with one shared file.
+- Checks: `npx tsc --noEmit` exit 0; `npx vitest run` 177 files / 2410 tests
+  passed; `npx biome lint` on the two changed files clean.
+
+- Chromium (OPFS folder, live server, guest): crash via CDP Page.crash then
+  a new page as the same guest (Solaris_Guest): the crashed session's file
+  gained `Ended: not recorded (the page closed)`, its binding was removed and
+  only the new live session's binding remained. Reload as the same guest
+  (Morava_Guest): folder remembered, new session file, old file ends
+  `Ended: 2026-10-18 03:32:53`; after Stop focus is on the heading.
+
 ## Next step
 
-Committed; report to team-lead; Codex reviews again.
+Committed; reported to team-lead; Codex reviews again.

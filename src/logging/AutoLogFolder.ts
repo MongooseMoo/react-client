@@ -58,6 +58,8 @@ export type LogFileBinding = {
   bindingId: string;
   folderName: string;
   character: string;
+  // IANA zone every render formats times in, fixed when the session binds.
+  timeZone: string;
   baseName: string;
   // The base name has been checked against existing files and saved.
   nameChecked: boolean;
@@ -228,16 +230,36 @@ export const MAX_PART_BYTES = 1024 * 1024;
 const FOOTER_RESERVE = 64;
 const PAGE_CLOSED_FOOTER = "\nEnded: not recorded (the page closed)\n";
 const LOCK_PREFIX = "mongoose-autolog-folder:";
+const NAME_LOCK_PREFIX = "mongoose-log-name:";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const byteLength = (text: string) => encoder.encode(text).length;
 
-const pad = (value: number) => String(value).padStart(2, "0");
-const localDay = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-const localTime = (date: Date) => `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-const localStamp = (time: number) => `${localDay(new Date(time))} ${localTime(new Date(time))}`;
-const endedFooter = (endedAt: number) => `\nEnded: ${localStamp(endedAt)}\n`;
+// Times are always formatted in the session's own IANA time zone, saved in
+// its binding, never the ambient one: a zone change between two renders
+// would otherwise move date lines and shift every saved byte offset.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+function zoned(time: number, timeZone: string): { day: string; time: string } {
+  let formatter = formatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+    formatters.set(timeZone, formatter);
+  }
+  const parts: Record<string, string> = {};
+  for (const part of formatter.formatToParts(time)) parts[part.type] = part.value;
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}:${parts.second}` };
+}
+const zonedStamp = (time: number, timeZone: string) => {
+  const { day, time: clock } = zoned(time, timeZone);
+  return `${day} ${clock}`;
+};
+const endedFooter = (endedAt: number, timeZone: string) => `\nEnded: ${zonedStamp(endedAt, timeZone)}\n`;
+const ambientTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+const HEADER_FIELD_BYTES = 256;
 
 const RESERVED_NAMES = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
 
@@ -255,44 +277,53 @@ function characterName(owner: PersonalDataOwner): string {
 
 // The last 12 hex digits of a random UUID: collisions are not a practical
 // concern, and an existing name is still checked before the first write.
-function baseFileName(session: AutoLogSession): string {
+function baseFileName(session: AutoLogSession, timeZone: string): string {
   const id = session.id.replace(/[^a-z0-9]/gi, "").slice(-12) || "session";
-  return `${localStamp(session.startedAt).replace(/:/g, "-")} ${id}`;
+  return `${zonedStamp(session.startedAt, timeZone).replace(/:/g, "-")} ${id}`;
 }
 
 export function partFileName(baseName: string, part: number): string {
   return `${baseName}${part > 1 ? ` part ${part}` : ""}.txt`;
 }
 
-function partHeader(binding: LogFileBinding, session: AutoLogSession, part: number): string {
-  const title = session.title || "Mongoose Client";
-  const lines = part === 1
-    ? [title, `Character: ${binding.character}`, `Started: ${localStamp(session.startedAt)}`, ...(session.sanitizedUrl ? [`URL: ${session.sanitizedUrl}`] : [])]
-    : [`${title}, part ${part}`, `Character: ${binding.character}`, `Started: ${localStamp(session.startedAt)}`, `Continues from: ${partFileName(binding.baseName, part - 1)}`];
-  return `${lines.join("\n")}\n\n`;
-}
-
-function renderLine(entry: AutoLogEntry, day: string): { text: string; day: string } {
-  const date = new Date(entry.timestamp);
-  const entryDay = localDay(date);
-  const separator = entryDay === day ? "" : `\n-- ${entryDay} --\n`;
-  const line = autoLogEntryToPlainText(entry).replace(/\r?\n$/, "");
-  return { text: `${separator}[${localTime(date)}] ${line}\n`, day: entryDay };
-}
-
-// The longest prefix of text that fits in maxBytes, cut between code points.
-// Always at least one code point, so splitting always makes progress.
+// The longest prefix of text within maxBytes, cut between code points; may
+// be empty.
 function utf8Prefix(text: string, maxBytes: number): string {
   let bytes = 0;
   let end = 0;
   for (const char of text) {
     const size = byteLength(char);
-    if (bytes + size > maxBytes && end > 0) break;
+    if (bytes + size > maxBytes) break;
     bytes += size;
     end += char.length;
   }
   return text.slice(0, end);
 }
+
+// Header fields come from the server and the URL, so they are bounded.
+function boundField(text: string): string {
+  return byteLength(text) <= HEADER_FIELD_BYTES ? text : `${utf8Prefix(text, HEADER_FIELD_BYTES - byteLength("…"))}…`;
+}
+
+function partHeader(binding: LogFileBinding, session: AutoLogSession, part: number): string {
+  const title = boundField(session.title || "Mongoose Client");
+  const character = `Character: ${boundField(binding.character)}`;
+  const started = `Started: ${zonedStamp(session.startedAt, binding.timeZone)}`;
+  const lines = part === 1
+    ? [title, character, started, ...(session.sanitizedUrl ? [`URL: ${boundField(session.sanitizedUrl)}`] : [])]
+    : [`${title}, part ${part}`, character, started, `Continues from: ${partFileName(binding.baseName, part - 1)}`];
+  return `${lines.join("\n")}\n\n`;
+}
+
+function renderLine(entry: AutoLogEntry, day: string, timeZone: string): { text: string; day: string } {
+  const at = zoned(entry.timestamp, timeZone);
+  const separator = at.day === day ? "" : `\n-- ${at.day} --\n`;
+  const line = autoLogEntryToPlainText(entry).replace(/\r?\n$/, "");
+  return { text: `${separator}[${at.time}] ${line}\n`, day: at.day };
+}
+
+// The widest UTF-8 code point: an empty part must have room for at least one.
+const MAX_CODE_POINT_BYTES = 4;
 
 /**
  * Renders a session's parts from `binding.mark` on. Pure: the same inputs
@@ -308,9 +339,18 @@ export function renderLogParts(
   maxPartBytes: number,
 ): { parts: Array<{ part: number; text: string }>; mark: PartMark } {
   const budget = maxPartBytes - FOOTER_RESERVE;
+  // Every part must hold its header, the footer reserve and one code point,
+  // or splitting an entry could never make progress.
+  const header = (part: number) => {
+    const text = partHeader(binding, session, part);
+    if (byteLength(text) + MAX_CODE_POINT_BYTES > budget) {
+      throw new Error(`Log part size ${maxPartBytes} is too small for its header`);
+    }
+    return text;
+  };
   const parts: Array<{ part: number; text: string }> = [];
   let mark = binding.mark;
-  let text = partHeader(binding, session, mark.part);
+  let text = header(mark.part);
   let size = byteLength(text);
   let hasContent = false;
   let day = mark.day;
@@ -318,14 +358,14 @@ export function renderLogParts(
   const close = (next: PartMark) => {
     parts.push({ part: mark.part, text });
     mark = next;
-    text = partHeader(binding, session, next.part);
+    text = header(next.part);
     size = byteLength(text);
     hasContent = false;
   };
 
   entries.forEach((entry, index) => {
     const dayBefore = day;
-    const line = renderLine(entry, day);
+    const line = renderLine(entry, day, binding.timeZone);
     let offset = index === 0 ? binding.mark.offset : 0;
     let rest = offset > 0 ? decoder.decode(encoder.encode(line.text).subarray(offset)) : line.text;
     while (true) {
@@ -341,7 +381,10 @@ export function renderLogParts(
         continue;
       }
       // Too big even for an empty part: fill this one and carry on in the next.
+      // The header check guarantees room for a code point, so this always
+      // consumes some of the entry.
       const chunk = utf8Prefix(rest, budget - size);
+      if (!chunk) throw new Error("Log part splitting made no progress");
       text += chunk;
       offset += byteLength(chunk);
       rest = rest.slice(chunk.length);
@@ -373,11 +416,13 @@ type LiveSession = {
   key: string;
   binding?: LogFileBinding;
   releaseLock?: () => void;
+  // Settles once the browser has actually let the session lock go.
+  lockSettled?: Promise<unknown>;
   ended: boolean;
   queued: boolean;
 };
 
-type RenderMode = "live" | "orphan" | "orphan-if-ended";
+type RenderMode = "live" | "orphan";
 
 // Thrown when the folder a write started with is no longer the chosen one.
 class StaleFolder extends Error {}
@@ -419,7 +464,9 @@ export type AutoLogFolderOptions = {
   readSnapshot: (sessionId: string, fromSequence: number) => Promise<SessionSnapshot | undefined>;
   pickDirectory?: () => Promise<FileSystemDirectoryHandle>;
   // With Web Locks, a session another tab is writing is never recovered here.
-  // Without them, only sessions that have ended (or were pruned) are.
+  // Without them nothing is recovered at all: only this page's own live
+  // sessions are written, and orphans wait for a page that has Web Locks.
+  // (Every browser with the folder picker has Web Locks.)
   locks?: LockManagerLike;
   maxPartBytes?: number;
 };
@@ -440,6 +487,7 @@ export class AutoLogFolder implements AutoLogSink {
   private currentKey: string | undefined;
   private queue: Promise<void> = Promise.resolve();
   private unsubscribeOwner: (() => void) | undefined;
+  private disposing: Promise<void> | undefined;
 
   constructor(options: AutoLogFolderOptions) {
     this.persistence = options.persistence;
@@ -458,6 +506,11 @@ export class AutoLogFolder implements AutoLogSink {
     return this.pickDirectory !== undefined;
   }
 
+  // Supported and not disposed: the only state that takes on new work.
+  private get active(): boolean {
+    return this.supported && !this.disposing;
+  }
+
   /** Resolves once every queued folder task, including ones queued meanwhile, has settled. */
   async whenIdle(): Promise<void> {
     let queue: Promise<void>;
@@ -467,14 +520,31 @@ export class AutoLogFolder implements AutoLogSink {
     } while (queue !== this.queue);
   }
 
-  dispose(): void {
+  /**
+   * Stops taking work and invalidates every write under way (each checks
+   * before opening and before committing). Resolves once the queue has
+   * drained; the session locks are released only then, so no other tab can
+   * recover a session while a write of this page's could still land.
+   */
+  dispose(): Promise<void> {
+    if (this.disposing) return this.disposing;
     this.unsubscribeOwner?.();
     this.unsubscribeOwner = undefined;
-    for (const live of this.live.values()) this.unbind(live);
+    this.disposing = (async () => {
+      await this.whenIdle();
+      const released = [...this.live.values()].map((live) => {
+        const settled = live.lockSettled;
+        this.unbind(live);
+        return settled;
+      });
+      this.live.clear();
+      await Promise.all(released);
+    })();
+    return this.disposing;
   }
 
   async syncOwner(): Promise<void> {
-    if (!this.supported) return;
+    if (!this.active) return;
     const key = currentOwnerKey();
     if (key !== this.currentKey) {
       this.currentKey = key;
@@ -488,7 +558,7 @@ export class AutoLogFolder implements AutoLogSink {
   /** Must run straight from a click: the picker needs the user's gesture. */
   async choose(): Promise<void> {
     const key = this.currentKey;
-    if (!key || !this.pickDirectory) return;
+    if (!key || !this.pickDirectory || !this.active) return;
     let directory: FileSystemDirectoryHandle;
     try {
       directory = await this.pickDirectory();
@@ -527,7 +597,7 @@ export class AutoLogFolder implements AutoLogSink {
   async reconnect(): Promise<void> {
     const key = this.currentKey;
     const record = key ? this.folders.get(key) : undefined;
-    if (!key || !record) return;
+    if (!key || !record || !this.active) return;
     if (record.permission !== "granted" && record.permission !== "error") {
       const permission = await this.request(record.directory);
       if (this.folders.get(key) !== record) return;
@@ -548,7 +618,7 @@ export class AutoLogFolder implements AutoLogSink {
   /** Reads the folder settings again after they could not be read. */
   async retry(): Promise<void> {
     const key = this.currentKey;
-    if (!key || !this.supported) return;
+    if (!key || !this.active) return;
     this.storageErrors.delete(key);
     this.publish();
     const record = await this.loadFolder(key);
@@ -561,7 +631,7 @@ export class AutoLogFolder implements AutoLogSink {
   async stopUsing(): Promise<void> {
     const key = this.currentKey;
     const record = key ? this.folders.get(key) : undefined;
-    if (!key || !record) return;
+    if (!key || !record || !this.active) return;
     this.folders.set(key, null);
     for (const live of [...this.live.values()]) {
       if (live.key !== key) continue;
@@ -584,7 +654,7 @@ export class AutoLogFolder implements AutoLogSink {
 
   // The entries themselves are not needed: every render reads IndexedDB.
   append(session: AutoLogSession, _entries: AutoLogEntry[]): void {
-    if (!this.supported || !session.owner) return;
+    if (!this.active || !session.owner) return;
     let live = this.live.get(session.id);
     if (!live) {
       live = { session, key: ownerKey(session.owner), ended: false, queued: false };
@@ -597,13 +667,13 @@ export class AutoLogFolder implements AutoLogSink {
   // and every remaining line from IndexedDB.
   sessionEnded(session: AutoLogSession, _endedAt: number): void {
     const live = this.live.get(session.id);
-    if (!live) return;
+    if (!live || !this.active) return;
     live.ended = true;
     this.schedule(live);
   }
 
   private schedule(live: LiveSession): void {
-    if (live.queued) return;
+    if (live.queued || !this.active) return;
     live.queued = true;
     this.enqueue(async () => {
       live.queued = false;
@@ -683,12 +753,13 @@ export class AutoLogFolder implements AutoLogSink {
   }
 
   private assertLive(key: string, record: FolderRecord): void {
-    if (this.folders.get(key) !== record) throw new StaleFolder();
+    if (this.disposing || this.folders.get(key) !== record) throw new StaleFolder();
   }
 
   // Takes the session's lock (so no other tab recovers it), then saves its
   // binding: nobody can see the binding without the lock already held.
   private async bind(live: LiveSession, record: FolderRecord): Promise<void> {
+    this.assertLive(live.key, record);
     if (!live.releaseLock) {
       let granted = () => {};
       const lockHeld = new Promise<void>((resolve) => { granted = resolve; });
@@ -696,7 +767,7 @@ export class AutoLogFolder implements AutoLogSink {
       const held = new Promise<void>((resolve) => { release = resolve; });
       live.releaseLock = release;
       if (this.locks) {
-        this.locks.request(LOCK_PREFIX + live.session.id, {}, () => {
+        live.lockSettled = this.locks.request(LOCK_PREFIX + live.session.id, {}, () => {
           granted();
           return held;
         }).catch((error) => {
@@ -706,17 +777,20 @@ export class AutoLogFolder implements AutoLogSink {
         await lockHeld;
       }
     }
+    this.assertLive(live.key, record);
     const { session } = live;
     const character = session.owner ? characterName(session.owner) : "";
+    const timeZone = ambientTimeZone();
     const binding: LogFileBinding = {
       sessionId: session.id,
       ownerKey: live.key,
       bindingId: record.bindingId,
       folderName: sanitizeFolderName(character, "Character"),
       character,
-      baseName: baseFileName(session),
+      timeZone,
+      baseName: baseFileName(session, timeZone),
       nameChecked: false,
-      mark: { part: 1, sequence: 0, offset: 0, day: localDay(new Date(session.startedAt)) },
+      mark: { part: 1, sequence: 0, offset: 0, day: zoned(session.startedAt, timeZone).day },
     };
     live.binding = binding;
     try {
@@ -730,6 +804,7 @@ export class AutoLogFolder implements AutoLogSink {
   private unbind(live: LiveSession): void {
     live.releaseLock?.();
     live.releaseLock = undefined;
+    live.lockSettled = undefined;
     live.binding = undefined;
   }
 
@@ -774,15 +849,14 @@ export class AutoLogFolder implements AutoLogSink {
     record: FolderRecord,
     mode: RenderMode,
     onClaimed: (binding: LogFileBinding) => void = () => {},
-  ): Promise<{ binding: LogFileBinding; outcome: "written" | "complete" | "gone" | "skipped" }> {
+  ): Promise<{ binding: LogFileBinding; outcome: "written" | "complete" | "gone" }> {
     let binding = start;
     const key = binding.ownerKey;
     const snapshot = await this.readSnapshot(binding.sessionId, binding.mark.sequence);
     this.assertLive(key, record);
     if (!snapshot) return { binding, outcome: "gone" };
     const { endedAt } = snapshot.session;
-    if (mode === "orphan-if-ended" && endedAt === undefined) return { binding, outcome: "skipped" };
-    const footer = endedAt !== undefined ? endedFooter(endedAt) : mode === "orphan" ? PAGE_CLOSED_FOOTER : undefined;
+    const footer = endedAt !== undefined ? endedFooter(endedAt, binding.timeZone) : mode === "orphan" ? PAGE_CLOSED_FOOTER : undefined;
 
     const folder = await record.directory.getDirectoryHandle(binding.folderName, { create: true });
     this.assertLive(key, record);
@@ -807,16 +881,28 @@ export class AutoLogFolder implements AutoLogSink {
   }
 
   // Before a session's first file: never take over an existing file. The
-  // choice is saved before anything is written, so a later render (or
-  // another recoverer) reuses it instead of treating our file as someone's.
+  // check, saving the claim, and creating the first file happen under one
+  // Web Lock per name, so two tabs whose sessions share a base name cannot
+  // both find it free. The claim is saved before anything is written, so a
+  // later render reuses it instead of treating our file as someone else's.
   private async claimName(binding: LogFileBinding, folder: FileSystemDirectoryHandle, record: FolderRecord): Promise<LogFileBinding> {
     const original = binding.baseName;
-    let baseName = original;
-    for (let copy = 2; await nameTaken(folder, partFileName(baseName, 1)); copy++) baseName = `${original} (${copy})`;
-    this.assertLive(binding.ownerKey, record);
-    const claimed = { ...binding, baseName, nameChecked: true };
-    await this.persistence.putBinding(claimed);
-    this.assertLive(binding.ownerKey, record);
+    const claim = async (): Promise<LogFileBinding> => {
+      let baseName = original;
+      for (let copy = 2; await nameTaken(folder, partFileName(baseName, 1)); copy++) baseName = `${original} (${copy})`;
+      this.assertLive(binding.ownerKey, record);
+      const claimed = { ...binding, baseName, nameChecked: true };
+      await this.persistence.putBinding(claimed);
+      this.assertLive(binding.ownerKey, record);
+      await folder.getFileHandle(partFileName(baseName, 1), { create: true });
+      return claimed;
+    };
+    if (!this.locks) return claim();
+    let claimed: LogFileBinding | undefined;
+    await this.locks.request(`${NAME_LOCK_PREFIX}${binding.ownerKey}/${binding.folderName}/${original}`, {}, async () => {
+      claimed = await claim();
+    });
+    if (!claimed) throw new Error("The log file name lock was not granted");
     return claimed;
   }
 
@@ -845,11 +931,14 @@ export class AutoLogFolder implements AutoLogSink {
   }
 
   // Renders sessions bound to this folder that no page here is writing:
-  // ones a closed page left unfinished, or pruned ones to forget.
+  // ones a closed page left unfinished, or pruned ones to forget. Only with
+  // Web Locks: without them a live tab's session cannot be told from a dead
+  // page's, so orphans wait for a page that has them.
   private recover(key: string, record: FolderRecord): void {
     const locks = this.locks;
+    if (!locks || !this.active) return;
     this.enqueue(async () => {
-      if (this.folders.get(key) !== record || !this.writable(key, record)) return;
+      if (this.disposing || this.folders.get(key) !== record || !this.writable(key, record)) return;
       let listed: LogFileBinding[];
       try {
         listed = await this.persistence.listBindings(key);
@@ -859,7 +948,7 @@ export class AutoLogFolder implements AutoLogSink {
       }
       for (const { sessionId } of listed) {
         if (this.live.has(sessionId) || this.folders.get(key) !== record) continue;
-        const recoverOne = async (mode: RenderMode) => {
+        const recoverOne = async () => {
           try {
             // Read again: another recoverer may have finished it meanwhile.
             const binding = await this.persistence.getBinding(sessionId);
@@ -868,20 +957,16 @@ export class AutoLogFolder implements AutoLogSink {
               await this.forgetBinding(sessionId);
               return;
             }
-            const result = await this.renderBinding(binding, record, mode);
+            const result = await this.renderBinding(binding, record, "orphan");
             if (result.outcome === "complete" || result.outcome === "gone") await this.forgetBinding(sessionId);
             this.recovered(record);
           } catch (error) {
             await this.handleWriteError(error, key, record);
           }
         };
-        if (locks) {
-          await locks.request(LOCK_PREFIX + sessionId, { ifAvailable: true }, async (lock) => {
-            if (lock) await recoverOne("orphan");
-          });
-        } else {
-          await recoverOne("orphan-if-ended");
-        }
+        await locks.request(LOCK_PREFIX + sessionId, { ifAvailable: true }, async (lock) => {
+          if (lock) await recoverOne();
+        });
       }
     });
   }

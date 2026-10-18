@@ -24,6 +24,7 @@ vi.mock("@react-aria/live-announcer", () => ({ announce }));
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const ambientZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 type Deferred = { promise: Promise<void>; resolve: () => void };
 function deferred(): Deferred {
@@ -43,6 +44,8 @@ class FakeFile {
   writableOptions: Array<{ keepExistingData?: boolean } | undefined> = [];
   failWrites: DOMException | undefined;
   failOnce: DOMException | undefined;
+  // Pauses the next write() on a writable until released.
+  holdWrite: Hold | undefined;
   constructor(readonly name: string) {}
 
   get text(): string { return decoder.decode(this.bytes); }
@@ -62,6 +65,12 @@ class FakeFile {
     return {
       seek: async (position: number) => { cursor = position; },
       write: async (text: string) => {
+        const held = this.holdWrite;
+        if (held) {
+          this.holdWrite = undefined;
+          held.entered.resolve();
+          await held.release.promise;
+        }
         const data = encoder.encode(text);
         const next = new Uint8Array(Math.max(buffer.length, cursor + data.length));
         next.set(buffer);
@@ -84,6 +93,8 @@ class FakeDirectory {
   // Pause the next directory or file lookup until released.
   holdDirectory: Hold | undefined;
   holdFile: Hold | undefined;
+  // Pause the next lookup that would create a missing file.
+  holdCreate: Hold | undefined;
   // The first file created anywhere below fails its first write.
   failFirstWrite: DOMException | undefined;
   private parent: FakeDirectory | undefined;
@@ -112,6 +123,12 @@ class FakeDirectory {
       this.holdFile = undefined;
       held.entered.resolve();
       await held.release.promise;
+    }
+    const creating = this.holdCreate;
+    if (creating && options?.create && !this.files.has(name)) {
+      this.holdCreate = undefined;
+      creating.entered.resolve();
+      await creating.release.promise;
     }
     if (this.dirs.has(name)) throw new DOMException("is a folder", "TypeMismatchError");
     let file = this.files.get(name);
@@ -400,7 +417,7 @@ describe("AutoLogFolder", () => {
 
   it("re-rendering gives identical bytes", async () => {
     const binding: LogFileBinding = {
-      sessionId: sid(1), ownerKey: "a", bindingId: "b", folderName: "Ada", character: "Ada",
+      sessionId: sid(1), ownerKey: "a", bindingId: "b", folderName: "Ada", character: "Ada", timeZone: ambientZone,
       baseName: "base", nameChecked: true, mark: { part: 1, sequence: 0, offset: 0, day: "2026-10-18" },
     };
     const entries = [entry(1, 0, "x".repeat(150)), entry(1, 1, "é".repeat(200)), entry(1, 2, "tail", at(0, 0, 1, 19))];
@@ -528,17 +545,20 @@ describe("AutoLogFolder", () => {
     page1.dispose();
     tab1.die();
 
-    // Without Web Locks nothing keeps them apart: both render, interleaved.
+    // Page 3 looks while page 2 is part-way through recovering it.
     const held = hold();
     root.holdDirectory = held;
-    const page2 = makeFolder({ noLocks: true });
-    const page3 = makeFolder({ noLocks: true });
+    const page2 = makeFolder();
+    const page3 = makeFolder();
     void page2.syncOwner();
     await held.entered.promise;
     await page3.syncOwner();
     await page3.whenIdle();
     held.release.resolve();
     await page2.whenIdle();
+    // And once more after page 2 has finished and forgotten it.
+    await page3.retry();
+    await page3.whenIdle();
 
     const files = root.all();
     expect(Object.keys(files)).toEqual([fileOf(1)]);
@@ -590,24 +610,25 @@ describe("AutoLogFolder", () => {
     page2.dispose();
   });
 
-  it("without Web Locks, finishes ended sessions, forgets pruned ones, and leaves the rest", async () => {
+  it("without Web Locks, writes only its own sessions and leaves every orphan for a page that has them", async () => {
     remember(ownerA, root);
-    const base = { ownerKey: ownerKey(ownerA), bindingId: "binding-1", folderName: "Ada", character: "Ada", nameChecked: false };
+    const base = { ownerKey: ownerKey(ownerA), bindingId: "binding-1", folderName: "Ada", character: "Ada", timeZone: ambientZone, nameChecked: false };
     const mark = { part: 1, sequence: 0, offset: 0, day: "2026-10-18" };
     const bind = (n: number) => persistence.bindings.set(sid(n), { ...base, sessionId: sid(n), baseName: `2026-10-18 14-05-12 ${pad12(n)}`, mark });
     bind(1);
     store(entry(1, 0, "ended"));
     endStored(1, at(14, 30, 0));
     bind(2); // pruned: no session in IndexedDB
-    bind(3);
-    store(entry(3, 0, "maybe still live in another tab"));
 
     const folder = makeFolder({ noLocks: true });
     await folder.syncOwner();
     await folder.whenIdle();
-    expect(footers(root.file(fileOf(1)).text)).toEqual(["Ended: 2026-10-18 14:30:00"]);
-    expect(Object.keys(root.all())).toEqual([fileOf(1)]);
-    expect([...persistence.bindings.keys()]).toEqual([sid(3)]);
+    expect(root.all()).toEqual({});
+    expect([...persistence.bindings.keys()]).toEqual([sid(1), sid(2)]);
+
+    folder.append(session(3), store(entry(3, 0, "this page's own")));
+    await folder.whenIdle();
+    expect(Object.keys(root.all())).toEqual([fileOf(3)]);
     folder.dispose();
   });
 
@@ -625,14 +646,132 @@ describe("AutoLogFolder", () => {
     folder.dispose();
   });
 
-  it("releases its locks when disposed", async () => {
+  it("releases its locks when disposed, and takes on no new work", async () => {
     const folder = await chosen();
     folder.append(session(1), store(entry(1, 0, "line")));
     await folder.whenIdle();
     expect(locks.held).toBe(1);
-    folder.dispose();
-    await tick();
+    await folder.dispose();
     expect(locks.held).toBe(0);
+    folder.append(session(2), store(entry(2, 0, "after dispose")));
+    await folder.whenIdle();
+    expect(locks.held).toBe(0);
+    expect(Object.keys(root.all())).toEqual([fileOf(1)]);
+  });
+
+  for (const stage of ["lookup", "write"] as const) {
+    it(`keeps its lock until a render caught mid-${stage} has stopped, then a recoverer finishes the session`, async () => {
+      const page1 = await chosen();
+      page1.append(session(1), store(entry(1, 0, "zero")));
+      await page1.whenIdle();
+
+      const held = hold();
+      if (stage === "lookup") root.holdDirectory = held;
+      else root.file(fileOf(1)).holdWrite = held;
+      page1.append(session(1), store(entry(1, 1, "one")));
+      await held.entered.promise;
+      const disposing = page1.dispose();
+      store(entry(1, 2, "two"));
+
+      // While the old render is still held, its session is not up for recovery.
+      const page2 = makeFolder();
+      await page2.syncOwner();
+      await page2.whenIdle();
+      expect(lineTexts(root.file(fileOf(1)).text)).toEqual(["zero"]);
+
+      held.release.resolve();
+      await disposing;
+      expect(locks.held).toBe(0);
+      expect(lineTexts(root.file(fileOf(1)).text)).toEqual(["zero"]);
+
+      await page2.retry();
+      await page2.whenIdle();
+      const text = root.file(fileOf(1)).text;
+      expect(lineTexts(text)).toEqual(["zero", "one", "two"]);
+      expect(footers(text)).toEqual(["Ended: not recorded (the page closed)"]);
+      page2.dispose();
+    });
+  }
+
+  it("claims a file name under a lock, so two tabs with the same 12-digit suffix get separate files", async () => {
+    remember(ownerA, root);
+    const ada = await root.getDirectoryHandle("Ada", { create: true });
+    const tabA = makeFolder();
+    const tabB = makeFolder();
+    await tabA.syncOwner();
+    await tabB.syncOwner();
+    const a = session(1, ownerA, { id: "00000000-0000-4000-8000-000000000001" });
+    const b = session(1, ownerA, { id: "11111111-1111-4111-8111-000000000001" });
+    storedSessions.set(a.id, a);
+    storedSessions.set(b.id, b);
+    stored.push({ ...entry(1, 0, "TAB A"), sessionId: a.id }, { ...entry(1, 0, "TAB B"), sessionId: b.id });
+
+    // Tab A has checked the name is free and is about to create the file.
+    const held = hold();
+    ada.holdCreate = held;
+    tabA.append(a, []);
+    await held.entered.promise;
+    tabB.append(b, []);
+    await tick();
+    held.release.resolve();
+    await Promise.all([tabA.whenIdle(), tabB.whenIdle()]);
+
+    const files = root.all();
+    expect(Object.keys(files).sort()).toEqual(["Ada/2026-10-18 14-05-12 000000000001 (2).txt", "Ada/2026-10-18 14-05-12 000000000001.txt"]);
+    expect(Object.values(files).map(lineTexts).sort()).toEqual([["TAB A"], ["TAB B"]]);
+    tabA.dispose();
+    tabB.dispose();
+  });
+
+  it("renders in the session's own time zone, never the ambient one, so a resumed render matches", async () => {
+    // Two zones on opposite sides of the date line, neither of them likely
+    // to be the machine's: whatever the ambient zone is, it is not used.
+    const late = { ...session(1), startedAt: Date.UTC(2026, 9, 18, 23, 50) };
+    const entries = [entry(1, 0, "before midnight UTC", Date.UTC(2026, 9, 18, 23, 55)), entry(1, 1, `${"y".repeat(400)} end`, Date.UTC(2026, 9, 19, 0, 10))];
+    const bound = (timeZone: string): LogFileBinding => ({
+      sessionId: sid(1), ownerKey: "a", bindingId: "b", folderName: "Ada", character: "Ada", timeZone,
+      baseName: "base", nameChecked: true, mark: { part: 1, sequence: 0, offset: 0, day: timeZone === "UTC" ? "2026-10-18" : "2026-10-19" },
+    });
+
+    const utc = renderLogParts(bound("UTC"), late, entries, undefined, 300);
+    const utcText = utc.parts.map((p) => p.text).join("");
+    expect(utcText).toContain("Started: 2026-10-18 23:50:00");
+    expect(utcText).toContain("-- 2026-10-19 --\n[00:10:00] y");
+    expect(utc.mark.offset).toBeGreaterThan(0);
+
+    // Kiritimati is UTC+14: the same instants fall on one day, no date line.
+    const kiritimati = renderLogParts(bound("Pacific/Kiritimati"), late, entries, undefined, 300);
+    const kiritimatiText = kiritimati.parts.map((p) => p.text).join("");
+    expect(kiritimatiText).toContain("Started: 2026-10-19 13:50:00");
+    expect(kiritimatiText).not.toContain("-- 2026-");
+
+    // Resuming from the saved mark gives exactly the part the full render made.
+    for (const [zone, whole] of [["UTC", utc], ["Pacific/Kiritimati", kiritimati]] as const) {
+      const rest = renderLogParts({ ...bound(zone), mark: whole.mark }, late, entries.filter((e) => e.sequence >= whole.mark.sequence), undefined, 300);
+      expect(rest.parts).toEqual([whole.parts[whole.parts.length - 1]]);
+    }
+  });
+
+  it("bounds long header fields at 256 UTF-8 bytes and refuses a cap too small for its header", async () => {
+    const title = "é".repeat(300);
+    const longUrl = `https://example.test/?q=${"€".repeat(300)}`;
+    const binding: LogFileBinding = {
+      sessionId: sid(1), ownerKey: "a", bindingId: "b", folderName: "Ada", character: "😀".repeat(100), timeZone: ambientZone,
+      baseName: "base", nameChecked: true, mark: { part: 1, sequence: 0, offset: 0, day: "2026-10-18" },
+    };
+    const long = { ...session(1), title, sanitizedUrl: longUrl };
+    const rendered = renderLogParts(binding, long, [entry(1, 0, "x".repeat(3000))], "\nEnded: 2026-10-18 15:00:00\n", 2048);
+    const [first] = rendered.parts;
+    const [titleLine, characterLine, , urlLine] = first.text.split("\n");
+    for (const line of [titleLine, characterLine.replace("Character: ", ""), urlLine.replace("URL: ", "")]) {
+      expect(encoder.encode(line).length).toBeLessThanOrEqual(256);
+      expect(line.endsWith("…")).toBe(true);
+      expect(line).not.toContain("�");
+    }
+    for (const part of rendered.parts) expect(encoder.encode(part.text).length).toBeLessThanOrEqual(2048);
+    expect(rendered.parts.map((p) => p.text.slice(p.text.indexOf("\n\n") + 2)).join("")).toContain("x".repeat(3000));
+
+    expect(() => renderLogParts(binding, long, [entry(1, 0, "x")], undefined, 300)).toThrow(/too small/);
   });
 
   it("gives ids that share their last eight characters, and existing names, their own files", async () => {
@@ -1062,7 +1201,7 @@ describe("IndexedDbLogFolderPersistence", () => {
     expect(await db.getFolder("a")).toBeUndefined();
 
     const binding: LogFileBinding = {
-      sessionId: "s1", ownerKey: "a", bindingId: "b1", folderName: "Ada", character: "Ada", baseName: "base",
+      sessionId: "s1", ownerKey: "a", bindingId: "b1", folderName: "Ada", character: "Ada", timeZone: "Europe/Paris", baseName: "base",
       nameChecked: true, mark: { part: 2, sequence: 40, offset: 7, day: "2026-10-18" },
     };
     await db.putBinding(binding);
