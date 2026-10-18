@@ -10,6 +10,7 @@ import {
 } from './codec';
 import type { GMCPPackage } from './package';
 import type { GMCPHandlerMap, KnownGMCPPackageMap, KnownGMCPPackageName } from './types';
+import { validSupportRequestPayload } from './playbackSupport';
 
 export type GMCPPackageConstructor<P extends GMCPPackage = GMCPPackage> = new (_: MudClient) => P;
 
@@ -20,6 +21,8 @@ export class GmcpSession {
   private _sessionReady = false;
   private identity = '';
   private _generation = 0;
+  private supportRequestTransport: number | undefined;
+  private readonly recentSupportRequests = new Set<string>();
 
   get generation(): number { return this._generation; }
 
@@ -95,6 +98,24 @@ export class GmcpSession {
     return true;
   }
 
+  respondToSupportRequest(requestId: string): void {
+    if (!this._ready || !this.telnet || !this.client.connected || this.client.localConnection) return;
+    const transport = this.client.currentTransportGeneration;
+    if (this.supportRequestTransport !== transport) {
+      this.recentSupportRequests.clear();
+      this.supportRequestTransport = transport;
+    }
+    if (this.recentSupportRequests.has(requestId)) return;
+    // Validation precedes both the Set and consuming this request's response.
+    const supports = this.require('Core.Supports');
+    supports.advertisedModules();
+    this.recentSupportRequests.add(requestId);
+    const oldest = this.recentSupportRequests.values().next().value;
+    if (this.recentSupportRequests.size > 64 && oldest !== undefined)
+      this.recentSupportRequests.delete(oldest);
+    supports.refreshCurrentSupport(requestId);
+  }
+
   receive(gmcpPackage: string, gmcpMessage: string | undefined): void {
     const address = parseGmcpMessageAddress(gmcpPackage);
     if (!address) {
@@ -103,7 +124,9 @@ export class GmcpSession {
     }
 
     const policy = usePersonalDataStore.getState();
-    if (policy.visitor && !policy.visitorWindow &&
+    const supportRequest = address.packageName === 'Client.Media' && address.messageType === 'SupportRequest';
+    if (supportRequest && !validSupportRequestPayload(gmcpMessage)) return;
+    if (policy.visitor && !policy.visitorWindow && !supportRequest &&
         !['Auth.Autologin', 'Char', 'Core', 'Core.Supports'].includes(address.packageName)) return;
 
     console.log('GMCP Message:', address.packageName, address.messageType);
@@ -149,6 +172,7 @@ export class GmcpSession {
   }
 
   shutdown(): void {
+    this.recentSupportRequests.clear();
     Object.values(this.packageHandlers).forEach((handler) => {
       handler?.shutdown();
     });

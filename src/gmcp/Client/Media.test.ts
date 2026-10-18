@@ -41,6 +41,7 @@ import {
   type GMCPMessageClientMediaUpdate,
 } from './Media';
 import { GMCPClientSpatial } from './Spatial';
+import { midiService } from '../../MidiService';
 
 type MockCacophony = ConstructorParameters<typeof MediaService>[0];
 
@@ -319,6 +320,29 @@ describe('GMCPClientMedia', () => {
     handler.shutdown();
     useSpatialStore.getState().reset();
     vi.useRealTimers();
+  });
+
+  it('identity recovery encodes the current selected sequence output and clock readiness each time', () => {
+    const output = vi.spyOn(midiService, 'sequenceOutputAvailable', 'get');
+    const clock = { ready: true };
+    Object.assign(client, { sharedClock: clock });
+    Object.assign(client.gmcp, { require: () => ({ advertisedModules: () => ['Client.Media 1', 'Client.Midi 2'] }) });
+    const reports = () => client.gmcp.send.mock.calls
+      .filter(([name]) => name === 'Client.Media.PlaybackSupport')
+      .map(([, body]) => JSON.parse(body));
+    output.mockReturnValue(false);
+    handler.sendPlaybackSupport();
+    output.mockReturnValue(true);
+    handler.sendPlaybackSupport();
+    clock.ready = false;
+    handler.sendPlaybackSupport();
+    expect(reports()).toEqual([
+      expect.objectContaining({ sharedTransport: true, midiSequences: false }),
+      expect.objectContaining({ sharedTransport: true, midiSequences: expect.objectContaining({ version: 1 }) }),
+      expect.objectContaining({ sharedTransport: false, midiSequences: false }),
+    ]);
+    expect(client.gmcp.send).toHaveBeenCalledTimes(3);
+    output.mockRestore();
   });
 
   it('uses the resolved URL as the load and play key when data.url is missing', async () => {

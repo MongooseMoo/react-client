@@ -19,7 +19,8 @@ describe('shared playback capability lifecycle', () => {
       configureSharedMedia: vi.fn(),
       reset: vi.fn(),
     };
-    const client = { sharedClock: clock, media, gmcp: { ready: true, send } };
+    const client = { sharedClock: clock, media, gmcp: { ready: true, send,
+      require: () => ({ advertisedModules: () => ['Client.Media 1', 'Core.Time 1'] }) } };
     const pkg = new GMCPClientMedia(
       client as unknown as ConstructorParameters<typeof GMCPClientMedia>[0],
     );
