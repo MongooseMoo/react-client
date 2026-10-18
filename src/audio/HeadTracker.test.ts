@@ -10,6 +10,7 @@ function setup(screenAngle = 0) {
   let now = 0;
   let angle = screenAngle;
   const onYaw = vi.fn<(yaw: number) => void>();
+  const onPausedChange = vi.fn<(paused: boolean) => void>();
   const timers = new Map<number, { due: number; callback: () => void }>();
   let nextTimer = 1;
   const screenListeners = new Set<() => void>();
@@ -30,6 +31,7 @@ function setup(screenAngle = 0) {
       timers.delete(id);
     },
     onYaw,
+    onPausedChange,
   });
   /** Move the clock on, running each timer when it comes due. */
   const advance = (ms: number) => {
@@ -58,8 +60,167 @@ function setup(screenAngle = 0) {
     angle = value;
     for (const listener of screenListeners) listener();
   };
-  return { tracker, turn, hold, advance, timers, screenListeners, onYaw, lastYawDegrees, rotateScreen };
+  return {
+    tracker,
+    turn,
+    hold,
+    advance,
+    timers,
+    screenListeners,
+    onYaw,
+    onPausedChange,
+    lastYawDegrees,
+    rotateScreen,
+  };
 }
+
+// From a flat reference, a tilt of beta has conditioning cos(beta / 2): it enters
+// the badly conditioned region below 0.5 (beta above 120) and leaves above 0.61
+// (beta below about 105).
+const INSIDE_BETA = 170;
+const BETWEEN_BETA = 112; // conditioning 0.56: between the thresholds
+const OUTSIDE_BETA = 90;
+
+describe('HeadTracker near the flipped-over pose', () => {
+  it('holds the last yaw through near-singular readings, however they wobble', () => {
+    const { tracker, turn, advance, lastYawDegrees, onPausedChange } = setup();
+    tracker.start();
+    turn(0);
+    turn(330); // a turn right: 30 degrees
+    advance(2000);
+    const settled = lastYawDegrees();
+    expect(settled).toBeCloseTo(30, 1); // within the filter's 0.01 degree settling
+    for (let i = 0; i < 60; i += 1) {
+      turn(330, FRAME_MS, INSIDE_BETA, i % 2 === 0 ? 3 : -3);
+    }
+    advance(500);
+    expect(lastYawDegrees()).toBeCloseTo(settled, 6);
+    expect(onPausedChange).not.toHaveBeenCalled(); // under 2 s so far
+  });
+
+  it('holds a flip of a device that was rolled when recentered (the Chromium round-3 case)', () => {
+    // Recentered rolled 20 degrees, then flipped to beta 170: a swing of about 150
+    // degrees about an axis that is not quite horizontal, whose twist reads as a
+    // turn of over 100 degrees. It must be held, not followed.
+    const { tracker, turn, advance, lastYawDegrees } = setup();
+    tracker.start();
+    turn(15, FRAME_MS, 0, 20);
+    for (let i = 0; i < 40; i += 1) turn(15, FRAME_MS, 170, i % 2 === 0 ? 2 : -2);
+    advance(500);
+    expect(lastYawDegrees()).toBeCloseTo(0, 6);
+  });
+
+  it('keeps tracking an ordinary tilt from flat to upright and a turn while upright', () => {
+    const { tracker, turn, advance, lastYawDegrees, onPausedChange } = setup();
+    tracker.start();
+    turn(0);
+    for (let beta = 0; beta <= 90; beta += 5) turn(0, FRAME_MS, beta, 0);
+    turn(330, FRAME_MS, 90, 0);
+    advance(2000);
+    expect(lastYawDegrees()).toBeCloseTo(30, 1);
+    expect(onPausedChange).not.toHaveBeenCalled();
+  });
+
+  it('uses hysteresis: between the thresholds it stays in whichever state it was', () => {
+    const { tracker, turn, advance, lastYawDegrees } = setup();
+    tracker.start();
+    turn(0);
+    // Coming from outside, a reading between the thresholds is still read.
+    turn(330, FRAME_MS, BETWEEN_BETA, 0);
+    advance(2000);
+    const between = lastYawDegrees();
+    expect(Number.isFinite(between)).toBe(true);
+    expect(Math.abs(between)).toBeGreaterThan(1);
+    // Once inside, the same reading is still held.
+    turn(330, FRAME_MS, INSIDE_BETA, 0);
+    advance(100);
+    const held = lastYawDegrees();
+    turn(300, FRAME_MS, BETWEEN_BETA, 0);
+    advance(2000);
+    expect(lastYawDegrees()).toBeCloseTo(held, 6);
+  });
+
+  it('after two seconds inside, pauses once', () => {
+    const { tracker, turn, advance, onPausedChange } = setup();
+    tracker.start();
+    turn(0);
+    turn(0, FRAME_MS, INSIDE_BETA, 0);
+    advance(1900);
+    expect(onPausedChange).not.toHaveBeenCalled();
+    advance(200);
+    expect(onPausedChange).toHaveBeenCalledTimes(1);
+    expect(onPausedChange).toHaveBeenLastCalledWith(true);
+    for (let i = 0; i < 30; i += 1) turn(0, FRAME_MS, INSIDE_BETA, i % 3);
+    advance(5000);
+    expect(onPausedChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('resumes smoothly when it comes out near the yaw it held', () => {
+    const { tracker, turn, advance, lastYawDegrees, onPausedChange, timers } = setup();
+    tracker.start();
+    turn(0);
+    turn(0, FRAME_MS, INSIDE_BETA, 0);
+    advance(2500); // paused
+    turn(350, FRAME_MS, OUTSIDE_BETA, 0); // out, 10 degrees from the held 0
+    expect(onPausedChange).toHaveBeenLastCalledWith(false);
+    advance(2000);
+    expect(lastYawDegrees()).toBeCloseTo(10, 1);
+    expect(timers.size).toBe(0);
+  });
+
+  it('comes out far from the held yaw: stays paused, without a swing, until recentered', () => {
+    const { tracker, turn, advance, lastYawDegrees, onPausedChange, onYaw } = setup();
+    tracker.start();
+    turn(0);
+    turn(0, FRAME_MS, INSIDE_BETA, 0); // inside, under 2 s
+    turn(270, FRAME_MS, 0, 0); // out, but 90 degrees from the held 0
+    expect(onPausedChange).toHaveBeenLastCalledWith(true);
+    const calls = onYaw.mock.calls.length;
+    for (let i = 0; i < 30; i += 1) turn(260 - i);
+    advance(2000);
+    expect(onYaw).toHaveBeenCalledTimes(calls);
+    expect(lastYawDegrees()).toBeCloseTo(0, 6);
+
+    tracker.recenter();
+    expect(onPausedChange).toHaveBeenLastCalledWith(false);
+    expect(lastYawDegrees()).toBe(0);
+    turn(200); // from 231 (the last reading) a 31 degree turn right
+    advance(2000);
+    expect(lastYawDegrees()).toBeCloseTo(31, 1);
+  });
+
+  it('comes out far, then back near the held yaw: resumes without a recenter', () => {
+    const { tracker, turn, advance, lastYawDegrees, onPausedChange } = setup();
+    tracker.start();
+    turn(0);
+    turn(0, FRAME_MS, INSIDE_BETA, 0);
+    turn(270, FRAME_MS, 0, 0); // paused, 90 away
+    turn(5); // back within 20 degrees of the held 0
+    expect(onPausedChange).toHaveBeenLastCalledWith(false);
+    advance(2000);
+    expect(lastYawDegrees()).toBeCloseTo(-5, 1);
+  });
+
+  it('stop clears a pause and its timer', () => {
+    const { tracker, turn, timers, onPausedChange } = setup();
+    tracker.start();
+    turn(0);
+    turn(0, FRAME_MS, INSIDE_BETA, 0);
+    tracker.stop();
+    expect(timers.size).toBe(0);
+    expect(onPausedChange).not.toHaveBeenCalled();
+  });
+
+  it('stop after a pause reports the pause over', () => {
+    const { tracker, turn, advance, onPausedChange } = setup();
+    tracker.start();
+    turn(0);
+    turn(0, FRAME_MS, INSIDE_BETA, 0);
+    advance(2500);
+    tracker.stop();
+    expect(onPausedChange).toHaveBeenLastCalledWith(false);
+  });
+});
 
 describe('HeadTracker', () => {
   it('ignores readings until started', () => {

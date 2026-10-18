@@ -12,12 +12,6 @@ export type Vector3 = [number, number, number];
 
 const DEG = Math.PI / 180;
 
-/**
- * Below this, a relative pose has no vertical part to read a turn from: it is
- * (within a millionth) a half turn about a horizontal axis.
- */
-const SINGULAR = 1e-6;
-
 /** Wrap an angle in degrees into (-180, 180]. */
 export function wrapDegrees(degrees: number): number {
   const wrapped = ((((degrees + 180) % 360) + 360) % 360) - 180;
@@ -69,29 +63,43 @@ export function devicePose(angles: OrientationAngles, screenAngle: number): Quat
   );
 }
 
+export interface RelativeYaw {
+  /** Degrees, (-180, 180], positive to the right. */
+  yaw: number;
+  /**
+   * How well the pose determines the yaw, 0 to 1: cos(t / 2) for a tilt t
+   * away from the reference about a horizontal axis. A wobble of d in the pose
+   * moves the yaw by about d / conditioning, so near 0 (the device flipped over
+   * from the reference) the yaw is meaningless.
+   */
+  conditioning: number;
+}
+
 /**
- * The head's yaw in degrees, (-180, 180], positive to the right: how far the
- * pose has turned about the vertical since the `reference` pose (straight
- * ahead, set by recentering).
+ * The head's yaw: how far the pose has turned about the vertical since the
+ * `reference` pose (straight ahead, set by recentering), with how well that
+ * is determined.
  *
  * It is the twist about the earth's up axis of the rotation from the
- * reference to the pose (a swing-twist decomposition). A head that rolls or
- * nods turns about a horizontal axis, which has no twist, so roll and nod add
- * no yaw however the device is held or mounted; a turn about the vertical is
- * read in full. It depends only on the two poses, so the same pose always
- * gives the same yaw, whatever path led there.
+ * reference to the pose (a swing-twist decomposition). It depends only on the
+ * two poses, so the same pose always gives the same yaw, whatever path led
+ * there. A turn about the vertical is read in full, and a turn about an
+ * earth-horizontal axis (nodding or rolling while level) adds nothing, however
+ * the device is held or mounted. A roll about an axis that is not horizontal
+ * (rolling sideways while tipped forward) couples partly into yaw: 30 degrees
+ * of roll at 30 degrees of tip reads as about 15 degrees of turn.
  *
- * The one pose with no yaw is a half turn about a horizontal axis from the
- * reference (the device flipped over): there every vertical turn is the same
- * pose, so this returns null and the caller holds its last yaw.
+ * At a half turn about a horizontal axis from the reference (the device
+ * flipped over), every vertical turn is the same pose: there the yaw is
+ * undefined and `conditioning` is 0.
  */
-export function yawFrom(reference: Quaternion, pose: Quaternion): number | null {
+export function yawFrom(reference: Quaternion, pose: Quaternion): RelativeYaw {
   const [w, , , z] = multiply(pose, [reference[0], -reference[1], -reference[2], -reference[3]]);
-  if (Math.hypot(w, z) < SINGULAR) {
-    return null;
-  }
-  // A right-handed twist about up is counter-clockwise; the yaw runs clockwise.
-  return wrapDegrees(0 - (2 * Math.atan2(z, w)) / DEG);
+  return {
+    // A right-handed twist about up is counter-clockwise; the yaw runs clockwise.
+    yaw: wrapDegrees(0 - (2 * Math.atan2(z, w)) / DEG),
+    conditioning: Math.hypot(w, z),
+  };
 }
 
 export interface HeadingFilterOptions {

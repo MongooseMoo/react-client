@@ -70,7 +70,12 @@ function setup(options: { permission?: () => Promise<string> } = {}) {
       }),
     );
   };
-  return { controller, sink, reading, advance, announce, timers, orientationListeners, screenListeners };
+  /** A reading with exactly these fields (a device may send only some angles). */
+  const dispatch = (fields: { alpha: number | null; beta: number | null; gamma: number | null }, ms = 16) => {
+    advance(ms);
+    target.dispatchEvent(Object.assign(new Event('deviceorientation'), fields));
+  };
+  return { controller, sink, reading, dispatch, advance, announce, timers, orientationListeners, screenListeners };
 }
 
 const headTrackingPreference = () => usePreferences.getState().sound.headTracking;
@@ -120,6 +125,23 @@ describe('HeadTrackingController', () => {
       expect(orientationListeners.size).toBe(0);
       reading(12);
       expect(useHeadTrackingStore.getState().sensor).toBe('none');
+    });
+
+    it('does not count a reading with only some angles, on the first check or a retry', () => {
+      const { controller, sink, dispatch, advance, announce } = setup();
+      detach = controller.attach(sink);
+      dispatch({ alpha: 12, beta: null, gamma: null });
+      dispatch({ alpha: 12, beta: 3, gamma: null });
+      expect(useHeadTrackingStore.getState().sensor).toBe('unknown');
+      advance(3000);
+      expect(useHeadTrackingStore.getState().sensor).toBe('none');
+
+      controller.checkSensorAgain();
+      dispatch({ alpha: 12, beta: null, gamma: null });
+      expect(useHeadTrackingStore.getState().sensor).toBe('checking');
+      dispatch({ alpha: 12, beta: 3, gamma: -4 });
+      expect(useHeadTrackingStore.getState().sensor).toBe('available');
+      expect(announce).toHaveBeenLastCalledWith('Motion sensor found. Head tracking is available.');
     });
 
     it('checking again after a timeout finds a sensor that arrives late', () => {
@@ -283,6 +305,54 @@ describe('HeadTrackingController', () => {
     expect(sink.setHeadYaw).toHaveBeenLastCalledWith(0);
     expect(useHeadTrackingStore.getState().yawDegrees).toBe(0);
     expect(announce).toHaveBeenLastCalledWith(expect.stringMatching(/^Recentered/));
+  });
+
+  describe('near the flipped-over pose', () => {
+    const PAUSED = 'Head tracking paused: hold the phone the way you started, or recenter.';
+
+    it('pauses after two seconds there, says so once, and resumes when the phone comes back', async () => {
+      const { controller, sink, reading, dispatch, advance, announce } = setup();
+      detach = controller.attach(sink);
+      await controller.enable();
+      reading(0);
+      dispatch({ alpha: 0, beta: 170, gamma: 0 });
+      advance(2500);
+      for (let i = 0; i < 10; i += 1) dispatch({ alpha: 0, beta: 170, gamma: i % 2 });
+      expect(useHeadTrackingStore.getState().status).toBe('paused');
+      expect(announce.mock.calls.filter(([message]) => message === PAUSED)).toHaveLength(1);
+
+      reading(5); // back near the way it started
+      expect(useHeadTrackingStore.getState().status).toBe('tracking');
+      expect(announce).toHaveBeenLastCalledWith('Head tracking resumed.');
+    });
+
+    it('recentering while paused resumes, saying only that it recentered', async () => {
+      const { controller, sink, reading, dispatch, advance, announce } = setup();
+      detach = controller.attach(sink);
+      await controller.enable();
+      reading(0);
+      dispatch({ alpha: 0, beta: 170, gamma: 0 });
+      advance(2500);
+      announce.mockClear();
+      controller.recenter();
+      expect(useHeadTrackingStore.getState().status).toBe('tracking');
+      expect(announce.mock.calls.map(([message]) => message)).toEqual([
+        'Recentered. Straight ahead is the way you face now.',
+      ]);
+    });
+
+    it('turning off while paused says only that it is off', async () => {
+      const { controller, sink, reading, dispatch, advance, announce } = setup();
+      detach = controller.attach(sink);
+      await controller.enable();
+      reading(0);
+      dispatch({ alpha: 0, beta: 170, gamma: 0 });
+      advance(2500);
+      announce.mockClear();
+      controller.disable();
+      expect(useHeadTrackingStore.getState().status).toBe('off');
+      expect(announce.mock.calls.map(([message]) => message)).toEqual(['Head tracking off.']);
+    });
   });
 
   it('recenter while off only says that head tracking is off', () => {

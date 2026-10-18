@@ -1527,12 +1527,12 @@ describe('GMCPClientMedia', () => {
     };
 
     // The mock engine records the requested listener pose and smoothing; it does not
-    // model AudioParam glides. In cacophony, putting the smoothing back to 0 (this
-    // app's setting) snaps a glide in flight to its target, so the facing below is
-    // where the engine is. A nonzero previous smoothing is put back too, and then the
-    // engine listener glides to the server facing at that rate rather than landing at
-    // once: the second test asks only for the policy and the requested facing.
-    it('glides while tracking; off puts back no smoothing and the server facing exactly', async () => {
+    // model AudioParam glides, so these tests show what MediaService asks for, not
+    // what a real listener does. (cacophony documents that a smoothing of 0, this
+    // app's setting, snaps a glide in flight to its target; the Chromium run reads
+    // the real AudioListener.) A nonzero previous smoothing is put back too, and the
+    // engine then glides to the server facing at that rate.
+    it('requests smoothing while tracking; off requests smoothing 0 and the exact server facing', async () => {
       const bed = await playBed();
       handler.handleListenerOrientation({ forward: [1, 0, 0] } as GMCPMessageClientMediaListenerOrientation);
       expect(client.media.cacophony.listenerSmoothingTau).toBe(0);

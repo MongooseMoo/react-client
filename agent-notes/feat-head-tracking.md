@@ -65,6 +65,25 @@ Do not push or open a PR.
   accumulation; the 0.011 start/end gap is unexplained, possibly sensor angle conversion
   or unsettled start). Turn/recenter/wrap/off values as round 1. Rotator offline check
   unchanged (max diff 0).
+- Codex round 3 (at 38229dd4): round-2 fixes confirmed. Team lead decided to KEEP the
+  twist method; fixed in the next commit:
+  1. Claim narrowed: a turn about an earth-horizontal axis adds no yaw; a roll while
+     tipped couples into yaw (documented test: tipped 30, rolled 30 -> -15.26, or
+     -8.21 recentered upright). Help text line added.
+  2. Ill-conditioned region with hysteresis, HeadTracker ILL_ENTER 0.5 / ILL_LEAVE 0.61
+     (conditioning = cos(swing/2)). First tried the suggested 0.15 / 0.25: the Chromium
+     run showed a flip of a phone recentered with a 20 degree roll swinging the scene to
+     131 degrees at conditioning ~0.26 (twist coupling grows like tan(swing/2)), so the
+     thresholds moved to a 120 degree tilt in / ~105 out. Held readings keep the last
+     yaw; 2 s inside, or leaving more than 20 degrees from the held yaw, pauses
+     (announced once); resumes when back within 20 degrees or on recenter (recenter and
+     stop end a pause without a "resumed" announcement).
+  3. hasAllAngles shared by discovery and tracking; partial-reading tests.
+  Test renames: FoaYawRotator call-order test, Media requested-values test.
+- Round 3 verification: tsc exit 0; vitest 180 files / 2450 tests; biome on changed
+  files clean. Chromium run (server facing 37.48): +30 -> 67.47; recenter 37.48; -45
+  across wrap -7.51; cycles -7.53 x3; flip of rolled phone held at 37.48 with status
+  "Paused..."; back near start 42.47 and "Tracking"; off 37.48.
 
 ## Decisions and why
 - Seam: `MediaService.setListenerOrientation` keeps the server's forward/up as the

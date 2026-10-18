@@ -130,7 +130,9 @@ describe('FoaYawRotator', () => {
     }
   });
 
-  it('a stepped write cancels a ramp still in flight, then lands at once', () => {
+  // Call order on spy params only, with no audio clock: a real ramp part-way through
+  // is the browser check (scratchpad rotator-check.mjs renders one).
+  it('a stepped write after a ramp cancels scheduled values, then sets the value', () => {
     const { ctx, gains } = context();
     const rotator = new FoaYawRotator(ctx as unknown as BaseAudioContext);
     rotator.setYaw(1, true); // a ramp starts

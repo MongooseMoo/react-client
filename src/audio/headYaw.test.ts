@@ -77,11 +77,11 @@ function anglesOf(r: Matrix): OrientationAngles {
 }
 
 /** The head yaw from a reference pose to a current one, both given as rotations. */
-function yawBetween(reference: Matrix, current: Matrix, screenAngle = 0): number | null {
+function yawBetween(reference: Matrix, current: Matrix, screenAngle = 0): number {
   const from = devicePose(anglesOf(reference), screenAngle);
   const to = devicePose(anglesOf(current), screenAngle);
   if (!from || !to) throw new Error('no pose');
-  return yawFrom(from, to);
+  return yawFrom(from, to).yaw;
 }
 
 /** Reference poses: flat, upright, pitched and rolled, facing various ways. */
@@ -94,7 +94,7 @@ const REFERENCES: Array<[string, Matrix]> = [
   ['pitched 60, rolled -35', multiply(rotX(60), rotY(-35))],
 ];
 
-/** Horizontal axes a head rolls or nods about. */
+/** Earth-horizontal axes (a head held level rolls and nods about these). */
 const HORIZONTAL_AXES: Vector3[] = [0, 45, 90, 135].map((deg) => [Math.cos(deg * D), Math.sin(deg * D), 0]);
 
 describe('yawFrom (the head yaw from the recentered pose)', () => {
@@ -113,7 +113,7 @@ describe('yawFrom (the head yaw from the recentered pose)', () => {
     }
   });
 
-  it('ignores head roll and nod (turns about any horizontal axis) from any pose', () => {
+  it('adds no yaw for a turn about any earth-horizontal axis, from any pose', () => {
     for (const [, reference] of REFERENCES) {
       for (const axis of HORIZONTAL_AXES) {
         for (const tilt of [-60, -20, 30, 60]) {
@@ -123,7 +123,7 @@ describe('yawFrom (the head yaw from the recentered pose)', () => {
     }
   });
 
-  it('reads the turn alone when the head turns and tilts together', () => {
+  it('reads the turn alone for a turn about the vertical with one earth-horizontal tilt', () => {
     for (const [, reference] of REFERENCES) {
       for (const axis of HORIZONTAL_AXES) {
         const pose = multiply(multiply(rotZ(-40), rotAbout(axis, 35)), reference);
@@ -132,11 +132,28 @@ describe('yawFrom (the head yaw from the recentered pose)', () => {
     }
   });
 
-  it('ignores the review case: an upright device rolled about 30 degrees sideways', () => {
+  it('adds no yaw for a sideways roll of an upright device (its back axis is horizontal)', () => {
     const upright = devicePose({ alpha: 0, beta: 90, gamma: 0 }, 0);
     const rolled = devicePose({ alpha: 270, beta: 60, gamma: 89.999999 }, 0);
     if (!upright || !rolled) throw new Error('no pose');
-    expect(yawFrom(upright, rolled)).toBeCloseTo(0, 4);
+    expect(yawFrom(upright, rolled).yaw).toBeCloseTo(0, 4);
+  });
+
+  // Documented behaviour, not a goal. A roll about an axis that is NOT
+  // earth-horizontal couples into yaw: here the device is tipped 30 degrees from
+  // upright (pitch 60) and then rolled 30 degrees about its own back, which keeps
+  // the back pointing exactly where it did. The twist reads part of that roll as
+  // a turn. Handheld, the main gesture is turning about the vertical, which reads
+  // exactly; a fixed facing axis would avoid this but brings back the axis
+  // singularities and switching of the earlier designs. The preference help says
+  // that tilting sideways while tipped forward turns the sound a little.
+  it('reads a roll while tipped forward as partly a turn (documented, review round 3)', () => {
+    const tipped = rotX(60);
+    const tippedAndRolled = multiply(tipped, rotZ(30));
+    // Recentered while tipped: about 15 degrees.
+    expect(yawBetween(tipped, tippedAndRolled)).toBeCloseTo(-15.2615, 3);
+    // Recentered upright, then tipped and rolled: about 8 degrees.
+    expect(yawBetween(rotX(90), tippedAndRolled)).toBeCloseTo(-8.2132, 3);
   });
 
   it.each([90, 270])('compensates a turn into landscape with the screen (angle %i)', (angle) => {
@@ -144,7 +161,7 @@ describe('yawFrom (the head yaw from the recentered pose)', () => {
     // Flat, turned a quarter in the hand with the screen: the facing has not changed.
     const landscape = devicePose({ alpha: angle, beta: 0, gamma: 0 }, angle);
     if (!portrait || !landscape) throw new Error('no pose');
-    expect(yawFrom(portrait, landscape)).toBeCloseTo(0, 9);
+    expect(yawFrom(portrait, landscape).yaw).toBeCloseTo(0, 9);
   });
 
   it.each([0, 90, 270])('returns to exactly the start after repeated pitch cycles (screen angle %i)', (screenAngle) => {
@@ -156,7 +173,7 @@ describe('yawFrom (the head yaw from the recentered pose)', () => {
         let end: number | null = null;
         for (let beta = 85; beta >= 0; beta -= 1) {
           const pose = devicePose({ alpha: 0, beta, gamma }, screenAngle);
-          if (pose) end = yawFrom(start, pose);
+          if (pose) end = yawFrom(start, pose).yaw;
         }
         expect(end).toBeCloseTo(0, 9);
       }
@@ -174,15 +191,48 @@ describe('yawFrom (the head yaw from the recentered pose)', () => {
     for (let cycle = 1; cycle <= 3; cycle += 1) {
       const end = devicePose(at(cycle * 2 * Math.PI), 0);
       if (!end) throw new Error('no pose');
-      expect(yawFrom(start, end)).toBeCloseTo(0, 9);
+      expect(yawFrom(start, end).yaw).toBeCloseTo(0, 9);
     }
   });
 
-  it('has no yaw for a half-turn flip about a horizontal axis (the one singular pose)', () => {
+  it('reports how well conditioned the yaw is: 1 level with the reference, 0 flipped over', () => {
     const flat = devicePose({ alpha: 0, beta: 0, gamma: 0 }, 0);
-    const flipped = devicePose({ alpha: 0, beta: 180, gamma: 0 }, 0);
-    if (!flat || !flipped) throw new Error('no pose');
-    expect(yawFrom(flat, flipped)).toBeNull();
+    if (!flat) throw new Error('no pose');
+    const at = (beta: number, gamma = 0) => {
+      const pose = devicePose({ alpha: 0, beta, gamma }, 0);
+      if (!pose) throw new Error('no pose');
+      return yawFrom(flat, pose);
+    };
+    expect(at(0).conditioning).toBeCloseTo(1, 9);
+    // A tilt of t from the reference: conditioning cos(t / 2).
+    expect(at(90).conditioning).toBeCloseTo(Math.cos(Math.PI / 4), 9);
+    expect(at(180).conditioning).toBeCloseTo(0, 9);
+    // A turn about the vertical does not lower it.
+    const turned = devicePose({ alpha: 120, beta: 0, gamma: 0 }, 0);
+    if (!turned) throw new Error('no pose');
+    expect(yawFrom(flat, turned).conditioning).toBeCloseTo(1, 9);
+  });
+
+  it('is badly conditioned near the flip, and tame above the leave threshold (0.61)', () => {
+    const flat = devicePose({ alpha: 0, beta: 0, gamma: 0 }, 0);
+    if (!flat) throw new Error('no pose');
+    const yawAt = (beta: number, gamma: number) => {
+      const pose = devicePose({ alpha: 0, beta, gamma }, 0);
+      if (!pose) throw new Error('no pose');
+      return yawFrom(flat, pose);
+    };
+    // The review case: at beta 179.9, a 0.1 degree wobble swings the yaw by about 90.
+    expect(yawAt(179.9, 0.1).conditioning).toBeLessThan(0.15);
+    expect(Math.abs(wrapDegrees(yawAt(179.9, 0.1).yaw - yawAt(179.9, -0.1).yaw))).toBeGreaterThan(90);
+    // At conditioning 0.61 or more, the same 0.2 degree wobble moves the yaw by under
+    // twice as much (the amplification is about 1 / conditioning).
+    for (const beta of [104, 90, 45]) {
+      const conditioning = yawAt(beta, 0).conditioning;
+      expect(conditioning).toBeGreaterThanOrEqual(0.61);
+      const amplification = Math.abs(wrapDegrees(yawAt(beta, 0.1).yaw - yawAt(beta, -0.1).yaw)) / 0.2;
+      expect(amplification).toBeLessThan(2);
+      expect(amplification).toBeLessThanOrEqual(1 / conditioning + 0.01);
+    }
   });
 
   it('has no pose for a reading without angles', () => {

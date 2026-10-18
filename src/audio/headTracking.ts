@@ -3,11 +3,11 @@ import { create } from 'zustand';
 
 import { isHeadRecenterShortcut } from '../reservedShortcuts';
 import { usePreferences } from '../stores/preferencesStore';
-import { HeadTracker, orientationAngles } from './HeadTracker';
+import { HeadTracker, hasAllAngles, orientationAngles } from './HeadTracker';
 
 /**
  * Whether this device can track the head: `available` once a reading with
- * angles has arrived, `needs-permission` where the browser sends none until
+ * all three angles has arrived (what tracking needs, {@link hasAllAngles}), `needs-permission` where the browser sends none until
  * the player allows motion access (iOS), `none` when no such reading came,
  * `unknown` while the first check listens, `checking` while a check the
  * player asked for listens. Desktops define DeviceOrientationEvent and may
@@ -18,8 +18,10 @@ export type SensorAvailability = 'unknown' | 'checking' | 'available' | 'needs-p
 /**
  * `waiting`: on, no reading yet. `no-readings`: on, but none arrived in
  * {@link NO_READING_MS}. `blocked`: the player refused motion access.
+ * `paused`: the device is near the flipped-over pose, or came out of it
+ * pointing elsewhere; the yaw is held until it points back or a recenter.
  */
-export type HeadTrackingStatus = 'off' | 'waiting' | 'tracking' | 'no-readings' | 'blocked';
+export type HeadTrackingStatus = 'off' | 'waiting' | 'tracking' | 'paused' | 'no-readings' | 'blocked';
 
 export interface HeadTrackingState {
   sensor: SensorAvailability;
@@ -77,6 +79,8 @@ export class HeadTrackingController {
   private lastReadoutMs = Number.NEGATIVE_INFINITY;
   /** The player turned it on in this session, so a missing reading is worth saying aloud. */
   private startedByPlayer = false;
+  /** A recenter or stop ends a pause; what it announces itself is enough. */
+  private quietResume = false;
 
   constructor(env: HeadTrackingEnvironment) {
     this.env = env;
@@ -88,6 +92,7 @@ export class HeadTrackingController {
       setTimer: env.setTimer,
       clearTimer: env.clearTimer,
       onYaw: (yaw) => this.handleYaw(yaw),
+      onPausedChange: (paused) => this.handlePausedChange(paused),
     });
   }
 
@@ -151,7 +156,9 @@ export class HeadTrackingController {
       this.env.announce('Head tracking is off.');
       return;
     }
+    this.quietResume = true;
     this.tracker.recenter();
+    this.quietResume = false;
     this.publishReadout(true);
     this.env.announce('Recentered. Straight ahead is the way you face now.');
   }
@@ -202,7 +209,9 @@ export class HeadTrackingController {
     this.startedByPlayer = false;
     // The tracker hands back a zero yaw as it stops; the sink then puts back the
     // server-driven smoothing and writes the server facing exactly.
+    this.quietResume = true;
     this.tracker.stop();
+    this.quietResume = false;
     this.sink?.setHeadTracking(false);
     // Off means no sensor work at all, a running availability check included.
     if (this.probeTimer !== null) {
@@ -219,11 +228,24 @@ export class HeadTrackingController {
     if (!this.tracker.hasReading) {
       return;
     }
-    if (useHeadTrackingStore.getState().status !== 'tracking') {
+    const { status } = useHeadTrackingStore.getState();
+    if (status === 'waiting' || status === 'no-readings') {
       this.clearNoReadingTimer();
       useHeadTrackingStore.setState({ status: 'tracking', sensor: 'available' });
     }
     this.publishReadout(false);
+  }
+
+  private handlePausedChange(paused: boolean): void {
+    if (paused) {
+      useHeadTrackingStore.setState({ status: 'paused' });
+      this.env.announce('Head tracking paused: hold the phone the way you started, or recenter.');
+      return;
+    }
+    useHeadTrackingStore.setState({ status: 'tracking' });
+    if (!this.quietResume) {
+      this.env.announce('Head tracking resumed.');
+    }
   }
 
   /** Refresh the readout now if it is due (or forced), else once the interval is up. */
@@ -307,7 +329,7 @@ export class HeadTrackingController {
   }
 
   private readonly handleProbe = (event: Event): void => {
-    if (orientationAngles(event).alpha === null) {
+    if (!hasAllAngles(orientationAngles(event))) {
       return;
     }
     const asked = useHeadTrackingStore.getState().sensor === 'checking';

@@ -17,6 +17,7 @@ const STATUS_TEXT: Record<HeadTrackingStatus, string> = {
   off: 'Off.',
   waiting: 'Waiting for the motion sensor.',
   tracking: 'Tracking.',
+  paused: 'Paused: hold the phone the way you started, or recenter.',
   'no-readings': 'No motion readings yet.',
   blocked: 'Motion access was not allowed.',
 };
@@ -94,7 +95,8 @@ const HeadTrackingControls: React.FC = () => {
       <p id="head-tracking-help" style={{ color: 'var(--color-text-secondary)', fontSize: '0.9em' }}>
         With headphones, hold or wear the device so it turns with your head: sounds stay where they
         are in the world as you turn. Recenter, or Alt+Shift+O, makes the way you face now straight
-        ahead.
+        ahead. Turn your whole body or the phone to look around; tilting it sideways while it is
+        tipped forward also turns the sound a little.
       </p>
       {enabled && (
         <button type="button" onClick={() => headTracking.recenter()}>
