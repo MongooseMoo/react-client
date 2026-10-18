@@ -72,6 +72,7 @@ type AdvertisedGMCPPackage = GMCPPackage & { packageVersion: number };
 const supportsSet = gmcpJsonMessage<"Set", never, string[]>("Set");
 const supportsAdd = gmcpJsonMessage<"Add", never, string[]>("Add");
 const supportsRemove = gmcpJsonMessage<"Remove", never, string[]>("Remove");
+const supportsGet = gmcpJsonMessage<"Get", Record<string, never>>("Get");
 
 const GMCPCoreSupportsBase = GMCPPackage.with({
   packageName: "Core.Supports",
@@ -79,17 +80,21 @@ const GMCPCoreSupportsBase = GMCPPackage.with({
     outbound(supportsSet),
     outbound(supportsAdd),
     outbound(supportsRemove),
+    inbound(supportsGet),
   ] as const,
 });
 
 export class GMCPCoreSupports extends GMCPCoreSupportsBase {
+  constructor(client: ConstructorParameters<typeof GMCPCoreSupportsBase>[0]) {
+    super(client);
+    this.on('get', () => this.sendSet(this.advertisedModules()));
+  }
   advertisedModules(): string[] {
     return Object.values(this.client.gmcp.handlers)
       .filter(isAdvertisedGMCPPackage)
       .map(p => `${p.packageName} ${p.packageVersion.toString()}`);
   }
 
-  // Note: Server doesn't send Core.Supports messages to the client according to IRE docs.
 }
 
 function isAdvertisedGMCPPackage(

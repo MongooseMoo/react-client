@@ -15,6 +15,8 @@ export enum AutoreadMode {
 }
 
 export type GeneralPreferences = {
+  /** Hub-first rollout: stays disabled until complete direct-send parity passes. */
+  fileSharingV2?: boolean;
   localEcho: boolean;
   syncTimezoneToServer: boolean;
   syncLocationToServer: boolean;
@@ -119,6 +121,7 @@ const PERSIST_DEBOUNCE_MS = 250;
 function getInitialPreferences(): PrefState {
   return {
     general: {
+      fileSharingV2: false,
       localEcho: false,
       syncTimezoneToServer: true,
       syncLocationToServer: false,

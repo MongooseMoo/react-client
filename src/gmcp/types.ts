@@ -12,6 +12,8 @@ import type { GMCPCharStatusConditions } from "./Char/Status/Conditions";
 import type { GMCPCharStatusTimers } from "./Char/Status/Timers";
 import type { GMCPClientFile } from "./Client/File";
 import type { GMCPClientFileTransfer } from "./Client/FileTransfer";
+import type { GMCPClientPeer } from './Client/Peer';
+import type { GMCPClientFiles } from './Client/Files';
 import type { GMCPClientHaptics } from "./Client/Haptics";
 import type { GMCPClientHtml } from "./Client/Html";
 import type { GMCPClientKeystrokes } from "./Client/Keystrokes";
@@ -53,6 +55,8 @@ export interface KnownGMCPPackageMap {
   "Char.Status.Timers": GMCPCharStatusTimers;
   "Client.File": GMCPClientFile;
   "Client.FileTransfer": GMCPClientFileTransfer;
+  'Client.Peer': GMCPClientPeer;
+  'Client.Files': GMCPClientFiles;
   "Client.Haptics": GMCPClientHaptics;
   "Client.Html": GMCPClientHtml;
   "Client.Keystrokes": GMCPClientKeystrokes;

@@ -1,4 +1,5 @@
 import commitHash from 'virtual:commit-hash';
+import { strictJson } from '../fileSharing/protocol';
 import { usePersonalDataStore } from '../stores/personalDataStore';
 
 import type MudClient from '../client';
@@ -113,7 +114,8 @@ export class GmcpSession {
 
     let handled: boolean;
     try {
-      const payload = parseGmcpPayload(gmcpMessage);
+      const payload = handler.enabled && ['Client.Peer', 'Client.Files'].includes(address.packageName)
+        ? strictJson(gmcpMessage ?? '') : parseGmcpPayload(gmcpMessage);
       handled = handler.receiveRegisteredMessage(address.messageType, payload);
     } catch {
       console.error(

@@ -2,7 +2,11 @@
 
 ## Goal
 
-Apply the final spec edits at 0da13297 on feat/file-sharing-v2 after the third
+Implement client-only Phase 1 from final specification commit 37b5bbca. The task
+is codex-dcpp-phase1-client.md in the scratchpad below. Commit coherent steps;
+do not push. Keep v2 disabled by default and preserve the v1 engine/storage.
+
+Prior documentation task: Apply the final spec edits at 0da13297 after the third
 independent Claude review. Work only in C:/Users/Q/code/react-client-file-sharing; commit the four
 contracts and this note. Do not push, implement client/server code, or contact
 or modify the MOO. Original tasks/review are in
@@ -14,10 +18,25 @@ This note and the linked contracts stand alone.
 
 ## State
 
+Client implementation in progress (2026-10-18). Strict Phase 1 schemas and
+binary codec, six-store worker storage, fresh-consent partial adoption/root
+purge, default-off package gates, endpoint election/recovery, and session pool
+have been added. First 10 protocol/storage/endpoint tests pass. The integration,
+offer/data lifecycle, UI, independent hub harness and full verification remain.
+No hub work or deployment is part of this task. No browser acceptance is claimed.
+
+Implementation decisions: v1 source files remain untouched. Phase 1 creates
+only the specified six native version-1 stores. Ctl and frame validators reject
+later-phase operations. Workers own v2 database connections. End superseded
+parks the endpoint, including no-lock tabs, until a player action.
+
+Implementation surprises: none yet. Next implementation step: offer grants,
+bind/ready/credits/receipt, facade integration and accessible explicit save UI.
+
 All original high, medium and low findings plus B1-B7 and L-new-1..6 from the
 re-review, plus C1-C3 and the final L1-L3, have specified resolutions below; no finding
-is rejected or left for an implementer to choose. This remains SPECIFICATION
-ONLY: no implementation, deployment, browser acceptance or author-run live MOO
+is rejected or left for an implementer to choose. The prior task was SPECIFICATION
+ONLY: no deployment, browser acceptance or author-run live MOO
 probe is claimed. Source baseline is 03a193ba2add2cb0d40bd9b21b508006f7512c96.
 Task-owned files:
 

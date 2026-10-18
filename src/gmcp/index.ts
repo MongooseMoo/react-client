@@ -8,6 +8,8 @@ export { GMCPCharStatusConditions } from "./Char/Status/Conditions";
 export { GMCPCharStatusTimers } from "./Char/Status/Timers";
 export { GMCPClientFile } from "./Client/File";
 export { GMCPClientFileTransfer } from "./Client/FileTransfer";
+export { GMCPClientPeer } from './Client/Peer';
+export { GMCPClientFiles } from './Client/Files';
 export { GMCPClientHtml } from "./Client/Html";
 export { GMCPClientKeystrokes } from "./Client/Keystrokes";
 export { GMCPClientMedia } from "./Client/Media";
