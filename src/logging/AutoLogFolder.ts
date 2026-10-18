@@ -81,13 +81,24 @@ export interface LockManagerLike {
 const FOLDER_STORE = "folders";
 const CURSOR_STORE = "cursors";
 const CURSOR_OWNER_INDEX = "ownerKey";
+// Version 1 kept only the bare handle per owner; version 2 wraps it in a
+// StoredFolder and adds the cursors store.
 const folderDatabaseSchema: IndexedDatabaseSchema = {
   name: "mongoose-autolog-folders",
-  version: 1,
-  upgrade: (database) => {
+  version: 2,
+  upgrade: (database, oldVersion, _newVersion, transaction) => {
     if (!database.objectStoreNames.contains(FOLDER_STORE)) database.createObjectStore(FOLDER_STORE);
     if (!database.objectStoreNames.contains(CURSOR_STORE)) {
       database.createObjectStore(CURSOR_STORE, { keyPath: "sessionId" }).createIndex(CURSOR_OWNER_INDEX, "ownerKey", { unique: false });
+    }
+    if (oldVersion === 1) {
+      const request = transaction.objectStore(FOLDER_STORE).openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        cursor.update({ handle: cursor.value, bindingId: newBindingId() });
+        cursor.continue();
+      };
     }
   },
 };

@@ -727,6 +727,34 @@ describe("sanitizeFolderName", () => {
 });
 
 describe("IndexedDbLogFolderPersistence", () => {
+  it("upgrades a version 1 database: adds cursors and keeps the remembered folders", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const deletion = indexedDB.deleteDatabase("mongoose-autolog-folders");
+      deletion.onsuccess = () => resolve();
+      deletion.onerror = () => reject(deletion.error);
+    });
+    // Version 1 stored the bare handle under the owner key.
+    const handle = { kind: "directory", name: "Logs" };
+    await new Promise<void>((resolve, reject) => {
+      const open = indexedDB.open("mongoose-autolog-folders", 1);
+      open.onupgradeneeded = () => { open.result.createObjectStore("folders"); };
+      open.onsuccess = () => {
+        const transaction = open.result.transaction("folders", "readwrite");
+        transaction.objectStore("folders").put(handle, "owner-a");
+        transaction.oncomplete = () => { open.result.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      open.onerror = () => reject(open.error);
+    });
+
+    const db = new IndexedDbLogFolderPersistence();
+    const folder = await db.getFolder("owner-a");
+    expect(folder?.handle).toEqual(handle);
+    expect(typeof folder?.bindingId).toBe("string");
+    expect(folder?.bindingId).not.toBe("");
+    expect(await db.listCursors("owner-a")).toEqual([]);
+  });
+
   it("keeps a folder per owner key and cursors per session", async () => {
     const db = new IndexedDbLogFolderPersistence();
     const handle = { kind: "directory", name: "Logs" } as unknown as FileSystemDirectoryHandle;
