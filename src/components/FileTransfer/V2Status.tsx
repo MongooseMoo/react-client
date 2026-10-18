@@ -48,7 +48,7 @@ export default function V2Status({
               {d.outcome === 'verified'
                 ? `${name}: downloaded and verified; ready to save`
                 : d.outcome === 'browser-download'
-                  ? `${name}: handed to the browser for download`
+                  ? `${name}: handed to the browser for download; you can save again for 24 hours`
                   : d.outcome === 'export-uncertain'
                     ? `${name}: download handoff uncertain; choose whether to save again`
                     : ''}
@@ -69,9 +69,10 @@ export default function V2Status({
                 onClick={() => {
                   void service.save(d.key);
                 }}
-                aria-label={`Save ${name}`}
+                aria-label={`Save ${name}${d.outcome === 'browser-download' ? ' again' : ''}`}
               >
                 Save {name}
+                {d.outcome === 'browser-download' ? ' again' : ''}
               </button>
             )}
           </div>

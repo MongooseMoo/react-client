@@ -1,6 +1,17 @@
 import type { WirePort } from './protocol';
 import {
   endpointKey,
+  check,
+  id,
+  player,
+  integer,
+  shape,
+  record,
+  strictJson,
+  validName,
+  validatePeer,
+  validateFiles,
+  validateSdp,
   randomId,
   sameEndpoint,
   type Endpoint,
@@ -16,6 +27,8 @@ export class MemoryPort<I, O> implements WirePort<I, O> {
   readonly sent: { kind: keyof O; data: O[keyof O] & Record<string, unknown> }[] = [];
   private readonly listeners = new Map<keyof I, Set<(v: unknown) => void>>();
   post?: (kind: keyof O, data: O[keyof O]) => void;
+  readonly errors: unknown[] = [];
+  constructor(private readonly validate?: (kind: keyof I & string, value: unknown) => I[keyof I]) {}
   send<K extends keyof O & string>(kind: K, data: O[K]): void {
     this.sent.push({ kind, data: data as O[keyof O] & Record<string, unknown> });
     this.post?.(kind, data);
@@ -29,7 +42,14 @@ export class MemoryPort<I, O> implements WirePort<I, O> {
     };
   }
   deliver<K extends keyof I & string>(kind: K, data: I[K]): void {
-    for (const fn of this.listeners.get(kind) ?? []) fn(data);
+    const parsed = this.validate ? this.validate(kind, strictJson(JSON.stringify(data))) : data;
+    for (const fn of this.listeners.get(kind) ?? []) {
+      try {
+        fn(parsed);
+      } catch (error) {
+        this.errors.push(error);
+      }
+    }
   }
 }
 
@@ -74,19 +94,41 @@ export class Phase1Hub {
   private readonly requests = new Map<string, { raw: string; until: number }>();
   private readonly reservedRequests = new Map<string, string>();
   dropOutcome = false;
+  outcomeErrors: ('rate' | 'busy')[] = [];
   peer(player: string, legacy = false): HubPeer {
     const p: HubPeer = {
       connection: randomId(),
       player,
       legacy,
-      peer: new MemoryPort(),
-      files: new MemoryPort(),
+      peer: new MemoryPort(validatePeer),
+      files: new MemoryPort(validateFiles),
       seq: 0,
     };
     this.players.set(player, p);
-    p.peer.post = (kind, data) => queueMicrotask(() => this.peerCommand(p, kind, data));
-    p.files.post = (kind, data) => queueMicrotask(() => this.fileCommand(p, kind, data));
+    p.peer.post = (kind, data) =>
+      queueMicrotask(() => this.receiveRaw(p, false, kind, JSON.stringify(data)));
+    p.files.post = (kind, data) =>
+      queueMicrotask(() => this.receiveRaw(p, true, kind, JSON.stringify(data)));
     return p;
+  }
+  receiveRaw(p: HubPeer, files: boolean, kind: string, raw: string): void {
+    let parsed: unknown;
+    try {
+      parsed = strictJson(raw);
+      validateHubInput(files, kind, parsed);
+    } catch {
+      const req = record(parsed) && id(parsed.req) ? String(parsed.req) : randomId();
+      this.error(p, files, req, kind, 'malformed');
+      return;
+    }
+    if (files)
+      this.fileCommand(
+        p,
+        kind as keyof FilesOutbound,
+        parsed as FilesOutbound[keyof FilesOutbound],
+      );
+    else
+      this.peerCommand(p, kind as keyof PeerOutbound, parsed as PeerOutbound[keyof PeerOutbound]);
   }
   private pair(a: string, b: string): string {
     return JSON.stringify([a, b].sort());
@@ -390,6 +432,11 @@ export class Phase1Hub {
       o.state = o.state === 'pending' ? 'rejected' : 'cancelled';
     else if (kind === 'Outcome' && receiver && (o.state === 'accepted' || o.state === 'received')) {
       if (this.dropOutcome) return;
+      const code = this.outcomeErrors.shift();
+      if (code) {
+        this.error(p, true, m.req, kind, code, m.offer);
+        return;
+      }
       o.state = 'received';
     } else {
       this.error(p, true, m.req, kind, 'state', m.offer);
@@ -507,6 +554,70 @@ export class Phase1Hub {
           .get(self.player)
           ?.peer.deliver('Closed', { event: randomId(), peer, session: s.id, reason });
     }
+  }
+}
+/** Hub ingress schemas are separate from its offer/session state machines. */
+function validateHubInput(files: boolean, kind: string, v: unknown): void {
+  const endpoint = shape({ player, endpoint: id, epoch: id });
+  const target = { req: id, to: player, target: endpoint };
+  const session = { ...target, session: id };
+  const equal = (expected: unknown) => (x: unknown) => x === expected;
+  const schemas: Record<string, (v: unknown) => boolean> = files
+    ? {
+        Offer: shape({
+          ...target,
+          offer: id,
+          id: (x) => typeof x === 'string' && /^[a-f0-9]{64}$/.test(x),
+          name: validName,
+          size: integer(0, 104857600),
+        }),
+        Respond: shape({ ...target, offer: id, accept: (x) => typeof x === 'boolean' }),
+        Cancel: shape({ ...target, offer: id }),
+        Withdraw: shape({ ...target, offer: id }),
+        Outcome: shape({ ...target, offer: id }),
+      }
+    : {
+        Hello: shape({
+          req: id,
+          endpoint: id,
+          peer: equal(1),
+          files: equal(1),
+          data: equal(1),
+          features: (x) => Array.isArray(x) && x.length === 1 && x[0] === 'base',
+          maxReceiveSize: integer(0, 104857600),
+        }),
+        Capabilities: shape({ req: id, to: player }),
+        Reserve: shape({
+          ...target,
+          purpose: equal('files'),
+          auth: shape({ kind: equal('offer'), offer: id }),
+        }),
+        Connect: shape({ ...session, sdp: (x) => typeof x === 'string' }),
+        Answer: shape({ ...session, sdp: (x) => typeof x === 'string' }),
+        Candidate: shape(session, {
+          candidate: shape(
+            { candidate: (x) => typeof x === 'string' && x.length > 0 && x.length <= 2048 },
+            {
+              sdpMid: (x) => typeof x === 'string',
+              sdpMLineIndex: integer(0, 15),
+              usernameFragment: (x) => typeof x === 'string',
+            },
+          ),
+          end: equal(true),
+        }),
+        Connected: shape(session),
+        Close: shape({
+          ...session,
+          reason: (x) => ['done', 'cancelled', 'failed', 'protocol'].includes(String(x)),
+        }),
+      };
+  check(Object.hasOwn(schemas, kind) && schemas[kind](v));
+  check(record(v));
+  if (!files && (kind === 'Connect' || kind === 'Answer')) validateSdp(String(v.sdp));
+  if (!files && kind === 'Candidate') {
+    check(Boolean(v.candidate) !== Boolean(v.end));
+    if (record(v.candidate))
+      check(v.candidate.sdpMid !== undefined || v.candidate.sdpMLineIndex !== undefined);
   }
 }
 function canonicalRequest(value: unknown): string {
@@ -630,7 +741,21 @@ export class TestPC {
   async createAnswer(): Promise<RTCSessionDescriptionInit> {
     return { type: 'answer', sdp: this.sdp() };
   }
-  async setLocalDescription(): Promise<void> {}
+  async setLocalDescription(): Promise<void> {
+    const candidate = {
+      candidate: `candidate:${this.serial} 1 UDP 1 127.0.0.1 9000 typ host`,
+      sdpMid: '0',
+      sdpMLineIndex: 0,
+      usernameFragment: null,
+    };
+    queueMicrotask(() => {
+      this.onicecandidate?.({ candidate } as unknown as RTCPeerConnectionIceEvent);
+      this.onicecandidate?.({
+        candidate: { ...candidate, candidate: '' },
+      } as unknown as RTCPeerConnectionIceEvent);
+      this.onicecandidate?.({ candidate: null } as RTCPeerConnectionIceEvent);
+    });
+  }
   async setRemoteDescription(d: RTCSessionDescriptionInit): Promise<void> {
     const n = Number(/a=x-test-pc:(\d+)/.exec(d.sdp ?? '')?.[1]);
     const other = this.network.pcs[n];
@@ -645,7 +770,10 @@ export class TestPC {
       });
     }
   }
-  async addIceCandidate(): Promise<void> {}
+  readonly ice: (RTCIceCandidateInit | null)[] = [];
+  async addIceCandidate(candidate: RTCIceCandidateInit | null): Promise<void> {
+    this.ice.push(candidate);
+  }
   close(): void {
     this.connectionState = 'closed';
     for (const c of this.channels) c.close();

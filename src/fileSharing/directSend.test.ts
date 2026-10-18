@@ -75,6 +75,126 @@ async function pair(persistent = false) {
   return { hub, rtc, a: await client(a), b: await client(b), connect: client };
 }
 describe('Phase 1 direct sends against the independent hub contract', () => {
+  it.each([
+    'rate',
+    'busy',
+  ])('G: retains a verified receipt and retries Outcome after %s until acknowledged', async (code) => {
+    const { hub, a, b } = await pair();
+    hub.outcomeErrors = [code as 'rate' | 'busy'];
+    await a.table.send(new File(['received'], 'outcome.txt'), b.ready.self, 104857600);
+    await until(() => b.table.snapshots().length === 1);
+    await b.table.accept(b.table.snapshots()[0].key);
+    await until(() => b.table.details()[0].outcome === 'verified');
+    expect(b.table.snapshots()[0].state).toBe('complete');
+    await until(() => [...hub.offers.values()][0].state === 'received');
+    expect(b.port.files.sent.filter((m) => m.kind === 'Outcome')).toHaveLength(2);
+    expect(b.table.snapshots()[0].state).toBe('complete');
+  });
+  it.each([
+    'verify',
+    'saveReceipt',
+  ] as const)('commits verification and sends Outcome after session loss during %s', async (method) => {
+    const { hub, rtc, a, b } = await pair();
+    const original = b.db[method].bind(b.db);
+    // Sever the data session after the storage work completes but before its caller resumes.
+    const spy = vi.spyOn(b.db, method).mockImplementation((async (...args: never[]) => {
+      const result = await (original as (...args: never[]) => Promise<unknown>)(...args);
+      rtc.pcs[0].sever();
+      return result;
+    }) as never);
+    await a.table.send(new File(['verified once'], 'loss.txt'), b.ready.self, 104857600);
+    await until(() => b.table.snapshots().length === 1);
+    await b.table.accept(b.table.snapshots()[0].key);
+    await until(() => b.table.details()[0].outcome === 'verified');
+    await until(() => [...hub.offers.values()][0].state === 'received');
+    expect(b.table.snapshots()[0].state).toBe('complete');
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+  it('keeps Save available and retained bytes after a browser download handoff', async () => {
+    const { a, b } = await pair();
+    vi.stubGlobal(
+      'URL',
+      Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:test'), revokeObjectURL: vi.fn() }),
+    );
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    try {
+      await a.table.send(new File(['retry save'], 'save.txt'), b.ready.self, 104857600);
+      await until(() => b.table.snapshots().length === 1);
+      const key = b.table.snapshots()[0].key;
+      await b.table.accept(key);
+      await until(() => b.table.details()[0].canSave);
+      await b.table.save(key);
+      expect(b.table.details()[0].canSave).toBe(true);
+      await b.table.save(key);
+      expect(click).toHaveBeenCalledTimes(2);
+      expect(b.table.details()[0].saveError).toBeUndefined();
+    } finally {
+      click.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+  it('pauses receive credits when the owner bucket is exhausted', async () => {
+    const { a, b } = await pair();
+    // biome-ignore lint/complexity/useLiteralKeys: exercise the private receive bucket without changing the public API.
+    const bucket = b.table['ownerDownload'];
+    const take = vi.spyOn(bucket, 'take').mockReturnValueOnce(false).mockReturnValueOnce(false);
+    await a.table.send(new File(['backpressure'], 'paced.txt'), b.ready.self, 104857600);
+    await until(() => b.table.snapshots().length === 1);
+    await b.table.accept(b.table.snapshots()[0].key);
+    await until(() => b.table.snapshots()[0].state === 'complete');
+    expect(take.mock.calls.length).toBeGreaterThan(2);
+    expect(b.changes.some((s) => s.state === 'failed')).toBe(false);
+  });
+  it('an unreadable upload and a refused storage reservation each fail only their operation', async () => {
+    const { a, b } = await pair();
+    const bad = new File(['unreadable'], 'bad.txt');
+    await a.table.send(bad, b.ready.self, 104857600);
+    await a.table.send(new File(['healthy'], 'good.txt'), b.ready.self, 104857600);
+    await until(() => b.table.snapshots().length === 2);
+    vi.spyOn(bad, 'slice').mockImplementation(() => {
+      throw new Error('NotReadableError');
+    });
+    await Promise.all(b.table.snapshots().map((s) => b.table.accept(s.key)));
+    await until(() => b.table.snapshots().find((s) => s.name === 'good.txt')?.state === 'complete');
+    expect(a.table.snapshots().find((s) => s.name === 'bad.txt')?.state).toBe('failed');
+    expect(a.table.snapshots().find((s) => s.name === 'good.txt')?.state).toBe('complete');
+  });
+  it('a storage error accepting one push leaves its session and another operation alive', async () => {
+    const { a, b } = await pair();
+    await a.table.send(new File(['one'], 'one.txt'), b.ready.self, 104857600);
+    await a.table.send(new File(['two'], 'two.txt'), b.ready.self, 104857600);
+    await until(() => b.table.snapshots().length === 2);
+    const reserve = b.db.reserve.bind(b.db);
+    const counts = new Map<string, number>();
+    vi.spyOn(b.db, 'reserve').mockImplementation(async (binding) => {
+      const count = (counts.get(binding.offer) ?? 0) + 1;
+      counts.set(binding.offer, count);
+      if (binding.meta.name === 'one.txt' && count === 2) throw new Error('Disk full');
+      return reserve(binding);
+    });
+    await Promise.all(b.table.snapshots().map((s) => b.table.accept(s.key)));
+    await until(() => b.table.snapshots().find((s) => s.name === 'two.txt')?.state === 'complete');
+    expect(a.pool.forPeer(b.ready.self)?.live).toBe(true);
+  });
+  it('Revoke alone stops the referenced work', async () => {
+    const { rtc, a, b } = await pair();
+    rtc.tap = (_c, data) =>
+      data instanceof ArrayBuffer && new Uint8Array(data)[0] === 1 ? 'hold' : 'pass';
+    await a.table.send(new File(['private'], 'revoke.txt'), b.ready.self, 104857600);
+    await until(() => b.table.snapshots().length === 1);
+    await b.table.accept(b.table.snapshots()[0].key);
+    await until(() => b.table.snapshots()[0].state === 'transferring');
+    b.port.files.deliver('Revoke', {
+      event: crypto.randomUUID().replaceAll('-', ''),
+      peer: a.ready.self,
+      scope: 'offer',
+      offer: present(b.port.files.sent.find((m) => m.kind === 'Respond')).data.offer,
+      reason: 'policy',
+    });
+    rtc.release();
+    await until(() => b.table.snapshots()[0].state === 'cancelled');
+    expect((await b.db.receipts()).some((r) => r.state === 'received')).toBe(false);
+  });
   it('asks again after reload, then adopts same-sender partials without restoring old consent', async () => {
     const { hub, rtc, a, b, connect } = await pair(true);
     const file = new File([new Uint8Array(3 * 16384)], 'reload.bin');
@@ -134,6 +254,12 @@ describe('Phase 1 direct sends against the independent hub contract', () => {
     expect(new Uint8Array(data[2].data as ArrayBuffer)[0]).toBe(2);
     const receipt = await b.db.receipts();
     expect(receipt[0].state).toBe('received');
+    for (const client of [a, b]) {
+      const candidates = client.port.peer.sent.filter((m) => m.kind === 'Candidate');
+      expect(candidates.filter((m) => m.data.end === true)).toHaveLength(1);
+      expect(candidates.some((m) => 'candidate' in m.data)).toBe(true);
+    }
+    expect(rtc.pcs.every((pc) => pc.ice.length === 2)).toBe(true);
   });
   it('multiplexes distinct same-content decisions on one PC per pair, and cancellation is scoped', async () => {
     const { rtc, a, b } = await pair();

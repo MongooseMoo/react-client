@@ -25,6 +25,7 @@ import {
   validName,
   type Endpoint,
   type FilesPort,
+  type FilesOutbound,
   type Metadata,
   type OfferState,
   type Ready,
@@ -61,6 +62,12 @@ interface Offer {
   retryTimer?: Timer;
   requestTimer?: Timer;
   verifyStart?: number;
+  verification?: Promise<void>;
+  outcomeTimer?: Timer;
+  outcomeReq?: string;
+  outcomeRetry?: number;
+  outcomeAck?: boolean;
+  terminalAt?: number;
   receipt?: Receipt;
   blob?: Blob;
   saveError?: string;
@@ -110,6 +117,7 @@ export interface OfferOptions {
 /** Direct-send consent and per-operation lifetimes. No file cache can grant remote authority. */
 export class OfferTable {
   private readonly rows = new Map<string, Offer>();
+  private readonly hubRequests = new Map<string, { kind: keyof FilesOutbound; row: Offer }>();
   private readonly tBindings = new Map<string, Offer>();
   private readonly qCache = new Map<string, { request: string; reply: Reply; at: number }>();
   private readonly cancellations = new Map<string, number>();
@@ -131,6 +139,7 @@ export class OfferTable {
     const f = options.files;
     this.off = [
       f.on('Offer', (m) => {
+        this.pruneRows();
         if (!this.live() || sameEndpoint(m.from, options.self.self) || this.rows.has(m.offer))
           return;
         if (
@@ -152,6 +161,7 @@ export class OfferTable {
         this.emit(r, 'offered');
       }),
       f.on('Offered', (m) => {
+        this.hubRequests.delete(m.req);
         const r = this.rows.get(m.offer);
         if (r && sameEndpoint(r.receiver, m.target) && r.state === 'pending')
           this.emit(r, 'offered');
@@ -160,6 +170,7 @@ export class OfferTable {
         const r = this.rows.get(m.offer);
         if (!r || !sameEndpoint(r.sender, m.sender) || !sameEndpoint(r.receiver, m.receiver))
           return;
+        if (r.receipt || (r.state === 'accepted' && m.state === 'pending')) return;
         if (r.state !== 'pending' && r.state !== 'accepted' && r.state !== m.state) return;
         const previous = r.state;
         r.state = m.state;
@@ -197,10 +208,25 @@ export class OfferTable {
           }
         if (m.scope === 'peer') this.pool.forPeer(m.peer)?.fail('cancelled');
       }),
+      f.on('Ack', (m) => {
+        const pending = this.hubRequests.get(m.req);
+        if (!pending || pending.kind !== m.about || pending.row.offer !== m.refs.offer) return;
+        this.hubRequests.delete(m.req);
+        if (pending.kind === 'Outcome') {
+          pending.row.outcomeAck = true;
+          clearTimeout(pending.row.outcomeTimer);
+        }
+      }),
       f.on('Error', (m) => {
-        if (!m.refs.offer) return;
-        const r = this.rows.get(m.refs.offer);
-        if (r && ['pending', 'accepted'].includes(r.state)) {
+        const pending = m.req ? this.hubRequests.get(m.req) : undefined;
+        if (!pending || pending.kind !== m.about || pending.row.offer !== m.refs.offer) return;
+        if (m.req) this.hubRequests.delete(m.req);
+        const r = pending.row;
+        if (pending.kind === 'Outcome') {
+          this.scheduleOutcome(r, m.retryAfterMs ?? 1000);
+          return;
+        }
+        if (!r.receipt && ['pending', 'accepted'].includes(r.state)) {
           r.state = 'revoked';
           this.rememberCancelled(r);
           this.stop(r);
@@ -219,6 +245,7 @@ export class OfferTable {
       if (receipt.state !== 'received' || this.rows.has(receipt.offer)) continue;
       const r = this.make(receipt.offer, receipt.sender, this.options.self.self, receipt.meta);
       r.state = 'received';
+      r.terminalAt = receipt.touchedAt;
       r.receipt = receipt;
       r.t = receipt.t;
       r.snapshot = { ...r.snapshot, state: 'complete', transferredBytes: r.meta.size };
@@ -277,12 +304,11 @@ export class OfferTable {
     return [...this.rows.values()].map((r) => r.snapshot);
   }
   details(): OfferDetails[] {
+    this.pruneRows();
     return [...this.rows.values()].map((r) => ({
       key: r.key,
       outcome: r.receipt?.outcome,
-      canSave: Boolean(
-        r.receipt && (r.blob || r.receipt.outcome !== 'browser-download') && !r.saving,
-      ),
+      canSave: Boolean(r.receipt && !r.saving),
       canRetry: Boolean(
         r.file && r.state === 'accepted' && r.paused && !r.attempt && !r.q && this.live(),
       ),
@@ -296,19 +322,27 @@ export class OfferTable {
   ): void {
     if (this.disposed) return;
     r.snapshot = { ...r.snapshot, state, transferredBytes: bytes };
+    if (!['preparing', 'pending', 'accepted'].includes(r.state)) r.terminalAt ??= Date.now();
     this.options.change(r.snapshot);
     this.options.changed();
   }
   private fail(r: Offer, message: string): void {
+    if (r.receipt) return;
     r.paused = true;
     r.snapshot = { ...r.snapshot, error: new FileTransferError('connection-failed', message) };
     this.emit(r, 'failed');
   }
   authorized(peer: Endpoint, offer: string): boolean {
     const r = this.rows.get(offer);
-    return Boolean(this.live() && r?.state === 'accepted' && sameEndpoint(peer, this.remote(r)));
+    return Boolean(
+      this.live() &&
+        r &&
+        (r.state === 'accepted' || r.receipt) &&
+        sameEndpoint(peer, this.remote(r)),
+    );
   }
   async send(file: File, to: Endpoint, maxReceiveSize: number): Promise<TransferSnapshot> {
+    this.pruneRows();
     check(
       this.live() && file.size <= Math.min(MAX_FILE, maxReceiveSize) && validName(file.name),
       'Unsupported file name or file exceeds the receive limit',
@@ -352,7 +386,7 @@ export class OfferTable {
     r.snapshot = { ...r.snapshot, id };
     r.state = 'pending';
     this.emit(r, 'offered');
-    this.options.files.send('Offer', {
+    this.command(r, 'Offer', {
       ...this.target(to),
       offer,
       id,
@@ -387,7 +421,7 @@ export class OfferTable {
         await this.options.storage.release(t);
         return;
       }
-      this.options.files.send('Respond', {
+      this.command(r, 'Respond', {
         ...this.target(r.sender),
         offer: r.offer,
         accept: true,
@@ -490,6 +524,17 @@ export class OfferTable {
     s.send(request);
   }
   control(s: PeerSession, m: Exclude<Control, { op: 'hello' }>): void {
+    try {
+      this.receiveControl(s, m);
+    } catch (error) {
+      const r = this.tBindings.get(m.t);
+      if (r && sameEndpoint(this.remote(r), s.peer)) {
+        this.stop(r);
+        this.fail(r, error instanceof Error ? error.message : String(error));
+      } else s.badChannel();
+    }
+  }
+  private receiveControl(s: PeerSession, m: Exclude<Control, { op: 'hello' }>): void {
     if (!this.live()) return;
     if (m.op === 'push') {
       const pending = this.pendingRequests.get(s.id) ?? 0;
@@ -500,7 +545,9 @@ export class OfferTable {
       this.pendingRequests.set(s.id, pending + 1);
       const work = (this.controlSerial.get(s.id) ?? Promise.resolve())
         .then(() => this.incomingPush(s, m))
-        .catch(() => s.fail('protocol'))
+        .catch(() => {
+          if (s.live) s.send({ op: 'error', q: m.q, t: m.t, a: m.a, code: 'unreadable' });
+        })
         .finally(() => {
           this.pendingRequests.set(s.id, Math.max(0, (this.pendingRequests.get(s.id) ?? 1) - 1));
         });
@@ -601,6 +648,9 @@ export class OfferTable {
       error('protocol');
       return;
     }
+    if (r.verification && !r.receipt) {
+      await r.verification;
+    }
     if (r.receipt?.state === 'received' && r.t === m.t) {
       reply({ op: 'outcome', q: m.q, t: m.t, a: m.a, meta: r.meta, outcome: r.receipt.outcome });
       return;
@@ -628,13 +678,20 @@ export class OfferTable {
     r.q = m.q;
     this.tBindings.set(m.t, r);
     await this.options.storage.release(r.reserveT);
-    const have = await this.options.storage.reserve({
-      t: m.t,
-      a: m.a,
-      source: r.sender,
-      offer: r.offer,
-      meta: r.meta,
-    });
+    let have: number[];
+    try {
+      have = await this.options.storage.reserve({
+        t: m.t,
+        a: m.a,
+        source: r.sender,
+        offer: r.offer,
+        meta: r.meta,
+      });
+    } catch (failure) {
+      error('unreadable');
+      this.fail(r, failure instanceof Error ? failure.message : String(failure));
+      return;
+    }
     if (!this.authorized(s.peer, r.offer) || !s.live || r.a !== m.a) {
       await this.options.storage.release(m.t);
       return;
@@ -751,8 +808,7 @@ export class OfferTable {
       if (
         e.data.byteLength > s.maxFrame ||
         a.queued >= 64 ||
-        this.queuedBytes + e.data.byteLength > 8 * 1024 ** 2 ||
-        (!r.file && !this.ownerDownload.take(e.data.byteLength))
+        this.queuedBytes + e.data.byteLength > 8 * 1024 ** 2
       ) {
         this.abort(a, 9, 'Receive buffer or rate limit');
         return;
@@ -761,7 +817,12 @@ export class OfferTable {
       this.queuedBytes += e.data.byteLength;
       const data = e.data;
       a.serial = a.serial
-        .then(() => this.frame(a, decodeFrame(data, Math.ceil(r.meta.size / PIECE), s.maxFrame)))
+        .then(async () => {
+          // Keep the bounded 64-frame window queued and withhold stored credits while paced.
+          while (!r.file && this.current(a) && !this.ownerDownload.take(data.byteLength))
+            await new Promise<void>((resolve) => setTimeout(resolve, 10));
+          await this.frame(a, decodeFrame(data, Math.ceil(r.meta.size / PIECE), s.maxFrame));
+        })
         .catch((error) => this.abort(a, 3, error instanceof Error ? error.message : String(error)))
         .finally(() => {
           a.queued--;
@@ -771,7 +832,6 @@ export class OfferTable {
     c.onclose = () => {
       if (a.terminal) this.finishAttempt(a);
       else if (this.current(a)) {
-        this.finishAttempt(a);
         s.fail('failed');
       }
     };
@@ -868,19 +928,26 @@ export class OfferTable {
       if (a.held.size === Math.ceil(r.meta.size / PIECE)) await this.verify(a);
     }
   }
-  private async verify(a: Attempt): Promise<void> {
+  private verify(a: Attempt): Promise<void> {
     const r = a.record;
-    if (!this.current(a) || r.receipt) return;
+    if (r.verification) return r.verification;
+    if (!this.current(a) || r.receipt) return Promise.resolve();
+    r.verification = this.verifyOffer(r, a).finally(() => {
+      r.verification = undefined;
+    });
+    return r.verification;
+  }
+  private async verifyOffer(r: Offer, a: Attempt): Promise<void> {
     this.emit(r, 'verifying');
-    if (!r.verifyStart) r.verifyStart = performance.now();
+    r.verifyStart = performance.now();
     clearTimeout(a.timer);
-    a.timer = setTimeout(
-      () => this.abort(a, 7, 'File verification timed out'),
-      Math.max(0, 300000 - (performance.now() - r.verifyStart)),
-    );
+    a.timer = setTimeout(() => this.abort(a, 7, 'File verification timed out'), 300000);
+    const generation = this.generation;
+    const authorized = () =>
+      this.live() && generation === this.generation && r.state === 'accepted';
     try {
       const blob = await this.options.storage.verify(a.request.t, a.request.a);
-      if (!this.current(a) || r.state !== 'accepted') return;
+      if (!authorized()) return;
       const receipt: Receipt = {
         sender: r.sender,
         offer: r.offer,
@@ -891,22 +958,71 @@ export class OfferTable {
         touchedAt: Date.now(),
       };
       await this.options.storage.saveReceipt(receipt);
-      if (!this.current(a) || r.state !== 'accepted') return;
+      // A committed receipt outlives its RTC attempt. Cancellation cannot downgrade it.
+      if (this.disposed || generation !== this.generation) return;
       r.receipt = receipt;
       r.blob = blob;
-      this.sendFrame(a, { type: 'stored', count: a.received });
-      this.options.files.send('Outcome', { ...this.target(r.sender), offer: r.offer });
-      this.sendFrame(a, { type: 'complete', outcome: 1 });
-      a.terminal = 3;
+      r.state = 'received';
       this.emit(r, 'complete', r.meta.size);
-      this.drain(a);
+      this.sendOutcome(r);
+      if (this.current(a)) {
+        this.sendFrame(a, { type: 'stored', count: a.received });
+        this.sendFrame(a, { type: 'complete', outcome: 1 });
+        a.terminal = 3;
+        this.drain(a);
+      } else {
+        clearTimeout(a.timer);
+      }
+      await this.options.storage.release(a.request.t);
     } catch (error) {
-      if (this.current(a))
-        this.abort(
-          a,
-          error instanceof Error && /integrity/.test(error.message) ? 1 : 2,
-          error instanceof Error ? error.message : String(error),
-        );
+      if (!r.receipt && authorized()) {
+        r.verification = undefined;
+        if (this.current(a))
+          this.abort(
+            a,
+            error instanceof Error && /integrity/.test(error.message) ? 1 : 2,
+            error instanceof Error ? error.message : String(error),
+          );
+        else this.fail(r, error instanceof Error ? error.message : String(error));
+      }
+    }
+  }
+  private command<K extends keyof FilesOutbound>(r: Offer, kind: K, data: FilesOutbound[K]): void {
+    this.hubRequests.set(data.req, { row: r, kind });
+    this.options.files.send(kind, data);
+  }
+  private sendOutcome(r: Offer): void {
+    if (!this.live() || !r.receipt || r.outcomeAck) return;
+    if (r.outcomeReq) this.hubRequests.delete(r.outcomeReq);
+    const data = { ...this.target(r.sender), offer: r.offer };
+    r.outcomeReq = data.req;
+    this.command(r, 'Outcome', data);
+    this.scheduleOutcome(r);
+  }
+  private scheduleOutcome(r: Offer, minimum = 1000): void {
+    clearTimeout(r.outcomeTimer);
+    if (!this.live() || !r.receipt || r.outcomeAck || Date.now() - r.receipt.touchedAt >= 86400000)
+      return;
+    const delay = Math.max(minimum, Math.min(60000, 1000 * 2 ** Math.min(r.outcomeRetry ?? 0, 6)));
+    r.outcomeRetry = (r.outcomeRetry ?? 0) + 1;
+    r.outcomeTimer = setTimeout(() => this.sendOutcome(r), delay);
+  }
+  private pruneRows(): void {
+    const terminal = [...this.rows.values()].filter(
+      (r) =>
+        r.terminalAt &&
+        !r.saving &&
+        !r.attempt &&
+        !r.verification &&
+        (!r.receipt || Date.now() - r.receipt.touchedAt >= 86400000),
+    );
+    for (const r of terminal) {
+      if (Date.now() - (r.terminalAt ?? 0) < 86400000 && this.rows.size < 1024) continue;
+      clearTimeout(r.outcomeTimer);
+      this.rows.delete(r.offer);
+      if (r.t) this.tBindings.delete(r.t);
+      for (const [req, pending] of this.hubRequests)
+        if (pending.row === r) this.hubRequests.delete(req);
     }
   }
   private pump(): void {
@@ -917,43 +1033,47 @@ export class OfferTable {
         while (this.live() && this.outgoing.size) {
           let progress = false;
           for (const a of this.outgoing) {
-            if (!this.current(a) || a.terminal) {
-              this.outgoing.delete(a);
-              continue;
-            }
-            const r = a.record;
-            check(r.file);
-            const key = endpointKey(a.session.peer);
-            const bucket = this.peerUpload.get(key) ?? new Bucket(4 * 1024 ** 2, 1024 ** 2);
-            this.peerUpload.set(key, bucket);
-            for (let count = 0; count < 4; count++) {
-              const n = Math.ceil(r.meta.size / PIECE);
-              while (a.next < n && a.have.some(([x, y]) => a.next >= x && a.next < y)) a.next++;
-              if (a.next >= n) {
+            try {
+              if (!this.current(a) || a.terminal) {
                 this.outgoing.delete(a);
-                break;
+                continue;
               }
-              if (a.channel.bufferedAmount >= 262144) a.backpressured = true;
-              if (a.backpressured && a.channel.bufferedAmount < 65536) a.backpressured = false;
-              if (
-                a.sent - a.stored >= 64 ||
-                a.backpressured ||
-                this.pool.bufferedBytes + PIECE + 5 > 8 * 1024 ** 2 ||
-                !this.ownerUpload.take(PIECE) ||
-                !bucket.take(PIECE)
-              )
-                break;
-              if (!this.authorized(a.session.peer, r.offer)) break;
-              const index = a.next;
-              const bytes = await r.file
-                .slice(index * PIECE, Math.min(r.meta.size, (index + 1) * PIECE))
-                .arrayBuffer();
-              if (!this.current(a) || !this.authorized(a.session.peer, r.offer)) break;
-              check(bytes.byteLength === pieceLength(r.meta.size, index));
-              this.sendFrame(a, { type: 'piece', index, bytes });
-              a.sent++;
-              a.next++;
-              progress = true;
+              const r = a.record;
+              check(r.file);
+              const key = endpointKey(a.session.peer);
+              const bucket = this.peerUpload.get(key) ?? new Bucket(4 * 1024 ** 2, 1024 ** 2);
+              this.peerUpload.set(key, bucket);
+              for (let count = 0; count < 4; count++) {
+                const n = Math.ceil(r.meta.size / PIECE);
+                while (a.next < n && a.have.some(([x, y]) => a.next >= x && a.next < y)) a.next++;
+                if (a.next >= n) {
+                  this.outgoing.delete(a);
+                  break;
+                }
+                if (a.channel.bufferedAmount >= 262144) a.backpressured = true;
+                if (a.backpressured && a.channel.bufferedAmount < 65536) a.backpressured = false;
+                if (
+                  a.sent - a.stored >= 64 ||
+                  a.backpressured ||
+                  this.pool.bufferedBytes + PIECE + 5 > 8 * 1024 ** 2 ||
+                  !this.ownerUpload.take(PIECE) ||
+                  !bucket.take(PIECE)
+                )
+                  break;
+                if (!this.authorized(a.session.peer, r.offer)) break;
+                const index = a.next;
+                const bytes = await r.file
+                  .slice(index * PIECE, Math.min(r.meta.size, (index + 1) * PIECE))
+                  .arrayBuffer();
+                if (!this.current(a) || !this.authorized(a.session.peer, r.offer)) break;
+                check(bytes.byteLength === pieceLength(r.meta.size, index));
+                this.sendFrame(a, { type: 'piece', index, bytes });
+                a.sent++;
+                a.next++;
+                progress = true;
+              }
+            } catch (error) {
+              this.abort(a, 4, error instanceof Error ? error.message : String(error));
             }
           }
           if (!progress) {
@@ -965,11 +1085,9 @@ export class OfferTable {
           }
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
-      } catch (error) {
-        for (const a of this.outgoing)
-          this.abort(a, 4, error instanceof Error ? error.message : String(error));
+      } finally {
+        this.pumping = false;
       }
-      this.pumping = false;
     })();
   }
   private inactivity(a: Attempt): void {
@@ -1034,7 +1152,8 @@ export class OfferTable {
       this.finishAttempt(old);
       clearTimeout(r.requestTimer);
       r.q = undefined;
-      if (r.t && !r.file) void this.options.storage.release(r.t).catch(() => {});
+      if (r.t && !r.file && !r.verification && !r.receipt)
+        void this.options.storage.release(r.t).catch(() => {});
       if (!r.file) continue;
       if (!retry || r.retry >= 3 || !this.live()) {
         this.fail(
@@ -1068,7 +1187,7 @@ export class OfferTable {
         () => !this.disposed && generation === this.generation,
       );
       r.blob = undefined;
-      if (r.t) await this.options.storage.releaseSaved(r.t);
+      if (r.t) await this.options.storage.release(r.t);
     } catch (error) {
       r.saveError = `Downloaded; save failed: ${error instanceof Error ? error.message : String(error)}`;
     } finally {
@@ -1094,6 +1213,10 @@ export class OfferTable {
     this.disposed = true;
     this.generation++;
     for (const off of this.off) off();
-    for (const r of this.rows.values()) this.stop(r);
+    for (const r of this.rows.values()) {
+      clearTimeout(r.outcomeTimer);
+      this.stop(r);
+    }
+    this.hubRequests.clear();
   }
 }

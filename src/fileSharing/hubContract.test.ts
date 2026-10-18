@@ -3,6 +3,16 @@ import { Phase1Hub } from './testHarness';
 import { randomId } from './protocol';
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe('reference hub replay contract', () => {
+  it('parses and rejects malformed client JSON before mutating hub state', async () => {
+    const hub = new Phase1Hub();
+    const p = hub.peer('#1');
+    const errors: string[] = [];
+    p.peer.on('Error', (e) => errors.push(e.code));
+    hub.receiveRaw(p, false, 'Hello', `{"req":"${'a'.repeat(32)}","req":"${'b'.repeat(32)}"}`);
+    await flush();
+    expect(p.ready).toBeUndefined();
+    expect(errors).toEqual(['malformed']);
+  });
   it('replays Hello without supersession and never reactivates a retired epoch', async () => {
     const hub = new Phase1Hub();
     const p = hub.peer('#1');
