@@ -184,4 +184,33 @@ change `.github`.
 
 ## Next step
 
-Waiting for team-lead's Codex round 4 results.
+Round 5 committed and reported; Codex reviews again.
+
+## Round 5 (Codex review 4 of aa9247be: 1 P2, 3 P3, lead's decisions)
+
+Checked against the code before fixing: a binding from c0adc02a has no
+`timeZone`, `zoned(time, undefined)` then formats in the ambient zone (and
+caches that formatter under the key undefined) while the old byte offset
+is reused (Codex: 18 bytes lost at the real cap). The other three were
+plain in the code: the claim was saved before the first create with no
+rollback; the name lock included the owner key; `choose` had no `active`
+check after its awaits.
+
+- renderBinding (always under the session lock) repairs a binding with a
+  missing or invalid zone first: saves this browser's resolved zone, resets
+  the mark to part 1, and renders the whole session again from sequence 0,
+  overwriting the old parts. The binding stays until that render completes
+  as usual. Tests: a pre-change binding (no zone, and "Not/A_Zone") whose
+  parts were rendered in Pacific/Kiritimati with a mark splitting an entry;
+  every part afterwards equals a fresh render in the machine's zone.
+- claimName: if creating the first file fails after the claim was saved,
+  the unclaimed binding (nameChecked false) is saved back before rethrowing.
+- Name lock is `mongoose-log-name:<chosen folder name>/<character>/<base>`.
+- choose() checks `active` after the picker, the permission request and the
+  persist, and abandons the choice once disposed.
+- All 5 new tests failed on aa9247be first, then passed.
+- All 7 CI steps on the round 5 tree: typecheck exit 0; `npm test` 177 files /
+  2415 tests; test:audio-cache exit 0 (4 PASS); editor-ownership 1 passed on
+  5183 serving this build's entry `index-3F0GPXlQ.js` (5183 was free this
+  time); check-browser-sessions exit 0; check-client-recovery exit 0;
+  test:a11y exit 0. Biome clean on the two changed files.

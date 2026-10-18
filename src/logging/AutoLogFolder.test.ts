@@ -95,6 +95,8 @@ class FakeDirectory {
   holdFile: Hold | undefined;
   // Pause the next lookup that would create a missing file.
   holdCreate: Hold | undefined;
+  // Fail the next lookup that would create a missing file.
+  failCreate: DOMException | undefined;
   // The first file created anywhere below fails its first write.
   failFirstWrite: DOMException | undefined;
   private parent: FakeDirectory | undefined;
@@ -129,6 +131,11 @@ class FakeDirectory {
       this.holdCreate = undefined;
       creating.entered.resolve();
       await creating.release.promise;
+    }
+    const createFailure = this.failCreate;
+    if (createFailure && options?.create && !this.files.has(name)) {
+      this.failCreate = undefined;
+      throw createFailure;
     }
     if (this.dirs.has(name)) throw new DOMException("is a folder", "TypeMismatchError");
     let file = this.files.get(name);
@@ -338,6 +345,9 @@ function remember(owner: PersonalDataOwner, directory: FakeDirectory, bindingId 
   persistence.folders.set(ownerKey(owner), { handle: directory as unknown as FileSystemDirectoryHandle, bindingId });
 }
 
+const storedEntries = (n: number) => stored.filter((e) => e.sessionId === sid(n)).sort((a, b) => a.sequence - b.sequence);
+const partName = (base: string, part: number) => `${base}${part > 1 ? ` part ${part}` : ""}.txt`;
+const zonedDay = (time: number) => new Intl.DateTimeFormat("en-CA", { timeZone: ambientZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(time);
 const lineTexts = (text: string) => text.split("\n").filter((line) => line.startsWith("[")).map((line) => line.replace(/^\[[^\]]+\] /, ""));
 const footers = (text: string) => text.split("\n").filter((line) => line.startsWith("Ended:"));
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -721,6 +731,93 @@ describe("AutoLogFolder", () => {
     expect(Object.values(files).map(lineTexts).sort()).toEqual([["TAB A"], ["TAB B"]]);
     tabA.dispose();
     tabB.dispose();
+  });
+
+  for (const stored of [undefined, "Not/A_Zone"] as const) {
+    it(`re-renders a session from part 1 when its saved binding has ${stored ? "an invalid" : "no"} time zone`, async () => {
+      const cap = 300;
+      // A binding as the build before time zones saved it, with a mark that
+      // splits an entry, and parts rendered in some other zone.
+      const late = { ...session(1), startedAt: Date.UTC(2026, 9, 18, 23, 50) };
+      storedSessions.set(sid(1), late);
+      store(entry(1, 0, "before midnight UTC", Date.UTC(2026, 9, 18, 23, 55)), entry(1, 1, `${"y".repeat(500)} end`, Date.UTC(2026, 9, 19, 0, 10)));
+      const elsewhere: LogFileBinding = {
+        sessionId: sid(1), ownerKey: ownerKey(ownerA), bindingId: "binding-1", folderName: "Ada", character: "Ada",
+        timeZone: "Pacific/Kiritimati", baseName: "base", nameChecked: true, mark: { part: 1, sequence: 0, offset: 0, day: "2026-10-19" },
+      };
+      const old = renderLogParts(elsewhere, late, storedEntries(1), undefined, cap);
+      expect(old.mark.offset).toBeGreaterThan(0);
+      const ada = await root.getDirectoryHandle("Ada", { create: true });
+      for (const part of old.parts) {
+        const file = await ada.getFileHandle(partName("base", part.part), { create: true });
+        file.bytes = encoder.encode(part.text);
+      }
+      const { timeZone: _dropped, ...withoutZone } = { ...elsewhere, mark: old.mark };
+      persistence.bindings.set(sid(1), (stored === undefined ? withoutZone : { ...withoutZone, timeZone: stored }) as LogFileBinding);
+      remember(ownerA, root);
+
+      const folder = makeFolder({ maxPartBytes: cap });
+      await folder.syncOwner();
+      await folder.whenIdle();
+
+      // Every part is now the render in this machine's zone, footer included.
+      const expected = renderLogParts({ ...elsewhere, timeZone: ambientZone, mark: { part: 1, sequence: 0, offset: 0, day: zonedDay(late.startedAt) } },
+        late, storedEntries(1), "\nEnded: not recorded (the page closed)\n", cap);
+      const files = root.all();
+      for (const part of expected.parts) expect(files[`Ada/${partName("base", part.part)}`]).toBe(part.text);
+      const body = expected.parts.map((p) => p.text.slice(p.text.indexOf("\n\n") + 2)).join("");
+      expect(body).toContain(`${"y".repeat(500)} end`);
+      expect(persistence.bindings.size).toBe(0);
+      folder.dispose();
+    });
+  }
+
+  it("un-claims a name when creating the first file fails, so the next try claims it again", async () => {
+    const folder = await chosen();
+    const ada = await root.getDirectoryHandle("Ada", { create: true });
+    ada.failCreate = new DOMException("The disk is full", "QuotaExceededError");
+    folder.append(session(1), store(entry(1, 0, "first")));
+    await folder.whenIdle();
+    expect(persistence.bindings.get(sid(1))?.nameChecked).toBe(false);
+    expect(root.all()).toEqual({});
+
+    folder.append(session(1), store(entry(1, 1, "second")));
+    await folder.whenIdle();
+    expect(Object.keys(root.all())).toEqual([fileOf(1)]);
+    expect(lineTexts(root.file(fileOf(1)).text)).toEqual(["first", "second"]);
+    folder.dispose();
+  });
+
+  it("keys the name lock on the destination folder, not the owner", async () => {
+    const requested: string[] = [];
+    const tab = locks.forTab();
+    const recording: LockManagerLike = {
+      request: (name, options, callback) => {
+        requested.push(name);
+        return tab.request(name, options, callback);
+      },
+    };
+    const folder = await chosen({ tab: recording });
+    folder.append(session(1), store(entry(1, 0, "line")));
+    await folder.whenIdle();
+    expect(requested.filter((name) => name.startsWith("mongoose-log-name:"))).toEqual([
+      `mongoose-log-name:Mongoose logs/Ada/2026-10-18 14-05-12 ${pad12(1)}`,
+    ]);
+    folder.dispose();
+  });
+
+  it("abandons a Choose that is still open when the sink is disposed", async () => {
+    let pick = (_directory: FakeDirectory) => {};
+    picker.mockImplementationOnce(() => new Promise((resolve) => { pick = resolve; }));
+    const folder = makeFolder();
+    await folder.syncOwner();
+    const choosing = folder.choose();
+    await folder.dispose();
+    pick(root);
+    await choosing;
+    expect(persistence.folders.size).toBe(0);
+    expect(announce).not.toHaveBeenCalled();
+    expect(folder.state.getState().status).toEqual({ kind: "none" });
   });
 
   it("renders in the session's own time zone, never the ambient one, so a resumed render matches", async () => {

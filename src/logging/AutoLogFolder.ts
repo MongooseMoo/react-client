@@ -259,6 +259,16 @@ const zonedStamp = (time: number, timeZone: string) => {
 const endedFooter = (endedAt: number, timeZone: string) => `\nEnded: ${zonedStamp(endedAt, timeZone)}\n`;
 const ambientTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
+function validTimeZone(timeZone: unknown): timeZone is string {
+  if (typeof timeZone !== "string" || !timeZone) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const HEADER_FIELD_BYTES = 256;
 
 const RESERVED_NAMES = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
@@ -560,16 +570,20 @@ export class AutoLogFolder implements AutoLogSink {
     const key = this.currentKey;
     if (!key || !this.pickDirectory || !this.active) return;
     let directory: FileSystemDirectoryHandle;
+    // Each await below can outlast dispose(); a disposed sink abandons the choice.
     try {
       directory = await this.pickDirectory();
     } catch (error) {
-      if (isPickerCancel(error)) return;
+      if (isPickerCancel(error) || !this.active) return;
       announce(`Could not open the folder picker: ${errorMessage(error)}`, "assertive");
       return;
     }
+    if (!this.active) return;
     // The picker grants readwrite when asked for it; ask again for browsers
     // that only granted read.
-    if ((await this.request(directory)) !== "granted") {
+    const permission = await this.request(directory);
+    if (!this.active) return;
+    if (permission !== "granted") {
       announce(`Permission to write to ${directory.name} was not given. Logs are still saved in the browser.`, "assertive");
       return;
     }
@@ -578,6 +592,7 @@ export class AutoLogFolder implements AutoLogSink {
     this.storageErrors.delete(key);
     this.publish();
     await this.run(async () => {
+      if (!this.active) return;
       try {
         await this.persistence.putFolder(key, { handle: directory, bindingId: record.bindingId });
         announce(`Saving logs to the folder ${directory.name}.`, "polite");
@@ -586,6 +601,7 @@ export class AutoLogFolder implements AutoLogSink {
         announce(`Saving logs to the folder ${directory.name} for this visit, but the browser could not remember it, so you will need to choose it again after a reload.`, "assertive");
       }
     });
+    if (!this.active) return;
     this.catchUp(key, record);
   }
 
@@ -827,7 +843,7 @@ export class AutoLogFolder implements AutoLogSink {
       if (live.binding?.bindingId !== record.bindingId) await this.bind(live, record);
       this.assertLive(live.key, record);
       if (!this.writable(live.key, record) || !live.binding) return;
-      const result = await this.renderBinding(live.binding, record, "live", (claimed) => { live.binding = claimed; });
+      const result = await this.renderBinding(live.binding, record, "live", (changed) => { live.binding = changed; });
       live.binding = result.binding;
       if (result.outcome === "complete" || result.outcome === "gone") {
         this.drop(live);
@@ -842,19 +858,36 @@ export class AutoLogFolder implements AutoLogSink {
 
   // Renders one session into the folder from IndexedDB. "gone": the session
   // was pruned, files left as they are. "complete": the footer is written.
-  // onClaimed hears the claimed name at once, even if a write then fails, so
-  // a retry never mistakes the session's own file for someone else's.
+  // Runs under the session's lock. onChanged hears every saved change to the
+  // binding at once (a claimed name, a repaired time zone), even if a write
+  // then fails, so a retry builds on it.
   private async renderBinding(
     start: LogFileBinding,
     record: FolderRecord,
     mode: RenderMode,
-    onClaimed: (binding: LogFileBinding) => void = () => {},
+    onChanged: (binding: LogFileBinding) => void = () => {},
   ): Promise<{ binding: LogFileBinding; outcome: "written" | "complete" | "gone" }> {
     let binding = start;
     const key = binding.ownerKey;
-    const snapshot = await this.readSnapshot(binding.sessionId, binding.mark.sequence);
+    // A binding saved before time zones were stored (or with a zone this
+    // browser does not know) has offsets measured in some other zone's text:
+    // give it this browser's zone and render the whole session again.
+    const repairZone = !validTimeZone(binding.timeZone);
+    const snapshot = await this.readSnapshot(binding.sessionId, repairZone ? 0 : binding.mark.sequence);
     this.assertLive(key, record);
     if (!snapshot) return { binding, outcome: "gone" };
+    if (repairZone) {
+      const timeZone = ambientTimeZone();
+      binding = { ...binding, timeZone, mark: { part: 1, sequence: 0, offset: 0, day: zoned(snapshot.session.startedAt, timeZone).day } };
+      try {
+        await this.persistence.putBinding(binding);
+      } catch (error) {
+        // The next render repairs it again, the same way.
+        console.error("Failed to save the log file binding:", error);
+      }
+      this.assertLive(key, record);
+      onChanged(binding);
+    }
     const { endedAt } = snapshot.session;
     const footer = endedAt !== undefined ? endedFooter(endedAt, binding.timeZone) : mode === "orphan" ? PAGE_CLOSED_FOOTER : undefined;
 
@@ -862,7 +895,7 @@ export class AutoLogFolder implements AutoLogSink {
     this.assertLive(key, record);
     if (!binding.nameChecked) {
       binding = await this.claimName(binding, folder, record);
-      onClaimed(binding);
+      onChanged(binding);
     }
     const layout = renderLogParts(binding, snapshot.session, snapshot.entries, footer, this.maxPartBytes);
     for (const part of layout.parts) {
@@ -893,13 +926,24 @@ export class AutoLogFolder implements AutoLogSink {
       this.assertLive(binding.ownerKey, record);
       const claimed = { ...binding, baseName, nameChecked: true };
       await this.persistence.putBinding(claimed);
-      this.assertLive(binding.ownerKey, record);
-      await folder.getFileHandle(partFileName(baseName, 1), { create: true });
+      try {
+        this.assertLive(binding.ownerKey, record);
+        await folder.getFileHandle(partFileName(baseName, 1), { create: true });
+      } catch (error) {
+        // No file holds the name yet: take the claim back, so the next try
+        // checks again rather than trusting a name nobody reserved.
+        await this.persistence.putBinding(binding).catch((saveError) => {
+          console.error("Failed to take back the log file name:", saveError);
+        });
+        throw error;
+      }
       return claimed;
     };
     if (!this.locks) return claim();
     let claimed: LogFileBinding | undefined;
-    await this.locks.request(`${NAME_LOCK_PREFIX}${binding.ownerKey}/${binding.folderName}/${original}`, {}, async () => {
+    // Keyed on the destination: sessions of different owners can share a
+    // folder, and over-serialising distinct folders that share a name is fine.
+    await this.locks.request(`${NAME_LOCK_PREFIX}${record.directory.name}/${binding.folderName}/${original}`, {}, async () => {
       claimed = await claim();
     });
     if (!claimed) throw new Error("The log file name lock was not granted");
