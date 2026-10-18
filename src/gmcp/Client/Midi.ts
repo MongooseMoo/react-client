@@ -13,6 +13,19 @@ export class GMCPMessageClientMidiNote extends GMCPMessage {
   public readonly duration?: number;
 }
 
+export interface MidiSongNote {
+  note: number;
+  offset: number;
+  duration: number;
+  velocity?: number;
+  channel?: number;
+}
+
+/** A whole song in one message: each note starts `offset` ms after arrival. */
+export class GMCPMessageClientMidiSong extends GMCPMessage {
+  public readonly notes!: MidiSongNote[];
+}
+
 export class GMCPMessageClientMidiControlChange extends GMCPMessage {
   public readonly controller!: number;
   public readonly value!: number;
@@ -42,6 +55,7 @@ export class GMCPMessageClientMidiEnable extends GMCPMessage {
 type MidiService = typeof import("../../MidiService").midiService;
 
 const midiNote = gmcpJsonMessage<"Note", GMCPMessageClientMidiNote>("Note");
+const midiSong = gmcpJsonMessage<"Song", GMCPMessageClientMidiSong>("Song");
 const midiControlChange = gmcpJsonMessage<
   "ControlChange",
   GMCPMessageClientMidiControlChange
@@ -62,6 +76,7 @@ const GMCPClientMidiBase = GMCPPackage.with({
   packageName: "Client.Midi",
   messages: [
     duplex(midiNote),
+    inbound(midiSong),
     duplex(midiControlChange),
     duplex(midiProgramChange),
     duplex(midiSystemMessage),
@@ -88,6 +103,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
   constructor(client: ConstructorParameters<typeof GMCPClientMidiBase>[0]) {
     super(client);
     this.on("note", (data) => this.handleNote(data));
+    this.on("song", (data) => this.handleSong(data));
     this.on("controlChange", (data) => this.handleControlChange(data));
     this.on("programChange", (data) => this.handleProgramChange(data));
     this.on("systemMessage", (data) => this.handleSystemMessage(data));
@@ -230,6 +246,16 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
   handleNote(data: GMCPMessageClientMidiNote): void {
     if (!this.enabled) return;
     void this.handleNoteAsync(data);
+  }
+
+  handleSong(data: GMCPMessageClientMidiSong): void {
+    if (!this.enabled) return;
+    for (const row of data.notes) {
+      const note: GMCPMessageClientMidiNote = {
+        note: row.note, velocity: row.velocity ?? 64, on: true, channel: row.channel, duration: row.duration,
+      };
+      setTimeout(() => void this.handleNoteAsync(note), row.offset);
+    }
   }
 
   private async handleNoteAsync(data: GMCPMessageClientMidiNote): Promise<void> {
