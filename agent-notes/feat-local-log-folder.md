@@ -166,6 +166,22 @@ did not run there; my own tests cover them.
   (Morava_Guest): folder remembered, new session file, old file ends
   `Ended: 2026-10-18 03:32:53`; after Stop focus is on the heading.
 
+## Local run of every CI step (.github/workflows/build-test.yml) on aa9247be
+
+All passed: `npm run typecheck` exit 0; `npm test` 177 files / 2410 tests;
+`npm run test:audio-cache` exit 0 (production build + 4 PASS lines);
+editor-ownership spec 1 passed; `check-browser-sessions.mjs` exit 0;
+`check-client-recovery.mjs` exit 0; `npm run test:a11y` exit 0.
+
+Surprise: port 5183 (the editor-ownership step's port) was already served by
+another `vite preview` process, presumably another worktree's, so the first
+editor-ownership pass ran against someone else's build. I did not stop that
+process; I reran the spec against this worktree's build on 5193 after
+confirming the served entry chunk (`index-sf82j40o.js`) was the one my build
+produced. Check what owns a port before trusting a run against it. The
+workflow-lint step (actionlint, zizmor) was not run; this branch does not
+change `.github`.
+
 ## Next step
 
-Committed; reported to team-lead; Codex reviews again.
+Waiting for team-lead's Codex round 4 results.
