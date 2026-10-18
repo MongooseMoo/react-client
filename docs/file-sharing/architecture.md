@@ -100,7 +100,7 @@ Logical states:
 | Owner object | States / transitions |
 | --- | --- |
 | Session | reserved -> offering -> answering -> established -> closed, identical to Peer hub states; retry closes/fences the old PC then Reserves a new session Id. |
-| Offer | preparing (local hashing), pending, accepted, then rejected/withdrawn/cancelled/expired/revoked/received as in Files. Received has a separate export substate. |
+| Offer | preparing (local hashing), pending, accepted, then rejected/withdrawn/cancelled/expired/revoked/received as in Files. Received has a separate (local) export substate; the hub stores no export substate. |
 | Content download | queued -> reserving -> manifest -> receiving -> verifying -> verified; paused/failed/cancelled releases consumer references but does not erase others' data. |
 | Export | none -> awaiting-user -> exporting -> saved/browser-download; errors retain verified content; crash while exporting -> export-uncertain. |
 | Share | disabled -> needs-handles/permission -> scanning -> ready/published; a new revision invalidates lists/search; recheck current id/size for active gets and retain unaffected files. Permission loss stops affected uploads immediately, before rebuilding/disabling. |
@@ -116,13 +116,15 @@ account or endpoint. Rehydrating a queue performs fresh capability/policy checks
 ## Owner-scoped storage and leases
 
 Use IndexedDB database `file-sharing-v2:<ownerKey>` (new namespace, independent
-of v1). Stores and primary keys:
+of v1). The table describes the eventual logical stores; the exact Phase 1
+database version and physical stores are specified below, not all created up front.
+Stores and primary keys:
 
 | Store | Key and required fields |
 | --- | --- |
-| owner | singleton: full ownerKey, schemaVersion=1, writerGeneration, next-GC time, reserved/committed byte accounting. |
+| owner | singleton: full ownerKey, schemaVersion matching the installed database version (1 in Phase 1), writerGeneration, next-GC time, reserved/committed byte accounting. |
 | content | id: immutable size/algorithm, manifest-root status, manifest coverage, bitmap, payload presence, touchedAt, recovery state. |
-| attempts | t: owner/id/size, immutable source Endpoint/offer/kind binding, provisional location/bitmap, bytes/reservation, current writer a and fence. New a reuses held bytes; never mixes unauthenticated sources. |
+| attempts | t: owner/id/size, immutable source Endpoint/offer/kind binding, provisional location/bitmap, bytes/reservation, current writer a and fence. New a reuses held bytes; never mixes unrelated sources. Before Phase 4 the location references the sender/id partial store below. |
 | leases | lease Id: content id, consumer kind/id, writerGeneration, expiresAt; immutable owner. |
 | queue | local queue Id: id/size/name, source hints (player only, refreshed before use), state, explicit intent and retry timestamps. |
 | offers | `(sender endpoint serialized tuple,offer)` plus metadata, received/cancelled tombstone, t, export attempt/outcome; no persisted active grant. |
@@ -130,18 +132,22 @@ of v1). Stores and primary keys:
 | index | virtual Path: local root Id + local relative locator + size/mtime hint, pinned content hash and digest reference, published revision. |
 | exports | export Id: consumer Id, id/size, attempt state, chosen handle if persistable, outcome; never silently reuse after reload. |
 
-Elect a single endpoint owner BEFORE Hello with an exclusive Web Lock
-`file-sharing-v2:endpoint:<ownerDigest>`, held for the entire service lifetime.
-ownerDigest is full lowercase SHA256 of UTF-8 ownerKey. Known-account tabs must
-acquire this election before automatic game reconnect as well: losing tabs
-suppress automatic login/reconnect and show “File transfers are active in
-another tab”; they do not send Hello or publish. This initial implementation
-uses that message, not a BroadcastChannel proxy. Release election on explicit
-logout/identity change and fence old work before another tab can take over.
-A tab already holding election but losing its game transport immediately closes
-file work and releases both locks; it must not keep OPFS while another elected
-tab has the hub connection. A newly authenticated unexpected-owner tab tries
-election once, never repeatedly supersedes or auto-reconnects on failure.
+Elect only the Files endpoint role BEFORE Hello with an exclusive Web Lock
+`file-sharing-v2:endpoint:<ownerDigest>`, held while that file service is active.
+ownerDigest is full lowercase SHA256 of UTF-8 ownerKey. EVERY tab continues
+the existing game auto-login/reconnect behavior unchanged. Once authenticated
+and policyReady, each same-owner tab queues ONE `navigator.locks.request` with
+mode exclusive and an AbortSignal for identity/logout cleanup; omit ifAvailable
+(never use ifAvailable:true or polling). Only its granted callback starts the
+Files service and sends Peer.Hello. Hold the callback promise until disposal.
+Other tabs register NO Files endpoint and show “File transfers are active in
+another tab”; there is no BroadcastChannel proxy. When the holder closes or
+releases, the next queued eligible tab acquires the lock, rechecks its current
+identity/connection/policy, acquires storage ownership and sends a fresh Hello.
+Abort obsolete queued requests on logout/identity change. Fence and drain old
+file work, release storage, then release election on logout, identity change,
+transport loss or supersession. A still-eligible tab may queue again at the
+tail after disposal; it never changes the game's reconnect behavior to win.
 Visitor owners use their page nonce, not remembered account data; the hub's
 single-endpoint rule still arbitrates distinct explicit visitor logins.
 
@@ -151,12 +157,18 @@ Increment writerGeneration transactionally on writer acquisition; every metadata
 write and lease requires it. If the elected tab cannot acquire storage ownership,
 stop/diagnose rather than registering a competing writer. Takeover occurs only
 after old locks release and all old callbacks are fenced. Without Web Locks,
-disable automatic file registration; an explicit user takeover can use the
-100 MiB memory mode, with no durable resume/queue or OPFS and no automatic
-re-registration after supersession. Display these limits before accepting work.
+EVERY authenticated policyReady tab may register once in 100 MiB total memory
+mode, with no persistent storage/queue or OPFS. The hub still admits one endpoint
+per player: the last valid Hello supersedes its predecessor. A superseded tab
+parks until a new login or explicit Files action; it does not automatically
+re-Hello on supersession, so tabs cannot fight. Other recoverable endpoint loss
+uses Peer's backoff. This is the chosen no-lock fallback, not an election that
+blocks game login. Display the lack of durable reload resume before acceptance.
 
 Leases are explicit records, renewed every ten seconds with 30-second lifetime
-by the current writer. Persistent queue/receipt metadata is a separate durable
+by the current writer. Before Phase 4 these operation references/expiry fields
+are embedded in attempts/offers/exports, not a premature leases store; expiry
+after reload restores no authority. Persistent queue/receipt metadata is a separate durable
 reference while it exists, not an indefinitely renewed abandoned process lease.
 GC checks references AND live leases in the writer's serialized transaction.
 One cancelled offer releases only its own lease. Source attempts cannot call a
@@ -251,15 +263,44 @@ crash after commit is still checked on recovery. Never trust metadata alone
 after eviction. Storage errors pause the consumer, retain valid referenced data
 when possible and release abandoned reservations.
 
-Pre-Phase-5 indexed storage may use the same ownership/lease contract with
-bounded 100 MiB payloads. Full-mode data without authenticated leaves stays
-logical-t-specific until a full root check. Reconnecting a+1 reuses the same
-provisional payload/bitmap under unchanged source/offer authority; fence/drain
-old writes before assigning the next writer a. Rehash held pieces after a crash
-before advertising provisional have, and verify the complete root before
-promotion; provisional data is not shared across source endpoints or offers. Promotion copies/renames only while
-holding the writer/content lock and reserves any temporary duplicate capacity;
-it cannot clobber already verified content.
+Phases 1-3 use IndexedDB with bounded 100 MiB files; they do not require OPFS
+or a sync access handle. The dedicated storage worker and storage lock ARE
+required from Phase 1 for persistent owners. Full-mode data is provisional
+until a full root check. Each t keeps immutable source/offer metadata and a
+writer fence; reconnecting a+1 under unchanged authority reuses its held bitmap
+only after fencing/draining old writes.
+
+Direct-send reload resume MUST also work in Phases 1-3. Inside the SAME
+persistent owner database keep pieces keyed by `(from,id,index)` and a touch/
+size record keyed by `(from,id)`, matching v1's peer/content keys and seven-day
+untouched retention (`src/fileTransfer/storage.ts:28-35`;
+`src/fileTransfer/FileTransferEngine.ts:63-73`). Here from is the authenticated
+sender's canonical Player, never a display name or untrusted ctl identity.
+After reload/epoch change a fresh Offer, fresh acceptance and NEW t bind to
+current source authority; only then may that t adopt stored pieces for the
+same from/id AND size. Rehash held pieces/check lengths on recovery, advertise
+them as provisional have, and verify the COMPLETE root against the new offer's
+id before receipt/export. No earlier grant, t, destination or save action is
+restored. Different senders cannot contribute provisional pieces to this cache.
+
+The t-specific bitmap references committed peer/id pieces rather than requiring
+a t-specific physical payload copy. Serialize writes per from/id under the
+storage owner; each commit checks current owner/writerGeneration/t/a. Shared
+cache records hold bounded active-t references in attempts; never overwrite a
+committed piece with conflicting bytes (fail that attempt). Two freshly accepted
+same-content offers may reference held same-sender bytes but retain independent
+consent, cancellation and receipts. One cancellation releases only its references;
+it cannot erase another operation's held bytes. Reuse after a new epoch is this
+explicit same-sender/id exception, not permission to mix unrelated sources or
+resurrect revoked work. Storage/quota limits may evict unreferenced partials as
+specified above; memory-only sessions cannot promise reload durability.
+
+Phase 4 replaces the peer-keyed partial store with owner/id verified content
+and leases. Authenticate the complete manifest and verify imported pieces before
+promotion; keep unverified bytes isolated until checked. Promotion reserves any
+temporary duplicate capacity and cannot clobber verified content. Retire old
+partial records only after successful migration or ordinary retention/GC, never
+erase resumable bytes merely to upgrade a schema.
 
 ### Legacy partials
 
@@ -335,7 +376,8 @@ sending any remote offer. Query current Peer.Capabilities after Ready:
 1. Both endpoint bundle versions 1 plus data 1/base -> v2. Use accepted-offer
    authority, a pair session and transfer attempts from this contract.
 2. The hub explicitly reports legacyV1 true: the target advertises
-   Client.FileTransfer 1 and does not advertise Client.Files at any version.
+   Client.FileTransfer 1 and has NO ready v2 endpoint, even if it advertises
+   Client.Files. This includes a new target recovering from endpoint loss.
    Choose v1 <=100 MiB. New clients keep the compatible legacy engine and accept
    inbound v1 with sharing off. No exact-build allowlist, tag/hash parsing or
    cached-build age restriction. If the hub lacks the target package list it
@@ -422,7 +464,12 @@ must drain, or their supported connections must reconnect, before that gate is
 accepted; never claim established-v1 gag coverage for unrecorded old streams.
 The endpoint registry also cancels any legacy transfers owned by a superseded
 v2 connection. Peer.End/local identity reset must dispose both transports in a
-new client. These compatibility hooks retain v1 rather than retire it, and the
+new client, fencing existing work first. After a recoverable file-endpoint loss,
+recreate the idle v1 receiver for the same still-confirmed policyReady owner
+independently of v2 Ready; fresh v1 offers still require a new decision and the
+relay's gag/connection checks. Otherwise the advertised v1 fallback during v2
+recovery would have no receiver. Identity/visitor/logout changes require a new
+owner service before either transport returns. These hooks retain v1; the
 Phase 0 agent is not responsible for them.
 
 ## MOO interface and phase plan
@@ -436,7 +483,13 @@ a new numeric object id into the client.
 
 `ctx` is a SERVER-CONSTRUCTED map
 `{player,principal_uuid,connection_key,guest}`: player is the authenticated MOO
-object, principal_uuid identifies its current login incarnation, connection_key
+object; principal_uuid is captured from that object's OWN nonempty `player.uuid`,
+the same value sent as Char.Name.uuid by the Char package's `#3476:0`
+(snapshot `mongoose.db.new.2026-10-18T080351`, `#3476:0`; client receiver
+`src/gmcp/Char.ts:41-50`). It identifies the player principal, not a per-login token.
+Also capture and compare `player.incarnation_id` in the server connection record
+to fence object reuse; do not add it to wire schemas. Reject registration if
+the UUID is missing/inherited or UUID/incarnation no longer matches. connection_key
 is an opaque server-side identity for THIS underlying connected transport, and
 guest is the authenticated guest classification. None are taken from incoming
 JSON. At GMCP transport ingress bind each parsed message to that connection
@@ -451,7 +504,10 @@ fence deferred work on that key. A transport integration unable to distinguish
 old messages MUST fail registration rather than weaken epoch checks.
 
 The source connection's complete Core.Supports.Set and subsequent Add/Remove
-updates must be indexed by this connection_key for capability discovery; retain
+updates use the existing telnet session.gmcp_data["supported_packages"] map,
+indexed by this connection_key for capability discovery. `#4004:handle_set`
+marks the list known-complete; `#4004:handle_remove handle_add` updates it as
+specified in Peer (Add/Remove alone cannot mark an unknown list complete). Retain
 Core.Hello for ordinary diagnostics, not a file-compatibility decision. Replies and safety events use
 `#3838:send_file_endpoint(connection_key,address,data)`, a new direct-to-current-
 transport path that never broadcasts to all of a player's connections and never
@@ -464,7 +520,7 @@ not live permission after restart.
 | Phase | Exact MOO work required | Client slice and exit gate |
 | --- | --- | --- |
 | 0 (separate agent) | On `#5897`, repair `handle_offer`, `handle_accept handle_reject`, `handle_candidate`, add `handle_cancel`: authenticated sender stamping, Accept/Reject recipient routing (legacy sender-as-target compatibility where needed), invalid-recipient guard. This row restates the supplied external dependency, not a performed change. | Compatible baseline direct send both directions through the repaired relay in two browsers; retain a fixed baseline for later comparison. |
-| 1 | Register both packages but install only Peer base and Files offer/receipt/peer-or-offer Revoke handlers, plus lifecycle/legacy-observer helpers listed below. Enable `["base"]`. Add pre-parse cap in #3838, byte/structural validation, endpoint epochs/leases, explicit package discovery, reservation/Close and symmetric gag. No Restart, Unicode tables, export substate, ctl progress, output pacing, or list/search/presence/Policy/share-scope handlers. Unknown later suffixes return unsupported. | v2 direct-send vertical slice, multiplexed sessions, bind/ready, cancellation, reconnect/receipt recovery, strict v1 transport selection. Keep 100 MiB ceiling and isolated v1 storage. Do not enable production v2 until complete direct-send parity passes. |
+| 1 | Register both packages but install only Peer base and Files offer/receipt handlers and outbound peer-or-offer Revoke helpers, plus lifecycle/legacy-observer helpers listed below. Revoke is hub-output-only, never an inbound handler. Enable `["base"]`. Add the byte cap/parse in #3838's existing try, handle_message rejection/ctx routing, #4004 capability hooks, endpoint epochs/leases/recovery, reservation/Close and symmetric gag. No Restart, Unicode tables, hub export substate, ctl progress, output pacing, or list/search/presence/Policy/share-scope handlers. Unknown later suffixes return unsupported. | Exact module/storage/worker inventory below: v2 direct sends, multiplexed sessions, bind/ready, cancellation, reconnect/receipt AND reload-partial recovery, explicit v1 selection. Keep 100 MiB ceiling and isolated v1 storage. Do not enable production v2 until complete direct-send parity passes. |
 | 2 | Enable lists; ADD Files.handle_status/handle_sharers plus Policy/Presence/share-scope Revoke, publishing/snapshot helpers and share authorization in authorize_session. Enforce offer-reserved session partition before enabling share Reserve. | Opt-in folders, bounded hashed index/list, browse and single-source full get. All upload/slot/channel/storage/parser caps already enforced. Sharing setting persists as owner intent. File removal/offline/gag tests pass. Direct send still passes sharing-off matrix. |
 | 3 | Enable search in Ready; activate Files.handle_search/handle_result/handle_searchcancel plus search helpers and bounded fanout/record budgets. | Literal bounded hub search, grouped content results and fresh source discovery; does not imply all sharers were searched. Direct-send parity remains green. |
 | 4 | Enable leaves in Ready; no new hub verbs. | Owner/id content manager, leases, authenticated complete manifests, persistent queue, per-piece verification and single-source verified resume. Keep 100 MiB until Phase 5; preserve separate export receipts and legacy data. |
@@ -475,6 +531,59 @@ Retirement is not a phase here. Do not remove `#5897`, Client.FileTransfer 1 or
 its client implementation. A future explicit minimum-supported-version and
 refresh policy plus acceptance evidence is required; online build snapshots
 cannot prove that returning clients have upgraded.
+
+### Exact Phase 1 client build inventory
+
+All paths below are REQUIRED TARGET modules, not existing implementation claims.
+Keep the current `src/fileTransfer/` legacy implementation and its database
+unchanged. Phase 1 has no ShareIndex (Phase 2) or owner/id DownloadTable (Phase 4).
+
+| Module / integration | Phase 1 responsibility |
+| --- | --- |
+| `src/gmcp/Client/Peer.ts`, `src/gmcp/Client/Files.ts` | Typed package definitions/version 1 registration, strict incoming schemas, canonical no-null outgoing messages, Peer base and Files offer/receipt/Revoke subset only. Files receives Revoke; only the hub emits it. |
+| `src/gmcp/Core.ts` | Advertise both packages and handle inbound Supports.Get by sending the current complete Set. |
+| `src/fileSharing/ownerService.ts` | Capture owner/generation, own SessionPool/OfferTable/StorageOwner/LegacyService, dispose both transports on endpoint/identity loss and fence callbacks. Gate v2 work on endpoint authority; restore only an idle v1 receiver for a still-confirmed owner during v2 recovery as specified above. |
+| `src/fileSharing/endpoint.ts` | Files-only queued lock election, Hello/Ready/Lease/End, canShare, readiness deadline, silent recovery/backoff and delayed unavailable notice. |
+| `src/fileSharing/transportChoice.ts` | Refresh Capabilities and choose v2 or explicitly eligible v1 once BEFORE each offer; no failure-based second offer. |
+| `src/fileSharing/sessionPool.ts` | One PC/ctl per reserved pair, initiator-only SDP, bounded ICE, 8/2 offer-reserved partition, Connected/Close, idle close and bounded 1/3/9-second session retries. |
+| `src/fileSharing/ctl.ts`, `src/fileSharing/frames.ts` | hello, push/accepted/error/outcome, cancel/cancelled, q replay and t/a binding; binary full-mode codec and flow control. |
+| `src/fileSharing/offers.ts` | Sender/receiver decisions, immutable metadata/IP warning, t/a and offer state, receipt-before-Outcome, terminal tombstones and separate local export state. No restored active grant. |
+| `src/fileSharing/storage.ts`, `src/fileSharing/storage.worker.ts` | StorageOwner facade and dedicated worker from Phase 1; serialized IndexedDB access, reservations, writer fences, same-sender/id retained partials, recovery/GC and bounded full-root hashing. Worker owns database connections; elected service holds storage lock until worker drains/closes. Worker accepts owner/generation/fence-tagged commands, with bounded queues and cancellation. Memory-only mode uses bounded volatile records and grants no reload resume. |
+| `src/fileSharing/export.ts`, `src/fileSharing/legacyService.ts` | <=100 MiB anchor handoff and export receipts; wrap the retained v1 engine as a complete transport, including incoming v1, without changing its wire/storage. |
+| `src/client.ts`, `src/components/FileTransfer/` | Wire owner/endpoint lifetime beside configureFileTransfer, register packages and expose consent/progress/cancel/save/status. Preserve existing game login/reconnect behavior. |
+
+Phase 1 persistent IndexedDB database is `file-sharing-v2:<ownerKey>`, native
+database version **1**, with owner.schemaVersion=1. Create EXACTLY six stores:
+
+| Store | Primary key / Phase 1 data |
+| --- | --- |
+| owner | Out-of-line singleton key `owner`; full ownerKey, schemaVersion, writerGeneration, reservation/committed accounting and next GC time. |
+| attempts | keyPath `t`; immutable current source Endpoint/offer/kind/id/size, from/id cache reference, per-t held bitmap, reservation/reference accounting and current a/writer fence. On reload fence old attempts and restore no active grant. |
+| offers | Out-of-line compound key `[JSON.stringify([sender.player,sender.endpoint,sender.epoch]),offer]`; immutable metadata, t and received/cancelled tombstones/local export outcome. |
+| exports | keyPath `id` where id is the export Id; content hash in `contentId`, consumer/offer reference, exporting/final outcome and uncertainty state. |
+| pieces | keyPath `["from","id","index"]`; immutable committed provisional bytes for authenticated sender Player/content Hash/piece index. Separate namespace from v1 despite matching key shape. |
+| transfers | keyPath `["from","id"]`; pinned size/algorithm, touchedAt, retained-piece bitmap, full-root verification status and serialized cache-writer fence. Active-t references live in attempts and protect data from GC. |
+
+The review's four-store suggestion omits payloads: pieces/transfers are necessary
+for direct-send partial retention and reload parity. They stay peer/id-keyed
+through Phase 3, with seven-day untouched retention and full-root verification.
+Do NOT create content, leases, queue, roots or index in Phase 1. Later phases
+increase the native database/schema version when adding their stores/migrations;
+the nine-store logical target above does not authorize early creation. Phase 4
+replaces peer/id partials with owner/id verified storage, verifying retained data
+before retiring it. v1 stays `file-transfer-pieces-v2:<ownerKey>` version 1 with
+its own pieces/transfers; v2 never opens that namespace for writes. Phase 1
+needs no OPFS probe/access handle; sync-handle requirements start with Phase 5.
+
+Phase 1 advertises ONLY `["base"]`. Implement binary types **1-5 and 11**,
+full mode only (ready mode 0; complete outcome 0 is range-only and forbidden).
+Types 6/9/10 (want/batchEnd/rangeAck) and 7/8 (leavesRequest/leaves) are gated
+off and rejected; no list/get request, range mode, manifest exchange, shared
+browse/search/presence/Policy, persistent queue, owner/id deduplication,
+multi-source work, OPFS or streamed multi-GB export. The full-mode receiver
+computes piece digests and the final root locally before receipt/export. The
+existing anchor handoff is bounded to 100 MiB/file and the reserved total memory
+budget. These cuts do not defer direct-send reload resume or the storage worker.
 
 ### Exact new handler and helper inventory
 
@@ -493,8 +602,10 @@ handlers/helpers at that phase, and gate their enabled feature then.
 | `$gmcp_files` | `authorize_session(source,target,auth,existing_session)` accepted-offer authority in Phase 1; add downloader-initiated current standing-share authority in Phase 2. existing_session is an optional MOO argument/map entry, never wire null. `transition_offer(record,action,actor)` atomic allowed-state transition, notifications and tombstones. `publish_policy(endpoint,status)` (Phase 2) validate revision/invalidate stale list/search authority, preserve current-index gets. `send_policy_pair(a,b)` (Phase 2) ordered Policy before Reserved. `revoke_pair(a,b,reason)` symmetric gag/offline, offers before Closed (search targets too from Phase 3). `revoke_share(endpoint,new_revision,sharing)` (Phase 2) send revision/sharing Revoke then Policy; no hub content index or blanket get cancellation. |
 | `$gmcp_files` | `visible_sharers(viewer,cursor)` (Phase 2) bounded per-viewer snapshot/pages, recheck at delivery; `notify_presence(viewers)` coalesced changed event; `dispatch_search(record)` (Phase 3) bounded rotating actual targets; `deliver_result(ctx,data)` recorded-target/byte-structural/hash/size/result-budget checks (no Unicode matcher); `end_search(record,reason)` release targets and tombstone; `endpoint_lost(endpoint,reason)` offers/presence/search invalidation; `tick(now)` offer/search/cursor expiry and coalesced presence. |
 | `$gmcp_files` and legacy relay `#5897` | Add Files `observe_v1(ctx,suffix,data,target_connection_key)`, `cancel_v1_pair(a_connection_key,b_connection_key)` and `expire_v1(now)`; hook `#5897:handle_offer`, `handle_accept handle_reject`, `handle_candidate`, `handle_cancel` through the observer/checks before forwarding. Add `#5897:send_policy_cancel(connection_key,exact_peer_string,hash)` using the directed transport output path, with exact legacy Cancel schema and per-direction recorded strings above. Files.revoke_pair/endpoint_lost and tick invoke these helpers, including legacy-only connections with no v2 Endpoint. |
-| `$gmcp` (`#3838`, target integration) | Modify `parse_gmcp_message` exactly at the pre-parse split point specified in Peer: raw byte cap, trapped common-subset parse, bounded post-parse walk, no raw fallback for v2. Add `query_file_capabilities(connection_key)` to request a complete Supports list as in Peer. Add `file_context(connection_key)` server-only ctx lookup and `send_file_endpoint(connection_key,address,data)` directed safety/control output. On `user_connected` allocate/bind fresh connection key; in `handle_message` preserve it through registry/package dispatch; on `user_disconnected` call `$gmcp_peer:end_endpoint` BEFORE deleting that connection's ctx. On removal of either v2 package or identity replacement, invalidate the endpoint; ordinary complete Supports refreshes with the same required packages only update capability state. New clients also answer Core.Supports.Get with their complete Set. |
-| `$player`/effective gag mutation integration | Add `file_gag_changed(other_player)`, called AFTER EVERY effective gag/ungag/list replacement including temporary/effective gag changes; it consults both directions' current effective gag state and invokes Files.revoke_pair for blocked pairs. Ungag updates the predicate but restores no records. Centralize mutation callers through this hook; merely filtering package.send is insufficient. |
+| `$gmcp` (`#3838`, target integration) | In `parse_gmcp_message`, recognize v2 after address/data split; put byte-cap rejection and common-subset parse INSIDE the existing try, cap before parse. Existing except returns integer 0 rejection marker for v2, retaining other-package raw fallback. Add NO catch. Apply the bounded post-parse walk. Modify `handle_message` to capture connection ctx before parsing, stop on the marker before any map mutation/routing, and attach ctx only to successful v2 messages alongside existing connection. `#2729:route_message` passes ctx to v2 dispatch only. Add `query_file_capabilities(connection_key)`, `file_context(connection_key)` and `send_file_endpoint(connection_key,address,data)`. On `user_connected user_created user_reconnected` allocate/bind a fresh transport key; on `user_disconnected user_client_disconnected` call end_endpoint before clearing THAT transport ctx. Identity/UUID/incarnation replacement invalidates old authority. |
+| Core.Supports `#4004` | `handle_set` writes session.gmcp_data["supported_packages"] and marks this connection's list known-complete. `handle_remove handle_add` updates the same map; Add alone never marks an unknown list complete. Set/Remove removing either required v2 package calls end_endpoint before further file routing; Add checks the resulting bundle too. A complete refresh retaining both packages only updates capabilities. Complete pending queries using the captured connection_key, not a current player-only lookup. |
+| `$gmcp_files` / `$player` (`#6`) gag integration | Add plain `blocked(a,b) = (a in b.gaglist) || (b in a.gaglist)` for player objects and use it on every v2 authorization, capability probe/discovery and v1 relay/observer path. Do NOT call #6:gag_p: it depends on task-global player and callers(). Add `#6:file_gag_changed(other_player)` and call it from `#6:set_gaglist`, `#6:gc_gaglist` and EVERY other verb writing .gaglist (audit direct writers). For replacements/GC diff old/new player entries and notify each affected pair after mutation. If blocked, invoke Files.revoke_pair and legacy cancellation; ungag restores no records. Object/location/caller gags in gag_p do NOT count unless the other player object itself is a gaglist entry; this predicate is symmetric player gag membership only. |
+| Startup `#0:server_started` | Call `$gmcp_peer:startup()` once from the server-start path after package registration; clear ephemeral authority, choose a fresh hub Id and start the single Peer/Files timer loop. This is required target wiring, not a claim of deployment. |
 
 Use one Peer timer driving Files timers, never one repeating task per record.
 Index deadlines in per-second buckets `expiry_second -> map(timer_id -> record_key)`:
@@ -543,12 +654,15 @@ features, outcome and bounded failure evidence for each live acceptance run.
 | Loss after receipt before complete; late terminalAck | Known outcome returned without another export; sender distinguishes receipt unknown from received/saved. |
 | Loss/reload while exporting, failed close, cancelled picker | Verified bytes retained, export-uncertain when crash window is ambiguous; explicit retry; no claimed disk save on handoff/failure. |
 | Reload; logout; owner/visitor/guest switch; recycled player ref | Old epochs stop, no persisted private consent/handles leak to new owner; fresh offer decision required, content reuse only inside same persistent owner. |
+| Phase 1-3 direct-send reload with stored partials | Same owner and authenticated sender/id/size within seven days: fresh offer/acceptance/new t, recovered provisional have skips held pieces, complete root verified before one receipt/export. Different sender/id/size, expired/evicted bytes or memory-only mode cannot reuse those partials. |
 | Gag after established ctl and active bytes | Immediate local/hub scope peer fence and session closure; pending/new offers, search/discovery and queued reconnect blocked both directions. |
 | Gag during compatible-v1 direct send (old/old and mixed directions) | Recorded relay pair receives exact per-destination-address policy Cancel on both connections; legacy per-transfer links stop without requiring v2 support. No gag-blocked resume/candidates survive. |
-| Multi-tab registration/takeover | Exactly one writer/file endpoint, old connection/service fence applied; background tab cannot supersede repeatedly. |
+| Multi-tab registration/takeover | Every tab retains existing game auto-login/reconnect. With Web Locks one Files holder and queued followers: close holder, next eligible tab automatically gets the lock and sends Hello. Without locks each tab may register memory-only; last Hello wins, superseded tab parks, no re-Hello contest or durable-resume promise. |
 | Capability race or missing one package; old hub silence | Actionable error; no second transport/offer or timeout downgrade. Legacy large send remains bounded. |
 | Public-share reservations/established slots saturated plus new direct offer | Share-only <=6 sessions/1 not-established per endpoint and <=4 per downloader globally; two total/one not-established slots remain for offer auth. Pending/expired/rejected offer tombstone saturation cannot block a new live direct offer; v1 observer pending pressure does not reject Offers. |
 | New Hello/changed receive limit on same game connection | Old endpoint authority ends; new epoch/canShare/ceiling is accurate; game remains logged in. Test rapid Hello replay never reactivates a retired epoch. |
+| Lower capability/quota ceiling during live work | Enforce the lower limit locally immediately; defer capability re-Hello until operations are quiescent. Existing safe consent is not revoked just to advertise a limit. |
+| End overload/error flood, endpoint cap, Ready timeout or lease expiry | Fence old work, one recovery loop with 1-second doubling backoff capped at 60 seconds plus bounded jitter; fresh endpoint/req. No player notice until continuously down for 30 seconds. New send to a target with no ready endpoint and explicit FileTransfer 1 selects v1 once, including a new client still advertising Files; target's idle v1 receiver works during recovery. |
 | Raw oversized/invalid/duplicate-case-key v2 ingress; overloaded output | Raw >64 KiB never reaches parse_json; malformed parse never passes raw strings. First retained parsed values alone control validation/forwarding/replay; no forged identity or null output. Endpoint load/errors stop file authority, preserve game connection. |
 | Enabled share revision changes during active get | Added unrelated file keeps pinned id/size transfer running; removal/change/off stops only applicable shared work; exact-revision list/search goes stale. |
 | Bad envelope/frame/manifest/list/path/count; changed source | Reject at defined scope without corrupting verified cache, crossing owner boundaries or growing queues; unrelated transfers survive. |

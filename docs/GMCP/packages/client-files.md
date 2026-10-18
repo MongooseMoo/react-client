@@ -238,9 +238,18 @@ as below, while unaffected current-index gets remain authorized. Previously
 verified content remains owned locally; a later explicit user export
 under that same current owner does not restore any remote authority.
 
+For all file authorization and revocation, the MOO predicate is exactly
+`blocked(a,b) = (a in b.gaglist) || (b in a.gaglist)` on player objects.
+Do not use `#6:gag_p`, which consults task-global player/callers rather than an
+arbitrary player pair. Object/location/caller gags do not apply unless the other
+player object is itself in the list. `#6:set_gaglist`, `#6:gc_gaglist` and every
+other .gaglist writer call `#6:file_gag_changed(other_player)` for affected
+old/new player entries; the hook revokes both directions when blocked and
+restores nothing on ungag. The same predicate governs the legacy relay/observer.
+
 | Trigger | Hub action | Client action |
 | --- | --- | --- |
-| Either player gags the other (including any effective gag-list change) | Atomically mark pair blocked; revoke both-direction pending/accepted offers and recorded search targets; send scope peer to both endpoints, then Peer.Closed for all pair sessions; suppress future discovery/signals/results. Reason policy deliberately does not disclose who gagged whom. | Close all pair sessions and operations, including separately accepted direct sends. Neither side reconnects from a saved queue while blocked. |
+| blocked(a,b) becomes true after a player gaglist mutation | Atomically mark pair blocked; revoke both-direction pending/accepted offers and recorded search targets; send scope peer to both endpoints, then Peer.Closed for all pair sessions; suppress future discovery/signals/results. Reason policy deliberately does not disclose who gagged whom. | Close all pair sessions and operations, including separately accepted direct sends. Neither side reconnects from a saved queue while blocked. |
 | Sharing off or published revision changes (including removed roots) | Replace status; send scope share with NEW revision and current sharing flag, then Policy; cancel old-revision search targets. | Discard stale lists/search work. Off stops every shared list/get. While still on, the uploader immediately rechecks each active get's pinned id/size in its approved current index and stops only removed/changed/unreadable content; an unaffected pinned File continues across revision changes. The downloader retains those gets while current policy stays on. Independently accepted direct sends survive. |
 | One offer cancelled/expired | Transition its record; send scope offer to both endpoints in addition to OfferState. | Stop only that push; release its content lease. Other channels remain. |
 | Endpoint logout/disconnect/supersession, principal change or hub reset | Invalidate old epoch, all grants/search/presence, scope peer to partners then Peer.Closed. | Stop all old-epoch work. New epoch never inherits direct consent. |

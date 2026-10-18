@@ -13,6 +13,12 @@ The content formula and 16 KiB pieces intentionally match existing
 abort/stored (`src/fileTransfer/wire.ts:30-48`); the bindings and additional
 frames below are new requirements.
 
+Phase 1 implements ONLY binary types 1-5 and 11, full-mode direct push with
+base feature. ready.mode is 0 and complete outcome 0 is forbidden until ranges.
+Types 6-10, list/get, leaves/ranges and shared discovery are disabled until their
+architecture phases. Phase 1 already includes the storage worker, IndexedDB
+partial retention and same-sender/id reload resume specified in architecture.md.
+
 ## Sessions, ctl and feature negotiation
 
 One current RTCPeerConnection per reserved endpoint pair/session Id, carrying
@@ -224,15 +230,24 @@ manifest must itself have a durable verified-root record or be reauthenticated
 before use. Serving leaves is limited to that pinned authorized File/index,
 never any arbitrary private cache entry.
 
-Without leaves, only full mode is allowed, at most one source. Received bytes
-remain in logical-operation provisional storage keyed by t, with immutable
-source Endpoint, offer (for push), kind, id and size. The current a is the
-exclusive writer fence, not a storage directory. Fence and finish old writes
+Without leaves, only full mode is allowed, at most one source. Logical-operation
+metadata/held bitmap is keyed by t, with immutable source Endpoint, offer (for
+push), kind, id and size. In Phases 1-3 the physical provisional pieces are
+peer/content-keyed `(from,id,index)` inside the captured owner's v2 database,
+with seven-day untouched retention, not a physical directory per t. The current
+a is the exclusive attempt writer fence, not a storage directory. Fence and finish old writes
 before assigning the next a; no stale callback can publish or overwrite bytes. At the end re-read every exact
 piece, compute all piece digests and the root, compare to expected id, and only
 then promote content to verified. Resume have can describe provisional pieces
 of that same still-authorized immutable operation, but does not assert they are
-verified. Do not combine provisional bytes from unrelated sources or blame
+verified. A NEW t may adopt retained partials only after a fresh accepted direct
+offer from the same authenticated sender Player with the same id AND size,
+including after reload/new epoch. Check stored lengths and rehash held pieces
+before have; still verify the complete root before receipt/export. Never reuse
+old consent, receipts as permission, or a prior export destination/action. Use
+the serialized peer/id writer and per-t references in architecture.md so a
+cancelled/old attempt cannot overwrite or erase another operation's pieces.
+Do not combine provisional bytes from unrelated sources or blame
 other peers based on an unauthenticated manifest. Feature absence does not
 authorize range mode or multi-source operation.
 
@@ -245,9 +260,11 @@ subset of held ranges; omitted ranges will be resent and safely deduplicated.
 The uploader iterates all missing indices in ascending order, with flow control.
 It does not allocate an array of every missing piece. If N=0 or have covers all
 pieces, it sends no pieces and waits for the receiving outcome. With leaves,
-have includes only durable verified pieces; otherwise only that logical t's durable provisional pieces, including those
-from its earlier a values under the SAME still-live source/offer authority.
-This preserves partial resume in Phases 1-3, before leaves exists. No batchEnd/rangeAck/want is valid in full mode.
+have includes only durable verified pieces; otherwise it describes the current
+t's durable provisional pieces: earlier a values under unchanged authority, or
+same-sender/id/size retained pieces explicitly adopted after NEW consent as above.
+Both same-epoch retry and reload partial resume are required in Phases 1-3,
+before leaves exists. No batchEnd/rangeAck/want is valid in full mode.
 The uploader's full-mode indices must be strictly ascending and absent from
 ready.have; repeating an index on the same attempt is protocol failure. A valid
 piece may nevertheless be deduplicated if another consumer made it durable
@@ -362,7 +379,12 @@ and online authority checks; revision need not equal its earlier snapshot. Persi
 upload rights. After a hub disconnect/reload, obtain a fresh endpoint; old
 direct consent is gone and a new Offer asks the receiver again. Existing
 verified content can satisfy that newly accepted operation without retransfer,
-but it still requires its own user consent and export action.
+but it still requires its own user consent and export action. Before Phase 4,
+same-sender/id/size provisional pieces retained for seven days can also satisfy
+the new t's have after recovery checks; missing pieces are requested normally
+and the complete root must pass before receipt. Reload must not force a complete
+retransfer when these stored pieces are usable. Owner/visitor changes never
+import another owner's retained partials; memory-only mode has no reload guarantee.
 
 An uploader that loses the session after sending all bytes but before complete
 shows `receipt unknown`, not saved/failed integrity. Recover using the same push

@@ -43,29 +43,43 @@ absent values are omitted, including candidate optionals and error correlation.
 ### Raw ingress on #3838
 
 In `#3838:parse_gmcp_message`, immediately AFTER splitting the GMCP address from
-raw `data` and BEFORE the existing `parse_json(data)` call or any parse-error
-fallback, recognize the ASCII package boundaries `Client.Peer.` and
+raw `data`, recognize the ASCII package boundaries `Client.Peer.` and
 `Client.Files.` (also their exact package roots). Select this capped path using
 ASCII CASE-INSENSITIVE address comparison so alternate casing cannot bypass it;
 after the raw cap reject noncanonical address spelling before decoding. For
 these addresses only:
 
-1. Bind the server connection context before deferred work. Charge admission
+1. `#3838:handle_message` captures the underlying transport's connection_key and
+   server ctx BEFORE calling this parser or doing deferred work. Charge admission
    using that context even if the payload is invalid.
-2. Test `length(data) <= 65536`; MOO length is bytes
+2. INSIDE the existing `try ... except (ANY)` in `parse_gmcp_message`, BEFORE
+   any parse_json call, test `length(data) <= 65536`; MOO length is bytes
    (`C:/Users/Q/src/toaststunt-prod-6d6d2ef/src/list.cc:666-668`). Above this bound do NOT
    call parse_json, forward, allocate a record or echo input. Send a bounded
    package Error with `about` the recognized suffix (or Unknown), `code:"too-large"`,
-   empty refs and NO req, because the payload was not decoded.
-3. Within the cap call `parse_json(data,"common-subset")` in an error trap.
+   empty refs and NO req, because the payload was not decoded. Return the
+   server-only rejection marker described below.
+3. Within the cap call `parse_json(data,"common-subset")` in that SAME existing try.
    On failure send the same bounded Error with `code:"malformed"`, no req/refs,
-   and RETURN; do not pass the raw string to handle_message. Require a map root.
+   and return the rejection marker from its existing except arm for v2 only.
+   Require a map root. Add NO new try/except or backtick catch. Keep the existing
+   raw-string fallback in that except arm only for other GMCP packages.
 4. Walk the parsed structure, stopping at depth >8 or >2048 total values
    (root and each map value/array item count; keys do not). Reject malformed
    before dispatch. A valid canonical top-level req may be echoed in errors
-   after successful parse, otherwise omit it. Drop decoded values after failure.
+   after successful parse, otherwise omit it. Drop decoded values after failure
+   and return the rejection marker. Noncanonical v2 addresses use that marker too.
 5. Continue through the ctx-bound v2 dispatch only after these checks. Other
    GMCP packages retain their existing parsing and routing behavior.
+
+The rejection marker is MOO integer 0, returned ONLY by this v2 rejection path;
+it is not wire data or a parsed message. `#3838:handle_message` tests for it and
+returns immediately BEFORE writing `message["connection"]` or calling
+`$gmcp_registry:route_message`. On a valid v2 message it retains the existing
+`message["connection"] = player`, adds `message["ctx"]` with the previously
+captured ctx (including connection_key), and routes through `#2729:route_message`
+to the ctx-aware v2 package dispatcher. Other packages keep the existing message
+shape and routing. Never recover a rejected v2 payload as a raw string.
 
 The raw cap precedes allocation by parse_json; depth/value checks are POST-parse.
 The parser's global `json_max_parse_depth` still protects native recursion; no
@@ -155,7 +169,11 @@ It assigns a new epoch. Atomically supersede any old endpoint: invalidate its
 offers/sessions/search/presence, send End, then activate the new Ready. This
 allows receive ceilings/capabilities to change without logging the player out.
 A new req with an already used endpoint Id is conflict; never reuse old ids.
-Clients pause new work and fence old work before a capability re-advertisement.
+Capability re-advertisement waits until NO operation is live (pending/accepted
+offers, sessions, channels, searches or exports). Do not supersede live consent
+just to refresh a quota/feature ceiling. Stop new admissions while waiting;
+enforce any lower current limit locally at accept/get immediately. An unsafe
+active operation is cancelled explicitly before re-Hello, never silently moved.
 Quota/export limits must be rechecked at accept/get even before a new Hello.
 
 `hub` changes on process start or registry loss. Ready.features is the enabled
@@ -163,10 +181,12 @@ hub/client intersection (base only in Phase 1); no disabled feature may be
 advertised. canShare is the hub's authenticated non-guest eligibility; false
 suppresses share setup/publishing but permits direct send, browse and download.
 Version mismatch is unsupported. Wait 10 seconds for Ready; silence is a
-connection/deployment error, never fallback evidence. Deploy the hub first.
+connection/deployment error, never fallback evidence. Use endpoint recovery below.
+Deploy the hub first.
 
 There is one active file endpoint/player. Another connection's valid Hello also
-supersedes the previous endpoint; background tabs must not send Hello. Removing
+supersedes the previous endpoint. With Web Locks only the elected Files tab
+sends Hello; without them use the memory-only registration rule in architecture.md. Removing
 either package, logout, principal/object reuse, disconnect or hub reset ends the
 epoch. Legacy-only players have no v2 endpoint.
 
@@ -179,24 +199,42 @@ Client.Peer.Capabilities {
 }
 ```
 
-A ready target has target, versions 1 and base. Otherwise omit target, set
-versions/size zero and features empty. legacyV1 is true ONLY for an online,
-ungagged target whose current connection explicitly advertises
-`Client.FileTransfer 1` and does NOT advertise `Client.Files` at any version.
+A ready target has target, versions 1 and base, and legacyV1 false. Otherwise
+omit target, set versions/size zero and features empty. legacyV1 is true ONLY
+for an online, ungagged target whose current connection explicitly advertises
+`Client.FileTransfer 1` AND has NO ready v2 endpoint. Advertising Client.Files
+does not prohibit v1 when its endpoint is absent, not yet Ready or invalidated.
 No build hash/describe string/allowlist participates. If Core.Supports is not
 known, the hub sends `Core.Supports.Get {}` (a NEW query) requesting the connection's complete
 current package list, waits up to five seconds for `Core.Supports.Set ["Package N",...]`, and then
 replies. Do not confuse an incomplete/unknown list with absence of Client.Files.
 At most one pending query per requesting endpoint, 256 hub-wide; concurrent
-requests get busy. New clients implement inbound Core.Supports.Get by resending their current
+requests get busy. This extension is not assumed on old/other clients. Coalesce
+queries for the same target connection and send at most one Get per target per
+five seconds, across ALL requesters; a cooldown miss returns unavailable rather
+than issuing another probe. Bound combined pending/cooldown target records at
+256 hub-wide; expire cooldown nodes after five seconds and reject excess with
+busy instead of evicting an active cooldown. A saved complete Set avoids any
+probe. New clients implement inbound Core.Supports.Get by resending their current
 complete Supports.Set; baseline Supports has only outbound Set/Add/Remove
 (`src/gmcp/Core.ts:70-81`), so no old-client query support is assumed. Use the
 connection's already captured complete Set for old clients whenever available.
 A timeout is Error unavailable, never legacyV1 true.
-A known list without an eligible bundle yields legacyV1 false. Offline or a
+If no v2 endpoint is ready and the known list lacks FileTransfer 1, legacyV1
+is false. Offline or a
 gagged pair yields the identical unavailable representation: online false,
 no target, zero versions/size, empty features and legacyV1 false. The hub checks
 either-direction gag before querying, so blocked users cause no target probes.
+
+`#4004:handle_set` owns the captured complete list: the existing telnet
+`session.gmcp_data["supported_packages"]` package-to-version map, associated
+with that transport's connection_key. Set marks it known-complete; Add/Remove
+alone never establishes completeness. `#4004:handle_remove handle_add` keeps
+that same map current without discarding a known-complete flag. After Set or
+Remove, disappearance of either required v2 package invalidates the endpoint;
+Add also checks the resulting map. Package-name keys may be case-insensitive.
+Bind updates/query completion to the original connection_key, never a replacement
+connection. `#3838:supported_packages_for` remains a reader, not the mutation hook.
 
 Capabilities is the sole fallback decision surface. It promises no future
 authorization; recheck target epoch on every mutation. Refresh results older
@@ -218,6 +256,32 @@ On transport loss, End, hub change or lease expiry, stop all peer work and close
 RTC. No Pong; the hub disconnect hook must invalidate authority. On seq
 exhaustion re-register without wrapping. Never renew a disconnected/invalid
 endpoint. File-sharing failure must NEVER boot/logout the MOO game connection.
+
+### Endpoint recovery
+
+On End (except superseded), endpoint invalidation/error flood, Hello rejection at the
+endpoint cap, Ready timeout, hub change or lease expiry, fence/dispose BOTH file
+transports and clear old authority. While still authenticated, policyReady and
+elected, retry Hello with NEW req/endpoint ids after backoff: nominal 1 second,
+doubling on each failure to 60 seconds; add uniform 0..25% jitter and clamp the
+final wait to 60 seconds. Only one pending Hello/timer per tab. Reset backoff
+after a Ready followed by 30 seconds of continuous valid lease. Respect any
+longer rate/busy retryAfterMs before retrying. Retry registration, never an old
+offer or consent; the retained partial cache grants no operation authority.
+No retry until both advertised packages, confirmed identity and policyReady
+return. Transport loss waits for the game's existing reconnect/login path;
+Files never initiates or suppresses game login. End identity waits for a fresh
+confirmed current identity/policy before retrying; End shutdown uses the same
+backoff while the authenticated game connection remains valid, including a hub
+registry restart on that connection. End superseded releases file ownership and parks
+that tab until its next election turn; without Web Locks it waits for a fresh
+login or explicit Files action, preventing a re-Hello contest.
+
+Keep transient retries silent to the player. After 30 continuous seconds without
+Ready, show/announce once “File transfers unavailable; retrying”; clear it on
+Ready. Do not toast each failed Hello. A sender selecting a NEW offer may use
+v1 only when the hub explicitly returns legacyV1 true for its target; neither
+the sender's Ready timeout nor any operation failure is fallback evidence.
 
 ## Session reservation and arbitration
 
@@ -346,8 +410,10 @@ pre-parse rejection); show a connection-level diagnostic, never choose a transfe
 ErrorCode is malformed, too-large, unsupported, unavailable, denied, rate, busy,
 conflict, stale-endpoint, unknown, expired or closed. Offline/missing bundle/gag
 is unavailable on targeted mutation without revealing gag. denied is operation
-policy denial. rate/busy require retryAfterMs 1000..60000; no automatic retries
-for other errors. Reject before record allocation when capacity is unavailable.
+policy denial. rate/busy require retryAfterMs 1000..60000; no automatic command
+retries for other errors. The endpoint-recovery loop above uses a fresh Hello
+after recoverable endpoint loss; it never retries failed transfer commands.
+Reject before record allocation when capacity is unavailable.
 
 Buckets start full, refill continuously by monotonic time, and charge player
 across all connections. One token/command; failures/replays consume it. Phase 1
