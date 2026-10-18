@@ -54,6 +54,7 @@ interface Source {
   reportedError?: boolean;
   maxCueSeq: number;
   cueSyncPending?: Promise<void>;
+  awaitingCueSnapshot?: boolean;
 }
 interface Pending {
   source: Source;
@@ -177,10 +178,26 @@ export class SharedMediaService {
       }
       if (incoming.revision === old.revision) {
         source.grant = { ...source.grant, cueWindows };
+        if (data.cueWindows !== undefined) this.acceptCueCoverage(source);
         this.cues(source);
         return true;
       }
       source.grant = { ...source.grant, transport: incoming, cueWindows };
+      if (
+        (incoming.discontinuity ?? 0) > (old.discontinuity ?? 0) &&
+        data.cueWindows === undefined &&
+        cueWindows !== undefined
+      ) {
+        source.awaitingCueSnapshot = true;
+        source.cueSignature = '';
+        this.present(
+          source,
+          source.localPaused || this.suspended ? 'paused' : 'preparing',
+          undefined,
+          [],
+        );
+      }
+      if (data.cueWindows !== undefined) this.acceptCueCoverage(source);
       source.reportedError = false;
       if (incoming.state === 'stopped') {
         this.remove(source);
@@ -188,6 +205,7 @@ export class SharedMediaService {
       }
       this.cancelOperation(source);
       void this.reconcile(source, false);
+      if (source.awaitingCueSnapshot) this.syncCues(source);
     }
     return true;
   }
@@ -216,13 +234,29 @@ export class SharedMediaService {
     return true;
   }
   private applySnapshot(source: Source, reply: MediaSyncReply): void {
+    if (
+      (reply.transport.discontinuity ?? 0) > (source.grant.transport.discontinuity ?? 0) &&
+      reply.cueWindows === undefined &&
+      source.grant.cueWindows !== undefined
+    )
+      source.awaitingCueSnapshot = true;
     source.grant = {
       ...source.grant,
       transport: reply.transport,
       ...(reply.cueWindows === undefined ? {} : { cueWindows: reply.cueWindows }),
     };
     source.maxCueSeq = Math.max(source.maxCueSeq, reply.cueWindows?.at(-1)?.seq ?? -1);
+    if (reply.cueWindows !== undefined) this.acceptCueCoverage(source);
     if (reply.transport.state === 'stopped') this.remove(source);
+  }
+  private acceptCueCoverage(source: Source): void {
+    const now = this.options.clock.getServerNow();
+    if (now === undefined) return;
+    const position = mediaPosition(source.grant.transport, now).unwrappedMs;
+    if (
+      source.grant.cueWindows?.some((window) => window.fromMs <= position && position < window.toMs)
+    )
+      source.awaitingCueSnapshot = false;
   }
   private syncCues(source: Source): void {
     if (source.cueSyncPending) return;
@@ -584,9 +618,17 @@ export class SharedMediaService {
     if (now === undefined) return;
     const p = mediaPosition(source.grant.transport, now);
     const transport = source.grant.transport;
+    const covered =
+      source.grant.cueWindows?.some(
+        (window) => window.fromMs <= p.unwrappedMs && p.unwrappedMs < window.toMs,
+      ) ?? false;
+    if (source.grant.cueWindows !== undefined && (source.awaitingCueSnapshot || !covered))
+      this.syncCues(source);
     const eligible =
-      transport.state === 'paused' ||
-      (transport.state === 'playing' && now >= transport.anchorServerMs);
+      !source.awaitingCueSnapshot &&
+      covered &&
+      (transport.state === 'paused' ||
+        (transport.state === 'playing' && now >= transport.anchorServerMs));
     const distinct = new Map<string, MediaCue>();
     if (eligible)
       for (const window of source.grant.cueWindows ?? [])

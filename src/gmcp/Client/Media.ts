@@ -237,6 +237,7 @@ export function buildPlaybackSupport() {
   return {
     version: 1,
     sharedTransport: true,
+    presentationCues: { version: 1, maxCues: 512, maxBytes: 16384 },
     midiSequences: midiService.sequenceOutputAvailable ? SEQUENCE_SUPPORT : false,
   };
 }

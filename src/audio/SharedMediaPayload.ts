@@ -145,7 +145,7 @@ export function decodeMediaCues(
 }
 export function decodeMediaCueWindows(raw: unknown): readonly MediaCueWindow[] | undefined {
   if (raw === undefined) return undefined;
-  if (!Array.isArray(raw) || raw.length > 512) throw new TypeError('Invalid media cue windows');
+  if (!Array.isArray(raw) || raw.length > 3) throw new TypeError('Invalid media cue windows');
   let previous: MediaCueWindow | undefined,
     textBytes = 0,
     encodedBytes = 2;

@@ -183,4 +183,15 @@ describe('shared media boundary', () => {
     expect(mergeMediaCueWindows(ring, [make(0)])).toEqual(ring);
     expect(() => mergeMediaCueWindows(ring, [make(6)])).toThrow(MediaCueGap);
   });
+  it('limits each batch to three adjacent windows while allowing a four-window retained ring', () => {
+    const windows = Array.from({ length: 4 }, (_, seq) => ({
+      seq,
+      fromMs: seq * 1000,
+      toMs: (seq + 1) * 1000,
+      cues: [],
+    }));
+    expect(decodeMediaCueWindows(windows.slice(0, 3))).toHaveLength(3);
+    expect(() => decodeMediaCueWindows(windows)).toThrow();
+    expect(mergeMediaCueWindows(windows.slice(0, 3), windows.slice(3))).toHaveLength(4);
+  });
 });

@@ -290,7 +290,7 @@ describe('shared file transport', () => {
     expect(voice.start).toHaveBeenCalledTimes(2);
   });
   it('recovers a missing cue-window baseline through one bounded correlated Sync', async () => {
-    const initial = { seq: 0, fromMs: 0, toMs: 10000, cues: [] };
+    const initial = { seq: 0, fromMs: 0, toMs: 11000, cues: [] };
     const pending = service.attach({ ...grant(), cueWindows: [initial] }, () => voice);
     await flush();
     service.receiveSync({ ...requests[0], transport, cueWindows: [initial] });
@@ -337,5 +337,24 @@ describe('shared file transport', () => {
     service.update({ key: 'tv', transport, cueWindows: [initial] });
     await flush();
     expect(presentations.at(-1)).toMatchObject({ discontinuity: 1 });
+  });
+  it('a seek without cue windows hides cached captions until Sync covers the new cursor', async () => {
+    transport = { ...transport, state: 'paused', positionMs: 5000 };
+    const cue = { id: 'current', startMs: 4000, endMs: 6000, text: 'Cached line' };
+    const initial = { seq: 0, fromMs: 0, toMs: 10000, cues: [cue] };
+    const pending = service.attach({ ...grant(), cueWindows: [initial] }, () => voice);
+    await flush();
+    service.receiveSync({ ...requests[0], transport });
+    await pending;
+    expect(presentations.at(-1)).toMatchObject({ cues: [cue] });
+    now = 12000;
+    const seek = { ...transport, revision: 2, discontinuity: 1 };
+    service.update({ key: 'tv', transport: seek });
+    await flush();
+    expect(presentations.at(-1)).toMatchObject({ discontinuity: 1, cues: [] });
+    expect(requests).toHaveLength(2);
+    service.receiveSync({ ...requests[1], transport: seek, cueWindows: [{ ...initial, seq: 1 }] });
+    await flush();
+    expect(presentations.at(-1)).toMatchObject({ discontinuity: 1, cues: [cue] });
   });
 });
