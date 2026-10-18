@@ -277,6 +277,8 @@ export interface ExtendedSound extends Sound, NamedRouteState {
 /** A pending load's claim on a media key; a newer claim, Stop, or reset makes it stale. */
 interface KeyClaim {
   readonly generation: number;
+  readonly abort: AbortController;
+  readonly sharedClockId?: string;
   readonly name: string;
   readonly tag?: string;
   readonly type?: MediaType;
@@ -284,6 +286,7 @@ interface KeyClaim {
 
 interface KeyTicket {
   readonly generation: number;
+  readonly signal: AbortSignal;
   /** True while this claim is still the latest for its key and no reset intervened. */
   current(): boolean;
   /** Drop the pending-load record once the load has settled. */
@@ -321,6 +324,7 @@ export class MediaService {
   private readonly midiAudio: MidiAudioRoute;
   private sequences?: SequenceService;
   private sharedMedia?: SharedMediaService;
+  private unsubscribeSharedClaims?: () => void;
   private sendSharedSourceError?: (report: MediaSourceError) => void;
   configureSharedMedia(
     clock: SharedClock,
@@ -349,6 +353,15 @@ export class MediaService {
             code: 'SEEK_UNAVAILABLE',
           });
       },
+    });
+    this.unsubscribeSharedClaims = clock.subscribe((change) => {
+      for (const [key, claim] of this.pendingLoads)
+        if (
+          claim.sharedClockId &&
+          (!clock.ready ||
+            (change.estimate.clockId && change.estimate.clockId !== claim.sharedClockId))
+        )
+          this.cancelKey(key);
     });
   }
   receiveMediaSync(reply: MediaSyncReply): void {
@@ -783,14 +796,16 @@ export class MediaService {
    * every earlier claim for the key, so a later Play always wins over an
    * in-flight earlier load; Stop and reset invalidate it as well.
    */
-  private claimKey(key: string, meta: Omit<KeyClaim, 'generation'>): KeyTicket {
+  private claimKey(key: string, meta: Omit<KeyClaim, 'generation' | 'abort'>): KeyTicket {
+    this.pendingLoads.get(key)?.abort.abort();
     const generation = ++this.nextKeyGeneration;
     this.keyGenerations.set(key, generation);
-    const claim: KeyClaim = { ...meta, generation };
+    const claim: KeyClaim = { ...meta, generation, abort: new AbortController() };
     this.pendingLoads.set(key, claim);
     const epoch = this.epoch;
     return {
       generation,
+      signal: claim.abort.signal,
       current: () => this.keyGenerations.get(key) === generation && this.epoch === epoch,
       finish: () => {
         if (this.pendingLoads.get(key) === claim) {
@@ -804,6 +819,7 @@ export class MediaService {
   /** Supersede whatever claim holds `key`, so its pending load never plays. */
   private cancelKey(key: string): void {
     this.keyGenerations.delete(key);
+    this.pendingLoads.get(key)?.abort.abort();
     this.pendingLoads.delete(key);
   }
 
@@ -861,7 +877,12 @@ export class MediaService {
     const soundKey = data.key;
     // Claim the key before any await: a later Play for this key, a Stop, or a
     // reset makes this call stale, and every continuation below checks that.
-    const ticket = this.claimKey(soundKey, { name: data.name, tag: data.tag, type: data.type });
+    const ticket = this.claimKey(soundKey, {
+      name: data.name,
+      tag: data.tag,
+      type: data.type,
+      sharedClockId: data.transport?.kind === 'media' ? data.transport.clockId : undefined,
+    });
     try {
       await this.playClaimed(data, soundKey, mediaUrl, ticket, continuing);
     } finally {
@@ -1100,8 +1121,11 @@ export class MediaService {
     this.tracePayload('loading', data, soundKey, ticket.generation);
     let sound: ExtendedSound;
     try {
-      sound = (await this.cacophony.createSound(mediaUrl, kind, panType)) as ExtendedSound;
+      sound = (await (data.transport?.kind === 'media'
+        ? this.cacophony.createSound(mediaUrl, kind, panType, ticket.signal)
+        : this.cacophony.createSound(mediaUrl, kind, panType))) as ExtendedSound;
     } catch (error) {
+      if (ticket.signal.aborted && !ticket.current()) return undefined;
       this.tracePayload('loading', data, soundKey, ticket.generation, {
         code: classifyLoadError(error),
         message: errorMessage(error),
@@ -1704,6 +1728,7 @@ export class MediaService {
     this.sharedMedia?.reset();
     this.sequences?.reset();
     this.epoch += 1;
+    for (const claim of this.pendingLoads.values()) claim.abort.abort();
     this.pendingLoads.clear();
     this.keyGenerations.clear();
     this.allSounds.forEach((sound) => {
@@ -1738,6 +1763,7 @@ export class MediaService {
     this.shutdownComplete = true;
     this.sequences?.shutdown();
     this.sharedMedia?.shutdown();
+    this.unsubscribeSharedClaims?.();
     this.midiAudio.shutdown();
     if (this.manageFocus && typeof window !== 'undefined') {
       window.removeEventListener('focus', this.handleWindowFocus);
