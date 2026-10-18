@@ -69,6 +69,10 @@ Do not push or open a PR.
   exposed the settling defect.
 - Editing a module under a running Vite server gives a dynamic `import('/src/...')`
   from the page a separate module instance (HMR timestamp), so its store reads stale.
+- Merge note: feat/voice-commands (7062014b) uses Alt+Shift+D and adds to the same
+  spots in src/reservedShortcuts.ts (chord + matcher above DIGITS, entry after keys
+  mode) and the KeyboardTab list in src/components/preferences.tsx. Both sides only add
+  lines; resolve by keeping both.
 
 ## Next step
 - Team lead / Q: review; on a phone with headphones, check feel (jitter, lag, any
