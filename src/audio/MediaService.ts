@@ -38,6 +38,7 @@ import type { EffectChain } from './effects/EffectChain';
 import { MediaEffects } from './effects/MediaEffects';
 import type { EffectSpec } from './effects/types';
 import { MediaSessionController } from './MediaSessionController';
+import { readAudioPerformance } from './audioPerformance';
 
 const CORS_PROXY = 'https://mongoose.world:9080/?url=';
 type CacophonySoundKind = NonNullable<Parameters<Cacophony['createSound']>[1]>;
@@ -284,6 +285,7 @@ export class MediaService {
   defaultUrl = '';
   /** The last 500 stage transitions and failures, for the Audio diagnostics view. */
   readonly diagnostics = new AudioDiagnosticsRing();
+  readonly readPerformance = () => readAudioPerformance(this.cacophony.context, this.allSounds);
 
   private readonly cleanedSounds = new WeakSet<ExtendedSound>();
   /** Glides server-sent sound positions (keyed by sound) instead of snapping. */

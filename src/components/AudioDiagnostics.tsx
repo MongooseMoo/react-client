@@ -7,9 +7,12 @@ import {
   formatAudioDiagnostics,
 } from '../audio/audioDiagnostics';
 import './AudioDiagnostics.css';
+import AudioPerformance from './AudioPerformance';
+import type { AudioPerformanceReading } from '../audio/audioPerformance';
 
 interface AudioDiagnosticsProps {
   diagnostics: AudioDiagnosticsRing;
+  readPerformance?: () => AudioPerformanceReading;
 }
 
 /** Coalesce ring changes: a busy scene can record hundreds of entries a second. */
@@ -86,7 +89,7 @@ function detailsText(entry: AudioDiagnosticEntry): string {
     .join('; ');
 }
 
-const AudioDiagnostics: React.FC<AudioDiagnosticsProps> = ({ diagnostics }) => {
+const AudioDiagnostics: React.FC<AudioDiagnosticsProps> = ({ diagnostics, readPerformance }) => {
   const headingId = useId();
   const live = useRingEntries(diagnostics);
   const [frozen, setFrozen] = useState<readonly AudioDiagnosticEntry[] | null>(null);
@@ -131,6 +134,7 @@ const AudioDiagnostics: React.FC<AudioDiagnosticsProps> = ({ diagnostics }) => {
   return (
     <section className="audio-diagnostics" aria-labelledby={headingId}>
       <h3 id={headingId}>Audio diagnostics</h3>
+      {readPerformance && <AudioPerformance read={readPerformance} />}
       <div className="audio-diagnostics-controls">
         <button type="button" aria-pressed={paused} onClick={togglePause}>
           Pause
