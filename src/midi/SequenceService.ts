@@ -463,23 +463,24 @@ export class SequenceService {
     if (!material) return;
     source[slot] = material;
     const generation = source.generation;
+    const owningSlot = () =>
+      source[slot] === material
+        ? slot
+        : slot === 'pendingWindowMaterial' && source.windowMaterial === material
+          ? 'windowMaterial'
+          : undefined;
     void this.prepareMaterial(source, material)
       .then(() => {
-        const owningSlot =
-          source[slot] === material
-            ? slot
-            : slot === 'pendingWindowMaterial' && source.windowMaterial === material
-              ? 'windowMaterial'
-              : undefined;
-        if (!this.current(source, generation) || !owningSlot) return;
+        const owner = owningSlot();
+        if (!this.current(source, generation) || !owner) return;
         if (source.pending === base) source.pending = material;
         else if (source.active === base) source.active = material;
         else return;
-        source[owningSlot] = undefined;
+        source[owner] = undefined;
         this.wake();
       })
       .catch((error) => {
-        if (source[slot] === material) this.fail(source, error);
+        if (owningSlot()) this.fail(source, error);
       });
   }
 

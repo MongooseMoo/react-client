@@ -394,6 +394,10 @@ describe('shared score ownership', () => {
     expect(s.starts[0].stop).not.toHaveBeenCalled();
     s.time(3000);
     expect(s.service.version('music')?.revision).toBe(1);
+    expect(s.error).toHaveBeenCalledWith(
+      'music',
+      'Replacement boundary does not match its score timeline',
+    );
     s.service.shutdown();
   });
   it('treats a same-source Play under a new runtime as a fresh silent grant until that clock is current', async () => {
@@ -598,102 +602,111 @@ describe('shared score ownership', () => {
     expect(s.service.version('music')?.revision).toBe(2);
     s.service.shutdown();
   });
-  it.each([
-    false,
-    true,
-  ])('merges pending revision resends with replacement fields %s', async (withBoundary) => {
-    const s = scheduler();
-    const window = (seq: number, id: string, revision: number) => ({
-      seq,
-      fromTick: seq * 3840,
-      toTick: (seq + 1) * 3840,
-      anchorServerMs: 1000 + seq * 2000,
-      contentId: id,
-      revision,
-      tempos: [{ tick: seq * 3840, bpm: 120 }],
-      meters: [{ tick: seq * 3840, numerator: 4, denominator: 4, barOriginTick: 0 }],
-      parts: [{ ...part, controls: [], notes: [[seq * 3840 + 960, 100, 60 + seq, 100]] }],
-    });
-    const midi = (seq: number, id: string, revision: number) =>
-      decodeSequenceData(
-        { version: 1, stream: true, windows: [window(seq, id, revision)] },
-        id,
+  it.each([false, true])(
+    'merges pending revision resends with replacement fields %s',
+    async (withBoundary) => {
+      const s = scheduler();
+      const window = (seq: number, id: string, revision: number) => ({
+        seq,
+        fromTick: seq * 3840,
+        toTick: (seq + 1) * 3840,
+        anchorServerMs: 1000 + seq * 2000,
+        contentId: id,
         revision,
-      );
-    await s.service.play({ ...s.request, midi: midi(0, 'content', 1) });
-    const boundary = { replaceFromTick: 3840, effectiveServerMs: 3000 };
-    s.service.update({
-      key: 'music',
-      contentId: 'new',
-      midi: midi(1, 'new', 2),
-      transport: { ...s.request.transport, revision: 2 },
-      ...boundary,
-    });
-    await settled();
-    s.service.update({
-      key: 'music',
-      contentId: 'new',
-      midi: midi(2, 'new', 2),
-      transport: { ...s.request.transport, revision: 2 },
-      ...(withBoundary ? boundary : {}),
-    });
-    await settled();
-    s.time(3325);
-    s.time(5325);
-    expect(s.starts.map((v) => v.note.note)).toEqual([61, 62]);
-    expect(s.error).not.toHaveBeenCalled();
-    s.service.shutdown();
-  });
-  it('carries a pending revision window load across the replacement boundary', async () => {
-    const s = scheduler();
-    const window = (seq: number, id: string, revision: number) => ({
-      seq,
-      fromTick: seq * 3840,
-      toTick: (seq + 1) * 3840,
-      anchorServerMs: 1000 + seq * 2000,
-      contentId: id,
-      revision,
-      tempos: [{ tick: seq * 3840, bpm: 120 }],
-      meters: [{ tick: seq * 3840, numerator: 4, denominator: 4, barOriginTick: 0 }],
-      parts: [{ ...part, controls: [], notes: [[seq * 3840 + 960, 100, 60 + seq, 100]] }],
-    });
-    const midi = (seq: number, id: string, revision: number) =>
-      decodeSequenceData(
-        { version: 1, stream: true, windows: [window(seq, id, revision)] },
-        id,
+        tempos: [{ tick: seq * 3840, bpm: 120 }],
+        meters: [{ tick: seq * 3840, numerator: 4, denominator: 4, barOriginTick: 0 }],
+        parts: [{ ...part, controls: [], notes: [[seq * 3840 + 960, 100, 60 + seq, 100]] }],
+      });
+      const midi = (seq: number, id: string, revision: number) =>
+        decodeSequenceData(
+          { version: 1, stream: true, windows: [window(seq, id, revision)] },
+          id,
+          revision,
+        );
+      await s.service.play({ ...s.request, midi: midi(0, 'content', 1) });
+      const boundary = { replaceFromTick: 3840, effectiveServerMs: 3000 };
+      s.service.update({
+        key: 'music',
+        contentId: 'new',
+        midi: midi(1, 'new', 2),
+        transport: { ...s.request.transport, revision: 2 },
+        ...boundary,
+      });
+      await settled();
+      s.service.update({
+        key: 'music',
+        contentId: 'new',
+        midi: midi(2, 'new', 2),
+        transport: { ...s.request.transport, revision: 2 },
+        ...(withBoundary ? boundary : {}),
+      });
+      await settled();
+      s.time(3325);
+      s.time(5325);
+      expect(s.starts.map((v) => v.note.note)).toEqual([61, 62]);
+      expect(s.error).not.toHaveBeenCalled();
+      s.service.shutdown();
+    },
+  );
+  it.each([false, true])(
+    'handles a pending window load across the boundary with failure %s',
+    async (fails) => {
+      const s = scheduler();
+      const window = (seq: number, id: string, revision: number) => ({
+        seq,
+        fromTick: seq * 3840,
+        toTick: (seq + 1) * 3840,
+        anchorServerMs: 1000 + seq * 2000,
+        contentId: id,
         revision,
+        tempos: [{ tick: seq * 3840, bpm: 120 }],
+        meters: [{ tick: seq * 3840, numerator: 4, denominator: 4, barOriginTick: 0 }],
+        parts: [{ ...part, controls: [], notes: [[seq * 3840 + 960, 100, 60 + seq, 100]] }],
+      });
+      const midi = (seq: number, id: string, revision: number) =>
+        decodeSequenceData(
+          { version: 1, stream: true, windows: [window(seq, id, revision)] },
+          id,
+          revision,
+        );
+      await s.service.play({ ...s.request, midi: midi(0, 'content', 1) });
+      s.service.update({
+        key: 'music',
+        contentId: 'new',
+        midi: midi(1, 'new', 2),
+        transport: { ...s.request.transport, revision: 2 },
+        replaceFromTick: 3840,
+        effectiveServerMs: 3000,
+      });
+      await settled();
+      let finish = () => {};
+      s.output.prepare.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            finish = () => (fails ? reject(new Error('Instrument fetch failed')) : resolve());
+          }),
       );
-    await s.service.play({ ...s.request, midi: midi(0, 'content', 1) });
-    s.service.update({
-      key: 'music',
-      contentId: 'new',
-      midi: midi(1, 'new', 2),
-      transport: { ...s.request.transport, revision: 2 },
-      replaceFromTick: 3840,
-      effectiveServerMs: 3000,
-    });
-    await settled();
-    let finish = () => {};
-    s.output.prepare.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    );
-    s.service.update({
-      key: 'music',
-      contentId: 'new',
-      midi: midi(2, 'new', 2),
-      transport: { ...s.request.transport, revision: 2 },
-    });
-    s.time(3001);
-    finish();
-    await settled();
-    s.time(5325);
-    expect(s.starts.map((v) => v.note.note)).toEqual([62]);
-    expect(s.error).not.toHaveBeenCalled();
-    s.service.shutdown();
-  });
+      s.service.update({
+        key: 'music',
+        contentId: 'new',
+        midi: midi(2, 'new', 2),
+        transport: { ...s.request.transport, revision: 2 },
+      });
+      s.time(3001);
+      finish();
+      await settled();
+      s.time(5325);
+      if (fails) {
+        expect(s.starts).toHaveLength(0);
+        expect(s.error).toHaveBeenCalledWith('music', 'Instrument fetch failed');
+        expect(s.service.has('music')).toBe(false);
+      } else {
+        expect(s.starts.map((v) => v.note.note)).toEqual([62]);
+        expect(s.error).not.toHaveBeenCalled();
+      }
+      s.service.shutdown();
+    },
+  );
   it('reports a future edit received without a current clock instead of silently losing it', async () => {
     const s = scheduler({ ...score, durationTicks: 7680 });
     await s.service.play(s.request);
