@@ -1,3 +1,4 @@
+import { clientSpeechSuspended } from "../../clientSpeechSuspension";
 import { inbound } from "../../protocol/messages";
 import { usePreferences } from "../../stores/preferencesStore";
 import { gmcpJsonMessage } from "../messages";
@@ -47,7 +48,8 @@ export class GMCPClientSpeech extends GMCPClientSpeechBase {
     }
 
     handleSpeak(data: GMCPMessageClientSpeechSpeak): void {
-        if (!("speechSynthesis" in window)) return;
+        // A voice command is listening; the microphone would hear this as the command.
+        if (!("speechSynthesis" in window) || clientSpeechSuspended()) return;
         const prefs = usePreferences.getState().speech;
         const text = (data.text ?? "").slice(0, MAX_SPEECH_LENGTH);
         const utterance = new SpeechSynthesisUtterance(text);

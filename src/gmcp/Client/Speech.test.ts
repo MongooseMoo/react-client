@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AutoreadMode, usePreferences } from "../../stores/preferencesStore";
 import { GMCPClientSpeech, MAX_SPEECH_LENGTH } from "./Speech";
+import { suspendClientSpeech } from "../../clientSpeechSuspension";
 
 class MockUtterance {
   text: string;
@@ -47,6 +48,15 @@ describe("GMCPClientSpeech", () => {
       volume: 0.7,
     });
     handler = new GMCPClientSpeech(createMockClient() as never);
+  });
+
+  it("stays silent while a voice command is listening", () => {
+    const release = suspendClientSpeech();
+    handler.handleSpeak({ text: "drop all" } as never);
+    expect(speak).not.toHaveBeenCalled();
+    release();
+    handler.handleSpeak({ text: "hi" } as never);
+    expect(speak).toHaveBeenCalledTimes(1);
   });
 
   it("clamps params above the Web Speech ranges", () => {

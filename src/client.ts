@@ -32,6 +32,7 @@ import { closeAwayStream, readAwayStream, sameRecipient, takeAwayLines } from '.
 import { browserNotificationTag, sendBrowserAwayCommand } from './browserAway';
 import type { BrowserNotificationContext } from './browserNotifications';
 import { noteMissedActivity } from './launch/appBadge';
+import { clientSpeechSuspended } from './clientSpeechSuspension';
 
 // How long an open socket may stay silent after a resume ping before it is
 // treated as dead.
@@ -788,6 +789,8 @@ An MCP message consists of three parts: the name of the message, the authenticat
 
   /** Speaks with the Speech preferences; `voiceName`, when given, replaces their voice. */
   speak(text: string, voiceName: string = "") {
+    // A voice command is listening; the microphone would hear this as the command.
+    if (clientSpeechSuspended()) return;
     if (!("speechSynthesis" in window)) {
       console.log("This browser does not support speech synthesis");
       return;

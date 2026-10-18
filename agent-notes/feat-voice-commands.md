@@ -78,6 +78,76 @@ by Q on 2026-10-18 via team lead. Do not push or open a PR.
 - Not exercised: a real microphone, real recognition, on-device install,
   Safari, Edge, LiveKit actually connected at the same time.
 
+## Codex review of 7062014b (2026-10-18): changes requested
+Report and harness in the session scratchpad
+(codex-review-voice-commands-report.md, codex-voice-review-harness.cjs; run
+the harness with node from this worktree). All of 1-5 and 7 reproduced
+against 7062014b.
+1. P1 Interim text sendable via Enter/Send (two commands for one utterance).
+2. P1 Pending start (available() unresolved) not cancellable by Escape,
+   preference-off, second toggle; recognizer starts even with enabled:false.
+3. P1 install() completion for en-US overwrote fr-FR availability: false
+   "on this device" text while session ran without processLocally.
+4. P1 Session survived disconnect + owner change: sent "page Alice hello" as
+   owner B and saved it in B's history.
+5. P2 Interim/final/restore overwrote text the player typed during dictation.
+6. P2 (inferred) client speech producers can speak during dictation.
+7. P3 start() throwing -> onEnd read `session` before init (ReferenceError).
+Cause: provisional text lived in the committed command store, and a session
+had no identity/cancellation token; tests used synchronous fakes only.
+
+## Rework for the review (tests written first; 22 failed before the fix)
+- VoiceCommandButton: one `Dictation` object per press, held in `currentRef`;
+  every callback checks it is still current. Phases idle/starting/listening
+  (button `data-phase`, `aria-pressed` true while starting or listening).
+  `cancel(dictation, "player" | "edit" | "quiet")` retires and aborts.
+  After the availability await: recheck current, enabled, identity.
+- inputStore `dictation: DictationHandle | null`; `handleSend` asks
+  `interceptSend()` first. Starting: drop the start, send typed text.
+  Listening: `session.stop()`, `sendOnFinal = true`, consume the send; the
+  final result is then sent (review or send-at-once). Handle cleared at final.
+- Session owns only `written` (the text it last set). An inputStore
+  subscription cancels ("edit", keeps text) on any other change: typing,
+  history recall, page/keystroke setText, personal-data clear. Restore of the
+  draft happens only if the text is still `written`.
+- Identity = [ownerKey, visitor, gameSessionId, connected], captured at press;
+  personalData/connection store subscriptions cancel quietly on change.
+- `src/clientSpeechSuspension.ts`: refcounted hold; `client.speak` (autoread
+  and channel speech) and `Client.Speech.Speak` drop speech while held. Held
+  from listen until end/error/abort/unmount. Preference preview not gated.
+- Preferences: availability stored with its language plus a request counter;
+  language field disabled during install; after install, recheck the language
+  chosen now.
+
+- Preference help now says Enter stops listening, typing stops it, the client
+  does not speak while listening, and (send at once) use headphones because
+  screen-reader speech from speakers can be heard and sent.
+
+## Surprises (rework)
+- In Playwright, a dictation started right after page load was cancelled at
+  ~1.2s: it began while "Not connected" and auto-login connected. That is the
+  identity binding working (cancel-probe.mjs in scratchpad: click at 0ms ->
+  aborted; click at 5000ms -> stays listening). The browser check now waits
+  for the status bar to show the login before dictating.
+- `TaskStop` on the backgrounded `npx vite` left the vite node process
+  running on :5203; it had to be killed by PID.
+- These Playwright runs sent "look at fountain", "inventory", "drop all",
+  "north" to the live MOO as an auto-logged-in guest.
+
+## Verification (rework, 2026-10-18)
+- tsc exit 0; vitest 178 files / 2415 tests passed.
+- biome on all branch-changed src files + clientSpeechSuspension.ts:
+  7 warnings, all pre-existing on master (6 noUnusedImports in
+  client.test.ts:169-174, input.tsx:83).
+- Codex harness: interim Enter -> sends ["drop all"] only; typing keeps
+  "inventory"; no recognizer after Escape / pref off / second toggle during a
+  pending start; disconnect aborts, no send, no history for owner B; start
+  throws -> no rejection; fr-FR text stays the cloud text after the en-US
+  install completes.
+- Playwright (after login): review mode, Enter sends; history recall works;
+  Escape restores; Enter during interim sends nothing then ["drop all"];
+  typing "x" during dictation aborts and keeps "lookx"; send at once sends
+  ["north"] only at final.
+
 ## Next step
-Committed on feat/voice-commands, not pushed. Next: team lead review; then a
-real-mic check in Chrome (on-device and cloud) and Safari.
+Committed; not pushed. Fresh Codex review follows (team lead).

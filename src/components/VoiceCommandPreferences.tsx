@@ -1,5 +1,5 @@
 import { announce } from "@react-aria/live-announcer";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePreferences } from "../stores/preferencesStore";
 import {
   checkAvailability,
@@ -31,21 +31,24 @@ const VoiceCommandPreferences = () => {
   const voiceInput = usePreferences((state) => state.voiceInput);
   const setVoiceInput = usePreferences((state) => state.setVoiceInput);
   const [recognizer] = useState(getRecognitionConstructor);
-  const [availability, setAvailability] = useState<VoiceAvailability | "checking">("checking");
+  // Each answer is kept with the language it is about, and only the newest
+  // request may set it, so a slow answer never describes another language.
+  const [checked, setChecked] = useState<{ lang: string; availability: VoiceAvailability } | null>(null);
   const [installing, setInstalling] = useState(false);
+  const requestRef = useRef(0);
   const lang = recognitionLanguage(voiceInput.language);
+  const availability = checked?.lang === lang ? checked.availability : "checking";
+
+  const refresh = useCallback(async (forLang: string) => {
+    if (!recognizer) return;
+    const request = ++requestRef.current;
+    const result = await checkAvailability(recognizer, forLang);
+    if (request === requestRef.current) setChecked({ lang: forLang, availability: result });
+  }, [recognizer]);
 
   useEffect(() => {
-    if (!recognizer) return;
-    let cancelled = false;
-    setAvailability("checking");
-    void checkAvailability(recognizer, lang).then((result) => {
-      if (!cancelled) setAvailability(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [recognizer, lang]);
+    void refresh(lang);
+  }, [refresh, lang]);
 
   if (!recognizer) {
     return (
@@ -60,22 +63,24 @@ const VoiceCommandPreferences = () => {
 
   const install = async () => {
     if (!recognizer.install) return;
+    const installLang = lang;
     setInstalling(true);
-    announce(`Downloading speech recognition for ${lang}`, "polite");
+    announce(`Downloading speech recognition for ${installLang}`, "polite");
     let installed = false;
     try {
-      installed = await recognizer.install({ langs: [lang], processLocally: true });
+      installed = await recognizer.install({ langs: [installLang], processLocally: true });
     } catch (error) {
       console.warn("On-device speech recognition download failed:", error);
     }
     setInstalling(false);
     announce(
       installed
-        ? `Speech in ${lang} is now turned into text on this device.`
+        ? `Speech in ${installLang} can now be turned into text on this device.`
         : "The download did not finish. Your audio still goes to the speech service.",
       installed ? "polite" : "assertive",
     );
-    setAvailability(await checkAvailability(recognizer, lang));
+    // Check again for whatever language is chosen now, which may not be the one downloaded.
+    void refresh(recognitionLanguage(usePreferences.getState().voiceInput.language));
   };
 
   return (
@@ -100,7 +105,8 @@ const VoiceCommandPreferences = () => {
       </label>
       <p id="voice-command-help" className="voice-command-note">
         Press Alt+Shift+D or the microphone button by the command box, then speak one command.
-        Listening stops when you pause; press again to stop sooner, or Escape to discard.
+        Listening stops when you pause; press again or press Enter to stop sooner, or Escape to discard.
+        Typing in the command box also stops it. The client does not speak while listening.
       </p>
       <label>
         <input
@@ -113,12 +119,15 @@ const VoiceCommandPreferences = () => {
       </label>
       <p id="voice-command-send-help" className="voice-command-note">
         When off, what you said waits in the command box for you to check and press Enter.
+        When on, use headphones: your screen reader&apos;s speech from speakers can be heard as part of the command and sent.
       </p>
       <label htmlFor="voice-command-language">Recognition language</label>
       <input
         id="voice-command-language"
         type="text"
         value={voiceInput.language}
+        // The download is for this language; changing it mid-download would misdescribe both.
+        disabled={installing}
         placeholder={recognitionLanguage("")}
         spellCheck={false}
         autoComplete="off"

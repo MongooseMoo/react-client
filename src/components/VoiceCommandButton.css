@@ -66,6 +66,19 @@
   }
 }
 
+/* Asking the browser where speech is recognized; the microphone is not open yet. */
+.voice-command-button[data-phase="starting"] {
+  background: var(--color-bg-active);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+.voice-command-button[data-phase="starting"]::after {
+  border-style: dashed;
+  animation: none;
+  opacity: 0.7;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .voice-command-button[aria-pressed="true"]::after {
     animation: none;

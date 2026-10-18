@@ -304,6 +304,21 @@ describe('MudClient lifecycle cleanup', () => {
     client.shutdown();
   });
 
+  it('speaks nothing while a voice command is listening', async () => {
+    const { suspendClientSpeech } = await import('./clientSpeechSuspension');
+    const client = new MudClient('example.test', 443);
+    const speak = vi.fn();
+    vi.stubGlobal('speechSynthesis', { speak, cancel: vi.fn(), getVoices: () => [] });
+    vi.stubGlobal('SpeechSynthesisUtterance', class {});
+    const release = suspendClientSpeech();
+    client.speak('drop all');
+    expect(speak).not.toHaveBeenCalled();
+    release();
+    client.speak('hello');
+    expect(speak).toHaveBeenCalledTimes(1);
+    client.shutdown();
+  });
+
   it('shutdown removes window focus listeners and preferences subscription', () => {
     const addListener = vi.spyOn(window, 'addEventListener');
     const removeListener = vi.spyOn(window, 'removeEventListener');

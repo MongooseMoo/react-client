@@ -114,6 +114,9 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
   }, []);
 
   const handleSend = useCallback(() => {
+    // While a voice command listens, the text is not yet the player's: Enter or
+    // Send finishes listening, and the final transcript is sent instead.
+    if (useInputStore.getState().dictation?.interceptSend()) return;
     // From the store, not the render: a voice command sets the text and sends at once.
     const currentInput = useInputStore.getState().text;
     onSend(currentInput);

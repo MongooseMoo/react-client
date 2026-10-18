@@ -1,5 +1,11 @@
 import { create } from "zustand";
 
+/** A voice command in progress, which the send path must ask before sending. */
+export interface DictationHandle {
+  /** True when dictation takes over this send; false when the send should go ahead. */
+  interceptSend: () => boolean;
+}
+
 interface InputStoreState {
   /** Current text in the command input. */
   text: string;
@@ -7,7 +13,10 @@ interface InputStoreState {
   autosay: boolean;
   /** Commands currently visible to the player, used by command input completion. */
   visibleCommands: string[];
+  /** Set while a voice command is starting or listening; its text is not yet the player's. */
+  dictation: DictationHandle | null;
   setText: (text: string) => void;
+  setDictation: (dictation: DictationHandle | null) => void;
   setAutosay: (autosay: boolean) => void;
   setVisibleCommands: (commands: string[]) => void;
   addVisibleCommands: (commands: string[]) => void;
@@ -28,7 +37,9 @@ export const useInputStore = create<InputStoreState>((set) => ({
   text: "",
   autosay: false,
   visibleCommands: [],
+  dictation: null,
   setText: (text) => set({ text }),
+  setDictation: (dictation) => set({ dictation }),
   setAutosay: (autosay) => set({ autosay }),
   setVisibleCommands: (commands) => set({ visibleCommands: sortedUnique(commands) }),
   addVisibleCommands: (commands) =>
