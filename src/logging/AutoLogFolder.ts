@@ -64,6 +64,10 @@ export type LogFileBinding = {
   // The base name has been checked against existing files and saved.
   nameChecked: boolean;
   mark: PartMark;
+  // Set by a rebuild from part 1: how many parts the session had before.
+  // Parts above the rebuilt count are removed (only if they are this
+  // session's) before this is cleared, so a crash leaves the cleanup owed.
+  rebuildFrom?: { parts: number };
 };
 
 export type SessionSnapshot = { session: AutoLogSession; entries: AutoLogEntry[] };
@@ -315,15 +319,40 @@ function boundField(text: string): string {
   return byteLength(text) <= HEADER_FIELD_BYTES ? text : `${utf8Prefix(text, HEADER_FIELD_BYTES - byteLength("…"))}…`;
 }
 
+// Every part names its session on its second line, after a title of at most
+// 256 bytes, so the first OWNERSHIP_READ_BYTES of a file say whose it is.
+// Nothing is ever written into a file that does not carry this session's line.
+const SESSION_PREFIX = "Session: ";
+const OWNERSHIP_READ_BYTES = 512;
+
 function partHeader(binding: LogFileBinding, session: AutoLogSession, part: number): string {
   const title = boundField(session.title || "Mongoose Client");
+  const owner = `${SESSION_PREFIX}${boundField(session.id)}`;
   const character = `Character: ${boundField(binding.character)}`;
   const started = `Started: ${zonedStamp(session.startedAt, binding.timeZone)}`;
   const lines = part === 1
-    ? [title, character, started, ...(session.sanitizedUrl ? [`URL: ${boundField(session.sanitizedUrl)}`] : [])]
-    : [`${title}, part ${part}`, character, started, `Continues from: ${partFileName(binding.baseName, part - 1)}`];
+    ? [title, owner, character, started, ...(session.sanitizedUrl ? [`URL: ${boundField(session.sanitizedUrl)}`] : [])]
+    : [`${title}, part ${part}`, owner, character, started, `Continues from: ${partFileName(binding.baseName, part - 1)}`];
   return `${lines.join("\n")}\n\n`;
 }
+
+// "missing", "ours" (its Session line names this session) or "foreign".
+async function partOwner(folder: FileSystemDirectoryHandle, name: string, sessionId: string): Promise<"missing" | "ours" | "foreign"> {
+  let file: FileSystemFileHandle;
+  try {
+    file = await folder.getFileHandle(name);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "NotFoundError") return "missing";
+    if (error instanceof DOMException && error.name === "TypeMismatchError") return "foreign";
+    throw error;
+  }
+  const head = await (await file.getFile()).slice(0, OWNERSHIP_READ_BYTES).text();
+  const line = head.split("\n").find((candidate) => candidate.startsWith(SESSION_PREFIX));
+  return line === `${SESSION_PREFIX}${boundField(sessionId)}` ? "ours" : "foreign";
+}
+
+// A part file at the session's name that belongs to someone else.
+class ForeignFile extends Error {}
 
 function renderLine(entry: AutoLogEntry, day: string, timeZone: string): { text: string; day: string } {
   const at = zoned(entry.timestamp, timeZone);
@@ -869,48 +898,94 @@ export class AutoLogFolder implements AutoLogSink {
   ): Promise<{ binding: LogFileBinding; outcome: "written" | "complete" | "gone" }> {
     let binding = start;
     const key = binding.ownerKey;
-    // A binding saved before time zones were stored (or with a zone this
-    // browser does not know) has offsets measured in some other zone's text:
-    // give it this browser's zone and render the whole session again.
-    const repairZone = !validTimeZone(binding.timeZone);
-    const snapshot = await this.readSnapshot(binding.sessionId, repairZone ? 0 : binding.mark.sequence);
-    this.assertLive(key, record);
-    if (!snapshot) return { binding, outcome: "gone" };
-    if (repairZone) {
-      const timeZone = ambientTimeZone();
-      binding = { ...binding, timeZone, mark: { part: 1, sequence: 0, offset: 0, day: zoned(snapshot.session.startedAt, timeZone).day } };
+    // Saves a change that sends the session back to part 1. A failed save is
+    // only logged: the next render reaches the same decision again.
+    const restart = async (changed: LogFileBinding, startedAt: number): Promise<LogFileBinding> => {
+      const next = { ...changed, mark: { part: 1, sequence: 0, offset: 0, day: zoned(startedAt, changed.timeZone).day } };
       try {
-        await this.persistence.putBinding(binding);
+        await this.persistence.putBinding(next);
       } catch (error) {
-        // The next render repairs it again, the same way.
         console.error("Failed to save the log file binding:", error);
       }
       this.assertLive(key, record);
-      onChanged(binding);
-    }
-    const { endedAt } = snapshot.session;
-    const footer = endedAt !== undefined ? endedFooter(endedAt, binding.timeZone) : mode === "orphan" ? PAGE_CLOSED_FOOTER : undefined;
+      onChanged(next);
+      return next;
+    };
 
-    const folder = await record.directory.getDirectoryHandle(binding.folderName, { create: true });
-    this.assertLive(key, record);
-    if (!binding.nameChecked) {
-      binding = await this.claimName(binding, folder, record);
-      onChanged(binding);
-    }
-    const layout = renderLogParts(binding, snapshot.session, snapshot.entries, footer, this.maxPartBytes);
-    for (const part of layout.parts) {
-      await this.writeFile(folder, partFileName(binding.baseName, part.part), part.text, key, record);
-    }
-    if (!sameMark(layout.mark, binding.mark)) {
-      binding = { ...binding, mark: layout.mark };
-      try {
-        await this.persistence.putBinding(binding);
-      } catch (error) {
-        // Costs a longer render next time, never wrong output.
-        console.error("Failed to save the log file binding:", error);
+    for (let attempt = 1; ; attempt++) {
+      if (attempt > 3) throw new Error("The log file kept finding its name taken");
+      // A binding saved before time zones were stored (or with a zone this
+      // browser does not know) has offsets measured in some other zone's
+      // text: give it this browser's zone and render the whole session
+      // again, owing the removal of any parts the rebuild no longer needs.
+      const repairZone = !validTimeZone(binding.timeZone);
+      const snapshot = await this.readSnapshot(binding.sessionId, repairZone ? 0 : binding.mark.sequence);
+      this.assertLive(key, record);
+      if (!snapshot) return { binding, outcome: "gone" };
+      const { startedAt, endedAt } = snapshot.session;
+      if (repairZone) {
+        binding = await restart({
+          ...binding,
+          timeZone: ambientTimeZone(),
+          rebuildFrom: { parts: Math.max(binding.rebuildFrom?.parts ?? 0, binding.mark.part) },
+        }, startedAt);
       }
+      const footer = endedAt !== undefined ? endedFooter(endedAt, binding.timeZone) : mode === "orphan" ? PAGE_CLOSED_FOOTER : undefined;
+
+      const folder = await record.directory.getDirectoryHandle(binding.folderName, { create: true });
+      this.assertLive(key, record);
+      // A claimed name only counts while its first part says it is ours. A
+      // missing or someone else's first part means claiming again (perhaps
+      // " (2)") and writing the whole session there; leftovers of the old
+      // name are not this rebuild's to remove.
+      if (binding.nameChecked && (await partOwner(folder, partFileName(binding.baseName, 1), binding.sessionId)) !== "ours") {
+        this.assertLive(key, record);
+        binding = await restart({ ...binding, nameChecked: false, rebuildFrom: undefined }, startedAt);
+        continue;
+      }
+      if (!binding.nameChecked) {
+        binding = await this.claimName(binding, folder, record);
+        onChanged(binding);
+      }
+
+      const layout = renderLogParts(binding, snapshot.session, snapshot.entries, footer, this.maxPartBytes);
+      try {
+        for (const part of layout.parts) {
+          await this.writeFile(folder, partFileName(binding.baseName, part.part), part.text, binding.sessionId, key, record);
+        }
+      } catch (error) {
+        if (!(error instanceof ForeignFile)) throw error;
+        binding = await restart({ ...binding, nameChecked: false, rebuildFrom: undefined }, startedAt);
+        continue;
+      }
+
+      let changed = !sameMark(layout.mark, binding.mark);
+      binding = { ...binding, mark: layout.mark };
+      const owed = binding.rebuildFrom;
+      if (owed) {
+        // Throws on any failure, leaving rebuildFrom saved for the next try.
+        const kept = layout.parts[layout.parts.length - 1].part;
+        for (let part = kept + 1; part <= owed.parts; part++) {
+          const name = partFileName(binding.baseName, part);
+          if ((await partOwner(folder, name, binding.sessionId)) === "ours") {
+            this.assertLive(key, record);
+            await folder.removeEntry(name);
+          }
+          this.assertLive(key, record);
+        }
+        binding = { ...binding, rebuildFrom: undefined };
+        changed = true;
+      }
+      if (changed) {
+        try {
+          await this.persistence.putBinding(binding);
+        } catch (error) {
+          // Costs a longer render (or a repeated cleanup) next time, never wrong output.
+          console.error("Failed to save the log file binding:", error);
+        }
+      }
+      return { binding, outcome: footer ? "complete" : "written" };
     }
-    return { binding, outcome: footer ? "complete" : "written" };
   }
 
   // Before a session's first file: never take over an existing file. The
@@ -926,12 +1001,27 @@ export class AutoLogFolder implements AutoLogSink {
       this.assertLive(binding.ownerKey, record);
       const claimed = { ...binding, baseName, nameChecked: true };
       await this.persistence.putBinding(claimed);
+      const name = partFileName(baseName, 1);
+      let created = false;
       try {
         this.assertLive(binding.ownerKey, record);
-        await folder.getFileHandle(partFileName(baseName, 1), { create: true });
+        // The placeholder already carries the Session line: from here on the
+        // name is provably this session's, and an empty file is nobody's.
+        const file = await folder.getFileHandle(name, { create: true });
+        created = true;
+        const writable = await file.createWritable();
+        try {
+          await writable.write(`${SESSION_PREFIX}${boundField(binding.sessionId)}\n`);
+          await writable.close();
+        } catch (error) {
+          await writable.abort().catch(() => {});
+          throw error;
+        }
       } catch (error) {
-        // No file holds the name yet: take the claim back, so the next try
-        // checks again rather than trusting a name nobody reserved.
+        // No file holds the name: take the claim back so the next try checks
+        // again. If that fails too, the next render finds the first part
+        // missing or someone else's and claims again (see renderBinding).
+        if (created) await folder.removeEntry(name).catch(() => {});
         await this.persistence.putBinding(binding).catch((saveError) => {
           console.error("Failed to take back the log file name:", saveError);
         });
@@ -950,8 +1040,12 @@ export class AutoLogFolder implements AutoLogSink {
     return claimed;
   }
 
-  private async writeFile(folder: FileSystemDirectoryHandle, name: string, text: string, key: string, record: FolderRecord): Promise<void> {
-    const file = await folder.getFileHandle(name, { create: true });
+  // Writes a part, but never into an existing file that is not this session's.
+  private async writeFile(folder: FileSystemDirectoryHandle, name: string, text: string, sessionId: string, key: string, record: FolderRecord): Promise<void> {
+    const owner = await partOwner(folder, name, sessionId);
+    this.assertLive(key, record);
+    if (owner === "foreign") throw new ForeignFile(name);
+    const file = await folder.getFileHandle(name, { create: owner === "missing" });
     this.assertLive(key, record);
     const writable = await file.createWritable();
     try {

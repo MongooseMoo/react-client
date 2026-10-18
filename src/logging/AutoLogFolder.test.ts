@@ -50,7 +50,10 @@ class FakeFile {
 
   get text(): string { return decoder.decode(this.bytes); }
 
-  async getFile() { return { size: this.bytes.length }; }
+  async getFile() {
+    const bytes = this.bytes;
+    return { size: bytes.length, slice: (start: number, end: number) => ({ text: async () => decoder.decode(bytes.slice(start, end)) }) };
+  }
 
   async createWritable(options?: { keepExistingData?: boolean }) {
     this.writableOptions.push(options);
@@ -97,6 +100,9 @@ class FakeDirectory {
   holdCreate: Hold | undefined;
   // Fail the next lookup that would create a missing file.
   failCreate: DOMException | undefined;
+  // Fail the next removeEntry.
+  failRemove: DOMException | undefined;
+  removed: string[] = [];
   // The first file created anywhere below fails its first write.
   failFirstWrite: DOMException | undefined;
   private parent: FakeDirectory | undefined;
@@ -148,6 +154,16 @@ class FakeDirectory {
       this.files.set(name, file);
     }
     return file;
+  }
+
+  async removeEntry(name: string) {
+    const failure = this.failRemove;
+    if (failure) {
+      this.failRemove = undefined;
+      throw failure;
+    }
+    if (!this.files.delete(name)) throw new DOMException("missing", "NotFoundError");
+    this.removed.push(name);
   }
 
   async queryPermission() { return this.permission; }
@@ -208,8 +224,12 @@ class MemoryPersistence implements LogFolderPersistence {
     const binding = this.bindings.get(sessionId);
     return binding && structuredClone(binding);
   }
+  // Return true to make that putBinding fail.
+  failPutBinding: ((binding: LogFileBinding) => boolean) | undefined;
+
   async putBinding(binding: LogFileBinding) {
     this.operations++;
+    if (this.failPutBinding?.(binding)) throw new Error("storage refused");
     this.bindings.set(binding.sessionId, structuredClone(binding));
   }
   async deleteBinding(sessionId: string) {
@@ -402,6 +422,7 @@ describe("AutoLogFolder", () => {
     const file = root.file(fileOf(1));
     expect(file.text).toBe([
       "Mongoose Client - The Hall",
+      `Session: ${sid(1)}`,
       "Character: Ada",
       "Started: 2026-10-18 14:05:12",
       "URL: https://example.test/?password=%5Bredacted%5D",
@@ -411,8 +432,9 @@ describe("AutoLogFolder", () => {
       "[14:05:15] Line three",
       "",
     ].join("\n"));
-    // The client owns the file: each render replaces it, never appends.
-    expect(file.writableOptions).toEqual([undefined, undefined]);
+    // The client owns the file: the name claim's placeholder, then each
+    // render, replaces it; nothing appends.
+    expect(file.writableOptions).toEqual([undefined, undefined, undefined]);
     expect(folder.state.getState().status).toEqual({ kind: "ready", folderName: "Mongoose logs", filePath: fileOf(1) });
     folder.dispose();
   });
@@ -443,7 +465,8 @@ describe("AutoLogFolder", () => {
     await folder.reconnect();
     await folder.whenIdle();
     expect(root.file(fileOf(1)).text).toBe(before);
-    expect(root.file(fileOf(1)).writableOptions.length).toBe(2);
+    // Placeholder, first render, second render.
+    expect(root.file(fileOf(1)).writableOptions.length).toBe(3);
     folder.dispose();
   });
 
@@ -467,8 +490,9 @@ describe("AutoLogFolder", () => {
     expect(bodies).toContain(`[14:05:14] ${big}\n`);
     expect(lineTexts(bodies)).toEqual(lines);
     expect(footers(bodies)).toEqual(["Ended: 2026-10-18 15:00:00"]);
-    expect(files[parts[1]].split("\n").slice(0, 4)).toEqual([
+    expect(files[parts[1]].split("\n").slice(0, 5)).toEqual([
       "Mongoose Client - The Hall, part 2",
+      `Session: ${sid(1)}`,
       "Character: Ada",
       "Started: 2026-10-18 14:05:12",
       `Continues from: ${fileOf(1).split("/")[1]}`,
@@ -806,6 +830,129 @@ describe("AutoLogFolder", () => {
     folder.dispose();
   });
 
+  // Shared by the rebuild tests: parts written at a small cap in an earlier
+  // build, a binding with an invalid zone pointing at the last of them, and
+  // (optionally) one of those parts replaced by someone else's file.
+  async function staleRebuild(options: { foreignPart?: boolean } = {}) {
+    const lines = Array.from({ length: 10 }, (_, i) => `line ${i} ${"a".repeat(30)}`);
+    store(...lines.map((text, sequence) => entry(1, sequence, text)));
+    const binding: LogFileBinding = {
+      sessionId: sid(1), ownerKey: ownerKey(ownerA), bindingId: "binding-1", folderName: "Ada", character: "Ada",
+      timeZone: ambientZone, baseName: "base", nameChecked: true, mark: { part: 1, sequence: 0, offset: 0, day: "2026-10-18" },
+    };
+    const old = renderLogParts(binding, session(1), storedEntries(1), undefined, 250);
+    const ada = await root.getDirectoryHandle("Ada", { create: true });
+    for (const part of old.parts) {
+      const file = await ada.getFileHandle(partName("base", part.part), { create: true });
+      file.bytes = encoder.encode(part.text);
+    }
+    let foreignName: string | undefined;
+    if (options.foreignPart) {
+      foreignName = partName("base", old.parts.length - 1);
+      const foreign = await ada.getFileHandle(foreignName, { create: true });
+      foreign.bytes = encoder.encode("Someone's notes\nSession: someone-else\n\nkeep me\n");
+    }
+    persistence.bindings.set(sid(1), { ...binding, timeZone: "Not/A_Zone", mark: old.mark });
+    remember(ownerA, root);
+    const expected = renderLogParts({ ...binding, mark: { part: 1, sequence: 0, offset: 0, day: zonedDay(startedAt) } },
+      session(1), storedEntries(1), "\nEnded: not recorded (the page closed)\n", 300);
+    expect(expected.parts.length).toBeLessThan(old.parts.length - 1);
+    return { lines, ada, old, expected, foreignName };
+  }
+
+  it("removes its own leftover parts after a rebuild that needs fewer of them, and only its own", async () => {
+    const { lines, ada, expected, foreignName } = await staleRebuild({ foreignPart: true });
+    const folder = makeFolder({ maxPartBytes: 300 });
+    await folder.syncOwner();
+    await folder.whenIdle();
+
+    const names = expected.parts.map((part) => partName("base", part.part));
+    expect([...ada.files.keys()].sort()).toEqual([...names, foreignName].sort());
+    expect(ada.files.get(foreignName ?? "")?.text).toBe("Someone's notes\nSession: someone-else\n\nkeep me\n");
+    const joined = names.map((name) => {
+      const text = ada.files.get(name)?.text ?? "";
+      return text.slice(text.indexOf("\n\n") + 2);
+    }).join("");
+    expect(lineTexts(joined)).toEqual(lines);
+    expect(footers(joined)).toEqual(["Ended: not recorded (the page closed)"]);
+    expect(persistence.bindings.size).toBe(0);
+    folder.dispose();
+  });
+
+  it("keeps the cleanup owed when removing a leftover part fails, and finishes it on the next try", async () => {
+    const { lines, ada, old, expected } = await staleRebuild();
+    ada.failRemove = new DOMException("The file is in use", "NoModificationAllowedError");
+    const folder = makeFolder({ maxPartBytes: 300 });
+    await folder.syncOwner();
+    await folder.whenIdle();
+    expect(folder.state.getState().status.kind).toBe("error");
+    expect(persistence.bindings.get(sid(1))?.rebuildFrom).toEqual({ parts: old.parts.length });
+    expect(ada.files.size).toBeGreaterThan(expected.parts.length);
+
+    await folder.reconnect();
+    await folder.whenIdle();
+    const names = expected.parts.map((part) => partName("base", part.part));
+    expect([...ada.files.keys()].sort()).toEqual([...names].sort());
+    expect(lineTexts(names.map((name) => ada.files.get(name)?.text ?? "").join(""))).toEqual(lines);
+    expect(persistence.bindings.size).toBe(0);
+    folder.dispose();
+  });
+
+  it("after a failed rollback and a rival taking the name, recovery writes under a new name and leaves the rival alone", async () => {
+    const tab1 = locks.forTab();
+    const page1 = await chosen({ tab: tab1 });
+    let claimSaved = false;
+    persistence.failPutBinding = (binding) => {
+      if (binding.nameChecked) {
+        claimSaved = true;
+        return false;
+      }
+      return claimSaved;
+    };
+    const ada = await root.getDirectoryHandle("Ada", { create: true });
+    ada.failCreate = new DOMException("The disk is full", "QuotaExceededError");
+    page1.append(session(1), store(entry(1, 0, "mine")));
+    await page1.whenIdle();
+    // The claim stayed saved although no file reserves the name.
+    expect(persistence.bindings.get(sid(1))?.nameChecked).toBe(true);
+    expect(root.all()).toEqual({});
+    persistence.failPutBinding = undefined;
+    page1.dispose();
+    tab1.die();
+
+    const rivalText = "Rival title\nSession: rival-session\nCharacter: Ada\n\n[09:00:00] not yours\n";
+    const rival = await ada.getFileHandle(fileOf(1).split("/")[1], { create: true });
+    rival.bytes = encoder.encode(rivalText);
+    const rivalWrites = rival.writableOptions.length;
+
+    const page2 = makeFolder();
+    await page2.syncOwner();
+    await page2.whenIdle();
+    expect(rival.text).toBe(rivalText);
+    expect(rival.writableOptions.length).toBe(rivalWrites);
+    const ours = root.file(fileOf(1).replace(".txt", " (2).txt")).text;
+    expect(ours.split("\n")[1]).toBe(`Session: ${sid(1)}`);
+    expect(lineTexts(ours)).toEqual(["mine"]);
+    page2.dispose();
+  });
+
+  it("never writes into a file at its name that another session owns", async () => {
+    const folder = await chosen();
+    folder.append(session(1), store(entry(1, 0, "one")));
+    await folder.whenIdle();
+    const file = root.file(fileOf(1));
+    const foreignText = "Not ours\nSession: another-session\n\nhands off\n";
+    file.bytes = encoder.encode(foreignText);
+    const writes = file.writableOptions.length;
+
+    folder.append(session(1), store(entry(1, 1, "two")));
+    await folder.whenIdle();
+    expect(file.text).toBe(foreignText);
+    expect(file.writableOptions.length).toBe(writes);
+    expect(lineTexts(root.file(fileOf(1).replace(".txt", " (2).txt")).text)).toEqual(["one", "two"]);
+    folder.dispose();
+  });
+
   it("abandons a Choose that is still open when the sink is disposed", async () => {
     let pick = (_directory: FakeDirectory) => {};
     picker.mockImplementationOnce(() => new Promise((resolve) => { pick = resolve; }));
@@ -859,7 +1006,7 @@ describe("AutoLogFolder", () => {
     const long = { ...session(1), title, sanitizedUrl: longUrl };
     const rendered = renderLogParts(binding, long, [entry(1, 0, "x".repeat(3000))], "\nEnded: 2026-10-18 15:00:00\n", 2048);
     const [first] = rendered.parts;
-    const [titleLine, characterLine, , urlLine] = first.text.split("\n");
+    const [titleLine, , characterLine, , urlLine] = first.text.split("\n");
     for (const line of [titleLine, characterLine.replace("Character: ", ""), urlLine.replace("URL: ", "")]) {
       expect(encoder.encode(line).length).toBeLessThanOrEqual(256);
       expect(line.endsWith("…")).toBe(true);
@@ -904,9 +1051,10 @@ describe("AutoLogFolder", () => {
     folder.append(session(1), store(entry(1, 1, "second")));
     await folder.whenIdle();
     const text = root.file(fileOf(1)).text;
-    expect(text.split("\n").slice(0, 2)).toEqual(["Mongoose Client - The Hall", "Character: Ada"]);
+    expect(text.split("\n").slice(0, 3)).toEqual(["Mongoose Client - The Hall", `Session: ${sid(1)}`, "Character: Ada"]);
     expect(lineTexts(text)).toEqual(["first", "second"]);
-    // The failed write left an empty file of our own; it is not someone else's.
+    // The failed first write left no file claiming the name, so the retry
+    // gets the same name, not " (2)".
     expect(Object.keys(root.all())).toEqual([fileOf(1)]);
     folder.dispose();
   });

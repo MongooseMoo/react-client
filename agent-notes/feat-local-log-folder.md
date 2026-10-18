@@ -184,7 +184,7 @@ change `.github`.
 
 ## Next step
 
-Round 5 committed and reported; Codex reviews again.
+Round 6 committed and reported; Codex reviews again.
 
 ## Round 5 (Codex review 4 of aa9247be: 1 P2, 3 P3, lead's decisions)
 
@@ -214,3 +214,44 @@ check after its awaits.
   5183 serving this build's entry `index-3F0GPXlQ.js` (5183 was free this
   time); check-browser-sessions exit 0; check-client-recovery exit 0;
   test:a11y exit 0. Biome clean on the two changed files.
+
+## Round 6 (Codex review 5 of e16d4166: shrinking rebuild, rollback gap)
+
+Both visible in the round 5 code: the zone-repair rebuild wrote parts 1..new
+count and nothing removed higher old parts; the claim rollback's failure was
+only logged, leaving a trusted claim with no file. Lead's root fix:
+
+- Ownership mark: every part's second line is `Session: <session id>` (the
+  only line before it is the title, bounded to 256 bytes, so it is always in
+  the first 512 bytes). `partOwner()` reads those bytes: missing / ours /
+  foreign. Nothing is ever written into an existing file that is not ours.
+- The name claim's placeholder file now carries the Session line (written
+  under the destination lock with the check and the claim). If creating or
+  writing it fails, the file is removed and the claim rolled back.
+- Every render checks part 1 of a claimed name first; missing or foreign
+  means claim again (maybe " (2)") and render the whole session there. A
+  foreign file at a later part does the same. So a failed rollback can never
+  lead to writing over another session's file.
+- Zone repair saves `rebuildFrom: {parts: N}` (old part count) with the reset
+  mark. After the rebuild's parts are written, under the session lock, parts
+  above the new count up to N are removed only if they are ours;
+  `rebuildFrom` is cleared (and saved) only after every removal succeeded. A
+  failure throws, leaving it owed for the next render.
+- Consequence to know: files written by earlier builds of this branch carry
+  no Session line, so they count as foreign; such a session moves to a new
+  name and is rendered whole there. Nothing is lost, the old files stay.
+- Cost: each render reads up to 512 bytes of part 1 (and of each part it
+  writes) before writing.
+- Tests: exact file set after a shrinking rebuild with bodies joined from
+  the actual files and a foreign part in range left alone; a failed removal
+  keeps `rebuildFrom` then the retry finishes; failed rollback, then a rival
+  file at the name, then recovery writes " (2)" and never touches the rival;
+  a foreign file replacing our part 1 mid-session is never written. All four
+  failed on e16d4166 (plus five older tests updated for the new header).
+- CI, all 7 steps on the round 6 tree: typecheck exit 0; `npm test` 177 files
+  / 2419 tests; test:audio-cache: first run exit 1 with a `TimeoutError`
+  (that run's build took 20.3 s against ~11 s normally; my filter dropped
+  which check timed out, so its cause is unknown), then exit 0 on 4
+  consecutive reruns (4 PASS lines each); editor-ownership 1 passed on 5183
+  serving this build's `index-CKbJpyFf.js`; check-browser-sessions exit 0;
+  check-client-recovery exit 0; test:a11y exit 0. Biome clean.
