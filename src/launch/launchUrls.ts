@@ -13,7 +13,12 @@ export const SHARE_TARGET_PATH = '/share-target';
 /** Query parameter of the page a share opens, naming its launch item. */
 export const SHARE_PARAM = 'share';
 
+/** Which kind of session a window runs (App reads it once, at start). */
+export const MODE_PARAM = 'mode';
+/** Host mode waits for a database; local mode runs the built-in one. Both are manifest shortcuts. */
+export const HOST_URL = `/?${MODE_PARAM}=host`;
+export const LOCAL_URL = `/?${MODE_PARAM}=local`;
 /** Manifest `file_handlers.action`: host mode, which waits for a database. */
-export const FILE_HANDLER_URL = '/?mode=host';
+export const FILE_HANDLER_URL = HOST_URL;
 /** Names the confirmed database a window opened to host it. */
 export const HOST_DATABASE_PARAM = 'hostDatabase';

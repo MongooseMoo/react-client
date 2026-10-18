@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatFileSize } from '../components/FileTransfer/formatFileSize';
-import { putLaunchItem } from './launchInbox';
+import { discardLaunchItem, putLaunchItem } from './launchInbox';
 import { useLaunchStore } from './launchStore';
 import { FILE_HANDLER_URL, HOST_DATABASE_PARAM } from './launchUrls';
 import './LaunchDatabaseDialog.css';
@@ -17,8 +17,13 @@ export default function LaunchDatabaseDialog() {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Each Host press is one attempt. Closing, a new offer, or unmounting ends
+  // it, and an ended attempt may neither open a window nor touch the offer.
+  const attempt = useRef(0);
 
   useEffect(() => {
+    attempt.current += 1;
+    setBusy(false);
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (database) {
@@ -32,9 +37,16 @@ export default function LaunchDatabaseDialog() {
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const dismiss = () => useLaunchStore.setState({ database: undefined });
+    const dismiss = () => {
+      attempt.current += 1;
+      setBusy(false);
+      useLaunchStore.setState({ database: undefined });
+    };
     dialog.addEventListener('close', dismiss);
-    return () => dialog.removeEventListener('close', dismiss);
+    return () => {
+      attempt.current += 1;
+      dialog.removeEventListener('close', dismiss);
+    };
   }, []);
 
   const host = async () => {
@@ -43,19 +55,28 @@ export default function LaunchDatabaseDialog() {
       useLaunchStore.setState({ confirmedDatabase: database, database: undefined });
       return;
     }
+    const mine = ++attempt.current;
+    const current = () => attempt.current === mine && useLaunchStore.getState().database === database;
     setBusy(true);
+    let id: string | undefined;
     try {
       // Stored first so a failure leaves no empty window behind; the click's
       // activation, which window.open needs, outlasts one IndexedDB write.
-      const id = await putLaunchItem({ kind: 'database', file: database });
+      id = await putLaunchItem({ kind: 'database', file: database });
+      if (!current()) return;
       const url = new URL(FILE_HANDLER_URL, window.location.origin);
       url.searchParams.set(HOST_DATABASE_PARAM, id);
-      if (window.open(url.href, '_blank')) useLaunchStore.setState({ database: undefined });
-      else setError('The browser blocked the new window. Allow pop-ups for this site, then choose Host again.');
+      if (window.open(url.href, '_blank')) {
+        id = undefined; // The new window reads it.
+        useLaunchStore.setState({ database: undefined });
+      } else {
+        setError('The browser blocked the new window. Allow pop-ups for this site, then choose Host again.');
+      }
     } catch {
-      setError('The database could not be handed to a new window. Try again.');
+      if (current()) setError('The database could not be handed to a new window. Try again.');
     } finally {
-      setBusy(false);
+      if (id) void discardLaunchItem(id).catch(() => {});
+      if (attempt.current === mine) setBusy(false);
     }
   };
 

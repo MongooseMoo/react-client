@@ -45,6 +45,7 @@ import BrowserSessions from './components/BrowserSessions';
 import { canUseGameConnection, useBrowserPolicy } from './browserPolicy';
 import { watchAppBadge } from './launch/appBadge';
 import LaunchDatabaseDialog from './launch/LaunchDatabaseDialog';
+import LaunchModeDialog from './launch/LaunchModeDialog';
 import { startLaunchHandling } from './launch/launchHandling';
 import { useLaunchStore } from './launch/launchStore';
 import { noteCommandSent } from './launch/placeLaunchText';
@@ -617,6 +618,8 @@ function App() {
       />
       {/* A database the OS opened with the client, before anything boots it */}
       <LaunchDatabaseDialog />
+      {/* A manifest shortcut for a mode this window is not in */}
+      <LaunchModeDialog />
       {/* Default mode with no client yet — blank */}
       {isDefaultMode && !client && null}
     </>

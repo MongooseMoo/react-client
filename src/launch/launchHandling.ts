@@ -1,12 +1,37 @@
 import { announce } from '@react-aria/live-announcer';
 import { focusCommandInput } from '../inputFocus';
-import { MAX_SHARED_FILES, takeLaunchItem } from './launchInbox';
-import { offerSharedFiles, useLaunchStore } from './launchStore';
+import {
+  MAX_INBOX_ITEMS,
+  MAX_SHARE_BYTES,
+  MAX_SHARED_FILE_BYTES,
+  MAX_SHARED_FILES,
+  pruneLaunchItems,
+  takeLaunchItem,
+} from './launchInbox';
+import { type LaunchMode, offerSharedFiles, useLaunchStore } from './launchStore';
 import { parseProtocolUrl } from './launchText';
-import { HOST_DATABASE_PARAM, PROTOCOL_PARAM, SHARE_PARAM } from './launchUrls';
+import { HOST_DATABASE_PARAM, MODE_PARAM, PROTOCOL_PARAM, SHARE_PARAM } from './launchUrls';
 import { placeLaunchText } from './placeLaunchText';
+import type { ShareRefusal } from './shareTarget';
 
 const LAUNCH_PARAMS = [PROTOCOL_PARAM, SHARE_PARAM, HOST_DATABASE_PARAM];
+const MIB = 1024 * 1024;
+
+const REFUSALS: Record<ShareRefusal, string> = {
+  'too-many': `Nothing was shared: the client takes at most ${MAX_SHARED_FILES} files at a time.`,
+  'too-large': `Nothing was shared: each file may be at most ${MAX_SHARED_FILE_BYTES / MIB} MB, and a share ${MAX_SHARE_BYTES / MIB} MB.`,
+  'inbox-full': `Nothing was shared: ${MAX_INBOX_ITEMS} shares or their files are already waiting to be opened. Try again in ten minutes.`,
+  failed: 'The share could not be read.',
+};
+
+function isRefusal(value: string): value is ShareRefusal {
+  return Object.hasOwn(REFUSALS, value);
+}
+
+function launchMode(url: URL): LaunchMode | undefined {
+  const mode = url.searchParams.get(MODE_PARAM);
+  return mode === 'host' || mode === 'local' ? mode : undefined;
+}
 
 function isDatabaseFile(handle: FileSystemHandle): handle is FileSystemFileHandle {
   return handle.kind === 'file' && handle.name.toLowerCase().endsWith('.db');
@@ -23,10 +48,8 @@ export async function handleLaunchUrl(url: URL): Promise<void> {
   }
 
   const share = url.searchParams.get(SHARE_PARAM);
-  if (share === 'too-many') {
-    announce(`Nothing was shared: the client takes at most ${MAX_SHARED_FILES} files at a time.`, 'polite');
-  } else if (share === 'failed') {
-    announce('The share could not be read.', 'polite');
+  if (share && isRefusal(share)) {
+    announce(REFUSALS[share], 'polite');
   } else if (share) {
     const item = await takeLaunchItem(share);
     if (item?.kind !== 'share') {
@@ -66,6 +89,8 @@ export function startLaunchHandling(win: Window = window): void {
   started = true;
   const initial = new URL(win.location.href);
   const report = (error: unknown) => console.error('Launch could not be handled:', error);
+  // Shares abandoned while no client page ran (a form posted from another site) go now.
+  void pruneLaunchItems().catch(report);
 
   if (LAUNCH_PARAMS.some((name) => initial.searchParams.has(name))) {
     // A reload must not repeat the launch.
@@ -80,7 +105,18 @@ export function startLaunchHandling(win: Window = window): void {
     // The browser also queues the launch that loaded the page, handled above.
     const repeat = first && params.targetURL === initial.href;
     first = false;
-    if (params.targetURL && !repeat) void handleLaunchUrl(new URL(params.targetURL)).catch(report);
+    if (params.targetURL && !repeat) {
+      const target = new URL(params.targetURL);
+      void handleLaunchUrl(target).catch(report);
+      // A shortcut for another mode. App reads its mode once, and switching in
+      // place would end this window's session, so the player is asked to open
+      // it in a window of its own. An opened file carries the host URL too,
+      // but its dialog already answers that.
+      const mode = launchMode(target);
+      if (mode && mode !== launchMode(initial) && params.files.length === 0) {
+        useLaunchStore.setState({ modeRequest: mode });
+      }
+    }
     if (params.files.length > 0) void handleLaunchFiles(params.files).catch(report);
   });
 }

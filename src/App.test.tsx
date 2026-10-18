@@ -41,6 +41,7 @@ const {
       setEnabled: ReturnType<typeof vi.fn>;
     }>,
     mockPreferences: {
+      general: { appBadge: true },
       haptics: { enabled: false },
       midi: { enabled: false },
     },

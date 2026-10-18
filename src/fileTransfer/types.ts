@@ -10,6 +10,9 @@
  * accepted the offer, so bytes can never arrive for a transfer nobody agreed to.
  */
 
+/** The largest file the engine sends or accepts unless told otherwise. */
+export const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024;
+
 /** Address of a remote peer, opaque to the engine and meaningful to the signalling channel. */
 export type PeerAddress = string;
 

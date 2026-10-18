@@ -1,12 +1,31 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LaunchDatabaseDialog from './LaunchDatabaseDialog';
+import type { LaunchItem } from './launchInbox';
 import { useLaunchStore } from './launchStore';
+
+const inbox = vi.hoisted(() => ({
+  put: vi.fn<(item: LaunchItem) => Promise<string>>(),
+  discard: vi.fn<(id: string) => Promise<void>>(),
+}));
+vi.mock('./launchInbox', () => ({
+  putLaunchItem: (item: LaunchItem) => inbox.put(item),
+  discardLaunchItem: (id: string) => inbox.discard(id),
+}));
 
 const world = new File(['moo'], 'World.db');
 const open = vi.fn();
 
+/** Holds the next database hand-off write until `finish` is called, as a slow IndexedDB would. */
+function holdNextWrite() {
+  let finish: (id: string) => void = () => {};
+  inbox.put.mockImplementationOnce(() => new Promise<string>((resolve) => { finish = resolve; }));
+  return (id: string) => act(async () => { finish(id); });
+}
+
 beforeEach(() => {
+  inbox.put.mockReset().mockResolvedValue('stored-id');
+  inbox.discard.mockReset().mockResolvedValue();
   open.mockReset();
   window.open = open;
   useLaunchStore.setState({ database: undefined, confirmedDatabase: undefined, hostWaiting: false });
@@ -59,5 +78,50 @@ describe('LaunchDatabaseDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(useLaunchStore.getState().database).toBeUndefined();
     expect(useLaunchStore.getState().confirmedDatabase).toBeUndefined();
+  });
+
+  it('opens nothing when Cancel comes while the hand-off is still being stored', async () => {
+    open.mockReturnValue({});
+    const finish = holdNextWrite();
+    offer(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Host' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await finish('abandoned-id');
+    expect(open).not.toHaveBeenCalled();
+    expect(inbox.discard).toHaveBeenCalledWith('abandoned-id');
+  });
+
+  it('opens nothing for an offer replaced while its hand-off was being stored, and keeps the new one', async () => {
+    open.mockReturnValue({});
+    const finish = holdNextWrite();
+    offer(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Host' }));
+    const other = new File(['moo'], 'Other.db');
+    act(() => useLaunchStore.setState({ database: other }));
+    await finish('abandoned-id');
+    expect(open).not.toHaveBeenCalled();
+    expect(inbox.discard).toHaveBeenCalledWith('abandoned-id');
+    expect(useLaunchStore.getState().database).toBe(other);
+    expect(screen.getByRole('dialog', { name: 'Host Other.db?' })).toHaveAttribute('open');
+  });
+
+  it('opens nothing when the dialog goes away while the hand-off is being stored', async () => {
+    open.mockReturnValue({});
+    const finish = holdNextWrite();
+    render(<LaunchDatabaseDialog />);
+    act(() => useLaunchStore.setState({ database: world, hostWaiting: false }));
+    fireEvent.click(screen.getByRole('button', { name: 'Host' }));
+    cleanup();
+    await finish('abandoned-id');
+    expect(open).not.toHaveBeenCalled();
+    expect(inbox.discard).toHaveBeenCalledWith('abandoned-id');
+  });
+
+  it('discards the stored hand-off when the new window is blocked', async () => {
+    open.mockReturnValue(null);
+    offer(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Host' }));
+    await screen.findByRole('alert');
+    expect(inbox.discard).toHaveBeenCalledWith('stored-id');
   });
 });

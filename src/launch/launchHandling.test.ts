@@ -4,7 +4,7 @@ import { useInputStore } from '../stores/inputStore';
 import { usePersonalDataStore } from '../stores/personalDataStore';
 import { handleLaunchFiles, handleLaunchUrl, resetLaunchHandlingForTests, startLaunchHandling } from './launchHandling';
 import { putLaunchItem } from './launchInbox';
-import { offerSharedFiles, takeSharedFile, useLaunchStore } from './launchStore';
+import { finishStagedShare, offerSharedFiles, stageNextSharedFile, useLaunchStore } from './launchStore';
 import { noteCommandSent, placeLaunchText } from './placeLaunchText';
 
 const spoken = vi.hoisted(() => vi.fn());
@@ -83,6 +83,13 @@ describe('drafts placed before sign-in', () => {
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
+  it('are not put back once the player deleted them', () => {
+    placeLaunchText('say unwanted');
+    useInputStore.getState().setText(''); // select all, Delete
+    usePersonalDataStore.getState().confirm(owner);
+    expect(useInputStore.getState().text).toBe('');
+  });
+
   it('are not put back once the player typed over them', () => {
     placeLaunchText('look at fountain');
     useInputStore.getState().setText('connect guest');
@@ -144,8 +151,55 @@ describe('shares', () => {
     const files = [new File(['a'], 'a.txt'), new File(['b'], 'b.txt')];
     offerSharedFiles(files);
     expect(useLaunchStore.getState().filesRequest).toBe(1);
-    expect(takeSharedFile()).toBe(files[0]);
-    expect(useLaunchStore.getState().sharedFiles).toEqual([files[1]]);
+    expect(stageNextSharedFile()).toBe(files[0]);
+    expect(stageNextSharedFile()).toBeUndefined(); // one at a time
+    expect(useLaunchStore.getState()).toMatchObject({ stagedShare: files[0], sharedFiles: [files[1]] });
+    finishStagedShare();
+    expect(stageNextSharedFile()).toBe(files[1]);
+    useLaunchStore.setState({ stagedShare: undefined });
+  });
+
+  it.each([
+    ['too-many', 'at most 10 files'],
+    ['too-large', 'at most 100 MB'],
+    ['inbox-full', 'already waiting'],
+    ['failed', 'could not be read'],
+  ])('says why a share was refused (%s)', async (refusal, words) => {
+    await handleLaunchUrl(new URL(`https://client.mongoose.world/?share=${refusal}`));
+    expect(spoken).toHaveBeenCalledWith(expect.stringContaining(words), 'polite');
+    expect(useInputStore.getState().text).toBe('');
+  });
+});
+
+describe('shortcuts reaching an open window', () => {
+  function startWithQueue(path: string) {
+    window.history.replaceState(null, '', path);
+    let consumer: ((params: LaunchParams) => void) | undefined;
+    window.launchQueue = { setConsumer: (next) => { consumer = next; } };
+    startLaunchHandling();
+    return (target: string, files: readonly FileSystemHandle[] = []) =>
+      consumer?.({ targetURL: new URL(target, window.location.origin).href, files });
+  }
+
+  afterEach(() => useLaunchStore.setState({ modeRequest: undefined }));
+
+  it.each([['/?mode=host', 'host'], ['/?mode=local', 'local']] as const)('asks before opening %s in a window of its own', (target, mode) => {
+    const launch = startWithQueue('/');
+    launch(target);
+    expect(useLaunchStore.getState().modeRequest).toBe(mode);
+  });
+
+  it('does nothing more when the window is already in that mode', () => {
+    const launch = startWithQueue('/?mode=host');
+    launch('/?mode=host');
+    expect(useLaunchStore.getState().modeRequest).toBeUndefined();
+  });
+
+  it('leaves an opened database to its own dialog', async () => {
+    const launch = startWithQueue('/');
+    launch('/?mode=host', [fileHandle('World.db')]);
+    await vi.waitFor(() => expect(useLaunchStore.getState().database?.name).toBe('World.db'));
+    expect(useLaunchStore.getState().modeRequest).toBeUndefined();
   });
 });
 

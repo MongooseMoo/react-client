@@ -5,10 +5,11 @@ import { usePersonalDataStore } from '../stores/personalDataStore';
 
 /**
  * The launched draft while it still needs keeping. Connecting and signing in
- * clear the command input (it belonged to the previous owner), and a launch
- * usually lands just before both. A launched draft came from outside and
- * belongs to nobody, so it is put back after each such clear, until the player
- * types over it, sends anything, or has signed in.
+ * empty the command input because it belonged to the previous owner
+ * (`discardForNewOwner`), and a launch usually lands just before both. A
+ * launched draft came from outside and belongs to nobody, so it is put back
+ * after each such reset, until the player changes it in any way (emptying it
+ * included), sends anything, or has signed in.
  */
 let kept: string | undefined;
 let watching = false;
@@ -16,13 +17,13 @@ let watching = false;
 function watch(): void {
   if (watching) return;
   watching = true;
-  usePersonalDataStore.subscribe((state) => {
+  useInputStore.subscribe((state, previous) => {
     if (kept === undefined) return;
-    if (useInputStore.getState().text === '') useInputStore.getState().setText(kept);
-    if (state.owner) kept = undefined;
+    if (state.ownerResets !== previous.ownerResets) state.setText(kept);
+    else if (state.text !== kept) kept = undefined;
   });
-  useInputStore.subscribe((state) => {
-    if (kept !== undefined && state.text !== '' && state.text !== kept) kept = undefined;
+  usePersonalDataStore.subscribe((state) => {
+    if (state.owner) kept = undefined;
   });
 }
 
@@ -34,6 +35,7 @@ export function placeLaunchText(text: string): void {
   watch();
   const input = useInputStore.getState();
   const replaced = input.text.trim() !== '' && input.text !== text;
+  kept = undefined;
   input.setText(text);
   focusCommandInput();
   announce(

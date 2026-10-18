@@ -22,7 +22,7 @@ export function clearMissedActivity(): void {
   if (supported()) navigator.clearAppBadge().catch(() => {});
 }
 
-/** Clears the badge whenever the client gains focus or the preference is turned off. */
+/** Clears the badge now if the client is focused or the preference is off, and whenever either becomes so. */
 export function watchAppBadge(): () => void {
   const onFocus = () => clearMissedActivity();
   const onVisible = () => { if (document.visibilityState === 'visible' && document.hasFocus()) clearMissedActivity(); };
@@ -32,6 +32,9 @@ export function watchAppBadge(): () => void {
     (state) => state.general.appBadge,
     (enabled) => { if (!enabled) clearMissedActivity(); },
   );
+  // A badge left from before this page loaded (a reload, a crash) is stale
+  // once the player is looking, or no longer wants one.
+  if (document.hasFocus() || !usePreferences.getState().general.appBadge) clearMissedActivity();
   return () => {
     window.removeEventListener('focus', onFocus);
     document.removeEventListener('visibilitychange', onVisible);

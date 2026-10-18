@@ -54,4 +54,24 @@ describe('app badge', () => {
     expect(clearAppBadge).toHaveBeenCalledOnce();
     stop();
   });
+
+  it('clears a badge left from before the page loaded when it starts focused', () => {
+    focused = true;
+    const stop = watchAppBadge();
+    expect(clearAppBadge).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  it('clears a badge left from before the page loaded when the player had turned it off', () => {
+    usePreferences.setState((state) => ({ general: { ...state.general, appBadge: false } }));
+    const stop = watchAppBadge();
+    expect(clearAppBadge).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  it('keeps a badge while the page starts unfocused', () => {
+    const stop = watchAppBadge();
+    expect(clearAppBadge).not.toHaveBeenCalled();
+    stop();
+  });
 });

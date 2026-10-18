@@ -1,5 +1,5 @@
 import { announce } from '@react-aria/live-announcer';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type MudClient from '../../client';
 import {
@@ -18,6 +18,7 @@ import type { ReceivedFile, TransferState } from '../../fileTransfer/types';
 import { PIECE_SIZE } from '../../fileTransfer/wire';
 import type { UserlistPlayer } from '../../mcp';
 import { offerSharedFiles, useLaunchStore } from '../../launch/launchStore';
+import { useConnectionStore } from '../../stores/connectionStore';
 import FileTransferPanel from './index';
 
 vi.mock('@react-aria/live-announcer', () => ({ announce: vi.fn() }));
@@ -483,7 +484,31 @@ describe('FileTransferPanel', () => {
 });
 
 describe('files shared from another app', () => {
-  afterEach(() => useLaunchStore.setState({ sharedFiles: [], filesRequest: 0 }));
+  afterEach(() => {
+    useLaunchStore.setState({ sharedFiles: [], stagedShare: undefined, filesRequest: 0 });
+    useConnectionStore.setState({ connected: false });
+  });
+
+  it('keeps the shared file chosen when the connection changes and the panel reloads', async () => {
+    const me = player(ME);
+    const alice = player(ALICE);
+    useConnectionStore.setState({ connected: false });
+    offerSharedFiles([fileOf(1, 'map.png')]);
+    await openPanel(me);
+    await screen.findByText(/^Shared file ready: map\.png/);
+
+    act(() => useConnectionStore.setState({ connected: true }));
+    await screen.findByRole('button', { name: 'Send File' });
+    expect(await screen.findByText(/^Shared file ready: map\.png/)).not.toBeNull();
+
+    fireEvent.focus(screen.getByLabelText('Recipient'));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Alice' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send File' }));
+    await reaches(alice, 'offered');
+    expect(alice.transfers()[0].name).toBe('map.png');
+    await waitFor(() => expect(screen.queryByText(/^Shared file ready/)).toBeNull());
+    expect(useLaunchStore.getState().stagedShare).toBeUndefined();
+  });
 
   it('waits as the chosen file until the player picks a recipient and sends it', async () => {
     const me = player(ME);
@@ -515,5 +540,6 @@ describe('files shared from another app', () => {
 
     await waitFor(() => expect(screen.queryByText(/^Shared file ready/)).toBeNull());
     expect(useLaunchStore.getState().sharedFiles).toEqual([]);
+    expect(useLaunchStore.getState().stagedShare).toBeUndefined();
   });
 });

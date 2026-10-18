@@ -3,7 +3,7 @@ import type MudClient from '../../client';
 import { FileTransferError } from '../../fileTransfer/types';
 import type { FileTransfers, TransferSnapshot, TransferState } from '../../fileTransfer/types';
 import { useConnectionStore } from '../../stores/connectionStore';
-import { takeSharedFile, useLaunchStore } from '../../launch/launchStore';
+import { discardShares, finishStagedShare, stageNextSharedFile, useLaunchStore } from '../../launch/launchStore';
 import type { UserlistPlayer } from '../../mcp';
 import { findTransferPeerByAddress, userlistPlayersToTransferPeers } from '../../fileTransferPeers';
 import type { TransferPeer } from '../../fileTransferPeers';
@@ -55,22 +55,23 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
 
   // Files shared from another app, one at a time: each waits as the chosen
   // file until the player picks a recipient and sends it. Nothing goes by itself.
+  // The staged one lives in the launch store, so a remount (the connection
+  // changed) finds it again instead of losing it.
   const queuedShares = useLaunchStore((state) => state.sharedFiles);
-  const [sharedFile, setSharedFile] = useState<File | null>(null);
+  const sharedFile = useLaunchStore((state) => state.stagedShare) ?? null;
   const recipientInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (sharedFile || queuedShares.length === 0) return;
-    const next = takeSharedFile();
-    if (!next) return;
-    setSharedFile(next);
-    setSelectedFile(next);
-    recipientInput.current?.focus();
+    // A newly staged file is what the player came for; a restaged one after a remount is not news.
+    if (stageNextSharedFile()) recipientInput.current?.focus();
   }, [queuedShares, sharedFile]);
+  useEffect(() => {
+    if (sharedFile) setSelectedFile(sharedFile);
+  }, [sharedFile]);
 
   const chooseFile = (file: File) => {
-    // Choosing a file of one's own sets the remaining shared files aside.
-    if (sharedFile) useLaunchStore.setState({ sharedFiles: [] });
-    setSharedFile(null);
+    // Choosing a file of one's own sets the shared files aside.
+    if (sharedFile || queuedShares.length > 0) discardShares();
     setSelectedFile(file);
   };
 
@@ -102,7 +103,7 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
         transfers.send(selectedFile, selectedRecipient.transferAddress),
       );
       // The next shared file, if any, takes its place.
-      if (selectedFile === sharedFile) setSharedFile(null);
+      if (selectedFile === sharedFile) finishStagedShare();
     }
   };
 

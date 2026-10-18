@@ -25,7 +25,7 @@ interface PersonalDataState {
 
 function clearTransientData(): void {
   useOutputStore.getState().reset();
-  useInputStore.getState().clear();
+  useInputStore.getState().discardForNewOwner();
 }
 
 export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
