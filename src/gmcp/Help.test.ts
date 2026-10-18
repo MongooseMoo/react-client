@@ -74,9 +74,12 @@ describe("helpTitle", () => {
 });
 
 describe("describeHelpTopic", () => {
-  it("is the title alone for ok and ambiguous results", () => {
+  it("is the title alone for an ok result", () => {
     expect(describeHelpTopic(topic())).toBe("money");
-    expect(describeHelpTopic(topic({ topic: "", query: "lo", status: "ambiguous", choices: ["look", "lock"] }))).toBe("lo");
+  });
+
+  it("says how many topics an ambiguous result offers", () => {
+    expect(describeHelpTopic(topic({ topic: "", query: "lo", status: "ambiguous", choices: ["look", "lock"] }))).toBe("lo: 2 topics match");
   });
 
   it("adds the meaning of none, shown and broken", () => {

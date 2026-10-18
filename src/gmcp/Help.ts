@@ -48,6 +48,7 @@ const STATUS_MEANING: Partial<Record<HelpStatus, string>> = {
 /** What a screen reader hears when a result arrives. */
 export function describeHelpTopic(result: GMCPMessageHelpTopic): string {
     const title = helpTitle(result);
+    if (result.status === "ambiguous") return `${title}: ${result.choices.length} topics match`;
     const meaning = STATUS_MEANING[result.status];
     return meaning ? `${title}: ${meaning}` : title;
 }
