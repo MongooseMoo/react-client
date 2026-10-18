@@ -113,7 +113,8 @@ try {
   const ui = await browser.newContext({ serviceWorkers: 'block' });
   await ui.route('**/*', (route) =>
     route.request().url().startsWith(origin) ? route.continue() : route.abort());
-  await ui.routeWebSocket('**/*', (socket) => socket.close());
+  // Keep the controlled game socket open so a reconnect cannot clear the fixture identity.
+  await ui.routeWebSocket('**/*', () => {});
   const uiPage = await ui.newPage();
   await uiPage.goto(origin, { waitUntil: 'networkidle' });
   await uiPage.evaluate(() => window.mudClient.gmcp.handlers.Char.receiveRegisteredMessage('Name', {
