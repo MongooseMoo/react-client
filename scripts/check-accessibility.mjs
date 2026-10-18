@@ -153,11 +153,34 @@ try {
   for (const state of ['cold', 'cached']) {
     await command.focus();
     await page.keyboard.press('Control+Shift+9');
-    await expect(diagnostics.getByRole('button', { name: 'Pause', exact: true })).toBeFocused();
+    await expect(diagnostics.getByRole('button', { name: 'Start recording', exact: true })).toBeFocused();
     await page.keyboard.press('Control+Shift+4');
     await expect(refresh).toBeFocused();
     evidence.journeys.push({ task: `${state} lazy sidebar destination`, result: 'Shortcut focuses the first control after content loads' });
   }
+
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+  await page.keyboard.press('Control+Shift+9');
+  await page.keyboard.press('Enter');
+  const stopRecording = diagnostics.getByRole('button', { name: 'Stop recording', exact: true });
+  await expect(stopRecording).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(diagnostics.getByRole('button', { name: 'Mark crackle', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(diagnostics.getByRole('status').filter({ hasText: 'Crackle marked.' })).toBeVisible();
+  await page.keyboard.press('Shift+Tab');
+  await expect(stopRecording).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(diagnostics.getByRole('button', { name: 'Copy performance report', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(diagnostics.getByRole('status').filter({ hasText: 'Performance report copied.' })).toBeVisible();
+  const performanceReport = await page.evaluate(async () => JSON.parse(await navigator.clipboard.readText()));
+  assert.equal(performanceReport.crackleTimes.length, 1);
+  assert.ok(performanceReport.samples.length > 0 && performanceReport.samples.length <= 120);
+  assert.equal(typeof performanceReport.baseline.contextState, 'string');
+  await scan('playback-performance');
+  evidence.journeys.push({ task: 'Capture playback performance', gestures: 'Sidebar shortcut, Enter, Tab and Shift+Tab', result: 'Start, mark, stop and copy produce a bounded report; disabled mark control is skipped after stopping' });
 
   const items = [{ id: 'a', name: 'Apple', verbs: [['drop', 'a']] }, { id: 'b', name: 'Book', verbs: [['drop', 'b']] }];
   await page.evaluate((items) => window.mudClient.gmcp.handlers['Char.Items'].handleList({ location: 'inv', items }), items);
