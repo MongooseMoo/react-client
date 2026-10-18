@@ -50,6 +50,7 @@ export class GMCPChar extends GMCPCharBase {
       if (personal.owner || personal.reconnectingIdentity) personal.forget();
     }
     previous.setPlayer(data.name, data.fullname, data.uuid);
+    this.client.gmcp.require('Client.Media').sendPlaybackSupport();
   }
   // --- Vitals ---
   handleVitals(data: Record<string, unknown>): void {

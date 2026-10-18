@@ -286,7 +286,7 @@ describe('music composer keyboard controls and capture', () => {
       close: vi.fn(),
       runtimeNamespace: 'runtime',
     });
-    Object.assign(client.gmcp, { confirmIdentity: vi.fn() });
+    Object.assign(client.gmcp, { confirmIdentity: vi.fn(), require: () => ({ sendPlaybackSupport: vi.fn() }) });
     const auth = new GMCPAutoLogin(client);
     act(() => auth.signOut());
     auth.shutdown();
@@ -327,7 +327,7 @@ describe('music composer keyboard controls and capture', () => {
     submitNote();
     act(() => usePersonalDataStore.getState().clear('reconnect'));
     Object.assign(client, { liveServer: true, runtimeNamespace: 'runtime' });
-    Object.assign(client.gmcp, { confirmIdentity: vi.fn() });
+    Object.assign(client.gmcp, { confirmIdentity: vi.fn(), require: () => ({ sendPlaybackSupport: vi.fn() }) });
     const char = new GMCPChar(client);
     act(() => char.handleName({ name: '#guest', fullname: 'Guest' }));
     expect(screen.getByRole('list', { name: 'Pattern notes' })).toBeEmptyDOMElement();

@@ -178,7 +178,7 @@ import { FileTransferEngine } from './fileTransfer/FileTransferEngine';
 import { createMemoryTransferStorage } from './fileTransfer/storage';
 import { LinkNetwork, polyfillBlobArrayBuffer, SignalingHub } from './fileTransfer/testHarness';
 import type { TransferSnapshot } from './fileTransfer/types';
-import { GMCPClientFileTransfer, GMCPCore } from './gmcp';
+import { GMCPChar, GMCPClientFileTransfer, GMCPCore } from './gmcp';
 import { useConnectionStore } from './stores/connectionStore';
 import { useOutputStore } from './stores/outputStore';
 import type { Stream } from './telnet';
@@ -1018,6 +1018,48 @@ describe('MudClient lifecycle cleanup', () => {
       expect(client.connected).toBe(false);
       current.onopen?.(new Event('open'));
       expect(client.connected).toBe(true);
+    });
+
+    it('publishes identity recovery only for valid Char.Name on the current transport, including after reset', () => {
+      const client = createClient();
+      const media = client.gmcp.register(MockClientMediaPackage as never) as unknown as MockClientMediaPackage;
+      client.gmcp.register(GMCPChar);
+      const network = vi.spyOn(client.sharedClock, 'setNetworkReady');
+      const invalidate = vi.spyOn(client.sharedClock, 'invalidate');
+      const name = [255, 250, 201, ...new TextEncoder().encode('Char.Name {"name":"#10","fullname":"A","uuid":"a"}'), 255, 240];
+      client.connect();
+      const old = latestSocket();
+      old.onopen?.(new Event('open'));
+      network.mockClear();
+      sendSocketBytes(old, name);
+      sendSocketBytes(old, name);
+      expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(2);
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(network).not.toHaveBeenCalled();
+
+      old.readyState = MockWebSocket.CLOSED;
+      becomeVisible();
+      expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(2);
+      sendSocketBytes(old, name);
+      expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(2);
+      const current = latestSocket();
+      current.onopen?.(new Event('open'));
+      network.mockClear();
+      invalidate.mockClear();
+      sendSocketBytes(current, [255, 250, 201, ...new TextEncoder().encode('Char.Name {"name":""}'), 255, 240]);
+      expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(2);
+      sendSocketBytes(current, name);
+      expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(3);
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(network).not.toHaveBeenCalled();
+      sendSocketBytes(current, [255, 250, 201, ...new TextEncoder().encode('Char.Name {"name":"#11","fullname":"B","uuid":"b"}'), 255, 240]);
+      sendSocketBytes(current, name);
+      expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(5);
+      expect(invalidate).toHaveBeenCalledTimes(2);
+      expect(network).not.toHaveBeenCalled();
+      client.close();
+      sendSocketBytes(current, name);
+      expect(media.sendPlaybackSupport).toHaveBeenCalledTimes(5);
     });
 
     it('backs off 1s, 2s, 5s, then 10s for every later attempt, and resets when a socket opens', () => {
