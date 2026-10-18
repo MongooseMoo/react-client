@@ -40,9 +40,21 @@ timeout. The probe was never committed.
   reconnect. With the socket open it passes like master. No evidence of a functional
   regression in the Files tab.
 
+- Line 137 shown with a second temporary probe (never committed). It held the
+  createFileTransfers chunk for 3 s after the Files tab click, so a reconnect landed during
+  the load. Socket closed: 0/5 had a file input. The panel read "File transfer
+  initialization cancelled" and stayed that way through later reconnects. Socket open: 5/5
+  had the file input.
+- Verification on this branch's build: `npm run test:audio-cache` 10 consecutive runs,
+  10 exit 0. Each printed the Monaco PASS line, which comes after lines 132 and 137.
+- Scratch worktrees for master and voice builds were removed after the runs.
+
 ## Surprises
-- The probe never reached failures at 125 or 137 on either build. For 137, the
-  cancellation path above is from reading the code. For 125 I have no mechanism.
+- Line 125 ("Local Echo") was not this flake. Per the team lead it was PR #187's
+  deterministic renderer crash: VoiceCommandPreferences probed
+  SpeechRecognition.available({processLocally:true}) on mount, which crashes headless
+  Chromium 147. That was fixed on the voice branch, so it isn't chased here.
+- test:audio-cache also runs a soundfont check, which prints its own fourth PASS line.
 
 ## Next step
-Verify `npm run test:audio-cache` 10 times on this branch's build; report.
+None. Push / PR only if asked.
