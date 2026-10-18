@@ -16,6 +16,9 @@ vi.mock('./FileTransferEngine', () => ({
     constructor(readonly options: FileTransferEngineOptions) {
       engines.push(this);
     }
+    on() {
+      return this;
+    }
   },
 }));
 
