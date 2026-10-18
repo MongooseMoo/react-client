@@ -54,6 +54,7 @@ interface Material {
   data: SequenceData;
   transport: ScoreTransport;
   contentId: string;
+  replacement?: { tick: number; serverMs: number };
 }
 interface Document {
   score: CanonicalScore;
@@ -84,6 +85,7 @@ interface Source {
   gate: SourceRevisionGate;
   active: Material;
   windowMaterial?: Material;
+  pendingWindowMaterial?: Material;
   pending?: Material;
   pendingLate?: boolean;
   generation: number;
@@ -308,6 +310,26 @@ export class SequenceService {
         this.options.error?.(source.key, 'Replacement score content is missing');
         return;
       }
+      const known =
+        source.pending?.transport.revision === transport.revision ? source.pending : source.active;
+      if (
+        known.transport.revision === transport.revision &&
+        known.contentId === contentId &&
+        known.replacement
+      ) {
+        if (
+          known.replacement.tick !== data.replaceFromTick ||
+          known.replacement.serverMs !== data.effectiveServerMs
+        ) {
+          this.options.error?.(
+            source.key,
+            'Replacement revision or boundary conflicts with the accepted edit',
+          );
+          return;
+        }
+        this.mergeStream(source, data.midi, known);
+        return;
+      }
       const now = this.options.clock.getServerNow();
       if (now === undefined) {
         this.options.error?.(source.key, 'Replacement requires a current shared clock');
@@ -339,6 +361,14 @@ export class SequenceService {
         },
         now,
       );
+      if (decision === 'unchanged') {
+        const target =
+          source.pending?.transport.revision === transport.revision
+            ? source.pending
+            : source.active;
+        this.mergeStream(source, data.midi, target);
+        return;
+      }
       if (decision !== 'pending' && decision !== 'late-replacement') {
         if (decision === 'rejected')
           this.options.error?.(
@@ -347,9 +377,10 @@ export class SequenceService {
           );
         return;
       }
-      source.windowMaterial = undefined;
+      source.pendingWindowMaterial = undefined;
       const superseded = source.pending,
         oldBoundary = previousBoundary;
+      next.replacement = { tick: data.replaceFromTick, serverMs: data.effectiveServerMs };
       source.pending = next;
       source.pendingLate = decision === 'late-replacement';
       const boundary = this.audioTime(source, data.effectiveServerMs);
@@ -384,28 +415,14 @@ export class SequenceService {
     if (decision === 'rejected' || decision === 'stale') return;
     if (decision === 'unchanged') {
       // Generated retransmission adds immutable windows without resetting the prefix.
-      if (data.midi && 'stream' in data.midi && 'stream' in source.active.data) {
-        const material = this.mergeWindows(source, data.midi);
-        if (!material) return;
-        const base = source.active;
-        source.windowMaterial = material;
-        const generation = source.generation;
-        void this.prepareMaterial(source, material)
-          .then(() => {
-            if (
-              !this.current(source, generation) ||
-              source.windowMaterial !== material ||
-              source.active !== base
-            )
-              return;
-            source.active = material;
-            source.windowMaterial = undefined;
-            this.wake();
-          })
-          .catch((error) => {
-            if (source.windowMaterial === material) this.fail(source, error);
-          });
-      }
+      if (data.midi)
+        this.mergeStream(
+          source,
+          data.midi,
+          source.pending?.transport.revision === transport.revision
+            ? source.pending
+            : source.active,
+        );
       source.mix = { ...source.mix, ...data };
       source.graph?.update(data);
       this.wake();
@@ -422,6 +439,7 @@ export class SequenceService {
     source.ended = false;
     source.pending = undefined;
     source.windowMaterial = undefined;
+    source.pendingWindowMaterial = undefined;
     source.pendingLate = false;
     source.active = next;
     source.needsJoin = true;
@@ -438,11 +456,38 @@ export class SequenceService {
     void this.prepare(source).catch((error) => this.fail(source, error));
   }
 
+  private mergeStream(source: Source, data: SequenceData, base: Material): void {
+    if (!('stream' in data) || !('stream' in base.data)) return;
+    const slot = base === source.pending ? 'pendingWindowMaterial' : 'windowMaterial';
+    const material = this.mergeWindows(source, data, source[slot] ?? base);
+    if (!material) return;
+    source[slot] = material;
+    const generation = source.generation;
+    void this.prepareMaterial(source, material)
+      .then(() => {
+        const owningSlot =
+          source[slot] === material
+            ? slot
+            : slot === 'pendingWindowMaterial' && source.windowMaterial === material
+              ? 'windowMaterial'
+              : undefined;
+        if (!this.current(source, generation) || !owningSlot) return;
+        if (source.pending === base) source.pending = material;
+        else if (source.active === base) source.active = material;
+        else return;
+        source[owningSlot] = undefined;
+        this.wake();
+      })
+      .catch((error) => {
+        if (source[slot] === material) this.fail(source, error);
+      });
+  }
+
   private mergeWindows(
     source: Source,
     data: Extract<SequenceData, { stream: true }>,
+    base: Material,
   ): Material | undefined {
-    const base = source.windowMaterial ?? source.active;
     if (!('stream' in base.data)) return undefined;
     const windows = new Map(base.data.windows.map((window) => [window.seq, window]));
     for (const window of data.windows) {
@@ -798,6 +843,8 @@ export class SequenceService {
     ) {
       source.active = source.pending;
       source.pending = undefined;
+      source.windowMaterial = source.pendingWindowMaterial;
+      source.pendingWindowMaterial = undefined;
       if (source.pendingLate) {
         source.needsJoin = true;
         source.pendingLate = false;
