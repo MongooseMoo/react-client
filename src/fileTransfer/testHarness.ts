@@ -50,6 +50,7 @@ export type Signal = Route &
     | { kind: 'candidate'; id: TransferId; candidate: RTCIceCandidateInit }
     | { kind: 'reject'; id: TransferId }
     | { kind: 'cancel'; id: TransferId }
+    | { kind: 'request'; id: TransferId }
   );
 
 /** Carries signals between named peers, asynchronously and in the order they were sent. */
@@ -72,6 +73,7 @@ export class SignalingHub {
         post({ kind: 'candidate', from: name, to, id, candidate }),
       sendReject: (to, id) => post({ kind: 'reject', from: name, to, id }),
       sendCancel: (to, id) => post({ kind: 'cancel', from: name, to, id }),
+      sendRequest: (to, id) => post({ kind: 'request', from: name, to, id }),
       subscribe: (handlers) => {
         const subscribers = this.subscribers.get(name) ?? new Set();
         this.subscribers.set(name, subscribers.add(handlers));
@@ -113,6 +115,9 @@ function deliverSignal(handlers: SignalHandlers, signal: Signal): void {
       break;
     case 'cancel':
       handlers.cancel(signal.from, signal.id);
+      break;
+    case 'request':
+      handlers.request(signal.from, signal.id);
       break;
   }
 }

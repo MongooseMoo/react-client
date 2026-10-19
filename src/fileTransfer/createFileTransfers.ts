@@ -7,6 +7,7 @@
 import type { GMCPClientFileTransfer } from '../gmcp/Client/FileTransfer';
 import { FileTransferEngine } from './FileTransferEngine';
 import { createGmcpTransferSignaling } from './gmcpSignaling';
+import { attachSharing, sharedFile } from './sharing';
 import { createRtcTransferLinkFactory } from './rtcLink';
 import { createIndexedDbTransferStorage, createMemoryTransferStorage } from './storage';
 import { ownerKey, usePersonalDataStore } from '../stores/personalDataStore';
@@ -31,7 +32,8 @@ export const ICE_CONFIGURATION: RTCConfiguration = {
 export function createFileTransfers(gmcp: GMCPClientFileTransfer): FileTransfers {
   const { owner, visitor, policyReady } = usePersonalDataStore.getState();
   const capturedOwner = owner ? ownerKey(owner) : undefined;
-  return new FileTransferEngine({
+  const transfers = new FileTransferEngine({
+    sharedFile,
     signaling: createGmcpTransferSignaling(gmcp),
     storage: capturedOwner && policyReady && !visitor
       ? createIndexedDbTransferStorage({ owner: capturedOwner }) : createMemoryTransferStorage(),
@@ -42,6 +44,8 @@ export function createFileTransfers(gmcp: GMCPClientFileTransfer): FileTransfers
       saveAsDownload(file);
     },
   });
+  attachSharing(gmcp, transfers);
+  return transfers;
 }
 
 /** A page cannot write to disk; following a link to the file makes the browser save it. */
