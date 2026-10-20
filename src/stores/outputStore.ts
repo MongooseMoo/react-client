@@ -21,6 +21,7 @@ interface OutputState {
   addHtml: (html: string) => void;
   addError: (error: Error) => void;
   addCommand: (command: string) => void;
+  flush: () => void;
   reset: () => void;
 }
 
@@ -48,6 +49,7 @@ export const useOutputStore = create<OutputState>((set) => ({
   addHtml: (html) => addOutputEntry(set, { type: "html", html }),
   addError: (error) => addOutputEntry(set, { type: "error", error }),
   addCommand: (command) => addOutputEntry(set, { type: "command", command }),
+  flush: () => flushPendingEntries(set),
   reset: () => {
     nextOutputEntryId = 1;
     pendingEntries = [];
