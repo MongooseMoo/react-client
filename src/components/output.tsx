@@ -188,6 +188,7 @@ class Output extends React.Component<Props, State> {
   private unsubscribeOwner: (() => void) | undefined;
   private storageKey = personalStorageKey('output');
   private ownerIdentity = usePersonalDataStore.getState().owner;
+  private reconnectingOutput?: { owner: string; lines: OutputLine[]; storageKey?: string };
   private previousConnected = useConnectionStore.getState().connected;
   private previousSessionReady = useConnectionStore.getState().sessionReady;
   private lastOutputEntryId = 0;
@@ -582,13 +583,23 @@ componentDidUpdate(
   componentDidMount() {
     this.unsubscribeOwner = usePersonalDataStore.subscribe(() => {
       const key = personalStorageKey('output');
-      const owner = usePersonalDataStore.getState().owner;
+      const { owner, reconnectingOwner } = usePersonalDataStore.getState();
+      // Keep a single in-memory history while identity is unconfirmed. Storage
+      // is best effort (and deliberately disabled for visitors), not a handoff.
+      if (!owner) {
+        if (!reconnectingOwner) this.reconnectingOutput = undefined;
+        else if (this.ownerIdentity && ownerKey(this.ownerIdentity) === ownerKey(reconnectingOwner)) {
+          this.reconnectingOutput = { owner: ownerKey(reconnectingOwner), lines: this.allLines, storageKey: this.storageKey };
+        }
+      }
       if (key === this.storageKey && (owner ? ownerKey(owner) : '') === (this.ownerIdentity ? ownerKey(this.ownerIdentity) : '')) return;
       this.cancelScheduledSave();
       this.saveOutput();
       this.storageKey = key;
       this.ownerIdentity = owner;
-      this.allLines = this.loadOutput();
+      this.allLines = owner && this.reconnectingOutput?.owner === ownerKey(owner)
+        ? this.reconnectingOutput.lines : this.loadOutput();
+      if (owner) this.reconnectingOutput = undefined;
       this.lastOutputEntryId = 0;
       this.totalLinesAdded = this.prevTotalLinesAdded = this.allLines.length;
       this.frozenRef.current?.replaceChildren();
@@ -802,6 +813,8 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
   clearLog() {
     // Cancel any pending debounced save so it can't fire after the clear and re-persist stale data.
     this.cancelScheduledSave();
+    const storageKey = this.storageKey ?? this.reconnectingOutput?.storageKey;
+    if (this.reconnectingOutput) this.reconnectingOutput.lines = [];
     this.allLines = [];
     this.frozenCount = 0;
     this.frozenHiddenCount = 0;
@@ -810,7 +823,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     const frozenDiv = this.frozenRef.current;
     if (frozenDiv) frozenDiv.innerHTML = '';
     this.setState({ liveOutput: [] });
-    if (this.storageKey) removeStoredValue(this.storageKey);
+    if (storageKey) removeStoredValue(storageKey);
   }
 
   async copyLog() {

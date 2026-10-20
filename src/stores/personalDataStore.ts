@@ -14,6 +14,7 @@ export function ownerKey(owner: PersonalDataOwner): string {
 
 interface PersonalDataState {
   owner?: PersonalDataOwner;
+  reconnectingOwner?: PersonalDataOwner;
   visitor: boolean;
   visitorWindow: boolean;
   policyReady: boolean;
@@ -49,14 +50,20 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
     if (previous && ownerKey(previous) === ownerKey(owner)) return;
     // Switching from one owner to another protects the first from the second.
     clearTransientData(!previous);
-    set({ owner });
+    set({ owner, reconnectingOwner: undefined });
   },
-  clear() { clearTransientData(false); set({ owner: undefined }); },
-  clearForConnect() { clearTransientData(true); set({ owner: undefined }); },
+  clear() { clearTransientData(false); set({ owner: undefined, reconnectingOwner: undefined }); },
+  clearForConnect() {
+    // Deliver the last transport's queued lines before output takes its snapshot.
+    useOutputStore.getState().flush();
+    const reconnectingOwner = get().owner ?? get().reconnectingOwner;
+    clearTransientData(true);
+    set({ owner: undefined, reconnectingOwner });
+  },
   setVisitor(visitor) {
     if (visitor === get().visitor) return;
     clearTransientData(false);
-    set({ visitor });
+    set({ visitor, reconnectingOwner: undefined });
   },
 }));
 
