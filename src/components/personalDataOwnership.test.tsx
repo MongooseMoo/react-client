@@ -132,6 +132,36 @@ it('does not restore a visitor log explicitly cleared during reconnect', async (
   expect(screen.queryByText('Explicitly cleared visitor log')).not.toBeInTheDocument();
 });
 
+it('clears persisted owner history during reconnect without touching another owner', async () => {
+  vi.useFakeTimers();
+  usePersonalDataStore.getState().confirm(b);
+  const output = createRef<Output>();
+  const view = render(<Output client={{} as MudClient} ref={output} />);
+  await act(async () => useOutputStore.getState().addMessage('B saved log'));
+  await act(async () => usePersonalDataStore.getState().confirm(a));
+  const bKey = personalStorageKey('output', b) ?? '';
+  const aKey = personalStorageKey('output', a) ?? '';
+  await act(async () => useOutputStore.getState().addMessage('A explicitly cleared log'));
+  await act(async () => usePersonalDataStore.getState().clearForConnect());
+  expect(localStorage.getItem(aKey)).toContain('A explicitly cleared log');
+  await act(async () => output.current?.clearLog());
+  await act(async () => vi.advanceTimersByTime(600));
+  await act(async () => usePersonalDataStore.getState().confirm(a));
+  expect(screen.queryByText('A explicitly cleared log')).not.toBeInTheDocument();
+  expect(localStorage.getItem(aKey) ?? '').not.toContain('A explicitly cleared log');
+  expect(localStorage.getItem(bKey)).toContain('B saved log');
+  await act(async () => usePersonalDataStore.getState().confirm(b));
+  expect(screen.getAllByText('B saved log')).toHaveLength(1);
+  await act(async () => usePersonalDataStore.getState().confirm(a));
+  view.unmount();
+  useOutputStore.getState().reset();
+  usePersonalDataStore.getState().clearForConnect();
+  usePersonalDataStore.getState().confirm(a);
+  render(<Output client={{} as MudClient} />);
+  expect(screen.queryByText('A explicitly cleared log')).not.toBeInTheDocument();
+  expect(screen.queryByText('B saved log')).not.toBeInTheDocument();
+});
+
 it('leaves legacy output and login commands unattributed before authentication', async () => {
   localStorage.setItem('outputLog', JSON.stringify({ version: 2, data: [{
     type: 'serverMessage', sourceType: 'plain', sourceContent: 'Legacy speech',

@@ -27,6 +27,8 @@ try {
   await context.route('https://mongoose.world/api/**', route => route.fulfill({ json: {} }));
   const sockets = [];
   let dropNextPing = false;
+  let holdNextResume = false;
+  let heldResume;
   const packet = (name, data) => Buffer.concat([Buffer.from([255, 250, 201]),
     Buffer.from(data === undefined ? name : `${name} ${JSON.stringify(data)}`), Buffer.from([255, 240])]);
   const owner = { uuid: 'recovery-owner', name: '#101', fullname: 'Recovery owner' };
@@ -52,15 +54,23 @@ try {
       const request = text.match(/Auth\.Autologin\.(Session|Resume) (\{.*\})/s);
       if (request) {
         const data = JSON.parse(request[2]);
-        if (request[1] === 'Resume') {
-          if (data.playerUuid === 'recovery-visitor') {
-            identity = { uuid: 'recovery-visitor', name: '#102', fullname: 'Temporary guest' };
+        const reply = () => {
+          if (request[1] === 'Resume') {
+            if (data.playerUuid === 'recovery-visitor') {
+              identity = { uuid: 'recovery-visitor', name: '#102', fullname: 'Temporary guest' };
+            }
+            socket.send(packet('Char.Name', identity));
           }
-          socket.send(packet('Char.Name', identity));
+          socket.send(packet('Auth.Autologin.SessionToken', { ...data, version: 2,
+            playerUuid: identity.uuid, playerRef: identity.name, token: `synthetic-recovery-${index}`,
+            expires_at: Date.now() / 1000 + 600 }));
+        };
+        if (request[1] === 'Resume' && holdNextResume) {
+          holdNextResume = false;
+          heldResume = reply;
+        } else {
+          reply();
         }
-        socket.send(packet('Auth.Autologin.SessionToken', { ...data, version: 2,
-          playerUuid: identity.uuid, playerRef: identity.name, token: `synthetic-recovery-${index}`,
-          expires_at: Date.now() / 1000 + 600 }));
       }
     });
     setTimeout(() => {
@@ -98,6 +108,22 @@ try {
   await page.reload();
   await expect.poll(() => page.evaluate(() => window.mudClient?.gmcp.require('Auth.Autologin').currentGrant?.playerUuid)).toBe(owner.uuid);
   await expect(ownerHistory).toHaveCount(1);
+  // Clear while the owner is temporarily unknown, before the resume reply.
+  holdNextResume = true;
+  const beforeClear = sockets.length;
+  sockets.at(-1).socket.close();
+  await expect.poll(() => sockets.length).toBe(beforeClear + 1);
+  await expect.poll(() => typeof heldResume).toBe('function');
+  await page.getByRole('button', { name: 'Clear Log', exact: true }).click();
+  heldResume();
+  heldResume = undefined;
+  await page.waitForFunction(() => window.mudClient.gmcp.sessionReady);
+  await expect.poll(() => page.evaluate(() => window.mudClient.gmcp.require('Auth.Autologin').currentGrant?.playerUuid)).toBe(owner.uuid);
+  await expect(ownerHistory).toHaveCount(0);
+  await page.reload();
+  await page.waitForFunction(() => window.mudClient?.gmcp.sessionReady);
+  await expect.poll(() => page.evaluate(() => window.mudClient?.gmcp.require('Auth.Autologin').currentGrant?.playerUuid)).toBe(owner.uuid);
+  await expect(ownerHistory).toHaveCount(0);
   await page.evaluate(async () => {
     const grant = window.mudClient.gmcp.require('Auth.Autologin').currentGrant;
     const db = await new Promise(resolve => { const request = indexedDB.open('mongoose-browser', 1); request.onsuccess = () => resolve(request.result); });
@@ -165,7 +191,7 @@ try {
   await expect(legacy.getByRole('alert')).toContainText('older game tab');
   assert.equal(await legacy.locator('.monaco-editor').count(), 0);
   await page.evaluate(() => window.mudClient.close());
-  console.log('Client recovery passed: repeated reconnect with failed history saves, persisted reload, visitor history retention and privacy, visit end/reload/login, rejected unrelated owner, retry selection, resumption without push permission, correlated reconnect recovery and explicit obsolete editor feedback.');
+  console.log('Client recovery passed: repeated reconnect with failed history saves, persisted reload, authenticated Clear Log during reconnect and reload, visitor history retention and privacy, visit end/reload/login, rejected unrelated owner, retry selection, resumption without push permission, correlated reconnect recovery and explicit obsolete editor feedback.');
 } finally {
   await browser.close();
   await new Promise(done => server.close(done));

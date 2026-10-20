@@ -30,8 +30,16 @@ Smallest expected change: correct output's ownership transition (~10-30 producti
 - Initial new browser locator incorrectly matched both visible log and live-announcement text; scoped it to .output-line-serverMessage, then browser QA passed.
 - Accessibility browser script initially could not load axe-core/axe.min.js from reused dependencies; after clean lockfile install, passed: native keyboard, stable selection, modal focus, history actions, startup and reflow.
 - Latest addition: clearLog drops the memory snapshot so an explicit clear during visitor reconnect cannot resurrect deleted text.
-- Normal commit hook passed typecheck and staged lint (17 existing warnings, no errors). All requested code/test work is committed on fix/reconnect-history; draft publication is next.
+- Normal commit hook passed typecheck and staged lint (17 existing warnings, no errors). Draft PR #201: https://github.com/MongooseMoo/react-client/pull/201. Initial head 9362578016635cbe321b6ee52304fe3e26cbd592 passed exact-head CI run 39504951824, including 2,749 tests / 191 files and all production/browser checks; deploy skipped.
 - No live game login/commands or production changes. No platform denial.
 
+## Authenticated Clear Log follow-up
+- Parent reported an uncovered persisted-owner case at 9362578. Verified with a failing regression: 1 failed / 13 passed; A explicitly cleared log reappeared after reconnect confirmation.
+- Cause: during reconnect storageKey is undefined. clearLog discarded the memory snapshot but never removed A's saved archive, so confirmation fell back to that archive. My initial test covered visitors only and missed this persisted-owner path.
+- Small fix: include the original storageKey in the one reconnect snapshot; Clear Log removes that specific key and retains an empty snapshot until confirmation. This prevents fallback resurrection while preserving invalidation on logout/different identity and never deriving a key from another owner.
+- Regression also verifies B's archive is preserved and A's cleared log stays absent after reload. Focused output/ownership tests passed 50/50; full suite passed 2,750/2,750 in 191 files (129s). Production build passed.
+- Production-browser recovery QA passed a held-resume Clear Log click, confirmation and reload, alongside the original reconnect/storage/visitor cases. All requests still use fake/local fixtures.
+- Follow-up commit hook passed typecheck and staged lint (17 existing output.tsx warnings, no errors).
+
 ## Next step
-Push fix/reconnect-history and open draft PR, then verify exact head CI. PR number/result will be in final handoff and can be recovered with gh pr list --head fix/reconnect-history. Keep draft, never merge/deploy.
+Commit/push the validated authenticated Clear Log follow-up to the same draft PR #201, then verify exact head CI. Implementation and local validation complete. Keep draft, never merge/deploy.
