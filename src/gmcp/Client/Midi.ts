@@ -2,6 +2,7 @@ import type { MidiMessage, MidiNote } from "../../MidiService";
 import { usePreferences } from "../../stores/preferencesStore";
 import { duplex, inbound } from "../../protocol/messages";
 import { decodeMidiRoute, type MidiRoute } from '../../audio/MidiAudioRoute';
+import { SOUNDFONT_OUTPUT } from "../../midi/soundfonts";
 import { gmcpJsonMessage } from "../messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 
@@ -92,6 +93,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
   private isAdvertised: boolean = false;
   private debugCallback?: (hex: string, type: string, gmcpMessage: string) => void;
   private midiServicePromise: Promise<MidiService> | null = null;
+  private outputConnecting: Promise<void> | null = null;
   private serviceInitialized = false;
   private hasInputDeviceConnected = false;
   private hasOutputDeviceConnected = false;
@@ -117,6 +119,33 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
       this.midiServicePromise = import("../../MidiService").then(({ midiService }) => midiService);
     }
     return this.midiServicePromise;
+  }
+
+  /**
+   * The service, with an output connected for a MOO message unless the user
+   * disconnected it on purpose. Concurrent callers share one connect.
+   */
+  private async loadMidiOutput(): Promise<MidiService> {
+    const midiService = await this.loadMidiService();
+    if (!midiService.connectionStatus.outputConnected && !midiService.intentionalDisconnectStatus.output) {
+      this.outputConnecting ??= this.connectAutomaticOutput(midiService)
+        .finally(() => { this.outputConnecting = null; });
+      await this.outputConnecting;
+    }
+    return midiService;
+  }
+
+  private async connectAutomaticOutput(midiService: MidiService): Promise<void> {
+    const saved = usePreferences.getState().midi.lastOutputDeviceId;
+    // The soundfont needs no Web MIDI, so only a saved hardware or virtual
+    // output initializes JZZ (and its permission prompt).
+    if (saved && saved !== SOUNDFONT_OUTPUT) {
+      await this.ensureInitialized();
+      if (midiService.connectionStatus.outputConnected) return;
+    }
+    const available = midiService.getOutputDevices().some((device) => device.id === saved);
+    await midiService.connectOutputDevice(saved && available ? saved : SOUNDFONT_OUTPUT);
+    this.syncConnectionState(midiService);
   }
 
   private syncConnectionState(midiService: MidiService): void {
@@ -259,7 +288,7 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
   }
 
   private async handleNoteAsync(data: GMCPMessageClientMidiNote): Promise<void> {
-    const midiService = await this.loadMidiService();
+    const midiService = await this.loadMidiOutput();
     const note: MidiNote = {
       note: data.note,
       velocity: data.velocity,
@@ -296,26 +325,26 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
 
   handleControlChange(data: GMCPMessageClientMidiControlChange): void {
     if (!this.enabled) return;
-    void this.sendRawIfOutputConnected([0xB0 | data.channel, data.controller, data.value]);
+    void this.sendRawToOutput([0xB0 | data.channel, data.controller, data.value]);
   }
 
   handleProgramChange(data: GMCPMessageClientMidiProgramChange): void {
     if (!this.enabled) return;
-    void this.sendRawIfOutputConnected([0xC0 | data.channel, data.program]);
+    void this.sendRawToOutput([0xC0 | data.channel, data.program]);
   }
 
   handleSystemMessage(data: GMCPMessageClientMidiSystemMessage): void {
     if (!this.enabled) return;
-    void this.sendRawIfOutputConnected(data.data);
+    void this.sendRawToOutput(data.data);
   }
 
   handleRawMessage(data: GMCPMessageClientMidiRawMessage): void {
     if (!this.enabled) return;
-    void this.sendRawIfOutputConnected(data.data);
+    void this.sendRawToOutput(data.data);
   }
 
-  private async sendRawIfOutputConnected(data: number[]): Promise<void> {
-    const midiService = await this.loadMidiService();
+  private async sendRawToOutput(data: number[]): Promise<void> {
+    const midiService = await this.loadMidiOutput();
     this.syncConnectionState(midiService);
     if (midiService.hasOutputDevice) {
       midiService.sendRawMessage(data);
