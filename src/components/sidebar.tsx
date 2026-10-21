@@ -217,6 +217,7 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
             <MidiStatus client={client} />
           </Suspense>
         ),
+        mountOnSelect: true,
         condition: midiPreferences.enabled,
       },
       {

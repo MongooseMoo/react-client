@@ -11,6 +11,7 @@ MOO MIDI plays without the user setting anything up:
 - Worktree had no node_modules; ran `npm ci` (lockfile identical to main checkout's).
 - Done: tests written first and seen failing (Midi.test.ts 5 failed; preferencesStore.test.ts 3 failed), then implemented; both files pass (29 tests). Full suite/typecheck left to PR CI.
 - `preferencesStore.ts`: STORAGE_VERSION 3 (131), default `midi.enabled: true` (155), migration `storedVersion < 3` sets `midi.enabled = true` (214-216).
+- PR #202 open. Second commit: midi-tab gets `mountOnSelect: true` (sidebar.tsx:220), like haptics (228). Test in sidebar.test.tsx shows MidiStatus is not mounted until the MIDI tab is clicked (failed before the change, passes after).
 - `Midi.ts`: `loadMidiOutput()` (128-136) shares one `outputConnecting` promise (96); `connectAutomaticOutput()` (138-149) picks saved output or `SOUNDFONT_OUTPUT`. Used by `handleNoteAsync` (291) and `sendRawToOutput` (346, renamed from `sendRawIfOutputConnected`).
 
 ## Decisions and why
@@ -19,8 +20,8 @@ MOO MIDI plays without the user setting anything up:
 
 ## Surprises
 - JZZ 1.9.6 (`node_modules/jzz/javascript/JZZ.js`): `JZZ()` (1342-1345) runs `_initJZZ` (812-818), which tries engines `node, extension, plugin, webmidi` (790); the webmidi engine `_tryWebMIDI` (697-714) calls `_requestMIDIAccess.call(_navigator, {})` (709), i.e. `navigator.requestMIDIAccess` (688-690).
-- `MidiStatus` (the MIDI sidebar tab) calls `midiPackage.ensureInitialized()` on mount when MIDI is enabled (MidiStatus.tsx:219-223), and the midi tab has no `mountOnSelect` (sidebar.tsx:212-221, tabs.tsx:139), so with MIDI on by default JZZ is still initialized when the sidebar renders. Out of this task's scope; reported, not changed.
+- `MidiStatus` (the MIDI sidebar tab) calls `midiPackage.ensureInitialized()` on mount when MIDI is enabled (MidiStatus.tsx:219-223), and the midi tab has no `mountOnSelect` (sidebar.tsx:212-221, tabs.tsx:139), so with MIDI on by default JZZ was still initialized when the sidebar rendered. The coordinator ruled to add `mountOnSelect: true`; done in the second commit. Selecting the MIDI tab still initializes JZZ, which is expected (it lists hardware ports).
 - Saved `virtual-synth` only appears in `getOutputDevices()` once `virtualMidiService.initialized` (MidiService.ts:172); otherwise the auto-connect falls back to the soundfont, per the plan's "in the device list" rule.
 
 ## Next step
-Read the PR's CI result. Open question for Q (not acted on): whether the MIDI tab should get `mountOnSelect` so the sidebar does not initialize JZZ at load.
+Read PR #202's CI result.
