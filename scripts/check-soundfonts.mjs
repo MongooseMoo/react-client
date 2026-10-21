@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
+import { BasicSoundBank } from 'spessasynth_core';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
@@ -25,25 +26,20 @@ const server = createServer(async (request, response) => {
 await new Promise((done) => server.listen(0, '127.0.0.1', done));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
-// A real, decodable sustained note. CI needs no network or soundfont-host uptime.
-const wav = Buffer.alloc(44 + 48000 * 2);
-wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
-wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
-wav.writeUInt32LE(48000, 24); wav.writeUInt32LE(96000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34);
-wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
-for (let n = 0; n < 48000; n++) wav.writeInt16LE(Math.round(Math.sin(n * 2 * Math.PI * 261.63 / 48000) * 12000), 44 + n * 2);
-const sample = `MIDI.Soundfont.acoustic_grand_piano = {"C4":"data:audio/mp3;base64,${wav.toString('base64')}",}`;
+// A real SoundFont (spessasynth's one-preset saw-wave bank). CI needs no network or bank-host uptime.
+const bank = Buffer.from(BasicSoundBank.getSampleSoundBankFile());
+const bankUrl = 'https://mongoose.world/sounds/soundfonts/MuseScore_General.sf3';
 const sampleRequests = [];
 let failNext = true;
 const browser = await chromium.launch();
 try {
   const context = await browser.newContext({ serviceWorkers: 'block' });
   await context.route('**/*', (route) => route.request().url().startsWith(origin) ? route.continue() : route.abort());
-  await context.route('https://gleitz.github.io/midi-js-soundfonts/**', async (route) => {
+  await context.route(bankUrl, async (route) => {
     sampleRequests.push(route.request().url());
     if (failNext) { failNext = false; await route.fulfill({ status: 503, body: '' }); return; }
-    const body = process.env.LIVE_SOUNDFONTS === '1' ? await (await fetch(route.request().url())).text() : sample;
-    await route.fulfill({ status: 200, body, contentType: 'application/javascript', headers: { 'Access-Control-Allow-Origin': '*' } });
+    const body = process.env.LIVE_SOUNDFONTS === '1' ? Buffer.from(await (await fetch(bankUrl)).arrayBuffer()) : bank;
+    await route.fulfill({ status: 200, body, contentType: 'application/octet-stream', headers: { 'Access-Control-Allow-Origin': '*' } });
   });
   await context.routeWebSocket('**/*', (socket) => socket.close());
   const page = await context.newPage();
@@ -61,16 +57,16 @@ try {
   await panel.getByRole('combobox', { name: 'Output device', exact: true }).selectOption('soundfont-synth');
   assert.equal(sampleRequests.length, 0, 'Opening MIDI and selecting an output must not fetch samples');
   assert.ok(!requests.includes(`/${renderer.file}`), 'Opening MIDI must not load the sample renderer');
-  const connect = panel.getByRole('button', { name: 'Connect output device', exact: true });
-  await connect.click();
-  await expect(panel.getByRole('status')).toContainText('Soundfont could not load', { timeout: 30000 });
-  await expect(connect).toBeEnabled();
-  await expect(panel.getByRole('combobox', { name: 'Output device', exact: true })).toHaveValue('soundfont-synth');
-  await connect.click();
-  await expect(panel).toContainText('Soundfont Synthesizer · Musyng Kite', { timeout: 30000 }).catch(async (error) => {
+  await panel.getByRole('button', { name: 'Connect output device', exact: true }).click();
+  // A failed download leaves the built-in synth playing; Reconnect retries.
+  await expect(panel.getByRole('status')).toContainText('MuseScore General could not load', { timeout: 30000 });
+  await expect(panel).toContainText('Soundfont Synthesizer · MuseScore General');
+  await panel.getByRole('button', { name: 'Reconnect soundfont', exact: true }).click();
+  await expect(panel.getByRole('status')).toContainText('MuseScore General ready.', { timeout: 30000 }).catch(async (error) => {
     console.error(await panel.innerText());
     throw error;
   });
+  assert.equal(sampleRequests.length, 2);
   assert.ok(requests.includes(`/${renderer.file}`));
 
   // Observe real PCM after the master bus, not a mocked send() call.
@@ -112,14 +108,8 @@ try {
   assert.equal(await page.evaluate(() => window.mudClient.media.cacophony.context.state), 'suspended', 'Incoming MIDI cannot undo Escape');
   await page.getByRole('button', { name: 'Resume sounds', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.mudClient.media.cacophony.context.state)).toBe('running');
-
-  for (const [id, name] of [['FluidR3', 'FluidR3'], ['FatBoy', 'FatBoy']]) {
-    await panel.getByRole('combobox', { name: 'Soundfont collection', exact: true }).selectOption(id);
-    await panel.getByRole('button', { name: 'Reconnect soundfont', exact: true }).click();
-    await expect(panel).toContainText(`Soundfont Synthesizer · ${name}`, { timeout: 30000 });
-    await note();
-    await expect.poll(energy).toBeGreaterThan(0.001);
-  }
+  await note();
+  await expect.poll(energy).toBeGreaterThan(0.001);
   await mkdir(resolve(root, 'screenshots'), { recursive: true });
   await panel.evaluate((node) => { for (let parent = node.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0; });
   await page.screenshot({ path: resolve(root, 'screenshots/pr24-midi-desktop.png'), fullPage: true });
@@ -133,5 +123,5 @@ try {
   assert.deepEqual(errors, []);
   await panel.getByRole('button', { name: 'Disconnect output device', exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Connect output device', exact: true })).toBeVisible();
-  console.log(`PASS: soundfont lazy loading, failure/retry, all three collections, real PCM through named effects, chain removal/recreation, Escape/Resume, axe and mobile reflow${process.env.LIVE_SOUNDFONTS === '1' ? ' (live MP3 samples)' : ''}.`);
+  console.log(`PASS: SoundFont lazy loading, failure/retry, real PCM through named effects, chain removal/recreation, Escape/Resume, axe and mobile reflow${process.env.LIVE_SOUNDFONTS === '1' ? ' (live MuseScore_General.sf3)' : ''}.`);
 } finally { await browser.close(); await new Promise((done) => server.close(done)); }

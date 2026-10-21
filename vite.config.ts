@@ -29,7 +29,13 @@ export default defineConfig({
       },
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        globIgnores: ['**/buttplug_wasm-*.js', '**/wasm/**', '**/wasm-worker.js'],
+        // The SoundFont worklet is a `?url` asset, so optionalChunks cannot drop it.
+        globIgnores: [
+          '**/buttplug_wasm-*.js',
+          '**/wasm/**',
+          '**/wasm-worker.js',
+          '**/spessasynth_processor.min-*.js',
+        ],
         manifestTransforms: [
           async (manifest) => ({
             manifest: manifest.filter((entry) => !deferredChunks.has(entry.url)),

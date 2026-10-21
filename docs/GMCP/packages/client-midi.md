@@ -2,14 +2,14 @@
 
 ## Browser soundfonts and effects
 
-Enable MIDI in Preferences, choose a soundfont collection, then connect
-**Soundfont Synthesizer** in the MIDI tab. Musyng Kite, FluidR3, and FatBoy
-download from [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts).
-The renderer loads only when this output is connected; opening Preferences or
-the MIDI tab does not download samples. Piano loads on connection. Other
-programs load as requested, with the built-in synth providing immediate
-playback while they load. Channel 10 percussion always uses the built-in synth.
-Reconnect to apply a different collection or retry failed instruments.
+Enable MIDI in Preferences, then connect **Soundfont Synthesizer** in the MIDI
+tab. It is a SoundFont synthesizer ([spessasynth](https://github.com/spessasus/spessasynth_lib))
+playing one bank, MuseScore General (MIT), downloaded from
+`https://mongoose.world/sounds/soundfonts/MuseScore_General.sf3`. That file is
+built by `scripts/build-soundbank.mjs`. The synthesizer and the bank load only when
+this output is connected; opening Preferences or the MIDI tab downloads nothing.
+The built-in synth plays everything, percussion included, until the bank has
+loaded, and stays in use if it cannot load. Reconnect to retry.
 
 Both browser synths share the client's volume, mute, Escape/Resume, and master
 effects. External hardware outputs are controlled by their own audio devices.
@@ -36,11 +36,6 @@ recreating it restores the requested route. Chain presets, replacement,
 `Client.Media.Automate`, and bypass work through the existing effects system.
 Server disconnect/reset clears the route. Route does not enable MIDI, load a
 soundfont, or alter external hardware outputs.
-
-Sample memory is bounded: four encoded instruments (32 MiB total), 32 MiB of
-decoded cache, four concurrent decodes, two instrument downloads, and 64 active
-sample voices. Closest decoded samples are pitch-shifted while an exact note
-decodes. Files are capped at 16 MiB and downloads time out after 20 seconds.
 
 `Client.Midi` is a Mongoose bidirectional Web MIDI bridge implemented in
 `src/gmcp/Client/Midi.ts`.

@@ -240,13 +240,6 @@ describe("preferencesStore", () => {
       });
     });
 
-    it('preserves a saved soundfont and replaces unknown legacy choices with the default', async () => {
-      const known = await loadWith({ version: 2, data: { midi: { enabled: true, midiJsSoundfont: 'FluidR3', lastOutputDeviceId: 'soundfont-synth' } } });
-      expect(known.midi).toEqual({ enabled: true, midiJsSoundfont: 'FluidR3', lastOutputDeviceId: 'soundfont-synth' });
-      const unknown = await loadWith({ version: 2, data: { midi: { enabled: false, midiJsSoundfont: 'deleted-font' } } });
-      expect(unknown.midi.midiJsSoundfont).toBe('MusyngKite');
-    });
-
     it("keeps changed keys and starts with none", async () => {
       const empty = await loadWith({ version: 2, data: {} });
       expect(empty.keystrokes).toEqual({});

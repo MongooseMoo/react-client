@@ -1,7 +1,7 @@
 import { virtualMidiService, type MidiOutputSink } from './VirtualMidiService';
 import JZZ from 'jzz';
 import { usePreferences } from './stores/preferencesStore';
-import { getSoundfont, SOUNDFONT_OUTPUT } from './midi/soundfonts';
+import { SOUNDFONT_NAME, SOUNDFONT_OUTPUT } from './midi/soundfonts';
 
 export interface MidiDevice {
   id: string;
@@ -291,14 +291,13 @@ class MidiService {
     this.pendingOutput = null;
     try {
       if (deviceId === SOUNDFONT_OUTPUT) {
-        const font = getSoundfont(usePreferences.getState().midi.midiJsSoundfont);
-        this.reportSoundfont(`Loading ${font.name}…`);
+        this.reportSoundfont(`Loading ${SOUNDFONT_NAME}…`);
         const { SoundfontOutput } = await import('./midi/SoundfontOutput');
         if (generation !== this.outputGeneration) return false;
         const fallback = await virtualMidiService.getVirtualPort();
         if (!fallback) throw new Error('Built-in synth is unavailable.');
         if (generation !== this.outputGeneration) { fallback.close(); return false; }
-        const output = new SoundfontOutput(font.id, () => virtualMidiService.getAudioOutput(), fallback,
+        const output = new SoundfontOutput(() => virtualMidiService.getAudioOutput(), fallback,
           (message) => { if (generation === this.outputGeneration) this.reportSoundfont(message); },
           (listener) => virtualMidiService.subscribeAudioOutput(listener),
           () => {
@@ -312,7 +311,7 @@ class MidiService {
         this.outputDevice = output;
         this.connectionState.outputConnected = true;
         this.connectionState.outputDeviceId = deviceId;
-        this.connectionState.outputDeviceName = `Soundfont Synthesizer · ${font.name}`;
+        this.connectionState.outputDeviceName = `Soundfont Synthesizer · ${SOUNDFONT_NAME}`;
         usePreferences.getState().setMidi({ ...usePreferences.getState().midi, lastOutputDeviceId: deviceId });
         this.intentionalDisconnectFlags.output = false;
         return true;

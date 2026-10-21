@@ -8,7 +8,6 @@ import AutoLogDialog, { type AutoLogDialogRef } from "./AutoLogDialog";
 import LogFolderPreferences from "./LogFolderPreferences";
 import ChannelPreferencesTab from "./ChannelPreferences";
 import KeystrokePreferencesTab from "./KeystrokePreferences";
-import SoundfontPicker from './SoundfontPicker';
 import HeadTrackingControls from './HeadTrackingControls';
 import AppIntegrationPreferences from '../launch/AppIntegrationPreferences';
 import VoiceCommandPreferences from "./VoiceCommandPreferences";
@@ -401,7 +400,6 @@ const MidiTab: React.FC = () => {
       <br />
       <br />
 
-        {midi.enabled && <SoundfontPicker />}
         <p id="midi-help" style={{ color: "var(--color-text-secondary)", fontSize: "0.9em" }}>
           Device selection and management is available in the MIDI tab when connected to a server.
         </p>
