@@ -81,6 +81,19 @@ instrument zone using the sample has sampleModes&3 == 1 and generators 1/12/3/50
 (zone value, else the instrument global zone, else 0). Unused samples fail. Each allowed
 exception is printed.
 
+## CI failure on #203 (head 681dd6d8, run 39534394351)
+check-soundfonts.mjs:62 expected "could not load"; the bank loaded with no Reconnect.
+Reproduced on a dev server (scratchpad debug/sf-double.mjs, fetch wrapped to log stacks):
+one Connect click -> 2 bank requests; the 2nd comes from MidiStatus
+updateReconnectableDevices -> connectOutputDevice via loadDevices. Temporary TRACE logs
+(removed) pinned the caller: handleConnectOutput's `loadDevices()` after success
+(MidiStatus.tsx:329) -> updateReconnectableDevices, whose check at :185 read the
+handler render's `connectionState` (closure outputConnected=false, live=true) while
+MidiService.ts:315 had just saved lastOutputDeviceId=soundfont-synth -> second connect (:194).
+The old renderer hid it: its ready() threw on the failed first download, so nothing was saved.
+Fix: updateReconnectableDevices reads live midiService.connectionStatus (input and output).
+Test: MidiStatus.test.tsx "connects an output once per Connect..." red (2 calls) before the fix.
+
 ## Next step
-Push, open the PR, read its CI result. Uploading the bank to mongoose.world is not part
+Commit, push to #203, read CI. Uploading the bank to mongoose.world is not part
 of this task.

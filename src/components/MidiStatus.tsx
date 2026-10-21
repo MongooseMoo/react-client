@@ -149,11 +149,14 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const updateReconnectableDevices = async () => {
     const prefs = usePreferences.getState().midi;
     const intentionalFlags = midiService.intentionalDisconnectStatus;
+    // The live status, not this render's `connectionState`: after a Connect,
+    // the handler's closure still says disconnected while the service is connected.
+    const connected = midiService.connectionStatus;
     const newReconnectables: { input?: { id: string, name: string }; output?: { id: string, name: string } } = {};
 
 
     // Check if last input device is available but not connected
-    if (prefs.lastInputDeviceId && !connectionState.inputConnected) {
+    if (prefs.lastInputDeviceId && !connected.inputConnected) {
       const device = inputDevices.find(d => d.id === prefs.lastInputDeviceId);
 
       if (device && midiService.canReconnectToDevice(prefs.lastInputDeviceId, 'input')) {
@@ -182,7 +185,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     }
 
     // Check if last output device is available but not connected
-    if (prefs.lastOutputDeviceId && !connectionState.outputConnected) {
+    if (prefs.lastOutputDeviceId && !connected.outputConnected) {
       const device = outputDevices.find(d => d.id === prefs.lastOutputDeviceId);
 
       if (device && midiService.canReconnectToDevice(prefs.lastOutputDeviceId, 'output')) {
