@@ -126,7 +126,7 @@ type PrefActions = {
 };
 
 const STORAGE_KEY = "preferences";
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 const PERSIST_DEBOUNCE_MS = 250;
 
 function getInitialPreferences(): PrefState {
@@ -150,7 +150,7 @@ function getInitialPreferences(): PrefState {
     },
     editor: { autocompleteEnabled: true, accessibilityMode: true, lineComments: false },
     keyboard: { navigationKeyScheme: "jkli" },
-    midi: { enabled: false },
+    midi: { enabled: true },
     haptics: { enabled: false, intensityCap: 1.0, autoStopTimeout: 5 },
     autologging: { enabled: false, maxBytes: 100 * 1024 * 1024 },
     voiceInput: { enabled: false, sendImmediately: false, language: "" },
@@ -206,6 +206,11 @@ const preferencesSchema: LocalStorageSchema<PrefState> = {
     // entry was a default under "sayto", a name the server never sends.
     if (storedVersion < 2) {
       delete (parsed as Partial<PrefState>).channels;
+    }
+
+    // Version 3 turned MIDI on by default; turn it on once for older saves.
+    if (storedVersion < 3) {
+      parsed.midi = { ...parsed.midi, enabled: true };
     }
 
     return mergePreferences(getInitialPreferences(), parsed);

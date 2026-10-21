@@ -38,18 +38,6 @@ import { clientSpeechSuspended } from './clientSpeechSuspension';
 // treated as dead.
 const LIVENESS_TIMEOUT_MS = 4000;
 
-function resetMidiIntentionalDisconnectFlags(): void {
-  if (!usePreferences.getState().midi.enabled) return;
-
-  import("./MidiService")
-    .then(({ midiService }) => {
-      midiService.resetIntentionalDisconnectFlags();
-    })
-    .catch((error) => {
-      console.error("Failed to reset MIDI disconnect flags:", error);
-    });
-}
-
 class MudClient {
   private ws!: WebSocket;
   private decoder = new TextDecoder("utf8");
@@ -253,7 +241,7 @@ class MudClient {
       this.reconnectAttempt = 0;
 
       // Reset MIDI intentional disconnect flags when successfully reconnecting to server
-      resetMidiIntentionalDisconnectFlags();
+      this.gmcp.handlers["Client.Midi"]?.resetIntentionalDisconnects();
 
       useConnectionStore.getState().setConnected(true);
     };
@@ -455,7 +443,7 @@ class MudClient {
     // Mark as connected immediately — the worker will send the "connected"
     // message once the virtual connection is created.
     this._connected = true;
-    resetMidiIntentionalDisconnectFlags();
+    this.gmcp.handlers["Client.Midi"]?.resetIntentionalDisconnects();
     useConnectionStore.getState().setConnected(true);
     this.gmcp.markReady();
   }

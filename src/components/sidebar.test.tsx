@@ -12,6 +12,9 @@ vi.mock('./ServerFeaturesPanel', () => ({ default: () => <span>Server informatio
 vi.mock('./AudioDiagnostics', () => ({ default: () => <span>Diagnostics</span> }));
 vi.mock('./HelpPanel', () => ({ default: () => <span>Help contents</span> }));
 vi.mock('./MapPanel', () => ({ default: () => <span>Map contents</span> }));
+vi.mock('./MidiStatus', () => ({ default: () => <span>MIDI contents</span> }));
+
+const client = { connected: false, gmcp: { handlers: {} }, media: { diagnostics: {} }, onFileTransferOffer: () => () => {} } as unknown as MudClient;
 
 beforeEach(() => {
   useRoomStore.getState().reset();
@@ -21,7 +24,6 @@ beforeEach(() => {
 
 it('reaches active destinations repeatedly and keeps shortcut positions stable as tabs arrive', () => {
   const ref = React.createRef<SidebarRef>();
-  const client = { connected: false, gmcp: { handlers: {} }, media: { diagnostics: {} }, onFileTransferOffer: () => () => {} } as unknown as MudClient;
   render(<><button type="button">Elsewhere</button><Sidebar ref={ref} client={client} collapsed={false} onToggleCollapse={vi.fn()} /></>);
   expect(screen.getByRole('tablist', { name: 'Sidebar' })).toBeTruthy();
   const outside = screen.getByRole('button', { name: 'Elsewhere' });
@@ -39,8 +41,16 @@ it('reaches active destinations repeatedly and keeps shortcut positions stable a
   expect(screen.getByRole('tab', { name: 'Users' })).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+3');
 });
 
+it('does not mount the MIDI panel, which initializes Web MIDI, until its tab is selected', async () => {
+  usePreferences.setState({ midi: { enabled: true } });
+  render(<Sidebar client={client} collapsed={false} onToggleCollapse={vi.fn()} />);
+  await act(async () => { await import('./MidiStatus'); });
+  expect(screen.queryByText('MIDI contents')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'MIDI' }));
+  expect(await screen.findByText('MIDI contents')).toBeInTheDocument();
+});
+
 it('puts Help last, after Map, with no number shortcut of its own', async () => {
-  const client = { connected: false, gmcp: { handlers: {} }, media: { diagnostics: {} }, onFileTransferOffer: () => () => {} } as unknown as MudClient;
   act(() => useRoomStore.getState().setRoomInfo({ num: 1, name: 'Room', exits: {} }));
   render(<Sidebar client={client} collapsed={false} onToggleCollapse={vi.fn()} />);
   const tabs = screen.getAllByRole('tab');

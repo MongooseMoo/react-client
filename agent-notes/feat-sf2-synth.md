@@ -9,15 +9,21 @@ MIDI.js sets and the font picker. PR against master.
 ## State
 - package.json pins spessasynth_core 4.3.22, spessasynth_lib 4.3.14, stb-vorbis 0.0.6
   (npm `latest` on 2026-10-20; `npm ls` shows the nested "latest" deps deduped onto these).
-- scripts/build-soundbank.mjs written; first run in progress (quality 6).
-  Source and outputs live in the session scratchpad (source/, bank/), never the repo.
+- scripts/build-soundbank.mjs: second full run with the ruled length gate (quality 6,
+  9m18s) printed "all gates passed", exit=0; 3 allowed longer decodes (79, 80, 599).
+  Outputs: MuseScore_General.flac.sf3 95,679,054 B, MuseScore_General.sf3 32,986,146 B,
+  MuseScore_General_License.md 3,419 B, in the session scratchpad bank/ (never the repo).
+  Not uploaded.
+- Committed f0a90314; merged origin/master (f955956e, #202 auto-midi). The one conflict
+  (preferencesStore.test.ts) resolved by keeping master's three MIDI-default tests and
+  dropping the soundfont test; master's STORAGE_VERSION 3, enabled default and migration kept.
 - Client: SoundfontOutput.test.ts rewritten (red: 8/8 failed on the old renderer);
   SoundfontOutput.ts rewritten on WorkletSynthesizer; soundfonts.ts cut to
   SOUNDFONT_OUTPUT + SOUNDFONT_NAME. Green 8/8. Done: MidiService.ts, preferencesStore.ts
   (+test), preferences.tsx, MidiStatus.tsx card (+css), programs.ts and
   SoundfontPicker.{tsx,css} deleted, vite.config.ts globIgnores, check-soundfonts.mjs
   (fixture = core sample bank; first download 503 -> "could not load", Reconnect -> "ready"),
-  docs/GMCP/packages/client-midi.md. Still to do: refactor pass, gate output, commit/PR.
+  docs/GMCP/packages/client-midi.md. Refactor pass done.
   check-soundfonts.mjs was not run locally (CI runs it; rule: no local CI re-runs).
 
 ## Decisions and why
@@ -76,4 +82,5 @@ instrument zone using the sample has sampleModes&3 == 1 and generators 1/12/3/50
 exception is printed.
 
 ## Next step
-Re-run the script end to end; if it passes, commit, push, open the PR.
+Push, open the PR, read its CI result. Uploading the bank to mongoose.world is not part
+of this task.

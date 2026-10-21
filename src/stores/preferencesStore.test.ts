@@ -61,7 +61,7 @@ describe("preferencesStore", () => {
     expect(setItem).toHaveBeenCalledWith("preferences", expect.any(String));
     const lastCall = setItem.mock.calls.at(-1);
     const stored = JSON.parse(lastCall?.[1] as string);
-    expect(stored.version).toBe(2);
+    expect(stored.version).toBe(3);
     expect(stored.data.general.localEcho).toBe(true);
     expect(stored.data.general.syncTimezoneToServer).toBe(false);
     expect(stored.data.general.syncLocationToServer).toBe(true);
@@ -238,6 +238,21 @@ describe("preferencesStore", () => {
         say_to_you: { autoreadMode: "default", voice: "", notify: true },
         mongoose: { autoreadMode: "all", voice: "Robot", notify: false },
       });
+    });
+
+    it("turns MIDI on by default", async () => {
+      const fresh = await loadWith(null);
+      expect(fresh.midi.enabled).toBe(true);
+    });
+
+    it("turns MIDI on once for preferences saved before version 3", async () => {
+      const old = await loadWith({ version: 2, data: { midi: { enabled: false } } });
+      expect(old.midi.enabled).toBe(true);
+    });
+
+    it("keeps MIDI off when the user turned it off at version 3", async () => {
+      const chosen = await loadWith({ version: 3, data: { midi: { enabled: false } } });
+      expect(chosen.midi.enabled).toBe(false);
     });
 
     it("keeps changed keys and starts with none", async () => {
