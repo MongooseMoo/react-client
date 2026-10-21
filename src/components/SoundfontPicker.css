@@ -1,7 +1,0 @@
-.soundfont-picker { display: grid; gap: var(--space-2); min-width: 0; }
-.soundfont-picker label { font-weight: 600; }
-.soundfont-picker select { width: 100%; min-width: 0; min-height: 44px; }
-.soundfont-picker select { background: var(--color-bg-surface); color: var(--color-text); border: 1px solid var(--color-separator); border-radius: var(--radius-sm); padding: var(--space-2); font: inherit; }
-.soundfont-picker p { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-sm); line-height: 1.6; }
-.soundfont-picker a { color: var(--color-primary); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
-.soundfont-picker .soundfont-picker-note { padding-left: var(--space-3); border-left: 2px solid var(--color-primary); }

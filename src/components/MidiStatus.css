@@ -7,6 +7,8 @@
 .midi-device-card > div:first-child { font-weight: 600; }
 .midi-device-card select { width: 100%; min-width: 0; margin: 0 0 var(--space-2) !important; }
 .midi-soundfont-card h4 { margin: 0 0 var(--space-3); color: var(--color-primary); font-size: 1rem; }
+.midi-soundfont-card p { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font-size: var(--font-size-sm); line-height: 1.6; }
+.midi-soundfont-card a { color: var(--color-primary); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
 .midi-outcome { color: var(--color-text-secondary); line-height: 1.6; font-size: var(--font-size-sm); }
 .midi-outcome:empty { display: none; }
 .midi-status button, .midi-status select { min-height: 44px; max-width: 100%; white-space: normal; }
@@ -18,7 +20,7 @@
 .midi-status .midi-device-card > button.midi-preview { background: var(--color-bg-surface); color: var(--color-primary); }
 .midi-status button:disabled { opacity: .55; cursor: default; }
 .midi-status input[type="range"] { accent-color: var(--color-primary); }
-.midi-status button:focus-visible, .midi-status select:focus-visible, .soundfont-picker select:focus-visible, .soundfont-picker a:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 3px; }
+.midi-status button:focus-visible, .midi-status select:focus-visible, .midi-soundfont-card a:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 3px; }
 .midi-status details { border-top: 1px solid var(--color-separator); padding: var(--space-3) 0; }
 .midi-status summary { cursor: pointer; line-height: 1.6; }
 .midi-status details input { max-width: 100%; box-sizing: border-box; }

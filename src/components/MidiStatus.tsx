@@ -6,8 +6,7 @@ import { midiService, type MidiDevice } from "../MidiService";
 import { usePreferences } from "../stores/preferencesStore";
 import type { GMCPClientMidi } from "../gmcp/Client/Midi";
 import { virtualMidiService } from "../VirtualMidiService";
-import { SOUNDFONT_OUTPUT } from '../midi/soundfonts';
-import SoundfontPicker from './SoundfontPicker';
+import { SOUNDFONT_NAME, SOUNDFONT_OUTPUT } from '../midi/soundfonts';
 import './MidiStatus.css';
 
 interface MidiStatusProps {
@@ -150,11 +149,14 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
   const updateReconnectableDevices = async () => {
     const prefs = usePreferences.getState().midi;
     const intentionalFlags = midiService.intentionalDisconnectStatus;
+    // The live status, not this render's `connectionState`: after a Connect,
+    // the handler's closure still says disconnected while the service is connected.
+    const connected = midiService.connectionStatus;
     const newReconnectables: { input?: { id: string, name: string }; output?: { id: string, name: string } } = {};
 
 
     // Check if last input device is available but not connected
-    if (prefs.lastInputDeviceId && !connectionState.inputConnected) {
+    if (prefs.lastInputDeviceId && !connected.inputConnected) {
       const device = inputDevices.find(d => d.id === prefs.lastInputDeviceId);
 
       if (device && midiService.canReconnectToDevice(prefs.lastInputDeviceId, 'input')) {
@@ -183,7 +185,7 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
     }
 
     // Check if last output device is available but not connected
-    if (prefs.lastOutputDeviceId && !connectionState.outputConnected) {
+    if (prefs.lastOutputDeviceId && !connected.outputConnected) {
       const device = outputDevices.find(d => d.id === prefs.lastOutputDeviceId);
 
       if (device && midiService.canReconnectToDevice(prefs.lastOutputDeviceId, 'output')) {
@@ -598,7 +600,17 @@ const MidiStatus: React.FC<MidiStatusProps> = ({ client }) => {
 
       <div className="midi-device-card midi-soundfont-card">
         <h4>Sampled instruments</h4>
-        <SoundfontPicker />
+        <p>
+          Choose Soundfont Synthesizer as your output to play the {SOUNDFONT_NAME} SoundFont. The
+          built-in synth plays while it downloads.
+        </p>
+        <a
+          href="https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General_License.md"
+          target="_blank"
+          rel="noreferrer"
+        >
+          SoundFont credits & license<span className="sr-only"> (opens a new tab)</span>
+        </a>
         {connectionState.outputDeviceId === SOUNDFONT_OUTPUT && <button type="button" disabled={busy} onClick={async () => {
           if (!midiPackage) return;
           await operation('Output device connected.', () => midiPackage.connectOutputDevice(SOUNDFONT_OUTPUT));

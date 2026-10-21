@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type MudClient from '../client';
 import MidiStatus from './MidiStatus';
 import { midiService } from '../MidiService';
+import { usePreferences } from '../stores/preferencesStore';
 
 const testState = vi.hoisted(() => ({
   connectionStatus: {
@@ -123,6 +124,32 @@ describe('MidiStatus lifecycle refreshes', () => {
     expect(screen.getByRole('status').textContent).toContain('Input device connected');
     await act(async () => { fireEvent.click(document.activeElement!); await vi.advanceTimersByTimeAsync(0); });
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Connect input device' }));
+  });
+
+  it('connects an output once per Connect, though the connect saves it as the last output', async () => {
+    vi.mocked(midiService.getOutputDevices).mockReturnValue([{ id: 'out', name: 'Synth', type: 'output' } as never]);
+    vi.mocked(midiService.canReconnectToDevice).mockReturnValue(true);
+    const preferences = usePreferences.getState() as { midi: { lastOutputDeviceId?: string } };
+    const connectOutputDevice = vi.fn(async () => {
+      testState.connectionStatus.outputConnected = true;
+      testState.connectionStatus.outputDeviceId = 'out';
+      preferences.midi.lastOutputDeviceId = 'out';
+      return true;
+    });
+    try {
+      render(<MidiStatus client={{ gmcp: { handlers: { 'Client.Midi': { connectOutputDevice, setDebugCallback: vi.fn() } } } } as unknown as MudClient} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      fireEvent.change(screen.getByRole('combobox', { name: 'Output device' }), { target: { value: 'out' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Connect output device' }));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(connectOutputDevice).toHaveBeenCalledTimes(1);
+    } finally {
+      preferences.midi.lastOutputDeviceId = undefined;
+      vi.mocked(midiService.canReconnectToDevice).mockReturnValue(false);
+    }
   });
 
   it('keeps the selected device and action available after a failed connection', async () => {
