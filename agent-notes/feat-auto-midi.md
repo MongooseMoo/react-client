@@ -12,10 +12,16 @@ MOO MIDI plays without the user setting anything up:
 - Done: tests written first and seen failing (Midi.test.ts 5 failed; preferencesStore.test.ts 3 failed), then implemented; both files pass (29 tests). Full suite/typecheck left to PR CI.
 - `preferencesStore.ts`: STORAGE_VERSION 3 (131), default `midi.enabled: true` (155), migration `storedVersion < 3` sets `midi.enabled = true` (214-216).
 - PR #202 open. Second commit: midi-tab gets `mountOnSelect: true` (sidebar.tsx:220), like haptics (228). Test in sidebar.test.tsx shows MidiStatus is not mounted until the MIDI tab is clicked (failed before the change, passes after).
+- CI run 39531908947 (head ea28d5a1) failed "Verify lazy audio caching": `scripts/check-audio-cache.mjs:108` saw `VirtualMidiService-*.js` and `MidiService-*.js` load at startup, because MIDI now defaults on. Third commit fixes it in code (script unchanged):
+  - App.tsx: removed the `midiEnabled` effect that imported VirtualMidiService, bound `setPlaybackSource`/`setAudioOutput(client.media.getMidiAudioOutput())` and called `initialize()` (was App.tsx:415-449), and the `midiEnabled` selector (was 165).
+  - Midi.ts `loadMidiService()` (117-129) now loads MidiService and VirtualMidiService together and does that wiring before resolving, so it runs before any output connects (every connect path goes through `loadMidiService`: automatic connect, `ensureInitialized`, `connectOutputDevice`).
+  - client.ts: removed `resetMidiIntentionalDisconnectFlags` (was 41-51, imported MidiService on every connect). onopen (244) and the worker path (446) call `this.gmcp.handlers["Client.Midi"]?.resetIntentionalDisconnects()`, which (Midi.ts:132-134) resets only if MidiService already loaded.
+  - Midi.ts `sendAllNotesOff` (419) uses `midiServicePromise?.then` instead of loading MidiService: `reset()` runs on every disconnect (session.ts registers `registerDisconnectReset`), so with MIDI on it would also have loaded the chunk at startup when the socket closes.
 - `Midi.ts`: `loadMidiOutput()` (128-136) shares one `outputConnecting` promise (96); `connectAutomaticOutput()` (138-149) picks saved output or `SOUNDFONT_OUTPUT`. Used by `handleNoteAsync` (291) and `sendRawToOutput` (346, renamed from `sendRawIfOutputConnected`).
 
 ## Decisions and why
 - Soundfont path skips `ensureInitialized()`: `connectOutputDevice(SOUNDFONT_OUTPUT)` (MidiService.ts:293-319) never touches `this.jzz`, and `JZZ()` reaches `navigator.requestMIDIAccess` (see Surprises). JZZ is only initialized when the saved output is something other than the soundfont (a hardware port needs JZZ to appear in the device list).
+- Wiring moved into `GMCPClientMidi` rather than gated in App: the package already owns the one lazy load and has `this.client.media`. Lost from App's effect: releasing the playback source when MIDI is turned off or the App's client changes; the binding now lasts for the package's lifetime. `virtualMidiService.initialize()` is not awaited, because it waits while playback is paused (VirtualMidiService.ts:106-110) and would hold up notes.
 - The in-flight promise is cleared when it settles, so a failed connect is retried by the next message rather than never.
 
 ## Surprises

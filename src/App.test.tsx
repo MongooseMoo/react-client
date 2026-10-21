@@ -51,6 +51,13 @@ const {
   };
 });
 
+const { virtualMidiLoaded } = vi.hoisted(() => ({ virtualMidiLoaded: vi.fn() }));
+
+vi.mock('./VirtualMidiService', () => {
+  virtualMidiLoaded();
+  return { virtualMidiService: { setPlaybackSource: vi.fn(() => () => {}), setAudioOutput: vi.fn(async () => {}), initialize: vi.fn(async () => true) } };
+});
+
 vi.mock('react-beforeunload', () => ({
   useBeforeunload: vi.fn(),
 }));
@@ -181,6 +188,13 @@ describe('App haptics backend lifecycle', () => {
   afterEach(() => {
     vi.useRealTimers();
     cleanup();
+  });
+
+  it('does not load the MIDI synth at startup when MIDI is on', async () => {
+    mockPreferences.midi.enabled = true;
+    render(<App />);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(virtualMidiLoaded).not.toHaveBeenCalled();
   });
 
   it('loads haptics only after enabling and disposes its runtime on cleanup', async () => {

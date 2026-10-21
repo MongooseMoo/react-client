@@ -17,11 +17,29 @@ const { midiService, output } = vi.hoisted(() => {
       sendNote: vi.fn(),
       scheduleNoteOff: vi.fn(() => true),
       sendRawMessage: vi.fn(),
+      sendAllNotesOff: vi.fn(),
+      resetIntentionalDisconnectFlags: vi.fn(),
+    },
+  };
+});
+
+const { virtualMidiService, audioOutput, media } = vi.hoisted(() => {
+  const audioOutput = { context: {}, destination: {} };
+  return {
+    audioOutput,
+    media: { getMidiAudioOutput: () => audioOutput },
+    virtualMidiService: {
+      setPlaybackSource: vi.fn(() => () => {}),
+      setAudioOutput: vi.fn(async () => {}),
+      initialize: vi.fn(async () => true),
     },
   };
 });
 
 vi.mock('../../MidiService', () => ({ midiService }));
+vi.mock('../../VirtualMidiService', () => ({ virtualMidiService }));
+
+const makeClient = () => ({ gmcp: { send: vi.fn() }, media }) as never;
 
 import { usePreferences } from '../../stores/preferencesStore';
 import { GMCPClientMidi } from './Midi';
@@ -33,7 +51,7 @@ describe('GMCPClientMidi ControlChange', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     usePreferences.getState().setMidi({ ...previous, enabled: true });
-    midi = new GMCPClientMidi({ gmcp: { send: vi.fn() } } as never);
+    midi = new GMCPClientMidi(makeClient());
   });
 
   afterEach(() => {
@@ -66,7 +84,7 @@ describe('GMCPClientMidi Song', () => {
   });
 
   it('plays each note of one Song message at its offset', async () => {
-    const midi = new GMCPClientMidi({ gmcp: { send: vi.fn() } } as never);
+    const midi = new GMCPClientMidi(makeClient());
     const played: number[] = [];
     vi.spyOn(midi as never, 'handleNoteAsync').mockImplementation(((note: { note: number }) => {
       played.push(note.note);
@@ -95,7 +113,7 @@ describe('GMCPClientMidi automatic output', () => {
     vi.clearAllMocks();
     Object.assign(output, { connected: false, intentional: false, initialized: false });
     usePreferences.getState().setMidi({ ...previous, enabled: true, lastOutputDeviceId: undefined });
-    midi = new GMCPClientMidi({ gmcp: { send: vi.fn() } } as never);
+    midi = new GMCPClientMidi(makeClient());
   });
 
   afterEach(() => {
@@ -146,6 +164,31 @@ describe('GMCPClientMidi automatic output', () => {
     note(60);
     await vi.waitFor(() => expect(midiService.sendNote).toHaveBeenCalled());
     expect(midiService.connectOutputDevice).toHaveBeenCalledWith('soundfont-synth');
+  });
+
+  it('renders the synth into the client audio graph before the first output connects', async () => {
+    note(60);
+    await vi.waitFor(() => expect(midiService.connectOutputDevice).toHaveBeenCalled());
+    expect(virtualMidiService.setPlaybackSource).toHaveBeenCalledWith(media);
+    expect(virtualMidiService.setAudioOutput).toHaveBeenCalledWith(audioOutput);
+    expect(virtualMidiService.setAudioOutput.mock.invocationCallOrder[0])
+      .toBeLessThan(midiService.connectOutputDevice.mock.invocationCallOrder[0]);
+  });
+
+  it('loads no MIDI code when reset or reconnected before any MIDI message', async () => {
+    midi.reset();
+    midi.resetIntentionalDisconnects();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(virtualMidiService.setPlaybackSource).not.toHaveBeenCalled();
+    expect(midiService.sendAllNotesOff).not.toHaveBeenCalled();
+    expect(midiService.resetIntentionalDisconnectFlags).not.toHaveBeenCalled();
+  });
+
+  it('resets the intentional disconnect flags once MIDI is loaded', async () => {
+    note(60);
+    await vi.waitFor(() => expect(midiService.sendNote).toHaveBeenCalled());
+    midi.resetIntentionalDisconnects();
+    await vi.waitFor(() => expect(midiService.resetIntentionalDisconnectFlags).toHaveBeenCalledOnce());
   });
 
   it('connects an output for a MOO ProgramChange before sending it', async () => {

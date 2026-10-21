@@ -229,6 +229,13 @@ class MockAutoLoginPackage {
   shutdown = vi.fn();
 }
 
+class MockClientMidiPackage {
+  packageName = 'Client.Midi';
+  resetIntentionalDisconnects = vi.fn();
+  reset = vi.fn();
+  shutdown = vi.fn();
+}
+
 class MockClientMediaPackage {
   packageName = 'Client.Media';
   packageVersion = 1;
@@ -683,6 +690,16 @@ describe('MudClient lifecycle cleanup', () => {
       new Error('Cannot send while disconnected'),
     );
     expect(socket.send).not.toHaveBeenCalled();
+    client.close();
+  });
+
+  it('resets MIDI intentional disconnects through the MIDI package when the socket opens', () => {
+    const client = new MudClient('example.test', 443);
+    const midi = client.gmcp.register(MockClientMidiPackage as never) as unknown as MockClientMidiPackage;
+    client.connect();
+    expect(midi.resetIntentionalDisconnects).not.toHaveBeenCalled();
+    mockWebSocketInstances[0].onopen?.(new Event('open'));
+    expect(midi.resetIntentionalDisconnects).toHaveBeenCalledOnce();
     client.close();
   });
 

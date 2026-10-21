@@ -115,10 +115,22 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
   }
 
   private loadMidiService(): Promise<MidiService> {
-    if (!this.midiServicePromise) {
-      this.midiServicePromise = import("../../MidiService").then(({ midiService }) => midiService);
-    }
+    this.midiServicePromise ??= Promise.all([import("../../MidiService"), import("../../VirtualMidiService")])
+      .then(async ([{ midiService }, { virtualMidiService }]) => {
+        // Render the synth (and soundfonts, which use its output) into the
+        // client's master gain before any output connects, so it shares the
+        // client's clock, volume, mute, and autoplay unlock.
+        virtualMidiService.setPlaybackSource(this.client.media);
+        await virtualMidiService.setAudioOutput(this.client.media.getMidiAudioOutput());
+        void virtualMidiService.initialize();
+        return midiService;
+      });
     return this.midiServicePromise;
+  }
+
+  /** On server reconnect. Before MIDI loads, the flags are already false. */
+  resetIntentionalDisconnects(): void {
+    void this.midiServicePromise?.then((midiService) => midiService.resetIntentionalDisconnectFlags());
   }
 
   /**
@@ -402,8 +414,9 @@ export class GMCPClientMidi extends GMCPClientMidiBase {
   }
 
   sendAllNotesOff(): void {
+    // Nothing can be sounding before MIDI has loaded, so don't load it here.
     if (this.enabled) {
-      void this.loadMidiService().then((midiService) => {
+      void this.midiServicePromise?.then((midiService) => {
         midiService.sendAllNotesOff();
       });
     }

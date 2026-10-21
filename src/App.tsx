@@ -162,7 +162,6 @@ function App() {
 
   const clientInitialized = useRef(false);
   const hapticsRuntimeRef = useRef<HapticsRuntime | null>(null);
-  const midiEnabled = usePreferences((state) => state.midi.enabled);
   const hapticsEnabled = usePreferences((state) => state.haptics.enabled);
   const connected = useConnectionStore((state) => state.connected);
   useFileTransferNotifications(client);
@@ -411,42 +410,6 @@ function App() {
       document.removeEventListener("keydown", handleAppKeyDown, true);
     };
   }, [handleAppKeyDown]);
-
-  useEffect(() => {
-    if (!midiEnabled) return;
-
-    let cancelled = false;
-    let releasePlayback: (() => void) | undefined;
-    import("./VirtualMidiService")
-      .then(async ({ virtualMidiService }) => {
-        if (cancelled) return false;
-        releasePlayback = virtualMidiService.setPlaybackSource(client?.media ?? null);
-        if (client) {
-          // Render into the client's master gain so the synth shares its
-          // clock, volume, mute, and autoplay unlock.
-          await virtualMidiService.setAudioOutput(client.media.getMidiAudioOutput());
-        }
-        if (cancelled) return false;
-        return virtualMidiService.initialize();
-      })
-      .then((success) => {
-        if (cancelled) return;
-        if (success) {
-          console.log("Virtual MIDI synthesizer initialized");
-        } else {
-          console.log("Failed to initialize virtual MIDI synthesizer");
-        }
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error("Error initializing virtual MIDI synthesizer:", error);
-      });
-
-    return () => {
-      cancelled = true;
-      releasePlayback?.();
-    };
-  }, [midiEnabled, client]);
 
   // Window subtitle tracks the current room from the room store. On disconnect
   // the client resets the store, which clears roomInfo and so clears the subtitle.
