@@ -896,9 +896,9 @@ function collectDefinitions(
   const lines = masked.split(/\r\n|\r|\n/);
   const lineOffsets = getLineOffsets(source);
 
+  collectAssignmentDefinitions(source, masked, definitions);
   lines.forEach((line, lineIndex) => {
     const lineOffset = lineOffsets[lineIndex] ?? 0;
-    collectAssignmentDefinitions(source, line, lineOffset, definitions);
     collectForDefinitions(source, line, lineOffset, definitions);
     collectForkDefinitions(source, line, lineOffset, definitions);
     collectExceptDefinitions(source, line, lineOffset, definitions);
@@ -911,21 +911,26 @@ function collectDefinitions(
 
 function collectAssignmentDefinitions(
   source: string,
-  line: string,
-  lineOffset: number,
+  masked: string,
   definitions: Array<{ name: string; occurrence: Occurrence }>,
 ): void {
   const assignmentPattern = new RegExp(
-    `(^|[;\\s])(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*=(?!=|>)`,
+    `\\b(${MOO_IDENTIFIER_PATTERN_SOURCE})\\s*=(?!=|>)`,
     'g',
   );
-  for (const match of line.matchAll(assignmentPattern)) {
-    const name = match[2];
+  for (const match of masked.matchAll(assignmentPattern)) {
+    const name = match[1];
     if (!name) {
       continue;
     }
 
-    const nameStart = lineOffset + match.index + match[0].indexOf(name);
+    // Assignment is an expression (ToastStunt parser.y), including in conditions
+    // and arguments. Property names are not local assignment targets.
+    const nameStart = match.index;
+    const previous = previousNonWhitespaceCharacter(masked, nameStart);
+    if (previous === '.' || previous === ':' || previous === '$') {
+      continue;
+    }
     definitions.push({
       name,
       occurrence: occurrenceAt(source, nameStart, name.length),
