@@ -40,6 +40,8 @@ interface KeystrokesState {
   /** In arrival order; the last one wins a key two layers bind. */
   layers: KeystrokeLayer[];
   keysMode: boolean;
+  /** A staged command turned keys mode off; sending it turns keys mode back on. */
+  resumeOnSend: boolean;
   /** Adds or replaces a layer; true when its id is new. */
   putLayer: (layer: KeystrokeLayer) => boolean;
   /** Replaces a layer where it stands, or adds it at the end. */
@@ -47,11 +49,16 @@ interface KeystrokesState {
   removeLayer: (id: string) => KeystrokeLayer | undefined;
   clearLayers: () => void;
   setKeysMode: (on: boolean) => void;
+  /** Keys mode off until the player sends the command a binding staged. */
+  pauseKeysMode: () => void;
+  /** The player sent a command; true when that turned keys mode back on. */
+  commandSent: () => boolean;
 }
 
 export const useKeystrokesStore = create<KeystrokesState>((set, get) => ({
   layers: [],
   keysMode: false,
+  resumeOnSend: false,
   putLayer: (layer) => {
     const others = get().layers.filter((existing) => existing.id !== layer.id);
     const isNew = others.length === get().layers.length;
@@ -71,8 +78,14 @@ export const useKeystrokesStore = create<KeystrokesState>((set, get) => ({
     if (removed) set({ layers: get().layers.filter((layer) => layer !== removed) });
     return removed;
   },
-  clearLayers: () => set({ layers: [], keysMode: false }),
-  setKeysMode: (keysMode) => set({ keysMode }),
+  clearLayers: () => set({ layers: [], keysMode: false, resumeOnSend: false }),
+  setKeysMode: (keysMode) => set({ keysMode, resumeOnSend: false }),
+  pauseKeysMode: () => set({ keysMode: false, resumeOnSend: true }),
+  commandSent: () => {
+    if (!get().resumeOnSend) return false;
+    set({ keysMode: true, resumeOnSend: false });
+    return true;
+  },
 }));
 
 export function bindingLabel(binding: KeystrokeBinding): string {

@@ -3,6 +3,7 @@ import { inbound, outbound } from "../../protocol/messages";
 import { GMCPMessage, GMCPPackage } from "../package";
 import { useInputStore } from "../../stores/inputStore";
 import {
+    bindingLabel,
     findBinding,
     resolveLayer,
     type KeystrokeBinding,
@@ -10,8 +11,8 @@ import {
     useKeystrokesStore,
 } from "../../stores/keystrokesStore";
 import { usePreferences } from "../../stores/preferencesStore";
-import { chordsEqual, parseChord } from "../../keystrokeChords";
-import { isKeysModeToggle } from "../../reservedShortcuts";
+import { chordFromEvent, chordsEqual, formatChord, parseChord } from "../../keystrokeChords";
+import { isKeysHelpToggle, isKeysModeToggle, reservedReason } from "../../reservedShortcuts";
 import { gmcpJsonMessage } from "../messages";
 
 /** A binding as it arrives on the wire. */
@@ -113,12 +114,18 @@ function keysWorkAt(target: EventTarget | null): boolean {
     return target.closest('.output[role="region"]') !== null && !isTextField(target);
 }
 
+/** A key press that would put a character in the command input. */
+function typesCharacter(event: KeyboardEvent): boolean {
+    return event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey;
+}
+
 function say(message: string): void {
     announce(message, "assertive", 2000);
 }
 
 export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
     private readonly boundKeyDownHandler = (event: KeyboardEvent) => this.handleKeydown(event);
+    private keysHelp = false;
 
     constructor(client: ConstructorParameters<typeof GMCPClientKeystrokesBase>[0]) {
         super(client);
@@ -139,11 +146,25 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
     }
 
     override reset(): void {
+        this.keysHelp = false;
         useKeystrokesStore.getState().clearLayers();
     }
 
     private handleKeydown(event: KeyboardEvent): void {
         if (event.repeat || event.isComposing || !keysWorkAt(event.target)) return;
+
+        if (isKeysHelpToggle(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.keysHelp = !this.keysHelp;
+            say(this.keysHelp ? "Key help on. Press a key to hear what it does. Escape ends key help." : "Key help off");
+            return;
+        }
+
+        if (this.keysHelp) {
+            this.describeKey(event);
+            return;
+        }
 
         if (isKeysModeToggle(event)) {
             event.preventDefault();
@@ -153,19 +174,45 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         }
 
         const { layers, keysMode } = useKeystrokesStore.getState();
-        // Once the command input has text, typing keys type: a staged command can be finished.
-        const typingKeysFire = keysMode && useInputStore.getState().text === "";
-        const found = findBinding(layers, usePreferences.getState().keystrokes, typingKeysFire, event);
-        if (!found) return;
+        const found = findBinding(layers, usePreferences.getState().keystrokes, keysMode, event);
+        // In keys mode a key never types, bound or not.
+        if (!found && !(keysMode && typesCharacter(event))) return;
 
         event.preventDefault();
         event.stopPropagation();
+        if (!found) return;
         const command = this.parseCommand(found.binding.command, useInputStore.getState().text);
         if (found.binding.autosend) {
             this.client.sendCommand(command);
-        } else {
-            useInputStore.getState().setText(command);
+            return;
         }
+        useInputStore.getState().setText(command);
+        if (keysMode) {
+            // The player types the rest; sending it turns keys mode back on.
+            useKeystrokesStore.getState().pauseKeysMode();
+            say("Keys mode off");
+        }
+    }
+
+    /** Key help: says what a key does, and does nothing else. */
+    private describeKey(event: KeyboardEvent): void {
+        const chord = chordFromEvent(event);
+        if (!chord) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (chord.key === "escape" && chord.modifiers.length === 0) {
+            this.keysHelp = false;
+            say("Key help off");
+            return;
+        }
+        const { layers } = useKeystrokesStore.getState();
+        const found = findBinding(layers, usePreferences.getState().keystrokes, true, event);
+        const keyName = formatChord(found?.chord ?? chord);
+        if (found) {
+            say(`${keyName}: ${bindingLabel(found.binding)}`);
+            return;
+        }
+        say(reservedReason(chord) ?? `${keyName}: not bound`);
     }
 
     private toggleKeysMode(): void {
@@ -220,7 +267,7 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         if (!removed) return undefined;
         const modalLeft = useKeystrokesStore.getState().layers.some((layer) => layer.modal);
         const keysModeEnds = removed.modal && !modalLeft && store.keysMode;
-        if (keysModeEnds) store.setKeysMode(false);
+        if (removed.modal && !modalLeft) store.setKeysMode(false);
         if (removed.id === SERVER_KEYS_ID) return keysModeEnds ? "Keys mode off" : undefined;
         return keysModeEnds ? `${removed.label} keys removed. Keys mode off` : `${removed.label} keys removed`;
     }

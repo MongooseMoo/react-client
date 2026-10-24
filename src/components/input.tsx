@@ -2,7 +2,9 @@ import type React from "react";
 import { useRef, useEffect, useCallback } from "react";
 import { CommandHistory } from "../CommandHistory";
 import "./input.css";
+import { announce } from "@react-aria/live-announcer";
 import { useInputStore } from "../stores/inputStore";
+import { useKeystrokesStore } from "../stores/keystrokesStore";
 import { useRoomStore } from "../stores/roomStore";
 import { registerCommandInput } from "../inputFocus";
 import VoiceCommandButton from "./VoiceCommandButton";
@@ -120,6 +122,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
     // From the store, not the render: a voice command sets the text and sends at once.
     const currentInput = useInputStore.getState().text;
     onSend(currentInput);
+    if (useKeystrokesStore.getState().commandSent()) announce("Keys mode on", "assertive", 2000);
     if (currentInput.trim() && owner) {
       commandHistoryRef.current.addCommand(currentInput);
       saveHistory();

@@ -77,10 +77,26 @@ bindings fire only in **keys mode**. Every other binding fires whenever focus al
 - When a modal layer arrives, the client says "Scrabble keys available. Alt+Shift+H for keys mode."
   It does not switch keys mode on by itself.
 - When the last modal layer goes away, keys mode switches off and the client says so.
-- In keys mode, keys that no layer binds still type as usual, and Enter still sends.
-- In keys mode, a key without Ctrl, Alt or Meta fires only while the command input is empty. Once it
-  has text (a staged `score `, or anything the player started typing), keys type, so the command can
-  be finished. Sending clears the input and the keys work again.
+- In keys mode a key never types into the command input, whether a layer binds it or not, and
+  whatever the input holds. Enter still sends, and Backspace, the arrows and Tab still do what they
+  do when no layer binds them.
+- A binding with `autosend` false (a staged `score `) puts its command in the input for the player to
+  finish. If keys mode is on, it switches off and says "Keys mode off", so the player can type the
+  rest. When the player sends the command, keys mode switches back on and says "Keys mode on".
+- Mudlet's command line always types a plain Space and Shift+Space: it never offers them to key
+  bindings. In Mudlet, Space types in keys mode and a layer's Space binding does not fire.
+
+## Key help
+
+**Alt+Shift+F1** turns key help on and off. It belongs to the client and no layer can bind it. Turning
+it on says "Key help on. Press a key to hear what it does. Escape ends key help."
+
+In key help each key says what it does and does nothing else: "S: Scorecards" for a binding (whether
+or not keys mode is on), the reason for a key the client keeps ("Alt+Shift+H turns keys mode on and
+off"), "X: not bound" for any other key. Escape or Alt+Shift+F1 ends key help and says "Key help off".
+
+In Mudlet, key help describes the bound keys and the character keys; other keys keep doing what they
+do. Mudlet keeps a plain Escape for itself, so there only Alt+Shift+F1 ends key help.
 
 A non-modal layer is announced on arrival as "Helm console keys: 6". A layer leaving is announced as
 "Helm console keys removed".

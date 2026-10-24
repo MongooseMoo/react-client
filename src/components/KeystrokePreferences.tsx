@@ -101,7 +101,7 @@ const KeystrokePreferencesTab: React.FC = () => {
     <div>
       <p id="keystroke-preferences-help">
         Keys mode is {keysMode ? "on" : "off"}. Alt+Shift+H in the command input or output turns it
-        on and off. To change a key, choose it, press Enter, then press the new key; Escape cancels.
+        on and off; Alt+Shift+F1 turns key help on and off. To change a key, choose it, press Enter, then press the new key; Escape cancels.
       </p>
       {layers.length === 0 && <p>No keys yet. A game or console you use adds its keys here.</p>}
       {layers.map((layer) => (
