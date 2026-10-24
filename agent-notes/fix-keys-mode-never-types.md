@@ -54,4 +54,6 @@ Mudlet source (Mudlet/Mudlet master via gh api):
 Whether Chrome, Firefox, NVDA or Mudlet's own shortcuts take Alt+Shift+F1.
 
 ## Next step
-Commit, push, open both PRs, read CI. Merge and the Mudlet release (v4, `$client_gui` url) are Q's.
+PRs open: react-client #205 (commit ae36c6a7), mudlet-package #1 (commit 0eed11d; that repo has no CI). Read #205's
+CI result: "Tests and production build" passed in 4m18s on ae36c6a7 (run 40135762922); Deploy skipped, as on every
+PR. Merge and the Mudlet release (v4, `$client_gui` url) are Q's.
