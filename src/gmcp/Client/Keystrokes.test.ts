@@ -302,17 +302,49 @@ describe("GMCPClientKeystrokes", () => {
       mockAnnounce.mockClear();
     });
 
-    it("lets typing keys type once the command input has text, so a staged command can be finished", () => {
+    it("fires typing keys even when the command input has text", () => {
       press(document.body, altShiftH);
-      useInputStore.getState().setText("score ");
+      useInputStore.getState().setText("half typed");
+
+      const typed = press(element("command-input"), { key: "p", code: "KeyP" });
+
+      expect(typed.defaultPrevented).toBe(true);
+      expect(client.sendCommand).toHaveBeenCalledWith("press p on #4936");
+    });
+
+    it("switches keys mode off for a staged command and back on when it is sent", () => {
+      handler.receiveRegisteredMessage("Layer", {
+        id: "#7",
+        label: "Yahtzee",
+        modal: true,
+        bindings: [{ key: "s", modifiers: ["shift"], command: "score ", label: "Score", autosend: false }],
+      });
+      press(document.body, altShiftH);
+
+      press(element("command-input"), { key: "S", code: "KeyS", shiftKey: true });
+      expect(useInputStore.getState().text).toBe("score ");
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
+      expect(mockAnnounce).toHaveBeenLastCalledWith("Keys mode off", "assertive", 2000);
 
       const typed = press(element("command-input"), { key: "p", code: "KeyP" });
       expect(typed.defaultPrevented).toBe(false);
-      expect(client.sendCommand).not.toHaveBeenCalled();
 
-      useInputStore.getState().clear();
-      press(element("command-input"), { key: "p", code: "KeyP" });
-      expect(client.sendCommand).toHaveBeenCalledWith("press p on #4936");
+      expect(useKeystrokesStore.getState().commandSent()).toBe(true);
+      expect(useKeystrokesStore.getState().keysMode).toBe(true);
+      expect(useKeystrokesStore.getState().commandSent()).toBe(false);
+    });
+
+    it("does not turn keys mode back on after a staged command once the modal layers are gone", () => {
+      handler.receiveRegisteredMessage("Layer", { ...scrabbleLayer, bindings: [
+        { key: "s", modifiers: ["shift"], command: "score ", label: "Score", autosend: false },
+      ] });
+      press(document.body, altShiftH);
+      press(element("command-input"), { key: "S", code: "KeyS", shiftKey: true });
+
+      handler.receiveRegisteredMessage("RemoveLayer", { id: scrabbleLayer.id });
+
+      expect(useKeystrokesStore.getState().commandSent()).toBe(false);
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
     });
 
     it("still fires a Ctrl binding while the command input has text", () => {
@@ -358,13 +390,15 @@ describe("GMCPClientKeystrokes", () => {
       expect(useKeystrokesStore.getState().keysMode).toBe(false);
     });
 
-    it("lets unbound keys type and Enter send in keys mode", () => {
+    it("never lets an unbound key type in keys mode, and lets Enter send", () => {
       press(document.body, altShiftH);
 
       const typed = press(element("command-input"), { key: "x", code: "KeyX" });
+      const space = press(element("command-input"), { key: " ", code: "Space" });
       const enter = press(element("command-input"), { key: "Enter", code: "Enter" });
 
-      expect(typed.defaultPrevented).toBe(false);
+      expect(typed.defaultPrevented).toBe(true);
+      expect(space.defaultPrevented).toBe(true);
       expect(enter.defaultPrevented).toBe(false);
       expect(client.sendCommand).not.toHaveBeenCalled();
     });
@@ -380,6 +414,50 @@ describe("GMCPClientKeystrokes", () => {
 
       expect(client.sendCommand).not.toHaveBeenCalled();
       expect(useKeystrokesStore.getState().keysMode).toBe(true);
+    });
+  });
+
+  describe("key help", () => {
+    const altShiftF1 = { key: "F1", code: "F1", altKey: true, shiftKey: true };
+
+    beforeEach(() => {
+      handler.receiveRegisteredMessage("Layer", scrabbleLayer);
+      press(document.body, altShiftF1);
+    });
+
+    it("says what each key does and does nothing else", () => {
+      expect(mockAnnounce).toHaveBeenLastCalledWith(
+        "Key help on. Press a key to hear what it does. Escape ends key help.", "assertive", 2000);
+
+      const bound = press(element("command-input"), { key: "p", code: "KeyP" });
+      expect(mockAnnounce).toHaveBeenLastCalledWith("P: Place the selected tile", "assertive", 2000);
+      press(element("command-input"), { key: "x", code: "KeyX" });
+      expect(mockAnnounce).toHaveBeenLastCalledWith("X: not bound", "assertive", 2000);
+      press(element("command-input"), altShiftH);
+      expect(mockAnnounce).toHaveBeenLastCalledWith("Alt+Shift+H turns keys mode on and off", "assertive", 2000);
+      const enter = press(element("command-input"), { key: "Enter", code: "Enter" });
+
+      expect(bound.defaultPrevented).toBe(true);
+      expect(enter.defaultPrevented).toBe(true);
+      expect(client.sendCommand).not.toHaveBeenCalled();
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
+    });
+
+    it("lets a lone modifier through", () => {
+      const shift = press(element("command-input"), { key: "Shift", code: "ShiftLeft", shiftKey: true });
+
+      expect(shift.defaultPrevented).toBe(false);
+    });
+
+    it("ends with Escape or Alt+Shift+F1", () => {
+      press(element("command-input"), { key: "Escape", code: "Escape" });
+      expect(mockAnnounce).toHaveBeenLastCalledWith("Key help off", "assertive", 2000);
+      press(element("command-input"), { key: "p", code: "KeyP" });
+      expect(client.sendCommand).not.toHaveBeenCalled();
+
+      press(document.body, altShiftF1);
+      press(document.body, altShiftF1);
+      expect(mockAnnounce).toHaveBeenLastCalledWith("Key help off", "assertive", 2000);
     });
   });
 

@@ -22,6 +22,14 @@ export function isKeysModeToggle(event: KeyboardEvent): boolean {
   return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyH";
 }
 
+// F1 is the same key on every layout; plain F1 stays the games' (rules).
+export const KEYS_HELP_CHORD: Chord = { key: "f1", modifiers: ["alt", "shift"] };
+
+/** Alt+Shift+F1: key help, where each key says what it does instead of doing it. */
+export function isKeysHelpToggle(event: KeyboardEvent): boolean {
+  return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "F1";
+}
+
 export const HEAD_RECENTER_CHORD: Chord = { key: "o", modifiers: ["alt", "shift"] };
 
 /** Alt+Shift+O by physical key: recenters head tracking (src/audio/headTracking.ts). */
@@ -50,6 +58,11 @@ const RESERVED_SHORTCUTS: readonly ReservedShortcut[] = [
     keys: [KEYS_MODE_CHORD.key],
     modifiers: KEYS_MODE_CHORD.modifiers,
     reason: "Alt+Shift+H turns keys mode on and off",
+  },
+  {
+    keys: [KEYS_HELP_CHORD.key],
+    modifiers: KEYS_HELP_CHORD.modifiers,
+    reason: "Alt+Shift+F1 turns key help on and off",
   },
   {
     keys: [HEAD_RECENTER_CHORD.key],
