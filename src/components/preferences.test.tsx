@@ -135,6 +135,8 @@ it('has a Status section that turns each status cue on and off and sets its volu
 
   fireEvent.click(screen.getByRole('checkbox', { name: 'Spoken health warnings' }));
   expect(usePreferences.getState().status.warnings.enabled).toBe(false);
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Spoken effect changes' }));
+  expect(usePreferences.getState().status.effectSpeech.enabled).toBe(false);
 
   const heartbeat = screen.getByRole('group', { name: 'Heartbeat' });
   fireEvent.input(within(heartbeat).getByRole('slider', { name: 'Heartbeat volume' }), { target: { value: '0.25' } });

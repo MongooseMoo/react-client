@@ -77,12 +77,30 @@ describe("followStatus", () => {
     expect(StatusCues.prototype.reserve).toHaveBeenCalledTimes(1);
   });
 
-  it("plays earcons for effects gained and lost", () => {
-    status().setEffects([effect("Shield")]);
-    status().setEffects([effect("Shield"), effect("Haste")]);
+  it("plays earcons and speaks the effects gained and lost", () => {
+    status().setEffects([effect("bless")]);
+    status().setEffects([effect("bless"), effect("haste")]);
     expect(StatusCues.prototype.effect).toHaveBeenLastCalledWith(true, 0.5);
-    status().setEffects([effect("Haste")]);
+    expect(announce).toHaveBeenLastCalledWith("Gained haste", "polite");
+    status().setEffects([effect("haste")]);
     expect(StatusCues.prototype.effect).toHaveBeenLastCalledWith(false, 0.5);
+    expect(announce).toHaveBeenLastCalledWith("Lost bless", "polite");
+    status().setEffects([effect("shield"), effect("ward")]);
+    expect(announce).toHaveBeenLastCalledWith("Gained shield, ward. Lost haste", "polite");
+    status().setEffects([effect("shield"), effect("ward")]);
+    expect(announce).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps effect changes silent and unspoken when both are turned off", () => {
+    usePreferences.getState().setStatus({
+      ...defaults,
+      effectEarcons: { enabled: false, volume: 0.5 },
+      effectSpeech: { enabled: false },
+    });
+    status().setEffects([effect("bless")]);
+    status().setEffects([effect("haste")]);
+    expect(StatusCues.prototype.effect).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
   });
 
   it("blips when the target's health changes, not when it clears", () => {

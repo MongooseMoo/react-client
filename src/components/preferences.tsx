@@ -364,6 +364,16 @@ const StatusTab: React.FC = () => {
         Spoken health warnings
       </label>
       <p id="status-warnings-help">Says when your health falls below 50, 25 and 10 percent.</p>
+      <label>
+        <input
+          type="checkbox"
+          checked={status.effectSpeech.enabled}
+          onChange={(e) => setStatus({ ...status, effectSpeech: { enabled: e.target.checked } })}
+          aria-describedby="status-effect-speech-help"
+        />
+        Spoken effect changes
+      </label>
+      <p id="status-effect-speech-help">Says the effects you gain and lose, such as "Gained haste. Lost bless".</p>
       {STATUS_SOUND_CUES.map(({ cue, label, help }) => (
         <fieldset key={cue}>
           <legend>{label}</legend>

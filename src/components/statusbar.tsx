@@ -7,7 +7,6 @@ import {
   type MeterKind,
 } from "../stores/characterStatusStore";
 import { useConnectionStore } from "../stores/connectionStore";
-import { describeMeter, describeTarget } from "../status/statusText";
 import './statusbar.css'; // Ensure CSS is imported
 
 // How often a meter that is moving by its rate is redrawn.
@@ -19,14 +18,21 @@ function levelClass(percent: number): string {
   return "vital-danger";
 }
 
-/** A bar for sight and the same percent and words as text, so colour is never the only cue. */
-function StatusMeter({ kind, percent, text }: { kind: MeterKind | "target"; percent: number; text: string }) {
+/**
+ * A bar for sight and the same percent and words as text, so colour is never the only cue.
+ * Narrow screens drop the words and keep the label and percent.
+ */
+function StatusMeter({ kind, label, percent, words }: {
+  kind: MeterKind | "target"; label: string; percent: number; words?: string;
+}) {
   return (
     <span className={`status-meter status-meter-${kind}`}>
       <span className="status-meter-bar" aria-hidden="true">
         <span className={`status-meter-fill ${levelClass(percent)}`} style={{ width: `${percent}%` }} />
       </span>
-      <span className="status-meter-text">{text}</span>
+      <span className="status-meter-text">
+        {label} {percent}%{words && <span className="status-meter-words">, {words}</span>}
+      </span>
     </span>
   );
 }
@@ -74,13 +80,12 @@ const Statusbar: React.FC = () => {
       {hasStatus && (
         <span className="status-vitals" role="group" aria-label="Status">
           {meters.map((meter) => (
-            <StatusMeter key={meter.id} kind={meter.kind}
-              percent={percentOf(meterValueAt(meter, metersAt, shownAt), meter.max)}
-              text={describeMeter(meter, metersAt, shownAt)} />
+            <StatusMeter key={meter.id} kind={meter.kind} label={meter.label} words={meter.words}
+              percent={percentOf(meterValueAt(meter, metersAt, shownAt), meter.max)} />
           ))}
           {target && (
-            <StatusMeter kind="target" percent={Math.round(target.value * 100)}
-              text={`Target: ${describeTarget(target)}`} />
+            <StatusMeter kind="target" label={`Target: ${target.name}`} words={target.words}
+              percent={Math.round(target.value * 100)} />
           )}
           {effects && effects.length > 0 && (
             <ul className="status-effects" aria-label="Effects">

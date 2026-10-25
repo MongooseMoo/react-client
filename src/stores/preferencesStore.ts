@@ -105,6 +105,8 @@ export type StatusPreferences = {
   targetBlip: StatusCuePreference;
   // A rising or falling pair of tones when you gain or lose an effect.
   effectEarcons: StatusCuePreference;
+  // A spoken line naming the effects gained and lost, such as "Gained haste. Lost bless".
+  effectSpeech: { enabled: boolean };
 };
 
 export type PrefState = {
@@ -182,6 +184,7 @@ function getInitialPreferences(): PrefState {
       warnings: { enabled: true },
       targetBlip: { enabled: true, volume: 0.5 },
       effectEarcons: { enabled: true, volume: 0.5 },
+      effectSpeech: { enabled: true },
     },
     keystrokes: {},
   };
@@ -210,6 +213,7 @@ function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
       warnings: { ...initial.status.warnings, ...stored.status?.warnings },
       targetBlip: { ...initial.status.targetBlip, ...stored.status?.targetBlip },
       effectEarcons: { ...initial.status.effectEarcons, ...stored.status?.effectEarcons },
+      effectSpeech: { ...initial.status.effectSpeech, ...stored.status?.effectSpeech },
     },
     keystrokes: { ...initial.keystrokes, ...stored.keystrokes },
   };

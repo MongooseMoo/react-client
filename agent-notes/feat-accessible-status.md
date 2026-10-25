@@ -46,11 +46,15 @@ protocol, no rebindable status keys).
   interval 900 ms down to 300 ms. No continuous loop.
 - Pitch: 200 Hz at 0 % to 800 Hz at 100 %, linear.
 - The status bar redraws once a second only while some meter is still moving
-  by its rate (plan: "the client moves each meter by rate"). Open question for
-  the lead: the plan's exclusions say "no new timers/tickers"; I read that as
-  the server, but this is a client interval.
-- Effects gained/lost are earcons only (the plan's package B); no spoken
-  "gained X" line.
+  by its rate. The lead confirmed (2026-10-25) that "no timers" meant the
+  server and fixed the plan wording.
+- Effects gained/lost: earcons plus a polite spoken line ("Gained haste. Lost
+  bless"), per the lead relaying Q's approved scope "a sound and a spoken
+  line"; its own on/off, `status.effectSpeech`.
+- Narrow screens (<= 768px) keep the meters: the bar wraps, bars shrink to
+  1.5rem and the condition words (own span) are hidden; label and percent stay.
+- Effects in the "Readiness" section are left out by the server; the client
+  has no section filter (lead, 2026-10-25).
 - Key help (Alt+Shift+F1) names the status key, or the buffer key when the
   chosen scheme uses H or T; `reservedReason` reads the scheme from prefs.
 
@@ -59,10 +63,12 @@ protocol, no rebindable status keys).
 - Input and output already preventDefault every buffer letter with Alt (h, t
   included) but not m or v; the window-level status handler preventDefaults.
 - vitest 1.6 fake timers do not fake `performance` unless asked.
+- Vitest empties CSS imports (even `?raw`) and `import.meta.url` is not a
+  file URL under jsdom; the stylesheet test reads it via `__dirname`. The
+  checkout has CRLF CSS, so the test's regex allows `\r?\n`.
 
 ## Next step
 
-Committed f976bc49 and pushed `feat/accessible-status`. PR title/body in
-`agent-notes/pr-body.md` (not committed). No PR opened: the lead opens it and
-reads CI. Open for the lead: the client redraw interval vs "no new
-timers/tickers".
+Pushed `feat/accessible-status` (f976bc49, then the effect speech and
+narrow-screen meters commit). PR title/body in `agent-notes/pr-body.md` (not
+committed). No PR opened: the lead opens it and reads CI.

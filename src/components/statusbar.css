@@ -55,7 +55,8 @@
     transition: width 0.3s ease-out;
 }
 
-.statusbar .status-meter-text {
+.statusbar .status-meter-text,
+.statusbar .status-meter-words {
     margin: 0;
 }
 
@@ -134,9 +135,29 @@
 .status-meter-fill.vital-danger { background: var(--color-danger, #ef4444); }
 
 /* === Mobile statusbar === */
+/* Meters stay visible: the bar wraps to a second row, bars shrink and the words go
+   (Alt+H and the other status keys still read them). */
 @media (max-width: 768px) {
-  .status-vitals,
   .status-time {
+    display: none;
+  }
+
+  .statusbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 1.5rem;
+  }
+
+  .statusbar .status-vitals {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .statusbar .status-meter-bar {
+    width: 1.5rem;
+  }
+
+  .statusbar .status-meter-words {
     display: none;
   }
 }

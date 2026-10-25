@@ -20,8 +20,16 @@ export function warningCrossed(before: number, after: number): number | undefine
 
 const effectKey = (effect: Effect) => `${effect.section}\u0000${effect.name}\u0000${effect.source}`;
 
+/** "Gained haste. Lost bless", or "" when nothing changed. */
+export function effectChangeLine(gained: readonly Effect[], lost: readonly Effect[]): string {
+  const parts: string[] = [];
+  if (gained.length > 0) parts.push(`Gained ${gained.map((effect) => effect.name).join(", ")}`);
+  if (lost.length > 0) parts.push(`Lost ${lost.map((effect) => effect.name).join(", ")}`);
+  return parts.join(". ");
+}
+
 /**
- * Plays the status cues and speaks the health warnings as Char.Vitals,
+ * Plays the status cues and speaks the health warnings and effect changes as Char.Vitals,
  * Char.Effects and Char.Target arrive. Only received changes are heard; a
  * meter moving by its rate between updates is silent. Returns the unsubscribe.
  */
@@ -51,11 +59,17 @@ export function followStatus(audio: ToneMaker): () => void {
       }
     }
 
-    if (state.effects !== previous.effects && state.effects && previous.effects && prefs.effectEarcons.enabled) {
+    if (state.effects !== previous.effects && state.effects && previous.effects) {
       const had = new Set(previous.effects.map(effectKey));
       const has = new Set(state.effects.map(effectKey));
-      if (state.effects.some((effect) => !had.has(effectKey(effect)))) cues.effect(true, prefs.effectEarcons.volume);
-      if (previous.effects.some((effect) => !has.has(effectKey(effect)))) cues.effect(false, prefs.effectEarcons.volume);
+      const gained = state.effects.filter((effect) => !had.has(effectKey(effect)));
+      const lost = previous.effects.filter((effect) => !has.has(effectKey(effect)));
+      if (prefs.effectEarcons.enabled) {
+        if (gained.length > 0) cues.effect(true, prefs.effectEarcons.volume);
+        if (lost.length > 0) cues.effect(false, prefs.effectEarcons.volume);
+      }
+      const line = effectChangeLine(gained, lost);
+      if (prefs.effectSpeech.enabled && line) announce(line, "polite");
     }
 
     if (state.target && state.target !== previous.target && prefs.targetBlip.enabled &&
