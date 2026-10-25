@@ -166,7 +166,6 @@ const Toolbar = ({
         <button
           type="button"
           onClick={handleMuteToggle}
-          accessKey="M"
           aria-label={muted ? 'Unmute' : 'Mute'}
           title={muted ? 'Unmute' : 'Mute'}
         >
@@ -181,7 +180,6 @@ const Toolbar = ({
             max="100"
             value={volume * 100}
             onChange={handleVolumeChange}
-            accessKey="V"
             aria-label="Volume"
           />
         </label>

@@ -265,5 +265,16 @@ describe("preferencesStore", () => {
       });
       expect(loaded.keystrokes).toEqual({ "#4936": { status: { key: "s", modifiers: ["alt"] } } });
     });
+
+    it("starts every status cue on and keeps a cue the player changed", async () => {
+      const fresh = await loadWith({ version: 3, data: {} });
+      expect(fresh.status.warnings).toEqual({ enabled: true });
+      expect(fresh.status.effectSpeech).toEqual({ enabled: true });
+      expect(fresh.status.heartbeat).toEqual({ enabled: true, volume: 0.5 });
+
+      const chosen = await loadWith({ version: 3, data: { status: { heartbeat: { enabled: false } } } });
+      expect(chosen.status.heartbeat).toEqual({ enabled: false, volume: 0.5 });
+      expect(chosen.status.reserveTones).toEqual({ enabled: true, volume: 0.5 });
+    });
   });
 });

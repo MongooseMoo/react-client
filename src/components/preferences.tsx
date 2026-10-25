@@ -335,6 +335,79 @@ const SoundsTab: React.FC = () => {
   );
 };
 
+type StatusSoundCue = "reserveTones" | "heartbeat" | "targetBlip" | "effectEarcons";
+
+const STATUS_SOUND_CUES: { cue: StatusSoundCue; label: string; help: string }[] = [
+  { cue: "heartbeat", label: "Heartbeat", help: "Beats when your health changes band; faster when it is lower." },
+  { cue: "reserveTones", label: "Reserve tones", help: "A tone when a power or body reserve moves by a tenth; higher means fuller." },
+  { cue: "targetBlip", label: "Target blip", help: "A blip when your target's health changes; higher means healthier." },
+  { cue: "effectEarcons", label: "Effect sounds", help: "Rising tones when you gain an effect, falling when you lose one." },
+];
+
+const StatusTab: React.FC = () => {
+  const status = usePreferences((state) => state.status);
+  const setStatus = usePreferences((state) => state.setStatus);
+
+  return (
+    <div>
+      <p id="status-keys-help">
+        Alt+H reads your health, Alt+M your power reserves, Alt+V your body reserve and Alt+T your
+        target. When your buffer keys use H or T, those stay buffer keys.
+      </p>
+      <label>
+        <input
+          type="checkbox"
+          checked={status.warnings.enabled}
+          onChange={(e) => setStatus({ ...status, warnings: { enabled: e.target.checked } })}
+          aria-describedby="status-warnings-help"
+        />
+        Spoken health warnings
+      </label>
+      <p id="status-warnings-help">Says when your health falls below 50, 25 and 10 percent.</p>
+      <label>
+        <input
+          type="checkbox"
+          checked={status.effectSpeech.enabled}
+          onChange={(e) => setStatus({ ...status, effectSpeech: { enabled: e.target.checked } })}
+          aria-describedby="status-effect-speech-help"
+        />
+        Spoken effect changes
+      </label>
+      <p id="status-effect-speech-help">Says the effects you gain and lose, such as "Gained haste. Lost bless".</p>
+      {STATUS_SOUND_CUES.map(({ cue, label, help }) => (
+        <fieldset key={cue}>
+          <legend>{label}</legend>
+          <label>
+            <input
+              type="checkbox"
+              checked={status[cue].enabled}
+              onChange={(e) => setStatus({ ...status, [cue]: { ...status[cue], enabled: e.target.checked } })}
+              aria-describedby={`status-${cue}-help`}
+            />
+            Play
+          </label>
+          <label>
+            {label} volume
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={status[cue].volume}
+              disabled={!status[cue].enabled}
+              aria-valuetext={`${Math.round(status[cue].volume * 100)}%`}
+              onChange={(e) =>
+                setStatus({ ...status, [cue]: { ...status[cue], volume: parseFloat(e.target.value) } })
+              }
+            />
+          </label>
+          <p id={`status-${cue}-help`}>{help}</p>
+        </fieldset>
+      ))}
+    </div>
+  );
+};
+
 const EditorTab: React.FC = () => {
   const editor = usePreferences((state) => state.editor);
   const setEditorAutocompleteEnabled = usePreferences(
@@ -493,6 +566,8 @@ const KeyboardTab: React.FC = () => {
           <dd>Alt+Left/Right changes buffer; Alt+Up/Down reviews messages. The selected letter scheme works with Alt too. Alt+PageUp/PageDown moves ten messages; Alt+Home/End moves to the first/last message.</dd>
           <dt>Reviewed message</dt>
           <dd>Alt+Space repeats; Alt+Enter opens its link or offers a link choice; Alt+Shift+Space copies. Alt+Shift+1 through Alt+Shift+0 selects a numbered buffer. Alt+Shift+T toggles timestamps; Alt+Shift+Delete deletes the current buffer.</dd>
+          <dt>Status</dt>
+          <dd>Alt+H reads your health, Alt+M your power reserves, Alt+V your body reserve and Alt+T your target. When your buffer keys use H or T, those stay buffer keys. The Status section turns the status sounds and warnings on and off.</dd>
           <dt>Sounds</dt>
           <dd>Escape pauses client sounds. Use Resume sounds in the toolbar to continue playback. Alt+Shift+O recenters head tracking.</dd>
           <dt>Server keys</dt>
@@ -509,7 +584,7 @@ const KeyboardTab: React.FC = () => {
               <tr key={label}><td>{index + 1}</td><td>{label}</td></tr>)}
           </tbody>
         </table>
-        <p>Browser access keys: L Save log, C Copy log, E Clear log, P Preferences, M Mute, V Volume, U Sidebar. Selected player: G Page, S Say to, K Look, F Follow. The activation modifier depends on your browser and operating system.</p>
+        <p>Browser access keys: L Save log, C Copy log, E Clear log, P Preferences, U Sidebar. Selected player: G Page, S Say to, K Look, F Follow. The activation modifier depends on your browser and operating system.</p>
       </details>
     </div>
   );
@@ -551,6 +626,7 @@ const Preferences: React.FC = () => {
     { id: "preferences-speech-tab", label: "Speech", content: <SpeechTab /> },
     { id: "preferences-channels-tab", label: "Channels", content: <ChannelPreferencesTab /> },
     { id: "preferences-sounds-tab", label: "Sounds", content: <SoundsTab /> },
+    { id: "preferences-status-tab", label: "Status", content: <StatusTab /> },
     { id: "preferences-editor-tab", label: "Editor", content: <EditorTab /> },
     { id: "preferences-keyboard-tab", label: "Keyboard", content: <KeyboardTab /> },
     { id: "preferences-keys-tab", label: "Keys", content: <KeystrokePreferencesTab /> },

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Chord, Modifier } from "./keystrokeChords";
 import {
   HEAD_RECENTER_CHORD,
@@ -7,7 +7,9 @@ import {
   isHeadRecenterShortcut,
   isVoiceCommandToggle,
   reservedReason,
+  statusReadoutFor,
 } from "./reservedShortcuts";
+import { usePreferences } from "./stores/preferencesStore";
 
 const chord = (key: string, ...modifiers: Modifier[]): Chord => ({ key, modifiers });
 
@@ -78,5 +80,47 @@ describe("reservedReason", () => {
     expect(reservedReason(chord("f2"))).toBeUndefined();
     expect(reservedReason(chord("enter", "ctrl"))).toBeUndefined();
     expect(reservedReason(chord("x", "alt"))).toBeUndefined();
+    // Mute and Volume no longer have access keys.
+    expect(reservedReason(chord("m", "alt", "shift"))).toBeUndefined();
+    expect(reservedReason(chord("v", "ctrl", "alt"))).toBeUndefined();
+  });
+});
+
+describe("status keys", () => {
+  const press = (init: KeyboardEventInit) => new KeyboardEvent("keydown", { altKey: true, ...init });
+
+  afterEach(() => usePreferences.getState().setKeyboard({ navigationKeyScheme: "jkli" }));
+
+  it("reads health, power, body and target on Alt+H, M, V and T", () => {
+    expect(statusReadoutFor(press({ key: "h", code: "KeyH" }), "jkli")).toBe("health");
+    expect(statusReadoutFor(press({ key: "m", code: "KeyM" }), "jkli")).toBe("power");
+    expect(statusReadoutFor(press({ key: "v", code: "KeyV" }), "jkli")).toBe("body");
+    expect(statusReadoutFor(press({ key: "t", code: "KeyT" }), "jkli")).toBe("target");
+    expect(statusReadoutFor(press({ key: "x", code: "KeyX" }), "jkli")).toBeUndefined();
+  });
+
+  it("takes only plain Alt, and the physical key when Option types another character", () => {
+    expect(statusReadoutFor(press({ key: "˙", code: "KeyH" }), "jkli")).toBe("health");
+    expect(statusReadoutFor(press({ key: "H", code: "KeyH", shiftKey: true }), "jkli")).toBeUndefined();
+    expect(statusReadoutFor(press({ key: "h", code: "KeyH", ctrlKey: true }), "jkli")).toBeUndefined();
+    expect(statusReadoutFor(new KeyboardEvent("keydown", { key: "h", code: "KeyH" }), "jkli")).toBeUndefined();
+  });
+
+  it("yields H and T to the Dvorak right-hand buffer keys", () => {
+    expect(statusReadoutFor(press({ key: "h", code: "KeyJ" }), "dvorak-rh")).toBeUndefined();
+    expect(statusReadoutFor(press({ key: "t", code: "KeyK" }), "dvorak-rh")).toBeUndefined();
+    expect(statusReadoutFor(press({ key: "m", code: "KeyM" }), "dvorak-rh")).toBe("power");
+    expect(statusReadoutFor(press({ key: "v", code: "KeyV" }), "dvorak-rh")).toBe("body");
+  });
+
+  it("names the status key, or the buffer key when the chosen scheme uses the letter", () => {
+    expect(reservedReason(chord("h", "alt"))).toBe("Alt+H reads your health");
+    expect(reservedReason(chord("m", "alt"))).toBe("Alt+M reads your power reserves");
+    expect(reservedReason(chord("v", "alt"))).toBe("Alt+V reads your body reserve");
+    expect(reservedReason(chord("t", "alt"))).toBe("Alt+T reads your target's health");
+    usePreferences.getState().setKeyboard({ navigationKeyScheme: "dvorak-rh" });
+    expect(reservedReason(chord("h", "alt"))).toMatch(/buffer/);
+    expect(reservedReason(chord("t", "alt"))).toMatch(/buffer/);
+    expect(reservedReason(chord("m", "alt"))).toBe("Alt+M reads your power reserves");
   });
 });
