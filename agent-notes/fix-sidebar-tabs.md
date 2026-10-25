@@ -38,6 +38,9 @@ PR #207. First CI run: 1 of 194 test files failed, `createConfiguredClient.test.
 `serverinfo-get` request after negotiation; my search was case-sensitive on `serverInfo`. Changed to the
 rehash request; a case-insensitive search finds no other reference.
 
+CI on `c9222249`: "Tests and production build" passed (typecheck, npm test, audio cache, editor ownership,
+browser sessions, keyboard accessibility). Deploy skipped, as on every PR. PR mergeable.
+
 ## Next step
 
-Read PR #207's CI on the fix commit.
+Q decides whether to merge. After merge: remove worktree `~/code/react-client-sidebar` and branch.
