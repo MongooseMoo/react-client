@@ -2,6 +2,9 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import PreferencesDialog, { type PreferencesDialogRef } from './PreferencesDialog';
+import { AudioDiagnosticsRing } from '../audio/audioDiagnostics';
+
+const media = { diagnostics: new AudioDiagnosticsRing() };
 
 const loading = vi.hoisted(() => {
   let resolve!: () => void;
@@ -18,7 +21,7 @@ afterEach(() => cleanup());
 
 it('preserves user focus during loading and chooses the selected tab on a cached reopening', async () => {
   const ref = React.createRef<PreferencesDialogRef>();
-  render(<PreferencesDialog ref={ref} />);
+  render(<PreferencesDialog ref={ref} media={media} />);
   await act(async () => ref.current?.open());
   const dialog = screen.getByRole('dialog');
   const close = screen.getByRole('button', { name: 'Close' });
@@ -39,7 +42,7 @@ it('preserves user focus during loading and chooses the selected tab on a cached
 
 it('stays open when reopened before the previous close event has arrived', async () => {
   const ref = React.createRef<PreferencesDialogRef>();
-  render(<PreferencesDialog ref={ref} />);
+  render(<PreferencesDialog ref={ref} media={media} />);
   await act(async () => ref.current?.open());
   const dialog = screen.getByRole('dialog');
   await act(async () => ref.current?.close());
@@ -50,7 +53,7 @@ it('stays open when reopened before the previous close event has arrived', async
 
 it('focuses settings once content is ready when the user has not started navigating', async () => {
   const ref = React.createRef<PreferencesDialogRef>();
-  render(<PreferencesDialog ref={ref} />);
+  render(<PreferencesDialog ref={ref} media={media} />);
   await act(async () => ref.current?.open());
   await waitFor(() => expect(screen.getByRole('tab', { name: 'General' })).toHaveFocus());
 });

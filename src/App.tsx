@@ -572,7 +572,7 @@ function App() {
           <footer style={{ gridArea: "status" }}>
             <Statusbar />
           </footer>
-          <PreferencesDialog ref={prefsDialogRef} />
+          <PreferencesDialog ref={prefsDialogRef} media={client.media} />
           <AutoLogDialog ref={autoLogDialogRef} />
         </div>
       )}

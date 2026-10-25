@@ -8,6 +8,7 @@ import type MudClient from "../client";
 import type { GMCPMessageHelpTopic } from "../gmcp/Help";
 import { useConnectionStore } from "../stores/connectionStore";
 import { useHelpStore } from "../stores/helpStore";
+import { useInputStore } from "../stores/inputStore";
 import HelpPanel from "./HelpPanel";
 
 const result = (overrides: Partial<GMCPMessageHelpTopic> = {}): GMCPMessageHelpTopic => ({
@@ -37,7 +38,11 @@ describe("HelpPanel", () => {
     useConnectionStore.getState().reset();
     useConnectionStore.getState().setSessionReady(true);
     sendGet = vi.fn();
-    client = { gmcp: { require: (name: string) => (name === "Help" ? { sendGet } : undefined) } } as unknown as MudClient;
+    useInputStore.getState().resetCommands();
+    client = {
+      gmcp: { require: (name: string) => (name === "Help" ? { sendGet } : undefined) },
+      mcpSession: { packageHandlers: {} },
+    } as unknown as MudClient;
   });
 
   const renderPanel = () => render(<HelpPanel client={client} />);
@@ -173,5 +178,14 @@ describe("HelpPanel", () => {
     expect(screen.getByRole("heading", { name: "Help" })).toBeInTheDocument();
     expect(announce).toHaveBeenCalledWith("Help", "polite");
     expect(sendGet).not.toHaveBeenCalled();
+  });
+
+  it("lists the commands the server says can be typed here", () => {
+    useHelpStore.getState().show(frontPage);
+    renderPanel();
+    expect(screen.getByText("No command list from the server yet.")).toBeInTheDocument();
+    act(() => useInputStore.getState().setVisibleCommands(["look", "get"]));
+    const list = screen.getByRole("list", { name: "Visible commands" });
+    expect(within(list).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["get", "look"]);
   });
 });

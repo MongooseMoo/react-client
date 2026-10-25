@@ -10,11 +10,8 @@ import {
   FaMapMarkerAlt,
   FaMusic,
   FaQuestionCircle,
-  FaServer,
   FaUsers,
-  FaWaveSquare,
 } from 'react-icons/fa';
-const AudioDiagnostics = React.lazy(() => import('./AudioDiagnostics'));
 const FileTransferUI = React.lazy(() => import('./FileTransfer'));
 import AudioChatBoundary from './AudioChatBoundary';
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
@@ -35,13 +32,12 @@ import { useRoomStore } from '../stores/roomStore';
 import { useItemsStore } from '../stores/itemsStore';
 import { useUserlistStore } from '../stores/userlistStore';
 import { hapticsService } from '../HapticsService';
-import ServerFeaturesPanel from './ServerFeaturesPanel';
 
-// Define the type for the imperative handle
+/** Tabs are addressed by their visible position, the number Ctrl+Shift+number names. */
 export type SidebarRef = {
   switchToTab: (index: number) => boolean;
   hasTab: (index: number) => boolean;
-  /** The position of the tab with this id, for switchToTab; -1 when there is none. */
+  /** The visible position of the tab with this id, for switchToTab; -1 when it is not shown. */
   indexOfTab: (id: string) => number;
 };
 
@@ -178,34 +174,67 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       onWidthChange(clampSidebarWidth(next));
     };
 
-    // Define all possible tabs
+    // In the order a player reaches for them: where am I, what do I carry, who is here,
+    // how do I do things, then devices.
     const allTabs: TabProps[] = [
       {
         id: 'room-tab',
         label: 'Room',
         icon: <FaMapMarkerAlt />,
         content: <RoomInfoDisplay client={client} />,
-        condition: hasRoomData, // Condition to show tab
+        condition: hasRoomData,
+      },
+      {
+        id: 'map-tab',
+        label: 'Map',
+        icon: <FaMap />,
+        content: (
+          <Suspense fallback={<p role="status">Loading map…</p>}>
+            <MapPanel client={client} />
+          </Suspense>
+        ),
+        mountOnSelect: true,
+        condition: hasRoomData,
       },
       {
         id: 'inventory-tab',
         label: 'Inventory',
         icon: <FaBoxOpen />,
-        content: <Inventory client={client} />, // Changed to use Inventory component
+        content: <Inventory client={client} />,
         condition: hasInventoryData,
       },
       {
-        id: 'users-tab', // Add unique IDs
+        id: 'users-tab',
         label: 'Users',
         icon: <FaUsers />,
         content: <Userlist users={users} />,
         condition: true,
       },
       {
-        id: 'server-tab',
-        label: 'Server',
-        icon: <FaServer />,
-        content: <ServerFeaturesPanel client={client} />,
+        id: 'help-tab',
+        label: 'Help',
+        icon: <FaQuestionCircle />,
+        content: (
+          <Suspense fallback={<p role="status">Loading help…</p>}>
+            <HelpPanel client={client} />
+          </Suspense>
+        ),
+        mountOnSelect: true,
+        condition: true,
+      },
+      {
+        id: 'audio-tab',
+        label: 'Voice chat',
+        icon: <FaHeadphones />,
+        content: <AudioChatBoundary client={client} />,
+        condition: true,
+      },
+      {
+        id: 'files-tab',
+        label: 'Files',
+        icon: <FaFolderOpen />,
+        content: <Suspense fallback={<p role="status">Loading file transfers…</p>}><FileTransferUI client={client} expanded={fileTransferExpanded} users={users} /></Suspense>,
+        mountOnSelect: true,
         condition: true,
       },
       {
@@ -228,98 +257,24 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         mountOnSelect: true,
         condition: hapticsPreferences.enabled,
       },
-
-      // { // Removed Skills Tab
-      //   id: "skills-tab",
-      //   label: "Skills",
-      //   content: <SkillsDisplay client={client} />,
-      //   condition: hasSkillsData,
-      // },
-      // { // Removed Afflictions Tab
-      //   id: "afflictions-tab",
-      //   label: "Afflictions",
-      //   content: <AfflictionsList client={client} />,
-      //   condition: hasAfflictionsData,
-      // },
-      // { // Removed Defences Tab
-      //   id: "defences-tab",
-      //   label: "Defences",
-      //   content: <DefencesList client={client} />,
-      //   condition: hasDefencesData,
-      // },
-      {
-        id: 'files-tab',
-        label: 'Files',
-        icon: <FaFolderOpen />,
-        content: <Suspense fallback={<p role="status">Loading file transfers…</p>}><FileTransferUI client={client} expanded={fileTransferExpanded} users={users} /></Suspense>,
-        mountOnSelect: true,
-        condition: true, // Always show Files tab
-      },
-      {
-        id: 'audio-tab',
-        label: 'Audio',
-        icon: <FaHeadphones />,
-        content: <AudioChatBoundary client={client} />,
-        condition: true, // Always show Audio tab (or add condition if needed)
-      },
-      {
-        // Last, so the Ctrl+Shift+number shortcuts of existing tabs keep their positions.
-        id: 'audio-diagnostics-tab',
-        label: 'Audio diagnostics',
-        icon: <FaWaveSquare />,
-        content: (
-          <Suspense fallback={<p role="status">Loading audio diagnostics…</p>}>
-            <AudioDiagnostics diagnostics={client.media.diagnostics} readPerformance={client.media.readPerformance} />
-          </Suspense>
-        ),
-        mountOnSelect: true,
-        condition: true,
-      },
-      {
-        // After Audio diagnostics so earlier tabs keep their numbers; this one is Ctrl+Shift+0.
-        id: 'map-tab',
-        label: 'Map',
-        icon: <FaMap />,
-        content: (
-          <Suspense fallback={<p role="status">Loading map…</p>}>
-            <MapPanel client={client} />
-          </Suspense>
-        ),
-        mountOnSelect: true,
-        condition: hasRoomData,
-      },
-      {
-        // After Map so earlier tabs keep their numbers; past the tenth there is no number shortcut.
-        id: 'help-tab',
-        label: 'Help',
-        icon: <FaQuestionCircle />,
-        content: (
-          <Suspense fallback={<p role="status">Loading help…</p>}>
-            <HelpPanel client={client} />
-          </Suspense>
-        ),
-        mountOnSelect: true,
-        condition: true,
-      },
     ];
 
-    // Reserve each destination's number even when optional data is absent.
-    const visibleTabs = allTabs.map((tab, index) => ({ ...tab, shortcut: shortcutForTab(index) }))
-      .filter((tab) => tab.condition ?? true);
+    // A tab's number is its place on screen, so the numbers have no gaps.
+    const visibleTabs = allTabs.filter((tab) => tab.condition ?? true)
+      .map((tab, index) => ({ ...tab, shortcut: shortcutForTab(index) }));
 
-    // Expose switchToTab function via useImperativeHandle
     React.useImperativeHandle(
       ref,
       () => ({
-        hasTab: (index) => Boolean(allTabs[index] && (allTabs[index].condition ?? true)),
-        indexOfTab: (id) => allTabs.findIndex((tab) => tab.id === id),
+        hasTab: (index) => index >= 0 && index < visibleTabs.length,
+        indexOfTab: (id) => visibleTabs.findIndex((tab) => tab.id === id),
         switchToTab: (index) => {
-          const tab = allTabs[index];
-          return Boolean(tab && (tab.condition ?? true) && tabsRef.current?.selectTab(tab.id, 'panel'));
+          const tab = visibleTabs[index];
+          return Boolean(tab && tabsRef.current?.selectTab(tab.id, 'panel'));
         },
       }),
       [visibleTabs],
-    ); // Dependency: visibleTabs
+    );
 
     // A newly offered file expands the file transfer panel.
     useEffect(() => client.onFileTransferOffer(() => setFileTransferExpanded(true)), [client]);

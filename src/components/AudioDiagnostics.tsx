@@ -10,7 +10,7 @@ import './AudioDiagnostics.css';
 import AudioPerformance from './AudioPerformance';
 import type { AudioPerformanceReading } from '../audio/audioPerformance';
 
-interface AudioDiagnosticsProps {
+export interface AudioDiagnosticsProps {
   diagnostics: AudioDiagnosticsRing;
   readPerformance?: () => AudioPerformanceReading;
 }

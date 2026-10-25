@@ -121,16 +121,21 @@ try {
   await command.fill('');
   await scan('default');
 
-  await page.keyboard.press('Control+Shift+4');
-  const serverTab = page.getByRole('tab', { name: 'Server', exact: true });
-  const refresh = page.getByRole('region', { name: 'Server Links', exact: true }).getByRole('button', { name: 'Refresh', exact: true });
-  await expect(refresh).toBeFocused();
+  // A tab's number is its place on screen. Before a room: Users 1, Help 2, Voice chat 3, Files 4.
+  await page.keyboard.press('Control+Shift+2');
+  const helpTab = page.getByRole('tab', { name: 'Help', exact: true });
+  const helpTopic = page.getByRole('textbox', { name: 'Help topic', exact: true });
+  await expect(helpTopic).toBeFocused();
+  evidence.journeys.push({ task: 'cold lazy sidebar destination', result: 'Shortcut focuses the first control after content loads' });
+  // Room and Map arrive ahead of Help: the selection and focus stay, and Help becomes 4.
   await page.evaluate(() => window.mudClient.gmcp.handlers.Room.handleInfo({ num: 1, name: 'Fixture room', area: 'Fixture', exits: {} }));
-  await expect(serverTab).toHaveAttribute('aria-selected', 'true');
-  await expect(refresh).toBeFocused();
+  await expect(helpTab).toHaveAttribute('aria-selected', 'true');
+  await expect(helpTab).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+4');
+  await expect(helpTopic).toBeFocused();
   await command.focus();
   await page.keyboard.press('Control+Shift+4');
-  await expect(refresh).toBeFocused();
+  await expect(helpTopic).toBeFocused();
+  evidence.journeys.push({ task: 'cached lazy sidebar destination', result: 'Shortcut focuses the first control' });
   await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
   await command.focus();
   await page.keyboard.press('Control+Shift+1');
@@ -146,51 +151,18 @@ try {
   evidence.journeys.push({ task: 'Reach a sidebar destination', gestures: 'One Ctrl+Shift+digit chord', states: 'Hidden, active, collapsed; first control or static panel focused; inserted tab retains selection and control focus' });
 
   // Clicking and arrowing still use the tablist; shortcuts enter the panel.
-  await serverTab.click();
-  await expect(serverTab).toBeFocused();
+  await helpTab.click();
+  await expect(helpTab).toBeFocused();
   await page.keyboard.press('ArrowLeft');
   await expect(page.getByRole('tab', { name: 'Users', exact: true })).toBeFocused();
   await page.keyboard.press('Home');
   await expect(roomTab).toBeFocused();
   evidence.journeys.push({ task: 'Navigate the sidebar tablist', result: 'Click, ArrowLeft and Home keep focus on the selected tab' });
 
-  const diagnostics = page.getByRole('tabpanel', { name: 'Audio diagnostics', exact: true });
-  for (const state of ['cold', 'cached']) {
-    await command.focus();
-    await page.keyboard.press('Control+Shift+9');
-    await expect(diagnostics.getByRole('button', { name: 'Start recording', exact: true })).toBeFocused();
-    await page.keyboard.press('Control+Shift+4');
-    await expect(refresh).toBeFocused();
-    evidence.journeys.push({ task: `${state} lazy sidebar destination`, result: 'Shortcut focuses the first control after content loads' });
-  }
-
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
-  await page.keyboard.press('Control+Shift+9');
-  await page.keyboard.press('Enter');
-  const stopRecording = diagnostics.getByRole('button', { name: 'Stop recording', exact: true });
-  await expect(stopRecording).toBeFocused();
-  await page.keyboard.press('Tab');
-  await expect(diagnostics.getByRole('button', { name: 'Mark crackle', exact: true })).toBeFocused();
-  await page.keyboard.press('Enter');
-  await expect(diagnostics.getByRole('status').filter({ hasText: 'Crackle marked.' })).toBeVisible();
-  await expect(diagnostics.getByText('Audio context', { exact: true })).toBeVisible();
-  await page.keyboard.press('Shift+Tab');
-  await expect(stopRecording).toBeFocused();
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('Tab');
-  await expect(diagnostics.getByRole('button', { name: 'Copy performance report', exact: true })).toBeFocused();
-  await page.keyboard.press('Enter');
-  await expect(diagnostics.getByRole('status').filter({ hasText: 'Performance report copied.' })).toBeVisible();
-  const performanceReport = await page.evaluate(async () => JSON.parse(await navigator.clipboard.readText()));
-  assert.equal(performanceReport.crackleTimes.length, 1);
-  assert.ok(performanceReport.samples.length > 0 && performanceReport.samples.length <= 120);
-  assert.equal(typeof performanceReport.baseline.contextState, 'string');
-  await scan('playback-performance');
-  evidence.journeys.push({ task: 'Capture playback performance', gestures: 'Sidebar shortcut, Enter, Tab and Shift+Tab', result: 'Start, mark, stop and copy produce a bounded report; disabled mark control is skipped after stopping' });
-
+  // Room 1, Map 2, Inventory 3 once the inventory arrives.
   const items = [{ id: 'a', name: 'Apple', verbs: [['drop', 'a']] }, { id: 'b', name: 'Book', verbs: [['drop', 'b']] }];
   await page.evaluate((items) => window.mudClient.gmcp.handlers['Char.Items'].handleList({ location: 'inv', items }), items);
-  await page.keyboard.press('Control+Shift+2');
+  await page.keyboard.press('Control+Shift+3');
   const inventory = page.getByRole('listbox', { name: 'Inventory', exact: true });
   await expect(inventory).toBeFocused();
   // Clicking the tab retains the tablist's normal route into the panel.
@@ -226,21 +198,52 @@ try {
     await dialog.getByRole('tab', { name: label, exact: true }).click();
     await scan(`preferences-${label.toLowerCase()}`);
   }
+
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+  await dialog.getByRole('tab', { name: 'Audio diagnostics', exact: true }).click();
+  const diagnostics = dialog.getByRole('tabpanel', { name: 'Audio diagnostics', exact: true });
+  const startRecording = diagnostics.getByRole('button', { name: 'Start recording', exact: true });
+  await expect(startRecording).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(startRecording).toBeFocused();
+  await page.keyboard.press('Enter');
+  const stopRecording = diagnostics.getByRole('button', { name: 'Stop recording', exact: true });
+  await expect(stopRecording).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(diagnostics.getByRole('button', { name: 'Mark crackle', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(diagnostics.getByRole('status').filter({ hasText: 'Crackle marked.' })).toBeVisible();
+  await expect(diagnostics.getByText('Audio context', { exact: true })).toBeVisible();
+  await page.keyboard.press('Shift+Tab');
+  await expect(stopRecording).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(diagnostics.getByRole('button', { name: 'Copy performance report', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(diagnostics.getByRole('status').filter({ hasText: 'Performance report copied.' })).toBeVisible();
+  const performanceReport = await page.evaluate(async () => JSON.parse(await navigator.clipboard.readText()));
+  assert.equal(performanceReport.crackleTimes.length, 1);
+  assert.ok(performanceReport.samples.length > 0 && performanceReport.samples.length <= 120);
+  assert.equal(typeof performanceReport.baseline.contextState, 'string');
+  await scan('playback-performance');
+  evidence.journeys.push({ task: 'Capture playback performance', gestures: 'Preferences tab, Tab, Enter and Shift+Tab', result: 'Start, mark, stop and copy produce a bounded report; disabled mark control is skipped after stopping' });
+
   await dialog.getByRole('tab', { name: 'MIDI', exact: true }).click();
   await dialog.getByRole('checkbox', { name: 'Enable MIDI', exact: true }).check();
   await dialog.getByRole('tab', { name: 'Haptics', exact: true }).click();
   await dialog.getByRole('checkbox', { name: 'Enable Haptics', exact: true }).check();
   await page.keyboard.press('Escape');
-  await page.keyboard.press('Control+Shift+5');
+  // Room, Map, Inventory, Users, Help, Voice chat, Files, MIDI 8, Haptics 9.
+  await page.keyboard.press('Control+Shift+8');
   await expect(page.getByRole('heading', { name: 'MIDI studio', exact: true })).toBeVisible();
   await scan('midi-empty');
   await page.setViewportSize({ width: 320, height: 800 });
   await scan('midi-320px');
-  await page.keyboard.press('Control+Shift+6');
+  await page.keyboard.press('Control+Shift+9');
   await expect(page.getByRole('heading', { name: 'Haptics Status', exact: true })).toBeVisible();
   await scan('haptics-320px');
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.keyboard.press('Control+Shift+2');
+  await page.keyboard.press('Control+Shift+3');
   await expect(page.getByRole('button', { name: 'Resume sounds', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Resume sounds', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Pause sounds', exact: true })).toBeFocused();
