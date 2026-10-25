@@ -44,6 +44,8 @@ const {
       general: { appBadge: true },
       haptics: { enabled: false },
       midi: { enabled: false },
+      // useStatusKeys reads the buffer scheme on every keydown.
+      keyboard: { navigationKeyScheme: 'jkli' },
     },
     mockCopyRecentOutputLine: vi.fn(),
     mockReviewRecentOutputLine: vi.fn(),

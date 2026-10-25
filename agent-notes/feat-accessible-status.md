@@ -66,6 +66,13 @@ protocol, no rebindable status keys).
 - Vitest empties CSS imports (even `?raw`) and `import.meta.url` is not a
   file URL under jsdom; the stylesheet test reads it via `__dirname`. The
   checkout has CRLF CSS, so the test's regex allows `\r?\n`.
+- PR #206 CI run 40232265584 went red: `src/App.test.tsx:43` mocks the
+  preferences store without `keyboard`, and App now mounts useStatusKeys,
+  which reads `keyboard.navigationKeyScheme` (`useStatusKeys.ts:13`) on
+  every keydown. All 196 files passed but the 11 unhandled errors failed the
+  run. The real store always has `keyboard` (defaults + merge), so the mock
+  was fixed, not the hook. My earlier local run of App.test.tsx hid this:
+  I filtered the output to pass/fail lines and dropped vitest's "Errors" line.
 
 ## Next step
 
