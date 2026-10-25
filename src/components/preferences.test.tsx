@@ -1,6 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Preferences from './preferences';
+import { AudioDiagnosticsRing } from '../audio/audioDiagnostics';
+
+const media = { diagnostics: new AudioDiagnosticsRing() };
 import { usePreferences } from '../stores/preferencesStore';
 import { suspendClientSpeech } from '../clientSpeechSuspension';
 import { FakeRecognition, fakeRecognizer } from '../voiceInputTestHelpers';
@@ -21,7 +24,7 @@ it('renders every section, Speech included, without asking the speech recognizer
   FakeRecognition.instances = [];
   window.webkitSpeechRecognition = fakeRecognizer(available);
   try {
-    render(<Preferences />);
+    render(<Preferences media={media} />);
     expect(screen.getByRole('checkbox', { name: 'Local Echo' })).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));
     expect(screen.getByRole('checkbox', { name: 'Voice commands' })).toBeTruthy();
@@ -36,7 +39,7 @@ it('still renders when the speech recognizer throws on the check', async () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   window.webkitSpeechRecognition = fakeRecognizer(() => { throw new Error('probe failed'); });
   try {
-    render(<Preferences />);
+    render(<Preferences media={media} />);
     fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Check this browser' })));
     expect(await screen.findByText(/does not say where speech is turned into text/)).toBeTruthy();
@@ -58,7 +61,7 @@ it('plays no voice preview while a voice command is listening', () => {
   const speak = vi.fn();
   vi.stubGlobal('speechSynthesis', { cancel: vi.fn(), speak, getVoices: () => [{ name: 'A' }] });
   vi.stubGlobal('SpeechSynthesisUtterance', PreviewUtterance);
-  render(<Preferences />);
+  render(<Preferences media={media} />);
   fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));
   const release = suspendClientSpeech();
   fireEvent.click(screen.getByRole('button', { name: 'Preview Voice' }));
@@ -75,7 +78,7 @@ it('plays no delayed voice preview if a voice command starts before the voices l
     { cancel: vi.fn(), speak, getVoices: () => [], onvoiceschanged: null };
   vi.stubGlobal('speechSynthesis', synth);
   vi.stubGlobal('SpeechSynthesisUtterance', PreviewUtterance);
-  render(<Preferences />);
+  render(<Preferences media={media} />);
   fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));
   fireEvent.click(screen.getByRole('button', { name: /Preview Voice|Playing/ }));
   const release = suspendClientSpeech();
@@ -87,7 +90,7 @@ it('plays no delayed voice preview if a voice command starts before the voices l
 });
 
 it('allows clearing and replacing a storage cap, committing only a valid completed edit', async () => {
-  render(<Preferences />);
+  render(<Preferences media={media} />);
   fireEvent.click(screen.getByRole('tab', { name: 'Logging' }));
   const cap = screen.getByRole('spinbutton', { name: 'Storage Cap (MB):' });
   const original = usePreferences.getState().autologging.maxBytes;
@@ -107,7 +110,7 @@ it('allows clearing and replacing a storage cap, committing only a valid complet
 
 it('retains the valid timeout through an invalid edit and accepts a replacement on blur', async () => {
   usePreferences.getState().setHaptics({ ...usePreferences.getState().haptics, enabled: true });
-  render(<Preferences />);
+  render(<Preferences media={media} />);
   fireEvent.click(screen.getByRole('tab', { name: 'Haptics' }));
   const timeout = screen.getByRole('spinbutton', { name: 'Auto-Stop Timeout (seconds):' });
   const original = usePreferences.getState().haptics.autoStopTimeout;
@@ -121,7 +124,7 @@ it('retains the valid timeout through an invalid edit and accepts a replacement 
 });
 
 it('has a Keys section and lists Alt+Shift+H with the keyboard shortcuts', () => {
-  render(<Preferences />);
+  render(<Preferences media={media} />);
   fireEvent.click(screen.getByRole('tab', { name: 'Keys' }));
   expect(screen.getByText(/No keys yet/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: 'Keyboard' }));
@@ -129,7 +132,7 @@ it('has a Keys section and lists Alt+Shift+H with the keyboard shortcuts', () =>
 });
 
 it('has a Status section that turns each status cue on and off and sets its volume', () => {
-  render(<Preferences />);
+  render(<Preferences media={media} />);
   fireEvent.click(screen.getByRole('tab', { name: 'Status' }));
   expect(within(screen.getByRole('tabpanel')).getByText(/Alt\+H reads your health/)).toBeInTheDocument();
 
@@ -150,7 +153,7 @@ it('has a Status section that turns each status cue on and off and sets its volu
 });
 
 it('lists the status keys with the keyboard shortcuts, and no access key for Mute or Volume', () => {
-  render(<Preferences />);
+  render(<Preferences media={media} />);
   fireEvent.click(screen.getByRole('tab', { name: 'Keyboard' }));
   const keyboard = within(screen.getByRole('tabpanel'));
   expect(keyboard.getByText(/Alt\+M your power reserves, Alt\+V your body reserve/)).toBeInTheDocument();
@@ -158,7 +161,7 @@ it('lists the status keys with the keyboard shortcuts, and no access key for Mut
 });
 
 it('uses stable slider names and keeps disabled-feature help references valid', () => {
-  render(<Preferences />);
+  render(<Preferences media={media} />);
   fireEvent.click(screen.getByRole('tab', { name: 'Speech' }));
   expect(screen.getByRole('slider', { name: 'Rate' })).toBeInTheDocument();
   expect(screen.getByRole('slider', { name: 'Pitch' })).toBeInTheDocument();

@@ -16,7 +16,7 @@ const CommandList: React.FC<CommandListProps> = ({ client }) => {
   return (
     <section className="command-list-panel" aria-labelledby="command-list-heading">
       <div className="command-list-heading-row">
-        <h4 id="command-list-heading">Commands</h4>
+        <h4 id="command-list-heading">Commands you can type here</h4>
         <button
           type="button"
           onClick={() => {
@@ -26,7 +26,7 @@ const CommandList: React.FC<CommandListProps> = ({ client }) => {
           }}
           disabled={!canRefresh}
         >
-          Refresh
+          Refresh commands
         </button>
       </div>
       {visibleCommands.length === 0 ? (

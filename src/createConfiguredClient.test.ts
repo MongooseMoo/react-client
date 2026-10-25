@@ -6,10 +6,8 @@ import type { Stream } from "./telnet";
 import { useInputStore } from "./stores/inputStore";
 import { useItemsStore } from "./stores/itemsStore";
 import { usePreferences } from "./stores/preferencesStore";
-import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useSkillsStore } from "./stores/skillsStore";
 import { useUserlistStore } from "./stores/userlistStore";
-import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { useCharacterStatusStore } from "./stores/characterStatusStore";
 import { useChannelHistoryStore } from "./stores/channelHistoryStore";
@@ -57,10 +55,8 @@ describe("createConfiguredClient", () => {
     useInputStore.getState().clear();
     useInputStore.getState().resetCommands();
     useItemsStore.getState().reset();
-    useServerLinksStore.getState().reset();
     useSkillsStore.getState().reset();
     useUserlistStore.getState().reset();
-    useWorldMapStore.getState().reset();
   });
 
   it("wires Char.Name to connection session state", () => {
@@ -126,41 +122,15 @@ describe("createConfiguredClient", () => {
     expect(useCharacterStatusStore.getState().target).toBeNull();
   });
 
-  it("wires AWNS MCP packages to semantic stores", () => {
+  it("wires the AWNS rehash command list to the input store", () => {
     client = createConfiguredClient();
 
-    client.mcpSession.packageHandlers["dns-com-awns-displayurl"].handle({
-      name: "dns-com-awns-displayurl",
-      keyvals: { url: "https://example.test/help" },
-    });
-    client.mcpSession.packageHandlers["dns-com-awns-serverinfo"].handle({
-      name: "dns-com-awns-serverinfo",
-      keyvals: {
-        home_url: "https://example.test/",
-        help_url: "https://example.test/help",
-      },
-    });
     client.mcpSession.packageHandlers["dns-com-awns-rehash"].handle({
       name: "dns-com-awns-rehash-commands",
       keyvals: { list: "open r*ead" },
     });
-    client.mcpSession.packageHandlers["dns-com-awns-visual"].handle({
-      name: "dns-com-awns-visual-location",
-      keyvals: { id: "#100" },
-    });
-    client.mcpSession.packageHandlers["dns-com-awns-visual"].handle({
-      name: "dns-com-awns-visual-self",
-      keyvals: { id: "#42" },
-    });
 
-    expect(useServerLinksStore.getState().recentUrls.map((entry) => entry.url)).toEqual([
-      "https://example.test/help",
-    ]);
-    expect(useServerLinksStore.getState().homeUrl).toBe("https://example.test/");
-    expect(useServerLinksStore.getState().helpUrl).toBe("https://example.test/help");
     expect(useInputStore.getState().visibleCommands).toEqual(["open", "read"]);
-    expect(useWorldMapStore.getState().locationId).toBe("#100");
-    expect(useWorldMapStore.getState().selfId).toBe("#42");
   });
 
   it("wires Char.Skills GMCP messages to the skills store", () => {
@@ -309,24 +279,9 @@ describe("createConfiguredClient", () => {
       command: "look",
       autosend: true,
     });
-    client.mcpSession.packageHandlers["dns-com-awns-displayurl"].handle({
-      name: "dns-com-awns-displayurl",
-      keyvals: { url: "https://example.test/help" },
-    });
-    client.mcpSession.packageHandlers["dns-com-awns-serverinfo"].handle({
-      name: "dns-com-awns-serverinfo",
-      keyvals: {
-        home_url: "https://example.test/",
-        help_url: "https://example.test/help",
-      },
-    });
     client.mcpSession.packageHandlers["dns-com-awns-rehash"].handle({
       name: "dns-com-awns-rehash-commands",
       keyvals: { list: "look" },
-    });
-    client.mcpSession.packageHandlers["dns-com-awns-visual"].handle({
-      name: "dns-com-awns-visual-location",
-      keyvals: { id: "#100" },
     });
     useInputStore.getState().setText("unfinished command");
     client.autosay = true;
@@ -347,13 +302,7 @@ describe("createConfiguredClient", () => {
     });
     expect(useSkillsStore.getState().groups).toEqual([]);
     expect(useSpatialStore.getState().spatialEntities).toEqual({});
-    expect(useServerLinksStore.getState()).toMatchObject({
-      homeUrl: "",
-      helpUrl: "",
-      recentUrls: [],
-    });
     expect(useInputStore.getState().visibleCommands).toEqual([]);
-    expect(useWorldMapStore.getState().locationId).toBe("");
     expect(useUserlistStore.getState().players).toEqual([]);
     expect(useChannelsStore.getState().channels).toEqual([]);
     expect(keystrokes.listBindings()).toEqual([]);
@@ -389,19 +338,7 @@ describe("createConfiguredClient", () => {
         ),
       ),
     ).toBe(true);
-    expect(sent.some((line) => line.includes(`#$#dns-com-awns-serverinfo-get ${authKey}`))).toBe(
-      true,
-    );
     expect(sent.some((line) => line.includes(`#$#dns-com-awns-rehash-getcommands ${authKey}`))).toBe(
-      true,
-    );
-    expect(sent.some((line) => line.includes(`#$#dns-com-awns-visual-getself ${authKey}`))).toBe(
-      true,
-    );
-    expect(sent.some((line) => line.includes(`#$#dns-com-awns-visual-getlocation ${authKey}`))).toBe(
-      true,
-    );
-    expect(sent.some((line) => line.includes(`#$#dns-com-awns-visual-getusers ${authKey}`))).toBe(
       true,
     );
   });
@@ -512,7 +449,7 @@ describe("createConfiguredClient", () => {
     client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
 
     expect(sent.some((line) => line.includes("#$#dns-com-awns-timezone"))).toBe(false);
-    expect(sent.some((line) => line.includes(`#$#dns-com-awns-serverinfo-get ${authKey}`))).toBe(
+    expect(sent.some((line) => line.includes(`#$#dns-com-awns-rehash-getcommands ${authKey}`))).toBe(
       true,
     );
   });

@@ -36,20 +36,15 @@ import {
 } from "./gmcp";
 import {
   DEFAULT_MCP_PACKAGES,
-  McpAwnsDisplayUrl,
   McpAwnsRehash,
-  McpAwnsServerInfo,
   McpAwnsStatus,
   McpAwnsTimezone,
-  McpAwnsVisual,
   McpWorldMongooseLocation,
   McpNegotiate,
   McpSimpleEdit,
 } from "./mcp/index";
 import { usePreferences } from "./stores/preferencesStore";
 import { useInputStore } from "./stores/inputStore";
-import { useServerLinksStore } from "./stores/serverLinksStore";
-import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
 import { followStatus } from "./status/statusFeedback";
 import { useOutputStore } from "./stores/outputStore";
@@ -194,8 +189,6 @@ export function createConfiguredClient(): MudClient {
   });
   // MCP packages
   let negotiatePackage: McpNegotiate | undefined;
-  let serverInfoPackage: McpAwnsServerInfo | undefined;
-  let visualPackage: McpAwnsVisual | undefined;
   let rehashPackage: McpAwnsRehash | undefined;
   let timezonePackage: McpAwnsTimezone | undefined;
   let locationPackage: McpWorldMongooseLocation | undefined;
@@ -207,46 +200,6 @@ export function createConfiguredClient(): MudClient {
     }
     if (mcpPackage instanceof McpSimpleEdit) {
       client.configureEditors(mcpPackage);
-    }
-    if (mcpPackage instanceof McpAwnsDisplayUrl) {
-      mcpPackage.on("displayUrl", (url) => {
-        useServerLinksStore.getState().addRecentUrl(url);
-        useConnectionStore.getState().setStatusText(`Server sent URL: ${url}`);
-      });
-    }
-    if (mcpPackage instanceof McpAwnsServerInfo) {
-      serverInfoPackage = mcpPackage;
-      mcpPackage.on("serverInfo", (info) => {
-        useServerLinksStore.getState().setServerInfo(info);
-      });
-    }
-    if (mcpPackage instanceof McpAwnsVisual) {
-      visualPackage = mcpPackage;
-      mcpPackage.on("location", ({ id }) => {
-        useWorldMapStore.getState().setLocation(id);
-      });
-      mcpPackage.on("self", ({ id }) => {
-        useWorldMapStore.getState().setSelf(id);
-      });
-      mcpPackage.on("users", (users) => {
-        useWorldMapStore.getState().setUsers(
-          users.map((user) => ({
-            id: user.id,
-            name: user.name,
-            locationId: user.location,
-            idleSeconds: Number.isFinite(Number(user.idle)) ? Number(user.idle) : null,
-          })),
-        );
-      });
-      mcpPackage.on("topology", (rooms) => {
-        useWorldMapStore.getState().setRooms(
-          rooms.map((room) => ({
-            id: room.id,
-            name: room.name,
-            exits: room.exit,
-          })),
-        );
-      });
     }
     if (mcpPackage instanceof McpAwnsRehash) {
       rehashPackage = mcpPackage;
@@ -299,11 +252,7 @@ export function createConfiguredClient(): MudClient {
   negotiatePackage?.on("end", () => {
     syncTimezoneToServer(timezonePackage);
     syncLocationToServer(client, locationPackage);
-    serverInfoPackage?.requestServerInfo();
     rehashPackage?.requestCommands();
-    visualPackage?.requestSelf();
-    visualPackage?.requestLocation();
-    visualPackage?.requestUsers();
   });
 
   // The commands a player can type depend on the room they stand in and on

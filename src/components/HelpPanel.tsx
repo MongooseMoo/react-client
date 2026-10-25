@@ -6,12 +6,14 @@ import { describeHelpTopic, helpTitle } from "../gmcp/Help";
 import { useFocusRecovery } from "../hooks/useFocusRecovery";
 import { useConnectionStore } from "../stores/connectionStore";
 import { useHelpStore } from "../stores/helpStore";
+import CommandList from "./CommandList";
 import { splitHelpLine } from "./helpLinks";
 import "./HelpPanel.css";
 
 /**
  * The Help tab: the server's help over GMCP Help.Get / Help.Topic. Every
  * `help <topic>` phrase in a result, and every choice, looks that topic up.
+ * Below it, the commands the server says can be typed here.
  */
 interface HelpPanelProps {
   client: MudClient;
@@ -110,6 +112,7 @@ const HelpPanel: React.FC<HelpPanelProps> = ({ client }) => {
       ) : (
         ready && <p>Loading help…</p>
       )}
+      <CommandList client={client} />
     </div>
   );
 };

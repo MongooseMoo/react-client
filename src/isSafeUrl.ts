@@ -2,7 +2,7 @@
  * Scheme allowlist guard for server-controlled URLs.
  *
  * A hostile or federated server can supply URLs that reach navigation/anchor
- * sinks (ansiParser hrefs, ServerLinksPanel/File window.open). URL_REGEX only
+ * sinks (ansiParser hrefs, File window.open). URL_REGEX only
  * requires "://", so `javascript://%0aalert(1)` slips through and executes.
  * This guard rejects everything outside http/https/mailto.
  */

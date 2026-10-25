@@ -1,12 +1,13 @@
 import CommitHash from 'virtual:commit-hash';
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "./PreferencesDialog.css";
+import type { PreferencesMedia } from "./preferences";
 
 const Preferences = lazy(() => import('./preferences'));
 
-function ReadyPreferences({ onReady }: { onReady: () => void }) {
+function ReadyPreferences({ media, onReady }: { media: PreferencesMedia; onReady: () => void }) {
   useEffect(onReady, [onReady]);
-  return <Preferences />;
+  return <Preferences media={media} />;
 }
 
 export type PreferencesDialogRef = {
@@ -14,7 +15,7 @@ export type PreferencesDialogRef = {
   close: () => void;
 };
 
-const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
+const PreferencesDialog = React.forwardRef<PreferencesDialogRef, { media: PreferencesMedia }>(({ media }, ref) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const initialFocusPending = useRef(false);
@@ -99,7 +100,7 @@ const PreferencesDialog = React.forwardRef<PreferencesDialogRef>((_, ref) => {
         backgroundColor: "black"
       }
       }  >Preferences</h2>
-      {isOpen && <Suspense fallback={<p role="status">Loading preferences…</p>}><ReadyPreferences onReady={markReady} /></Suspense>}
+      {isOpen && <Suspense fallback={<p role="status">Loading preferences…</p>}><ReadyPreferences media={media} onReady={markReady} /></Suspense>}
       <button type="button" onClick={() => setIsOpen(false)}>Close</button>
       <br />
       <span id="commit-hash">

@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
+import type { AudioDiagnosticsProps } from "./AudioDiagnostics";
 import { announce } from "@react-aria/live-announcer";
 import type { AutoreadMode, NavigationKeyScheme } from "../stores/preferencesStore";
 import { usePreferences } from "../stores/preferencesStore";
@@ -12,6 +13,11 @@ import HeadTrackingControls from './HeadTrackingControls';
 import AppIntegrationPreferences from '../launch/AppIntegrationPreferences';
 import VoiceCommandPreferences from "./VoiceCommandPreferences";
 import { clientSpeechSuspended } from "../clientSpeechSuspension";
+
+const AudioDiagnostics = React.lazy(() => import("./AudioDiagnostics"));
+
+/** What the Audio diagnostics section reads from the client's media service. */
+export type PreferencesMedia = AudioDiagnosticsProps;
 
 function PreferenceNumber({ id, label, value, min, max, onCommit }: {
   id: string; label: string; value: number; min: number; max: number;
@@ -575,15 +581,7 @@ const KeyboardTab: React.FC = () => {
           <dt>Voice commands</dt>
           <dd>Alt+Shift+D listens for one spoken command when voice commands are on in the Speech section; press it again to stop sooner, or Escape to discard.</dd>
         </dl>
-        <p>Ctrl+Shift+number opens and focuses a sidebar destination. Numbers stay fixed when optional tabs appear; unavailable destinations do nothing.</p>
-        <table>
-          <caption>Sidebar destinations</caption>
-          <thead><tr><th scope="col">Number</th><th scope="col">Destination</th></tr></thead>
-          <tbody>
-            {['Room', 'Inventory', 'Users', 'Server', 'MIDI', 'Haptics', 'Files', 'Audio', 'Audio diagnostics'].map((label, index) =>
-              <tr key={label}><td>{index + 1}</td><td>{label}</td></tr>)}
-          </tbody>
-        </table>
+        <p>Ctrl+Shift+number opens and focuses a sidebar tab: 1 is the first tab shown, 2 the second, and so on. The tabs come in this order, and a tab that is not shown takes no number: Room and Map (once you are in a room), Inventory (once you carry something), Users, Help, Voice chat, Files, MIDI and Haptics (when turned on).</p>
         <p>Browser access keys: L Save log, C Copy log, E Clear log, P Preferences, U Sidebar. Selected player: G Page, S Say to, K Look, F Follow. The activation modifier depends on your browser and operating system.</p>
       </details>
     </div>
@@ -620,12 +618,22 @@ const AutologgingTab: React.FC = () => {
   );
 };
 
-const Preferences: React.FC = () => {
+const Preferences: React.FC<{ media: PreferencesMedia }> = ({ media }) => {
   const tabs: TabProps[] = [
     { id: "preferences-general-tab", label: "General", content: <GeneralTab /> },
     { id: "preferences-speech-tab", label: "Speech", content: <SpeechTab /> },
     { id: "preferences-channels-tab", label: "Channels", content: <ChannelPreferencesTab /> },
     { id: "preferences-sounds-tab", label: "Sounds", content: <SoundsTab /> },
+    {
+      id: "preferences-audio-diagnostics-tab",
+      label: "Audio diagnostics",
+      content: (
+        <Suspense fallback={<p role="status">Loading audio diagnostics…</p>}>
+          <AudioDiagnostics diagnostics={media.diagnostics} readPerformance={media.readPerformance} />
+        </Suspense>
+      ),
+      mountOnSelect: true,
+    },
     { id: "preferences-status-tab", label: "Status", content: <StatusTab /> },
     { id: "preferences-editor-tab", label: "Editor", content: <EditorTab /> },
     { id: "preferences-keyboard-tab", label: "Keyboard", content: <KeyboardTab /> },
