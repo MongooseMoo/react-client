@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { announce } from "@react-aria/live-announcer";
 import { useChannelHistoryStore, type ChannelTextEntry } from "../stores/channelHistoryStore";
-import { usePreferences, type NavigationKeyScheme } from "../stores/preferencesStore";
+import { usePreferences } from "../stores/preferencesStore";
+import { matchesNavKey, navigationKeyMaps } from "../reservedShortcuts";
 import { extractLinks, openLink, type ExtractedLink } from "../messageLinks";
 import {
   CHANNEL_READ_MODE_LABELS,
@@ -13,21 +14,6 @@ import {
   saveStoredValue,
   type LocalStorageSchema,
 } from "../persistence";
-
-const navigationKeyMaps: Record<NavigationKeyScheme, { up: string; down: string; left: string; right: string }> = {
-  jkli: { up: "i", down: "k", left: "j", right: "l" },
-  wasd: { up: "w", down: "s", left: "a", right: "d" },
-  "dvorak-rh": { up: "c", down: "t", left: "h", right: "n" },
-  "dvorak-lh": { up: ",", down: "o", left: "a", right: "e" },
-};
-
-/** Match a key event against a navigation key, using e.code as fallback for macOS Option+letter */
-function matchesNavKey(e: KeyboardEvent, navKey: string): boolean {
-  if (e.key.toLowerCase() === navKey) return true;
-  if (navKey === ",") return e.code === "Comma";
-  if (navKey.length === 1) return e.code === `Key${navKey.toUpperCase()}`;
-  return false;
-}
 
 /** Extract digit 0-9 from a key event, using e.code as fallback for macOS Option+number */
 function getDigit(e: KeyboardEvent): number | null {

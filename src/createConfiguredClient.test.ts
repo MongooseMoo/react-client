@@ -25,6 +25,7 @@ vi.mock("cacophony", () => ({
   Cacophony: class {
     muted = false;
     setGlobalVolume = vi.fn();
+    createOscillator = vi.fn(() => ({ play: vi.fn(), stop: vi.fn() }));
   },
 }));
 
@@ -107,13 +108,22 @@ describe("createConfiguredClient", () => {
     expect(useHelpStore.getState().current?.topic).toBe("money");
   });
 
-  it("wires Char.Vitals to the character status store", () => {
+  it("wires Char.Vitals, Char.Effects and Char.Target to the character status store", () => {
     client = createConfiguredClient();
 
-    const char = client.gmcp.require("Char");
-    char.receiveRegisteredMessage("Vitals", { hp: "10", maxhp: "20" });
+    const health = { id: "health", kind: "health", label: "Health", value: 30, max: 40, words: "bruised", rate: 0 };
+    const shield = { section: "Spells", name: "Shield", source: "you", seconds: 30, dismissible: true };
+    client.gmcp.receive("Char.Vitals", JSON.stringify([health]));
+    client.gmcp.receive("Char.Effects", JSON.stringify([shield]));
+    client.gmcp.receive("Char.Target", JSON.stringify({ name: "a rat", value: 0.5, words: "hurt" }));
 
-    expect(useCharacterStatusStore.getState().vitals).toEqual({ hp: "10", maxhp: "20" });
+    expect(useCharacterStatusStore.getState()).toMatchObject({
+      meters: [health],
+      effects: [shield],
+      target: { name: "a rat", value: 0.5, words: "hurt" },
+    });
+    client.gmcp.receive("Char.Target", "{}");
+    expect(useCharacterStatusStore.getState().target).toBeNull();
   });
 
   it("wires AWNS MCP packages to semantic stores", () => {
@@ -264,7 +274,11 @@ describe("createConfiguredClient", () => {
       fullname: "Q",
       name: "q",
     });
-    client.gmcp.require("Char").receiveRegisteredMessage("Vitals", { hp: "10" });
+    client.gmcp.require("Char").receiveRegisteredMessage("Vitals", [
+      { id: "health", kind: "health", label: "Health", value: 10, max: 20, rate: 0 },
+    ]);
+    client.gmcp.require("Char").receiveRegisteredMessage("Effects", []);
+    client.gmcp.require("Char").receiveRegisteredMessage("Target", { name: "a rat", value: 1, words: "unhurt" });
     client.gmcp.require("Room").receiveRegisteredMessage("Info", {
       num: 101,
       name: "The Test Chamber",
@@ -322,7 +336,7 @@ describe("createConfiguredClient", () => {
     // History stores batch appends into a microtask flush; let them run.
     await Promise.resolve();
 
-    expect(useCharacterStatusStore.getState().vitals).toBeNull();
+    expect(useCharacterStatusStore.getState()).toMatchObject({ meters: [], effects: null, target: null });
     expect(useItemsStore.getState().itemsByLocation).toEqual({});
     expect(useLiveKitStore.getState().rooms).toEqual([]);
     expect(useRoomStore.getState().roomInfo).toBeNull();

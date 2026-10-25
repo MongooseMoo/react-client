@@ -16,6 +16,8 @@ it('keeps player shortcuts distinct from application actions and prefills named 
   </>);
   const bindings = Array.from(container.querySelectorAll('[accesskey]')).map((element) => element.getAttribute('accesskey')!.toLowerCase());
   expect(new Set(bindings).size).toBe(bindings.length);
+  // Alt+H, M, V and T read status aloud.
+  expect(bindings.filter((key) => 'hmvt'.includes(key))).toEqual([]);
   fireEvent.click(screen.getByRole('button', { name: 'Page Alice' }));
   expect(screen.getByRole('textbox', { name: 'Command' })).toHaveValue('page alice ');
   expect(screen.getByRole('textbox', { name: 'Command' })).toHaveFocus();

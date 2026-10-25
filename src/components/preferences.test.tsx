@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Preferences from './preferences';
 import { usePreferences } from '../stores/preferencesStore';
@@ -126,6 +126,33 @@ it('has a Keys section and lists Alt+Shift+H with the keyboard shortcuts', () =>
   expect(screen.getByText(/No keys yet/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('tab', { name: 'Keyboard' }));
   expect(screen.getByText(/Alt\+Shift\+H turns keys mode on and off/)).toBeInTheDocument();
+});
+
+it('has a Status section that turns each status cue on and off and sets its volume', () => {
+  render(<Preferences />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Status' }));
+  expect(within(screen.getByRole('tabpanel')).getByText(/Alt\+H reads your health/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Spoken health warnings' }));
+  expect(usePreferences.getState().status.warnings.enabled).toBe(false);
+
+  const heartbeat = screen.getByRole('group', { name: 'Heartbeat' });
+  fireEvent.input(within(heartbeat).getByRole('slider', { name: 'Heartbeat volume' }), { target: { value: '0.25' } });
+  expect(usePreferences.getState().status.heartbeat).toEqual({ enabled: true, volume: 0.25 });
+  fireEvent.click(within(heartbeat).getByRole('checkbox', { name: 'Play' }));
+  expect(usePreferences.getState().status.heartbeat.enabled).toBe(false);
+  expect(within(heartbeat).getByRole('slider', { name: 'Heartbeat volume' })).toBeDisabled();
+  for (const name of ['Reserve tones', 'Target blip', 'Effect sounds']) {
+    expect(screen.getByRole('group', { name })).toBeInTheDocument();
+  }
+});
+
+it('lists the status keys with the keyboard shortcuts, and no access key for Mute or Volume', () => {
+  render(<Preferences />);
+  fireEvent.click(screen.getByRole('tab', { name: 'Keyboard' }));
+  const keyboard = within(screen.getByRole('tabpanel'));
+  expect(keyboard.getByText(/Alt\+M your power reserves, Alt\+V your body reserve/)).toBeInTheDocument();
+  expect(keyboard.getByText(/Browser access keys:/).textContent).not.toMatch(/Mute|Volume/);
 });
 
 it('uses stable slider names and keeps disabled-feature help references valid', () => {

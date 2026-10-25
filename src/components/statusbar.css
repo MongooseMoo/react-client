@@ -23,8 +23,79 @@
     font-weight: var(--font-weight-semibold, 600);
 }
 
-.status-vitals {
-    /* Style for vitals section */
+.statusbar .status-vitals {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+}
+
+.statusbar .status-meter {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0;
+}
+
+.statusbar .status-meter-bar {
+    display: inline-block;
+    width: 3rem;
+    height: 0.5rem;
+    margin: 0;
+    border: 1px solid var(--color-text-muted);
+    border-radius: 2px;
+    background: var(--color-bg);
+    flex-shrink: 0;
+}
+
+.statusbar .status-meter-fill {
+    display: block;
+    height: 100%;
+    margin: 0;
+    transition: width 0.3s ease-out;
+}
+
+.statusbar .status-meter-text {
+    margin: 0;
+}
+
+.status-effects {
+    display: inline-flex;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow: hidden;
+}
+
+.status-effect {
+    padding: 0 var(--space-1);
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .statusbar .status-meter-fill {
+        transition: none;
+    }
+}
+
+/* High-contrast themes drop backgrounds; draw the bar in system colours. */
+@media (forced-colors: active) {
+    .statusbar .status-meter-bar {
+        border-color: CanvasText;
+        background: Canvas;
+        forced-color-adjust: none;
+    }
+
+    .statusbar .status-meter .status-meter-fill {
+        background: Highlight;
+        forced-color-adjust: none;
+    }
+
+    .status-effect {
+        border-color: CanvasText;
+    }
 }
 
 .status-time {
@@ -58,9 +129,9 @@
     50% { opacity: 0.4; }
 }
 
-.vital-good { color: var(--color-success, #4ade80); }
-.vital-warning { color: var(--color-warning, #f59e0b); }
-.vital-danger { color: var(--color-danger, #ef4444); }
+.status-meter-fill.vital-good { background: var(--color-success, #4ade80); }
+.status-meter-fill.vital-warning { background: var(--color-warning, #f59e0b); }
+.status-meter-fill.vital-danger { background: var(--color-danger, #ef4444); }
 
 /* === Mobile statusbar === */
 @media (max-width: 768px) {

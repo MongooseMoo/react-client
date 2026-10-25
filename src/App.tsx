@@ -25,6 +25,7 @@ import type { GMCPMessageRoomInfo } from "./gmcp/Room";
 import type { HapticsRuntime } from "./haptics/runtime";
 import { useChannelHistory } from "./hooks/useChannelHistory";
 import { useHeadTracking } from "./hooks/useHeadTracking";
+import { useStatusKeys } from "./hooks/useStatusKeys";
 import {
   autoLogService,
   createAutoLogSessionDraft,
@@ -140,6 +141,7 @@ function App() {
     guestCount: 0,
   });
   const { clearAllBuffers, linkPickerLinks, closeLinkPicker } = useChannelHistory();
+  useStatusKeys();
   const outRef = React.useRef<OutputWindow | null>(null);
   const inRef = React.useRef<HTMLTextAreaElement | null>(null);
   const prefsDialogRef = React.useRef<PreferencesDialogRef | null>(null);

@@ -51,7 +51,7 @@ import { useInputStore } from "./stores/inputStore";
 import { useServerLinksStore } from "./stores/serverLinksStore";
 import { useWorldMapStore } from "./stores/worldMapStore";
 import { useConnectionStore } from "./stores/connectionStore";
-import { useCharacterStatusStore } from "./stores/characterStatusStore";
+import { followStatus } from "./status/statusFeedback";
 import { useOutputStore } from "./stores/outputStore";
 import { useItemsStore } from "./stores/itemsStore";
 import { useRoomStore } from "./stores/roomStore";
@@ -179,7 +179,6 @@ export function createConfiguredClient(): MudClient {
       useConnectionStore.getState().setSessionReady(true);
     }
   });
-  char.on("vitals", (data) => useCharacterStatusStore.getState().setVitals(data));
   clientHtml.on("addHtml", (data) => useOutputStore.getState().addHtml(data.data.join("\n")));
   clientHtml.on("addMarkdown", (data) => {
     const generation = client.gmcp.generation;
@@ -341,6 +340,8 @@ export function createConfiguredClient(): MudClient {
     unsubscribeInventory();
     clearTimeout(commandRefreshTimer);
   });
+  // Status tones, heartbeat and spoken warnings follow Char.Vitals, Char.Effects and Char.Target.
+  client.registerCleanup(followStatus(client.media.cacophony));
 
   return client;
 }

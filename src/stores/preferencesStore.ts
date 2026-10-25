@@ -87,6 +87,26 @@ export type VoiceInputPreferences = {
   language: string;
 };
 
+export type StatusCuePreference = {
+  enabled: boolean;
+  // 0 to 1, under the master volume.
+  volume: number;
+};
+
+// The status sounds (src/status/statusCues.ts) and spoken warnings, one entry per cue.
+export type StatusPreferences = {
+  // A pitched tone when a power or body reserve moves by a step.
+  reserveTones: StatusCuePreference;
+  // A heartbeat when your health crosses into another band; faster when lower.
+  heartbeat: StatusCuePreference;
+  // Spoken warnings when your health falls below 50, 25 and 10 percent.
+  warnings: { enabled: boolean };
+  // A pitched blip when your target's health changes.
+  targetBlip: StatusCuePreference;
+  // A rising or falling pair of tones when you gain or lose an effect.
+  effectEarcons: StatusCuePreference;
+};
+
 export type PrefState = {
   general: GeneralPreferences;
   speech: SpeechPreferences;
@@ -100,6 +120,7 @@ export type PrefState = {
   haptics: HapticsPreferences;
   autologging: AutologgingPreferences;
   voiceInput: VoiceInputPreferences;
+  status: StatusPreferences;
   // Keys the player chose for server key layers, keyed by layer id and then by
   // the binding's command.
   keystrokes: KeystrokeOverrides;
@@ -122,6 +143,7 @@ type PrefActions = {
   setHaptics: (data: HapticsPreferences) => void;
   setAutologging: (data: AutologgingPreferences) => void;
   setVoiceInput: (data: VoiceInputPreferences) => void;
+  setStatus: (data: StatusPreferences) => void;
   setKeystrokeOverride: (layerId: string, command: string, chord: Chord) => void;
 };
 
@@ -154,6 +176,13 @@ function getInitialPreferences(): PrefState {
     haptics: { enabled: false, intensityCap: 1.0, autoStopTimeout: 5 },
     autologging: { enabled: false, maxBytes: 100 * 1024 * 1024 },
     voiceInput: { enabled: false, sendImmediately: false, language: "" },
+    status: {
+      reserveTones: { enabled: true, volume: 0.5 },
+      heartbeat: { enabled: true, volume: 0.5 },
+      warnings: { enabled: true },
+      targetBlip: { enabled: true, volume: 0.5 },
+      effectEarcons: { enabled: true, volume: 0.5 },
+    },
     keystrokes: {},
   };
 }
@@ -175,6 +204,13 @@ function mergePreferences(initial: PrefState, stored: PrefState): PrefState {
     haptics: { ...initial.haptics, ...cleanHaptics },
     autologging: { ...initial.autologging, ...stored.autologging },
     voiceInput: { ...initial.voiceInput, ...stored.voiceInput },
+    status: {
+      reserveTones: { ...initial.status.reserveTones, ...stored.status?.reserveTones },
+      heartbeat: { ...initial.status.heartbeat, ...stored.status?.heartbeat },
+      warnings: { ...initial.status.warnings, ...stored.status?.warnings },
+      targetBlip: { ...initial.status.targetBlip, ...stored.status?.targetBlip },
+      effectEarcons: { ...initial.status.effectEarcons, ...stored.status?.effectEarcons },
+    },
     keystrokes: { ...initial.keystrokes, ...stored.keystrokes },
   };
 }
@@ -247,6 +283,7 @@ export const usePreferences = create<PrefState & PrefActions>()(
     setHaptics: (data) => set({ haptics: data }),
     setAutologging: (data) => set({ autologging: data }),
     setVoiceInput: (data) => set({ voiceInput: data }),
+    setStatus: (data) => set({ status: data }),
     setKeystrokeOverride: (layerId, command, chord) =>
       set((s) => ({
         keystrokes: {
