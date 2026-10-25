@@ -62,4 +62,7 @@ protocol, no rebindable status keys).
 
 ## Next step
 
-Commit, push, write `agent-notes/pr-body.md` (uncommitted), report to lead.
+Committed f976bc49 and pushed `feat/accessible-status`. PR title/body in
+`agent-notes/pr-body.md` (not committed). No PR opened: the lead opens it and
+reads CI. Open for the lead: the client redraw interval vs "no new
+timers/tickers".
