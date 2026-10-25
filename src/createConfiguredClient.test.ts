@@ -449,7 +449,7 @@ describe("createConfiguredClient", () => {
     client.mcpSession.receiveLine(`#$#mcp-negotiate-end ${authKey}`);
 
     expect(sent.some((line) => line.includes("#$#dns-com-awns-timezone"))).toBe(false);
-    expect(sent.some((line) => line.includes(`#$#dns-com-awns-serverinfo-get ${authKey}`))).toBe(
+    expect(sent.some((line) => line.includes(`#$#dns-com-awns-rehash-getcommands ${authKey}`))).toBe(
       true,
     );
   });

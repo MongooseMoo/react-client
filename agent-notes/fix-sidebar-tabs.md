@@ -34,6 +34,10 @@ text), `PreferencesDialog.tsx`/`App.tsx` (pass `client.media`), `HelpPanel.tsx` 
 tests, `scripts/check-accessibility.mjs` (sidebar journey renumbered; diagnostics journey via Preferences).
 Not run locally (no node_modules in this worktree); CI on the PR is the check.
 
+PR #207. First CI run: 1 of 194 test files failed, `createConfiguredClient.test.ts:452` still expected the
+`serverinfo-get` request after negotiation; my search was case-sensitive on `serverInfo`. Changed to the
+rehash request; a case-insensitive search finds no other reference.
+
 ## Next step
 
-Push, open PR, read CI.
+Read PR #207's CI on the fix commit.
