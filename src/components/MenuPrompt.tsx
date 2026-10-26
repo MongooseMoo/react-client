@@ -28,7 +28,7 @@ const titleFor = (prompt: string): string => {
  * without the app-wide Escape that pauses sounds (App.tsx skips .menu-prompt).
  */
 export default function MenuPrompt({ menu, onAnswer }: MenuPromptProps) {
-  const rootRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLFieldSetElement>(null);
   const digits = useRef({ text: "", timer: 0 });
 
   const choices = useMemo(
@@ -40,13 +40,14 @@ export default function MenuPrompt({ menu, onAnswer }: MenuPromptProps) {
   );
   const notes = menu.items.filter((item) => !item.response);
 
+  // A new menu (another round after "Invalid selection") takes focus again.
   useEffect(() => {
-    rootRef.current?.querySelector<HTMLElement>('[role="listbox"]')?.focus();
+    if (menu.items.length) rootRef.current?.querySelector<HTMLElement>('[role="listbox"]')?.focus();
   }, [menu]);
 
   useEffect(() => () => window.clearTimeout(digits.current.timer), []);
 
-  const handleKeyDownCapture = (event: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDownCapture = (event: React.KeyboardEvent<HTMLFieldSetElement>) => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "Escape") {
       event.preventDefault();
@@ -76,10 +77,9 @@ export default function MenuPrompt({ menu, onAnswer }: MenuPromptProps) {
   };
 
   return (
-    <div
+    <fieldset
       className="menu-prompt"
       ref={rootRef}
-      role="group"
       aria-labelledby="menu-prompt-title"
       onKeyDownCapture={handleKeyDownCapture}
     >
@@ -120,6 +120,6 @@ export default function MenuPrompt({ menu, onAnswer }: MenuPromptProps) {
       >
         Cancel
       </button>
-    </div>
+    </fieldset>
   );
 }
