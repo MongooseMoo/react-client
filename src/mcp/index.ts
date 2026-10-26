@@ -11,6 +11,11 @@ export { MCPPackage } from './package';
 export { DEFAULT_MCP_PACKAGES, type McpPackageConstructor } from './packages';
 export { McpAwnsGetSet } from './packages/getSet';
 export { type WorldMongooseLocation, McpWorldMongooseLocation } from './packages/location';
+export {
+  type WorldMongooseMenu,
+  type WorldMongooseMenuItem,
+  McpWorldMongooseMenu,
+} from './packages/menu';
 export { McpNegotiate } from './packages/negotiate';
 export { McpAwnsPing } from './packages/ping';
 export { McpAwnsRehash } from './packages/rehash';

@@ -525,9 +525,10 @@ class MudClient {
     this.cleanupConnection();
   }
 
-  public sendCommand(command: string): void {
+  /** `answer` sends a reply to a server prompt (a menu choice) as typed, never through autosay. */
+  public sendCommand(command: string, { answer = false }: { answer?: boolean } = {}): void {
     if (!canUseGameConnection()) return;
-    if (this.autosay && usePersonalDataStore.getState().owner && !command.startsWith("-") && !command.startsWith("'")) {
+    if (!answer && this.autosay && usePersonalDataStore.getState().owner && !command.startsWith("-") && !command.startsWith("'")) {
       command = `say ${command}`;
     }
     try {
