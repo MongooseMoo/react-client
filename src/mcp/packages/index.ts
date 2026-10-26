@@ -1,6 +1,7 @@
 import type { MCPPackage } from '../package';
 import { McpAwnsGetSet } from './getSet';
 import { McpWorldMongooseLocation } from './location';
+import { McpWorldMongooseMenu } from './menu';
 import { McpNegotiate } from './negotiate';
 import { McpAwnsPing } from './ping';
 import { McpAwnsRehash } from './rehash';
@@ -17,6 +18,7 @@ export const DEFAULT_MCP_PACKAGES = [
   McpAwnsRehash,
   McpAwnsTimezone,
   McpWorldMongooseLocation,
+  McpWorldMongooseMenu,
   McpAwnsStatus,
   McpSimpleEdit,
   McpVmooUserlist,

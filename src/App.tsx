@@ -13,6 +13,7 @@ import PreferencesDialog, {
   type PreferencesDialogRef,
 } from "./components/PreferencesDialog";
 import LinkPickerDialog from "./components/LinkPickerDialog";
+import MenuPrompt from "./components/MenuPrompt";
 import Sidebar, { clampSidebarWidth, type SidebarRef } from "./components/sidebar";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
@@ -38,6 +39,7 @@ import {
 import { usePreferences } from "./stores/preferencesStore";
 import { useRoomStore } from "./stores/roomStore";
 import { useConnectionStore } from "./stores/connectionStore";
+import { useMenuStore } from "./stores/menuStore";
 import { useOutputStore } from "./stores/outputStore";
 import { usePersonalDataStore } from './stores/personalDataStore';
 import { stripMudAnsiTags } from "./stripMudAnsiTags";
@@ -198,7 +200,8 @@ function App() {
         client.cancelSpeech();
       }
 
-      if (event.key === "Escape") {
+      // Escape in a server menu cancels the menu; sounds keep playing.
+      if (event.key === "Escape" && !(event.target instanceof Element && event.target.closest(".menu-prompt"))) {
         void client.pauseAllSounds().catch(() => {
           useOutputStore.getState().addError(new Error('Could not pause sounds. Try again.'));
         });
@@ -465,6 +468,23 @@ function App() {
     inRef.current?.focus();
   }, []);
 
+  const menu = useMenuStore((s) => s.menu);
+  const answerMenu = useCallback(
+    (line: string) => {
+      useMenuStore.getState().clear();
+      noteCommandSent();
+      client?.sendCommand(line, { answer: true });
+    },
+    [client],
+  );
+
+  // The input is hidden while a menu shows; give it focus back when the menu goes.
+  const menuWasOpen = useRef(false);
+  useEffect(() => {
+    if (menuWasOpen.current && !menu) focusInput();
+    menuWasOpen.current = !!menu;
+  }, [menu, focusInput]);
+
   useBeforeunload((event) => {
     if (client) {
       client.shutdown();
@@ -549,11 +569,14 @@ function App() {
             />
           </main>
           <section aria-label="Command input" style={{ gridArea: "input" }}>
-            <CommandInput
-              onSend={handleCommand}
-              inputRef={inRef}
-              client={client}
-            />
+            {menu && <MenuPrompt menu={menu} onAnswer={answerMenu} />}
+            <div hidden={!!menu}>
+              <CommandInput
+                onSend={handleCommand}
+                inputRef={inRef}
+                client={client}
+              />
+            </div>
           </section>
           <aside
             aria-roledescription="Sidebar"
