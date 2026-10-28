@@ -30,7 +30,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-it('restores the same owner history after repeated reconnects, including queued output', async () => {
+it('keeps the same owner history on screen through repeated reconnects, including queued output', async () => {
   usePersonalDataStore.getState().confirm(a);
   render(<Output client={{} as MudClient} />);
   await act(async () => useOutputStore.getState().addMessage('Before the disconnect'));
@@ -39,7 +39,8 @@ it('restores the same owner history after repeated reconnects, including queued 
       useOutputStore.getState().addMessage(`Last line ${reconnect}`);
       usePersonalDataStore.getState().clearForConnect();
     });
-    expect(screen.queryByText('Before the disconnect')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Before the disconnect')).toHaveLength(1);
+    expect(screen.getAllByText(`Last line ${reconnect}`)).toHaveLength(1);
     await act(async () => usePersonalDataStore.getState().confirm(a));
     expect(screen.getAllByText('Before the disconnect')).toHaveLength(1);
     expect(screen.getAllByText(`Last line ${reconnect}`)).toHaveLength(1);
@@ -75,16 +76,16 @@ it.each([
   ['different server', () => usePersonalDataStore.getState().confirm({ ...a, runtime: 'other-server' })],
   ['sign-out', () => { usePersonalDataStore.getState().clear(); usePersonalDataStore.getState().confirm(a); }],
   ['visitor transition', () => { usePersonalDataStore.getState().setVisitor(false); usePersonalDataStore.getState().confirm(a); }],
-])('discards the reconnect snapshot on %s', async (_label, transition) => {
+])('clears a visitor log kept through reconnect on %s', async (_label, transition) => {
   usePersonalDataStore.setState({ visitor: true, visitorWindow: true });
   usePersonalDataStore.getState().confirm(a);
   render(<Output client={{} as MudClient} />);
   await act(async () => useOutputStore.getState().addMessage('Private visitor log'));
   await act(async () => usePersonalDataStore.getState().clearForConnect());
-  expect(screen.queryByText('Private visitor log')).not.toBeInTheDocument();
+  expect(screen.getAllByText('Private visitor log')).toHaveLength(1);
   await act(async () => transition());
   expect(screen.queryByText('Private visitor log')).not.toBeInTheDocument();
-  // Even selecting A again cannot recover a snapshot discarded by a transition.
+  // Even selecting A again cannot recover a log cleared by a transition.
   await act(async () => usePersonalDataStore.getState().confirm(a));
   expect(screen.queryByText('Private visitor log')).not.toBeInTheDocument();
 });
@@ -143,6 +144,7 @@ it('clears persisted owner history during reconnect without touching another own
   const aKey = personalStorageKey('output', a) ?? '';
   await act(async () => useOutputStore.getState().addMessage('A explicitly cleared log'));
   await act(async () => usePersonalDataStore.getState().clearForConnect());
+  await act(async () => vi.advanceTimersByTime(600));
   expect(localStorage.getItem(aKey)).toContain('A explicitly cleared log');
   await act(async () => output.current?.clearLog());
   await act(async () => vi.advanceTimersByTime(600));
