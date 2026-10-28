@@ -19,6 +19,8 @@ interface PersonalDataState {
   visitorWindow: boolean;
   policyReady: boolean;
   gameSessionId: string;
+  /** Counts `clearForConnect` calls, so a watcher can tell each new connection apart. */
+  connects: number;
   confirm: (owner: PersonalDataOwner) => void;
   /** Forgets the owner and everything of theirs on screen: sign-out. */
   clear: () => void;
@@ -48,6 +50,7 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
   visitorWindow: false,
   policyReady: false,
   gameSessionId: '',
+  connects: 0,
   confirm(owner) {
     const { owner: current, reconnectingOwner } = get();
     if (current && ownerKey(current) === ownerKey(owner)) return;
@@ -58,7 +61,7 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
   },
   clear() { clearTransientData(false); set({ owner: undefined, reconnectingOwner: undefined }); },
   clearForConnect() {
-    set({ owner: undefined, reconnectingOwner: get().owner ?? get().reconnectingOwner });
+    set({ owner: undefined, reconnectingOwner: get().owner ?? get().reconnectingOwner, connects: get().connects + 1 });
   },
   setVisitor(visitor) {
     if (visitor === get().visitor) return;

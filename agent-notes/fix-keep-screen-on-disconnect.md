@@ -17,7 +17,7 @@ Commit "Partition personal histories and deferred work by confirmed player" (PR 
 - Tests: flipped the two assertions that pinned blanking; the persisted-clear test now advances the save debounce before checking storage (the old code saved as a side effect of blanking).
 
 ## Surprises
-VoiceCommandButton's dictation now stops on connect via its identity check rather than via `ownerResets`; its tests run in CI, not checked locally.
+First CI run on PR #209 failed 2 VoiceCommandButton tests ("a new connection stops it…", "a new connection stops dictation at once…"): dictation stopped on connect only through the input clear (`ownerResets`); a connect with nobody signed in changed nothing in its identity (VoiceCommandButton.tsx `identityChange`). Fix: `clearForConnect` increments `connects`; dictation's identity includes it ("new connection"). No input clear, protection kept.
 
 ## Next step
-Commit, push, open PR, read its CI.
+Read PR #209's CI on the dictation fix.
