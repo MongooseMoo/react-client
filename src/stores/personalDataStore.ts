@@ -19,10 +19,15 @@ interface PersonalDataState {
   visitorWindow: boolean;
   policyReady: boolean;
   gameSessionId: string;
+  /** Counts `clearForConnect` calls, so a watcher can tell each new connection apart. */
+  connects: number;
   confirm: (owner: PersonalDataOwner) => void;
   /** Forgets the owner and everything of theirs on screen: sign-out. */
   clear: () => void;
-  /** Forgets the owner because a new connection starts; it has nobody signed in yet. */
+  /**
+   * A new connection starts with nobody signed in yet. What is on screen stays
+   * until a different player signs in.
+   */
   clearForConnect: () => void;
   setVisitor: (visitor: boolean) => void;
 }
@@ -30,7 +35,7 @@ interface PersonalDataState {
 /**
  * Output and input on screen belonged to the previous owner. `forNewOwner`
  * marks the resets where nobody's data is being protected from anyone yet (a
- * connection starting, a sign-in with nobody before), which a draft from a launch link
+ * sign-in on a new connection), which a draft from a launch link
  * survives (see launch/placeLaunchText). Sign-out and visitor changes are
  * privacy clears and discard everything.
  */
@@ -45,20 +50,18 @@ export const usePersonalDataStore = create<PersonalDataState>((set, get) => ({
   visitorWindow: false,
   policyReady: false,
   gameSessionId: '',
+  connects: 0,
   confirm(owner) {
-    const previous = get().owner;
-    if (previous && ownerKey(previous) === ownerKey(owner)) return;
+    const { owner: current, reconnectingOwner } = get();
+    if (current && ownerKey(current) === ownerKey(owner)) return;
+    const previous = current ?? reconnectingOwner;
     // Switching from one owner to another protects the first from the second.
-    clearTransientData(!previous);
+    if (!previous || ownerKey(previous) !== ownerKey(owner)) clearTransientData(!current);
     set({ owner, reconnectingOwner: undefined });
   },
   clear() { clearTransientData(false); set({ owner: undefined, reconnectingOwner: undefined }); },
   clearForConnect() {
-    // Deliver the last transport's queued lines before output takes its snapshot.
-    useOutputStore.getState().flush();
-    const reconnectingOwner = get().owner ?? get().reconnectingOwner;
-    clearTransientData(true);
-    set({ owner: undefined, reconnectingOwner });
+    set({ owner: undefined, reconnectingOwner: get().owner ?? get().reconnectingOwner, connects: get().connects + 1 });
   },
   setVisitor(visitor) {
     if (visitor === get().visitor) return;

@@ -45,17 +45,19 @@ interface Identity {
   player: string;
   gameSessionId: string;
   connected: boolean;
+  connects: number;
 }
 
 function currentIdentity(): Identity {
-  const { owner, visitor, gameSessionId } = usePersonalDataStore.getState();
+  const { owner, visitor, gameSessionId, connects } = usePersonalDataStore.getState();
   const { connected } = useConnectionStore.getState();
-  return { player: JSON.stringify([owner ? ownerKey(owner) : null, visitor]), gameSessionId, connected };
+  return { player: JSON.stringify([owner ? ownerKey(owner) : null, visitor]), gameSessionId, connected, connects };
 }
 
 /** Why the identity changed, or nothing when it has not. */
 function identityChange(from: Identity, to: Identity): string | undefined {
   if (from.connected !== to.connected) return to.connected ? "connected" : "disconnected";
+  if (from.connects !== to.connects) return "new connection";
   if (from.player !== to.player) return "player changed";
   if (from.gameSessionId !== to.gameSessionId) return "new game session";
   return undefined;
