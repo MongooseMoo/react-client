@@ -43,9 +43,10 @@ it('numbers tabs by their place on screen, so a tab that arrives renumbers those
   outside.focus();
   act(() => { ref.current?.switchToTab(2); });
   expect(usersPanel()).toContainElement(document.activeElement as HTMLElement);
-  // Room, Map, Users, Help, Voice chat, Files, Photos.
+  // Room, Map, Users, Help, Voice chat, Files, Photos, Properties.
   expect(ref.current?.hasTab(6)).toBe(true);
-  expect(ref.current?.hasTab(7)).toBe(false);
+  expect(ref.current?.hasTab(7)).toBe(true);
+  expect(ref.current?.hasTab(8)).toBe(false);
   expect(ref.current?.indexOfTab('midi-tab')).toBe(-1);
 });
 
@@ -65,6 +66,7 @@ it('orders every tab by purpose and numbers them without gaps', () => {
     ['MIDI', 'Control+Shift+8'],
     ['Haptics', 'Control+Shift+9'],
     ['Photos', 'Control+Shift+0'],
+    ['Properties', null],
   ]);
 });
 

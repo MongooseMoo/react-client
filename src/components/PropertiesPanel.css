@@ -1,0 +1,71 @@
+.properties-panel {
+  --property-accent: var(--color-primary, #4c90d4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+  line-height: 1.55;
+  min-width: 0;
+}
+.properties-panel h3, .properties-panel h4, .properties-panel p { margin: 0; }
+.property-intro { padding-block-end: 12px; border-block-end: 2px solid var(--property-accent); }
+.property-intro h3 { font-size: 1.35em; letter-spacing: -.015em; }
+.property-intro p, .property-hint { color: var(--color-text-secondary, inherit); font-size: .88em; }
+.property-lookup, .property-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.properties-panel label, .properties-panel legend { font-weight: 600; }
+.property-actions, .property-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.property-actions input { flex: 1 1 12em; min-width: 0; }
+.property-filters .property-field { flex: 1 1 10em; }
+.properties-panel input, .properties-panel textarea, .properties-panel select {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid var(--color-border, currentColor);
+  border-radius: 5px;
+  color: var(--color-text, inherit);
+  background: var(--color-background, transparent);
+  font: inherit;
+}
+.properties-panel textarea { width: 100%; resize: vertical; }
+.properties-panel button { min-height: 36px; padding: 6px 10px; overflow-wrap: anywhere; font: inherit; }
+.properties-panel :focus-visible { outline: 3px solid var(--property-accent); outline-offset: 3px; }
+.properties-panel button:disabled { cursor: default; }
+.property-primary { font-weight: 700; border: 2px solid var(--property-accent); }
+.property-notice, .property-error { padding: 10px; border-inline-start: 4px solid var(--property-accent); }
+.property-error { border-inline-start-style: double; border-inline-start-width: 6px; }
+.property-table-scroll { overflow-x: auto; }
+.property-list table { width: 100%; border-collapse: collapse; font-size: .9em; }
+.property-list caption { font-weight: 700; text-align: start; padding-block-end: 10px; }
+.property-list th, .property-list td { text-align: start; vertical-align: top; padding: 10px 6px; border-block-end: 1px solid var(--color-border, currentColor); overflow-wrap: anywhere; }
+.property-list th:first-child { padding-inline-start: 0; }
+.property-list tbody th button { font-family: var(--font-family-mono, monospace); text-align: start; }
+.property-type, .property-source { display: block; }
+.property-source { font-size: .85em; }
+.property-list > p { margin-block: 12px; }
+.property-detail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.property-detail-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.property-detail h4 { font-family: var(--font-family-mono, monospace); font-size: 1.2em; overflow-wrap: anywhere; }
+.property-badge { font-size: .8em; padding: 2px 8px; border: 1px solid var(--color-border, currentColor); border-radius: 999px; }
+.property-target { font-size: .9em; }
+.property-metadata { display: grid; grid-template-columns: minmax(5em, 1fr) minmax(0, 2fr); gap: 6px 12px; margin: 0; font-size: .9em; }
+.property-metadata dt { font-weight: 600; }
+.property-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.property-reference { text-align: start; text-decoration: underline; }
+.properties-panel fieldset { display: flex; flex-direction: column; gap: 12px; margin: 0; min-width: 0; padding: 12px; border: 1px solid var(--color-border, currentColor); border-radius: 6px; }
+.property-value { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.property-value details { min-width: 0; }
+.property-value summary { cursor: pointer; padding-block: 6px; font-weight: 600; overflow-wrap: anywhere; }
+.property-items { margin: 0; padding-inline-start: 18px; }
+.property-items > li { padding: 10px 0 14px 4px; border-block-end: 1px solid var(--color-border, currentColor); }
+.property-items > li > button { margin-block-start: 8px; }
+.property-opaque { padding: 10px; border: 1px dashed var(--color-border, currentColor); overflow-wrap: anywhere; }
+.property-empty { padding-block: 16px; }
+@media (max-width: 600px) {
+  .property-metadata { grid-template-columns: 1fr; gap: 2px; }
+  .property-metadata dd { margin-block-end: 8px; }
+  .properties-panel fieldset { padding: 8px; }
+}
+@media (forced-colors: active) {
+  .properties-panel :focus-visible { outline-color: Highlight; }
+  .property-intro, .property-notice, .property-error, .property-primary { border-color: CanvasText; }
+}
