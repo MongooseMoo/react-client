@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react'; // Import useState, useEffect
 import {
   FaBoxOpen,
+  FaCamera,
   FaChevronLeft,
   FaChevronRight,
   FaFolderOpen,
@@ -17,6 +18,7 @@ import AudioChatBoundary from './AudioChatBoundary';
 const MidiStatus = React.lazy(() => import('./MidiStatus'));
 const MapPanel = React.lazy(() => import('./MapPanel'));
 const HelpPanel = React.lazy(() => import('./HelpPanel'));
+const PhotoPanel = React.lazy(() => import('./PhotoPanel'));
 import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
@@ -256,6 +258,14 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         content: <Suspense fallback={<p role="status">Loading haptics…</p>}><HapticsStatus client={client} /></Suspense>,
         mountOnSelect: true,
         condition: hapticsPreferences.enabled,
+      },
+      {
+        id: 'photos-tab',
+        label: 'Photos',
+        icon: <FaCamera />,
+        content: <Suspense fallback={<p role="status">Loading photos…</p>}><PhotoPanel client={client} /></Suspense>,
+        mountOnSelect: true,
+        condition: true,
       },
     ];
 
