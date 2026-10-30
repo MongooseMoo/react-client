@@ -2,6 +2,7 @@ import React, { Suspense, useEffect, useRef, useState } from 'react'; // Import 
 import {
   FaBoxOpen,
   FaCamera,
+  FaClipboardList,
   FaChevronLeft,
   FaChevronRight,
   FaFolderOpen,
@@ -19,6 +20,7 @@ const MidiStatus = React.lazy(() => import('./MidiStatus'));
 const MapPanel = React.lazy(() => import('./MapPanel'));
 const HelpPanel = React.lazy(() => import('./HelpPanel'));
 const PhotoPanel = React.lazy(() => import('./PhotoPanel'));
+const PropertiesPanel = React.lazy(() => import('./PropertiesPanel'));
 import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
@@ -264,6 +266,14 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         label: 'Photos',
         icon: <FaCamera />,
         content: <Suspense fallback={<p role="status">Loading photos…</p>}><PhotoPanel client={client} /></Suspense>,
+        mountOnSelect: true,
+        condition: true,
+      },
+      {
+        id: 'properties-tab',
+        label: 'Properties',
+        icon: <FaClipboardList />,
+        content: <Suspense fallback={<p role="status">Loading properties…</p>}><PropertiesPanel client={client} /></Suspense>,
         mountOnSelect: true,
         condition: true,
       },

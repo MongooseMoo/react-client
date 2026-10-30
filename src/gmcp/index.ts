@@ -27,6 +27,7 @@ export { GMCPCharSkills } from "./Char/Skills";
 export { GmcPIRESound } from "./IRE/Sound";
 export { GMCPGroup } from "./Group";
 export { GMCPHelp } from "./Help";
+export { GMCPObjectProperties } from "./Object/Properties";
 export { GMCPLogging } from "./Logging";
 export { GMCPRedirect } from "./Redirect";
 export { GMCPRoom } from "./Room";
