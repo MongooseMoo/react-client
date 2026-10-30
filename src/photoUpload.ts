@@ -5,13 +5,38 @@ import type MudClient from "./client";
 export const PHOTO_MAX_EDGE = 1568;
 const UPLOAD_ENDPOINT = "/api/photos/upload";
 
+function readBytes(blob: Blob): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
+/**
+ * Where the JPEG starts in the file: 0 for an ordinary image, later for a frame
+ * a camera saved with its video-stream header in front (a doorbell snapshot
+ * that begins "--frameboundary"), which browsers will not decode as it is.
+ */
+export async function jpegStart(file: Blob): Promise<number> {
+  const head = new Uint8Array(await readBytes(file.slice(0, 4096)));
+  if (head[0] === 0xff && head[1] === 0xd8) return 0;
+  for (let i = 1; i + 2 < head.length; i++) {
+    if (head[i] === 0xff && head[i + 1] === 0xd8 && head[i + 2] === 0xff) return i;
+  }
+  return 0;
+}
+
 /**
  * Decodes a photo, scales it so its longest edge is at most PHOTO_MAX_EDGE, and
  * re-encodes it as JPEG. Re-encoding through a canvas also drops EXIF, so no
  * location or camera details leave the device.
  */
 export async function prepareJpeg(file: Blob): Promise<Blob> {
-  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const start = await jpegStart(file);
+  const image = start ? file.slice(start, file.size, "image/jpeg") : file;
+  const bitmap = await createImageBitmap(image, { imageOrientation: "from-image" });
   const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(bitmap.width * scale);

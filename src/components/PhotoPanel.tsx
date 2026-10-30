@@ -1,3 +1,4 @@
+import { announce } from "@react-aria/live-announcer";
 import { useRef, useState } from "react";
 import type MudClient from "../client";
 import { prepareJpeg, uploadPhoto } from "../photoUpload";
@@ -16,13 +17,21 @@ const PhotoPanel = ({ client }: Props) => {
   const [sending, setSending] = useState(false);
   const [status, setStatus] = useState("");
 
+  // Results are spoken through the shared announcer, as elsewhere in the client:
+  // a polite status region in the sidebar was not heard while focus came back
+  // from the file picker (Q, 2026-10-30). The paragraph keeps the last result to read again.
+  const report = (text: string) => {
+    setStatus(text);
+    announce(text, "assertive");
+  };
+
   const send = async (file: File) => {
     setSending(true);
-    setStatus("Sending photo…");
+    report("Sending photo…");
     try {
-      setStatus(await uploadPhoto(client, await prepareJpeg(file)));
+      report(await uploadPhoto(client, await prepareJpeg(file)));
     } catch (error) {
-      setStatus(`Could not send the photo: ${error instanceof Error ? error.message : String(error)}`);
+      report(`Could not send the photo: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSending(false);
     }
@@ -55,7 +64,7 @@ const PhotoPanel = ({ client }: Props) => {
       >
         Take or choose a photo
       </button>
-      <p role="status">{status}</p>
+      <p>{status}</p>
     </section>
   );
 };
