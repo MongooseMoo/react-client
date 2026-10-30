@@ -145,8 +145,8 @@ export default function PropertiesPanel({ client }: { client: MudClient }) {
               {!state.rows.length && <p>No matching properties on this page.</p>}
               <p>{state.total} matching {state.total === 1 ? 'property' : 'properties'}. {state.rows.length > 0 ? `Showing ${state.offset + 1}–${state.offset + state.rows.length}.` : ''}</p>
               <nav className="property-actions" aria-label="Property pages">
-                <button type="button" disabled={disabled || state.offset === 0} onClick={() => packageHandler().list(state.target, search, filter, Math.max(0, state.offset - 30))}>Previous page</button>
-                <button type="button" disabled={disabled || state.offset + 30 >= state.total} onClick={() => packageHandler().list(state.target, search, filter, state.offset + 30)}>Next page</button>
+                <button type="button" disabled={disabled || state.offset === 0} onClick={() => packageHandler().list(state.target, state.listedSearch, state.listedFilter, Math.max(0, state.offset - 30))}>Previous page</button>
+                <button type="button" disabled={disabled || state.offset + 30 >= state.total} onClick={() => packageHandler().list(state.target, state.listedSearch, state.listedFilter, state.offset + 30)}>Next page</button>
               </nav>
             </div>
           ) : <p className="property-empty">Choose an object to explore its properties.</p>}

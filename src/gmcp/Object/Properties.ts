@@ -124,7 +124,7 @@ let instanceCounter = 0;
 export class GMCPObjectProperties extends PropertiesBase {
   private readonly instance = ++instanceCounter;
   private serial = 0;
-  private pending?: { id: string; operation: PropertyOperation; generation: number; timer: ReturnType<typeof setTimeout> };
+  private pending?: { id: string; operation: PropertyOperation; generation: number; timer: ReturnType<typeof setTimeout>; criteria?: { search: string; filter: PropertyFilter } };
   private readonly unsubscribe: () => void;
 
   constructor(client: ConstructorParameters<typeof PropertiesBase>[0]) {
@@ -153,7 +153,8 @@ export class GMCPObjectProperties extends PropertiesBase {
       this.pending = undefined;
       usePropertyBrowserStore.getState().fail('The server did not answer. Your draft is still here. Check the connection, then try again.');
     }, 15000);
-    this.pending = { id, operation, generation: this.client.gmcp.generation, timer };
+    const criteria = 'search' in payload ? { search: payload.search, filter: payload.filter } : undefined;
+    this.pending = { id, operation, generation: this.client.gmcp.generation, timer, criteria };
     state.begin();
     this.sendData(operation, { ...payload, id });
   }
@@ -181,7 +182,7 @@ export class GMCPObjectProperties extends PropertiesBase {
     if (!pending || result.id !== pending.id || result.operation !== pending.operation || pending.generation !== this.client.gmcp.generation) return;
     clearTimeout(pending.timer);
     this.pending = undefined;
-    usePropertyBrowserStore.getState().accept(result);
+    usePropertyBrowserStore.getState().accept(result, pending.criteria);
   }
 
   override reset(): void {

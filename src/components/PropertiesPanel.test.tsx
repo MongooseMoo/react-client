@@ -141,6 +141,19 @@ describe('Properties browser journey', () => {
     expect(request()).toMatchObject({ target: '#101', name: 'description', edit: 1 });
   });
 
+  it('paginates the displayed listing until draft filters are applied', () => {
+    render(<PropertiesPanel client={client} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Here' }));
+    arrive({ rows: [detail], total: 70, offset: 0 });
+    fireEvent.change(screen.getByLabelText('Show properties'), { target: { value: 'writable' } });
+    fireEvent.input(screen.getByLabelText('Search property names'), { target: { value: 'description' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(request()).toMatchObject({ filter: 'all', search: '', offset: 30 });
+    arrive({ rows: [detail], total: 70, offset: 30 });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(request()).toMatchObject({ filter: 'writable', search: 'description', offset: 0 });
+  });
+
   it('clears private results and drafts on sign-out and ignores late replies', () => {
     openDetail();
     fireEvent.input(screen.getByLabelText('Value'), { target: { value: 'Private draft' } });
@@ -149,6 +162,19 @@ describe('Properties browser journey', () => {
     arrive({ detail });
     expect(screen.queryByDisplayValue('Private draft')).not.toBeInTheDocument();
     expect(usePropertyBrowserStore.getState().detail).toBeNull();
+  });
+
+  it('does not label a previous object property list as a newly opened object', () => {
+    openDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Close property' }));
+    fireEvent.input(screen.getByLabelText('Object'), { target: { value: '#202' } });
+    fireEvent.input(screen.getByLabelText('Property name'), { target: { value: 'description' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open property' }));
+    arrive({ target: '#202', targetName: 'Other room', detail: { ...detail, supplier: '#202' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Close property' }));
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'description' })).not.toBeInTheDocument();
+    expect(screen.getByText('Choose an object to explore its properties.')).toBeInTheDocument();
   });
 
   it('ignores responses from an older transport generation and disables logged-out requests', () => {
