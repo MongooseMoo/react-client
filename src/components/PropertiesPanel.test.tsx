@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type MudClient from '../client';
-import { GMCPObjectProperties, type PropertyDetail, type PropertyResult } from '../gmcp/Object/Properties';
+import { GMCPObjectProperties, type PropertyDetail, type PropertyResult, type PropertyValue } from '../gmcp/Object/Properties';
 import { useConnectionStore } from '../stores/connectionStore';
 import { usePersonalDataStore } from '../stores/personalDataStore';
 import { usePropertyBrowserStore } from '../stores/propertyBrowserStore';
@@ -95,6 +95,14 @@ describe('Properties browser journey', () => {
     openDetail({ ...detail, type: 'list', value: { type: 'list', items: [{ type: 'opaque', text: 'WAIF' }] }, editable: 0 });
     expect(screen.queryByRole('button', { name: 'Save value' })).not.toBeInTheDocument();
     expect(screen.getByText(/cannot be recreated/i)).toBeInTheDocument();
+  });
+
+  it('shows the server terminal sentinel beyond its nesting limit as read-only', () => {
+    let value: PropertyValue = { type: 'truncated', text: 'Value exceeds the browser nesting limit.' };
+    for (let depth = 0; depth < 17; depth++) value = { type: 'list', items: [value] };
+    openDetail({ ...detail, type: 'list', value, editable: 0 });
+    expect(screen.getByText('Value exceeds the browser nesting limit.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save value' })).not.toBeInTheDocument();
   });
 
   it('resets an inherited override and separately saves native metadata', () => {

@@ -64,7 +64,8 @@ function record(value: unknown): value is Record<string, unknown> {
 function bit(value: unknown): value is Bit { return value === 0 || value === 1; }
 
 export function isPropertyValue(value: unknown, depth = 0, budget = { nodes: 0, text: 0 }): value is PropertyValue {
-  if (!record(value) || depth > 16 || ++budget.nodes > 2048) return false;
+  // The server replaces an over-depth child with a terminal sentinel at depth 17.
+  if (!record(value) || depth > 17 || (depth > 16 && value.type !== 'truncated') || ++budget.nodes > 2048) return false;
   if (value.type === 'list') return Array.isArray(value.items) && value.items.every((item) => isPropertyValue(item, depth + 1, budget));
   if (value.type === 'map') return Array.isArray(value.entries) && value.entries.every((entry) =>
     Array.isArray(entry) && entry.length === 2 && entry.every((item) => isPropertyValue(item, depth + 1, budget)));
