@@ -4,7 +4,9 @@ Implement the approved accessible Properties panel over Object.Properties GMCP, 
 
 # State
 
-Client source and focused journey tests are written on feat/property-browser. Root has independently read the protocol, store, panel and recursive value editor. Focused journey tests run with the completed source. Root owns publication and live MOO integration. The worker hit model capacity after writing source; root continues the task. The paired Object.Properties package is now registered live through $gmcp_registry.
+Independent verifier is reviewing the published PR #212 diff, its actual callers and the paired live MOO source. Review evidence belongs in the required review ledger; no test result copies are written here.
+
+Client PR #212 is published from feat/property-browser. Root independently read the protocol, store, panel and recursive value editor, repaired cross-target listing retention and pagination criteria, and updated existing sidebar expectations for the appended tab. Root owns publication and live MOO integration. The paired Object.Properties package is registered live through $gmcp_registry. A disposable browser exercised the real panel against an ordinary live guest, saved its description and restored the original; the connected test is tests/browser/property-browser-live.spec.ts and runs separately from isolated CI.
 
 # Decisions and why
 
@@ -23,6 +25,8 @@ Dependency setup hit npm's git-dependency propagation error for the existing all
 
 Dependencies are now present. The initial test used change events on text inputs, which do not exercise the Preact input handler; corrected those to input events, consistent with the existing Help panel tests. The select-change event remains a change event.
 
+Browser extension/DevTools access was unavailable and native control refused URL verification for an existing user window. No further input was sent there. The separate program-under-test browser uses an isolated disposable context, not that user window. It covers keyboard entry/save, focus, a narrow viewport, forced colors and an automated panel scan. Actual NVDA speech has not been observed; do not equate browser semantics with a screen-reader transcript.
+
 # Next step
 
-Commit through existing hooks, publish the client PR and watch required CI to completion. Complete independent review, wire/connected keyboard and screen-reader acceptance and the authorized merge/deployment. Keep tests, CI, merge, deployment and actual connected acceptance distinct.
+Publish the connected browser test and updated note with the task change, watch the PR's current checks, obtain the required independent verifier verdict and perform the authorized normal merge/deployment. Verify production assets and registered GMCP remain current, then remove the owned worktree/branch. Keep tests, CI, merge, deployment and actual connected acceptance distinct.
