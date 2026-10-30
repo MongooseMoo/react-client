@@ -131,12 +131,12 @@ const ChannelPreferencesTab: React.FC = () => {
                   </select>
                 </td>
                 <td>
-                  <input
+                  {row.name === "say_to_you" ? "Always when unfocused" : <input
                     type="checkbox"
                     aria-label={`${row.caption}: notify when the window is not focused`}
                     checked={current.notify}
                     onChange={(e) => update({ notify: e.target.checked })}
-                  />
+                  />}
                 </td>
               </tr>
             );
