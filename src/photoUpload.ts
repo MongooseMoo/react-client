@@ -5,13 +5,22 @@ import type MudClient from "./client";
 export const PHOTO_MAX_EDGE = 1568;
 const UPLOAD_ENDPOINT = "/api/photos/upload";
 
+function readBytes(blob: Blob): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 /**
  * Where the JPEG starts in the file: 0 for an ordinary image, later for a frame
  * a camera saved with its video-stream header in front (a doorbell snapshot
  * that begins "--frameboundary"), which browsers will not decode as it is.
  */
 export async function jpegStart(file: Blob): Promise<number> {
-  const head = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+  const head = new Uint8Array(await readBytes(file.slice(0, 4096)));
   if (head[0] === 0xff && head[1] === 0xd8) return 0;
   for (let i = 1; i + 2 < head.length; i++) {
     if (head[i] === 0xff && head[i + 1] === 0xd8 && head[i + 2] === 0xff) return i;
