@@ -75,6 +75,52 @@ describe('GMCPClientFileTransfer', () => {
     );
   });
 
+  it('sends the sharing messages and Request', () => {
+    const { fileTransfer, telnet } = createFileTransferPackage();
+    const file = { hash: 'a'.repeat(64), name: 'map.txt', path: '', size: 3 };
+
+    fileTransfer.sendShare({ sharing: true });
+    fileTransfer.sendBrowse({ recipient: '#1' });
+    fileTransfer.sendList({ recipient: '#2', files: [file] });
+    fileTransfer.sendSearch({ id: 's', query: 'map' });
+    fileTransfer.sendResult({ recipient: '#2', id: 's', files: [file] });
+    fileTransfer.sendRequest({ recipient: '#1', hash: file.hash });
+
+    expect((telnet.sendGmcp as ReturnType<typeof vi.fn>).mock.calls).toEqual([
+      ['Client.FileTransfer.Share', '{"sharing":true}'],
+      ['Client.FileTransfer.Browse', '{"recipient":"#1"}'],
+      ['Client.FileTransfer.List', JSON.stringify({ recipient: '#2', files: [file] })],
+      ['Client.FileTransfer.Search', '{"id":"s","query":"map"}'],
+      ['Client.FileTransfer.Result', JSON.stringify({ recipient: '#2', id: 's', files: [file] })],
+      ['Client.FileTransfer.Request', JSON.stringify({ recipient: '#1', hash: file.hash })],
+    ]);
+  });
+
+  it.each(['Browse', 'List', 'Search', 'Result', 'Request'])(
+    'delivers an inbound %s once file transfer has loaded',
+    async (wireName) => {
+      const { fileTransfer, session } = createFileTransferPackage();
+      const received: unknown[] = [];
+      const event = `${wireName.charAt(0).toLowerCase()}${wireName.slice(1)}` as
+        | 'browse'
+        | 'list'
+        | 'search'
+        | 'result'
+        | 'request';
+      fileTransfer.on(event, (payload) => received.push(payload));
+
+      session.receive(`Client.FileTransfer.${wireName}`, JSON.stringify({ sender: '#5' }));
+
+      await vi.waitFor(() => expect(received).toEqual([{ sender: '#5' }]));
+    },
+  );
+
+  it('has no listener event for Share, which the server never relays', () => {
+    const { fileTransfer } = createFileTransferPackage();
+
+    expect(fileTransfer.receiveRegisteredMessage('Share', { sharing: true })).toBe(false);
+  });
+
   it('has no way to ask for a resend: a lost link is resumed by a new offer', () => {
     const { fileTransfer } = createFileTransferPackage();
 

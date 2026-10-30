@@ -726,6 +726,19 @@ function hubOffer(index: number) {
   return signal;
 }
 
+describe('a request', () => {
+  it('is rejected by a client that shares nothing', async () => {
+    peer('alice');
+    const bob = peer('bob');
+
+    hub.peer('alice').sendRequest('bob', idOf(1));
+    await quiet();
+
+    expect(hub.sentOf('reject')).toEqual([{ kind: 'reject', from: 'bob', to: 'alice', id: idOf(1) }]);
+    expect(bob.engine.transfers()).toEqual([]);
+  });
+});
+
 describe('a peer that breaks the rules', () => {
   /** Runs a transfer in which the first frame of `type` sent by `owner` is replaced. */
   async function withReplaced(
