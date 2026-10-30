@@ -7,8 +7,11 @@ Q, 2026-10-29: take pictures of real things and turn them into MOO objects. This
 - `src/photoUpload.ts`:
   - `prepareJpeg` decodes the photo, scales its long edge to at most 1568 px, and re-encodes it as JPEG 0.85 through a canvas, which drops EXIF.
   - `uploadPhoto` gets the `Client.WebPush` token and POSTs to `/api/photos/upload`.
-- `src/components/PhotoButton.tsx`: a file input with no `capture` attribute, so a phone offers camera or library. Results are announced through the live announcer.
-- `input.tsx` renders the button beside the voice button.
+- `src/components/PhotoPanel.tsx`, its own sidebar tab "Photos" (Q, 2026-10-30: "on its own tab I'd reckon"). It is last, so existing tab numbers are unchanged.
+  - A file input with no `capture` attribute, so a phone offers camera or library.
+  - A `role="status"` line keeps the last result. It is the only announcement, to avoid speaking it twice.
+- The first version was a button beside the voice button; it was replaced by the tab and `input.tsx` is back as it was.
+- `sidebar.test.tsx` counts Photos: the 7th of six base tabs, and 10th (`Control+Shift+0`) with MIDI and Haptics.
 - Tests: `src/photoUpload.test.ts`.
 
 ## Decisions and why
