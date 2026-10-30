@@ -252,19 +252,27 @@ describe("Comm.Channel", () => {
   });
 
   describe("notifying", () => {
-    it("notifies for a channel with notify on when the window is not focused", () => {
+    it("always notifies for directed speech and follows other channel settings when unfocused", () => {
       const sendNotification = vi.fn(() => true);
       client.sendNotification = sendNotification;
       usePreferences
         .getState()
         .setChannelPreferences("page", { autoreadMode: "default", voice: "", notify: true });
+      usePreferences
+        .getState()
+        .setChannelPreferences("say_to_you", { autoreadMode: "default", voice: "", notify: false });
 
       receiveChannelLine("page", "Alice", "focused");
+      receiveChannelLine("say_to_you", "Alice", "directed while focused");
       focused = false;
+      receiveChannelLine("say_to_you", "Alice", "directed while away");
       receiveChannelLine("page", "Alice", "away");
       receiveChannelLine("mongoose", "Bob", "chatter");
 
-      expect(sendNotification.mock.calls).toEqual([["Message from Alice", "away"]]);
+      expect(sendNotification.mock.calls).toEqual([
+        ["Message from Alice", "directed while away"],
+        ["Message from Alice", "away"],
+      ]);
     });
   });
 });

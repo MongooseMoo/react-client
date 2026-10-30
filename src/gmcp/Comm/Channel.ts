@@ -99,7 +99,7 @@ export class GMCPCommChannel extends GMCPCommChannelBase {
       this.client.speak(channelSpeechText(data.talker, data.text), preferences.voice);
     }
 
-    if (preferences.notify && !focused) {
+    if ((data.channel === "say_to_you" || preferences.notify) && !focused) {
       this.client.sendNotification(`Message from ${data.talker}`, data.text);
     }
   }
