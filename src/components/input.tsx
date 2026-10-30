@@ -8,6 +8,7 @@ import { useKeystrokesStore } from "../stores/keystrokesStore";
 import { useRoomStore } from "../stores/roomStore";
 import { registerCommandInput } from "../inputFocus";
 import VoiceCommandButton from "./VoiceCommandButton";
+import PhotoButton from "./PhotoButton";
 import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
 import type MudClient from "../client"; // Import MudClient
 import type { RoomPlayer } from "../gmcp/Room"; // Import RoomPlayer type
@@ -68,7 +69,7 @@ const parseWordForCompletion = (word: string): { leadingPunctuation: string, nam
   }
 };
 
-const CommandInput = ({ onSend, inputRef }: Props) => {
+const CommandInput = ({ onSend, inputRef, client }: Props) => {
   const commandHistoryRef = useRef(new CommandHistory());
   const text = useInputStore((s) => s.text);
   const owner = usePersonalDataStore((s) => s.owner);
@@ -290,6 +291,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
         autoFocus
       />
       <VoiceCommandButton onSend={handleSend} />
+      {client && <PhotoButton client={client} />}
       <button type="button" onClick={handleSend} className="send-button">
         Send
       </button>
