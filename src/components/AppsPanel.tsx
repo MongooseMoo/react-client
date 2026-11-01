@@ -91,7 +91,7 @@ const AppsPanel = ({ client }: Props) => {
         >
           <label>
             Code the app shows
-            <input type="text" value={code} autoComplete="off" onChange={(event) => setCode(event.target.value)} />
+            <input type="text" value={code} autoComplete="off" onChange={(event) => setCode(event.currentTarget.value)} />
           </label>
           <button type="submit">Approve</button>
         </form>

@@ -42,7 +42,7 @@ describe("AppsPanel", () => {
   it("approves the code typed, trimmed, and clears the field", () => {
     render(<AppsPanel client={client} />);
     const input = screen.getByRole("textbox", { name: "Code the app shows" });
-    fireEvent.change(input, { target: { value: " BCDF-GHJK " } });
+    fireEvent.input(input, { target: { value: " BCDF-GHJK " } });
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(apps.sendApprove).toHaveBeenCalledWith({ code: "BCDF-GHJK" });
     expect(input).toHaveValue("");
