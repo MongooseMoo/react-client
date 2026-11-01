@@ -73,7 +73,6 @@ describe('player-pinned tab authentication', () => {
   it('keeps legacy authority unattributed and resumes exactly the tab-selected player', async () => {
     localStorage.setItem('LoginRefreshToken', 'synthetic-legacy-private');
     const first = client();
-    first.auth.receiveRegisteredMessage('Token', 'synthetic-new-legacy');
     first.auth.sendStoredLogin();
     await Promise.resolve();
     expect(first.send).not.toHaveBeenCalled();
