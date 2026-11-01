@@ -56,18 +56,31 @@ export async function prepareJpeg(file: Blob): Promise<Blob> {
 
 /**
  * Sends a prepared JPEG to the MOO, which reads it into a draft and tells the
- * player in the game when it is ready. Returns the sentence to announce.
+ * player in the game when it is ready. With a set, the picture is one of
+ * several sent together: the MOO keeps them until the last arrives, puts them
+ * in one album and reads them together. Returns whether the MOO took it, and
+ * the sentence to announce.
  */
-export async function uploadPhoto(client: MudClient, jpeg: Blob): Promise<string> {
+export async function uploadPhoto(
+  client: MudClient,
+  jpeg: Blob,
+  set?: { id: string; count: number },
+): Promise<{ sent: boolean; message: string }> {
   const token = await client.gmcp.require("Client.WebPush").requestToken();
-  if (!token) return "Could not send the photo: connect to the game first.";
-  const response = await fetch(resolveApiUrl(UPLOAD_ENDPOINT), {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
-    body: jpeg,
-  });
+  if (!token) return { sent: false, message: "Could not send the photo: connect to the game first." };
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" };
+  if (set) {
+    headers["X-Photo-Set"] = set.id;
+    headers["X-Photo-Count"] = String(set.count);
+  }
+  const response = await fetch(resolveApiUrl(UPLOAD_ENDPOINT), { method: "POST", headers, body: jpeg });
   if (response.status === 202) {
-    return "Photo sent. The game will tell you when it has been read.";
+    return {
+      sent: true,
+      message: set
+        ? "Photos sent. The game will tell you when they have been read."
+        : "Photo sent. The game will tell you when it has been read.",
+    };
   }
   let reason = response.status === 413 ? "the photo is too large" : `the server answered ${response.status}`;
   // The MOO explains refusals in JSON; Caddy's own size refusal has no body.
@@ -75,5 +88,30 @@ export async function uploadPhoto(client: MudClient, jpeg: Blob): Promise<string
     const payload = (await response.json()) as { error?: unknown };
     if (typeof payload.error === "string") reason = payload.error;
   }
-  return `Could not send the photo: ${reason}`;
+  return { sent: false, message: `Could not send the photo: ${reason}` };
+}
+
+/**
+ * Sends several pictures as one set, one after another in the order given, and
+ * stops at the first the MOO refuses. One picture is sent on its own, as before.
+ * progress is told which picture is being sent; prepare turns each file into
+ * the JPEG sent (prepareJpeg). Returns the sentence to announce.
+ */
+export async function uploadPhotos(
+  client: MudClient,
+  files: Blob[],
+  progress: (index: number, count: number) => void,
+  prepare: (file: Blob) => Promise<Blob> = prepareJpeg,
+): Promise<string> {
+  const count = files.length;
+  const set = count > 1 ? { id: crypto.randomUUID(), count } : undefined;
+  let result = { sent: false, message: "No photo was chosen." };
+  for (let index = 0; index < count; index++) {
+    progress(index + 1, count);
+    result = await uploadPhoto(client, await prepare(files[index]), set);
+    if (!result.sent) {
+      return count > 1 ? `Photo ${index + 1} of ${count}: ${result.message}` : result.message;
+    }
+  }
+  return result.message;
 }
