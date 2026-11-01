@@ -58,8 +58,10 @@ export async function prepareJpeg(file: Blob): Promise<Blob> {
  * Sends a prepared JPEG to the MOO, which reads it into a draft and tells the
  * player in the game when it is ready. With a set, the picture is one of
  * several sent together: the MOO keeps them until the last arrives, puts them
- * in one album and reads them together. Returns whether the MOO took it, and
- * the sentence to announce.
+ * in one album and reads them together. The set goes in the query string:
+ * custom headers would need the API's CORS preflight to allow them, and it
+ * allows only Authorization and Content-Type. Returns whether the MOO took it,
+ * and the sentence to announce.
  */
 export async function uploadPhoto(
   client: MudClient,
@@ -68,12 +70,12 @@ export async function uploadPhoto(
 ): Promise<{ sent: boolean; message: string }> {
   const token = await client.gmcp.require("Client.WebPush").requestToken();
   if (!token) return { sent: false, message: "Could not send the photo: connect to the game first." };
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" };
-  if (set) {
-    headers["X-Photo-Set"] = set.id;
-    headers["X-Photo-Count"] = String(set.count);
-  }
-  const response = await fetch(resolveApiUrl(UPLOAD_ENDPOINT), { method: "POST", headers, body: jpeg });
+  const query = set ? `?${new URLSearchParams({ set: set.id, count: String(set.count) })}` : "";
+  const response = await fetch(resolveApiUrl(UPLOAD_ENDPOINT + query), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
+    body: jpeg,
+  });
   if (response.status === 202) {
     return {
       sent: true,
