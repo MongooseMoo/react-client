@@ -51,10 +51,13 @@ it('sends several pictures in order as one set, naming the set and its size on e
   expect(message).toBe('Photos sent. The game will tell you when they have been read.');
   expect(seen).toEqual(['1/3', '2/3', '3/3']);
   expect(fetchMock.mock.calls.map(([, init]) => init.body)).toEqual(files);
-  const sets = fetchMock.mock.calls.map(([, init]) => init.headers['X-Photo-Set']);
+  const queries = fetchMock.mock.calls.map(([url]) => new URL(url, 'https://example.invalid').searchParams);
+  const sets = queries.map((q) => q.get('set'));
   expect(new Set(sets).size).toBe(1);
   expect(sets[0]).toMatch(/^[0-9a-f-]{36}$/);
-  expect(fetchMock.mock.calls.every(([, init]) => init.headers['X-Photo-Count'] === '3')).toBe(true);
+  expect(queries.every((q) => q.get('count') === '3')).toBe(true);
+  // Only the two headers the API's CORS preflight allows.
+  expect(fetchMock.mock.calls.every(([, init]) => Object.keys(init.headers).join() === 'Authorization,Content-Type')).toBe(true);
 });
 
 it('stops a set at the first picture refused and says which one', async () => {
@@ -66,6 +69,7 @@ it('stops a set at the first picture refused and says which one', async () => {
 
 it('sends one picture on its own, with no set', async () => {
   await uploadPhotos(client, [jpeg], () => {}, async (file) => file);
+  expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/photos\/upload$/);
   expect(fetchMock.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer synthetic-push', 'Content-Type': 'image/jpeg' });
 });
 
