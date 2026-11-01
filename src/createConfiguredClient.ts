@@ -23,6 +23,7 @@ import {
   GMCPClientSpatial,
   GMCPClientSpeech,
   GMCPClientWebPush,
+  GMCPClientApps,
   GMCPCommChannel,
   GMCPCommLiveKit,
   GMCPCore,
@@ -160,6 +161,7 @@ export function createConfiguredClient(): MudClient {
   client.gmcp.register(GMCPClientHaptics);
   client.gmcp.register(GMCPHelp);
   client.gmcp.register(GMCPObjectProperties);
+  client.gmcp.register(GMCPClientApps);
 
   // The automap learns each room as the player enters it and drives map walks.
   room.on("info", (data) => {

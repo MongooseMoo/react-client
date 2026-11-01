@@ -16,6 +16,7 @@ export { GMCPClientHaptics } from "./Client/Haptics";
 export { GMCPClientSpatial } from "./Client/Spatial";
 export { GMCPClientSpeech } from "./Client/Speech";
 export { GMCPClientWebPush } from "./Client/WebPush";
+export { GMCPClientApps } from "./Client/Apps";
 export { GMCPCommChannel } from "./Comm/Channel";
 export { GMCPCommLiveKit } from "./Comm/LiveKit";
 export { GMCPCore } from "./Core";

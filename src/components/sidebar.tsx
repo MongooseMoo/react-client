@@ -8,6 +8,7 @@ import {
   FaFolderOpen,
   FaGamepad,
   FaHeadphones,
+  FaKey,
   FaMap,
   FaMapMarkerAlt,
   FaMusic,
@@ -21,6 +22,7 @@ const MapPanel = React.lazy(() => import('./MapPanel'));
 const HelpPanel = React.lazy(() => import('./HelpPanel'));
 const PhotoPanel = React.lazy(() => import('./PhotoPanel'));
 const PropertiesPanel = React.lazy(() => import('./PropertiesPanel'));
+const AppsPanel = React.lazy(() => import('./AppsPanel'));
 import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
@@ -274,6 +276,14 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         label: 'Properties',
         icon: <FaClipboardList />,
         content: <Suspense fallback={<p role="status">Loading properties…</p>}><PropertiesPanel client={client} /></Suspense>,
+        mountOnSelect: true,
+        condition: true,
+      },
+      {
+        id: 'apps-tab',
+        label: 'Apps',
+        icon: <FaKey />,
+        content: <Suspense fallback={<p role="status">Loading apps…</p>}><AppsPanel client={client} /></Suspense>,
         mountOnSelect: true,
         condition: true,
       },
