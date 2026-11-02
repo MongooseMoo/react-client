@@ -3,7 +3,8 @@ import type MudClient from "./client";
 
 /** Longest edge sent to the server; Claude reads objects well at this size and it keeps uploads small. */
 export const PHOTO_MAX_EDGE = 1568;
-const UPLOAD_ENDPOINT = "/api/photos/upload";
+/** The player's photos folder: Caddy writes uploads there and the MOO only authorizes them, so pictures never pass through the game. */
+const PHOTO_FOLDER = "/dav/photos/";
 
 function readBytes(blob: Blob): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
@@ -54,50 +55,35 @@ export async function prepareJpeg(file: Blob): Promise<Blob> {
   });
 }
 
-/**
- * Sends a prepared JPEG to the MOO, which reads it into a draft and tells the
- * player in the game when it is ready. With a set, the picture is one of
- * several sent together: the MOO keeps them until the last arrives, puts them
- * in one album and reads them together. The set goes in the query string:
- * custom headers would need the API's CORS preflight to allow them, and it
- * allows only Authorization and Content-Type. Returns whether the MOO took it,
- * and the sentence to announce.
- */
-export async function uploadPhoto(
-  client: MudClient,
-  jpeg: Blob,
-  set?: { id: string; count: number },
-): Promise<{ sent: boolean; message: string }> {
-  const token = await client.gmcp.require("Client.WebPush").requestToken();
-  if (!token) return { sent: false, message: "Could not send the photo: connect to the game first." };
-  const query = set ? `?${new URLSearchParams({ set: set.id, count: String(set.count) })}` : "";
-  const response = await fetch(resolveApiUrl(UPLOAD_ENDPOINT + query), {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
+/** One request to the player's photos folder on the MOO's WebDAV drive, with the push token. */
+function davRequest(method: "PUT" | "MKCOL", path: string, token: string, jpeg?: Blob): Promise<Response> {
+  return fetch(resolveApiUrl(PHOTO_FOLDER + path), {
+    method,
+    headers: jpeg ? { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" } : { Authorization: `Bearer ${token}` },
     body: jpeg,
   });
-  if (response.status === 202) {
-    return {
-      sent: true,
-      message: set
-        ? "Photos sent. The game will tell you when they have been read."
-        : "Photo sent. The game will tell you when it has been read.",
-    };
+}
+
+/** Why a request was refused: the MOO says so in plain text (for example builders only); Caddy's size refusal is named. */
+async function refusal(response: Response): Promise<string> {
+  if (response.status === 413) return "the photo is too large";
+  if (response.headers.get("Content-Type")?.startsWith("text/plain")) {
+    const text = (await response.text()).trim();
+    if (text) return text;
   }
-  let reason = response.status === 413 ? "the photo is too large" : `the server answered ${response.status}`;
-  // The MOO explains refusals in JSON; Caddy's own size refusal has no body.
-  if (response.headers.get("Content-Type")?.includes("application/json")) {
-    const payload = (await response.json()) as { error?: unknown };
-    if (typeof payload.error === "string") reason = payload.error;
-  }
-  return { sent: false, message: `Could not send the photo: ${reason}` };
+  return `the server answered ${response.status}`;
 }
 
 /**
- * Sends several pictures as one set, one after another in the order given, and
- * stops at the first the MOO refuses. One picture is sent on its own, as before.
- * progress is told which picture is being sent; prepare turns each file into
- * the JPEG sent (prepareJpeg). Returns the sentence to announce.
+ * Sends pictures to the player's photos folder (/dav/photos/, the same folder a
+ * mapped drive shows); the game takes each from there, reads it and tells the
+ * player when it is read. One picture goes in on its own. Several go into a new
+ * subfolder, named 001.jpg, 002.jpg ... in the order given, and become one album
+ * read together: the game takes a subfolder once nothing more has arrived in it
+ * for a few seconds, so every picture is prepared first and they are sent back
+ * to back. Stops at the first picture refused. progress is told which picture is
+ * being sent; prepare turns each file into the JPEG sent (prepareJpeg). Returns
+ * the sentence to announce.
  */
 export async function uploadPhotos(
   client: MudClient,
@@ -106,14 +92,26 @@ export async function uploadPhotos(
   prepare: (file: Blob) => Promise<Blob> = prepareJpeg,
 ): Promise<string> {
   const count = files.length;
-  const set = count > 1 ? { id: crypto.randomUUID(), count } : undefined;
-  let result = { sent: false, message: "No photo was chosen." };
+  if (count === 0) return "No photo was chosen.";
+  const token = await client.gmcp.require("Client.WebPush").requestToken();
+  if (!token) return "Could not send the photo: connect to the game first.";
+  const jpegs: Blob[] = [];
+  for (const file of files) jpegs.push(await prepare(file));
+  const album = count > 1 ? `${crypto.randomUUID()}/` : "";
+  if (album) {
+    const made = await davRequest("MKCOL", album, token);
+    if (made.status !== 201) return `Could not send the photos: ${await refusal(made)}`;
+  }
   for (let index = 0; index < count; index++) {
     progress(index + 1, count);
-    result = await uploadPhoto(client, await prepare(files[index]), set);
-    if (!result.sent) {
-      return count > 1 ? `Photo ${index + 1} of ${count}: ${result.message}` : result.message;
+    const name = album ? `${String(index + 1).padStart(3, "0")}.jpg` : `${crypto.randomUUID()}.jpg`;
+    const response = await davRequest("PUT", album + name, token, jpegs[index]);
+    if (response.status !== 201 && response.status !== 204) {
+      const message = `Could not send the photo: ${await refusal(response)}`;
+      return count > 1 ? `Photo ${index + 1} of ${count}: ${message}` : message;
     }
   }
-  return result.message;
+  return count > 1
+    ? "Photos sent. The game will tell you when they have been read."
+    : "Photo sent. The game will tell you when it has been read.";
 }

@@ -38,10 +38,17 @@ describe("apiOrigin", () => {
     expect(resolveApiUrl(url)).toBe(url);
   });
 
-  it("leaves non-/api/ paths alone", () => {
+  it("sends /dav/ to the same origin, where the photo upload folder is", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_API_ORIGIN", "");
+    expect(resolveApiUrl("/dav/photos/a.jpg")).toBe("https://mongoose.world/dav/photos/a.jpg");
+  });
+
+  it("leaves other paths alone", () => {
     vi.stubEnv("DEV", false);
     vi.stubEnv("VITE_API_ORIGIN", "");
     expect(resolveApiUrl("/")).toBe("/");
     expect(resolveApiUrl("/apiary")).toBe("/apiary");
+    expect(resolveApiUrl("/davenport")).toBe("/davenport");
   });
 });
