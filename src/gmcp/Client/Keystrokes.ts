@@ -130,6 +130,8 @@ interface InteractTarget {
     key: string;
     name: string;
     command: string;
+    /** The sound to play on landing here, as the server sent it (Char.Items earcon, Room.Info earcons). */
+    earcon?: unknown;
 }
 
 /**
@@ -140,9 +142,14 @@ function interactTargets(): InteractTarget[] {
     const { itemsByLocation } = useItemsStore.getState();
     const things = [...(itemsByLocation.inv ?? []), ...(itemsByLocation.room ?? [])]
         .filter((item) => item.verbs === undefined || item.verbs.length > 0)
-        .map((item) => ({ key: item.id, name: item.name, command: `interact ${item.id}` }));
-    const exits = Object.keys(useRoomStore.getState().roomInfo?.exits ?? {})
-        .map((direction) => ({ key: `exit ${direction}`, name: `${direction} exit`, command: `interact ${direction}` }));
+        .map((item) => ({ key: item.id, name: item.name, command: `interact ${item.id}`, earcon: item.earcon }));
+    const roomInfo = useRoomStore.getState().roomInfo;
+    const exits = Object.keys(roomInfo?.exits ?? {}).map((direction) => ({
+        key: `exit ${direction}`,
+        name: `${direction} exit`,
+        command: `interact ${direction}`,
+        earcon: roomInfo?.earcons?.[direction],
+    }));
     return [...things, ...exits];
 }
 
@@ -290,8 +297,14 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         }
         const index = targets.findIndex((target) => target.key === this.interactKey);
         const next = index < 0 ? (step > 0 ? 0 : targets.length - 1) : (index + step + targets.length) % targets.length;
-        this.interactKey = targets[next].key;
+        this.landOn(targets[next]);
         say(`${targets[next].name}, ${next + 1} of ${targets.length}`);
+    }
+
+    /** Makes target the current thing and plays its earcon, if the server sent one. */
+    private landOn(target: InteractTarget): void {
+        this.interactKey = target.key;
+        if (target.earcon !== undefined) this.client.gmcp.handlers["Client.Media"]?.playEarcon(target.earcon);
     }
 
     private toggleInteractMode(): void {
@@ -307,7 +320,7 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         const store = useKeystrokesStore.getState();
         this.keysModeBeforeInteract = store.keysMode;
         store.setKeysMode(true);
-        this.interactKey = targets[0].key;
+        this.landOn(targets[0]);
         say(`Interact mode on. ${targets[0].name}, 1 of ${targets.length}. Tab moves, Ctrl+I interacts, Escape ends.`);
     }
 

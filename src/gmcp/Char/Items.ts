@@ -14,6 +14,11 @@ export interface Item {
    * Each entry is the verb's names followed by its arguments; see `itemActions`.
    */
   verbs?: string[][];
+  /**
+   * Mongoose addition: a Client.Media.Play payload, placed at the item, that interact mode plays
+   * when the player moves to it (GMCPClientMedia.playEarcon).
+   */
+  earcon?: unknown;
 }
 
 export type ItemLocation = "inv" | "room" | string; // "repNUMBER" for containers

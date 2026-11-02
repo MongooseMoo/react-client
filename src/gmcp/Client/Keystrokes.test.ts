@@ -15,7 +15,7 @@ import { GMCPClientKeystrokes } from "./Keystrokes";
 
 function createMockClient() {
   return {
-    gmcp: { send: vi.fn() },
+    gmcp: { send: vi.fn(), handlers: { "Client.Media": { playEarcon: vi.fn() } } },
     sendCommand: vi.fn(),
   };
 }
@@ -495,6 +495,25 @@ describe("GMCPClientKeystrokes", () => {
       expect(moves).toEqual(["chest, 2 of 4", "Rindalin, 3 of 4", "north exit, 4 of 4", "lamp, 1 of 4"]);
       press(element("command-input"), { ...tab, shiftKey: true });
       expect(said()).toBe("north exit, 4 of 4");
+    });
+
+    it("plays the earcon the server sent for each thing it lands on, and nothing for one without", () => {
+      const lampEarcon = { name: "ui/tick.m4a", position: [1, 2, 0] };
+      const northEarcon = { name: "ui/select.m4a", position: [0, 5, 1] };
+      useItemsStore.getState().setLocationItems("inv", [
+        { id: "#7", name: "lamp", verbs: [["rub", "#7"]], earcon: lampEarcon },
+      ]);
+      useRoomStore.getState().setRoomInfo({
+        num: 1, name: "Hall", area: "", exits: { north: 2 }, earcons: { north: northEarcon },
+      } as never);
+      const playEarcon = client.gmcp.handlers["Client.Media"].playEarcon;
+
+      press(document.body, altBacktick);
+      press(document.body, tab);
+      press(document.body, tab);
+      press(document.body, tab);
+
+      expect(playEarcon.mock.calls).toEqual([[lampEarcon], [northEarcon]]);
     });
 
     it("sends interact for the thing it is on, by number or by exit name", () => {
