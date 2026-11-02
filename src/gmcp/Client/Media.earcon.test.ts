@@ -7,7 +7,7 @@ import { GMCPClientMedia } from "./Media";
 function createClient() {
   return {
     gmcp: { send: vi.fn() },
-    media: { play: vi.fn(() => Promise.resolve()), diagnostics: { record: vi.fn() } },
+    media: { play: vi.fn(() => Promise.resolve()), reset: vi.fn(), diagnostics: { record: vi.fn() } },
   };
 }
 
