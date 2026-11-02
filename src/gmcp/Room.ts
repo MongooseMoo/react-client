@@ -17,6 +17,8 @@ export class GMCPMessageRoomInfo extends GMCPMessage {
   exits?: { [key: string]: number }; // {"n": 12344, "se": 12336}
   /** Mongoose addition: under the same keys as `exits`, each exit's earcon, placed at its doorway. */
   earcons?: { [key: string]: unknown };
+  /** Mongoose addition: under the same keys as `exits`, each exit's own name ("north" for n). */
+  exit_names?: { [key: string]: string };
 }
 
 export interface RoomPlayer {

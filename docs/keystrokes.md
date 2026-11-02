@@ -96,14 +96,15 @@ player carries (`Char.Items` `inv`), who and what is in the room (`room`), then 
 - Turning it on says "Interact mode on. lamp, 1 of 4. Tab moves, Ctrl+I interacts, Escape ends." With
   nothing around it says "Nothing here to interact with" and stays off.
 - **Tab** and **Shift+Tab** move to the next and previous thing and say "chest, 2 of 4". An exit is
-  said as "north exit".
+  said by its name in `Room.Info`'s `exit_names` (same keys as `exits`), as "north exit" for the key
+  `n`; with no name sent, by its key.
 - Landing on a thing (turning interact mode on, Tab, Shift+Tab) plays its **earcon**: the item's
   `earcon` in `Char.Items`, or the exit's entry in `Room.Info`'s `earcons` (same keys as `exits`).
   Each is a `Client.Media.Play` payload placed at the thing (an exit at its doorway), played like a
   Play under the one key `earcon`, so the next earcon replaces the last. A thing with no earcon plays
   nothing. In the MOO, an object's sound is its `earcon_snd` (default on #1; exits have their own
   default on `$exitwaif`).
-- **Ctrl+I** sends `interact #7` for an item, or `interact north` for an exit. The server answers with
+- **Ctrl+I** sends `interact #7` for an item, or `interact n` (its key) for an exit. The server answers with
   its menu (`world.mongoose.menu`), the same one typing that command brings up. If the thing has gone,
   the client says "That is no longer here. Tab to choose again."
 - **Escape** or Alt+backtick ends it and says "Interact mode off". Keys mode goes off too, unless it

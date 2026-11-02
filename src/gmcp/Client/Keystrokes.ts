@@ -146,7 +146,7 @@ function interactTargets(): InteractTarget[] {
     const roomInfo = useRoomStore.getState().roomInfo;
     const exits = Object.keys(roomInfo?.exits ?? {}).map((direction) => ({
         key: `exit ${direction}`,
-        name: `${direction} exit`,
+        name: `${roomInfo?.exit_names?.[direction] ?? direction} exit`,
         command: `interact ${direction}`,
         earcon: roomInfo?.earcons?.[direction],
     }));

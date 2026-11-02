@@ -525,6 +525,19 @@ describe("GMCPClientKeystrokes", () => {
       expect(client.sendCommand.mock.calls).toEqual([["interact #7"], ["interact north"]]);
     });
 
+    it("says an exit by the name the server sent and interacts with it by its key", () => {
+      useRoomStore.getState().setRoomInfo({
+        num: 1, name: "Hall", area: "", exits: { n: 2 }, exit_names: { n: "north" },
+      } as never);
+
+      press(element("output"), altBacktick);
+      press(element("output"), { ...tab, shiftKey: true });
+      expect(said()).toBe("north exit, 4 of 4");
+      press(element("output"), ctrlI);
+
+      expect(client.sendCommand.mock.calls).toEqual([["interact n"]]);
+    });
+
     it("says so when the thing it is on has gone", () => {
       press(document.body, altBacktick);
       useItemsStore.getState().setLocationItems("inv", []);
