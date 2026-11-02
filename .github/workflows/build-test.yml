@@ -117,4 +117,5 @@ jobs:
         with:
           github_token: ${{ github.token }}
           publish_dir: dist/
-          commit_message: Deploy verified build
+          # The gh-pages commit says what was deployed: the master commit's own message.
+          full_commit_message: ${{ github.event.head_commit.message }}
