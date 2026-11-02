@@ -32,6 +32,13 @@ export function isKeysHelpToggle(event: KeyboardEvent): boolean {
   return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "F1";
 }
 
+export const INTERACT_MODE_CHORD: Chord = { key: "`", modifiers: ["alt"] };
+
+/** Alt+backtick by physical key: interact mode (gmcp/Client/Keystrokes.ts), whatever the layout types there. */
+export function isInteractModeToggle(event: KeyboardEvent): boolean {
+  return event.altKey && !event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "Backquote";
+}
+
 export const HEAD_RECENTER_CHORD: Chord = { key: "o", modifiers: ["alt", "shift"] };
 
 /** Alt+Shift+O by physical key: recenters head tracking (src/audio/headTracking.ts). */
@@ -116,6 +123,11 @@ const RESERVED_SHORTCUTS: readonly ReservedShortcut[] = [
     keys: [KEYS_HELP_CHORD.key],
     modifiers: KEYS_HELP_CHORD.modifiers,
     reason: "Alt+Shift+F1 turns key help on and off",
+  },
+  {
+    keys: [INTERACT_MODE_CHORD.key],
+    modifiers: INTERACT_MODE_CHORD.modifiers,
+    reason: "Alt+backtick turns interact mode on and off",
   },
   {
     keys: [HEAD_RECENTER_CHORD.key],
