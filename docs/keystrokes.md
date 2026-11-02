@@ -86,6 +86,25 @@ bindings fire only in **keys mode**. Every other binding fires whenever focus al
 - Mudlet's command line always types a plain Space and Shift+Space: it never offers them to key
   bindings. In Mudlet, Space types in keys mode and a layer's Space binding does not fire.
 
+## Interact mode
+
+**Alt+backtick** (the key left of 1, matched by physical key) turns interact mode on and off. It belongs
+to the client and no layer can bind it. Interact mode is keys mode with a current thing: what the
+player carries (`Char.Items` `inv`), who and what is in the room (`room`), then the room's exits
+(`Room.Info` `exits`). An item whose `verbs` is an empty list is left out.
+
+- Turning it on says "Interact mode on. lamp, 1 of 4. Tab moves, Ctrl+I interacts, Escape ends." With
+  nothing around it says "Nothing here to interact with" and stays off.
+- **Tab** and **Shift+Tab** move to the next and previous thing and say "chest, 2 of 4". An exit is
+  said as "north exit".
+- **Ctrl+I** sends `interact #7` for an item, or `interact north` for an exit. The server answers with
+  its menu (`world.mongoose.menu`), the same one typing that command brings up. If the thing has gone,
+  the client says "That is no longer here. Tab to choose again."
+- **Escape** or Alt+backtick ends it and says "Interact mode off". Keys mode goes off too, unless it
+  was on before interact mode started. Anything else that ends keys mode ends interact mode.
+- While interact mode is on, Tab, Shift+Tab, Ctrl+I and Escape do only this, even when a layer binds
+  them. Every other key works as in keys mode. To type, end interact mode.
+
 ## Key help
 
 **Alt+Shift+F1** turns key help on and off. It belongs to the client and no layer can bind it. Turning

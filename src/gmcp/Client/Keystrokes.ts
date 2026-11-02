@@ -12,7 +12,9 @@ import {
 } from "../../stores/keystrokesStore";
 import { usePreferences } from "../../stores/preferencesStore";
 import { chordFromEvent, chordsEqual, formatChord, parseChord } from "../../keystrokeChords";
-import { isKeysHelpToggle, isKeysModeToggle, reservedReason } from "../../reservedShortcuts";
+import { isInteractModeToggle, isKeysHelpToggle, isKeysModeToggle, reservedReason } from "../../reservedShortcuts";
+import { useItemsStore } from "../../stores/itemsStore";
+import { useRoomStore } from "../../stores/roomStore";
 import { gmcpJsonMessage } from "../messages";
 
 /** A binding as it arrives on the wire. */
@@ -123,9 +125,35 @@ function say(message: string): void {
     announce(message, "assertive", 2000);
 }
 
+/** Something interact mode can land on, and the command that brings up its menu. */
+interface InteractTarget {
+    key: string;
+    name: string;
+    command: string;
+}
+
+/**
+ * What the player carries, who and what is in the room, then the room's exits: the same things
+ * the MOO's bare `interact` offers. An item the server says has no verbs is left out.
+ */
+function interactTargets(): InteractTarget[] {
+    const { itemsByLocation } = useItemsStore.getState();
+    const things = [...(itemsByLocation.inv ?? []), ...(itemsByLocation.room ?? [])]
+        .filter((item) => item.verbs === undefined || item.verbs.length > 0)
+        .map((item) => ({ key: item.id, name: item.name, command: `interact ${item.id}` }));
+    const exits = Object.keys(useRoomStore.getState().roomInfo?.exits ?? {})
+        .map((direction) => ({ key: `exit ${direction}`, name: `${direction} exit`, command: `interact ${direction}` }));
+    return [...things, ...exits];
+}
+
+const NOTHING_TO_INTERACT_WITH = "Nothing here to interact with";
+
 export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
     private readonly boundKeyDownHandler = (event: KeyboardEvent) => this.handleKeydown(event);
     private keysHelp = false;
+    /** The key of the thing interact mode is on, or null when interact mode is off. */
+    private interactKey: string | null = null;
+    private keysModeBeforeInteract = false;
 
     constructor(client: ConstructorParameters<typeof GMCPClientKeystrokesBase>[0]) {
         super(client);
@@ -147,6 +175,7 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
 
     override reset(): void {
         this.keysHelp = false;
+        this.interactKey = null;
         useKeystrokesStore.getState().clearLayers();
     }
 
@@ -166,6 +195,13 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
             return;
         }
 
+        if (isInteractModeToggle(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleInteractMode();
+            return;
+        }
+
         if (isKeysModeToggle(event)) {
             event.preventDefault();
             event.stopPropagation();
@@ -174,6 +210,13 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         }
 
         const { layers, keysMode } = useKeystrokesStore.getState();
+        // Interact mode lives inside keys mode and ends with it, however keys mode ended.
+        if (!keysMode) this.interactKey = null;
+        if (this.interactKey !== null && this.handleInteractKey(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
         const found = findBinding(layers, usePreferences.getState().keystrokes, keysMode, event);
         // In keys mode a key never types, bound or not.
         if (!found && !(keysMode && typesCharacter(event))) return;
@@ -213,6 +256,65 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
             return;
         }
         say(reservedReason(chord) ?? `${keyName}: not bound`);
+    }
+
+    /** Tab and Shift+Tab move between things, Ctrl+I interacts, Escape ends. Whether the key was one of these. */
+    private handleInteractKey(event: KeyboardEvent): boolean {
+        if (event.altKey || event.metaKey) return false;
+        if (event.key === "Tab" && !event.ctrlKey) {
+            this.moveInteract(event.shiftKey ? -1 : 1);
+            return true;
+        }
+        if (event.key === "Escape" && !event.ctrlKey && !event.shiftKey) {
+            this.endInteractMode();
+            return true;
+        }
+        if (event.code === "KeyI" && event.ctrlKey && !event.shiftKey) {
+            const target = interactTargets().find((candidate) => candidate.key === this.interactKey);
+            if (target) {
+                this.client.sendCommand(target.command);
+            } else {
+                say("That is no longer here. Tab to choose again.");
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private moveInteract(step: number): void {
+        const targets = interactTargets();
+        if (targets.length === 0) {
+            say(NOTHING_TO_INTERACT_WITH);
+            return;
+        }
+        const index = targets.findIndex((target) => target.key === this.interactKey);
+        const next = index < 0 ? (step > 0 ? 0 : targets.length - 1) : (index + step + targets.length) % targets.length;
+        this.interactKey = targets[next].key;
+        say(`${targets[next].name}, ${next + 1} of ${targets.length}`);
+    }
+
+    private toggleInteractMode(): void {
+        if (this.interactKey !== null && useKeystrokesStore.getState().keysMode) {
+            this.endInteractMode();
+            return;
+        }
+        const targets = interactTargets();
+        if (targets.length === 0) {
+            say(NOTHING_TO_INTERACT_WITH);
+            return;
+        }
+        const store = useKeystrokesStore.getState();
+        this.keysModeBeforeInteract = store.keysMode;
+        store.setKeysMode(true);
+        this.interactKey = targets[0].key;
+        say(`Interact mode on. ${targets[0].name}, 1 of ${targets.length}. Tab moves, Ctrl+I interacts, Escape ends.`);
+    }
+
+    /** Leaves interact mode, and keys mode too unless it was on before. */
+    private endInteractMode(): void {
+        this.interactKey = null;
+        if (!this.keysModeBeforeInteract) useKeystrokesStore.getState().setKeysMode(false);
+        say("Interact mode off");
     }
 
     private toggleKeysMode(): void {

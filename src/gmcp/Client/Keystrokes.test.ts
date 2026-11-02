@@ -7,6 +7,8 @@ vi.mock("@react-aria/live-announcer", () => ({
 }));
 
 import { useInputStore } from "../../stores/inputStore";
+import { useItemsStore } from "../../stores/itemsStore";
+import { useRoomStore } from "../../stores/roomStore";
 import { useKeystrokesStore } from "../../stores/keystrokesStore";
 import { usePreferences } from "../../stores/preferencesStore";
 import { GMCPClientKeystrokes } from "./Keystrokes";
@@ -458,6 +460,109 @@ describe("GMCPClientKeystrokes", () => {
       press(document.body, altShiftF1);
       press(document.body, altShiftF1);
       expect(mockAnnounce).toHaveBeenLastCalledWith("Key help off", "assertive", 2000);
+    });
+  });
+
+  describe("interact mode", () => {
+    const altBacktick = { key: "`", code: "Backquote", altKey: true };
+    const tab = { key: "Tab", code: "Tab" };
+    const ctrlI = { key: "i", code: "KeyI", ctrlKey: true };
+    const said = () => mockAnnounce.mock.lastCall?.[0];
+
+    beforeEach(() => {
+      useItemsStore.getState().reset();
+      useRoomStore.getState().reset();
+      useItemsStore.getState().setLocationItems("inv", [{ id: "#7", name: "lamp", verbs: [["rub", "#7"]] }]);
+      useItemsStore.getState().setLocationItems("room", [
+        { id: "#8", name: "chest", verbs: [["open", "#8"]] },
+        { id: "#9", name: "dust", verbs: [] },
+        { id: "#10", name: "Rindalin" },
+      ]);
+      useRoomStore.getState().setRoomInfo({ num: 1, name: "Hall", area: "", exits: { north: 2 } } as never);
+    });
+
+    it("lands on what you carry, then what is here, then the exits, skipping what has no verbs", () => {
+      const toggle = press(element("command-input"), altBacktick);
+
+      expect(toggle.defaultPrevented).toBe(true);
+      expect(useKeystrokesStore.getState().keysMode).toBe(true);
+      expect(said()).toBe("Interact mode on. lamp, 1 of 4. Tab moves, Ctrl+I interacts, Escape ends.");
+      const moves = [tab, tab, tab, tab].map((key) => {
+        const event = press(element("command-input"), key);
+        expect(event.defaultPrevented).toBe(true);
+        return said();
+      });
+      expect(moves).toEqual(["chest, 2 of 4", "Rindalin, 3 of 4", "north exit, 4 of 4", "lamp, 1 of 4"]);
+      press(element("command-input"), { ...tab, shiftKey: true });
+      expect(said()).toBe("north exit, 4 of 4");
+    });
+
+    it("sends interact for the thing it is on, by number or by exit name", () => {
+      press(element("output"), altBacktick);
+      press(element("output"), ctrlI);
+      press(element("output"), { ...tab, shiftKey: true });
+      press(element("output"), ctrlI);
+
+      expect(client.sendCommand.mock.calls).toEqual([["interact #7"], ["interact north"]]);
+    });
+
+    it("says so when the thing it is on has gone", () => {
+      press(document.body, altBacktick);
+      useItemsStore.getState().setLocationItems("inv", []);
+      press(document.body, ctrlI);
+
+      expect(client.sendCommand).not.toHaveBeenCalled();
+      expect(said()).toBe("That is no longer here. Tab to choose again.");
+      press(document.body, tab);
+      expect(said()).toBe("chest, 1 of 3");
+    });
+
+    it("ends with Escape or Alt+backtick, leaving keys mode as it was", () => {
+      press(document.body, altBacktick);
+      press(document.body, { key: "Escape", code: "Escape" });
+      expect(said()).toBe("Interact mode off");
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
+      const plainTab = press(document.body, tab);
+      expect(plainTab.defaultPrevented).toBe(false);
+
+      press(document.body, altShiftH);
+      press(document.body, altBacktick);
+      press(document.body, altBacktick);
+      expect(said()).toBe("Interact mode off");
+      expect(useKeystrokesStore.getState().keysMode).toBe(true);
+    });
+
+    it("ends when keys mode does", () => {
+      press(document.body, altBacktick);
+      press(document.body, altShiftH);
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
+
+      const plainTab = press(document.body, tab);
+      press(document.body, ctrlI);
+      expect(plainTab.defaultPrevented).toBe(false);
+      expect(client.sendCommand).not.toHaveBeenCalled();
+    });
+
+    it("does not start with nothing around", () => {
+      useItemsStore.getState().reset();
+      useRoomStore.getState().reset();
+      press(document.body, altBacktick);
+
+      expect(said()).toBe("Nothing here to interact with");
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
+    });
+
+    it("cannot be bound by a layer, and key help names it", () => {
+      handler.receiveRegisteredMessage("Layer", {
+        id: "#9",
+        label: "Greedy",
+        bindings: [{ key: "`", modifiers: ["alt"], command: "grab", label: "Grab" }],
+      });
+      press(document.body, { key: "F1", code: "F1", altKey: true, shiftKey: true });
+      press(document.body, altBacktick);
+
+      expect(said()).toBe("Alt+backtick turns interact mode on and off");
+      expect(client.sendCommand).not.toHaveBeenCalled();
     });
   });
 
