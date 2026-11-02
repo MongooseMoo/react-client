@@ -19,6 +19,7 @@ import type { GMCPClientMedia } from "./Client/Media";
 import type { GMCPClientMidi } from "./Client/Midi";
 import type { GMCPClientSpeech } from "./Client/Speech";
 import type { GMCPClientWebPush } from "./Client/WebPush";
+import type { GMCPClientApps } from "./Client/Apps";
 import type { GMCPCommChannel } from "./Comm/Channel";
 import type { GMCPCommLiveKit } from "./Comm/LiveKit";
 import type { GMCPCore, GMCPCoreSupports } from "./Core";
@@ -61,6 +62,7 @@ export interface KnownGMCPPackageMap {
   "Client.Midi": GMCPClientMidi;
   "Client.Speech": GMCPClientSpeech;
   "Client.WebPush": GMCPClientWebPush;
+  "Client.Apps": GMCPClientApps;
   "Comm.Channel": GMCPCommChannel;
   "Comm.LiveKit": GMCPCommLiveKit;
   "Core": GMCPCore;
