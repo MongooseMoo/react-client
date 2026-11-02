@@ -84,22 +84,8 @@ Used when optional support is withdrawn.
 
 ## `Auth.Autologin`
 
-`Auth.Autologin` is a Mongoose package for token login. It is implemented in
-`src/gmcp/Auth.ts`.
-
-### Server to Client: `Auth.Autologin.Token`
-
-```json
-"opaque-token"
-```
-
-The client stores this token in `localStorage` under `auth_token`.
-
-### Client to Server: `Auth.Autologin.Login`
-
-```json
-"opaque-token"
-```
-
-Sent during startup if `localStorage.auth_token` exists.
+`Auth.Autologin` is a Mongoose package for per-tab browser sessions
+(`Session`, `SessionToken`, `SessionStatus`, `Resume`, `SessionLogout`). It is
+implemented in `src/gmcp/Auth.ts`. The old browser-wide `Token` and `Login`
+messages were removed in November 2026; the server no longer sends or accepts them.
 

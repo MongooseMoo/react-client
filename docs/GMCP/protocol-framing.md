@@ -78,7 +78,6 @@ When GMCP becomes ready, `MudClient` sends:
 
 - `Core.Hello`
 - `Core.Supports.Set`
-- `Auth.Autologin.Login`, if a saved token exists
 - `Client.Media.EffectsSupport`
 
 `Core.Supports.Set` is built from the registered handler instances whose

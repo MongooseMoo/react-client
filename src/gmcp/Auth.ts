@@ -9,8 +9,6 @@ import { createTabSession, isSessionGrant, type SessionGrant } from '../tabSessi
 import { gmcpJsonMessage } from './messages';
 import { GMCPPackage } from './package';
 
-const legacyToken = gmcpJsonMessage<'Token', string>('Token');
-const legacyLogin = gmcpJsonMessage<'Login', never, string>('Login');
 const sessionToken = gmcpJsonMessage<'SessionToken', unknown>('SessionToken');
 const sessionStatus = gmcpJsonMessage<'SessionStatus', unknown>('SessionStatus');
 interface SessionRequest {
@@ -28,8 +26,7 @@ const logout = gmcpJsonMessage<'SessionLogout', never, ResumeRequest>('SessionLo
 
 const GMCPAutoLoginBase = GMCPPackage.with({
   packageName: 'Auth.Autologin',
-  messages: [inbound(legacyToken), outbound(legacyLogin), inbound(sessionToken),
-    inbound(sessionStatus), outbound(session), outbound(resume), outbound(logout)] as const,
+  messages: [inbound(sessionToken), inbound(sessionStatus), outbound(session), outbound(resume), outbound(logout)] as const,
 });
 
 export class GMCPAutoLogin extends GMCPAutoLoginBase {
