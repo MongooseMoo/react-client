@@ -10,9 +10,10 @@ export function apiOrigin(): string {
   return import.meta.env.DEV ? "" : PRODUCTION_API_ORIGIN;
 }
 
-// Absolute URLs pass through; /api/ paths are prefixed with the API origin.
+// Absolute URLs pass through; /api/ paths and /dav/ (the MOO's WebDAV drive, where
+// /dav/photos/ is a builder's upload folder) are prefixed with the API origin.
 export function resolveApiUrl(pathOrUrl: string): string {
-  if (pathOrUrl.startsWith("/api/")) {
+  if (pathOrUrl.startsWith("/api/") || pathOrUrl.startsWith("/dav/")) {
     return `${apiOrigin()}${pathOrUrl}`;
   }
   return pathOrUrl;

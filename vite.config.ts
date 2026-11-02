@@ -55,6 +55,11 @@ export default defineConfig({
         target: 'http://mongoose.moo.mud.org:7780',
         changeOrigin: true,
       },
+      // Caddy, not the MOO, serves the photo upload folder under /dav/photos/.
+      '/dav': {
+        target: 'https://mongoose.world',
+        changeOrigin: true,
+      },
     },
   },
   test: {
