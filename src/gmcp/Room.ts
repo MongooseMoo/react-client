@@ -15,6 +15,8 @@ export class GMCPMessageRoomInfo extends GMCPMessage {
   map?: string; // "url X Y"
   details?: string[]; // ["shop", "bank"]
   exits?: { [key: string]: number }; // {"n": 12344, "se": 12336}
+  /** Mongoose addition: under the same keys as `exits`, each exit's earcon, placed at its doorway. */
+  earcons?: { [key: string]: unknown };
 }
 
 export interface RoomPlayer {

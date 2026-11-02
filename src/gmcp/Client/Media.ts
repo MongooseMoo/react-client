@@ -195,6 +195,9 @@ const mediaStop = gmcpJsonMessage<'Stop', ClientMediaStopPayload>(
   inboundCodec(decodeMediaStop),
 );
 
+/** The one key every earcon plays under (see GMCPClientMedia.playEarcon). */
+const EARCON_KEY = 'earcon';
+
 /** Log an async Client.Media failure as one bounded line (never an unhandled rejection). */
 function logMediaFailure(
   message: string,
@@ -330,6 +333,17 @@ export class GMCPClientMedia extends GMCPClientMediaBase {
 
   async handlePlay(data: ClientMediaPlayPayload): Promise<void> {
     return this.client.media.play(this.transformSpatialPayload(data));
+  }
+
+  /**
+   * Plays an earcon: a Client.Media.Play payload the server sent ahead of time with an item
+   * (Char.Items) or an exit (Room.Info earcons), played when the player moves to that thing.
+   * It is decoded and placed exactly as a Play. Every earcon shares one key and restarts, so
+   * the next one replaces the last instead of piling up.
+   */
+  playEarcon(raw: unknown): void {
+    const data = { ...decodeMediaPlay(raw), key: EARCON_KEY, continue: false };
+    this.handlePlay(data).catch((error) => logMediaFailure('Play', data, error));
   }
 
   handleUpdate(data: ClientMediaUpdatePayload): void {
