@@ -101,9 +101,14 @@ player carries (`Char.Items` `inv`), who and what is in the room (`room`), then 
   its menu (`world.mongoose.menu`), the same one typing that command brings up. If the thing has gone,
   the client says "That is no longer here. Tab to choose again."
 - **Escape** or Alt+backtick ends it and says "Interact mode off". Keys mode goes off too, unless it
-  was on before interact mode started. Anything else that ends keys mode ends interact mode.
+  was on before interact mode started. Anything else that ends keys mode ends interact mode, except
+  the pause below.
 - While interact mode is on, Tab, Shift+Tab, Ctrl+I and Escape do only this, even when a layer binds
   them. Every other key works as in keys mode. To type, end interact mode.
+- A menu choice whose label has `<anything>` in it (such as "give lamp to <anything>") is followed by
+  the server asking for that text. Choosing one while keys mode is on pauses keys mode and says
+  "Keys mode off", so the player can type the text. Sending it turns keys mode back on, and interact
+  mode is still on the same thing. Until then Tab, Ctrl+I and Escape do their usual things.
 
 ## Key help
 
