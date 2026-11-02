@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 
-# Superseded PR checks can stop; a running production publish must finish.
+# Superseded PR checks can stop. Each master push tests at once in its own run
+# instead of queueing behind the previous push's tests; only the deploy job is
+# serialized (below), and a running production publish must finish.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -80,6 +82,10 @@ jobs:
     name: Deploy
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # One publish at a time; a waiting older deploy is replaced by a newer one.
+    concurrency:
+      group: ${{ github.workflow }}-gh-pages
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
