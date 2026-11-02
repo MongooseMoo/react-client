@@ -209,10 +209,11 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
             return;
         }
 
-        const { layers, keysMode } = useKeystrokesStore.getState();
-        // Interact mode lives inside keys mode and ends with it, however keys mode ended.
-        if (!keysMode) this.interactKey = null;
-        if (this.interactKey !== null && this.handleInteractKey(event)) {
+        const { layers, keysMode, resumeOnSend } = useKeystrokesStore.getState();
+        // Interact mode lives inside keys mode and ends with it, however keys mode ended. A pause
+        // for typing (resumeOnSend) keeps the current thing for when keys mode comes back.
+        if (!keysMode && !resumeOnSend) this.interactKey = null;
+        if (keysMode && this.interactKey !== null && this.handleInteractKey(event)) {
             event.preventDefault();
             event.stopPropagation();
             return;

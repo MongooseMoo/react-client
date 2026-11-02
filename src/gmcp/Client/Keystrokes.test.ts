@@ -543,6 +543,25 @@ describe("GMCPClientKeystrokes", () => {
       expect(client.sendCommand).not.toHaveBeenCalled();
     });
 
+    it("lets you type while paused for text, and comes back on the same thing when you send it", () => {
+      press(document.body, altBacktick);
+      press(document.body, tab);
+      useKeystrokesStore.getState().pauseKeysMode();
+      mockAnnounce.mockClear();
+
+      const pausedTab = press(element("command-input"), tab);
+      const typed = press(element("command-input"), { key: "x", code: "KeyX" });
+      press(element("command-input"), ctrlI);
+      expect(pausedTab.defaultPrevented).toBe(false);
+      expect(typed.defaultPrevented).toBe(false);
+      expect(client.sendCommand).not.toHaveBeenCalled();
+      expect(mockAnnounce).not.toHaveBeenCalled();
+
+      useKeystrokesStore.getState().commandSent();
+      press(element("command-input"), ctrlI);
+      expect(client.sendCommand).toHaveBeenCalledWith("interact #8");
+    });
+
     it("does not start with nothing around", () => {
       useItemsStore.getState().reset();
       useRoomStore.getState().reset();

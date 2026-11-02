@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { useKeystrokesStore } from "../stores/keystrokesStore";
 import MenuPrompt, { MENU_ABORT } from "./MenuPrompt";
 
 const menu = {
@@ -83,5 +84,49 @@ describe("MenuPrompt", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(onAnswer.mock.calls).toEqual([[MENU_ABORT], [MENU_ABORT]]);
+  });
+
+  describe("in keys mode", () => {
+    const interactMenu = {
+      prompt: "your selection:",
+      items: [
+        { label: "give lamp to <anything>", response: "1" },
+        { label: "rub lamp", response: "2" },
+      ],
+    };
+
+    afterEach(() => {
+      useKeystrokesStore.getState().clearLayers();
+    });
+
+    it("pauses keys mode for a choice that still needs text, until it is sent", () => {
+      useKeystrokesStore.getState().setKeysMode(true);
+      const onAnswer = vi.fn();
+      render(<MenuPrompt menu={interactMenu} onAnswer={onAnswer} />);
+
+      fireEvent.keyDown(screen.getByRole("listbox"), { key: "1" });
+
+      expect(onAnswer).toHaveBeenCalledWith("1");
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
+      expect(useKeystrokesStore.getState().resumeOnSend).toBe(true);
+    });
+
+    it("leaves keys mode on for a complete choice", () => {
+      useKeystrokesStore.getState().setKeysMode(true);
+      render(<MenuPrompt menu={interactMenu} onAnswer={() => {}} />);
+
+      fireEvent.keyDown(screen.getByRole("listbox"), { key: "2" });
+
+      expect(useKeystrokesStore.getState().keysMode).toBe(true);
+    });
+
+    it("does not turn keys mode on when it was off", () => {
+      render(<MenuPrompt menu={interactMenu} onAnswer={() => {}} />);
+
+      fireEvent.keyDown(screen.getByRole("listbox"), { key: "1" });
+
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
+      expect(useKeystrokesStore.getState().resumeOnSend).toBe(false);
+    });
   });
 });

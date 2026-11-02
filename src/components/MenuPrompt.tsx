@@ -1,5 +1,7 @@
+import { announce } from "@react-aria/live-announcer";
 import type React from "react";
 import { useEffect, useMemo, useRef } from "react";
+import { useKeystrokesStore } from "../stores/keystrokesStore";
 import AccessibleList from "./AccessibleList";
 import type { WorldMongooseMenu } from "../mcp/packages/menu";
 import "./MenuPrompt.css";
@@ -47,6 +49,18 @@ export default function MenuPrompt({ menu, onAnswer }: MenuPromptProps) {
 
   useEffect(() => () => window.clearTimeout(digits.current.timer), []);
 
+  // A choice with "<anything>" in it (the MOO's interact) is followed by the server asking for that
+  // text, so keys mode pauses for the player to type it and comes back when they send it.
+  const choose = (response: string) => {
+    const label = choices.find((choice) => choice.response === response)?.label ?? "";
+    const keystrokes = useKeystrokesStore.getState();
+    if (label.includes("<anything>") && keystrokes.keysMode) {
+      keystrokes.pauseKeysMode();
+      announce("Keys mode off", "assertive", 2000);
+    }
+    onAnswer(response);
+  };
+
   const handleKeyDownCapture = (event: React.KeyboardEvent<HTMLFieldSetElement>) => {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "Escape") {
@@ -67,11 +81,11 @@ export default function MenuPrompt({ menu, onAnswer }: MenuPromptProps) {
     );
     digits.current.text = longer ? typed : "";
     if (exact && !longer) {
-      onAnswer(exact.response);
+      choose(exact.response);
     } else if (exact) {
       digits.current.timer = window.setTimeout(() => {
         digits.current.text = "";
-        onAnswer(exact.response);
+        choose(exact.response);
       }, DIGIT_WAIT_MS);
     }
   };
@@ -111,7 +125,7 @@ export default function MenuPrompt({ menu, onAnswer }: MenuPromptProps) {
           </>
         )}
         getItemTextValue={(item) => item.label}
-        onActivate={(index) => onAnswer(choices[index].response)}
+        onActivate={(index) => choose(choices[index].response)}
       />
       <button
         type="button"
