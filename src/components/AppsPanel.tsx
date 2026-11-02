@@ -1,5 +1,5 @@
 import { announce } from "@react-aria/live-announcer";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type MudClient from "../client";
 import { useAppsStore } from "../stores/appsStore";
 import { useConnectionStore } from "../stores/connectionStore";
@@ -28,9 +28,21 @@ const AppsPanel = ({ client }: Props) => {
   const [code, setCode] = useState("");
   const appsPackage = () => client.gmcp.require("Client.Apps");
 
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Ask when the session is ready and again each time the tab is shown: the
+  // sidebar keeps a visited panel mounted and only hides it, and an app joins
+  // the list when it collects its token, after the approval was answered.
   useEffect(() => {
-    if (ready) appsPackage().sendList({});
-    // Ask once each time the session is ready.
+    if (!ready) return;
+    appsPackage().sendList({});
+    const panel = rootRef.current?.closest<HTMLElement>('[role="tabpanel"]');
+    if (!panel) return;
+    const observer = new MutationObserver(() => {
+      if (!panel.hidden) appsPackage().sendList({});
+    });
+    observer.observe(panel, { attributes: true, attributeFilter: ["hidden"] });
+    return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
@@ -56,7 +68,7 @@ const AppsPanel = ({ client }: Props) => {
   );
 
   return (
-    <div className="apps-panel">
+    <div className="apps-panel" ref={rootRef}>
       <h2>Apps</h2>
       {result && <p role="status">{result.message}</p>}
 

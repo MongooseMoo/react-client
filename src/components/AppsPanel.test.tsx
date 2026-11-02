@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const announce = vi.hoisted(() => vi.fn());
@@ -31,6 +31,19 @@ describe("AppsPanel", () => {
     act(() => useAppsStore.getState().setApps([{ name: "VS Code", approved: 1793570000 }]));
     fireEvent.click(screen.getByRole("button", { name: "Revoke VS Code" }));
     expect(apps.sendRevoke).toHaveBeenCalledWith({ name: "VS Code" });
+  });
+
+  it("asks for the list again each time its hidden tab panel is shown", async () => {
+    const { container } = render(
+      <div role="tabpanel">
+        <AppsPanel client={client} />
+      </div>,
+    );
+    const panel = container.querySelector<HTMLElement>('[role="tabpanel"]')!;
+    expect(apps.sendList).toHaveBeenCalledTimes(1);
+    panel.hidden = true;
+    panel.hidden = false;
+    await waitFor(() => expect(apps.sendList).toHaveBeenCalledTimes(2));
   });
 
   it("says when no app can act as the player", () => {
