@@ -64,14 +64,43 @@ describe("AppsPanel", () => {
   it("asks for a drive and shows its address, user, password and Windows command", () => {
     render(<AppsPanel client={client} />);
     fireEvent.click(screen.getByRole("button", { name: "Connect a drive" }));
-    expect(apps.sendDrive).toHaveBeenCalledWith({});
-    act(() => useAppsStore.getState().setDrive({ url: "https://mongoose.world/dav/", user: "Q", password: "ABC123" }));
+    expect(apps.sendDrive).toHaveBeenCalledWith({ app: "drive" });
+    act(() => useAppsStore.getState().setPassword({ app: "drive", url: "https://mongoose.world/dav/", user: "Q", password: "ABC123" }));
     expect(screen.getByRole("textbox", { name: "Address" })).toHaveValue("https://mongoose.world/dav/");
     expect(screen.getByRole("textbox", { name: "User name" })).toHaveValue("Q");
     expect(screen.getByRole("textbox", { name: "Password" })).toHaveValue("ABC123");
     expect(screen.getByRole("textbox", { name: "Windows command" })).toHaveValue(
       'net use M: https://mongoose.world/dav/ /user:"Q" ABC123 /persistent:yes',
     );
+  });
+
+  it("asks for an MQTT password and shows the broker's host, port, user, password and topics", () => {
+    render(<AppsPanel client={client} />);
+    fireEvent.click(screen.getByRole("button", { name: "Get an MQTT password" }));
+    expect(apps.sendDrive).toHaveBeenCalledWith({ app: "mqtt" });
+    act(() =>
+      useAppsStore.getState().setPassword({
+        app: "mqtt",
+        url: "mqtts://mongoose.world:8883",
+        user: "Q",
+        password: "KEY9",
+        topics: "players/249/#",
+      }),
+    );
+    expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue("mongoose.world");
+    expect(screen.getByRole("textbox", { name: "Port" })).toHaveValue("8883");
+    expect(screen.getByRole("textbox", { name: "MQTT user name" })).toHaveValue("Q");
+    expect(screen.getByRole("textbox", { name: "MQTT password" })).toHaveValue("KEY9");
+    expect(screen.getByRole("textbox", { name: "Your topics" })).toHaveValue("players/249/#");
+    expect(screen.queryByRole("textbox", { name: "Windows command" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the drive password shown when an MQTT password arrives", () => {
+    render(<AppsPanel client={client} />);
+    act(() => useAppsStore.getState().setPassword({ app: "drive", url: "https://mongoose.world/dav/", user: "Q", password: "D1" }));
+    act(() => useAppsStore.getState().setPassword({ app: "mqtt", url: "mqtts://mongoose.world:8883", user: "Q", password: "M1" }));
+    expect(screen.getByRole("textbox", { name: "Password" })).toHaveValue("D1");
+    expect(screen.getByRole("textbox", { name: "MQTT password" })).toHaveValue("M1");
   });
 
   it("shows the server's answer", () => {
