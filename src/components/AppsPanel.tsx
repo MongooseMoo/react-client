@@ -21,6 +21,28 @@ export function brokerHostPort(url: string): { host: string; port: string } {
 }
 
 /**
+ * A Mosquitto bridge section that connects a home broker to the game's broker,
+ * for the player to paste into mosquitto.conf (or a conf.d file). Local topics
+ * under mongoose/ become the player's own topics on the game, both ways.
+ * notification_topic keeps the bridge's state topic, and its Will, inside the
+ * player's topics: the default $SYS/… topic is refused as not authorised.
+ */
+export function mosquittoBridgeConfig(url: string, user: string, password: string, topics: string): string {
+  const { host, port } = brokerHostPort(url);
+  const prefix = topics.replace(/#$/, "");
+  return [
+    "connection mongoose",
+    `address ${host}:${port}`,
+    "bridge_capath /etc/ssl/certs",
+    `remote_username ${user}`,
+    `remote_password ${password}`,
+    `remote_clientid ${user}-bridge`,
+    `notification_topic ${prefix}bridge/state`,
+    `topic # both 0 mongoose/ ${prefix}`,
+  ].join("\n");
+}
+
+/**
  * The Apps tab, over GMCP Client.Apps: the apps that can act as the player on
  * the web, with Revoke for each; approving an app's code (what @approve does);
  * Connect a drive, which gets a new password for mounting the MOO's verbs and
@@ -62,11 +84,16 @@ const AppsPanel = ({ client }: Props) => {
     }
   };
 
-  const field = (label: string, value: string) => (
+  // rows gives a multi-line value (a config snippet) a read-only text area.
+  const field = (label: string, value: string, rows?: number) => (
     <div className="apps-field">
       <label>
         {label}
-        <input type="text" readOnly value={value} onFocus={(event) => event.currentTarget.select()} />
+        {rows ? (
+          <textarea readOnly rows={rows} value={value} onFocus={(event) => event.currentTarget.select()} />
+        ) : (
+          <input type="text" readOnly value={value} onFocus={(event) => event.currentTarget.select()} />
+        )}
       </label>
       <button type="button" onClick={() => copy(label, value)}>
         Copy {label.toLowerCase()}
@@ -155,6 +182,15 @@ const AppsPanel = ({ client }: Props) => {
             {field("MQTT user name", mqtt.user)}
             {field("MQTT password", mqtt.password)}
             {mqtt.topics && field("Your topics", mqtt.topics)}
+            {mqtt.topics && (
+              <>
+                <p>
+                  To connect a Mosquitto broker at home, paste this into its configuration and restart it.
+                  Anything published at home under mongoose/ appears in your topics in the game, and back.
+                </p>
+                {field("Mosquitto bridge", mosquittoBridgeConfig(mqtt.url, mqtt.user, mqtt.password, mqtt.topics), 8)}
+              </>
+            )}
           </div>
         )}
       </section>

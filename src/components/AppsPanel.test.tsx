@@ -7,7 +7,7 @@ vi.mock("@react-aria/live-announcer", () => ({ announce }));
 import type MudClient from "../client";
 import { useAppsStore } from "../stores/appsStore";
 import { useConnectionStore } from "../stores/connectionStore";
-import AppsPanel, { windowsDriveCommand } from "./AppsPanel";
+import AppsPanel, { mosquittoBridgeConfig, windowsDriveCommand } from "./AppsPanel";
 
 describe("AppsPanel", () => {
   let apps: { sendList: ReturnType<typeof vi.fn>; sendApprove: ReturnType<typeof vi.fn>; sendRevoke: ReturnType<typeof vi.fn>; sendDrive: ReturnType<typeof vi.fn> };
@@ -93,6 +93,22 @@ describe("AppsPanel", () => {
     expect(screen.getByRole("textbox", { name: "MQTT password" })).toHaveValue("KEY9");
     expect(screen.getByRole("textbox", { name: "Your topics" })).toHaveValue("players/249/#");
     expect(screen.queryByRole("textbox", { name: "Windows command" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Mosquitto bridge" })).toHaveValue(
+      mosquittoBridgeConfig("mqtts://mongoose.world:8883", "Q", "KEY9", "players/249/#"),
+    );
+  });
+
+  it("writes a Mosquitto bridge section with the player's password, prefix and state topic", () => {
+    expect(mosquittoBridgeConfig("mqtts://mongoose.world:8883", "Solaris_Guest", "KEY9", "players/2280/#").split("\n")).toEqual([
+      "connection mongoose",
+      "address mongoose.world:8883",
+      "bridge_capath /etc/ssl/certs",
+      "remote_username Solaris_Guest",
+      "remote_password KEY9",
+      "remote_clientid Solaris_Guest-bridge",
+      "notification_topic players/2280/bridge/state",
+      "topic # both 0 mongoose/ players/2280/",
+    ]);
   });
 
   it("keeps the drive password shown when an MQTT password arrives", () => {
