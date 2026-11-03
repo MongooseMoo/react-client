@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { eventKey } from "../keystrokeChords";
 import { announce } from "@react-aria/live-announcer";
 import { useChannelHistoryStore, type ChannelTextEntry } from "../stores/channelHistoryStore";
 import { usePreferences } from "../stores/preferencesStore";
@@ -15,14 +16,10 @@ import {
   type LocalStorageSchema,
 } from "../persistence";
 
-/** Extract digit 0-9 from a key event, using e.code as fallback for macOS Option+number */
+/** The digit 0-9 a key event means (Shift and Mac Option type punctuation on digit keys), or null. */
 function getDigit(e: KeyboardEvent): number | null {
-  const fromKey = parseInt(e.key);
-  if (!isNaN(fromKey) && fromKey >= 0 && fromKey <= 9) return fromKey;
-  // macOS Option+number produces special chars, fall back to physical key
-  const match = e.code.match(/^Digit(\d)$/);
-  if (match) return parseInt(match[1]);
-  return null;
+  const key = eventKey(e);
+  return /^[0-9]$/.test(key) ? Number(key) : null;
 }
 
 interface Message {
@@ -728,14 +725,14 @@ export const useChannelHistory = () => {
       }
 
       // Alt+Shift+T: Toggle timestamps
-      if (e.altKey && e.shiftKey && e.key.toLowerCase() === "t") {
+      if (e.altKey && e.shiftKey && eventKey(e) === "t") {
         e.preventDefault();
         toggleTimestamps();
         return;
       }
 
       // Alt+Shift+R: Cycle how the current channel is read aloud
-      if (e.altKey && e.shiftKey && !e.ctrlKey && (e.key.toLowerCase() === "r" || e.code === "KeyR")) {
+      if (e.altKey && e.shiftKey && !e.ctrlKey && eventKey(e) === "r") {
         e.preventDefault();
         cycleCurrentChannelReading();
         return;

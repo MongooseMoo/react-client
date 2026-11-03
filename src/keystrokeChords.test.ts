@@ -65,6 +65,18 @@ describe("matchesEvent", () => {
     expect(matchesEvent(chord("p", ["shift"]), keyEvent({ key: "P", code: "KeyP", shiftKey: true }))).toBe(true);
   });
 
+  it("matches the letter the layout typed, not the letter at that position on QWERTY", () => {
+    // Dvorak: QWERTY's I position types C, and I is where QWERTY has G.
+    expect(matchesEvent(chord("i", ["ctrl"]), keyEvent({ key: "c", code: "KeyI", ctrlKey: true }))).toBe(false);
+    expect(matchesEvent(chord("i", ["ctrl"]), keyEvent({ key: "i", code: "KeyG", ctrlKey: true }))).toBe(true);
+    expect(matchesEvent(chord("w", ["alt"]), keyEvent({ key: ",", code: "KeyW", altKey: true }))).toBe(false);
+    expect(matchesEvent(chord(",", ["alt"]), keyEvent({ key: ",", code: "KeyW", altKey: true }))).toBe(true);
+  });
+
+  it("matches a binding sent as the shifted character", () => {
+    expect(matchesEvent(chord("!", ["shift"]), keyEvent({ key: "!", code: "Digit1", shiftKey: true }))).toBe(true);
+  });
+
   it("matches named keys by event.key", () => {
     expect(matchesEvent(chord("left"), keyEvent({ key: "ArrowLeft", code: "ArrowLeft" }))).toBe(true);
     expect(matchesEvent(chord("F2"), keyEvent({ key: "F2", code: "F2" }))).toBe(true);
@@ -82,6 +94,14 @@ describe("chordFromEvent", () => {
       key: "1",
       modifiers: ["ctrl", "shift"],
     });
+  });
+
+  it("takes letters and punctuation from the layout when it types them", () => {
+    expect(chordFromEvent(keyEvent({ key: "i", code: "KeyG", ctrlKey: true }))?.key).toBe("i");
+    expect(chordFromEvent(keyEvent({ key: ",", code: "KeyW", altKey: true }))?.key).toBe(",");
+    expect(chordFromEvent(keyEvent({ key: "ш", code: "KeyI", ctrlKey: true }))?.key).toBe("i");
+    expect(chordFromEvent(keyEvent({ key: "≤", code: "Comma", altKey: true }))?.key).toBe(",");
+    expect(chordFromEvent(keyEvent({ key: "&", code: "Digit1", ctrlKey: true }))?.key).toBe("1");
   });
 
   it("takes other keys from event.key", () => {

@@ -1,4 +1,4 @@
-import type { Chord, Modifier } from "./keystrokeChords";
+import { eventKey, matchesEvent, type Chord, type Modifier } from "./keystrokeChords";
 import { usePreferences, type NavigationKeyScheme } from "./stores/preferencesStore";
 import type { StatusReadout } from "./status/statusText";
 
@@ -19,9 +19,9 @@ interface ReservedShortcut {
 // Alt+Shift with A, I, N and T.
 export const KEYS_MODE_CHORD: Chord = { key: "h", modifiers: ["alt", "shift"] };
 
-/** Alt+Shift+H by physical key, which Alt changes the character of on a Mac. */
+/** Alt+Shift+H, the key marked H on the player's layout. */
 export function isKeysModeToggle(event: KeyboardEvent): boolean {
-  return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyH";
+  return matchesEvent(KEYS_MODE_CHORD, event);
 }
 
 // F1 is the same key on every layout; plain F1 stays the games' (rules).
@@ -41,18 +41,18 @@ export function isInteractModeToggle(event: KeyboardEvent): boolean {
 
 export const HEAD_RECENTER_CHORD: Chord = { key: "o", modifiers: ["alt", "shift"] };
 
-/** Alt+Shift+O by physical key: recenters head tracking (src/audio/headTracking.ts). */
+/** Alt+Shift+O: recenters head tracking (src/audio/headTracking.ts). */
 export function isHeadRecenterShortcut(event: KeyboardEvent): boolean {
-  return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyO";
+  return matchesEvent(HEAD_RECENTER_CHORD, event);
 }
 
 // D for dictate. Alt+Shift with a letter reaches the page past NVDA's and JAWS's browse mode,
 // and no browser uses Alt+Shift+D.
 export const VOICE_COMMAND_CHORD: Chord = { key: "d", modifiers: ["alt", "shift"] };
 
-/** Alt+Shift+D by physical key, which Alt changes the character of on a Mac. */
+/** Alt+Shift+D: listens for a voice command. */
 export function isVoiceCommandToggle(event: KeyboardEvent): boolean {
-  return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyD";
+  return matchesEvent(VOICE_COMMAND_CHORD, event);
 }
 
 /** The Alt+letter buffer keys of each scheme the player can choose (useChannelHistory.tsx). */
@@ -63,12 +63,9 @@ export const navigationKeyMaps: Record<NavigationKeyScheme, { up: string; down: 
   "dvorak-lh": { up: ",", down: "o", left: "a", right: "e" },
 };
 
-/** Match a key event against a navigation key, using e.code as fallback for macOS Option+letter */
+/** Whether a key event is this navigation key, on the player's layout. Modifiers are the caller's to check. */
 export function matchesNavKey(e: KeyboardEvent, navKey: string): boolean {
-  if (e.key.toLowerCase() === navKey) return true;
-  if (navKey === ",") return e.code === "Comma";
-  if (navKey.length === 1) return e.code === `Key${navKey.toUpperCase()}`;
-  return false;
+  return eventKey(e) === navKey;
 }
 
 // Alter Aeon's keys. H and T are also Dvorak right-hand buffer keys; the buffer keys win.
@@ -93,9 +90,7 @@ function schemeUses(scheme: NavigationKeyScheme, letter: string): boolean {
 export function statusReadoutFor(event: KeyboardEvent, scheme: NavigationKeyScheme): StatusReadout | undefined {
   if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return undefined;
   if (Object.values(navigationKeyMaps[scheme]).some((navKey) => matchesNavKey(event, navKey))) return undefined;
-  const typed = event.key.toLowerCase();
-  // Option+letter on a Mac types another character; fall back to the physical key.
-  const letter = /^[a-z]$/.test(typed) ? typed : event.code.startsWith("Key") ? event.code.slice(3).toLowerCase() : "";
+  const letter = eventKey(event);
   return Object.hasOwn(STATUS_KEYS, letter) ? STATUS_KEYS[letter] : undefined;
 }
 
@@ -109,7 +104,7 @@ function statusReason(chord: Chord): string | undefined {
 const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 const ARROWS = ["arrowleft", "arrowright", "arrowup", "arrowdown"];
 // Every scheme's letters: the input and output suppress all of them with Alt.
-const BUFFER_LETTERS = ["i", "j", "k", "l", "w", "a", "s", "d", "c", "h", "t", "n", "o", "e", ","];
+export const BUFFER_LETTERS = ["i", "j", "k", "l", "w", "a", "s", "d", "c", "h", "t", "n", "o", "e", ","];
 // toolbar.tsx and PlayerCard.tsx; browsers use Alt or Alt+Shift (Ctrl+Alt on a Mac).
 const ACCESS_KEYS = ["l", "c", "e", "p", "u", "g", "s", "k", "f"];
 
