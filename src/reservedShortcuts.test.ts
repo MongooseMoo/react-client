@@ -30,6 +30,14 @@ describe("reservedReason", () => {
     expect(press({ code: "KeyD", key: "d", altKey: true })).toBe(false);
   });
 
+  it("takes Alt+Shift+D from the key marked D on the player's layout", () => {
+    const press = (init: KeyboardEventInit) =>
+      isVoiceCommandToggle(new KeyboardEvent("keydown", { altKey: true, shiftKey: true, ...init }));
+    // Dvorak: D is where QWERTY has H, and QWERTY's D position types E.
+    expect(press({ code: "KeyH", key: "D" })).toBe(true);
+    expect(press({ code: "KeyD", key: "E" })).toBe(false);
+  });
+
   it("keeps both the voice command and head tracking keys, and neither shortcut takes the other's", () => {
     expect(reservedReason(VOICE_COMMAND_CHORD)).toBe("Alt+Shift+D listens for a voice command");
     expect(reservedReason(HEAD_RECENTER_CHORD)).toBe("Alt+Shift+O recenters head tracking");

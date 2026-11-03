@@ -1,4 +1,6 @@
 import type React from "react";
+import { eventKey } from "../keystrokeChords";
+import { BUFFER_LETTERS } from "../reservedShortcuts";
 import { useRef, useEffect, useCallback } from "react";
 import { CommandHistory } from "../CommandHistory";
 import "./input.css";
@@ -242,8 +244,7 @@ const CommandInput = ({ onSend, inputRef }: Props) => {
       handleSend();
     } else if (isPlainAlt && (
       e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight" ||
-      "ijklwasdchtnoe,".includes(e.key.toLowerCase()) ||
-      "IJKLWASDCHTNOE".split("").some(c => e.code === `Key${c}`) || e.code === "Comma"
+      BUFFER_LETTERS.includes(eventKey(e.nativeEvent))
     )) {
       e.preventDefault();
     } else if (isPlainAlt && e.code === "Space") {
