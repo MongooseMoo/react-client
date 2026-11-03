@@ -24,3 +24,12 @@ own filter, `players/<number>/#`. The broker (`$mqttd`) accepts a CONNECT only
 with a live `mqtt` password (any user name) and lets the client publish and
 subscribe only under `players/<number>`. Revoking `mqtt`, or getting a new
 `mqtt` password, disconnects clients still using the old one.
+
+The Apps tab also shows the `mqtt` answer as a Mosquitto bridge section to
+paste into a home broker's configuration (`mosquittoBridgeConfig` in
+`AppsPanel.tsx`): `address` and `bridge_capath` for TLS, the user name and
+password, `remote_clientid <user>-bridge`, `notification_topic
+players/<number>/bridge/state` (the default `$SYS/...` state topic, which is
+also the bridge's Will, is outside the player's topics and is refused), and
+`topic # both 0 mongoose/ players/<number>/`, so local `mongoose/...` topics
+are the player's own topics in the game, both ways.
