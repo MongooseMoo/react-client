@@ -1,5 +1,5 @@
-import { resolveApiUrl } from "./apiOrigin";
 import type MudClient from "./client";
+import { davRequest, refusal } from "./davUpload";
 
 /** Longest edge sent to the server; Claude reads objects well at this size and it keeps uploads small. */
 export const PHOTO_MAX_EDGE = 1568;
@@ -56,22 +56,13 @@ export async function prepareJpeg(file: Blob): Promise<Blob> {
 }
 
 /** One request to the player's photos folder on the MOO's WebDAV drive, with the push token. */
-function davRequest(method: "PUT" | "MKCOL", path: string, token: string, jpeg?: Blob): Promise<Response> {
-  return fetch(resolveApiUrl(PHOTO_FOLDER + path), {
-    method,
-    headers: jpeg ? { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" } : { Authorization: `Bearer ${token}` },
-    body: jpeg,
-  });
+function photoRequest(method: "PUT" | "MKCOL", path: string, token: string, jpeg?: Blob): Promise<Response> {
+  return davRequest(method, PHOTO_FOLDER + path, token, jpeg, "image/jpeg");
 }
 
-/** Why a request was refused: the MOO says so in plain text (for example builders only); Caddy's size refusal is named. */
-async function refusal(response: Response): Promise<string> {
-  if (response.status === 413) return "the photo is too large";
-  if (response.headers.get("Content-Type")?.startsWith("text/plain")) {
-    const text = (await response.text()).trim();
-    if (text) return text;
-  }
-  return `the server answered ${response.status}`;
+/** Why a photo was refused, in the words the player is told. */
+function photoRefusal(response: Response): Promise<string> {
+  return refusal(response, "the photo is too large");
 }
 
 /**
@@ -99,15 +90,15 @@ export async function uploadPhotos(
   for (const file of files) jpegs.push(await prepare(file));
   const album = count > 1 ? `${crypto.randomUUID()}/` : "";
   if (album) {
-    const made = await davRequest("MKCOL", album, token);
-    if (made.status !== 201) return `Could not send the photos: ${await refusal(made)}`;
+    const made = await photoRequest("MKCOL", album, token);
+    if (made.status !== 201) return `Could not send the photos: ${await photoRefusal(made)}`;
   }
   for (let index = 0; index < count; index++) {
     progress(index + 1, count);
     const name = album ? `${String(index + 1).padStart(3, "0")}.jpg` : `${crypto.randomUUID()}.jpg`;
-    const response = await davRequest("PUT", album + name, token, jpegs[index]);
+    const response = await photoRequest("PUT", album + name, token, jpegs[index]);
     if (response.status !== 201 && response.status !== 204) {
-      const message = `Could not send the photo: ${await refusal(response)}`;
+      const message = `Could not send the photo: ${await photoRefusal(response)}`;
       return count > 1 ? `Photo ${index + 1} of ${count}: ${message}` : message;
     }
   }
