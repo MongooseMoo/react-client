@@ -138,7 +138,7 @@ try {
   await logsDialog.waitFor({ state: 'hidden' });
   assert.equal(await logsButton.evaluate((button) => document.activeElement === button), true);
   await uiPage.getByRole('tab', { name: 'Files', exact: true }).click();
-  await uiPage.locator('input[type="file"]').waitFor();
+  await uiPage.getByLabel('File to send', { exact: true }).waitFor();
 
   // Exercise real Monaco and its React wrapper using installed assets, without
   // a CDN dependency or a connection to a MOO.

@@ -13,6 +13,7 @@ import PendingTransfer from './PendingTransfer';
 import OutgoingTransfer from './OutgoingTransfer';
 import History from './History';
 import Sharing from './Sharing';
+import SoundUpload from './SoundUpload';
 import { formatFileSize } from './formatFileSize';
 import { useFocusRefuge } from './useFocusRefuge';
 import { useTransferHistory } from './useTransferHistory';
@@ -40,7 +41,7 @@ const awaitsUser = ({ direction, state }: TransferSnapshot) =>
 
 const isUnderWay = ({ state }: TransferSnapshot) => UNDER_WAY.includes(state);
 
-const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { transfers: FileTransfers }) => {
+const FileTransferUI = ({ client, transfers, expanded, users }: FileTransferUIProps & { transfers: FileTransfers }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedRecipient, setSelectedRecipient] = useState<TransferPeer | null>(null);
   const recipients = useMemo(() => userlistPlayersToTransferPeers(users), [users]);
@@ -187,6 +188,8 @@ const FileTransferUI = ({ transfers, expanded, users }: FileTransferUIProps & { 
       <Sharing recipients={recipients} />
 
       <History history={history.entries} />
+
+      <SoundUpload client={client} />
     </div>
   );
 };
