@@ -8,12 +8,15 @@ import { davRequest, refusal } from "./davUpload";
  */
 const SOUND_FOLDER = "/dav/sounds/";
 
-/** Endings of the sound files sent; anything else is turned away before sending. */
-export const SOUND_EXTENSIONS = ["m4a", "mp3", "ogg", "oga", "opus", "wav", "flac", "aac", "aif", "aiff", "webm"];
+/**
+ * Endings of the files sent; anything else is turned away before sending. A .zip
+ * goes up whole: the game's sound inbox unpacks it and adds each sound inside.
+ */
+export const SOUND_EXTENSIONS = ["m4a", "mp3", "ogg", "oga", "opus", "wav", "flac", "aac", "aif", "aiff", "webm", "zip"];
 
-/** Whether a file looks like a sound: an audio type, or a known ending when the browser gives no type. */
+/** Whether a file can go to the sounds folder: an audio type, a zip, or a known ending when the browser gives no type. */
 export function isSoundFile(file: File): boolean {
-  if (file.type.startsWith("audio/")) return true;
+  if (file.type.startsWith("audio/") || file.type === "application/zip" || file.type === "application/x-zip-compressed") return true;
   const dot = file.name.lastIndexOf(".");
   return dot > 0 && SOUND_EXTENSIONS.includes(file.name.slice(dot + 1).toLowerCase());
 }

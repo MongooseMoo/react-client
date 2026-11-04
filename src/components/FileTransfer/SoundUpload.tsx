@@ -52,7 +52,7 @@ const SoundUpload: React.FC<SoundUploadProps> = ({ client }) => {
         id={inputId}
         type="file"
         multiple
-        accept="audio/*,.m4a,.mp3,.ogg,.oga,.opus,.wav,.flac,.aac,.aif,.aiff,.webm"
+        accept="audio/*,.m4a,.mp3,.ogg,.oga,.opus,.wav,.flac,.aac,.aif,.aiff,.webm,.zip,application/zip"
         onChange={choose}
         disabled={sending}
       />

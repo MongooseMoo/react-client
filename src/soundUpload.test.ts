@@ -76,6 +76,16 @@ it('knows a sound by its type, or by its ending when the browser gives no type',
   expect(isSoundFile(new File(['x'], 'notes.txt'))).toBe(false);
 });
 
+it('lets a zip of sounds through whole, for the game to unpack', async () => {
+  const pack = new File(['z'], 'pack.zip', { type: 'application/zip' });
+  expect(isSoundFile(pack)).toBe(true);
+  expect(isSoundFile(new File(['z'], 'pack.ZIP'))).toBe(true);
+  expect(await uploadSounds(client, [pack], none)).toBe('Sound sent. The game will tell you when it is in the sound library.');
+  const [url, init] = fetchMock.mock.calls[0];
+  expect(url).toMatch(/\/dav\/sounds\/pack\.zip$/);
+  expect(init.headers).toEqual({ Authorization: 'Bearer synthetic-push', 'Content-Type': 'application/zip' });
+});
+
 it('stores a sound under a safe version of its name', () => {
   expect(soundFileName('C:\\music\\a:b?.wav')).toBe('a-b-.wav');
   expect(soundFileName('folder/rain.wav')).toBe('rain.wav');
