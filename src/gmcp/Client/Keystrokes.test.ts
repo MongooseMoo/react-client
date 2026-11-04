@@ -525,6 +525,15 @@ describe("GMCPClientKeystrokes", () => {
       expect(client.sendCommand.mock.calls).toEqual([["interact #7"], ["interact north"]]);
     });
 
+    it("interacts on the key marked I on the player's layout, not the key in QWERTY's I position", () => {
+      press(document.body, altBacktick);
+      // Dvorak: I is where QWERTY has G, and QWERTY's I position types C.
+      press(document.body, { key: "c", code: "KeyI", ctrlKey: true });
+      expect(client.sendCommand).not.toHaveBeenCalled();
+      press(document.body, { key: "i", code: "KeyG", ctrlKey: true });
+      expect(client.sendCommand.mock.calls).toEqual([["interact #7"]]);
+    });
+
     it("says so when the thing it is on has gone", () => {
       press(document.body, altBacktick);
       useItemsStore.getState().setLocationItems("inv", []);

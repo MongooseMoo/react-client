@@ -11,11 +11,13 @@ import {
     useKeystrokesStore,
 } from "../../stores/keystrokesStore";
 import { usePreferences } from "../../stores/preferencesStore";
-import { chordFromEvent, chordsEqual, formatChord, parseChord } from "../../keystrokeChords";
+import { chordFromEvent, chordsEqual, formatChord, matchesEvent, parseChord, type Chord } from "../../keystrokeChords";
 import { isInteractModeToggle, isKeysHelpToggle, isKeysModeToggle, reservedReason } from "../../reservedShortcuts";
 import { useItemsStore } from "../../stores/itemsStore";
 import { useRoomStore } from "../../stores/roomStore";
 import { gmcpJsonMessage } from "../messages";
+
+const INTERACT_CHORD: Chord = { key: "i", modifiers: ["ctrl"] };
 
 /** A binding as it arrives on the wire. */
 interface WireBinding {
@@ -277,7 +279,7 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
             this.endInteractMode();
             return true;
         }
-        if (event.code === "KeyI" && event.ctrlKey && !event.shiftKey) {
+        if (matchesEvent(INTERACT_CHORD, event)) {
             const target = interactTargets().find((candidate) => candidate.key === this.interactKey);
             if (target) {
                 this.client.sendCommand(target.command);

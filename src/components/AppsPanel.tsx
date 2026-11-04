@@ -14,16 +14,45 @@ export function windowsDriveCommand(url: string, user: string, password: string)
   return `net use M: ${url} /user:${quote(user)} ${password} /persistent:yes`;
 }
 
+/** The host and port of an mqtts://host:port broker address, for MQTT apps that ask for them separately. */
+export function brokerHostPort(url: string): { host: string; port: string } {
+  const parsed = new URL(url);
+  return { host: parsed.hostname, port: parsed.port };
+}
+
+/**
+ * A Mosquitto bridge section that connects a home broker to the game's broker,
+ * for the player to paste into mosquitto.conf (or a conf.d file). Local topics
+ * under mongoose/ become the player's own topics on the game, both ways.
+ * notification_topic keeps the bridge's state topic, and its Will, inside the
+ * player's topics: the default $SYS/… topic is refused as not authorised.
+ */
+export function mosquittoBridgeConfig(url: string, user: string, password: string, topics: string): string {
+  const { host, port } = brokerHostPort(url);
+  const prefix = topics.replace(/#$/, "");
+  return [
+    "connection mongoose",
+    `address ${host}:${port}`,
+    "bridge_capath /etc/ssl/certs",
+    `remote_username ${user}`,
+    `remote_password ${password}`,
+    `remote_clientid ${user}-bridge`,
+    `notification_topic ${prefix}bridge/state`,
+    `topic # both 0 mongoose/ ${prefix}`,
+  ].join("\n");
+}
+
 /**
  * The Apps tab, over GMCP Client.Apps: the apps that can act as the player on
  * the web, with Revoke for each; approving an app's code (what @approve does);
- * and Connect a drive, which gets a new password for mounting the MOO's verbs
- * and properties as files over WebDAV.
+ * Connect a drive, which gets a new password for mounting the MOO's verbs and
+ * properties as files over WebDAV; and an MQTT password for the MOO's broker.
  */
 const AppsPanel = ({ client }: Props) => {
   const apps = useAppsStore((state) => state.apps);
   const result = useAppsStore((state) => state.result);
-  const drive = useAppsStore((state) => state.drive);
+  const drive = useAppsStore((state) => state.passwords.drive);
+  const mqtt = useAppsStore((state) => state.passwords.mqtt);
   const ready = useConnectionStore((state) => state.sessionReady);
   const [code, setCode] = useState("");
   const appsPackage = () => client.gmcp.require("Client.Apps");
@@ -55,11 +84,16 @@ const AppsPanel = ({ client }: Props) => {
     }
   };
 
-  const field = (label: string, value: string) => (
+  // rows gives a multi-line value (a config snippet) a read-only text area.
+  const field = (label: string, value: string, rows?: number) => (
     <div className="apps-field">
       <label>
         {label}
-        <input type="text" readOnly value={value} onFocus={(event) => event.currentTarget.select()} />
+        {rows ? (
+          <textarea readOnly rows={rows} value={value} onFocus={(event) => event.currentTarget.select()} />
+        ) : (
+          <input type="text" readOnly value={value} onFocus={(event) => event.currentTarget.select()} />
+        )}
       </label>
       <button type="button" onClick={() => copy(label, value)}>
         Copy {label.toLowerCase()}
@@ -116,7 +150,7 @@ const AppsPanel = ({ client }: Props) => {
           Connecting makes a new password and stops the old drive password. The Windows command
           needs Windows' WebClient service running.
         </p>
-        <button type="button" onClick={() => appsPackage().sendDrive({})}>
+        <button type="button" onClick={() => appsPackage().sendDrive({ app: "drive" })}>
           Connect a drive
         </button>
         {drive && (
@@ -126,6 +160,37 @@ const AppsPanel = ({ client }: Props) => {
             {field("User name", drive.user)}
             {field("Password", drive.password)}
             {field("Windows command", windowsDriveCommand(drive.url, drive.user, drive.password))}
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="apps-mqtt-heading">
+        <h3 id="apps-mqtt-heading">MQTT</h3>
+        <p>
+          Connect an MQTT app or device to the game's broker over TLS. You can publish and subscribe only
+          under your own topics. Getting a password stops the old MQTT password and disconnects anything
+          still using it; Revoke mqtt above does the same.
+        </p>
+        <button type="button" onClick={() => appsPackage().sendDrive({ app: "mqtt" })}>
+          Get an MQTT password
+        </button>
+        {mqtt && (
+          <div>
+            <p>Shown once. Copy the password now.</p>
+            {field("Host", brokerHostPort(mqtt.url).host)}
+            {field("Port", brokerHostPort(mqtt.url).port)}
+            {field("MQTT user name", mqtt.user)}
+            {field("MQTT password", mqtt.password)}
+            {mqtt.topics && field("Your topics", mqtt.topics)}
+            {mqtt.topics && (
+              <>
+                <p>
+                  To connect a Mosquitto broker at home, paste this into its configuration and restart it.
+                  Anything published at home under mongoose/ appears in your topics in the game, and back.
+                </p>
+                {field("Mosquitto bridge", mosquittoBridgeConfig(mqtt.url, mqtt.user, mqtt.password, mqtt.topics), 8)}
+              </>
+            )}
           </div>
         )}
       </section>

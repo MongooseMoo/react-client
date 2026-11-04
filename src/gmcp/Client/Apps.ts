@@ -20,11 +20,25 @@ export class GMCPMessageClientAppsResult extends GMCPMessage {
     public readonly message!: string;
 }
 
-/** Where and how to mount the WebDAV drive. The password is shown once; asking again replaces it. */
+/** The apps the Apps tab can get a password for: the WebDAV drive and the MQTT broker. */
+export type ClientAppsPasswordApp = "drive" | "mqtt";
+
+/**
+ * A new password for one app and where to use it: for "drive" the WebDAV
+ * address to mount, for "mqtt" the broker (mqtts://host:port) and the topics
+ * the player may use. Shown once; asking again replaces that app's password.
+ */
 export class GMCPMessageClientAppsDrive extends GMCPMessage {
+    public readonly app!: ClientAppsPasswordApp;
     public readonly url!: string;
     public readonly user!: string;
     public readonly password!: string;
+    /** For "mqtt": the player's own topic filter, such as players/123/#. */
+    public readonly topics?: string;
+}
+
+export class GMCPMessageClientAppsDriveRequest extends GMCPMessage {
+    public readonly app!: ClientAppsPasswordApp;
 }
 
 export class GMCPMessageClientAppsApprove extends GMCPMessage {
@@ -38,7 +52,7 @@ export class GMCPMessageClientAppsRevoke extends GMCPMessage {
 type Empty = Record<string, never>;
 
 const appsList = gmcpJsonMessage<"List", GMCPMessageClientAppsList, Empty>("List");
-const appsDrive = gmcpJsonMessage<"Drive", GMCPMessageClientAppsDrive, Empty>("Drive");
+const appsDrive = gmcpJsonMessage<"Drive", GMCPMessageClientAppsDrive, GMCPMessageClientAppsDriveRequest>("Drive");
 const appsResult = gmcpJsonMessage<"Result", GMCPMessageClientAppsResult>("Result");
 const appsApprove = gmcpJsonMessage<"Approve", never, GMCPMessageClientAppsApprove>("Approve");
 const appsRevoke = gmcpJsonMessage<"Revoke", never, GMCPMessageClientAppsRevoke>("Revoke");
@@ -56,8 +70,8 @@ const GMCPClientAppsBase = GMCPPackage.with({
 
 /**
  * Client.Apps: the apps that can act as the player on the web, approving an
- * app's device code, revoking one, and a password for mounting the MOO's
- * WebDAV drive. The server answers List, Result and Drive; see
+ * app's device code, revoking one, and a password for the MOO's WebDAV drive
+ * or its MQTT broker. The server answers List, Result and Drive; see
  * docs/GMCP/client-apps.md.
  */
 export class GMCPClientApps extends GMCPClientAppsBase {
@@ -69,8 +83,8 @@ export class GMCPClientApps extends GMCPClientAppsBase {
             announce(data.message, "assertive");
         });
         this.on("drive", (data) => {
-            useAppsStore.getState().setDrive(data);
-            announce("Drive password ready. It is shown once.", "assertive");
+            useAppsStore.getState().setPassword(data);
+            announce(`${data.app === "mqtt" ? "MQTT" : "Drive"} password ready. It is shown once.`, "assertive");
         });
     }
 

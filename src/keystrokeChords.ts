@@ -1,6 +1,6 @@
 export type Modifier = "ctrl" | "alt" | "shift" | "meta";
 
-/** A key and its exact modifiers. `key` is a lower-cased KeyboardEvent.key value. */
+/** A key and its exact modifiers. `key` is a lower-cased key name, as `eventKey` reads one. */
 export interface Chord {
   key: string;
   modifiers: Modifier[];
@@ -80,11 +80,40 @@ function eventModifiers(event: KeyboardEvent): Modifier[] {
   return modifiers;
 }
 
-/** The letter or digit printed on the physical key, if it is one. */
+const PHYSICAL_PUNCTUATION: Record<string, string> = {
+  Backquote: "`",
+  Minus: "-",
+  Equal: "=",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+};
+
+/** What this physical key types on a US QWERTY keyboard, for the keys that type a character. */
 function physicalCharacter(code: string): string | undefined {
   const match = /^(?:Key([A-Z])|Digit([0-9]))$/.exec(code);
-  if (!match) return undefined;
-  return (match[1] ?? match[2]).toLowerCase();
+  if (match) return (match[1] ?? match[2]).toLowerCase();
+  return PHYSICAL_PUNCTUATION[code];
+}
+
+/**
+ * The key a press means, lower-cased. This is what the player's layout typed, so Ctrl+I is the
+ * key marked I on Dvorak or AZERTY. Two cases fall back to the key's US QWERTY name: the layout
+ * typed no ASCII character (Option on a Mac, Cyrillic, a dead key), or a digit key typed
+ * punctuation (Shift+1, unshifted AZERTY), so digit shortcuts work on every layout.
+ * `event.code` alone names the key's position, whatever the layout types there.
+ */
+export function eventKey(event: KeyboardEvent): string {
+  const typed = normalizeKey(event.key);
+  const physical = physicalCharacter(event.code);
+  if (physical === undefined) return typed;
+  if (/^[0-9]$/.test(physical)) return /^[0-9]$/.test(typed) ? typed : physical;
+  return /^[\x21-\x7e]$/.test(typed) ? typed : physical;
 }
 
 function sameModifiers(a: readonly Modifier[], b: readonly Modifier[]): boolean {
@@ -99,17 +128,14 @@ export function chordsEqual(a: Chord, b: Chord): boolean {
 
 export function matchesEvent(chord: Chord, event: KeyboardEvent): boolean {
   if (!sameModifiers(chord.modifiers, eventModifiers(event))) return false;
-  if (event.key.toLowerCase() === chord.key) return true;
-  return /^[a-z0-9]$/.test(chord.key) && physicalCharacter(event.code) === chord.key;
+  // The typed character also counts, so a binding sent as Shift+! still matches Shift+1.
+  return eventKey(event) === chord.key || normalizeKey(event.key) === chord.key;
 }
 
 /** The chord a key press would bind, or nothing for a lone modifier key. */
 export function chordFromEvent(event: KeyboardEvent): Chord | undefined {
-  const typed = event.key.toLowerCase();
-  if (LONE_MODIFIER_KEYS.has(typed)) return undefined;
-  const physical = physicalCharacter(event.code);
-  const key = physical !== undefined && !/^[a-z0-9]$/.test(typed) ? physical : typed;
-  return { key, modifiers: eventModifiers(event) };
+  if (LONE_MODIFIER_KEYS.has(event.key.toLowerCase())) return undefined;
+  return { key: eventKey(event), modifiers: eventModifiers(event) };
 }
 
 export function formatChord(chord: Chord): string {

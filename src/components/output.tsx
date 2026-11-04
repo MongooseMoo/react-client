@@ -1,4 +1,6 @@
 import { announce } from "@react-aria/live-announcer";
+import { eventKey } from "../keystrokeChords";
+import { BUFFER_LETTERS } from "../reservedShortcuts";
 import "./output.css";
 import React from "react";
 import { parseToElements } from "../ansiParser";
@@ -878,8 +880,7 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
     // don't interfere with app-level keybindings
     if (isPlainAlt && (
       e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
-      'ijklwasdchtnoe,'.includes(e.key.toLowerCase()) ||
-      'IJKLWASDCHTNOE'.split('').some(c => e.code === `Key${c}`) || e.code === 'Comma'
+      BUFFER_LETTERS.includes(eventKey(e.nativeEvent))
     )) {
       e.preventDefault();
       return;

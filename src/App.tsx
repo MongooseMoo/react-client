@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { eventKey } from "./keystrokeChords";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
 import type MudClient from "./client";
@@ -87,9 +88,9 @@ function getRoomSubtitle(roomInfo: GMCPMessageRoomInfo): string | undefined {
 }
 
 function getShortcutDigit(event: KeyboardEvent): number | null {
-  // Shift changes KeyboardEvent.key to punctuation on many layouts.
-  const value = /^Digit([0-9])$/.exec(event.code)?.[1] ?? (/^[0-9]$/.test(event.key) ? event.key : null);
-  return value === null ? null : Number(value);
+  // eventKey reads Shift+1 and unshifted AZERTY digits as their digit.
+  const key = eventKey(event);
+  return /^[0-9]$/.test(key) ? Number(key) : null;
 }
 
 function getOutputReviewLineNumber(event: KeyboardEvent): number | null {
