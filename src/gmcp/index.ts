@@ -17,6 +17,7 @@ export { GMCPClientSpatial } from "./Client/Spatial";
 export { GMCPClientSpeech } from "./Client/Speech";
 export { GMCPClientWebPush } from "./Client/WebPush";
 export { GMCPClientApps } from "./Client/Apps";
+export { GMCPClientTasks } from "./Client/Tasks";
 export { GMCPCommChannel } from "./Comm/Channel";
 export { GMCPCommLiveKit } from "./Comm/LiveKit";
 export { GMCPCore } from "./Core";

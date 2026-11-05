@@ -13,6 +13,7 @@ import {
   FaMapMarkerAlt,
   FaMusic,
   FaQuestionCircle,
+  FaTasks,
   FaUsers,
 } from 'react-icons/fa';
 const FileTransferUI = React.lazy(() => import('./FileTransfer'));
@@ -23,6 +24,7 @@ const HelpPanel = React.lazy(() => import('./HelpPanel'));
 const PhotoPanel = React.lazy(() => import('./PhotoPanel'));
 const PropertiesPanel = React.lazy(() => import('./PropertiesPanel'));
 const AppsPanel = React.lazy(() => import('./AppsPanel'));
+const TasksPanel = React.lazy(() => import('./TasksPanel'));
 import Tabs, { type TabProps, type TabsRef } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
@@ -37,6 +39,8 @@ import { usePreferences } from '../stores/preferencesStore';
 import { useRoomStore } from '../stores/roomStore';
 import { useItemsStore } from '../stores/itemsStore';
 import { useUserlistStore } from '../stores/userlistStore';
+import { useTasksStore } from '../stores/tasksStore';
+import { useConnectionStore } from '../stores/connectionStore';
 import { hapticsService } from '../HapticsService';
 
 /** Tabs are addressed by their visible position, the number Ctrl+Shift+number names. */
@@ -92,6 +96,14 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
     // const [hasSkillsData, setHasSkillsData] = useState(false); // Removed
     // Show the Room tab once room info has arrived (from the room store).
     const hasRoomData = useRoomStore((state) => state.roomInfo !== null);
+    // Show the Tasks tab once the player has had a queued task this session.
+    const hasTasks = useTasksStore((state) => state.everHadTasks);
+    const sessionReady = useConnectionStore((state) => state.sessionReady);
+
+    // Ask once per session whether the player has any queued tasks, so the Tasks tab can appear.
+    useEffect(() => {
+      if (sessionReady) client.gmcp.handlers?.['Client.Tasks']?.sendList({});
+    }, [sessionReady, client]);
 
     // Handle MIDI support advertisement based on preferences
     useEffect(() => {
@@ -286,6 +298,14 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         content: <Suspense fallback={<p role="status">Loading apps…</p>}><AppsPanel client={client} /></Suspense>,
         mountOnSelect: true,
         condition: true,
+      },
+      {
+        id: 'tasks-tab',
+        label: 'Tasks',
+        icon: <FaTasks />,
+        content: <Suspense fallback={<p role="status">Loading tasks…</p>}><TasksPanel client={client} /></Suspense>,
+        mountOnSelect: true,
+        condition: hasTasks,
       },
     ];
 
