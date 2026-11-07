@@ -133,10 +133,21 @@ describe("TasksPanel", () => {
     await waitFor(() => expect(tasks.sendList).toHaveBeenCalledTimes(2));
   });
 
-  it("remembers that the player has had tasks once a list arrives with any", () => {
-    expect(useTasksStore.getState().everHadTasks).toBe(false);
-    useTasksStore.getState().setList(list);
-    useTasksStore.getState().setList({ now: NOW, total: 0, groups: [] });
-    expect(useTasksStore.getState().everHadTasks).toBe(true);
+  it("refreshes an opened group after Kill even when the group still exists", () => {
+    render(<TasksPanel client={client} />);
+    act(() => useTasksStore.getState().setList(list));
+    fireEvent.click(screen.getByRole("button", { name: /dispatch_event on 35 objects/ }));
+    act(() => useTasksStore.getState().setGroup(group));
+    tasks.sendGroup.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Kill task 101" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm: kill task 101" }));
+    act(() => {
+      useTasksStore.getState().setResult({ ok: 1, message: "Killed 1 task." });
+      useTasksStore.getState().setList({ ...list, total: 35 });
+    });
+    expect(tasks.sendGroup).toHaveBeenCalledWith({ key: group.key });
+    act(() => useTasksStore.getState().setGroup({ ...group, tasks: [group.tasks[1]] }));
+    expect(screen.queryByRole("button", { name: "Kill task 101" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Kill task 102" })).toBeInTheDocument();
   });
 });

@@ -6,22 +6,39 @@ import type MudClient from '../client';
 import { useRoomStore } from '../stores/roomStore';
 import { useItemsStore } from '../stores/itemsStore';
 import { usePreferences } from '../stores/preferencesStore';
+import { useTasksStore } from '../stores/tasksStore';
+import { useConnectionStore } from '../stores/connectionStore';
 
 vi.mock('./AudioChatBoundary', () => ({ default: () => <span>Audio controls</span> }));
 vi.mock('./HelpPanel', () => ({ default: () => <span>Help contents</span> }));
 vi.mock('./MapPanel', () => ({ default: () => <span>Map contents</span> }));
 vi.mock('./MidiStatus', () => ({ default: () => <span>MIDI contents</span> }));
 vi.mock('./inventory', () => ({ default: () => <span>Inventory contents</span> }));
+vi.mock('./TasksPanel', () => ({ default: () => <span>Task controls</span> }));
 
 const client = { connected: false, gmcp: { handlers: {} }, onFileTransferOffer: () => () => {} } as unknown as MudClient;
 
 beforeEach(() => {
   useRoomStore.getState().reset();
   useItemsStore.getState().reset();
+  useTasksStore.getState().reset();
+  useConnectionStore.getState().reset();
   usePreferences.setState({ midi: { enabled: false }, haptics: { enabled: false, intensityCap: 1, autoStopTimeout: 30 } });
 });
 
 const shortcuts = () => screen.getAllByRole('tab').map((tab) => [tab.textContent, tab.getAttribute('aria-keyshortcuts')]);
+
+it('offers Tasks after an empty initial list so tasks created later remain discoverable', async () => {
+  const sendList = vi.fn();
+  const taskClient = { ...client, gmcp: { handlers: { 'Client.Tasks': { sendList } } } } as unknown as MudClient;
+  render(<Sidebar client={taskClient} collapsed={false} onToggleCollapse={vi.fn()} />);
+  expect(screen.queryByRole('tab', { name: 'Tasks' })).not.toBeInTheDocument();
+  act(() => useConnectionStore.getState().setSessionReady(true));
+  expect(sendList).toHaveBeenCalledWith({});
+  act(() => useTasksStore.getState().setList({ now: 1800000000, total: 0, groups: [] }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }));
+  expect(await screen.findByText('Task controls')).toBeInTheDocument();
+});
 
 it('numbers tabs by their place on screen, so a tab that arrives renumbers those after it', () => {
   const ref = React.createRef<SidebarRef>();

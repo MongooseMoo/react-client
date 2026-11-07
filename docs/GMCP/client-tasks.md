@@ -32,7 +32,8 @@ would for that player.
   already finished, or were refused.
 
 The client asks for `List` when the session is ready, and shows the Tasks tab
-once the player has had a queued task in the session. While the tab is
-showing it asks for `List` (and each opened group) again every ten seconds.
+once the server answers, including an empty list. Refresh lets the player find
+tasks created later. After a Kill result it refreshes opened groups immediately.
+While the tab is showing it asks for `List` (and each opened group) again every ten seconds.
 Telnet players have the same view with `@tasks`, `@tasks <n>` and
 `@tasks <text>`.

@@ -92,6 +92,12 @@ const TasksPanel = ({ client }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
+  // Kill answers with Result and List, which do not include updated group rows.
+  useEffect(() => {
+    if (!ready || !result) return;
+    for (const key of openRef.current) client.gmcp.require("Client.Tasks").sendGroup({ key });
+  }, [ready, result, client]);
+
   const serverNow = Date.now() / 1000 + clockOffset;
 
   const toggleGroup = (key: string) => {

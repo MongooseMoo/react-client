@@ -96,11 +96,11 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
     // const [hasSkillsData, setHasSkillsData] = useState(false); // Removed
     // Show the Room tab once room info has arrived (from the room store).
     const hasRoomData = useRoomStore((state) => state.roomInfo !== null);
-    // Show the Tasks tab once the player has had a queued task this session.
-    const hasTasks = useTasksStore((state) => state.everHadTasks);
+    // An empty first response still offers Refresh for tasks created later.
+    const hasTasks = useTasksStore((state) => state.list !== null);
     const sessionReady = useConnectionStore((state) => state.sessionReady);
 
-    // Ask once per session whether the player has any queued tasks, so the Tasks tab can appear.
+    // Offer Tasks once this session's server has answered the initial request.
     useEffect(() => {
       if (sessionReady) client.gmcp.handlers?.['Client.Tasks']?.sendList({});
     }, [sessionReady, client]);

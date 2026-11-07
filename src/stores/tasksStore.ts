@@ -16,8 +16,6 @@ interface TasksState {
   /** Call stacks asked for, by task id. */
   info: Record<number, string[]>;
   result: GMCPMessageClientTasksResult | null;
-  /** True once the player has had a task this session; the tab stays shown after that. */
-  everHadTasks: boolean;
   setList: (list: GMCPMessageClientTasksList) => void;
   setGroup: (group: GMCPMessageClientTasksGroup) => void;
   setInfo: (info: GMCPMessageClientTasksInfo) => void;
@@ -33,7 +31,6 @@ export const useTasksStore = create<TasksState>((set) => ({
   groups: {},
   info: {},
   result: null,
-  everHadTasks: false,
   setList: (list) =>
     set((state) => {
       // Drop opened groups that no longer exist.
@@ -43,12 +40,11 @@ export const useTasksStore = create<TasksState>((set) => ({
         list,
         groups,
         clockOffset: list.now - browserNow(),
-        everHadTasks: state.everHadTasks || list.total > 0,
       };
     }),
   setGroup: (group) =>
     set((state) => ({ groups: { ...state.groups, [group.key]: group }, clockOffset: group.now - browserNow() })),
   setInfo: (info) => set((state) => ({ info: { ...state.info, [info.id]: info.lines ?? [] } })),
   setResult: (result) => set({ result }),
-  reset: () => set({ list: null, clockOffset: 0, groups: {}, info: {}, result: null, everHadTasks: false }),
+  reset: () => set({ list: null, clockOffset: 0, groups: {}, info: {}, result: null }),
 }));
