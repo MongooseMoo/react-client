@@ -19,7 +19,9 @@ concurrency:
 jobs:
   test:
     name: Tests and production build
-    runs-on: ubuntu-latest
+    # Playwright (1.59.1) has no Chromium for Ubuntu 26.04, which ubuntu-latest
+    # is moving to; back to ubuntu-latest once a Playwright release supports it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       HUSKY: '0'

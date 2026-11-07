@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type {
   ClientAppsPasswordApp,
   GMCPMessageClientAppsApp,
-  GMCPMessageClientAppsDrive,
+  GMCPMessageClientAppsPassword,
   GMCPMessageClientAppsResult,
 } from "../gmcp/Client/Apps";
 
@@ -10,10 +10,10 @@ import type {
 interface AppsState {
   apps: GMCPMessageClientAppsApp[] | null;
   result: GMCPMessageClientAppsResult | null;
-  passwords: Partial<Record<ClientAppsPasswordApp, GMCPMessageClientAppsDrive>>;
+  passwords: Partial<Record<ClientAppsPasswordApp, GMCPMessageClientAppsPassword>>;
   setApps: (apps: GMCPMessageClientAppsApp[]) => void;
   setResult: (result: GMCPMessageClientAppsResult) => void;
-  setPassword: (password: GMCPMessageClientAppsDrive) => void;
+  setPassword: (password: GMCPMessageClientAppsPassword) => void;
   reset: () => void;
 }
 

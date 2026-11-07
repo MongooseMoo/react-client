@@ -1,6 +1,7 @@
 import { announce } from "@react-aria/live-announcer";
 import { useEffect, useRef, useState } from "react";
 import type MudClient from "../client";
+import { takeApproveCode, useLaunchStore } from "../launch/launchStore";
 import { useAppsStore } from "../stores/appsStore";
 import { useConnectionStore } from "../stores/connectionStore";
 
@@ -12,6 +13,11 @@ type Props = {
 export function windowsDriveCommand(url: string, user: string, password: string): string {
   const quote = (text: string) => `"${text.replace(/"/g, '\\"')}"`;
   return `net use M: ${url} /user:${quote(user)} ${password} /persistent:yes`;
+}
+
+/** The command that adds the MOO's MCP server to Claude Code, for the player to paste into a terminal. */
+export function claudeMcpCommand(url: string, password: string): string {
+  return `claude mcp add --transport http mongoose ${url} --header "Authorization: Bearer ${password}"`;
 }
 
 /** The host and port of an mqtts://host:port broker address, for MQTT apps that ask for them separately. */
@@ -46,16 +52,28 @@ export function mosquittoBridgeConfig(url: string, user: string, password: strin
  * The Apps tab, over GMCP Client.Apps: the apps that can act as the player on
  * the web, with Revoke for each; approving an app's code (what @approve does);
  * Connect a drive, which gets a new password for mounting the MOO's verbs and
- * properties as files over WebDAV; and an MQTT password for the MOO's broker.
+ * properties as files over WebDAV; a Claude Code password for the MOO's MCP
+ * server; and an MQTT password for the MOO's broker.
  */
 const AppsPanel = ({ client }: Props) => {
   const apps = useAppsStore((state) => state.apps);
   const result = useAppsStore((state) => state.result);
   const drive = useAppsStore((state) => state.passwords.drive);
   const mqtt = useAppsStore((state) => state.passwords.mqtt);
+  const mcp = useAppsStore((state) => state.passwords.mcp);
   const ready = useConnectionStore((state) => state.sessionReady);
   const [code, setCode] = useState("");
   const appsPackage = () => client.gmcp.require("Client.Apps");
+
+  // A link from an app's login page (?approve=CODE) fills in its code; the player still chooses Approve.
+  const waitingCode = useLaunchStore((state) => state.approveCode);
+  useEffect(() => {
+    const taken = waitingCode && takeApproveCode();
+    if (taken) {
+      setCode(taken);
+      announce(`An app's sign-in code ${taken} is filled in. Choose Approve to let it act as you.`, "assertive");
+    }
+  }, [waitingCode]);
 
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -150,7 +168,7 @@ const AppsPanel = ({ client }: Props) => {
           Connecting makes a new password and stops the old drive password. The Windows command
           needs Windows' WebClient service running.
         </p>
-        <button type="button" onClick={() => appsPackage().sendDrive({ app: "drive" })}>
+        <button type="button" onClick={() => appsPackage().sendPassword({ app: "drive" })}>
           Connect a drive
         </button>
         {drive && (
@@ -164,6 +182,26 @@ const AppsPanel = ({ client }: Props) => {
         )}
       </section>
 
+      <section aria-labelledby="apps-mcp-heading">
+        <h3 id="apps-mcp-heading">Claude Code</h3>
+        <p>
+          Let Claude Code, or another AI tool that speaks MCP, read and change MOO code and build as you.
+          Getting a password stops the old Claude Code password; Revoke mcp above does the same. Claude Code
+          can instead sign in through the browser if you add the address without a password.
+        </p>
+        <button type="button" onClick={() => appsPackage().sendPassword({ app: "mcp" })}>
+          Get a Claude Code password
+        </button>
+        {mcp && (
+          <div>
+            <p>Shown once. Copy the command now and run it in a terminal.</p>
+            {field("Claude Code command", claudeMcpCommand(mcp.url, mcp.password))}
+            {field("MCP address", mcp.url)}
+            {field("Bearer token", mcp.password)}
+          </div>
+        )}
+      </section>
+
       <section aria-labelledby="apps-mqtt-heading">
         <h3 id="apps-mqtt-heading">MQTT</h3>
         <p>
@@ -171,7 +209,7 @@ const AppsPanel = ({ client }: Props) => {
           under your own topics. Getting a password stops the old MQTT password and disconnects anything
           still using it; Revoke mqtt above does the same.
         </p>
-        <button type="button" onClick={() => appsPackage().sendDrive({ app: "mqtt" })}>
+        <button type="button" onClick={() => appsPackage().sendPassword({ app: "mqtt" })}>
           Get an MQTT password
         </button>
         {mqtt && (

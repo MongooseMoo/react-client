@@ -22,3 +22,5 @@ export const LOCAL_URL = `/?${MODE_PARAM}=local`;
 export const FILE_HANDLER_URL = HOST_URL;
 /** Names the confirmed database a window opened to host it. */
 export const HOST_DATABASE_PARAM = 'hostDatabase';
+/** An app's sign-in code (from the MOO's app login page), put in the Apps tab for the player to approve. */
+export const APPROVE_PARAM = 'approve';

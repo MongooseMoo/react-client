@@ -7,13 +7,13 @@ import {
   pruneLaunchItems,
   takeLaunchItem,
 } from './launchInbox';
-import { type LaunchMode, offerSharedFiles, useLaunchStore } from './launchStore';
+import { type LaunchMode, offerApproveCode, offerSharedFiles, useLaunchStore } from './launchStore';
 import { parseProtocolUrl } from './launchText';
-import { HOST_DATABASE_PARAM, MODE_PARAM, PROTOCOL_PARAM, SHARE_PARAM } from './launchUrls';
+import { APPROVE_PARAM, HOST_DATABASE_PARAM, MODE_PARAM, PROTOCOL_PARAM, SHARE_PARAM } from './launchUrls';
 import { placeLaunchText } from './placeLaunchText';
 import type { ShareRefusal } from './shareTarget';
 
-const LAUNCH_PARAMS = [PROTOCOL_PARAM, SHARE_PARAM, HOST_DATABASE_PARAM];
+const LAUNCH_PARAMS = [PROTOCOL_PARAM, SHARE_PARAM, HOST_DATABASE_PARAM, APPROVE_PARAM];
 const MIB = 1024 * 1024;
 
 const REFUSALS: Record<ShareRefusal, string> = {
@@ -59,6 +59,9 @@ export async function handleLaunchUrl(url: URL): Promise<void> {
       offerSharedFiles(item.files);
     }
   }
+
+  const approve = url.searchParams.get(APPROVE_PARAM)?.trim();
+  if (approve) offerApproveCode(approve);
 
   const hosted = url.searchParams.get(HOST_DATABASE_PARAM);
   if (hosted) {
