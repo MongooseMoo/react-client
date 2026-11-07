@@ -12,9 +12,12 @@ connection's player only (`$gmcp_apps`).
 | `Client.Apps.List {}` | `Client.Apps.List {"apps": [{"name", "approved"}]}` (`approved` in Unix seconds) |
 | `Client.Apps.Approve {"code"}` | `Client.Apps.Result {"ok", "message"}`, then `List`. Same as `@approve <code>` |
 | `Client.Apps.Revoke {"name"}` | `Client.Apps.Result {"ok", "message"}`, then `List`. Same as `@apps revoke <name>` |
-| `Client.Apps.Drive {"app"}` | `Client.Apps.Drive {"app", "url", "user", "password"}` (and `"topics"` for `mqtt`), then `List` |
+| `Client.Apps.Password {"app"}` | `Client.Apps.Password {"app", "url", "user", "password"}` (and `"topics"` for `mqtt`), then `List` |
 
-`app` is `drive` (the default when it is left out) or `mqtt`. The password is a
+`app` is `drive` (the default when it is left out), `mqtt` or `mcp`. For `mcp`,
+`url` is the MOO's MCP server (`https://mongoose.world/mcp`); the Apps tab shows
+the `claude mcp add --transport http mongoose <url> --header "Authorization:
+Bearer <password>"` command that adds it to Claude Code. The password is a
 new app token named after the app; asking again replaces it, so that app's
 previous password stops working. It is sent only over GMCP and never as game
 text. The client shows it once and keeps it only in memory.
@@ -24,6 +27,11 @@ own filter, `players/<number>/#`. The broker (`$mqttd`) accepts a CONNECT only
 with a live `mqtt` password (any user name) and lets the client publish and
 subscribe only under `players/<number>`. Revoking `mqtt`, or getting a new
 `mqtt` password, disconnects clients still using the old one.
+
+A link to the client with `?approve=<code>` (the button on the MOO's app login
+page at `https://mongoose.world`) opens the Apps tab with that code filled in.
+Nothing is approved until the player chooses Approve, which sends
+`Client.Apps.Approve`.
 
 The Apps tab also shows the `mqtt` answer as a Mosquitto bridge section to
 paste into a home broker's configuration (`mosquittoBridgeConfig` in

@@ -27,6 +27,10 @@ interface LaunchState {
   hostWaiting: boolean;
   /** A shortcut asked for a mode this window is not in, awaiting the player's answer. */
   modeRequest?: ModeRequest;
+  /** An app's sign-in code a link brought, waiting in the Apps tab for the player to approve or ignore. */
+  approveCode?: string;
+  /** Bumped when a sign-in code arrives, asking the window to show the Apps tab. */
+  appsRequest: number;
 }
 
 /** Hand-off between launches (links, shares, opened files) and the parts of the client that show them. */
@@ -34,7 +38,21 @@ export const useLaunchStore = create<LaunchState>(() => ({
   sharedFiles: [],
   filesRequest: 0,
   hostWaiting: false,
+  appsRequest: 0,
 }));
+
+/** A link brought an app's sign-in code: the Apps tab shows it filled in; nothing is approved until the player says so. */
+export function offerApproveCode(code: string): void {
+  if (!code) return;
+  useLaunchStore.setState((state) => ({ approveCode: code, appsRequest: state.appsRequest + 1 }));
+}
+
+/** The Apps tab took the waiting sign-in code into its form. */
+export function takeApproveCode(): string | undefined {
+  const { approveCode } = useLaunchStore.getState();
+  if (approveCode) useLaunchStore.setState({ approveCode: undefined });
+  return approveCode;
+}
 
 export function offerSharedFiles(files: File[]): void {
   if (files.length === 0) return;

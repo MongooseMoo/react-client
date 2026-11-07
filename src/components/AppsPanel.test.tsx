@@ -7,10 +7,11 @@ vi.mock("@react-aria/live-announcer", () => ({ announce }));
 import type MudClient from "../client";
 import { useAppsStore } from "../stores/appsStore";
 import { useConnectionStore } from "../stores/connectionStore";
-import AppsPanel, { mosquittoBridgeConfig, windowsDriveCommand } from "./AppsPanel";
+import { offerApproveCode, useLaunchStore } from "../launch/launchStore";
+import AppsPanel, { claudeMcpCommand, mosquittoBridgeConfig, windowsDriveCommand } from "./AppsPanel";
 
 describe("AppsPanel", () => {
-  let apps: { sendList: ReturnType<typeof vi.fn>; sendApprove: ReturnType<typeof vi.fn>; sendRevoke: ReturnType<typeof vi.fn>; sendDrive: ReturnType<typeof vi.fn> };
+  let apps: { sendList: ReturnType<typeof vi.fn>; sendApprove: ReturnType<typeof vi.fn>; sendRevoke: ReturnType<typeof vi.fn>; sendPassword: ReturnType<typeof vi.fn> };
   let client: MudClient;
 
   beforeEach(() => {
@@ -18,7 +19,7 @@ describe("AppsPanel", () => {
     useAppsStore.getState().reset();
     useConnectionStore.getState().reset();
     useConnectionStore.getState().setSessionReady(true);
-    apps = { sendList: vi.fn(), sendApprove: vi.fn(), sendRevoke: vi.fn(), sendDrive: vi.fn() };
+    apps = { sendList: vi.fn(), sendApprove: vi.fn(), sendRevoke: vi.fn(), sendPassword: vi.fn() };
     client = {
       gmcp: { require: (name: string) => (name === "Client.Apps" ? apps : undefined) },
     } as unknown as MudClient;
@@ -64,7 +65,7 @@ describe("AppsPanel", () => {
   it("asks for a drive and shows its address, user, password and Windows command", () => {
     render(<AppsPanel client={client} />);
     fireEvent.click(screen.getByRole("button", { name: "Connect a drive" }));
-    expect(apps.sendDrive).toHaveBeenCalledWith({ app: "drive" });
+    expect(apps.sendPassword).toHaveBeenCalledWith({ app: "drive" });
     act(() => useAppsStore.getState().setPassword({ app: "drive", url: "https://mongoose.world/dav/", user: "Q", password: "ABC123" }));
     expect(screen.getByRole("textbox", { name: "Address" })).toHaveValue("https://mongoose.world/dav/");
     expect(screen.getByRole("textbox", { name: "User name" })).toHaveValue("Q");
@@ -77,7 +78,7 @@ describe("AppsPanel", () => {
   it("asks for an MQTT password and shows the broker's host, port, user, password and topics", () => {
     render(<AppsPanel client={client} />);
     fireEvent.click(screen.getByRole("button", { name: "Get an MQTT password" }));
-    expect(apps.sendDrive).toHaveBeenCalledWith({ app: "mqtt" });
+    expect(apps.sendPassword).toHaveBeenCalledWith({ app: "mqtt" });
     act(() =>
       useAppsStore.getState().setPassword({
         app: "mqtt",
@@ -117,6 +118,28 @@ describe("AppsPanel", () => {
     act(() => useAppsStore.getState().setPassword({ app: "mqtt", url: "mqtts://mongoose.world:8883", user: "Q", password: "M1" }));
     expect(screen.getByRole("textbox", { name: "Password" })).toHaveValue("D1");
     expect(screen.getByRole("textbox", { name: "MQTT password" })).toHaveValue("M1");
+  });
+
+  it("asks for a Claude Code password and shows the claude mcp add command", () => {
+    render(<AppsPanel client={client} />);
+    fireEvent.click(screen.getByRole("button", { name: "Get a Claude Code password" }));
+    expect(apps.sendPassword).toHaveBeenCalledWith({ app: "mcp" });
+    act(() => useAppsStore.getState().setPassword({ app: "mcp", url: "https://mongoose.world/mcp", user: "Q", password: "T0K" }));
+    expect(screen.getByRole("textbox", { name: "Claude Code command" })).toHaveValue(
+      'claude mcp add --transport http mongoose https://mongoose.world/mcp --header "Authorization: Bearer T0K"',
+    );
+    expect(screen.getByRole("textbox", { name: "Bearer token" })).toHaveValue("T0K");
+    expect(claudeMcpCommand("https://m/mcp", "X")).toBe('claude mcp add --transport http mongoose https://m/mcp --header "Authorization: Bearer X"');
+  });
+
+  it("fills in a sign-in code a link brought, without approving it", () => {
+    offerApproveCode("BCDF-GHJK");
+    render(<AppsPanel client={client} />);
+    expect(screen.getByRole("textbox", { name: "Code the app shows" })).toHaveValue("BCDF-GHJK");
+    expect(apps.sendApprove).not.toHaveBeenCalled();
+    expect(useLaunchStore.getState().approveCode).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(apps.sendApprove).toHaveBeenCalledWith({ code: "BCDF-GHJK" });
   });
 
   it("shows the server's answer", () => {

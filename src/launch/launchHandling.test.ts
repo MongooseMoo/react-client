@@ -28,7 +28,7 @@ beforeEach(() => {
   sendCommand.mockClear();
   window.mudClient = { sendCommand } as unknown as MudClient;
   useInputStore.setState({ text: '' });
-  useLaunchStore.setState({ sharedFiles: [], filesRequest: 0, database: undefined, confirmedDatabase: undefined });
+  useLaunchStore.setState({ sharedFiles: [], filesRequest: 0, database: undefined, confirmedDatabase: undefined, approveCode: undefined, appsRequest: 0 });
   usePersonalDataStore.setState({ owner: { runtime: 'live', playerUuid: 'p', playerRef: '#1' } });
 });
 
@@ -196,6 +196,26 @@ describe('shares', () => {
     await handleLaunchUrl(new URL(`https://client.mongoose.world/?share=${refusal}`));
     expect(spoken).toHaveBeenCalledWith(expect.stringContaining(words), 'polite');
     expect(useInputStore.getState().text).toBe('');
+  });
+});
+
+describe('app sign-in codes', () => {
+  it('holds the code for the Apps tab and asks for the tab, approving nothing', async () => {
+    await handleLaunchUrl(new URL('https://client.mongoose.world/?approve=%20BCDF-GHJK%20'));
+    expect(useLaunchStore.getState()).toMatchObject({ approveCode: 'BCDF-GHJK', appsRequest: 1 });
+    expect(sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('ignores an empty code', async () => {
+    await handleLaunchUrl(new URL('https://client.mongoose.world/?approve=%20'));
+    expect(useLaunchStore.getState()).toMatchObject({ approveCode: undefined, appsRequest: 0 });
+  });
+
+  it('removes the code from the page URL', async () => {
+    window.history.replaceState(null, '', '/?mode=host&approve=BCDF-GHJK');
+    startLaunchHandling();
+    await vi.waitFor(() => expect(useLaunchStore.getState().approveCode).toBe('BCDF-GHJK'));
+    expect(window.location.search).toBe('?mode=host');
   });
 });
 

@@ -20,15 +20,16 @@ export class GMCPMessageClientAppsResult extends GMCPMessage {
     public readonly message!: string;
 }
 
-/** The apps the Apps tab can get a password for: the WebDAV drive and the MQTT broker. */
-export type ClientAppsPasswordApp = "drive" | "mqtt";
+/** The apps the Apps tab can get a password for: the WebDAV drive, the MQTT broker and the MCP server. */
+export type ClientAppsPasswordApp = "drive" | "mqtt" | "mcp";
 
 /**
  * A new password for one app and where to use it: for "drive" the WebDAV
  * address to mount, for "mqtt" the broker (mqtts://host:port) and the topics
- * the player may use. Shown once; asking again replaces that app's password.
+ * the player may use, for "mcp" the MCP server address that AI tools such as
+ * Claude Code connect to. Shown once; asking again replaces that app's password.
  */
-export class GMCPMessageClientAppsDrive extends GMCPMessage {
+export class GMCPMessageClientAppsPassword extends GMCPMessage {
     public readonly app!: ClientAppsPasswordApp;
     public readonly url!: string;
     public readonly user!: string;
@@ -37,7 +38,7 @@ export class GMCPMessageClientAppsDrive extends GMCPMessage {
     public readonly topics?: string;
 }
 
-export class GMCPMessageClientAppsDriveRequest extends GMCPMessage {
+export class GMCPMessageClientAppsPasswordRequest extends GMCPMessage {
     public readonly app!: ClientAppsPasswordApp;
 }
 
@@ -52,7 +53,7 @@ export class GMCPMessageClientAppsRevoke extends GMCPMessage {
 type Empty = Record<string, never>;
 
 const appsList = gmcpJsonMessage<"List", GMCPMessageClientAppsList, Empty>("List");
-const appsDrive = gmcpJsonMessage<"Drive", GMCPMessageClientAppsDrive, GMCPMessageClientAppsDriveRequest>("Drive");
+const appsPassword = gmcpJsonMessage<"Password", GMCPMessageClientAppsPassword, GMCPMessageClientAppsPasswordRequest>("Password");
 const appsResult = gmcpJsonMessage<"Result", GMCPMessageClientAppsResult>("Result");
 const appsApprove = gmcpJsonMessage<"Approve", never, GMCPMessageClientAppsApprove>("Approve");
 const appsRevoke = gmcpJsonMessage<"Revoke", never, GMCPMessageClientAppsRevoke>("Revoke");
@@ -61,7 +62,7 @@ const GMCPClientAppsBase = GMCPPackage.with({
     packageName: "Client.Apps",
     messages: [
         duplex(appsList),
-        duplex(appsDrive),
+        duplex(appsPassword),
         inbound(appsResult),
         outbound(appsApprove),
         outbound(appsRevoke),
@@ -70,8 +71,8 @@ const GMCPClientAppsBase = GMCPPackage.with({
 
 /**
  * Client.Apps: the apps that can act as the player on the web, approving an
- * app's device code, revoking one, and a password for the MOO's WebDAV drive
- * or its MQTT broker. The server answers List, Result and Drive; see
+ * app's device code, revoking one, and a password for the MOO's WebDAV drive,
+ * its MQTT broker or its MCP server. The server answers List, Result and Password; see
  * docs/GMCP/client-apps.md.
  */
 export class GMCPClientApps extends GMCPClientAppsBase {
@@ -82,9 +83,10 @@ export class GMCPClientApps extends GMCPClientAppsBase {
             useAppsStore.getState().setResult(data);
             announce(data.message, "assertive");
         });
-        this.on("drive", (data) => {
+        this.on("password", (data) => {
             useAppsStore.getState().setPassword(data);
-            announce(`${data.app === "mqtt" ? "MQTT" : "Drive"} password ready. It is shown once.`, "assertive");
+            const label = data.app === "mqtt" ? "MQTT" : data.app === "mcp" ? "Claude Code" : "Drive";
+            announce(`${label} password ready. It is shown once.`, "assertive");
         });
     }
 

@@ -259,6 +259,17 @@ function App() {
     setSidebarFocusRequest({ index });
   }, [filesRequest, client]);
 
+  // An app's sign-in code waits in the Apps tab; bring it up for it.
+  const appsRequest = useLaunchStore((state) => state.appsRequest);
+  useEffect(() => {
+    if (!appsRequest || !client) return;
+    const index = sidebarRef.current?.indexOfTab('apps-tab') ?? -1;
+    if (index < 0) return;
+    setShowSidebar(true);
+    setSidebarCollapsed(false);
+    setSidebarFocusRequest({ index });
+  }, [appsRequest, client]);
+
   useLayoutEffect(() => {
     if (sidebarFocusRequest && showSidebar && !sidebarCollapsed) {
       sidebarRef.current?.switchToTab(sidebarFocusRequest.index);
