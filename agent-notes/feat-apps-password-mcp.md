@@ -13,6 +13,7 @@ The MOO side (`$gmcp_apps`) is renamed at the same time by claude180; the client
 ## Surprises
 
 - `npm ci` in this worktree fails: "git dep preparation failed ... EALLOWSCRIPTS --allow-scripts is not allowed in project-scoped installs". Typecheck, lint and vitest were therefore not run locally; CI on the PR is the check.
+- PR #230's first CI run: typecheck and `npm test` passed; "Install browser" failed with "Playwright does not support chromium on ubuntu26.04-x64" (ubuntu-latest is migrating to 26.04; microsoft/playwright#40117 open). The test job is pinned to `ubuntu-24.04` in `build-test.yml`.
 
 ## Decisions and why
 
