@@ -21,4 +21,4 @@ The MOO side (`$gmcp_apps`) is renamed at the same time by claude180; the client
 
 ## Next step
 
-Type check, lint, vitest; PR; CI; merge; deploy with the MOO rename.
+PR #230 is open and green. Merging to master deploys (the Deploy job in `build-test.yml`), so merge only with Q's go-ahead and when the MOO's `$gmcp_apps` rename to Password goes live; then live check, remove worktree and branch.
