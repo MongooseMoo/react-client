@@ -6,20 +6,8 @@ import {
 } from "./fileTransferPeers";
 
 const players: UserlistPlayer[] = [
-  {
-    Object: "#100",
-    Name: "Quinn",
-    Icon: 1,
-    away: false,
-    idle: true,
-  },
-  {
-    Object: "#200",
-    Name: "Riley",
-    Icon: 2,
-    away: true,
-    idle: false,
-  },
+  { id: "#100", name: "Quinn", role: "", rank: 1, away: false, idle: true, lastActive: null, connectedAt: null },
+  { id: "#200", name: "Riley", role: "", rank: 2, away: true, idle: false, lastActive: null, connectedAt: null },
 ];
 
 describe("file transfer peers", () => {

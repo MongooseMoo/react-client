@@ -22,6 +22,11 @@ Tests: `src/mcp/packages/userlist.test.ts` replays the real guest login capture;
 - Status is text in every option (not only color); the dot also changes shape (filled, ring, square) and has a forced-colors style.
 - Your own entry has no actions.
 
+## Surprises
+
+- First CI run (PR #231): my two new test files passed; `src/fileTransferPeers.test.ts` and `src/mcp.test.ts` still built the old `{Object, Name, Icon}` shape. My search for old fields matched `.Object` but not `Object:` literals. Fixed; `mcp.test.ts` now checks the store after reset instead of the package's private fields.
+- Local `npm ci` in this worktree fails (`--allow-scripts is not allowed in project-scoped installs`); CI is the test run.
+
 ## Next step
 
-CI on the PR, merge, check the deployed client.
+CI on the PR, merge, check the deployed client in a browser.
