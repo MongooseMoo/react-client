@@ -28,8 +28,8 @@ it('numbers tabs by their place on screen, so a tab that arrives renumbers those
   render(<><button type="button">Elsewhere</button><Sidebar ref={ref} client={client} collapsed={false} onToggleCollapse={vi.fn()} /></>);
   expect(screen.getByRole('tablist', { name: 'Sidebar' })).toBeTruthy();
   const outside = screen.getByRole('button', { name: 'Elsewhere' });
-  const usersPanel = () => screen.getByRole('tabpanel', { name: 'Users' });
-  expect(screen.getByRole('tab', { name: 'Users' })).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+1');
+  const usersPanel = () => screen.getByRole('tabpanel', { name: 'Players' });
+  expect(screen.getByRole('tab', { name: 'Players' })).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+1');
   outside.focus();
   act(() => { ref.current?.switchToTab(0); });
   expect(usersPanel()).toContainElement(document.activeElement as HTMLElement);
@@ -38,12 +38,12 @@ it('numbers tabs by their place on screen, so a tab that arrives renumbers those
   expect(usersPanel()).toContainElement(document.activeElement as HTMLElement);
 
   act(() => useRoomStore.getState().setRoomInfo({ num: 1, name: 'Room', exits: {} }));
-  expect(screen.getByRole('tab', { name: 'Users' })).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+3');
+  expect(screen.getByRole('tab', { name: 'Players' })).toHaveAttribute('aria-keyshortcuts', 'Control+Shift+3');
   expect(ref.current?.indexOfTab('users-tab')).toBe(2);
   outside.focus();
   act(() => { ref.current?.switchToTab(2); });
   expect(usersPanel()).toContainElement(document.activeElement as HTMLElement);
-  // Room, Map, Users, Help, Voice chat, Files, Photos, Properties, Apps.
+  // Room, Map, Players, Help, Voice chat, Files, Photos, Properties, Apps.
   expect(ref.current?.hasTab(6)).toBe(true);
   expect(ref.current?.hasTab(8)).toBe(true);
   expect(ref.current?.hasTab(9)).toBe(false);
@@ -59,7 +59,7 @@ it('orders every tab by purpose and numbers them without gaps', () => {
     ['Room', 'Control+Shift+1'],
     ['Map', 'Control+Shift+2'],
     ['Inventory', 'Control+Shift+3'],
-    ['Users', 'Control+Shift+4'],
+    ['Players', 'Control+Shift+4'],
     ['Help', 'Control+Shift+5'],
     ['Voice chat', 'Control+Shift+6'],
     ['Files', 'Control+Shift+7'],

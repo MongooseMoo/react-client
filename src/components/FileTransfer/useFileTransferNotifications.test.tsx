@@ -75,7 +75,7 @@ describe('useFileTransferNotifications', () => {
 
   it('names the sender as the user list does, not by address', () => {
     useUserlistStore.setState({
-      players: [{ Object: '#200', Name: 'Riley', Icon: 0, away: false, idle: false }],
+      players: [{ id: '#200', name: 'Riley', role: '', rank: 0, away: false, idle: false, lastActive: null, connectedAt: null }],
     });
     const { client, offer, sendNotification } = clientWith(true);
     render(<TestHook client={client} />);

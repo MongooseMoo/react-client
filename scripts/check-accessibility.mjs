@@ -154,7 +154,7 @@ try {
   await helpTab.click();
   await expect(helpTab).toBeFocused();
   await page.keyboard.press('ArrowLeft');
-  await expect(page.getByRole('tab', { name: 'Users', exact: true })).toBeFocused();
+  await expect(page.getByRole('tab', { name: 'Players', exact: true })).toBeFocused();
   await page.keyboard.press('Home');
   await expect(roomTab).toBeFocused();
   evidence.journeys.push({ task: 'Navigate the sidebar tablist', result: 'Click, ArrowLeft and Home keep focus on the selected tab' });
