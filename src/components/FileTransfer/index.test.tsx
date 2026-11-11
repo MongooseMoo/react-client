@@ -30,8 +30,8 @@ const ME = '#1';
 const ALICE = '#2';
 const BOB = '#3';
 const users: UserlistPlayer[] = [
-  { Object: ALICE, Name: 'Alice', Icon: 0, away: false, idle: false },
-  { Object: BOB, Name: 'Bob', Icon: 0, away: false, idle: false },
+  { id: ALICE, name: 'Alice', role: '', rank: 0, away: false, idle: false, lastActive: null, connectedAt: null },
+  { id: BOB, name: 'Bob', role: '', rank: 0, away: false, idle: false, lastActive: null, connectedAt: null },
 ];
 
 let hub: SignalingHub;

@@ -12,6 +12,7 @@ import {
   parseMcpMultiline,
 } from './mcp';
 import type { EditorSession, McpMessage } from './mcp';
+import { useUserlistStore } from './stores/userlistStore';
 
 function expectMessage(value: McpMessage | null): McpMessage {
   expect(value).not.toBeNull();
@@ -329,18 +330,19 @@ describe('McpSession', () => {
 
     expect(userlists.at(-1)).toEqual([
       {
-        Object: '5678',
-        Name: 'Bob',
-        Icon: 5,
+        id: '5678',
+        name: 'Bob',
+        role: '',
+        rank: 5,
         away: false,
         idle: false,
+        lastActive: null,
+        connectedAt: null,
       },
     ]);
 
     userlist.reset();
 
-    expect(userlist.player).toBeUndefined();
-    expect(userlist.fields).toEqual(['Object', 'Name', 'Icon']);
-    expect(userlist.players).toEqual([]);
+    expect(useUserlistStore.getState()).toMatchObject({ players: [], you: null, menu: [], hasReceivedList: false });
   });
 });

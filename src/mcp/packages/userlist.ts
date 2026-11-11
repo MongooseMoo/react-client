@@ -3,33 +3,29 @@ import {
   inbound,
   messageEnvelope,
 } from '../../protocol/messages';
-import { useUserlistStore } from '../../stores/userlistStore';
+import { type UserlistMenuItem, useUserlistStore } from '../../stores/userlistStore';
 import { mooListToArray, type MooListValue } from '../mooList';
 import { MCPPackage } from '../package';
 import type { McpMessage } from '../types';
 
+/** One connected player, as the server's who list describes them. */
 export interface UserlistPlayer {
-  Object: string;
-  Name: string;
-  Icon: number;
-  away: boolean;
+  /** Object number, e.g. "#249". */
+  id: string;
+  name: string;
+  /** The server's label for the player's icon, e.g. "Wizard"; empty when it sent none. */
+  role: string;
+  /** The server's icon number; higher ranks first among equals. */
+  rank: number;
   idle: boolean;
+  away: boolean;
+  /** When the player last typed a command, in this browser's clock (ms); null when unknown. */
+  lastActive: number | null;
+  /** When the player connected, in ms since the epoch; null when unknown. */
+  connectedAt: number | null;
 }
 
 const DEFAULT_FIELDS = ['Object', 'Name', 'Icon'];
-const DEFAULT_ICONS = [
-  'Idle',
-  'Away',
-  'Idle+Away',
-  'Friend',
-  'Newbie',
-  'Inhabitant',
-  'Inhabitant+',
-  'Schooled',
-  'Wizard',
-  'Key',
-  'Star',
-];
 
 const userlist = messageEnvelope('userlist', identityCodec<UserlistPlayer[]>());
 
@@ -38,19 +34,25 @@ const McpVmooUserlistBase = MCPPackage.with({
   messages: [inbound(userlist)] as const,
 });
 
+/**
+ * dns-com-vmoo-userlist: the server sends the whole list once (`=`), then one
+ * change per line: `+` connected, `-` left, `*` changed, `<`/`>` idle and back,
+ * `[`/`]` away and back, `(`/`)` cloaked and visible.
+ */
 export class McpVmooUserlist extends McpVmooUserlistBase {
   public maxVersion = 1.1;
-  public player: string | undefined;
-  public fields: string[] = [...DEFAULT_FIELDS];
-  public icons: string[] = [...DEFAULT_ICONS];
-  public players: UserlistPlayer[] = [];
+  private fields: string[] = [...DEFAULT_FIELDS];
+  private icons: string[] = [];
+  private players = new Map<string, UserlistPlayer>();
 
   handle(message: McpMessage): void {
     switch (message.name) {
       case 'dns-com-vmoo-userlist-you':
-        this.player = message.keyvals.nr;
+        useUserlistStore.getState().setYou(message.keyvals.nr ?? null);
         break;
-
+      case 'dns-com-vmoo-userlist-menu':
+        useUserlistStore.getState().setMenu(parseMenu(message.keyvals.menu ?? '{}'));
+        break;
       default:
         break;
     }
@@ -64,107 +66,114 @@ export class McpVmooUserlist extends McpVmooUserlistBase {
       this.icons = mooListToArray(message.keyvals.icons.trim()).map(String);
     }
     if ('d' in message.keyvals) {
-      this.applyUserlistDelta(message.keyvals.d);
-      this.update();
+      this.applyDelta(message.keyvals.d.trim());
+      this.publish();
     }
   }
 
-  private applyUserlistDelta(delta: string): void {
+  private applyDelta(delta: string): void {
     const mode = delta[0];
+    const values = mooListToArray(delta.slice(1));
+    const ids = () => new Set(values.map(String));
     switch (mode) {
-      case '=': {
-        const list = mooListToArray(delta.slice(1));
-        this.players = list.map((player) => this.playerFromArray(asMooListArray(player)));
+      case '=':
+        this.players = new Map();
+        for (const entry of values) {
+          const player = this.playerFrom(asList(entry));
+          this.players.set(player.id, player);
+        }
+        break;
+      case '+': {
+        const player = this.playerFrom(values);
+        this.players.set(player.id, player);
         break;
       }
-      case '+':
-        this.players.push(this.playerFromArray(mooListToArray(delta.slice(1))));
-        break;
-      case '-': {
-        const idSet = new Set(mooListToArray(delta.slice(1)).map(String));
-        this.players = this.players.filter((player) => !idSet.has(player.Object));
+      case '*': {
+        const player = this.playerFrom(values);
+        const known = this.players.get(player.id);
+        this.players.set(player.id, known ? { ...player, idle: known.idle, away: known.away } : player);
         break;
       }
-      case '*':
-        this.updatePlayer(this.playerFromArray(mooListToArray(delta.slice(1))));
+      case '-':
+      case '(':
+        for (const id of ids()) this.players.delete(id);
+        break;
+      case ')':
+        // The server sends the player with + before this.
         break;
       case '<':
-        this.markPlayersIdle(mooListToArray(delta.slice(1)), true);
+        this.mark(ids(), (player) => ({ ...player, idle: true }));
         break;
       case '>':
-        this.markPlayersIdle(mooListToArray(delta.slice(1)), false);
+        this.mark(ids(), (player) => ({ ...player, idle: false, lastActive: Date.now() }));
         break;
       case '[':
-        this.markPlayersAway(mooListToArray(delta.slice(1)), true);
+        this.mark(ids(), (player) => ({ ...player, away: true }));
         break;
       case ']':
-        this.markPlayersAway(mooListToArray(delta.slice(1)), false);
+        this.mark(ids(), (player) => ({ ...player, away: false }));
         break;
       default:
-        console.log(`Unknown userlist mode ${mode} in ${delta}`);
+        console.warn(`Unknown userlist change ${mode} in ${delta}`);
         break;
     }
   }
 
-  private markPlayersIdle(ids: MooListValue[], idle: boolean): void {
-    const idSet = new Set(ids.map(String));
-    this.players = this.players.map((player) =>
-      idSet.has(player.Object) ? { ...player, idle } : player,
-    );
-  }
-
-  private markPlayersAway(ids: MooListValue[], away: boolean): void {
-    const idSet = new Set(ids.map(String));
-    this.players = this.players.map((player) =>
-      idSet.has(player.Object) ? { ...player, away } : player,
-    );
-  }
-
-  private updatePlayer(user: UserlistPlayer): void {
-    const userIndex = this.players.findIndex((player) => player.Object === user.Object);
-    if (userIndex !== -1) {
-      this.players[userIndex] = user;
-    } else {
-      this.players.push(user);
+  private mark(ids: Set<string>, change: (player: UserlistPlayer) => UserlistPlayer): void {
+    for (const id of ids) {
+      const player = this.players.get(id);
+      if (player) this.players.set(id, change(player));
     }
   }
 
-  private update(): void {
-    this.players.sort((left, right) => sortScore(right) - sortScore(left));
-    useUserlistStore.getState().setPlayers(this.players);
-    this.emitRegisteredMessage(userlist.wireName, this.players);
-
-    function sortScore(player: UserlistPlayer): number {
-      return player.Icon - (player.idle ? 10 : 0) - (player.away ? 20 : 0);
-    }
+  private publish(): void {
+    const players = [...this.players.values()];
+    useUserlistStore.getState().setPlayers(players);
+    this.emitRegisteredMessage(userlist.wireName, players);
   }
 
   override reset(): void {
-    this.player = undefined;
     this.fields = [...DEFAULT_FIELDS];
-    this.icons = [...DEFAULT_ICONS];
-    this.players = [];
+    this.icons = [];
+    this.players = new Map();
     useUserlistStore.getState().reset();
   }
 
-  private playerFromArray(values: MooListValue[]): UserlistPlayer {
-    const player: Partial<UserlistPlayer> = {};
-    values.forEach((value, index) => {
-      const key = this.fields[index] as keyof UserlistPlayer | undefined;
-      if (key) {
-        (player as Record<string, unknown>)[key] = value;
-      }
-    });
+  private playerFrom(values: MooListValue[]): UserlistPlayer {
+    const field = (name: string) => values[this.fields.indexOf(name)];
+    const rank = Number(field('Icon') ?? 0);
+    const idleSeconds = field('Idle');
     return {
-      Object: String(player.Object ?? ''),
-      Name: String(player.Name ?? ''),
-      Icon: Number(player.Icon ?? 0),
-      away: false,
+      id: String(field('Object') ?? ''),
+      name: String(field('Name') ?? ''),
+      role: this.icons[rank - 1] ?? '',
+      rank,
       idle: false,
+      away: false,
+      lastActive: typeof idleSeconds === 'number' ? Date.now() - idleSeconds * 1000 : null,
+      connectedAt: epochMs(field('LastConnectTime')),
     };
   }
 }
 
-function asMooListArray(value: MooListValue): MooListValue[] {
+/** Seconds since the epoch to ms; null for missing values and placeholders in the future. */
+function epochMs(value: MooListValue | undefined): number | null {
+  if (typeof value !== 'number' || value <= 0) return null;
+  const ms = value * 1000;
+  return ms > Date.now() + 60_000 ? null : ms;
+}
+
+function asList(value: MooListValue): MooListValue[] {
   return Array.isArray(value) ? value : [value];
+}
+
+/** The server's menu: {label, command} pairs with 0 as a separator; & marks a shortcut letter. */
+function parseMenu(text: string): UserlistMenuItem[] {
+  const items: UserlistMenuItem[] = [];
+  for (const entry of mooListToArray(text)) {
+    if (Array.isArray(entry) && entry.length >= 2) {
+      items.push({ label: String(entry[0]).replace(/&(.)/g, '$1'), command: String(entry[1]) });
+    }
+  }
+  return items;
 }

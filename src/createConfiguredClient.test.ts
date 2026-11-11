@@ -214,11 +214,14 @@ describe("createConfiguredClient", () => {
 
     expect(useUserlistStore.getState().players).toEqual([
       {
-        Object: "1234",
-        Name: "Alice",
-        Icon: 4,
+        id: "1234",
+        name: "Alice",
+        role: "",
+        rank: 4,
         away: false,
         idle: false,
+        lastActive: null,
+        connectedAt: null,
       },
     ]);
     expect(useUserlistStore.getState().hasReceivedList).toBe(true);

@@ -223,9 +223,9 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       },
       {
         id: 'users-tab',
-        label: 'Users',
+        label: 'Players',
         icon: <FaUsers />,
-        content: <Userlist users={users} />,
+        content: <Userlist client={client} />,
         condition: true,
       },
       {
@@ -328,10 +328,6 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
 
     // A newly offered file expands the file transfer panel.
     useEffect(() => client.onFileTransferOffer(() => setFileTransferExpanded(true)), [client]);
-
-    // If no tabs are visible (e.g., only Users tab exists but no users yet),
-    // you might want to render nothing or a placeholder.
-    // For now, we assume at least one tab will always be potentially visible.
 
     const collapseButton = (
       <button
