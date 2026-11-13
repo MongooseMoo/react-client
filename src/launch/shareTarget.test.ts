@@ -170,6 +170,13 @@ describe('launch inbox', () => {
 });
 
 describe('share target', () => {
+  // Response.formData() is Node's (undici). From Node 26 it asserts every file
+  // part is its own File, and jsdom's global File is not, so the parse threw and
+  // every share came back 'failed'. Browsers parse with their own File; give
+  // undici Node's here so the handler is tested, not the jsdom/undici mismatch.
+  beforeEach(() => { vi.stubGlobal('File', NodeFile); });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
   it('drafts shared text and keeps shared files for the page it opens', async () => {
     const body = multipart(
       { title: 'Fountain', text: 'look at\nfountain', url: 'https://example.com/f' },
