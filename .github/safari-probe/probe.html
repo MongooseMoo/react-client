@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>decode probe</title>
+<script src="onset.js"></script>
+<script>
+// Decodes each served file at its own sample rate (no resampling) and posts
+// the onsets to serve.py. A file that fails to decode is a result: its error
+// name and message are recorded and the loop goes on to the next file.
+const FILES = [
+  ["sonniss-gdc/2020/fox-audio-post-production-mechanimal-vocalization/mechanimal-096.m4a", 96000],
+  ["sonniss-gdc/2019/the-chris-alan-gliss-bliss/marimba-gliss-up-down-flourish-slow-04.m4a", 44100],
+  ["sonniss-gdc/2018/bluezone-corporation-metal-debris/bluezone-bc0236-metal-whoosh-021.m4a", 44100],
+  ["sonniss-gdc/2020/matias-mac-sd-retrace/fx-transition-06.m4a", 48000],
+  ["sonniss-gdc/2020/smart-sound-fx-user-interaction/slide-generic-small-plastic-turn-back-02.m4a", 48000],
+  ["mud/alteraeon-mushz/world-sounds/combat/grunts/1/neuter/65.m4a", 22050],
+  ["user-131/reaction/applaud-8-1.m4a", 44100],
+  ["chatmud/spongebob-wav.m4a", 44100],
+  ["destruction/glass/window-broken.m4a", 44100],
+];
+async function probe([path, rate]) {
+  const resp = await fetch("https://mongoose.world/sounds/" + path, {cache: "no-store"});
+  if (!resp.ok) throw new Error("HTTP " + resp.status + " fetching the file");
+  const bytes = await resp.arrayBuffer();
+  const buf = await new OfflineAudioContext(1, 1, rate).decodeAudioData(bytes);
+  const channels = [];
+  for (let c = 0; c < buf.numberOfChannels; c++) channels.push(buf.getChannelData(c));
+  return {path, sampleRate: buf.sampleRate, length: buf.length, channels: buf.numberOfChannels,
+          bytes: bytes.byteLength, ...measureOnsets(channels)};
+}
+(async () => {
+  const out = {userAgent: navigator.userAgent, results: []};
+  for (const f of FILES) {
+    try { out.results.push(await probe(f)); }
+    catch (e) { out.results.push({path: f[0], error: e.name + ": " + e.message}); }
+  }
+  await fetch("/result", {method: "POST", body: JSON.stringify(out)});
+  document.title = "done";
+})();
+</script>
