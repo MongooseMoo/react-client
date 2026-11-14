@@ -6,7 +6,7 @@ A manually started workflow that measures where Safari's `decodeAudioData` start
 
 ## State
 
-- `.github/workflows/safari-decode-probe.yml`: `workflow_dispatch` only. Safari via safaridriver on `macos-15`, `macos-26`, `xcode-27`; simulator Safari on iOS 26.4 (`macos-26`) and iOS 27.2 (`xcode-27`). Uploads each `result.json` as an artifact.
+- `.github/workflows/safari-decode-probe.yml`: `workflow_dispatch` only. Safari 27.2 via safaridriver on `macos-15` and `macos-26`; simulator Safari on iOS 26.4 (`macos-26`). Uploads each `result.json` as an artifact.
 - `.github/safari-probe/`: `probe.html` (fetches nine files from `https://mongoose.world/sounds/`, decodes each at its own rate in an `OfflineAudioContext`), `onset.js` (onset detection), `serve.py` (serves the page, writes the POSTed result), `drive_safari.py` (WebDriver over HTTP), `check.py` (classifies each file's onset offset; exits 1 unless every file honours the edit list).
 - `node --test .github/safari-probe/onset_check.js` passes locally. Nothing else has run: no Safari, simulator or workflow run yet.
 
@@ -21,9 +21,14 @@ A manually started workflow that measures where Safari's `decodeAudioData` start
 
 ## Surprises
 
-- actionlint v1.7.12 does not know the `xcode-27` label (preview image) and fails on it, matrix values included. Open decision: declare the label in `.github/actionlint.yaml`, or drop the two `xcode-27` jobs. Until then the PR's lint step goes red.
+- actionlint v1.7.12, run by `build-test.yml`, does not know the `xcode-27` label (preview image) and fails on it, matrix values included. Decision: the two `xcode-27` jobs were removed so the existing lint check passes unchanged; declaring the label in `.github/actionlint.yaml` changes how an existing check is configured, which is the owner's decision.
+  Removed (`xcode-27` = macOS 27.0.1, Safari/SafariDriver 27.0.1 (22625.1.29.11.28), iOS 27.2 simulator runtime with iPhone 17; runner-images `images/macos/xcode-27-arm64-Readme.md`). To add back, once the label is declared: in job `safari` set `runner: [macos-15, macos-26, xcode-27]`; in job `ios-simulator` add to `matrix.include`:
+  ```yaml
+          - runner: xcode-27
+            runtime: iOS-27-2
+  ```
 - A `workflow_dispatch` workflow can only be started once its file exists on the default branch (GitHub docs, "Events that trigger workflows", `workflow_dispatch`). It cannot be run from this branch before it is merged.
 
 ## Next step
 
-Decide the `xcode-27` question, push, open the PR, merge it. Then start the workflow from the Actions tab ("Safari decode probe", Run workflow) or `gh workflow run safari-decode-probe.yml --ref master`, and read each job's "Classify the onsets" log and its `result.json` artifact. Fix ordinary CI failures (runtime identifier strings, first-run prompts, simulator networking) from the logs.
+Push, open the PR, merge it. Then start the workflow from the Actions tab ("Safari decode probe", Run workflow) or `gh workflow run safari-decode-probe.yml --ref master`, and read each job's "Classify the onsets" log and its `result.json` artifact. Fix ordinary CI failures (runtime identifier strings, first-run prompts, simulator networking) from the logs.

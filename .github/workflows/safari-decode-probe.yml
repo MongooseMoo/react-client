@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-26, xcode-27]
+        runner: [macos-15, macos-26]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
@@ -50,8 +50,6 @@ jobs:
         include:
           - runner: macos-26
             runtime: iOS-26-4
-          - runner: xcode-27
-            runtime: iOS-27-2
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
