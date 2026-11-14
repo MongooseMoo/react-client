@@ -1,0 +1,80 @@
+name: Safari decode probe
+
+# Manual only. Measures where Safari's decodeAudioData starts the audio of
+# served m4a files, against ffmpeg's edit-list-honouring decode.
+# Files and expected numbers: .github/safari-probe/check.py
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+# A new manual run replaces one still running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safari:
+    name: Safari on ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-26, xcode-27]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Show macOS and Safari versions
+        run: sw_vers && /usr/bin/safaridriver --version
+      - name: Decode the files in Safari
+        run: |
+          python3 .github/safari-probe/serve.py result.json &
+          sleep 2
+          python3 .github/safari-probe/drive_safari.py result.json
+      - name: Classify the onsets
+        run: python3 .github/safari-probe/check.py result.json
+      - name: Upload the raw result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: safari-${{ matrix.runner }}
+          path: result.json
+
+  ios-simulator:
+    name: Simulator Safari on ${{ matrix.runtime }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            runtime: iOS-26-4
+          - runner: xcode-27
+            runtime: iOS-27-2
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: List simulator runtimes
+        run: xcrun simctl list runtimes
+      - name: Decode the files in simulator Safari
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+        run: |
+          python3 .github/safari-probe/serve.py result.json &
+          UDID=$(xcrun simctl create probe "iPhone 17" "com.apple.CoreSimulator.SimRuntime.${RUNTIME}")
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl openurl "$UDID" http://127.0.0.1:8000/probe.html
+          for _ in $(seq 1 180); do [ -f result.json ] && break; sleep 1; done
+          test -f result.json
+      - name: Classify the onsets
+        run: python3 .github/safari-probe/check.py result.json
+      - name: Upload the raw result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-${{ matrix.runtime }}
+          path: result.json
