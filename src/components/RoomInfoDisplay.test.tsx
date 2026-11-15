@@ -58,7 +58,7 @@ describe("RoomInfoDisplay", () => {
         area: "Daystrom Annex",
         exits: { west: 100, northeast: 102 },
       },
-      roomPlayers: [{ name: "q", fullname: "Q" }],
+      roomPlayers: [{ name: "marlow", fullname: "Marlow" }],
     });
     useItemsStore.getState().setLocationItems("room", [
       { id: "lantern", name: "Lantern", location: "room" },
@@ -67,7 +67,7 @@ describe("RoomInfoDisplay", () => {
     render(<RoomInfoDisplay client={client as unknown as MudClient} />);
     expect(screen.getByText("Codex's Lab")).toBeTruthy();
     expect(screen.getByText("Area: Daystrom Annex")).toBeTruthy();
-    expect(screen.getByText("Q")).toBeTruthy();
+    expect(screen.getByText("Marlow")).toBeTruthy();
     expect(screen.getByText("Lantern")).toBeTruthy();
   });
 });

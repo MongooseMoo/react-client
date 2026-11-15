@@ -101,7 +101,7 @@ describe('GMCPClientSpatial', () => {
       entities: [
         {
           id: 'player-1',
-          name: 'Q',
+          name: 'Marlow',
           kind: 'player',
           position: [1, 2, 3],
         },
@@ -130,7 +130,7 @@ describe('GMCPClientSpatial', () => {
     expect(spatial.spatialEntities).toEqual({
       'player-1': {
         id: 'player-1',
-        name: 'Q',
+        name: 'Marlow',
         kind: 'player',
         position: [-1, 3, 2],
       },
@@ -198,7 +198,7 @@ describe('GMCPClientSpatial', () => {
       spatialEntities: {
         'player-1': {
           id: 'player-1',
-          name: 'Q',
+          name: 'Marlow',
           kind: 'player',
           position: [1, 1, 1],
         },
@@ -227,7 +227,7 @@ describe('GMCPClientSpatial', () => {
     step(300);
     expect(useSpatialStore.getState().spatialEntities['player-1']).toEqual({
       id: 'player-1',
-      name: 'Q',
+      name: 'Marlow',
       kind: 'player',
       position: [-2, 4, 3],
       velocity: [-0.5, 0, 0],

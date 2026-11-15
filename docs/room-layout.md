@@ -45,6 +45,42 @@ the middle of the room, so it spans `-width/2..width/2` and `-depth/2..depth/2`;
 | `things[].classes` | Optional. The registered `$` names of the thing's ancestors, nearest first, without the `$` (`["table", "furniture", "thing"]`). The client draws a thing by the first name it knows. |
 | `things[].capabilities` | Optional. The capability names the thing declares (`furniture_seating`, `support_surface`). |
 | `things[].material` | Optional. What it is made of: `[{"species": "wood", "fraction": 0.9}, …]`. The client colours a thing by its largest fraction. |
+| `things[].appearance` | Optional, `player` and `person` only; absent when the character has no appearance record. How the person looks to this recipient (below). The person's height is their box's height in `shapes`, not repeated here. |
+
+### `things[].appearance`
+
+Every key is optional; a missing key means nothing remarkable and is drawn plainly. Colours are
+`{"name": "navy", "hex": "#01153e"}` from the MOO's palette, so the words and the picture agree.
+
+```json
+{"label": "the short red-haired woman", "posture": "standing", "build": "thin", "age_years": 24,
+ "skin": {"name": "fair", "hex": "#f3e7db"},
+ "hair": {"length_cm": 40, "texture": "straight", "style": "loose", "name": "red", "hex": "#9a3001"},
+ "eyes": {"name": "green", "hex": "#3a7d44"},
+ "face": {"shape": "heart", "nose": "button", "lips": "full", "brows": "arched", "ears": "average"},
+ "features": ["freckles"],
+ "garments": [{"name": "a navy jumper", "areas": ["torso", "arms"], "layer": 2,
+               "colour": {"name": "navy", "hex": "#01153e"}}]}
+```
+
+| Key | Meaning |
+|---|---|
+| `label` | The shortest phrase that tells this person from the others present, worked out by the server for this recipient. Shown as text; the client never computes one. |
+| `posture` | `standing`, `sitting` or `reclining`. |
+| `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers`, `horns` and `pointed ears`. |
+| `build` | `average`, `athletic`, `thin`, `curvy`, `chunky`, `pudgy`, `muscular` or `dumpy`; anything else is drawn as average. |
+| `age_years` | A child's head is drawn larger for their height. |
+| `skin`, `eyes` | Colours. |
+| `hair` | `length_cm` (under 1 none, under 8 short, under 25 medium, longer long), `texture` (`straight`, `wavy`, `curly`, `coily`), `style`, and its colour. Absent when bald or covered. |
+| `facial_hair` | `kind` (`none`, `stubble`, `moustache`, `goatee`, `beard`) and its colour; without a colour, the hair's. |
+| `face` | `shape` (`oval`, `round`, `square`, `long`, `heart`), `nose`, `lips`, `brows`, `ears`. |
+| `features` | A list of keys for small features. The portrait draws `freckles`, `glasses`, `sunglasses`, `eyepatch`, `earrings`, `mole` and `dimples`, in the outline colour; other keys are ignored. |
+| `face_hidden` | `true` when a form hides the face; no eyes, brows, mouth, facial hair or face features are drawn. |
+| `marks` | `[{"kind": "scar", "area": "cheek"}]`, uncovered marks only. The portrait shows those on the head and neck. |
+| `garments` | Worn things: `areas` they cover (`head`, `neck`, `torso`, `arms`, `hands`, `waist`, `legs`, `feet`), `layer` (higher is outside) and `colour` when it has one. Each area is drawn in its outermost garment's colour, plain cloth grey when that garment has no colour, skin when bare. |
+
+The client checks none of these on arrival; anything missing or of the wrong type is treated as
+unremarkable.
 
 ## Keeping it current
 
@@ -77,13 +113,19 @@ nearest wall, a bookshelf or cabinet as a tall box with shelves, a moving photog
 picture, a TV as a dark screen, a door leaf as a door, a book or note as a flat block; anything
 else as its boxes and spheres. In 3D they are coloured by their largest material (wood and pine brown, lcd
 near-black, paper cream, foam and cotton fabric blue, plastic grey, metal and steel steel-grey, anything
-else a neutral stone). The plan marks tables' legs, seats' backs and doors' swing. The 3D views are
+else a neutral stone). People are figures: head, body, arms and legs sized by their height and
+build, painted with their skin, hair, eye and garment colours, with hair by length and texture,
+facial hair, a head garment, and parts for their traits; standing, sitting or lying as `posture`
+says, and turned to face their `Client.Spatial` forward (south when there is none). Where two
+neighbouring colours fall below 3:1 contrast, a thin dark or light band outlines the seam. A
+person without `appearance` is the same figure in the person colour, you in blue. The plan marks tables' legs, seats' backs and doors' swing. The 3D views are
 one image to a screen reader with the same name as the plan, and clicking a doorway in them
 sends its exit too.
 
 - The drawing: walls; doorways as gaps in the walls with their exit names outside; each thing's
-  footprint from above (boxes as rectangles, spheres as circles); people in their own colour; you
-  ringed; fixed things outlined heavier; mounted things dashed; a floor grid, a scale bar and a
+  footprint from above (boxes as rectangles, spheres as circles); people as round tokens, in
+  their main garment's colour (or skin) with their head in hair or head-covering colour when they
+  send `appearance`, otherwise in the person colour; you ringed; fixed things outlined heavier; mounted things dashed; a floor grid, a scale bar and a
   north arrow. Labels move aside so they do not cover each other.
 - Zoom with the wheel, a pinch, the Zoom in / Zoom out buttons, or `+` and `-` on the picture;
   drag or use the arrow keys to pan; `0` or Whole room shows the whole room.
@@ -93,5 +135,8 @@ sends its exit too.
   exits, people and things it holds. Below it, headed lists give the size, each exit
   ("west: 0.9 m doorway in the west wall, 1.3 m from the south wall") and each person and thing
   ("oak table, 1.2 m from the north wall, near the west wall"; with `classes` and `material`,
-  "coffee table (table, wood), …"). Moves update the lists quietly;
+  "coffee table (table, wood), …"; a person with a `label`, "Ann (the tall red-haired woman), …").
+  Each person in the list, and the selected player's card in the Room tab (matched by name), shows
+  a small head-and-shoulders portrait drawn from `appearance`; it is decoration, hidden from
+  screen readers, and the label beside it is ordinary text. Moves update the lists quietly;
   nothing is announced and focus never moves.

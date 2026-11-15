@@ -15,8 +15,8 @@ const list = {
   now: NOW,
   total: 36,
   groups: [
-    { key: "#2 every dispatch_event", label: "dispatch_event on 35 objects", owner: "daiverd", kind: "every" as const, count: 35, next: NOW + 3 },
-    { key: "#249 every cycle", label: "#4143:cycle", owner: "q", kind: "every" as const, count: 1, next: NOW },
+    { key: "#2 every dispatch_event", label: "dispatch_event on 35 objects", owner: "tamsin", kind: "every" as const, count: 35, next: NOW + 3 },
+    { key: "#7741 every cycle", label: "#4143:cycle", owner: "marlow", kind: "every" as const, count: 1, next: NOW },
   ],
 };
 
@@ -24,8 +24,8 @@ const group = {
   key: "#2 every dispatch_event",
   now: NOW,
   tasks: [
-    { id: 101, start: NOW + 3, owner: "daiverd", kind: "every" as const, label: "#24130:dispatch_event", name: "a rat", line: 9, interval: 21 },
-    { id: 102, start: NOW + 75, owner: "daiverd", kind: "every" as const, label: "#24074:dispatch_event", name: "", line: 9, interval: 25 },
+    { id: 101, start: NOW + 3, owner: "tamsin", kind: "every" as const, label: "#24130:dispatch_event", name: "a rat", line: 9, interval: 21 },
+    { id: 102, start: NOW + 75, owner: "tamsin", kind: "every" as const, label: "#24074:dispatch_event", name: "", line: 9, interval: 25 },
   ],
 };
 
@@ -64,7 +64,7 @@ describe("TasksPanel", () => {
     expect(screen.getByText(/Loading/)).toBeInTheDocument();
     act(() => useTasksStore.getState().setList(list));
     expect(screen.getByText("36 tasks in 2 groups.", { exact: false })).toBeInTheDocument();
-    const toggle = screen.getByRole("button", { name: /dispatch_event on 35 objects, daiverd, repeats, next in 3s/ });
+    const toggle = screen.getByRole("button", { name: /dispatch_event on 35 objects, tamsin, repeats, next in 3s/ });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
@@ -76,8 +76,8 @@ describe("TasksPanel", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(tasks.sendGroup).toHaveBeenCalledWith({ key: "#2 every dispatch_event" });
     act(() => useTasksStore.getState().setGroup(group));
-    expect(screen.getByText("Task 101: #24130:dispatch_event (a rat), in 3s, every 21s, daiverd")).toBeInTheDocument();
-    expect(screen.getByText("Task 102: #24074:dispatch_event, in 1m 15s, every 25s, daiverd")).toBeInTheDocument();
+    expect(screen.getByText("Task 101: #24130:dispatch_event (a rat), in 3s, every 21s, tamsin")).toBeInTheDocument();
+    expect(screen.getByText("Task 102: #24074:dispatch_event, in 1m 15s, every 25s, tamsin")).toBeInTheDocument();
   });
 
   it("kills a task only on the second press", () => {

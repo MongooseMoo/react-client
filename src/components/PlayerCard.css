@@ -30,6 +30,15 @@
   text-overflow: ellipsis;
 }
 
+.player-portrait {
+  flex: none;
+}
+
+.player-label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
 .player-actions {
   display: flex;
   align-items: center;

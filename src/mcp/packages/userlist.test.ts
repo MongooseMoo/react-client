@@ -8,10 +8,10 @@ const LOGIN = [
   '#$#dns-com-vmoo-userlist-you k1 nr: #2280',
   '#$#dns-com-vmoo-userlist k1 icons*: "" fields*: "" d*: "" _data-tag: 577658545885034478036875',
   '#$#dns-com-vmoo-userlist-menu k1 menu: "{{\\"&Look at $(2)\\", \\"look $(1)\\"}, {\\"&Page $(2)\\", \\"page $(1) \\"}, {\\"&Wave at $(2)\\", \\"wave $(1)\\"}, 0, {\\"&Join $(2)\\", \\"@join $(1)\\"}, {\\"&Invite $(2)\\", \\"@invite $(1)\\"}, 0, {\\"W&ho $(2)\\", \\"@who $(1)\\"}}"',
-  '#$#dns-com-vmoo-userlist-friends k1 friends: "{#2, #180, #133, #733, #729, #2030, #2032, #2262, #249, #2259, #2298, #2299}"',
+  '#$#dns-com-vmoo-userlist-friends k1 friends: "{#2, #180, #133, #733, #729, #2030, #2032, #2262, #7741, #2259, #2298, #2299}"',
   '#$#* 577658545885034478036875 fields: {"Object", "Name", "Icon", "FirstConnectTime", "LastConnectTime", "Idle"}',
   '#$#* 577658545885034478036875 icons: {"Guest", "Player", "Programmer", "Schooled", "President", "Builder", "Wizard"}',
-  '#$#* 577658545885034478036875 d: ={{#2280, "Solaris Guest", 1, 2147483647, 2147483647, 12}, {#249, "Q", 7, 1128798341, 1794432191, 12}, {#2261, "Zemmi", 3, 1150690530, 1794429456, 1524}, {#3487, "Talon", 7, 1674296735, 1794401742, 35445}}',
+  '#$#* 577658545885034478036875 d: ={{#2280, "Wayfarer Guest", 1, 2147483647, 2147483647, 12}, {#7741, "Marlow", 7, 1128798341, 1794432191, 12}, {#2261, "Pellam", 3, 1150690530, 1794429456, 1524}, {#3487, "Corvin", 7, 1674296735, 1794401742, 35445}}',
   '#$#* 577658545885034478036875 d: <{#2261, #3487}',
 ];
 const TAG = '577658545885034478036875';
@@ -41,9 +41,9 @@ describe('dns-com-vmoo-userlist', () => {
     loggedIn();
     const state = useUserlistStore.getState();
     expect(state.you).toBe('#2280');
-    expect(state.players.map((p) => p.id)).toEqual(['#2280', '#249', '#2261', '#3487']);
-    expect(player('#249')).toEqual({
-      id: '#249', name: 'Q', role: 'Wizard', rank: 7, idle: false, away: false,
+    expect(state.players.map((p) => p.id)).toEqual(['#2280', '#7741', '#2261', '#3487']);
+    expect(player('#7741')).toEqual({
+      id: '#7741', name: 'Marlow', role: 'Wizard', rank: 7, idle: false, away: false,
       lastActive: NOW - 12_000, connectedAt: 1794432191_000,
     });
     expect(player('#3487')).toMatchObject({ idle: true, lastActive: NOW - 35445_000 });
@@ -65,8 +65,8 @@ describe('dns-com-vmoo-userlist', () => {
   it('keeps idle and away through a changed entry, as the server sends one before marking idle', () => {
     const session = loggedIn();
     session.receiveLine(`#$#* ${TAG} d: [{#3487}`);
-    session.receiveLine(`#$#* ${TAG} d: *{#3487, "Talon the Bold", 7, 1674296735, 1794401742, 35500}`);
-    expect(player('#3487')).toMatchObject({ name: 'Talon the Bold', idle: true, away: true, lastActive: NOW - 35500_000 });
+    session.receiveLine(`#$#* ${TAG} d: *{#3487, "Corvin the Bold", 7, 1674296735, 1794401742, 35500}`);
+    expect(player('#3487')).toMatchObject({ name: 'Corvin the Bold', idle: true, away: true, lastActive: NOW - 35500_000 });
   });
 
   it('marks a returning player active from now', () => {
@@ -78,10 +78,10 @@ describe('dns-com-vmoo-userlist', () => {
 
   it('adds a connecting player once, even if they were already listed', () => {
     const session = loggedIn();
-    session.receiveLine(`#$#* ${TAG} d: +{#249, "Q", 7, 1128798341, 1794432999, 0}`);
+    session.receiveLine(`#$#* ${TAG} d: +{#7741, "Marlow", 7, 1128798341, 1794432999, 0}`);
     session.receiveLine(`#$#* ${TAG} d: +{#7576, "Saeed", 3, 1684986628, 1794096537, 0}`);
     const ids = useUserlistStore.getState().players.map((p) => p.id);
-    expect(ids.filter((id) => id === '#249')).toHaveLength(1);
+    expect(ids.filter((id) => id === '#7741')).toHaveLength(1);
     expect(ids).toContain('#7576');
   });
 
@@ -89,6 +89,6 @@ describe('dns-com-vmoo-userlist', () => {
     const session = loggedIn();
     session.receiveLine(`#$#* ${TAG} d: -{#2261}`);
     session.receiveLine(`#$#* ${TAG} d: ({#3487}`);
-    expect(useUserlistStore.getState().players.map((p) => p.id)).toEqual(['#2280', '#249']);
+    expect(useUserlistStore.getState().players.map((p) => p.id)).toEqual(['#2280', '#7741']);
   });
 });

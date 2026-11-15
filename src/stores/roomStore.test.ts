@@ -20,7 +20,7 @@ describe("roomStore", () => {
   });
 
   it("setRoomInfo stores info and clears the player list for the new room", () => {
-    useRoomStore.setState({ roomPlayers: [player("q", "Q")] });
+    useRoomStore.setState({ roomPlayers: [player("marlow", "Marlow")] });
     useRoomStore.getState().setRoomInfo(roomInfo({ name: "Lab" }));
 
     expect(useRoomStore.getState().roomInfo?.name).toBe("Lab");

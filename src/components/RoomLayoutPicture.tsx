@@ -3,6 +3,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LayoutVector, RoomLayout } from "../gmcp/Room";
 import type { LayoutArrival } from "../stores/roomStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
+import { tokenColours } from "../avatar/figure";
 import {
   displayName,
   exitWall,
@@ -80,6 +81,8 @@ export const LAYOUT_STYLE = `
 .room-layout-svg .rl-mounted .rl-thing { fill: var(--color-text-secondary, #a0a0b0); fill-opacity: 0.55; stroke: none; }
 .room-layout-svg .rl-person .rl-thing { fill: var(--color-success, #4ade80); fill-opacity: 0.85; stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 1.5px; }
 .room-layout-svg .rl-you .rl-thing { fill: var(--color-primary, #5ba0ff); fill-opacity: 1; }
+.room-layout-svg .rl-person.rl-dressed .rl-thing { fill: var(--rl-body); fill-opacity: 1; }
+.room-layout-svg .rl-head { fill: var(--rl-head); stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .room-layout-svg .rl-you-ring { fill: none; stroke: var(--color-primary, #5ba0ff); stroke-width: 2px; stroke-opacity: 0.7; vector-effect: non-scaling-stroke; }
 .room-layout-svg .rl-label { fill: var(--color-text-secondary, #a0a0b0); paint-order: stroke; stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 3.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .room-layout-svg .rl-label-person { fill: var(--color-text, #e8e8ed); font-weight: 600; }
@@ -95,6 +98,9 @@ export const LAYOUT_STYLE = `
   .room-layout-svg .rl-mounted .rl-thing, .room-layout-svg .rl-person .rl-thing { fill: CanvasText; }
   .room-layout-svg .rl-door, .room-layout-svg .rl-hatch, .room-layout-svg .rl-you-ring { stroke: Highlight; }
   .room-layout-svg .rl-you .rl-thing { fill: Highlight; }
+  .room-layout-svg .rl-person.rl-dressed .rl-thing { fill: CanvasText; }
+  .room-layout-svg .rl-you.rl-dressed .rl-thing { fill: Highlight; }
+  .room-layout-svg .rl-head { fill: Canvas; stroke: CanvasText; }
   .room-layout-svg .rl-label, .room-layout-svg .rl-exit-label, .room-layout-svg .rl-mark { fill: CanvasText; stroke: Canvas; }
 }
 `;
@@ -478,10 +484,21 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
           const [cx, cy] = centreOf(p);
           if (isPerson(p.thing)) {
             const r = markerRadius;
+            // Seen from above: the body in the main garment's colour (or skin), the head in hair or head covering.
+            const look = tokenColours(p.thing.appearance);
+            const style: Record<string, string> = {};
+            if (look?.body) style["--rl-body"] = look.body;
+            if (look?.head) style["--rl-head"] = look.head;
             return (
-              <g key={p.thing.id} className={className} data-id={p.thing.id}>
+              <g
+                key={p.thing.id}
+                className={look?.body ? `${className} rl-dressed` : className}
+                data-id={p.thing.id}
+                style={look ? (style as React.CSSProperties) : undefined}
+              >
                 <title>{displayName(p.thing, youId)}</title>
                 <circle className="rl-thing" cx={cx} cy={cy} r={r} />
+                {look?.head && <circle className="rl-head" cx={cx} cy={cy} r={r * 0.5} />}
                 {you && <circle className="rl-you-ring" cx={cx} cy={cy} r={r * 1.35} />}
               </g>
             );

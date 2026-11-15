@@ -15,6 +15,7 @@ import {
   shortLabel,
 } from "../map/roomLayout";
 import {
+  FigureCache,
   buildRoomScene,
   type CameraMode,
   type CameraPose,
@@ -41,6 +42,8 @@ interface RoomLayout3DProps {
   placed: PlacedThing[];
   arrivals: Array<{ arrival: LayoutArrival; at: LayoutVector }>;
   youId: string;
+  /** Each person's Client.Spatial forward in the MOO frame, by id. */
+  facings: Record<string, LayoutVector | undefined>;
   label: string;
   mode: CameraMode;
   onExit: (name: string) => void;
@@ -56,6 +59,8 @@ interface Stage {
   controls: OrbitControls;
   scene: THREE.Scene;
   room: RoomScene | null;
+  /** People's figure geometries, reused while their look is unchanged. */
+  figures: FigureCache;
   labelObjects: Map<string, CSS2DObject>;
   render: () => void;
 }
@@ -71,7 +76,7 @@ function applyPose(stage: Stage, pose: CameraPose) {
   stage.camera.lookAt(stage.controls.target);
 }
 
-const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, youId, label, mode, onExit }) => {
+const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, youId, facings, label, mode, onExit }) => {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Stage | null>(null);
   const modeRef = useRef(mode);
@@ -112,6 +117,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       controls,
       scene,
       room: null,
+      figures: new FigureCache(),
       labelObjects: new Map(),
       render: () => {
         if (stage.room) cutWalls(stage.room, layoutRef.current, camera.position, modeRef.current);
@@ -144,6 +150,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       controls.removeEventListener("change", stage.render);
       controls.dispose();
       if (stage.room) disposeRoomScene(stage.room);
+      stage.figures.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       labels.domElement.remove();
@@ -196,7 +203,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     for (const object of stage.labelObjects.values()) object.removeFromParent();
     stage.labelObjects.clear();
 
-    const room = buildRoomScene({ layout, placed, arrivals, youId });
+    const room = buildRoomScene({ layout, placed, arrivals, youId, facings, figures: stage.figures });
     stage.room = room;
     stage.scene.add(room.root);
     // In your own eyes you are not drawn.
@@ -224,7 +231,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       stage.labelObjects.set(id, object);
     }
     stage.render();
-  }, [layout, placed, arrivals, youId, mode]);
+  }, [layout, placed, arrivals, youId, facings, mode]);
 
   // A new room or a new view starts the dollhouse at its whole-room view.
   const youBounds = placed.find((p) => p.thing.id === youId)?.bounds;

@@ -62,7 +62,7 @@ describe("spatialStore", () => {
 
   it("moveEntity merges coordinates and velocity onto the existing entity", () => {
     useSpatialStore.setState({
-      spatialEntities: { p1: { id: "p1", name: "Q", position: [1, 1, 1] } },
+      spatialEntities: { p1: { id: "p1", name: "Marlow", position: [1, 1, 1] } },
     });
     useSpatialStore.getState().moveEntity({
       entityId: "p1",
@@ -72,7 +72,7 @@ describe("spatialStore", () => {
 
     expect(useSpatialStore.getState().spatialEntities.p1).toEqual({
       id: "p1",
-      name: "Q",
+      name: "Marlow",
       position: [2, 3, 4],
       velocity: [0.5, 0, 0],
     });
@@ -81,14 +81,14 @@ describe("spatialStore", () => {
   it("patchEntity merges a partial update onto the existing entity", () => {
     useSpatialStore.setState({
       spatialEntities: {
-        p1: { id: "p1", name: "Q", position: [1, 1, 1], velocity: [0.5, 0, 0] },
+        p1: { id: "p1", name: "Marlow", position: [1, 1, 1], velocity: [0.5, 0, 0] },
       },
     });
     useSpatialStore.getState().patchEntity("p1", { position: [2, 2, 2] });
 
     expect(useSpatialStore.getState().spatialEntities.p1).toEqual({
       id: "p1",
-      name: "Q",
+      name: "Marlow",
       position: [2, 2, 2],
       velocity: [0.5, 0, 0],
     });
