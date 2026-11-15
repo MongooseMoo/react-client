@@ -33,14 +33,14 @@ the middle of the room, so it spans `-width/2..width/2` and `-depth/2..depth/2`;
 | `size` | `[width, depth, height]`: east to west, north to south, floor to ceiling. |
 | `exits[].name` | The exit's name, the same key `Room.Info` `exits` uses. It is the command that takes it. |
 | `exits[].to` | Where it leads (object number). |
-| `exits[].at` | The middle of the doorway. On a wall when it is a door; elsewhere for a hatch, ladder or stairs. |
+| `exits[].at` | The middle of the doorway. The server puts a wall's doorway up to 5% of the room in from that wall (`$spatial_utils:coords_for_edge`); the client draws a point that close to exactly one wall as a doorway in it, and any other point (a corner, a hatch, a ladder, stairs) as a marked square where it is. |
 | `exits[].width` | How wide the doorway is along its wall. |
 | `things[].id` | `tostr(obj)`, the same id `Client.Spatial` uses for the thing. |
 | `things[].name` | What to call it. |
 | `things[].kind` | `player`, `person` (a living body that is not a player) or `object`. |
 | `things[].fixed` | It cannot be picked up. |
 | `things[].mounted` | It hangs on a wall or ceiling. |
-| `things[].shapes` | Its solid parts: boxes `{"box": [[x0,x1],[y0,y1],[z0,z1]]}` and spheres `{"sphere": [[x,y,z], r]}`. |
+| `things[].shapes` | Its solid parts: boxes `{"box": [[x0,x1],[y0,y1],[z0,z1]]}` and spheres `{"sphere": [[x,y,z], r]}`. May be empty; such a thing is listed but not drawn. |
 | `things[].origin` | Where `Client.Spatial` placed this thing when the layout was built (its sound origin). |
 
 ## Keeping it current

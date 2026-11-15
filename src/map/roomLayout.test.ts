@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import type { RoomLayout } from "../gmcp/Room";
 import { sampleLayout } from "./roomLayout.fixture";
+import laundry from "./roomLayout.sample-1770.json";
 import {
   describeExit,
   describePlace,
@@ -43,11 +45,29 @@ describe("room layout geometry", () => {
     expect(q.bounds.z0).toBeCloseTo(0);
   });
 
-  it("finds the wall a doorway is in, and none for a point inside the room", () => {
+  it("finds the wall a doorway is in, and none for a point inside the room or in a corner", () => {
     const size = sampleLayout().size;
     expect(exitWall(sampleLayout().exits[0], size)).toBe("west");
     expect(exitWall({ name: "north", to: 1, at: [0, 2.565, 0], width: 1 }, size)).toBe("north");
     expect(exitWall({ name: "down", to: 1, at: [0, 0, 0], width: 1 }, size)).toBeNull();
+    expect(exitWall({ name: "northeast", to: 1, at: [1.7145, 2.3085, 0], width: 1 }, size)).toBeNull();
+  });
+
+  it("reads the real laundry room payload (room 1770, 2026-11-14)", () => {
+    const layout = laundry as unknown as RoomLayout;
+    // Default doorways sit 5% of the room in from their wall ($spatial_utils:coords_for_edge).
+    expect(layout.exits.map((exit) => exitWall(exit, layout.size))).toEqual(["south", "west"]);
+    const placed = placeThings(layout, {});
+    expect(placed).toHaveLength(12);
+    expect(placed.some((p) => p.thing.id === "#39832")).toBe(false);
+    expect(layoutSummary("Laundry", layout)).toBe(
+      "Layout of Laundry: 6.0 m east to west, 8.0 m north to south, 3.0 m high; 2 exits, 0 people, 13 things.",
+    );
+    expect(describeExit(layout.exits[0], layout.size)).toBe(
+      "south: 0.9 m doorway in the south wall, midway between the east and west walls",
+    );
+    const pump = placed.find((p) => p.thing.id === "#10211") as (typeof placed)[number];
+    expect(describeThing(pump, layout.size, "")).toBe("wall-mounted heat pump, against the south wall, against the west wall");
   });
 
   it("says where things are in plain words", () => {
@@ -70,7 +90,7 @@ describe("room layout geometry", () => {
 
   it("sums the room up for the picture's label", () => {
     const layout = sampleLayout();
-    expect(layoutSummary("Le Salon", layout, placeThings(layout, {}))).toBe(
+    expect(layoutSummary("Le Salon", layout)).toBe(
       "Layout of Le Salon: 3.8 m east to west, 5.1 m north to south, 2.4 m high; 1 exit, 1 person, 1 thing.",
     );
   });

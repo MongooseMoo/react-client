@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mongooseToWebAudioVector } from "../audio/mongooseCoordinates";
 import type { SpatialVector } from "../gmcp/Client/Spatial";
+import type { RoomLayout } from "../gmcp/Room";
 import { sampleLayout } from "../map/roomLayout.fixture";
+import laundry from "../map/roomLayout.sample-1770.json";
 import { useSpatialStore } from "../stores/spatialStore";
 import { standaloneSvg } from "./RoomLayoutPicture";
 import RoomLayoutView from "./RoomLayoutView";
@@ -56,6 +58,18 @@ describe("RoomLayoutView", () => {
     expect(Number(rect?.getAttribute("y"))).toBeCloseTo(-1.2);
     expect(document.activeElement).toBe(before);
     expect(document.querySelector("[aria-live]")).toBeNull();
+  });
+
+  it("draws the real laundry room and lists a thing sent without shapes", () => {
+    render(<RoomLayoutView layout={laundry as unknown as RoomLayout} roomName="Laundry" onExit={onExit} />);
+    const picture = screen.getByRole("img");
+    expect(picture.querySelectorAll(".rl-item")).toHaveLength(12);
+    expect(picture.querySelectorAll(".rl-door")).toHaveLength(2);
+    const things = within(screen.getByRole("list", { name: "Things in the layout" }))
+      .getAllByRole("listitem")
+      .map((item) => item.textContent);
+    expect(things).toHaveLength(13);
+    expect(things).toContain("a puddle of water and copper, no size or place given");
   });
 
   it("sends the exit when its doorway is clicked", () => {

@@ -79,22 +79,30 @@ export function toSvg(x: number, y: number): [number, number] {
   return [x, 0 - y];
 }
 
-/** How far a point may sit from a wall and still be a doorway in it, in metres. */
-const DOORWAY_TOLERANCE = 0.25;
+/**
+ * How far in from a wall, as a fraction of the room across it, a doorway
+ * point may sit and still be in that wall. The MOO puts a wall's default
+ * doorway 5% of the room in from it ($spatial_utils:coords_for_edge, the
+ * same threshold as its "against the wall").
+ */
+const DOORWAY_INSET = 0.05;
 
-/** The wall a doorway is in, or null when its point is not on a wall (a hatch, a ladder, stairs in the floor). */
+/**
+ * The wall a doorway is in, or null when its point is not by exactly one
+ * wall: a corner, or a hatch, ladder or stairs inside the room.
+ */
 export function exitWall(exit: LayoutExit, size: LayoutVector): Wall | null {
   const [x, y] = exit.at;
-  const halfW = size[0] / 2;
-  const halfD = size[1] / 2;
-  const gaps: Array<[Wall, number]> = [
-    ["north", Math.abs(halfD - y)],
-    ["south", Math.abs(y + halfD)],
-    ["east", Math.abs(halfW - x)],
-    ["west", Math.abs(x + halfW)],
+  const [w, d] = size;
+  const slack = 1e-6;
+  const walls: Array<[Wall, boolean]> = [
+    ["north", Math.abs(d / 2 - y) <= d * DOORWAY_INSET + slack],
+    ["south", Math.abs(y + d / 2) <= d * DOORWAY_INSET + slack],
+    ["east", Math.abs(w / 2 - x) <= w * DOORWAY_INSET + slack],
+    ["west", Math.abs(x + w / 2) <= w * DOORWAY_INSET + slack],
   ];
-  const [wall, gap] = gaps.reduce((best, next) => (next[1] < best[1] ? next : best));
-  return gap <= DOORWAY_TOLERANCE ? wall : null;
+  const inWalls = walls.filter(([, near]) => near).map(([wall]) => wall);
+  return inWalls.length === 1 ? inWalls[0] : null;
 }
 
 export function metres(value: number): string {
@@ -129,6 +137,11 @@ export function describeThing(placed: PlacedThing, size: LayoutVector, youId: st
   return parts.join(", ");
 }
 
+/** A thing the server sent without shapes: it is in the room but cannot be drawn. */
+export function describeUnshaped(thing: LayoutThing, youId: string): string {
+  return `${thing.id === youId ? `${thing.name} (you)` : thing.name}, no size or place given`;
+}
+
 export function describeExit(exit: LayoutExit, size: LayoutVector): string {
   const wall = exitWall(exit, size);
   const halfW = size[0] / 2;
@@ -150,10 +163,10 @@ export function isPerson(thing: LayoutThing): boolean {
 }
 
 /** The picture's accessible name: room size and what is in it. */
-export function layoutSummary(roomName: string, layout: RoomLayout, placed: PlacedThing[]): string {
+export function layoutSummary(roomName: string, layout: RoomLayout): string {
   const [w, d, h] = layout.size;
-  const people = placed.filter((p) => isPerson(p.thing)).length;
-  const things = placed.length - people;
+  const people = layout.things.filter(isPerson).length;
+  const things = layout.things.length - people;
   return `Layout of ${roomName || "this room"}: ${metres(w)} east to west, ${metres(d)} north to south, ${metres(h)} high; ` +
     `${count(layout.exits.length, "exit", "exits")}, ${count(people, "person", "people")}, ${count(things, "thing", "things")}.`;
 }

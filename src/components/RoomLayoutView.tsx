@@ -3,7 +3,15 @@ import { useMemo } from "react";
 import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
 import { downloadFile } from "../downloadFile";
 import type { LayoutVector, RoomLayout } from "../gmcp/Room";
-import { describeExit, describeThing, isPerson, layoutSummary, metres, placeThings } from "../map/roomLayout";
+import {
+  describeExit,
+  describeThing,
+  describeUnshaped,
+  isPerson,
+  layoutSummary,
+  metres,
+  placeThings,
+} from "../map/roomLayout";
 import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import RoomLayoutPicture, { standaloneSvg } from "./RoomLayoutPicture";
@@ -34,9 +42,15 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
     return placeThings(layout, positions);
   }, [layout, entities]);
 
-  const summary = layoutSummary(name, layout, placed);
-  const people = placed.filter((p) => isPerson(p.thing)).sort((a, b) => a.thing.name.localeCompare(b.thing.name));
-  const things = placed.filter((p) => !isPerson(p.thing)).sort((a, b) => a.thing.name.localeCompare(b.thing.name));
+  const summary = layoutSummary(name, layout);
+  // Every thing in the layout is listed; one sent without shapes is listed but not drawn.
+  const entries = layout.things.map((thing) => {
+    const where = placed.find((p) => p.thing.id === thing.id);
+    return { thing, text: where ? describeThing(where, layout.size, youId) : describeUnshaped(thing, youId) };
+  });
+  const byName = (a: (typeof entries)[number], b: (typeof entries)[number]) => a.thing.name.localeCompare(b.thing.name);
+  const people = entries.filter((e) => isPerson(e.thing)).sort(byName);
+  const things = entries.filter((e) => !isPerson(e.thing)).sort(byName);
   const [w, d, h] = layout.size;
 
   const save = (svg: SVGSVGElement) => {
@@ -68,8 +82,8 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
         <p>No one.</p>
       ) : (
         <ul aria-label="People in the layout">
-          {people.map((p) => (
-            <li key={p.thing.id}>{describeThing(p, layout.size, youId)}</li>
+          {people.map((e) => (
+            <li key={e.thing.id}>{e.text}</li>
           ))}
         </ul>
       )}
@@ -78,8 +92,8 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
         <p>Nothing.</p>
       ) : (
         <ul aria-label="Things in the layout">
-          {things.map((p) => (
-            <li key={p.thing.id}>{describeThing(p, layout.size, youId)}</li>
+          {things.map((e) => (
+            <li key={e.thing.id}>{e.text}</li>
           ))}
         </ul>
       )}
