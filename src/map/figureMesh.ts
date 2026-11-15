@@ -155,6 +155,44 @@ function parts(p: FigureParams): Part[] {
     }
   }
 
+  // Features big enough to read at figure size, in the outline ink as in the
+  // portrait. Freckles, a mole and dimples are left to the portrait.
+  const eyeZ = headCentreZ + headR * 0.12;
+  const lensY = headR * 1.0;
+  const lensR = headR * 0.2;
+  const rim = headR * 0.04;
+  // The ellipsoid head's half width at eye height, where temples and earrings sit.
+  const headSide = headR * headScale.x;
+  for (const feature of p.features) {
+    if (feature === "glasses" || feature === "sunglasses") {
+      for (const side of [-1, 1]) {
+        const lens = new THREE.Vector3(side * headR * 0.32, lensY, eyeZ);
+        if (feature === "glasses") {
+          // A torus lies across z; turn it to face forward (+y).
+          out.push(placed(new THREE.TorusGeometry(lensR, rim, 4, 12), c.ink, lens, new THREE.Euler(Math.PI / 2, 0, 0)));
+        } else {
+          // A cylinder's axis is y, so a short one is a forward-facing disc.
+          out.push(placed(new THREE.CylinderGeometry(lensR * 1.1, lensR * 1.1, rim * 1.5, 12), c.ink, lens));
+        }
+        // Temple: from the lens's outer edge back to above the ear.
+        out.push(limb(new THREE.Vector3(side * (headR * 0.32 + lensR), lensY - rim, eyeZ), new THREE.Vector3(side * headSide * 1.02, 0, eyeZ), rim * 0.8, c.ink));
+      }
+      out.push(limb(new THREE.Vector3(-headR * 0.32 + lensR, lensY, eyeZ), new THREE.Vector3(headR * 0.32 - lensR, lensY, eyeZ), rim * 0.8, c.ink));
+    } else if (feature === "eyepatch") {
+      // Over the left eye (-x, as the portrait draws it on the viewer's right), with a strap to above the right ear.
+      const patch = new THREE.Vector3(-headR * 0.32, lensY, eyeZ);
+      out.push(placed(new THREE.CylinderGeometry(lensR * 1.15, lensR * 1.15, rim * 1.5, 12), c.ink, patch));
+      out.push(limb(patch, new THREE.Vector3(headSide * 1.02, 0, eyeZ + headR * 0.45), rim * 0.8, c.ink));
+      out.push(limb(patch, new THREE.Vector3(-headSide * 1.02, 0, eyeZ), rim * 0.8, c.ink));
+    } else if (feature === "earrings") {
+      for (const side of [-1, 1]) {
+        // A ring hanging from each earlobe, turned to face sideways.
+        const at = new THREE.Vector3(side * headSide * 1.04, 0, headCentreZ - headR * 0.35);
+        out.push(placed(new THREE.TorusGeometry(headR * 0.12, rim * 0.9, 4, 10), c.ink, at, new THREE.Euler(0, Math.PI / 2, 0)));
+      }
+    }
+  }
+
   // Parts from the body plan's traits.
   const crown = headCentreZ + headR * 0.8;
   const accent = c.hair ?? c.skin;

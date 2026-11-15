@@ -157,6 +157,44 @@ describe("buildRoomScene", () => {
     expect(scene.labelAnchors.get("#9")?.z).toBeGreaterThan(bounds.max.z - 0.2);
   });
 
+  it("draws glasses, sunglasses, an eyepatch and earrings on the figure's head in the ink, not on a hidden face", () => {
+    // Pale skin and no garments: the ink is dark and appears only where a feature (or outline) is drawn.
+    const plain = { skin: { hex: "#f0d8c0" }, eyes: { hex: "#3a7d44" } };
+    const figures = new FigureCache();
+    const sceneOf = (appearance: Record<string, unknown>) => {
+      const layout = livingRoomLayout();
+      layout.things = layout.things.map((t) => (t.id === "#9" ? { ...t, appearance } : t));
+      return buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "#99", figures });
+    };
+    const inkVertices = (appearance: Record<string, unknown>) => {
+      const scene = sceneOf(appearance);
+      const body = meshes(scene.things.get("#9"))[0];
+      const ink = new THREE.Color(figureParams(appearance, { height: 1.7, base: "#000000" }).colours.ink);
+      const colours = body.geometry.getAttribute("color");
+      const positions = body.geometry.getAttribute("position");
+      const head = box(body);
+      const zs: number[] = [];
+      for (let i = 0; i < colours.count; i++) {
+        if (Math.abs(colours.getX(i) - ink.r) + Math.abs(colours.getY(i) - ink.g) + Math.abs(colours.getZ(i) - ink.b) < 1e-6) zs.push(positions.getZ(i));
+      }
+      return { zs, top: head.max.z, geometry: body.geometry };
+    };
+    const bare = inkVertices(plain);
+    expect(bare.zs).toHaveLength(0);
+    for (const feature of ["glasses", "sunglasses", "eyepatch", "earrings"]) {
+      const drawn = inkVertices({ ...plain, features: [feature] });
+      expect(drawn.zs.length, feature).toBeGreaterThan(0);
+      // Every inked vertex is on the head: within its top quarter-metre.
+      expect(Math.min(...drawn.zs), feature).toBeGreaterThan(drawn.top - 0.3);
+      // A feature is part of the figure's look, so it gets its own geometry.
+      expect(drawn.geometry, feature).not.toBe(bare.geometry);
+    }
+    // Freckles, a mole and dimples stay in the portrait.
+    expect(inkVertices({ ...plain, features: ["freckles", "mole", "dimples"] }).zs).toHaveLength(0);
+    expect(inkVertices({ ...plain, face_hidden: true, features: ["glasses", "earrings"] }).zs).toHaveLength(0);
+    figures.dispose();
+  });
+
   it("seats a sitting person lower and lays a reclining one down", () => {
     const layout = livingRoomLayout();
     const posed = (posture: "sitting" | "reclining") => {

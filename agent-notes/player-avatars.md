@@ -27,13 +27,13 @@ Built and on pull request 237 (MongooseMoo/react-client), CI pending at the last
 - A seam between two different colours under 3:1 gets a thin outline band (3D); the portrait outlines every region in the ink.
 - Facing defaults to south without a forward, so faces show in the dollhouse's starting view.
 - Portrait in the People list and `PlayerCard` only; `aria-hidden`, `focusable="false"`, no focus stop. The label is plain text.
-- `appearance.features` (a list of string keys) was added to the wire by team-lead on 2026-11-14, after the first commit. The portrait draws freckles, glasses, sunglasses, eyepatch, earrings, mole and dimples in the outline ink (features carry no colour); other keys are ignored, and a hidden face shows none. The 3D figure does not draw features.
+- `appearance.features` (a list of string keys) was added to the wire by team-lead on 2026-11-14, after the first commit. The portrait draws freckles, glasses, sunglasses, eyepatch, earrings, mole and dimples in the outline ink (features carry no colour); other keys are ignored, and a hidden face shows none. Follow-up branch `avatar-followup`: the 3D figure draws glasses, sunglasses, an eyepatch and earrings in the same ink, inside the one merged mesh (features are in the parameters, so in the cache key); freckles, mole and dimples are too small at figure size and stay portrait-only (said in `docs/room-layout.md`).
 
 ## Surprises
 
-- `npm ci` in a fresh worktree fails with `EALLOWSCRIPTS` while preparing the git dependency `@xrnavigation/webaudio-tinysynth` (user-level npm `allow-scripts` is passed to the nested install). `node_modules` was copied from a worktree with an identical lockfile.
+- `npm ci` in a fresh worktree fails with `EALLOWSCRIPTS` while preparing the git dependency `@xrnavigation/webaudio-tinysynth`. Cause on this machine, not in the repo: `~/.npmrc` sets `allow-scripts`; npm 11.19.1 exports every non-default config to child processes as `npm_config_*` (`@npmcli/config/lib/set-envs.js`), and the git dependency's nested `npm install` reads that env value as the `--allow-scripts` flag, which `lib/utils/resolve-allow-scripts.js` refuses in project installs. CI has no user config. Stopgap: copy `node_modules` from a checkout with byte-identical `package.json` and `package-lock.json`.
 - The 3D room is rebuilt on every animation frame while anyone moves (`RoomLayout3D.tsx` rebuild effect), so figure build time was paid per frame: about 3.7 ms per figure in node. Fixed by reusing figure geometry (above); the rest of the room is still rebuilt.
 
 ## Next step
 
-Watch CI on pull request 237 and fix any red check. Then review and merge (team-lead/Q). After that, the MOO work (`appearance` in `#3964:layout_data`, the label) is what makes it visible; nothing in the client waits on anything else. Not done in the client: features in the 3D figure, a browser measurement of frame cost, a build check that three.js stays out of the startup chunk, and anyone looking at the figures by eye.
+PR 237 merged. Follow-up branch `avatar-followup` (work log `reports/player-avatars-client-followup-2026-11-14.md` in the hub): features on the 3D figure (done), then a build check that three.js stays out of the startup chunk, a browser measurement of frame cost, and looking at the figures by eye.
