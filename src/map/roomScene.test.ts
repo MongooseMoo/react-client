@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
 import { figureParams } from "../avatar/figure";
 import type { RoomLayout } from "../gmcp/Room";
-import { livingRoomLayout } from "./roomLayout.fixture";
+import { crowdLayout, livingRoomLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingRoom from "./roomLayout.sample-25828.json";
 import { placeThings } from "./roomLayout";
@@ -31,25 +31,6 @@ const meshes = (group: THREE.Object3D | undefined) =>
 const parts = (group: THREE.Object3D | undefined) => meshes(group).map((m) => m.userData.part);
 const colour = (mesh: THREE.Mesh) => (mesh.material as THREE.MeshStandardMaterial).color.getHex();
 const box = (mesh: THREE.Mesh) => new THREE.Box3().setFromObject(mesh);
-/** A room holding `count` people, each one of the test characters, in rows. */
-const crowd = (count: number): RoomLayout => {
-  const layout = livingRoomLayout();
-  layout.things = Array.from({ length: count }, (_, i) => {
-    const ch = TEST_CHARACTERS[i % TEST_CHARACTERS.length];
-    const x = -2 + (i % 8) * 0.5;
-    const y = -1.5 + Math.floor(i / 8) * 0.7;
-    return {
-      id: `#p${i}`,
-      name: `Person ${i}`,
-      kind: "person" as const,
-      fixed: true,
-      mounted: false,
-      shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
-      appearance: ch.appearance,
-    };
-  });
-  return layout;
-};
 const hex = (colour: number) => `#${colour.toString(16).padStart(6, "0")}`;
 /** The distinct colours painted on a person's figure (its vertex colours, as sRGB numbers), sorted. */
 const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): number[] => {
@@ -211,7 +192,7 @@ describe("buildRoomScene", () => {
 
   it("rebuilds rooms of 8 and 40 people with unchanged appearances, as while someone moves, reusing their figures", () => {
     const rebuild = (count: number, figures?: FigureCache) => {
-      const layout = crowd(count);
+      const layout = crowdLayout(count);
       const placed = placeThings(layout, {});
       let scene = buildRoomScene({ layout, placed, arrivals: [], youId: "", figures });
       // Fresh builds are slow; fewer rounds keep the suite quick.
@@ -236,7 +217,7 @@ describe("buildRoomScene", () => {
 
   it("reuses an unchanged figure's geometry, frees it when the person leaves or changes, and moves it on the mesh", () => {
     const figures = new FigureCache();
-    const layout = crowd(3);
+    const layout = crowdLayout(3);
     const first = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "", figures });
     const geometryOf = (scene: ReturnType<typeof buildRoomScene>, id: string) => meshes(scene.things.get(id))[0].geometry;
     const kept = geometryOf(first, "#p0");
@@ -276,22 +257,8 @@ describe("buildRoomScene", () => {
   });
 
   it("builds forty figures quickly and cheaply", () => {
-    const layout = livingRoomLayout();
-    const people = Array.from({ length: 40 }, (_, i) => {
-      const ch = TEST_CHARACTERS[i % TEST_CHARACTERS.length];
-      const x = -2 + (i % 8) * 0.5;
-      const y = -1.5 + Math.floor(i / 8) * 0.7;
-      return {
-        id: `#p${i}`,
-        name: `Person ${i}`,
-        kind: "person" as const,
-        fixed: true,
-        mounted: false,
-        shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
-        appearance: ch.appearance,
-      };
-    });
-    layout.things = people;
+    const layout = crowdLayout(40);
+    const people = layout.things;
     const placed = placeThings(layout, {});
     buildRoomScene({ layout, placed, arrivals: [], youId: "" }); // warm-up
     const start = performance.now();
