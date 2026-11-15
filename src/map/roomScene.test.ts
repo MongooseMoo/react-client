@@ -16,6 +16,7 @@ import {
   disposeRoomScene,
   dollhousePose,
   eyesPose,
+  FigureCache,
   MATERIAL_COLOURS,
   NEUTRAL,
   PERSON_COLOUR,
@@ -30,6 +31,25 @@ const meshes = (group: THREE.Object3D | undefined) =>
 const parts = (group: THREE.Object3D | undefined) => meshes(group).map((m) => m.userData.part);
 const colour = (mesh: THREE.Mesh) => (mesh.material as THREE.MeshStandardMaterial).color.getHex();
 const box = (mesh: THREE.Mesh) => new THREE.Box3().setFromObject(mesh);
+/** A room holding `count` people, each one of the test characters, in rows. */
+const crowd = (count: number): RoomLayout => {
+  const layout = livingRoomLayout();
+  layout.things = Array.from({ length: count }, (_, i) => {
+    const ch = TEST_CHARACTERS[i % TEST_CHARACTERS.length];
+    const x = -2 + (i % 8) * 0.5;
+    const y = -1.5 + Math.floor(i / 8) * 0.7;
+    return {
+      id: `#p${i}`,
+      name: `Person ${i}`,
+      kind: "person" as const,
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
+      appearance: ch.appearance,
+    };
+  });
+  return layout;
+};
 const hex = (colour: number) => `#${colour.toString(16).padStart(6, "0")}`;
 /** The distinct colours painted on a person's figure (its vertex colours, as sRGB numbers), sorted. */
 const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): number[] => {
@@ -149,6 +169,72 @@ describe("buildRoomScene", () => {
     expect(sitting.max.z).toBeLessThan(standing.max.z - 0.3);
     expect(reclining.max.z).toBeLessThan(0.5);
     expect(Math.max(reclining.max.x - reclining.min.x, reclining.max.y - reclining.min.y)).toBeGreaterThan(1.4);
+  });
+
+  it("rebuilds rooms of 8 and 40 people with unchanged appearances, as while someone moves, reusing their figures", () => {
+    const rebuild = (count: number, figures?: FigureCache) => {
+      const layout = crowd(count);
+      const placed = placeThings(layout, {});
+      let scene = buildRoomScene({ layout, placed, arrivals: [], youId: "", figures });
+      // Fresh builds are slow; fewer rounds keep the suite quick.
+      const rounds = figures ? 30 : 5;
+      const start = performance.now();
+      for (let i = 0; i < rounds; i++) {
+        disposeRoomScene(scene);
+        scene = buildRoomScene({ layout, placed, arrivals: [], youId: "", figures });
+      }
+      const ms = (performance.now() - start) / rounds;
+      disposeRoomScene(scene);
+      figures?.dispose();
+      return ms;
+    };
+    for (const count of [8, 40]) {
+      const fresh = rebuild(count);
+      const kept = rebuild(count, new FigureCache());
+      console.log(`rebuild: ${count} people, ${fresh.toFixed(2)} ms fresh, ${kept.toFixed(2)} ms reusing figures (means of 5 and 30)`);
+      expect(kept).toBeLessThan(fresh / 2);
+    }
+  });
+
+  it("reuses an unchanged figure's geometry, frees it when the person leaves or changes, and moves it on the mesh", () => {
+    const figures = new FigureCache();
+    const layout = crowd(3);
+    const first = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "", figures });
+    const geometryOf = (scene: ReturnType<typeof buildRoomScene>, id: string) => meshes(scene.things.get(id))[0].geometry;
+    const kept = geometryOf(first, "#p0");
+    const changed = geometryOf(first, "#p1");
+    const leaving = geometryOf(first, "#p2");
+    const freed = new Set<THREE.BufferGeometry>();
+    for (const g of [kept, changed, leaving]) g.addEventListener("dispose", () => freed.add(g));
+    disposeRoomScene(first);
+    expect(freed.size).toBe(0);
+
+    // #p0 moves and turns, #p1 changes clothes, #p2 leaves.
+    const next: RoomLayout = {
+      ...layout,
+      things: [
+        { ...layout.things[0], origin: [0, 0, 0] },
+        { ...layout.things[1], appearance: { ...layout.things[1].appearance, garments: [] } },
+      ],
+    };
+    const second = buildRoomScene({
+      layout: next,
+      placed: placeThings(next, { "#p0": [1, 1, 0] }),
+      arrivals: [],
+      youId: "",
+      figures,
+      facings: { "#p0": [1, 0, 0] },
+    });
+    expect(geometryOf(second, "#p0")).toBe(kept);
+    expect(meshes(second.things.get("#p0"))[0].position.x).toBeCloseTo(-2 + 1);
+    expect(geometryOf(second, "#p1")).not.toBe(changed);
+    expect(freed.size).toBe(2);
+    expect(freed.has(changed) && freed.has(leaving)).toBe(true);
+    expect(figures.size).toBe(2);
+
+    disposeRoomScene(second);
+    figures.dispose();
+    expect(freed.has(kept)).toBe(true);
   });
 
   it("builds forty figures quickly and cheaply", () => {

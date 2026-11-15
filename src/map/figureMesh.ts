@@ -211,12 +211,65 @@ export function figureGeometry(p: FigureParams): THREE.BufferGeometry {
 }
 
 /**
+ * Figure geometries kept between room rebuilds, keyed by their figure
+ * parameters. The 3D room is rebuilt on every Client.Spatial step while
+ * anyone moves; a person whose parameters are unchanged gets the same
+ * geometry back, since position and facing live on the mesh. Meshes using a
+ * kept geometry are marked `userData.keptGeometry` so `disposeRoomScene`
+ * leaves it; `sweep` frees what the latest build did not use.
+ */
+export class FigureCache {
+  private geometries = new Map<string, THREE.BufferGeometry>();
+  private used = new Set<string>();
+
+  geometry(p: FigureParams): THREE.BufferGeometry {
+    const key = JSON.stringify(p);
+    let geometry = this.geometries.get(key);
+    if (!geometry) {
+      geometry = figureGeometry(p);
+      this.geometries.set(key, geometry);
+    }
+    this.used.add(key);
+    return geometry;
+  }
+
+  /** Frees every geometry not asked for since the last sweep: people who left or whose look changed. */
+  sweep(): void {
+    for (const [key, geometry] of this.geometries) {
+      if (this.used.has(key)) continue;
+      geometry.dispose();
+      this.geometries.delete(key);
+    }
+    this.used.clear();
+  }
+
+  get size(): number {
+    return this.geometries.size;
+  }
+
+  dispose(): void {
+    for (const geometry of this.geometries.values()) geometry.dispose();
+    this.geometries.clear();
+    this.used.clear();
+  }
+}
+
+/**
  * The figure as one mesh standing at (x, y, z0), turned to face `facing`
  * (a MOO-frame direction; only its horizontal part counts). Without a facing
- * the figure faces south.
+ * the figure faces south. With a cache, the geometry is the cache's.
  */
-export function figureMesh(p: FigureParams, x: number, y: number, z0: number, facing: readonly number[] | undefined, material: THREE.Material): THREE.Mesh {
-  const mesh = new THREE.Mesh(figureGeometry(p), material);
+export function figureMesh(
+  p: FigureParams,
+  x: number,
+  y: number,
+  z0: number,
+  facing: readonly number[] | undefined,
+  material: THREE.Material,
+  cache?: FigureCache,
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(cache ? cache.geometry(p) : figureGeometry(p), material);
+  if (cache) mesh.userData.keptGeometry = true;
   const fx = facing?.[0] ?? 0;
   const fy = facing?.[1] ?? 0;
   // Turning by θ about z takes +y to (-sin θ, cos θ).

@@ -15,6 +15,7 @@ import {
   shortLabel,
 } from "../map/roomLayout";
 import {
+  FigureCache,
   buildRoomScene,
   type CameraMode,
   type CameraPose,
@@ -58,6 +59,8 @@ interface Stage {
   controls: OrbitControls;
   scene: THREE.Scene;
   room: RoomScene | null;
+  /** People's figure geometries, reused while their look is unchanged. */
+  figures: FigureCache;
   labelObjects: Map<string, CSS2DObject>;
   render: () => void;
 }
@@ -114,6 +117,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       controls,
       scene,
       room: null,
+      figures: new FigureCache(),
       labelObjects: new Map(),
       render: () => {
         if (stage.room) cutWalls(stage.room, layoutRef.current, camera.position, modeRef.current);
@@ -146,6 +150,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       controls.removeEventListener("change", stage.render);
       controls.dispose();
       if (stage.room) disposeRoomScene(stage.room);
+      stage.figures.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       labels.domElement.remove();
@@ -198,7 +203,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     for (const object of stage.labelObjects.values()) object.removeFromParent();
     stage.labelObjects.clear();
 
-    const room = buildRoomScene({ layout, placed, arrivals, youId, facings });
+    const room = buildRoomScene({ layout, placed, arrivals, youId, facings, figures: stage.figures });
     stage.room = room;
     stage.scene.add(room.root);
     // In your own eyes you are not drawn.

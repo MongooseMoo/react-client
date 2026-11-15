@@ -16,6 +16,7 @@ This branch is the client half: draw each person from the `appearance` map the M
 - People list: portrait plus `name (label), place`. `PlayerCard`: portrait and label, the layout person found by name (`layoutPersonNamed`).
 - Tests: `src/avatar/figure.test.ts`, `portrait.test.tsx`, twelve invented characters in `characters.fixture.ts`; updated `roomScene.test.ts`, `RoomLayoutView.test.tsx`, `PlayerCard.test.tsx`, `roomLayout.test.ts`. The fixture player once named after a real character is now "Ondine"; the same name in `RoomInfoDisplay.test.tsx`, `createConfiguredClient.test.ts` and `spatialStore.test.ts` is now "Marlow". Other test files still use it (AppsPanel, userlist, useChannelHistory, Spatial, sessionStore, roomStore, messages, userlist MCP); not asked for in this round.
 - Measured in Vitest (node, jsdom): 40 figures built in about 145-150 ms; 1,802 to 2,702 triangles per figure, 80,266 for 40.
+- Figure geometry is reused between rebuilds: `FigureCache` in `figureMesh.ts`, keyed by the figure parameters, owned by the 3D view's stage. Position and facing are on the mesh. Meshes with a kept geometry carry `userData.keptGeometry`, so `disposeRoomScene` leaves the geometry to the cache. Each build ends with `sweep()`, which frees figures nobody used (a person who left or changed), and the stage disposes the cache on unmount. Rebuild with unchanged appearances: 8 people 27.5-28.3 ms before, 1.25-1.30 ms after; 40 people 134-137 ms before, 2.25-2.37 ms after.
 
 ## Decisions and why
 
@@ -29,8 +30,8 @@ This branch is the client half: draw each person from the `appearance` map the M
 ## Surprises
 
 - `npm ci` in a fresh worktree fails with `EALLOWSCRIPTS` while preparing the git dependency `@xrnavigation/webaudio-tinysynth` (user-level npm `allow-scripts` is passed to the nested install). `node_modules` was copied from a worktree with an identical lockfile.
-- The 3D room is rebuilt on every animation frame while anyone moves (`RoomLayout3D.tsx` rebuild effect), so figure build time is paid per frame: about 3.7 ms per figure in node.
+- The 3D room is rebuilt on every animation frame while anyone moves (`RoomLayout3D.tsx` rebuild effect), so figure build time was paid per frame: about 3.7 ms per figure in node. Fixed by reusing figure geometry (above); the rest of the room is still rebuilt.
 
 ## Next step
 
-PR review and CI. Open: whether to cache figure geometry across rebuilds or move groups instead of rebuilding, if the per-frame cost shows in real rooms; the MOO must send `appearance` before anything changes for players.
+PR review and CI. Then `appearance.features` (team-lead, 2026-11-14). The MOO must send `appearance` before anything changes for players.

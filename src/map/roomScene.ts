@@ -1,7 +1,9 @@
 import * as THREE from "three";
 import { figureParams } from "../avatar/figure";
 import type { LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
-import { figureMesh } from "./figureMesh";
+import { FigureCache, figureMesh } from "./figureMesh";
+
+export { FigureCache };
 import type { LayoutArrival } from "../stores/roomStore";
 import {
   type Bounds,
@@ -67,6 +69,8 @@ export interface RoomSceneInput {
   youId: string;
   /** Each person's Client.Spatial forward in the MOO frame, by id; a figure faces it. */
   facings?: Record<string, LayoutVector | undefined>;
+  /** Figure geometries kept across rebuilds; without one, every figure is built afresh and freed with the scene. */
+  figures?: FigureCache;
 }
 
 const hexString = (colour: number) => `#${colour.toString(16).padStart(6, "0")}`;
@@ -87,6 +91,8 @@ export interface RoomScene {
 /** Builds meshes, sharing one material per colour within a scene. */
 class Builder {
   private materials = new Map<string, THREE.Material>();
+
+  constructor(private figures?: FigureCache) {}
 
   material(colour: number, options: { opacity?: number; emissive?: number } = {}): THREE.Material {
     const key = `${colour}:${options.opacity ?? 1}:${options.emissive ?? 0}`;
@@ -147,7 +153,7 @@ class Builder {
     facing: LayoutVector | undefined,
   ): { mesh: THREE.Mesh; top: number } {
     const params = figureParams(appearance, { height: z1 - z0, base: hexString(base) });
-    return { mesh: figureMesh(params, x, y, z0, facing, this.figureMaterial()), top: z0 + params.top };
+    return { mesh: figureMesh(params, x, y, z0, facing, this.figureMaterial(), this.figures), top: z0 + params.top };
   }
 }
 
@@ -285,8 +291,8 @@ function buildWall(builder: Builder, layout: RoomLayout, wall: Wall, exits: THRE
   return group;
 }
 
-export function buildRoomScene({ layout, placed, arrivals, youId, facings = {} }: RoomSceneInput): RoomScene {
-  const builder = new Builder();
+export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, figures }: RoomSceneInput): RoomScene {
+  const builder = new Builder(figures);
   const [w, d] = layout.size;
   const root = new THREE.Group();
   const exits: THREE.Object3D[] = [];
@@ -385,6 +391,8 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {} }
     things.set(arrival.id, group);
   }
 
+  // Figures of people who left, or whose look changed, are freed now.
+  figures?.sweep();
   return { root, walls, ceiling, exits, things, labelAnchors };
 }
 
@@ -451,7 +459,8 @@ export function disposeRoomScene(scene: RoomScene): void {
   const materials = new Set<THREE.Material>();
   scene.root.traverse((object) => {
     if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
-      object.geometry.dispose();
+      // A kept figure geometry belongs to its FigureCache, which frees it.
+      if (!object.userData.keptGeometry) object.geometry.dispose();
       const material = object.material as THREE.Material | THREE.Material[];
       for (const m of Array.isArray(material) ? material : [material]) materials.add(m);
     }
