@@ -93,12 +93,17 @@ if (view === "portraits") {
     const room = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "" });
     const scene = new THREE.Scene();
     scene.add(room.root);
-    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV * 0.7, cell.w / cell.h, 0.05, 50);
+    const fov = DOLLHOUSE_FOV * 0.7;
+    const camera = new THREE.PerspectiveCamera(fov, cell.w / cell.h, 0.05, 50);
     camera.up.set(0, 0, 1);
-    const distance = 1.9;
-    const lookZ = ch.height * 0.52;
-    camera.position.set(Math.sin(angle) * distance, -Math.cos(angle) * distance, lookZ + 0.25);
-    camera.lookAt(0, 0, lookZ);
+    // Whole figure: far enough that it (and antlers) fits. Head: the top 30 cm of the figure, close.
+    const bounds = new THREE.Box3().setFromObject(room.things.get("#p") as THREE.Object3D);
+    const head = params.get("zoom") === "head";
+    const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
+    const lookY = head && ch.appearance.posture === "reclining" ? bounds.min.y + 0.14 : 0;
+    const distance = head ? 0.75 : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
+    camera.position.set(Math.sin(angle) * distance, lookY - Math.cos(angle) * distance, lookZ + (head ? 0.05 : 0.3));
+    camera.lookAt(0, lookY, lookZ);
     cutWalls(room, layout, camera.position, "dollhouse");
     const x = (i % cols) * cell.w;
     const y = (rows - 1 - Math.floor(i / cols)) * cell.h;

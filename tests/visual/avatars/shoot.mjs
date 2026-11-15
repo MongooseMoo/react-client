@@ -28,13 +28,33 @@ try {
   };
   const suffix = gpu ? '-gpu' : '';
   if (!gpu) {
+    const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
+    // Each character's row at twice the pixels, to read the details.
+    const sharp = await browser.newPage({ viewport: { width: 1280, height: 1000 }, colorScheme: 'dark', deviceScaleFactor: 2 });
+    await sharp.goto(`${base}?view=portraits`);
+    await sharp.waitForFunction(() => window.ready === true);
+    for (const row of await sharp.locator('tr').all()) {
+      await row.screenshot({ path: resolve(out, `portrait-${slug(await row.locator('td').first().innerText())}.png`) });
+    }
+    await sharp.close();
     await open('view=plan');
     await page.locator('svg.room-layout-svg, svg').first().screenshot({ path: resolve(out, 'plan-tokens.png') });
-    for (const angle of ['front', 'three']) {
-      await open(`view=figures&angle=${angle}`);
-      await page.locator('#root > div').screenshot({ path: resolve(out, `figures-${angle}.png`) });
+    for (const zoom of ['body', 'head']) {
+      for (const angle of ['front', 'three']) {
+        await open(`view=figures&angle=${angle}&zoom=${zoom}`);
+        const grid = page.locator('#root > div');
+        const name = zoom === 'head' ? `heads-${angle}` : `figures-${angle}`;
+        await grid.screenshot({ path: resolve(out, `${name}.png`) });
+        if (zoom === 'head') continue;
+        const box = await grid.boundingBox();
+        const names = await page.locator('#root > div > div').allInnerTexts();
+        for (const [i, who] of names.entries()) {
+          const clip = { x: box.x + (i % 4) * 300, y: box.y + Math.floor(i / 4) * 420, width: 300, height: 420 };
+          await page.screenshot({ path: resolve(out, `figure-${angle}-${slug(who)}.png`), clip });
+        }
+      }
     }
   }
   const results = [];
