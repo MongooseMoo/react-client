@@ -1,6 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "./characters.fixture";
+import { contrast, INK_LIGHT, MIN_CONTRAST } from "./colour";
 import { figureParams } from "./figure";
 import AvatarPortrait from "./portrait";
 
@@ -27,8 +28,8 @@ describe("AvatarPortrait", () => {
 
   it("draws only supplied colours, outlines in the ink, for every test character", () => {
     for (const ch of TEST_CHARACTERS) {
-      const ink = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours.ink;
-      const allowed = new Set([...suppliedHexes(ch.appearance), ink]);
+      const { ink, faceInk } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
+      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk]);
       const svg = draw(ch.appearance).querySelector("svg") as SVGSVGElement;
       for (const el of svg.querySelectorAll("[fill], [stroke]")) {
         for (const attr of ["fill", "stroke"]) {
@@ -73,6 +74,34 @@ describe("AvatarPortrait", () => {
     expect(drawn(["monocle", "glasses", "GLASSES"])).toEqual(["glasses"]);
     expect(drawn("glasses")).toEqual([]);
     expect(draw({ face_hidden: true, features: ["glasses"] }).querySelector(".avatar-feature")).toBeNull();
+  });
+
+  it("draws pupils, nose, mouth, marks and features in an ink that stands out on the skin", () => {
+    // Aster's dark clothes make her outline ink light; on her fair skin that ink vanished.
+    const aster = TEST_CHARACTERS[0];
+    expect(figureParams(aster.appearance, { height: aster.height, base: "#888888" }).colours.ink).toBe(INK_LIGHT);
+    for (const ch of TEST_CHARACTERS) {
+      const { skin, faceInk } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
+      expect(contrast(faceInk, skin), ch.name).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      const svg = draw(ch.appearance).querySelector("svg") as SVGSVGElement;
+      const onFace = [...svg.querySelectorAll(".avatar-nose, .avatar-mouth, .avatar-pupil, .avatar-mark, .avatar-feature *")];
+      if (!ch.appearance.face_hidden) expect(onFace.length, ch.name).toBeGreaterThan(3);
+      for (const el of onFace) {
+        const stroke = el.getAttribute("stroke");
+        expect(stroke && stroke !== "none" ? stroke : el.getAttribute("fill"), ch.name).toBe(faceInk);
+      }
+      for (const eye of svg.querySelectorAll(".avatar-eye")) expect(eye.getAttribute("stroke"), ch.name).toBe(faceInk);
+    }
+  });
+
+  it("hangs earrings on the earlobe and keeps a cheek scar clear of glasses", () => {
+    const earrings = draw({ skin: { hex: "#d7bd96" }, features: ["earrings"] }).querySelectorAll(".avatar-feature circle");
+    // The ear is an ellipse at cy 30 with ry 4: each ring's centre is on it.
+    for (const ring of earrings) expect(Math.abs(Number(ring.getAttribute("cy")) - 30)).toBeLessThan(4);
+    const scar = draw({ skin: { hex: "#f6ede4" }, features: ["glasses"], marks: [{ kind: "scar", area: "cheek" }] }).querySelector(".avatar-mark");
+    // Glasses lenses reach down to y 31.4; the scar starts below them.
+    const [, startY] = /M[\d.]+,([\d.]+)/.exec(scar?.getAttribute("d") ?? "") ?? [];
+    expect(Number(startY)).toBeGreaterThan(31.4);
   });
 
   it("differs between characters", () => {

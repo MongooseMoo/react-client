@@ -150,7 +150,7 @@ describe("buildRoomScene", () => {
     const inkVertices = (appearance: Record<string, unknown>) => {
       const scene = sceneOf(appearance);
       const body = meshes(scene.things.get("#9"))[0];
-      const ink = new THREE.Color(figureParams(appearance, { height: 1.7, base: "#000000" }).colours.ink);
+      const ink = new THREE.Color(figureParams(appearance, { height: 1.7, base: "#000000" }).colours.faceInk);
       const colours = body.geometry.getAttribute("color");
       const positions = body.geometry.getAttribute("position");
       const head = box(body);
