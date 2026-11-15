@@ -42,6 +42,9 @@ the middle of the room, so it spans `-width/2..width/2` and `-depth/2..depth/2`;
 | `things[].mounted` | It hangs on a wall or ceiling. |
 | `things[].shapes` | Its solid parts: boxes `{"box": [[x0,x1],[y0,y1],[z0,z1]]}` and spheres `{"sphere": [[x,y,z], r]}`. May be empty; such a thing is listed but not drawn. |
 | `things[].origin` | `thing:sound_origin()`: where `Client.Spatial` placed this thing when the layout was built. A thing without it is drawn where its shapes are and not moved. |
+| `things[].classes` | Optional. The registered `$` names of the thing's ancestors, nearest first, without the `$` (`["table", "furniture", "thing"]`). The client draws a thing by the first name it knows. |
+| `things[].capabilities` | Optional. The capability names the thing declares (`furniture_seating`, `support_surface`). |
+| `things[].material` | Optional. What it is made of: `[{"species": "wood", "fraction": 0.9}, …]`. The client colours a thing by its largest fraction. |
 
 ## Keeping it current
 
