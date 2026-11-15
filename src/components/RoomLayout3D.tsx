@@ -41,6 +41,8 @@ interface RoomLayout3DProps {
   placed: PlacedThing[];
   arrivals: Array<{ arrival: LayoutArrival; at: LayoutVector }>;
   youId: string;
+  /** Each person's Client.Spatial forward in the MOO frame, by id. */
+  facings: Record<string, LayoutVector | undefined>;
   label: string;
   mode: CameraMode;
   onExit: (name: string) => void;
@@ -71,7 +73,7 @@ function applyPose(stage: Stage, pose: CameraPose) {
   stage.camera.lookAt(stage.controls.target);
 }
 
-const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, youId, label, mode, onExit }) => {
+const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, youId, facings, label, mode, onExit }) => {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Stage | null>(null);
   const modeRef = useRef(mode);
@@ -196,7 +198,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     for (const object of stage.labelObjects.values()) object.removeFromParent();
     stage.labelObjects.clear();
 
-    const room = buildRoomScene({ layout, placed, arrivals, youId });
+    const room = buildRoomScene({ layout, placed, arrivals, youId, facings });
     stage.room = room;
     stage.scene.add(room.root);
     // In your own eyes you are not drawn.
@@ -224,7 +226,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       stage.labelObjects.set(id, object);
     }
     stage.render();
-  }, [layout, placed, arrivals, youId, mode]);
+  }, [layout, placed, arrivals, youId, facings, mode]);
 
   // A new room or a new view starts the dollhouse at its whole-room view.
   const youBounds = placed.find((p) => p.thing.id === youId)?.bounds;

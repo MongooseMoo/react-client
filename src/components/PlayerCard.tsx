@@ -3,6 +3,8 @@ import type { RoomPlayer } from '../gmcp/Room';
 import { setInputTextAndFocus } from '../inputFocus';
 import './PlayerCard.css';
 import { useFocusRecovery } from '../hooks/useFocusRecovery';
+import { appearanceLabel } from '../avatar/figure';
+import AvatarPortrait from '../avatar/portrait';
 
 interface PlayerCardProps {
   player: RoomPlayer;
@@ -10,16 +12,20 @@ interface PlayerCardProps {
   onFollow: (player: RoomPlayer) => void;
   focusReturnId?: string;
   focusFallbackId?: string;
+  /** The player's Room.Layout appearance, when the room has a layout with them in it. */
+  appearance?: unknown;
 }
 
 const PlayerCard: React.FC<PlayerCardProps> = ({
   player,
+  appearance,
   onLook,
   onFollow,
   focusReturnId,
   focusFallbackId,
 }) => {
   const cardRef = React.useRef<HTMLDivElement>(null);
+  const label = appearanceLabel(appearance);
   useFocusRecovery(cardRef, focusReturnId, focusFallbackId);
   const handlePageClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -44,7 +50,9 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
   return (
     <div ref={cardRef} className="player-card" title={player.fullname} data-player-name={player.name}>
       <div className="player-details">
+        <AvatarPortrait appearance={appearance} size={48} className="player-portrait" />
         <div className="player-name">{player.fullname}</div>
+        {label && <div className="player-label">{label}</div>}
       </div>
       <div className="player-actions">
         <button

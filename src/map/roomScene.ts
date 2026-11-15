@@ -1,5 +1,7 @@
 import * as THREE from "three";
+import { figureParams } from "../avatar/figure";
 import type { LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
+import { figureMesh } from "./figureMesh";
 import type { LayoutArrival } from "../stores/roomStore";
 import {
   type Bounds,
@@ -48,8 +50,6 @@ const SCREEN_COLOUR = 0x101014;
 const WALL_THICKNESS = 0.08;
 /** How high a wall facing the dollhouse camera stays, so it does not hide the room. */
 export const CUT_WALL_HEIGHT = 0.3;
-/** A person's body as drawn: a capsule this wide. */
-const PERSON_RADIUS = 0.2;
 export const DEFAULT_EYE_HEIGHT = 1.6;
 /** Vertical fields of view, degrees: the dollhouse, and your eyes (about what a person takes in without turning). */
 export const DOLLHOUSE_FOV = 50;
@@ -65,7 +65,11 @@ export interface RoomSceneInput {
   placed: PlacedThing[];
   arrivals: Array<{ arrival: LayoutArrival; at: LayoutVector }>;
   youId: string;
+  /** Each person's Client.Spatial forward in the MOO frame, by id; a figure faces it. */
+  facings?: Record<string, LayoutVector | undefined>;
 }
+
+const hexString = (colour: number) => `#${colour.toString(16).padStart(6, "0")}`;
 
 export interface RoomScene {
   root: THREE.Group;
@@ -118,27 +122,40 @@ class Builder {
     return mesh;
   }
 
-  /** A standing person: a capsule from the floor (z0) to z1 at (x, y). */
-  person(x: number, y: number, z0: number, z1: number, material: THREE.Material): THREE.Mesh {
-    const height = Math.max(z1 - z0, PERSON_RADIUS * 2 + 0.1);
-    const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(PERSON_RADIUS, height - PERSON_RADIUS * 2, 6, 16), material);
-    // A capsule stands along its own y; turn it to stand along z.
-    mesh.rotation.x = Math.PI / 2;
-    mesh.position.set(x, y, z0 + height / 2);
-    mesh.userData.part = "body";
-    return mesh;
+  /** One material for every figure: each part's colour is in the geometry's vertex colours. */
+  figureMaterial(): THREE.Material {
+    let material = this.materials.get("figure");
+    if (!material) {
+      material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0.05 });
+      this.materials.set("figure", material);
+    }
+    return material;
+  }
+
+  /**
+   * A person from the floor (z0) to z1 at (x, y), drawn from their appearance
+   * (or, without one, the same figure in `base`), facing `facing`. Returns the
+   * mesh and how high the figure's crown is, for the label.
+   */
+  person(
+    appearance: unknown,
+    x: number,
+    y: number,
+    z0: number,
+    z1: number,
+    base: number,
+    facing: LayoutVector | undefined,
+  ): { mesh: THREE.Mesh; top: number } {
+    const params = figureParams(appearance, { height: z1 - z0, base: hexString(base) });
+    return { mesh: figureMesh(params, x, y, z0, facing, this.figureMaterial()), top: z0 + params.top };
   }
 }
 
 const centre = (b: Bounds) => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2] as const;
 
-/** The parts of one thing, by its form. */
-function thingMeshes(builder: Builder, placed: PlacedThing, size: LayoutVector, youId: string): THREE.Mesh[] {
+/** The parts of one thing that is not a person, by its form. */
+function thingMeshes(builder: Builder, placed: PlacedThing, size: LayoutVector): THREE.Mesh[] {
   const { thing, bounds: b } = placed;
-  if (isPerson(thing)) {
-    const [x, y] = centre(b);
-    return [builder.person(x, y, b.z0, b.z1, builder.material(thing.id === youId ? YOU_COLOUR : PERSON_COLOUR))];
-  }
   const colour = thingColour(thing);
   const surface = builder.material(colour);
   const w = b.x1 - b.x0;
@@ -268,7 +285,7 @@ function buildWall(builder: Builder, layout: RoomLayout, wall: Wall, exits: THRE
   return group;
 }
 
-export function buildRoomScene({ layout, placed, arrivals, youId }: RoomSceneInput): RoomScene {
+export function buildRoomScene({ layout, placed, arrivals, youId, facings = {} }: RoomSceneInput): RoomScene {
   const builder = new Builder();
   const [w, d] = layout.size;
   const root = new THREE.Group();
@@ -331,12 +348,20 @@ export function buildRoomScene({ layout, placed, arrivals, youId }: RoomSceneInp
     const group = new THREE.Group();
     group.name = p.thing.id;
     group.userData.thingId = p.thing.id;
-    group.userData.form = isPerson(p.thing) ? "person" : thingForm(p.thing);
-    for (const mesh of thingMeshes(builder, p, layout.size, youId)) group.add(mesh);
+    const [x, y] = centre(p.bounds);
+    if (isPerson(p.thing)) {
+      group.userData.form = "person";
+      const base = p.thing.id === youId ? YOU_COLOUR : PERSON_COLOUR;
+      const { mesh, top } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
+      group.add(mesh);
+      labelAnchors.set(p.thing.id, new THREE.Vector3(x, y, top + 0.12));
+    } else {
+      group.userData.form = thingForm(p.thing);
+      for (const mesh of thingMeshes(builder, p, layout.size)) group.add(mesh);
+      labelAnchors.set(p.thing.id, new THREE.Vector3(x, y, p.bounds.z1 + 0.12));
+    }
     root.add(group);
     things.set(p.thing.id, group);
-    const [x, y] = centre(p.bounds);
-    labelAnchors.set(p.thing.id, new THREE.Vector3(x, y, p.bounds.z1 + 0.12));
   }
   for (const { arrival, at } of arrivals) {
     const group = new THREE.Group();
@@ -345,8 +370,10 @@ export function buildRoomScene({ layout, placed, arrivals, youId }: RoomSceneInp
     if (isPerson(arrival)) {
       group.userData.form = "person";
       // Client.Spatial puts a person at head height; the body stands on the floor below it.
-      const top = Math.max(at[2] + 0.12, 1.0);
-      group.add(builder.person(at[0], at[1], 0, top, builder.material(arrival.id === youId ? YOU_COLOUR : PERSON_COLOUR)));
+      const crown = Math.max(at[2] + 0.12, 1.0);
+      const base = arrival.id === youId ? YOU_COLOUR : PERSON_COLOUR;
+      const { mesh, top } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
+      group.add(mesh);
       labelAnchors.set(arrival.id, new THREE.Vector3(at[0], at[1], top + 0.12));
     } else {
       group.userData.form = "box";

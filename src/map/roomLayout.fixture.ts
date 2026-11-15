@@ -114,7 +114,7 @@ export const livingRoomLayout = (): RoomLayout => ({
   ],
 });
 
-/** The Room.Layout contract's example (docs/room-layout.md), with a body for Q. Tests only. */
+/** The Room.Layout contract's example (docs/room-layout.md), with a body for an invented player. Tests only. */
 export const sampleLayout = (): RoomLayout => ({
   num: 1234,
   size: [3.81, 5.13, 2.44],
@@ -131,7 +131,7 @@ export const sampleLayout = (): RoomLayout => ({
     },
     {
       id: "#99",
-      name: "Q",
+      name: "Ondine",
       kind: "player",
       fixed: true,
       mounted: false,

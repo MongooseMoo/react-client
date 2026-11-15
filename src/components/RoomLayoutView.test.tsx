@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mongooseToWebAudioVector } from "../audio/mongooseCoordinates";
+import { TEST_CHARACTERS } from "../avatar/characters.fixture";
 import type { SpatialVector } from "../gmcp/Client/Spatial";
 import type { RoomLayout } from "../gmcp/Room";
 import { livingRoomLayout, sampleLayout } from "../map/roomLayout.fixture";
@@ -33,6 +34,23 @@ describe("RoomLayoutView", () => {
 
   const renderView = () => render(<RoomLayoutView layout={sampleLayout()} roomName="Le Salon" onExit={onExit} />);
 
+  it("colours a person's token from their appearance and lists their portrait and label quietly", () => {
+    const ch = TEST_CHARACTERS[0];
+    const layout = sampleLayout();
+    layout.things = layout.things.map((t) => (t.id === "#99" ? { ...t, appearance: ch.appearance } : t));
+    const { container } = render(<RoomLayoutView layout={layout} roomName="Le Salon" onExit={onExit} />);
+    const token = screen.getByRole("img").querySelector('[data-id="#99"]') as SVGGElement;
+    expect(token.getAttribute("class")).toContain("rl-dressed");
+    expect(token.style.getPropertyValue("--rl-body")).toBe("#01153e");
+    expect(token.style.getPropertyValue("--rl-head")).toBe("#9a3001");
+    expect(token.querySelector("circle.rl-thing")).not.toBeNull();
+    expect(token.querySelector("circle.rl-head")).not.toBeNull();
+    const item = within(screen.getByRole("list", { name: "People in the layout" })).getByRole("listitem");
+    expect(item.textContent).toBe("Ondine (you) (the short red-haired woman), 0.6 m from the south wall, 0.5 m from the east wall");
+    expect(item.querySelector("svg.avatar-portrait")?.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector("[aria-live]")).toBeNull();
+  });
+
   it("draws something that entered after the layout as a marker, lists it, moves it and drops it on leave", () => {
     renderView();
     act(() => {
@@ -60,7 +78,7 @@ describe("RoomLayoutView", () => {
       useRoomStore.getState().removeLayoutThing("#7");
     });
     expect(picture.querySelector('[data-id="#7"]')).toBeNull();
-    expect(people()).toEqual(["Q (you), 0.6 m from the south wall, 0.5 m from the east wall"]);
+    expect(people()).toEqual(["Ondine (you), 0.6 m from the south wall, 0.5 m from the east wall"]);
   });
 
   it("labels the picture with the room's size and counts, and titles every shape", () => {
@@ -70,7 +88,7 @@ describe("RoomLayoutView", () => {
       "Layout of Le Salon: 3.8 m east to west, 5.1 m north to south, 2.4 m high; 1 exit, 1 person, 1 thing.",
     );
     const items = picture.querySelectorAll(".rl-item");
-    expect([...items].map((item) => item.querySelector("title")?.textContent)).toEqual(["oak table", "Q (you)"]);
+    expect([...items].map((item) => item.querySelector("title")?.textContent)).toEqual(["oak table", "Ondine (you)"]);
     expect(picture.querySelector(".rl-you")?.getAttribute("data-id")).toBe("#99");
     expect(picture.querySelector(".rl-exit title")?.textContent).toBe("Exit west");
   });
@@ -80,7 +98,7 @@ describe("RoomLayoutView", () => {
     const words = (name: string) =>
       within(screen.getByRole("list", { name })).getAllByRole("listitem").map((item) => item.textContent);
     expect(words("Exits in the layout")).toEqual(["west: 0.9 m doorway in the west wall, 1.3 m from the south wall"]);
-    expect(words("People in the layout")).toEqual(["Q (you), 0.6 m from the south wall, 0.5 m from the east wall"]);
+    expect(words("People in the layout")).toEqual(["Ondine (you), 0.6 m from the south wall, 0.5 m from the east wall"]);
     expect(words("Things in the layout")).toEqual([
       "oak table, 1.6 m from the north wall, midway between the east and west walls",
     ]);

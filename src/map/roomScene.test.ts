@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
+import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
+import { figureParams } from "../avatar/figure";
 import type { RoomLayout } from "../gmcp/Room";
 import { livingRoomLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
@@ -28,6 +30,15 @@ const meshes = (group: THREE.Object3D | undefined) =>
 const parts = (group: THREE.Object3D | undefined) => meshes(group).map((m) => m.userData.part);
 const colour = (mesh: THREE.Mesh) => (mesh.material as THREE.MeshStandardMaterial).color.getHex();
 const box = (mesh: THREE.Mesh) => new THREE.Box3().setFromObject(mesh);
+const hex = (colour: number) => `#${colour.toString(16).padStart(6, "0")}`;
+/** The distinct colours painted on a person's figure (its vertex colours, as sRGB numbers), sorted. */
+const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): number[] => {
+  const attribute = meshes(scene.things.get(id))[0].geometry.getAttribute("color");
+  const found = new Set<number>();
+  const c = new THREE.Color();
+  for (let i = 0; i < attribute.count; i++) found.add(c.setRGB(attribute.getX(i), attribute.getY(i), attribute.getZ(i)).getHex());
+  return [...found].sort((a, b) => a - b);
+};
 
 describe("buildRoomScene", () => {
   it("draws the real laundry room: one mesh per shape of a plain thing, doorways in the south and west walls", () => {
@@ -93,16 +104,85 @@ describe("buildRoomScene", () => {
     expect(meshes(scene.things.get("#8"))[0].geometry).toBeInstanceOf(THREE.SphereGeometry);
   });
 
-  it("colours things by their largest material, people green and you blue", () => {
+  it("colours things by their largest material, people without appearance green and you blue", () => {
     const scene = build(livingRoomLayout());
     const first = (id: string) => colour(meshes(scene.things.get(id))[0]);
     expect(first("#1")).toBe(MATERIAL_COLOURS.wood);
     expect(first("#2")).toBe(MATERIAL_COLOURS.cotton);
     expect(colour(meshes(scene.things.get("#4"))[1])).toBe(MATERIAL_COLOURS.paper);
     expect(first("#8")).toBe(NEUTRAL);
-    expect(first("#99")).toBe(YOU_COLOUR);
-    expect(first("#9")).toBe(PERSON_COLOUR);
-    expect(meshes(scene.things.get("#9"))[0].geometry).toBeInstanceOf(THREE.CapsuleGeometry);
+    expect(figureColours("#99", scene)).toEqual([YOU_COLOUR]);
+    expect(figureColours("#9", scene)).toEqual([PERSON_COLOUR]);
+    // A person is one merged mesh with vertex colours, not a capsule.
+    expect(meshes(scene.things.get("#9"))).toHaveLength(1);
+    expect(meshes(scene.things.get("#9"))[0].geometry.getAttribute("color")).toBeDefined();
+  });
+
+  it("draws a person from their appearance, facing their Client.Spatial forward", () => {
+    const layout = livingRoomLayout();
+    const ch = TEST_CHARACTERS[1];
+    layout.things = layout.things.map((t) => (t.id === "#9" ? { ...t, appearance: ch.appearance } : t));
+    const scene = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "#99", facings: { "#9": [1, 0, 0] } });
+    const colours = figureColours("#9", scene);
+    expect(colours.length).toBeGreaterThan(3);
+    const supplied = suppliedHexes(ch.appearance);
+    const ink = figureParams(ch.appearance, { height: 1.7, base: "#000000" }).colours.ink;
+    for (const c of colours) expect(supplied.has(hex(c)) || hex(c) === ink, hex(c)).toBe(true);
+    const body = meshes(scene.things.get("#9"))[0];
+    // Facing east: its own +y turned onto +x.
+    expect(new THREE.Vector3(0, 1, 0).applyEuler(body.rotation).x).toBeCloseTo(1);
+    const bounds = box(body);
+    expect(bounds.min.z).toBeCloseTo(0, 1);
+    expect(bounds.max.z).toBeLessThan(1.8);
+    expect(scene.labelAnchors.get("#9")?.z).toBeGreaterThan(bounds.max.z - 0.2);
+  });
+
+  it("seats a sitting person lower and lays a reclining one down", () => {
+    const layout = livingRoomLayout();
+    const posed = (posture: "sitting" | "reclining") => {
+      layout.things = layout.things.map((t) => (t.id === "#9" ? { ...t, appearance: { posture } } : t));
+      return box(meshes(build(layout).things.get("#9"))[0]);
+    };
+    const standing = box(meshes(build(livingRoomLayout()).things.get("#9"))[0]);
+    const sitting = posed("sitting");
+    const reclining = posed("reclining");
+    expect(sitting.max.z).toBeLessThan(standing.max.z - 0.3);
+    expect(reclining.max.z).toBeLessThan(0.5);
+    expect(Math.max(reclining.max.x - reclining.min.x, reclining.max.y - reclining.min.y)).toBeGreaterThan(1.4);
+  });
+
+  it("builds forty figures quickly and cheaply", () => {
+    const layout = livingRoomLayout();
+    const people = Array.from({ length: 40 }, (_, i) => {
+      const ch = TEST_CHARACTERS[i % TEST_CHARACTERS.length];
+      const x = -2 + (i % 8) * 0.5;
+      const y = -1.5 + Math.floor(i / 8) * 0.7;
+      return {
+        id: `#p${i}`,
+        name: `Person ${i}`,
+        kind: "person" as const,
+        fixed: true,
+        mounted: false,
+        shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
+        appearance: ch.appearance,
+      };
+    });
+    layout.things = people;
+    const placed = placeThings(layout, {});
+    buildRoomScene({ layout, placed, arrivals: [], youId: "" }); // warm-up
+    const start = performance.now();
+    const scene = buildRoomScene({ layout, placed, arrivals: [], youId: "" });
+    const ms = performance.now() - start;
+    const triangles = people.map((p) => {
+      const g = meshes(scene.things.get(p.id))[0].geometry;
+      return (g.index ? g.index.count : g.getAttribute("position").count) / 3;
+    });
+    console.log(
+      `figures: 40 built in ${ms.toFixed(1)} ms; triangles per figure ${Math.min(...triangles)}..${Math.max(...triangles)}, total ${triangles.reduce((a, b) => a + b, 0)}`,
+    );
+    expect(Math.max(...triangles)).toBeLessThan(5000);
+    expect(ms).toBeLessThan(1000);
+    disposeRoomScene(scene);
   });
 
   it("draws the live living-room sample (#25828) by class and material", () => {
@@ -131,7 +211,7 @@ describe("buildRoomScene", () => {
     expect(first("#29293")).toBe(MATERIAL_COLOURS.cotton); // blue sofa
     expect(first("#29617")).toBe(MATERIAL_COLOURS.wood); // coffee table: pine is a wood
     expect(first("#29972")).toBe(NEUTRAL); // weather station: no material
-    expect(first("#2")).toBe(YOU_COLOUR);
+    expect(figureColours("#2", scene)).toEqual([YOU_COLOUR]);
   });
 
   it("draws someone who entered after the layout as a person standing at their Client.Spatial point", () => {
@@ -145,8 +225,9 @@ describe("buildRoomScene", () => {
     const zed = scene.things.get("#77");
     expect(zed?.userData.form).toBe("person");
     const body = box(meshes(zed)[0]);
-    expect(body.min.z).toBeCloseTo(0);
-    expect((body.min.x + body.max.x) / 2).toBeCloseTo(1);
+    expect(body.min.z).toBeCloseTo(0, 1);
+    expect((body.min.x + body.max.x) / 2).toBeCloseTo(1, 1);
+    expect(figureColours("#77", scene)).toEqual([PERSON_COLOUR]);
     expect(scene.labelAnchors.get("#77")?.z).toBeGreaterThan(1.6);
   });
 });

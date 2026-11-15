@@ -19,6 +19,7 @@ import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { type LocalStorageSchema, loadStoredValue, saveStoredValue } from "../persistence";
 import RoomLayoutPicture, { standaloneSvg } from "./RoomLayoutPicture";
+import AvatarPortrait from "../avatar/portrait";
 
 /** three.js and the 3D views load only when one of them is chosen. */
 const RoomLayout3D = lazy(() => import("./RoomLayout3D"));
@@ -84,6 +85,15 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
     return placeThings(layout, positions);
   }, [layout, entities]);
 
+  // Which way each person faces, so their 3D figure turns with them.
+  const facings = useMemo(() => {
+    const out: Record<string, LayoutVector | undefined> = {};
+    for (const [id, entity] of Object.entries(entities)) {
+      if (entity.forward) out[id] = webAudioToMongooseVector(entity.forward);
+    }
+    return out;
+  }, [entities]);
+
   // What entered after the layout, at its Client.Spatial point; it moves with Client.Spatial and goes on leave.
   const arrivals = useMemo(
     () =>
@@ -106,6 +116,7 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
       return {
         id: thing.id,
         kind: thing.kind,
+        appearance: thing.appearance,
         sortName: displayName(thing, youId),
         text: where ? describeThing(where, layout.size, youId) : describeUnshaped(thing, youId),
       };
@@ -113,6 +124,7 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
     ...arrivals.map(({ arrival, at }) => ({
       id: arrival.id,
       kind: arrival.kind,
+      appearance: undefined,
       sortName: displayName(arrival, youId),
       text: describeArrival(arrival, at, layout.size, youId),
     })),
@@ -163,6 +175,7 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
             placed={placed}
             arrivals={drawnArrivals}
             youId={youId}
+            facings={facings}
             label={summary}
             mode={view}
             onExit={onExit}
@@ -189,7 +202,10 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
       ) : (
         <ul aria-label="People in the layout">
           {people.map((e) => (
-            <li key={e.id}>{e.text}</li>
+            <li key={e.id}>
+              <AvatarPortrait appearance={e.appearance} size={32} className="room-layout-portrait" />
+              {e.text}
+            </li>
           ))}
         </ul>
       )}

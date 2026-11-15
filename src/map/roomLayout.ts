@@ -1,6 +1,7 @@
 import type { LayoutExit, LayoutShape, LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
 import type { LayoutArrival } from "../stores/roomStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
+import { appearanceLabel } from "../avatar/figure";
 
 /**
  * Pure geometry for the Room.Layout picture and its text. Everything here is
@@ -205,12 +206,15 @@ export function labelOrder(placed: PlacedThing[], youId: string): PlacedThing[] 
 
 /**
  * A thing's name with what it is and what it is made of, when the server
- * says: "coffee table (table, wood)". People are listed under People and
- * keep their plain names.
+ * says: "coffee table (table, wood)". People are listed under People with
+ * the server's label for them when it sends one: "Ann (the tall red-haired woman)".
  */
 export function namedWithKind(thing: LayoutThing, youId: string): string {
   const name = displayName(thing, youId);
-  if (isPerson(thing)) return name;
+  if (isPerson(thing)) {
+    const label = appearanceLabel(thing.appearance);
+    return label ? `${name} (${stripMudAnsiTags(label) || label})` : name;
+  }
   const kind = [thing.classes?.[0], mainMaterial(thing)].filter(Boolean);
   return kind.length > 0 ? `${name} (${kind.join(", ")})` : name;
 }
@@ -253,6 +257,16 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 
 export function isPerson(thing: { kind: string }): boolean {
   return thing.kind === "player" || thing.kind === "person";
+}
+
+/**
+ * The layout's person for a Room.Players entry, matched by name: Room.Players
+ * carries no object number, so its `name` or `fullname` is compared, ignoring
+ * case and colour markup, with each person's layout name.
+ */
+export function layoutPersonNamed(layout: RoomLayout | null | undefined, names: string[]): LayoutThing | undefined {
+  const wanted = new Set(names.map((n) => (stripMudAnsiTags(n) || n).trim().toLowerCase()).filter(Boolean));
+  return layout?.things.find((t) => isPerson(t) && wanted.has((stripMudAnsiTags(t.name) || t.name).trim().toLowerCase()));
 }
 
 /** The picture's accessible name: room size and what is in it, arrivals included. */

@@ -91,6 +91,11 @@
   padding-left: 1.2em;
 }
 
+.room-layout-portrait {
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
 .room-layout-help {
   margin: 0 0 6px;
   color: var(--color-text-secondary);

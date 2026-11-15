@@ -17,6 +17,7 @@ import {
   describeThing,
   displayName,
   exitWall,
+  layoutPersonNamed,
   layoutSummary,
   placeLabels,
   placeThings,
@@ -106,7 +107,7 @@ describe("room layout geometry", () => {
       "against the south wall, midway between the east and west walls",
     );
     const [table, q] = placeThings(sampleLayout(), {});
-    expect(describeThing(q, sampleLayout().size, "#99")).toBe("Q (you), 0.6 m from the south wall, 0.5 m from the east wall");
+    expect(describeThing(q, sampleLayout().size, "#99")).toBe("Ondine (you), 0.6 m from the south wall, 0.5 m from the east wall");
     expect(describeThing(table, sampleLayout().size, "#99")).toBe(
       "oak table, 1.6 m from the north wall, midway between the east and west walls",
     );
@@ -223,5 +224,23 @@ describe("what things are", () => {
     expect(order.slice(0, 2)).toEqual(["#99", "#9"]);
     expect(order[2]).toBe("#2");
     expect(order).not.toContain("#4");
+  });
+});
+
+describe("people's labels and names", () => {
+  it("lists a person with the server's label, and a person without one by name alone", () => {
+    const layout = livingRoomLayout();
+    const person = layout.things.find((t) => t.id === "#9") as RoomLayout["things"][number];
+    expect(namedWithKind(person, "#99")).toBe("Person 1");
+    expect(namedWithKind({ ...person, appearance: { label: "the [red]tall woman" } }, "#99")).toBe("Person 1 (the tall woman)");
+    expect(namedWithKind({ ...person, appearance: { label: 7 } as never }, "#99")).toBe("Person 1");
+  });
+
+  it("finds the layout person for a Room.Players entry by name or full name, never an object", () => {
+    const layout = livingRoomLayout();
+    expect(layoutPersonNamed(layout, ["player 1", "Player 1, the Curious"])?.id).toBe("#99");
+    expect(layoutPersonNamed(layout, ["nobody", "PERSON 1"])?.id).toBe("#9");
+    expect(layoutPersonNamed(layout, ["sofa"])).toBeUndefined();
+    expect(layoutPersonNamed(null, ["Player 1"])).toBeUndefined();
   });
 });

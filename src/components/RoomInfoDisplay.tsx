@@ -8,6 +8,7 @@ import { type ItemAction, performItemAction } from "../itemActions";
 import { useItemsStore } from "../stores/itemsStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { compareDirections, directionLabel } from "../map/directions";
+import { layoutPersonNamed } from "../map/roomLayout";
 import AccessibleList from "./AccessibleList"; // Import AccessibleList
 import ItemCard from "./ItemCard"; // Import ItemCard
 import PlayerCard from "./PlayerCard"; // Import PlayerCard
@@ -23,6 +24,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   // Room info and players come from the room store (single source of truth).
   const roomInfo = useRoomStore((state) => state.roomInfo);
   const roomPlayers = useRoomStore((state) => state.roomPlayers);
+  const roomLayout = useRoomStore((state) => state.roomLayout);
   const roomItems = useItemsStore((state) => state.itemsByLocation.room ?? EMPTY_ITEMS);
   const [selectedRoomItemId, setSelectedRoomItemId] = useState<string | null>(null);
   const [selectedPlayerName, setSelectedPlayerName] = useState<string | null>(null);
@@ -195,6 +197,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
         <div className="selected-player-card-container" style={{ marginTop: '1rem' }}>
           <PlayerCard
             player={selectedPlayer}
+            appearance={layoutPersonNamed(roomLayout, [selectedPlayer.name, selectedPlayer.fullname])?.appearance}
             onLook={handleLookAtPlayer}
             onFollow={handleFollowPlayer}
             focusReturnId={playersListId}

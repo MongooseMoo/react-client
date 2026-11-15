@@ -54,6 +54,54 @@ export interface LayoutThing {
   capabilities?: string[];
   /** What it is made of: species with their fractions of the whole; `[]` when it declares none. */
   material?: LayoutMaterial[];
+  /**
+   * People only (`player`, `person`): how they look to this recipient. Absent when the character has
+   * no appearance record. Nothing here is checked by the decoder, so every field may be missing or wrong.
+   */
+  appearance?: LayoutAppearance;
+}
+
+/** A named palette colour: the word the MOO uses for it and its `#rrggbb` value. */
+export interface LayoutColour {
+  name: string;
+  hex: string;
+}
+
+/** One visible mark on a part of the body not covered by clothing. */
+export interface LayoutMark {
+  kind: string;
+  area: string;
+}
+
+/** One worn garment: the body areas it covers (head, neck, torso, arms, hands, waist, legs, feet) and its layer, higher outside. */
+export interface LayoutGarment {
+  name: string;
+  areas: string[];
+  layer: number;
+  colour?: LayoutColour;
+}
+
+/** `things[].appearance` in Room.Layout (see docs/room-layout.md). Every key is optional. */
+export interface LayoutAppearance {
+  /** The shortest phrase that tells this person from the others present, computed by the server for this recipient. */
+  label?: string;
+  posture?: "standing" | "sitting" | "reclining";
+  /** Species or body plan, and traits such as `tail`, `wings`, `antlers`. */
+  body_plan?: string;
+  traits?: string[];
+  /** One of the chargen builds: average, athletic, thin, curvy, chunky, pudgy, muscular, dumpy. */
+  build?: string;
+  age_years?: number;
+  skin?: LayoutColour;
+  /** Absent when bald or covered. */
+  hair?: { length_cm?: number; texture?: string; style?: string; name?: string; hex?: string };
+  facial_hair?: { kind?: string; name?: string; hex?: string };
+  eyes?: LayoutColour;
+  face?: { shape?: string; nose?: string; lips?: string; brows?: string; ears?: string };
+  /** A form hides the face; hair, eyes and face are then the form's. */
+  face_hidden?: boolean;
+  marks?: LayoutMark[];
+  garments?: LayoutGarment[];
 }
 
 /** One component of a thing's material: the stored component map, which may carry more keys (`phase`, `frozen_fraction`…). */
