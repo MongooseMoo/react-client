@@ -1,5 +1,5 @@
 import type React from "react";
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LayoutVector, RoomLayout } from "../gmcp/Room";
 import type { LayoutArrival } from "../stores/roomStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
@@ -11,6 +11,7 @@ import {
   type PlacedThing,
   placeLabels,
   scaleBarLength,
+  shortLabel,
   toSvg,
   type Wall,
 } from "../map/roomLayout";
@@ -64,28 +65,30 @@ export const LAYOUT_STYLE = `
 .room-layout-svg { font-family: var(--font-family-base, sans-serif); }
 .room-layout-svg .rl-bg { fill: var(--color-bg, #14141a); }
 .room-layout-svg .rl-floor { fill: var(--color-bg-elevated, #1a1a22); }
-.room-layout-svg .rl-grid { stroke: var(--color-text-muted, #9999aa); stroke-opacity: 0.18; stroke-width: 1px; vector-effect: non-scaling-stroke; }
-.room-layout-svg .rl-wall { fill: none; stroke: var(--color-text, #e8e8ed); stroke-width: 4px; vector-effect: non-scaling-stroke; stroke-linejoin: miter; }
-.room-layout-svg .rl-door-gap { stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 6px; vector-effect: non-scaling-stroke; }
-.room-layout-svg .rl-door { stroke: var(--color-action, #fb923c); stroke-width: 2px; vector-effect: non-scaling-stroke; stroke-linecap: round; cursor: pointer; }
+.room-layout-svg .rl-grid { stroke: var(--color-text-muted, #9999aa); stroke-opacity: 0.12; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.room-layout-svg .rl-wall { fill: none; stroke: var(--color-text, #e8e8ed); stroke-width: 5px; vector-effect: non-scaling-stroke; stroke-linejoin: miter; }
+.room-layout-svg .rl-door-gap { stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 7px; vector-effect: non-scaling-stroke; }
+.room-layout-svg .rl-door { stroke: var(--color-action, #fb923c); stroke-width: 2.5px; vector-effect: non-scaling-stroke; stroke-linecap: round; cursor: pointer; }
 .room-layout-svg .rl-hatch { fill: var(--color-action, #fb923c); fill-opacity: 0.25; stroke: var(--color-action, #fb923c); stroke-width: 2px; vector-effect: non-scaling-stroke; cursor: pointer; }
 .room-layout-svg .rl-door-hit { stroke: transparent; stroke-width: 18px; vector-effect: non-scaling-stroke; cursor: pointer; }
-.room-layout-svg .rl-exit-label { fill: var(--color-action, #fb923c); font-weight: 600; }
-.room-layout-svg .rl-thing { fill: var(--color-bg-surface, #22222d); fill-opacity: 0.9; stroke: var(--color-text-secondary, #a0a0b0); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
-.room-layout-svg .rl-fixed .rl-thing { stroke: var(--color-text, #e8e8ed); stroke-width: 2.5px; }
-.room-layout-svg .rl-mounted .rl-thing { fill-opacity: 0.5; stroke-dasharray: 5 3; }
-.room-layout-svg .rl-person .rl-thing { fill: var(--color-success, #4ade80); fill-opacity: 0.35; stroke: var(--color-success, #4ade80); stroke-width: 2px; }
-.room-layout-svg .rl-you .rl-thing { fill: var(--color-primary, #5ba0ff); fill-opacity: 0.45; stroke: var(--color-primary, #5ba0ff); }
-.room-layout-svg .rl-you-ring { fill: none; stroke: var(--color-primary, #5ba0ff); stroke-width: 2px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
-.room-layout-svg .rl-label { fill: var(--color-text, #e8e8ed); paint-order: stroke; stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 3px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.room-layout-svg .rl-label-you { fill: var(--color-primary, #5ba0ff); font-weight: 600; }
-.room-layout-svg .rl-leader { stroke: var(--color-text-muted, #9999aa); stroke-width: 1px; vector-effect: non-scaling-stroke; }
-.room-layout-svg .rl-mark { fill: var(--color-text-secondary, #a0a0b0); }
-.room-layout-svg .rl-mark-line { stroke: var(--color-text-secondary, #a0a0b0); stroke-width: 1.5px; vector-effect: non-scaling-stroke; fill: none; }
+.room-layout-svg .rl-exit-label { fill: var(--color-action, #fb923c); font-weight: 700; letter-spacing: 0.02em; }
+.room-layout-svg .rl-thing { fill: var(--color-bg-surface, #22222d); stroke: var(--color-text-muted, #9999aa); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.room-layout-svg .rl-fixed .rl-thing { stroke: var(--color-text-secondary, #a0a0b0); stroke-width: 1.5px; }
+.room-layout-svg .rl-mounted .rl-thing { fill: var(--color-text-secondary, #a0a0b0); fill-opacity: 0.55; stroke: none; }
+.room-layout-svg .rl-person .rl-thing { fill: var(--color-success, #4ade80); fill-opacity: 0.85; stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 1.5px; }
+.room-layout-svg .rl-you .rl-thing { fill: var(--color-primary, #5ba0ff); fill-opacity: 1; }
+.room-layout-svg .rl-you-ring { fill: none; stroke: var(--color-primary, #5ba0ff); stroke-width: 2px; stroke-opacity: 0.7; vector-effect: non-scaling-stroke; }
+.room-layout-svg .rl-label { fill: var(--color-text-secondary, #a0a0b0); paint-order: stroke; stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 3.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.room-layout-svg .rl-label-person { fill: var(--color-text, #e8e8ed); font-weight: 600; }
+.room-layout-svg .rl-label-you { fill: var(--color-primary, #5ba0ff); font-weight: 700; }
+.room-layout-svg .rl-mark { fill: var(--color-text-muted, #9999aa); }
+.room-layout-svg .rl-mark-line { stroke: var(--color-text-muted, #9999aa); stroke-width: 1.5px; vector-effect: non-scaling-stroke; fill: none; }
 @media (forced-colors: active) {
   .room-layout-svg .rl-bg, .room-layout-svg .rl-floor, .room-layout-svg .rl-thing { fill: Canvas; }
-  .room-layout-svg .rl-wall, .room-layout-svg .rl-thing, .room-layout-svg .rl-mark-line, .room-layout-svg .rl-leader { stroke: CanvasText; }
-  .room-layout-svg .rl-door, .room-layout-svg .rl-hatch, .room-layout-svg .rl-you-ring, .room-layout-svg .rl-you .rl-thing { stroke: Highlight; }
+  .room-layout-svg .rl-wall, .room-layout-svg .rl-thing, .room-layout-svg .rl-mark-line { stroke: CanvasText; }
+  .room-layout-svg .rl-mounted .rl-thing, .room-layout-svg .rl-person .rl-thing { fill: CanvasText; }
+  .room-layout-svg .rl-door, .room-layout-svg .rl-hatch, .room-layout-svg .rl-you-ring { stroke: Highlight; }
+  .room-layout-svg .rl-you .rl-thing { fill: Highlight; }
   .room-layout-svg .rl-label, .room-layout-svg .rl-exit-label, .room-layout-svg .rl-mark { fill: CanvasText; stroke: Canvas; }
 }
 `;
@@ -93,9 +96,12 @@ export const LAYOUT_STYLE = `
 /** The whole room plus a margin for exit names, the scale bar and the north arrow. */
 export function baseViewBox(layout: RoomLayout): ViewBox {
   const [w, d] = layout.size;
-  const pad = Math.max(0.8, Math.max(w, d) * 0.16);
+  const pad = Math.max(0.6, Math.max(w, d) * 0.12);
   return { x: -w / 2 - pad, y: -d / 2 - pad, w: w + pad * 2, h: d + pad * 2 };
 }
+
+/** Label text height on screen, in CSS pixels, at every zoom. */
+const LABEL_PIXELS = 12;
 
 export function labelFontSize(layout: RoomLayout): number {
   return Math.min(0.6, Math.max(0.12, Math.max(layout.size[0], layout.size[1]) / 30));
@@ -169,8 +175,25 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
     setView(base);
   }
 
+  // The drawing's size on screen, so text stays LABEL_PIXELS tall at every zoom.
+  const [screenSize, setScreenSize] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const svg = ownRef.current;
+    if (!svg || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const rect = svg.getBoundingClientRect();
+      setScreenSize(rect.width > 0 && rect.height > 0 ? { w: rect.width, h: rect.height } : null);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(svg);
+    return () => observer.disconnect();
+  }, []);
+
   const [w, d] = layout.size;
-  const fontSize = labelFontSize(layout);
+  const fontSize = screenSize
+    ? LABEL_PIXELS * Math.max(view.w / screenSize.w, view.h / screenSize.h)
+    : labelFontSize(layout);
   const pad = -base.x - w / 2;
 
   const zoomAtCentre = (factor: number) =>
@@ -256,20 +279,50 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
     (a, b) => Number(isPerson(a.thing)) - Number(isPerson(b.thing)) || a.bounds.z0 - b.bounds.z0,
   );
 
-  const markerRadius = fontSize * 0.6;
+  // Every person is the same round token at their centre, so a body's collision box does not make one look bigger.
+  const markerRadius = 0.22;
+  /** A person's name goes beside their token (under it first), never on it: the token is in `avoid` below. */
+  const underToken = (x: number, y: number) => ({ x, y, radius: markerRadius });
+  const centreOf = (p: PlacedThing) => toSvg((p.bounds.x0 + p.bounds.x1) / 2, (p.bounds.y0 + p.bounds.y1) / 2);
+  const area = (p: PlacedThing) => (p.bounds.x1 - p.bounds.x0) * (p.bounds.y1 - p.bounds.y0);
+  // Labels by importance: you, other people, then things largest first. Things on the walls are
+  // not labelled; each keeps its title and its line in the lists below.
+  const labelled = [...placed]
+    .filter((p) => isPerson(p.thing) || !p.thing.mounted)
+    .sort(
+      (a, b) =>
+        Number(b.thing.id === youId) - Number(a.thing.id === youId) ||
+        Number(isPerson(b.thing)) - Number(isPerson(a.thing)) ||
+        area(b) - area(a),
+    );
+  const personIds = new Set([
+    ...placed.filter((p) => isPerson(p.thing)).map((p) => p.thing.id),
+    ...arrivals.filter(({ arrival }) => isPerson(arrival)).map(({ arrival }) => arrival.id),
+  ]);
+  const inset = fontSize * 0.2;
   const labels = placeLabels(
     [
+      ...labelled.filter((p) => p.thing.id === youId || isPerson(p.thing)).map((p) => {
+        const [x, y] = centreOf(p);
+        return { id: p.thing.id, text: shortLabel(displayName(p.thing, youId)), ...underToken(x, y) };
+      }),
       ...arrivals.map(({ arrival, at }) => {
         const [x, y] = toSvg(at[0], at[1]);
-        return { id: arrival.id, text: displayName(arrival, youId), x, y, radius: markerRadius };
+        return { id: arrival.id, text: shortLabel(displayName(arrival, youId)), ...underToken(x, y) };
       }),
-      ...[...ordered].reverse().map((p) => {
-        const [x, y] = toSvg((p.bounds.x0 + p.bounds.x1) / 2, (p.bounds.y0 + p.bounds.y1) / 2);
+      ...labelled.filter((p) => !isPerson(p.thing)).map((p) => {
+        const [x, y] = centreOf(p);
         const radius = Math.max(p.bounds.x1 - p.bounds.x0, p.bounds.y1 - p.bounds.y0) / 2;
-        return { id: p.thing.id, text: displayName(p.thing, youId), x, y, radius };
+        return { id: p.thing.id, text: shortLabel(displayName(p.thing, youId)), x, y, radius };
       }),
     ],
     fontSize,
+    { x0: -w / 2 + inset, x1: w / 2 - inset, y0: -d / 2 + inset, y1: d / 2 - inset },
+    // No label covers a person's token.
+    [
+      ...placed.filter((p) => isPerson(p.thing)).map(centreOf),
+      ...arrivals.map(({ at }) => toSvg(at[0], at[1])),
+    ].map(([x, y]) => ({ x0: x - markerRadius, x1: x + markerRadius, y0: y - markerRadius, y1: y + markerRadius })),
   );
 
   const exits = layout.exits.map((exit, index) => {
@@ -365,7 +418,17 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
           ]
             .filter(Boolean)
             .join(" ");
-          const [cx, cy] = toSvg((p.bounds.x0 + p.bounds.x1) / 2, (p.bounds.y0 + p.bounds.y1) / 2);
+          const [cx, cy] = centreOf(p);
+          if (isPerson(p.thing)) {
+            const r = markerRadius;
+            return (
+              <g key={p.thing.id} className={className} data-id={p.thing.id}>
+                <title>{displayName(p.thing, youId)}</title>
+                <circle className="rl-thing" cx={cx} cy={cy} r={r} />
+                {you && <circle className="rl-you-ring" cx={cx} cy={cy} r={r * 1.35} />}
+              </g>
+            );
+          }
           return (
             <g key={p.thing.id} className={className} data-id={p.thing.id}>
               <title>{displayName(p.thing, youId)}</title>
@@ -386,14 +449,6 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
                   />
                 );
               })}
-              {you && (
-                <circle
-                  className="rl-you-ring"
-                  cx={cx}
-                  cy={cy}
-                  r={Math.max(p.bounds.x1 - p.bounds.x0, p.bounds.y1 - p.bounds.y0) / 2 + fontSize * 0.5}
-                />
-              )}
             </g>
           );
         })}
@@ -407,7 +462,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
             <g key={arrival.id} className={className} data-id={arrival.id}>
               <title>{displayName(arrival, youId)}</title>
               <circle className="rl-thing" cx={x} cy={y} r={markerRadius} />
-              {you && <circle className="rl-you-ring" cx={x} cy={y} r={markerRadius + fontSize * 0.5} />}
+              {you && <circle className="rl-you-ring" cx={x} cy={y} r={markerRadius * 1.35} />}
             </g>
           );
         })}
@@ -417,9 +472,10 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
       <g aria-hidden="true">
         {labels.map((l) => (
           <g key={l.id}>
-            {l.leader && <line className="rl-leader" x1={l.anchorX} y1={l.anchorY} x2={l.x} y2={l.y} />}
             <text
-              className={l.id === youId ? "rl-label rl-label-you" : "rl-label"}
+              className={
+                l.id === youId ? "rl-label rl-label-you" : personIds.has(l.id) ? "rl-label rl-label-person" : "rl-label"
+              }
               x={l.x}
               y={l.y + fontSize * 0.35}
               fontSize={fontSize}
