@@ -4,14 +4,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mongooseToWebAudioVector } from "../audio/mongooseCoordinates";
 import type { SpatialVector } from "../gmcp/Client/Spatial";
 import type { RoomLayout } from "../gmcp/Room";
-import { sampleLayout } from "../map/roomLayout.fixture";
+import { livingRoomLayout, sampleLayout } from "../map/roomLayout.fixture";
 import laundry from "../map/roomLayout.sample-1770.json";
 import { useRoomStore } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
 import { standaloneSvg } from "./RoomLayoutPicture";
 import RoomLayoutView from "./RoomLayoutView";
 
-const webAudio = (v: [number, number, number]) => mongooseToWebAudioVector(v) as SpatialVector;
+// jsdom has no WebGL: the 3D views stand in as an element carrying their props.
+vi.mock("./RoomLayout3D", () => ({
+  default: (props: { mode: string; label: string }) => (
+    <div data-testid="room-3d" data-mode={props.mode} role="img" aria-label={props.label} />
+  ),
+}));
+
+const webAudio =(v: [number, number, number]) => mongooseToWebAudioVector(v) as SpatialVector;
 
 describe("RoomLayoutView", () => {
   let onExit: ReturnType<typeof vi.fn>;
@@ -143,5 +150,68 @@ describe("RoomLayoutView", () => {
     expect(parsed.querySelector("style")?.textContent).toContain(".room-layout-svg .rl-wall");
     expect(parsed.firstElementChild?.tagName).toBe("title");
     expect(parsed.firstElementChild?.textContent).toBe("Room layout");
+  });
+});
+
+describe("RoomLayoutView views", () => {
+  beforeEach(() => {
+    // setupTests stubs localStorage with no-ops; give it a memory for these tests.
+    const stored = new Map<string, string>();
+    vi.mocked(localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => void stored.set(key, value));
+    useSpatialStore.getState().reset();
+    useSpatialStore.setState({ listenerEntityId: "#99" });
+    useRoomStore.getState().reset();
+  });
+
+  const renderLiving = () =>
+    render(<RoomLayoutView layout={livingRoomLayout()} roomName="The Living Room" onExit={vi.fn()} />);
+  const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
+
+  it("offers Plan, Dollhouse and Your eyes as one labelled radio group, Plan first", () => {
+    renderLiving();
+    const group = screen.getByRole("group", { name: "View" });
+    expect(within(group).getAllByRole("radio").map((r) => r.closest("label")?.textContent)).toEqual([
+      "Plan",
+      "Dollhouse",
+      "Your eyes",
+    ]);
+    expect(radio("Plan").checked).toBe(true);
+    expect(screen.getByRole("img").tagName.toLowerCase()).toBe("svg");
+  });
+
+  it("shows the chosen 3D view with the same label, keeps the lists, and remembers the choice in the next room", async () => {
+    const view = renderLiving();
+    const label = screen.getByRole("img").getAttribute("aria-label");
+    fireEvent.click(radio("Dollhouse"));
+    const picture = await screen.findByTestId("room-3d");
+    expect(picture.getAttribute("data-mode")).toBe("dollhouse");
+    expect(picture.getAttribute("aria-label")).toBe(label);
+    expect(screen.getByRole("list", { name: "Things in the layout" })).toBeTruthy();
+    expect(screen.getByText(/^Drag to turn the room/)).toBeTruthy();
+
+    fireEvent.click(radio("Your eyes"));
+    expect((await screen.findByTestId("room-3d")).getAttribute("data-mode")).toBe("eyes");
+    view.unmount();
+
+    render(<RoomLayoutView layout={sampleLayout()} roomName="Le Salon" onExit={vi.fn()} />);
+    expect(radio("Your eyes").checked).toBe(true);
+    expect((await screen.findByTestId("room-3d")).getAttribute("data-mode")).toBe("eyes");
+  });
+
+  it("draws what things are in the plan and names them with class and material in the lists", () => {
+    renderLiving();
+    const picture = screen.getByRole("img");
+    const form = (id: string) => picture.querySelector(`[data-id="${id}"]`);
+    expect(form("#1")?.getAttribute("data-form")).toBe("table");
+    expect(form("#1")?.querySelectorAll("circle.rl-symbol")).toHaveLength(4);
+    expect(form("#2")?.querySelector("rect.rl-symbol")).not.toBeNull();
+    expect(form("#6")?.querySelector("path.rl-symbol-line")).not.toBeNull();
+    const things = within(screen.getByRole("list", { name: "Things in the layout" }))
+      .getAllByRole("listitem")
+      .map((i) => i.textContent);
+    expect(things).toContain(
+      "coffee table (table, wood), midway between the north and south walls, midway between the east and west walls",
+    );
   });
 });
