@@ -14,7 +14,7 @@ This branch is the client half: draw each person from the `appearance` map the M
 - `roomScene.ts` builds every person, arrivals included, with it; `RoomLayoutView` passes each entity's Client.Spatial forward (`facings`) to the 3D view.
 - Plan tokens: `rl-dressed` class and `--rl-body`/`--rl-head` custom properties on the person's group; forced-colors rules extended.
 - People list: portrait plus `name (label), place`. `PlayerCard`: portrait and label, the layout person found by name (`layoutPersonNamed`).
-- Tests: `src/avatar/figure.test.ts`, `portrait.test.tsx`, twelve invented characters in `characters.fixture.ts`; updated `roomScene.test.ts`, `RoomLayoutView.test.tsx`, `PlayerCard.test.tsx`, `roomLayout.test.ts`. The fixture player once named after a real character is now "Ondine".
+- Tests: `src/avatar/figure.test.ts`, `portrait.test.tsx`, twelve invented characters in `characters.fixture.ts`; updated `roomScene.test.ts`, `RoomLayoutView.test.tsx`, `PlayerCard.test.tsx`, `roomLayout.test.ts`. The fixture player once named after a real character is now "Ondine"; the same name in `RoomInfoDisplay.test.tsx`, `createConfiguredClient.test.ts` and `spatialStore.test.ts` is now "Marlow". Other test files still use it (AppsPanel, userlist, useChannelHistory, Spatial, sessionStore, roomStore, messages, userlist MCP); not asked for in this round.
 - Measured in Vitest (node, jsdom): 40 figures built in about 145-150 ms; 1,802 to 2,702 triangles per figure, 80,266 for 40.
 
 ## Decisions and why

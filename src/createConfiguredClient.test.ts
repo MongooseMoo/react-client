@@ -63,12 +63,12 @@ describe("createConfiguredClient", () => {
     client = createConfiguredClient();
 
     const char = client.gmcp.require("Char");
-    char.receiveRegisteredMessage("Name", { fullname: "Q", name: "q" });
-    char.receiveRegisteredMessage("Name", { fullname: "Q", name: "q" });
+    char.receiveRegisteredMessage("Name", { fullname: "Marlow", name: "marlow" });
+    char.receiveRegisteredMessage("Name", { fullname: "Marlow", name: "marlow" });
 
     expect(client.gmcp.sessionReady).toBe(true);
     expect(useConnectionStore.getState().sessionReady).toBe(true);
-    expect(useConnectionStore.getState().statusText).toBe("Logged in as Q");
+    expect(useConnectionStore.getState().statusText).toBe("Logged in as Marlow");
   });
 
   it("registers IRE.Sound so server sound events reach the media service", () => {
@@ -244,8 +244,8 @@ describe("createConfiguredClient", () => {
     client.connectLocal(stream);
 
     client.gmcp.require("Char").receiveRegisteredMessage("Name", {
-      fullname: "Q",
-      name: "q",
+      fullname: "Marlow",
+      name: "marlow",
     });
     client.gmcp.require("Char").receiveRegisteredMessage("Vitals", [
       { id: "health", kind: "health", label: "Health", value: 10, max: 20, rate: 0 },
