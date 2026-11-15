@@ -52,11 +52,11 @@ export interface LayoutThing {
   classes?: string[];
   /** Capability names the thing declares (`furniture_seating`, `support_surface`). */
   capabilities?: string[];
-  /** What it is made of: species with their fractions of the whole. */
+  /** What it is made of: species with their fractions of the whole; `[]` when it declares none. */
   material?: LayoutMaterial[];
 }
 
-/** One component of a thing's material. */
+/** One component of a thing's material: the stored component map, which may carry more keys (`phase`, `frozen_fraction`…). */
 export interface LayoutMaterial {
   species: string;
   fraction: number;

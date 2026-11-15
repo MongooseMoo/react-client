@@ -138,9 +138,86 @@ export function displayName(item: { id: string; name: string }, youId: string): 
   return item.id === youId ? `${name} (you)` : name;
 }
 
+/**
+ * How a thing is drawn, from the first of its MOO classes (nearest first)
+ * that has a drawing. Things with none of these classes are plain boxes.
+ */
+export type ThingForm = "table" | "seat" | "shelf" | "picture" | "screen" | "door" | "flat" | "box";
+
+const FORM_BY_CLASS: Record<string, ThingForm> = {
+  table: "table",
+  chair: "seat",
+  furniture: "seat",
+  old_furniture: "seat",
+  bookshelf: "shelf",
+  cabinet: "shelf",
+  moving_photograph: "picture",
+  tv: "screen",
+  door_leaf: "door",
+  book: "flat",
+  note: "flat",
+};
+
+export function thingForm(thing: LayoutThing): ThingForm {
+  for (const name of thing.classes ?? []) {
+    const form = FORM_BY_CLASS[name];
+    if (form) return form;
+  }
+  return "box";
+}
+
+/** The species with the largest fraction of a thing's material, or undefined when none is sent. */
+export function mainMaterial(thing: LayoutThing): string | undefined {
+  let best: { species: string; fraction: number } | undefined;
+  for (const part of thing.material ?? []) {
+    if (!best || part.fraction > best.fraction) best = part;
+  }
+  return best?.species;
+}
+
+/** The wall a footprint is closest to; ties go north, south, east, west in that order. */
+export function nearestWall(bounds: Bounds, size: LayoutVector): Wall {
+  const gaps: Array<[Wall, number]> = [
+    ["north", size[1] / 2 - bounds.y1],
+    ["south", bounds.y0 + size[1] / 2],
+    ["east", size[0] / 2 - bounds.x1],
+    ["west", bounds.x0 + size[0] / 2],
+  ];
+  return gaps.reduce((best, gap) => (gap[1] < best[1] ? gap : best))[0];
+}
+
+/**
+ * The things to label, most important first: you, other people, then things
+ * largest footprint first. Things on the walls are not labelled; each keeps
+ * its title and its line in the lists. Every view labels in this order.
+ */
+export function labelOrder(placed: PlacedThing[], youId: string): PlacedThing[] {
+  const area = (p: PlacedThing) => (p.bounds.x1 - p.bounds.x0) * (p.bounds.y1 - p.bounds.y0);
+  return placed
+    .filter((p) => isPerson(p.thing) || !p.thing.mounted)
+    .sort(
+      (a, b) =>
+        Number(b.thing.id === youId) - Number(a.thing.id === youId) ||
+        Number(isPerson(b.thing)) - Number(isPerson(a.thing)) ||
+        area(b) - area(a),
+    );
+}
+
+/**
+ * A thing's name with what it is and what it is made of, when the server
+ * says: "coffee table (table, wood)". People are listed under People and
+ * keep their plain names.
+ */
+export function namedWithKind(thing: LayoutThing, youId: string): string {
+  const name = displayName(thing, youId);
+  if (isPerson(thing)) return name;
+  const kind = [thing.classes?.[0], mainMaterial(thing)].filter(Boolean);
+  return kind.length > 0 ? `${name} (${kind.join(", ")})` : name;
+}
+
 export function describeThing(placed: PlacedThing, size: LayoutVector, youId: string): string {
   const { thing, bounds } = placed;
-  const parts = [displayName(thing, youId), describePlace(bounds, size)];
+  const parts = [namedWithKind(thing, youId), describePlace(bounds, size)];
   if (thing.mounted) parts.push(bounds.z0 > 0.05 ? `mounted ${metres(bounds.z0)} up` : "mounted");
   else if (thing.fixed && thing.kind === "object") parts.push("fixed in place");
   return parts.join(", ");
@@ -148,7 +225,7 @@ export function describeThing(placed: PlacedThing, size: LayoutVector, youId: st
 
 /** A thing the server sent without shapes: it is in the room but cannot be drawn. */
 export function describeUnshaped(thing: LayoutThing, youId: string): string {
-  return `${displayName(thing, youId)}, no size or place given`;
+  return `${namedWithKind(thing, youId)}, no size or place given`;
 }
 
 /** Something that entered after the layout, at its Client.Spatial point (MOO frame). */

@@ -7,11 +7,14 @@ import {
   displayName,
   exitWall,
   isPerson,
+  labelOrder,
   metres,
+  nearestWall,
   type PlacedThing,
   placeLabels,
   scaleBarLength,
   shortLabel,
+  thingForm,
   toSvg,
   type Wall,
 } from "../map/roomLayout";
@@ -81,11 +84,14 @@ export const LAYOUT_STYLE = `
 .room-layout-svg .rl-label { fill: var(--color-text-secondary, #a0a0b0); paint-order: stroke; stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 3.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .room-layout-svg .rl-label-person { fill: var(--color-text, #e8e8ed); font-weight: 600; }
 .room-layout-svg .rl-label-you { fill: var(--color-primary, #5ba0ff); font-weight: 700; }
+.room-layout-svg .rl-symbol { fill: var(--color-text-muted, #9999aa); fill-opacity: 0.8; }
+.room-layout-svg .rl-symbol-line { fill: none; stroke: var(--color-text-muted, #9999aa); stroke-width: 1px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
 .room-layout-svg .rl-mark { fill: var(--color-text-muted, #9999aa); }
 .room-layout-svg .rl-mark-line { stroke: var(--color-text-muted, #9999aa); stroke-width: 1.5px; vector-effect: non-scaling-stroke; fill: none; }
 @media (forced-colors: active) {
   .room-layout-svg .rl-bg, .room-layout-svg .rl-floor, .room-layout-svg .rl-thing { fill: Canvas; }
-  .room-layout-svg .rl-wall, .room-layout-svg .rl-thing, .room-layout-svg .rl-mark-line { stroke: CanvasText; }
+  .room-layout-svg .rl-wall, .room-layout-svg .rl-thing, .room-layout-svg .rl-mark-line, .room-layout-svg .rl-symbol-line { stroke: CanvasText; }
+  .room-layout-svg .rl-symbol { fill: CanvasText; }
   .room-layout-svg .rl-mounted .rl-thing, .room-layout-svg .rl-person .rl-thing { fill: CanvasText; }
   .room-layout-svg .rl-door, .room-layout-svg .rl-hatch, .room-layout-svg .rl-you-ring { stroke: Highlight; }
   .room-layout-svg .rl-you .rl-thing { fill: Highlight; }
@@ -154,6 +160,67 @@ function doorwayGeometry(wall: Wall, at: [number, number, number], width: number
       return { a: [halfW, at[1] - half], b: [halfW, at[1] + half], out: [1, 0] };
     case "west":
       return { a: [-halfW, at[1] - half], b: [-halfW, at[1] + half], out: [-1, 0] };
+  }
+}
+
+/**
+ * What a thing is, seen from above, drawn over its footprint: a table's leg
+ * dots, a seat's back bar on its side nearest a wall, a door's swing arc into
+ * the room. Other forms are their footprint alone; things on the walls are
+ * already wall marks.
+ */
+export function formSymbol(p: PlacedThing, size: [number, number, number]): React.ReactNode {
+  const { x0, x1, y0, y1 } = p.bounds;
+  const w = x1 - x0;
+  const d = y1 - y0;
+  switch (thingForm(p.thing)) {
+    case "table": {
+      const r = Math.min(0.04, Math.min(w, d) / 6);
+      const ix = Math.min(w * 0.12, 0.08);
+      const iy = Math.min(d * 0.12, 0.08);
+      const corners: Array<[string, number, number]> = [
+        ["sw", x0 + ix, y0 + iy],
+        ["se", x1 - ix, y0 + iy],
+        ["nw", x0 + ix, y1 - iy],
+        ["ne", x1 - ix, y1 - iy],
+      ];
+      return corners.map(([corner, x, y]) => {
+        const [sx, sy] = toSvg(x, y);
+        return <circle key={corner} className="rl-symbol" cx={sx} cy={sy} r={r} />;
+      });
+    }
+    case "seat": {
+      const wall = nearestWall(p.bounds, size);
+      const back = { x0, x1, y0, y1 };
+      if (wall === "north") back.y0 = y1 - d * 0.22;
+      if (wall === "south") back.y1 = y0 + d * 0.22;
+      if (wall === "east") back.x0 = x1 - w * 0.22;
+      if (wall === "west") back.x1 = x0 + w * 0.22;
+      const [sx, sy] = toSvg(back.x0, back.y1);
+      return <rect className="rl-symbol" x={sx} y={sy} width={back.x1 - back.x0} height={back.y1 - back.y0} />;
+    }
+    case "door": {
+      // The leaf lies along its longer side; it swings about one end into the room.
+      const wall = nearestWall(p.bounds, size);
+      const alongX = w >= d;
+      const length = alongX ? w : d;
+      const into = wall === "north" || wall === "east" ? -1 : 1;
+      const hinge: [number, number] = alongX
+        ? [x0, wall === "north" ? y1 : y0]
+        : [wall === "east" ? x1 : x0, y0];
+      const points: string[] = [];
+      for (let step = 0; step <= 8; step++) {
+        const angle = (Math.PI / 2) * (step / 8);
+        const along = Math.cos(angle) * length;
+        const out = Math.sin(angle) * length * into;
+        const [sx, sy] = alongX ? toSvg(hinge[0] + along, hinge[1] + out) : toSvg(hinge[0] + out, hinge[1] + along);
+        points.push(`${sx},${sy}`);
+      }
+      const [hx, hy] = toSvg(hinge[0], hinge[1]);
+      return <path className="rl-symbol-line" d={`M${points.join("L")}L${hx},${hy}`} />;
+    }
+    default:
+      return null;
   }
 }
 
@@ -284,17 +351,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
   /** A person's name goes beside their token (under it first), never on it: the token is in `avoid` below. */
   const underToken = (x: number, y: number) => ({ x, y, radius: markerRadius });
   const centreOf = (p: PlacedThing) => toSvg((p.bounds.x0 + p.bounds.x1) / 2, (p.bounds.y0 + p.bounds.y1) / 2);
-  const area = (p: PlacedThing) => (p.bounds.x1 - p.bounds.x0) * (p.bounds.y1 - p.bounds.y0);
-  // Labels by importance: you, other people, then things largest first. Things on the walls are
-  // not labelled; each keeps its title and its line in the lists below.
-  const labelled = [...placed]
-    .filter((p) => isPerson(p.thing) || !p.thing.mounted)
-    .sort(
-      (a, b) =>
-        Number(b.thing.id === youId) - Number(a.thing.id === youId) ||
-        Number(isPerson(b.thing)) - Number(isPerson(a.thing)) ||
-        area(b) - area(a),
-    );
+  const labelled = labelOrder(placed, youId);
   const personIds = new Set([
     ...placed.filter((p) => isPerson(p.thing)).map((p) => p.thing.id),
     ...arrivals.filter(({ arrival }) => isPerson(arrival)).map(({ arrival }) => arrival.id),
@@ -430,7 +487,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
             );
           }
           return (
-            <g key={p.thing.id} className={className} data-id={p.thing.id}>
+            <g key={p.thing.id} className={className} data-id={p.thing.id} data-form={thingForm(p.thing)}>
               <title>{displayName(p.thing, youId)}</title>
               {p.footprints.map((f, index) => {
                 if (f.type === "circle") {
@@ -449,6 +506,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
                   />
                 );
               })}
+              {formSymbol(p, layout.size)}
             </g>
           );
         })}
@@ -469,7 +527,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
       </g>
       <rect className="rl-wall" x={-w / 2} y={-d / 2} width={w} height={d} />
       <g>{exits}</g>
-      <g aria-hidden="true">
+      <g>
         {labels.map((l) => (
           <g key={l.id}>
             <text
