@@ -1,3 +1,4 @@
+import { useRoomStore } from '../../stores/roomStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSpatialStore } from '../../stores/spatialStore';
 import { mongooseToWebAudioVector } from '../../audio/mongooseCoordinates';
@@ -261,6 +262,7 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
     this.motion.cancel(entityPositionKey(data.entityId));
     this.motion.cancel(entityForwardKey(data.entityId));
     useSpatialStore.getState().leaveEntity(data.entityId);
+    useRoomStore.getState().removeLayoutThing(data.entityId);
   }
 
   handleEntityMove(data: GMCPMessageClientSpatialEntityMove): void {

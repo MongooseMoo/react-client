@@ -19,6 +19,46 @@ export class GMCPMessageRoomInfo extends GMCPMessage {
   earcons?: { [key: string]: unknown };
 }
 
+/** A Room.Layout point or extent: metres, room-local MOO frame (x east, y north, z up). */
+export type LayoutVector = [number, number, number];
+
+/** A world box `[[x0,x1],[y0,y1],[z0,z1]]` or a sphere `[[cx,cy,cz], r]`. */
+export type LayoutShape =
+  | { box: [[number, number], [number, number], [number, number]] }
+  | { sphere: [LayoutVector, number] };
+
+export interface LayoutExit {
+  /** `exit:title()`, the same key Room.Info `exits` uses. */
+  name: string;
+  /** Destination object number. */
+  to: number;
+  /** Doorway centre point. */
+  at: LayoutVector;
+  /** Doorway width along its wall. */
+  width: number;
+}
+
+export interface LayoutThing {
+  /** `tostr(obj)`, the same id Client.Spatial uses. */
+  id: string;
+  name: string;
+  kind: "player" | "person" | "object";
+  fixed: boolean;
+  mounted: boolean;
+  shapes: LayoutShape[];
+  /** Where Client.Spatial places this thing when the layout was built (its `:sound_origin()`). */
+  origin: LayoutVector;
+}
+
+/** Mongoose `Room.Layout`: the inside of a spatial room, drawn by the client. See docs/room-layout.md. */
+export interface RoomLayout {
+  num: number;
+  /** `room:dimensions()`: width (east-west), depth (north-south), height. The room spans ±width/2, ±depth/2. */
+  size: LayoutVector;
+  exits: LayoutExit[];
+  things: LayoutThing[];
+}
+
 export interface RoomPlayer {
   name: string;
   fullname: string;
@@ -29,6 +69,7 @@ const roomWrongDir = gmcpJsonMessage<"WrongDir", string>("WrongDir");
 const roomPlayers = gmcpJsonMessage<"Players", RoomPlayer[]>("Players");
 const roomAddPlayer = gmcpJsonMessage<"AddPlayer", RoomPlayer>("AddPlayer");
 const roomRemovePlayer = gmcpJsonMessage<"RemovePlayer", string>("RemovePlayer");
+const roomLayout = gmcpJsonMessage<"Layout", RoomLayout>("Layout");
 
 const GMCPRoomBase = GMCPPackage.with({
   packageName: "Room",
@@ -38,6 +79,7 @@ const GMCPRoomBase = GMCPPackage.with({
     inbound(roomPlayers),
     inbound(roomAddPlayer),
     inbound(roomRemovePlayer),
+    inbound(roomLayout),
   ] as const,
 });
 
@@ -54,6 +96,7 @@ export class GMCPRoom extends GMCPRoomBase {
     this.on("players", (data) => this.handlePlayers(data));
     this.on("addPlayer", (data) => this.handleAddPlayer(data));
     this.on("removePlayer", (data) => this.handleRemovePlayer(data));
+    this.on("layout", (data) => useRoomStore.getState().setRoomLayout(data));
   }
 
   handleInfo(data: GMCPMessageRoomInfo): void {

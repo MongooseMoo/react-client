@@ -19,6 +19,12 @@ export function mongooseToWebAudioVector(
   return [0 - east, up, north];
 }
 
+/** The inverse of mongooseToWebAudioVector: Web Audio [x, y, z] back to Mongoose [east, north, up]. */
+export function webAudioToMongooseVector(vector: CoordinateVector): [number, number, number] {
+  const [x, y, z] = vector;
+  return [0 - x, z, y];
+}
+
 export function mongooseToWebAudioOrientation<T extends CoordinateOrientation | null | undefined>(
   orientation: T,
 ): { forward?: Position | null; up?: Position | null } | null | undefined {

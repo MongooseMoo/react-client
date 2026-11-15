@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { GMCPMessageRoomInfo, RoomPlayer } from "../gmcp/Room";
+import type { GMCPMessageRoomInfo, RoomLayout, RoomPlayer } from "../gmcp/Room";
 
 /**
  * Single source of truth for the player's current room: its info and the
@@ -15,8 +15,13 @@ const sortByFullname = (players: RoomPlayer[]): RoomPlayer[] =>
 interface RoomState {
   roomInfo: GMCPMessageRoomInfo | null;
   roomPlayers: RoomPlayer[];
-  /** A new Room.Info means a new room — replace info and clear the player list. */
+  /** The current spatial room's Room.Layout; null outside spatial rooms. */
+  roomLayout: RoomLayout | null;
+  /** A new Room.Info means a new room — replace info, clear the player list, and keep the layout only if it is this room's. */
   setRoomInfo: (info: GMCPMessageRoomInfo) => void;
+  setRoomLayout: (layout: RoomLayout) => void;
+  /** A thing left the room (Client.Spatial EntityLeave): stop drawing it. */
+  removeLayoutThing: (id: string) => void;
   setRoomPlayers: (players: RoomPlayer[]) => void;
   addPlayer: (player: RoomPlayer) => void;
   removePlayer: (name: string) => void;
@@ -26,7 +31,20 @@ interface RoomState {
 export const useRoomStore = create<RoomState>((set) => ({
   roomInfo: null,
   roomPlayers: [],
-  setRoomInfo: (info) => set({ roomInfo: info, roomPlayers: [] }),
+  roomLayout: null,
+  setRoomInfo: (info) =>
+    set((state) => ({
+      roomInfo: info,
+      roomPlayers: [],
+      roomLayout: state.roomLayout?.num === info.num ? state.roomLayout : null,
+    })),
+  setRoomLayout: (layout) => set({ roomLayout: layout }),
+  removeLayoutThing: (id) =>
+    set((state) =>
+      state.roomLayout?.things.some((thing) => thing.id === id)
+        ? { roomLayout: { ...state.roomLayout, things: state.roomLayout.things.filter((thing) => thing.id !== id) } }
+        : state
+    ),
   setRoomPlayers: (players) => set({ roomPlayers: sortByFullname(players) }),
   addPlayer: (player) =>
     set((state) =>
@@ -38,5 +56,5 @@ export const useRoomStore = create<RoomState>((set) => ({
     set((state) => ({
       roomPlayers: state.roomPlayers.filter((p) => p.name !== name),
     })),
-  reset: () => set({ roomInfo: null, roomPlayers: [] }),
+  reset: () => set({ roomInfo: null, roomPlayers: [], roomLayout: null }),
 }));
