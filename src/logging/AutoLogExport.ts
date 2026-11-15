@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import stripAnsi from "strip-ansi";
+import { downloadFile } from "../downloadFile";
 import { AutoLogEntry, AutoLogSession } from "./AutoLogTypes";
 
 export type AutoLogDownloadFormat = "text" | "html";
@@ -92,13 +93,5 @@ export function buildAutoLogFilename(session: AutoLogSession, format: AutoLogDow
 }
 
 export function downloadAutoLog(content: string, filename: string, format: AutoLogDownloadFormat): void {
-  const blob = new Blob([content], { type: format === "html" ? "text/html" : "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  downloadFile(content, filename, format === "html" ? "text/html" : "text/plain");
 }
