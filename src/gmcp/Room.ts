@@ -48,6 +48,18 @@ export interface LayoutThing {
   shapes: LayoutShape[];
   /** Where Client.Spatial places this thing when the layout was built (its `:sound_origin()`). Without it the thing is not moved. */
   origin?: LayoutVector;
+  /** Registered `$` names of the thing's ancestors, nearest first (`table`, `furniture`, `thing`). */
+  classes?: string[];
+  /** Capability names the thing declares (`furniture_seating`, `support_surface`). */
+  capabilities?: string[];
+  /** What it is made of: species with their fractions of the whole; `[]` when it declares none. */
+  material?: LayoutMaterial[];
+}
+
+/** One component of a thing's material: the stored component map, which may carry more keys (`phase`, `frozen_fraction`…). */
+export interface LayoutMaterial {
+  species: string;
+  fraction: number;
 }
 
 /** Mongoose `Room.Layout`: the inside of a spatial room, drawn by the client. See docs/room-layout.md. */

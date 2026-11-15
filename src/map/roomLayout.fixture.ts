@@ -1,5 +1,119 @@
 import type { RoomLayout } from "../gmcp/Room";
 
+/**
+ * A small living room with the optional classes and material fields, written by hand
+ * to cover every drawn form in one small room. 5 x 4 x 2.5 m. Tests only.
+ */
+export const livingRoomLayout = (): RoomLayout => ({
+  num: 25828,
+  size: [5, 4, 2.5],
+  exits: [
+    { name: "south", to: 25827, at: [0, -1.9, 0], width: 0.9 },
+    { name: "east", to: 25829, at: [2.4, 1, 0], width: 1.0 },
+  ],
+  things: [
+    {
+      id: "#1",
+      name: "coffee table",
+      kind: "object",
+      fixed: false,
+      mounted: false,
+      shapes: [{ box: [[-0.6, 0.6], [-0.3, 0.3], [0, 0.45]] }],
+      classes: ["table", "furniture", "thing"],
+      material: [{ species: "wood", fraction: 0.9 }, { species: "metal", fraction: 0.1 }],
+    },
+    {
+      id: "#2",
+      name: "sofa",
+      kind: "object",
+      fixed: false,
+      mounted: false,
+      shapes: [{ box: [[-1.0, 1.0], [1.1, 2.0], [0, 0.9]] }],
+      classes: ["furniture", "thing"],
+      material: [{ species: "foam", fraction: 0.4 }, { species: "cotton", fraction: 0.5 }, { species: "wood", fraction: 0.1 }],
+    },
+    {
+      id: "#3",
+      name: "bookshelf",
+      kind: "object",
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[-2.5, -2.1], [-1.0, 0.0], [0, 2.0]] }],
+      classes: ["bookshelf", "container", "thing"],
+      material: [{ species: "wood", fraction: 1 }],
+    },
+    {
+      id: "#4",
+      name: "a framed print",
+      kind: "object",
+      fixed: true,
+      mounted: true,
+      shapes: [{ box: [[0.2, 0.8], [1.97, 2.0], [1.4, 1.9]] }],
+      classes: ["moving_photograph", "thing"],
+      material: [{ species: "paper", fraction: 0.7 }, { species: "glass", fraction: 0.3 }],
+    },
+    {
+      id: "#5",
+      name: "television",
+      kind: "object",
+      fixed: false,
+      mounted: false,
+      shapes: [{ box: [[-0.5, 0.5], [-2.0, -1.9], [0.5, 1.1]] }],
+      classes: ["tv", "audio_device", "thing"],
+      material: [{ species: "lcd", fraction: 0.5 }, { species: "plastic", fraction: 0.3 }, { species: "circuitboard", fraction: 0.2 }],
+    },
+    {
+      id: "#6",
+      name: "door",
+      kind: "object",
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[2.45, 2.5], [0.5, 1.5], [0, 2.0]] }],
+      classes: ["door_leaf", "thing"],
+      material: [{ species: "wood", fraction: 1 }],
+    },
+    {
+      id: "#7",
+      name: "a paperback",
+      kind: "object",
+      fixed: false,
+      mounted: false,
+      shapes: [{ box: [[0.1, 0.3], [-0.1, 0.05], [0.45, 0.48]] }],
+      classes: ["book", "thing"],
+      material: [{ species: "paper", fraction: 1 }],
+    },
+    {
+      id: "#8",
+      name: "robot vacuum",
+      kind: "object",
+      fixed: false,
+      mounted: false,
+      shapes: [{ sphere: [[1.5, -1.0, 0.1], 0.15] }],
+      classes: ["thing"],
+    },
+    {
+      id: "#99",
+      name: "Player 1",
+      kind: "player",
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[1.4, 1.8], [0.2, 0.6], [0, 1.8]] }],
+      origin: [1.6, 0.4, 1.67],
+      classes: ["player"],
+    },
+    {
+      id: "#9",
+      name: "Person 1",
+      kind: "person",
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[-1.8, -1.4], [-1.6, -1.2], [0, 1.7]] }],
+      origin: [-1.6, -1.4, 1.6],
+      classes: ["janet", "wanderer"],
+    },
+  ],
+});
+
 /** The Room.Layout contract's example (docs/room-layout.md), with a body for Q. Tests only. */
 export const sampleLayout = (): RoomLayout => ({
   num: 1234,

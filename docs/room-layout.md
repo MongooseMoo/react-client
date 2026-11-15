@@ -42,6 +42,9 @@ the middle of the room, so it spans `-width/2..width/2` and `-depth/2..depth/2`;
 | `things[].mounted` | It hangs on a wall or ceiling. |
 | `things[].shapes` | Its solid parts: boxes `{"box": [[x0,x1],[y0,y1],[z0,z1]]}` and spheres `{"sphere": [[x,y,z], r]}`. May be empty; such a thing is listed but not drawn. |
 | `things[].origin` | `thing:sound_origin()`: where `Client.Spatial` placed this thing when the layout was built. A thing without it is drawn where its shapes are and not moved. |
+| `things[].classes` | Optional. The registered `$` names of the thing's ancestors, nearest first, without the `$` (`["table", "furniture", "thing"]`). The client draws a thing by the first name it knows. |
+| `things[].capabilities` | Optional. The capability names the thing declares (`furniture_seating`, `support_surface`). |
+| `things[].material` | Optional. What it is made of: `[{"species": "wood", "fraction": 0.9}, …]`. The client colours a thing by its largest fraction. |
 
 ## Keeping it current
 
@@ -58,7 +61,25 @@ room drops both; one for the same room keeps them.
 
 ## In the client
 
-The Map tab shows the room under "Room layout":
+The Map tab shows the room under "Room layout", in one of three views chosen with the View radio
+buttons (the choice is kept across rooms):
+
+- **Plan**: the drawing from above, described below.
+- **Dollhouse**: the room in 3D, seen from above one corner. Drag to turn it, the wheel or a pinch
+  to zoom; on the picture the arrow keys turn it, `+` and `-` zoom and `0` returns to the start.
+  Walls on the camera's side are cut low so they never hide the room.
+- **Your eyes**: the room in 3D from where you stand (your `Client.Spatial` position), facing
+  your `Client.Spatial` forward, turning as you turn.
+
+In every view things are drawn by what they are, from the first of their `classes` the client
+knows: a table as a top on legs, a chair or other furniture as a seat with its back to the
+nearest wall, a bookshelf or cabinet as a tall box with shelves, a moving photograph as a framed
+picture, a TV as a dark screen, a door leaf as a door, a book or note as a flat block; anything
+else as its boxes and spheres. In 3D they are coloured by their largest material (wood and pine brown, lcd
+near-black, paper cream, foam and cotton fabric blue, plastic grey, metal and steel steel-grey, anything
+else a neutral stone). The plan marks tables' legs, seats' backs and doors' swing. The 3D views are
+one image to a screen reader with the same name as the plan, and clicking a doorway in them
+sends its exit too.
 
 - The drawing: walls; doorways as gaps in the walls with their exit names outside; each thing's
   footprint from above (boxes as rectangles, spheres as circles); people in their own colour; you
@@ -71,5 +92,6 @@ The Map tab shows the room under "Room layout":
 - To a screen reader the drawing is one image whose name gives the room's size and how many
   exits, people and things it holds. Below it, headed lists give the size, each exit
   ("west: 0.9 m doorway in the west wall, 1.3 m from the south wall") and each person and thing
-  ("oak table, 1.2 m from the north wall, near the west wall"). Moves update the lists quietly;
+  ("oak table, 1.2 m from the north wall, near the west wall"; with `classes` and `material`,
+  "coffee table (table, wood), …"). Moves update the lists quietly;
   nothing is announced and focus never moves.

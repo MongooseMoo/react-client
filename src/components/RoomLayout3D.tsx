@@ -1,0 +1,321 @@
+import type React from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
+import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
+import type { LayoutVector, RoomLayout } from "../gmcp/Room";
+import {
+  displayName,
+  isPerson,
+  type LabelRequest,
+  labelOrder,
+  type PlacedThing,
+  placeLabels,
+  shortLabel,
+} from "../map/roomLayout";
+import {
+  buildRoomScene,
+  type CameraMode,
+  type CameraPose,
+  cutWalls,
+  DOLLHOUSE_FOV,
+  disposeRoomScene,
+  dollhousePose,
+  EYES_FOV,
+  eyesPose,
+  type RoomScene,
+} from "../map/roomScene";
+import type { LayoutArrival } from "../stores/roomStore";
+import { useSpatialStore } from "../stores/spatialStore";
+
+/**
+ * The Room.Layout room in 3D: Dollhouse (orbit around it) or Your eyes (from
+ * where you stand, facing where you face, turning as you turn). Loaded only
+ * when one of those views is chosen, so three.js stays out of startup. It is
+ * one image to a screen reader; RoomLayoutView's lists say the room in words.
+ */
+
+interface RoomLayout3DProps {
+  layout: RoomLayout;
+  placed: PlacedThing[];
+  arrivals: Array<{ arrival: LayoutArrival; at: LayoutVector }>;
+  youId: string;
+  label: string;
+  mode: CameraMode;
+  onExit: (name: string) => void;
+}
+
+/** Label text height on screen, CSS pixels: the plan's size. */
+const LABEL_PIXELS = 12;
+
+interface Stage {
+  renderer: THREE.WebGLRenderer;
+  labels: CSS2DRenderer;
+  camera: THREE.PerspectiveCamera;
+  controls: OrbitControls;
+  scene: THREE.Scene;
+  room: RoomScene | null;
+  labelObjects: Map<string, CSS2DObject>;
+  render: () => void;
+}
+
+function webglAvailable(): boolean {
+  const probe = document.createElement("canvas");
+  return Boolean(probe.getContext("webgl2") ?? probe.getContext("webgl"));
+}
+
+function applyPose(stage: Stage, pose: CameraPose) {
+  stage.camera.position.set(...pose.position);
+  stage.controls.target.set(...pose.target);
+  stage.camera.lookAt(stage.controls.target);
+}
+
+const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, youId, label, mode, onExit }) => {
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<Stage | null>(null);
+  const modeRef = useRef(mode);
+  const onExitRef = useRef(onExit);
+  onExitRef.current = onExit;
+  const [supported] = useState(webglAvailable);
+  const listenerPosition = useSpatialStore((state) => state.listenerPosition);
+  const listenerForward = useSpatialStore((state) => state.listenerOrientation.forward);
+  // What labels to place and in what order, read by every render.
+  const labelPlan = useRef<Array<{ id: string; text: string; person: boolean }>>([]);
+
+  // The renderer, camera, controls and label layer live as long as the component.
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || !supported) return;
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setClearColor(0x14141a);
+    renderer.domElement.setAttribute("aria-hidden", "true");
+    frame.appendChild(renderer.domElement);
+    const labels = new CSS2DRenderer();
+    labels.domElement.className = "room-layout-3d-labels";
+    labels.domElement.setAttribute("aria-hidden", "true");
+    frame.appendChild(labels.domElement);
+
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.maxPolarAngle = Math.PI / 2 - 0.05;
+    controls.minDistance = 0.5;
+    controls.maxDistance = 60;
+    const scene = new THREE.Scene();
+
+    const stage: Stage = {
+      renderer,
+      labels,
+      camera,
+      controls,
+      scene,
+      room: null,
+      labelObjects: new Map(),
+      render: () => {
+        if (stage.room) cutWalls(stage.room, layoutRef.current, camera.position, modeRef.current);
+        renderer.render(scene, camera);
+        placeVisibleLabels(stage);
+        labels.render(scene, camera);
+      },
+    };
+    stageRef.current = stage;
+    controls.addEventListener("change", stage.render);
+
+    const resize = () => {
+      const width = frame.clientWidth;
+      const height = frame.clientHeight;
+      if (width === 0 || height === 0) return;
+      renderer.setSize(width, height, false);
+      renderer.domElement.style.width = "100%";
+      renderer.domElement.style.height = "100%";
+      labels.setSize(width, height);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      stage.render();
+    };
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
+    observer?.observe(frame);
+    resize();
+
+    return () => {
+      observer?.disconnect();
+      controls.removeEventListener("change", stage.render);
+      controls.dispose();
+      if (stage.room) disposeRoomScene(stage.room);
+      renderer.dispose();
+      renderer.domElement.remove();
+      labels.domElement.remove();
+      stageRef.current = null;
+    };
+  }, [supported]);
+
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+
+  /** Shows the labels that fit, most important first, each beside its thing; hides the rest. */
+  function placeVisibleLabels(stage: Stage) {
+    const width = stage.labels.domElement.clientWidth || stage.renderer.domElement.clientWidth;
+    const height = stage.labels.domElement.clientHeight || stage.renderer.domElement.clientHeight;
+    const requests: LabelRequest[] = [];
+    const anchors = new Map<string, [number, number]>();
+    const projected = new THREE.Vector3();
+    for (const { id, text, person } of labelPlan.current) {
+      const anchor = stage.room?.labelAnchors.get(id);
+      const object = stage.labelObjects.get(id);
+      if (!anchor || !object) continue;
+      object.visible = false;
+      if (!object.parent?.visible) continue;
+      projected.copy(anchor).project(stage.camera);
+      if (projected.z < -1 || projected.z > 1) continue;
+      const x = ((projected.x + 1) / 2) * width;
+      const y = ((1 - projected.y) / 2) * height;
+      anchors.set(id, [x, y]);
+      requests.push({ id, text, x, y, radius: person ? 10 : 6 });
+    }
+    const inset = 4;
+    const placedLabels = placeLabels(requests, LABEL_PIXELS, { x0: inset, x1: width - inset, y0: inset, y1: height - inset });
+    for (const placedLabel of placedLabels) {
+      const object = stage.labelObjects.get(placedLabel.id);
+      const anchor = anchors.get(placedLabel.id);
+      if (!object || !anchor) continue;
+      object.visible = true;
+      object.element.style.translate = `${placedLabel.x - anchor[0]}px ${placedLabel.y - anchor[1]}px`;
+    }
+  }
+
+  // The room itself: rebuilt when the layout, the things' places or the arrivals change.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    if (stage.room) {
+      stage.scene.remove(stage.room.root);
+      disposeRoomScene(stage.room);
+    }
+    for (const object of stage.labelObjects.values()) object.removeFromParent();
+    stage.labelObjects.clear();
+
+    const room = buildRoomScene({ layout, placed, arrivals, youId });
+    stage.room = room;
+    stage.scene.add(room.root);
+    // In your own eyes you are not drawn.
+    const you = room.things.get(youId);
+    if (you) you.visible = mode !== "eyes";
+
+    const ordered = labelOrder(placed, youId);
+    const plan = [
+      ...ordered.filter((p) => isPerson(p.thing)).map((p) => ({ id: p.thing.id, text: displayName(p.thing, youId), person: true })),
+      ...arrivals.map(({ arrival }) => ({ id: arrival.id, text: displayName(arrival, youId), person: isPerson(arrival) })),
+      ...ordered.filter((p) => !isPerson(p.thing)).map((p) => ({ id: p.thing.id, text: displayName(p.thing, youId), person: false })),
+    ];
+    labelPlan.current = plan;
+    for (const { id, text, person } of plan) {
+      const anchor = room.labelAnchors.get(id);
+      const group = room.things.get(id);
+      if (!anchor || !group) continue;
+      const element = document.createElement("div");
+      element.className = id === youId ? "rl3d-label rl3d-label-you" : person ? "rl3d-label rl3d-label-person" : "rl3d-label";
+      element.textContent = shortLabel(text);
+      const object = new CSS2DObject(element);
+      object.position.copy(anchor);
+      object.visible = false;
+      group.add(object);
+      stage.labelObjects.set(id, object);
+    }
+    stage.render();
+  }, [layout, placed, arrivals, youId, mode]);
+
+  // A new room or a new view starts the dollhouse at its whole-room view.
+  const youBounds = placed.find((p) => p.thing.id === youId)?.bounds;
+  useEffect(() => {
+    const stage = stageRef.current;
+    modeRef.current = mode;
+    if (!stage) return;
+    stage.controls.enabled = mode === "dollhouse";
+    stage.camera.fov = mode === "eyes" ? EYES_FOV : DOLLHOUSE_FOV;
+    stage.camera.updateProjectionMatrix();
+    if (mode === "dollhouse") {
+      applyPose(stage, dollhousePose(layout));
+      stage.controls.update();
+      stage.render();
+    }
+  }, [mode, layout.num]);
+
+  // Your eyes follow your Client.Spatial position and facing.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || mode !== "eyes") return;
+    const position = listenerPosition ? webAudioToMongooseVector(listenerPosition) : null;
+    const forward = listenerForward ? webAudioToMongooseVector(listenerForward) : null;
+    applyPose(stage, eyesPose(layout, position, forward, youBounds));
+    stage.render();
+  }, [mode, layout, listenerPosition, listenerForward, youBounds?.x0, youBounds?.y0, youBounds?.z1]);
+
+  // A doorway click sends its exit, unless the pointer was turning the view.
+  const down = useRef<{ x: number; y: number } | null>(null);
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    down.current = { x: event.clientX, y: event.clientY };
+  };
+  const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = down.current;
+    down.current = null;
+    const stage = stageRef.current;
+    if (!stage?.room || !start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
+    const rect = stage.renderer.domElement.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const pointer = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(pointer, stage.camera);
+    const hit = ray.intersectObjects(stage.room.exits, false)[0];
+    if (hit) onExitRef.current(hit.object.userData.exit as string);
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const stage = stageRef.current;
+    if (!stage || mode !== "dollhouse" || event.altKey || event.ctrlKey || event.metaKey) return;
+    const turn = Math.PI / 18;
+    const actions: Record<string, () => void> = {
+      ArrowLeft: () => stage.controls.rotateLeft(-turn),
+      ArrowRight: () => stage.controls.rotateLeft(turn),
+      ArrowUp: () => stage.controls.rotateUp(turn / 2),
+      ArrowDown: () => stage.controls.rotateUp(-turn / 2),
+      "+": () => stage.controls.dollyIn(1.15),
+      "=": () => stage.controls.dollyIn(1.15),
+      "-": () => stage.controls.dollyOut(1.15),
+      _: () => stage.controls.dollyOut(1.15),
+      "0": () => {
+        applyPose(stage, dollhousePose(layout));
+        stage.controls.update();
+      },
+    };
+    const action = actions[event.key];
+    if (!action) return;
+    event.preventDefault();
+    action();
+    stage.render();
+  };
+
+  if (!supported) {
+    return <p role="status">This browser cannot draw 3D (it offers no WebGL). The Plan view and the lists below show the room.</p>;
+  }
+
+  return (
+    <div
+      ref={frameRef}
+      className="room-layout-3d"
+      role="img"
+      aria-label={label}
+      tabIndex={0}
+      data-mode={mode}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onKeyDown={onKeyDown}
+    />
+  );
+};
+
+export default RoomLayout3D;

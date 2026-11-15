@@ -1,5 +1,5 @@
 import type React from "react";
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
 import { downloadFile } from "../downloadFile";
 import type { LayoutVector, RoomLayout } from "../gmcp/Room";
@@ -17,7 +17,40 @@ import {
 import { useRoomStore } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
+import { type LocalStorageSchema, loadStoredValue, saveStoredValue } from "../persistence";
 import RoomLayoutPicture, { standaloneSvg } from "./RoomLayoutPicture";
+
+/** three.js and the 3D views load only when one of them is chosen. */
+const RoomLayout3D = lazy(() => import("./RoomLayout3D"));
+
+export type RoomLayoutViewName = "plan" | "dollhouse" | "eyes";
+
+const VIEWS: Array<{ value: RoomLayoutViewName; label: string; help: string }> = [
+  {
+    value: "plan",
+    label: "Plan",
+    help: "Zoom with the wheel, a pinch, or + and - on the picture; arrows pan; 0 shows the whole room.",
+  },
+  {
+    value: "dollhouse",
+    label: "Dollhouse",
+    help: "Drag to turn the room, the wheel or a pinch to zoom; on the picture arrows turn it, + and - zoom, 0 shows the whole room.",
+  },
+  {
+    value: "eyes",
+    label: "Your eyes",
+    help: "The room from where you stand, facing where you face; it turns as you turn.",
+  },
+];
+
+/** The chosen view, kept across rooms and visits. */
+const isViewName = (value: unknown): value is RoomLayoutViewName => VIEWS.some((view) => view.value === value);
+
+export const roomLayoutViewSchema: LocalStorageSchema<RoomLayoutViewName> = {
+  key: "roomLayoutView",
+  version: 1,
+  migrate: (data) => (isViewName(data) ? data : undefined),
+};
 
 /**
  * The current spatial room from Room.Layout: the drawing, its controls, and
@@ -36,6 +69,11 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
   const youId = useSpatialStore((state) => state.listenerEntityId);
   const arrivalList = useRoomStore((state) => state.layoutArrivals);
   const name = stripMudAnsiTags(roomName);
+  const [view, setView] = useState<RoomLayoutViewName>(() => loadStoredValue(roomLayoutViewSchema, "plan"));
+  const chooseView = (next: RoomLayoutViewName) => {
+    setView(next);
+    saveStoredValue(roomLayoutViewSchema, next);
+  };
 
   const placed = useMemo(() => {
     const positions: Record<string, LayoutVector | undefined> = {};
@@ -47,10 +85,18 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
   }, [layout, entities]);
 
   // What entered after the layout, at its Client.Spatial point; it moves with Client.Spatial and goes on leave.
-  const arrivals = arrivalList.map((arrival) => {
-    const entity = entities[arrival.id];
-    return { arrival, at: entity ? webAudioToMongooseVector(entity.position) : undefined };
-  });
+  const arrivals = useMemo(
+    () =>
+      arrivalList.map((arrival) => {
+        const entity = entities[arrival.id];
+        return { arrival, at: entity ? webAudioToMongooseVector(entity.position) : undefined };
+      }),
+    [arrivalList, entities],
+  );
+  const drawnArrivals = useMemo(
+    () => arrivals.filter((a): a is { arrival: (typeof a)["arrival"]; at: LayoutVector } => a.at !== undefined),
+    [arrivals],
+  );
 
   const summary = layoutSummary(name, layout, arrivalList);
   // Everything is listed: a thing sent without shapes is listed but not drawn.
@@ -84,16 +130,45 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
   return (
     <section className="room-layout" aria-labelledby="room-layout-heading">
       <h5 id="room-layout-heading">Room layout</h5>
-      <p className="room-layout-help">Zoom with the wheel, a pinch, or + and - on the picture; arrows pan; 0 shows the whole room.</p>
-      <RoomLayoutPicture
-        layout={layout}
-        placed={placed}
-        arrivals={arrivals.filter((a): a is { arrival: (typeof a)["arrival"]; at: LayoutVector } => a.at !== undefined)}
-        youId={youId}
-        label={summary}
-        onExit={onExit}
-        onSave={save}
-      />
+      <fieldset className="room-layout-views">
+        <legend>View</legend>
+        {VIEWS.map((option) => (
+          <label key={option.value}>
+            <input
+              type="radio"
+              name="room-layout-view"
+              value={option.value}
+              checked={view === option.value}
+              onChange={() => chooseView(option.value)}
+            />
+            {option.label}
+          </label>
+        ))}
+      </fieldset>
+      <p className="room-layout-help">{VIEWS.find((option) => option.value === view)?.help}</p>
+      {view === "plan" ? (
+        <RoomLayoutPicture
+          layout={layout}
+          placed={placed}
+          arrivals={drawnArrivals}
+          youId={youId}
+          label={summary}
+          onExit={onExit}
+          onSave={save}
+        />
+      ) : (
+        <Suspense fallback={<p>Loading the 3D view…</p>}>
+          <RoomLayout3D
+            layout={layout}
+            placed={placed}
+            arrivals={drawnArrivals}
+            youId={youId}
+            label={summary}
+            mode={view}
+            onExit={onExit}
+          />
+        </Suspense>
+      )}
 
       <p>
         {metres(w)} east to west, {metres(d)} north to south, {metres(h)} high.

@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { RoomLayout } from "../gmcp/Room";
-import { sampleLayout } from "./roomLayout.fixture";
+import { livingRoomLayout, sampleLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
+import livingSample from "./roomLayout.sample-25828.json";
 import {
+  type Bounds,
+  labelOrder,
+  mainMaterial,
+  namedWithKind,
+  nearestWall,
+  thingForm,
   describeExit,
   describeArrival,
   describePlace,
@@ -156,5 +163,65 @@ describe("room layout geometry", () => {
     expect(labels.map((l) => l.id)).toEqual(["a"]);
     expect(shortLabel("keyboard stand which holds electric keyboard")).toBe("keyboard stand which…");
     expect(shortLabel("oak table")).toBe("oak table");
+  });
+});
+
+describe("what things are", () => {
+  const living = livingRoomLayout();
+  const byId = (id: string) => living.things.find((t) => t.id === id) as RoomLayout["things"][number];
+
+  it("draws a thing by the first of its classes that has a drawing, nearest first", () => {
+    expect(thingForm(byId("#1"))).toBe("table");
+    expect(thingForm(byId("#2"))).toBe("seat");
+    expect(thingForm(byId("#3"))).toBe("shelf");
+    expect(thingForm({ ...byId("#1"), classes: ["tv", "table"] })).toBe("screen");
+    expect(thingForm(byId("#8"))).toBe("box");
+    expect(thingForm({ ...byId("#8"), classes: undefined })).toBe("box");
+  });
+
+  it("finds the main material and names a thing with its class and material", () => {
+    expect(mainMaterial(byId("#2"))).toBe("cotton");
+    expect(mainMaterial(byId("#8"))).toBeUndefined();
+    expect(namedWithKind(byId("#1"), "#99")).toBe("coffee table (table, wood)");
+    expect(namedWithKind(byId("#8"), "#99")).toBe("robot vacuum (thing)");
+    expect(namedWithKind({ ...byId("#8"), classes: undefined }, "#99")).toBe("robot vacuum");
+    const placed = placeThings(living, {});
+    const table = placed.find((p) => p.thing.id === "#1");
+    expect(table && describeThing(table, living.size, "#99")).toBe(
+      "coffee table (table, wood), midway between the north and south walls, midway between the east and west walls",
+    );
+  });
+
+  it("names things in the live sample with their nearest class and main material, people plainly", () => {
+    const live = livingSample as RoomLayout;
+    const named = (id: string) => namedWithKind(live.things.find((t) => t.id === id) as RoomLayout["things"][number], "#2");
+    expect(named("#29617")).toBe("coffee table (table, pine)");
+    expect(named("#25860")).toBe("A flat screen television named Moonbase (tv, lcd)");
+    expect(named("#28049")).toBe("There Will Come Soft Rains (audio_play)");
+    expect(named("#2")).toBe("Player 6 (you)");
+    expect(named("#6574")).toBe("Person 1");
+  });
+
+  it("reads material components with extra keys, and an empty material as none", () => {
+    const thing = (id: string) => livingSample.things.find((t) => t.id === id) as RoomLayout["things"][number];
+    expect(mainMaterial(thing("#3963"))).toBe("plastic"); // entries carry phase, frozen_fraction, vapor_fraction too
+    expect(mainMaterial(thing("#28049"))).toBeUndefined(); // sent as []
+    expect(namedWithKind(thing("#28049"), "#2")).toBe("There Will Come Soft Rains (audio_play)");
+  });
+
+  it("finds the wall a thing is nearest", () => {
+    const placed = placeThings(living, {});
+    const wall = (id: string) => nearestWall(placed.find((p) => p.thing.id === id)?.bounds as Bounds, living.size);
+    expect(wall("#2")).toBe("north");
+    expect(wall("#3")).toBe("west");
+    expect(wall("#5")).toBe("south");
+    expect(wall("#6")).toBe("east");
+  });
+
+  it("labels you first, then people, then things largest first, and not things on the walls", () => {
+    const order = labelOrder(placeThings(living, {}), "#99").map((p) => p.thing.id);
+    expect(order.slice(0, 2)).toEqual(["#99", "#9"]);
+    expect(order[2]).toBe("#2");
+    expect(order).not.toContain("#4");
   });
 });
