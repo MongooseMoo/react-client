@@ -196,10 +196,8 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
-    if (stage.room) {
-      stage.scene.remove(stage.room.root);
-      disposeRoomScene(stage.room);
-    }
+    const previous = stage.room;
+    if (previous) stage.scene.remove(previous.root);
     for (const object of stage.labelObjects.values()) object.removeFromParent();
     stage.labelObjects.clear();
 
@@ -231,6 +229,11 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       stage.labelObjects.set(id, object);
     }
     stage.render();
+    // Free the previous room only once the new one is drawn. three.js shares a
+    // compiled shader between materials alike and deletes it when the last one is
+    // disposed; disposing first made it recompile every shader on every rebuild,
+    // which is every frame while anyone moves.
+    if (previous) disposeRoomScene(previous);
   }, [layout, placed, arrivals, youId, facings, mode]);
 
   // A new room or a new view starts the dollhouse at its whole-room view.

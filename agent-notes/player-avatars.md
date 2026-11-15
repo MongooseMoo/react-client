@@ -33,6 +33,7 @@ Built and on pull request 237 (MongooseMoo/react-client), CI pending at the last
 
 - `npm ci` in a fresh worktree fails with `EALLOWSCRIPTS` while preparing the git dependency `@xrnavigation/webaudio-tinysynth`. Cause on this machine, not in the repo: `~/.npmrc` sets `allow-scripts`; npm 11.19.1 exports every non-default config to child processes as `npm_config_*` (`@npmcli/config/lib/set-envs.js`), and the git dependency's nested `npm install` reads that env value as the `--allow-scripts` flag, which `lib/utils/resolve-allow-scripts.js` refuses in project installs. CI has no user config. Stopgap: copy `node_modules` from a checkout with byte-identical `package.json` and `package-lock.json`.
 - The 3D room is rebuilt on every animation frame while anyone moves (`RoomLayout3D.tsx` rebuild effect), so figure build time was paid per frame: about 3.7 ms per figure in node. Fixed by reusing figure geometry (above); the rest of the room is still rebuilt.
+- Measured in headless Chromium (follow-up branch): the rebuild disposed the old room's materials before drawing the new room, so three.js deleted every shared shader program and compiled them all again each frame: 25 ms of work per frame for 8 people on a GTX 1050 Ti (30 fps), almost all in `getProgramInfoLog`. The effect now disposes the old room after the new one is drawn: 2.2 ms for 8 people, 3.3 ms for 40, 60 fps. Harness: `tests/visual/avatars/` (`node tests/visual/avatars/shoot.mjs <dir> [--gpu]`), tests only, not in the build.
 
 ## Next step
 
