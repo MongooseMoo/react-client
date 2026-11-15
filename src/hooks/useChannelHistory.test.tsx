@@ -79,12 +79,12 @@ describe("formatAnnouncementMessage", () => {
     expect(
       formatAnnouncementMessage({
         id: 2,
-        message: 'Q says to you, "Sup broski."',
+        message: 'Marlow says to you, "Sup broski."',
         timestamp: 0,
         channel: "say_to_you",
-        talker: "Q",
+        talker: "Marlow",
       })
-    ).toBe('Q. Q says to you, "Sup broski."');
+    ).toBe('Marlow. Marlow says to you, "Sup broski."');
   });
 
   it("does the same for page messages without rewriting the message body", () => {
@@ -454,7 +454,7 @@ describe("the all buffer holds the contents of all channels", () => {
     const { result } = renderHook(() => useChannelHistory());
 
     act(() => {
-      addChannelText("chat", "Q", "hello");
+      addChannelText("chat", "Marlow", "hello");
       addChannelText("newbie", "claude", "hi");
     });
 
@@ -481,7 +481,7 @@ describe("the all buffer holds the contents of all channels", () => {
     const { result } = renderHook(() => useChannelHistory());
 
     act(() => {
-      addChannelText("chat", "Q", "yo");
+      addChannelText("chat", "Marlow", "yo");
     });
 
     await waitFor(() => {
@@ -490,7 +490,7 @@ describe("the all buffer holds the contents of all channels", () => {
 
     const msg = result.current.buffers.get("all")?.messages[0];
     expect(msg?.channel).toBe("chat");
-    expect(msg?.talker).toBe("Q");
+    expect(msg?.talker).toBe("Marlow");
   });
 
   it("does not put generic non-channel messages into the all buffer", () => {

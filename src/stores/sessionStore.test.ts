@@ -15,24 +15,24 @@ describe("sessionStore", () => {
   });
 
   it("setPlayer sets id and name", () => {
-    useSessionStore.getState().setPlayer("q", "Q the Mongoose");
+    useSessionStore.getState().setPlayer("marlow", "Marlow the Mongoose");
 
     const state = useSessionStore.getState();
-    expect(state.playerId).toBe("q");
-    expect(state.playerName).toBe("Q the Mongoose");
+    expect(state.playerId).toBe("marlow");
+    expect(state.playerName).toBe("Marlow the Mongoose");
   });
 
   it("setRoomId sets the room without touching the player", () => {
-    useSessionStore.getState().setPlayer("q", "Q");
+    useSessionStore.getState().setPlayer("marlow", "Marlow");
     useSessionStore.getState().setRoomId("101");
 
     const state = useSessionStore.getState();
     expect(state.roomId).toBe("101");
-    expect(state.playerId).toBe("q");
+    expect(state.playerId).toBe("marlow");
   });
 
   it("reset clears everything", () => {
-    useSessionStore.getState().setPlayer("q", "Q");
+    useSessionStore.getState().setPlayer("marlow", "Marlow");
     useSessionStore.getState().setRoomId("101");
     useSessionStore.getState().reset();
 

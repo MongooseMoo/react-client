@@ -66,12 +66,12 @@ describe("AppsPanel", () => {
     render(<AppsPanel client={client} />);
     fireEvent.click(screen.getByRole("button", { name: "Connect a drive" }));
     expect(apps.sendPassword).toHaveBeenCalledWith({ app: "drive" });
-    act(() => useAppsStore.getState().setPassword({ app: "drive", url: "https://mongoose.world/dav/", user: "Q", password: "ABC123" }));
+    act(() => useAppsStore.getState().setPassword({ app: "drive", url: "https://mongoose.world/dav/", user: "Marlow", password: "ABC123" }));
     expect(screen.getByRole("textbox", { name: "Address" })).toHaveValue("https://mongoose.world/dav/");
-    expect(screen.getByRole("textbox", { name: "User name" })).toHaveValue("Q");
+    expect(screen.getByRole("textbox", { name: "User name" })).toHaveValue("Marlow");
     expect(screen.getByRole("textbox", { name: "Password" })).toHaveValue("ABC123");
     expect(screen.getByRole("textbox", { name: "Windows command" })).toHaveValue(
-      'net use M: https://mongoose.world/dav/ /user:"Q" ABC123 /persistent:yes',
+      'net use M: https://mongoose.world/dav/ /user:"Marlow" ABC123 /persistent:yes',
     );
   });
 
@@ -83,19 +83,19 @@ describe("AppsPanel", () => {
       useAppsStore.getState().setPassword({
         app: "mqtt",
         url: "mqtts://mongoose.world:8883",
-        user: "Q",
+        user: "Marlow",
         password: "KEY9",
         topics: "players/249/#",
       }),
     );
     expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue("mongoose.world");
     expect(screen.getByRole("textbox", { name: "Port" })).toHaveValue("8883");
-    expect(screen.getByRole("textbox", { name: "MQTT user name" })).toHaveValue("Q");
+    expect(screen.getByRole("textbox", { name: "MQTT user name" })).toHaveValue("Marlow");
     expect(screen.getByRole("textbox", { name: "MQTT password" })).toHaveValue("KEY9");
     expect(screen.getByRole("textbox", { name: "Your topics" })).toHaveValue("players/249/#");
     expect(screen.queryByRole("textbox", { name: "Windows command" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Mosquitto bridge" })).toHaveValue(
-      mosquittoBridgeConfig("mqtts://mongoose.world:8883", "Q", "KEY9", "players/249/#"),
+      mosquittoBridgeConfig("mqtts://mongoose.world:8883", "Marlow", "KEY9", "players/249/#"),
     );
   });
 
@@ -114,8 +114,8 @@ describe("AppsPanel", () => {
 
   it("keeps the drive password shown when an MQTT password arrives", () => {
     render(<AppsPanel client={client} />);
-    act(() => useAppsStore.getState().setPassword({ app: "drive", url: "https://mongoose.world/dav/", user: "Q", password: "D1" }));
-    act(() => useAppsStore.getState().setPassword({ app: "mqtt", url: "mqtts://mongoose.world:8883", user: "Q", password: "M1" }));
+    act(() => useAppsStore.getState().setPassword({ app: "drive", url: "https://mongoose.world/dav/", user: "Marlow", password: "D1" }));
+    act(() => useAppsStore.getState().setPassword({ app: "mqtt", url: "mqtts://mongoose.world:8883", user: "Marlow", password: "M1" }));
     expect(screen.getByRole("textbox", { name: "Password" })).toHaveValue("D1");
     expect(screen.getByRole("textbox", { name: "MQTT password" })).toHaveValue("M1");
   });
@@ -124,7 +124,7 @@ describe("AppsPanel", () => {
     render(<AppsPanel client={client} />);
     fireEvent.click(screen.getByRole("button", { name: "Get a Claude Code password" }));
     expect(apps.sendPassword).toHaveBeenCalledWith({ app: "mcp" });
-    act(() => useAppsStore.getState().setPassword({ app: "mcp", url: "https://mongoose.world/mcp", user: "Q", password: "T0K" }));
+    act(() => useAppsStore.getState().setPassword({ app: "mcp", url: "https://mongoose.world/mcp", user: "Marlow", password: "T0K" }));
     expect(screen.getByRole("textbox", { name: "Claude Code command" })).toHaveValue(
       'claude mcp add --transport http mongoose https://mongoose.world/mcp --header "Authorization: Bearer T0K"',
     );

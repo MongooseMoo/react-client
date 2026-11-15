@@ -36,12 +36,12 @@ describe('protocol message registry', () => {
     const listener = vi.fn();
 
     io.on('offer', listener);
-    expect(io.receive('Offer', { sender: 'Q', filename: 'notes.txt' })).toBe(
+    expect(io.receive('Offer', { sender: 'Marlow', filename: 'notes.txt' })).toBe(
       true,
     );
 
     expect(listener).toHaveBeenCalledWith({
-      sender: 'Q',
+      sender: 'Marlow',
       filename: 'notes.txt',
     });
   });
@@ -78,15 +78,15 @@ describe('protocol message registry', () => {
       send,
     );
 
-    io.sendOffer({ sender: 'Q', filename: 'notes.txt' });
-    io.sendRequestResend({ sender: 'Q', hash: 'abc123' });
+    io.sendOffer({ sender: 'Marlow', filename: 'notes.txt' });
+    io.sendRequestResend({ sender: 'Marlow', hash: 'abc123' });
 
     expect(send).toHaveBeenCalledWith('Offer', {
-      sender: 'Q',
+      sender: 'Marlow',
       filename: 'notes.txt',
     });
     expect(send).toHaveBeenCalledWith('RequestResend', {
-      sender: 'Q',
+      sender: 'Marlow',
       hash: 'abc123',
     });
   });
@@ -98,7 +98,7 @@ describe('protocol message registry', () => {
     const unsubscribe = io.on('offer', listener);
 
     unsubscribe();
-    io.receive('Offer', { sender: 'Q', filename: 'notes.txt' });
+    io.receive('Offer', { sender: 'Marlow', filename: 'notes.txt' });
 
     expect(listener).not.toHaveBeenCalled();
   });

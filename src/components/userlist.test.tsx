@@ -27,14 +27,14 @@ describe('Players panel', () => {
         person('#3', 'Talon', { role: 'Wizard', idle: true, lastActive: NOW - 9 * 3_600_000 }),
         person('#4', 'Saeed', { away: true }),
         person('#2', 'zemmi'),
-        person('#1', 'Q', { role: 'Wizard' }),
+        person('#1', 'Marlow', { role: 'Wizard' }),
       ],
     });
     render(<Userlist client={{ sendCommand: vi.fn() }} />);
     expect(screen.getByRole('heading', { name: 'Players: 4 online, 2 active' })).toBeTruthy();
     const options = within(screen.getByRole('listbox', { name: 'Players: 4 online, 2 active' })).getAllByRole('option');
     expect(options.map((option) => option.textContent)).toEqual([
-      'Q (you), Wizard, active',
+      'Marlow (you), Wizard, active',
       'zemmi, Player, active',
       'Talon, Wizard, idle 9 h',
       'Saeed, Player, away',
