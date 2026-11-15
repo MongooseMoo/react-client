@@ -4,7 +4,8 @@
 Daiverd, 2026-11-13: move the client from Node 22 to Node 26, the LTS line since October 2026. Nothing pinned it to 22 except `.node-version`, which CI reads.
 
 ## State
-- Repair in progress, 2026-11-14: Q asked to fix this PR. CI completed the Chromium download under Node 26, then stalled in extraction until cancellation. Updated the manifest floor and the three Playwright lockfile entries from 1.59.1 to 1.60.0; hosted verification pending.
+- Repair verified, 2026-11-14: Q asked to fix this PR. CI completed the Chromium download under Node 26, then stalled in extraction until cancellation. Updated the manifest floor and the three Playwright lockfile entries from 1.59.1 to 1.60.0.
+- Hosted Node.js CI succeeded on Node 26.13.1 / npm 11.20.0: workflow audits, locked installation, typecheck, unit tests, Chromium installation, production build, audio/soundfont caching, editor ownership, browser sessions/recovery, and keyboard accessibility. Evidence: https://github.com/MongooseMoo/react-client/actions/runs/43659354121. Deployment was skipped for this PR, as intended by the workflow.
 - `.node-version` 22 -> 26. `@types/node` ^20 -> ^26.6.6 (it was two majors behind even 22).
 - On Node 26.13 / npm 11.20 (Windows): typecheck clean, 2967/2967 unit tests, `vite build` OK.
 - Browser checks (Playwright: audio cache, editor ownership, sessions, recovery, a11y) were not run locally; this PR's CI runs them on Linux.
@@ -22,4 +23,4 @@ Daiverd, 2026-11-13: move the client from Node 22 to Node 26, the LTS line since
 - Node 26's npm prints `install-scripts` warnings for esbuild on every install. They're harmless here.
 
 ## Next step
-Apply the dependency update and verify the existing PR's hosted checks on Node 26. The original note's merge/deployment hold remains pending Q's go-ahead.
+Finish the final note update's hosted checks and take PR #232 out of draft. The original note's merge/deployment hold remains pending Q's go-ahead.
