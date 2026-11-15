@@ -50,4 +50,23 @@ describe("Room.Layout", () => {
     spatial.receive("EntityLeave", { entityId: "#5678" });
     expect(useRoomStore.getState().roomLayout?.things.map((thing) => thing.id)).toEqual(["#99"]);
   });
+
+  it("records what enters after the layout, until it leaves or a new layout comes", () => {
+    const spatial = new GMCPClientSpatial(client as never);
+    spatial.receive("EntityEnter", { entity: { id: "#7", name: "Zed", kind: "player", position: [0, 0, 0] } });
+    expect(useRoomStore.getState().layoutArrivals).toEqual([]); // no layout yet
+
+    room.receive("Layout", sampleLayout());
+    spatial.receive("EntityEnter", { entity: { id: "#7", name: "Zed", kind: "player", position: [0, 0, 0] } });
+    spatial.receive("EntityEnter", { entity: { id: "#5678", name: "oak table", position: [0, 0, 0] } });
+    expect(useRoomStore.getState().layoutArrivals).toEqual([{ id: "#7", name: "Zed", kind: "player" }]);
+
+    spatial.receive("EntityLeave", { entityId: "#7" });
+    expect(useRoomStore.getState().layoutArrivals).toEqual([]);
+
+    spatial.receive("EntityEnter", { entity: { id: "#8", position: [0, 0, 0] } });
+    expect(useRoomStore.getState().layoutArrivals).toEqual([{ id: "#8", name: "#8", kind: "object" }]);
+    room.receive("Layout", sampleLayout());
+    expect(useRoomStore.getState().layoutArrivals).toEqual([]);
+  });
 });

@@ -6,6 +6,7 @@ import type { SpatialVector } from "../gmcp/Client/Spatial";
 import type { RoomLayout } from "../gmcp/Room";
 import { sampleLayout } from "../map/roomLayout.fixture";
 import laundry from "../map/roomLayout.sample-1770.json";
+import { useRoomStore } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
 import { standaloneSvg } from "./RoomLayoutPicture";
 import RoomLayoutView from "./RoomLayoutView";
@@ -19,9 +20,41 @@ describe("RoomLayoutView", () => {
     onExit = vi.fn();
     useSpatialStore.getState().reset();
     useSpatialStore.setState({ listenerEntityId: "#99" });
+    useRoomStore.getState().reset();
+    useRoomStore.getState().setRoomLayout(sampleLayout());
   });
 
   const renderView = () => render(<RoomLayoutView layout={sampleLayout()} roomName="Le Salon" onExit={onExit} />);
+
+  it("draws something that entered after the layout as a marker, lists it, moves it and drops it on leave", () => {
+    renderView();
+    act(() => {
+      useSpatialStore.getState().enterEntity({ id: "#7", name: "[green]Zed", kind: "player", position: webAudio([1.0, -1.0, 1.6]) });
+      useRoomStore.getState().addLayoutArrival({ id: "#7", name: "[green]Zed", kind: "player" });
+    });
+    const picture = screen.getByRole("img");
+    const marker = picture.querySelector('[data-id="#7"]');
+    expect(marker?.getAttribute("class")).toBe("rl-item rl-arrival rl-person");
+    expect(marker?.querySelector("title")?.textContent).toBe("Zed");
+    expect(Number(marker?.querySelector("circle")?.getAttribute("cy"))).toBeCloseTo(1.0);
+    const people = () =>
+      within(screen.getByRole("list", { name: "People in the layout" })).getAllByRole("listitem").map((i) => i.textContent);
+    expect(people()).toContain("Zed, 1.6 m from the south wall, 0.9 m from the east wall");
+    expect(picture.getAttribute("aria-label")).toContain("2 people");
+
+    act(() => {
+      useSpatialStore.getState().moveEntity({ entityId: "#7", position: webAudio([-1.0, 2.0, 1.6]) });
+    });
+    expect(Number(picture.querySelector('[data-id="#7"] circle')?.getAttribute("cx"))).toBeCloseTo(-1.0);
+    expect(Number(picture.querySelector('[data-id="#7"] circle')?.getAttribute("cy"))).toBeCloseTo(-2.0);
+
+    act(() => {
+      useSpatialStore.getState().leaveEntity("#7");
+      useRoomStore.getState().removeLayoutThing("#7");
+    });
+    expect(picture.querySelector('[data-id="#7"]')).toBeNull();
+    expect(people()).toEqual(["Q (you), 0.6 m from the south wall, 0.5 m from the east wall"]);
+  });
 
   it("labels the picture with the room's size and counts, and titles every shape", () => {
     renderView();

@@ -256,6 +256,8 @@ export class GMCPClientSpatial extends GMCPClientSpatialBase {
     this.motion.cancel(entityPositionKey(data.entity.id));
     this.motion.cancel(entityForwardKey(data.entity.id));
     useSpatialStore.getState().enterEntity(transformEntity(data.entity));
+    const { id, name, kind } = data.entity;
+    useRoomStore.getState().addLayoutArrival({ id, name: name ?? id, kind: kind ?? "object" });
   }
 
   handleEntityLeave(data: GMCPMessageClientSpatialEntityLeave): void {

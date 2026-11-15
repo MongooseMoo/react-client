@@ -5,8 +5,10 @@ import { sampleLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import {
   describeExit,
+  describeArrival,
   describePlace,
   describeThing,
+  displayName,
   exitWall,
   layoutSummary,
   placeLabels,
@@ -17,6 +19,23 @@ import {
 } from "./roomLayout";
 
 describe("room layout geometry", () => {
+  it("does not move a thing that has no origin (payloads from before origin)", () => {
+    const layout = laundry as unknown as RoomLayout;
+    const [washer] = placeThings(layout, { "#23011": [2, 2, 0] });
+    expect(washer.bounds).toEqual({ x0: -2.8, x1: -2.2, y0: 1.0, y1: 1.65, z0: 0, z1: 0.85 });
+  });
+
+  it("shows names without colour markup, and marks you", () => {
+    expect(displayName({ id: "#5", name: "[red]oak table[normal]" }, "#99")).toBe("oak table");
+    expect(displayName({ id: "#99", name: "[bold]Q" }, "#99")).toBe("Q (you)");
+    expect(describeExit({ name: "[cyan]west[normal]", to: 1, at: [-2.7, 0, 0], width: 0.9 }, [6, 8, 3])).toBe(
+      "west: 0.9 m doorway in the west wall, midway between the north and south walls",
+    );
+    expect(describeArrival({ id: "#7", name: "[green]Zed", kind: "player" }, [2.9, 0, 0], [6, 8, 3], "#99")).toBe(
+      "Zed, midway between the north and south walls, near the east wall",
+    );
+  });
+
   it("reads boxes as rectangles and spheres as circles from above", () => {
     expect(shapeFootprint({ box: [[-0.5, 0.5], [0.2, 1.0], [0.0, 0.75]] })).toEqual({
       type: "rect",

@@ -1,4 +1,6 @@
 import type { LayoutExit, LayoutShape, LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
+import type { LayoutArrival } from "../stores/roomStore";
+import { stripMudAnsiTags } from "../stripMudAnsiTags";
 
 /**
  * Pure geometry for the Room.Layout picture and its text. Everything here is
@@ -58,16 +60,17 @@ function union(all: Bounds[]): Bounds {
  * Each thing's footprints where it is now: its layout shapes moved by how far
  * Client.Spatial says it has gone from its layout `origin`. `positions` are
  * current Client.Spatial positions in the MOO frame, by thing id; a thing
- * without one stays where the layout put it. Things without shapes are left out.
+ * without one, or without an `origin`, stays where the layout put it.
+ * Things without shapes are left out.
  */
 export function placeThings(layout: RoomLayout, positions: Record<string, LayoutVector | undefined>): PlacedThing[] {
   const placed: PlacedThing[] = [];
   for (const thing of layout.things) {
     if (thing.shapes.length === 0) continue;
     const now = positions[thing.id];
-    const offset: LayoutVector = now
-      ? [now[0] - thing.origin[0], now[1] - thing.origin[1], now[2] - thing.origin[2]]
-      : [0, 0, 0];
+    const origin = thing.origin;
+    const offset: LayoutVector =
+      now && origin ? [now[0] - origin[0], now[1] - origin[1], now[2] - origin[2]] : [0, 0, 0];
     const footprints = thing.shapes.map((shape) => shapeFootprint(shape, offset));
     placed.push({ thing, footprints, bounds: union(footprints.map((f) => f.bounds)) });
   }
@@ -129,9 +132,15 @@ export function describePlace(bounds: Bounds, size: LayoutVector): string {
   return `${northSouth}, ${eastWest}`;
 }
 
+/** A name as shown: its colour markup removed (names are `title()`), and "(you)" after your own. */
+export function displayName(item: { id: string; name: string }, youId: string): string {
+  const name = stripMudAnsiTags(item.name) || item.id;
+  return item.id === youId ? `${name} (you)` : name;
+}
+
 export function describeThing(placed: PlacedThing, size: LayoutVector, youId: string): string {
   const { thing, bounds } = placed;
-  const parts = [thing.id === youId ? `${thing.name} (you)` : thing.name, describePlace(bounds, size)];
+  const parts = [displayName(thing, youId), describePlace(bounds, size)];
   if (thing.mounted) parts.push(bounds.z0 > 0.05 ? `mounted ${metres(bounds.z0)} up` : "mounted");
   else if (thing.fixed && thing.kind === "object") parts.push("fixed in place");
   return parts.join(", ");
@@ -139,7 +148,13 @@ export function describeThing(placed: PlacedThing, size: LayoutVector, youId: st
 
 /** A thing the server sent without shapes: it is in the room but cannot be drawn. */
 export function describeUnshaped(thing: LayoutThing, youId: string): string {
-  return `${thing.id === youId ? `${thing.name} (you)` : thing.name}, no size or place given`;
+  return `${displayName(thing, youId)}, no size or place given`;
+}
+
+/** Something that entered after the layout, at its Client.Spatial point (MOO frame). */
+export function describeArrival(arrival: LayoutArrival, at: LayoutVector | undefined, size: LayoutVector, youId: string): string {
+  if (!at) return `${displayName(arrival, youId)}, no place given`;
+  return `${displayName(arrival, youId)}, ${describePlace({ x0: at[0], x1: at[0], y0: at[1], y1: at[1], z0: at[2], z1: at[2] }, size)}`;
 }
 
 export function describeExit(exit: LayoutExit, size: LayoutVector): string {
@@ -147,26 +162,28 @@ export function describeExit(exit: LayoutExit, size: LayoutVector): string {
   const halfW = size[0] / 2;
   const halfD = size[1] / 2;
   const [x, y] = exit.at;
+  const name = stripMudAnsiTags(exit.name) || exit.name;
   if (wall === "north" || wall === "south") {
-    return `${exit.name}: ${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
+    return `${name}: ${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
   }
   if (wall === "east" || wall === "west") {
-    return `${exit.name}: ${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfD - y, y + halfD, "north", "south")}`;
+    return `${name}: ${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfD - y, y + halfD, "north", "south")}`;
   }
-  return `${exit.name}: not in a wall, ${axisWords(halfD - y, y + halfD, "north", "south")}, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
+  return `${name}: not in a wall, ${axisWords(halfD - y, y + halfD, "north", "south")}, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
 }
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-export function isPerson(thing: LayoutThing): boolean {
+export function isPerson(thing: { kind: string }): boolean {
   return thing.kind === "player" || thing.kind === "person";
 }
 
-/** The picture's accessible name: room size and what is in it. */
-export function layoutSummary(roomName: string, layout: RoomLayout): string {
+/** The picture's accessible name: room size and what is in it, arrivals included. */
+export function layoutSummary(roomName: string, layout: RoomLayout, arrivals: LayoutArrival[] = []): string {
   const [w, d, h] = layout.size;
-  const people = layout.things.filter(isPerson).length;
-  const things = layout.things.length - people;
+  const everyone = [...layout.things, ...arrivals];
+  const people = everyone.filter(isPerson).length;
+  const things = everyone.length - people;
   return `Layout of ${roomName || "this room"}: ${metres(w)} east to west, ${metres(d)} north to south, ${metres(h)} high; ` +
     `${count(layout.exits.length, "exit", "exits")}, ${count(people, "person", "people")}, ${count(things, "thing", "things")}.`;
 }

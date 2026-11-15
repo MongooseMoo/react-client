@@ -1,7 +1,10 @@
 import type React from "react";
 import { useMemo, useRef, useState } from "react";
-import type { RoomLayout } from "../gmcp/Room";
+import type { LayoutVector, RoomLayout } from "../gmcp/Room";
+import type { LayoutArrival } from "../stores/roomStore";
+import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import {
+  displayName,
   exitWall,
   isPerson,
   metres,
@@ -34,6 +37,8 @@ interface ViewBox {
 interface RoomLayoutPictureProps {
   layout: RoomLayout;
   placed: PlacedThing[];
+  /** Things that entered after the layout, at their Client.Spatial points; drawn as small markers. */
+  arrivals: Array<{ arrival: LayoutArrival; at: LayoutVector }>;
   youId: string;
   label: string;
   onExit: (name: string) => void;
@@ -146,7 +151,7 @@ function doorwayGeometry(wall: Wall, at: [number, number, number], width: number
   }
 }
 
-const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, youId, label, onExit, onSave }) => {
+const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, arrivals, youId, label, onExit, onSave }) => {
   const base = useMemo(() => baseViewBox(layout), [layout]);
   const [view, setView] = useState<ViewBox>(base);
   const [viewFor, setViewFor] = useState(layout.num);
@@ -251,19 +256,27 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
     (a, b) => Number(isPerson(a.thing)) - Number(isPerson(b.thing)) || a.bounds.z0 - b.bounds.z0,
   );
 
+  const markerRadius = fontSize * 0.6;
   const labels = placeLabels(
-    [...ordered].reverse().map((p) => {
-      const [x, y] = toSvg((p.bounds.x0 + p.bounds.x1) / 2, (p.bounds.y0 + p.bounds.y1) / 2);
-      const radius = Math.max(p.bounds.x1 - p.bounds.x0, p.bounds.y1 - p.bounds.y0) / 2;
-      return { id: p.thing.id, text: p.thing.id === youId ? `${p.thing.name} (you)` : p.thing.name, x, y, radius };
-    }),
+    [
+      ...arrivals.map(({ arrival, at }) => {
+        const [x, y] = toSvg(at[0], at[1]);
+        return { id: arrival.id, text: displayName(arrival, youId), x, y, radius: markerRadius };
+      }),
+      ...[...ordered].reverse().map((p) => {
+        const [x, y] = toSvg((p.bounds.x0 + p.bounds.x1) / 2, (p.bounds.y0 + p.bounds.y1) / 2);
+        const radius = Math.max(p.bounds.x1 - p.bounds.x0, p.bounds.y1 - p.bounds.y0) / 2;
+        return { id: p.thing.id, text: displayName(p.thing, youId), x, y, radius };
+      }),
+    ],
     fontSize,
   );
 
   const exits = layout.exits.map((exit, index) => {
     const wall = exitWall(exit, layout.size);
     const key = `${exit.name}-${index}`;
-    const title = <title>{`Exit ${exit.name}`}</title>;
+    const exitName = stripMudAnsiTags(exit.name) || exit.name;
+    const title = <title>{`Exit ${exitName}`}</title>;
     if (!wall) {
       const [x, y] = toSvg(exit.at[0], exit.at[1]);
       const r = Math.max(exit.width / 2, fontSize * 0.6);
@@ -272,7 +285,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
           {title}
           <rect className="rl-hatch" x={x - r} y={y - r} width={r * 2} height={r * 2} />
           <text className="rl-exit-label" x={x} y={y + r + fontSize} fontSize={fontSize} textAnchor="middle">
-            {exit.name}
+            {exitName}
           </text>
         </g>
       );
@@ -290,7 +303,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
         <line className="rl-door" x1={ax} y1={ay} x2={bx} y2={by} />
         <line className="rl-door-hit" x1={ax} y1={ay} x2={bx} y2={by} />
         <text className="rl-exit-label" x={lx} y={ly} fontSize={fontSize} textAnchor="middle">
-          {exit.name}
+          {exitName}
         </text>
       </g>
     );
@@ -355,7 +368,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
           const [cx, cy] = toSvg((p.bounds.x0 + p.bounds.x1) / 2, (p.bounds.y0 + p.bounds.y1) / 2);
           return (
             <g key={p.thing.id} className={className} data-id={p.thing.id}>
-              <title>{you ? `${p.thing.name} (you)` : p.thing.name}</title>
+              <title>{displayName(p.thing, youId)}</title>
               {p.footprints.map((f, index) => {
                 if (f.type === "circle") {
                   const [x, y] = toSvg(f.cx, f.cy);
@@ -381,6 +394,20 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
                   r={Math.max(p.bounds.x1 - p.bounds.x0, p.bounds.y1 - p.bounds.y0) / 2 + fontSize * 0.5}
                 />
               )}
+            </g>
+          );
+        })}
+        {arrivals.map(({ arrival, at }) => {
+          const you = arrival.id === youId;
+          const className = ["rl-item", "rl-arrival", isPerson(arrival) ? "rl-person" : "", you ? "rl-you" : ""]
+            .filter(Boolean)
+            .join(" ");
+          const [x, y] = toSvg(at[0], at[1]);
+          return (
+            <g key={arrival.id} className={className} data-id={arrival.id}>
+              <title>{displayName(arrival, youId)}</title>
+              <circle className="rl-thing" cx={x} cy={y} r={markerRadius} />
+              {you && <circle className="rl-you-ring" cx={x} cy={y} r={markerRadius + fontSize * 0.5} />}
             </g>
           );
         })}

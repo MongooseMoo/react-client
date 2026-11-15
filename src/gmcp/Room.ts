@@ -46,8 +46,8 @@ export interface LayoutThing {
   fixed: boolean;
   mounted: boolean;
   shapes: LayoutShape[];
-  /** Where Client.Spatial places this thing when the layout was built (its `:sound_origin()`). */
-  origin: LayoutVector;
+  /** Where Client.Spatial places this thing when the layout was built (its `:sound_origin()`). Without it the thing is not moved. */
+  origin?: LayoutVector;
 }
 
 /** Mongoose `Room.Layout`: the inside of a spatial room, drawn by the client. See docs/room-layout.md. */

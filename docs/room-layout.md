@@ -36,19 +36,25 @@ the middle of the room, so it spans `-width/2..width/2` and `-depth/2..depth/2`;
 | `exits[].at` | The middle of the doorway. The server puts a wall's doorway up to 5% of the room in from that wall (`$spatial_utils:coords_for_edge`); the client draws a point that close to exactly one wall as a doorway in it, and any other point (a corner, a hatch, a ladder, stairs) as a marked square where it is. |
 | `exits[].width` | How wide the doorway is along its wall. |
 | `things[].id` | `tostr(obj)`, the same id `Client.Spatial` uses for the thing. |
-| `things[].name` | What to call it. |
+| `things[].name` | What to call it (`title()`; colour markup such as `[red]` is removed for display). |
 | `things[].kind` | `player`, `person` (a living body that is not a player) or `object`. |
 | `things[].fixed` | It cannot be picked up. |
 | `things[].mounted` | It hangs on a wall or ceiling. |
 | `things[].shapes` | Its solid parts: boxes `{"box": [[x0,x1],[y0,y1],[z0,z1]]}` and spheres `{"sphere": [[x,y,z], r]}`. May be empty; such a thing is listed but not drawn. |
-| `things[].origin` | Where `Client.Spatial` placed this thing when the layout was built (its sound origin). |
+| `things[].origin` | `thing:sound_origin()`: where `Client.Spatial` placed this thing when the layout was built. A thing without it is drawn where its shapes are and not moved. |
 
 ## Keeping it current
 
-The layout is not resent when things move. The client moves a thing's shapes by how far its
-`Client.Spatial` position has gone from `origin`, and stops drawing a thing when `Client.Spatial`
-sends `EntityLeave` for its id. A new `Room.Info` for a different room drops the layout; one for
-the same room keeps it until the next `Room.Layout` replaces it.
+Room.Layout is sent only with Room.Info, never again for moves or arrivals. The client:
+
+- moves a thing's shapes by its `Client.Spatial` position minus its `origin`;
+- draws an entity that `Client.Spatial` says entered (`EntityEnter`) and is not in the layout as a
+  small marker at its position with its name (in the person colour for `player` and `person`),
+  lists it, and moves it with `Client.Spatial`;
+- stops drawing a thing or arrival when `Client.Spatial` sends `EntityLeave` for its id.
+
+A new `Room.Layout` replaces the layout and forgets the arrivals. A new `Room.Info` for a different
+room drops both; one for the same room keeps them.
 
 ## In the client
 

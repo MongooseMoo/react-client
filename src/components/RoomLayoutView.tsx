@@ -4,14 +4,17 @@ import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
 import { downloadFile } from "../downloadFile";
 import type { LayoutVector, RoomLayout } from "../gmcp/Room";
 import {
+  describeArrival,
   describeExit,
   describeThing,
   describeUnshaped,
+  displayName,
   isPerson,
   layoutSummary,
   metres,
   placeThings,
 } from "../map/roomLayout";
+import { useRoomStore } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import RoomLayoutPicture, { standaloneSvg } from "./RoomLayoutPicture";
@@ -31,6 +34,7 @@ interface RoomLayoutViewProps {
 const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExit }) => {
   const entities = useSpatialStore((state) => state.spatialEntities);
   const youId = useSpatialStore((state) => state.listenerEntityId);
+  const arrivalList = useRoomStore((state) => state.layoutArrivals);
   const name = stripMudAnsiTags(roomName);
 
   const placed = useMemo(() => {
@@ -42,15 +46,34 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
     return placeThings(layout, positions);
   }, [layout, entities]);
 
-  const summary = layoutSummary(name, layout);
-  // Every thing in the layout is listed; one sent without shapes is listed but not drawn.
-  const entries = layout.things.map((thing) => {
-    const where = placed.find((p) => p.thing.id === thing.id);
-    return { thing, text: where ? describeThing(where, layout.size, youId) : describeUnshaped(thing, youId) };
+  // What entered after the layout, at its Client.Spatial point; it moves with Client.Spatial and goes on leave.
+  const arrivals = arrivalList.map((arrival) => {
+    const entity = entities[arrival.id];
+    return { arrival, at: entity ? webAudioToMongooseVector(entity.position) : undefined };
   });
-  const byName = (a: (typeof entries)[number], b: (typeof entries)[number]) => a.thing.name.localeCompare(b.thing.name);
-  const people = entries.filter((e) => isPerson(e.thing)).sort(byName);
-  const things = entries.filter((e) => !isPerson(e.thing)).sort(byName);
+
+  const summary = layoutSummary(name, layout, arrivalList);
+  // Everything is listed: a thing sent without shapes is listed but not drawn.
+  const entries = [
+    ...layout.things.map((thing) => {
+      const where = placed.find((p) => p.thing.id === thing.id);
+      return {
+        id: thing.id,
+        kind: thing.kind,
+        sortName: displayName(thing, youId),
+        text: where ? describeThing(where, layout.size, youId) : describeUnshaped(thing, youId),
+      };
+    }),
+    ...arrivals.map(({ arrival, at }) => ({
+      id: arrival.id,
+      kind: arrival.kind,
+      sortName: displayName(arrival, youId),
+      text: describeArrival(arrival, at, layout.size, youId),
+    })),
+  ];
+  const byName = (a: (typeof entries)[number], b: (typeof entries)[number]) => a.sortName.localeCompare(b.sortName);
+  const people = entries.filter((e) => isPerson(e)).sort(byName);
+  const things = entries.filter((e) => !isPerson(e)).sort(byName);
   const [w, d, h] = layout.size;
 
   const save = (svg: SVGSVGElement) => {
@@ -62,7 +85,15 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
     <section className="room-layout" aria-labelledby="room-layout-heading">
       <h5 id="room-layout-heading">Room layout</h5>
       <p className="room-layout-help">Zoom with the wheel, a pinch, or + and - on the picture; arrows pan; 0 shows the whole room.</p>
-      <RoomLayoutPicture layout={layout} placed={placed} youId={youId} label={summary} onExit={onExit} onSave={save} />
+      <RoomLayoutPicture
+        layout={layout}
+        placed={placed}
+        arrivals={arrivals.filter((a): a is { arrival: (typeof a)["arrival"]; at: LayoutVector } => a.at !== undefined)}
+        youId={youId}
+        label={summary}
+        onExit={onExit}
+        onSave={save}
+      />
 
       <p>
         {metres(w)} east to west, {metres(d)} north to south, {metres(h)} high.
@@ -83,7 +114,7 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
       ) : (
         <ul aria-label="People in the layout">
           {people.map((e) => (
-            <li key={e.thing.id}>{e.text}</li>
+            <li key={e.id}>{e.text}</li>
           ))}
         </ul>
       )}
@@ -93,7 +124,7 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
       ) : (
         <ul aria-label="Things in the layout">
           {things.map((e) => (
-            <li key={e.thing.id}>{e.text}</li>
+            <li key={e.id}>{e.text}</li>
           ))}
         </ul>
       )}
