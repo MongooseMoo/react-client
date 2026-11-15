@@ -58,6 +58,7 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
  "hair": {"length_cm": 40, "texture": "straight", "style": "loose", "name": "red", "hex": "#9a3001"},
  "eyes": {"name": "green", "hex": "#3a7d44"},
  "face": {"shape": "heart", "nose": "button", "lips": "full", "brows": "arched", "ears": "average"},
+ "features": ["freckles"],
  "garments": [{"name": "a navy jumper", "areas": ["torso", "arms"], "layer": 2,
                "colour": {"name": "navy", "hex": "#01153e"}}]}
 ```
@@ -73,7 +74,8 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 | `hair` | `length_cm` (under 1 none, under 8 short, under 25 medium, longer long), `texture` (`straight`, `wavy`, `curly`, `coily`), `style`, and its colour. Absent when bald or covered. |
 | `facial_hair` | `kind` (`none`, `stubble`, `moustache`, `goatee`, `beard`) and its colour; without a colour, the hair's. |
 | `face` | `shape` (`oval`, `round`, `square`, `long`, `heart`), `nose`, `lips`, `brows`, `ears`. |
-| `face_hidden` | `true` when a form hides the face; no eyes, brows, mouth or facial hair are drawn. |
+| `features` | A list of keys for small features. The portrait draws `freckles`, `glasses`, `sunglasses`, `eyepatch`, `earrings`, `mole` and `dimples`, in the outline colour; other keys are ignored. |
+| `face_hidden` | `true` when a form hides the face; no eyes, brows, mouth, facial hair or face features are drawn. |
 | `marks` | `[{"kind": "scar", "area": "cheek"}]`, uncovered marks only. The portrait shows those on the head and neck. |
 | `garments` | Worn things: `areas` they cover (`head`, `neck`, `torso`, `arms`, `hands`, `waist`, `legs`, `feet`), `layer` (higher is outside) and `colour` when it has one. Each area is drawn in its outermost garment's colour, plain cloth grey when that garment has no colour, skin when bare. |
 

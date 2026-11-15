@@ -59,6 +59,22 @@ describe("AvatarPortrait", () => {
     expect(scarred.querySelector(".avatar-mark")).not.toBeNull();
   });
 
+  it("draws each supported feature and ignores unknown keys", () => {
+    const drawn = (features: unknown) =>
+      [...draw({ skin: { hex: "#a07e56" }, eyes: { hex: "#3a7d44" }, features }).querySelectorAll(".avatar-feature")].map((g) =>
+        g.getAttribute("data-feature"),
+      );
+    const supported = ["freckles", "glasses", "sunglasses", "eyepatch", "earrings", "mole", "dimples"];
+    for (const feature of supported) {
+      expect(drawn([feature])).toEqual([feature]);
+      const g = draw({ skin: { hex: "#a07e56" }, features: [feature] }).querySelector(".avatar-feature");
+      expect(g?.children.length, feature).toBeGreaterThan(0);
+    }
+    expect(drawn(["monocle", "glasses", "GLASSES"])).toEqual(["glasses"]);
+    expect(drawn("glasses")).toEqual([]);
+    expect(draw({ face_hidden: true, features: ["glasses"] }).querySelector(".avatar-feature")).toBeNull();
+  });
+
   it("differs between characters", () => {
     const pictures = TEST_CHARACTERS.map((ch) => draw(ch.appearance).innerHTML);
     expect(new Set(pictures).size).toBe(pictures.length);

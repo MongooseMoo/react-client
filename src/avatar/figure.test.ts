@@ -145,6 +145,16 @@ describe("figureParams branches", () => {
     ]);
   });
 
+  it("keeps known features once each, in order, ignoring unknown keys, wrong types and a hidden face", () => {
+    expect(params({ features: ["Glasses", "monocle", "freckles", 3, null, "glasses", "eyepatch"] }).features).toEqual([
+      "glasses",
+      "freckles",
+      "eyepatch",
+    ]);
+    for (const features of [undefined, "glasses", { glasses: true }, 7]) expect(params({ features }).features).toEqual([]);
+    expect(params({ face_hidden: true, features: ["glasses"] }).features).toEqual([]);
+  });
+
   it("lowers the crown for sitting and reclining", () => {
     const standing = params({}, 1.8);
     const sitting = params({ posture: "sitting" }, 1.8);

@@ -98,6 +98,8 @@ export interface LayoutAppearance {
   facial_hair?: { kind?: string; name?: string; hex?: string };
   eyes?: LayoutColour;
   face?: { shape?: string; nose?: string; lips?: string; brows?: string; ears?: string };
+  /** Small features by key: `freckles`, `glasses`, … */
+  features?: string[];
   /** A form hides the face; hair, eyes and face are then the form's. */
   face_hidden?: boolean;
   marks?: LayoutMark[];

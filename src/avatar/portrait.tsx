@@ -211,6 +211,34 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
         </g>,
       );
     }
+    // Features carry no colour of their own, so they are drawn in the outline ink.
+    const feature: Record<string, React.ReactNode> = {
+      freckles: [
+        [23.5, 32],
+        [26, 33.5],
+        [24.5, 34.5],
+        [40.5, 32],
+        [38, 33.5],
+        [39.5, 34.5],
+      ].map(([x, y]) => <circle key={`${x},${y}`} cx={x} cy={y} r={0.45} fill={ink} />),
+      glasses: (
+        <path fill="none" stroke={ink} strokeWidth={1} d="M22.5,28 a4,3.4 0 1,0 8,0 a4,3.4 0 1,0 -8,0 M33.5,28 a4,3.4 0 1,0 8,0 a4,3.4 0 1,0 -8,0 M30.5,27.5 Q32,26.5 33.5,27.5" />
+      ),
+      sunglasses: (
+        <path fill={ink} stroke={ink} strokeWidth={1} d="M22.5,27 h8 v2.5 a4,2.5 0 0,1 -8,0 Z M33.5,27 h8 v2.5 a4,2.5 0 0,1 -8,0 Z M30.5,27.5 h3" />
+      ),
+      eyepatch: <path fill={ink} stroke={ink} strokeWidth={0.8} d="M34,25 h7 v5 a3.5,3 0 0,1 -7,0 Z M19,22 L34,26 M41,26 L45,24" />,
+      earrings: [17.5, 46.5].map((x) => <circle key={x} cx={x} cy={35.5} r={1.1} fill="none" stroke={ink} strokeWidth={0.8} />),
+      mole: <circle cx={36.5} cy={36} r={0.6} fill={ink} />,
+      dimples: [27, 37].map((x) => <path key={x} fill="none" stroke={ink} strokeWidth={0.6} strokeLinecap="round" d={`M${x},37 q-0.6,0.8 0,1.6`} />),
+    };
+    for (const name of params.features) {
+      parts.push(
+        <g key={`feature-${name}`} className="avatar-feature" data-feature={name}>
+          {feature[name]}
+        </g>,
+      );
+    }
   }
 
   const marks = Array.isArray(record.marks) ? record.marks : [];

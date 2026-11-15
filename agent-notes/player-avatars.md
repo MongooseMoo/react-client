@@ -25,7 +25,7 @@ This branch is the client half: draw each person from the `appearance` map the M
 - A seam between two different colours under 3:1 gets a thin outline band (3D); the portrait outlines every region in the ink.
 - Facing defaults to south without a forward, so faces show in the dollhouse's starting view.
 - Portrait in the People list and `PlayerCard` only; `aria-hidden`, `focusable="false"`, no focus stop. The label is plain text.
-- `features` is in the MOO record but not in the Contract's Wire list, so it is not in the type; the portrait's features come from `face`.
+- `appearance.features` (a list of string keys) was added to the wire by team-lead on 2026-11-14, after the first commit. The portrait draws freckles, glasses, sunglasses, eyepatch, earrings, mole and dimples in the outline ink (features carry no colour); other keys are ignored, and a hidden face shows none. The 3D figure does not draw features.
 
 ## Surprises
 
@@ -34,4 +34,4 @@ This branch is the client half: draw each person from the `appearance` map the M
 
 ## Next step
 
-PR review and CI. Then `appearance.features` (team-lead, 2026-11-14). The MOO must send `appearance` before anything changes for players.
+PR review and CI. The MOO must send `appearance` before anything changes for players.

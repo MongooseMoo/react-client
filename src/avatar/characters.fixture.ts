@@ -39,6 +39,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
       hair: { length_cm: 40, texture: "straight", style: "loose", ...c("red", "#9a3001") },
       eyes: c("green", "#3a7d44"),
       face: { shape: "heart", nose: "button", lips: "full", brows: "arched", ears: "average" },
+      features: ["freckles"],
       garments: [
         { name: "a navy jumper", areas: ["torso", "arms"], layer: 2, colour: c("navy", "#01153e") },
         { name: "grey trousers", areas: ["waist", "legs"], layer: 1, colour: c("grey", "#6b6b6b") },
@@ -75,6 +76,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
       hair: { length_cm: 18, texture: "curly", ...c("dark brown", "#341c02") },
       eyes: c("hazel", "#8e7618"),
       face: { shape: "round", nose: "average", lips: "full" },
+      features: ["mole", "dimples"],
       marks: [{ kind: "piercing", area: "nose" }],
       garments: [{ name: "a teal dress", areas: ["torso", "waist", "legs"], layer: 1, colour: c("teal", "#029386") }],
     },
@@ -90,6 +92,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
       facial_hair: { kind: "moustache", ...c("white", "#e8e8e8") },
       eyes: c("blue", "#3d6fb6"),
       face: { shape: "long", nose: "hooked", lips: "thin", brows: "bushy" },
+      features: ["glasses", "Glasses"],
       marks: [{ kind: "scar", area: "cheek" }],
       garments: [
         { name: "a white shirt", areas: ["torso", "arms"], layer: 1, colour: c("white", "#f4f1ea") },
@@ -108,6 +111,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
       hair: { length_cm: 9, texture: "wavy", ...c("blonde", "#e5c76b") },
       eyes: c("grey", "#8a9399"),
       face: { shape: "oval", nose: "pudgy", lips: "narrow" },
+      features: ["sunglasses", "monocle"],
       garments: [
         { name: "a pink hoodie", areas: ["head", "torso", "arms"], layer: 2, colour: c("pink", "#ff81c0") },
         { name: "blue jeans", areas: ["waist", "legs"], layer: 1, colour: c("denim", "#3b5b92") },
@@ -154,6 +158,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
       facial_hair: { kind: "stubble", ...c("grey", "#7d7d7d") },
       eyes: c("grey", "#8a9399"),
       face: { shape: "square", nose: "previously broken", lips: "chapped" },
+      features: ["eyepatch", "earrings"],
       garments: [
         { name: "a green flannel shirt", areas: ["torso", "arms"], layer: 1, colour: c("forest", "#0b5509") },
         { name: "khaki trousers", areas: ["waist", "legs"], layer: 1, colour: c("khaki", "#aaa662") },
@@ -171,6 +176,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
       skin: c("deep brown", "#604134"),
       eyes: c("dark brown", "#3b2412"),
       face_hidden: true,
+      features: ["glasses"],
       garments: [
         { name: "a maroon cloak", areas: ["head", "neck", "torso", "arms", "legs"], layer: 4, colour: c("maroon", "#650021") },
         { name: "black boots", areas: ["feet"], layer: 1, colour: c("black", "#1b1b1b") },

@@ -12,6 +12,9 @@ export type Posture = "standing" | "sitting" | "reclining";
 export type HairShape = "none" | "short" | "medium" | "long";
 export type FacialHair = "none" | "stubble" | "moustache" | "goatee" | "beard";
 export type ExtraPart = "tail" | "wings" | "antlers" | "horns" | "pointed_ears";
+/** `features` keys the portrait draws; others are ignored. */
+export const FEATURES = ["freckles", "glasses", "sunglasses", "eyepatch", "earrings", "mole", "dimples"] as const;
+export type Feature = (typeof FEATURES)[number];
 /** Where two differently coloured regions of the figure meet. */
 export type Seam = "hairline" | "neck" | "waist" | "hips" | "wrists" | "ankles";
 
@@ -83,6 +86,8 @@ export interface FigureParams {
   facialHair: FacialHair;
   faceHidden: boolean;
   extras: ExtraPart[];
+  /** Known `features`, in the order given, each once; none on a hidden face. */
+  features: Feature[];
   /** Seams whose two sides fall below 3:1 contrast, drawn with an outline in `colours.ink`. */
   outlined: Seam[];
 }
@@ -239,6 +244,12 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     if (part && !extras.includes(part)) extras.push(part);
   }
 
+  const features: Feature[] = [];
+  for (const key of faceHidden || !Array.isArray(record.features) ? [] : record.features) {
+    const feature = word(key) as Feature;
+    if ((FEATURES as readonly string[]).includes(feature) && !features.includes(feature)) features.push(feature);
+  }
+
   const posture = POSTURES.includes(word(record.posture) as Posture) ? (word(record.posture) as Posture) : "standing";
   const legShare = 0.47;
   const top =
@@ -262,6 +273,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     facialHair,
     faceHidden,
     extras,
+    features,
     outlined,
   };
 }
