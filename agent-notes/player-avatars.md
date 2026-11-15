@@ -36,4 +36,4 @@ Built and on pull request 237 (MongooseMoo/react-client), CI pending at the last
 
 ## Next step
 
-PR 237 merged. Follow-up branch `avatar-followup` (work log `reports/player-avatars-client-followup-2026-11-14.md` in the hub): features on the 3D figure (done), then a build check that three.js stays out of the startup chunk, a browser measurement of frame cost, and looking at the figures by eye.
+PR 237 merged. Follow-up branch `avatar-followup` (work log `reports/player-avatars-client-followup-2026-11-14.md` in the hub): features on the 3D figure (done); a build check that three.js stays out of startup (done: `lazyPackagesAtStartup` in `src/build/optionalChunks.ts`, called by the `optional-feature-precache` plugin in `vite.config.ts`, fails the build; the production build had three.js only in the lazy `RoomLayout3D` chunk); then a browser measurement of frame cost, and looking at the figures by eye.
