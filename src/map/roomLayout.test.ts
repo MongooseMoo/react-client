@@ -13,6 +13,7 @@ import {
   layoutSummary,
   placeLabels,
   placeThings,
+  shortLabel,
   scaleBarLength,
   shapeFootprint,
   toSvg,
@@ -138,6 +139,22 @@ describe("room layout geometry", () => {
         expect(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1).toBe(false);
       }
     }
-    expect(labels[0]).toMatchObject({ x: 0, y: 0, leader: false });
+    expect(labels[0]).toMatchObject({ x: 0, y: 0 });
+  });
+
+  it("leaves out a label that has no free spot inside the room, and shortens long names", () => {
+    const fontSize = 0.2;
+    const room = { x0: -1, x1: 1, y0: -1, y1: 1 };
+    const labels = placeLabels(
+      [
+        { id: "a", text: "table", x: 0, y: 0, radius: 0.1 },
+        { id: "b", text: "a very long wide label", x: 0.9, y: 0.9, radius: 0.1 },
+      ],
+      fontSize,
+      room,
+    );
+    expect(labels.map((l) => l.id)).toEqual(["a"]);
+    expect(shortLabel("keyboard stand which holds electric keyboard")).toBe("keyboard stand which…");
+    expect(shortLabel("oak table")).toBe("oak table");
   });
 });

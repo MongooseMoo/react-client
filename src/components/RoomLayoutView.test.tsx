@@ -85,10 +85,10 @@ describe("RoomLayoutView", () => {
     act(() => {
       useSpatialStore.getState().enterEntity({ id: "#99", position: webAudio([0.2, 1.0, 1.67]) });
     });
-    const rect = screen.getByRole("img").querySelector('.rl-you rect');
-    // Footprint x 0.0..0.4, y 0.8..1.2: its top-left in SVG units is (0, -1.2).
-    expect(Number(rect?.getAttribute("x"))).toBeCloseTo(0);
-    expect(Number(rect?.getAttribute("y"))).toBeCloseTo(-1.2);
+    const token = screen.getByRole("img").querySelector(".rl-you circle.rl-thing");
+    // Footprint x 0.0..0.4, y 0.8..1.2: a person is a round token at its centre, (0.2, -1.0) in SVG units.
+    expect(Number(token?.getAttribute("cx"))).toBeCloseTo(0.2);
+    expect(Number(token?.getAttribute("cy"))).toBeCloseTo(-1.0);
     expect(document.activeElement).toBe(before);
     expect(document.querySelector("[aria-live]")).toBeNull();
   });

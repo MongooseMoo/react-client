@@ -211,13 +211,9 @@ export interface PlacedLabel {
   text: string;
   x: number;
   y: number;
-  /** The label had to move away from its thing; draw a leader line back to (anchorX, anchorY). */
-  leader: boolean;
-  anchorX: number;
-  anchorY: number;
 }
 
-interface Box {
+export interface Box {
   x0: number;
   x1: number;
   y0: number;
@@ -225,27 +221,38 @@ interface Box {
 }
 
 const overlaps = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+const inside = (a: Box, b: Box) => a.x0 >= b.x0 && a.x1 <= b.x1 && a.y0 >= b.y0 && a.y1 <= b.y1;
 
-/** A label's box when its text is centred on (x, y): text width estimated at 0.6 em a character. */
+/** A label's box when its text is centred on (x, y): text width estimated at 0.58 em a character. */
 function labelBox(text: string, x: number, y: number, fontSize: number): Box {
-  const halfW = (text.length * 0.6 * fontSize) / 2 + fontSize * 0.2;
-  const halfH = fontSize * 0.65;
+  const halfW = (text.length * 0.58 * fontSize) / 2 + fontSize * 0.25;
+  const halfH = fontSize * 0.7;
   return { x0: x - halfW, x1: x + halfW, y0: y - halfH, y1: y + halfH };
 }
 
+const LABEL_MAX = 22;
+
+/** A label's text: a long name cut at a word near LABEL_MAX characters, with an ellipsis. */
+export function shortLabel(text: string): string {
+  if (text.length <= LABEL_MAX) return text;
+  const cut = text.slice(0, LABEL_MAX - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space >= LABEL_MAX / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:(-]+$/, "")}…`;
+}
+
 /**
- * Places labels so none overlap: each tries its thing's centre, then rings of
- * positions around it, and takes the first free one. A label that moved more
- * than beside its thing gets a leader line. When nothing is free it goes at
- * its thing's centre.
+ * Places labels in request order (most important first) so none overlap:
+ * each tries its thing's centre, then just beside it, then a little further,
+ * and takes the first spot that is free (of other labels and of `avoid`)
+ * and, given `within`, inside it. A label with no such spot is left out; the
+ * thing keeps its title and its line in the lists, and zooming in makes room.
  */
-export function placeLabels(requests: LabelRequest[], fontSize: number): PlacedLabel[] {
-  const taken: Box[] = [];
+export function placeLabels(requests: LabelRequest[], fontSize: number, within?: Box, avoid: Box[] = []): PlacedLabel[] {
+  const taken: Box[] = [...avoid];
   const result: PlacedLabel[] = [];
   const directions = [
-    [0, 0],
-    [0, -1],
     [0, 1],
+    [0, -1],
     [1, 0],
     [-1, 0],
     [1, -1],
@@ -254,30 +261,25 @@ export function placeLabels(requests: LabelRequest[], fontSize: number): PlacedL
     [-1, 1],
   ];
   for (const request of requests) {
-    let chosen: { x: number; y: number; ring: number } | null = null;
-    for (let ring = 0; ring < 6 && !chosen; ring++) {
-      const distance = ring === 0 ? 0 : request.radius + fontSize * (0.9 + ring - 1);
-      for (const [dx, dy] of ring === 0 ? [directions[0]] : directions.slice(1)) {
-        const x = request.x + dx * distance * (dx !== 0 && dy !== 0 ? Math.SQRT1_2 : 1);
-        const y = request.y + dy * distance * (dx !== 0 && dy !== 0 ? Math.SQRT1_2 : 1);
-        const box = labelBox(request.text, x, y, fontSize);
-        if (!taken.some((other) => overlaps(box, other))) {
-          chosen = { x, y, ring };
-          break;
-        }
+    const candidates: Array<[number, number]> = [[request.x, request.y]];
+    const own = labelBox(request.text, 0, 0, fontSize);
+    for (let ring = 1; ring <= 2; ring++) {
+      const gap = fontSize * (ring - 1) * 1.2;
+      // Beside the thing: clear of it by the label's own half-width across, half-height up and down.
+      const across = request.radius + own.x1 + gap;
+      const upDown = request.radius + own.y1 + gap;
+      for (const [dx, dy] of directions) {
+        const diagonal = dx !== 0 && dy !== 0 ? Math.SQRT1_2 : 1;
+        candidates.push([request.x + dx * across * diagonal, request.y + dy * upDown * diagonal]);
       }
     }
-    const spot = chosen ?? { x: request.x, y: request.y, ring: 0 };
-    taken.push(labelBox(request.text, spot.x, spot.y, fontSize));
-    result.push({
-      id: request.id,
-      text: request.text,
-      x: spot.x,
-      y: spot.y,
-      leader: spot.ring > 1,
-      anchorX: request.x,
-      anchorY: request.y,
-    });
+    for (const [x, y] of candidates) {
+      const box = labelBox(request.text, x, y, fontSize);
+      if ((within && !inside(box, within)) || taken.some((other) => overlaps(box, other))) continue;
+      taken.push(box);
+      result.push({ id: request.id, text: request.text, x, y });
+      break;
+    }
   }
   return result;
 }
