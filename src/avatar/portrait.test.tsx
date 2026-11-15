@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "./characters.fixture";
 import { contrast, INK_LIGHT, MIN_CONTRAST } from "./colour";
 import { figureParams } from "./figure";
-import AvatarPortrait from "./portrait";
+import AvatarPortrait, { PORTRAIT_BACKDROP } from "./portrait";
 
 const draw = (appearance: unknown) => render(<AvatarPortrait appearance={appearance} />).container;
 
@@ -29,7 +29,7 @@ describe("AvatarPortrait", () => {
   it("draws only supplied colours, outlines in the ink, for every test character", () => {
     for (const ch of TEST_CHARACTERS) {
       const { ink, faceInk } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
-      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk]);
+      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, PORTRAIT_BACKDROP]);
       const svg = draw(ch.appearance).querySelector("svg") as SVGSVGElement;
       for (const el of svg.querySelectorAll("[fill], [stroke]")) {
         for (const attr of ["fill", "stroke"]) {
@@ -102,6 +102,23 @@ describe("AvatarPortrait", () => {
     // Glasses lenses reach down to y 31.4; the scar starts below them.
     const [, startY] = /M[\d.]+,([\d.]+)/.exec(scar?.getAttribute("d") ?? "") ?? [];
     expect(Number(startY)).toBeGreaterThan(31.4);
+  });
+
+  it("sets the picture on a backdrop that black and white hair both stand out from", () => {
+    // On the client's dark page, black hair behind the head showed only as its outline.
+    for (const hair of ["#141414", "#e8e8e8"]) expect(contrast(PORTRAIT_BACKDROP, hair), hair).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    const svg = draw(TEST_CHARACTERS[0].appearance).querySelector("svg") as SVGSVGElement;
+    expect(svg.firstElementChild?.getAttribute("class")).toBe("avatar-backdrop");
+  });
+
+  it("ends hair that falls behind the head in rounded corners, not a box", () => {
+    for (const length_cm of [18, 40]) {
+      const back = draw({ skin: { hex: "#a07e56" }, hair: { length_cm, hex: "#341c02" } }).querySelector("path.avatar-hair");
+      const d = back?.getAttribute("d") ?? "";
+      // The outer corners (x 17 and 47 at the bottom) are never reached by a straight line.
+      expect(d, String(length_cm)).not.toMatch(/L47,(42|54)|L17,(42|54)/);
+      expect(d).toMatch(/^M17,26 C/);
+    }
   });
 
   it("differs between characters", () => {

@@ -17,7 +17,14 @@ export interface PortraitProps {
   className?: string;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+/**
+ * The disc behind every portrait: one fixed mid grey, not taken from the
+ * appearance. It reaches 3:1 against both near-black and near-white hair, which
+ * the client's dark (or a light) page does not.
+ */
+export const PORTRAIT_BACKDROP = "#707080";
+
+const isRecord =(value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const word = (value: unknown): string =>
   typeof value === "string" ? value.trim().toLowerCase().replace(/[\s-]+/g, "_") : "";
@@ -94,9 +101,13 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
   const shoulders = 26 * BUILDS[params.build].shoulders;
   const parts: React.ReactNode[] = [];
 
+  // A plain disc behind the picture, so dark hair still shows on a dark page and light hair on a light one.
+  parts.push(<circle key="backdrop" className="avatar-backdrop" cx={32} cy={32} r={31} fill={PORTRAIT_BACKDROP} />);
   if (params.hair === "medium" || params.hair === "long") {
     const bottom = params.hair === "long" ? 54 : 42;
     const w = 15 * params.hairVolume;
+    // Hair falling behind the head, narrowing to rounded ends rather than a box.
+    const r = 6;
     parts.push(
       <path
         key="hair-back"
@@ -104,7 +115,7 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
         fill={c.hair}
         stroke={ink}
         strokeWidth={1.2}
-        d={`M${32 - w},26 C${32 - w},8 ${32 + w},8 ${32 + w},26 L${32 + w},${bottom} L${32 - w},${bottom} Z`}
+        d={`M${32 - w},26 C${32 - w},8 ${32 + w},8 ${32 + w},26 C${32 + w},${bottom - r} ${32 + w - r},${bottom} ${32 + w - 2 * r},${bottom} L${32 - w + 2 * r},${bottom} C${32 - w + r},${bottom} ${32 - w},${bottom - r} ${32 - w},26 Z`}
       />,
     );
   }
