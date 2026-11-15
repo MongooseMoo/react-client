@@ -16,7 +16,7 @@ const list = {
   total: 36,
   groups: [
     { key: "#2 every dispatch_event", label: "dispatch_event on 35 objects", owner: "daiverd", kind: "every" as const, count: 35, next: NOW + 3 },
-    { key: "#249 every cycle", label: "#4143:cycle", owner: "q", kind: "every" as const, count: 1, next: NOW },
+    { key: "#7741 every cycle", label: "#4143:cycle", owner: "marlow", kind: "every" as const, count: 1, next: NOW },
   ],
 };
 

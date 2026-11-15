@@ -24,7 +24,7 @@ describe('Players panel', () => {
     useUserlistStore.setState({
       you: '#1',
       players: [
-        person('#3', 'Talon', { role: 'Wizard', idle: true, lastActive: NOW - 9 * 3_600_000 }),
+        person('#3', 'Corvin', { role: 'Wizard', idle: true, lastActive: NOW - 9 * 3_600_000 }),
         person('#4', 'Saeed', { away: true }),
         person('#2', 'zemmi'),
         person('#1', 'Marlow', { role: 'Wizard' }),
@@ -36,17 +36,17 @@ describe('Players panel', () => {
     expect(options.map((option) => option.textContent)).toEqual([
       'Marlow (you), Wizard, active',
       'zemmi, Player, active',
-      'Talon, Wizard, idle 9 h',
+      'Corvin, Wizard, idle 9 h',
       'Saeed, Player, away',
     ]);
   });
 
   it('keeps idle times current while open', () => {
-    useUserlistStore.setState({ players: [person('#3', 'Talon', { idle: true, lastActive: NOW - 3 * 60_000 })] });
+    useUserlistStore.setState({ players: [person('#3', 'Corvin', { idle: true, lastActive: NOW - 3 * 60_000 })] });
     render(<Userlist client={{ sendCommand: vi.fn() }} />);
-    expect(screen.getByRole('option').textContent).toBe('Talon, Player, idle 3 min');
+    expect(screen.getByRole('option').textContent).toBe('Corvin, Player, idle 3 min');
     act(() => { vi.advanceTimersByTime(2 * 60_000); });
-    expect(screen.getByRole('option').textContent).toBe('Talon, Player, idle 5 min');
+    expect(screen.getByRole('option').textContent).toBe('Corvin, Player, idle 5 min');
   });
 
   it("offers the server's actions on the selected player; a trailing space leaves the command to finish", () => {

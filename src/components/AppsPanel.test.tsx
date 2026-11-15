@@ -85,28 +85,28 @@ describe("AppsPanel", () => {
         url: "mqtts://mongoose.world:8883",
         user: "Marlow",
         password: "KEY9",
-        topics: "players/249/#",
+        topics: "players/7741/#",
       }),
     );
     expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue("mongoose.world");
     expect(screen.getByRole("textbox", { name: "Port" })).toHaveValue("8883");
     expect(screen.getByRole("textbox", { name: "MQTT user name" })).toHaveValue("Marlow");
     expect(screen.getByRole("textbox", { name: "MQTT password" })).toHaveValue("KEY9");
-    expect(screen.getByRole("textbox", { name: "Your topics" })).toHaveValue("players/249/#");
+    expect(screen.getByRole("textbox", { name: "Your topics" })).toHaveValue("players/7741/#");
     expect(screen.queryByRole("textbox", { name: "Windows command" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Mosquitto bridge" })).toHaveValue(
-      mosquittoBridgeConfig("mqtts://mongoose.world:8883", "Marlow", "KEY9", "players/249/#"),
+      mosquittoBridgeConfig("mqtts://mongoose.world:8883", "Marlow", "KEY9", "players/7741/#"),
     );
   });
 
   it("writes a Mosquitto bridge section with the player's password, prefix and state topic", () => {
-    expect(mosquittoBridgeConfig("mqtts://mongoose.world:8883", "Solaris_Guest", "KEY9", "players/2280/#").split("\n")).toEqual([
+    expect(mosquittoBridgeConfig("mqtts://mongoose.world:8883", "Wayfarer_Guest", "KEY9", "players/2280/#").split("\n")).toEqual([
       "connection mongoose",
       "address mongoose.world:8883",
       "bridge_capath /etc/ssl/certs",
-      "remote_username Solaris_Guest",
+      "remote_username Wayfarer_Guest",
       "remote_password KEY9",
-      "remote_clientid Solaris_Guest-bridge",
+      "remote_clientid Wayfarer_Guest-bridge",
       "notification_topic players/2280/bridge/state",
       "topic # both 0 mongoose/ players/2280/",
     ]);
