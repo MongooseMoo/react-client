@@ -460,6 +460,46 @@ export function zoomFocus(you: Bounds | undefined, layout: RoomLayout): THREE.Ve
   return new THREE.Vector3((you.x0 + you.x1) / 2, (you.y0 + you.y1) / 2, you.z0 + (you.z1 - you.z0) * 0.9);
 }
 
+/** One dollhouse wheel notch toward the pointer multiplies the camera's distance by this. */
+export const WHEEL_STEP = 0.95;
+
+/** How many wheel notches a wheel event is: a notch is 100 pixels, 3 lines or one page. */
+export function wheelNotches(deltaY: number, deltaMode: number): number {
+  return Math.abs(deltaY) / (deltaMode === 1 ? 3 : deltaMode === 2 ? 1 : 100);
+}
+
+/**
+ * What a dollhouse wheel zoom heads for, along the pointer's ray: a person's face
+ * when the ray meets a person, else the first thing it meets, else the floor;
+ * undefined when it meets none of them (pointing over the walls into the dark).
+ */
+export function wheelZoomPoint(ray: THREE.Ray, scene: RoomScene, placed: PlacedThing[], layout: RoomLayout): THREE.Vector3 | undefined {
+  const caster = new THREE.Raycaster(ray.origin, ray.direction);
+  const hit = caster.intersectObjects([...scene.things.values()], true)[0];
+  if (hit) {
+    let object: THREE.Object3D | null = hit.object;
+    while (object && object.userData.thingId === undefined) object = object.parent;
+    const person = object?.userData.form === "person" ? placed.find((p) => p.thing.id === object?.userData.thingId) : undefined;
+    return person ? zoomFocus(person.bounds, layout) : hit.point.clone();
+  }
+  return ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3()) ?? undefined;
+}
+
+/**
+ * One dollhouse wheel zoom by `scale` (below 1 comes closer). Zooming in moves the
+ * camera toward `point` and the point it orbits onto `point` a little faster, so what
+ * was zoomed onto comes to the middle of the picture and the arrow keys then turn
+ * around it. Zooming out backs away from the point it orbits.
+ */
+export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: THREE.Vector3, scale: number): void {
+  if (scale < 1) {
+    camera.sub(point).multiplyScalar(scale).add(point);
+    target.sub(point).multiplyScalar(scale * scale).add(point);
+  } else {
+    camera.sub(target).multiplyScalar(scale).add(target);
+  }
+}
+
 /** Your eyes' field of view after a zoom key (`+`/`=` in, `-`/`_` out, `0` back), or undefined for any other key. */
 export function zoomedFov(fov: number, key: string): number | undefined {
   if (key === "+" || key === "=") return Math.max(EYES_MIN_FOV, fov * ZOOM_STEP);

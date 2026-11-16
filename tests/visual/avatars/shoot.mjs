@@ -1,6 +1,6 @@
 // Tests only: screenshots of the invented test characters and frame times of the
 // 3D view, in headless Chromium (no window). Usage:
-//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu]
+//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d]
 // --gpu asks headless Chromium for the machine's GPU instead of its software renderer.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -9,6 +9,8 @@ import { createServer } from 'vite';
 
 const out = resolve(process.argv[2] ?? 'screenshots/avatars');
 const gpu = process.argv.includes('--gpu');
+// --view3d shoots only the 3D view's zoom, turn and label sequence (then the frame timing).
+const view3d = process.argv.includes('--view3d');
 mkdirSync(out, { recursive: true });
 
 const server = await createServer({ server: { port: 5199, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' });
@@ -28,7 +30,64 @@ try {
     await page.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
   };
   const suffix = gpu ? '-gpu' : '';
-  if (!gpu) {
+  if (view3d) {
+    // Getting a person's face into view in the Dollhouse, and where labels sit (both 3D views).
+    const room = 'view=room&n=8&size=50&spread=6&face=north&mode=dollhouse';
+    const wheelOn = async (pic, id, steps, tag, every) => {
+      const at = await page.evaluate((who) => window.screenOf(who), id);
+      await page.mouse.move(at.x, at.y);
+      for (let i = 1; i <= steps; i++) {
+        await page.mouse.wheel(0, -100);
+        await page.waitForTimeout(20);
+        if (every.includes(i)) await pic.screenshot({ path: resolve(out, `${tag}-wheel${i}.png`) });
+      }
+    };
+    // 1, 2 and 4: wheel onto Bram (#p1, 9 m from the middle, facing away), then turn with the arrow keys.
+    await open(room);
+    let pic = page.locator('.room-layout-3d');
+    await pic.screenshot({ path: resolve(out, 'd1-start.png') });
+    // --wheel=N: how many wheel steps before turning (default 22).
+    const steps = Number(process.argv.find((a) => a.startsWith('--wheel='))?.slice(8) ?? '22');
+    await wheelOn(pic, '#p1', steps, 'd1', [10, 15, 20, 25, 30, 40, 50, 60].filter((n) => n <= steps));
+    await pic.focus();
+    for (let i = 1; i <= 18; i++) {
+      await page.keyboard.press('ArrowLeft');
+      if ([3, 6, 9, 12, 18].includes(i)) await pic.screenshot({ path: resolve(out, `d1-turn${i * 10}deg.png`) });
+    }
+    for (let i = 1; i <= 4; i++) await page.keyboard.press('ArrowDown');
+    await pic.screenshot({ path: resolve(out, 'd1-turn180deg-down4.png') });
+    await page.keyboard.press('0');
+    await pic.screenshot({ path: resolve(out, 'd1-reset0.png') });
+    // 4: the same 20 wheel steps in the 5 m room, on the same person.
+    await open('view=room&n=8&mode=dollhouse&face=north');
+    pic = page.locator('.room-layout-3d');
+    await wheelOn(pic, '#p1', 25, 'd4-5m', [10, 20, 25]);
+    // 3: the 276 px side panel at 3x, as the live guest saw it: Your eyes among people, and the Dollhouse with you by a wall.
+    const narrow = await browser.newPage({ viewport: { width: 400, height: 500 }, colorScheme: 'dark', deviceScaleFactor: 3 });
+    for (const [tag, query] of [
+      ['d3-eyes-276', 'view=room&n=24&size=50&spread=6&mode=eyes&width=276&you=%23p3'],
+      ['d3-doll-276', 'view=room&n=8&size=50&spread=10&mode=dollhouse&width=276&you=%23p7'],
+      ['d3-doll-960', 'view=room&n=8&size=50&spread=10&mode=dollhouse&width=960&you=%23p7'],
+    ]) {
+      await narrow.goto(`${base}?${query}`);
+      await narrow.waitForFunction(() => window.ready === true);
+      await narrow.waitForTimeout(300);
+      await narrow.locator('.room-layout-3d').screenshot({ path: resolve(out, `${tag}.png`) });
+      // Each shown label's centre and its figure's anchor, in CSS pixels within the picture.
+      const labels = await narrow.evaluate(() => {
+        const frame = document.querySelector('.room-layout-3d').getBoundingClientRect();
+        return [...document.querySelectorAll('.rl3d-label')]
+          .filter((e) => e.style.display !== 'none' && getComputedStyle(e).display !== 'none')
+          .map((e) => {
+            const r = e.getBoundingClientRect();
+            return { text: e.textContent, x0: Math.round(r.left - frame.left), x1: Math.round(r.right - frame.left), y0: Math.round(r.top - frame.top), y1: Math.round(r.bottom - frame.top), moved: e.style.translate };
+          });
+      });
+      console.log(tag, JSON.stringify(labels));
+    }
+    await narrow.close();
+  }
+  if (!gpu && !view3d) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -77,7 +136,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu) {
+  if (!gpu && !view3d) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');

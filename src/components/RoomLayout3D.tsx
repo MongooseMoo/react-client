@@ -29,6 +29,10 @@ import {
   zoomFocus,
   eyesPose,
   type RoomScene,
+  WHEEL_STEP,
+  wheelNotches,
+  wheelZoom,
+  wheelZoomPoint,
   ZOOM_STEP,
   zoomedFov,
 } from "../map/roomScene";
@@ -112,7 +116,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.maxPolarAngle = Math.PI / 2 - 0.05;
     controls.minDistance = 0.5;
-    // The wheel zooms toward what is under the pointer, so a person anywhere in a large room can be brought close.
+    // A pinch zooms toward what is under the fingers. The wheel never reaches the controls: `onWheel` below takes it.
     controls.zoomToCursor = true;
     const scene = new THREE.Scene();
 
@@ -150,8 +154,12 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
     observer?.observe(frame);
     resize();
+    // Taken on the way down to the canvas, so the orbit controls' own wheel zoom never runs.
+    const wheel = (event: WheelEvent) => onWheelRef.current(event);
+    frame.addEventListener("wheel", wheel, { capture: true, passive: false });
 
     return () => {
+      frame.removeEventListener("wheel", wheel, { capture: true });
       observer?.disconnect();
       controls.removeEventListener("change", stage.render);
       controls.dispose();
@@ -251,6 +259,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     stage.controls.enabled = mode === "dollhouse";
     stage.camera.fov = mode === "eyes" ? EYES_FOV : DOLLHOUSE_FOV;
     stage.camera.updateProjectionMatrix();
+    wheelFocus.current = null;
     if (mode === "dollhouse") {
       // Far enough out for this room's whole-room view, however large the room.
       stage.controls.maxDistance = dollhouseMaxDistance(layout);
@@ -303,14 +312,40 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     return true;
   };
 
-  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    // The dollhouse's orbit controls take the wheel themselves.
-    if (mode !== "eyes" || event.deltaY === 0) return;
-    if (zoomEyes(event.deltaY < 0 ? "+" : "-")) event.preventDefault();
+  // What the dollhouse wheel is zooming onto, kept while the pointer stays where it was.
+  const wheelFocus = useRef<{ x: number; y: number; point: THREE.Vector3 | undefined } | null>(null);
+  const onWheel = (event: WheelEvent) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.deltaY === 0) return;
+    if (mode === "eyes") {
+      zoomEyes(event.deltaY < 0 ? "+" : "-");
+      return;
+    }
+    const focus = wheelFocus.current;
+    if (!focus || Math.hypot(event.clientX - focus.x, event.clientY - focus.y) > 4) {
+      const rect = stage.renderer.domElement.getBoundingClientRect();
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(
+        new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1),
+        stage.camera,
+      );
+      const point = stage.room ? wheelZoomPoint(ray.ray, stage.room, placed, layout) : undefined;
+      wheelFocus.current = { x: event.clientX, y: event.clientY, point };
+    }
+    const scale = WHEEL_STEP ** (wheelNotches(event.deltaY, event.deltaMode) * (event.deltaY < 0 ? 1 : -1));
+    wheelZoom(stage.camera.position, stage.controls.target, wheelFocus.current?.point ?? stage.controls.target.clone(), scale);
+    stage.controls.update();
+    stage.render();
   };
+  const onWheelRef = useRef(onWheel);
+  onWheelRef.current = onWheel;
 
   /** Slides the dollhouse view over to your figure, unturned, then moves the camera `scale` times as far from it. */
   const zoomToward = (stage: Stage, scale: number) => {
+    wheelFocus.current = null;
     panTo(stage.camera, stage.controls.target, zoomFocus(youBounds, layout));
     stage.controls.dollyIn(scale);
   };
@@ -335,6 +370,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       "-": () => zoomToward(stage, 1 / ZOOM_STEP),
       _: () => zoomToward(stage, 1 / ZOOM_STEP),
       "0": () => {
+        wheelFocus.current = null;
         applyPose(stage, dollhousePose(layout));
         stage.controls.update();
       },
@@ -360,7 +396,6 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       data-mode={mode}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
-      onWheel={onWheel}
       onKeyDown={onKeyDown}
     />
   );

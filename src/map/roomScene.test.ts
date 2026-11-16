@@ -25,6 +25,10 @@ import {
   NEUTRAL,
   PERSON_COLOUR,
   panTo,
+  WHEEL_STEP,
+  wheelNotches,
+  wheelZoom,
+  wheelZoomPoint,
   zoomFocus,
   YOU_COLOUR,
   ZOOM_STEP,
@@ -410,6 +414,78 @@ describe("cameras", () => {
     }
     expect(camera.position.distanceTo(face)).toBeLessThan(2);
     controls.dispose();
+  });
+
+  it("wheel-zooms the dollhouse onto the person under the pointer, then turns around them", () => {
+    // A 50 m room; Bram stands 9 m south-west of the middle, facing north (away from the opening camera).
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const bram = TEST_CHARACTERS[1];
+    big.things = [
+      {
+        id: "#p1",
+        name: bram.name,
+        kind: "person",
+        fixed: true,
+        mounted: false,
+        shapes: [{ box: [[-9.2, -8.8], [-9.2, -8.8], [0, bram.height]] }],
+        appearance: bram.appearance,
+      },
+    ];
+    const placed = placeThings(big, {});
+    const scene = buildRoomScene({ layout: big, placed, arrivals: [], youId: "", facings: { "#p1": [0, 1, 0] } });
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const controls = new OrbitControls(camera, document.createElement("div"));
+    controls.maxDistance = dollhouseMaxDistance(big);
+    const pose = dollhousePose(big);
+    camera.position.set(...pose.position);
+    controls.target.set(...pose.target);
+    controls.update();
+    scene.root.updateMatrixWorld(true);
+
+    // The pointer on his head: the zoom heads for his face, not the floor behind him.
+    const face = zoomFocus(placed[0].bounds, big);
+    const head = new THREE.Vector3(-9, -9, bram.height * 0.95);
+    const point = wheelZoomPoint(new THREE.Ray(camera.position.clone(), head.clone().sub(camera.position).normalize()), scene, placed, big);
+    expect(point?.distanceTo(face)).toBeLessThan(1e-9);
+    // On bare floor, the floor; over the walls into the dark, nothing.
+    const floor = wheelZoomPoint(new THREE.Ray(camera.position.clone(), new THREE.Vector3(5, 5, 0).sub(camera.position).normalize()), scene, placed, big);
+    expect(floor?.distanceTo(new THREE.Vector3(5, 5, 0))).toBeLessThan(1e-6);
+    expect(wheelZoomPoint(new THREE.Ray(camera.position.clone(), new THREE.Vector3(0, 1, 0.2).normalize()), scene, placed, big)).toBeUndefined();
+
+    const inMiddle = () => {
+      camera.updateMatrixWorld();
+      const at = face.clone().project(camera);
+      return Math.hypot(at.x, at.y);
+    };
+    expect(inMiddle()).toBeGreaterThan(0.2);
+    for (let i = 0; i < 60; i++) {
+      wheelZoom(camera.position, controls.target, face, WHEEL_STEP);
+      controls.update();
+    }
+    // Close, and his face in the middle of the picture.
+    expect(camera.position.distanceTo(face)).toBeLessThan(5);
+    expect(inMiddle()).toBeLessThan(0.02);
+    // Turning half way round keeps him in the middle, and ends in front of him (north of him).
+    for (let i = 0; i < 18; i++) {
+      controls.rotateLeft(Math.PI / 18);
+      expect(inMiddle()).toBeLessThan(0.02);
+    }
+    expect(camera.position.y).toBeGreaterThan(face.y);
+    // Zooming out backs away from what it turns around.
+    const near = camera.position.distanceTo(controls.target);
+    wheelZoom(camera.position, controls.target, face, 1 / WHEEL_STEP);
+    controls.update();
+    expect(camera.position.distanceTo(controls.target)).toBeCloseTo(near / WHEEL_STEP, 6);
+    controls.dispose();
+    disposeRoomScene(scene);
+  });
+
+  it("counts wheel notches: 100 pixels, 3 lines or a page", () => {
+    expect(wheelNotches(-100, 0)).toBe(1);
+    expect(wheelNotches(250, 0)).toBe(2.5);
+    expect(wheelNotches(-3, 1)).toBe(1);
+    expect(wheelNotches(1, 2)).toBe(1);
   });
 
   it("lets the dollhouse reach a large room's whole-room view", () => {
