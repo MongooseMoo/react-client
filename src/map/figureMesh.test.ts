@@ -192,6 +192,46 @@ describe("figure hair", () => {
   });
 });
 
+describe("figure hair texture and bun", () => {
+  const hairOf = (texture: string, style = "loose", hex = "#1b1612", length_cm = 50) => standing({ skin: { hex: "#292420" }, hair: { length_cm, texture, style, hex } });
+
+  it("shades curls, coils and waves toward the hair's sheen, also under tied styles, so texture shows on black hair", () => {
+    for (const style of ["loose", "ponytail", "braided", "bun"]) {
+      for (const texture of ["wavy", "curly", "coily"]) {
+        const { p } = hairOf(texture, style);
+        const cap = figureParts(p).find((x) => x.name === "cap");
+        expect(cap?.tone, `${texture} ${style}`).toBe(p.colours.hairSheen);
+        const shade = [...(cap?.shade ?? [])];
+        // Peaks well toward the sheen, troughs left in the hair's colour.
+        expect(Math.max(...shade), `${texture} ${style}`).toBeGreaterThan(0.5);
+        expect(Math.min(...shade), `${texture} ${style}`).toBeLessThan(0.1);
+      }
+      // Straight hair stays one smooth colour.
+      expect(figureParts(hairOf("straight", style).p).find((x) => x.name === "cap")?.shade, style).toBeUndefined();
+    }
+    // The sheen of black hair is a lighter tone of it; of white hair, a darker one.
+    expect(contrast(hairOf("coily").p.colours.hairSheen as string, "#1b1612")).toBeGreaterThan(2);
+    expect(contrast(hairOf("coily", "loose", "#eeeeea").p.colours.hairSheen as string, "#eeeeea")).toBeGreaterThan(2);
+  });
+
+  it("sets a bun clear of the cap, above the crown and out behind it, for every texture, with a tie and a lit crown", () => {
+    for (const texture of ["straight", "wavy", "curly", "coily"]) {
+      const { p, headR } = hairOf(texture, "bun");
+      const cap = vertices(p, "cap");
+      const bun = vertices(p, "bun");
+      expect(bun.length, texture).toBeGreaterThan(0);
+      // Seen from the front it rises over the cap's top; from the side it stands out behind the cap.
+      expect(Math.max(...bun.map((v) => v.z)), texture).toBeGreaterThan(Math.max(...cap.map((v) => v.z)) + 0.15 * headR);
+      expect(Math.min(...bun.map((v) => v.y)), texture).toBeLessThan(Math.min(...cap.filter((v) => v.z > p.height - 0.6 * headR).map((v) => v.y)) - 0.1 * headR);
+      const parts = figureParts(p).filter((x) => x.name === "bun");
+      // The ball, shaded toward the sheen on its crown, and the tie in the sheen.
+      expect(parts.length, texture).toBe(2);
+      expect(Math.max(...(parts[0].shade ?? [0])), texture).toBeGreaterThan(0.3);
+      expect(parts[1].colour, texture).toBe(p.colours.hairSheen);
+    }
+  });
+});
+
 describe("figure face", () => {
   it("seats the eyes in the head: they stand out of the face by less than half their size", () => {
     const { p, headR, headZ } = standing(lightHair);

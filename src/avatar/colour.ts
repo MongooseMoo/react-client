@@ -82,5 +82,5 @@ export function toneOff(base: string, against: string): string {
  * on strands, so texture and form show on hair whose colour lighting alone barely changes (black, white).
  */
 export function sheenFor(hair: string): string {
-  return luminance(hair) < 0.25 ? overlayHex(hair, INK_LIGHT, 0.4) : overlayHex(hair, INK_DARK, 0.3);
+  return luminance(hair) < 0.25 ? overlayHex(hair, INK_LIGHT, 0.4) : overlayHex(hair, INK_DARK, 0.35);
 }

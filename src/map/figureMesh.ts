@@ -17,6 +17,12 @@ export interface Part {
   colour: string;
   /** What the part is, for parts that tests look at by name (cap, brow, mouth, beard, strap, …). */
   name?: string;
+  /**
+   * Per vertex, how far toward `tone` its colour goes (0 to 1): the hair's sheen on curls and coils and on a bun's
+   * crown, so texture and form show on hair whose colour lighting alone barely changes.
+   */
+  shade?: Float32Array;
+  tone?: string;
 }
 
 const named = (part: Part, name: string): Part => ({ ...part, name });
@@ -59,8 +65,9 @@ function textured(
    * meets the band's middle line, so the band's two edges rise together and do not twist.
    */
   band?: THREE.Vector3,
-): void {
-  if (texture === "straight") return;
+): Float32Array | undefined {
+  if (texture === "straight") return undefined;
+  const bumps = new Float32Array(g.getAttribute("position").count);
   const positions = g.getAttribute("position");
   const q = new THREE.Vector3();
   const d = new THREE.Vector3();
@@ -82,14 +89,25 @@ function textured(
       texture === "wavy"
         ? [0.05, Math.sin(down * 7)]
         : texture === "curly"
-          ? [0.07, Math.sin(around * 7) * Math.sin(down * 9)]
-          : [0.08, Math.sin(around * 11) * Math.sin(down * 14)];
-    const lift = (headR * rise * (0.5 + 0.5 * f)) / Math.max(1e-6, d.length());
+          ? [0.09, Math.sin(around * 7) * Math.sin(down * 9)]
+          : [0.1, Math.sin(around * 11) * Math.sin(down * 14)];
+    bumps[i] = 0.5 + 0.5 * f;
+    const lift = (headR * rise * bumps[i]) / Math.max(1e-6, d.length());
     q.addScaledVector(d, lift);
     positions.setXYZ(i, q.x, q.y, q.z);
   }
   positions.needsUpdate = true;
   g.computeVertexNormals();
+  return bumps;
+}
+
+/** How far a texture's peaks go toward the hair's sheen: wave crests, curls and coils catch the light. */
+const SHEEN_ON_PEAKS = 0.75;
+
+/** The part with its texture's peaks shaded toward the hair's sheen (troughs keep the hair's colour); unchanged for straight hair. */
+function sheened(part: Part, bumps: Float32Array | undefined, sheen: string | undefined): Part {
+  if (!bumps || !sheen) return part;
+  return { ...part, shade: bumps.map((b) => SHEEN_ON_PEAKS * b * b), tone: sheen };
 }
 
 /** Stubble's stipple: points across the face and up it (about 50 shown after those round the back are left out). */
@@ -245,9 +263,10 @@ function cone(base: THREE.Vector3, dir: THREE.Vector3, radius: number, length: n
  * locks, spikes, a mohawk's crest or a brushed parting. Loose, swept-back and voluminous hair
  * are drawn by the cap and fall alone. Hanging parts reach down by the hair's length.
  */
-function styleParts(p: FigureParams, style: FigureParams["hairStyle"], headCentreZ: number, headR: number, headScale: THREE.Vector3): Part[] {
+function styleParts(p: FigureParams, style: FigureParams["hairStyle"], headCentreZ: number, headR: number, headScale: THREE.Vector3, capV: number): Part[] {
   const s = p.height / 1.75;
   const hairColour = p.colours.head;
+  const sheen = p.colours.hairSheen;
   const hang =
     { none: 0, shaved: 0, cropped: 0.04, short: 0.08, "chin-length": 0.18, "shoulder-length": 0.28, long: 0.42, "waist-length": 0.58 }[p.hair] * s;
   // A point on the hair's surface (just outside the head ellipsoid) in direction (x, y, z) from the head's centre.
@@ -275,9 +294,30 @@ function styleParts(p: FigureParams, style: FigureParams["hairStyle"], headCentr
         for (let i = 0; i < links; i++) out.push(named(ball(start.clone().lerp(end, i / (links - 1)), headR * 0.17, hairColour, undefined, 6), "braid"));
       }
       break;
-    case "bun":
-      out.push(named(ball(onHair(0, -0.6, 0.75, 1.1), headR * 0.42, hairColour, undefined, 8), "bun"));
+    case "bun": {
+      // High on the back of the crown, standing clear of the cap (`capV`, the cap's size), so it shows above the
+      // head from the front and as a ball from the side. Set at 1.1 head radii it sat inside a coily cap.
+      const r = headR * 0.46;
+      const centre = onHair(0, -0.65, 0.76, capV + 0.36);
+      const bun = named(ball(centre, r, hairColour, undefined, 12), "bun");
+      const bumps = textured(bun.geometry, () => centre, p.hairTexture, headR * 0.6);
+      // Its crown catches the light (the sheen), so a black bun on black hair still reads as a round mass.
+      const normals = bun.geometry.getAttribute("normal");
+      const up = new THREE.Vector3(0, -0.35, 1).normalize();
+      const shade = new Float32Array(normals.count);
+      for (let i = 0; i < normals.count; i++) {
+        const lit = Math.max(0, normals.getX(i) * up.x + normals.getY(i) * up.y + normals.getZ(i) * up.z);
+        shade[i] = Math.min(1, 0.55 * lit * lit + (bumps ? 0.4 * bumps[i] * bumps[i] : 0));
+      }
+      out.push(sheen ? { ...bun, shade, tone: sheen } : bun);
+      // Where it is gathered: a ring in the sheen round its base, between it and the cap.
+      const base = onHair(0, -0.65, 0.76, capV + 0.02);
+      const tie = new THREE.TorusGeometry(r * 0.62, headR * 0.06, 4, 14);
+      tie.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), centre.clone().sub(base).normalize()));
+      tie.translate(...base.clone().lerp(centre, 0.45).toArray());
+      out.push(named({ geometry: tie, colour: sheen ?? p.colours.ink }, "bun"));
       break;
+    }
     case "topknot": {
       // Sitting on the crown, its tie just under it.
       const knot = onHair(0, -0.1, 1, 1.22);
@@ -425,17 +465,18 @@ export function figureParts(p: FigureParams): Part[] {
   // A shaved head, like a mohawk's sides, is a shadow of the hair's colour on the scalp.
   const shaved = !p.headCovered && (style === "mohawk" || p.hair === "shaved");
   const capTexture: HairTexture = shaved || style === "brushed" || style === "swept_back" ? "straight" : p.hairTexture;
+  // A little larger than the head all round, so the tilted cap's facets stay outside the head's; cropped hair lies closer.
+  const v = p.headCovered
+    ? 1.06
+    : shaved
+      ? 1.04
+      : (p.hair === "cropped" ? 1.035 : 1.05) * p.hairVolume * (style === "voluminous" ? 1.25 : 1);
   if (p.headCovered || p.hair !== "none") {
-    // A little larger than the head all round, so the tilted cap's facets stay outside the head's; cropped hair lies closer.
-    const v = p.headCovered
-      ? 1.06
-      : shaved
-        ? 1.04
-        : (p.hair === "cropped" ? 1.035 : 1.05) * p.hairVolume * (style === "voluminous" ? 1.25 : 1);
     const capReach = Math.PI * 0.55;
-    // Textured hair needs enough facets for its curls to show.
+    // Textured hair needs enough facets for its curls to show; coils are tighter, so they need more.
     const fine = !p.headCovered && capTexture !== "straight";
-    const cap = new THREE.SphereGeometry(headR, fine ? 24 : 16, fine ? 12 : 9, 0, Math.PI * 2, 0, capReach);
+    const coils = fine && capTexture === "coily";
+    const cap = new THREE.SphereGeometry(headR, coils ? 28 : fine ? 24 : 16, fine ? 12 : 9, 0, Math.PI * 2, 0, capReach);
     // A sphere's pole is +y. Turning by more than a right angle about x takes it
     // past +z toward -y: the cap leans back, its front edge above the eyes
     // (the forehead shows) and its back edge low on the nape. Swept-back hair leaves a higher forehead.
@@ -445,8 +486,8 @@ export function figureParts(p: FigureParams): Part[] {
     const capScale = new THREE.Vector3(headScale.x * v, v, headScale.y * v);
     const capColour = shaved ? overlayHex(c.skin, c.head, STUBBLE_OPACITY) : c.head;
     const capPart = named(placed(cap, capColour, capAt, capTurn, capScale), "cap");
-    if (!p.headCovered) textured(capPart.geometry, () => capAt, capTexture, headR);
-    out.push(capPart);
+    if (!p.headCovered) out.push(sheened(capPart, textured(capPart.geometry, () => capAt, capTexture, headR), c.hairSheen));
+    else out.push(capPart);
     if (outlined.has("hairline") && !shaved) {
       // The hair's own edge, a tone of the hair that stands 3:1 off the skin (`hairEdge`): a thin line lying on
       // the cap just above its rim, built there and turned with the cap. A white ring standing out from the
@@ -489,10 +530,10 @@ export function figureParts(p: FigureParams): Part[] {
     fall.scale(headScale.x * v, headScale.y * v, 1);
     fall.translate(0, long ? -headR * 0.25 : 0, (top + bottom) / 2);
     const hang = { geometry: twoSided(fall), colour: c.head };
-    textured(hang.geometry, (q) => new THREE.Vector3(0, long ? -headR * 0.25 : 0, q.z), p.hairTexture, headR, 0.4);
-    out.push(named(hang, "hair"));
+    const bumps = textured(hang.geometry, (q) => new THREE.Vector3(0, long ? -headR * 0.25 : 0, q.z), p.hairTexture, headR, 0.4);
+    out.push(sheened(named(hang, "hair"), bumps, c.hairSheen));
   }
-  if (!p.headCovered && p.hair !== "none") out.push(...styleParts(p, style, headCentreZ, headR, headScale));
+  if (!p.headCovered && p.hair !== "none") out.push(...styleParts(p, style, headCentreZ, headR, headScale, v));
 
   // Facial hair, shaped from the head's own ellipsoid so it follows the jaw.
   if (c.facialHair && p.facialHair !== "none") {
@@ -678,12 +719,17 @@ export function figureParts(p: FigureParams): Part[] {
 /** The parts as one geometry, each part's colour in a `color` attribute (linear, as three.js expects). */
 export function figureGeometry(p: FigureParams): THREE.BufferGeometry {
   const colour = new THREE.Color();
-  const geometries = figureParts(p).map(({ geometry: g, colour: hex }) => {
+  const toward = new THREE.Color();
+  const geometries = figureParts(p).map(({ geometry: g, colour: hex, shade, tone }) => {
     g.deleteAttribute("uv");
     colour.set(hex);
+    if (tone) toward.set(tone);
     const count = g.getAttribute("position").count;
     const colours = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) colours.set([colour.r, colour.g, colour.b], i * 3);
+    for (let i = 0; i < count; i++) {
+      const t = shade && tone ? shade[i] : 0;
+      colours.set([colour.r + (toward.r - colour.r) * t, colour.g + (toward.g - colour.g) * t, colour.b + (toward.b - colour.b) * t], i * 3);
+    }
     g.setAttribute("color", new THREE.BufferAttribute(colours, 3));
     return g;
   });
