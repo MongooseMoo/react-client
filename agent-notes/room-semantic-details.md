@@ -14,6 +14,8 @@ Room.Layout stays the sole complete physical scene; Room.LayoutUpdate changes ex
 
 ## Surprises
 
+Native stature is independent of posture. A person without an appearance record previously had no way to tell the figure renderer they were seated. Native pose now carries physical posture as well; the figure and words consume it without inventing an appearance record.
+
 Review also found that Plan still drew axis-aligned world bounds for a turned box. It now projects the intrinsic body's corners through the supplied quaternion and transforms existing form marks in that same frame; custom world shapes remain unchanged. Added an area/bounds regression for a quarter-diagonal body.
 
 First PR CI identified stale movement expectations (the supplied physical delta puts y at 0.0..0.4) and scene construction leaving parent world matrices stale until the first render. Corrected the expectations and update world matrices when construction finishes, so geometry queries and labels see the same transforms as drawing.

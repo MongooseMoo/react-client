@@ -265,6 +265,7 @@ export function describeThing(placed: PlacedThing, size: LayoutVector, youId: st
 export function semanticDetails(thing: LayoutThing): string[] {
   const details: string[] = [];
   if (typeof thing.relation?.text === "string") details.push(thing.relation.text);
+  if (!thing.relation && (thing.pose?.posture === "sitting" || thing.pose?.posture === "reclining")) details.push(thing.pose.posture);
   if (typeof thing.front?.direction === "string") details.push(`faces ${thing.front.direction}`);
   if (typeof thing.state?.opened === "boolean") details.push(thing.state.opened ? "open" : "closed");
   if (typeof thing.state?.lit === "boolean") details.push(thing.state.lit ? "lit" : "unlit");

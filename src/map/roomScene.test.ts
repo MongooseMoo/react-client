@@ -64,6 +64,19 @@ const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): nu
 };
 
 describe("buildRoomScene", () => {
+  it("draws native sitting posture without requiring a person's appearance record", () => {
+    const layout = livingRoomLayout();
+    layout.things = [{ ...layout.things[0], id: "#plain", kind: "person", appearance: undefined,
+      shapes: [{ box: [[0, 0.4], [0, 0.3], [0, 0.99]] }],
+      pose: { centre_m: [0.2, 0.15, 0.495], dimensions_m: [0.4, 0.3, 0.99],
+        body_quaternion: [1, 0, 0, 0], box: true, figure_height_m: 1.8, posture: "sitting" } }];
+    const scene = build(layout);
+    const figure = meshes(scene.things.get("#plain"))[0];
+    const expected = figureParams({ posture: "sitting" }, { height: 1.8, base: hex(PERSON_COLOUR) });
+    expect(box(figure).max.z).toBeCloseTo(expected.top, 1);
+    expect(box(figure).max.z).toBeLessThan(1.3);
+    disposeRoomScene(scene);
+  });
   it("retains meshes and updates world label points during native rigid movement", () => {
     const layout = livingRoomLayout();
     const placed = placeThings(layout);

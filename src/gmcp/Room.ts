@@ -33,6 +33,8 @@ export interface LayoutPose {
   box: boolean;
   /** Native unposed stature for the existing person figure, when supplied. */
   figure_height_m?: number;
+  /** Native physical posture, available even without an appearance record. */
+  posture?: "standing" | "sitting" | "reclining";
 }
 
 export interface LayoutFront {
@@ -196,7 +198,8 @@ export function isLayoutPose(pose: unknown): pose is LayoutPose {
   return vector(pose.centre_m) && vector(pose.dimensions_m) && pose.dimensions_m.every((n) => n >= 0) &&
     typeof pose.box === "boolean" && Array.isArray(q) && q.length === 4 && q.every(finite) &&
     Number.isFinite(Math.hypot(...q)) && Math.hypot(...q) > 0 &&
-    (pose.figure_height_m === undefined || (finite(pose.figure_height_m) && pose.figure_height_m > 0));
+    (pose.figure_height_m === undefined || (finite(pose.figure_height_m) && pose.figure_height_m > 0)) &&
+    (pose.posture === undefined || pose.posture === "standing" || pose.posture === "sitting" || pose.posture === "reclining");
 }
 
 function body(value: unknown): value is LayoutBody {

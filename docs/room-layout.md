@@ -43,7 +43,7 @@ the middle of the room, so it spans `-width/2..width/2` and `-depth/2..depth/2`;
 | `things[].shapes` | Its solid parts: boxes `{"box": [[x0,x1],[y0,y1],[z0,z1]]}` and spheres `{"sphere": [[x,y,z], r]}`. May be empty; such a thing is listed but not drawn. |
 | `things[].origin` | Acoustic snapshot origin, retained for other consumers. It never moves physical drawings. |
 | `room_lifetime`, `things[].lifetime` | Native incarnation identifiers, preventing delayed updates from changing recycled replacements. |
-| `things[].pose` | Native `centre_m`, intrinsic `dimensions_m`, and `body_quaternion` in wxyz order. `box` says there are no custom collision shapes. People may supply native unposed `figure_height_m`. |
+| `things[].pose` | Native `centre_m`, intrinsic `dimensions_m`, and `body_quaternion` in wxyz order. `box` says there are no custom collision shapes. People may supply native unposed `figure_height_m` and physical `posture`, even without an appearance record. |
 | `things[].front` | Present only with native `fronted`: local `axis`, floor heading `yaw`, and native compass `direction`. Gaze is separate. |
 | `things[].relation` | Viewer-identifiable support: native `kind`, target ID and readable `text`. |
 | `things[].state` | Applicable public `opened`, `lit`, and electronics `mode`; unknown fields are omitted. Projection never settles electronics. |

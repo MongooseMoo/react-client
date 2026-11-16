@@ -170,7 +170,11 @@ class Builder {
     base: number,
     pose?: LayoutPose,
   ): { mesh: THREE.Mesh; label: THREE.Vector3[]; head: THREE.Vector3[] } {
-    const params = figureParams(appearance, { height: pose?.figure_height_m ?? pose?.dimensions_m[2] ?? (z1 - z0), base: hexString(base) });
+    const visible = pose?.posture ? {
+      ...(typeof appearance === "object" && appearance !== null && !Array.isArray(appearance) ? appearance : {}),
+      posture: pose.posture,
+    } : appearance;
+    const params = figureParams(visible, { height: pose?.figure_height_m ?? pose?.dimensions_m[2] ?? (z1 - z0), base: hexString(base) });
     const mesh = figureMesh(params, x, y, z0, undefined, this.figureMaterial(), this.figures);
     if (pose) {
       const q = bodyQuaternion(pose);
@@ -446,7 +450,7 @@ export function updateRoomBodies(room: RoomScene, before: PlacedThing[], after: 
     const b = next.thing.pose;
     if (old.thing.id !== next.thing.id || !room.things.has(next.thing.id) ||
       !isLayoutPose(a) || !isLayoutPose(b) || (!b.box && !isPerson(next.thing)) ||
-      a.box !== b.box || a.figure_height_m !== b.figure_height_m ||
+      a.box !== b.box || a.figure_height_m !== b.figure_height_m || a.posture !== b.posture ||
       a.dimensions_m.some((n, axis) => n !== b.dimensions_m[axis]) ||
       old.thing.appearance !== next.thing.appearance || old.thing.state !== next.thing.state ||
       old.thing.material !== next.thing.material || old.thing.classes !== next.thing.classes ||
