@@ -115,6 +115,10 @@ buttons (the choice is kept across rooms):
 
 In both 3D views a name label sits just above the top of the head as drawn (hair, hat or antlers
 included), or above the middle of a thing's top, at every zoom, so it never covers a face.
+Where labels would overlap, a later one (people first, you first among them) moves up, or a
+little sideways while its text still spans its figure, by the least that frees it and at most two
+label heights; one with no such place is left out until zooming makes room (the lists below
+still name it).
 
 In every view things are drawn by what they are, from the first of their `classes` the client
 knows: a table as a top on legs, a chair or other furniture as a seat with its back to the

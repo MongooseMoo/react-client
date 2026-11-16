@@ -11,7 +11,7 @@ import {
   type LabelRequest,
   labelOrder,
   type PlacedThing,
-  placeLabels,
+  placeLabelsOver,
   shortLabel,
 } from "../map/roomLayout";
 import {
@@ -178,14 +178,14 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
-  /** Shows the labels that fit, most important first, each beside its thing; hides the rest. */
+  /** Shows the labels that fit, most important first, each just above its head or thing; hides the rest. */
   function placeVisibleLabels(stage: Stage) {
     const width = stage.labels.domElement.clientWidth || stage.renderer.domElement.clientWidth;
     const height = stage.labels.domElement.clientHeight || stage.renderer.domElement.clientHeight;
-    const requests: LabelRequest[] = [];
+    const requests: Array<Omit<LabelRequest, "radius">> = [];
     const anchors = new Map<string, [number, number]>();
     const projected = new THREE.Vector3();
-    for (const { id, text, person } of labelPlan.current) {
+    for (const { id, text } of labelPlan.current) {
       const points = stage.room?.labelPoints.get(id);
       const object = stage.labelObjects.get(id);
       if (!points || !object) continue;
@@ -197,10 +197,10 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       projected.copy(object.position).project(stage.camera);
       anchors.set(id, [((projected.x + 1) / 2) * width, ((1 - projected.y) / 2) * height]);
       // Centred over the head (or thing), its bottom edge LABEL_GAP pixels above the head's top as drawn: clear of hair and face at any zoom.
-      requests.push({ id, text, x: shown.x, y: shown.top - LABEL_GAP - LABEL_PIXELS * 0.7, radius: person ? 10 : 6 });
+      requests.push({ id, text, x: shown.x, y: shown.top - LABEL_GAP - LABEL_PIXELS * 0.7 });
     }
     const inset = 4;
-    const placedLabels = placeLabels(requests, LABEL_PIXELS, { x0: inset, x1: width - inset, y0: inset, y1: height - inset });
+    const placedLabels = placeLabelsOver(requests, LABEL_PIXELS, { x0: inset, x1: width - inset, y0: inset, y1: height - inset });
     for (const placedLabel of placedLabels) {
       const object = stage.labelObjects.get(placedLabel.id);
       const anchor = anchors.get(placedLabel.id);

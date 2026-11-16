@@ -332,6 +332,44 @@ export function shortLabel(text: string): string {
 }
 
 /**
+ * The 3D views' labels: placed in request order (most important first) so none
+ * overlap, each as near its spot (x, y: centred over its figure, just above its
+ * head) as a free place allows. A label moves up, or sideways only so far that its
+ * text still spans its figure's x, never down onto the head, and at most two
+ * label heights; the first free place nearest its spot wins. A label with none,
+ * or none inside `within`, is left out; the lists still name it.
+ */
+export function placeLabelsOver(requests: Array<Omit<LabelRequest, "radius">>, fontSize: number, within?: Box): PlacedLabel[] {
+  const taken: Box[] = [];
+  const result: PlacedLabel[] = [];
+  const height = labelBox("", 0, 0, fontSize).y1 * 2;
+  for (const request of requests) {
+    const halfWidth = labelBox(request.text, 0, 0, fontSize).x1;
+    // Sideways only while the label's text still reaches over its figure, by a margin of 2 px.
+    const reach = Math.max(0, halfWidth - 2);
+    const across = Math.max(2, reach / 4);
+    const offsets: Array<[number, number]> = [];
+    for (let up = 0; up <= 4; up++) {
+      for (let side = -4; side <= 4; side++) {
+        const dx = side * across;
+        if (Math.abs(dx) <= reach + 1e-9) offsets.push([dx, -up * (height / 2)]);
+      }
+    }
+    offsets.sort((a, b) => a[0] ** 2 + a[1] ** 2 - (b[0] ** 2 + b[1] ** 2));
+    for (const [dx, dy] of offsets) {
+      const x = request.x + dx;
+      const y = request.y + dy;
+      const box = labelBox(request.text, x, y, fontSize);
+      if ((within && !inside(box, within)) || taken.some((other) => overlaps(box, other))) continue;
+      taken.push(box);
+      result.push({ id: request.id, text: request.text, x, y });
+      break;
+    }
+  }
+  return result;
+}
+
+/**
  * Places labels in request order (most important first) so none overlap:
  * each tries its thing's centre, then just beside it, then a little further,
  * and takes the first spot that is free (of other labels and of `avoid`)
