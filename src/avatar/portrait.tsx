@@ -1,5 +1,5 @@
 import type React from "react";
-import { BUILDS, type FigureParams, figureParams, appearanceRecord, STUBBLE_OPACITY } from "./figure";
+import { BUILDS, type FigureParams, figureParams, appearanceRecord, HORN_TONE, STUBBLE_OPACITY } from "./figure";
 
 /**
  * A head-and-shoulders portrait of a person drawn in SVG from their Room.Layout
@@ -153,12 +153,12 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
   }
   if (params.extras.includes("horns") || params.extras.includes("antlers")) {
     const tine = params.extras.includes("antlers");
-    const fill = c.hair ?? c.skin;
     for (const side of [-1, 1]) {
       parts.push(
         <path
           key={`horn${side}`}
-          fill={fill}
+          className="avatar-horn"
+          fill={HORN_TONE}
           stroke={ink}
           strokeWidth={1}
           d={

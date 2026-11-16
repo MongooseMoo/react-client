@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { overlayHex } from "../avatar/colour";
-import { figureParams, STUBBLE_OPACITY } from "../avatar/figure";
+import { figureParams, HORN_TONE, STUBBLE_OPACITY } from "../avatar/figure";
 import { figureParts } from "./figureMesh";
 
 /** A standing figure's parameters (in its own frame: facing +y, z up) and its head's measurements. */
@@ -86,6 +86,32 @@ describe("eyepatch", () => {
     // It passes the patch over the left eye (x -0.32, at eye height).
     const nearPatch = strap.filter((v) => Math.abs(v.x + 0.32 * headR) < 0.1 * headR && v.y > 0.8 * headR);
     expect(nearPatch.length).toBeGreaterThan(0);
+  });
+});
+
+describe("traits", () => {
+  const winged = standing({ skin: { hex: "#292420" }, hair: { length_cm: 60, hex: "#c5c9c7" }, traits: ["wings", "horns", "antlers"] });
+
+  it("draws horns and antlers in the bone tone, not the hair colour", () => {
+    const parts = figureParts(winged.p);
+    for (const name of ["horn", "antler"]) {
+      const found = parts.filter((x) => x.name === name);
+      expect(found.length, name).toBeGreaterThan(0);
+      for (const part of found) expect(part.colour, name).toBe(HORN_TONE);
+    }
+  });
+
+  it("gives wings a wing's outline, spread out and up behind the shoulders, not a flat panel", () => {
+    const { p, headR } = winged;
+    for (const side of [-1, 1]) {
+      const wing = vertices(p, "wing").filter((v) => Math.sign(v.x) === side);
+      // A box had 24 vertices; the outline has curves.
+      expect(wing.length, String(side)).toBeGreaterThan(60);
+      // Reaching well out beyond the shoulders and above them, and behind the body.
+      expect(Math.max(...wing.map((v) => Math.abs(v.x))), String(side)).toBeGreaterThan(p.shoulderHalf + 0.25);
+      expect(Math.max(...wing.map((v) => v.z))).toBeGreaterThan(p.height - 2 * p.headHeight);
+      expect(Math.max(...wing.map((v) => v.y))).toBeLessThan(headR * 0.2);
+    }
   });
 });
 

@@ -67,7 +67,7 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 |---|---|
 | `label` | The shortest phrase that tells this person from the others present, worked out by the server for this recipient. Shown as text; the client never computes one. |
 | `posture` | `standing`, `sitting` or `reclining`. |
-| `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers`, `horns` and `pointed ears`. |
+| `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers`, `horns` and `pointed ears`. The wire gives these no colour: horns and antlers are drawn in one bone tone (`#d6c9a8`), wings and tail in the hair colour (the skin's when there is no hair). |
 | `build` | `average`, `athletic`, `thin`, `curvy`, `chunky`, `pudgy`, `muscular` or `dumpy`; anything else is drawn as average. |
 | `age_years` | A child's head is drawn larger for their height. |
 | `skin`, `eyes` | Colours. Without `skin`, a person is drawn in a neutral light warm grey (`#b9b0a6`), the same in the portrait, the 3D figure and the plan token; it is not a human skin tone. |

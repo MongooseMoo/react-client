@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { overlayHex } from "../avatar/colour";
-import { type FigureParams, type HairTexture, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
+import { type FigureParams, type HairTexture, HORN_TONE, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
 
 /**
  * A person's 3D figure from `figureParams`: three.js primitives, each painted
@@ -102,6 +102,37 @@ function twoSided(g: THREE.BufferGeometry): THREE.BufferGeometry {
   back.dispose();
   if (!both) throw new Error("hair could not be made two-sided");
   return both;
+}
+
+/**
+ * One wing, rooted at `root` on the shoulder blade: a wing outline (a curved leading edge out
+ * to the tip, a scalloped trailing edge back to the root) given a little thickness, spread
+ * up and out to `side` and swept back. Sizes are for a 1.75 m figure times `s`.
+ */
+function wing(side: number, s: number, root: THREE.Vector3, colour: string): Part {
+  const outline = new THREE.Shape();
+  // x outward from the root, y up; metres for a 1.75 m figure.
+  outline.moveTo(0, 0);
+  outline.quadraticCurveTo(0.15, 0.32, 0.62, 0.44);
+  outline.quadraticCurveTo(0.56, 0.26, 0.5, 0.2);
+  outline.quadraticCurveTo(0.46, 0.05, 0.37, 0.08);
+  outline.quadraticCurveTo(0.33, -0.1, 0.23, -0.05);
+  outline.quadraticCurveTo(0.18, -0.26, 0.08, -0.22);
+  outline.quadraticCurveTo(0.04, -0.1, 0, -0.08);
+  outline.closePath();
+  const geometry = new THREE.ExtrudeGeometry(outline, { depth: 0.015, bevelEnabled: false, curveSegments: 4 });
+  // Merging needs every part indexed; an extrusion comes without an index.
+  geometry.setIndex([...Array(geometry.getAttribute("position").count).keys()]);
+  geometry.translate(0, 0, -0.0075);
+  // The outline's plane stands upright (its y up, its thickness front to back) ...
+  geometry.rotateX(Math.PI / 2);
+  // ... the left wing is the right one turned half round, so its faces stay outward ...
+  if (side < 0) geometry.rotateZ(Math.PI);
+  // ... and each sweeps back from the shoulders.
+  geometry.rotateZ(-side * 0.5);
+  geometry.scale(s, s, s);
+  geometry.translate(root.x, root.y, root.z);
+  return { geometry, colour };
 }
 
 /** A thin stroke on the face (brow, mouth, moustache): a capsule with few facets, since it is a few pixels wide. */
@@ -391,19 +422,18 @@ export function figureParts(p: FigureParams): Part[] {
     if (extra === "tail") {
       out.push(limb(new THREE.Vector3(0, -p.hipHalf * 0.55, hipZ - 0.02 * H), new THREE.Vector3(0, -p.hipHalf * 0.55 - 0.35 * s, sitting ? 0.03 : hipZ - 0.3 * H), p.limbRadius * 0.6, accent));
     } else if (extra === "wings") {
-      for (const side of [-1, 1]) {
-        out.push(block(new THREE.Vector3(side * p.shoulderHalf * 1.4, -0.12 * s, shoulderZ - 0.12 * H), new THREE.Vector3(0.45 * s, 0.02 * s, 0.5 * H * 0.6), accent, new THREE.Euler(0, side * 0.35, side * 0.5)));
-      }
+      for (const side of [-1, 1]) out.push(named(wing(side, s, new THREE.Vector3(side * p.shoulderHalf * 0.45, -0.1 * s, shoulderZ - 0.04 * H), accent), "wing"));
     } else if (extra === "antlers") {
       for (const side of [-1, 1]) {
         const base = new THREE.Vector3(side * headR * 0.45, 0, crown);
         const tip = new THREE.Vector3(side * headR * 1.5, -headR * 0.2, crown + headR * 1.4);
-        out.push(limb(base, tip, headR * 0.07, accent));
-        out.push(limb(base.clone().lerp(tip, 0.5), new THREE.Vector3(side * headR * 0.7, headR * 0.3, crown + headR * 1.2), headR * 0.06, accent));
+        out.push(named(limb(base, tip, headR * 0.07, HORN_TONE), "antler"));
+        out.push(named(limb(base.clone().lerp(tip, 0.5), new THREE.Vector3(side * headR * 0.7, headR * 0.3, crown + headR * 1.2), headR * 0.06, HORN_TONE), "antler"));
       }
     } else if (extra === "horns") {
       for (const side of [-1, 1]) {
-        out.push(placed(new THREE.ConeGeometry(headR * 0.16, headR * 0.7, 6), accent, new THREE.Vector3(side * headR * 0.45, headR * 0.15, crown + headR * 0.2), new THREE.Euler(Math.PI / 2, 0, -side * 0.35)));
+        const horn = placed(new THREE.ConeGeometry(headR * 0.16, headR * 0.7, 6), HORN_TONE, new THREE.Vector3(side * headR * 0.45, headR * 0.15, crown + headR * 0.2), new THREE.Euler(Math.PI / 2, 0, -side * 0.35));
+        out.push(named(horn, "horn"));
       }
     } else if (extra === "pointed_ears") {
       for (const side of [-1, 1]) {

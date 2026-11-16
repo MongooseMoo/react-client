@@ -2,7 +2,7 @@ import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "./characters.fixture";
 import { contrast, INK_LIGHT, MIN_CONTRAST } from "./colour";
-import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "./figure";
+import { figureParams, HORN_TONE, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "./figure";
 import AvatarPortrait, { HEAD_VIEWBOX, PORTRAIT_BACKDROP } from "./portrait";
 
 const draw = (appearance: unknown) => render(<AvatarPortrait appearance={appearance} />).container;
@@ -29,7 +29,7 @@ describe("AvatarPortrait", () => {
   it("draws only supplied colours, outlines in the ink, for every test character", () => {
     for (const ch of TEST_CHARACTERS) {
       const { ink, faceInk } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
-      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, PORTRAIT_BACKDROP, NEUTRAL_SKIN, NEUTRAL_CLOTHING]);
+      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, PORTRAIT_BACKDROP, NEUTRAL_SKIN, NEUTRAL_CLOTHING, HORN_TONE]);
       const svg = draw(ch.appearance).querySelector("svg") as SVGSVGElement;
       for (const el of svg.querySelectorAll("[fill], [stroke]")) {
         for (const attr of ["fill", "stroke"]) {
@@ -125,6 +125,14 @@ describe("AvatarPortrait", () => {
     const svg = draw({ hair: { length_cm: 75, hex: "#a33a1f" }, eyes: { hex: "#4f7a3a" } }).querySelector("svg") as SVGSVGElement;
     expect(svg.querySelector(".avatar-skin")?.getAttribute("fill")).toBe(NEUTRAL_SKIN);
     expect(svg.querySelector('path.avatar-garment[d^="M"]')?.getAttribute("fill")).toBe(NEUTRAL_CLOTHING);
+  });
+
+  it("draws horns and antlers in the bone tone, not the hair colour", () => {
+    for (const trait of ["horns", "antlers"]) {
+      const horns = draw({ skin: { hex: "#292420" }, hair: { length_cm: 60, hex: "#c5c9c7" }, traits: [trait] }).querySelectorAll(".avatar-horn");
+      expect(horns.length, trait).toBe(2);
+      for (const h of horns) expect(h.getAttribute("fill"), trait).toBe(HORN_TONE);
+    }
   });
 
   it("hides the ears under a hood or hat, and shows them otherwise", () => {

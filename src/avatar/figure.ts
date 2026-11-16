@@ -193,6 +193,11 @@ export const NEUTRAL_SKIN = "#b9b0a6";
  * dark slate, 3.7:1 against the neutral skin.
  */
 export const NEUTRAL_CLOTHING = "#4b5262";
+/**
+ * Horns and antlers, in the portrait and on the 3D figure. The wire's `traits` name them
+ * but give no colour, so they are drawn in one bone tone rather than the hair's colour.
+ */
+export const HORN_TONE = "#d6c9a8";
 
 export interface FigureOptions {
   /** Floor to crown, metres: the person's Room.Layout box height. */
