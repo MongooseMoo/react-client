@@ -48,7 +48,9 @@ try {
     await pic.screenshot({ path: resolve(out, 'd1-start.png') });
     // --wheel=N: how many wheel steps before turning (default 22).
     const steps = Number(process.argv.find((a) => a.startsWith('--wheel='))?.slice(8) ?? '22');
-    await wheelOn(pic, '#p1', steps, 'd1', [10, 15, 20, 25, 30, 40, 50, 60].filter((n) => n <= steps));
+    // --who=#pN: whom to zoom onto (default Bram, #p1).
+    const who = process.argv.find((a) => a.startsWith('--who='))?.slice(6) ?? '#p1';
+    await wheelOn(pic, who, steps, 'd1', [10, 15, 20, 25, 30, 40, 50, 60].filter((n) => n <= steps));
     await pic.focus();
     for (let i = 1; i <= 18; i++) {
       await page.keyboard.press('ArrowLeft');
@@ -56,6 +58,12 @@ try {
     }
     for (let i = 1; i <= 4; i++) await page.keyboard.press('ArrowDown');
     await pic.screenshot({ path: resolve(out, 'd1-turn180deg-down4.png') });
+    // Down near eye level, then three notches closer (the pointer has not moved, so still onto the same face).
+    for (let i = 1; i <= 4; i++) await page.keyboard.press('ArrowDown');
+    await pic.screenshot({ path: resolve(out, 'd1-turn180deg-down8.png') });
+    for (let i = 1; i <= 3; i++) await page.mouse.wheel(0, -100);
+    await page.waitForTimeout(100);
+    await pic.screenshot({ path: resolve(out, 'd1-front-close.png') });
     await page.keyboard.press('0');
     await pic.screenshot({ path: resolve(out, 'd1-reset0.png') });
     // 4: the same 20 wheel steps in the 5 m room, on the same person.
