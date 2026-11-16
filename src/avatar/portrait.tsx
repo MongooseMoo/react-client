@@ -63,8 +63,8 @@ function headShape(shape: string, fill: string, stroke: string): React.ReactElem
     case "heart":
       return <path {...common} d="M19,22 C19,10 45,10 45,22 C45,32 38,42 32,44 C26,42 19,32 19,22 Z" />;
     case "angular":
-      // Flat planes meeting at corners: high cheekbones, a sharp jaw and a pointed chin.
-      return <path {...common} strokeLinejoin="round" d="M22,13 L42,13 L46,27 L40,39 L32,44 L24,39 L18,27 Z" />;
+      // Flat planes meeting at corners below the cheekbones: a sharp jaw and a pointed chin.
+      return <path {...common} strokeLinejoin="round" d="M18,27 C18,9 46,9 46,27 L40,39 L32,44 L24,39 Z" />;
     default:
       return <ellipse {...common} cx={32} cy={28} rx={13} ry={16} />;
   }
@@ -149,7 +149,7 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
   // The build shows above the collar as well: neck by the limbs, the face fuller or leaner with the waist,
   // and the shoulders rising toward the neck on a heavily muscled build.
   const neck = 10 * shape.limbs;
-  const fullness = 1 + (shape.waist - 1) * 0.35;
+  const fullness = 1 + (shape.waist - 1) * 0.5;
   const shoulderRise = 50 - (shape.limbs - 1) * 12;
   const parts: React.ReactNode[] = [];
 
@@ -241,16 +241,17 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
       const inward = x < 32 ? 1 : -1;
       const inner = x + inward * 3.5;
       const outer = x - inward * 3.5;
+      // Set a little below the hairline (about y 21.5 here), so a brow in the hair's colour stands apart from the hair.
       const browShape: Record<string, [number, string]> = {
-        thick: [2.2, `M${outer},23 L${inner},23`],
-        thin: [0.9, `M${outer},23 L${inner},23`],
-        arched: [1.5, `M${outer},23.5 Q${x},20.5 ${inner},23.5`],
+        thick: [2.2, `M${outer},24 L${inner},24`],
+        thin: [0.9, `M${outer},24 L${inner},24`],
+        arched: [1.5, `M${outer},24.5 Q${x},21.5 ${inner},24.5`],
         // Tufted: a ragged run of short strokes along a broad brow.
-        bushy: [2.3, `M${outer},23.4 l${inward * 1.4},-1.6 l${inward * 0.6},1.4 l${inward * 1.4},-1.6 l${inward * 0.6},1.4 l${inward * 1.4},-1.6 l${inward * 0.6},1.4 l${inward * 1.0},-1.2`],
+        bushy: [2.3, `M${outer},24.4 l${inward * 1.4},-1.6 l${inward * 0.6},1.4 l${inward * 1.4},-1.6 l${inward * 0.6},1.4 l${inward * 1.4},-1.6 l${inward * 0.6},1.4 l${inward * 1.0},-1.2`],
         // A broad, low brow that sinks toward the nose.
-        heavy: [2.9, `M${outer - inward * 0.5},23.2 L${inner},24.6`],
+        heavy: [2.9, `M${outer - inward * 0.5},24 L${inner},25.2`],
       };
-      const [width, d] = browShape[brows] ?? [1.5, `M${outer},23 L${inner},23`];
+      const [width, d] = browShape[brows] ?? [1.5, `M${outer},24 L${inner},24`];
       parts.push(
         <path key={`brow${x}`} className="avatar-brow" fill="none" stroke={brow} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" d={d} />,
       );

@@ -127,6 +127,21 @@ describe("beard length", () => {
     expect(lowest(undefined) - lows[lows.length - 1]).toBeGreaterThan(0.25);
   });
 
+  it("lays a long beard over the chest, not through it", () => {
+    for (const build of ["thin", "average", "muscular"]) {
+      const p = params({ ...beard(40), build });
+      const neckBase = p.height - p.headHeight - 0.045 * p.height;
+      // The torso is widest at its top, reaching 0.92 x 0.55 of the shoulder half width forward.
+      const chest = p.shoulderHalf * 0.92 * 0.55;
+      for (const part of figureParts(p).filter((x) => x.name === "beard")) {
+        const positions = part.geometry.getAttribute("position");
+        for (let i = 0; i < positions.count; i++) {
+          if (positions.getZ(i) < neckBase) expect(positions.getY(i), build).toBeGreaterThan(chest);
+        }
+      }
+    }
+  });
+
   it("keeps the heaviest figure the vocabulary allows under the 5,000-triangle budget", () => {
     const heaviest = {
       ...withValue("facial_hair.length_cm", 100),

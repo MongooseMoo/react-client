@@ -368,12 +368,13 @@ export function figureParts(p: FigureParams): Part[] {
       if (full && p.beardLength !== undefined && p.beardLength > 10) {
         const hang = Math.min((p.beardLength - 10) / 100, H / 3);
         const chinZ = headCentreZ - headR * k * drop;
-        const top = new THREE.Vector3(0, headR * 0.45, chinZ + headR * 0.35);
-        // Its end lies just in front of the chest, which reaches about 0.55 of the shoulder half width forward.
-        const end = new THREE.Vector3(0, Math.max(headR * 0.45, p.shoulderHalf * 0.6), chinZ - hang);
+        // Its wide end starts inside the jaw beard, so the two read as one.
+        const top = new THREE.Vector3(0, headR * 0.75, chinZ + headR * 0.6);
+        // It lies on the chest: the torso's top reaches 0.92 x 0.55 of the shoulder half width forward.
+        const end = new THREE.Vector3(0, p.shoulderHalf * 0.92 * 0.55 + headR * 0.3, chinZ - hang);
         const cone = new THREE.ConeGeometry(headR * 0.62, top.distanceTo(end), 10, 1, true);
         // A cone points along +y, its wide end at -y: turn it to point from the jaw down to the end, flattened front to back.
-        cone.scale(1, 1, 0.55);
+        cone.scale(1, 1, 0.4);
         cone.applyMatrix4(
           new THREE.Matrix4().compose(
             top.clone().add(end).multiplyScalar(0.5),
