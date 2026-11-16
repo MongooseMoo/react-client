@@ -6,7 +6,7 @@ Implement Q's authorized todo 4: render native body orientation/front, exposed s
 
 ## State
 
-Client implementation is published in PR 247; current PR CI and production build pass. The branch includes the merged avatar-face work without editing figureMesh or portrait owners. The MOO snapshot now supplies this contract through one body constructor; geometry and finish mutation owners announce generic events. Room publication remains disconnected pending client deployment. Native state, source review and activation work are tracked in C:/Users/Q/projects/mongoose/agent-notes/room-view-improvements.md. MOO outcomes remain in conversation and the existing runner history.
+Client implementation is published in PR 247; posture and real MOO sample coverage pass PR CI and the production build. The branch includes the merged avatar-face work without editing figureMesh or portrait owners. Native room resizing also updates the dollhouse zoom limit while preserving its camera. The MOO snapshot supplies the contract through one body constructor; geometry and finish mutation owners announce generic events. Room publication remains disconnected pending client deployment. Native state, source review and activation work are tracked in C:/Users/Q/projects/mongoose/agent-notes/room-view-improvements.md. MOO outcomes remain in conversation and the existing runner history.
 
 ## Decisions and why
 

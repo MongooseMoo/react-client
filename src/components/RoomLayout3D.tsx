@@ -252,6 +252,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
+    if (mode === "dollhouse") stage.controls.maxDistance = dollhouseMaxDistance(layout);
     if (stage.room && stage.layout?.size === layout.size && stage.layout.exits === layout.exits &&
       stage.layout.finishes === layout.finishes && updateRoomBodies(stage.room, stage.placed, placed)) {
       stage.layout = layout;
