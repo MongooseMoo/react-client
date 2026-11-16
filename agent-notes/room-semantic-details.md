@@ -14,6 +14,8 @@ Room.Layout stays the sole complete physical scene; Room.LayoutUpdate changes ex
 
 ## Surprises
 
+The native posture regression initially used an incorrect 1.3 m ceiling for a 1.8 m seated figure. The existing figure owner defines seated crown height as 79 percent of stature (1.422 m); the test now checks that explicit value instead of the incorrect bound. No figure proportions changed.
+
 Native stature is independent of posture. A person without an appearance record previously had no way to tell the figure renderer they were seated. Native pose now carries physical posture as well; the figure and words consume it without inventing an appearance record.
 
 Review also found that Plan still drew axis-aligned world bounds for a turned box. It now projects the intrinsic body's corners through the supplied quaternion and transforms existing form marks in that same frame; custom world shapes remain unchanged. Added an area/bounds regression for a quarter-diagonal body.

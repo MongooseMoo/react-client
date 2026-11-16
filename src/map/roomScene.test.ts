@@ -74,7 +74,8 @@ describe("buildRoomScene", () => {
     const figure = meshes(scene.things.get("#plain"))[0];
     const expected = figureParams({ posture: "sitting" }, { height: 1.8, base: hex(PERSON_COLOUR) });
     expect(box(figure).max.z).toBeCloseTo(expected.top, 1);
-    expect(box(figure).max.z).toBeLessThan(1.3);
+    // The existing figure's seated crown is 1.8 * (1 - 0.47 + 0.26) = 1.422 m.
+    expect(box(figure).max.z).toBeCloseTo(1.422, 2);
     disposeRoomScene(scene);
   });
   it("retains meshes and updates world label points during native rigid movement", () => {
