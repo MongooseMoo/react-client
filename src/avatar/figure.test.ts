@@ -104,15 +104,30 @@ describe("figureParams with missing or malformed appearance", () => {
 });
 
 describe("figureParams branches", () => {
-  it("knows every chargen build, and only those", () => {
+  it("knows every game build, spelled as the game sends it, and only those", () => {
     for (const build of Object.keys(BUILDS)) expect(params({ build }).build).toBe(build);
-    expect(params({ build: "Muscular" }).build).toBe("muscular");
+    expect(params({ build: "Muscular" }).build).toBe("average");
     expect(params({ build: "gelatinous" }).build).toBe("average");
     expect(params({ build: "muscular" }).shoulderHalf).toBeGreaterThan(params({ build: "thin" }).shoulderHalf);
   });
 
   it("sorts hair by length and bulks it by texture", () => {
-    expect([undefined, 0.5, 3, 20, 50].map(hairShape)).toEqual(["none", "none", "short", "medium", "long"]);
+    // The game's bands, named as the game names them: under each band's highest; bald only at 0.
+    expect([undefined, 0, -1, 0.5, 1.5, 3, 12.9, 13, 24, 40, 64, 65, 300].map(hairShape)).toEqual([
+      "none",
+      "none",
+      "none",
+      "shaved",
+      "cropped",
+      "cropped",
+      "short",
+      "chin-length",
+      "shoulder-length",
+      "long",
+      "long",
+      "waist-length",
+      "waist-length",
+    ]);
     const hair = (texture: string) => params({ hair: { length_cm: 10, texture, hex: "#222222" } }).hairVolume;
     expect(hair("straight")).toBe(1);
     expect(hair("coily")).toBeGreaterThan(hair("curly"));
@@ -155,6 +170,19 @@ describe("figureParams branches", () => {
     expect(params({ face_hidden: true, eyes: { hex: "#00ff00" } }).colours.eyes).toBeUndefined();
   });
 
+  it("keeps a beard's length within the game's range, and only for a beard", () => {
+    const beard = (length_cm: unknown, kind = "beard") => params({ facial_hair: { kind, length_cm, hex: "#333333" } });
+    expect(beard(25).beardLength).toBe(25);
+    expect(beard(25).beardReach).toBeCloseTo(25 / 40);
+    expect(beard(500).beardLength).toBe(100);
+    expect(beard(500).beardReach).toBe(1);
+    expect(beard(-3).beardLength).toBe(0);
+    for (const missing of [beard(undefined), beard("long"), beard(25, "goatee"), params({ facial_hair: { kind: "beard", length_cm: 25 } })]) {
+      expect(missing.beardLength).toBeUndefined();
+      expect(missing.beardReach).toBeUndefined();
+    }
+  });
+
   it("adds parts for known traits only, once each", () => {
     expect(params({ traits: ["Tail", "wings", "wing", "antlers", "horns", "pointed ears", "scales", 4] }).extras).toEqual([
       "tail",
@@ -166,9 +194,9 @@ describe("figureParams branches", () => {
   });
 
   it("keeps known features once each, in order, ignoring unknown keys, wrong types and a hidden face", () => {
-    expect(params({ features: ["Glasses", "monocle", "freckles", 3, null, "glasses", "eyepatch"] }).features).toEqual([
-      "glasses",
+    expect(params({ features: ["Glasses", "monocle", "freckles", 3, null, "glasses", "eyepatch", "glasses"] }).features).toEqual([
       "freckles",
+      "glasses",
       "eyepatch",
     ]);
     for (const features of [undefined, "glasses", { glasses: true }, 7]) expect(params({ features }).features).toEqual([]);

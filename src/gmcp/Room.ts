@@ -89,13 +89,14 @@ export interface LayoutAppearance {
   /** Species or body plan, and traits such as `tail`, `wings`, `antlers`. */
   body_plan?: string;
   traits?: string[];
-  /** One of the chargen builds: average, athletic, thin, curvy, chunky, pudgy, muscular, dumpy. */
+  /** One of the game's builds: average, slender, thin, athletic, muscular, curvy, stocky, chunky, pudgy, dumpy. */
   build?: string;
   age_years?: number;
   skin?: LayoutColour;
   /** Absent when bald or covered. */
   hair?: { length_cm?: number; texture?: string; style?: string; name?: string; hex?: string };
-  facial_hair?: { kind?: string; name?: string; hex?: string };
+  /** `length_cm`: how long a beard is, from the game's beard length bands. */
+  facial_hair?: { kind?: string; length_cm?: number; name?: string; hex?: string };
   eyes?: LayoutColour;
   face?: { shape?: string; nose?: string; lips?: string; brows?: string; ears?: string };
   /** Small features by key: `freckles`, `glasses`, … */

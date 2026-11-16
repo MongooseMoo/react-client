@@ -1,7 +1,9 @@
 // Tests only: screenshots of the invented test characters and frame times of the
 // 3D view, in headless Chromium (no window). Usage:
-//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d]
+//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d] [--pinch] [--vocab] [--labels3d]
 // --gpu asks headless Chromium for the machine's GPU instead of its software renderer.
+// --vocab shoots the game's vocabulary (a portrait per value, builds and beard lengths in 3D)
+// instead of the test characters and zoom checks; frame times are measured either way.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium } from '@playwright/test';
@@ -9,6 +11,7 @@ import { createServer } from 'vite';
 
 const out = resolve(process.argv[2] ?? 'screenshots/avatars');
 const gpu = process.argv.includes('--gpu');
+const vocab = process.argv.includes('--vocab');
 // --view3d shoots only the 3D view's zoom, turn and label sequence (then the frame timing).
 const view3d = process.argv.includes('--view3d');
 // --pinch shoots only a touch pinch and one-finger turn in the Dollhouse (then the frame timing).
@@ -35,6 +38,24 @@ try {
     await page.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
   };
   const suffix = gpu ? '-gpu' : '';
+  if (vocab) {
+    // One picture per vocabulary field (a portrait per value), then every build and beard length in 3D.
+    const sharp = await browser.newPage({ viewport: { width: 1600, height: 1000 }, colorScheme: 'dark', deviceScaleFactor: 2 });
+    await sharp.goto(`${base}?view=vocab`);
+    await sharp.waitForFunction(() => window.ready === true);
+    for (const table of await sharp.locator('table[data-field]').all()) {
+      await table.screenshot({ path: resolve(out, `vocab-${(await table.getAttribute('data-field')).replace(/[^a-z_]+/g, '-')}.png`) });
+    }
+    await sharp.close();
+    // Nine rows of 420 px cells: a page tall enough to hold them all.
+    const tall = await browser.newPage({ viewport: { width: 1280, height: 3900 }, colorScheme: 'dark' });
+    for (const [zoom, angle] of [['body', 'front'], ['head', 'front'], ['head', 'three'], ['head', 'back']]) {
+      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=${zoom}&set=vocab`);
+      await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
+      await tall.locator('#root > div').screenshot({ path: resolve(out, `vocab-figures-${zoom}-${angle}.png`) });
+    }
+    await tall.close();
+  }
   if (pinch) {
     // A phone player in the 50 m room: two fingers pinch outward over Cleo (#p2, facing away), then one
     // finger drags sideways to turn. Touches go through CDP Input.dispatchTouchEvent, as a touch screen's would.
@@ -237,7 +258,7 @@ try {
     }
     await narrow.close();
   }
-  if (!gpu && !view3d && !pinch && !labels3d) {
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -286,7 +307,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu && !view3d && !pinch && !labels3d) {
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');
