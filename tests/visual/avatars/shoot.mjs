@@ -1,7 +1,9 @@
 // Tests only: screenshots of the invented test characters and frame times of the
 // 3D view, in headless Chromium (no window). Usage:
-//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu]
+//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--vocab]
 // --gpu asks headless Chromium for the machine's GPU instead of its software renderer.
+// --vocab shoots the game's vocabulary (a portrait per value, builds and beard lengths in 3D)
+// instead of the test characters and zoom checks; frame times are measured either way.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium } from '@playwright/test';
@@ -9,6 +11,7 @@ import { createServer } from 'vite';
 
 const out = resolve(process.argv[2] ?? 'screenshots/avatars');
 const gpu = process.argv.includes('--gpu');
+const vocab = process.argv.includes('--vocab');
 mkdirSync(out, { recursive: true });
 
 const server = await createServer({ server: { port: 5199, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' });
@@ -28,7 +31,21 @@ try {
     await page.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
   };
   const suffix = gpu ? '-gpu' : '';
-  if (!gpu) {
+  if (vocab) {
+    // One picture per vocabulary field (a portrait per value), then every build and beard length in 3D.
+    const sharp = await browser.newPage({ viewport: { width: 1600, height: 1000 }, colorScheme: 'dark', deviceScaleFactor: 2 });
+    await sharp.goto(`${base}?view=vocab`);
+    await sharp.waitForFunction(() => window.ready === true);
+    for (const table of await sharp.locator('table[data-field]').all()) {
+      await table.screenshot({ path: resolve(out, `vocab-${(await table.getAttribute('data-field')).replace(/[^a-z_]+/g, '-')}.png`) });
+    }
+    await sharp.close();
+    for (const zoom of ['body', 'head']) {
+      await open(`view=figures&angle=front&zoom=${zoom}&set=vocab`);
+      await page.locator('#root > div').screenshot({ path: resolve(out, `vocab-figures-${zoom}.png`) });
+    }
+  }
+  if (!gpu && !vocab) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -77,7 +94,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu) {
+  if (!gpu && !vocab) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');

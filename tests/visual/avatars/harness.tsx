@@ -1,7 +1,9 @@
 /**
  * Tests only: draws the invented test characters for tests/visual/avatars/shoot.mjs.
  * `?view=portraits` portraits at the People list size and at 4x;
- * `?view=plan` plan tokens; `?view=figures&angle=front|three` 3D close-ups;
+ * `?view=vocab` one portrait per game vocabulary value and beard length;
+ * `?view=plan` plan tokens; `?view=figures&angle=front|three` 3D close-ups
+ * (`&set=vocab`: every build and beard length instead of the test characters);
  * `?view=room&n=8` the real 3D view (Dollhouse), with `window.measure(seconds)`
  * moving one person every frame and reporting frame times.
  */
@@ -10,18 +12,39 @@ import * as THREE from "three";
 import "../../../src/tokens.css";
 import "../../../src/index.css";
 import "../../../src/components/MapPanel.css";
-import { TEST_CHARACTERS } from "../../../src/avatar/characters.fixture";
+import { TEST_CHARACTERS, type TestCharacter } from "../../../src/avatar/characters.fixture";
 import AvatarPortrait from "../../../src/avatar/portrait";
+import { GAME_BEARD_LENGTHS, GAME_VOCABULARY, type VocabularyField, withValue } from "../../../src/avatar/vocabulary.fixture";
 import PlayerCard from "../../../src/components/PlayerCard";
 import RoomLayout3D from "../../../src/components/RoomLayout3D";
 import RoomLayoutPicture from "../../../src/components/RoomLayoutPicture";
-import type { RoomLayout } from "../../../src/gmcp/Room";
+import type { LayoutAppearance, RoomLayout } from "../../../src/gmcp/Room";
 import { placeThings } from "../../../src/map/roomLayout";
 import { crowdLayout, livingRoomLayout } from "../../../src/map/roomLayout.fixture";
 import { buildRoomScene, cutWalls, DOLLHOUSE_FOV } from "../../../src/map/roomScene";
 
 const params = new URLSearchParams(location.search);
 const view = params.get("view") ?? "portraits";
+
+/** The game's vocabulary one value at a time on a plain person, plus beard lengths: rows of [caption, appearance]. */
+const VOCAB_ROWS: Array<[string, Array<[string, Record<string, unknown>]>]> = [
+  ...(Object.keys(GAME_VOCABULARY) as VocabularyField[]).map(
+    (field) => [field, GAME_VOCABULARY[field].map((value) => [value, withValue(field, value)])] as [string, Array<[string, Record<string, unknown>]>],
+  ),
+  [
+    "facial_hair.length_cm",
+    [
+      ["no length", withValue("facial_hair.kind", "beard")],
+      ...GAME_BEARD_LENGTHS.map(([band, low]) => [`${band} ${low}`, withValue("facial_hair.length_cm", low)] as [string, Record<string, unknown>]),
+    ],
+  ],
+];
+/** `set=vocab` in the figures view: every build, then beard lengths. */
+const VOCAB_CHARACTERS: TestCharacter[] = [
+  ...GAME_VOCABULARY.build.map((build) => ({ name: `build ${build}`, height: 1.75, appearance: withValue("build", build) as LayoutAppearance })),
+  ...(VOCAB_ROWS.at(-1)?.[1] ?? []).map(([name, appearance]) => ({ name: `beard ${name}`, height: 1.75, appearance: appearance as LayoutAppearance })),
+];
+const CHARACTERS = params.get("set") === "vocab" ? VOCAB_CHARACTERS : TEST_CHARACTERS;
 const root = document.getElementById("root") as HTMLElement;
 document.body.style.background = "#14141a";
 document.body.style.color = "#e8e8ed";
@@ -54,6 +77,29 @@ if (view === "portraits") {
     root,
   );
   window.ready = true;
+} else if (view === "vocab") {
+  // One table per field, one portrait (at 96 px) per value, captioned with the value.
+  render(
+    <div>
+      {VOCAB_ROWS.map(([field, values]) => (
+        <table key={field} data-field={field} style={{ borderSpacing: "8px 4px", marginBottom: 8 }}>
+          <tbody>
+            <tr>
+              <th style={{ width: "10em", textAlign: "left" }}>{field}</th>
+              {values.map(([value, appearance]) => (
+                <td key={value} style={{ textAlign: "center", font: "12px sans-serif" }}>
+                  <AvatarPortrait appearance={appearance} size={96} />
+                  <div>{value}</div>
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      ))}
+    </div>,
+    root,
+  );
+  window.ready = true;
 } else if (view === "plan") {
   const layout = crowdLayout(TEST_CHARACTERS.length);
   render(
@@ -78,7 +124,7 @@ if (view === "portraits") {
   const angle = params.get("angle") === "three" ? Math.PI / 4 : 0;
   const cell = { w: 300, h: 420 };
   const cols = 4;
-  const rows = Math.ceil(TEST_CHARACTERS.length / cols);
+  const rows = Math.ceil(CHARACTERS.length / cols);
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(1);
   renderer.setSize(cell.w * cols, cell.h * rows);
@@ -88,7 +134,7 @@ if (view === "portraits") {
   frame.style.position = "relative";
   frame.appendChild(renderer.domElement);
   root.appendChild(frame);
-  TEST_CHARACTERS.forEach((ch, i) => {
+  CHARACTERS.forEach((ch, i) => {
     const layout: RoomLayout = livingRoomLayout();
     layout.things = [
       {
