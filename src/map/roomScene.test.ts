@@ -25,6 +25,13 @@ import {
   NEUTRAL,
   PERSON_COLOUR,
   panTo,
+  Pinch,
+  screenTop,
+  WHEEL_NOTCHES,
+  wheelNotches,
+  wheelStep,
+  wheelZoom,
+  wheelZoomPoint,
   zoomFocus,
   YOU_COLOUR,
   ZOOM_STEP,
@@ -144,7 +151,10 @@ describe("buildRoomScene", () => {
     const bounds = box(body);
     expect(bounds.min.z).toBeCloseTo(0, 1);
     expect(bounds.max.z).toBeLessThan(1.8);
-    expect(scene.labelAnchors.get("#9")?.z).toBeGreaterThan(bounds.max.z - 0.2);
+    // The label hangs at the crown, and its outline holds the head and nothing below the chin.
+    const label = scene.labelPoints.get("#9") as THREE.Vector3[];
+    expect(label[0].z).toBeCloseTo(bounds.max.z, 3);
+    expect(Math.min(...label.map((p) => p.z))).toBeGreaterThan(1.4);
   });
 
   it("draws a record without skin or garments in the same neutral skin and clothing as the portrait and plan token", () => {
@@ -342,7 +352,7 @@ describe("buildRoomScene", () => {
     expect(body.min.z).toBeCloseTo(0, 1);
     expect((body.min.x + body.max.x) / 2).toBeCloseTo(1, 1);
     expect(figureColours("#77", scene)).toEqual([PERSON_COLOUR]);
-    expect(scene.labelAnchors.get("#77")?.z).toBeGreaterThan(1.6);
+    expect(scene.labelPoints.get("#77")?.[0].z).toBeGreaterThan(1.6);
   });
 });
 
@@ -410,6 +420,238 @@ describe("cameras", () => {
     }
     expect(camera.position.distanceTo(face)).toBeLessThan(2);
     controls.dispose();
+  });
+
+  it("wheel-zooms the dollhouse onto the person under the pointer, then turns around them", () => {
+    // A 50 m room; Bram stands 9 m south-west of the middle, facing north (away from the opening camera).
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const bram = TEST_CHARACTERS[1];
+    big.things = [
+      {
+        id: "#p1",
+        name: bram.name,
+        kind: "person",
+        fixed: true,
+        mounted: false,
+        shapes: [{ box: [[-9.2, -8.8], [-9.2, -8.8], [0, bram.height]] }],
+        appearance: bram.appearance,
+      },
+    ];
+    const placed = placeThings(big, {});
+    const scene = buildRoomScene({ layout: big, placed, arrivals: [], youId: "", facings: { "#p1": [0, 1, 0] } });
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const controls = new OrbitControls(camera, document.createElement("div"));
+    controls.maxDistance = dollhouseMaxDistance(big);
+    const pose = dollhousePose(big);
+    camera.position.set(...pose.position);
+    controls.target.set(...pose.target);
+    controls.update();
+    scene.root.updateMatrixWorld(true);
+
+    // The pointer on his head: the zoom heads for his face, not the floor behind him.
+    const face = zoomFocus(placed[0].bounds, big);
+    const head = new THREE.Vector3(-9, -9, bram.height * 0.95);
+    const point = wheelZoomPoint(new THREE.Ray(camera.position.clone(), head.clone().sub(camera.position).normalize()), scene, placed, big);
+    expect(point?.distanceTo(face)).toBeLessThan(1e-9);
+    // On bare floor, the floor; over the walls into the dark, nothing.
+    const floor = wheelZoomPoint(new THREE.Ray(camera.position.clone(), new THREE.Vector3(5, 5, 0).sub(camera.position).normalize()), scene, placed, big);
+    expect(floor?.distanceTo(new THREE.Vector3(5, 5, 0))).toBeLessThan(1e-6);
+    expect(wheelZoomPoint(new THREE.Ray(camera.position.clone(), new THREE.Vector3(0, 1, 0.2).normalize()), scene, placed, big)).toBeUndefined();
+
+    const inMiddle = () => {
+      camera.updateMatrixWorld();
+      const at = face.clone().project(camera);
+      return Math.hypot(at.x, at.y);
+    };
+    expect(inMiddle()).toBeGreaterThan(0.2);
+    const step = wheelStep(big);
+    for (let i = 0; i < WHEEL_NOTCHES; i++) {
+      wheelZoom(camera.position, controls.target, face, step);
+      controls.update();
+    }
+    // Close, and his face in the middle of the picture.
+    expect(camera.position.distanceTo(face)).toBeLessThan(2.5);
+    expect(inMiddle()).toBeLessThan(0.02);
+    // Turning half way round keeps him in the middle, and ends in front of him (north of him).
+    for (let i = 0; i < 18; i++) {
+      controls.rotateLeft(Math.PI / 18);
+      expect(inMiddle()).toBeLessThan(0.02);
+    }
+    expect(camera.position.y).toBeGreaterThan(face.y);
+    // Zooming out backs away from what it turns around.
+    const near = camera.position.distanceTo(controls.target);
+    wheelZoom(camera.position, controls.target, face, 1 / step);
+    controls.update();
+    expect(camera.position.distanceTo(controls.target)).toBeCloseTo(near / step, 6);
+    controls.dispose();
+    disposeRoomScene(scene);
+  });
+
+  it("brings a person close in about twenty wheel notches in a room of any size", () => {
+    // OrbitControls' fixed 0.95 a notch took 80 and more in a 50 m room.
+    for (const size of [5, 12, 50, 100]) {
+      const layout: RoomLayout = { ...livingRoomLayout(), size: [size, size, Math.min(size, 4)] };
+      const pose = dollhousePose(layout);
+      const camera = new THREE.Vector3(...pose.position);
+      const target = new THREE.Vector3(...pose.target);
+      // A face a third of the way out toward the south-west corner.
+      const face = new THREE.Vector3(-size / 6, -size / 6, 1.6);
+      const step = wheelStep(layout);
+      let notches = 0;
+      while (camera.distanceTo(face) > 2 && notches < 200) {
+        wheelZoom(camera, target, face, step);
+        notches++;
+      }
+      expect(notches, `${size} m room`).toBeGreaterThanOrEqual(15);
+      expect(notches, `${size} m room`).toBeLessThanOrEqual(25);
+    }
+    // A room smaller than its close-up distance keeps the small-room step.
+    expect(wheelStep({ ...livingRoomLayout(), size: [1, 1, 2] })).toBe(0.95);
+  });
+
+  it("puts a person's label just over the head as drawn, from any distance and angle", () => {
+    // Every standing test character: long hair, an afro, hoods, a cloak, antlers.
+    for (const ch of TEST_CHARACTERS.filter((c) => (c.appearance.posture ?? "standing") === "standing")) {
+      const layout = livingRoomLayout();
+      layout.things = [
+        {
+          id: "#p",
+          name: ch.name,
+          kind: "person",
+          fixed: true,
+          mounted: false,
+          shapes: [{ box: [[-0.2, 0.2], [-0.2, 0.2], [0, ch.height]] }],
+          appearance: ch.appearance,
+        },
+      ];
+      const scene = build(layout);
+      scene.root.updateMatrixWorld(true);
+      const figure = meshes(scene.things.get("#p"))[0];
+      const position = figure.geometry.getAttribute("position");
+      const points = scene.labelPoints.get("#p") as THREE.Vector3[];
+      const params = figureParams(ch.appearance, { height: ch.height, base: "#000000" });
+      for (const distance of [0.8, 1.5, 4, 20, 80]) {
+        for (const [turn, rise] of [[0, 0.1], [Math.PI / 2, 0.5], [Math.PI, 1], [-Math.PI / 4, 1.4]]) {
+          const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+          camera.up.set(0, 0, 1);
+          const head = new THREE.Vector3(0, 0, ch.height - 0.1);
+          camera.position.set(Math.sin(turn) * Math.cos(rise), -Math.cos(turn) * Math.cos(rise), Math.sin(rise)).multiplyScalar(distance).add(head);
+          camera.lookAt(head);
+          camera.updateMatrixWorld();
+          const shown = screenTop(points, camera, 800, 600);
+          expect(shown).toBeDefined();
+          // No point of the head, hair, hat or antlers (all above the chin) is drawn above the label's line
+          // on screen, and the head's top is right below it (within 3 px), so the label stays close.
+          const chin = params.top - params.headHeight * 1.05;
+          let highest = Number.POSITIVE_INFINITY;
+          const v = new THREE.Vector3();
+          for (let i = 0; i < position.count; i++) {
+            v.fromBufferAttribute(position, i).applyMatrix4(figure.matrixWorld);
+            if (v.z < chin) continue;
+            v.project(camera);
+            if (Math.abs(v.z) <= 1) highest = Math.min(highest, ((1 - v.y) / 2) * 600);
+          }
+          const where = `${ch.name} at ${distance} m, turn ${turn.toFixed(2)}, rise ${rise}`;
+          expect(highest, where).toBeGreaterThanOrEqual((shown?.top ?? 0) - 1);
+          expect(highest - (shown?.top ?? 0), where).toBeLessThan(3);
+        }
+      }
+    }
+  });
+
+  it("reads two fingers as a pinch: spacing before over after, onto where it began", () => {
+    const pinch = new Pinch();
+    pinch.down(1, 100, 200);
+    expect(pinch.move(1, 90, 200)).toBeUndefined(); // one finger turns; it is no pinch
+    pinch.down(2, 190, 200);
+    expect(pinch.pinching).toBe(true);
+    // Spread from 100 px apart to 200: twice as close, onto the midpoint where they started.
+    const a = pinch.move(1, 40, 200);
+    const b = pinch.move(2, 240, 200);
+    expect(a?.at).toEqual({ x: 140, y: 200 });
+    expect(b?.at).toEqual({ x: 140, y: 200 });
+    expect((a?.scale ?? 0) * (b?.scale ?? 0)).toBeCloseTo(0.5, 9);
+    // A third finger ends it; lifting back to two does not start a new one until a finger comes down again.
+    pinch.down(3, 0, 0);
+    expect(pinch.move(1, 10, 200)).toBeUndefined();
+    pinch.up(3);
+    expect(pinch.pinching).toBe(false);
+    expect(pinch.move(1, 0, 200)).toBeUndefined();
+  });
+
+  it("pinches the dollhouse onto a person, then one finger turns round them", () => {
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const face = new THREE.Vector3(-9, -9, 1.75);
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const element = document.createElement("div");
+    // jsdom lays nothing out: give the picture its size, and pointer capture as a browser has it.
+    Object.assign(element, { setPointerCapture: () => {}, releasePointerCapture: () => {} });
+    Object.defineProperties(element, { clientWidth: { value: 800 }, clientHeight: { value: 600 } });
+    document.body.appendChild(element);
+    const controls = new OrbitControls(camera, element);
+    controls.touches.TWO = null;
+    controls.maxDistance = dollhouseMaxDistance(big);
+    const pose = dollhousePose(big);
+    camera.position.set(...pose.position);
+    controls.target.set(...pose.target);
+    controls.update();
+    const touch = (type: string, pointerId: number, x: number, y: number) => {
+      const event = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
+      Object.defineProperties(event, { pointerId: { value: pointerId }, pointerType: { value: "touch" }, pageX: { value: x }, pageY: { value: y } });
+      element.dispatchEvent(event);
+      return event;
+    };
+    const inMiddle = () => {
+      camera.updateMatrixWorld();
+      const at = face.clone().project(camera);
+      return Math.hypot(at.x, at.y);
+    };
+
+    // Two fingers spread apart: the controls do nothing with them; the pinch zooms onto the face.
+    const pinch = new Pinch();
+    const before = camera.position.clone();
+    touch("pointerdown", 1, 300, 300);
+    pinch.down(1, 300, 300);
+    touch("pointerdown", 2, 310, 300);
+    pinch.down(2, 310, 300);
+    for (let i = 1; i <= 40; i++) {
+      const was = camera.position.clone();
+      touch("pointermove", 2, 310 + i * 10, 300);
+      expect(camera.position.distanceTo(was)).toBe(0);
+      const step = pinch.move(2, 310 + i * 10, 300);
+      if (step) {
+        wheelZoom(camera.position, controls.target, face, step.scale);
+        controls.update();
+      }
+    }
+    // Forty-one times as far apart: forty-one times closer.
+    expect(camera.position.distanceTo(face)).toBeCloseTo(before.distanceTo(face) / 41, 6);
+    expect(inMiddle()).toBeLessThan(0.02);
+    touch("pointerup", 2, 710, 300);
+    pinch.up(2);
+
+    // The finger left down drags sideways: the controls turn the view round the face, which stays in the middle.
+    const near = camera.position.distanceTo(face);
+    const start = camera.position.clone();
+    for (let i = 1; i <= 20; i++) {
+      touch("pointermove", 1, 300 + i * 15, 300);
+      expect(inMiddle()).toBeLessThan(0.02);
+    }
+    expect(camera.position.distanceTo(start)).toBeGreaterThan(near * 0.5);
+    // Round the face: the turn centre is within millimetres of it after the pinch.
+    expect(camera.position.distanceTo(face)).toBeCloseTo(near, 1);
+    touch("pointerup", 1, 600, 300);
+    controls.dispose();
+    element.remove();
+  });
+
+  it("counts wheel notches: 100 pixels, 3 lines or a page", () => {
+    expect(wheelNotches(-100, 0)).toBe(1);
+    expect(wheelNotches(250, 0)).toBe(2.5);
+    expect(wheelNotches(-3, 1)).toBe(1);
+    expect(wheelNotches(1, 2)).toBe(1);
   });
 
   it("lets the dollhouse reach a large room's whole-room view", () => {

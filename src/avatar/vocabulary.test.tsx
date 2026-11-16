@@ -124,7 +124,7 @@ describe("beard length", () => {
     const lows = bands.map(({ length }) => lowest(length));
     for (let i = 1; i < lows.length; i++) expect(lows[i], bands[i].band).toBeLessThan(lows[i - 1] - 0.005);
     // A very long beard (40 cm) hangs about 30 cm below the jaw beard.
-    expect(lowest(undefined) - lows.at(-1)!).toBeGreaterThan(0.25);
+    expect(lowest(undefined) - lows[lows.length - 1]).toBeGreaterThan(0.25);
   });
 
   it("keeps the heaviest figure the vocabulary allows under the 5,000-triangle budget", () => {

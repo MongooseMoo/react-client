@@ -20,6 +20,7 @@ import {
   layoutPersonNamed,
   layoutSummary,
   placeLabels,
+  placeLabelsOver,
   placeThings,
   shortLabel,
   scaleBarLength,
@@ -148,6 +149,69 @@ describe("room layout geometry", () => {
       }
     }
     expect(labels[0]).toMatchObject({ x: 0, y: 0 });
+  });
+
+  describe("3D labels (placeLabelsOver)", () => {
+    const fontSize = 12;
+    const frame = { x0: 4, x1: 272, y0: 4, y1: 203 };
+    // A label's box as placeLabels estimates it: 0.58 em a character, plus a quarter em; 0.7 em above and below.
+    const boxOf = (l: { text: string; x: number; y: number }) => {
+      const half = (l.text.length * 0.58 * fontSize) / 2 + fontSize * 0.25;
+      return { x0: l.x - half, x1: l.x + half, y0: l.y - fontSize * 0.7, y1: l.y + fontSize * 0.7 };
+    };
+    const height = fontSize * 1.4;
+    // Each shown label still spans its figure's x, sits no lower than asked, at most two label heights up, and none overlap.
+    const attached = (requests: Array<{ id: string; text: string; x: number; y: number }>, labels: ReturnType<typeof placeLabelsOver>) => {
+      for (const label of labels) {
+        const asked = requests.find((r) => r.id === label.id) as (typeof requests)[number];
+        const box = boxOf(label);
+        expect(box.x0, label.id).toBeLessThan(asked.x);
+        expect(box.x1, label.id).toBeGreaterThan(asked.x);
+        expect(label.y, label.id).toBeLessThanOrEqual(asked.y + 1e-9);
+        expect(asked.y - label.y, label.id).toBeLessThanOrEqual(2 * height + 1e-9);
+      }
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = i + 1; j < labels.length; j++) {
+          const a = boxOf(labels[i]);
+          const b = boxOf(labels[j]);
+          expect(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1, `${labels[i].id} over ${labels[j].id}`).toBe(false);
+        }
+      }
+    };
+
+    it("keeps a lone label exactly where it was asked for", () => {
+      const labels = placeLabelsOver([{ id: "a", text: "Winxie Wink", x: 120, y: 90 }], fontSize, frame);
+      expect(labels).toEqual([{ id: "a", text: "Winxie Wink", x: 120, y: 90 }]);
+    });
+
+    it("moves the second of two clashing labels only as far as it must, staying over its figure", () => {
+      const requests = [
+        { id: "a", text: "Generic Janet", x: 120, y: 90 },
+        { id: "b", text: "deepsqueak", x: 135, y: 92 },
+      ];
+      const labels = placeLabelsOver(requests, fontSize, frame);
+      expect(labels.map((l) => l.id)).toEqual(["a", "b"]);
+      expect(labels[0]).toMatchObject({ x: 120, y: 90 });
+      attached(requests, labels);
+      // The old placement sent it a whole label width aside (about 50 px); now it moves less than a label height and a half.
+      expect(Math.hypot(labels[1].x - 135, labels[1].y - 92)).toBeLessThan(height * 1.5);
+    });
+
+    it("keeps every label of a crowd over its own figure, leaving out the ones with no room", () => {
+      const names = ["Kit Sarne", "Lio Danner", "Mott Ansel", "Esme Tarrow", "Faro Quint", "Gwen Ashby", "Ines Corvald", "Hale Brennick (you)"];
+      const requests = names.map((text, i) => ({ id: `#p${i}`, text, x: 60 + (i % 4) * 45, y: 90 + Math.floor(i / 4) * 12 }));
+      const labels = placeLabelsOver(requests, fontSize, frame);
+      expect(labels.length).toBeGreaterThan(3);
+      attached(requests, labels);
+    });
+
+    it("keeps a label at the picture's edge inside it and still over its figure", () => {
+      const requests = [{ id: "a", text: "Hale Brennick (you)", x: 266, y: 120 }];
+      const labels = placeLabelsOver(requests, fontSize, frame);
+      expect(labels).toHaveLength(1);
+      expect(boxOf(labels[0]).x1).toBeLessThanOrEqual(frame.x1);
+      attached(requests, labels);
+    });
   });
 
   it("leaves out a label that has no free spot inside the room, and shortens long names", () => {

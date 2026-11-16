@@ -546,6 +546,50 @@ export class FigureCache {
 }
 
 /**
+ * The head's outline in the figure's own frame: the point on its axis at its
+ * crown, then, for cameras all round it and from below to straight above, the
+ * point of everything above `chin` (hair, hats, antlers) that is highest in that
+ * camera's picture. The highest of them on screen is where the head ends, whatever
+ * the view. Kept on the geometry, so a cached figure works it out once.
+ */
+export function headOutline(geometry: THREE.BufferGeometry, chin: number): THREE.Vector3[] {
+  if (geometry.userData.headOutline) return geometry.userData.headOutline as THREE.Vector3[];
+  const position = geometry.getAttribute("position");
+  const head: number[] = [];
+  let top = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < position.count; i++) {
+    const z = position.getZ(i);
+    if (z < chin) continue;
+    head.push(position.getX(i), position.getY(i), z);
+    top = Math.max(top, z);
+  }
+  const chosen = new Set<number>();
+  // A camera at elevation e and azimuth a sees "up" in its picture as (-sin e cos a, -sin e sin a, cos e).
+  for (const degrees of [-60, -40, -20, 0, 10, 20, 30, 40, 50, 60, 70, 80, 90]) {
+    const e = (degrees * Math.PI) / 180;
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * 2 * Math.PI;
+      const ux = -Math.sin(e) * Math.cos(a);
+      const uy = -Math.sin(e) * Math.sin(a);
+      const uz = Math.cos(e);
+      let best = 0;
+      let bestDot = Number.NEGATIVE_INFINITY;
+      for (let i = 0; i < head.length; i += 3) {
+        const dot = head[i] * ux + head[i + 1] * uy + head[i + 2] * uz;
+        if (dot > bestDot) {
+          bestDot = dot;
+          best = i;
+        }
+      }
+      if (head.length) chosen.add(best);
+    }
+  }
+  const outline = [new THREE.Vector3(0, 0, top), ...[...chosen].map((i) => new THREE.Vector3(head[i], head[i + 1], head[i + 2]))];
+  geometry.userData.headOutline = outline;
+  return outline;
+}
+
+/**
  * The figure as one mesh standing at (x, y, z0), turned to face `facing`
  * (a MOO-frame direction; only its horizontal part counts). Without a facing
  * the figure faces south. With a cache, the geometry is the cache's.
