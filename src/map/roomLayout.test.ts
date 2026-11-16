@@ -231,6 +231,27 @@ describe("room layout geometry", () => {
       expect(placeLabelsOver(ask([{ id: "#rack", text: "a newspaper rack", x: 120, top: 120 }]), gap, frame, [face])).toEqual([]);
     });
 
+    it("never slides a person's label off their head: it rises or is left out", () => {
+      // The live check after 8 notches: a 72 px label sat 35 px to the side of its 10 px head, only its last
+      // letter over it, reading as the neighbour's. Here the label above is at the frame's top (no room to rise)
+      // and a neighbour's label takes the space over the head.
+      const head = { id: "#s1", x0: 91, x1: 101, y0: 24, y1: 36 };
+      const requests = [
+        { id: "#s3", text: "Tangra Moss", x: 140, top: 24 },
+        { id: "#s1", text: "Orrin Vale Ash", x: 96, top: 24 },
+      ];
+      const asked = requests.map((r) => ({ ...r, width: r.id === "#s1" ? 72 : 60, height }));
+      const labels = placeLabelsOver(asked, gap, frame, [head, { id: "#s3", x0: 135, x1: 145, y0: 24, y1: 36 }]);
+      expect(labels.map((l) => l.id)).toEqual(["#s3"]);
+      // With room to rise, it rises over its own head instead of sliding.
+      const roomy = placeLabelsOver(asked.map((r) => ({ ...r, top: 60 })), gap, frame, [{ ...head, y0: 60, y1: 72 }]);
+      const own = roomy.find((l) => l.id === "#s1");
+      expect(own).toBeDefined();
+      expect(own?.x).toBeGreaterThanOrEqual(head.x0);
+      expect(own?.x).toBeLessThanOrEqual(head.x1);
+      expect(own?.y).toBeLessThan(60 - gap - height / 2);
+    });
+
     it("keeps a label at the picture's edge inside it and still over its figure, or leaves it out", () => {
       const requests = [{ id: "a", text: "Hale Brennick (you)", x: 266, top: 130 }];
       const labels = placeLabelsOver(ask(requests), gap, frame);

@@ -7,6 +7,7 @@ export { FigureCache };
 import type { LayoutArrival } from "../stores/roomStore";
 import {
   type Bounds,
+  type Box,
   exitWall,
   isPerson,
   mainMaterial,
@@ -581,11 +582,17 @@ const thingIdOf = (object: THREE.Object3D | null): string | undefined => {
   return object?.userData.thingId as string | undefined;
 };
 
+/** How far (x, y) is from `box`, pixels: 0 inside it. */
+const offBox = (at: { x: number; y: number }, box: Box) => Math.hypot(Math.max(box.x0 - at.x, 0, at.x - box.x1), Math.max(box.y0 - at.y, 0, at.y - box.y1));
+
 /**
  * What a dollhouse wheel zoom or pinch at (x, y), pixels from the top left of a `width` x
- * `height` picture, heads for. A person's face when a visible person is drawn within
- * PICK_TOLERANCE of the pointer (the nearest one), else the first thing under the pointer,
- * else the floor; undefined when there is none of them (pointing over the walls into the dark).
+ * `height` picture, heads for. A person's face when one of the people's `labels` as drawn
+ * (screen boxes, each with its person's id) is within PICK_TOLERANCE of the pointer (the
+ * nearest label), else when a visible person is drawn within PICK_TOLERANCE of it (the
+ * nearest one), else the first thing or wall under the pointer, else the room's floor;
+ * undefined when there is none of them (pointing over the walls or through a doorway into
+ * the dark), so a zoom never heads for a point outside the room.
  * `nearest` keeps the camera outside the person (their box and PERSON_CLEARANCE) and at least ZOOM_NEAREST away.
  */
 export function wheelZoomPoint(
@@ -595,24 +602,33 @@ export function wheelZoomPoint(
   scene: RoomScene,
   placed: PlacedThing[],
   layout: RoomLayout,
+  labels: Array<Box & { id: string }> = [],
 ): ZoomPick | undefined {
   const caster = new THREE.Raycaster();
   caster.setFromCamera(new THREE.Vector2((at.x / size.width) * 2 - 1, -(at.y / size.height) * 2 + 1), camera);
   const things = [...scene.things.values()].filter((group) => group.visible);
   const eye = camera.getWorldPosition(new THREE.Vector3());
 
-  // People drawn near the pointer, nearest to it first (then nearest the camera), each only if nothing hides their face.
-  const near: Array<{ person: PlacedThing; off: number; depth: number }> = [];
+  // People near the pointer: first those whose label it is on or near (nearest label first), then those drawn
+  // near it (nearest first, then nearest the camera); each only if nothing hides their face.
+  const near: Array<{ person: PlacedThing; byLabel: boolean; off: number; depth: number }> = [];
   for (const person of placed) {
     if (scene.things.get(person.thing.id)?.userData.form !== "person" || !scene.things.get(person.thing.id)?.visible) continue;
     const b = person.bounds;
+    const depth = eye.distanceTo(zoomFocus(b, layout));
+    const label = labels.find((l) => l.id === person.thing.id);
+    const labelOff = label ? offBox(at, label) : Number.POSITIVE_INFINITY;
+    if (labelOff <= PICK_TOLERANCE) {
+      near.push({ person, byLabel: true, off: labelOff, depth });
+      continue;
+    }
     const corners = boxCorners(new THREE.Box3(new THREE.Vector3(b.x0, b.y0, b.z0), new THREE.Vector3(b.x1, b.y1, b.z1)));
     const box = screenBox(corners, camera, size.width, size.height);
     if (!box) continue;
-    const off = Math.hypot(Math.max(box.x0 - at.x, 0, at.x - box.x1), Math.max(box.y0 - at.y, 0, at.y - box.y1));
-    if (off <= PICK_TOLERANCE) near.push({ person, off, depth: eye.distanceTo(zoomFocus(b, layout)) });
+    const off = offBox(at, box);
+    if (off <= PICK_TOLERANCE) near.push({ person, byLabel: false, off, depth });
   }
-  near.sort((p, q) => p.off - q.off || p.depth - q.depth);
+  near.sort((p, q) => Number(q.byLabel) - Number(p.byLabel) || p.off - q.off || p.depth - q.depth);
   for (const { person, depth } of near) {
     const face = zoomFocus(person.bounds, layout);
     const sight = new THREE.Raycaster(eye, face.clone().sub(eye).normalize(), 0, depth);
@@ -621,10 +637,12 @@ export function wheelZoomPoint(
     return { point: face, nearest: Math.max(ZOOM_NEAREST, outOfBox(face, eye, person.bounds, PERSON_CLEARANCE)) };
   }
 
-  const hit = caster.intersectObjects(things, true)[0];
+  // The walls as drawn (cut low or full height) stop the ray, so it never reaches a point beyond them.
+  const hit = caster.intersectObjects([...things, ...Object.values(scene.walls)], true)[0];
   if (hit) return { point: hit.point.clone(), nearest: ZOOM_NEAREST };
   const floor = caster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
-  return floor ? { point: floor, nearest: ZOOM_NEAREST } : undefined;
+  const [w, d] = layout.size;
+  return floor && Math.abs(floor.x) <= w / 2 && Math.abs(floor.y) <= d / 2 ? { point: floor, nearest: ZOOM_NEAREST } : undefined;
 }
 
 /** How far from `point`, inside box `b` grown by `clearance`, the line toward `toward` leaves it. */
