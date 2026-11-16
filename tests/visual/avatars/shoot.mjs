@@ -76,6 +76,33 @@ try {
       }
     }
   }
+  // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
+  if (!gpu) {
+    for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
+      await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
+      const pic = page.locator('.room-layout-3d');
+      await pic.focus();
+      const focused = await page.evaluate(() => document.activeElement?.className);
+      const tag = `${mode}${size ? `-${size}m` : ''}`;
+      const shots = {};
+      for (const [step, key, times] of [['start', null, 0], ['plus10', '+', 10], ['plus30', '+', 20], ['minus10', '-', 30]]) {
+        for (let i = 0; i < times; i++) await page.keyboard.press(key);
+        await page.waitForTimeout(150);
+        shots[step] = await pic.screenshot({ path: resolve(out, `zoom-${tag}-${step}.png`) });
+      }
+      if (tag === 'dollhouse-50m') {
+        // The wheel with the pointer on the people (where the start shot shows them), zooming toward them.
+        await page.keyboard.press('0');
+        const box = await pic.boundingBox();
+        await page.mouse.move(box.x + box.width * 0.49, box.y + box.height * 0.505);
+        for (let i = 0; i < 40; i++) await page.mouse.wheel(0, -100);
+        await page.waitForTimeout(300);
+        await pic.screenshot({ path: resolve(out, `zoom-${tag}-wheel-on-people.png`) });
+      }
+      const same = (a, b) => Buffer.compare(shots[a], shots[b]) === 0;
+      console.log(`zoom ${tag}: focused=${focused} start=plus10:${same('start', 'plus10')} plus10=plus30:${same('plus10', 'plus30')} start=minus10:${same('start', 'minus10')}`);
+    }
+  }
   const results = [];
   for (const n of [8, 40]) {
     await open(`view=room&n=${n}`);

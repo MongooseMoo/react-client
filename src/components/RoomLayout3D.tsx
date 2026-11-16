@@ -22,10 +22,13 @@ import {
   cutWalls,
   DOLLHOUSE_FOV,
   disposeRoomScene,
+  dollhouseMaxDistance,
   dollhousePose,
   EYES_FOV,
   eyesPose,
   type RoomScene,
+  ZOOM_STEP,
+  zoomedFov,
 } from "../map/roomScene";
 import type { LayoutArrival } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
@@ -107,7 +110,8 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.maxPolarAngle = Math.PI / 2 - 0.05;
     controls.minDistance = 0.5;
-    controls.maxDistance = 60;
+    // The wheel zooms toward what is under the pointer, so a person anywhere in a large room can be brought close.
+    controls.zoomToCursor = true;
     const scene = new THREE.Scene();
 
     const stage: Stage = {
@@ -246,6 +250,8 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     stage.camera.fov = mode === "eyes" ? EYES_FOV : DOLLHOUSE_FOV;
     stage.camera.updateProjectionMatrix();
     if (mode === "dollhouse") {
+      // Far enough out for this room's whole-room view, however large the room.
+      stage.controls.maxDistance = dollhouseMaxDistance(layout);
       applyPose(stage, dollhousePose(layout));
       stage.controls.update();
       stage.render();
@@ -284,19 +290,41 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     if (hit) onExitRef.current(hit.object.userData.exit as string);
   };
 
+  /** Your eyes zoom by narrowing the field of view, as binoculars would; they stay where you stand. */
+  const zoomEyes = (key: string): boolean => {
+    const stage = stageRef.current;
+    const fov = stage ? zoomedFov(stage.camera.fov, key) : undefined;
+    if (!stage || fov === undefined) return false;
+    stage.camera.fov = fov;
+    stage.camera.updateProjectionMatrix();
+    stage.render();
+    return true;
+  };
+
+  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    // The dollhouse's orbit controls take the wheel themselves.
+    if (mode !== "eyes" || event.deltaY === 0) return;
+    if (zoomEyes(event.deltaY < 0 ? "+" : "-")) event.preventDefault();
+  };
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const stage = stageRef.current;
-    if (!stage || mode !== "dollhouse" || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (!stage || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (mode === "eyes") {
+      if (zoomEyes(event.key)) event.preventDefault();
+      return;
+    }
     const turn = Math.PI / 18;
+    // OrbitControls multiplies the camera's distance by the scale it is given: below 1 comes closer.
     const actions: Record<string, () => void> = {
       ArrowLeft: () => stage.controls.rotateLeft(-turn),
       ArrowRight: () => stage.controls.rotateLeft(turn),
       ArrowUp: () => stage.controls.rotateUp(turn / 2),
       ArrowDown: () => stage.controls.rotateUp(-turn / 2),
-      "+": () => stage.controls.dollyIn(1.15),
-      "=": () => stage.controls.dollyIn(1.15),
-      "-": () => stage.controls.dollyOut(1.15),
-      _: () => stage.controls.dollyOut(1.15),
+      "+": () => stage.controls.dollyIn(ZOOM_STEP),
+      "=": () => stage.controls.dollyIn(ZOOM_STEP),
+      "-": () => stage.controls.dollyOut(ZOOM_STEP),
+      _: () => stage.controls.dollyOut(ZOOM_STEP),
       "0": () => {
         applyPose(stage, dollhousePose(layout));
         stage.controls.update();
@@ -323,6 +351,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       data-mode={mode}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
+      onWheel={onWheel}
       onKeyDown={onKeyDown}
     />
   );

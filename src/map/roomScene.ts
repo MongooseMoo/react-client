@@ -432,6 +432,26 @@ export function dollhousePose(layout: RoomLayout, fov = DOLLHOUSE_FOV): CameraPo
   return { position: [target[0] + direction.x, target[1] + direction.y, target[2] + direction.z], target };
 }
 
+/** One zoom-in step multiplies the dollhouse camera's distance, or Your eyes' field of view, by this. */
+export const ZOOM_STEP = 0.87;
+/** The narrowest field of view Your eyes zoom to, degrees: about eight times magnified. */
+export const EYES_MIN_FOV = 10;
+
+/** How far out the dollhouse may go: at least 60 m, and always far enough for the room's whole-room view. */
+export function dollhouseMaxDistance(layout: RoomLayout, fov = DOLLHOUSE_FOV): number {
+  const pose = dollhousePose(layout, fov);
+  const distance = Math.hypot(...pose.position.map((v, i) => v - pose.target[i]));
+  return Math.max(60, distance * 1.5);
+}
+
+/** Your eyes' field of view after a zoom key (`+`/`=` in, `-`/`_` out, `0` back), or undefined for any other key. */
+export function zoomedFov(fov: number, key: string): number | undefined {
+  if (key === "+" || key === "=") return Math.max(EYES_MIN_FOV, fov * ZOOM_STEP);
+  if (key === "-" || key === "_") return Math.min(EYES_FOV, fov / ZOOM_STEP);
+  if (key === "0") return EYES_FOV;
+  return undefined;
+}
+
 /**
  * Your eyes: at your Client.Spatial position (or your body's top when there is
  * none), looking along your Client.Spatial forward. `position` and

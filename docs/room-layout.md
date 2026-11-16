@@ -101,11 +101,13 @@ The Map tab shows the room under "Room layout", in one of three views chosen wit
 buttons (the choice is kept across rooms):
 
 - **Plan**: the drawing from above, described below.
-- **Dollhouse**: the room in 3D, seen from above one corner. Drag to turn it, the wheel or a pinch
-  to zoom; on the picture the arrow keys turn it, `+` and `-` zoom and `0` returns to the start.
-  Walls on the camera's side are cut low so they never hide the room.
+- **Dollhouse**: the room in 3D, seen from above one corner, far enough out for the whole room
+  however large. Drag to turn it, the wheel or a pinch to zoom toward what is under the pointer;
+  on the picture the arrow keys turn it, `+` and `-` zoom toward and away from the room's middle,
+  and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
 - **Your eyes**: the room in 3D from where you stand (your `Client.Spatial` position), facing
-  your `Client.Spatial` forward, turning as you turn.
+  your `Client.Spatial` forward, turning as you turn. `+` and `-` on the picture, or the wheel,
+  narrow and widen the view (up to about seven times closer); `0` returns to the normal view.
 
 In every view things are drawn by what they are, from the first of their `classes` the client
 knows: a table as a top on legs, a chair or other furniture as a seat with its back to the

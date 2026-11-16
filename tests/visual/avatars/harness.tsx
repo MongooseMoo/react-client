@@ -130,6 +130,10 @@ if (view === "portraits") {
 } else if (view === "room") {
   const count = Number(params.get("n") ?? "8");
   const layout = crowdLayout(count);
+  // `size=50`: the same people in a square room that many metres across, like a large live room.
+  const size = Number(params.get("size") ?? "0");
+  if (size > 0) layout.size = [size, size, layout.size[2]];
+  const mode = params.get("mode") === "eyes" ? "eyes" : "dollhouse";
   // Time every WebGL render the 3D view makes, and keep its draw counts. WebGLRenderer
   // sets `render` on each instance, so the scene's before/after hooks are used instead.
   let renderMs = 0;
@@ -152,7 +156,7 @@ if (view === "portraits") {
           youId=""
           facings={{}}
           label="test room"
-          mode="dollhouse"
+          mode={mode}
           onExit={noop}
         />
       </div>,

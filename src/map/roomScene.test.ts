@@ -13,15 +13,22 @@ import {
   CUT_WALL_HEIGHT,
   cutWalls,
   DEFAULT_EYE_HEIGHT,
+  DOLLHOUSE_FOV,
   disposeRoomScene,
+  dollhouseMaxDistance,
   dollhousePose,
+  EYES_FOV,
+  EYES_MIN_FOV,
   eyesPose,
   FigureCache,
   MATERIAL_COLOURS,
   NEUTRAL,
   PERSON_COLOUR,
   YOU_COLOUR,
+  ZOOM_STEP,
+  zoomedFov,
 } from "./roomScene";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 const build = (layout: RoomLayout, youId = "#99") =>
   buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId });
@@ -351,6 +358,43 @@ describe("cameras", () => {
     cutWalls(scene, layout, camera, "eyes");
     expect(Object.values(scene.walls).map((w) => w.scale.z)).toEqual([1, 1, 1, 1]);
     expect(scene.ceiling.visible).toBe(true);
+  });
+
+  it("zooms the dollhouse in with + : the camera comes closer to what it looks at", () => {
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const controls = new OrbitControls(camera, document.createElement("div"));
+    camera.position.set(0, -10, 5);
+    controls.update();
+    const before = camera.position.distanceTo(controls.target);
+    controls.dollyIn(ZOOM_STEP);
+    expect(camera.position.distanceTo(controls.target)).toBeLessThan(before * 0.9);
+    // The scale it used to be given, 1.15, moved the camera away.
+    const at = camera.position.distanceTo(controls.target);
+    controls.dollyIn(1.15);
+    expect(camera.position.distanceTo(controls.target)).toBeGreaterThan(at);
+    controls.dispose();
+  });
+
+  it("lets the dollhouse reach a large room's whole-room view", () => {
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const pose = dollhousePose(big);
+    const distance = Math.hypot(...pose.position.map((v, i) => v - pose.target[i]));
+    // A 50 m room needs about 87 m; the fixed limit was 60.
+    expect(distance).toBeGreaterThan(60);
+    expect(dollhouseMaxDistance(big)).toBeGreaterThan(distance);
+    expect(dollhouseMaxDistance(livingRoomLayout())).toBe(60);
+  });
+
+  it("zooms Your eyes by narrowing the field of view, within limits", () => {
+    expect(zoomedFov(EYES_FOV, "+")).toBeLessThan(EYES_FOV);
+    expect(zoomedFov(EYES_FOV, "-")).toBe(EYES_FOV);
+    expect(zoomedFov(30, "-")).toBeGreaterThan(30);
+    let fov = EYES_FOV;
+    for (let i = 0; i < 40; i++) fov = zoomedFov(fov, "=") ?? fov;
+    expect(fov).toBe(EYES_MIN_FOV);
+    expect(zoomedFov(20, "0")).toBe(EYES_FOV);
+    expect(zoomedFov(20, "x")).toBeUndefined();
   });
 
   it("starts the dollhouse above the room's south side, looking into it", () => {
