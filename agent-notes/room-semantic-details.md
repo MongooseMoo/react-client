@@ -6,7 +6,7 @@ Implement Q's authorized todo 4: render native body orientation/front, exposed s
 
 ## State
 
-Implementation underway against the default branch in an isolated worktree. The coordinated MOO work and current decisions are recorded in C:/Users/Q/projects/mongoose/agent-notes/room-view-improvements.md. No MOO publisher is activated for this contract yet. Preserve the open avatar-face PR's figureMesh and portrait work; those files are not edited here.
+Client implementation is published in PR 247; current PR CI and production build pass. The branch includes the merged avatar-face work without editing figureMesh or portrait owners. The MOO snapshot now supplies this contract through one body constructor; geometry and finish mutation owners announce generic events. Room publication remains disconnected pending client deployment. Native state, source review and activation work are tracked in C:/Users/Q/projects/mongoose/agent-notes/room-view-improvements.md. MOO outcomes remain in conversation and the existing runner history.
 
 ## Decisions and why
 

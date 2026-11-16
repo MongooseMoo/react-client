@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sampleLayout } from "../map/roomLayout.fixture";
+import nativeFront from "../map/roomLayout.native-front.sample.json";
 import { useRoomStore } from "../stores/roomStore";
 import { GMCPClientSpatial } from "./Client/Spatial";
 import { GMCPRoom, type GMCPMessageRoomInfo } from "./Room";
@@ -28,6 +29,19 @@ describe("Room.Layout", () => {
     room.receive("Info", info(1234));
     expect(room.receive("Layout", sampleLayout())).toBe(true);
     expect(useRoomStore.getState().roomLayout).toEqual(sampleLayout());
+  });
+
+  it("accepts the real MOO front/pose/finish projection and matching physical updates", () => {
+    room.receive("Layout", nativeFront);
+    const actual = useRoomStore.getState().roomLayout;
+    const chair = actual?.things[0];
+    expect(actual?.finishes).toEqual({ floor: "oak", wall: "drywall", ceiling: "drywall" });
+    expect(chair?.front?.direction).toBe("north");
+    expect(chair?.pose?.dimensions_m).toEqual([0.6, 0.6, 0.65]);
+    if (!chair?.pose || !actual) throw new Error("missing native physical record");
+    room.receive("LayoutUpdate", { num: actual.num, room_lifetime: actual.room_lifetime,
+      bodies: [{ id: chair.id, lifetime: chair.lifetime, pose: chair.pose, shapes: chair.shapes, front: chair.front }] });
+    expect(useRoomStore.getState().roomLayout?.things[0].pose).toEqual(chair.pose);
   });
 
   it("keeps the layout when Room.Info repeats its room, and drops it for another room", () => {
