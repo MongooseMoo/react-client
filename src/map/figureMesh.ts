@@ -583,7 +583,7 @@ export function figureParts(p: FigureParams): Part[] {
       }
       if (!full) {
         // Stubble is also a stipple of short hairs, in its colour toned off the skin (`facialHairEdge`): a shadow
-        // alone barely changes dark skin. Small four-sided points, set on a jittered grid over the area.
+        // alone barely changes dark skin. Small points, set on a jittered grid over the area.
         const dot = c.facialHairEdge ?? fh;
         const r = headR * 0.028;
         for (let i = 0; i < STUBBLE_DOTS_ACROSS; i++) {
@@ -595,7 +595,8 @@ export function figureParts(p: FigureParams): Part[] {
             if (Math.abs(phi - front) > 1.45) continue;
             const theta = beardTop(phi) * (j + 0.5 + 0.3 * Math.cos(jitter)) / (STUBBLE_DOTS_UP + 0.3);
             const at = new THREE.Vector3(-Math.cos(phi) * Math.sin(theta), Math.cos(theta), Math.sin(phi) * Math.sin(theta)).multiplyScalar(headR * 1.02);
-            const g = new THREE.OctahedronGeometry(r, 0);
+            // Four faces each: an octahedron's eight took a stubbled figure over the 5,000-triangle budget.
+            const g = new THREE.TetrahedronGeometry(r * 1.2, 0);
             g.setIndex([...Array(g.getAttribute("position").count).keys()]);
             g.translate(at.x, at.y, at.z);
             out.push(named({ geometry: toHead(g, 1, 1), colour: dot }, "stubble-dot"));

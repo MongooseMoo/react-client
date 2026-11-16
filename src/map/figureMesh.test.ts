@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { contrast, INK_DARK, INK_LIGHT, MIN_CONTRAST, overlayHex } from "../avatar/colour";
 import { figureParams, HORN_TONE, STUBBLE_OPACITY } from "../avatar/figure";
-import { BAND_HEIGHT, EYE_WHITE, figureParts, HAIRLINE_WIDTH } from "./figureMesh";
+import { BAND_HEIGHT, EYE_WHITE, figureGeometry, figureParts, HAIRLINE_WIDTH } from "./figureMesh";
 
 /** A standing figure's parameters (in its own frame: facing +y, z up) and its head's measurements. */
 const standing = (appearance: Record<string, unknown>) => {
@@ -309,6 +309,18 @@ describe("figure face", () => {
         // And round the chin.
         expect(Math.min(...vertices(p, name).map((v) => v.z)), `${skin} ${name}`).toBeLessThan(headZ - 0.95 * headR);
       }
+    }
+  });
+
+  it("keeps the heaviest stubbled figure under the 5,000-triangle budget", () => {
+    // The stipple adds points; with the bulkiest hair and every feature the figure must still fit.
+    for (const style of ["loose", "braided", "voluminous", "dreadlocks"]) {
+      const p = figureParams(
+        { build: "muscular", skin: { hex: "#292420" }, hair: { length_cm: 75, texture: "coily", style, hex: "#1b1612" }, facial_hair: { kind: "stubble", hex: "#1b1612" }, features: ["glasses", "earrings", "eyepatch", "sunglasses", "freckles", "dimples", "beauty_mark"] },
+        { height: 1.75 },
+      );
+      const g = figureGeometry(p);
+      expect((g.getIndex()?.count ?? 0) / 3, style).toBeLessThan(5000);
     }
   });
 
