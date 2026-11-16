@@ -215,6 +215,7 @@ describe("the test characters", () => {
       const c = p.colours;
       const pairs: Array<[string, string, string]> = [
         ["hairline", c.head, c.skin],
+        ...(p.facialHair === "beard" || p.facialHair === "goatee" ? [["jawline", c.facialHair as string, c.skin] as [string, string, string]] : []),
         ["neck", c.neck, c.torso],
         ["waist", c.torso, c.hips],
         ["hips", c.hips, c.legs],
@@ -229,6 +230,16 @@ describe("the test characters", () => {
       // An outline stands out from the colours it separates better than the other ink would.
       for (const seam of p.outlined) expect([INK_DARK, INK_LIGHT], ch.name + seam).toContain(c.ink);
     }
+  });
+
+  it("(a2) separates black hair and a black beard from dark skin: outlines that reach 3:1 against both sides", () => {
+    // 1.45:1 each without an outline.
+    const p = params({ skin: { hex: "#3a312a" }, hair: { length_cm: 2, texture: "coily", hex: "#141414" }, facial_hair: { kind: "beard", hex: "#141414" } });
+    expect(contrast("#3a312a", "#141414")).toBeLessThan(MIN_CONTRAST);
+    expect(p.outlined).toEqual(expect.arrayContaining(["hairline", "jawline"]));
+    for (const side of ["#3a312a", "#141414"]) expect(contrast(p.colours.ink, side), side).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    // Black hair on brown skin already reaches 3:1, so it needs no outline.
+    expect(params({ skin: { hex: "#825c43" }, hair: { length_cm: 30, hex: "#141414" } }).outlined).not.toContain("hairline");
   });
 
   it("(b) characters differing in height, build or hair differ in figure parameters", () => {
