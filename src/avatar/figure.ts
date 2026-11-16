@@ -14,7 +14,7 @@ export type HairTexture = "straight" | "wavy" | "curly" | "coily";
 export type FacialHair = "none" | "stubble" | "moustache" | "goatee" | "beard";
 export type ExtraPart = "tail" | "wings" | "antlers" | "horns" | "pointed_ears";
 /** `features` keys the portrait draws; others are ignored. */
-export const FEATURES = ["freckles", "glasses", "sunglasses", "eyepatch", "earrings", "mole", "dimples"] as const;
+export const FEATURES = ["freckles", "glasses", "sunglasses", "eyepatch", "earrings", "beauty_mark", "dimples"] as const;
 export type Feature = (typeof FEATURES)[number];
 /** Where two differently coloured regions of the figure meet. */
 export type Seam = "hairline" | "jawline" | "neck" | "waist" | "hips" | "wrists" | "ankles";

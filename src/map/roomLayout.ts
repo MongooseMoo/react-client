@@ -207,7 +207,7 @@ export function labelOrder(placed: PlacedThing[], youId: string): PlacedThing[] 
 /**
  * A thing's name with what it is and what it is made of, when the server
  * says: "coffee table (table, wood)". People are listed under People with
- * the server's label for them when it sends one: "Ann (the tall red-haired woman)".
+ * the server's label for them when it sends one: "Ann (the red-haired woman)".
  */
 export function namedWithKind(thing: LayoutThing, youId: string): string {
   const name = displayName(thing, youId);

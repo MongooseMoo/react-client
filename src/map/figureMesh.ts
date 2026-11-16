@@ -377,7 +377,7 @@ export function figureParts(p: FigureParams): Part[] {
   }
 
   // Features big enough to read at figure size, in the face ink as in the
-  // portrait. Freckles, a mole and dimples are left to the portrait.
+  // portrait. Freckles, a beauty mark and dimples are left to the portrait.
   const fi = c.faceInk;
   const eyeZ = headCentreZ + headR * 0.12;
   const lensY = headR * 1.0;

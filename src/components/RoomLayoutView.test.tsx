@@ -46,7 +46,7 @@ describe("RoomLayoutView", () => {
     expect(token.querySelector("circle.rl-thing")).not.toBeNull();
     expect(token.querySelector("circle.rl-head")).not.toBeNull();
     const item = within(screen.getByRole("list", { name: "People in the layout" })).getByRole("listitem");
-    expect(item.textContent).toBe("Ondine (you) (the short red-haired woman), 0.6 m from the south wall, 0.5 m from the east wall");
+    expect(item.textContent).toBe("Ondine (you) (the red-haired woman), 0.6 m from the south wall, 0.5 m from the east wall");
     expect(item.querySelector("svg.avatar-portrait")?.getAttribute("aria-hidden")).toBe("true");
     expect(container.querySelector("[aria-live]")).toBeNull();
   });

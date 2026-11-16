@@ -32,7 +32,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
     name: "Aster Vell",
     height: 1.62,
     appearance: {
-      label: "the short red-haired woman",
+      label: "the red-haired woman",
       build: "thin",
       age_years: 24,
       skin: c("fair", "#f3e7db"),
@@ -51,7 +51,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
     name: "Bram Okoro",
     height: 1.94,
     appearance: {
-      label: "the tall bearded man",
+      label: "the tall man",
       build: "muscular",
       age_years: 41,
       skin: c("dark brown", "#3a312a"),
@@ -76,7 +76,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
       hair: { length_cm: 18, texture: "curly", ...c("dark brown", "#341c02") },
       eyes: c("hazel", "#8e7618"),
       face: { shape: "round", nose: "average", lips: "full" },
-      features: ["mole", "dimples"],
+      features: ["beauty_mark", "dimples"],
       marks: [{ kind: "piercing", area: "nose" }],
       garments: [{ name: "a teal dress", areas: ["torso", "waist", "legs"], layer: 1, colour: c("teal", "#029386") }],
     },

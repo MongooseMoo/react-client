@@ -193,8 +193,8 @@ describe("buildRoomScene", () => {
       // A feature is part of the figure's look, so it gets its own geometry.
       expect(drawn.geometry, feature).not.toBe(bare.geometry);
     }
-    // Freckles, a mole and dimples stay in the portrait.
-    expect(inkVertices({ ...plain, features: ["freckles", "mole", "dimples"] }).zs).toHaveLength(bare.zs.length);
+    // Freckles, a beauty mark and dimples stay in the portrait.
+    expect(inkVertices({ ...plain, features: ["freckles", "beauty_mark", "dimples"] }).zs).toHaveLength(bare.zs.length);
     expect(inkVertices({ ...plain, face_hidden: true, features: ["glasses", "earrings"] }).zs).toHaveLength(0);
     figures.dispose();
   });

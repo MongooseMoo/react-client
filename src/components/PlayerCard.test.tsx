@@ -38,6 +38,6 @@ it('shows the layout portrait as decoration and the server label as text, adding
   const portrait = container.querySelector('svg.player-portrait');
   expect(portrait?.getAttribute('aria-hidden')).toBe('true');
   expect(portrait?.getAttribute('focusable')).toBe('false');
-  expect(screen.getByText('the short red-haired woman')).toBeTruthy();
+  expect(screen.getByText('the red-haired woman')).toBeTruthy();
   expect(container.querySelectorAll('button, [tabindex]')).toHaveLength(4);
 });
