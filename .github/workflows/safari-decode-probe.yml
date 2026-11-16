@@ -87,16 +87,23 @@ jobs:
           python3 .github/safari-probe/serve.py result.json &
           UDID=$(xcrun simctl create probe "iPhone 17" "com.apple.CoreSimulator.SimRuntime.${RUNTIME}")
           xcrun simctl bootstatus "$UDID" -b
-          if [ -n "$LIST" ]; then PAGE="probe.html?list=$LIST"; WAIT=600; else PAGE=probe.html; WAIT=180; fi
-          # openurl can time out (code 60) on a simulator that has just booted:
-          # run 43797802771, iOS 27.2. Up to three tries.
-          OPENED=no
+          if [ -n "$LIST" ]; then PAGE="probe.html?list=$LIST"; else PAGE=probe.html; fi
+          # Safari's first launch after boot took 82 to 195 s in runs
+          # 43797802771 and 43803691466, and openurl gives up (code 60) after
+          # about ten seconds while Safari may still go on to load the page.
+          # So: start Safari first, do not fail on openurl, and let the page's
+          # own progress reports say whether it opened. Asked again only if the
+          # page reported nothing in 240 s; a page that started and then went
+          # quiet for 240 s fails the step.
+          xcrun simctl launch "$UDID" com.apple.mobilesafari || echo "launch did not return cleanly; opening the page anyway"
+          STATE=2
           for _ in 1 2 3; do
-            if xcrun simctl openurl "$UDID" "http://127.0.0.1:8000/$PAGE"; then OPENED=yes; break; fi
+            xcrun simctl openurl "$UDID" "http://127.0.0.1:8000/$PAGE" || echo "openurl gave up; waiting for the page anyway"
+            STATE=0
+            python3 .github/safari-probe/wait_result.py result.json progress 240 || STATE=$?
+            if [ "$STATE" != 2 ]; then break; fi
           done
-          test "$OPENED" = yes
-          for _ in $(seq 1 "$WAIT"); do [ -f result.json ] && break; sleep 1; done
-          test -f result.json
+          test "$STATE" = 0
       - name: Classify the onsets
         if: inputs.list == ''
         run: python3 .github/safari-probe/check.py result.json
