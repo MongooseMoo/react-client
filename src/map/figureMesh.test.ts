@@ -70,6 +70,25 @@ describe("figure head", () => {
   });
 });
 
+describe("eyepatch", () => {
+  it("runs its strap around the head on the surface, through the patch, not through the head", () => {
+    const { p, headR, headZ } = standing({ skin: { hex: "#d7bd96" }, features: ["eyepatch"] });
+    const strap = vertices(p, "strap");
+    expect(strap.length).toBeGreaterThan(50);
+    for (const v of strap) {
+      const r = onHead(v, headR, headZ);
+      expect(r).toBeGreaterThan(0.99);
+      expect(r).toBeLessThan(1.1);
+    }
+    // It goes all the way round: in front and behind the head, and out at both sides.
+    expect(Math.max(...strap.map((v) => v.y))).toBeGreaterThan(0.9 * headR);
+    expect(Math.min(...strap.map((v) => v.y))).toBeLessThan(-0.9 * headR);
+    // It passes the patch over the left eye (x -0.32, at eye height).
+    const nearPatch = strap.filter((v) => Math.abs(v.x + 0.32 * headR) < 0.1 * headR && v.y > 0.8 * headR);
+    expect(nearPatch.length).toBeGreaterThan(0);
+  });
+});
+
 describe("figure hair", () => {
   const hairOf = (length_cm: number, texture = "straight") => standing({ skin: { hex: "#f3e7db" }, hair: { length_cm, texture, hex: "#9a3001" } });
 

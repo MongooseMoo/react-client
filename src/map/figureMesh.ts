@@ -364,9 +364,16 @@ export function figureParts(p: FigureParams): Part[] {
       // Over the left eye (-x, as the portrait draws it on the viewer's right), with a strap to above the right ear.
       const patch = new THREE.Vector3(-headR * 0.32, lensY, eyeZ);
       out.push(placed(new THREE.CylinderGeometry(lensR * 1.15, lensR * 1.15, rim * 1.5, 12), fi, patch));
-      const strapTop = eyeZ + headR * 0.45;
-      out.push(limb(patch, new THREE.Vector3(headSide(strapTop), 0, strapTop), rim * 0.8, fi));
-      out.push(limb(patch, new THREE.Vector3(-headSide(eyeZ), 0, eyeZ), rim * 0.8, fi));
+      // The strap: a ring lying on the head, through the patch and up over the right temple, round the back.
+      // Built on a unit sphere (where the head is round), then stretched to the head's half widths.
+      const unit = new THREE.Vector3(patch.x / headScale.x, patch.y / headScale.y, (patch.z - headCentreZ) / headScale.z).normalize();
+      const rightAndUp = new THREE.Vector3(1, 0, 0.5).normalize();
+      const normal = new THREE.Vector3().crossVectors(unit, rightAndUp).normalize();
+      const ring = new THREE.TorusGeometry(1, (rim * 0.8) / headR, 4, 40);
+      ring.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal));
+      ring.scale(headR * headScale.x * 1.03, headR * headScale.y * 1.03, headR * headScale.z * 1.03);
+      ring.translate(0, 0, headCentreZ);
+      out.push(named({ geometry: ring, colour: fi }, "strap"));
     } else if (feature === "earrings") {
       for (const side of [-1, 1]) {
         // A ring hanging from each earlobe, turned to face sideways.
