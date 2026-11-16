@@ -34,4 +34,11 @@ test("a silent buffer has no onset", () => {
   const r = measureOnsets([new Float32Array(64)]);
   assert.equal(r.peak, 0);
   assert.deepEqual(r.onset, [null, null, null]);
+  assert.equal(r.peakIndex, null);
+});
+
+test("peakIndex is the first frame holding the peak, over all channels", () => {
+  const left = silenceThen(500, [0, 0.8, 0, 0.3, 0]);
+  const right = silenceThen(500, [0, 0, 0, -0.8, 0]);
+  assert.equal(measureOnsets([left, right]).peakIndex, 501);
 });

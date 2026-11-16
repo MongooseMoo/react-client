@@ -17,11 +17,44 @@ const FILES = [
   ["chatmud/spongebob-wav.m4a", 44100],
   ["destruction/glass/window-broken.m4a", 44100],
 ];
-async function probe([path, rate]) {
-  const resp = await fetch("https://mongoose.world/sounds/" + path, {cache: "no-store"});
+// probe.html?list=NAME probes the files of that tab-separated list in this
+// directory instead: a header line, then one file per line with its path and
+// sample rate in the first two columns. Files are fetched one at a time.
+async function filesToProbe() {
+  const list = new URLSearchParams(location.search).get("list");
+  if (!list) return FILES;
+  const resp = await fetch(list, {cache: "no-store"});
+  if (!resp.ok) throw new Error("HTTP " + resp.status + " fetching " + list);
+  return (await resp.text()).trim().split("\n").slice(1).map((line) => {
+    const columns = line.split("\t");
+    return [columns[0], Number(columns[1])];
+  });
+}
+// A fetch or a decode that never settles would stop the whole list (run
+// 43808738274, iOS 27.2: silent after file 415 of 1500). Each gets LIMIT_MS;
+// past it the file fails with an error named ProbeTimeout that says which.
+const LIMIT_MS = 60000;
+function within(promise, what, onTimeout) {
+  let timer;
+  const late = new Promise((resolve, reject) => {
+    timer = setTimeout(() => {
+      if (onTimeout) onTimeout();
+      const e = new Error(what + " did not finish in " + LIMIT_MS / 1000 + " s");
+      e.name = "ProbeTimeout";
+      reject(e);
+    }, LIMIT_MS);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+async function fetchBytes(path, signal) {
+  const resp = await fetch("https://mongoose.world/sounds/" + path, {cache: "no-store", signal});
   if (!resp.ok) throw new Error("HTTP " + resp.status + " fetching the file");
-  const bytes = await resp.arrayBuffer();
-  const buf = await new OfflineAudioContext(1, 1, rate).decodeAudioData(bytes);
+  return resp.arrayBuffer();
+}
+async function probe([path, rate]) {
+  const stop = new AbortController();
+  const bytes = await within(fetchBytes(path, stop.signal), "the fetch", () => stop.abort());
+  const buf = await within(new OfflineAudioContext(1, 1, rate).decodeAudioData(bytes), "the decode");
   const channels = [];
   for (let c = 0; c < buf.numberOfChannels; c++) channels.push(buf.getChannelData(c));
   return {path, sampleRate: buf.sampleRate, length: buf.length, channels: buf.numberOfChannels,
@@ -29,9 +62,28 @@ async function probe([path, rate]) {
 }
 (async () => {
   const out = {userAgent: navigator.userAgent, results: []};
-  for (const f of FILES) {
-    try { out.results.push(await probe(f)); }
-    catch (e) { out.results.push({path: f[0], error: e.name + ": " + e.message}); }
+  const files = await filesToProbe();
+  for (const [i, f] of files.entries()) {
+    // A file that timed out is tried once more; "attempts" marks a row that
+    // needed it. Any other failure is that file's result at once.
+    let row;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      // Tells serve.py which file is starting, so a waiting step sees progress
+      // and a stall names its file in the log. Sent at each try: the longest
+      // the page is quiet is then one try, 2 x LIMIT_MS = 120 s, half the
+      // 240 s the simulator step waits (wait_result.py in the workflow).
+      await fetch("/progress?" + (i + 1) + "/" + files.length + "&" + encodeURIComponent(f[0]) +
+                  (attempt > 1 ? "&try" + attempt : ""));
+      try {
+        row = await probe(f);
+        if (attempt > 1) row.attempts = attempt;
+        break;
+      } catch (e) {
+        row = {path: f[0], error: e.name + ": " + e.message};
+        if (e.name !== "ProbeTimeout") break;
+      }
+    }
+    out.results.push(row);
   }
   await fetch("/result", {method: "POST", body: JSON.stringify(out)});
   document.title = "done";

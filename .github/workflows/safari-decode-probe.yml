@@ -3,14 +3,23 @@ name: Safari decode probe
 # Manual only. Measures where Safari's decodeAudioData starts the audio of
 # served m4a files, against ffmpeg's edit-list-honouring decode.
 # Files and expected numbers: .github/safari-probe/check.py
-on: workflow_dispatch
+# With the "list" input, the files of that list are measured instead and each
+# file's offset is written to offsets.tsv (.github/safari-probe/offsets.py).
+on:
+  workflow_dispatch:
+    inputs:
+      list:
+        description: List file in .github/safari-probe to measure instead of the nine-file check (passthrough-m4a.tsv)
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
-# A new manual run replaces one still running.
+# A new manual run replaces one still running for the same list; runs for
+# different lists queue beside each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.list }}
   cancel-in-progress: true
 
 jobs:
@@ -29,18 +38,28 @@ jobs:
       - name: Show macOS and Safari versions
         run: sw_vers && /usr/bin/safaridriver --version
       - name: Decode the files in Safari
+        env:
+          LIST: ${{ inputs.list }}
         run: |
           python3 .github/safari-probe/serve.py result.json &
           sleep 2
-          python3 .github/safari-probe/drive_safari.py result.json
+          python3 .github/safari-probe/drive_safari.py result.json "$LIST"
       - name: Classify the onsets
+        if: inputs.list == ''
         run: python3 .github/safari-probe/check.py result.json
+      - name: Write each listed file's offset
+        if: inputs.list != ''
+        env:
+          LIST: ${{ inputs.list }}
+        run: python3 .github/safari-probe/offsets.py ".github/safari-probe/$LIST" result.json offsets.tsv
       - name: Upload the raw result
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: safari-${{ matrix.runner }}
-          path: result.json
+          path: |
+            result.json
+            offsets.tsv
 
   ios-simulator:
     name: Simulator Safari on ${{ matrix.runtime }}
@@ -63,18 +82,41 @@ jobs:
       - name: Decode the files in simulator Safari
         env:
           RUNTIME: ${{ matrix.runtime }}
+          LIST: ${{ inputs.list }}
         run: |
           python3 .github/safari-probe/serve.py result.json &
           UDID=$(xcrun simctl create probe "iPhone 17" "com.apple.CoreSimulator.SimRuntime.${RUNTIME}")
           xcrun simctl bootstatus "$UDID" -b
-          xcrun simctl openurl "$UDID" http://127.0.0.1:8000/probe.html
-          for _ in $(seq 1 180); do [ -f result.json ] && break; sleep 1; done
-          test -f result.json
+          if [ -n "$LIST" ]; then PAGE="probe.html?list=$LIST"; else PAGE=probe.html; fi
+          # Safari's first launch after boot took 82 to 195 s in runs
+          # 43797802771 and 43803691466, and openurl gives up (code 60) after
+          # about ten seconds while Safari may still go on to load the page.
+          # So: start Safari first, do not fail on openurl, and let the page's
+          # own progress reports say whether it opened. Asked again only if the
+          # page reported nothing in 240 s; a page that started and then went
+          # quiet for 240 s fails the step.
+          xcrun simctl launch "$UDID" com.apple.mobilesafari || echo "launch did not return cleanly; opening the page anyway"
+          STATE=2
+          for _ in 1 2 3; do
+            xcrun simctl openurl "$UDID" "http://127.0.0.1:8000/$PAGE" || echo "openurl gave up; waiting for the page anyway"
+            STATE=0
+            python3 .github/safari-probe/wait_result.py result.json progress 240 || STATE=$?
+            if [ "$STATE" != 2 ]; then break; fi
+          done
+          test "$STATE" = 0
       - name: Classify the onsets
+        if: inputs.list == ''
         run: python3 .github/safari-probe/check.py result.json
+      - name: Write each listed file's offset
+        if: inputs.list != ''
+        env:
+          LIST: ${{ inputs.list }}
+        run: python3 .github/safari-probe/offsets.py ".github/safari-probe/$LIST" result.json offsets.tsv
       - name: Upload the raw result
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-${{ matrix.runtime }}
-          path: result.json
+          path: |
+            result.json
+            offsets.tsv
