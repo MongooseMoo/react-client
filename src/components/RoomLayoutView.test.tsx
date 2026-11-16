@@ -5,7 +5,7 @@ import { mongooseToWebAudioVector } from "../audio/mongooseCoordinates";
 import { TEST_CHARACTERS } from "../avatar/characters.fixture";
 import type { SpatialVector } from "../gmcp/Client/Spatial";
 import type { RoomLayout } from "../gmcp/Room";
-import { livingRoomLayout, sampleLayout } from "../map/roomLayout.fixture";
+import { livingRoomLayout, sampleLayout, translateLayoutThing } from "../map/roomLayout.fixture";
 import laundry from "../map/roomLayout.sample-1770.json";
 import { useRoomStore } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
@@ -32,7 +32,27 @@ describe("RoomLayoutView", () => {
     useRoomStore.getState().setRoomLayout(sampleLayout());
   });
 
-  const renderView = () => render(<RoomLayoutView layout={sampleLayout()} roomName="Le Salon" onExit={onExit} />);
+  function StoredView() {
+    const layout = useRoomStore((state) => state.roomLayout);
+    return layout && <RoomLayoutView layout={layout} roomName="Le Salon" onExit={onExit} />;
+  }
+  const renderView = () => render(<StoredView />);
+
+  it("shows supplied finishes, support, front and device state quietly", () => {
+    const layout = sampleLayout();
+    layout.finishes = { floor: "oak", wall: "drywall" };
+    layout.things.push({ id: "#panel", name: "control panel", kind: "object", fixed: false, mounted: false,
+      shapes: [{ box: [[-0.2, 0.2], [0.4, 0.6], [1.05, 1.2]] }],
+      relation: { kind: "on", target: "#5678", text: "on oak table" },
+      front: { axis: [0, -1, 0], yaw: Math.PI, direction: "north" }, state: { opened: false, mode: "offline" },
+    });
+    render(<RoomLayoutView layout={layout} roomName="Le Salon" onExit={onExit} />);
+    expect(screen.getAllByRole("definition")).toHaveLength(2);
+    expect(screen.getByText("oak")).toBeDefined();
+    expect(screen.getByText("drywall")).toBeDefined();
+    expect(within(screen.getByRole("list", { name: "Things in the layout" })).getByText(/control panel,.*on oak table, faces north, closed, offline/)).toBeDefined();
+    expect(document.querySelector("[aria-live]")).toBeNull();
+  });
 
   it("colours a person's token from their appearance and lists their portrait and label quietly", () => {
     const ch = TEST_CHARACTERS[0];
@@ -51,36 +71,12 @@ describe("RoomLayoutView", () => {
     expect(container.querySelector("[aria-live]")).toBeNull();
   });
 
-  it("draws something that entered after the layout as a marker, lists it, moves it and drops it on leave", () => {
+  it("does not draw an acoustic newcomer without a physical room record", () => {
     renderView();
-    act(() => {
-      useSpatialStore.getState().enterEntity({ id: "#7", name: "[green]Zed", kind: "player", position: webAudio([1.0, -1.0, 1.6]) });
-      useRoomStore.getState().addLayoutArrival({ id: "#7", name: "[green]Zed", kind: "player" });
-    });
-    const picture = screen.getByRole("img");
-    const marker = picture.querySelector('[data-id="#7"]');
-    expect(marker?.getAttribute("class")).toBe("rl-item rl-arrival rl-person");
-    expect(marker?.querySelector("title")?.textContent).toBe("Zed");
-    expect(Number(marker?.querySelector("circle")?.getAttribute("cy"))).toBeCloseTo(1.0);
-    const people = () =>
-      within(screen.getByRole("list", { name: "People in the layout" })).getAllByRole("listitem").map((i) => i.textContent);
-    expect(people()).toContain("Zed, 1.6 m from the south wall, 0.9 m from the east wall");
-    expect(picture.getAttribute("aria-label")).toContain("2 people");
-
-    act(() => {
-      useSpatialStore.getState().moveEntity({ entityId: "#7", position: webAudio([-1.0, 2.0, 1.6]) });
-    });
-    expect(Number(picture.querySelector('[data-id="#7"] circle')?.getAttribute("cx"))).toBeCloseTo(-1.0);
-    expect(Number(picture.querySelector('[data-id="#7"] circle')?.getAttribute("cy"))).toBeCloseTo(-2.0);
-
-    act(() => {
-      useSpatialStore.getState().leaveEntity("#7");
-      useRoomStore.getState().removeLayoutThing("#7");
-    });
-    expect(picture.querySelector('[data-id="#7"]')).toBeNull();
-    expect(people()).toEqual(["Ondine (you), 0.6 m from the south wall, 0.5 m from the east wall"]);
+    act(() => useSpatialStore.getState().enterEntity({ id: "#7", name: "Zed", kind: "player", position: webAudio([1, -1, 1.6]) }));
+    expect(screen.getByRole("img").querySelector('[data-id="#7"]')).toBeNull();
+    expect(screen.getByRole("img").getAttribute("aria-label")).toContain("1 person");
   });
-
   it("labels the picture with the room's size and counts, and titles every shape", () => {
     renderView();
     const picture = screen.getByRole("img");
@@ -104,11 +100,11 @@ describe("RoomLayoutView", () => {
     ]);
   });
 
-  it("moves a thing when Client.Spatial moves it, without taking focus", () => {
+  it("moves only from the physical room projection, without taking focus", () => {
     renderView();
     const before = document.activeElement;
     act(() => {
-      useSpatialStore.getState().enterEntity({ id: "#99", position: webAudio([0.2, 1.0, 1.67]) });
+      useRoomStore.getState().setRoomLayout(translateLayoutThing(sampleLayout(), "#99", [-1.0, 2.0, 0]));
     });
     const token = screen.getByRole("img").querySelector(".rl-you circle.rl-thing");
     // Footprint x 0.0..0.4, y 0.8..1.2: a person is a round token at its centre, (0.2, -1.0) in SVG units.
@@ -223,7 +219,7 @@ describe("RoomLayoutView views", () => {
     const form = (id: string) => picture.querySelector(`[data-id="${id}"]`);
     expect(form("#1")?.getAttribute("data-form")).toBe("table");
     expect(form("#1")?.querySelectorAll("circle.rl-symbol")).toHaveLength(4);
-    expect(form("#2")?.querySelector("rect.rl-symbol")).not.toBeNull();
+    expect(form("#2")?.querySelector("line.rl-mark-line")).not.toBeNull();
     expect(form("#6")?.querySelector("path.rl-symbol-line")).not.toBeNull();
     const things = within(screen.getByRole("list", { name: "Things in the layout" }))
       .getAllByRole("listitem")

@@ -8,7 +8,7 @@ the Map tab, north up, and says the same in words beside the picture.
 
 ### `Room.Layout`
 
-Sent with `Room.Info` whenever that `Room.Info` is for a spatial room. Not sent for other rooms.
+Sent with `Room.Info` for a spatial room, and after committed membership, public state or finish changes. Not sent for other rooms.
 It holds only what the recipient can see.
 
 ```json
@@ -41,7 +41,13 @@ the middle of the room, so it spans `-width/2..width/2` and `-depth/2..depth/2`;
 | `things[].fixed` | It cannot be picked up. |
 | `things[].mounted` | It hangs on a wall or ceiling. |
 | `things[].shapes` | Its solid parts: boxes `{"box": [[x0,x1],[y0,y1],[z0,z1]]}` and spheres `{"sphere": [[x,y,z], r]}`. May be empty; such a thing is listed but not drawn. |
-| `things[].origin` | `thing:sound_origin()`: where `Client.Spatial` placed this thing when the layout was built. A thing without it is drawn where its shapes are and not moved. |
+| `things[].origin` | Acoustic snapshot origin, retained for other consumers. It never moves physical drawings. |
+| `room_lifetime`, `things[].lifetime` | Native incarnation identifiers, preventing delayed updates from changing recycled replacements. |
+| `things[].pose` | Native `centre_m`, intrinsic `dimensions_m`, and `body_quaternion` in wxyz order. `box` says there are no custom collision shapes. People may supply native unposed `figure_height_m`. |
+| `things[].front` | Present only with native `fronted`: local `axis`, floor heading `yaw`, and native compass `direction`. Gaze is separate. |
+| `things[].relation` | Viewer-identifiable support: native `kind`, target ID and readable `text`. |
+| `things[].state` | Applicable public `opened`, `lit`, and electronics `mode`; unknown fields are omitted. Projection never settles electronics. |
+| `finishes` | Native floor, wall and ceiling surface names. Missing visual colours remain unspecified. |
 | `things[].classes` | Optional. The registered `$` names of the thing's ancestors, nearest first, without the `$` (`["table", "furniture", "thing"]`). The client draws a thing by the first name it knows. |
 | `things[].capabilities` | Optional. The capability names the thing declares (`furniture_seating`, `support_surface`). |
 | `things[].material` | Optional. What it is made of: `[{"species": "wood", "fraction": 0.9}, …]`. The client colours a thing by its largest fraction. |
@@ -84,16 +90,19 @@ unremarkable.
 
 ## Keeping it current
 
-Room.Layout is sent only with Room.Info, never again for moves or arrivals. The client:
+Room.Layout is the complete viewer-specific physical scene, including exposed surface children.
+The sibling `Room.LayoutUpdate` carries `{num, room_lifetime, bodies}`. Each body contains
+`id`, `lifetime`, `pose`, refreshed exact world `shapes`, and applicable `front` and `relation`.
+Only existing matching identities in the matching room incarnation are updated. A body packet
+cannot create a drawing. Omitted optional body fields clear their prior values.
 
-- moves a thing's shapes by its `Client.Spatial` position minus its `origin`;
-- draws an entity that `Client.Spatial` says entered (`EntityEnter`) and is not in the layout as a
-  small marker at its position with its name (in the person colour for `player` and `person`),
-  lists it, and moves it with `Client.Spatial`;
-- stops drawing a thing or arrival when `Client.Spatial` sends `EntityLeave` for its id.
+Shapes are already in the room frame. Custom world shapes are never rotated again; intrinsic
+box forms use their body pose. Acoustic presence and movement remain in Client.Spatial for audio
+and the listener's eyes. They cannot create, remove or translate physical drawings.
 
-A new `Room.Layout` replaces the layout and forgets the arrivals. A new `Room.Info` for a different
-room drops both; one for the same room keeps them.
+A new Room.Layout replaces the scene. Room.Info for another room clears it. Ordinary native
+setters announce geometry, membership, state and finish changes; raw administrative property
+assignments do not promise automatic publication.
 
 ## In the client
 
@@ -136,15 +145,15 @@ no such place is left out until zooming makes room (the lists below still name i
 placed by their size as drawn, and two side by side keep a few pixels apart.
 
 In every view things are drawn by what they are, from the first of their `classes` the client
-knows: a table as a top on legs, a chair or other furniture as a seat with its back to the
-nearest wall, a bookshelf or cabinet as a tall box with shelves, a moving photograph as a framed
+knows: a table as a top on legs, a chair or other furniture as a seat with a back only when its
+native front is supplied, a bookshelf or cabinet as a tall box with shelves, a moving photograph as a framed
 picture, a TV as a dark screen, a door leaf as a door, a book or note as a flat block; anything
 else as its boxes and spheres. In 3D they are coloured by their largest material (wood and pine brown, lcd
 near-black, paper cream, foam and cotton fabric blue, plastic grey, metal and steel steel-grey, anything
 else a neutral stone). People are figures: head, body, arms and legs sized by their height and
 build, painted with their skin, hair, eye and garment colours, with hair by length and texture,
 facial hair, a head garment, and parts for their traits; standing, sitting or lying as `posture`
-says, and turned to face their `Client.Spatial` forward (south when there is none). Where two
+says, and turned by their native physical body quaternion. Where two
 neighbouring colours fall below 3:1 contrast, a thin dark or light line lying close to the body
 outlines the seam, whatever their hues: colours told apart by hue alone look alike to someone
 with red-green colour blindness. At the hairline and a beard's edge that line is a tone of the

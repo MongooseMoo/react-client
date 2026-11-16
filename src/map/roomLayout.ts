@@ -1,7 +1,7 @@
 import type { LayoutExit, LayoutShape, LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
-import type { LayoutArrival } from "../stores/roomStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { appearanceLabel } from "../avatar/figure";
+import { isLayoutPose } from "../gmcp/Room";
 
 /**
  * Pure geometry for the Room.Layout picture and its text. Everything here is
@@ -31,6 +31,24 @@ export interface PlacedThing {
 
 export type Wall = "north" | "south" | "east" | "west";
 
+/** Rotate a declared local direction by the supplied physical body attitude. */
+export function bodyDirection(thing: LayoutThing, axis: LayoutVector): LayoutVector | undefined {
+  if (!isLayoutPose(thing.pose)) return undefined;
+  const [rw, rx, ry, rz] = thing.pose.body_quaternion;
+  const length = Math.hypot(rw, rx, ry, rz);
+  const [w, x, y, z] = [rw / length, rx / length, ry / length, rz / length];
+  const [vx, vy, vz] = axis;
+  const tx = 2 * (y * vz - z * vy);
+  const ty = 2 * (z * vx - x * vz);
+  const tz = 2 * (x * vy - y * vx);
+  return [vx + w * tx + y * tz - z * ty, vy + w * ty + z * tx - x * tz, vz + w * tz + x * ty - y * tx];
+}
+
+export function frontDirection(thing: LayoutThing): LayoutVector | undefined {
+  const axis = thing.front?.axis;
+  return Array.isArray(axis) && axis.length === 3 && axis.every(Number.isFinite) ? bodyDirection(thing, axis) : undefined;
+}
+
 const add = (a: LayoutVector, b: LayoutVector): LayoutVector => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 
 export function shapeFootprint(shape: LayoutShape, offset: LayoutVector = [0, 0, 0]): Footprint {
@@ -58,21 +76,14 @@ function union(all: Bounds[]): Bounds {
 }
 
 /**
- * Each thing's footprints where it is now: its layout shapes moved by how far
- * Client.Spatial says it has gone from its layout `origin`. `positions` are
- * current Client.Spatial positions in the MOO frame, by thing id; a thing
- * without one, or without an `origin`, stays where the layout put it.
- * Things without shapes are left out.
+ * Current exact world footprints from the MOO's room projection. Acoustic
+ * origins and gaze do not move physical geometry. Things without shapes are left out.
  */
-export function placeThings(layout: RoomLayout, positions: Record<string, LayoutVector | undefined>): PlacedThing[] {
+export function placeThings(layout: RoomLayout): PlacedThing[] {
   const placed: PlacedThing[] = [];
   for (const thing of layout.things) {
     if (thing.shapes.length === 0) continue;
-    const now = positions[thing.id];
-    const origin = thing.origin;
-    const offset: LayoutVector =
-      now && origin ? [now[0] - origin[0], now[1] - origin[1], now[2] - origin[2]] : [0, 0, 0];
-    const footprints = thing.shapes.map((shape) => shapeFootprint(shape, offset));
+    const footprints = thing.shapes.map((shape) => shapeFootprint(shape));
     placed.push({ thing, footprints, bounds: union(footprints.map((f) => f.bounds)) });
   }
   return placed;
@@ -224,18 +235,24 @@ export function describeThing(placed: PlacedThing, size: LayoutVector, youId: st
   const parts = [namedWithKind(thing, youId), describePlace(bounds, size)];
   if (thing.mounted) parts.push(bounds.z0 > 0.05 ? `mounted ${metres(bounds.z0)} up` : "mounted");
   else if (thing.fixed && thing.kind === "object") parts.push("fixed in place");
+  parts.push(...semanticDetails(thing));
   return parts.join(", ");
+}
+
+/** Native words and public states; unknown facts make no claim. */
+export function semanticDetails(thing: LayoutThing): string[] {
+  const details: string[] = [];
+  if (typeof thing.relation?.text === "string") details.push(thing.relation.text);
+  if (typeof thing.front?.direction === "string") details.push(`faces ${thing.front.direction}`);
+  if (typeof thing.state?.opened === "boolean") details.push(thing.state.opened ? "open" : "closed");
+  if (typeof thing.state?.lit === "boolean") details.push(thing.state.lit ? "lit" : "unlit");
+  if (typeof thing.state?.mode === "string") details.push(thing.state.mode);
+  return details;
 }
 
 /** A thing the server sent without shapes: it is in the room but cannot be drawn. */
 export function describeUnshaped(thing: LayoutThing, youId: string): string {
-  return `${namedWithKind(thing, youId)}, no size or place given`;
-}
-
-/** Something that entered after the layout, at its Client.Spatial point (MOO frame). */
-export function describeArrival(arrival: LayoutArrival, at: LayoutVector | undefined, size: LayoutVector, youId: string): string {
-  if (!at) return `${displayName(arrival, youId)}, no place given`;
-  return `${displayName(arrival, youId)}, ${describePlace({ x0: at[0], x1: at[0], y0: at[1], y1: at[1], z0: at[2], z1: at[2] }, size)}`;
+  return [namedWithKind(thing, youId), "no size or place given", ...semanticDetails(thing)].join(", ");
 }
 
 export function describeExit(exit: LayoutExit, size: LayoutVector): string {
@@ -269,10 +286,10 @@ export function layoutPersonNamed(layout: RoomLayout | null | undefined, names: 
   return layout?.things.find((t) => isPerson(t) && wanted.has((stripMudAnsiTags(t.name) || t.name).trim().toLowerCase()));
 }
 
-/** The picture's accessible name: room size and what is in it, arrivals included. */
-export function layoutSummary(roomName: string, layout: RoomLayout, arrivals: LayoutArrival[] = []): string {
+/** The picture's accessible name: room size and its authoritative contents. */
+export function layoutSummary(roomName: string, layout: RoomLayout): string {
   const [w, d, h] = layout.size;
-  const everyone = [...layout.things, ...arrivals];
+  const everyone = layout.things;
   const people = everyone.filter(isPerson).length;
   const things = everyone.length - people;
   return `Layout of ${roomName || "this room"}: ${metres(w)} east to west, ${metres(d)} north to south, ${metres(h)} high; ` +

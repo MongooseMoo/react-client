@@ -5,12 +5,13 @@ import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
 import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "../avatar/figure";
 import type { RoomLayout } from "../gmcp/Room";
 import { EYE_WHITE } from "./figureMesh";
-import { crowdLayout, livingRoomLayout } from "./roomLayout.fixture";
+import { crowdLayout, livingRoomLayout, translateLayoutThing, withBodyFacings } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingRoom from "./roomLayout.sample-25828.json";
 import { placeLabelsOver, placeThings } from "./roomLayout";
 import {
   buildRoomScene,
+  updateRoomBodies,
   CUT_WALL_HEIGHT,
   cutWalls,
   DEFAULT_EYE_HEIGHT,
@@ -45,7 +46,7 @@ import {
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 const build = (layout: RoomLayout, youId = "#99") =>
-  buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId });
+  buildRoomScene({ layout, placed: placeThings(layout), youId });
 
 const meshes = (group: THREE.Object3D | undefined) =>
   (group?.children ?? []).filter((c): c is THREE.Mesh => c instanceof THREE.Mesh);
@@ -63,6 +64,60 @@ const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): nu
 };
 
 describe("buildRoomScene", () => {
+  it("retains meshes and updates world label points during native rigid movement", () => {
+    const layout = livingRoomLayout();
+    const placed = placeThings(layout);
+    const scene = buildRoomScene({ layout, placed, youId: "" });
+    const seat = scene.things.get("#2");
+    if (!seat) throw new Error("missing seat");
+    const geometry = meshes(seat)[0].geometry;
+    const point = scene.labelPoints.get("#2")?.[0].clone();
+    if (!point) throw new Error("missing label point");
+    const moved = translateLayoutThing(layout, "#2", [1, -0.5, 0]);
+    expect(updateRoomBodies(scene, placed, placeThings(moved))).toBe(true);
+    expect(scene.things.get("#2")).toBe(seat);
+    expect(meshes(seat)[0].geometry).toBe(geometry);
+    expect(scene.labelPoints.get("#2")?.[0].toArray()).toEqual(point.add(new THREE.Vector3(1, -0.5, 0)).toArray());
+    disposeRoomScene(scene);
+  });
+  it("turns a seat's declared local front through its native body pose", () => {
+    const layout: RoomLayout = { num: 1, size: [6, 6, 3], exits: [], things: [{
+      id: "#seat", name: "seat", kind: "object", fixed: false, mounted: false, classes: ["chair"],
+      shapes: [{ box: [[-0.5, 0.5], [-1, 1], [0, 1]] }],
+      pose: { centre_m: [0, 0, 0.5], dimensions_m: [2, 1, 1], body_quaternion: [Math.SQRT1_2, 0, 0, Math.SQRT1_2], box: true },
+      front: { axis: [1, 0, 0], yaw: Math.PI, direction: "north" },
+    }] };
+    const scene = build(layout);
+    const back = meshes(scene.things.get("#seat")).find((mesh) => mesh.userData.part === "back");
+    expect(back).toBeDefined();
+    if (!back) throw new Error("missing supplied seat back");
+    expect(box(back).max.y).toBeLessThan(-0.7);
+    const seat = scene.things.get("#seat");
+    if (!seat) throw new Error("missing seat");
+    const bounds = new THREE.Box3().setFromObject(seat);
+    expect(bounds.min.x).toBeCloseTo(-0.5);
+    expect(bounds.max.x).toBeCloseTo(0.5);
+    expect(bounds.min.y).toBeCloseTo(-1);
+    expect(bounds.max.y).toBeCloseTo(1);
+    disposeRoomScene(scene);
+  });
+
+  it("keeps custom world shapes unrotated and a frontless seat without an invented back", () => {
+    const layout = livingRoomLayout();
+    layout.things = [{ ...layout.things[1], front: undefined }, {
+      id: "#custom", name: "custom", kind: "object", fixed: false, mounted: false,
+      shapes: [{ box: [[1, 3], [0, 0.5], [0, 1]] }],
+      pose: { centre_m: [2, 0.25, 0.5], dimensions_m: [0.5, 2, 1], body_quaternion: [Math.SQRT1_2, 0, 0, Math.SQRT1_2], box: false },
+    }];
+    const scene = build(layout);
+    expect(parts(scene.things.get("#2"))).toEqual(["seat"]);
+    const custom = box(meshes(scene.things.get("#custom"))[0]);
+    expect(custom.min.x).toBeCloseTo(1);
+    expect(custom.max.x).toBeCloseTo(3);
+    expect(custom.max.y).toBeCloseTo(0.5);
+    disposeRoomScene(scene);
+  });
+
   it("draws the real laundry room: one mesh per shape of a plain thing, doorways in the south and west walls", () => {
     const layout = laundry as RoomLayout;
     const scene = build(layout);
@@ -144,7 +199,8 @@ describe("buildRoomScene", () => {
     const layout = livingRoomLayout();
     const ch = TEST_CHARACTERS[1];
     layout.things = layout.things.map((t) => (t.id === "#9" ? { ...t, appearance: ch.appearance } : t));
-    const scene = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "#99", facings: { "#9": [1, 0, 0] } });
+    const faced = withBodyFacings(layout, { "#9": [1, 0, 0] });
+    const scene = buildRoomScene({ layout: faced, placed: placeThings(faced), youId: "#99" });
     const colours = figureColours("#9", scene);
     expect(colours.length).toBeGreaterThan(3);
     // Every colour is one the game supplied, or one the figure derives from them: its outline and face inks, the
@@ -196,7 +252,7 @@ describe("buildRoomScene", () => {
     const sceneOf = (appearance: Record<string, unknown>) => {
       const layout = livingRoomLayout();
       layout.things = layout.things.map((t) => (t.id === "#9" ? { ...t, appearance } : t));
-      return buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "#99", figures });
+      return buildRoomScene({ layout, placed: placeThings(layout), youId: "#99", figures });
     };
     const inkVertices = (appearance: Record<string, unknown>) => {
       const scene = sceneOf(appearance);
@@ -246,14 +302,14 @@ describe("buildRoomScene", () => {
   it("rebuilds rooms of 8 and 40 people with unchanged appearances, as while someone moves, reusing their figures", () => {
     const rebuild = (count: number, figures?: FigureCache) => {
       const layout = crowdLayout(count);
-      const placed = placeThings(layout, {});
-      let scene = buildRoomScene({ layout, placed, arrivals: [], youId: "", figures });
+      const placed = placeThings(layout);
+      let scene = buildRoomScene({ layout, placed, youId: "", figures });
       // Fresh builds are slow; fewer rounds keep the suite quick.
       const rounds = figures ? 30 : 5;
       const start = performance.now();
       for (let i = 0; i < rounds; i++) {
         disposeRoomScene(scene);
-        scene = buildRoomScene({ layout, placed, arrivals: [], youId: "", figures });
+        scene = buildRoomScene({ layout, placed, youId: "", figures });
       }
       const ms = (performance.now() - start) / rounds;
       disposeRoomScene(scene);
@@ -271,7 +327,7 @@ describe("buildRoomScene", () => {
   it("reuses an unchanged figure's geometry, frees it when the person leaves or changes, and moves it on the mesh", () => {
     const figures = new FigureCache();
     const layout = crowdLayout(3);
-    const first = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "", figures });
+    const first = buildRoomScene({ layout, placed: placeThings(layout), youId: "", figures });
     const geometryOf = (scene: ReturnType<typeof buildRoomScene>, id: string) => meshes(scene.things.get(id))[0].geometry;
     const kept = geometryOf(first, "#p0");
     const changed = geometryOf(first, "#p1");
@@ -282,20 +338,19 @@ describe("buildRoomScene", () => {
     expect(freed.size).toBe(0);
 
     // #p0 moves and turns, #p1 changes clothes, #p2 leaves.
-    const next: RoomLayout = {
+    let next: RoomLayout = {
       ...layout,
       things: [
         { ...layout.things[0], origin: [0, 0, 0] },
         { ...layout.things[1], appearance: { ...layout.things[1].appearance, garments: [] } },
       ],
     };
+    next = withBodyFacings(translateLayoutThing(next, "#p0", [1, 1, 0]), { "#p0": [1, 0, 0] });
     const second = buildRoomScene({
       layout: next,
-      placed: placeThings(next, { "#p0": [1, 1, 0] }),
-      arrivals: [],
+      placed: placeThings(next),
       youId: "",
       figures,
-      facings: { "#p0": [1, 0, 0] },
     });
     expect(geometryOf(second, "#p0")).toBe(kept);
     expect(meshes(second.things.get("#p0"))[0].position.x).toBeCloseTo(-2 + 1);
@@ -312,10 +367,10 @@ describe("buildRoomScene", () => {
   it("builds forty figures quickly and cheaply", () => {
     const layout = crowdLayout(40);
     const people = layout.things;
-    const placed = placeThings(layout, {});
-    buildRoomScene({ layout, placed, arrivals: [], youId: "" }); // warm-up
+    const placed = placeThings(layout);
+    buildRoomScene({ layout, placed, youId: "" }); // warm-up
     const start = performance.now();
-    const scene = buildRoomScene({ layout, placed, arrivals: [], youId: "" });
+    const scene = buildRoomScene({ layout, placed, youId: "" });
     const ms = performance.now() - start;
     const triangles = people.map((p) => {
       const g = meshes(scene.things.get(p.id))[0].geometry;
@@ -358,23 +413,12 @@ describe("buildRoomScene", () => {
     expect(figureColours("#2", scene)).toEqual([YOU_COLOUR]);
   });
 
-  it("draws someone who entered after the layout as a person standing at their Client.Spatial point", () => {
+  it("draws only the supplied physical identities", () => {
     const layout = livingRoomLayout();
-    const scene = buildRoomScene({
-      layout,
-      placed: placeThings(layout, {}),
-      arrivals: [{ arrival: { id: "#77", name: "Zed", kind: "player" }, at: [1, -1, 1.6] }],
-      youId: "#99",
-    });
-    const zed = scene.things.get("#77");
-    expect(zed?.userData.form).toBe("person");
-    const body = box(meshes(zed)[0]);
-    expect(body.min.z).toBeCloseTo(0, 1);
-    expect((body.min.x + body.max.x) / 2).toBeCloseTo(1, 1);
-    expect(figureColours("#77", scene)).toEqual([PERSON_COLOUR]);
-    expect(scene.labelPoints.get("#77")?.[0].z).toBeGreaterThan(1.6);
-  });
-});
+    const scene = build(layout);
+    expect([...scene.things.keys()].sort()).toEqual(layout.things.map((thing) => thing.id).sort());
+    disposeRoomScene(scene);
+  });});
 
 describe("cameras", () => {
   it("cuts the walls the dollhouse camera is outside of, and none from your eyes", () => {
@@ -457,8 +501,9 @@ describe("cameras", () => {
         appearance: bram.appearance,
       },
     ];
-    const placed = placeThings(big, {});
-    const scene = buildRoomScene({ layout: big, placed, arrivals: [], youId: "", facings: { "#p1": [0, 1, 0] } });
+    const placed = placeThings(big);
+    const faced = withBodyFacings(big, { "#p1": [0, 1, 0] });
+    const scene = buildRoomScene({ layout: faced, placed: placeThings(faced), youId: "" });
     const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
     camera.up.set(0, 0, 1);
     const controls = new OrbitControls(camera, document.createElement("div"));
@@ -527,8 +572,9 @@ describe("cameras", () => {
       { id: "#p2", name: "Hidden", kind: "person", fixed: true, mounted: false, shapes: [{ box: box(6, 6, 1.7) }] },
       { id: "#cab", name: "cabinet", kind: "object", fixed: true, mounted: false, shapes: [{ box: [[5, 7.5], [3.5, 4.5], [0, 4]] }], classes: ["shelf", "thing"] },
     ];
-    const placed = placeThings(big, {});
-    const scene = buildRoomScene({ layout: big, placed, arrivals: [], youId: "", facings: { "#p1": [0, 1, 0] } });
+    const placed = placeThings(big);
+    const faced = withBodyFacings(big, { "#p1": [0, 1, 0] });
+    const scene = buildRoomScene({ layout: faced, placed: placeThings(faced), youId: "" });
     scene.root.updateMatrixWorld(true);
     const size = { width: 276, height: 207 };
     const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, size.width / size.height, 0.05, 200);
@@ -668,8 +714,8 @@ describe("cameras", () => {
       person("#cleo", TEST_CHARACTERS[2], 0.15, 1),
       { id: "#rack", name: "a newspaper rack of The Daily Caption", kind: "object", fixed: true, mounted: false, shapes: [{ box: [[-0.4, 0.4], [1.4, 1.8], [0, 1.3]] }], classes: ["shelf", "thing"] },
     ];
-    const placed = placeThings(layout, {});
-    const scene = buildRoomScene({ layout, placed, arrivals: [], youId: "", facings: { "#bram": [0, -1, 0], "#cleo": [0, -1, 0] } });
+    const placed = placeThings(layout);
+    const scene = buildRoomScene({ layout, placed, youId: "" });
     scene.root.updateMatrixWorld(true);
     const [w, h] = [276, 207];
     const order = ["#bram", "#cleo", "#rack"];
@@ -888,7 +934,7 @@ describe("cameras", () => {
 
   it("without a position uses your body, and without a facing looks north", () => {
     const layout = livingRoomLayout();
-    const placed = placeThings(layout, {});
+    const placed = placeThings(layout);
     const you = placed.find((p) => p.thing.id === "#99")?.bounds;
     const pose = eyesPose(layout, null, null, you);
     expect(pose.position[0]).toBeCloseTo(1.6);

@@ -44,29 +44,59 @@ describe("Room.Layout", () => {
     expect(useRoomStore.getState().roomLayout).toBeNull();
   });
 
-  it("stops drawing a thing when Client.Spatial says it left", () => {
+  it("keeps acoustic membership separate from the physical room", () => {
     room.receive("Layout", sampleLayout());
     const spatial = new GMCPClientSpatial(client as never);
     spatial.receive("EntityLeave", { entityId: "#5678" });
-    expect(useRoomStore.getState().roomLayout?.things.map((thing) => thing.id)).toEqual(["#99"]);
+    spatial.receive("EntityEnter", { entity: { id: "#unseen", position: [0, 0, 0] } });
+    expect(useRoomStore.getState().roomLayout).toEqual(sampleLayout());
   });
 
-  it("records what enters after the layout, until it leaves or a new layout comes", () => {
-    const spatial = new GMCPClientSpatial(client as never);
-    spatial.receive("EntityEnter", { entity: { id: "#7", name: "Zed", kind: "player", position: [0, 0, 0] } });
-    expect(useRoomStore.getState().layoutArrivals).toEqual([]); // no layout yet
+  const body = () => ({
+    id: "#5678", lifetime: "thing-1",
+    pose: { centre_m: [1, 1, 0.5], dimensions_m: [1, 1, 1], body_quaternion: [1, 0, 0, 0], box: true },
+    shapes: [{ box: [[0.5, 1.5], [0.5, 1.5], [0, 1]] }],
+    front: { axis: [0, -1, 0], yaw: 0, direction: "south" },
+  } satisfies import("./Room").LayoutBody);
 
-    room.receive("Layout", sampleLayout());
-    spatial.receive("EntityEnter", { entity: { id: "#7", name: "Zed", kind: "player", position: [0, 0, 0] } });
-    spatial.receive("EntityEnter", { entity: { id: "#5678", name: "oak table", position: [0, 0, 0] } });
-    expect(useRoomStore.getState().layoutArrivals).toEqual([{ id: "#7", name: "Zed", kind: "player" }]);
+  function currentLayout() {
+    const layout = sampleLayout();
+    layout.room_lifetime = "room-1";
+    layout.things = layout.things.map((thing) => ({ ...thing, lifetime: "thing-1" }));
+    room.receive("Layout", layout);
+    return layout;
+  }
 
-    spatial.receive("EntityLeave", { entityId: "#7" });
-    expect(useRoomStore.getState().layoutArrivals).toEqual([]);
+  it("applies body data only to an existing matching incarnation", () => {
+    currentLayout();
+    const changed = body();
+    room.receive("LayoutUpdate", { num: 1234, room_lifetime: "room-1", bodies: [changed] });
+    const actual = useRoomStore.getState().roomLayout?.things.find((thing) => thing.id === "#5678");
+    expect(actual?.pose).toEqual(changed.pose);
+    expect(actual?.shapes).toEqual(changed.shapes);
+    expect(actual?.front).toEqual(changed.front);
+    const kept = useRoomStore.getState().roomLayout;
+    room.receive("LayoutUpdate", { num: 1234, room_lifetime: "room-1", bodies: [{ ...changed, lifetime: "replacement" }, { ...changed, id: "#new" }] });
+    expect(useRoomStore.getState().roomLayout).toBe(kept);
+  });
 
-    spatial.receive("EntityEnter", { entity: { id: "#8", position: [0, 0, 0] } });
-    expect(useRoomStore.getState().layoutArrivals).toEqual([{ id: "#8", name: "#8", kind: "object" }]);
-    room.receive("Layout", sampleLayout());
-    expect(useRoomStore.getState().layoutArrivals).toEqual([]);
+  it("rejects other rooms and old room incarnations", () => {
+    const layout = currentLayout();
+    room.receive("LayoutUpdate", { num: 999, room_lifetime: "room-1", bodies: [body()] });
+    room.receive("LayoutUpdate", { num: 1234, room_lifetime: "old-room", bodies: [body()] });
+    room.receive("Info", info(999));
+    room.receive("Layout", layout);
+    expect(useRoomStore.getState().roomLayout).toBeNull();
+  });
+
+  it("keeps the last valid scene when a body update is malformed", () => {
+    const layout = currentLayout();
+    const valid = body();
+    for (const invalid of [
+      { ...valid, pose: { ...valid.pose, centre_m: [NaN, 0, 0] } },
+      { ...valid, pose: { ...valid.pose, body_quaternion: [0, 0, 0, 0] } },
+      { ...valid, shapes: [{ box: [[2, 1], [0, 1], [0, 1]] }] },
+    ]) room.receive("LayoutUpdate", { num: 1234, room_lifetime: "room-1", bodies: [invalid] });
+    expect(useRoomStore.getState().roomLayout).toEqual(layout);
   });
 });

@@ -1,16 +1,14 @@
 import * as THREE from "three";
 import { figureParams } from "../avatar/figure";
-import type { LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
+import { isLayoutPose, type LayoutPose, type LayoutThing, type LayoutVector, type RoomLayout } from "../gmcp/Room";
 import { FigureCache, figureMesh, headOutline } from "./figureMesh";
 
 export { FigureCache };
-import type { LayoutArrival } from "../stores/roomStore";
 import {
   type Bounds,
   exitWall,
   isPerson,
   mainMaterial,
-  nearestWall,
   type PlacedThing,
   scaleBarLength,
   thingForm,
@@ -65,10 +63,7 @@ export function thingColour(thing: LayoutThing): number {
 export interface RoomSceneInput {
   layout: RoomLayout;
   placed: PlacedThing[];
-  arrivals: Array<{ arrival: LayoutArrival; at: LayoutVector }>;
   youId: string;
-  /** Each person's Client.Spatial forward in the MOO frame, by id; a figure faces it. */
-  facings?: Record<string, LayoutVector | undefined>;
   /** Figure geometries kept across rebuilds; without one, every figure is built afresh and freed with the scene. */
   figures?: FigureCache;
 }
@@ -173,10 +168,16 @@ class Builder {
     z0: number,
     z1: number,
     base: number,
-    facing: LayoutVector | undefined,
+    pose?: LayoutPose,
   ): { mesh: THREE.Mesh; label: THREE.Vector3[]; head: THREE.Vector3[] } {
-    const params = figureParams(appearance, { height: z1 - z0, base: hexString(base) });
-    const mesh = figureMesh(params, x, y, z0, facing, this.figureMaterial(), this.figures);
+    const params = figureParams(appearance, { height: pose?.figure_height_m ?? pose?.dimensions_m[2] ?? (z1 - z0), base: hexString(base) });
+    const mesh = figureMesh(params, x, y, z0, undefined, this.figureMaterial(), this.figures);
+    if (pose) {
+      const q = bodyQuaternion(pose);
+      mesh.quaternion.premultiply(q);
+      const offset = new THREE.Vector3(0, 0, -pose.dimensions_m[2] / 2).applyQuaternion(q);
+      mesh.position.fromArray(pose.centre_m).add(offset);
+    }
     mesh.updateMatrixWorld();
     const chin = params.top - params.headHeight * 1.05;
     const outline = headOutline(mesh.geometry, chin);
@@ -185,10 +186,15 @@ class Builder {
   }
 }
 
+function bodyQuaternion(pose: LayoutPose): THREE.Quaternion {
+  const [w, x, y, z] = pose.body_quaternion;
+  return new THREE.Quaternion(x, y, z, w).normalize();
+}
+
 const centre = (b: Bounds) => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2] as const;
 
 /** The parts of one thing that is not a person, by its form. */
-function thingMeshes(builder: Builder, placed: PlacedThing, size: LayoutVector): THREE.Mesh[] {
+function thingMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
   const { thing, bounds: b } = placed;
   const colour = thingColour(thing);
   const surface = builder.material(colour);
@@ -210,15 +216,19 @@ function thingMeshes(builder: Builder, placed: PlacedThing, size: LayoutVector):
       return [builder.box({ ...b, z0: b.z1 - top }, surface, "top"), ...legs];
     }
     case "seat": {
-      // A seat to half its height, and a back the full height on its side nearest a wall.
       const seat = builder.box({ ...b, z1: b.z0 + h * 0.45 }, surface, "seat");
-      const back = { ...b };
-      const wall = nearestWall(b, size);
-      if (wall === "north") back.y0 = b.y1 - d * 0.22;
-      if (wall === "south") back.y1 = b.y0 + d * 0.22;
-      if (wall === "east") back.x0 = b.x1 - w * 0.22;
-      if (wall === "west") back.x1 = b.x0 + w * 0.22;
-      return [seat, builder.box(back, surface, "back")];
+      const front = thing.front?.axis;
+      if (!front || Math.hypot(front[0], front[1]) < 1e-6) return [seat];
+      const norm = Math.hypot(front[0], front[1]);
+      const fx = front[0] / norm, fy = front[1] / norm;
+      const thickness = Math.min(w, d) * 0.22;
+      const reach = (Math.abs(fx) * w + Math.abs(fy) * d) / 2 - thickness / 2;
+      const width = Math.abs(fy) * w + Math.abs(fx) * d;
+      const back = builder.box({ x0: -width / 2, x1: width / 2, y0: -thickness / 2, y1: thickness / 2, z0: b.z0, z1: b.z1 }, surface, "back");
+      back.rotation.z = Math.atan2(-fx, fy);
+      back.position.x = (b.x0 + b.x1) / 2 - fx * reach;
+      back.position.y = (b.y0 + b.y1) / 2 - fy * reach;
+      return [seat, back];
     }
     case "shelf": {
       const shelves: THREE.Mesh[] = [builder.box(b, surface, "body")];
@@ -242,7 +252,7 @@ function thingMeshes(builder: Builder, placed: PlacedThing, size: LayoutVector):
       ];
     }
     case "screen":
-      return [builder.box(b, builder.material(SCREEN_COLOUR, { emissive: 0x0a1020 }), "screen")];
+      return [builder.box(b, builder.material(SCREEN_COLOUR, { emissive: thing.state?.mode === "running" ? 0x0a1020 : 0 }), "screen")];
     case "door": {
       // The leaf, and a knob near its free end on the side facing the middle of the room.
       const alongX = w >= d;
@@ -256,12 +266,16 @@ function thingMeshes(builder: Builder, placed: PlacedThing, size: LayoutVector):
     case "flat":
       return [builder.box({ ...b, z1: b.z0 + Math.min(h, 0.05) }, surface, "block")];
     case "box":
-      return placed.footprints.map((f) =>
-        f.type === "circle"
-          ? builder.sphere([f.cx, f.cy, (f.bounds.z0 + f.bounds.z1) / 2], f.r, surface, "sphere")
-          : builder.box(f.bounds, surface, "box"),
-      );
+      return collisionMeshes(builder, placed);
   }
+}
+
+/** Custom native world shapes stay in their supplied frame. */
+function collisionMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
+  const material = builder.material(thingColour(placed.thing));
+  return placed.footprints.map((f) => f.type === "circle"
+    ? builder.sphere([f.cx, f.cy, (f.bounds.z0 + f.bounds.z1) / 2], f.r, material, "sphere")
+    : builder.box(f.bounds, material, "box"));
 }
 
 /** One wall's solid pieces around its doorways, and the doorways as orange openings. */
@@ -281,6 +295,7 @@ function buildWall(builder: Builder, layout: RoomLayout, wall: Wall, exits: THRE
   const group = new THREE.Group();
   group.name = `${wall} wall`;
   group.userData.wall = wall;
+  group.userData.finish = layout.finishes?.wall;
   const solid = builder.material(WALL_COLOUR);
   // Lit from within a little, so the orange reads as orange in shade.
   const doorway = builder.material(DOORWAY_COLOUR, { opacity: 0.55, emissive: 0x6a2e08 });
@@ -319,7 +334,7 @@ function buildWall(builder: Builder, layout: RoomLayout, wall: Wall, exits: THRE
   return group;
 }
 
-export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, figures }: RoomSceneInput): RoomScene {
+export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInput): RoomScene {
   const builder = new Builder(figures);
   const [w, d] = layout.size;
   const root = new THREE.Group();
@@ -331,6 +346,7 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
   root.add(sun);
 
   const floor = builder.box({ x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -0.02, z1: 0 }, builder.material(FLOOR_COLOUR), "floor");
+  floor.userData.finish = layout.finishes?.floor;
   root.add(floor);
   // Seen only from your eyes; the dollhouse looks in from above.
   const ceiling = builder.box(
@@ -338,6 +354,7 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
     builder.material(CEILING_COLOUR),
     "ceiling",
   );
+  ceiling.userData.finish = layout.finishes?.ceiling;
   root.add(ceiling);
 
   // Floor grid at the plan's scale-bar step, so both views measure alike.
@@ -387,44 +404,70 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
     if (isPerson(p.thing)) {
       group.userData.form = "person";
       const base = p.thing.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, label, head } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
+      const { mesh, label, head } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, isLayoutPose(p.thing.pose) ? p.thing.pose : undefined);
       group.add(mesh);
       labelPoints.set(p.thing.id, label);
       heads.set(p.thing.id, head);
     } else {
       group.userData.form = thingForm(p.thing);
-      for (const mesh of thingMeshes(builder, p, layout.size)) group.add(mesh);
+      const pose = p.thing.pose;
+      if (isLayoutPose(pose) && pose.box) {
+        const [w, d, h] = pose.dimensions_m;
+        const local: PlacedThing = { ...p, bounds: { x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -h / 2, z1: h / 2 } };
+        if (thingForm(p.thing) === "box") group.add(builder.box(local.bounds, builder.material(thingColour(p.thing)), "box"));
+        else for (const mesh of thingMeshes(builder, local)) group.add(mesh);
+        group.quaternion.copy(bodyQuaternion(pose));
+        group.position.fromArray(pose.centre_m);
+      } else if (isLayoutPose(pose)) {
+        for (const mesh of collisionMeshes(builder, p)) group.add(mesh);
+      } else {
+        for (const mesh of thingMeshes(builder, p)) group.add(mesh);
+      }
       labelPoints.set(p.thing.id, [new THREE.Vector3(x, y, p.bounds.z1)]);
     }
     root.add(group);
     things.set(p.thing.id, group);
   }
-  for (const { arrival, at } of arrivals) {
-    const group = new THREE.Group();
-    group.name = arrival.id;
-    group.userData.thingId = arrival.id;
-    if (isPerson(arrival)) {
-      group.userData.form = "person";
-      // Client.Spatial puts a person at head height; the body stands on the floor below it.
-      const crown = Math.max(at[2] + 0.12, 1.0);
-      const base = arrival.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, label, head } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
-      group.add(mesh);
-      labelPoints.set(arrival.id, label);
-      heads.set(arrival.id, head);
-    } else {
-      group.userData.form = "box";
-      const s = 0.1;
-      group.add(builder.box({ x0: at[0] - s, x1: at[0] + s, y0: at[1] - s, y1: at[1] + s, z0: at[2] - s, z1: at[2] + s }, builder.material(NEUTRAL), "box"));
-      labelPoints.set(arrival.id, [new THREE.Vector3(at[0], at[1], at[2] + s)]);
-    }
-    root.add(group);
-    things.set(arrival.id, group);
-  }
-
   // Figures of people who left, or whose look changed, are freed now.
   figures?.sweep();
   return { root, walls, ceiling, exits, things, labelPoints, heads };
+}
+
+/** Move existing rigid bodies without replacing meshes, materials or figure geometry. */
+export function updateRoomBodies(room: RoomScene, before: PlacedThing[], after: PlacedThing[]): boolean {
+  if (before.length !== after.length) return false;
+  const changes: Array<{ old: PlacedThing; next: PlacedThing; delta: THREE.Matrix4 }> = [];
+  for (let i = 0; i < before.length; i++) {
+    const old = before[i];
+    const next = after[i];
+    if (old.thing === next.thing) continue;
+    const a = old.thing.pose;
+    const b = next.thing.pose;
+    if (old.thing.id !== next.thing.id || !room.things.has(next.thing.id) ||
+      !isLayoutPose(a) || !isLayoutPose(b) || (!b.box && !isPerson(next.thing)) ||
+      a.box !== b.box || a.figure_height_m !== b.figure_height_m ||
+      a.dimensions_m.some((n, axis) => n !== b.dimensions_m[axis]) ||
+      old.thing.appearance !== next.thing.appearance || old.thing.state !== next.thing.state ||
+      old.thing.material !== next.thing.material || old.thing.classes !== next.thing.classes ||
+      JSON.stringify(old.thing.front?.axis) !== JSON.stringify(next.thing.front?.axis)) return false;
+    const matrix = (pose: LayoutPose) => new THREE.Matrix4().compose(
+      new THREE.Vector3(...pose.centre_m), bodyQuaternion(pose), new THREE.Vector3(1, 1, 1));
+    changes.push({ old, next, delta: matrix(b).multiply(matrix(a).invert()) });
+  }
+  for (const { next, delta } of changes) {
+    const group = room.things.get(next.thing.id);
+    if (!group) return false;
+    group.applyMatrix4(delta);
+    if (isPerson(next.thing)) {
+      for (const point of room.heads.get(next.thing.id) ?? []) point.applyMatrix4(delta);
+      for (const point of room.labelPoints.get(next.thing.id) ?? []) point.applyMatrix4(delta);
+    } else {
+      const [x, y] = centre(next.bounds);
+      room.labelPoints.set(next.thing.id, [new THREE.Vector3(x, y, next.bounds.z1)]);
+    }
+  }
+  room.root.updateMatrixWorld(true);
+  return true;
 }
 
 /**

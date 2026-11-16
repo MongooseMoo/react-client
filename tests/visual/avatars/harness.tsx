@@ -22,7 +22,7 @@ import RoomLayout3D from "../../../src/components/RoomLayout3D";
 import RoomLayoutPicture from "../../../src/components/RoomLayoutPicture";
 import type { LayoutAppearance, RoomLayout } from "../../../src/gmcp/Room";
 import { placeThings } from "../../../src/map/roomLayout";
-import { crowdLayout, livingRoomLayout } from "../../../src/map/roomLayout.fixture";
+import { crowdLayout, livingRoomLayout, translateLayoutThing, withBodyFacings } from "../../../src/map/roomLayout.fixture";
 import { buildRoomScene, cutWalls, DOLLHOUSE_FOV, dollhousePose } from "../../../src/map/roomScene";
 
 const params = new URLSearchParams(location.search);
@@ -179,7 +179,7 @@ if (view === "portraits") {
   const layout = crowdLayout(TEST_CHARACTERS.length);
   render(
     <div style={{ width: 960 }}>
-      <RoomLayoutPicture layout={layout} placed={placeThings(layout, {})} arrivals={[]} youId="" label="test room" onExit={noop} onSave={noop} />
+      <RoomLayoutPicture layout={layout} placed={placeThings(layout)} youId="" label="test room" onExit={noop} onSave={noop} />
     </div>,
     root,
   );
@@ -222,7 +222,7 @@ if (view === "portraits") {
         appearance: ch.appearance,
       },
     ];
-    const room = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "" });
+    const room = buildRoomScene({ layout, placed: placeThings(layout), youId: "" });
     const scene = new THREE.Scene();
     scene.add(room.root);
     const fov = DOLLHOUSE_FOV * 0.7;
@@ -289,7 +289,7 @@ if (view === "portraits") {
   }
   const facing: Record<string, [number, number, number]> = { north: [0, 1, 0], south: [0, -1, 0], east: [1, 0, 0], west: [-1, 0, 0] };
   const faced = facing[params.get("face") ?? ""];
-  const facings = faced ? Object.fromEntries(layout.things.map((t) => [t.id, faced])) : {};
+  const bodyLayout = withBodyFacings(layout, faced ? Object.fromEntries(layout.things.map((t) => [t.id, faced])) : {});
   const width = Number(params.get("width") ?? "960");
   const mode = params.get("mode") === "eyes" ? "eyes" : "dollhouse";
   // Where a person's head is in the opening Dollhouse picture, in page pixels: what the wheel is pointed at.
@@ -375,11 +375,9 @@ if (view === "portraits") {
     render(
       <div style={{ width }}>
         <RoomLayout3D
-          layout={layout}
-          placed={placeThings(layout, offset ? { "#p0": offset } : {})}
-          arrivals={[]}
+          layout={bodyLayout}
+          placed={placeThings(offset ? translateLayoutThing(bodyLayout, "#p0", offset) : bodyLayout)}
           youId={params.get("you") ?? ""}
-          facings={facings}
           label="test room"
           mode={mode}
           onExit={noop}
