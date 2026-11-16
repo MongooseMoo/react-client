@@ -12,6 +12,7 @@ import "../../../src/index.css";
 import "../../../src/components/MapPanel.css";
 import { TEST_CHARACTERS } from "../../../src/avatar/characters.fixture";
 import AvatarPortrait from "../../../src/avatar/portrait";
+import PlayerCard from "../../../src/components/PlayerCard";
 import RoomLayout3D from "../../../src/components/RoomLayout3D";
 import RoomLayoutPicture from "../../../src/components/RoomLayoutPicture";
 import type { RoomLayout } from "../../../src/gmcp/Room";
@@ -58,6 +59,16 @@ if (view === "portraits") {
   render(
     <div style={{ width: 960 }}>
       <RoomLayoutPicture layout={layout} placed={placeThings(layout, {})} arrivals={[]} youId="" label="test room" onExit={noop} onSave={noop} />
+    </div>,
+    root,
+  );
+  window.ready = true;
+} else if (view === "card") {
+  // The player card as the Room tab shows it, in a side panel 276 px wide (the live guest check's width).
+  const appearance = { ...TEST_CHARACTERS[1].appearance, label: "the tall bearded man" };
+  render(
+    <div className="sidebar" style={{ width: 276, boxSizing: "border-box", padding: 8 }}>
+      <PlayerCard player={{ name: "bram", fullname: "Bram Okoro" }} appearance={appearance} onLook={noop} onFollow={noop} />
     </div>,
     root,
   );

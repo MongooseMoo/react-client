@@ -40,6 +40,24 @@ try {
       await row.screenshot({ path: resolve(out, `portrait-${slug(await row.locator('td').first().innerText())}.png`) });
     }
     await sharp.close();
+    // The player card in a 276 px side panel: is the name whole, and how many lines does the label take?
+    const card = await browser.newPage({ viewport: { width: 400, height: 300 }, colorScheme: 'dark', deviceScaleFactor: 2 });
+    await card.goto(`${base}?view=card`);
+    await card.waitForFunction(() => window.ready === true);
+    await card.locator('.player-card').screenshot({ path: resolve(out, 'player-card-276.png') });
+    const cardFit = await card.evaluate(() => {
+      const name = document.querySelector('.player-name');
+      const label = document.querySelector('.player-label');
+      const lineHeight = Number.parseFloat(getComputedStyle(label).lineHeight) || Number.parseFloat(getComputedStyle(label).fontSize) * 1.2;
+      return {
+        nameWhole: name.scrollWidth <= name.clientWidth,
+        nameWidth: name.clientWidth,
+        labelLines: Math.round(label.getBoundingClientRect().height / lineHeight),
+        readingOrder: [...document.querySelectorAll('.player-card *')].filter((e) => !e.closest('[aria-hidden="true"]') && e.childElementCount === 0).map((e) => e.getAttribute('aria-label') ?? e.textContent),
+      };
+    });
+    console.log('player card at 276 px:', JSON.stringify(cardFit));
+    await card.close();
     await open('view=plan');
     await page.locator('svg.room-layout-svg, svg').first().screenshot({ path: resolve(out, 'plan-tokens.png') });
     for (const zoom of ['body', 'head']) {

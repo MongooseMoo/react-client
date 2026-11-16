@@ -1,6 +1,9 @@
+/* In a narrow side panel the buttons wrap below the name, so name and label keep their width. */
 .player-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -14,39 +17,48 @@
   box-shadow: var(--shadow-md);
 }
 
+/* Portrait on the left, name above label on the right. */
 .player-details {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  flex: 1 1 12rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: center;
   min-width: 0;
 }
 
+/* Without a portrait (no layout appearance), no empty column before the name. */
+.player-details:not(:has(.player-portrait)) {
+  display: block;
+}
+
 .player-name {
+  grid-column: 2;
   font-weight: var(--font-weight-semibold, 600);
   color: var(--color-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .player-portrait {
-  flex: none;
+  grid-row: 1 / span 2;
 }
 
 .player-label {
+  grid-column: 2;
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
 }
 
 .player-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: var(--space-2);
   margin-left: auto;
 }
 
 .player-actions button {
-  margin-left: var(--space-2);
+  white-space: nowrap;
   padding: var(--space-1) var(--space-2);
   font-size: 0.9em;
   border: 1px solid transparent;
