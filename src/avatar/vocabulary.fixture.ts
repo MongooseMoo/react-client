@@ -117,6 +117,24 @@ export function withValue(field: string, value: string | number): Record<string,
   return out;
 }
 
+/**
+ * The shortest hair in cm the game offers each `hair.style` for: the third column of
+ * `$appearance.vocab["hair.style"]`, read live 2026-11-16 the same way.
+ */
+export const GAME_HAIR_STYLE_MIN_CM: Readonly<Record<string, number>> = {
+  loose: 0,
+  ponytail: 18,
+  braided: 18,
+  bun: 30,
+  topknot: 18,
+  dreadlocks: 8,
+  spiky: 2.5,
+  mohawk: 2.5,
+  swept_back: 8,
+  brushed: 2.5,
+  voluminous: 8,
+};
+
 /** `$appearance.beard_lengths`: band name, lowest and highest cm (0 means no upper end). */
 export const GAME_BEARD_LENGTHS: ReadonlyArray<readonly [string, number, number]> = [
   ["short", 2.0, 3.0],

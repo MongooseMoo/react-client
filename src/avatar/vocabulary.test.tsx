@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { figureGeometry, figureParts } from "../map/figureMesh";
 import { figureParams } from "./figure";
 import AvatarPortrait from "./portrait";
-import { GAME_BEARD_LENGTHS, GAME_PALETTE, GAME_VOCABULARY, type VocabularyField, VOCABULARY_BASE, withValue } from "./vocabulary.fixture";
+import { GAME_BEARD_LENGTHS, GAME_HAIR_STYLE_MIN_CM, GAME_PALETTE, GAME_VOCABULARY, type VocabularyField, VOCABULARY_BASE, withValue } from "./vocabulary.fixture";
 
 /**
  * Every value the game can send is drawn: refresh vocabulary.fixture.ts from the MOO
@@ -97,6 +97,24 @@ describe("the game's vocabulary", () => {
     for (const [, hex] of Object.values(GAME_PALETTE.eyes)) expect(params({ ...VOCABULARY_BASE, eyes: { hex } }).colours.eyes).toBe(hex);
     for (const [, hex] of Object.values(GAME_PALETTE.fabric)) {
       expect(params({ ...VOCABULARY_BASE, garments: [{ areas: ["torso"], layer: 1, colour: { hex } }] }).colours.torso).toBe(hex);
+    }
+  });
+});
+
+describe("hair style and length", () => {
+  const styled = (style: string, length_cm: number) => ({ ...VOCABULARY_BASE, hair: { ...VOCABULARY_BASE.hair, length_cm, style } });
+
+  it("draws each style from the shortest hair the game offers it for, and hair too short for it loose", () => {
+    for (const style of GAME_VOCABULARY["hair.style"]) {
+      const min = GAME_HAIR_STYLE_MIN_CM[style];
+      expect(min, style).toBeDefined();
+      if (min === 0) continue;
+      expect(portrait(styled(style, min)), `${style} at ${min} cm`).not.toBe(portrait(styled("loose", min)));
+      expect(params(styled(style, min)).hairStyle).toBe(style);
+      // A form can put any style on any length: too short, it is the plain drawing for that length.
+      const short = min - 0.5;
+      expect(portrait(styled(style, short)), `${style} at ${short} cm`).toBe(portrait(styled("loose", short)));
+      expect(params(styled(style, short)).hairStyle).toBe("loose");
     }
   });
 });

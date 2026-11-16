@@ -11,9 +11,25 @@ import { colourHex, contrast, hexOrUndefined, inkFor, MIN_CONTRAST } from "./col
 export type Posture = "standing" | "sitting" | "reclining";
 export type HairShape = "none" | "short" | "medium" | "long";
 export type HairTexture = "straight" | "wavy" | "curly" | "coily";
-/** `hair.style`, as the game sends it (`$appearance.vocab["hair.style"]`). */
-export const HAIR_STYLES = ["loose", "ponytail", "braided", "bun", "topknot", "dreadlocks", "spiky", "mohawk", "swept_back", "brushed", "voluminous"] as const;
-export type HairStyle = (typeof HAIR_STYLES)[number];
+/**
+ * `hair.style`, as the game sends it (`$appearance.vocab["hair.style"]`), with the shortest hair in cm
+ * the game offers it for. A form can put any style on any length; hair shorter than its style's
+ * minimum is drawn loose, the plain drawing for its length.
+ */
+export const HAIR_STYLE_MIN_CM = {
+  loose: 0,
+  ponytail: 18,
+  braided: 18,
+  bun: 30,
+  topknot: 18,
+  dreadlocks: 8,
+  spiky: 2.5,
+  mohawk: 2.5,
+  swept_back: 8,
+  brushed: 2.5,
+  voluminous: 8,
+} as const;
+export type HairStyle = keyof typeof HAIR_STYLE_MIN_CM;
 export type FacialHair ="none" | "stubble" | "moustache" | "goatee" | "beard";
 export type ExtraPart = "tail" | "wings" | "antlers" | "horns" | "pointed_ears";
 /** `features` keys the portrait draws; others are ignored. */
@@ -97,7 +113,7 @@ export interface FigureParams {
   hairVolume: number;
   /** The hair's texture as sent; anything else, or none, is straight. */
   hairTexture: HairTexture;
-  /** How the hair is worn; `loose` when none is sent, the style is unknown, or no hair is drawn. */
+  /** How the hair is worn; `loose` when none is sent, the style is unknown, the hair is too short for it, or no hair is drawn. */
   hairStyle: HairStyle;
   headCovered: boolean;
   facialHair: FacialHair;
@@ -259,8 +275,10 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
   const textureWord = vocabKey(hairRecord?.texture) ?? "straight";
   const hairTexture: HairTexture = Object.hasOwn(HAIR_VOLUME, textureWord) ? (textureWord as HairTexture) : "straight";
   const hairVolume = HAIR_VOLUME[hairTexture];
-  const styleKey = vocabKey(hairRecord?.style);
-  const hairStyle: HairStyle = hair !== "none" && (HAIR_STYLES as readonly string[]).includes(styleKey ?? "") ? (styleKey as HairStyle) : "loose";
+  const styleKey = vocabKey(hairRecord?.style) ?? "";
+  const hairCm = finite(hairRecord?.length_cm) ?? 0;
+  const hairStyle: HairStyle =
+    hair !== "none" && Object.hasOwn(HAIR_STYLE_MIN_CM, styleKey) && hairCm >= HAIR_STYLE_MIN_CM[styleKey as HairStyle] ? (styleKey as HairStyle) : "loose";
 
   const facialRecord = isRecord(record.facial_hair) ? record.facial_hair : undefined;
   const facialKind = vocabKey(facialRecord?.kind);

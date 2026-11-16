@@ -32,6 +32,11 @@ const VOCAB_ROWS: Array<[string, Array<[string, Record<string, unknown>]>]> = [
     (field) => [field, GAME_VOCABULARY[field].map((value) => [value, withValue(field, value)])] as [string, Array<[string, Record<string, unknown>]>],
   ),
   [
+    // Every style on cropped hair: those the game needs longer hair for are drawn loose.
+    "hair.style at 4 cm",
+    GAME_VOCABULARY["hair.style"].map((style) => [style, { ...withValue("hair.style", style), hair: { ...(withValue("hair.style", style).hair as object), length_cm: 4 } }] as [string, Record<string, unknown>]),
+  ],
+  [
     "facial_hair.length_cm",
     [
       ["no length", withValue("facial_hair.kind", "beard")],
