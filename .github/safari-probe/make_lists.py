@@ -5,6 +5,9 @@ Run here:  python make_lists.py HOST ROOT REMOTE_PYTHON PREFIX < files
   ROOT           the tree there (what https://mongoose.world/sounds/ serves)
   REMOTE_PYTHON  a Python there with numpy; ffmpeg and ffprobe must be on its PATH
   PREFIX         lists are written beside this file as PREFIX-01.tsv, PREFIX-02.tsv, ...
+                 Or the name of an existing list beside this file, ending in
+                 .tsv: its rows for the given files are replaced and every
+                 other row is kept as it is (for files replaced on HOST).
   stdin          one file per line: path under ROOT, a tab, its layout label
 
 The files are only read on HOST. Each is decoded there with the edit list
@@ -67,6 +70,18 @@ remote.stdin.write(REMOTE.replace("FILES_JSON", json.dumps(json.dumps(files))).e
 remote.stdin.close()
 
 here = pathlib.Path(__file__).parent
+if prefix.endswith(".tsv"):
+    fresh = {line.split("\t")[0]: line for line in (raw.decode() for raw in remote.stdout)}
+    status = remote.wait()
+    with open(here / prefix, encoding="utf-8", newline="") as f:
+        old = f.readlines()
+    done = status == 0 and len(fresh) == len(files) and set(fresh) <= {line.split("\t")[0] for line in old}
+    if done:
+        with open(here / prefix, "w", encoding="utf-8", newline="\n") as f:
+            f.writelines(fresh.get(line.split("\t")[0], line) for line in old)
+    print(f"{len(fresh)} of {len(files)} rows for {prefix}: {'replaced' if done else 'NOT written'}; ssh exit {status}",
+          file=sys.stderr)
+    sys.exit(0 if done else 1)
 number = count = size = total = 0
 out = None
 for line in remote.stdout:
