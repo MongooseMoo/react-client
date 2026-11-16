@@ -114,6 +114,7 @@ const FACE_CHARACTERS: TestCharacter[] = [
   faceOf("very pale skin, white hair, white full beard, unclothed", SKIN.veryPale, { length_cm: 30, texture: "straight", hex: HAIR.white }, { kind: "beard", length_cm: 10, hex: HAIR.white }, { garments: [] }),
   faceOf("very dark skin, black hair, stubble, unclothed", SKIN.veryDark, { length_cm: 10, texture: "straight", hex: HAIR.black }, { kind: "stubble", hex: HAIR.black }, { garments: [] }),
   faceOf("deep skin, black coily bun, unclothed", SKIN.deep, { length_cm: 50, texture: "coily", style: "bun", hex: HAIR.black }, undefined, { garments: [] }),
+  faceOf("deep skin, black hair, black full beard, oval face", SKIN.deep, { length_cm: 10, texture: "straight", hex: HAIR.black }, { kind: "beard", length_cm: 10, hex: HAIR.black }, { garments: [], face: { brows: "average" } }),
   faceOf("loose 5 cm", SKIN.tan, { length_cm: 5, texture: "straight", hex: HAIR.brown }, undefined),
   faceOf("brushed 5 cm", SKIN.tan, { length_cm: 5, texture: "straight", style: "brushed", hex: HAIR.brown }, undefined),
   faceOf("loose 13 cm", SKIN.tan, { length_cm: 13, texture: "straight", hex: HAIR.brown }, undefined),

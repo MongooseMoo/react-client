@@ -159,14 +159,21 @@ outlines the seam, whatever their hues: colours told apart by hue alone look ali
 with red-green colour blindness. At the hairline and a beard's edge that line is a tone of the
 hair itself, moved toward light or dark until it stands 3:1 off the skin, about 5 mm wide and lying
 on the hair, so it reads as the hair's edge (a grey edge on black hair over dark skin), not as a
-band. Brows are the hair's colour toned the same way; eyes have a white and an iris in the eye
-colour. A beard or stubble covers the cheeks and chin up to the sideburns, leaving the mouth;
-stubble is a shadow plus a stipple of points toned off the skin. Curly, coily and wavy hair is
+band. The collar line on the neck is the clothing's colour toned off the neck the same way. Brows
+are the hair's colour toned the same way, set below the hair's front edge and clear of it; eyes
+have a white and an iris in the eye colour. A beard or stubble covers the cheeks and chin up to the
+sideburns, leaving the mouth; a beard is shaded in strands toward its own tone off the skin, so a
+beard of the skin's darkness or paleness shows as a beard; stubble is a shadow plus a stipple of
+points toned off the skin. Curly, coily and wavy hair is
 raised in curls or waves whose peaks catch a sheen of the hair's colour (lighter on dark hair,
 darker on light hair), on loose and tied styles alike; a bun stands clear of the head with a lit
-crown and a tie. The portrait draws texture on tied styles' caps, the same toned brows and beard
-edge, short beards along the face shape's own jaw, and hair worn down as locks beside the face
-that end where the hair ends. A
+crown and a tie. The portrait outlines skin and clothing in the dark or light line, and hair in
+the hair's own edge tone; hair close to the skin's colour also has its body shaded toward the
+sheen (curls a highlight each on a mass of hair), and such a beard carries strands in its edge
+tone. It draws texture on tied styles' caps, the same toned brows and beard edge, short beards
+along the face shape's own jaw, swept-back hair standing high off a high forehead, brushed hair
+with a parting notch and a swept fringe, and hair worn down as locks beside the face that end
+where the hair ends. A
 person without `appearance` is the same figure in the person colour, you in blue. The plan marks tables' legs, seats' backs and doors' swing. The 3D views are
 one image to a screen reader with the same name as the plan, and clicking a doorway in them
 sends its exit too.
