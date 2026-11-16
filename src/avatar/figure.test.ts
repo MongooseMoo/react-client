@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "./characters.fixture";
-import { colourHex, contrast, hexOrUndefined, INK_DARK, INK_LIGHT, inkFor, MIN_CONTRAST } from "./colour";
+import { colourDifference, colourHex, contrast, DISTINCT_COLOURS, hexOrUndefined, INK_DARK, INK_LIGHT, inkFor, MIN_CONTRAST } from "./colour";
 import {
   appearanceLabel,
   BUILDS,
@@ -210,7 +210,7 @@ describe("the test characters", () => {
     expect(new Set(all.map(({ ch }) => ch.name)).size).toBe(all.length);
   });
 
-  it("(a) adjacent regions reach 3:1 or are outlined", () => {
+  it("(a) adjacent regions reach 3:1, differ plainly in colour, or are outlined; outlines only where needed", () => {
     for (const { ch, p } of all) {
       const c = p.colours;
       const pairs: Array<[string, string, string]> = [
@@ -223,13 +223,23 @@ describe("the test characters", () => {
         ["ankles", c.legs, c.feet],
       ];
       for (const [seam, a, b] of pairs) {
-        if (a === b) continue;
-        const ok = contrast(a, b) >= MIN_CONTRAST || p.outlined.includes(seam as never);
-        expect(ok, `${ch.name} ${seam} ${a}/${b}`).toBe(true);
+        const needed = a !== b && contrast(a, b) < MIN_CONTRAST && colourDifference(a, b) < DISTINCT_COLOURS;
+        expect(p.outlined.includes(seam as never), `${ch.name} ${seam} ${a}/${b}`).toBe(needed);
       }
       // An outline stands out from the colours it separates better than the other ink would.
       for (const seam of p.outlined) expect([INK_DARK, INK_LIGHT], ch.name + seam).toContain(c.ink);
     }
+  });
+
+  it("(a1) drops bands between plainly different colours and keeps them between alike ones", () => {
+    // A yellow raincoat on light skin, a teal dress on light brown: under 3:1, plainly different.
+    expect(params({ skin: { hex: "#eadaba" }, garments: [{ areas: ["torso", "arms"], layer: 1, colour: { hex: "#ffd400" } }] }).outlined).not.toContain("wrists");
+    expect(params({ skin: { hex: "#a07e56" }, garments: [{ areas: ["torso"], layer: 1, colour: { hex: "#029386" } }] }).outlined).not.toContain("neck");
+    // A chestnut jacket on brown skin, white shorts on olive legs: alike, so outlined.
+    expect(params({ skin: { hex: "#825c43" }, garments: [{ areas: ["torso", "arms"], layer: 1, colour: { hex: "#742802" } }] }).outlined).toContain("wrists");
+    expect(params({ skin: { hex: "#eadaba" }, garments: [{ areas: ["legs"], layer: 1, colour: { hex: "#f4f1ea" } }] }).outlined).toContain("ankles");
+    expect(colourDifference("#eadaba", "#ffd400")).toBeGreaterThan(DISTINCT_COLOURS);
+    expect(colourDifference("#000000", "#000000")).toBe(0);
   });
 
   it("(a2) separates black hair and a black beard from dark skin: outlines that reach 3:1 against both sides", () => {

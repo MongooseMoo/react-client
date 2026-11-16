@@ -25,8 +25,8 @@ function vertices(p: ReturnType<typeof figureParams>, name: string): THREE.Vecto
 /** A vertex's distance from the head's centre in the head ellipsoid's own units (half widths 0.84, 0.95 and 1 head radius): 1 is on the head. */
 const onHead = (v: THREE.Vector3, headR: number, headZ: number) => Math.hypot(v.x / (0.84 * headR), v.y / (0.95 * headR), (v.z - headZ) / headR);
 
-// Short hair whose colour is under 3:1 against the skin, so its edge is outlined.
-const lightHair = { skin: { hex: "#eadaba" }, eyes: { hex: "#3d6fb6" }, hair: { length_cm: 5, texture: "straight", hex: "#ad8150" } };
+// Short sandy hair on light skin: under 3:1 and alike in colour, so its edge is outlined.
+const lightHair = { skin: { hex: "#eadaba" }, eyes: { hex: "#3d6fb6" }, hair: { length_cm: 5, texture: "straight", hex: "#c8ad86" } };
 
 describe("figure head", () => {
   it("keeps the hair cap off the face: its front edge is above the eyes, for straight and coily hair", () => {
@@ -140,7 +140,7 @@ describe("figure face", () => {
     expect(mouth.length).toBeGreaterThan(0);
     expect(brows.length).toBeGreaterThan(0);
     expect(figureParts(p).find((x) => x.name === "mouth")?.colour).toBe(p.colours.faceInk);
-    expect(figureParts(p).find((x) => x.name === "brow")?.colour).toBe("#ad8150");
+    expect(figureParts(p).find((x) => x.name === "brow")?.colour).toBe(lightHair.hair.hex);
     // The mouth is low on the front of the face, the brows just above the eyes; both sit on the surface.
     for (const v of mouth) {
       expect(v.z).toBeLessThan(headZ - headR * 0.3);

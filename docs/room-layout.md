@@ -119,7 +119,9 @@ else a neutral stone). People are figures: head, body, arms and legs sized by th
 build, painted with their skin, hair, eye and garment colours, with hair by length and texture,
 facial hair, a head garment, and parts for their traits; standing, sitting or lying as `posture`
 says, and turned to face their `Client.Spatial` forward (south when there is none). Where two
-neighbouring colours fall below 3:1 contrast, a thin dark or light band outlines the seam. A
+neighbouring colours fall below 3:1 contrast and are also alike in colour (CIE ΔE under 35), a
+thin dark or light band outlines the seam; plainly different colours, such as a yellow sleeve on
+light skin, need no band. A
 person without `appearance` is the same figure in the person colour, you in blue. The plan marks tables' legs, seats' backs and doors' swing. The 3D views are
 one image to a screen reader with the same name as the plan, and clicking a doorway in them
 sends its exit too.
