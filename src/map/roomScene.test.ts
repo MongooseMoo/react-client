@@ -39,6 +39,7 @@ import {
   ZOOM_NEAREST,
   ZOOM_STEP,
   zoomedFov,
+  zoomedFovBy,
 } from "./roomScene";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -806,11 +807,28 @@ describe("cameras", () => {
     element.remove();
   });
 
-  it("counts wheel notches: 100 pixels, 3 lines or a page", () => {
-    expect(wheelNotches(-100, 0)).toBe(1);
-    expect(wheelNotches(250, 0)).toBe(2.5);
-    expect(wheelNotches(-3, 1)).toBe(1);
-    expect(wheelNotches(1, 2)).toBe(1);
+  it("counts one mouse-wheel notch as one notch, whatever the browser sends for it, and a trackpad in proportion", () => {
+    // One notch as browsers' source builds it (log: reports/player-avatars-client-3d-labels-2026-11-16.md).
+    expect(wheelNotches(-100, 0)).toBe(1); // Chromium, Windows, 3 lines, any display scale
+    expect(wheelNotches(200, 0)).toBe(1); // Chromium, Windows set to 6 lines; or page zoom 50%
+    expect(wheelNotches(-120, 0)).toBe(1); // Chromium, Linux X11
+    expect(wheelNotches(-3, 1)).toBe(1); // Firefox, Windows, deltaMode read first
+    expect(wheelNotches(-6, 1)).toBe(1); // Firefox with its system scroll speed-up
+    expect(wheelNotches(1, 2)).toBe(1); // "one screen at a time"
+    // A high-resolution wheel's quarter-notch events, and a trackpad's stream of small deltas, add up in proportion.
+    expect(wheelNotches(25, 0) * 4).toBeCloseTo(1, 9);
+    expect(wheelNotches(0.75, 1) * 4).toBeCloseTo(1, 9);
+    expect(Array.from({ length: 50 }, () => wheelNotches(4, 0)).reduce((a, b) => a + b, 0)).toBeCloseTo(2, 9);
+    // Chromium at page zoom 300% sends a notch as 33.3 (and Playwright's wheel at device scale 3 arrives so too):
+    // the event alone cannot tell it from a trackpad's 33 px, so it counts as a third.
+    expect(wheelNotches(100 / 3, 0)).toBeCloseTo(1 / 3, 9);
+  });
+
+  it("zooms Your eyes by a wheel's notches, fractions too, within the same limits as the keys", () => {
+    expect(zoomedFovBy(EYES_FOV, 1)).toBeCloseTo(zoomedFov(EYES_FOV, "+") as number, 9);
+    expect(zoomedFovBy(EYES_FOV, 0.25) ** 4 / EYES_FOV ** 3).toBeCloseTo(zoomedFovBy(EYES_FOV, 1), 6);
+    expect(zoomedFovBy(EYES_FOV, -3)).toBe(EYES_FOV);
+    expect(zoomedFovBy(EYES_MIN_FOV, 5)).toBe(EYES_MIN_FOV);
   });
 
   it("lets the dollhouse reach a large room's whole-room view", () => {

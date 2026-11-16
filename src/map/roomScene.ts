@@ -545,9 +545,17 @@ export function wheelStep(layout: RoomLayout, fov = DOLLHOUSE_FOV): number {
   return Math.min(0.95, (WHEEL_CLOSE / distance) ** (1 / WHEEL_NOTCHES));
 }
 
-/** How many wheel notches a wheel event is: a notch is 100 pixels, 3 lines or one page. */
+/**
+ * How many wheel notches a wheel event is: at most one, and a smaller event in proportion to a
+ * notch of 100 pixels, 3 lines or one page. What browsers send for one notch of a mouse wheel
+ * (from their source; see docs/room-layout.md): Chromium 100 px on Windows at the default 3 lines
+ * at any display scale (6 lines: 200), 120 px on Linux, never lines; Firefox 3 lines (6 with its
+ * own speed-up) when `deltaMode` is read before `deltaY`, which callers must do. So every notch
+ * is one; a trackpad's small deltas add up smoothly; a page zoom above 100% in Chromium divides
+ * its notch (200%: 50 px, half a notch), which the event alone cannot tell from a trackpad.
+ */
 export function wheelNotches(deltaY: number, deltaMode: number): number {
-  return Math.abs(deltaY) / (deltaMode === 1 ? 3 : deltaMode === 2 ? 1 : 100);
+  return Math.min(1, Math.abs(deltaY) / (deltaMode === 1 ? 3 : deltaMode === 2 ? 1 : 100));
 }
 
 /**
@@ -694,10 +702,15 @@ export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: T
 
 /** Your eyes' field of view after a zoom key (`+`/`=` in, `-`/`_` out, `0` back), or undefined for any other key. */
 export function zoomedFov(fov: number, key: string): number | undefined {
-  if (key === "+" || key === "=") return Math.max(EYES_MIN_FOV, fov * ZOOM_STEP);
-  if (key === "-" || key === "_") return Math.min(EYES_FOV, fov / ZOOM_STEP);
+  if (key === "+" || key === "=") return zoomedFovBy(fov, 1);
+  if (key === "-" || key === "_") return zoomedFovBy(fov, -1);
   if (key === "0") return EYES_FOV;
   return undefined;
+}
+
+/** Your eyes' field of view after `steps` zoom steps (in when positive; a wheel's notches, fractions too), within limits. */
+export function zoomedFovBy(fov: number, steps: number): number {
+  return Math.min(EYES_FOV, Math.max(EYES_MIN_FOV, fov * ZOOM_STEP ** steps));
 }
 
 /**

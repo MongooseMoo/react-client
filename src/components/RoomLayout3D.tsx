@@ -41,6 +41,7 @@ import {
   type ZoomPick,
   ZOOM_STEP,
   zoomedFov,
+  zoomedFovBy,
 } from "../map/roomScene";
 import type { LayoutArrival } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
@@ -364,12 +365,18 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     if (!stage) return;
     event.preventDefault();
     event.stopPropagation();
-    if (event.deltaY === 0) return;
+    // deltaMode first: Firefox then reports a mouse wheel in lines, not in pixels of the page's font.
+    const deltaMode = event.deltaMode;
+    const deltaY = event.deltaY;
+    if (deltaY === 0) return;
+    const notches = wheelNotches(deltaY, deltaMode) * (deltaY < 0 ? 1 : -1);
     if (mode === "eyes") {
-      zoomEyes(event.deltaY < 0 ? "+" : "-");
+      stage.camera.fov = zoomedFovBy(stage.camera.fov, notches);
+      stage.camera.updateProjectionMatrix();
+      stage.render();
       return;
     }
-    zoomOnto(stage, event.clientX, event.clientY, wheelStep(layout) ** (wheelNotches(event.deltaY, event.deltaMode) * (event.deltaY < 0 ? 1 : -1)));
+    zoomOnto(stage, event.clientX, event.clientY, wheelStep(layout) ** notches);
   };
   const onWheelRef = useRef(onWheel);
   onWheelRef.current = onWheel;

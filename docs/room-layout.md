@@ -118,6 +118,14 @@ buttons (the choice is kept across rooms):
   your `Client.Spatial` forward, turning as you turn. `+` and `-` on the picture, or the wheel,
   narrow and widen the view (up to about seven times closer); `0` returns to the normal view.
 
+In both 3D views a wheel event counts as at most one notch, and a smaller one in proportion to a
+notch of 100 pixels, 3 lines or a page, so a trackpad or a high-resolution wheel zooms smoothly.
+That makes every notch of a mouse wheel one notch as browsers send it (read in their source, not
+measured): Chromium sends 100 px on Windows at the default 3 lines at any display scale (200 px at
+6 lines) and 120 px on Linux; Firefox sends 3 lines (6 with its own speed-up) when the page reads
+`deltaMode` first, as this view does. Chromium divides a notch by the page zoom (50 px at 200%),
+which the event alone cannot tell from a trackpad's delta, so there a notch counts as that fraction.
+
 In both 3D views a name label sits just above the top of the head as drawn (hair, hat or antlers
 included), or above the middle of a thing's top, at every zoom. No label, a person's or a
 thing's, is placed over anyone's head as drawn, so none covers a face. Where a label would
