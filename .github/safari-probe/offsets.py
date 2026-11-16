@@ -3,8 +3,8 @@ for each listed file, how many samples Safari's decoded audio sits from ffmpeg's
 (negative: Safari cut that much from the front). A measurement, not a check:
 the offsets do not change the exit status.
 
-Output columns: "offset" is the agreed offset in samples, empty when the marks
-that could give one are lost or disagree; then each mark's own offset;
+Output columns: "offset" is the agreed offset in samples, empty when fewer than
+two marks that can give one agree; then each mark's own offset;
 "frames_offset" is Safari's decoded length minus ffmpeg's (ffmpeg does not trim
 the tail, so it is evidence of a front cut only where the file names no end
 padding).
@@ -26,6 +26,7 @@ data = json.load(open(sys.argv[2]))
 print(data["userAgent"])
 MARKS = ["onset_001", "onset_01peak", "onset_05peak", "peak_index"]
 PRIMING = 2112
+MIN_INDEX = 16
 
 
 def offset(measured, reference):
@@ -53,16 +54,22 @@ with open(sys.argv[3], "w", newline="") as f:
         measured = [r["onset"][0], r["onset"][1], r["onset"][2], r["peakIndex"]]
         four = [offset(m, e[name]) for m, name in zip(measured, MARKS)]
         # A mark inside audio Safari cut from the front is lost and its number
-        # means nothing. A cut is at most the AAC priming, so marks ffmpeg has
-        # at or past that many samples survive one. They give the offset when
-        # they agree; when none qualifies, only "all four are 0" is an offset.
-        late = [x for x, name in zip(four, MARKS) if x is not None and int(e[name]) >= PRIMING]
-        known = [x for x in four if x is not None]
-        agreed = None
-        if late and max(late) - min(late) <= 2:
-            agreed = statistics.median_low(late)
-        elif known and all(abs(x) <= 2 for x in known):
-            agreed = 0
+        # means nothing; a cut is at most the AAC priming, so a mark ffmpeg has
+        # at or past that many samples survives one. Safari's decoder also
+        # moves single marks on some files without moving the audio, and a mark
+        # ffmpeg has at the very start reads 0 in a cut file too when its audio
+        # starts at once (both seen in run 43797802771). So a mark is evidence
+        # for a value only if it survives a cut, or the value is 0 and ffmpeg
+        # has the mark at least MIN_INDEX samples in; the offset is the value
+        # at least two such marks share within 2 samples.
+        known = [(x, int(e[name])) for x, name in zip(four, MARKS) if x is not None]
+        best = []
+        for value, _ in known:
+            group = [x for x, index in known if abs(x - value) <= 2
+                     and (index >= PRIMING or (abs(value) <= 2 and index >= MIN_INDEX))]
+            if len(group) > len(best):
+                best = group
+        agreed = statistics.median_low(best) if len(best) >= 2 else None
         frames_offset = r["length"] - int(e["frames"])
         out.writerow([r["path"], e["layout"], e["onset_001"], cell(r["onset"][0]), cell(agreed),
                       *(cell(x) for x in four), e["frames"], r["length"], frames_offset,

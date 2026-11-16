@@ -16,9 +16,10 @@ on:
 permissions:
   contents: read
 
-# A new manual run replaces one still running.
+# A new manual run replaces one still running for the same list; runs for
+# different lists queue beside each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.list }}
   cancel-in-progress: true
 
 jobs:
@@ -87,7 +88,13 @@ jobs:
           UDID=$(xcrun simctl create probe "iPhone 17" "com.apple.CoreSimulator.SimRuntime.${RUNTIME}")
           xcrun simctl bootstatus "$UDID" -b
           if [ -n "$LIST" ]; then PAGE="probe.html?list=$LIST"; WAIT=600; else PAGE=probe.html; WAIT=180; fi
-          xcrun simctl openurl "$UDID" "http://127.0.0.1:8000/$PAGE"
+          # openurl can time out (code 60) on a simulator that has just booted:
+          # run 43797802771, iOS 27.2. Up to three tries.
+          OPENED=no
+          for _ in 1 2 3; do
+            if xcrun simctl openurl "$UDID" "http://127.0.0.1:8000/$PAGE"; then OPENED=yes; break; fi
+          done
+          test "$OPENED" = yes
           for _ in $(seq 1 "$WAIT"); do [ -f result.json ] && break; sleep 1; done
           test -f result.json
       - name: Classify the onsets
