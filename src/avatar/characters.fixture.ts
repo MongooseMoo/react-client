@@ -157,7 +157,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
       skin: c("medium", "#d7bd96"),
       facial_hair: { kind: "stubble", ...c("grey", "#7d7d7d") },
       eyes: c("grey", "#8a9399"),
-      face: { shape: "square", nose: "previously broken", lips: "chapped" },
+      face: { shape: "square", nose: "previously_broken", lips: "chapped" },
       features: ["eyepatch", "earrings"],
       garments: [
         { name: "a green flannel shirt", areas: ["torso", "arms"], layer: 1, colour: c("forest", "#0b5509") },

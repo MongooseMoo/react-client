@@ -335,8 +335,8 @@ export function figureParts(p: FigureParams): Part[] {
       g.translate(0, 0, headCentreZ);
       return g;
     };
-    const shell = (reach: number, toward: number, span: number, k: number, colour: string, drop = 1): Part => ({
-      geometry: toHead(new THREE.SphereGeometry(headR, 16, 6, toward - span / 2, span, 0, reach), k, drop),
+    const shell = (reach: number, toward: number, span: number, k: number, colour: string, drop = 1, across = 16): Part => ({
+      geometry: toHead(new THREE.SphereGeometry(headR, across, 6, toward - span / 2, span, 0, reach), k, drop),
       colour,
     });
     // The upper edge of a shell, for an outline where the facial hair meets skin of nearly its own lightness.
@@ -352,15 +352,37 @@ export function figureParts(p: FigureParams): Part[] {
     const jawSpan = 4.0;
     if (p.facialHair === "beard" || p.facialHair === "stubble") {
       const full = p.facialHair === "beard";
-      // A beard stands out and hangs; stubble lies on the skin.
-      const k = full ? 1.12 : 1.012;
-      const drop = full ? 1.12 : 1;
+      // A beard stands out and hangs, a short one less than a full one; stubble lies on the skin.
+      const thick = p.beardReach === undefined ? 0.12 : 0.06 + 0.06 * Math.min(1, p.beardReach * 4);
+      const k = full ? 1 + thick : 1.012;
+      const drop = full ? 1 + thick : 1;
       // Stubble is a shadow on the skin: its colour laid over the skin, as the portrait draws it.
       const colour = full ? fh : overlayHex(c.skin, fh, STUBBLE_OPACITY);
       out.push(named(shell(jawReach, front, jawSpan, k, colour, drop), full ? "beard" : "stubble"));
       // A full beard runs up the side of the face in front of each ear; on stubble that strip read as a pale patch.
-      for (const side of full ? [-1, 1] : []) out.push(named(shell(1.75, front + side * 1.3, 0.35, k - 0.006, colour, drop), "beard"));
+      // The strip is narrow (0.35 rad), so four facets across it are enough.
+      for (const side of full ? [-1, 1] : []) out.push(named(shell(1.75, front + side * 1.3, 0.35, k - 0.006, colour, drop, 4), "beard"));
       if (full && outlined.has("jawline")) out.push(named(shellEdge(jawReach, front, jawSpan, k, drop), "jawline"));
+      // A beard longer than a full one hangs below the chin over the chest, narrowing to its end:
+      // a cone from under the jaw, its length the beard's beyond 10 cm (at most a third of the height).
+      if (full && p.beardLength !== undefined && p.beardLength > 10) {
+        const hang = Math.min((p.beardLength - 10) / 100, H / 3);
+        const chinZ = headCentreZ - headR * k * drop;
+        const top = new THREE.Vector3(0, headR * 0.45, chinZ + headR * 0.35);
+        // Its end lies just in front of the chest, which reaches about 0.55 of the shoulder half width forward.
+        const end = new THREE.Vector3(0, Math.max(headR * 0.45, p.shoulderHalf * 0.6), chinZ - hang);
+        const cone = new THREE.ConeGeometry(headR * 0.62, top.distanceTo(end), 10, 1, true);
+        // A cone points along +y, its wide end at -y: turn it to point from the jaw down to the end, flattened front to back.
+        cone.scale(1, 1, 0.55);
+        cone.applyMatrix4(
+          new THREE.Matrix4().compose(
+            top.clone().add(end).multiplyScalar(0.5),
+            new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().subVectors(end, top).normalize()),
+            new THREE.Vector3(1, 1, 1),
+          ),
+        );
+        out.push(named({ geometry: twoSided(cone), colour: fh }, "beard"));
+      }
     } else if (p.facialHair === "goatee") {
       out.push(named(shell(0.75, front, 0.9, 1.1, fh, 1.08), "beard"));
       if (outlined.has("jawline")) out.push(named(shellEdge(0.75, front, 0.9, 1.1, 1.08), "jawline"));
@@ -397,9 +419,10 @@ export function figureParts(p: FigureParams): Part[] {
           out.push(placed(new THREE.CylinderGeometry(lensR * 1.1, lensR * 1.1, rim * 1.5, 12), fi, lens));
         }
         // Temple: from the lens's outer edge back to above the ear.
-        out.push(limb(new THREE.Vector3(side * (headR * 0.32 + lensR), lensY - rim, eyeZ), new THREE.Vector3(side * headSide(eyeZ), 0, eyeZ), rim * 0.8, fi));
+        // A thin stroke, a few pixels wide like the brows: a fine capsule cost 140 triangles each.
+        out.push(stroke(new THREE.Vector3(side * (headR * 0.32 + lensR), lensY - rim, eyeZ), new THREE.Vector3(side * headSide(eyeZ), 0, eyeZ), rim * 0.8, fi));
       }
-      out.push(limb(new THREE.Vector3(-headR * 0.32 + lensR, lensY, eyeZ), new THREE.Vector3(headR * 0.32 - lensR, lensY, eyeZ), rim * 0.8, fi));
+      out.push(stroke(new THREE.Vector3(-headR * 0.32 + lensR, lensY, eyeZ), new THREE.Vector3(headR * 0.32 - lensR, lensY, eyeZ), rim * 0.8, fi));
     } else if (feature === "eyepatch") {
       // Over the left eye (-x, as the portrait draws it on the viewer's right), with a strap to above the right ear.
       const patch = new THREE.Vector3(-headR * 0.32, lensY, eyeZ);

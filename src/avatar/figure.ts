@@ -34,13 +34,15 @@ export interface BuildShape {
   limbs: number;
 }
 
-/** The eight chargen builds. Any other value is drawn as average. */
+/** The game's builds (`$appearance.vocab["build"]`). Any other value is drawn as average. */
 export const BUILDS: Readonly<Record<string, BuildShape>> = {
   average: { shoulders: 1, waist: 1, hips: 1, limbs: 1 },
+  slender: { shoulders: 0.93, waist: 0.86, hips: 0.92, limbs: 0.88 },
   thin: { shoulders: 0.86, waist: 0.8, hips: 0.85, limbs: 0.8 },
   athletic: { shoulders: 1.12, waist: 0.95, hips: 1, limbs: 1.08 },
   muscular: { shoulders: 1.25, waist: 1.05, hips: 1.05, limbs: 1.25 },
   curvy: { shoulders: 0.95, waist: 0.9, hips: 1.2, limbs: 1.02 },
+  stocky: { shoulders: 1.2, waist: 1.15, hips: 1.08, limbs: 1.22 },
   chunky: { shoulders: 1.15, waist: 1.25, hips: 1.2, limbs: 1.18 },
   pudgy: { shoulders: 1.02, waist: 1.3, hips: 1.15, limbs: 1.08 },
   dumpy: { shoulders: 1.05, waist: 1.25, hips: 1.25, limbs: 1.1 },
@@ -94,6 +96,10 @@ export interface FigureParams {
   hairTexture: HairTexture;
   headCovered: boolean;
   facialHair: FacialHair;
+  /** A beard's `facial_hair.length_cm`, within the game's 0 to 100; undefined for another kind or no length. */
+  beardLength?: number;
+  /** `beardReach(beardLength)`, with it. */
+  beardReach?: number;
   faceHidden: boolean;
   extras: ExtraPart[];
   /** Known `features`, in the order given, each once; none on a hidden face. */
@@ -108,6 +114,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const finite = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
+/** A vocabulary key exactly as the game sends it (`previously_broken`, `beauty_mark`); no other spelling. */
+export const vocabKey = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+
+/** A trait name, which the body plan writes in words ("pointed ears"), as a key. */
 const word = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value.trim().toLowerCase().replace(/[\s-]+/g, "_") : undefined;
 
@@ -155,6 +165,14 @@ export function outermostByArea(value: unknown): Partial<Record<Area, string>> {
   const colours: Partial<Record<Area, string>> = {};
   for (const area of AREAS) if (byArea[area]) colours[area] = byArea[area]?.colour;
   return colours;
+}
+
+/**
+ * How far a beard of `lengthCm` reaches, from 0 (cropped to the jaw) to 1 at the game's
+ * "very long" band (40 cm) and beyond. The portrait and the 3D figure both draw by it.
+ */
+export function beardReach(lengthCm: number): number {
+  return Math.min(1, Math.max(0, lengthCm) / 40);
 }
 
 export function hairShape(lengthCm: number | undefined): HairShape {
@@ -213,7 +231,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
   const record = appearanceRecord(appearance) ?? {};
   const height = Math.min(4, Math.max(0.5, Number.isFinite(rawHeight) ? rawHeight : 1.75));
   const scale = height / 1.75;
-  const buildName = word(record.build);
+  const buildName = vocabKey(record.build);
   const build = buildName !== undefined && Object.hasOwn(BUILDS, buildName) ? buildName : "average";
   const shape = BUILDS[build];
   const age = finite(record.age_years);
@@ -233,16 +251,18 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
       ? { torso: NEUTRAL_CLOTHING, arms: NEUTRAL_CLOTHING, waist: NEUTRAL_CLOTHING, legs: NEUTRAL_CLOTHING, feet: NEUTRAL_CLOTHING }
       : worn;
   const hair = hairHex && !covered.head ? hairShape(finite(hairRecord?.length_cm)) : "none";
-  const textureWord = word(hairRecord?.texture) ?? "straight";
+  const textureWord = vocabKey(hairRecord?.texture) ?? "straight";
   const hairTexture: HairTexture = Object.hasOwn(HAIR_VOLUME, textureWord) ? (textureWord as HairTexture) : "straight";
   const hairVolume = HAIR_VOLUME[hairTexture];
 
   const facialRecord = isRecord(record.facial_hair) ? record.facial_hair : undefined;
-  const facialKind = word(facialRecord?.kind);
+  const facialKind = vocabKey(facialRecord?.kind);
   const facialHex = hexOrUndefined(facialRecord?.hex) ?? hairHex;
   const faceHidden = record.face_hidden === true;
   const facialHair: FacialHair =
     !faceHidden && facialHex && FACIAL_HAIR.includes(facialKind as FacialHair) ? (facialKind as FacialHair) : "none";
+  const facialLength = finite(facialRecord?.length_cm);
+  const beardLength = facialHair === "beard" && facialLength !== undefined ? Math.min(100, Math.max(0, facialLength)) : undefined;
 
   const torso = covered.torso ?? skin;
   const legs = covered.legs ?? skin;
@@ -289,7 +309,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
 
   const features: Feature[] = [];
   for (const key of faceHidden || !Array.isArray(record.features) ? [] : record.features) {
-    const feature = word(key) as Feature;
+    const feature = vocabKey(key) as Feature;
     if ((FEATURES as readonly string[]).includes(feature) && !features.includes(feature)) features.push(feature);
   }
 
@@ -316,6 +336,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     hairTexture,
     headCovered: covered.head !== undefined,
     facialHair,
+    ...(beardLength !== undefined ? { beardLength, beardReach: beardReach(beardLength) } : {}),
     faceHidden,
     extras,
     features,
