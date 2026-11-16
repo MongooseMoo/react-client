@@ -89,7 +89,27 @@ export interface RoomScene {
    * the middle of a thing's top. The first point is where the label hangs.
    */
   labelPoints: Map<string, THREE.Vector3[]>;
+  /** Each person's head as drawn (everything above the chin: hair, hat, antlers), as its box's eight corners. */
+  heads: Map<string, THREE.Vector3[]>;
 }
+
+/** The box round a figure geometry's vertices above `chin`, worked out once per geometry. */
+function headBox(geometry: THREE.BufferGeometry, chin: number): THREE.Box3 {
+  const kept = geometry.userData.headBox as { chin: number; box: THREE.Box3 } | undefined;
+  if (kept && kept.chin === chin) return kept.box;
+  const box = new THREE.Box3();
+  const position = geometry.getAttribute("position");
+  const v = new THREE.Vector3();
+  for (let i = 0; i < position.count; i++) {
+    v.fromBufferAttribute(position, i);
+    if (v.z >= chin) box.expandByPoint(v);
+  }
+  geometry.userData.headBox = { chin, box };
+  return box;
+}
+
+const boxCorners = (b: THREE.Box3): THREE.Vector3[] =>
+  [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z));
 
 /** Builds meshes, sharing one material per colour within a scene. */
 class Builder {
@@ -154,12 +174,14 @@ class Builder {
     z1: number,
     base: number,
     facing: LayoutVector | undefined,
-  ): { mesh: THREE.Mesh; label: THREE.Vector3[] } {
+  ): { mesh: THREE.Mesh; label: THREE.Vector3[]; head: THREE.Vector3[] } {
     const params = figureParams(appearance, { height: z1 - z0, base: hexString(base) });
     const mesh = figureMesh(params, x, y, z0, facing, this.figureMaterial(), this.figures);
     mesh.updateMatrixWorld();
-    const outline = headOutline(mesh.geometry, params.top - params.headHeight * 1.05);
-    return { mesh, label: outline.map((p) => p.clone().applyMatrix4(mesh.matrixWorld)) };
+    const chin = params.top - params.headHeight * 1.05;
+    const outline = headOutline(mesh.geometry, chin);
+    const toWorld = (p: THREE.Vector3) => p.clone().applyMatrix4(mesh.matrixWorld);
+    return { mesh, label: outline.map(toWorld), head: boxCorners(headBox(mesh.geometry, chin)).map(toWorld) };
   }
 }
 
@@ -356,6 +378,7 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
 
   const things = new Map<string, THREE.Group>();
   const labelPoints = new Map<string, THREE.Vector3[]>();
+  const heads = new Map<string, THREE.Vector3[]>();
   for (const p of placed) {
     const group = new THREE.Group();
     group.name = p.thing.id;
@@ -364,9 +387,10 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
     if (isPerson(p.thing)) {
       group.userData.form = "person";
       const base = p.thing.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, label } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
+      const { mesh, label, head } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
       group.add(mesh);
       labelPoints.set(p.thing.id, label);
+      heads.set(p.thing.id, head);
     } else {
       group.userData.form = thingForm(p.thing);
       for (const mesh of thingMeshes(builder, p, layout.size)) group.add(mesh);
@@ -384,9 +408,10 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
       // Client.Spatial puts a person at head height; the body stands on the floor below it.
       const crown = Math.max(at[2] + 0.12, 1.0);
       const base = arrival.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, label } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
+      const { mesh, label, head } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
       group.add(mesh);
       labelPoints.set(arrival.id, label);
+      heads.set(arrival.id, head);
     } else {
       group.userData.form = "box";
       const s = 0.1;
@@ -399,7 +424,27 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
 
   // Figures of people who left, or whose look changed, are freed now.
   figures?.sweep();
-  return { root, walls, ceiling, exits, things, labelPoints };
+  return { root, walls, ceiling, exits, things, labelPoints, heads };
+}
+
+/**
+ * The screen box, in pixels from the top left of a `width` x `height` picture, round
+ * `points` (a head's box corners). Undefined when any of them is behind the camera or beyond its far plane.
+ */
+export function screenBox(points: THREE.Vector3[], camera: THREE.Camera, width: number, height: number): { x0: number; x1: number; y0: number; y1: number } | undefined {
+  const at = new THREE.Vector3();
+  const box = { x0: Number.POSITIVE_INFINITY, x1: Number.NEGATIVE_INFINITY, y0: Number.POSITIVE_INFINITY, y1: Number.NEGATIVE_INFINITY };
+  for (const point of points) {
+    at.copy(point).project(camera);
+    if (at.z < -1 || at.z > 1) return undefined;
+    const x = ((at.x + 1) / 2) * width;
+    const y = ((1 - at.y) / 2) * height;
+    box.x0 = Math.min(box.x0, x);
+    box.x1 = Math.max(box.x1, x);
+    box.y0 = Math.min(box.y0, y);
+    box.y1 = Math.max(box.y1, y);
+  }
+  return box;
 }
 
 /**

@@ -331,6 +331,9 @@ export function shortLabel(text: string): string {
   return `${(space >= LABEL_MAX / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:(-]+$/, "")}…`;
 }
 
+/** Least space between two 3D labels side by side, pixels (the plan's estimate left about this much). */
+const LABEL_SPACE = 6;
+
 /** A 3D view's label to place: what it names, and the label's size as drawn, in screen pixels. */
 export interface LabelOver {
   id: string;
@@ -351,8 +354,10 @@ export interface LabelOver {
  * its bottom never more than two label heights above that top; the first free
  * place nearest its spot wins. A label with none, or none inside `within`, is
  * left out; the lists still name it. Sizes are the labels' own, as drawn.
+ * `heads` are the people's heads as drawn on screen, each with its person's id:
+ * no label is placed over one, except its own person's (which it sits above).
  */
-export function placeLabelsOver(requests: LabelOver[], gap: number, within?: Box): PlacedLabel[] {
+export function placeLabelsOver(requests: LabelOver[], gap: number, within?: Box, heads: Array<Box & { id: string }> = []): PlacedLabel[] {
   const taken: Box[] = [];
   const result: PlacedLabel[] = [];
   for (const request of requests) {
@@ -374,8 +379,11 @@ export function placeLabelsOver(requests: LabelOver[], gap: number, within?: Box
       const x = request.x + dx;
       const y = request.top - gap - height / 2 + dy;
       const box = { x0: x - width / 2, x1: x + width / 2, y0: y - height / 2, y1: y + height / 2 };
-      if ((within && !inside(box, within)) || taken.some((other) => overlaps(box, other))) continue;
-      taken.push(box);
+      // Two labels side by side keep LABEL_SPACE between them, so their names do not run together.
+      const spaced = { ...box, x0: box.x0 - LABEL_SPACE / 2, x1: box.x1 + LABEL_SPACE / 2 };
+      if ((within && !inside(box, within)) || taken.some((other) => overlaps(spaced, other))) continue;
+      if (heads.some((head) => head.id !== request.id && overlaps(box, head))) continue;
+      taken.push(spaced);
       result.push({ id: request.id, text: request.text, x, y });
       break;
     }

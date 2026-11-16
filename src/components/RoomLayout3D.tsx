@@ -6,6 +6,7 @@ import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRe
 import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
 import type { LayoutVector, RoomLayout } from "../gmcp/Room";
 import {
+  type Box,
   displayName,
   isPerson,
   type LabelOver,
@@ -30,6 +31,7 @@ import {
   eyesPose,
   Pinch,
   type RoomScene,
+  screenBox,
   screenTop,
   wheelNotches,
   wheelStep,
@@ -224,8 +226,15 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       // Centred over the head (or thing), its bottom edge LABEL_GAP pixels above the head's top as drawn: clear of hair and face at any zoom.
       requests.push({ id, text, x: shown.x, top: shown.top, ...size });
     }
+    // Every head drawn in the picture is kept clear of labels (you are not drawn in your own eyes).
+    const heads: Array<Box & { id: string }> = [];
+    for (const [id, corners] of stage.room?.heads ?? []) {
+      if (!stage.room?.things.get(id)?.visible) continue;
+      const box = screenBox(corners, stage.camera, width, height);
+      if (box) heads.push({ id, ...box });
+    }
     const inset = 4;
-    const placedLabels = placeLabelsOver(requests, LABEL_GAP, { x0: inset, x1: width - inset, y0: inset, y1: height - inset });
+    const placedLabels = placeLabelsOver(requests, LABEL_GAP, { x0: inset, x1: width - inset, y0: inset, y1: height - inset }, heads);
     for (const placedLabel of placedLabels) {
       const object = stage.labelObjects.get(placedLabel.id);
       const anchor = anchors.get(placedLabel.id);

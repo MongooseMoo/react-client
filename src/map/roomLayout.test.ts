@@ -175,7 +175,8 @@ describe("room layout geometry", () => {
         for (let j = i + 1; j < labels.length; j++) {
           const a = boxOf(labels[i]);
           const b = boxOf(labels[j]);
-          expect(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1, `${labels[i].id} over ${labels[j].id}`).toBe(false);
+          // Side by side they keep 6 px apart, so two names never read as one.
+          expect(a.x0 - 6 < b.x1 && b.x0 - 6 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1, `${labels[i].id} against ${labels[j].id}`).toBe(false);
         }
       }
     };
@@ -212,6 +213,22 @@ describe("room layout geometry", () => {
       const labels = placeLabelsOver(ask(requests), gap, frame);
       expect(labels.length).toBeGreaterThan(3);
       attached(requests, labels);
+    });
+
+    it("keeps labels off every head but their own person's, moving them by the same rule or leaving them out", () => {
+      // A thing's label asked for right where another person's head is drawn: it rises clear of the head.
+      const head = { id: "#p1", x0: 110, x1: 130, y0: 80, y1: 100 };
+      const thing = placeLabelsOver(ask([{ id: "#rack", text: "a newspaper rack", x: 120, top: 104 }]), gap, frame, [head]);
+      expect(thing).toHaveLength(1);
+      const box = boxOf(thing[0]);
+      expect(box.x0 < head.x1 && head.x0 < box.x1 && box.y0 < head.y1 && head.y0 < box.y1).toBe(false);
+      // Its own head never pushes a person's label away: it sits just above it as asked.
+      expect(placeLabelsOver(ask([{ id: "#p1", text: "Bram Okoro", x: 120, top: 80 }]), gap, frame, [head])).toEqual([
+        { id: "#p1", text: "Bram Okoro", x: 120, y: 80 - gap - height / 2 },
+      ]);
+      // A face filling the picture's middle leaves no free spot within two label heights: the label is left out.
+      const face = { id: "#p1", x0: 20, x1: 256, y0: 30, y1: 200 };
+      expect(placeLabelsOver(ask([{ id: "#rack", text: "a newspaper rack", x: 120, top: 120 }]), gap, frame, [face])).toEqual([]);
     });
 
     it("keeps a label at the picture's edge inside it and still over its figure, or leaves it out", () => {

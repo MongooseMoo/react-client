@@ -7,7 +7,7 @@ import type { RoomLayout } from "../gmcp/Room";
 import { crowdLayout, livingRoomLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingRoom from "./roomLayout.sample-25828.json";
-import { placeThings } from "./roomLayout";
+import { placeLabelsOver, placeThings } from "./roomLayout";
 import {
   buildRoomScene,
   CUT_WALL_HEIGHT,
@@ -26,6 +26,7 @@ import {
   PERSON_COLOUR,
   panTo,
   Pinch,
+  screenBox,
   screenTop,
   WHEEL_NOTCHES,
   wheelNotches,
@@ -558,6 +559,91 @@ describe("cameras", () => {
         }
       }
     }
+  });
+
+  it("places no label over any person's head as drawn, close up with people and a thing behind", () => {
+    // Bram faces the camera; Cleo stands 1 m behind him and a tall rack 1.6 m behind; the camera comes close from a little above.
+    const layout = livingRoomLayout();
+    const person = (id: string, ch: (typeof TEST_CHARACTERS)[number], x: number, y: number) => ({
+      id,
+      name: ch.name,
+      kind: "person" as const,
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
+      appearance: ch.appearance,
+    });
+    layout.things = [
+      person("#bram", TEST_CHARACTERS[1], 0, 0),
+      person("#cleo", TEST_CHARACTERS[2], 0.15, 1),
+      { id: "#rack", name: "a newspaper rack of The Daily Caption", kind: "object", fixed: true, mounted: false, shapes: [{ box: [[-0.4, 0.4], [1.4, 1.8], [0, 1.3]] }], classes: ["shelf", "thing"] },
+    ];
+    const placed = placeThings(layout, {});
+    const scene = buildRoomScene({ layout, placed, arrivals: [], youId: "", facings: { "#bram": [0, -1, 0], "#cleo": [0, -1, 0] } });
+    scene.root.updateMatrixWorld(true);
+    const [w, h] = [276, 207];
+    const order = ["#bram", "#cleo", "#rack"];
+    const texts: Record<string, string> = { "#bram": "Bram Okoro", "#cleo": "Cleo Marsh", "#rack": "a newspaper rack of…" };
+    // Each person's head as drawn: every figure vertex above the chin, projected.
+    const drawnHead = (id: string, camera: THREE.Camera) => {
+      const figure = meshes(scene.things.get(id))[0];
+      const ch = id === "#bram" ? TEST_CHARACTERS[1] : TEST_CHARACTERS[2];
+      const params = figureParams(ch.appearance, { height: ch.height, base: "#000000" });
+      const chin = params.top - params.headHeight * 1.05;
+      const position = figure.geometry.getAttribute("position");
+      const box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+      const v = new THREE.Vector3();
+      for (let i = 0; i < position.count; i++) {
+        v.fromBufferAttribute(position, i).applyMatrix4(figure.matrixWorld);
+        if (v.z < chin) continue;
+        v.project(camera);
+        box.x0 = Math.min(box.x0, ((v.x + 1) / 2) * w);
+        box.x1 = Math.max(box.x1, ((v.x + 1) / 2) * w);
+        box.y0 = Math.min(box.y0, ((1 - v.y) / 2) * h);
+        box.y1 = Math.max(box.y1, ((1 - v.y) / 2) * h);
+      }
+      return box;
+    };
+    const overHead = (labels: ReturnType<typeof placeLabelsOver>, camera: THREE.Camera) =>
+      labels.flatMap((label) => {
+        const half = texts[label.id].length * 3;
+        const box = { x0: label.x - half, x1: label.x + half, y0: label.y - 7.2, y1: label.y + 7.2 };
+        return ["#bram", "#cleo"]
+          .filter((id) => {
+            const head = drawnHead(id, camera);
+            return box.x0 < head.x1 && head.x0 < box.x1 && box.y0 < head.y1 && head.y0 < box.y1;
+          })
+          .map((id) => `${label.id} over ${id}`);
+      });
+    let coveredBefore = 0;
+    for (const distance of [0.9, 1.3, 2, 3]) {
+      for (const rise of [0, 0.15, 0.35]) {
+        for (const turn of [-0.3, 0, 0.3]) {
+          const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, w / h, 0.05, 200);
+          camera.up.set(0, 0, 1);
+          const face = new THREE.Vector3(0, 0, TEST_CHARACTERS[1].height * 0.9);
+          camera.position.set(Math.sin(turn) * Math.cos(rise), -Math.cos(turn) * Math.cos(rise), Math.sin(rise)).multiplyScalar(distance).add(face);
+          camera.lookAt(face);
+          camera.updateMatrixWorld();
+          // As the 3D view asks: centred over the top as drawn, with the drawn label size; heads from `heads`.
+          const requests = order.flatMap((id) => {
+            const shown = screenTop(scene.labelPoints.get(id) as THREE.Vector3[], camera, w, h);
+            return shown ? [{ id, text: texts[id], x: shown.x, top: shown.top, width: texts[id].length * 6, height: 14.4 }] : [];
+          });
+          const heads = ["#bram", "#cleo"].flatMap((id) => {
+            const box = screenBox(scene.heads.get(id) as THREE.Vector3[], camera, w, h);
+            return box ? [{ id, ...box }] : [];
+          });
+          const frame = { x0: 4, x1: w - 4, y0: 4, y1: h - 4 };
+          const where = `distance ${distance}, rise ${rise}, turn ${turn}`;
+          expect(overHead(placeLabelsOver(requests, 3, frame, heads), camera), where).toEqual([]);
+          coveredBefore += overHead(placeLabelsOver(requests, 3, frame), camera).length;
+        }
+      }
+    }
+    // Without the heads kept clear (the old placement), labels did lie over faces in these views.
+    expect(coveredBefore).toBeGreaterThan(0);
+    disposeRoomScene(scene);
   });
 
   it("reads two fingers as a pinch: spacing before over after, onto where it began", () => {

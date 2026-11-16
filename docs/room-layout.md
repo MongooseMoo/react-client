@@ -115,11 +115,13 @@ buttons (the choice is kept across rooms):
   narrow and widen the view (up to about seven times closer); `0` returns to the normal view.
 
 In both 3D views a name label sits just above the top of the head as drawn (hair, hat or antlers
-included), or above the middle of a thing's top, at every zoom, so it never covers a face.
-Where labels would overlap, a later one (people first, you first among them) moves up, or a
-little sideways while its text still spans its figure, by the least that frees it and at most two
-label heights; one with no such place is left out until zooming makes room (the lists below
-still name it).
+included), or above the middle of a thing's top, at every zoom. No label, a person's or a
+thing's, is placed over anyone's head as drawn, so none covers a face. Where a label would
+overlap another label or someone else's head, the later one (people first, you first among them)
+moves up, or a little sideways while its text still spans the middle of what it names, by the
+least that frees it, its bottom never more than two of its own heights above that top; one with
+no such place is left out until zooming makes room (the lists below still name it). Labels are
+placed by their size as drawn, and two side by side keep a few pixels apart.
 
 In every view things are drawn by what they are, from the first of their `classes` the client
 knows: a table as a top on legs, a chair or other furniture as a seat with its back to the
