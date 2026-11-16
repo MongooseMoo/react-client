@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "./characters.fixture";
-import { contrast, INK_LIGHT, MIN_CONTRAST } from "./colour";
+import { contrast, INK_DARK, INK_LIGHT, MIN_CONTRAST } from "./colour";
 import { figureParams, HORN_TONE, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "./figure";
 import AvatarPortrait, { HEAD_VIEWBOX, PORTRAIT_BACKDROP } from "./portrait";
 
@@ -28,8 +28,10 @@ describe("AvatarPortrait", () => {
 
   it("draws only supplied colours, outlines in the ink, for every test character", () => {
     for (const ch of TEST_CHARACTERS) {
-      const { ink, faceInk } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
-      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, PORTRAIT_BACKDROP, NEUTRAL_SKIN, NEUTRAL_CLOTHING, HORN_TONE]);
+      const { ink, faceInk, brow, facialHairEdge, hairSheen } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
+      // Tones made from supplied colours count too: brows and facial hair edges toned off the skin, the hair's sheen.
+      const tones = [brow, facialHairEdge, hairSheen].filter((x): x is string => x !== undefined);
+      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, ...tones, PORTRAIT_BACKDROP, NEUTRAL_SKIN, NEUTRAL_CLOTHING, HORN_TONE]);
       const svg = draw(ch.appearance).querySelector("svg") as SVGSVGElement;
       for (const el of svg.querySelectorAll("[fill], [stroke]")) {
         for (const attr of ["fill", "stroke"]) {
@@ -91,6 +93,19 @@ describe("AvatarPortrait", () => {
         expect(stroke && stroke !== "none" ? stroke : el.getAttribute("fill"), ch.name).toBe(faceInk);
       }
       for (const eye of svg.querySelectorAll(".avatar-eye")) expect(eye.getAttribute("stroke"), ch.name).toBe(faceInk);
+    }
+  });
+
+  it("draws brows and a beard's edge that read on the darkest and palest skins, never ringing a beard in white or black ink", () => {
+    for (const skin of ["#292420", "#3a312a", "#f6ede4"]) {
+      for (const hair of ["#1b1612", "#653700", "#e3c27a", "#eeeeea"]) {
+        const svg = draw({ skin: { hex: skin }, hair: { length_cm: 3, hex: hair }, facial_hair: { kind: "beard", length_cm: 8, hex: hair } }).querySelector("svg") as SVGSVGElement;
+        for (const b of svg.querySelectorAll(".avatar-brow")) expect(contrast(b.getAttribute("stroke") ?? "", skin), `${skin} ${hair} brow`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+        const edge = svg.querySelector(".avatar-facial-hair path")?.getAttribute("stroke") ?? "";
+        expect([INK_DARK, INK_LIGHT], `${skin} ${hair} beard edge`).not.toContain(edge);
+        // The beard's edge stands 3:1 off the skin, so a beard of the skin's darkness still has a visible edge.
+        expect(contrast(edge, skin), `${skin} ${hair} beard edge`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      }
     }
   });
 

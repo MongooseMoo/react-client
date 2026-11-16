@@ -1,9 +1,9 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { overlayHex } from "../avatar/colour";
+import { contrast, INK_DARK, INK_LIGHT, MIN_CONTRAST, overlayHex } from "../avatar/colour";
 import { figureParams, HORN_TONE, STUBBLE_OPACITY } from "../avatar/figure";
-import { BAND_HEIGHT, figureParts } from "./figureMesh";
+import { BAND_HEIGHT, EYE_WHITE, figureParts, HAIRLINE_WIDTH } from "./figureMesh";
 
 /** A standing figure's parameters (in its own frame: facing +y, z up) and its head's measurements. */
 const standing = (appearance: Record<string, unknown>) => {
@@ -20,6 +20,18 @@ function vertices(p: ReturnType<typeof figureParams>, name: string): THREE.Vecto
     for (let i = 0; i < positions.count; i++) out.push(new THREE.Vector3().fromBufferAttribute(positions, i));
   }
   return out;
+}
+
+/**
+ * How wide an edge line is: its spread along the axis it runs round (the hair cap's axis, leaning back from
+ * upright by the cap's tilt, for the hairline; straight up for a beard's edge).
+ */
+function lineWidth(part: { geometry: THREE.BufferGeometry }, seam: "hairline" | "jawline"): number {
+  const axis = seam === "hairline" ? new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(Math.PI / 2 + 0.5, 0, 0)) : new THREE.Vector3(0, 0, 1);
+  const positions = part.geometry.getAttribute("position");
+  const along: number[] = [];
+  for (let i = 0; i < positions.count; i++) along.push(new THREE.Vector3().fromBufferAttribute(positions, i).dot(axis));
+  return Math.max(...along) - Math.min(...along);
 }
 
 /** A vertex's distance from the head's centre in the head ellipsoid's own units (half widths 0.84, 0.95 and 1 head radius): 1 is on the head. */
@@ -191,7 +203,10 @@ describe("figure face", () => {
     expect(mouth.length).toBeGreaterThan(0);
     expect(brows.length).toBeGreaterThan(0);
     expect(figureParts(p).find((x) => x.name === "mouth")?.colour).toBe(p.colours.faceInk);
-    expect(figureParts(p).find((x) => x.name === "brow")?.colour).toBe(lightHair.hair.hex);
+    // Sandy brows on light skin are under 3:1: they are drawn in a tone of the hair that reaches it.
+    const brow = figureParts(p).find((x) => x.name === "brow")?.colour as string;
+    expect(brow).toBe(p.colours.brow);
+    expect(contrast(brow, lightHair.skin.hex)).toBeGreaterThanOrEqual(MIN_CONTRAST);
     // The mouth is low on the front of the face, the brows just above the eyes; both sit on the surface.
     for (const v of mouth) {
       expect(v.z).toBeLessThan(headZ - headR * 0.3);
@@ -231,6 +246,57 @@ describe("figure face", () => {
     expect(p.outlined).not.toContain("jawline");
     // Nothing of it reaches the mouth or above.
     expect(Math.max(...stubble.map((v) => v.z))).toBeLessThan(Math.min(...vertices(p, "mouth").map((v) => v.z)));
+  });
+
+  // The darkest and palest palette skins, with black, brown, blonde and white hair and a full beard of the same colour.
+  const SKINS = ["#292420", "#3a312a", "#f6ede4"];
+  const HAIRS = ["#1b1612", "#653700", "#e3c27a", "#eeeeea"];
+  const faceOf = (skin: string, hair: string) =>
+    standing({ skin: { hex: skin }, eyes: { hex: "#5b3a1e" }, hair: { length_cm: 3, texture: "coily", hex: hair }, facial_hair: { kind: "beard", length_cm: 8, hex: hair } });
+
+  it("edges hair and a beard that are close to the skin's darkness with a thin line in a tone of the hair, not a white or black band", () => {
+    for (const skin of SKINS) {
+      for (const hair of HAIRS) {
+        const { p } = faceOf(skin, hair);
+        const parts = figureParts(p);
+        for (const seam of ["hairline", "jawline"] as const) {
+          const lines = parts.filter((x) => x.name === seam);
+          expect(lines.length > 0, `${skin} ${hair} ${seam}`).toBe(p.outlined.includes(seam));
+          for (const line of lines) {
+            // It stands 3:1 off the skin, so the edge shows without hue; and it is the hair's tone, not the ink.
+            expect(contrast(line.colour, skin), `${skin} ${hair} ${seam}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+            expect([INK_DARK, INK_LIGHT], `${skin} ${hair} ${seam}`).not.toContain(line.colour);
+            // Thin: about 5 mm across, where the white band was 12 to 14 mm (and wider still with the cap's scale).
+            expect(lineWidth(line, seam), `${skin} ${hair} ${seam}`).toBeLessThan(HAIRLINE_WIDTH * 2);
+          }
+        }
+      }
+    }
+    // Black hair and beard on very dark skin (Bram's colours): both seams are drawn, in a grey of the hair.
+    expect(faceOf("#3a312a", "#141414").p.outlined).toEqual(expect.arrayContaining(["hairline", "jawline"]));
+  });
+
+  it("gives eyes a white and an iris, so they read on the darkest and the palest skin", () => {
+    for (const skin of SKINS) {
+      const { p } = faceOf(skin, "#1b1612");
+      const eyes = figureParts(p).filter((x) => x.name === "eye");
+      expect(eyes.map((x) => x.colour).sort(), skin).toEqual([EYE_WHITE, EYE_WHITE, "#5b3a1e", "#5b3a1e"].sort());
+      // Something of the eye stands 3:1 off the skin: the white on dark skin, the iris on pale.
+      expect(Math.max(...eyes.map((x) => contrast(x.colour, skin))), skin).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    }
+  });
+
+  it("draws brows that stand 3:1 off the skin and a mouth in the face ink, on the darkest and palest skins", () => {
+    for (const skin of SKINS) {
+      for (const hair of HAIRS) {
+        const parts = figureParts(faceOf(skin, hair).p);
+        for (const name of ["brow", "mouth"]) {
+          const found = parts.filter((x) => x.name === name);
+          expect(found.length).toBeGreaterThan(0);
+          for (const part of found) expect(contrast(part.colour, skin), `${skin} ${hair} ${name}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+        }
+      }
+    }
   });
 
   it("draws no face on a hidden face, nor on the plain figure of someone without appearance", () => {

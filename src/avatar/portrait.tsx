@@ -395,7 +395,8 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
 
   if (!params.faceHidden) {
     const brows = vocabKey(face.brows) ?? "";
-    const brow = c.hair ?? c.facialHair ?? faceInk;
+    // The hair's colour toned off the skin: black brows vanished on dark skin.
+    const brow = c.brow;
     for (const x of [26.5, 37.5]) {
       // Toward the nose: -1 on the left brow, +1 on the right.
       const inward = x < 32 ? 1 : -1;
@@ -447,12 +448,14 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
       />,
     );
     const fh = c.facialHair;
+    // Facial hair's edge in its own tone off the skin: a black beard on dark skin was ringed in white, a chin strap.
+    const edge = c.facialHairEdge ?? faceInk;
     if (fh) {
       const shapes: Record<string, React.ReactElement> = {
         stubble: <path fill={fh} fillOpacity={STUBBLE_OPACITY} stroke="none" d="M20,33 C21,45 43,45 44,33 C41,41 23,41 20,33 Z" />,
-        moustache: <path fill={fh} stroke={faceInk} strokeWidth={0.8} d="M27,36 Q32,33.5 37,36 Q32,35.5 27,36 Z" />,
-        goatee: <path fill={fh} stroke={faceInk} strokeWidth={0.8} d="M29,40 Q32,47 35,40 Q32,41.5 29,40 Z" />,
-        beard: <path fill={fh} stroke={faceInk} strokeWidth={1} d={beardPath(params.beardReach)} />,
+        moustache: <path fill={fh} stroke={edge} strokeWidth={0.8} d="M27,36 Q32,33.5 37,36 Q32,35.5 27,36 Z" />,
+        goatee: <path fill={fh} stroke={edge} strokeWidth={0.8} d="M29,40 Q32,47 35,40 Q32,41.5 29,40 Z" />,
+        beard: <path fill={fh} stroke={edge} strokeWidth={0.8} d={beardPath(params.beardReach)} />,
       };
       parts.push(
         <g key="facial-hair" className="avatar-facial-hair">

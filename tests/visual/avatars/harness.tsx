@@ -61,7 +61,55 @@ const VOCAB_CHARACTERS: TestCharacter[] = [
   ...GAME_VOCABULARY.build.map((build) => ({ name: `build ${build}`, height: 1.75, appearance: withValue("build", build) as LayoutAppearance })),
   ...(VOCAB_ROWS.at(-1)?.[1] ?? []).map(([name, appearance]) => ({ name: `beard ${name}`, height: 1.75, appearance: appearance as LayoutAppearance })),
 ];
-const CHARACTERS = params.get("set") === "vocab" ? VOCAB_CHARACTERS : TEST_CHARACTERS;
+/**
+ * `set=face`: the faces, beards and hair the readability checks look at (shoot.mjs --face): the darkest and palest
+ * palette skins with black, brown, blonde and white hair and beards, short beards and stubble on light and dark
+ * skin, buns, textured hair in tied styles, and chin- and shoulder-length hair beside a very long beard.
+ */
+const SKIN = { deep: "#292420", veryDark: "#3a312a", tan: "#d7bd96", veryPale: "#f6ede4" };
+const HAIR = { black: "#1b1612", brown: "#653700", blonde: "#e3c27a", white: "#eeeeea" };
+const faceOf = (
+  name: string,
+  skin: string,
+  hair: Record<string, unknown> | undefined,
+  facial: Record<string, unknown> | undefined,
+  extra: Record<string, unknown> = {},
+): TestCharacter => ({
+  name,
+  height: 1.75,
+  appearance: {
+    build: "average",
+    skin: { hex: skin },
+    eyes: { hex: "#5b3a1e" },
+    face: { shape: "square", nose: "average", lips: "average", brows: "average" },
+    garments: [{ name: "a shirt", areas: ["torso", "arms"], layer: 1, colour: { hex: "#ceb301" } }],
+    ...(hair ? { hair } : {}),
+    ...(facial ? { facial_hair: facial } : {}),
+    ...extra,
+  } as LayoutAppearance,
+});
+const FACE_CHARACTERS: TestCharacter[] = [
+  ...(["deep", "veryPale"] as const).flatMap((skin) =>
+    (Object.keys(HAIR) as Array<keyof typeof HAIR>).map((hair) =>
+      faceOf(`${skin} skin, ${hair} hair, full beard`, SKIN[skin], { length_cm: 3, texture: "coily", hex: HAIR[hair] }, { kind: "beard", length_cm: 8, hex: HAIR[hair] }),
+    ),
+  ),
+  faceOf("very dark skin, black short beard", SKIN.veryDark, { length_cm: 1.5, texture: "coily", hex: HAIR.black }, { kind: "beard", length_cm: 2, hex: HAIR.black }),
+  faceOf("tan skin, black short beard", SKIN.tan, { length_cm: 2.5, texture: "straight", style: "mohawk", hex: HAIR.black }, { kind: "beard", length_cm: 2, hex: HAIR.black }, { face: { shape: "angular", brows: "heavy" } }),
+  faceOf("very pale skin, brown short beard", SKIN.veryPale, { length_cm: 9, texture: "straight", hex: HAIR.brown }, { kind: "beard", length_cm: 3, hex: HAIR.brown }),
+  faceOf("deep skin, black stubble", SKIN.deep, { length_cm: 2.5, texture: "straight", hex: HAIR.black }, { kind: "stubble", hex: HAIR.black }),
+  faceOf("very pale skin, black stubble", SKIN.veryPale, { length_cm: 2.5, texture: "straight", hex: HAIR.black }, { kind: "stubble", hex: HAIR.black }),
+  faceOf("tan skin, brown stubble", SKIN.tan, { length_cm: 9, texture: "straight", hex: HAIR.brown }, { kind: "stubble", hex: HAIR.brown }),
+  faceOf("deep skin, black coily bun", SKIN.deep, { length_cm: 50, texture: "coily", style: "bun", hex: HAIR.black }, undefined),
+  faceOf("very pale skin, black bun", SKIN.veryPale, { length_cm: 50, texture: "straight", style: "bun", hex: HAIR.black }, undefined),
+  faceOf("curly ponytail", SKIN.tan, { length_cm: 30, texture: "curly", style: "ponytail", hex: HAIR.black }, undefined),
+  faceOf("wavy braids", SKIN.tan, { length_cm: 75, texture: "wavy", style: "braided", hex: HAIR.brown }, undefined),
+  faceOf("curly loose", SKIN.veryPale, { length_cm: 30, texture: "curly", hex: HAIR.brown }, undefined),
+  faceOf("coily loose", SKIN.deep, { length_cm: 50, texture: "coily", hex: HAIR.black }, undefined),
+  faceOf("chin-length, very long beard", SKIN.tan, { length_cm: 18, texture: "straight", hex: HAIR.black }, { kind: "beard", length_cm: 40, hex: HAIR.black }),
+  faceOf("shoulder-length, very long beard", SKIN.tan, { length_cm: 30, texture: "straight", hex: HAIR.black }, { kind: "beard", length_cm: 40, hex: HAIR.black }),
+];
+const CHARACTERS = params.get("set") === "vocab" ? VOCAB_CHARACTERS : params.get("set") === "face" ? FACE_CHARACTERS : TEST_CHARACTERS;
 const root = document.getElementById("root") as HTMLElement;
 document.body.style.background = "#14141a";
 document.body.style.color = "#e8e8ed";
@@ -88,7 +136,7 @@ if (view === "portraits") {
   render(
     <table style={{ borderSpacing: "16px 8px" }}>
       <tbody>
-        {TEST_CHARACTERS.map((ch) => (
+        {(params.get("set") === "face" ? FACE_CHARACTERS : TEST_CHARACTERS).map((ch) => (
           <tr key={ch.name}>
             <td style={{ width: "12em" }}>{ch.name}</td>
             <td>
@@ -148,7 +196,7 @@ if (view === "portraits") {
   window.ready = true;
 } else if (view === "figures") {
   // One close-up per character, alone in the living room, facing south toward the camera.
-  const angle = { three: Math.PI / 4, back: Math.PI }[params.get("angle") ?? ""] ?? 0;
+  const angle = { three: Math.PI / 4, side: Math.PI / 2, back: Math.PI }[params.get("angle") ?? ""] ?? 0;
   const cell = { w: 300, h: 420 };
   const cols = 4;
   const rows = Math.ceil(CHARACTERS.length / cols);
@@ -192,7 +240,8 @@ if (view === "portraits") {
       camera.lookAt(at);
     } else {
       const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
-      const distance = head ? 0.75 : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
+      // `dist=1.05`: the head camera that far away, metres (about 150 px of head in a 420 px cell).
+      const distance = head ? Number(params.get("dist") ?? "0.75") : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
       camera.position.set(Math.sin(angle) * distance, -Math.cos(angle) * distance, lookZ + (head ? 0.05 : 0.3));
       camera.lookAt(0, 0, lookZ);
     }

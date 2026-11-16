@@ -22,10 +22,17 @@ export interface Part {
 const named = (part: Part, name: string): Part => ({ ...part, name });
 
 const RADIAL = 10;
+/** The white of the 3D eye, behind the iris. */
+export const EYE_WHITE = "#ece8e0";
 /** How tall a seam outline band is, metres: a line, not a ring. */
 export const BAND_HEIGHT = 0.006;
 /** How far out from the surface a seam band lies, as a factor of the part's radius. */
 const BAND_OUT = 1.03;
+/**
+ * How wide the hairline and a beard's edge are, metres: about 3 px when the head is 150 px tall. They were 14 and
+ * 12 mm in pure white or black, and read as a headband and a chin strap.
+ */
+export const HAIRLINE_WIDTH = 0.005;
 /** How far the hair or head-covering cap leans back from upright, radians. */
 const CAP_LEAN = 0.5;
 
@@ -334,16 +341,22 @@ export function figureParts(p: FigureParams): Part[] {
     for (const side of [-1, 1]) {
       const ex = side * headR * 0.32;
       const ez = headR * 0.12;
-      // Seated in the head: the eye stands out of the face by less than half its radius.
-      if (c.eyes) out.push(named(ball(new THREE.Vector3(ex, faceY(ex, ez) - eyeR * 0.6, headCentreZ + ez), eyeR, c.eyes, undefined, 8), "eye"));
-      // A brow over each eye, in the hair colour as in the portrait, following the face.
+      // Seated in the head: the eye stands out of the face by less than half its radius. Its white, with the
+      // iris in the eye's colour at its front: an eye in its colour alone vanished on skin of its own darkness.
+      if (c.eyes) {
+        const centre = new THREE.Vector3(ex, faceY(ex, ez) - eyeR * 0.7, headCentreZ + ez);
+        out.push(named(ball(centre, eyeR, EYE_WHITE, undefined, 8), "eye"));
+        // The iris stands a little proud of the white, so its facets are not lost inside the white's.
+        out.push(named(ball(centre.clone().add(new THREE.Vector3(0, eyeR * 0.45, 0)), eyeR * 0.65, c.eyes, undefined, 8), "eye"));
+      }
+      // A brow over each eye, in the hair colour toned off the skin (`brow`), as in the portrait, following the face.
       const inner = side * headR * 0.16;
       const outer = side * headR * 0.48;
       const bz = headR * 0.3;
-      const brow = c.hair ?? c.facialHair ?? c.faceInk;
+      const brow = c.brow;
       const browInner = new THREE.Vector3(inner, faceY(inner, bz), headCentreZ + bz);
       const browOuter = new THREE.Vector3(outer, faceY(outer, bz - headR * 0.03), headCentreZ + bz - headR * 0.03);
-      out.push(named(stroke(browInner, browOuter, headR * 0.035, brow), "brow"));
+      out.push(named(stroke(browInner, browOuter, headR * 0.045, brow), "brow"));
     }
     // The mouth: a shallow smile across the lower face, in the face ink.
     const mz = -headR * 0.45;
@@ -351,7 +364,7 @@ export function figureParts(p: FigureParams): Part[] {
     const middle = new THREE.Vector3(0, faceY(0, mz - headR * 0.04), headCentreZ + mz - headR * 0.04);
     for (const side of [-1, 1]) {
       const end = new THREE.Vector3(side * corner, faceY(corner, mz), headCentreZ + mz);
-      out.push(named(stroke(middle, end, headR * 0.03, c.faceInk), "mouth"));
+      out.push(named(stroke(middle, end, headR * 0.04, c.faceInk), "mouth"));
     }
   }
 
@@ -384,11 +397,14 @@ export function figureParts(p: FigureParams): Part[] {
     if (!p.headCovered) textured(capPart.geometry, () => capAt, capTexture, headR);
     out.push(capPart);
     if (outlined.has("hairline") && !shaved) {
-      // The outline runs along the cap's edge, so it is built where that edge is and turned with the cap.
-      const edgeR = headR * Math.sin(capReach) * 1.02;
-      const edge = new THREE.CylinderGeometry(edgeR, edgeR, 0.014, RADIAL * 2, 1, true);
-      edge.translate(0, headR * Math.cos(capReach), 0);
-      const hairline = named(placed(edge, c.ink, capAt, capTurn, capScale), "hairline");
+      // The hair's own edge, a tone of the hair that stands 3:1 off the skin (`hairEdge`): a thin line lying on
+      // the cap just above its rim, built there and turned with the cap. A white ring standing out from the
+      // head read as a headband on black hair over dark skin.
+      const rim = capReach - HAIRLINE_WIDTH / headR / 2;
+      const edgeR = headR * Math.sin(rim) * 1.006;
+      const edge = new THREE.CylinderGeometry(edgeR, edgeR, HAIRLINE_WIDTH, RADIAL * 2, 1, true);
+      edge.translate(0, headR * Math.cos(rim), 0);
+      const hairline = named(placed(edge, c.hairEdge, capAt, capTurn, capScale), "hairline");
       // Raised with the cap's texture, so the curls do not cover it.
       const capAxis = new THREE.Vector3(0, 1, 0).applyEuler(capTurn);
       if (!p.headCovered) textured(hairline.geometry, () => capAt, capTexture, headR, 1, capAxis);
@@ -443,12 +459,14 @@ export function figureParts(p: FigureParams): Part[] {
       geometry: toHead(new THREE.SphereGeometry(headR, across, 6, toward - span / 2, span, 0, reach), k, drop),
       colour,
     });
-    // The upper edge of a shell, for an outline where the facial hair meets skin of nearly its own lightness.
+    // The upper edge of a shell where the facial hair meets skin of nearly its own lightness: a thin line of the
+    // facial hair's own tone off the skin (`facialHairEdge`), lying on the shell just below its edge.
     const shellEdge = (reach: number, toward: number, span: number, k: number, drop = 1): Part => {
-      const r = headR * Math.sin(reach) * 1.01;
-      const g = new THREE.CylinderGeometry(r, r, 0.012, 16, 1, true, toward - span / 2 - Math.PI / 2, span);
-      g.translate(0, headR * Math.cos(reach), 0);
-      return { geometry: toHead(g, k, drop), colour: c.ink };
+      const rim = reach - HAIRLINE_WIDTH / headR / 2;
+      const r = headR * Math.sin(rim) * 1.006;
+      const g = new THREE.CylinderGeometry(r, r, HAIRLINE_WIDTH, 16, 1, true, toward - span / 2 - Math.PI / 2, span);
+      g.translate(0, headR * Math.cos(rim), 0);
+      return { geometry: toHead(g, k, drop), colour: c.facialHairEdge ?? c.ink };
     };
     const front = Math.PI / 2;
     // Below the mouth (which sits at -0.45 to -0.49 head radii), across the jaw from ear to ear.

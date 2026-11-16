@@ -61,3 +61,26 @@ export function inkFor(...neighbours: string[]): string {
   const worst = (ink: string) => Math.min(...neighbours.map((c) => contrast(ink, c)));
   return worst(INK_DARK) >= worst(INK_LIGHT) ? INK_DARK : INK_LIGHT;
 }
+
+/**
+ * `base` as it is when it stands MIN_CONTRAST off `against`; otherwise `base` moved toward the ink that
+ * stands out on `against`, by the fewest twentieths that reach it (the ink itself when none does).
+ * A black brow or beard edge on dark skin becomes a grey of the same hair, not a white line.
+ */
+export function toneOff(base: string, against: string): string {
+  if (contrast(base, against) >= MIN_CONTRAST) return base;
+  const ink = inkFor(against);
+  for (let i = 1; i < 20; i++) {
+    const tone = overlayHex(base, ink, i / 20);
+    if (contrast(tone, against) >= MIN_CONTRAST) return tone;
+  }
+  return ink;
+}
+
+/**
+ * A sheen on hair: dark hair a step lighter, light hair a step darker. Drawn on curls and coils, on a bun and
+ * on strands, so texture and form show on hair whose colour lighting alone barely changes (black, white).
+ */
+export function sheenFor(hair: string): string {
+  return luminance(hair) < 0.25 ? overlayHex(hair, INK_LIGHT, 0.4) : overlayHex(hair, INK_DARK, 0.3);
+}

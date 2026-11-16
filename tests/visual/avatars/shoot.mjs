@@ -1,6 +1,6 @@
 // Tests only: screenshots of the invented test characters and frame times of the
 // 3D view, in headless Chromium (no window). Usage:
-//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d] [--pinch] [--vocab] [--labels3d]
+//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d] [--pinch] [--vocab] [--labels3d] [--face]
 // --gpu asks headless Chromium for the machine's GPU instead of its software renderer.
 // --vocab shoots the game's vocabulary (a portrait per value, builds and beard lengths in 3D)
 // instead of the test characters and zoom checks; frame times are measured either way.
@@ -19,6 +19,8 @@ const pinch = process.argv.includes('--pinch');
 // --labels3d shoots labels against heads in both 3D views and the wheel onto a person from near them
 // (options --dsf=N, --raw-wheel, --only=eyes|face|near; then the frame timing).
 const labels3d = process.argv.includes('--labels3d');
+// --face shoots the face, beard and hair readability set (portraits and 3D heads), then the frame timing.
+const face = process.argv.includes('--face');
 mkdirSync(out, { recursive: true });
 
 const server = await createServer({ server: { port: 5199, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' });
@@ -53,6 +55,30 @@ try {
       await tall.goto(`${base}?view=figures&angle=${angle}&zoom=${zoom}&set=vocab`);
       await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
       await tall.locator('#root > div').screenshot({ path: resolve(out, `vocab-figures-${zoom}-${angle}.png`) });
+    }
+    await tall.close();
+  }
+  if (face) {
+    // Faces, beards and hair (set=face in the harness): portraits at 128 px and 32 px, then 3D heads at about 150 px
+    // from the front, three-quarters, the side and behind.
+    const sharp = await browser.newPage({ viewport: { width: 1280, height: 1000 }, colorScheme: 'dark', deviceScaleFactor: 2 });
+    await sharp.goto(`${base}?view=portraits&set=face`);
+    await sharp.waitForFunction(() => window.ready === true);
+    await sharp.locator('table').screenshot({ path: resolve(out, 'face-portraits.png') });
+    // Four rows to a picture, to read the details.
+    const rows = await sharp.locator('tr').all();
+    for (let i = 0; i < rows.length; i += 4) {
+      const boxes = await Promise.all(rows.slice(i, i + 4).map((r) => r.boundingBox()));
+      const top = boxes[0].y;
+      const bottom = Math.max(...boxes.map((b) => b.y + b.height));
+      await sharp.screenshot({ path: resolve(out, `face-portraits-${String(i / 4 + 1).padStart(2, '0')}.png`), clip: { x: boxes[0].x, y: top, width: boxes[0].width, height: bottom - top }, fullPage: true });
+    }
+    await sharp.close();
+    const tall = await browser.newPage({ viewport: { width: 1280, height: 2600 }, colorScheme: 'dark' });
+    for (const angle of ['front', 'three', 'side', 'back']) {
+      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=head&dist=1.05&set=face`);
+      await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
+      await tall.locator('#root > div').screenshot({ path: resolve(out, `face-heads-${angle}.png`) });
     }
     await tall.close();
   }
@@ -258,7 +284,7 @@ try {
     }
     await narrow.close();
   }
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab) {
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -307,7 +333,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab) {
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');
