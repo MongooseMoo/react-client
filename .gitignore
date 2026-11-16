@@ -28,5 +28,7 @@ dist/
 .aider*
 .env
 screenshots/
+# vite-plugin-pwa's development service worker, written whenever the dev server runs
+dev-dist/
 public/wasm/mongoose.db
 public/wasm/toastcore.db

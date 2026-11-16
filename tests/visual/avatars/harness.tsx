@@ -110,11 +110,19 @@ if (view === "portraits") {
     // Whole figure: far enough that it (and antlers) fits. Head: the top 30 cm of the figure, close.
     const bounds = new THREE.Box3().setFromObject(room.things.get("#p") as THREE.Object3D);
     const head = params.get("zoom") === "head";
-    const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
-    const lookY = head && ch.appearance.posture === "reclining" ? bounds.min.y + 0.14 : 0;
-    const distance = head ? 0.75 : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
-    camera.position.set(Math.sin(angle) * distance, lookY - Math.cos(angle) * distance, lookZ + (head ? 0.05 : 0.3));
-    camera.lookAt(0, lookY, lookZ);
+    const lying = ch.appearance.posture === "reclining";
+    if (head && lying) {
+      // Lying on the back, face up. The figure lies head toward its own -y and is turned to
+      // face south, so its head is at the room's +y end: look down at the face from above it.
+      const at = new THREE.Vector3(0, bounds.max.y - 0.12, bounds.max.z - 0.05);
+      camera.position.set(Math.sin(angle) * 0.35, at.y - Math.cos(angle) * 0.35, at.z + 0.65);
+      camera.lookAt(at);
+    } else {
+      const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
+      const distance = head ? 0.75 : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
+      camera.position.set(Math.sin(angle) * distance, -Math.cos(angle) * distance, lookZ + (head ? 0.05 : 0.3));
+      camera.lookAt(0, 0, lookZ);
+    }
     cutWalls(room, layout, camera.position, "dollhouse");
     const x = (i % cols) * cell.w;
     const y = (rows - 1 - Math.floor(i / cols)) * cell.h;
