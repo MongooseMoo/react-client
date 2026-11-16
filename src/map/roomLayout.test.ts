@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { RoomLayout } from "../gmcp/Room";
+import type { LayoutThing, RoomLayout } from "../gmcp/Room";
 import { livingRoomLayout, sampleLayout, translateLayoutThing } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingSample from "./roomLayout.sample-25828.json";
 import {
   type Bounds,
+  bodyFootprint,
   labelOrder,
   mainMaterial,
   namedWithKind,
@@ -28,6 +29,21 @@ import {
 } from "./roomLayout";
 
 describe("room layout geometry", () => {
+  it("projects turned intrinsic body corners instead of rotating world bounds again", () => {
+    const thing: LayoutThing = { ...sampleLayout().things[0], pose: { centre_m: [1, 2, 1],
+      dimensions_m: [2, 1, 2], body_quaternion: [Math.cos(Math.PI / 8), 0, 0, Math.sin(Math.PI / 8)], box: true } };
+    const hull = bodyFootprint(thing);
+    expect(hull).toHaveLength(4);
+    if (!hull) throw new Error("missing native body footprint");
+    const area = Math.abs(hull.reduce((sum, point, i) => {
+      const next = hull[(i + 1) % hull.length];
+      return sum + point[0] * next[1] - next[0] * point[1];
+    }, 0)) / 2;
+    expect(area).toBeCloseTo(2);
+    expect(Math.max(...hull.map(p => p[0]))).toBeCloseTo(1 + 1.5 * Math.SQRT1_2);
+    if (!thing.pose) throw new Error("missing native pose");
+    expect(bodyFootprint({ ...thing, pose: { ...thing.pose, box: false } })).toBeUndefined();
+  });
   it("uses the supplied world shapes without an acoustic position", () => {
     const layout = laundry as unknown as RoomLayout;
     const [washer] = placeThings(layout);

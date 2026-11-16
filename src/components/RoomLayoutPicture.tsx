@@ -1,6 +1,6 @@
 import type React from "react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { LayoutVector, RoomLayout } from "../gmcp/Room";
+import { isLayoutPose, type RoomLayout } from "../gmcp/Room";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { tokenColours } from "../avatar/figure";
 import {
@@ -11,6 +11,8 @@ import {
   metres,
   nearestWall,
   frontDirection,
+  bodyDirection,
+  bodyFootprint,
   semanticDetails,
   type PlacedThing,
   placeLabels,
@@ -170,11 +172,24 @@ function doorwayGeometry(wall: Wall, at: [number, number, number], width: number
 
 /**
  * What a thing is, seen from above, drawn over its footprint: a table's leg
- * dots, a seat's back bar on its side nearest a wall, a door's swing arc into
+ * dots, a seat's back bar opposite its supplied front, a door's swing arc into
  * the room. Other forms are their footprint alone; things on the walls are
  * already wall marks.
  */
 export function formSymbol(p: PlacedThing, size: [number, number, number]): React.ReactNode {
+  const pose = p.thing.pose;
+  const x = bodyDirection(p.thing, [1, 0, 0]);
+  const y = bodyDirection(p.thing, [0, 1, 0]);
+  if (isLayoutPose(pose) && pose.box && x && y) {
+    const [w, d, h] = pose.dimensions_m;
+    const local: PlacedThing = { ...p, thing: { ...p.thing, pose: { ...pose, body_quaternion: [1, 0, 0, 0] } },
+      bounds: { x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -h / 2, z1: h / 2 } };
+    return <g transform={`matrix(${x[0]} ${-x[1]} ${-y[0]} ${y[1]} ${pose.centre_m[0]} ${-pose.centre_m[1]})`}>{flatFormSymbol(local, size)}</g>;
+  }
+  return flatFormSymbol(p, size);
+}
+
+function flatFormSymbol(p: PlacedThing, size: [number, number, number]): React.ReactNode {
   const { x0, x1, y0, y1 } = p.bounds;
   const w = x1 - x0;
   const d = y1 - y0;
@@ -466,6 +481,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
       <g>{grid}</g>
       <g>
         {ordered.map((p) => {
+          const body = bodyFootprint(p.thing);
           const you = p.thing.id === youId;
           const className = [
             "rl-item",
@@ -501,7 +517,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
           return (
             <g key={p.thing.id} className={className} data-id={p.thing.id} data-form={thingForm(p.thing)}>
               <title>{[displayName(p.thing, youId), ...semanticDetails(p.thing)].join(", ")}</title>
-              {p.footprints.map((f, index) => {
+              {body ? <polygon className="rl-thing" points={body.map(([x, y]) => toSvg(x, y).join(",")).join(" ")} /> : p.footprints.map((f, index) => {
                 if (f.type === "circle") {
                   const [x, y] = toSvg(f.cx, f.cy);
                   return <circle key={index} className="rl-thing" cx={x} cy={y} r={f.r} />;

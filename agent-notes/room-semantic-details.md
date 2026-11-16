@@ -14,6 +14,8 @@ Room.Layout stays the sole complete physical scene; Room.LayoutUpdate changes ex
 
 ## Surprises
 
+Review also found that Plan still drew axis-aligned world bounds for a turned box. It now projects the intrinsic body's corners through the supplied quaternion and transforms existing form marks in that same frame; custom world shapes remain unchanged. Added an area/bounds regression for a quarter-diagonal body.
+
 First PR CI identified stale movement expectations (the supplied physical delta puts y at 0.0..0.4) and scene construction leaving parent world matrices stale until the first render. Corrected the expectations and update world matrices when construction finishes, so geometry queries and labels see the same transforms as drawing.
 
 The existing surface registry supplies species and acoustic coefficients, not authored visual colours. Power state has a read-only native getter; projection must not refresh or settle electronics. Fronted eligibility is distinct from the default body axis.

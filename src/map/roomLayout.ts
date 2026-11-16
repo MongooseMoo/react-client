@@ -49,6 +49,28 @@ export function frontDirection(thing: LayoutThing): LayoutVector | undefined {
   return Array.isArray(axis) && axis.length === 3 && axis.every(Number.isFinite) ? bodyDirection(thing, axis) : undefined;
 }
 
+/** The projected solid body, built from intrinsic corners rather than rotating its world bounds. */
+export function bodyFootprint(thing: LayoutThing): Array<[number, number]> | undefined {
+  const pose = thing.pose;
+  if (!isLayoutPose(pose) || !pose.box) return undefined;
+  const points: Array<[number, number]> = [];
+  for (const x of [-0.5, 0.5]) for (const y of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
+    const rotated = bodyDirection(thing, [x * pose.dimensions_m[0], y * pose.dimensions_m[1], z * pose.dimensions_m[2]]);
+    if (rotated) points.push([pose.centre_m[0] + rotated[0], pose.centre_m[1] + rotated[1]]);
+  }
+  points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (a: number[], b: number[], c: number[]) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const half = (ordered: Array<[number, number]>) => {
+    const edge: Array<[number, number]> = [];
+    for (const point of ordered) {
+      while (edge.length > 1 && cross(edge[edge.length - 2], edge[edge.length - 1], point) <= 1e-12) edge.pop();
+      edge.push(point);
+    }
+    return edge.slice(0, -1);
+  };
+  return [...half(points), ...half([...points].reverse())];
+}
+
 const add = (a: LayoutVector, b: LayoutVector): LayoutVector => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 
 export function shapeFootprint(shape: LayoutShape, offset: LayoutVector = [0, 0, 0]): Footprint {
