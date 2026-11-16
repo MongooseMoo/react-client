@@ -67,17 +67,17 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 |---|---|
 | `label` | The shortest phrase that tells this person from the others present, worked out by the server for this recipient. Shown as text; the client never computes one. |
 | `posture` | `standing`, `sitting` or `reclining`. |
-| `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers`, `horns` and `pointed ears`. |
+| `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers`, `horns` and `pointed ears`. The wire gives these no colour: horns and antlers are drawn in one bone tone (`#d6c9a8`), wings and tail in the hair colour (the skin's when there is no hair). |
 | `build` | `average`, `athletic`, `thin`, `curvy`, `chunky`, `pudgy`, `muscular` or `dumpy`; anything else is drawn as average. |
 | `age_years` | A child's head is drawn larger for their height. |
-| `skin`, `eyes` | Colours. |
+| `skin`, `eyes` | Colours. Without `skin`, a person is drawn in a neutral light warm grey (`#b9b0a6`), the same in the portrait, the 3D figure and the plan token; it is not a human skin tone. |
 | `hair` | `length_cm` (under 1 none, under 8 short, under 25 medium, longer long), `texture` (`straight`, `wavy`, `curly`, `coily`), `style`, and its colour. Absent when bald or covered. |
 | `facial_hair` | `kind` (`none`, `stubble`, `moustache`, `goatee`, `beard`) and its colour; without a colour, the hair's. |
 | `face` | `shape` (`oval`, `round`, `square`, `long`, `heart`), `nose`, `lips`, `brows`, `ears`. |
 | `features` | A list of keys for small features. The portrait draws `freckles`, `glasses`, `sunglasses`, `eyepatch`, `earrings`, `mole` and `dimples`, in black or white, whichever stands out more on the skin (as are the pupils, nose, mouth and face marks); other keys are ignored. The 3D figure draws `glasses`, `sunglasses`, `eyepatch` and `earrings` in the same colour; `freckles`, `mole` and `dimples` are too small to read at figure size and appear only in the portrait. |
 | `face_hidden` | `true` when a form hides the face; no eyes, brows, mouth, facial hair or face features are drawn. |
 | `marks` | `[{"kind": "scar", "area": "cheek"}]`, uncovered marks only. The portrait shows those on the head and neck. |
-| `garments` | Worn things: `areas` they cover (`head`, `neck`, `torso`, `arms`, `hands`, `waist`, `legs`, `feet`), `layer` (higher is outside) and `colour` when it has one. Each area is drawn in its outermost garment's colour, plain cloth grey when that garment has no colour, skin when bare. |
+| `garments` | Worn things: `areas` they cover (`head`, `neck`, `torso`, `arms`, `hands`, `waist`, `legs`, `feet`), `layer` (higher is outside) and `colour` when it has one. Each area is drawn in its outermost garment's colour, plain cloth grey when that garment has no colour, skin when bare. With no `garments` at all, the torso, arms, waist, legs and feet are drawn in a neutral dark slate (`#4b5262`), so the person looks dressed. A person with no `appearance` at all keeps the plain figure in the person colour (you in blue). |
 
 The client checks none of these on arrival; anything missing or of the wrong type is treated as
 unremarkable.
@@ -101,11 +101,13 @@ The Map tab shows the room under "Room layout", in one of three views chosen wit
 buttons (the choice is kept across rooms):
 
 - **Plan**: the drawing from above, described below.
-- **Dollhouse**: the room in 3D, seen from above one corner. Drag to turn it, the wheel or a pinch
-  to zoom; on the picture the arrow keys turn it, `+` and `-` zoom and `0` returns to the start.
-  Walls on the camera's side are cut low so they never hide the room.
+- **Dollhouse**: the room in 3D, seen from above one corner, far enough out for the whole room
+  however large. Drag to turn it, the wheel or a pinch to zoom toward what is under the pointer;
+  on the picture the arrow keys turn it, `+` and `-` zoom toward and away from your own figure
+  (the room's middle when you are not in the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
 - **Your eyes**: the room in 3D from where you stand (your `Client.Spatial` position), facing
-  your `Client.Spatial` forward, turning as you turn.
+  your `Client.Spatial` forward, turning as you turn. `+` and `-` on the picture, or the wheel,
+  narrow and widen the view (up to about seven times closer); `0` returns to the normal view.
 
 In every view things are drawn by what they are, from the first of their `classes` the client
 knows: a table as a top on legs, a chair or other furniture as a seat with its back to the
@@ -117,7 +119,9 @@ else a neutral stone). People are figures: head, body, arms and legs sized by th
 build, painted with their skin, hair, eye and garment colours, with hair by length and texture,
 facial hair, a head garment, and parts for their traits; standing, sitting or lying as `posture`
 says, and turned to face their `Client.Spatial` forward (south when there is none). Where two
-neighbouring colours fall below 3:1 contrast, a thin dark or light band outlines the seam. A
+neighbouring colours fall below 3:1 contrast, a thin dark or light line lying close to the body
+outlines the seam, whatever their hues: colours told apart by hue alone look alike to someone
+with red-green colour blindness. A
 person without `appearance` is the same figure in the person colour, you in blue. The plan marks tables' legs, seats' backs and doors' swing. The 3D views are
 one image to a screen reader with the same name as the plan, and clicking a doorway in them
 sends its exit too.

@@ -1,7 +1,7 @@
 import type { LayoutAppearance } from "../gmcp/Room";
 
 /**
- * Twelve invented characters covering heights, builds, hair, skin tones
+ * Thirteen invented characters covering heights, builds, hair, skin tones
  * (Monk scale values), garments, facial hair, marks, a hidden face, traits
  * and postures. Names are made up; no real character goes in a fixture. Tests only.
  */
@@ -234,6 +234,21 @@ export const TEST_CHARACTERS: TestCharacter[] = [
         { name: "a sky-blue vest", areas: ["torso"], layer: 1, colour: c("sky blue", "#75bbfd") },
         { name: "white shorts", areas: ["waist", "legs"], layer: 1, colour: c("white", "#f4f1ea") },
       ],
+    },
+  },
+  {
+    // Shaped like most live records today: hair, eyes, face and build, but no skin and no garments.
+    name: "Mott Ansel",
+    height: 1.78,
+    appearance: {
+      label: "the dumpy person",
+      build: "dumpy",
+      body_plan: "human body",
+      traits: ["physical", "living", "limbs", "arms", "legs", "eyes", "mouth", "skin", "ears", "hair", "hands"],
+      posture: "standing",
+      eyes: c("green", "#4f7a3a"),
+      hair: { length_cm: 75, ...c("red", "#a33a1f") },
+      face: { lips: "chapped", nose: "pudgy" },
     },
   },
 ];

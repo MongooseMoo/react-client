@@ -20,6 +20,16 @@ export function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }
 
+/**
+ * `over` laid on `under` at opacity `t`, in sRGB as a browser composites SVG `fill-opacity`:
+ * what the portrait's stubble (45% over the skin) looks like, for the 3D figure to paint.
+ */
+export function overlayHex(under: string, over: string, t: number): string {
+  const a = hexToRgb(under);
+  const b = hexToRgb(over);
+  return `#${a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
+}
+
 export function hexToNumber(hex: string): number {
   return Number.parseInt(hex.slice(1), 16);
 }

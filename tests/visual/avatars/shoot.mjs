@@ -19,7 +19,8 @@ const browser = await chromium.launch({
   args: gpu ? ['--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist'] : [],
 });
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, colorScheme: 'dark' });
+  // Tall enough for every row of figure cells (420 px each), since a clip must lie inside the viewport.
+  const page = await browser.newPage({ viewport: { width: 1280, height: 1800 }, colorScheme: 'dark' });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   const open = async (query) => {
@@ -39,6 +40,24 @@ try {
       await row.screenshot({ path: resolve(out, `portrait-${slug(await row.locator('td').first().innerText())}.png`) });
     }
     await sharp.close();
+    // The player card in a 276 px side panel: is the name whole, and how many lines does the label take?
+    const card = await browser.newPage({ viewport: { width: 400, height: 300 }, colorScheme: 'dark', deviceScaleFactor: 2 });
+    await card.goto(`${base}?view=card`);
+    await card.waitForFunction(() => window.ready === true);
+    await card.locator('.player-card').screenshot({ path: resolve(out, 'player-card-276.png') });
+    const cardFit = await card.evaluate(() => {
+      const name = document.querySelector('.player-name');
+      const label = document.querySelector('.player-label');
+      const lineHeight = Number.parseFloat(getComputedStyle(label).lineHeight) || Number.parseFloat(getComputedStyle(label).fontSize) * 1.2;
+      return {
+        nameWhole: name.scrollWidth <= name.clientWidth,
+        nameWidth: name.clientWidth,
+        labelLines: Math.round(label.getBoundingClientRect().height / lineHeight),
+        readingOrder: [...document.querySelectorAll('.player-card *')].filter((e) => !e.closest('[aria-hidden="true"]') && e.childElementCount === 0).map((e) => e.getAttribute('aria-label') ?? e.textContent),
+      };
+    });
+    console.log('player card at 276 px:', JSON.stringify(cardFit));
+    await card.close();
     await open('view=plan');
     await page.locator('svg.room-layout-svg, svg').first().screenshot({ path: resolve(out, 'plan-tokens.png') });
     for (const zoom of ['body', 'head']) {
@@ -55,6 +74,41 @@ try {
           await page.screenshot({ path: resolve(out, `figure-${angle}-${slug(who)}.png`), clip });
         }
       }
+    }
+  }
+  // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
+  if (!gpu) {
+    for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
+      await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
+      const pic = page.locator('.room-layout-3d');
+      await pic.focus();
+      const focused = await page.evaluate(() => document.activeElement?.className);
+      const tag = `${mode}${size ? `-${size}m` : ''}`;
+      const shots = {};
+      for (const [step, key, times] of [['start', null, 0], ['plus10', '+', 10], ['plus30', '+', 20], ['minus10', '-', 30]]) {
+        for (let i = 0; i < times; i++) await page.keyboard.press(key);
+        await page.waitForTimeout(150);
+        shots[step] = await pic.screenshot({ path: resolve(out, `zoom-${tag}-${step}.png`) });
+      }
+      if (tag === 'dollhouse-50m') {
+        // The wheel with the pointer on the people (where the start shot shows them), zooming toward them.
+        await page.keyboard.press('0');
+        const box = await pic.boundingBox();
+        await page.mouse.move(box.x + box.width * 0.49, box.y + box.height * 0.505);
+        for (let i = 0; i < 40; i++) await page.mouse.wheel(0, -100);
+        await page.waitForTimeout(300);
+        await pic.screenshot({ path: resolve(out, `zoom-${tag}-wheel-on-people.png`) });
+      }
+      if (tag === 'dollhouse-50m') {
+        // With a "you" (#p7, the right end of the front row): + heads for your own face.
+        await open('view=room&n=8&mode=dollhouse&size=50&you=%23p7');
+        await pic.focus();
+        for (let i = 0; i < 30; i++) await page.keyboard.press('+');
+        await page.waitForTimeout(300);
+        await pic.screenshot({ path: resolve(out, `zoom-${tag}-plus30-toward-you.png`) });
+      }
+      const same = (a, b) => Buffer.compare(shots[a], shots[b]) === 0;
+      console.log(`zoom ${tag}: focused=${focused} start=plus10:${same('start', 'plus10')} plus10=plus30:${same('plus10', 'plus30')} start=minus10:${same('start', 'minus10')}`);
     }
   }
   const results = [];

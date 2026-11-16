@@ -12,6 +12,7 @@ import "../../../src/index.css";
 import "../../../src/components/MapPanel.css";
 import { TEST_CHARACTERS } from "../../../src/avatar/characters.fixture";
 import AvatarPortrait from "../../../src/avatar/portrait";
+import PlayerCard from "../../../src/components/PlayerCard";
 import RoomLayout3D from "../../../src/components/RoomLayout3D";
 import RoomLayoutPicture from "../../../src/components/RoomLayoutPicture";
 import type { RoomLayout } from "../../../src/gmcp/Room";
@@ -62,6 +63,16 @@ if (view === "portraits") {
     root,
   );
   window.ready = true;
+} else if (view === "card") {
+  // The player card as the Room tab shows it, in a side panel 276 px wide (the live guest check's width).
+  const appearance = { ...TEST_CHARACTERS[1].appearance, label: "the tall bearded man" };
+  render(
+    <div className="sidebar" style={{ width: 276, boxSizing: "border-box", padding: 8 }}>
+      <PlayerCard player={{ name: "bram", fullname: "Bram Okoro" }} appearance={appearance} onLook={noop} onFollow={noop} />
+    </div>,
+    root,
+  );
+  window.ready = true;
 } else if (view === "figures") {
   // One close-up per character, alone in the living room, facing south toward the camera.
   const angle = params.get("angle") === "three" ? Math.PI / 4 : 0;
@@ -99,11 +110,19 @@ if (view === "portraits") {
     // Whole figure: far enough that it (and antlers) fits. Head: the top 30 cm of the figure, close.
     const bounds = new THREE.Box3().setFromObject(room.things.get("#p") as THREE.Object3D);
     const head = params.get("zoom") === "head";
-    const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
-    const lookY = head && ch.appearance.posture === "reclining" ? bounds.min.y + 0.14 : 0;
-    const distance = head ? 0.75 : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
-    camera.position.set(Math.sin(angle) * distance, lookY - Math.cos(angle) * distance, lookZ + (head ? 0.05 : 0.3));
-    camera.lookAt(0, lookY, lookZ);
+    const lying = ch.appearance.posture === "reclining";
+    if (head && lying) {
+      // Lying on the back, face up. The figure lies head toward its own -y and is turned to
+      // face south, so its head is at the room's +y end: look down at the face from above it.
+      const at = new THREE.Vector3(0, bounds.max.y - 0.12, bounds.max.z - 0.05);
+      camera.position.set(Math.sin(angle) * 0.35, at.y - Math.cos(angle) * 0.35, at.z + 0.65);
+      camera.lookAt(at);
+    } else {
+      const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
+      const distance = head ? 0.75 : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
+      camera.position.set(Math.sin(angle) * distance, -Math.cos(angle) * distance, lookZ + (head ? 0.05 : 0.3));
+      camera.lookAt(0, 0, lookZ);
+    }
     cutWalls(room, layout, camera.position, "dollhouse");
     const x = (i % cols) * cell.w;
     const y = (rows - 1 - Math.floor(i / cols)) * cell.h;
@@ -119,6 +138,10 @@ if (view === "portraits") {
 } else if (view === "room") {
   const count = Number(params.get("n") ?? "8");
   const layout = crowdLayout(count);
+  // `size=50`: the same people in a square room that many metres across, like a large live room.
+  const size = Number(params.get("size") ?? "0");
+  if (size > 0) layout.size = [size, size, layout.size[2]];
+  const mode = params.get("mode") === "eyes" ? "eyes" : "dollhouse";
   // Time every WebGL render the 3D view makes, and keep its draw counts. WebGLRenderer
   // sets `render` on each instance, so the scene's before/after hooks are used instead.
   let renderMs = 0;
@@ -138,10 +161,10 @@ if (view === "portraits") {
           layout={layout}
           placed={placeThings(layout, offset ? { "#p0": offset } : {})}
           arrivals={[]}
-          youId=""
+          youId={params.get("you") ?? ""}
           facings={{}}
           label="test room"
-          mode="dollhouse"
+          mode={mode}
           onExit={noop}
         />
       </div>,

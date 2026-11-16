@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
-import { figureParams } from "../avatar/figure";
+import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "../avatar/figure";
 import type { RoomLayout } from "../gmcp/Room";
 import { crowdLayout, livingRoomLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
@@ -13,15 +13,24 @@ import {
   CUT_WALL_HEIGHT,
   cutWalls,
   DEFAULT_EYE_HEIGHT,
+  DOLLHOUSE_FOV,
   disposeRoomScene,
+  dollhouseMaxDistance,
   dollhousePose,
+  EYES_FOV,
+  EYES_MIN_FOV,
   eyesPose,
   FigureCache,
   MATERIAL_COLOURS,
   NEUTRAL,
   PERSON_COLOUR,
+  panTo,
+  zoomFocus,
   YOU_COLOUR,
+  ZOOM_STEP,
+  zoomedFov,
 } from "./roomScene";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 const build = (layout: RoomLayout, youId = "#99") =>
   buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId });
@@ -138,6 +147,18 @@ describe("buildRoomScene", () => {
     expect(scene.labelAnchors.get("#9")?.z).toBeGreaterThan(bounds.max.z - 0.2);
   });
 
+  it("draws a record without skin or garments in the same neutral skin and clothing as the portrait and plan token", () => {
+    const layout = livingRoomLayout();
+    const appearance = { hair: { length_cm: 75, hex: "#a33a1f" }, eyes: { hex: "#4f7a3a" }, build: "dumpy" };
+    layout.things = layout.things.map((t) => (t.id === "#9" ? { ...t, appearance } : t));
+    const colours = figureColours("#9", build(layout)).map(hex);
+    expect(colours).toContain(NEUTRAL_SKIN);
+    expect(colours).toContain(NEUTRAL_CLOTHING);
+    expect(colours).not.toContain(hex(PERSON_COLOUR));
+    // A person with no appearance at all keeps the plain look.
+    expect(figureColours("#9", build(livingRoomLayout())).map(hex)).toEqual([hex(PERSON_COLOUR)]);
+  });
+
   it("draws glasses, sunglasses, an eyepatch and earrings on the figure's head in the ink, not on a hidden face", () => {
     // Pale skin and no garments: the ink is dark and appears only where a feature (or outline) is drawn.
     const plain = { skin: { hex: "#f0d8c0" }, eyes: { hex: "#3a7d44" } };
@@ -160,18 +181,20 @@ describe("buildRoomScene", () => {
       }
       return { zs, top: head.max.z, geometry: body.geometry };
     };
+    // The bare face has only its mouth in the face ink.
     const bare = inkVertices(plain);
-    expect(bare.zs).toHaveLength(0);
+    expect(bare.zs.length).toBeGreaterThan(0);
+    expect(Math.min(...bare.zs)).toBeGreaterThan(bare.top - 0.3);
     for (const feature of ["glasses", "sunglasses", "eyepatch", "earrings"]) {
       const drawn = inkVertices({ ...plain, features: [feature] });
-      expect(drawn.zs.length, feature).toBeGreaterThan(0);
+      expect(drawn.zs.length, feature).toBeGreaterThan(bare.zs.length);
       // Every inked vertex is on the head: within its top quarter-metre.
       expect(Math.min(...drawn.zs), feature).toBeGreaterThan(drawn.top - 0.3);
       // A feature is part of the figure's look, so it gets its own geometry.
       expect(drawn.geometry, feature).not.toBe(bare.geometry);
     }
     // Freckles, a mole and dimples stay in the portrait.
-    expect(inkVertices({ ...plain, features: ["freckles", "mole", "dimples"] }).zs).toHaveLength(0);
+    expect(inkVertices({ ...plain, features: ["freckles", "mole", "dimples"] }).zs).toHaveLength(bare.zs.length);
     expect(inkVertices({ ...plain, face_hidden: true, features: ["glasses", "earrings"] }).zs).toHaveLength(0);
     figures.dispose();
   });
@@ -339,6 +362,75 @@ describe("cameras", () => {
     cutWalls(scene, layout, camera, "eyes");
     expect(Object.values(scene.walls).map((w) => w.scale.z)).toEqual([1, 1, 1, 1]);
     expect(scene.ceiling.visible).toBe(true);
+  });
+
+  it("zooms the dollhouse in with + : the camera comes closer to what it looks at", () => {
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const controls = new OrbitControls(camera, document.createElement("div"));
+    camera.position.set(0, -10, 5);
+    controls.update();
+    const before = camera.position.distanceTo(controls.target);
+    controls.dollyIn(ZOOM_STEP);
+    expect(camera.position.distanceTo(controls.target)).toBeLessThan(before * 0.9);
+    // The scale it used to be given, 1.15, moved the camera away.
+    const at = camera.position.distanceTo(controls.target);
+    controls.dollyIn(1.15);
+    expect(camera.position.distanceTo(controls.target)).toBeGreaterThan(at);
+    controls.dispose();
+  });
+
+  it("zooms the dollhouse toward your own face with the keyboard, or the room's middle when you are not in it", () => {
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const you = { x0: 18, x1: 18.4, y0: -12, y1: -11.6, z0: 0, z1: 1.75 };
+    const face = zoomFocus(you, big);
+    expect(face.toArray()).toEqual([18.2, -11.8, 1.575]);
+    expect(zoomFocus(undefined, big).toArray()).toEqual(dollhousePose(big).target);
+
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const controls = new OrbitControls(camera, document.createElement("div"));
+    controls.maxDistance = dollhouseMaxDistance(big);
+    const pose = dollhousePose(big);
+    camera.position.set(...pose.position);
+    controls.target.set(...pose.target);
+    controls.update();
+    const direction = camera.position.clone().sub(controls.target).normalize();
+    const orbit = camera.position.distanceTo(controls.target);
+    // What + does: slide over to the face, unturned, then come a step closer to it.
+    panTo(camera, controls.target, face);
+    controls.dollyIn(ZOOM_STEP);
+    expect(controls.target.distanceTo(face)).toBeLessThan(1e-9);
+    expect(camera.position.clone().sub(controls.target).normalize().distanceTo(direction)).toBeLessThan(1e-6);
+    expect(camera.position.distanceTo(face)).toBeCloseTo(orbit * ZOOM_STEP, 6);
+    // Thirty presses bring the camera within arm's length of the face.
+    for (let i = 0; i < 29; i++) {
+      panTo(camera, controls.target, face);
+      controls.dollyIn(ZOOM_STEP);
+    }
+    expect(camera.position.distanceTo(face)).toBeLessThan(2);
+    controls.dispose();
+  });
+
+  it("lets the dollhouse reach a large room's whole-room view", () => {
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const pose = dollhousePose(big);
+    const distance = Math.hypot(...pose.position.map((v, i) => v - pose.target[i]));
+    // A 50 m room needs about 87 m; the fixed limit was 60.
+    expect(distance).toBeGreaterThan(60);
+    expect(dollhouseMaxDistance(big)).toBeGreaterThan(distance);
+    expect(dollhouseMaxDistance(livingRoomLayout())).toBe(60);
+  });
+
+  it("zooms Your eyes by narrowing the field of view, within limits", () => {
+    expect(zoomedFov(EYES_FOV, "+")).toBeLessThan(EYES_FOV);
+    expect(zoomedFov(EYES_FOV, "-")).toBe(EYES_FOV);
+    expect(zoomedFov(30, "-")).toBeGreaterThan(30);
+    let fov = EYES_FOV;
+    for (let i = 0; i < 40; i++) fov = zoomedFov(fov, "=") ?? fov;
+    expect(fov).toBe(EYES_MIN_FOV);
+    expect(zoomedFov(20, "0")).toBe(EYES_FOV);
+    expect(zoomedFov(20, "x")).toBeUndefined();
   });
 
   it("starts the dollhouse above the room's south side, looking into it", () => {

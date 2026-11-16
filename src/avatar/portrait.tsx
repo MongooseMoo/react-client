@@ -1,5 +1,5 @@
 import type React from "react";
-import { BUILDS, type FigureParams, figureParams, appearanceRecord } from "./figure";
+import { BUILDS, type FigureParams, figureParams, appearanceRecord, HORN_TONE, STUBBLE_OPACITY } from "./figure";
 
 /**
  * A head-and-shoulders portrait of a person drawn in SVG from their Room.Layout
@@ -92,7 +92,7 @@ function hairCap(params: FigureParams, fill: string, ink: string): React.ReactNo
 export function portraitElements(appearance: unknown): React.ReactNode[] | null {
   const record = appearanceRecord(appearance);
   if (!record) return null;
-  const params = figureParams(record, { height: 1.75, base: "#888888" });
+  const params = figureParams(record, { height: 1.75 });
   const c = params.colours;
   const ink = c.ink;
   // What is drawn on the skin uses the ink that stands out on the skin; region outlines use the seam ink.
@@ -131,13 +131,14 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
     <rect key="neck" className="avatar-neck" x={27} y={36} width={10} height={10} fill={c.neck} stroke={ink} strokeWidth={1.2} />,
   );
   const pointed = params.extras.includes("pointed_ears") || word(face.ears) === "pointed";
-  for (const x of [17.5, 46.5]) {
+  // A hood or hat over the head covers the ears.
+  for (const x of params.headCovered ? [] : [17.5, 46.5]) {
     const out = x < 32 ? -1 : 1;
     parts.push(
       pointed ? (
-        <path key={`ear${x}`} fill={c.skin} stroke={ink} strokeWidth={1} d={`M${x - out},26 L${x + out * 4},19 L${x + out * 1.5},34 Z`} />
+        <path key={`ear${x}`} className="avatar-ear" fill={c.skin} stroke={ink} strokeWidth={1} d={`M${x - out},26 L${x + out * 4},19 L${x + out * 1.5},34 Z`} />
       ) : (
-        <ellipse key={`ear${x}`} fill={c.skin} stroke={ink} strokeWidth={1} cx={x} cy={30} rx={2.6} ry={4} />
+        <ellipse key={`ear${x}`} className="avatar-ear" fill={c.skin} stroke={ink} strokeWidth={1} cx={x} cy={30} rx={2.6} ry={4} />
       ),
     );
   }
@@ -152,12 +153,12 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
   }
   if (params.extras.includes("horns") || params.extras.includes("antlers")) {
     const tine = params.extras.includes("antlers");
-    const fill = c.hair ?? c.skin;
     for (const side of [-1, 1]) {
       parts.push(
         <path
           key={`horn${side}`}
-          fill={fill}
+          className="avatar-horn"
+          fill={HORN_TONE}
           stroke={ink}
           strokeWidth={1}
           d={
@@ -216,7 +217,7 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
     const fh = c.facialHair;
     if (fh) {
       const shapes: Record<string, React.ReactElement> = {
-        stubble: <path fill={fh} fillOpacity={0.45} stroke="none" d="M20,33 C21,45 43,45 44,33 C41,41 23,41 20,33 Z" />,
+        stubble: <path fill={fh} fillOpacity={STUBBLE_OPACITY} stroke="none" d="M20,33 C21,45 43,45 44,33 C41,41 23,41 20,33 Z" />,
         moustache: <path fill={fh} stroke={faceInk} strokeWidth={0.8} d="M27,36 Q32,33.5 37,36 Q32,35.5 27,36 Z" />,
         goatee: <path fill={fh} stroke={faceInk} strokeWidth={0.8} d="M29,40 Q32,47 35,40 Q32,41.5 29,40 Z" />,
         beard: <path fill={fh} stroke={faceInk} strokeWidth={1} d="M19.5,30 C19,47 45,47 44.5,30 C43,38 38,41 32,41 C26,41 21,38 19.5,30 Z" />,
@@ -279,13 +280,21 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
   return parts;
 }
 
+/** Below this many CSS pixels the portrait shows the head alone, so the face has room to read. */
+export const HEAD_CROP_BELOW = 48;
+/** The head and the top of the shoulders, in the drawing's 64-unit square. */
+export const HEAD_VIEWBOX = "12 5 40 40";
+
 export const AvatarPortrait: React.FC<PortraitProps> = ({ appearance, size = 40, className }) => {
   const parts = portraitElements(appearance);
   if (!parts) return null;
+  // At the People list's 32 px the whole picture gives a face about 13 px; the head alone gives about 21.
+  const cropped = size < HEAD_CROP_BELOW;
   return (
     <svg
-      className={["avatar-portrait", className].filter(Boolean).join(" ")}
-      viewBox="0 0 64 64"
+      className={["avatar-portrait", cropped ? "avatar-portrait-head" : "", className].filter(Boolean).join(" ")}
+      viewBox={cropped ? HEAD_VIEWBOX : "0 0 64 64"}
+      style={cropped ? { borderRadius: "50%" } : undefined}
       width={size}
       height={size}
       aria-hidden="true"
