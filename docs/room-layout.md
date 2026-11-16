@@ -147,7 +147,17 @@ facial hair, a head garment, and parts for their traits; standing, sitting or ly
 says, and turned to face their `Client.Spatial` forward (south when there is none). Where two
 neighbouring colours fall below 3:1 contrast, a thin dark or light line lying close to the body
 outlines the seam, whatever their hues: colours told apart by hue alone look alike to someone
-with red-green colour blindness. A
+with red-green colour blindness. At the hairline and a beard's edge that line is a tone of the
+hair itself, moved toward light or dark until it stands 3:1 off the skin, about 5 mm wide and lying
+on the hair, so it reads as the hair's edge (a grey edge on black hair over dark skin), not as a
+band. Brows are the hair's colour toned the same way; eyes have a white and an iris in the eye
+colour. A beard or stubble covers the cheeks and chin up to the sideburns, leaving the mouth;
+stubble is a shadow plus a stipple of points toned off the skin. Curly, coily and wavy hair is
+raised in curls or waves whose peaks catch a sheen of the hair's colour (lighter on dark hair,
+darker on light hair), on loose and tied styles alike; a bun stands clear of the head with a lit
+crown and a tie. The portrait draws texture on tied styles' caps, the same toned brows and beard
+edge, short beards along the face shape's own jaw, and hair worn down as locks beside the face
+that end where the hair ends. A
 person without `appearance` is the same figure in the person colour, you in blue. The plan marks tables' legs, seats' backs and doors' swing. The 3D views are
 one image to a screen reader with the same name as the plan, and clicking a doorway in them
 sends its exit too.

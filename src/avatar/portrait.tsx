@@ -269,9 +269,10 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
             <circle cx={32} cy={10} r={6} fill={fill} stroke={ink} strokeWidth={1.2} />
             {/* Curls or coils round a textured bun's top. */}
             {texture === "curly" || texture === "coily"
-              ? Array.from({ length: 7 }, (_, i) => {
-                  const angle = Math.PI * (1 + i / 6);
-                  return <circle key={`bun${i}`} className="avatar-hair-texture" cx={n(32 + Math.cos(angle) * 6)} cy={n(10 + Math.sin(angle) * 6)} r={texture === "curly" ? 1.8 : 1.3} fill={fill} stroke={ink} strokeWidth={0.6} />;
+              ? [0, 1, 2, 3, 4, 5, 6].map((step) => {
+                  const angle = Math.PI * (1 + step / 6);
+                  const [cx, cy] = [n(32 + Math.cos(angle) * 6), n(10 + Math.sin(angle) * 6)];
+                  return <circle key={`bun${cx},${cy}`} className="avatar-hair-texture" cx={cx} cy={cy} r={texture === "curly" ? 1.8 : 1.3} fill={fill} stroke={ink} strokeWidth={0.6} />;
                 })
               : null}
             {tiedCap(line("bun-ring", "M28.5,10.5 Q32,6 35.5,10.5"))}
