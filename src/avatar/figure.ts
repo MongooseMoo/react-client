@@ -61,6 +61,8 @@ export interface FigureColours {
   eyes?: string;
   /** Outline colour for seams below MIN_CONTRAST. */
   ink: string;
+  /** The ink that stands out on the skin: pupils, nose, mouth, face marks and features. */
+  faceInk: string;
 }
 
 export interface FigureParams {
@@ -222,6 +224,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     facialHair: facialHair !== "none" ? facialHex : undefined,
     eyes: faceHidden ? undefined : colourHex(record.eyes),
     ink: "",
+    faceInk: inkFor(skin),
   };
 
   const seams: Array<[Seam, string, string]> = [

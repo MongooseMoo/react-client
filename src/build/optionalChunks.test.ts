@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type ChunkGraph, optionalChunks } from './optionalChunks';
+import { type ChunkGraph, lazyPackagesAtStartup, optionalChunks } from './optionalChunks';
 
 function chunk(moduleIds: string[], imports: string[] = [], isEntry = false) {
   return { type: 'chunk' as const, moduleIds, imports, isEntry };
@@ -45,5 +45,26 @@ describe('optional feature precaching', () => {
       'feature.js': chunk(['/app/src/feature.ts'], ['shared.js']),
     };
     expect([...optionalChunks(bundle)]).toEqual(['feature.js']);
+  });
+});
+
+describe('three.js stays out of startup', () => {
+  it('accepts three.js in a lazily imported chunk', () => {
+    const bundle: ChunkGraph = {
+      'main.js': chunk(['/app/src/main.ts'], [], true),
+      'RoomLayout3D.js': chunk(['/app/src/components/RoomLayout3D.tsx', '/app/node_modules/three/build/three.module.js'], ['main.js']),
+    };
+    expect(lazyPackagesAtStartup(bundle)).toEqual([]);
+  });
+
+  it('reports three.js in an entry or in a chunk an entry imports statically, on either path style', () => {
+    const bundle: ChunkGraph = {
+      'main.js': chunk(['/app/src/main.ts'], ['shared.js'], true),
+      'shared.js': chunk(['C:\\app\\node_modules\\three\\build\\three.core.js']),
+      'other.js': chunk(['/app/node_modules/three-mesh-bvh/index.js'], ['main.js']),
+    };
+    expect(lazyPackagesAtStartup(bundle)).toEqual(['shared.js: C:\\app\\node_modules\\three\\build\\three.core.js']);
+    bundle['main.js'] = chunk(['/app/src/main.ts', '/app/node_modules/three/build/three.module.js'], [], true);
+    expect(lazyPackagesAtStartup(bundle)).toEqual(['main.js: /app/node_modules/three/build/three.module.js']);
   });
 });

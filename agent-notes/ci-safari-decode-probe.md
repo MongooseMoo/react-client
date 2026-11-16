@@ -6,7 +6,8 @@ A manually started workflow that measures where Safari's `decodeAudioData` start
 
 ## State
 
-- `.github/workflows/safari-decode-probe.yml`: `workflow_dispatch` only. Safari 27.2 via safaridriver on `macos-15` and `macos-26`; simulator Safari on iOS 26.4 (`macos-26`). Uploads each `result.json` as an artifact.
+- `.github/workflows/safari-decode-probe.yml`: `workflow_dispatch` only. Safari via safaridriver on `macos-15`, `macos-26` and `xcode-27` (macOS 27.0.1, Safari 27.0.1); simulator Safari on iOS 26.4 (`macos-26`) and iOS 27.2 (`xcode-27`). Uploads each `result.json` as an artifact.
+- `.github/actionlint.yaml` declares the `xcode-27` label so actionlint v1.7.12 accepts it (added with the owner's approval on 2026-11-14). The `xcode-27` jobs, removed earlier for that lint failure, are restored.
 - `.github/safari-probe/`: `probe.html` (fetches nine files from `https://mongoose.world/sounds/`, decodes each at its own rate in an `OfflineAudioContext`), `onset.js` (onset detection), `serve.py` (serves the page, writes the POSTed result), `drive_safari.py` (WebDriver over HTTP), `check.py` (classifies each file's onset offset; exits 1 unless every file honours the edit list).
 - `node --test .github/safari-probe/onset_check.js` passes locally. Nothing else has run: no Safari, simulator or workflow run yet.
 
@@ -21,12 +22,9 @@ A manually started workflow that measures where Safari's `decodeAudioData` start
 
 ## Surprises
 
-- actionlint v1.7.12, run by `build-test.yml`, does not know the `xcode-27` label (preview image) and fails on it, matrix values included. Decision: the two `xcode-27` jobs were removed so the existing lint check passes unchanged; declaring the label in `.github/actionlint.yaml` changes how an existing check is configured, which is the owner's decision.
-  Removed (`xcode-27` = macOS 27.0.1, Safari/SafariDriver 27.0.1 (22625.1.29.11.28), iOS 27.2 simulator runtime with iPhone 17; runner-images `images/macos/xcode-27-arm64-Readme.md`). To add back, once the label is declared: in job `safari` set `runner: [macos-15, macos-26, xcode-27]`; in job `ios-simulator` add to `matrix.include`:
-  ```yaml
-          - runner: xcode-27
-            runtime: iOS-27-2
-  ```
+- actionlint v1.7.12, run by `build-test.yml`, does not know the `xcode-27` label (preview image) and fails on it, matrix values included. No actionlint release or its `main` knows the label (upstream issue 739 and PR 744 are open). The two `xcode-27` jobs were first removed so the lint check passed unchanged; the owner then approved declaring the label in `.github/actionlint.yaml` (2026-11-14), and the jobs are back. That file makes actionlint accept `xcode-27` in any workflow and nothing else. Not yet run: actionlint with this file (it runs on the PR).
+- `xcode-27` is the free standard label for the macOS 27 image; `xcode-27-xlarge` is a paid larger runner and must not be used. There is no `macos-27` label. The image (runner-images `images/macos/xcode-27-arm64-Readme.md`, image version 20261104.0337.1) has macOS 27.0.1, Safari/SafariDriver 27.0.1 (22625.1.29.11.28), and simulator runtimes iOS 27.0, 27.1 and 27.2; "iPhone 17" is installed for 27.0 and 27.2, not 27.1. It is a preview image: outside the Actions SLA, and runs may queue.
+- Not confirmed by a run: that the 27.2 runtime's identifier is `com.apple.CoreSimulator.SimRuntime.iOS-27-2` (built from the matrix value the same way as `iOS-26-4`). The job's "List simulator runtimes" step prints the real identifiers.
 - A `workflow_dispatch` workflow can only be started once its file exists on the default branch (GitHub docs, "Events that trigger workflows", `workflow_dispatch`). It cannot be run from this branch before it is merged.
 
 ## Next step
