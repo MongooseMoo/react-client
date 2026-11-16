@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { overlayHex } from "../avatar/colour";
-import { type FigureParams, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
+import { type FigureParams, type HairTexture, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
 
 /**
  * A person's 3D figure from `figureParams`: three.js primitives, each painted
@@ -31,10 +31,86 @@ function placed(geometry: THREE.BufferGeometry, colour: string, at: THREE.Vector
   return { geometry, colour };
 }
 
+/**
+ * Raises the surface of a hair part outward from `centre(vertex)`, never inward, so the
+ * texture shows: wavy hair in ripples across its fall, curly in bumps, coily in small
+ * tight bumps. Straight hair is left smooth. Positions are in metres, `headR` sets the scale.
+ */
+function textured(
+  g: THREE.BufferGeometry,
+  centre: (q: THREE.Vector3) => THREE.Vector3,
+  texture: HairTexture,
+  headR: number,
+  /** Waves per head radius along the hair's fall relative to the cap's: fewer on long falls, which have fewer facets. */
+  along = 1,
+  /**
+   * For a thin band along the cap's edge: its axis. The texture is read where each vertex
+   * meets the band's middle line, so the band's two edges rise together and do not twist.
+   */
+  band?: THREE.Vector3,
+): void {
+  if (texture === "straight") return;
+  const positions = g.getAttribute("position");
+  const q = new THREE.Vector3();
+  const d = new THREE.Vector3();
+  const at = new THREE.Vector3();
+  let middle = 0;
+  if (band) {
+    for (let i = 0; i < positions.count; i++) middle += q.fromBufferAttribute(positions, i).sub(centre(q)).dot(band);
+    middle /= positions.count;
+  }
+  for (let i = 0; i < positions.count; i++) {
+    q.fromBufferAttribute(positions, i);
+    d.subVectors(q, centre(q));
+    at.copy(q);
+    if (band) at.addScaledVector(band, middle - d.dot(band));
+    const around = Math.atan2(at.y - centre(q).y, at.x - centre(q).x);
+    const down = (at.z / headR) * along;
+    // How far out, as a share of the head radius, at the peaks.
+    const [rise, f] =
+      texture === "wavy"
+        ? [0.05, Math.sin(down * 7)]
+        : texture === "curly"
+          ? [0.07, Math.sin(around * 7) * Math.sin(down * 9)]
+          : [0.08, Math.sin(around * 11) * Math.sin(down * 14)];
+    const lift = (headR * rise * (0.5 + 0.5 * f)) / Math.max(1e-6, d.length());
+    q.addScaledVector(d, lift);
+    positions.setXYZ(i, q.x, q.y, q.z);
+  }
+  positions.needsUpdate = true;
+  g.computeVertexNormals();
+}
+
+/** The geometry and its back faces, so an open surface (hair falling behind the neck) is seen from inside too. */
+function twoSided(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const back = g.clone();
+  const index = back.getIndex();
+  if (index) {
+    const a = index.array;
+    const flipped = new Uint32Array(a.length);
+    for (let i = 0; i < a.length; i += 3) {
+      flipped[i] = a[i];
+      flipped[i + 1] = a[i + 2];
+      flipped[i + 2] = a[i + 1];
+    }
+    back.setIndex(new THREE.BufferAttribute(flipped, 1));
+  }
+  const normals = back.getAttribute("normal");
+  for (let i = 0; i < normals.count; i++) normals.setXYZ(i, -normals.getX(i), -normals.getY(i), -normals.getZ(i));
+  const both = mergeGeometries([g, back], false);
+  g.dispose();
+  back.dispose();
+  if (!both) throw new Error("hair could not be made two-sided");
+  return both;
+}
+
+/** A thin stroke on the face (brow, mouth, moustache): a capsule with few facets, since it is a few pixels wide. */
+const stroke = (a: THREE.Vector3, b: THREE.Vector3, radius: number, colour: string): Part => limb(a, b, radius, colour, false);
+
 /** A capsule between two points. */
-function limb(a: THREE.Vector3, b: THREE.Vector3, radius: number, colour: string): Part {
+function limb(a: THREE.Vector3, b: THREE.Vector3, radius: number, colour: string, fine = true): Part {
   const length = a.distanceTo(b);
-  const geometry = new THREE.CapsuleGeometry(radius, Math.max(0.001, length), 3, RADIAL);
+  const geometry = new THREE.CapsuleGeometry(radius, Math.max(0.001, length), fine ? 3 : 1, fine ? RADIAL : 6);
   // Capsules stand along y; turn y onto the segment.
   const direction = new THREE.Vector3().subVectors(b, a).normalize();
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
@@ -144,7 +220,7 @@ export function figureParts(p: FigureParams): Part[] {
       const brow = c.hair ?? c.facialHair ?? c.faceInk;
       const browInner = new THREE.Vector3(inner, faceY(inner, bz), headCentreZ + bz);
       const browOuter = new THREE.Vector3(outer, faceY(outer, bz - headR * 0.03), headCentreZ + bz - headR * 0.03);
-      out.push(named(limb(browInner, browOuter, headR * 0.035, brow), "brow"));
+      out.push(named(stroke(browInner, browOuter, headR * 0.035, brow), "brow"));
     }
     // The mouth: a shallow smile across the lower face, in the face ink.
     const mz = -headR * 0.45;
@@ -152,7 +228,7 @@ export function figureParts(p: FigureParams): Part[] {
     const middle = new THREE.Vector3(0, faceY(0, mz - headR * 0.04), headCentreZ + mz - headR * 0.04);
     for (const side of [-1, 1]) {
       const end = new THREE.Vector3(side * corner, faceY(corner, mz), headCentreZ + mz);
-      out.push(named(limb(middle, end, headR * 0.03, c.faceInk), "mouth"));
+      out.push(named(stroke(middle, end, headR * 0.03, c.faceInk), "mouth"));
     }
   }
 
@@ -161,7 +237,9 @@ export function figureParts(p: FigureParams): Part[] {
     // A little larger than the head all round, so the tilted cap's facets stay outside the head's.
     const v = p.headCovered ? 1.06 : 1.05 * p.hairVolume;
     const capReach = Math.PI * 0.55;
-    const cap = new THREE.SphereGeometry(headR, 16, 9, 0, Math.PI * 2, 0, capReach);
+    // Textured hair needs enough facets for its curls to show.
+    const fine = !p.headCovered && p.hairTexture !== "straight";
+    const cap = new THREE.SphereGeometry(headR, fine ? 24 : 16, fine ? 12 : 9, 0, Math.PI * 2, 0, capReach);
     // A sphere's pole is +y. Turning by more than a right angle about x takes it
     // past +z toward -y: the cap leans back, its front edge above the eyes
     // (the forehead shows) and its back edge low on the nape.
@@ -169,20 +247,40 @@ export function figureParts(p: FigureParams): Part[] {
     const capAt = new THREE.Vector3(0, 0, headCentreZ);
     const capTurn = new THREE.Euler(Math.PI / 2 + CAP_LEAN, 0, 0);
     const capScale = new THREE.Vector3(headScale.x * v, v, headScale.y * v);
-    out.push(named(placed(cap, c.head, capAt, capTurn, capScale), "cap"));
+    const capPart = named(placed(cap, c.head, capAt, capTurn, capScale), "cap");
+    if (!p.headCovered) textured(capPart.geometry, () => capAt, p.hairTexture, headR);
+    out.push(capPart);
     if (outlined.has("hairline")) {
       // The outline runs along the cap's edge, so it is built where that edge is and turned with the cap.
       const edgeR = headR * Math.sin(capReach) * 1.02;
       const edge = new THREE.CylinderGeometry(edgeR, edgeR, 0.014, RADIAL * 2, 1, true);
       edge.translate(0, headR * Math.cos(capReach), 0);
-      out.push(named(placed(edge, c.ink, capAt, capTurn, capScale), "hairline"));
+      const hairline = named(placed(edge, c.ink, capAt, capTurn, capScale), "hairline");
+      // Raised with the cap's texture, so the curls do not cover it.
+      const capAxis = new THREE.Vector3(0, 1, 0).applyEuler(capTurn);
+      if (!p.headCovered) textured(hairline.geometry, () => capAt, p.hairTexture, headR, 1, capAxis);
+      out.push(hairline);
     }
   }
   if (!p.headCovered && (p.hair === "medium" || p.hair === "long")) {
+    // Hair falling from under the cap around the back and sides of the head, widening a little
+    // as it falls: to the jaw when medium, past the shoulders when long. Open at the front.
+    const v = 1.04 * p.hairVolume;
+    const top = headCentreZ + headR * 0.1;
     const bottom = p.hair === "long" ? shoulderZ - 0.12 * H : headCentreZ - headR * 1.15;
-    const top = headCentreZ + headR * 0.4;
-    const width = headR * 1.7 * p.hairVolume;
-    out.push(block(new THREE.Vector3(0, -headR * 0.62, (top + bottom) / 2), new THREE.Vector3(width, headR * 0.5 * p.hairVolume, top - bottom), c.head));
+    const long = p.hair === "long";
+    // Around the back, and forward on each side to just in front of the ears.
+    const around = 3.8;
+    const fine = p.hairTexture !== "straight";
+    const fall = new THREE.CylinderGeometry(headR, headR * (long ? 1.25 : 1.12), top - bottom, 20, fine ? 10 : 3, true, -around / 2, around);
+    // A cylinder stands along y with its seam at +z; turned upright (+z) its middle faces -y, the back.
+    fall.rotateX(Math.PI / 2);
+    // Long hair lies back over the shoulders rather than through them.
+    fall.scale(headScale.x * v, headScale.y * v, 1);
+    fall.translate(0, long ? -headR * 0.25 : 0, (top + bottom) / 2);
+    const hang = { geometry: twoSided(fall), colour: c.head };
+    textured(hang.geometry, (q) => new THREE.Vector3(0, long ? -headR * 0.25 : 0, q.z), p.hairTexture, headR, 0.4);
+    out.push(named(hang, "hair"));
   }
 
   // Facial hair, shaped from the head's own ellipsoid so it follows the jaw.
@@ -233,7 +331,7 @@ export function figureParts(p: FigureParams): Part[] {
       const middle = new THREE.Vector3(0, faceY(0, top) + headR * 0.02, headCentreZ + top);
       for (const side of [-1, 1]) {
         const end = new THREE.Vector3(side * headR * 0.28, faceY(headR * 0.28, -headR * 0.43) + headR * 0.02, headCentreZ - headR * 0.43);
-        out.push(named(limb(middle, end, headR * 0.06, fh), "moustache"));
+        out.push(named(stroke(middle, end, headR * 0.06, fh), "moustache"));
       }
     }
   }

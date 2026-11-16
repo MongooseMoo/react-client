@@ -70,6 +70,40 @@ describe("figure head", () => {
   });
 });
 
+describe("figure hair", () => {
+  const hairOf = (length_cm: number, texture = "straight") => standing({ skin: { hex: "#f3e7db" }, hair: { length_cm, texture, hex: "#9a3001" } });
+
+  it("lets medium and long hair fall around the back and sides of the head, not as a flat board", () => {
+    for (const length of [18, 40]) {
+      const { p, headR, headZ } = hairOf(length);
+      const hair = vertices(p, "hair");
+      expect(hair.length, String(length)).toBeGreaterThan(0);
+      // It wraps: behind the head (the board stopped 0.37 to 0.87 head radii back) and out at both sides.
+      expect(Math.min(...hair.map((v) => v.y)), String(length)).toBeLessThan(-0.95 * headR);
+      expect(Math.max(...hair.map((v) => v.x)), String(length)).toBeGreaterThan(0.84 * headR);
+      expect(Math.min(...hair.map((v) => v.x)), String(length)).toBeLessThan(-0.84 * headR);
+      // It falls from under the cap downward, and long hair further.
+      expect(Math.max(...hair.map((v) => v.z))).toBeLessThan(headZ + 0.3 * headR);
+    }
+    const low = (length: number) => Math.min(...vertices(hairOf(length).p, "hair").map((v) => v.z));
+    expect(low(40)).toBeLessThan(low(18));
+    expect(vertices(hairOf(5).p, "hair")).toEqual([]);
+  });
+
+  it("shows texture: straight hair is smooth, wavy, curly and coily hair stand out unevenly", () => {
+    // How rough the cap is: the mean change in distance from the head's centre between neighbouring vertices.
+    const roughness = (texture: string) => {
+      const { p, headR, headZ } = hairOf(5, texture);
+      const r = vertices(p, "cap").map((v) => onHead(v, headR, headZ));
+      let sum = 0;
+      for (let i = 1; i < r.length; i++) sum += Math.abs(r[i] - r[i - 1]);
+      return sum / (r.length - 1);
+    };
+    const smooth = roughness("straight");
+    for (const texture of ["wavy", "curly", "coily"]) expect(roughness(texture), texture).toBeGreaterThan(smooth * 2);
+  });
+});
+
 describe("figure face", () => {
   it("seats the eyes in the head: they stand out of the face by less than half their size", () => {
     const { p, headR, headZ } = standing(lightHair);
