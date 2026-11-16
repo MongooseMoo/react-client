@@ -17,6 +17,8 @@ interface Part {
 }
 
 const RADIAL = 10;
+/** How far the hair or head-covering cap leans back from upright, radians. */
+const CAP_LEAN = 0.5;
 
 function placed(geometry: THREE.BufferGeometry, colour: string, at: THREE.Vector3, rotation?: THREE.Euler, scale?: THREE.Vector3): Part {
   const m = new THREE.Matrix4().compose(at, new THREE.Quaternion().setFromEuler(rotation ?? new THREE.Euler()), scale ?? new THREE.Vector3(1, 1, 1));
@@ -127,11 +129,25 @@ function parts(p: FigureParams): Part[] {
 
   // Over the head: a head garment, or hair by its length.
   if (p.headCovered || p.hair !== "none") {
-    const v = p.headCovered ? 1.04 : 1.03 * p.hairVolume;
-    const cap = new THREE.SphereGeometry(headR, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    // A sphere's pole is +y; tilt it to +z and lean the cap back so the forehead shows.
-    out.push(placed(cap, c.head, new THREE.Vector3(0, -headR * 0.06, headCentreZ), new THREE.Euler(Math.PI / 2 - 0.25, 0, 0), new THREE.Vector3(headScale.x * v, v, headScale.y * v)));
-    if (outlined.has("hairline")) out.push(band(0, -headR * 0.05, headCentreZ + headR * 0.05, headR * 0.9 * v, 1.12, c.ink));
+    // A little larger than the head all round, so the tilted cap's facets stay outside the head's.
+    const v = p.headCovered ? 1.06 : 1.05 * p.hairVolume;
+    const capReach = Math.PI * 0.55;
+    const cap = new THREE.SphereGeometry(headR, 16, 9, 0, Math.PI * 2, 0, capReach);
+    // A sphere's pole is +y. Turning by more than a right angle about x takes it
+    // past +z toward -y: the cap leans back, its front edge above the eyes
+    // (the forehead shows) and its back edge low on the nape.
+    // Centred on the head: shifting it back let the forehead show through the cap's front.
+    const capAt = new THREE.Vector3(0, 0, headCentreZ);
+    const capTurn = new THREE.Euler(Math.PI / 2 + CAP_LEAN, 0, 0);
+    const capScale = new THREE.Vector3(headScale.x * v, v, headScale.y * v);
+    out.push(placed(cap, c.head, capAt, capTurn, capScale));
+    if (outlined.has("hairline")) {
+      // The outline runs along the cap's edge, so it is built where that edge is and turned with the cap.
+      const edgeR = headR * Math.sin(capReach) * 1.02;
+      const edge = new THREE.CylinderGeometry(edgeR, edgeR, 0.014, RADIAL * 2, 1, true);
+      edge.translate(0, headR * Math.cos(capReach), 0);
+      out.push(placed(edge, c.ink, capAt, capTurn, capScale));
+    }
   }
   if (!p.headCovered && (p.hair === "medium" || p.hair === "long")) {
     const bottom = p.hair === "long" ? shoulderZ - 0.12 * H : headCentreZ - headR * 1.15;
@@ -152,6 +168,47 @@ function parts(p: FigureParams): Part[] {
     }
     if (p.facialHair === "moustache" || p.facialHair === "beard" || p.facialHair === "goatee") {
       out.push(block(new THREE.Vector3(0, headR * 0.9, headCentreZ - headR * 0.32), new THREE.Vector3(headR * 0.7, headR * 0.12, headR * 0.12), fh));
+    }
+  }
+
+  // Features big enough to read at figure size, in the face ink as in the
+  // portrait. Freckles, a mole and dimples are left to the portrait.
+  const fi = c.faceInk;
+  const eyeZ = headCentreZ + headR * 0.12;
+  const lensY = headR * 1.0;
+  const lensR = headR * 0.2;
+  const rim = headR * 0.04;
+  // The ellipsoid head's half width at height z: temples, straps and earrings end on its surface.
+  const headSide = (z: number) => headR * headScale.x * Math.sqrt(Math.max(0, 1 - ((z - headCentreZ) / (headR * headScale.z)) ** 2));
+  for (const feature of p.features) {
+    if (feature === "glasses" || feature === "sunglasses") {
+      for (const side of [-1, 1]) {
+        const lens = new THREE.Vector3(side * headR * 0.32, lensY, eyeZ);
+        if (feature === "glasses") {
+          // A torus lies across z; turn it to face forward (+y).
+          out.push(placed(new THREE.TorusGeometry(lensR, rim, 4, 12), fi, lens, new THREE.Euler(Math.PI / 2, 0, 0)));
+        } else {
+          // A cylinder's axis is y, so a short one is a forward-facing disc.
+          out.push(placed(new THREE.CylinderGeometry(lensR * 1.1, lensR * 1.1, rim * 1.5, 12), fi, lens));
+        }
+        // Temple: from the lens's outer edge back to above the ear.
+        out.push(limb(new THREE.Vector3(side * (headR * 0.32 + lensR), lensY - rim, eyeZ), new THREE.Vector3(side * headSide(eyeZ), 0, eyeZ), rim * 0.8, fi));
+      }
+      out.push(limb(new THREE.Vector3(-headR * 0.32 + lensR, lensY, eyeZ), new THREE.Vector3(headR * 0.32 - lensR, lensY, eyeZ), rim * 0.8, fi));
+    } else if (feature === "eyepatch") {
+      // Over the left eye (-x, as the portrait draws it on the viewer's right), with a strap to above the right ear.
+      const patch = new THREE.Vector3(-headR * 0.32, lensY, eyeZ);
+      out.push(placed(new THREE.CylinderGeometry(lensR * 1.15, lensR * 1.15, rim * 1.5, 12), fi, patch));
+      const strapTop = eyeZ + headR * 0.45;
+      out.push(limb(patch, new THREE.Vector3(headSide(strapTop), 0, strapTop), rim * 0.8, fi));
+      out.push(limb(patch, new THREE.Vector3(-headSide(eyeZ), 0, eyeZ), rim * 0.8, fi));
+    } else if (feature === "earrings") {
+      for (const side of [-1, 1]) {
+        // A ring hanging from each earlobe, turned to face sideways.
+        const lobe = headCentreZ - headR * 0.35;
+        const at = new THREE.Vector3(side * (headSide(lobe) + rim), 0, lobe);
+        out.push(placed(new THREE.TorusGeometry(headR * 0.12, rim * 0.9, 4, 10), fi, at, new THREE.Euler(0, Math.PI / 2, 0)));
+      }
     }
   }
 

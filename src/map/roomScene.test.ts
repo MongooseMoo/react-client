@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
 import { figureParams } from "../avatar/figure";
 import type { RoomLayout } from "../gmcp/Room";
-import { livingRoomLayout } from "./roomLayout.fixture";
+import { crowdLayout, livingRoomLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingRoom from "./roomLayout.sample-25828.json";
 import { placeThings } from "./roomLayout";
@@ -31,25 +31,6 @@ const meshes = (group: THREE.Object3D | undefined) =>
 const parts = (group: THREE.Object3D | undefined) => meshes(group).map((m) => m.userData.part);
 const colour = (mesh: THREE.Mesh) => (mesh.material as THREE.MeshStandardMaterial).color.getHex();
 const box = (mesh: THREE.Mesh) => new THREE.Box3().setFromObject(mesh);
-/** A room holding `count` people, each one of the test characters, in rows. */
-const crowd = (count: number): RoomLayout => {
-  const layout = livingRoomLayout();
-  layout.things = Array.from({ length: count }, (_, i) => {
-    const ch = TEST_CHARACTERS[i % TEST_CHARACTERS.length];
-    const x = -2 + (i % 8) * 0.5;
-    const y = -1.5 + Math.floor(i / 8) * 0.7;
-    return {
-      id: `#p${i}`,
-      name: `Person ${i}`,
-      kind: "person" as const,
-      fixed: true,
-      mounted: false,
-      shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
-      appearance: ch.appearance,
-    };
-  });
-  return layout;
-};
 const hex = (colour: number) => `#${colour.toString(16).padStart(6, "0")}`;
 /** The distinct colours painted on a person's figure (its vertex colours, as sRGB numbers), sorted. */
 const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): number[] => {
@@ -157,6 +138,44 @@ describe("buildRoomScene", () => {
     expect(scene.labelAnchors.get("#9")?.z).toBeGreaterThan(bounds.max.z - 0.2);
   });
 
+  it("draws glasses, sunglasses, an eyepatch and earrings on the figure's head in the ink, not on a hidden face", () => {
+    // Pale skin and no garments: the ink is dark and appears only where a feature (or outline) is drawn.
+    const plain = { skin: { hex: "#f0d8c0" }, eyes: { hex: "#3a7d44" } };
+    const figures = new FigureCache();
+    const sceneOf = (appearance: Record<string, unknown>) => {
+      const layout = livingRoomLayout();
+      layout.things = layout.things.map((t) => (t.id === "#9" ? { ...t, appearance } : t));
+      return buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "#99", figures });
+    };
+    const inkVertices = (appearance: Record<string, unknown>) => {
+      const scene = sceneOf(appearance);
+      const body = meshes(scene.things.get("#9"))[0];
+      const ink = new THREE.Color(figureParams(appearance, { height: 1.7, base: "#000000" }).colours.faceInk);
+      const colours = body.geometry.getAttribute("color");
+      const positions = body.geometry.getAttribute("position");
+      const head = box(body);
+      const zs: number[] = [];
+      for (let i = 0; i < colours.count; i++) {
+        if (Math.abs(colours.getX(i) - ink.r) + Math.abs(colours.getY(i) - ink.g) + Math.abs(colours.getZ(i) - ink.b) < 1e-6) zs.push(positions.getZ(i));
+      }
+      return { zs, top: head.max.z, geometry: body.geometry };
+    };
+    const bare = inkVertices(plain);
+    expect(bare.zs).toHaveLength(0);
+    for (const feature of ["glasses", "sunglasses", "eyepatch", "earrings"]) {
+      const drawn = inkVertices({ ...plain, features: [feature] });
+      expect(drawn.zs.length, feature).toBeGreaterThan(0);
+      // Every inked vertex is on the head: within its top quarter-metre.
+      expect(Math.min(...drawn.zs), feature).toBeGreaterThan(drawn.top - 0.3);
+      // A feature is part of the figure's look, so it gets its own geometry.
+      expect(drawn.geometry, feature).not.toBe(bare.geometry);
+    }
+    // Freckles, a mole and dimples stay in the portrait.
+    expect(inkVertices({ ...plain, features: ["freckles", "mole", "dimples"] }).zs).toHaveLength(0);
+    expect(inkVertices({ ...plain, face_hidden: true, features: ["glasses", "earrings"] }).zs).toHaveLength(0);
+    figures.dispose();
+  });
+
   it("seats a sitting person lower and lays a reclining one down", () => {
     const layout = livingRoomLayout();
     const posed = (posture: "sitting" | "reclining") => {
@@ -173,7 +192,7 @@ describe("buildRoomScene", () => {
 
   it("rebuilds rooms of 8 and 40 people with unchanged appearances, as while someone moves, reusing their figures", () => {
     const rebuild = (count: number, figures?: FigureCache) => {
-      const layout = crowd(count);
+      const layout = crowdLayout(count);
       const placed = placeThings(layout, {});
       let scene = buildRoomScene({ layout, placed, arrivals: [], youId: "", figures });
       // Fresh builds are slow; fewer rounds keep the suite quick.
@@ -198,7 +217,7 @@ describe("buildRoomScene", () => {
 
   it("reuses an unchanged figure's geometry, frees it when the person leaves or changes, and moves it on the mesh", () => {
     const figures = new FigureCache();
-    const layout = crowd(3);
+    const layout = crowdLayout(3);
     const first = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "", figures });
     const geometryOf = (scene: ReturnType<typeof buildRoomScene>, id: string) => meshes(scene.things.get(id))[0].geometry;
     const kept = geometryOf(first, "#p0");
@@ -238,22 +257,8 @@ describe("buildRoomScene", () => {
   });
 
   it("builds forty figures quickly and cheaply", () => {
-    const layout = livingRoomLayout();
-    const people = Array.from({ length: 40 }, (_, i) => {
-      const ch = TEST_CHARACTERS[i % TEST_CHARACTERS.length];
-      const x = -2 + (i % 8) * 0.5;
-      const y = -1.5 + Math.floor(i / 8) * 0.7;
-      return {
-        id: `#p${i}`,
-        name: `Person ${i}`,
-        kind: "person" as const,
-        fixed: true,
-        mounted: false,
-        shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
-        appearance: ch.appearance,
-      };
-    });
-    layout.things = people;
+    const layout = crowdLayout(40);
+    const people = layout.things;
     const placed = placeThings(layout, {});
     buildRoomScene({ layout, placed, arrivals: [], youId: "" }); // warm-up
     const start = performance.now();

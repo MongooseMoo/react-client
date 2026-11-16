@@ -1,4 +1,25 @@
+import { TEST_CHARACTERS } from "../avatar/characters.fixture";
 import type { RoomLayout } from "../gmcp/Room";
+
+/** The living room holding `count` people (#p0, #p1, …), each one of the test characters in turn, in rows of eight. */
+export const crowdLayout = (count: number): RoomLayout => {
+  const layout = livingRoomLayout();
+  layout.things = Array.from({ length: count }, (_, i) => {
+    const ch = TEST_CHARACTERS[i % TEST_CHARACTERS.length];
+    const x = -2 + (i % 8) * 0.5;
+    const y = -1.5 + Math.floor(i / 8) * 0.7;
+    return {
+      id: `#p${i}`,
+      name: ch.name,
+      kind: "person" as const,
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
+      appearance: ch.appearance,
+    };
+  });
+  return layout;
+};
 
 /**
  * A small living room with the optional classes and material fields, written by hand

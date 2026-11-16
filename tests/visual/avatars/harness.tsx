@@ -1,0 +1,194 @@
+/**
+ * Tests only: draws the invented test characters for tests/visual/avatars/shoot.mjs.
+ * `?view=portraits` portraits at the People list size and at 4x;
+ * `?view=plan` plan tokens; `?view=figures&angle=front|three` 3D close-ups;
+ * `?view=room&n=8` the real 3D view (Dollhouse), with `window.measure(seconds)`
+ * moving one person every frame and reporting frame times.
+ */
+import { options, render } from "preact";
+import * as THREE from "three";
+import "../../../src/tokens.css";
+import "../../../src/index.css";
+import "../../../src/components/MapPanel.css";
+import { TEST_CHARACTERS } from "../../../src/avatar/characters.fixture";
+import AvatarPortrait from "../../../src/avatar/portrait";
+import RoomLayout3D from "../../../src/components/RoomLayout3D";
+import RoomLayoutPicture from "../../../src/components/RoomLayoutPicture";
+import type { RoomLayout } from "../../../src/gmcp/Room";
+import { placeThings } from "../../../src/map/roomLayout";
+import { crowdLayout, livingRoomLayout } from "../../../src/map/roomLayout.fixture";
+import { buildRoomScene, cutWalls, DOLLHOUSE_FOV } from "../../../src/map/roomScene";
+
+const params = new URLSearchParams(location.search);
+const view = params.get("view") ?? "portraits";
+const root = document.getElementById("root") as HTMLElement;
+document.body.style.background = "#14141a";
+document.body.style.color = "#e8e8ed";
+const noop = () => {};
+
+declare global {
+  interface Window {
+    ready?: boolean;
+    measure?: (seconds: number) => Promise<unknown>;
+  }
+}
+
+if (view === "portraits") {
+  render(
+    <table style={{ borderSpacing: "16px 8px" }}>
+      <tbody>
+        {TEST_CHARACTERS.map((ch) => (
+          <tr key={ch.name}>
+            <td style={{ width: "12em" }}>{ch.name}</td>
+            <td>
+              <AvatarPortrait appearance={ch.appearance} size={32} />
+            </td>
+            <td>
+              <AvatarPortrait appearance={ch.appearance} size={128} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>,
+    root,
+  );
+  window.ready = true;
+} else if (view === "plan") {
+  const layout = crowdLayout(TEST_CHARACTERS.length);
+  render(
+    <div style={{ width: 960 }}>
+      <RoomLayoutPicture layout={layout} placed={placeThings(layout, {})} arrivals={[]} youId="" label="test room" onExit={noop} onSave={noop} />
+    </div>,
+    root,
+  );
+  window.ready = true;
+} else if (view === "figures") {
+  // One close-up per character, alone in the living room, facing south toward the camera.
+  const angle = params.get("angle") === "three" ? Math.PI / 4 : 0;
+  const cell = { w: 300, h: 420 };
+  const cols = 4;
+  const rows = Math.ceil(TEST_CHARACTERS.length / cols);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  renderer.setSize(cell.w * cols, cell.h * rows);
+  renderer.setClearColor(0x14141a);
+  renderer.setScissorTest(true);
+  const frame = document.createElement("div");
+  frame.style.position = "relative";
+  frame.appendChild(renderer.domElement);
+  root.appendChild(frame);
+  TEST_CHARACTERS.forEach((ch, i) => {
+    const layout: RoomLayout = livingRoomLayout();
+    layout.things = [
+      {
+        id: "#p",
+        name: ch.name,
+        kind: "person",
+        fixed: true,
+        mounted: false,
+        shapes: [{ box: [[-0.2, 0.2], [-0.2, 0.2], [0, ch.height]] }],
+        appearance: ch.appearance,
+      },
+    ];
+    const room = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "" });
+    const scene = new THREE.Scene();
+    scene.add(room.root);
+    const fov = DOLLHOUSE_FOV * 0.7;
+    const camera = new THREE.PerspectiveCamera(fov, cell.w / cell.h, 0.05, 50);
+    camera.up.set(0, 0, 1);
+    // Whole figure: far enough that it (and antlers) fits. Head: the top 30 cm of the figure, close.
+    const bounds = new THREE.Box3().setFromObject(room.things.get("#p") as THREE.Object3D);
+    const head = params.get("zoom") === "head";
+    const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
+    const lookY = head && ch.appearance.posture === "reclining" ? bounds.min.y + 0.14 : 0;
+    const distance = head ? 0.75 : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
+    camera.position.set(Math.sin(angle) * distance, lookY - Math.cos(angle) * distance, lookZ + (head ? 0.05 : 0.3));
+    camera.lookAt(0, lookY, lookZ);
+    cutWalls(room, layout, camera.position, "dollhouse");
+    const x = (i % cols) * cell.w;
+    const y = (rows - 1 - Math.floor(i / cols)) * cell.h;
+    renderer.setViewport(x, y, cell.w, cell.h);
+    renderer.setScissor(x, y, cell.w, cell.h);
+    renderer.render(scene, camera);
+    const caption = document.createElement("div");
+    caption.textContent = ch.name;
+    Object.assign(caption.style, { position: "absolute", left: `${(i % cols) * cell.w + 6}px`, top: `${Math.floor(i / cols) * cell.h + 4}px`, font: "14px sans-serif" });
+    frame.appendChild(caption);
+  });
+  window.ready = true;
+} else if (view === "room") {
+  const count = Number(params.get("n") ?? "8");
+  const layout = crowdLayout(count);
+  // Time every WebGL render the 3D view makes, and keep its draw counts. WebGLRenderer
+  // sets `render` on each instance, so the scene's before/after hooks are used instead.
+  let renderMs = 0;
+  let renderStart = 0;
+  let info = { calls: 0, triangles: 0 };
+  THREE.Scene.prototype.onBeforeRender = () => {
+    renderStart = performance.now();
+  };
+  THREE.Scene.prototype.onAfterRender = (renderer: THREE.WebGLRenderer) => {
+    renderMs += performance.now() - renderStart;
+    info = { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles };
+  };
+  const draw = (offset: [number, number, number] | undefined) =>
+    render(
+      <div style={{ width: 960 }}>
+        <RoomLayout3D
+          layout={layout}
+          placed={placeThings(layout, offset ? { "#p0": offset } : {})}
+          arrivals={[]}
+          youId=""
+          facings={{}}
+          label="test room"
+          mode="dollhouse"
+          onExit={noop}
+        />
+      </div>,
+      root,
+    );
+  draw(undefined);
+  window.ready = true;
+  window.measure = (seconds: number) =>
+    new Promise((resolve) => {
+      // Run effects (the room rebuild) in the same task as the render, so each frame's work can be timed.
+      options.requestAnimationFrame = (callback: () => void) => callback();
+      const work: number[] = [];
+      const gl: number[] = [];
+      const intervals: number[] = [];
+      let last = 0;
+      let step = 0;
+      const end = performance.now() + seconds * 1000;
+      const frame = (now: number) => {
+        if (last) intervals.push(now - last);
+        last = now;
+        step++;
+        renderMs = 0;
+        const start = performance.now();
+        const a = step * 0.05;
+        draw([Math.cos(a) * 0.5 + 0.5, Math.sin(a) * 0.5, 0]);
+        work.push(performance.now() - start);
+        gl.push(renderMs);
+        if (now < end) requestAnimationFrame(frame);
+        else {
+          const stat = (xs: number[]) => {
+            const s = [...xs].sort((p, q) => p - q);
+            return { median: s[Math.floor(s.length / 2)], p95: s[Math.floor(s.length * 0.95)], worst: s[s.length - 1] };
+          };
+          const ctx = document.createElement("canvas").getContext("webgl2");
+          const debug = ctx?.getExtension("WEBGL_debug_renderer_info");
+          resolve({
+            people: count,
+            frames: work.length,
+            workMs: stat(work),
+            webglRenderMs: stat(gl),
+            frameIntervalMs: stat(intervals),
+            calls: info.calls,
+            triangles: info.triangles,
+            gpu: debug && ctx ? ctx.getParameter(debug.UNMASKED_RENDERER_WEBGL) : "unknown",
+          });
+        }
+      };
+      requestAnimationFrame(frame);
+    });
+}

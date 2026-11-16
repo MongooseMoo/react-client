@@ -2,7 +2,7 @@ import preact from '@preact/preset-vite';
 import { defineConfig } from 'vite';
 import { CommitHashPlugin } from 'vite-plugin-commit-hash';
 import { VitePWA } from 'vite-plugin-pwa';
-import { optionalChunks } from './src/build/optionalChunks';
+import { lazyPackagesAtStartup, optionalChunks } from './src/build/optionalChunks';
 import { webAppManifest } from './src/build/webAppManifest';
 
 let deferredChunks = new Set<string>();
@@ -15,6 +15,8 @@ export default defineConfig({
       name: 'optional-feature-precache',
       apply: 'build',
       generateBundle(_options, bundle) {
+        const leaks = lazyPackagesAtStartup(bundle);
+        if (leaks.length > 0) this.error(`Startup chunks must not carry lazy packages:\n${leaks.join('\n')}`);
         deferredChunks = optionalChunks(bundle);
       },
     },
