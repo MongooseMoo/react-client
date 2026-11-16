@@ -131,13 +131,14 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
     <rect key="neck" className="avatar-neck" x={27} y={36} width={10} height={10} fill={c.neck} stroke={ink} strokeWidth={1.2} />,
   );
   const pointed = params.extras.includes("pointed_ears") || word(face.ears) === "pointed";
-  for (const x of [17.5, 46.5]) {
+  // A hood or hat over the head covers the ears.
+  for (const x of params.headCovered ? [] : [17.5, 46.5]) {
     const out = x < 32 ? -1 : 1;
     parts.push(
       pointed ? (
-        <path key={`ear${x}`} fill={c.skin} stroke={ink} strokeWidth={1} d={`M${x - out},26 L${x + out * 4},19 L${x + out * 1.5},34 Z`} />
+        <path key={`ear${x}`} className="avatar-ear" fill={c.skin} stroke={ink} strokeWidth={1} d={`M${x - out},26 L${x + out * 4},19 L${x + out * 1.5},34 Z`} />
       ) : (
-        <ellipse key={`ear${x}`} fill={c.skin} stroke={ink} strokeWidth={1} cx={x} cy={30} rx={2.6} ry={4} />
+        <ellipse key={`ear${x}`} className="avatar-ear" fill={c.skin} stroke={ink} strokeWidth={1} cx={x} cy={30} rx={2.6} ry={4} />
       ),
     );
   }

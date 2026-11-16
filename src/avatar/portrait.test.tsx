@@ -127,6 +127,14 @@ describe("AvatarPortrait", () => {
     expect(svg.querySelector('path.avatar-garment[d^="M"]')?.getAttribute("fill")).toBe(NEUTRAL_CLOTHING);
   });
 
+  it("hides the ears under a hood or hat, and shows them otherwise", () => {
+    const hood = { areas: ["head"], layer: 2, colour: { hex: "#ff81c0" } };
+    for (const traits of [[], ["pointed ears"]]) {
+      expect(draw({ skin: { hex: "#d7bd96" }, traits, garments: [hood] }).querySelectorAll(".avatar-ear")).toHaveLength(0);
+      expect(draw({ skin: { hex: "#d7bd96" }, traits }).querySelectorAll(".avatar-ear")).toHaveLength(2);
+    }
+  });
+
   it("shows the head alone at list size, so the face has room, and the whole picture from 48 px", () => {
     const at = (size: number) => render(<AvatarPortrait appearance={TEST_CHARACTERS[0].appearance} size={size} />).container.querySelector("svg");
     expect(at(32)?.getAttribute("viewBox")).toBe(HEAD_VIEWBOX);
