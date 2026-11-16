@@ -37,6 +37,8 @@ import {
   wheelStep,
   wheelZoom,
   wheelZoomPoint,
+  ZOOM_NEAREST,
+  type ZoomPick,
   ZOOM_STEP,
   zoomedFov,
 } from "../map/roomScene";
@@ -141,7 +143,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     camera.up.set(0, 0, 1);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.maxPolarAngle = Math.PI / 2 - 0.05;
-    controls.minDistance = 0.5;
+    controls.minDistance = ZOOM_NEAREST;
     // The controls turn the view (drag, one finger) and nothing else: the wheel never reaches them
     // (`onWheel` below takes it), and two fingers are left to `onTouchPointer`, which zooms the same way.
     controls.touches.TWO = null;
@@ -356,7 +358,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
   };
 
   // What the dollhouse wheel is zooming onto, kept while the pointer stays where it was.
-  const wheelFocus = useRef<{ x: number; y: number; point: THREE.Vector3 | undefined } | null>(null);
+  const wheelFocus = useRef<{ x: number; y: number; pick: ZoomPick | undefined } | null>(null);
   const onWheel = (event: WheelEvent) => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -373,19 +375,21 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
   onWheelRef.current = onWheel;
 
   /**
-   * One dollhouse zoom by `scale` onto what is at (clientX, clientY): picked there the first
-   * time, and kept while the wheel or pinch stays within 4 px of it.
+   * One dollhouse zoom by `scale` onto what is at (clientX, clientY) (`wheelZoomPoint`: a person
+   * drawn within PICK_TOLERANCE first): picked there the first time, and kept while the wheel
+   * or pinch stays within 4 px of it. The camera stops short of it, outside what it zooms onto.
    */
   const zoomOnto = (stage: Stage, clientX: number, clientY: number, scale: number) => {
     const focus = wheelFocus.current;
     if (!focus || Math.hypot(clientX - focus.x, clientY - focus.y) > 4) {
       const rect = stage.renderer.domElement.getBoundingClientRect();
-      const ray = new THREE.Raycaster();
-      ray.setFromCamera(new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), stage.camera);
-      const point = stage.room ? wheelZoomPoint(ray.ray, stage.room, placed, layout) : undefined;
-      wheelFocus.current = { x: clientX, y: clientY, point };
+      const pick = stage.room
+        ? wheelZoomPoint(stage.camera, { x: clientX - rect.left, y: clientY - rect.top }, rect, stage.room, placed, layout)
+        : undefined;
+      wheelFocus.current = { x: clientX, y: clientY, pick };
     }
-    wheelZoom(stage.camera.position, stage.controls.target, wheelFocus.current?.point ?? stage.controls.target.clone(), scale);
+    const pick = wheelFocus.current?.pick;
+    wheelZoom(stage.camera.position, stage.controls.target, pick?.point ?? stage.controls.target.clone(), scale, pick?.nearest ?? ZOOM_NEAREST);
     stage.controls.update();
     stage.render();
   };

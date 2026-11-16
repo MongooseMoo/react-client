@@ -25,6 +25,7 @@ import {
   NEUTRAL,
   PERSON_COLOUR,
   panTo,
+  PICK_TOLERANCE,
   Pinch,
   screenBox,
   screenTop,
@@ -35,6 +36,7 @@ import {
   wheelZoomPoint,
   zoomFocus,
   YOU_COLOUR,
+  ZOOM_NEAREST,
   ZOOM_STEP,
   zoomedFov,
 } from "./roomScene";
@@ -451,14 +453,21 @@ describe("cameras", () => {
     scene.root.updateMatrixWorld(true);
 
     // The pointer on his head: the zoom heads for his face, not the floor behind him.
+    const size = { width: 276, height: 207 };
+    const pixel = (p: THREE.Vector3) => {
+      camera.updateMatrixWorld();
+      const v = p.clone().project(camera);
+      return { x: ((v.x + 1) / 2) * size.width, y: ((1 - v.y) / 2) * size.height };
+    };
     const face = zoomFocus(placed[0].bounds, big);
     const head = new THREE.Vector3(-9, -9, bram.height * 0.95);
-    const point = wheelZoomPoint(new THREE.Ray(camera.position.clone(), head.clone().sub(camera.position).normalize()), scene, placed, big);
+    const point = wheelZoomPoint(camera, pixel(head), size, scene, placed, big)?.point;
     expect(point?.distanceTo(face)).toBeLessThan(1e-9);
     // On bare floor, the floor; over the walls into the dark, nothing.
-    const floor = wheelZoomPoint(new THREE.Ray(camera.position.clone(), new THREE.Vector3(5, 5, 0).sub(camera.position).normalize()), scene, placed, big);
+    const floor = wheelZoomPoint(camera, pixel(new THREE.Vector3(5, 5, 0)), size, scene, placed, big)?.point;
     expect(floor?.distanceTo(new THREE.Vector3(5, 5, 0))).toBeLessThan(1e-6);
-    expect(wheelZoomPoint(new THREE.Ray(camera.position.clone(), new THREE.Vector3(0, 1, 0.2).normalize()), scene, placed, big)).toBeUndefined();
+    const sky = camera.position.clone().addScaledVector(new THREE.Vector3(0, 1, 0.2).normalize(), 100);
+    expect(wheelZoomPoint(camera, pixel(sky), size, scene, placed, big)).toBeUndefined();
 
     const inMiddle = () => {
       camera.updateMatrixWorld();
@@ -486,6 +495,70 @@ describe("cameras", () => {
     controls.update();
     expect(camera.position.distanceTo(controls.target)).toBeCloseTo(near / step, 6);
     controls.dispose();
+    disposeRoomScene(scene);
+  });
+
+  it("picks a person a pixel or two tall from beside them, zooms onto their face and never into their body", () => {
+    // The live check's case: a 50 m room in a 276 x 207 picture, where a person at the opening view is about 1 x 3 px.
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const bram = TEST_CHARACTERS[1];
+    const box = (x: number, y: number, top: number) => [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, top]] as [[number, number], [number, number], [number, number]];
+    big.things = [
+      { id: "#p1", name: bram.name, kind: "person", fixed: true, mounted: false, shapes: [{ box: box(-9, -9, bram.height) }], appearance: bram.appearance },
+      // A rack 1.5 m behind him (north), and a person hidden behind a tall cabinet.
+      { id: "#rack", name: "rack", kind: "object", fixed: true, mounted: false, shapes: [{ box: [[-9.4, -8.6], [-7.7, -7.3], [0, 1.3]] }], classes: ["shelf", "thing"] },
+      { id: "#p2", name: "Hidden", kind: "person", fixed: true, mounted: false, shapes: [{ box: box(6, 6, 1.7) }] },
+      { id: "#cab", name: "cabinet", kind: "object", fixed: true, mounted: false, shapes: [{ box: [[5, 7.5], [3.5, 4.5], [0, 4]] }], classes: ["shelf", "thing"] },
+    ];
+    const placed = placeThings(big, {});
+    const scene = buildRoomScene({ layout: big, placed, arrivals: [], youId: "", facings: { "#p1": [0, 1, 0] } });
+    scene.root.updateMatrixWorld(true);
+    const size = { width: 276, height: 207 };
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, size.width / size.height, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const pose = dollhousePose(big);
+    camera.position.set(...pose.position);
+    const target = new THREE.Vector3(...pose.target);
+    camera.lookAt(target);
+    camera.updateMatrixWorld();
+    const pixel = (p: THREE.Vector3) => {
+      const v = p.clone().project(camera);
+      return { x: ((v.x + 1) / 2) * size.width, y: ((1 - v.y) / 2) * size.height };
+    };
+    const face = zoomFocus(placed[0].bounds, big);
+    // His whole figure is under 4 px tall here.
+    const feet = pixel(new THREE.Vector3(-9, -9, 0));
+    const crown = pixel(new THREE.Vector3(-9, -9, bram.height));
+    expect(feet.y - crown.y).toBeLessThan(4);
+    // Two pixels to his right at mid height (the ray meets the floor behind him): his face. Before, the floor.
+    const beside = { x: Math.max(feet.x, crown.x) + 2.5, y: (feet.y + crown.y) / 2 };
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((beside.x / size.width) * 2 - 1, -(beside.y / size.height) * 2 + 1), camera);
+    expect(ray.intersectObject(scene.things.get("#p1") as THREE.Object3D, true)).toEqual([]);
+    const pick = wheelZoomPoint(camera, beside, size, scene, placed, big);
+    expect(pick?.point.distanceTo(face)).toBeLessThan(1e-9);
+    // Beyond the tolerance, the floor or the rack, not him.
+    const far = wheelZoomPoint(camera, { x: beside.x + PICK_TOLERANCE + 2, y: beside.y }, size, scene, placed, big);
+    expect(far?.point.distanceTo(face)).toBeGreaterThan(0.5);
+    // A person hidden behind the cabinet is not picked from beside them; the cabinet is.
+    const hidden = wheelZoomPoint(camera, pixel(new THREE.Vector3(6, 6, 1.5)), size, scene, placed, big);
+    expect(hidden?.point.distanceTo(zoomFocus(placed[2].bounds, big))).toBeGreaterThan(0.5);
+
+    // Twenty notches from there, then any number more: close, his face in the middle, the camera never inside his box (grown by 10 cm).
+    const step = wheelStep(big);
+    const grown = new THREE.Box3(new THREE.Vector3(-9.3, -9.3, 0), new THREE.Vector3(-8.7, -8.7, bram.height + 0.1));
+    for (let i = 1; i <= 60; i++) {
+      wheelZoom(camera.position, target, pick?.point as THREE.Vector3, step, pick?.nearest);
+      camera.lookAt(target);
+      camera.updateMatrixWorld();
+      expect(grown.containsPoint(camera.position), `notch ${i}`).toBe(false);
+      expect(camera.position.distanceTo(face), `notch ${i}`).toBeGreaterThanOrEqual(ZOOM_NEAREST - 1e-9);
+      if (i === 20) {
+        expect(camera.position.distanceTo(face)).toBeLessThan(2.5);
+        const v = face.clone().project(camera);
+        expect(Math.hypot(v.x, v.y)).toBeLessThan(0.05);
+      }
+    }
     disposeRoomScene(scene);
   });
 

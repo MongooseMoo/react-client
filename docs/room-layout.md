@@ -104,9 +104,13 @@ buttons (the choice is kept across rooms):
 - **Dollhouse**: the room in 3D, seen from above one corner, far enough out for the whole room
   however large. Drag, or one finger, to turn it. The wheel zooms toward what is under the
   pointer, and a pinch toward what is between the two fingers where it began: a person's face
-  when that is a person, else the thing or the floor there. Either brings it to the middle of the
-  picture as it comes closer (about twenty wheel notches from the whole-room view to a person
-  close up, in a room of any size; a pinch comes as much closer as the fingers spread apart).
+  when a person is drawn within 12 CSS pixels of that point (the nearest one, if nothing hides
+  their face; half the 24 px minimum target of WCAG 2.2 criterion 2.5.8, so a person a pixel tall
+  in a large room can still be picked), else the thing or the floor there. Either brings it to
+  the middle of the picture as it comes closer (about twenty wheel notches from the whole-room
+  view to a person close up, in a room of any size; a pinch comes as much closer as the fingers
+  spread apart), and stops short of it: never nearer than 0.5 m, and never inside a person it
+  zooms onto (their box and 15 cm round it).
   Turning then goes round it, so you can turn until a person faces you. On the picture the arrow keys turn
   it, `+` and `-` zoom toward and away from your own figure (the room's middle when you are not in
   the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.

@@ -551,20 +551,82 @@ export function wheelNotches(deltaY: number, deltaMode: number): number {
 }
 
 /**
- * What a dollhouse wheel zoom heads for, along the pointer's ray: a person's face
- * when the ray meets a person, else the first thing it meets, else the floor;
- * undefined when it meets none of them (pointing over the walls into the dark).
+ * How near the pointer must be to a person as drawn, CSS pixels, for the wheel or a pinch to
+ * pick them: half of the 24 CSS px minimum target of WCAG 2.2 success criterion 2.5.8, so
+ * even a person a pixel tall is a target at least 24 px across.
  */
-export function wheelZoomPoint(ray: THREE.Ray, scene: RoomScene, placed: PlacedThing[], layout: RoomLayout): THREE.Vector3 | undefined {
-  const caster = new THREE.Raycaster(ray.origin, ray.direction);
-  const hit = caster.intersectObjects([...scene.things.values()], true)[0];
-  if (hit) {
-    let object: THREE.Object3D | null = hit.object;
-    while (object && object.userData.thingId === undefined) object = object.parent;
-    const person = object?.userData.form === "person" ? placed.find((p) => p.thing.id === object?.userData.thingId) : undefined;
-    return person ? zoomFocus(person.bounds, layout) : hit.point.clone();
+export const PICK_TOLERANCE = 12;
+/** The least distance, metres, the dollhouse camera keeps from what it zooms onto (OrbitControls' minDistance too). */
+export const ZOOM_NEAREST = 0.5;
+/** Room left round a person's box that a zoom onto them never brings the camera into, metres. */
+const PERSON_CLEARANCE = 0.15;
+
+/** What a dollhouse zoom heads for, and how near the camera may come to it. */
+export interface ZoomPick {
+  point: THREE.Vector3;
+  /** The camera stops this far from `point`: outside what owns it. */
+  nearest: number;
+}
+
+const thingIdOf = (object: THREE.Object3D | null): string | undefined => {
+  while (object && object.userData.thingId === undefined) object = object.parent;
+  return object?.userData.thingId as string | undefined;
+};
+
+/**
+ * What a dollhouse wheel zoom or pinch at (x, y), pixels from the top left of a `width` x
+ * `height` picture, heads for. A person's face when a visible person is drawn within
+ * PICK_TOLERANCE of the pointer (the nearest one), else the first thing under the pointer,
+ * else the floor; undefined when there is none of them (pointing over the walls into the dark).
+ * `nearest` keeps the camera outside the person (their box and PERSON_CLEARANCE) and at least ZOOM_NEAREST away.
+ */
+export function wheelZoomPoint(
+  camera: THREE.Camera,
+  at: { x: number; y: number },
+  size: { width: number; height: number },
+  scene: RoomScene,
+  placed: PlacedThing[],
+  layout: RoomLayout,
+): ZoomPick | undefined {
+  const caster = new THREE.Raycaster();
+  caster.setFromCamera(new THREE.Vector2((at.x / size.width) * 2 - 1, -(at.y / size.height) * 2 + 1), camera);
+  const things = [...scene.things.values()].filter((group) => group.visible);
+  const eye = camera.getWorldPosition(new THREE.Vector3());
+
+  // People drawn near the pointer, nearest to it first (then nearest the camera), each only if nothing hides their face.
+  const near: Array<{ person: PlacedThing; off: number; depth: number }> = [];
+  for (const person of placed) {
+    if (scene.things.get(person.thing.id)?.userData.form !== "person" || !scene.things.get(person.thing.id)?.visible) continue;
+    const b = person.bounds;
+    const corners = boxCorners(new THREE.Box3(new THREE.Vector3(b.x0, b.y0, b.z0), new THREE.Vector3(b.x1, b.y1, b.z1)));
+    const box = screenBox(corners, camera, size.width, size.height);
+    if (!box) continue;
+    const off = Math.hypot(Math.max(box.x0 - at.x, 0, at.x - box.x1), Math.max(box.y0 - at.y, 0, at.y - box.y1));
+    if (off <= PICK_TOLERANCE) near.push({ person, off, depth: eye.distanceTo(zoomFocus(b, layout)) });
   }
-  return ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3()) ?? undefined;
+  near.sort((p, q) => p.off - q.off || p.depth - q.depth);
+  for (const { person, depth } of near) {
+    const face = zoomFocus(person.bounds, layout);
+    const sight = new THREE.Raycaster(eye, face.clone().sub(eye).normalize(), 0, depth);
+    const first = sight.intersectObjects(things, true)[0];
+    if (first && thingIdOf(first.object) !== person.thing.id) continue;
+    return { point: face, nearest: Math.max(ZOOM_NEAREST, outOfBox(face, eye, person.bounds, PERSON_CLEARANCE)) };
+  }
+
+  const hit = caster.intersectObjects(things, true)[0];
+  if (hit) return { point: hit.point.clone(), nearest: ZOOM_NEAREST };
+  const floor = caster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+  return floor ? { point: floor, nearest: ZOOM_NEAREST } : undefined;
+}
+
+/** How far from `point`, inside box `b` grown by `clearance`, the line toward `toward` leaves it. */
+function outOfBox(point: THREE.Vector3, toward: THREE.Vector3, b: Bounds, clearance: number): number {
+  const grown = new THREE.Box3(new THREE.Vector3(b.x0 - clearance, b.y0 - clearance, b.z0), new THREE.Vector3(b.x1 + clearance, b.y1 + clearance, b.z1 + clearance));
+  const direction = toward.clone().sub(point).normalize();
+  // From far along the line back toward the point, the first crossing of the grown box is where the line leaves it.
+  const far = point.clone().addScaledVector(direction, 1000);
+  const entry = new THREE.Ray(far, direction.clone().negate()).intersectBox(grown, new THREE.Vector3());
+  return entry ? point.distanceTo(entry) : 0;
 }
 
 /**
@@ -616,11 +678,14 @@ export class Pinch {
  * One dollhouse zoom, a wheel notch's or a pinch step's, by `scale` (below 1 comes closer). Zooming in moves the
  * camera toward `point` and the point it orbits onto `point` a little faster, so what
  * was zoomed onto comes to the middle of the picture and the arrow keys then turn
- * around it. Zooming out backs away from the point it orbits.
+ * around it. Zooming out backs away from the point it orbits. Zooming in never brings the
+ * camera nearer `point` than `nearest` (a `ZoomPick`'s), so it stays outside what it zooms onto.
  */
-export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: THREE.Vector3, scale: number): void {
+export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: THREE.Vector3, scale: number, nearest = 0): void {
   if (scale < 1) {
-    camera.sub(point).multiplyScalar(scale).add(point);
+    const distance = camera.distanceTo(point);
+    const toward = distance > nearest ? Math.max(scale, nearest / distance) : 1;
+    camera.sub(point).multiplyScalar(toward).add(point);
     target.sub(point).multiplyScalar(scale * scale).add(point);
   } else {
     camera.sub(target).multiplyScalar(scale).add(target);
