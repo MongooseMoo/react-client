@@ -11,10 +11,14 @@ import type { FigureParams, Seam } from "../avatar/figure";
  * 3D chunk.
  */
 
-interface Part {
+export interface Part {
   geometry: THREE.BufferGeometry;
   colour: string;
+  /** What the part is, for parts that tests look at by name (cap, brow, mouth, beard, strap, …). */
+  name?: string;
 }
+
+const named = (part: Part, name: string): Part => ({ ...part, name });
 
 const RADIAL = 10;
 /** How far the hair or head-covering cap leans back from upright, radians. */
@@ -58,7 +62,7 @@ function band(x: number, y: number, z: number, radius: number, depth: number, co
 }
 
 /** The figure's parts, standing or sitting, in its own frame. */
-function parts(p: FigureParams): Part[] {
+export function figureParts(p: FigureParams): Part[] {
   const c = p.colours;
   const H = p.height;
   const s = H / 1.75;
@@ -121,9 +125,33 @@ function parts(p: FigureParams): Part[] {
   // Nose: which way the person faces.
   out.push(placed(new THREE.ConeGeometry(headR * 0.13, headR * 0.3, 6), c.skin, new THREE.Vector3(0, headR * 0.98, headCentreZ - headR * 0.08), new THREE.Euler(0, 0, 0)));
 
-  if (!p.faceHidden && c.eyes) {
+  // The face's surface: how far forward (y) the head ellipsoid is at a point (x, z) on it, z from the head's centre.
+  const faceY = (x: number, z: number) =>
+    headR * headScale.y * Math.sqrt(Math.max(0, 1 - (x / (headR * headScale.x)) ** 2 - (z / (headR * headScale.z)) ** 2));
+  // A face only for a described person; the plain figure of someone without appearance stays plain.
+  if (p.described && !p.faceHidden) {
+    const eyeR = headR * 0.1;
     for (const side of [-1, 1]) {
-      out.push(ball(new THREE.Vector3(side * headR * 0.32, headR * 0.86, headCentreZ + headR * 0.12), headR * 0.1, c.eyes, undefined, 6));
+      const ex = side * headR * 0.32;
+      const ez = headR * 0.12;
+      // Seated in the head: the eye stands out of the face by less than half its radius.
+      if (c.eyes) out.push(named(ball(new THREE.Vector3(ex, faceY(ex, ez) - eyeR * 0.6, headCentreZ + ez), eyeR, c.eyes, undefined, 8), "eye"));
+      // A brow over each eye, in the hair colour as in the portrait, following the face.
+      const inner = side * headR * 0.16;
+      const outer = side * headR * 0.48;
+      const bz = headR * 0.3;
+      const brow = c.hair ?? c.facialHair ?? c.faceInk;
+      const browInner = new THREE.Vector3(inner, faceY(inner, bz), headCentreZ + bz);
+      const browOuter = new THREE.Vector3(outer, faceY(outer, bz - headR * 0.03), headCentreZ + bz - headR * 0.03);
+      out.push(named(limb(browInner, browOuter, headR * 0.035, brow), "brow"));
+    }
+    // The mouth: a shallow smile across the lower face, in the face ink.
+    const mz = -headR * 0.45;
+    const corner = headR * 0.24;
+    const middle = new THREE.Vector3(0, faceY(0, mz - headR * 0.04), headCentreZ + mz - headR * 0.04);
+    for (const side of [-1, 1]) {
+      const end = new THREE.Vector3(side * corner, faceY(corner, mz), headCentreZ + mz);
+      out.push(named(limb(middle, end, headR * 0.03, c.faceInk), "mouth"));
     }
   }
 
@@ -140,13 +168,13 @@ function parts(p: FigureParams): Part[] {
     const capAt = new THREE.Vector3(0, 0, headCentreZ);
     const capTurn = new THREE.Euler(Math.PI / 2 + CAP_LEAN, 0, 0);
     const capScale = new THREE.Vector3(headScale.x * v, v, headScale.y * v);
-    out.push(placed(cap, c.head, capAt, capTurn, capScale));
+    out.push(named(placed(cap, c.head, capAt, capTurn, capScale), "cap"));
     if (outlined.has("hairline")) {
       // The outline runs along the cap's edge, so it is built where that edge is and turned with the cap.
       const edgeR = headR * Math.sin(capReach) * 1.02;
       const edge = new THREE.CylinderGeometry(edgeR, edgeR, 0.014, RADIAL * 2, 1, true);
       edge.translate(0, headR * Math.cos(capReach), 0);
-      out.push(placed(edge, c.ink, capAt, capTurn, capScale));
+      out.push(named(placed(edge, c.ink, capAt, capTurn, capScale), "hairline"));
     }
   }
   if (!p.headCovered && (p.hair === "medium" || p.hair === "long")) {
@@ -207,7 +235,7 @@ function parts(p: FigureParams): Part[] {
         // A ring hanging from each earlobe, turned to face sideways.
         const lobe = headCentreZ - headR * 0.35;
         const at = new THREE.Vector3(side * (headSide(lobe) + rim), 0, lobe);
-        out.push(placed(new THREE.TorusGeometry(headR * 0.12, rim * 0.9, 4, 10), fi, at, new THREE.Euler(0, Math.PI / 2, 0)));
+        out.push(named(placed(new THREE.TorusGeometry(headR * 0.12, rim * 0.9, 4, 10), fi, at, new THREE.Euler(0, Math.PI / 2, 0)), "earring"));
       }
     }
   }
@@ -245,7 +273,7 @@ function parts(p: FigureParams): Part[] {
 /** The parts as one geometry, each part's colour in a `color` attribute (linear, as three.js expects). */
 export function figureGeometry(p: FigureParams): THREE.BufferGeometry {
   const colour = new THREE.Color();
-  const geometries = parts(p).map(({ geometry: g, colour: hex }) => {
+  const geometries = figureParts(p).map(({ geometry: g, colour: hex }) => {
     g.deleteAttribute("uv");
     colour.set(hex);
     const count = g.getAttribute("position").count;

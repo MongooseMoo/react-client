@@ -179,18 +179,20 @@ describe("buildRoomScene", () => {
       }
       return { zs, top: head.max.z, geometry: body.geometry };
     };
+    // The bare face has only its mouth in the face ink.
     const bare = inkVertices(plain);
-    expect(bare.zs).toHaveLength(0);
+    expect(bare.zs.length).toBeGreaterThan(0);
+    expect(Math.min(...bare.zs)).toBeGreaterThan(bare.top - 0.3);
     for (const feature of ["glasses", "sunglasses", "eyepatch", "earrings"]) {
       const drawn = inkVertices({ ...plain, features: [feature] });
-      expect(drawn.zs.length, feature).toBeGreaterThan(0);
+      expect(drawn.zs.length, feature).toBeGreaterThan(bare.zs.length);
       // Every inked vertex is on the head: within its top quarter-metre.
       expect(Math.min(...drawn.zs), feature).toBeGreaterThan(drawn.top - 0.3);
       // A feature is part of the figure's look, so it gets its own geometry.
       expect(drawn.geometry, feature).not.toBe(bare.geometry);
     }
     // Freckles, a mole and dimples stay in the portrait.
-    expect(inkVertices({ ...plain, features: ["freckles", "mole", "dimples"] }).zs).toHaveLength(0);
+    expect(inkVertices({ ...plain, features: ["freckles", "mole", "dimples"] }).zs).toHaveLength(bare.zs.length);
     expect(inkVertices({ ...plain, face_hidden: true, features: ["glasses", "earrings"] }).zs).toHaveLength(0);
     figures.dispose();
   });

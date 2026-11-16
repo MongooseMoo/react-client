@@ -66,6 +66,8 @@ export interface FigureColours {
 }
 
 export interface FigureParams {
+  /** False for a person with no appearance map: the plain figure, with no face drawn. */
+  described: boolean;
   /** Floor to crown, metres, standing. */
   height: number;
   posture: Posture;
@@ -280,6 +282,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     posture === "standing" ? height : posture === "sitting" ? height * (1 - legShare) + height * SEAT_SHARE : height * 0.16;
 
   return {
+    described,
     height,
     posture,
     top,
