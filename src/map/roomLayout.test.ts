@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import type { RoomLayout } from "../gmcp/Room";
-import { livingRoomLayout, sampleLayout } from "./roomLayout.fixture";
+import type { LayoutThing, RoomLayout } from "../gmcp/Room";
+import { livingRoomLayout, sampleLayout, translateLayoutThing } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingSample from "./roomLayout.sample-25828.json";
 import {
   type Bounds,
+  bodyFootprint,
   labelOrder,
   mainMaterial,
   namedWithKind,
   nearestWall,
   thingForm,
   describeExit,
-  describeArrival,
   describePlace,
   describeThing,
   displayName,
@@ -29,9 +29,24 @@ import {
 } from "./roomLayout";
 
 describe("room layout geometry", () => {
-  it("does not move a thing that has no origin (payloads from before origin)", () => {
+  it("projects turned intrinsic body corners instead of rotating world bounds again", () => {
+    const thing: LayoutThing = { ...sampleLayout().things[0], pose: { centre_m: [1, 2, 1],
+      dimensions_m: [2, 1, 2], body_quaternion: [Math.cos(Math.PI / 8), 0, 0, Math.sin(Math.PI / 8)], box: true } };
+    const hull = bodyFootprint(thing);
+    expect(hull).toHaveLength(4);
+    if (!hull) throw new Error("missing native body footprint");
+    const area = Math.abs(hull.reduce((sum, point, i) => {
+      const next = hull[(i + 1) % hull.length];
+      return sum + point[0] * next[1] - next[0] * point[1];
+    }, 0)) / 2;
+    expect(area).toBeCloseTo(2);
+    expect(Math.max(...hull.map(p => p[0]))).toBeCloseTo(1 + 1.5 * Math.SQRT1_2);
+    if (!thing.pose) throw new Error("missing native pose");
+    expect(bodyFootprint({ ...thing, pose: { ...thing.pose, box: false } })).toBeUndefined();
+  });
+  it("uses the supplied world shapes without an acoustic position", () => {
     const layout = laundry as unknown as RoomLayout;
-    const [washer] = placeThings(layout, { "#23011": [2, 2, 0] });
+    const [washer] = placeThings(layout);
     expect(washer.bounds).toEqual({ x0: -2.8, x1: -2.2, y0: 1.0, y1: 1.65, z0: 0, z1: 0.85 });
   });
 
@@ -40,9 +55,6 @@ describe("room layout geometry", () => {
     expect(displayName({ id: "#99", name: "[bold]Q" }, "#99")).toBe("Q (you)");
     expect(describeExit({ name: "[cyan]west[normal]", to: 1, at: [-2.7, 0, 0], width: 0.9 }, [6, 8, 3])).toBe(
       "west: 0.9 m doorway in the west wall, midway between the north and south walls",
-    );
-    expect(describeArrival({ id: "#7", name: "[green]Zed", kind: "player" }, [2.9, 0, 0], [6, 8, 3], "#99")).toBe(
-      "Zed, midway between the north and south walls, near the east wall",
     );
   });
 
@@ -64,13 +76,13 @@ describe("room layout geometry", () => {
     expect(northY).toBeLessThan(southY);
   });
 
-  it("moves a thing's shapes by how far Client.Spatial says it went from its origin", () => {
-    const [table, q] = placeThings(sampleLayout(), { "#99": [0.2, 1.0, 1.67] });
+  it("reads a translated physical record without moving unrelated things", () => {
+    const [table, q] = placeThings(translateLayoutThing(sampleLayout(), "#99", [-1.0, 2.0, 0]));
     expect(table.bounds).toEqual({ x0: -0.5, x1: 0.5, y0: 0.2, y1: 1.0, z0: 0, z1: 1.05 });
     expect(q.bounds.x0).toBeCloseTo(0.0);
     expect(q.bounds.x1).toBeCloseTo(0.4);
-    expect(q.bounds.y0).toBeCloseTo(0.8);
-    expect(q.bounds.y1).toBeCloseTo(1.2);
+    expect(q.bounds.y0).toBeCloseTo(0.0);
+    expect(q.bounds.y1).toBeCloseTo(0.4);
     expect(q.bounds.z0).toBeCloseTo(0);
   });
 
@@ -86,7 +98,7 @@ describe("room layout geometry", () => {
     const layout = laundry as unknown as RoomLayout;
     // Default doorways sit 5% of the room in from their wall ($spatial_utils:coords_for_edge).
     expect(layout.exits.map((exit) => exitWall(exit, layout.size))).toEqual(["south", "west"]);
-    const placed = placeThings(layout, {});
+    const placed = placeThings(layout);
     expect(placed).toHaveLength(12);
     expect(placed.some((p) => p.thing.id === "#39832")).toBe(false);
     expect(layoutSummary("Laundry", layout)).toBe(
@@ -107,7 +119,7 @@ describe("room layout geometry", () => {
     expect(describePlace({ x0: -0.5, x1: 0.5, y0: -3, y1: -2, z0: 0, z1: 1 }, size)).toBe(
       "against the south wall, midway between the east and west walls",
     );
-    const [table, q] = placeThings(sampleLayout(), {});
+    const [table, q] = placeThings(sampleLayout());
     expect(describeThing(q, sampleLayout().size, "#99")).toBe("Ondine (you), 0.6 m from the south wall, 0.5 m from the east wall");
     expect(describeThing(table, sampleLayout().size, "#99")).toBe(
       "oak table, 1.6 m from the north wall, midway between the east and west walls",
@@ -278,7 +290,7 @@ describe("what things are", () => {
     expect(namedWithKind(byId("#1"), "#99")).toBe("coffee table (table, wood)");
     expect(namedWithKind(byId("#8"), "#99")).toBe("robot vacuum (thing)");
     expect(namedWithKind({ ...byId("#8"), classes: undefined }, "#99")).toBe("robot vacuum");
-    const placed = placeThings(living, {});
+    const placed = placeThings(living);
     const table = placed.find((p) => p.thing.id === "#1");
     expect(table && describeThing(table, living.size, "#99")).toBe(
       "coffee table (table, wood), midway between the north and south walls, midway between the east and west walls",
@@ -303,7 +315,7 @@ describe("what things are", () => {
   });
 
   it("finds the wall a thing is nearest", () => {
-    const placed = placeThings(living, {});
+    const placed = placeThings(living);
     const wall = (id: string) => nearestWall(placed.find((p) => p.thing.id === id)?.bounds as Bounds, living.size);
     expect(wall("#2")).toBe("north");
     expect(wall("#3")).toBe("west");
@@ -312,7 +324,7 @@ describe("what things are", () => {
   });
 
   it("labels you first, then people, then things largest first, and not things on the walls", () => {
-    const order = labelOrder(placeThings(living, {}), "#99").map((p) => p.thing.id);
+    const order = labelOrder(placeThings(living), "#99").map((p) => p.thing.id);
     expect(order.slice(0, 2)).toEqual(["#99", "#9"]);
     expect(order[2]).toBe("#2");
     expect(order).not.toContain("#4");

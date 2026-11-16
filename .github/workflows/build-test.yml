@@ -62,7 +62,7 @@ jobs:
             fi
             sleep 1
           done
-          node node_modules/@playwright/test/cli.js test tests/browser/editor-ownership.spec.ts --workers=1 --reporter=line
+          node node_modules/@playwright/test/cli.js test tests/browser/editor-ownership.spec.ts tests/browser/room-semantics.spec.ts --workers=1 --reporter=line
       - name: Verify browser session ownership and visitor privacy in the production build
         run: |
           node scripts/check-browser-sessions.mjs

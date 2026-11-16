@@ -22,6 +22,44 @@ export class GMCPMessageRoomInfo extends GMCPMessage {
 /** A Room.Layout point or extent: metres, room-local MOO frame (x east, y north, z up). */
 export type LayoutVector = [number, number, number];
 
+/** Native body attitude, in MOO w,x,y,z order. Gaze is separate. */
+export type LayoutQuaternion = [number, number, number, number];
+
+export interface LayoutPose {
+  centre_m: LayoutVector;
+  dimensions_m: LayoutVector;
+  body_quaternion: LayoutQuaternion;
+  /** No custom collision shapes: draw the intrinsic box through its body pose. */
+  box: boolean;
+  /** Native unposed stature for the existing person figure, when supplied. */
+  figure_height_m?: number;
+  /** Native physical posture, available even without an appearance record. */
+  posture?: "standing" | "sitting" | "reclining";
+}
+
+export interface LayoutFront {
+  axis: LayoutVector;
+  yaw: number;
+  direction: string;
+}
+
+export interface LayoutRelation { kind: string; target: string; text: string }
+
+export interface LayoutBody {
+  id: string;
+  lifetime: string;
+  pose: LayoutPose;
+  shapes: LayoutShape[];
+  front?: LayoutFront;
+  relation?: LayoutRelation;
+}
+
+export interface RoomLayoutUpdate {
+  num: number;
+  room_lifetime: string;
+  bodies: LayoutBody[];
+}
+
 /** A world box `[[x0,x1],[y0,y1],[z0,z1]]` or a sphere `[[cx,cy,cz], r]`. */
 export type LayoutShape =
   | { box: [[number, number], [number, number], [number, number]] }
@@ -46,7 +84,12 @@ export interface LayoutThing {
   fixed: boolean;
   mounted: boolean;
   shapes: LayoutShape[];
-  /** Where Client.Spatial places this thing when the layout was built (its `:sound_origin()`). Without it the thing is not moved. */
+  lifetime?: string;
+  pose?: LayoutPose;
+  front?: LayoutFront;
+  relation?: LayoutRelation;
+  state?: { opened?: boolean; lit?: boolean; mode?: string };
+  /** Acoustic snapshot origin; never a physical drawing position. */
   origin?: LayoutVector;
   /** Registered `$` names of the thing's ancestors, nearest first (`table`, `furniture`, `thing`). */
   classes?: string[];
@@ -116,6 +159,8 @@ export interface LayoutMaterial {
 /** Mongoose `Room.Layout`: the inside of a spatial room, drawn by the client. See docs/room-layout.md. */
 export interface RoomLayout {
   num: number;
+  room_lifetime?: string;
+  finishes?: Partial<Record<"floor" | "wall" | "ceiling", string>>;
   /** `room:dimensions()`: width (east-west), depth (north-south), height. The room spans ±width/2, ±depth/2. */
   size: LayoutVector;
   exits: LayoutExit[];
@@ -133,6 +178,43 @@ const roomPlayers = gmcpJsonMessage<"Players", RoomPlayer[]>("Players");
 const roomAddPlayer = gmcpJsonMessage<"AddPlayer", RoomPlayer>("AddPlayer");
 const roomRemovePlayer = gmcpJsonMessage<"RemovePlayer", string>("RemovePlayer");
 const roomLayout = gmcpJsonMessage<"Layout", RoomLayout>("Layout");
+const roomLayoutUpdate = gmcpJsonMessage<"LayoutUpdate", unknown>("LayoutUpdate");
+
+const record = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+const vector = (value: unknown): value is LayoutVector =>
+  Array.isArray(value) && value.length === 3 && value.every(finite);
+const pair = (value: unknown): value is [number, number] =>
+  Array.isArray(value) && value.length === 2 && value.every(finite) && value[1] >= value[0];
+const shape = (value: unknown): value is LayoutShape => record(value) && (
+  (Array.isArray(value.box) && value.box.length === 3 && value.box.every(pair)) ||
+  (Array.isArray(value.sphere) && value.sphere.length === 2 && vector(value.sphere[0]) && finite(value.sphere[1]) && value.sphere[1] > 0)
+);
+
+export function isLayoutPose(pose: unknown): pose is LayoutPose {
+  if (!record(pose)) return false;
+  const q = pose.body_quaternion;
+  return vector(pose.centre_m) && vector(pose.dimensions_m) && pose.dimensions_m.every((n) => n >= 0) &&
+    typeof pose.box === "boolean" && Array.isArray(q) && q.length === 4 && q.every(finite) &&
+    Number.isFinite(Math.hypot(...q)) && Math.hypot(...q) > 0 &&
+    (pose.figure_height_m === undefined || (finite(pose.figure_height_m) && pose.figure_height_m > 0)) &&
+    (pose.posture === undefined || pose.posture === "standing" || pose.posture === "sitting" || pose.posture === "reclining");
+}
+
+function body(value: unknown): value is LayoutBody {
+  return record(value) && typeof value.id === "string" && typeof value.lifetime === "string" && isLayoutPose(value.pose) &&
+    Array.isArray(value.shapes) && value.shapes.every(shape) &&
+    (value.front === undefined || (record(value.front) && vector(value.front.axis) &&
+      finite(value.front.yaw) && typeof value.front.direction === "string")) &&
+    (value.relation === undefined || (record(value.relation) && typeof value.relation.kind === "string" &&
+      typeof value.relation.target === "string" && typeof value.relation.text === "string"));
+}
+
+function layoutUpdate(value: unknown): value is RoomLayoutUpdate {
+  return record(value) && finite(value.num) && typeof value.room_lifetime === "string" &&
+    Array.isArray(value.bodies) && value.bodies.every(body);
+}
 
 const GMCPRoomBase = GMCPPackage.with({
   packageName: "Room",
@@ -143,6 +225,7 @@ const GMCPRoomBase = GMCPPackage.with({
     inbound(roomAddPlayer),
     inbound(roomRemovePlayer),
     inbound(roomLayout),
+    inbound(roomLayoutUpdate),
   ] as const,
 });
 
@@ -160,6 +243,9 @@ export class GMCPRoom extends GMCPRoomBase {
     this.on("addPlayer", (data) => this.handleAddPlayer(data));
     this.on("removePlayer", (data) => this.handleRemovePlayer(data));
     this.on("layout", (data) => useRoomStore.getState().setRoomLayout(data));
+    this.on("layoutUpdate", (data) => {
+      if (layoutUpdate(data)) useRoomStore.getState().updateRoomLayout(data);
+    });
   }
 
   handleInfo(data: GMCPMessageRoomInfo): void {

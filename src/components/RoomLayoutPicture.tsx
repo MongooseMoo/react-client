@@ -1,7 +1,6 @@
 import type React from "react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { LayoutVector, RoomLayout } from "../gmcp/Room";
-import type { LayoutArrival } from "../stores/roomStore";
+import { isLayoutPose, type RoomLayout } from "../gmcp/Room";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { tokenColours } from "../avatar/figure";
 import {
@@ -11,6 +10,10 @@ import {
   labelOrder,
   metres,
   nearestWall,
+  frontDirection,
+  bodyDirection,
+  bodyFootprint,
+  semanticDetails,
   type PlacedThing,
   placeLabels,
   scaleBarLength,
@@ -42,8 +45,6 @@ interface ViewBox {
 interface RoomLayoutPictureProps {
   layout: RoomLayout;
   placed: PlacedThing[];
-  /** Things that entered after the layout, at their Client.Spatial points; drawn as small markers. */
-  arrivals: Array<{ arrival: LayoutArrival; at: LayoutVector }>;
   youId: string;
   label: string;
   onExit: (name: string) => void;
@@ -171,11 +172,24 @@ function doorwayGeometry(wall: Wall, at: [number, number, number], width: number
 
 /**
  * What a thing is, seen from above, drawn over its footprint: a table's leg
- * dots, a seat's back bar on its side nearest a wall, a door's swing arc into
+ * dots, a seat's back bar opposite its supplied front, a door's swing arc into
  * the room. Other forms are their footprint alone; things on the walls are
  * already wall marks.
  */
 export function formSymbol(p: PlacedThing, size: [number, number, number]): React.ReactNode {
+  const pose = p.thing.pose;
+  const x = bodyDirection(p.thing, [1, 0, 0]);
+  const y = bodyDirection(p.thing, [0, 1, 0]);
+  if (isLayoutPose(pose) && pose.box && x && y) {
+    const [w, d, h] = pose.dimensions_m;
+    const local: PlacedThing = { ...p, thing: { ...p.thing, pose: { ...pose, body_quaternion: [1, 0, 0, 0] } },
+      bounds: { x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -h / 2, z1: h / 2 } };
+    return <g transform={`matrix(${x[0]} ${-x[1]} ${-y[0]} ${y[1]} ${pose.centre_m[0]} ${-pose.centre_m[1]})`}>{flatFormSymbol(local, size)}</g>;
+  }
+  return flatFormSymbol(p, size);
+}
+
+function flatFormSymbol(p: PlacedThing, size: [number, number, number]): React.ReactNode {
   const { x0, x1, y0, y1 } = p.bounds;
   const w = x1 - x0;
   const d = y1 - y0;
@@ -196,14 +210,16 @@ export function formSymbol(p: PlacedThing, size: [number, number, number]): Reac
       });
     }
     case "seat": {
-      const wall = nearestWall(p.bounds, size);
-      const back = { x0, x1, y0, y1 };
-      if (wall === "north") back.y0 = y1 - d * 0.22;
-      if (wall === "south") back.y1 = y0 + d * 0.22;
-      if (wall === "east") back.x0 = x1 - w * 0.22;
-      if (wall === "west") back.x1 = x0 + w * 0.22;
-      const [sx, sy] = toSvg(back.x0, back.y1);
-      return <rect className="rl-symbol" x={sx} y={sy} width={back.x1 - back.x0} height={back.y1 - back.y0} />;
+      const front = frontDirection(p.thing);
+      if (!front || Math.hypot(front[0], front[1]) < 1e-6) return null;
+      const length = Math.hypot(front[0], front[1]);
+      const fx = front[0] / length, fy = front[1] / length;
+      const reach = Math.min(w, d) * 0.35;
+      const cx = (x0 + x1) / 2 - fx * reach;
+      const cy = (y0 + y1) / 2 - fy * reach;
+      const [ax, ay] = toSvg(cx - fy * reach, cy + fx * reach);
+      const [bx, by] = toSvg(cx + fy * reach, cy - fx * reach);
+      return <line className="rl-mark-line" x1={ax} y1={ay} x2={bx} y2={by} />;
     }
     case "door": {
       // The leaf lies along its longer side; it swings about one end into the room.
@@ -230,7 +246,7 @@ export function formSymbol(p: PlacedThing, size: [number, number, number]): Reac
   }
 }
 
-const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, arrivals, youId, label, onExit, onSave }) => {
+const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, youId, label, onExit, onSave }) => {
   const base = useMemo(() => baseViewBox(layout), [layout]);
   const [view, setView] = useState<ViewBox>(base);
   const [viewFor, setViewFor] = useState(layout.num);
@@ -360,7 +376,6 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
   const labelled = labelOrder(placed, youId);
   const personIds = new Set([
     ...placed.filter((p) => isPerson(p.thing)).map((p) => p.thing.id),
-    ...arrivals.filter(({ arrival }) => isPerson(arrival)).map(({ arrival }) => arrival.id),
   ]);
   const inset = fontSize * 0.2;
   const labels = placeLabels(
@@ -368,10 +383,6 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
       ...labelled.filter((p) => p.thing.id === youId || isPerson(p.thing)).map((p) => {
         const [x, y] = centreOf(p);
         return { id: p.thing.id, text: shortLabel(displayName(p.thing, youId)), ...underToken(x, y) };
-      }),
-      ...arrivals.map(({ arrival, at }) => {
-        const [x, y] = toSvg(at[0], at[1]);
-        return { id: arrival.id, text: shortLabel(displayName(arrival, youId)), ...underToken(x, y) };
       }),
       ...labelled.filter((p) => !isPerson(p.thing)).map((p) => {
         const [x, y] = centreOf(p);
@@ -384,8 +395,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
     // No label covers a person's token.
     [
       ...placed.filter((p) => isPerson(p.thing)).map(centreOf),
-      ...arrivals.map(({ at }) => toSvg(at[0], at[1])),
-    ].map(([x, y]) => ({ x0: x - markerRadius, x1: x + markerRadius, y0: y - markerRadius, y1: y + markerRadius })),
+      ].map(([x, y]) => ({ x0: x - markerRadius, x1: x + markerRadius, y0: y - markerRadius, y1: y + markerRadius })),
   );
 
   const exits = layout.exits.map((exit, index) => {
@@ -467,10 +477,11 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
     >
       <style>{LAYOUT_STYLE}</style>
       <rect className="rl-bg" x={base.x} y={base.y} width={base.w} height={base.h} />
-      <rect className="rl-floor" x={-w / 2} y={-d / 2} width={w} height={d} />
+      <rect className="rl-floor" x={-w / 2} y={-d / 2} width={w} height={d}><title>{layout.finishes?.floor ? `${layout.finishes.floor} floor` : "Floor"}</title></rect>
       <g>{grid}</g>
       <g>
         {ordered.map((p) => {
+          const body = bodyFootprint(p.thing);
           const you = p.thing.id === youId;
           const className = [
             "rl-item",
@@ -496,7 +507,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
                 data-id={p.thing.id}
                 style={look ? (style as React.CSSProperties) : undefined}
               >
-                <title>{displayName(p.thing, youId)}</title>
+                <title>{[displayName(p.thing, youId), ...semanticDetails(p.thing)].join(", ")}</title>
                 <circle className="rl-thing" cx={cx} cy={cy} r={r} />
                 {look?.head && <circle className="rl-head" cx={cx} cy={cy} r={r * 0.5} />}
                 {you && <circle className="rl-you-ring" cx={cx} cy={cy} r={r * 1.35} />}
@@ -505,8 +516,8 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
           }
           return (
             <g key={p.thing.id} className={className} data-id={p.thing.id} data-form={thingForm(p.thing)}>
-              <title>{displayName(p.thing, youId)}</title>
-              {p.footprints.map((f, index) => {
+              <title>{[displayName(p.thing, youId), ...semanticDetails(p.thing)].join(", ")}</title>
+              {body ? <polygon className="rl-thing" points={body.map(([x, y]) => toSvg(x, y).join(",")).join(" ")} /> : p.footprints.map((f, index) => {
                 if (f.type === "circle") {
                   const [x, y] = toSvg(f.cx, f.cy);
                   return <circle key={index} className="rl-thing" cx={x} cy={y} r={f.r} />;
@@ -524,20 +535,6 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, a
                 );
               })}
               {formSymbol(p, layout.size)}
-            </g>
-          );
-        })}
-        {arrivals.map(({ arrival, at }) => {
-          const you = arrival.id === youId;
-          const className = ["rl-item", "rl-arrival", isPerson(arrival) ? "rl-person" : "", you ? "rl-you" : ""]
-            .filter(Boolean)
-            .join(" ");
-          const [x, y] = toSvg(at[0], at[1]);
-          return (
-            <g key={arrival.id} className={className} data-id={arrival.id}>
-              <title>{displayName(arrival, youId)}</title>
-              <circle className="rl-thing" cx={x} cy={y} r={markerRadius} />
-              {you && <circle className="rl-you-ring" cx={x} cy={y} r={markerRadius * 1.35} />}
             </g>
           );
         })}

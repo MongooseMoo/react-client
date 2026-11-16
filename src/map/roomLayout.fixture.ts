@@ -1,5 +1,30 @@
 import { TEST_CHARACTERS } from "../avatar/characters.fixture";
-import type { RoomLayout } from "../gmcp/Room";
+import type { LayoutShape, LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
+
+/** Native body-facing fixture data; independent of acoustic listener/gaze state. */
+export function withBodyFacings(layout: RoomLayout, facings: Record<string, LayoutVector | undefined>): RoomLayout {
+  return { ...layout, things: layout.things.map((thing): LayoutThing => {
+    const facing = facings[thing.id];
+    const shape = thing.shapes[0];
+    if (!facing || !shape || !("box" in shape)) return thing;
+    const [[x0, x1], [y0, y1], [z0, z1]] = shape.box;
+    const yaw = Math.atan2(facing[0], -facing[1]);
+    return { ...thing, pose: { centre_m: [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2],
+      dimensions_m: [x1 - x0, y1 - y0, z1 - z0], body_quaternion: [Math.cos(yaw / 2), 0, 0, Math.sin(yaw / 2)], box: true } };
+  }) };
+}
+
+/** A translated native physical record for movement/rendering fixtures. */
+export function translateLayoutThing(layout: RoomLayout, id: string, delta: LayoutVector): RoomLayout {
+  const add = (point: LayoutVector): LayoutVector => [point[0] + delta[0], point[1] + delta[1], point[2] + delta[2]];
+  return { ...layout, things: layout.things.map((thing) => thing.id !== id ? thing : { ...thing,
+    pose: thing.pose ? { ...thing.pose, centre_m: add(thing.pose.centre_m) } : undefined,
+    shapes: thing.shapes.map((shape): LayoutShape => "sphere" in shape
+      ? { sphere: [add(shape.sphere[0]), shape.sphere[1]] }
+      : { box: [[shape.box[0][0] + delta[0], shape.box[0][1] + delta[0]],
+        [shape.box[1][0] + delta[1], shape.box[1][1] + delta[1]], [shape.box[2][0] + delta[2], shape.box[2][1] + delta[2]]] }),
+  }) };
+}
 
 /** The living room holding `count` people (#p0, #p1, …), each one of the test characters in turn, in rows of eight. */
 export const crowdLayout = (count: number): RoomLayout => {
@@ -50,6 +75,8 @@ export const livingRoomLayout = (): RoomLayout => ({
       fixed: false,
       mounted: false,
       shapes: [{ box: [[-1.0, 1.0], [1.1, 2.0], [0, 0.9]] }],
+      pose: { centre_m: [0, 1.55, 0.45], dimensions_m: [2, 0.9, 0.9], body_quaternion: [1, 0, 0, 0], box: true },
+      front: { axis: [0, -1, 0], yaw: 0, direction: "south" },
       classes: ["furniture", "thing"],
       material: [{ species: "foam", fraction: 0.4 }, { species: "cotton", fraction: 0.5 }, { species: "wood", fraction: 0.1 }],
     },

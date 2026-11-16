@@ -1,10 +1,8 @@
 import type React from "react";
 import { lazy, Suspense, useMemo, useState } from "react";
-import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
 import { downloadFile } from "../downloadFile";
-import type { LayoutVector, RoomLayout } from "../gmcp/Room";
+import type { RoomLayout } from "../gmcp/Room";
 import {
-  describeArrival,
   describeExit,
   describeThing,
   describeUnshaped,
@@ -14,7 +12,6 @@ import {
   metres,
   placeThings,
 } from "../map/roomLayout";
-import { useRoomStore } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { type LocalStorageSchema, loadStoredValue, saveStoredValue } from "../persistence";
@@ -56,7 +53,7 @@ export const roomLayoutViewSchema: LocalStorageSchema<RoomLayoutViewName> = {
 /**
  * The current spatial room from Room.Layout: the drawing, its controls, and
  * the same room in words (exits, people, things, each with where it is).
- * Things follow Client.Spatial moves; nothing here is announced or takes
+ * Things follow Room.LayoutUpdate body changes; nothing here is announced or takes
  * focus when they do.
  */
 interface RoomLayoutViewProps {
@@ -66,9 +63,7 @@ interface RoomLayoutViewProps {
 }
 
 const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExit }) => {
-  const entities = useSpatialStore((state) => state.spatialEntities);
   const youId = useSpatialStore((state) => state.listenerEntityId);
-  const arrivalList = useRoomStore((state) => state.layoutArrivals);
   const name = stripMudAnsiTags(roomName);
   const [view, setView] = useState<RoomLayoutViewName>(() => loadStoredValue(roomLayoutViewSchema, "plan"));
   const chooseView = (next: RoomLayoutViewName) => {
@@ -76,39 +71,8 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
     saveStoredValue(roomLayoutViewSchema, next);
   };
 
-  const placed = useMemo(() => {
-    const positions: Record<string, LayoutVector | undefined> = {};
-    for (const thing of layout.things) {
-      const entity = entities[thing.id];
-      if (entity) positions[thing.id] = webAudioToMongooseVector(entity.position);
-    }
-    return placeThings(layout, positions);
-  }, [layout, entities]);
-
-  // Which way each person faces, so their 3D figure turns with them.
-  const facings = useMemo(() => {
-    const out: Record<string, LayoutVector | undefined> = {};
-    for (const [id, entity] of Object.entries(entities)) {
-      if (entity.forward) out[id] = webAudioToMongooseVector(entity.forward);
-    }
-    return out;
-  }, [entities]);
-
-  // What entered after the layout, at its Client.Spatial point; it moves with Client.Spatial and goes on leave.
-  const arrivals = useMemo(
-    () =>
-      arrivalList.map((arrival) => {
-        const entity = entities[arrival.id];
-        return { arrival, at: entity ? webAudioToMongooseVector(entity.position) : undefined };
-      }),
-    [arrivalList, entities],
-  );
-  const drawnArrivals = useMemo(
-    () => arrivals.filter((a): a is { arrival: (typeof a)["arrival"]; at: LayoutVector } => a.at !== undefined),
-    [arrivals],
-  );
-
-  const summary = layoutSummary(name, layout, arrivalList);
+  const placed = useMemo(() => placeThings(layout), [layout]);
+  const summary = layoutSummary(name, layout);
   // Everything is listed: a thing sent without shapes is listed but not drawn.
   const entries = [
     ...layout.things.map((thing) => {
@@ -121,13 +85,6 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
         text: where ? describeThing(where, layout.size, youId) : describeUnshaped(thing, youId),
       };
     }),
-    ...arrivals.map(({ arrival, at }) => ({
-      id: arrival.id,
-      kind: arrival.kind,
-      appearance: undefined,
-      sortName: displayName(arrival, youId),
-      text: describeArrival(arrival, at, layout.size, youId),
-    })),
   ];
   const byName = (a: (typeof entries)[number], b: (typeof entries)[number]) => a.sortName.localeCompare(b.sortName);
   const people = entries.filter((e) => isPerson(e)).sort(byName);
@@ -162,7 +119,6 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
         <RoomLayoutPicture
           layout={layout}
           placed={placed}
-          arrivals={drawnArrivals}
           youId={youId}
           label={summary}
           onExit={onExit}
@@ -173,9 +129,7 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
           <RoomLayout3D
             layout={layout}
             placed={placed}
-            arrivals={drawnArrivals}
             youId={youId}
-            facings={facings}
             label={summary}
             mode={view}
             onExit={onExit}
@@ -186,6 +140,14 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
       <p>
         {metres(w)} east to west, {metres(d)} north to south, {metres(h)} high.
       </p>
+      {layout.finishes && <dl aria-label="Room finishes">
+        {(["floor", "wall", "ceiling"] as const).map((slot) => {
+          const finish = layout.finishes?.[slot];
+          return typeof finish === "string" && finish ? <div key={slot}>
+            <dt>{slot === "wall" ? "Walls" : slot === "floor" ? "Floor" : "Ceiling"}</dt><dd>{finish}</dd>
+          </div> : null;
+        })}
+      </dl>}
       <h6>Exits</h6>
       {layout.exits.length === 0 ? (
         <p>No exits.</p>
