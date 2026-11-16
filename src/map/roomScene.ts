@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { figureParams } from "../avatar/figure";
 import type { LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
-import { FigureCache, figureMesh } from "./figureMesh";
+import { FigureCache, figureMesh, headOutline } from "./figureMesh";
 
 export { FigureCache };
 import type { LayoutArrival } from "../stores/roomStore";
@@ -84,8 +84,11 @@ export interface RoomScene {
   exits: THREE.Object3D[];
   /** Each thing's and arrival's group by id; `userData.form` says how it was drawn. */
   things: Map<string, THREE.Group>;
-  /** Where each thing's or arrival's label belongs: just above it. */
-  labelAnchors: Map<string, THREE.Vector3>;
+  /**
+   * What each thing's or arrival's label sits just above on screen: a person's head outline,
+   * the middle of a thing's top. The first point is where the label hangs.
+   */
+  labelPoints: Map<string, THREE.Vector3[]>;
 }
 
 /** Builds meshes, sharing one material per colour within a scene. */
@@ -141,7 +144,7 @@ class Builder {
   /**
    * A person from the floor (z0) to z1 at (x, y), drawn from their appearance
    * (or, without one, the same figure in `base`), facing `facing`. Returns the
-   * mesh and how high the figure's crown is, for the label.
+   * mesh and the points its label sits above: the head's outline (`headOutline`).
    */
   person(
     appearance: unknown,
@@ -151,9 +154,12 @@ class Builder {
     z1: number,
     base: number,
     facing: LayoutVector | undefined,
-  ): { mesh: THREE.Mesh; top: number } {
+  ): { mesh: THREE.Mesh; label: THREE.Vector3[] } {
     const params = figureParams(appearance, { height: z1 - z0, base: hexString(base) });
-    return { mesh: figureMesh(params, x, y, z0, facing, this.figureMaterial(), this.figures), top: z0 + params.top };
+    const mesh = figureMesh(params, x, y, z0, facing, this.figureMaterial(), this.figures);
+    mesh.updateMatrixWorld();
+    const outline = headOutline(mesh.geometry, params.top - params.headHeight * 1.05);
+    return { mesh, label: outline.map((p) => p.clone().applyMatrix4(mesh.matrixWorld)) };
   }
 }
 
@@ -349,7 +355,7 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
   }
 
   const things = new Map<string, THREE.Group>();
-  const labelAnchors = new Map<string, THREE.Vector3>();
+  const labelPoints = new Map<string, THREE.Vector3[]>();
   for (const p of placed) {
     const group = new THREE.Group();
     group.name = p.thing.id;
@@ -358,13 +364,13 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
     if (isPerson(p.thing)) {
       group.userData.form = "person";
       const base = p.thing.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, top } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
+      const { mesh, label } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
       group.add(mesh);
-      labelAnchors.set(p.thing.id, new THREE.Vector3(x, y, top + 0.12));
+      labelPoints.set(p.thing.id, label);
     } else {
       group.userData.form = thingForm(p.thing);
       for (const mesh of thingMeshes(builder, p, layout.size)) group.add(mesh);
-      labelAnchors.set(p.thing.id, new THREE.Vector3(x, y, p.bounds.z1 + 0.12));
+      labelPoints.set(p.thing.id, [new THREE.Vector3(x, y, p.bounds.z1)]);
     }
     root.add(group);
     things.set(p.thing.id, group);
@@ -378,14 +384,14 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
       // Client.Spatial puts a person at head height; the body stands on the floor below it.
       const crown = Math.max(at[2] + 0.12, 1.0);
       const base = arrival.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, top } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
+      const { mesh, label } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
       group.add(mesh);
-      labelAnchors.set(arrival.id, new THREE.Vector3(at[0], at[1], top + 0.12));
+      labelPoints.set(arrival.id, label);
     } else {
       group.userData.form = "box";
       const s = 0.1;
       group.add(builder.box({ x0: at[0] - s, x1: at[0] + s, y0: at[1] - s, y1: at[1] + s, z0: at[2] - s, z1: at[2] + s }, builder.material(NEUTRAL), "box"));
-      labelAnchors.set(arrival.id, new THREE.Vector3(at[0], at[1], at[2] + s + 0.12));
+      labelPoints.set(arrival.id, [new THREE.Vector3(at[0], at[1], at[2] + s)]);
     }
     root.add(group);
     things.set(arrival.id, group);
@@ -393,7 +399,25 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
 
   // Figures of people who left, or whose look changed, are freed now.
   figures?.sweep();
-  return { root, walls, ceiling, exits, things, labelAnchors };
+  return { root, walls, ceiling, exits, things, labelPoints };
+}
+
+/**
+ * Where label points (`RoomScene.labelPoints`) show on a `width` x `height` picture, in
+ * pixels from the top left: across, where the first point is; down, the highest of the
+ * rest (the first itself when it is alone). Undefined when the first point is behind the
+ * camera or beyond its far plane.
+ */
+export function screenTop(points: THREE.Vector3[], camera: THREE.Camera, width: number, height: number): { x: number; top: number } | undefined {
+  const at = new THREE.Vector3().copy(points[0]).project(camera);
+  if (at.z < -1 || at.z > 1) return undefined;
+  const x = at.x;
+  let top = points.length === 1 ? at.y : Number.NEGATIVE_INFINITY;
+  for (let i = 1; i < points.length; i++) {
+    at.copy(points[i]).project(camera);
+    if (at.z >= -1 && at.z <= 1) top = Math.max(top, at.y);
+  }
+  return { x: ((x + 1) / 2) * width, top: ((1 - top) / 2) * height };
 }
 
 /**

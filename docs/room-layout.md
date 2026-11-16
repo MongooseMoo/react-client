@@ -113,6 +113,9 @@ buttons (the choice is kept across rooms):
   your `Client.Spatial` forward, turning as you turn. `+` and `-` on the picture, or the wheel,
   narrow and widen the view (up to about seven times closer); `0` returns to the normal view.
 
+In both 3D views a name label sits just above the top of the head as drawn (hair, hat or antlers
+included), or above the middle of a thing's top, at every zoom, so it never covers a face.
+
 In every view things are drawn by what they are, from the first of their `classes` the client
 knows: a table as a top on legs, a chair or other furniture as a seat with its back to the
 nearest wall, a bookshelf or cabinet as a tall box with shelves, a moving photograph as a framed

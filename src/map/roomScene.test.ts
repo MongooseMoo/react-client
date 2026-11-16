@@ -25,6 +25,7 @@ import {
   NEUTRAL,
   PERSON_COLOUR,
   panTo,
+  screenTop,
   WHEEL_NOTCHES,
   wheelNotches,
   wheelStep,
@@ -149,7 +150,10 @@ describe("buildRoomScene", () => {
     const bounds = box(body);
     expect(bounds.min.z).toBeCloseTo(0, 1);
     expect(bounds.max.z).toBeLessThan(1.8);
-    expect(scene.labelAnchors.get("#9")?.z).toBeGreaterThan(bounds.max.z - 0.2);
+    // The label hangs at the crown, and its outline holds the head and nothing below the chin.
+    const label = scene.labelPoints.get("#9") as THREE.Vector3[];
+    expect(label[0].z).toBeCloseTo(bounds.max.z, 3);
+    expect(Math.min(...label.map((p) => p.z))).toBeGreaterThan(1.4);
   });
 
   it("draws a record without skin or garments in the same neutral skin and clothing as the portrait and plan token", () => {
@@ -347,7 +351,7 @@ describe("buildRoomScene", () => {
     expect(body.min.z).toBeCloseTo(0, 1);
     expect((body.min.x + body.max.x) / 2).toBeCloseTo(1, 1);
     expect(figureColours("#77", scene)).toEqual([PERSON_COLOUR]);
-    expect(scene.labelAnchors.get("#77")?.z).toBeGreaterThan(1.6);
+    expect(scene.labelPoints.get("#77")?.[0].z).toBeGreaterThan(1.6);
   });
 });
 
@@ -503,6 +507,56 @@ describe("cameras", () => {
     }
     // A room smaller than its close-up distance keeps the small-room step.
     expect(wheelStep({ ...livingRoomLayout(), size: [1, 1, 2] })).toBe(0.95);
+  });
+
+  it("puts a person's label just over the head as drawn, from any distance and angle", () => {
+    // Every standing test character: long hair, an afro, hoods, a cloak, antlers.
+    for (const ch of TEST_CHARACTERS.filter((c) => (c.appearance.posture ?? "standing") === "standing")) {
+      const layout = livingRoomLayout();
+      layout.things = [
+        {
+          id: "#p",
+          name: ch.name,
+          kind: "person",
+          fixed: true,
+          mounted: false,
+          shapes: [{ box: [[-0.2, 0.2], [-0.2, 0.2], [0, ch.height]] }],
+          appearance: ch.appearance,
+        },
+      ];
+      const scene = build(layout);
+      scene.root.updateMatrixWorld(true);
+      const figure = meshes(scene.things.get("#p"))[0];
+      const position = figure.geometry.getAttribute("position");
+      const points = scene.labelPoints.get("#p") as THREE.Vector3[];
+      const params = figureParams(ch.appearance, { height: ch.height, base: "#000000" });
+      for (const distance of [0.8, 1.5, 4, 20, 80]) {
+        for (const [turn, rise] of [[0, 0.1], [Math.PI / 2, 0.5], [Math.PI, 1], [-Math.PI / 4, 1.4]]) {
+          const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+          camera.up.set(0, 0, 1);
+          const head = new THREE.Vector3(0, 0, ch.height - 0.1);
+          camera.position.set(Math.sin(turn) * Math.cos(rise), -Math.cos(turn) * Math.cos(rise), Math.sin(rise)).multiplyScalar(distance).add(head);
+          camera.lookAt(head);
+          camera.updateMatrixWorld();
+          const shown = screenTop(points, camera, 800, 600);
+          expect(shown).toBeDefined();
+          // No point of the head, hair, hat or antlers (all above the chin) is drawn above the label's line
+          // on screen, and the head's top is right below it (within 3 px), so the label stays close.
+          const chin = params.top - params.headHeight * 1.05;
+          let highest = Number.POSITIVE_INFINITY;
+          const v = new THREE.Vector3();
+          for (let i = 0; i < position.count; i++) {
+            v.fromBufferAttribute(position, i).applyMatrix4(figure.matrixWorld);
+            if (v.z < chin) continue;
+            v.project(camera);
+            if (Math.abs(v.z) <= 1) highest = Math.min(highest, ((1 - v.y) / 2) * 600);
+          }
+          const where = `${ch.name} at ${distance} m, turn ${turn.toFixed(2)}, rise ${rise}`;
+          expect(highest, where).toBeGreaterThanOrEqual((shown?.top ?? 0) - 1);
+          expect(highest - (shown?.top ?? 0), where).toBeLessThan(3);
+        }
+      }
+    }
   });
 
   it("counts wheel notches: 100 pixels, 3 lines or a page", () => {

@@ -29,6 +29,7 @@ import {
   zoomFocus,
   eyesPose,
   type RoomScene,
+  screenTop,
   wheelNotches,
   wheelStep,
   wheelZoom,
@@ -60,6 +61,8 @@ interface RoomLayout3DProps {
 
 /** Label text height on screen, CSS pixels: the plan's size. */
 const LABEL_PIXELS = 12;
+/** Space between a label and the top of what it names, CSS pixels. */
+const LABEL_GAP = 3;
 
 interface Stage {
   renderer: THREE.WebGLRenderer;
@@ -183,17 +186,18 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     const anchors = new Map<string, [number, number]>();
     const projected = new THREE.Vector3();
     for (const { id, text, person } of labelPlan.current) {
-      const anchor = stage.room?.labelAnchors.get(id);
+      const points = stage.room?.labelPoints.get(id);
       const object = stage.labelObjects.get(id);
-      if (!anchor || !object) continue;
+      if (!points || !object) continue;
       object.visible = false;
       if (!object.parent?.visible) continue;
-      projected.copy(anchor).project(stage.camera);
-      if (projected.z < -1 || projected.z > 1) continue;
-      const x = ((projected.x + 1) / 2) * width;
-      const y = ((1 - projected.y) / 2) * height;
-      anchors.set(id, [x, y]);
-      requests.push({ id, text, x, y, radius: person ? 10 : 6 });
+      const shown = screenTop(points, stage.camera, width, height);
+      if (!shown) continue;
+      // Where CSS2DRenderer puts the label before it is moved: its object's point.
+      projected.copy(object.position).project(stage.camera);
+      anchors.set(id, [((projected.x + 1) / 2) * width, ((1 - projected.y) / 2) * height]);
+      // Centred over the head (or thing), its bottom edge LABEL_GAP pixels above the head's top as drawn: clear of hair and face at any zoom.
+      requests.push({ id, text, x: shown.x, y: shown.top - LABEL_GAP - LABEL_PIXELS * 0.7, radius: person ? 10 : 6 });
     }
     const inset = 4;
     const placedLabels = placeLabels(requests, LABEL_PIXELS, { x0: inset, x1: width - inset, y0: inset, y1: height - inset });
@@ -230,14 +234,14 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     ];
     labelPlan.current = plan;
     for (const { id, text, person } of plan) {
-      const anchor = room.labelAnchors.get(id);
+      const points = room.labelPoints.get(id);
       const group = room.things.get(id);
-      if (!anchor || !group) continue;
+      if (!points || !group) continue;
       const element = document.createElement("div");
       element.className = id === youId ? "rl3d-label rl3d-label-you" : person ? "rl3d-label rl3d-label-person" : "rl3d-label";
       element.textContent = shortLabel(text);
       const object = new CSS2DObject(element);
-      object.position.copy(anchor);
+      object.position.copy(points[0]);
       object.visible = false;
       group.add(object);
       stage.labelObjects.set(id, object);
