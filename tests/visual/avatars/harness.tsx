@@ -65,7 +65,7 @@ if (view === "portraits") {
   window.ready = true;
 } else if (view === "card") {
   // The player card as the Room tab shows it, in a side panel 276 px wide (the live guest check's width).
-  const appearance = { ...TEST_CHARACTERS[1].appearance, label: "the tall bearded man" };
+  const appearance = TEST_CHARACTERS[1].appearance;
   render(
     <div className="sidebar" style={{ width: 276, boxSizing: "border-box", padding: 8 }}>
       <PlayerCard player={{ name: "bram", fullname: "Bram Okoro" }} appearance={appearance} onLook={noop} onFollow={noop} />

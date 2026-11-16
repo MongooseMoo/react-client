@@ -53,7 +53,7 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 `{"name": "navy", "hex": "#01153e"}` from the MOO's palette, so the words and the picture agree.
 
 ```json
-{"label": "the short red-haired woman", "posture": "standing", "build": "thin", "age_years": 24,
+{"label": "the red-haired woman", "posture": "standing", "build": "thin", "age_years": 24,
  "skin": {"name": "fair", "hex": "#f3e7db"},
  "hair": {"length_cm": 40, "texture": "straight", "style": "loose", "name": "red", "hex": "#9a3001"},
  "eyes": {"name": "green", "hex": "#3a7d44"},
@@ -65,7 +65,7 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 
 | Key | Meaning |
 |---|---|
-| `label` | The shortest phrase that tells this person from the others present, worked out by the server for this recipient. Shown as text; the client never computes one. |
+| `label` | The shortest phrase that tells this person from the others present, worked out by the server for this recipient: "the tall man", "the red-haired woman", "the woman in navy", or "a woman" when nobody else is present. Shown as text; the client never computes one. |
 | `posture` | `standing`, `sitting` or `reclining`. |
 | `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers`, `horns` and `pointed ears`. The wire gives these no colour: horns and antlers are drawn in one bone tone (`#d6c9a8`), wings and tail in the hair colour (the skin's when there is no hair). |
 | `build` | `average`, `athletic`, `thin`, `curvy`, `chunky`, `pudgy`, `muscular` or `dumpy`; anything else is drawn as average. |
@@ -74,7 +74,7 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 | `hair` | `length_cm` (under 1 none, under 8 short, under 25 medium, longer long), `texture` (`straight`, `wavy`, `curly`, `coily`), `style`, and its colour. Absent when bald or covered. |
 | `facial_hair` | `kind` (`none`, `stubble`, `moustache`, `goatee`, `beard`) and its colour; without a colour, the hair's. |
 | `face` | `shape` (`oval`, `round`, `square`, `long`, `heart`), `nose`, `lips`, `brows`, `ears`. |
-| `features` | A list of keys for small features. The portrait draws `freckles`, `glasses`, `sunglasses`, `eyepatch`, `earrings`, `mole` and `dimples`, in black or white, whichever stands out more on the skin (as are the pupils, nose, mouth and face marks); other keys are ignored. The 3D figure draws `glasses`, `sunglasses`, `eyepatch` and `earrings` in the same colour; `freckles`, `mole` and `dimples` are too small to read at figure size and appear only in the portrait. |
+| `features` | A list of keys for small features. The portrait draws `freckles`, `glasses`, `sunglasses`, `eyepatch`, `earrings`, `beauty_mark` and `dimples`, in black or white, whichever stands out more on the skin (as are the pupils, nose, mouth and face marks); other keys are ignored. The 3D figure draws `glasses`, `sunglasses`, `eyepatch` and `earrings` in the same colour; `freckles`, `beauty_mark` and `dimples` are too small to read at figure size and appear only in the portrait. |
 | `face_hidden` | `true` when a form hides the face; no eyes, brows, mouth, facial hair or face features are drawn. |
 | `marks` | `[{"kind": "scar", "area": "cheek"}]`, uncovered marks only. The portrait shows those on the head and neck. |
 | `garments` | Worn things: `areas` they cover (`head`, `neck`, `torso`, `arms`, `hands`, `waist`, `legs`, `feet`), `layer` (higher is outside) and `colour` when it has one. Each area is drawn in its outermost garment's colour, plain cloth grey when that garment has no colour, skin when bare. With no `garments` at all, the torso, arms, waist, legs and feet are drawn in a neutral dark slate (`#4b5262`), so the person looks dressed. A person with no `appearance` at all keeps the plain figure in the person colour (you in blue). |
@@ -139,7 +139,7 @@ sends its exit too.
   exits, people and things it holds. Below it, headed lists give the size, each exit
   ("west: 0.9 m doorway in the west wall, 1.3 m from the south wall") and each person and thing
   ("oak table, 1.2 m from the north wall, near the west wall"; with `classes` and `material`,
-  "coffee table (table, wood), …"; a person with a `label`, "Ann (the tall red-haired woman), …").
+  "coffee table (table, wood), …"; a person with a `label`, "Ann (the red-haired woman), …").
   Each person in the list, and the selected player's card in the Room tab (matched by name), shows
   a small head-and-shoulders portrait drawn from `appearance`; it is decoration, hidden from
   screen readers, and the label beside it is ordinary text. Moves update the lists quietly;

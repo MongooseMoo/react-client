@@ -65,7 +65,7 @@ describe("AvatarPortrait", () => {
       [...draw({ skin: { hex: "#a07e56" }, eyes: { hex: "#3a7d44" }, features }).querySelectorAll(".avatar-feature")].map((g) =>
         g.getAttribute("data-feature"),
       );
-    const supported = ["freckles", "glasses", "sunglasses", "eyepatch", "earrings", "mole", "dimples"];
+    const supported = ["freckles", "glasses", "sunglasses", "eyepatch", "earrings", "beauty_mark", "dimples"];
     for (const feature of supported) {
       expect(drawn([feature])).toEqual([feature]);
       const g = draw({ skin: { hex: "#a07e56" }, features: [feature] }).querySelector(".avatar-feature");

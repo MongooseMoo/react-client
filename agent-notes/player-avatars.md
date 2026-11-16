@@ -27,7 +27,7 @@ Built and on pull request 237 (MongooseMoo/react-client), CI pending at the last
 - A seam between two different colours under 3:1 gets a thin outline band (3D); the portrait outlines every region in the ink.
 - Facing defaults to south without a forward, so faces show in the dollhouse's starting view.
 - Portrait in the People list and `PlayerCard` only; `aria-hidden`, `focusable="false"`, no focus stop. The label is plain text.
-- `appearance.features` (a list of string keys) was added to the wire by team-lead on 2026-11-14, after the first commit. The portrait draws freckles, glasses, sunglasses, eyepatch, earrings, mole and dimples in the outline ink (features carry no colour); other keys are ignored, and a hidden face shows none. Follow-up branch `avatar-followup`: the 3D figure draws glasses, sunglasses, an eyepatch and earrings in the same ink, inside the one merged mesh (features are in the parameters, so in the cache key); freckles, mole and dimples are too small at figure size and stay portrait-only (said in `docs/room-layout.md`).
+- `appearance.features` (a list of string keys) was added to the wire by team-lead on 2026-11-14, after the first commit. The portrait draws freckles, glasses, sunglasses, eyepatch, earrings, beauty_mark and dimples in the outline ink (features carry no colour); other keys are ignored, and a hidden face shows none. Follow-up branch `avatar-followup`: the 3D figure draws glasses, sunglasses, an eyepatch and earrings in the same ink, inside the one merged mesh (features are in the parameters, so in the cache key); freckles, beauty_mark and dimples are too small at figure size and stay portrait-only (said in `docs/room-layout.md`).
 
 ## Surprises
 
@@ -46,6 +46,11 @@ Built and on pull request 237 (MongooseMoo/react-client), CI pending at the last
 - Parts carry names (`figureParts(p)`), so tests find parts by name rather than colour. Face strokes use 1x6 capsules (`stroke`) to stay under the 5,000-triangle budget.
 - Frame cost after the round (GTX 1050 Ti): 8 people 2.1 ms, 40 people 3.5 ms per frame (2.3 / 3.7 before).
 - npm ci in a new worktree: `npm ci --userconfig <file containing min-release-age=14>` (Q's allowed method, 2026-11-14), when no checkout has an identical lockfile to copy from.
+
+## Feature key and label examples (branch `avatar-keys`, work log `reports/player-avatars-client-feature-keys-2026-11-16.md` in the hub)
+
+- The game's key for a small dark facial mark is `beauty_mark` (`$appearance.vocab["features"]`); the client drew `mole`, which the game never sends. Renamed everywhere; only `beauty_mark` is drawn.
+- Labels with height plus another word ("the tall red-haired woman", "the short red-haired woman", "the tall bearded man") cannot come from the game: when height tells someone apart, no more words are added. Doc and fixtures now use "the tall man", "the red-haired woman", "the woman in navy", "a woman".
 
 ## Next step
 

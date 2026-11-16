@@ -247,7 +247,7 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
       eyepatch: <path fill={faceInk} stroke={faceInk} strokeWidth={0.8} d="M34,25 h7 v5 a3.5,3 0 0,1 -7,0 Z M19,22 L34,26 M41,26 L45,24" />,
       // On the earlobe, over skin, so the face ink shows; below it they fell on the page background.
       earrings: [17.5, 46.5].map((x) => <circle key={x} cx={x} cy={33} r={1.1} fill="none" stroke={faceInk} strokeWidth={0.8} />),
-      mole: <circle cx={36.5} cy={36} r={0.6} fill={faceInk} />,
+      beauty_mark: <circle cx={36.5} cy={36} r={0.6} fill={faceInk} />,
       dimples: [27, 37].map((x) => <path key={x} fill="none" stroke={faceInk} strokeWidth={0.6} strokeLinecap="round" d={`M${x},37 q-0.6,0.8 0,1.6`} />),
     };
     for (const name of params.features) {
