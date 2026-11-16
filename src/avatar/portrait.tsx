@@ -1,5 +1,6 @@
 import type React from "react";
-import { BUILDS, type FigureParams, figureParams, appearanceRecord, HORN_TONE, STUBBLE_OPACITY, vocabKey } from "./figure";
+import { overlayHex } from "./colour";
+import { BUILDS, type FigureParams, type HairTexture, figureParams, appearanceRecord, HORN_TONE, STUBBLE_OPACITY, vocabKey } from "./figure";
 
 /**
  * A head-and-shoulders portrait of a person drawn in SVG from their Room.Layout
@@ -73,14 +74,13 @@ function headShape(shape: string, fill: string, stroke: string): React.ReactElem
 /** A round number for SVG path text. */
 const n = (x: number) => Math.round(x * 100) / 100;
 
-/** The hair over the top of the head, by length and texture. */
-function hairCap(params: FigureParams, fill: string, ink: string): React.ReactNode {
-  const v = params.hairVolume;
+/** The hair over the top of the head, by texture, `v` times as bulky as straight hair. */
+function hairCap(texture: HairTexture, v: number, fill: string, ink: string): React.ReactNode {
   const rise = 12 - (v - 1) * 18;
   const width = 14 * v;
-  if (params.hairTexture === "curly" || params.hairTexture === "coily") {
+  if (texture === "curly" || texture === "coily") {
     // Curly hair: one row of large round curls. Coily hair: smaller, tighter curls packed in two rows.
-    const rows = params.hairTexture === "curly" ? [{ count: 9, reach: width, r: 3.2 * v }] : [
+    const rows = texture === "curly" ? [{ count: 9, reach: width, r: 3.2 * v }] : [
       { count: 13, reach: width + 0.5, r: 2.2 * v },
       { count: 8, reach: width - 4, r: 2.2 * v },
     ];
@@ -96,7 +96,7 @@ function hairCap(params: FigureParams, fill: string, ink: string): React.ReactNo
     }
     return <g className="avatar-hair">{curls}</g>;
   }
-  if (params.hairTexture === "wavy") {
+  if (texture === "wavy") {
     // Wavy hair: the cap's outer edge in a run of soft waves, each bulging out between two points on the head's curve.
     const waves = 7;
     const ry = 27 - (0.25 * 27 + 0.75 * rise);
@@ -116,9 +116,158 @@ function hairCap(params: FigureParams, fill: string, ink: string): React.ReactNo
       fill={fill}
       stroke={ink}
       strokeWidth={1.2}
-      d={`M${32 - width},27 C${32 - width},${rise} ${32 + width},${rise} ${32 + width},27 C${38},20 ${26},20 ${32 - width},27 Z`}
+      d={`M${n(32 - width)},27 C${n(32 - width)},${n(rise)} ${n(32 + width)},${n(rise)} ${n(32 + width)},27 C${38},20 ${26},20 ${n(32 - width)},27 Z`}
     />
   );
+}
+
+/** Hair falling behind the head to `bottom`, `w` to each side, narrowing to rounded ends rather than a box. */
+function hairBack(w: number, bottom: number, fill: string, ink: string): React.ReactElement {
+  const r = 6;
+  return (
+    <path
+      key="hair-back"
+      className="avatar-hair"
+      fill={fill}
+      stroke={ink}
+      strokeWidth={1.2}
+      d={`M${n(32 - w)},26 C${n(32 - w)},8 ${n(32 + w)},8 ${n(32 + w)},26 C${n(32 + w)},${bottom - r} ${n(32 + w - r)},${bottom} ${n(32 + w - 2 * r)},${bottom} L${n(32 - w + 2 * r)},${bottom} C${n(32 - w + r)},${bottom} ${n(32 - w)},${bottom - r} ${n(32 - w)},26 Z`}
+    />
+  );
+}
+
+/** How far down hanging hair (braids, locks, a ponytail) reaches in the portrait, by the hair's length. */
+const HANG_BOTTOM: Readonly<Record<FigureParams["hair"], number>> = { none: 0, short: 38, medium: 46, long: 56 };
+
+/**
+ * What a hair style puts behind the head (`back`, drawn before the shoulders), hanging in front of the
+ * shoulders (`hang`, before the head) and over the head (`cap`). `loose` is the hair as it falls.
+ */
+function hairStyle(params: FigureParams, fill: string, ink: string, skin: string): { back: React.ReactNode[]; hang: React.ReactNode[]; cap: React.ReactNode } {
+  const v = params.hairVolume;
+  const texture = params.hairTexture;
+  const falls = params.hair === "medium" || params.hair === "long";
+  const fallBottom = params.hair === "long" ? 54 : 42;
+  const bottom = HANG_BOTTOM[params.hair];
+  const line = (key: string, d: string, width = 0.8) => <path key={key} fill="none" stroke={ink} strokeWidth={width} strokeLinecap="round" d={d} />;
+  // A close cap for hair drawn back from the face: smooth, whatever the texture.
+  const sleek = (hairline = "C38,20 26,20") => (
+    <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d={`M18,27 C18,12 46,12 46,27 ${hairline} 18,27 Z`} />
+  );
+  switch (params.hairStyle) {
+    case "ponytail":
+      // Drawn back into a tail that shows past the right of the head, tied at the back.
+      return {
+        back: [
+          <path key="tail" className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d={`M40,15 C52,16 53,28 50,${bottom - 4} C49,${bottom} 45,${bottom} 45.5,${bottom - 4} C47,30 46,22 40,20 Z`} />,
+        ],
+        hang: [],
+        cap: (
+          <g className="avatar-hair">
+            {sleek()}
+            <rect x={43} y={15.5} width={3.5} height={3} rx={1} fill={ink} />
+          </g>
+        ),
+      };
+    case "braided": {
+      // Two braids hanging in front of the shoulders, each a chain of plaited links ending in a tie.
+      const hang: React.ReactNode[] = [];
+      for (const side of [-1, 1]) {
+        const x = 32 + side * 13;
+        for (let y = 30; y <= bottom - 2; y += 3.4) {
+          hang.push(<ellipse key={`braid${side}-${y}`} className="avatar-hair" cx={x} cy={n(y)} rx={2.6} ry={2.1} fill={fill} stroke={ink} strokeWidth={0.8} />);
+        }
+        hang.push(<rect key={`tie${side}`} x={x - 1.5} y={bottom - 1} width={3} height={1.8} fill={ink} />);
+      }
+      return { back: [], hang, cap: <g className="avatar-hair">{sleek()}{line("parting", "M32,13 L32,20.5")}</g> };
+    }
+    case "bun":
+      // Gathered into a round bun on the crown.
+      return {
+        back: [],
+        hang: [],
+        cap: (
+          <g className="avatar-hair">
+            <circle cx={32} cy={10} r={6} fill={fill} stroke={ink} strokeWidth={1.2} />
+            {sleek()}
+            {line("bun-ring", "M28.5,10.5 Q32,6 35.5,10.5")}
+          </g>
+        ),
+      };
+    case "topknot":
+      // A small knot high on the crown, tied at its base.
+      return {
+        back: [],
+        hang: [],
+        cap: (
+          <g className="avatar-hair">
+            {sleek()}
+            <circle cx={32} cy={5.5} r={3.4} fill={fill} stroke={ink} strokeWidth={1} />
+            <rect x={30.4} y={8.6} width={3.2} height={3.6} fill={ink} />
+          </g>
+        ),
+      };
+    case "dreadlocks": {
+      // Thick ropes from the crown falling round the face and over the shoulders.
+      const hang: React.ReactNode[] = [];
+      [17, 20.5, 43.5, 47].forEach((x, i) => {
+        const end = bottom - (i % 2) * 4;
+        hang.push(<rect key={`lock${x}`} className="avatar-hair" x={x - 1.7} y={20} width={3.4} height={end - 20} rx={1.7} fill={fill} stroke={ink} strokeWidth={0.8} />);
+      });
+      const back = [24, 28, 32, 36, 40].map((x, i) => (
+        <rect key={`lockb${x}`} className="avatar-hair" x={x - 1.7} y={14} width={3.4} height={bottom - 14 + (i % 2) * 3} rx={1.7} fill={fill} stroke={ink} strokeWidth={0.8} />
+      ));
+      return { back, hang, cap: <g className="avatar-hair">{sleek()}{line("locks", "M24,15 L24,20 M28,13 L28,20 M32,12.5 L32,20 M36,13 L36,20 M40,15 L40,20")}</g> };
+    }
+    case "spiky": {
+      // Standing up in spikes round the top of the head.
+      const spikes = 9;
+      let d = "M18,27";
+      for (let i = 0; i < spikes; i++) {
+        const a0 = Math.PI * (1 + i / spikes);
+        const a1 = Math.PI * (1 + (i + 1) / spikes);
+        const tip = (a0 + a1) / 2;
+        d += ` L${n(32 + Math.cos(tip) * 20)},${n(25 + Math.sin(tip) * 21)} L${n(32 + Math.cos(a1) * 14)},${n(25 + Math.sin(a1) * 13)}`;
+      }
+      d += " C38,20 26,20 18,27 Z";
+      return { back: [], hang: [], cap: <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} strokeLinejoin="round" d={d} /> };
+    }
+    case "mohawk":
+      // The sides shaved to a shadow on the skin, one tall crest down the middle.
+      return {
+        back: [],
+        hang: [],
+        cap: (
+          <g className="avatar-hair">
+            <path fill={overlayHex(skin, fill, STUBBLE_OPACITY)} stroke="none" d="M19,27 C19,12 45,12 45,27 C40,21 24,21 19,27 Z" />
+            <path fill={fill} stroke={ink} strokeWidth={1.2} d="M28.5,20 C27.5,10 29,1.5 32,0.5 C35,1.5 36.5,10 35.5,20 C34,21 30,21 28.5,20 Z" />
+          </g>
+        ),
+      };
+    case "swept_back":
+      // Combed straight back off a high forehead; the comb lines run back over the crown.
+      return {
+        back: falls ? [hairBack(15, fallBottom, fill, ink)] : [],
+        hang: [],
+        cap: <g className="avatar-hair">{sleek("C39,15.5 25,15.5")}{line("comb", "M26,16.5 Q25,13 27,10.5 M32,15.5 Q31.5,12 32,9.5 M38,16.5 Q39,13 37,10.5", 0.7)}</g>,
+      };
+    case "brushed":
+      // Neatly brushed with a side parting, the fringe swept across.
+      return {
+        back: falls ? [hairBack(15, fallBottom, fill, ink)] : [],
+        hang: [],
+        cap: <g className="avatar-hair">{sleek("C41,23 27,17")}{line("parting", "M25.5,12 Q24.5,15 23.5,18.5", 0.9)}</g>,
+      };
+    case "voluminous":
+      // Thick and full: the hair stands well out from the head and falls wide.
+      return {
+        back: [hairBack(15 * v * 1.3, falls ? fallBottom + 4 : 40, fill, ink)],
+        hang: [],
+        cap: hairCap(texture, v * 1.3, fill, ink),
+      };
+    default:
+      return { back: falls ? [hairBack(15 * v, fallBottom, fill, ink)] : [], hang: [], cap: hairCap(texture, v, fill, ink) };
+  }
 }
 
 /**
@@ -155,22 +304,8 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
 
   // A plain disc behind the picture, so dark hair still shows on a dark page and light hair on a light one.
   parts.push(<circle key="backdrop" className="avatar-backdrop" cx={32} cy={32} r={31} fill={PORTRAIT_BACKDROP} />);
-  if (params.hair === "medium" || params.hair === "long") {
-    const bottom = params.hair === "long" ? 54 : 42;
-    const w = 15 * params.hairVolume;
-    // Hair falling behind the head, narrowing to rounded ends rather than a box.
-    const r = 6;
-    parts.push(
-      <path
-        key="hair-back"
-        className="avatar-hair"
-        fill={c.hair}
-        stroke={ink}
-        strokeWidth={1.2}
-        d={`M${32 - w},26 C${32 - w},8 ${32 + w},8 ${32 + w},26 C${32 + w},${bottom - r} ${32 + w - r},${bottom} ${32 + w - 2 * r},${bottom} L${32 - w + 2 * r},${bottom} C${32 - w + r},${bottom} ${32 - w},${bottom - r} ${32 - w},26 Z`}
-      />,
-    );
-  }
+  const style = !params.headCovered && params.hair !== "none" && c.hair ? hairStyle(params, c.hair, ink, c.skin) : undefined;
+  parts.push(...(style?.back ?? []));
   parts.push(
     <path
       key="shoulders"
@@ -182,6 +317,7 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
     />,
     <rect key="neck" className="avatar-neck" x={n(32 - neck / 2)} y={36} width={n(neck)} height={10} fill={c.neck} stroke={ink} strokeWidth={1.2} />,
   );
+  parts.push(...(style?.hang ?? []));
   const ears = vocabKey(face.ears);
   const pointed = params.extras.includes("pointed_ears") || ears === "pointed";
   const ear = EARS[ears ?? ""] ?? EARS.average;
@@ -210,8 +346,8 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
     parts.push(
       <path key="head-garment" className="avatar-garment" fill={c.head} stroke={ink} strokeWidth={1.2} d="M17,30 C15,6 49,6 47,30 C44,20 20,20 17,30 Z" />,
     );
-  } else if (params.hair !== "none" && c.hair) {
-    parts.push(<g key="hair">{hairCap(params, c.hair, ink)}</g>);
+  } else if (style) {
+    parts.push(<g key="hair">{style.cap}</g>);
   }
   if (params.extras.includes("horns") || params.extras.includes("antlers")) {
     const tine = params.extras.includes("antlers");

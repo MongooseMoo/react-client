@@ -109,8 +109,9 @@ export function withValue(field: string, value: string | number): Record<string,
   if (field === "features") out.features = [value];
   else if (field === "facial_hair.length_cm") out.facial_hair = { kind: "beard", length_cm: value, name: "brown", hex: "#653700" };
   else if (head === "facial_hair") out.facial_hair = { kind: value, name: "brown", hex: "#653700" };
-  // Texture shows on hair that falls past the jaw.
+  // Texture and style show on hair that falls past the jaw.
   else if (field === "hair.texture") out.hair = { ...VOCABULARY_BASE.hair, length_cm: 30, texture: value };
+  else if (field === "hair.style") out.hair = { ...VOCABULARY_BASE.hair, length_cm: 30, style: value };
   else if (tail) out[head] = { ...(out[head] as Record<string, unknown>), [tail]: value };
   else out[head] = value;
   return out;

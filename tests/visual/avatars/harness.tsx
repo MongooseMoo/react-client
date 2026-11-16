@@ -3,7 +3,7 @@
  * `?view=portraits` portraits at the People list size and at 4x;
  * `?view=vocab` one portrait per game vocabulary value and beard length;
  * `?view=plan` plan tokens; `?view=figures&angle=front|three` 3D close-ups
- * (`&set=vocab`: every build and beard length instead of the test characters);
+ * (`angle=back` from behind; `&set=vocab`: every hair style, build and beard length instead of the test characters);
  * `?view=room&n=8` the real 3D view (Dollhouse), with `window.measure(seconds)`
  * moving one person every frame and reporting frame times.
  */
@@ -39,8 +39,9 @@ const VOCAB_ROWS: Array<[string, Array<[string, Record<string, unknown>]>]> = [
     ],
   ],
 ];
-/** `set=vocab` in the figures view: every build, then beard lengths. */
+/** `set=vocab` in the figures view: hair styles, then every build, then beard lengths. */
 const VOCAB_CHARACTERS: TestCharacter[] = [
+  ...GAME_VOCABULARY["hair.style"].map((style) => ({ name: `hair ${style}`, height: 1.75, appearance: withValue("hair.style", style) as LayoutAppearance })),
   ...GAME_VOCABULARY.build.map((build) => ({ name: `build ${build}`, height: 1.75, appearance: withValue("build", build) as LayoutAppearance })),
   ...(VOCAB_ROWS.at(-1)?.[1] ?? []).map(([name, appearance]) => ({ name: `beard ${name}`, height: 1.75, appearance: appearance as LayoutAppearance })),
 ];
@@ -122,7 +123,7 @@ if (view === "portraits") {
   window.ready = true;
 } else if (view === "figures") {
   // One close-up per character, alone in the living room, facing south toward the camera.
-  const angle = params.get("angle") === "three" ? Math.PI / 4 : 0;
+  const angle = { three: Math.PI / 4, back: Math.PI }[params.get("angle") ?? ""] ?? 0;
   const cell = { w: 300, h: 420 };
   const cols = 4;
   const rows = Math.ceil(CHARACTERS.length / cols);

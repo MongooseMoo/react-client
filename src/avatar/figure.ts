@@ -11,7 +11,10 @@ import { colourHex, contrast, hexOrUndefined, inkFor, MIN_CONTRAST } from "./col
 export type Posture = "standing" | "sitting" | "reclining";
 export type HairShape = "none" | "short" | "medium" | "long";
 export type HairTexture = "straight" | "wavy" | "curly" | "coily";
-export type FacialHair = "none" | "stubble" | "moustache" | "goatee" | "beard";
+/** `hair.style`, as the game sends it (`$appearance.vocab["hair.style"]`). */
+export const HAIR_STYLES = ["loose", "ponytail", "braided", "bun", "topknot", "dreadlocks", "spiky", "mohawk", "swept_back", "brushed", "voluminous"] as const;
+export type HairStyle = (typeof HAIR_STYLES)[number];
+export type FacialHair ="none" | "stubble" | "moustache" | "goatee" | "beard";
 export type ExtraPart = "tail" | "wings" | "antlers" | "horns" | "pointed_ears";
 /** `features` keys the portrait draws; others are ignored. */
 export const FEATURES = ["freckles", "glasses", "sunglasses", "eyepatch", "earrings", "beauty_mark", "dimples"] as const;
@@ -94,6 +97,8 @@ export interface FigureParams {
   hairVolume: number;
   /** The hair's texture as sent; anything else, or none, is straight. */
   hairTexture: HairTexture;
+  /** How the hair is worn; `loose` when none is sent, the style is unknown, or no hair is drawn. */
+  hairStyle: HairStyle;
   headCovered: boolean;
   facialHair: FacialHair;
   /** A beard's `facial_hair.length_cm`, within the game's 0 to 100; undefined for another kind or no length. */
@@ -254,6 +259,8 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
   const textureWord = vocabKey(hairRecord?.texture) ?? "straight";
   const hairTexture: HairTexture = Object.hasOwn(HAIR_VOLUME, textureWord) ? (textureWord as HairTexture) : "straight";
   const hairVolume = HAIR_VOLUME[hairTexture];
+  const styleKey = vocabKey(hairRecord?.style);
+  const hairStyle: HairStyle = hair !== "none" && (HAIR_STYLES as readonly string[]).includes(styleKey ?? "") ? (styleKey as HairStyle) : "loose";
 
   const facialRecord = isRecord(record.facial_hair) ? record.facial_hair : undefined;
   const facialKind = vocabKey(facialRecord?.kind);
@@ -334,6 +341,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     hair,
     hairVolume,
     hairTexture,
+    hairStyle,
     headCovered: covered.head !== undefined,
     facialHair,
     ...(beardLength !== undefined ? { beardLength, beardReach: beardReach(beardLength) } : {}),

@@ -15,6 +15,7 @@ import { GAME_BEARD_LENGTHS, GAME_PALETTE, GAME_VOCABULARY, type VocabularyField
 const DRAWN: readonly VocabularyField[] = [
   "build",
   "hair.texture",
+  "hair.style",
   "facial_hair.kind",
   "face.shape",
   "face.brows",
@@ -26,7 +27,6 @@ const DRAWN: readonly VocabularyField[] = [
 /** Fields the client does not draw, and why. */
 const NOT_DRAWN: Readonly<Partial<Record<VocabularyField, string>>> = {
   "face.teeth": "the game never puts teeth on the wire ($appearance:look)",
-  "hair.style": "not drawn by the client yet",
 };
 
 const portrait = (appearance: unknown) => render(<AvatarPortrait appearance={appearance} size={128} />).container.innerHTML;
@@ -38,6 +38,7 @@ function without(field: VocabularyField): Record<string, unknown> {
   if (tail && typeof out[head] === "object") delete (out[head] as Record<string, unknown>)[tail];
   else delete out[head];
   if (field === "hair.texture") out.hair = { ...VOCABULARY_BASE.hair, length_cm: 30, texture: undefined };
+  if (field === "hair.style") out.hair = { ...VOCABULARY_BASE.hair, length_cm: 30 };
   return out;
 }
 
@@ -73,6 +74,17 @@ describe("the game's vocabulary", () => {
     expect(new Set(GAME_VOCABULARY.build.map(shape)).size).toBe(GAME_VOCABULARY.build.length);
     for (const texture of GAME_VOCABULARY["hair.texture"]) expect(params(withValue("hair.texture", texture)).hairTexture).toBe(texture);
     for (const kind of GAME_VOCABULARY["facial_hair.kind"]) expect(params(withValue("facial_hair.kind", kind)).facialHair).toBe(kind);
+    // Every hair style builds a different figure: compare the parts' names, sizes and colours.
+    const figure = (style: string) =>
+      figureParts(params(withValue("hair.style", style)))
+        .map((part) => {
+          const box = new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute);
+          return `${part.name}:${part.colour}:${part.geometry.getAttribute("position").count}:${box.min.z.toFixed(3)}:${box.max.z.toFixed(3)}:${box.min.y.toFixed(3)}`;
+        })
+        .join("|");
+    const styles = GAME_VOCABULARY["hair.style"].map(figure);
+    expect(new Set(styles).size).toBe(styles.length);
+    expect(styles[0]).toBe(figure("no such style"));
     const partCount = (features: string[]) => figureParts(params({ ...VOCABULARY_BASE, features })).length;
     for (const feature of ["glasses", "sunglasses", "eyepatch", "earrings"]) expect(partCount([feature]), feature).toBeGreaterThan(partCount([]));
   });
@@ -142,15 +154,17 @@ describe("beard length", () => {
     }
   });
 
-  it("keeps the heaviest figure the vocabulary allows under the 5,000-triangle budget", () => {
-    const heaviest = {
-      ...withValue("facial_hair.length_cm", 100),
-      build: "muscular",
-      hair: { length_cm: 75, texture: "coily", hex: "#1b1612" },
-      features: [...GAME_VOCABULARY.features],
-    };
-    const g = figureGeometry(params(heaviest));
-    const triangles = (g.getIndex()?.count ?? g.getAttribute("position").count) / 3;
-    expect(triangles).toBeLessThan(5000);
+  it("keeps the heaviest figure the vocabulary allows, in every hair style, under the 5,000-triangle budget", () => {
+    for (const style of GAME_VOCABULARY["hair.style"]) {
+      const heaviest = {
+        ...withValue("facial_hair.length_cm", 100),
+        build: "muscular",
+        hair: { length_cm: 75, texture: "coily", style, hex: "#1b1612" },
+        features: [...GAME_VOCABULARY.features],
+      };
+      const g = figureGeometry(params(heaviest));
+      const triangles = (g.getIndex()?.count ?? g.getAttribute("position").count) / 3;
+      expect(triangles, style).toBeLessThan(5000);
+    }
   });
 });

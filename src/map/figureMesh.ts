@@ -175,6 +175,88 @@ function band(x: number, y: number, z: number, radius: number, depth: number, co
   return placed(geometry, colour, new THREE.Vector3(x, y, z), new THREE.Euler(Math.PI / 2, 0, 0), new THREE.Vector3(1, 1, depth));
 }
 
+/** A cone standing on `base` and pointing along `dir` (a unit vector), `length` long. */
+function cone(base: THREE.Vector3, dir: THREE.Vector3, radius: number, length: number, colour: string, segments = 5): Part {
+  const g = new THREE.ConeGeometry(radius, length, segments, 1, true);
+  g.applyMatrix4(new THREE.Matrix4().compose(base.clone().addScaledVector(dir, length / 2), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir), new THREE.Vector3(1, 1, 1)));
+  return { geometry: g, colour };
+}
+
+/**
+ * What a hair style adds to the cap and falling hair: a ponytail, braids, a bun, a topknot,
+ * locks, spikes, a mohawk's crest or a brushed parting. Loose, swept-back and voluminous hair
+ * are drawn by the cap and fall alone. Hanging parts reach down by the hair's length.
+ */
+function styleParts(p: FigureParams, style: FigureParams["hairStyle"], headCentreZ: number, headR: number, headScale: THREE.Vector3): Part[] {
+  const s = p.height / 1.75;
+  const hairColour = p.colours.head;
+  const hang = { none: 0, short: 0.08, medium: 0.2, long: 0.42 }[p.hair] * s;
+  // A point on the hair's surface (just outside the head ellipsoid) in direction (x, y, z) from the head's centre.
+  const onHair = (x: number, y: number, z: number, out = 1.08) => {
+    const d = new THREE.Vector3(x, y, z).normalize();
+    return new THREE.Vector3(d.x * headR * headScale.x * out, d.y * headR * headScale.y * out, headCentreZ + d.z * headR * headScale.z * out);
+  };
+  const out: Part[] = [];
+  switch (style) {
+    case "ponytail": {
+      // Gathered at the back of the head and hanging down behind.
+      const tie = onHair(0, -1, 0.25, 1.05);
+      const end = new THREE.Vector3(0, tie.y - headR * 0.35, tie.z - Math.max(hang, 0.1 * s));
+      out.push(named(limb(tie, end, headR * 0.2, hairColour), "ponytail"));
+      out.push(named(ball(tie, headR * 0.14, p.colours.ink, undefined, 6), "ponytail"));
+      break;
+    }
+    case "braided":
+      // Two braids from behind the ears down the back: a rope with plaited links along it.
+      for (const side of [-1, 1]) {
+        const start = onHair(side * 0.75, -0.55, -0.35, 1.02);
+        const end = new THREE.Vector3(side * headR * 0.85, -headR * 0.95, start.z - Math.max(hang, 0.12 * s));
+        out.push(named(limb(start, end, headR * 0.13, hairColour), "braid"));
+        const links = 7;
+        for (let i = 0; i < links; i++) out.push(named(ball(start.clone().lerp(end, i / (links - 1)), headR * 0.17, hairColour, undefined, 6), "braid"));
+      }
+      break;
+    case "bun":
+      out.push(named(ball(onHair(0, -0.6, 0.75, 1.1), headR * 0.42, hairColour, undefined, 8), "bun"));
+      break;
+    case "topknot": {
+      // Sitting on the crown, its tie just under it.
+      const knot = onHair(0, -0.1, 1, 1.22);
+      out.push(named(ball(knot, headR * 0.26, hairColour, undefined, 8), "topknot"));
+      out.push(named(ball(onHair(0, -0.1, 1, 1.05), headR * 0.14, p.colours.ink, undefined, 6), "topknot"));
+      break;
+    }
+    case "dreadlocks":
+      // Ropes from all round the back and sides of the head, hanging down.
+      for (let i = 0; i < 11; i++) {
+        const a = Math.PI * (0.9 + (1.2 * i) / 10);
+        const top = onHair(Math.cos(a), Math.sin(a), 0.15, 1.02);
+        const end = new THREE.Vector3(top.x * 1.2, top.y * 1.2, top.z - Math.max(hang, 0.1 * s) * (i % 2 ? 0.85 : 1));
+        out.push(named(stroke(top, end, headR * 0.11, hairColour), "lock"));
+      }
+      break;
+    case "spiky":
+      // Spikes standing out all over the top of the head.
+      for (let i = 0; i < 9; i++) {
+        const around = (i * Math.PI * 2) / 8;
+        const dir = i === 8 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(Math.cos(around) * 0.7, Math.sin(around) * 0.7, 0.75).normalize();
+        out.push(named(cone(onHair(dir.x, dir.y, dir.z, 1.0), dir, headR * 0.14, headR * 0.55, hairColour), "spike"));
+      }
+      break;
+    case "mohawk":
+      // One tall, narrow crest from the forehead over the crown to the nape.
+      out.push(named(ball(new THREE.Vector3(0, -headR * 0.1, headCentreZ + headR * 0.72), headR, hairColour, new THREE.Vector3(0.16, 1.02, 0.62), 10), "crest"));
+      break;
+    case "brushed":
+      // A side parting from the forehead back over the crown.
+      out.push(named(stroke(onHair(-0.35, 0.25, 0.9, 1.07), onHair(-0.35, -0.5, 0.8, 1.07), headR * 0.03, p.colours.ink), "parting"));
+      break;
+    default:
+      break;
+  }
+  return out;
+}
+
 /** The figure's parts, standing or sitting, in its own frame. */
 export function figureParts(p: FigureParams): Part[] {
   const c = p.colours;
@@ -272,25 +354,29 @@ export function figureParts(p: FigureParams): Part[] {
     }
   }
 
-  // Over the head: a head garment, or hair by its length.
+  // Over the head: a head garment, or hair by its length and style.
+  const style = p.headCovered ? "loose" : p.hairStyle;
+  // Styles combed close to the head are smooth whatever the texture; a shaved mohawk side is a shadow on the skin.
+  const capTexture: HairTexture = style === "brushed" || style === "swept_back" || style === "mohawk" ? "straight" : p.hairTexture;
   if (p.headCovered || p.hair !== "none") {
     // A little larger than the head all round, so the tilted cap's facets stay outside the head's.
-    const v = p.headCovered ? 1.06 : 1.05 * p.hairVolume;
+    const v = p.headCovered ? 1.06 : style === "mohawk" ? 1.04 : 1.05 * p.hairVolume * (style === "voluminous" ? 1.25 : 1);
     const capReach = Math.PI * 0.55;
     // Textured hair needs enough facets for its curls to show.
-    const fine = !p.headCovered && p.hairTexture !== "straight";
+    const fine = !p.headCovered && capTexture !== "straight";
     const cap = new THREE.SphereGeometry(headR, fine ? 24 : 16, fine ? 12 : 9, 0, Math.PI * 2, 0, capReach);
     // A sphere's pole is +y. Turning by more than a right angle about x takes it
     // past +z toward -y: the cap leans back, its front edge above the eyes
-    // (the forehead shows) and its back edge low on the nape.
+    // (the forehead shows) and its back edge low on the nape. Swept-back hair leaves a higher forehead.
     // Centred on the head: shifting it back let the forehead show through the cap's front.
     const capAt = new THREE.Vector3(0, 0, headCentreZ);
-    const capTurn = new THREE.Euler(Math.PI / 2 + CAP_LEAN, 0, 0);
+    const capTurn = new THREE.Euler(Math.PI / 2 + CAP_LEAN + (style === "swept_back" ? 0.3 : 0), 0, 0);
     const capScale = new THREE.Vector3(headScale.x * v, v, headScale.y * v);
-    const capPart = named(placed(cap, c.head, capAt, capTurn, capScale), "cap");
-    if (!p.headCovered) textured(capPart.geometry, () => capAt, p.hairTexture, headR);
+    const capColour = style === "mohawk" ? overlayHex(c.skin, c.head, STUBBLE_OPACITY) : c.head;
+    const capPart = named(placed(cap, capColour, capAt, capTurn, capScale), "cap");
+    if (!p.headCovered) textured(capPart.geometry, () => capAt, capTexture, headR);
     out.push(capPart);
-    if (outlined.has("hairline")) {
+    if (outlined.has("hairline") && style !== "mohawk") {
       // The outline runs along the cap's edge, so it is built where that edge is and turned with the cap.
       const edgeR = headR * Math.sin(capReach) * 1.02;
       const edge = new THREE.CylinderGeometry(edgeR, edgeR, 0.014, RADIAL * 2, 1, true);
@@ -298,14 +384,16 @@ export function figureParts(p: FigureParams): Part[] {
       const hairline = named(placed(edge, c.ink, capAt, capTurn, capScale), "hairline");
       // Raised with the cap's texture, so the curls do not cover it.
       const capAxis = new THREE.Vector3(0, 1, 0).applyEuler(capTurn);
-      if (!p.headCovered) textured(hairline.geometry, () => capAt, p.hairTexture, headR, 1, capAxis);
+      if (!p.headCovered) textured(hairline.geometry, () => capAt, capTexture, headR, 1, capAxis);
       out.push(hairline);
     }
   }
-  if (!p.headCovered && (p.hair === "medium" || p.hair === "long")) {
+  // Only hair worn down falls round the head; hair tied up, braided, locked, spiked or shaved does not.
+  const fallsDown = style === "loose" || style === "voluminous" || style === "brushed" || style === "swept_back";
+  if (!p.headCovered && fallsDown && (p.hair === "medium" || p.hair === "long")) {
     // Hair falling from under the cap around the back and sides of the head, widening a little
     // as it falls: to the jaw when medium, past the shoulders when long. Open at the front.
-    const v = 1.04 * p.hairVolume;
+    const v = 1.04 * p.hairVolume * (style === "voluminous" ? 1.2 : 1);
     const top = headCentreZ + headR * 0.1;
     const bottom = p.hair === "long" ? shoulderZ - 0.12 * H : headCentreZ - headR * 1.15;
     const long = p.hair === "long";
@@ -322,6 +410,7 @@ export function figureParts(p: FigureParams): Part[] {
     textured(hang.geometry, (q) => new THREE.Vector3(0, long ? -headR * 0.25 : 0, q.z), p.hairTexture, headR, 0.4);
     out.push(named(hang, "hair"));
   }
+  if (!p.headCovered && p.hair !== "none") out.push(...styleParts(p, style, headCentreZ, headR, headScale));
 
   // Facial hair, shaped from the head's own ellipsoid so it follows the jaw.
   if (c.facialHair && p.facialHair !== "none") {
