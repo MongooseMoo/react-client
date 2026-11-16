@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { overlayHex } from "../avatar/colour";
 import { figureParams, HORN_TONE, STUBBLE_OPACITY } from "../avatar/figure";
-import { figureParts } from "./figureMesh";
+import { BAND_HEIGHT, figureParts } from "./figureMesh";
 
 /** A standing figure's parameters (in its own frame: facing +y, z up) and its head's measurements. */
 const standing = (appearance: Record<string, unknown>) => {
@@ -67,6 +67,31 @@ describe("figure head", () => {
       expect(Math.min(...gaps)).toBeLessThanOrEqual(0);
       expect(Math.min(...gaps)).toBeGreaterThan(-0.1);
     }
+  });
+});
+
+describe("seam bands", () => {
+  // A yellow raincoat over the torso, arms and waist on light skin: neck, wrists and hips are outlined.
+  const raincoat = standing({ skin: { hex: "#eadaba" }, garments: [{ areas: ["torso", "arms", "waist"], layer: 1, colour: { hex: "#ffd400" } }] });
+
+  it("draws thin lines lying close to the body, not raised rings", () => {
+    const { p } = raincoat;
+    expect(p.outlined).toEqual(expect.arrayContaining(["neck", "wrists", "hips"]));
+    for (const part of figureParts(p).filter((x) => x.name === "band")) {
+      const box = new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute);
+      // The old bands were 14 mm tall and stood up to a quarter of the part's radius out.
+      // Positions are 32-bit floats.
+      expect(box.max.z - box.min.z).toBeLessThanOrEqual(BAND_HEIGHT + 1e-6);
+    }
+  });
+
+  it("puts the collar line above the torso's top, where it shows", () => {
+    const { p } = raincoat;
+    const neckBase = p.height - p.headHeight - 0.045 * p.height;
+    // The shoulder bar rises 0.15 limb radii over the neck's base; the collar must be clear of it.
+    const collar = vertices(p, "band").filter((v) => v.z > neckBase - 0.02);
+    expect(collar.length).toBeGreaterThan(0);
+    expect(Math.min(...collar.map((v) => v.z))).toBeGreaterThan(neckBase + p.limbRadius * 0.15);
   });
 });
 

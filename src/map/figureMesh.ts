@@ -22,6 +22,10 @@ export interface Part {
 const named = (part: Part, name: string): Part => ({ ...part, name });
 
 const RADIAL = 10;
+/** How tall a seam outline band is, metres: a line, not a ring. */
+export const BAND_HEIGHT = 0.006;
+/** How far out from the surface a seam band lies, as a factor of the part's radius. */
+const BAND_OUT = 1.03;
 /** How far the hair or head-covering cap leans back from upright, radians. */
 const CAP_LEAN = 0.5;
 
@@ -165,7 +169,9 @@ function block(at: THREE.Vector3, size: THREE.Vector3, colour: string, rotation?
 
 /** A thin band (an outline) around something upright at height z. */
 function band(x: number, y: number, z: number, radius: number, depth: number, colour: string): Part {
-  const geometry = new THREE.CylinderGeometry(radius, radius, 0.014, RADIAL * 2, 1, true);
+  // A thin line lying almost on the surface (callers give a radius a few per cent out),
+  // so it parts two alike colours without standing out as a ring.
+  const geometry = new THREE.CylinderGeometry(radius, radius, BAND_HEIGHT, RADIAL * 2, 1, true);
   return placed(geometry, colour, new THREE.Vector3(x, y, z), new THREE.Euler(Math.PI / 2, 0, 0), new THREE.Vector3(1, 1, depth));
 }
 
@@ -197,13 +203,14 @@ export function figureParts(p: FigureParams): Part[] {
       out.push(limb(new THREE.Vector3(x, 0, hipZ), knee, legR, c.legs));
       out.push(limb(knee, new THREE.Vector3(x, 0.24 * H, ankleZ + legR), legR * 0.9, c.legs));
       out.push(block(new THREE.Vector3(x, 0.24 * H + 0.04 * s, ankleZ / 2), new THREE.Vector3(legR * 2.2, 0.16 * s, ankleZ), c.feet));
-      if (outlined.has("ankles")) out.push(band(x, 0.24 * H, ankleZ + 0.02 * s, legR * 1.05, 1, c.ink));
+      if (outlined.has("ankles")) out.push(named(band(x, 0.24 * H, ankleZ + 0.02 * s, legR * BAND_OUT, 1, c.ink), "band"));
     } else {
       out.push(limb(new THREE.Vector3(x, 0, ankleZ + legR), new THREE.Vector3(x, 0, hipZ - legR * 0.5), legR, c.legs));
       out.push(block(new THREE.Vector3(x, 0.04 * s, ankleZ / 2), new THREE.Vector3(legR * 2.2, 0.16 * s, ankleZ), c.feet));
-      if (outlined.has("ankles")) out.push(band(x, 0, ankleZ + 0.02 * s, legR * 1.05, 1, c.ink));
+      if (outlined.has("ankles")) out.push(named(band(x, 0, ankleZ + 0.02 * s, legR * BAND_OUT, 1, c.ink), "band"));
     }
-    if (outlined.has("hips")) out.push(band(x, sitting ? 0.06 * s : 0, hipZ - 0.07 * H, legR * 1.08, 1, c.ink));
+    // Just below the hips' lower edge, where the legs come out, so it shows.
+    if (outlined.has("hips")) out.push(named(band(x, sitting ? 0.06 * s : 0, hipZ - 0.07 * H - BAND_HEIGHT, legR * BAND_OUT, 1, c.ink), "band"));
   }
 
   // Hips, torso, shoulders.
@@ -212,7 +219,7 @@ export function figureParts(p: FigureParams): Part[] {
   out.push(trunk(waistZ, neckBase, p.waistHalf, p.shoulderHalf * 0.92, 0.55, c.torso));
   const shoulderZ = neckBase - p.limbRadius * 1.2;
   out.push(limb(new THREE.Vector3(-p.shoulderHalf * 0.9, 0, shoulderZ), new THREE.Vector3(p.shoulderHalf * 0.9, 0, shoulderZ), p.limbRadius * 1.35, c.torso));
-  if (outlined.has("waist")) out.push(band(0, 0, waistZ, p.waistHalf * 1.03, 0.62, c.ink));
+  if (outlined.has("waist")) out.push(named(band(0, 0, waistZ, p.waistHalf * BAND_OUT, 0.62, c.ink), "band"));
 
   // Arms and hands, hanging a little away from the body.
   const wristZ = hipZ - 0.02 * H;
@@ -221,13 +228,15 @@ export function figureParts(p: FigureParams): Part[] {
     const wrist = new THREE.Vector3(side * (p.hipHalf + p.limbRadius * 1.6), sitting ? 0.08 * s : 0, wristZ);
     out.push(limb(shoulder, wrist, p.limbRadius, c.arms));
     out.push(ball(new THREE.Vector3(wrist.x, wrist.y, wrist.z - p.limbRadius * 1.3), p.limbRadius * 1.25, c.hands));
-    if (outlined.has("wrists")) out.push(band(wrist.x, wrist.y, wrist.z, p.limbRadius * 1.1, 1, c.ink));
+    if (outlined.has("wrists")) out.push(named(band(wrist.x, wrist.y, wrist.z, p.limbRadius * BAND_OUT, 1, c.ink), "band"));
   }
 
   // Neck and head.
   const neckR = 0.045 * s;
   out.push(trunk(neckBase - 0.01, headCentreZ - headR * 0.6, neckR, neckR, 1, c.neck));
-  if (outlined.has("neck")) out.push(band(0, 0, neckBase, neckR * 1.25, 1, c.ink));
+  // Just above the torso's top and the shoulder bar (which rises 0.15 limb radii over the neck's base), so it shows.
+  const collarZ = neckBase + p.limbRadius * 0.15 + BAND_HEIGHT;
+  if (outlined.has("neck")) out.push(named(band(0, 0, collarZ, neckR * BAND_OUT, 1, c.ink), "band"));
   const headScale = new THREE.Vector3(0.84, 0.95, 1);
   out.push(ball(new THREE.Vector3(0, 0, headCentreZ), headR, c.skin, headScale, 14));
   // Nose: which way the person faces.

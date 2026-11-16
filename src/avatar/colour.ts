@@ -20,29 +20,6 @@ export function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }
 
-/** CIE L*a*b* of an sRGB `#rrggbb` (D65 white). */
-function lab(hex: string): [number, number, number] {
-  const [r, g, b] = hexToRgb(hex).map((c) => {
-    const s = c / 255;
-    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  });
-  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
-  const x = f((r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047);
-  const y = f(r * 0.2126 + g * 0.7152 + b * 0.0722);
-  const z = f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883);
-  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
-}
-
-/** How different two colours look (CIE76 ΔE in L*a*b*): about 2 is just noticeable, 35 or more plainly different. */
-export function colourDifference(a: string, b: string): number {
-  const p = lab(a);
-  const q = lab(b);
-  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-}
-
-/** Colours this far apart (ΔE) are told apart by their colour even when their lightness is close. */
-export const DISTINCT_COLOURS = 35;
-
 /**
  * `over` laid on `under` at opacity `t`, in sRGB as a browser composites SVG `fill-opacity`:
  * what the portrait's stubble (45% over the skin) looks like, for the 3D figure to paint.

@@ -1,4 +1,4 @@
-import { colourDifference, colourHex, contrast, DISTINCT_COLOURS, hexOrUndefined, inkFor, MIN_CONTRAST } from "./colour";
+import { colourHex, contrast, hexOrUndefined, inkFor, MIN_CONTRAST } from "./colour";
 
 /**
  * A person's figure as numbers, colours and part choices, from the Room.Layout
@@ -273,12 +273,10 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     ["wrists", colours.arms, colours.hands],
     ["ankles", colours.legs, colours.feet],
   ];
-  // A seam gets an outline where two different colours are hard to tell apart: under 3:1 in
-  // lightness and alike in colour. A yellow sleeve on light skin is under 3:1 but plainly
-  // different, and a band there was only noise.
-  const weak = seams.filter(
-    ([, a, b]) => a !== b && contrast(a, b) < MIN_CONTRAST && colourDifference(a, b) < DISTINCT_COLOURS,
-  );
+  // A seam between two different colours under 3:1 gets an outline, whatever their hues:
+  // colours told apart by hue alone (green on brown, crimson on near-black) look alike to
+  // someone with red-green colour blindness.
+  const weak = seams.filter(([, a, b]) => a !== b && contrast(a, b) < MIN_CONTRAST);
   const outlined = weak.map(([seam]) => seam);
   colours.ink = inkFor(...(weak.length > 0 ? weak.flatMap(([, a, b]) => [a, b]) : [skin, torso]));
 
