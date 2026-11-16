@@ -28,6 +28,7 @@ import {
   panTo,
   zoomFocus,
   eyesPose,
+  Pinch,
   type RoomScene,
   screenTop,
   wheelNotches,
@@ -119,8 +120,9 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.maxPolarAngle = Math.PI / 2 - 0.05;
     controls.minDistance = 0.5;
-    // A pinch zooms toward what is under the fingers. The wheel never reaches the controls: `onWheel` below takes it.
-    controls.zoomToCursor = true;
+    // The controls turn the view (drag, one finger) and nothing else: the wheel never reaches them
+    // (`onWheel` below takes it), and two fingers are left to `onTouchPointer`, which zooms the same way.
+    controls.touches.TWO = null;
     const scene = new THREE.Scene();
 
     const stage: Stage = {
@@ -286,9 +288,11 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
   // A doorway click sends its exit, unless the pointer was turning the view.
   const down = useRef<{ x: number; y: number } | null>(null);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    onTouchPointer(event);
     down.current = { x: event.clientX, y: event.clientY };
   };
   const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    onTouchPointer(event);
     const start = down.current;
     down.current = null;
     const stage = stageRef.current;
@@ -328,24 +332,41 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       zoomEyes(event.deltaY < 0 ? "+" : "-");
       return;
     }
+    zoomOnto(stage, event.clientX, event.clientY, wheelStep(layout) ** (wheelNotches(event.deltaY, event.deltaMode) * (event.deltaY < 0 ? 1 : -1)));
+  };
+  const onWheelRef = useRef(onWheel);
+  onWheelRef.current = onWheel;
+
+  /**
+   * One dollhouse zoom by `scale` onto what is at (clientX, clientY): picked there the first
+   * time, and kept while the wheel or pinch stays within 4 px of it.
+   */
+  const zoomOnto = (stage: Stage, clientX: number, clientY: number, scale: number) => {
     const focus = wheelFocus.current;
-    if (!focus || Math.hypot(event.clientX - focus.x, event.clientY - focus.y) > 4) {
+    if (!focus || Math.hypot(clientX - focus.x, clientY - focus.y) > 4) {
       const rect = stage.renderer.domElement.getBoundingClientRect();
       const ray = new THREE.Raycaster();
-      ray.setFromCamera(
-        new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1),
-        stage.camera,
-      );
+      ray.setFromCamera(new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), stage.camera);
       const point = stage.room ? wheelZoomPoint(ray.ray, stage.room, placed, layout) : undefined;
-      wheelFocus.current = { x: event.clientX, y: event.clientY, point };
+      wheelFocus.current = { x: clientX, y: clientY, point };
     }
-    const scale = wheelStep(layout) ** (wheelNotches(event.deltaY, event.deltaMode) * (event.deltaY < 0 ? 1 : -1));
     wheelZoom(stage.camera.position, stage.controls.target, wheelFocus.current?.point ?? stage.controls.target.clone(), scale);
     stage.controls.update();
     stage.render();
   };
-  const onWheelRef = useRef(onWheel);
-  onWheelRef.current = onWheel;
+
+  // Two fingers zoom like the wheel, onto what is under the point where the pinch began.
+  const pinch = useRef(new Pinch());
+  const onTouchPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const stage = stageRef.current;
+    if (!stage || event.pointerType !== "touch" || mode !== "dollhouse") return;
+    if (event.type === "pointerdown") pinch.current.down(event.pointerId, event.clientX, event.clientY);
+    else if (event.type === "pointerup" || event.type === "pointercancel") pinch.current.up(event.pointerId);
+    else {
+      const step = pinch.current.move(event.pointerId, event.clientX, event.clientY);
+      if (step) zoomOnto(stage, step.at.x, step.at.y, step.scale);
+    }
+  };
 
   /** Slides the dollhouse view over to your figure, unturned, then moves the camera `scale` times as far from it. */
   const zoomToward = (stage: Stage, scale: number) => {
@@ -400,6 +421,8 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       data-mode={mode}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
+      onPointerMove={onTouchPointer}
+      onPointerCancel={onTouchPointer}
       onKeyDown={onKeyDown}
     />
   );

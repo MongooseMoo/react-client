@@ -25,6 +25,7 @@ import {
   NEUTRAL,
   PERSON_COLOUR,
   panTo,
+  Pinch,
   screenTop,
   WHEEL_NOTCHES,
   wheelNotches,
@@ -557,6 +558,93 @@ describe("cameras", () => {
         }
       }
     }
+  });
+
+  it("reads two fingers as a pinch: spacing before over after, onto where it began", () => {
+    const pinch = new Pinch();
+    pinch.down(1, 100, 200);
+    expect(pinch.move(1, 90, 200)).toBeUndefined(); // one finger turns; it is no pinch
+    pinch.down(2, 190, 200);
+    expect(pinch.pinching).toBe(true);
+    // Spread from 100 px apart to 200: twice as close, onto the midpoint where they started.
+    const a = pinch.move(1, 40, 200);
+    const b = pinch.move(2, 240, 200);
+    expect(a?.at).toEqual({ x: 140, y: 200 });
+    expect(b?.at).toEqual({ x: 140, y: 200 });
+    expect((a?.scale ?? 0) * (b?.scale ?? 0)).toBeCloseTo(0.5, 9);
+    // A third finger ends it; lifting back to two does not start a new one until a finger comes down again.
+    pinch.down(3, 0, 0);
+    expect(pinch.move(1, 10, 200)).toBeUndefined();
+    pinch.up(3);
+    expect(pinch.pinching).toBe(false);
+    expect(pinch.move(1, 0, 200)).toBeUndefined();
+  });
+
+  it("pinches the dollhouse onto a person, then one finger turns round them", () => {
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const face = new THREE.Vector3(-9, -9, 1.75);
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const element = document.createElement("div");
+    // jsdom lays nothing out: give the picture its size, and pointer capture as a browser has it.
+    Object.assign(element, { setPointerCapture: () => {}, releasePointerCapture: () => {} });
+    Object.defineProperties(element, { clientWidth: { value: 800 }, clientHeight: { value: 600 } });
+    document.body.appendChild(element);
+    const controls = new OrbitControls(camera, element);
+    controls.touches.TWO = null;
+    controls.maxDistance = dollhouseMaxDistance(big);
+    const pose = dollhousePose(big);
+    camera.position.set(...pose.position);
+    controls.target.set(...pose.target);
+    controls.update();
+    const touch = (type: string, pointerId: number, x: number, y: number) => {
+      const event = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
+      Object.defineProperties(event, { pointerId: { value: pointerId }, pointerType: { value: "touch" }, pageX: { value: x }, pageY: { value: y } });
+      element.dispatchEvent(event);
+      return event;
+    };
+    const inMiddle = () => {
+      camera.updateMatrixWorld();
+      const at = face.clone().project(camera);
+      return Math.hypot(at.x, at.y);
+    };
+
+    // Two fingers spread apart: the controls do nothing with them; the pinch zooms onto the face.
+    const pinch = new Pinch();
+    const before = camera.position.clone();
+    touch("pointerdown", 1, 300, 300);
+    pinch.down(1, 300, 300);
+    touch("pointerdown", 2, 310, 300);
+    pinch.down(2, 310, 300);
+    for (let i = 1; i <= 40; i++) {
+      const was = camera.position.clone();
+      touch("pointermove", 2, 310 + i * 10, 300);
+      expect(camera.position.distanceTo(was)).toBe(0);
+      const step = pinch.move(2, 310 + i * 10, 300);
+      if (step) {
+        wheelZoom(camera.position, controls.target, face, step.scale);
+        controls.update();
+      }
+    }
+    // Forty-one times as far apart: forty-one times closer.
+    expect(camera.position.distanceTo(face)).toBeCloseTo(before.distanceTo(face) / 41, 6);
+    expect(inMiddle()).toBeLessThan(0.02);
+    touch("pointerup", 2, 710, 300);
+    pinch.up(2);
+
+    // The finger left down drags sideways: the controls turn the view round the face, which stays in the middle.
+    const near = camera.position.distanceTo(face);
+    const start = camera.position.clone();
+    for (let i = 1; i <= 20; i++) {
+      touch("pointermove", 1, 300 + i * 15, 300);
+      expect(inMiddle()).toBeLessThan(0.02);
+    }
+    expect(camera.position.distanceTo(start)).toBeGreaterThan(near * 0.5);
+    // Round the face: the turn centre is within millimetres of it after the pinch.
+    expect(camera.position.distanceTo(face)).toBeCloseTo(near, 1);
+    touch("pointerup", 1, 600, 300);
+    controls.dispose();
+    element.remove();
   });
 
   it("counts wheel notches: 100 pixels, 3 lines or a page", () => {

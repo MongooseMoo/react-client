@@ -11,6 +11,8 @@ const out = resolve(process.argv[2] ?? 'screenshots/avatars');
 const gpu = process.argv.includes('--gpu');
 // --view3d shoots only the 3D view's zoom, turn and label sequence (then the frame timing).
 const view3d = process.argv.includes('--view3d');
+// --pinch shoots only a touch pinch and one-finger turn in the Dollhouse (then the frame timing).
+const pinch = process.argv.includes('--pinch');
 mkdirSync(out, { recursive: true });
 
 const server = await createServer({ server: { port: 5199, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' });
@@ -30,6 +32,33 @@ try {
     await page.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
   };
   const suffix = gpu ? '-gpu' : '';
+  if (pinch) {
+    // A phone player in the 50 m room: two fingers pinch outward over Cleo (#p2, facing away), then one
+    // finger drags sideways to turn. Touches go through CDP Input.dispatchTouchEvent, as a touch screen's would.
+    const phone = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark', hasTouch: true });
+    await phone.goto(`${base}?view=room&n=8&size=50&spread=6&face=north&mode=dollhouse`);
+    await phone.waitForFunction(() => window.ready === true);
+    const pic = phone.locator('.room-layout-3d');
+    const cdp = await phone.context().newCDPSession(phone);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y, id]) => ({ x, y, id })) });
+    const at = await phone.evaluate(() => window.screenOf('#p2'));
+    await pic.screenshot({ path: resolve(out, 'p-start.png') });
+    await touch('touchStart', [[at.x - 5, at.y, 1]]);
+    await touch('touchStart', [[at.x - 5, at.y, 1], [at.x + 5, at.y, 2]]);
+    for (let i = 1; i <= 40; i++) {
+      await touch('touchMove', [[at.x - 5 - i * 5, at.y, 1], [at.x + 5 + i * 5, at.y, 2]]);
+      if (i === 20) await pic.screenshot({ path: resolve(out, 'p-pinch-half.png') });
+    }
+    await pic.screenshot({ path: resolve(out, 'p-pinched.png') });
+    // Lift the second finger (CDP's touchEnd releases the points it lists); the first drags right, turning the view.
+    await touch('touchEnd', [[at.x + 205, at.y, 2]]);
+    for (let i = 1; i <= 24; i++) {
+      await touch('touchMove', [[at.x - 205 + i * 15, at.y, 1]]);
+      if (i % 8 === 0) await pic.screenshot({ path: resolve(out, `p-turn${i * 15}px.png`) });
+    }
+    await touch('touchEnd', [[at.x + 155, at.y, 1]]);
+    await phone.close();
+  }
   if (view3d) {
     // Getting a person's face into view in the Dollhouse, and where labels sit (both 3D views).
     const room = 'view=room&n=8&size=50&spread=6&face=north&mode=dollhouse';
@@ -95,7 +124,7 @@ try {
     }
     await narrow.close();
   }
-  if (!gpu && !view3d) {
+  if (!gpu && !view3d && !pinch) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -144,7 +173,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu && !view3d) {
+  if (!gpu && !view3d && !pinch) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');

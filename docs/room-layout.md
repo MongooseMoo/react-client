@@ -102,11 +102,12 @@ buttons (the choice is kept across rooms):
 
 - **Plan**: the drawing from above, described below.
 - **Dollhouse**: the room in 3D, seen from above one corner, far enough out for the whole room
-  however large. Drag to turn it, a pinch to zoom toward what is under the fingers. The wheel
-  zooms toward what is under the pointer (a person's face when it is over a person, else the
-  thing or the floor there) and brings it to the middle of the picture as it comes closer, about
-  twenty notches from the whole-room view to a person close up in a room of any size; turning
-  then goes round it, so you can turn until a person faces you. On the picture the arrow keys turn
+  however large. Drag, or one finger, to turn it. The wheel zooms toward what is under the
+  pointer, and a pinch toward what is between the two fingers where it began: a person's face
+  when that is a person, else the thing or the floor there. Either brings it to the middle of the
+  picture as it comes closer (about twenty wheel notches from the whole-room view to a person
+  close up, in a room of any size; a pinch comes as much closer as the fingers spread apart).
+  Turning then goes round it, so you can turn until a person faces you. On the picture the arrow keys turn
   it, `+` and `-` zoom toward and away from your own figure (the room's middle when you are not in
   the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
 - **Your eyes**: the room in 3D from where you stand (your `Client.Spatial` position), facing

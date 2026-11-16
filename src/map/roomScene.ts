@@ -523,7 +523,52 @@ export function wheelZoomPoint(ray: THREE.Ray, scene: RoomScene, placed: PlacedT
 }
 
 /**
- * One dollhouse wheel zoom by `scale` (below 1 comes closer). Zooming in moves the
+ * Two fingers on the dollhouse, from their pointer events. Each move while
+ * exactly two are down gives the zoom scale for `wheelZoom` (the fingers'
+ * spacing before over after: spreading them comes closer) and the midpoint
+ * where the pinch began, which is what it zooms onto.
+ */
+export class Pinch {
+  private fingers = new Map<number, { x: number; y: number }>();
+  private start: { x: number; y: number } | null = null;
+
+  down(id: number, x: number, y: number): void {
+    this.fingers.set(id, { x, y });
+    this.start = this.fingers.size === 2 ? this.midpoint() : null;
+  }
+
+  move(id: number, x: number, y: number): { scale: number; at: { x: number; y: number } } | undefined {
+    if (!this.fingers.has(id)) return undefined;
+    const before = this.spacing();
+    this.fingers.set(id, { x, y });
+    const after = this.spacing();
+    if (this.fingers.size !== 2 || !this.start || before === 0 || after === 0 || before === after) return undefined;
+    return { scale: before / after, at: this.start };
+  }
+
+  up(id: number): void {
+    this.fingers.delete(id);
+    this.start = null;
+  }
+
+  /** Whether a pinch began with this pair of fingers and both are still down. */
+  get pinching(): boolean {
+    return this.start !== null;
+  }
+
+  private spacing(): number {
+    const [a, b] = [...this.fingers.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  }
+
+  private midpoint(): { x: number; y: number } {
+    const [a, b] = [...this.fingers.values()];
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+}
+
+/**
+ * One dollhouse zoom, a wheel notch's or a pinch step's, by `scale` (below 1 comes closer). Zooming in moves the
  * camera toward `point` and the point it orbits onto `point` a little faster, so what
  * was zoomed onto comes to the middle of the picture and the arrow keys then turn
  * around it. Zooming out backs away from the point it orbits.
