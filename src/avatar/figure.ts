@@ -16,7 +16,10 @@ export type ExtraPart = "tail" | "wings" | "antlers" | "horns" | "pointed_ears";
 export const FEATURES = ["freckles", "glasses", "sunglasses", "eyepatch", "earrings", "mole", "dimples"] as const;
 export type Feature = (typeof FEATURES)[number];
 /** Where two differently coloured regions of the figure meet. */
-export type Seam = "hairline" | "neck" | "waist" | "hips" | "wrists" | "ankles";
+export type Seam = "hairline" | "jawline" | "neck" | "waist" | "hips" | "wrists" | "ankles";
+
+/** Stubble is drawn at this opacity over the skin, in the portrait and on the 3D figure alike. */
+export const STUBBLE_OPACITY = 0.45;
 
 /** Body areas a garment can cover, as the server names them. */
 export const AREAS = ["head", "neck", "torso", "arms", "hands", "waist", "legs", "feet"] as const;
@@ -252,6 +255,8 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
 
   const seams: Array<[Seam, string, string]> = [
     ["hairline", colours.head, skin],
+    // A beard or goatee against the skin; stubble is shading, never outlined.
+    ...(facialHair === "beard" || facialHair === "goatee" ? [["jawline", facialHex as string, skin] as [Seam, string, string]] : []),
     ["neck", colours.neck, colours.torso],
     ["waist", colours.torso, colours.hips],
     ["hips", colours.hips, colours.legs],

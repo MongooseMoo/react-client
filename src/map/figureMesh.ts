@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type { FigureParams, Seam } from "../avatar/figure";
+import { overlayHex } from "../avatar/colour";
+import { type FigureParams, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
 
 /**
  * A person's 3D figure from `figureParams`: three.js primitives, each painted
@@ -184,18 +185,56 @@ export function figureParts(p: FigureParams): Part[] {
     out.push(block(new THREE.Vector3(0, -headR * 0.62, (top + bottom) / 2), new THREE.Vector3(width, headR * 0.5 * p.hairVolume, top - bottom), c.head));
   }
 
-  // Facial hair on the chin and lip.
+  // Facial hair, shaped from the head's own ellipsoid so it follows the jaw.
   if (c.facialHair && p.facialHair !== "none") {
     const fh = c.facialHair;
-    const chinZ = headCentreZ - headR * 0.62;
+    // A piece of the head ellipsoid around its lowest point, `k` times the head's size: up to
+    // `reach` radians from straight down, across `span` radians centred on `toward` (π/2 is the
+    // front; 0 and π the sides). `drop` stretches it downward, as a beard hangs below the chin.
+    const toHead = (g: THREE.BufferGeometry, k: number, drop = 1) => {
+      g.rotateX(-Math.PI / 2);
+      g.scale(headScale.x * k, headScale.y * k, headScale.z * k * drop);
+      g.translate(0, 0, headCentreZ);
+      return g;
+    };
+    const shell = (reach: number, toward: number, span: number, k: number, colour: string, drop = 1): Part => ({
+      geometry: toHead(new THREE.SphereGeometry(headR, 16, 6, toward - span / 2, span, 0, reach), k, drop),
+      colour,
+    });
+    // The upper edge of a shell, for an outline where the facial hair meets skin of nearly its own lightness.
+    const shellEdge = (reach: number, toward: number, span: number, k: number, drop = 1): Part => {
+      const r = headR * Math.sin(reach) * 1.01;
+      const g = new THREE.CylinderGeometry(r, r, 0.012, 16, 1, true, toward - span / 2 - Math.PI / 2, span);
+      g.translate(0, headR * Math.cos(reach), 0);
+      return { geometry: toHead(g, k, drop), colour: c.ink };
+    };
+    const front = Math.PI / 2;
+    // Below the mouth (which sits at -0.45 to -0.49 head radii), across the jaw from ear to ear.
+    const jawReach = 0.96;
+    const jawSpan = 4.0;
     if (p.facialHair === "beard" || p.facialHair === "stubble") {
-      const depth = p.facialHair === "beard" ? headR * 0.45 : headR * 0.12;
-      out.push(block(new THREE.Vector3(0, headR * 0.62, chinZ), new THREE.Vector3(headR * 1.25, depth, headR * 0.7), fh));
+      const full = p.facialHair === "beard";
+      // A beard stands out and hangs; stubble lies on the skin.
+      const k = full ? 1.12 : 1.012;
+      const drop = full ? 1.12 : 1;
+      // Stubble is a shadow on the skin: its colour laid over the skin, as the portrait draws it.
+      const colour = full ? fh : overlayHex(c.skin, fh, STUBBLE_OPACITY);
+      out.push(named(shell(jawReach, front, jawSpan, k, colour, drop), full ? "beard" : "stubble"));
+      // A full beard runs up the side of the face in front of each ear; on stubble that strip read as a pale patch.
+      for (const side of full ? [-1, 1] : []) out.push(named(shell(1.75, front + side * 1.3, 0.35, k - 0.006, colour, drop), "beard"));
+      if (full && outlined.has("jawline")) out.push(named(shellEdge(jawReach, front, jawSpan, k, drop), "jawline"));
     } else if (p.facialHair === "goatee") {
-      out.push(block(new THREE.Vector3(0, headR * 0.72, chinZ - headR * 0.1), new THREE.Vector3(headR * 0.45, headR * 0.3, headR * 0.45), fh));
+      out.push(named(shell(0.75, front, 0.9, 1.1, fh, 1.08), "beard"));
+      if (outlined.has("jawline")) out.push(named(shellEdge(0.75, front, 0.9, 1.1, 1.08), "jawline"));
     }
     if (p.facialHair === "moustache" || p.facialHair === "beard" || p.facialHair === "goatee") {
-      out.push(block(new THREE.Vector3(0, headR * 0.9, headCentreZ - headR * 0.32), new THREE.Vector3(headR * 0.7, headR * 0.12, headR * 0.12), fh));
+      // Two strokes over the upper lip, from under the nose out to the corners of the mouth.
+      const top = -headR * 0.32;
+      const middle = new THREE.Vector3(0, faceY(0, top) + headR * 0.02, headCentreZ + top);
+      for (const side of [-1, 1]) {
+        const end = new THREE.Vector3(side * headR * 0.28, faceY(headR * 0.28, -headR * 0.43) + headR * 0.02, headCentreZ - headR * 0.43);
+        out.push(named(limb(middle, end, headR * 0.06, fh), "moustache"));
+      }
     }
   }
 

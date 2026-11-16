@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { figureParams } from "../avatar/figure";
+import { overlayHex } from "../avatar/colour";
+import { figureParams, STUBBLE_OPACITY } from "../avatar/figure";
 import { figureParts } from "./figureMesh";
 
 /** A standing figure's parameters (in its own frame: facing +y, z up) and its head's measurements. */
@@ -94,6 +95,38 @@ describe("figure face", () => {
     }
     for (const v of brows) expect(v.z).toBeGreaterThan(headZ + headR * 0.22);
     for (const v of [...mouth, ...brows]) expect(Math.abs(onHead(v, headR, headZ) - 1)).toBeLessThan(0.1);
+  });
+
+  it("shapes a beard to the jaw: on the head's surface, standing out a little, below the mouth", () => {
+    const { p, headR, headZ } = standing({ skin: { hex: "#3a312a" }, facial_hair: { kind: "beard", hex: "#141414" } });
+    const beard = vertices(p, "beard");
+    expect(beard.length).toBeGreaterThan(50);
+    const radii = beard.map((v) => onHead(v, headR, headZ));
+    // A box stood out to 1.6 at its corners; the shell follows the head at 1.1 to 1.25.
+    expect(Math.min(...radii)).toBeGreaterThan(0.99);
+    expect(Math.max(...radii)).toBeLessThan(1.3);
+    // Its front edge is below the mouth, so the mouth shows.
+    const mouthLow = Math.min(...vertices(p, "mouth").map((v) => v.z));
+    const frontEdge = Math.max(...beard.filter((v) => Math.abs(v.x) < headR * 0.2 && v.y > 0).map((v) => v.z));
+    expect(frontEdge).toBeLessThan(mouthLow);
+    // A black beard on dark brown skin is under 3:1, so its edge is outlined.
+    expect(p.outlined).toContain("jawline");
+    expect(vertices(p, "jawline").length).toBeGreaterThan(0);
+    // The moustache sits above the mouth.
+    expect(Math.min(...vertices(p, "moustache").map((v) => v.z))).toBeGreaterThan(mouthLow - headR * 0.05);
+  });
+
+  it("lays stubble flat on the skin as a shadow, not a mask over the face", () => {
+    const { p, headR, headZ } = standing({ skin: { hex: "#d7bd96" }, facial_hair: { kind: "stubble", hex: "#7d7d7d" } });
+    const stubble = vertices(p, "stubble");
+    expect(stubble.length).toBeGreaterThan(50);
+    for (const v of stubble) expect(onHead(v, headR, headZ)).toBeLessThan(1.03);
+    // The portrait's 45% stubble over the skin, not the solid grey.
+    const part = figureParts(p).find((x) => x.name === "stubble");
+    expect(part?.colour).toBe(overlayHex("#d7bd96", "#7d7d7d", STUBBLE_OPACITY));
+    expect(p.outlined).not.toContain("jawline");
+    // Nothing of it reaches the mouth or above.
+    expect(Math.max(...stubble.map((v) => v.z))).toBeLessThan(Math.min(...vertices(p, "mouth").map((v) => v.z)));
   });
 
   it("draws no face on a hidden face, nor on the plain figure of someone without appearance", () => {

@@ -1,5 +1,5 @@
 import type React from "react";
-import { BUILDS, type FigureParams, figureParams, appearanceRecord } from "./figure";
+import { BUILDS, type FigureParams, figureParams, appearanceRecord, STUBBLE_OPACITY } from "./figure";
 
 /**
  * A head-and-shoulders portrait of a person drawn in SVG from their Room.Layout
@@ -216,7 +216,7 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
     const fh = c.facialHair;
     if (fh) {
       const shapes: Record<string, React.ReactElement> = {
-        stubble: <path fill={fh} fillOpacity={0.45} stroke="none" d="M20,33 C21,45 43,45 44,33 C41,41 23,41 20,33 Z" />,
+        stubble: <path fill={fh} fillOpacity={STUBBLE_OPACITY} stroke="none" d="M20,33 C21,45 43,45 44,33 C41,41 23,41 20,33 Z" />,
         moustache: <path fill={fh} stroke={faceInk} strokeWidth={0.8} d="M27,36 Q32,33.5 37,36 Q32,35.5 27,36 Z" />,
         goatee: <path fill={fh} stroke={faceInk} strokeWidth={0.8} d="M29,40 Q32,47 35,40 Q32,41.5 29,40 Z" />,
         beard: <path fill={fh} stroke={faceInk} strokeWidth={1} d="M19.5,30 C19,47 45,47 44.5,30 C43,38 38,41 32,41 C26,41 21,38 19.5,30 Z" />,
