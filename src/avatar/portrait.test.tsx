@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "./characters.fixture";
-import { contrast, INK_LIGHT, MIN_CONTRAST } from "./colour";
+import { contrast, INK_DARK, INK_LIGHT, MIN_CONTRAST } from "./colour";
 import { figureParams, HORN_TONE, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "./figure";
 import AvatarPortrait, { HEAD_VIEWBOX, PORTRAIT_BACKDROP } from "./portrait";
 
@@ -28,8 +28,10 @@ describe("AvatarPortrait", () => {
 
   it("draws only supplied colours, outlines in the ink, for every test character", () => {
     for (const ch of TEST_CHARACTERS) {
-      const { ink, faceInk } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
-      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, PORTRAIT_BACKDROP, NEUTRAL_SKIN, NEUTRAL_CLOTHING, HORN_TONE]);
+      const { ink, faceInk, brow, facialHairEdge, hairSheen } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
+      // Tones made from supplied colours count too: brows and facial hair edges toned off the skin, the hair's sheen.
+      const tones = [brow, facialHairEdge, hairSheen].filter((x): x is string => x !== undefined);
+      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, ...tones, PORTRAIT_BACKDROP, NEUTRAL_SKIN, NEUTRAL_CLOTHING, HORN_TONE]);
       const svg = draw(ch.appearance).querySelector("svg") as SVGSVGElement;
       for (const el of svg.querySelectorAll("[fill], [stroke]")) {
         for (const attr of ["fill", "stroke"]) {
@@ -92,6 +94,73 @@ describe("AvatarPortrait", () => {
       }
       for (const eye of svg.querySelectorAll(".avatar-eye")) expect(eye.getAttribute("stroke"), ch.name).toBe(faceInk);
     }
+  });
+
+  it("draws brows and a beard's edge that read on the darkest and palest skins, never ringing a beard in white or black ink", () => {
+    for (const skin of ["#292420", "#3a312a", "#f6ede4"]) {
+      for (const hair of ["#1b1612", "#653700", "#e3c27a", "#eeeeea"]) {
+        const svg = draw({ skin: { hex: skin }, hair: { length_cm: 3, hex: hair }, facial_hair: { kind: "beard", length_cm: 8, hex: hair } }).querySelector("svg") as SVGSVGElement;
+        for (const b of svg.querySelectorAll(".avatar-brow")) expect(contrast(b.getAttribute("stroke") ?? "", skin), `${skin} ${hair} brow`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+        const edge = svg.querySelector(".avatar-facial-hair path")?.getAttribute("stroke") ?? "";
+        expect([INK_DARK, INK_LIGHT], `${skin} ${hair} beard edge`).not.toContain(edge);
+        // The beard's edge stands 3:1 off the skin, so a beard of the skin's darkness still has a visible edge.
+        expect(contrast(edge, skin), `${skin} ${hair} beard edge`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      }
+    }
+  });
+
+  it("draws a short beard over the cheeks and chin, following the jaw, and stubble as a shadow with visible hairs on any skin", () => {
+    /** The y of every point a path names (ends and controls). */
+    const ys = (d: string) => [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => Number(m[2]));
+    for (const skin of ["#292420", "#d7bd96", "#f6ede4"]) {
+      for (const length_cm of [2, 3]) {
+        for (const shape of ["oval", "angular", "square"]) {
+          const d = draw({ skin: { hex: skin }, face: { shape }, facial_hair: { kind: "beard", length_cm, hex: "#1b1612" } }).querySelector(".avatar-facial-hair path")?.getAttribute("d") ?? "";
+          // It reaches up the cheeks to the sideburns (y 27), where the jaw-line band stopped at y 30.
+          expect(Math.min(...ys(d)), `${skin} ${length_cm} ${shape}`).toBeLessThanOrEqual(27);
+          // And down over the chin, at most 1 below it.
+          expect(Math.max(...ys(d)), `${skin} ${length_cm} ${shape}`).toBeGreaterThan(44);
+        }
+        // An angular face keeps its pointed chin under a short beard: a corner at the chin, not a curve rounding it.
+        const angular = draw({ skin: { hex: skin }, face: { shape: "angular" }, facial_hair: { kind: "beard", length_cm, hex: "#1b1612" } });
+        expect(angular.querySelector(".avatar-facial-hair path")?.getAttribute("d")).toMatch(/L32,44\.8 /);
+      }
+      const stubble = draw({ skin: { hex: skin }, facial_hair: { kind: "stubble", hex: "#1b1612" } });
+      const dots = stubble.querySelectorAll(".avatar-stubble-dot");
+      expect(dots.length, skin).toBeGreaterThan(14);
+      for (const dot of dots) expect(contrast(dot.getAttribute("fill") ?? "", skin), skin).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    }
+  });
+
+  it("keeps the hair's texture on tied styles: curls, coils or waves on the cap of a ponytail, braids, bun or topknot", () => {
+    const tied = (style: string, texture: string) =>
+      draw({ skin: { hex: "#d7bd96" }, hair: { length_cm: 50, texture, style, hex: "#1b1612" } }).querySelector("svg") as SVGSVGElement;
+    for (const style of ["ponytail", "braided", "bun", "topknot"]) {
+      expect(tied(style, "straight").querySelector(".avatar-hair-texture"), style).toBeNull();
+      const drawings = ["straight", "wavy", "curly", "coily"].map((texture) => tied(style, texture).innerHTML);
+      expect(new Set(drawings).size, style).toBe(4);
+      for (const texture of ["wavy", "curly", "coily"]) expect(tied(style, texture).querySelector(".avatar-hair-texture"), `${style} ${texture}`).not.toBeNull();
+    }
+  });
+
+  it("shows where chin- and shoulder-length hair ends beside a very long dark beard: locks beside the face, clear of the beard", () => {
+    const tip = (length_cm: number) => {
+      const svg = draw({ skin: { hex: "#d7bd96" }, hair: { length_cm, texture: "straight", hex: "#1b1612" }, facial_hair: { kind: "beard", length_cm: 40, hex: "#1b1612" } }).querySelector("svg") as SVGSVGElement;
+      // The hanging locks: hair drawn after the shoulders, before the head.
+      const shoulders = svg.querySelector('.avatar-garment');
+      const after = [...svg.querySelectorAll("path.avatar-hair")].filter((el) => shoulders && shoulders.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+      const locks = after.filter((el) => /^M(15\.4|48\.6),27 /.test(el.getAttribute("d") ?? ""));
+      expect(locks, String(length_cm)).toHaveLength(2);
+      const numbers = (d: string) => [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+      for (const lock of locks) {
+        // Beside the face, never over the beard (x 19.5 to 44.5).
+        for (const [x] of numbers(lock.getAttribute("d") ?? "")) expect(x < 19.5 || x > 44.5, String(length_cm)).toBe(true);
+      }
+      return Math.max(...locks.flatMap((lock) => numbers(lock.getAttribute("d") ?? "").map(([, y]) => y)));
+    };
+    // Chin-length ends at the jaw, above the shoulders; shoulder-length 6 lower, on them.
+    expect(tip(30) - tip(18)).toBeGreaterThanOrEqual(5);
+    expect(tip(18)).toBeLessThan(45);
   });
 
   it("hangs earrings on the earlobe and keeps a cheek scar clear of glasses", () => {

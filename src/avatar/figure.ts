@@ -1,4 +1,4 @@
-import { colourHex, contrast, hexOrUndefined, inkFor, MIN_CONTRAST } from "./colour";
+import { colourHex, contrast, hexOrUndefined, inkFor, MIN_CONTRAST, sheenFor, toneOff } from "./colour";
 import { HAIR_LENGTHS } from "./hairLengths";
 
 /**
@@ -91,6 +91,17 @@ export interface FigureColours {
   ink: string;
   /** The ink that stands out on the skin: pupils, nose, mouth, face marks and features. */
   faceInk: string;
+  /**
+   * The 3D hairline: the colour over the head (hair or a head garment) as `toneOff` gives it against the skin,
+   * so the edge of black hair on dark skin is a grey of the hair, not a white band.
+   */
+  hairEdge: string;
+  /** Brows: the hair's colour (else the beard's, else the face ink), toned off the skin by the same rule. */
+  brow: string;
+  /** The facial hair's edge and stubble's dots, by the same rule; undefined without facial hair. */
+  facialHairEdge?: string;
+  /** `sheenFor(hair)`: texture, a bun's form and strands on the hair; undefined without hair. */
+  hairSheen?: string;
 }
 
 export interface FigureParams {
@@ -312,7 +323,14 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     eyes: faceHidden ? undefined : colourHex(record.eyes),
     ink: "",
     faceInk: inkFor(skin),
+    hairEdge: "",
+    brow: "",
   };
+  colours.hairEdge = toneOff(colours.head, skin);
+  // A brow in the hair's colour (or the beard's, or the face ink without either), toned off the skin.
+  colours.brow = toneOff(colours.hair ?? colours.facialHair ?? colours.faceInk, skin);
+  if (colours.facialHair) colours.facialHairEdge = toneOff(colours.facialHair, skin);
+  if (colours.hair) colours.hairSheen = sheenFor(colours.hair);
 
   const seams: Array<[Seam, string, string]> = [
     ["hairline", colours.head, skin],
@@ -376,7 +394,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
   };
 }
 
-/** Every fill colour a figure draws (outline ink aside), for checks. */
+/** Every fill colour a figure draws (outline ink and the tones made from these, `brow`, `hairEdge`, `facialHairEdge` and `hairSheen`, aside), for checks. */
 export function figureFills(params: FigureParams): Set<string> {
   const c = params.colours;
   return new Set(

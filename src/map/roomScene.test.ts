@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
 import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "../avatar/figure";
 import type { RoomLayout } from "../gmcp/Room";
+import { EYE_WHITE } from "./figureMesh";
 import { crowdLayout, livingRoomLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingRoom from "./roomLayout.sample-25828.json";
@@ -146,9 +147,24 @@ describe("buildRoomScene", () => {
     const scene = buildRoomScene({ layout, placed: placeThings(layout, {}), arrivals: [], youId: "#99", facings: { "#9": [1, 0, 0] } });
     const colours = figureColours("#9", scene);
     expect(colours.length).toBeGreaterThan(3);
-    const supplied = suppliedHexes(ch.appearance);
-    const ink = figureParams(ch.appearance, { height: 1.7, base: "#000000" }).colours.ink;
-    for (const c of colours) expect(supplied.has(hex(c)) || hex(c) === ink, hex(c)).toBe(true);
+    // Every colour is one the game supplied, or one the figure derives from them: its outline and face inks, the
+    // hair edge, brow and facial hair edge toned off the skin, the eye white, and shades from a hair colour toward
+    // its sheen on textured hair (Bram's coily cap). Nothing else.
+    const fc = figureParams(ch.appearance, { height: 1.7, base: "#000000" }).colours;
+    const allowed = new Set([...suppliedHexes(ch.appearance), fc.ink, fc.faceInk, fc.hairEdge, fc.brow, fc.facialHairEdge, EYE_WHITE].filter((x): x is string => x !== undefined));
+    const onSheen = (c: number) => {
+      if (!fc.hair || !fc.hairSheen) return false;
+      // Shading mixes in linear colour, as figureGeometry does; allow the last bit of 8-bit rounding.
+      const [from, to, got] = [new THREE.Color(fc.hair), new THREE.Color(fc.hairSheen), new THREE.Color(c)];
+      for (let step = 0; step <= 1000; step++) {
+        const at = from.clone().lerp(to, step / 1000);
+        if (Math.abs(at.r - got.r) + Math.abs(at.g - got.g) + Math.abs(at.b - got.b) < 0.006) return true;
+      }
+      return false;
+    };
+    for (const c of colours) expect(allowed.has(hex(c)) || onSheen(c), hex(c)).toBe(true);
+    // Bram's coily black hair shows its texture: shades toward the sheen are present.
+    expect(colours.some((c) => !allowed.has(hex(c)) && onSheen(c))).toBe(true);
     const body = meshes(scene.things.get("#9"))[0];
     // Facing east: its own +y turned onto +x.
     expect(new THREE.Vector3(0, 1, 0).applyEuler(body.rotation).x).toBeCloseTo(1);
