@@ -113,9 +113,14 @@ buttons (the choice is kept across rooms):
 - **Dollhouse**: the room in 3D, seen from above one corner, far enough out for the whole room
   however large. Drag, or one finger, to turn it. The wheel zooms toward what is under the
   pointer, and a pinch toward what is between the two fingers where it began: a person's face
-  when a person is drawn within 12 CSS pixels of that point (the nearest one, if nothing hides
-  their face; half the 24 px minimum target of WCAG 2.2 criterion 2.5.8, so a person a pixel tall
-  in a large room can still be picked), else the thing or the floor there. Either brings it to
+  when that point is on or within 12 CSS pixels of a person's name label as shown (the nearest
+  label; it wins over anyone else's head nearer the point), else when a person is drawn within
+  12 CSS pixels of it (the nearest one; in both cases only if nothing hides their face; half the
+  24 px minimum target of WCAG 2.2 criterion 2.5.8, so a person a pixel tall in a large room can
+  still be picked), else the thing or wall there, else the room's floor there. Pointing over the
+  walls or through a doorway into the dark heads for nothing new: the zoom goes on toward the
+  point the view turns round, which is in the room or on its walls. So a zoom never heads for a point outside
+  the room and never takes the camera through a wall. Either brings it to
   the middle of the picture as it comes closer (about twenty wheel notches from the whole-room
   view to a person close up, in a room of any size; a pinch comes as much closer as the fingers
   spread apart), and stops short of it: never nearer than 0.5 m, and never inside a person it
@@ -139,9 +144,11 @@ In both 3D views a name label sits just above the top of the head as drawn (hair
 included), or above the middle of a thing's top, at every zoom. No label, a person's or a
 thing's, is placed over anyone's head as drawn, so none covers a face. Where a label would
 overlap another label or someone else's head, the later one (people first, you first among them)
-moves up, or a little sideways while its text still spans the middle of what it names, by the
-least that frees it, its bottom never more than two of its own heights above that top; one with
-no such place is left out until zooming makes room (the lists below still name it). Labels are
+moves up, or a little sideways, by the least that frees it, its bottom never more than two of its
+own heights above that top. Sideways, a thing's label goes only while its text still spans the
+middle of the thing; a person's label only while its own middle stays over that person's head as
+drawn, so it never sits over the space beside them and reads as a neighbour's. One with no such
+place is left out until zooming makes room (the lists below still name it). Labels are
 placed by their size as drawn, and two side by side keep a few pixels apart.
 
 In every view things are drawn by what they are, from the first of their `classes` the client
