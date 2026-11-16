@@ -156,6 +156,9 @@ if (view === "portraits") {
               <AvatarPortrait appearance={ch.appearance} size={32} />
             </td>
             <td>
+              <AvatarPortrait appearance={ch.appearance} size={48} />
+            </td>
+            <td>
               <AvatarPortrait appearance={ch.appearance} size={128} />
             </td>
           </tr>
