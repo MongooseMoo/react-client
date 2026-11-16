@@ -126,6 +126,36 @@ function hairCap(texture: HairTexture, v: number, fill: string, ink: string, cro
   );
 }
 
+/**
+ * Texture on the close cap of tied hair (its outline from (18,27) over y 15.75 to (46,27)): curls (one row of
+ * rounds) or coils (a row of small rounds and tight rings in the sheen inside) on the outline, or wave lines across
+ * it in the sheen. Nothing for straight hair.
+ */
+function capTexture(texture: HairTexture, fill: string, ink: string, sheen: string): React.ReactNode {
+  if (texture === "straight") return null;
+  if (texture === "wavy") {
+    return (
+      <path className="avatar-hair-texture" fill="none" stroke={sheen} strokeWidth={0.8} strokeLinecap="round" d="M22,20.5 q2.5,-2 5,0 t5,0 t5,0 t5,0 M24,16.8 q2,-1.6 4,0 t4,0 t4,0 t4,0" />
+    );
+  }
+  const curly = texture === "curly";
+  const count = curly ? 9 : 13;
+  const r = curly ? 2.2 : 1.5;
+  const out: React.ReactElement[] = [];
+  for (let i = 0; i < count; i++) {
+    const angle = Math.PI * (1 + i / (count - 1));
+    out.push(<circle key={`c${i}`} className="avatar-hair-texture" cx={n(32 + Math.cos(angle) * 14)} cy={n(27 + Math.sin(angle) * 11.25)} r={r} fill={fill} stroke={ink} strokeWidth={0.6} />);
+  }
+  if (!curly) {
+    // Tight coils inside the outline: small rings in the sheen.
+    for (let i = 0; i < 7; i++) {
+      const angle = Math.PI * (1.12 + (0.76 * i) / 6);
+      out.push(<circle key={`k${i}`} className="avatar-hair-texture" cx={n(32 + Math.cos(angle) * 9)} cy={n(25.5 + Math.sin(angle) * 7)} r={0.9} fill="none" stroke={sheen} strokeWidth={0.6} />);
+    }
+  }
+  return out;
+}
+
 /** Hair falling behind the head to `bottom`, `w` to each side, narrowing to rounded ends rather than a box. */
 function hairBack(w: number, bottom: number, fill: string, ink: string): React.ReactElement {
   const r = 6;
@@ -170,6 +200,43 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
   const sleek = (hairline = "C38,20 26,20") => (
     <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d={`M18,27 C18,12 46,12 46,27 ${hairline} 18,27 Z`} />
   );
+  const sheen = params.colours.hairSheen ?? ink;
+  /**
+   * Hair worn down also hangs in front of the shoulders beside the face, ending in a rounded tip where the hair
+   * ends: above the shoulders for chin-length, on them for shoulder-length. Behind the head alone, its end was hidden
+   * by the shoulders and, beside a long dark beard, chin and shoulder length looked the same.
+   */
+  const sideLocks = () => {
+    // Shoulder-length hair lies a little way down the front of the shoulders, so its end is seen on them.
+    const end = fallBottom + (params.hair === "shoulder-length" ? 2.5 : 0);
+    return falls
+      ? [-1, 1].map((side) => {
+          const outer = 32 + side * 16.6;
+          const inner = 32 + side * 12.9;
+          return (
+            <path
+              key={`side-lock${side}`}
+              className="avatar-hair"
+              fill={fill}
+              stroke={ink}
+              strokeWidth={1}
+              d={`M${n(outer)},27 L${n(outer)},${n(end - 2)} Q${n((outer + inner) / 2)},${n(end + 1.4)} ${n(inner)},${n(end - 2)} L${n(inner)},30 Z`}
+            />
+          );
+        })
+      : [];
+  };
+  /**
+   * Hair drawn back and tied (ponytail, braids, bun, topknot) keeps its texture on the cap: curls or tight coils
+   * standing on its outline, or waves across it in the hair's sheen. Without it the tied styles all looked straight.
+   */
+  const tiedCap = (extra: React.ReactNode = null) => (
+    <g className="avatar-hair">
+      {sleek()}
+      {capTexture(texture, fill, ink, sheen)}
+      {extra}
+    </g>
+  );
   switch (params.hairStyle) {
     case "ponytail":
       // Drawn back into a tail that shows past the right of the head, tied at the back.
@@ -178,12 +245,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
           <path key="tail" className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d={`M40,15 C52,16 53,28 50,${bottom - 4} C49,${bottom} 45,${bottom} 45.5,${bottom - 4} C47,30 46,22 40,20 Z`} />,
         ],
         hang: [],
-        cap: (
-          <g className="avatar-hair">
-            {sleek()}
-            <rect x={43} y={15.5} width={3.5} height={3} rx={1} fill={ink} />
-          </g>
-        ),
+        cap: tiedCap(<rect x={43} y={15.5} width={3.5} height={3} rx={1} fill={ink} />),
       };
     case "braided": {
       // Two braids hanging in front of the shoulders, each a chain of plaited links ending in a tie.
@@ -195,7 +257,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
         }
         hang.push(<rect key={`tie${side}`} x={x - 1.5} y={bottom - 1} width={3} height={1.8} fill={ink} />);
       }
-      return { back: [], hang, cap: <g className="avatar-hair">{sleek()}{line("parting", "M32,13 L32,20.5")}</g> };
+      return { back: [], hang, cap: tiedCap(line("parting", "M32,13 L32,20.5")) };
     }
     case "bun":
       // Gathered into a round bun on the crown.
@@ -205,8 +267,14 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
         cap: (
           <g className="avatar-hair">
             <circle cx={32} cy={10} r={6} fill={fill} stroke={ink} strokeWidth={1.2} />
-            {sleek()}
-            {line("bun-ring", "M28.5,10.5 Q32,6 35.5,10.5")}
+            {/* Curls or coils round a textured bun's top. */}
+            {texture === "curly" || texture === "coily"
+              ? Array.from({ length: 7 }, (_, i) => {
+                  const angle = Math.PI * (1 + i / 6);
+                  return <circle key={`bun${i}`} className="avatar-hair-texture" cx={n(32 + Math.cos(angle) * 6)} cy={n(10 + Math.sin(angle) * 6)} r={texture === "curly" ? 1.8 : 1.3} fill={fill} stroke={ink} strokeWidth={0.6} />;
+                })
+              : null}
+            {tiedCap(line("bun-ring", "M28.5,10.5 Q32,6 35.5,10.5"))}
           </g>
         ),
       };
@@ -216,11 +284,12 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
         back: [],
         hang: [],
         cap: (
-          <g className="avatar-hair">
-            {sleek()}
-            <circle cx={32} cy={5.5} r={3.4} fill={fill} stroke={ink} strokeWidth={1} />
-            <rect x={30.4} y={8.6} width={3.2} height={3.6} fill={ink} />
-          </g>
+          tiedCap(
+            <>
+              <circle cx={32} cy={5.5} r={3.4} fill={fill} stroke={ink} strokeWidth={1} />
+              <rect x={30.4} y={8.6} width={3.2} height={3.6} fill={ink} />
+            </>,
+          )
         ),
       };
     case "dreadlocks": {
@@ -264,14 +333,14 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
       // Combed straight back off a high forehead; the comb lines run back over the crown.
       return {
         back: falls ? [hairBack(15, fallBottom, fill, ink)] : [],
-        hang: [],
+        hang: sideLocks(),
         cap: <g className="avatar-hair">{sleek("C39,15.5 25,15.5")}{line("comb", "M26,16.5 Q25,13 27,10.5 M32,15.5 Q31.5,12 32,9.5 M38,16.5 Q39,13 37,10.5", 0.7)}</g>,
       };
     case "brushed":
       // Neatly brushed with a side parting, the fringe swept across.
       return {
         back: falls ? [hairBack(15, fallBottom, fill, ink)] : [],
-        hang: [],
+        hang: sideLocks(),
         cap: <g className="avatar-hair">{sleek("C41,23 27,17")}{line("parting", "M25.5,12 Q24.5,15 23.5,18.5", 0.9)}</g>,
       };
     case "voluminous":
@@ -288,7 +357,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
       }
       return {
         back: falls ? [hairBack(15 * v * (params.hair === "waist-length" ? 1.1 : 1), fallBottom, fill, ink)] : [],
-        hang: [],
+        hang: sideLocks(),
         cap: hairCap(texture, v, fill, ink, params.hair === "cropped"),
       };
   }

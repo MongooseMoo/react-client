@@ -132,6 +132,37 @@ describe("AvatarPortrait", () => {
     }
   });
 
+  it("keeps the hair's texture on tied styles: curls, coils or waves on the cap of a ponytail, braids, bun or topknot", () => {
+    const tied = (style: string, texture: string) =>
+      draw({ skin: { hex: "#d7bd96" }, hair: { length_cm: 50, texture, style, hex: "#1b1612" } }).querySelector("svg") as SVGSVGElement;
+    for (const style of ["ponytail", "braided", "bun", "topknot"]) {
+      expect(tied(style, "straight").querySelector(".avatar-hair-texture"), style).toBeNull();
+      const drawings = ["straight", "wavy", "curly", "coily"].map((texture) => tied(style, texture).innerHTML);
+      expect(new Set(drawings).size, style).toBe(4);
+      for (const texture of ["wavy", "curly", "coily"]) expect(tied(style, texture).querySelector(".avatar-hair-texture"), `${style} ${texture}`).not.toBeNull();
+    }
+  });
+
+  it("shows where chin- and shoulder-length hair ends beside a very long dark beard: locks beside the face, clear of the beard", () => {
+    const tip = (length_cm: number) => {
+      const svg = draw({ skin: { hex: "#d7bd96" }, hair: { length_cm, texture: "straight", hex: "#1b1612" }, facial_hair: { kind: "beard", length_cm: 40, hex: "#1b1612" } }).querySelector("svg") as SVGSVGElement;
+      // The hanging locks: hair drawn after the shoulders, before the head.
+      const shoulders = svg.querySelector('.avatar-garment');
+      const after = [...svg.querySelectorAll("path.avatar-hair")].filter((el) => shoulders && shoulders.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+      const locks = after.filter((el) => /^M(15\.4|48\.6),27 /.test(el.getAttribute("d") ?? ""));
+      expect(locks, String(length_cm)).toHaveLength(2);
+      const numbers = (d: string) => [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+      for (const lock of locks) {
+        // Beside the face, never over the beard (x 19.5 to 44.5).
+        for (const [x] of numbers(lock.getAttribute("d") ?? "")) expect(x < 19.5 || x > 44.5, String(length_cm)).toBe(true);
+      }
+      return Math.max(...locks.flatMap((lock) => numbers(lock.getAttribute("d") ?? "").map(([, y]) => y)));
+    };
+    // Chin-length ends at the jaw, above the shoulders; shoulder-length 6 lower, on them.
+    expect(tip(30) - tip(18)).toBeGreaterThanOrEqual(5);
+    expect(tip(18)).toBeLessThan(45);
+  });
+
   it("hangs earrings on the earlobe and keeps a cheek scar clear of glasses", () => {
     const earrings = draw({ skin: { hex: "#d7bd96" }, features: ["earrings"] }).querySelectorAll(".avatar-feature circle");
     // The ear is an ellipse at cy 30 with ry 4: each ring's centre is on it.
