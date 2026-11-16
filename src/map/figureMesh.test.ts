@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { contrast, INK_DARK, INK_LIGHT, MIN_CONTRAST, overlayHex } from "../avatar/colour";
 import { figureParams, HORN_TONE, STUBBLE_OPACITY } from "../avatar/figure";
-import { BAND_HEIGHT, EYE_WHITE, figureGeometry, figureParts, HAIRLINE_WIDTH } from "./figureMesh";
+import { BAND_HEIGHT, CAP_LEAN, EYE_WHITE, figureGeometry, figureParts, HAIRLINE_WIDTH } from "./figureMesh";
 
 /** A standing figure's parameters (in its own frame: facing +y, z up) and its head's measurements. */
 const standing = (appearance: Record<string, unknown>) => {
@@ -34,7 +34,7 @@ function lineWidth(part: { geometry: THREE.BufferGeometry }, seam: "hairline" | 
     const at = (i: number) => new THREE.Vector3().fromBufferAttribute(positions, i);
     return Math.max(...Array.from({ length: half }, (_, i) => at(i).distanceTo(at(i + half))));
   }
-  const axis = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(Math.PI / 2 + 0.5, 0, 0));
+  const axis = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(Math.PI / 2 + CAP_LEAN, 0, 0));
   const along: number[] = [];
   for (let i = 0; i < positions.count; i++) along.push(new THREE.Vector3().fromBufferAttribute(positions, i).dot(axis));
   return Math.max(...along) - Math.min(...along);
@@ -110,6 +110,20 @@ describe("seam bands", () => {
     const collar = vertices(p, "band").filter((v) => v.z > neckBase - 0.02);
     expect(collar.length).toBeGreaterThan(0);
     expect(Math.min(...collar.map((v) => v.z))).toBeGreaterThan(neckBase + p.limbRadius * 0.15);
+  });
+
+  it("draws the collar line on a dark neck in a tone of the clothing, never a white or black ring", () => {
+    // No garments: the neutral clothing, under 3:1 against the darkest skins, so the neck seam is outlined.
+    for (const skin of ["#292420", "#3a312a", "#604134"]) {
+      const { p } = standing({ skin: { hex: skin } });
+      expect(p.outlined, skin).toContain("neck");
+      const neckBase = p.height - p.headHeight - 0.045 * p.height;
+      const collars = figureParts(p).filter((x) => x.name === "band" && new THREE.Box3().setFromBufferAttribute(x.geometry.getAttribute("position") as THREE.BufferAttribute).min.z > neckBase - 0.02);
+      expect(collars.length, skin).toBe(1);
+      expect([INK_DARK, INK_LIGHT], skin).not.toContain(collars[0].colour);
+      expect(collars[0].colour, skin).toBe(p.colours.collarEdge);
+      expect(contrast(collars[0].colour, skin), skin).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    }
   });
 });
 
@@ -384,6 +398,50 @@ describe("figure face", () => {
           const found = parts.filter((x) => x.name === name);
           expect(found.length).toBeGreaterThan(0);
           for (const part of found) expect(contrast(part.colour, skin), `${skin} ${hair} ${name}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+        }
+      }
+    }
+  });
+
+  it("sets the brows clear below the hair's front edge and its hairline line, above the eyes, on every texture and on short fringes", () => {
+    for (const skin of SKINS) {
+      for (const [length_cm, texture, style] of [[3, "straight", "loose"], [5, "straight", "loose"], [10, "straight", "loose"], [10, "wavy", "loose"], [10, "curly", "loose"], [10, "coily", "loose"], [5, "straight", "brushed"], [13, "straight", "swept_back"], [30, "straight", "bun"]] as const) {
+        const { p, headR, headZ } = standing({ skin: { hex: skin }, eyes: { hex: "#5b3a1e" }, hair: { length_cm, texture, style, hex: "#1b1612" } });
+        const label = `${skin} ${length_cm} cm ${texture} ${style}`;
+        const brows = vertices(p, "brow");
+        const browTop = Math.max(...brows.map((v) => v.z));
+        // Above the eyes (their tops at 0.22 head radii over the head's centre).
+        expect(Math.min(...brows.map((v) => v.z)), label).toBeGreaterThan(headZ + headR * 0.22);
+        // In front of the brows (x within their span), the cap's lowest point and the hairline line's lowest point stand
+        // clear above the brows' top by at least the brow's own thickness, so the brows read as their own strokes.
+        const front = (name: string) => vertices(p, name).filter((v) => v.y > headR * 0.5 && Math.abs(v.x) > headR * 0.14 && Math.abs(v.x) < headR * 0.5);
+        for (const name of ["cap", "hairline"]) {
+          const edge = front(name);
+          if (name === "hairline" && !p.outlined.includes("hairline")) continue;
+          expect(edge.length, `${label} ${name}`).toBeGreaterThan(0);
+          expect(Math.min(...edge.map((v) => v.z)) - browTop, `${label} ${name}`).toBeGreaterThan(headR * 0.09);
+        }
+      }
+    }
+  });
+
+  it("gives a beard of the skin's own darkness a surface that stands off the skin: strands shaded toward a 3:1 tone of the beard", () => {
+    for (const [skin, hair] of [["#292420", "#1b1612"], ["#3a312a", "#1b1612"], ["#f6ede4", "#eeeeea"]]) {
+      for (const length_cm of [2, 10, 40]) {
+        const { p } = standing({ skin: { hex: skin }, hair: { length_cm: 10, hex: hair }, facial_hair: { kind: "beard", length_cm, hex: hair } });
+        const label = `${skin} ${hair} ${length_cm} cm`;
+        const beards = figureParts(p).filter((x) => x.name === "beard");
+        expect(beards.length, label).toBeGreaterThan(0);
+        for (const beard of beards) {
+          // Its own colour, shaded toward the beard's tone off the skin (the same family: a grey of black, a grey of white).
+          expect(beard.colour, label).toBe(hair);
+          expect(beard.tone, label).toBe(p.colours.facialHairEdge);
+          expect(contrast(beard.tone as string, skin), label).toBeGreaterThanOrEqual(MIN_CONTRAST);
+          const shade = [...(beard.shade ?? [])];
+          expect(shade.length, label).toBe(beard.geometry.getAttribute("position").count);
+          // Strands: some of the surface reaches the tone, some stays the beard's colour.
+          expect(shade.filter((t) => t >= 0.9).length / shade.length, label).toBeGreaterThan(0.3);
+          expect(Math.min(...shade), label).toBeLessThan(0.3);
         }
       }
     }

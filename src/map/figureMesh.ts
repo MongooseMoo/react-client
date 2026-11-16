@@ -40,7 +40,7 @@ const BAND_OUT = 1.03;
  */
 export const HAIRLINE_WIDTH = 0.005;
 /** How far the hair or head-covering cap leans back from upright, radians. */
-const CAP_LEAN = 0.5;
+export const CAP_LEAN = 0.66;
 
 function placed(geometry: THREE.BufferGeometry, colour: string, at: THREE.Vector3, rotation?: THREE.Euler, scale?: THREE.Vector3): Part {
   const m = new THREE.Matrix4().compose(at, new THREE.Quaternion().setFromEuler(rotation ?? new THREE.Euler()), scale ?? new THREE.Vector3(1, 1, 1));
@@ -108,6 +108,17 @@ const SHEEN_ON_PEAKS = 0.75;
 function sheened(part: Part, bumps: Float32Array | undefined, sheen: string | undefined): Part {
   if (!bumps || !sheen) return part;
   return { ...part, shade: bumps.map((b) => SHEEN_ON_PEAKS * b * b), tone: sheen };
+}
+
+/**
+ * A beard's strands: every other column of its vertices (a geometry laid out in rows of `columns` vertices, as a
+ * sphere strip or an open cone is) goes all the way to the beard's tone off the skin, the rest stay near the beard's
+ * colour. A beard of the skin's own darkness, one flat colour, showed only its thin edge line, a chin strap.
+ */
+function strands(count: number, columns: number): Float32Array {
+  const shade = new Float32Array(count);
+  for (let i = 0; i < count; i++) shade[i] = (i % columns) % 2 ? 1 : 0.15;
+  return shade;
 }
 
 /** Stubble's stipple: points across the face and up it (about 50 shown after those round the back are left out). */
@@ -417,7 +428,8 @@ export function figureParts(p: FigureParams): Part[] {
   out.push(trunk(neckBase - 0.01, headCentreZ - headR * 0.6, neckR, neckR, 1, c.neck));
   // Just above the torso's top and the shoulder bar (which rises 0.15 limb radii over the neck's base), so it shows.
   const collarZ = neckBase + p.limbRadius * 0.15 + BAND_HEIGHT;
-  if (outlined.has("neck")) out.push(named(band(0, 0, collarZ, neckR * BAND_OUT, 1, c.ink), "band"));
+  // In the clothing's tone off the neck (`collarEdge`): in the ink, a dark neck over dark clothing wore a white ring.
+  if (outlined.has("neck")) out.push(named(band(0, 0, collarZ, neckR * BAND_OUT, 1, c.collarEdge), "band"));
   const headScale = new THREE.Vector3(0.84, 0.95, 1);
   out.push(ball(new THREE.Vector3(0, 0, headCentreZ), headR, c.skin, headScale, 14));
   // Nose: which way the person faces.
@@ -443,10 +455,10 @@ export function figureParts(p: FigureParams): Part[] {
       // A brow over each eye, in the hair colour toned off the skin (`brow`), as in the portrait, following the face.
       const inner = side * headR * 0.16;
       const outer = side * headR * 0.48;
-      const bz = headR * 0.3;
+      const bz = headR * 0.285;
       const brow = c.brow;
       const browInner = new THREE.Vector3(inner, faceY(inner, bz), headCentreZ + bz);
-      const browOuter = new THREE.Vector3(outer, faceY(outer, bz - headR * 0.03), headCentreZ + bz - headR * 0.03);
+      const browOuter = new THREE.Vector3(outer, faceY(outer, bz - headR * 0.015), headCentreZ + bz - headR * 0.015);
       out.push(named(stroke(browInner, browOuter, headR * 0.045, brow), "brow"));
     }
     // The mouth: a shallow smile across the lower face, in the face ink.
@@ -483,7 +495,11 @@ export function figureParts(p: FigureParams): Part[] {
     // Centred on the head: shifting it back let the forehead show through the cap's front.
     const capAt = new THREE.Vector3(0, 0, headCentreZ);
     const capTurn = new THREE.Euler(Math.PI / 2 + CAP_LEAN + (style === "swept_back" ? 0.3 : 0), 0, 0);
-    const capScale = new THREE.Vector3(headScale.x * v, v, headScale.y * v);
+    // The cap's own depth axis, once turned, points down and back; it takes the head's extent along that direction,
+    // so a cap leaning far enough back to clear the brows still covers the head behind.
+    const depth = new THREE.Vector3(0, 0, 1).applyEuler(capTurn);
+    const depthExtent = 1 / Math.hypot(depth.x / headScale.x, depth.y / headScale.y, depth.z / headScale.z);
+    const capScale = new THREE.Vector3(headScale.x * v, v, depthExtent * v);
     const capColour = shaved ? overlayHex(c.skin, c.head, STUBBLE_OPACITY) : c.head;
     const capPart = named(placed(cap, capColour, capAt, capTurn, capScale), "cap");
     if (!p.headCovered) out.push(sheened(capPart, textured(capPart.geometry, () => capAt, capTexture, headR), c.hairSheen));
@@ -574,7 +590,11 @@ export function figureParts(p: FigureParams): Part[] {
       // Beard and stubble cover the cheeks and the chin, not only the jaw's underside, which from a camera above
       // read as a chin strap: the area's upper edge (`beardTop`) is under the mouth in front, rises over the
       // cheeks and up in front of each ear, and comes back down behind the jaw.
-      out.push(named({ geometry: toHead(sphereStrip(headR, 20, 6, front - jawSpan / 2, jawSpan, () => 0, beardTop), k, drop), colour }, full ? "beard" : "stubble"));
+      const across = 20;
+      const area = toHead(sphereStrip(headR, across, 6, front - jawSpan / 2, jawSpan, () => 0, beardTop), k, drop);
+      // A beard's strands are shaded toward its tone off the skin (`facialHairEdge`, the beard itself when it already stands off).
+      const strandsOf = (g: THREE.BufferGeometry, columns: number) => (c.facialHairEdge ? { shade: strands(g.getAttribute("position").count, columns), tone: c.facialHairEdge } : {});
+      out.push(named({ geometry: area, colour, ...(full ? strandsOf(area, across + 1) : {}) }, full ? "beard" : "stubble"));
       if (full && outlined.has("jawline")) {
         // Along that edge, just inside it, a thin line in the beard's tone off the skin.
         const band = HAIRLINE_WIDTH / headR;
@@ -612,7 +632,8 @@ export function figureParts(p: FigureParams): Part[] {
         const top = new THREE.Vector3(0, headR * 0.75, chinZ + headR * 0.6);
         // It lies on the chest: the torso's top reaches 0.92 x 0.55 of the shoulder half width forward.
         const end = new THREE.Vector3(0, p.shoulderHalf * 0.92 * 0.55 + headR * 0.3, chinZ - hang);
-        const cone = new THREE.ConeGeometry(headR * 0.62, top.distanceTo(end), 10, 1, true);
+        const segments = 10;
+        const cone = new THREE.ConeGeometry(headR * 0.62, top.distanceTo(end), segments, 1, true);
         // A cone points along +y, its wide end at -y: turn it to point from the jaw down to the end, flattened front to back.
         cone.scale(1, 1, 0.4);
         cone.applyMatrix4(
@@ -622,7 +643,9 @@ export function figureParts(p: FigureParams): Part[] {
             new THREE.Vector3(1, 1, 1),
           ),
         );
-        out.push(named({ geometry: twoSided(cone), colour: fh }, "beard"));
+        // Both sides keep the cone's layout (rows of segments + 1 vertices), so the strands line up on each.
+        const hanging = twoSided(cone);
+        out.push(named({ geometry: hanging, colour: fh, ...strandsOf(hanging, segments + 1) }, "beard"));
       }
     } else if (p.facialHair === "goatee") {
       out.push(named(shell(0.75, front, 0.9, 1.1, fh, 1.08), "beard"));
