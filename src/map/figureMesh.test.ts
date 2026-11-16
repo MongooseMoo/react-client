@@ -27,8 +27,14 @@ function vertices(p: ReturnType<typeof figureParams>, name: string): THREE.Vecto
  * upright by the cap's tilt, for the hairline; straight up for a beard's edge).
  */
 function lineWidth(part: { geometry: THREE.BufferGeometry }, seam: "hairline" | "jawline"): number {
-  const axis = seam === "hairline" ? new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(Math.PI / 2 + 0.5, 0, 0)) : new THREE.Vector3(0, 0, 1);
   const positions = part.geometry.getAttribute("position");
+  if (seam === "jawline") {
+    // The beard's edge follows the beard's rising edge: two rows of points, the line's width the widest gap between them.
+    const half = positions.count / 2;
+    const at = (i: number) => new THREE.Vector3().fromBufferAttribute(positions, i);
+    return Math.max(...Array.from({ length: half }, (_, i) => at(i).distanceTo(at(i + half))));
+  }
+  const axis = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(Math.PI / 2 + 0.5, 0, 0));
   const along: number[] = [];
   for (let i = 0; i < positions.count; i++) along.push(new THREE.Vector3().fromBufferAttribute(positions, i).dot(axis));
   return Math.max(...along) - Math.min(...along);
@@ -244,8 +250,40 @@ describe("figure face", () => {
     const part = figureParts(p).find((x) => x.name === "stubble");
     expect(part?.colour).toBe(overlayHex("#d7bd96", "#7d7d7d", STUBBLE_OPACITY));
     expect(p.outlined).not.toContain("jawline");
-    // Nothing of it reaches the mouth or above.
-    expect(Math.max(...stubble.map((v) => v.z))).toBeLessThan(Math.min(...vertices(p, "mouth").map((v) => v.z)));
+    // Nothing of it covers the mouth: in front of the mouth it stays below it.
+    const underMouth = stubble.filter((v) => Math.abs(v.x) < 0.3 * headR && v.y > 0.5 * headR);
+    expect(underMouth.length).toBeGreaterThan(0);
+    expect(Math.max(...underMouth.map((v) => v.z))).toBeLessThan(Math.min(...vertices(p, "mouth").map((v) => v.z)));
+  });
+
+  /** Vertices of `name` on the cheek beside the mouth, above the mouth's level: what a beard on the jaw's underside lacked. */
+  const onCheek = (p: ReturnType<typeof figureParams>, name: string, headR: number, headZ: number) =>
+    vertices(p, name).filter((v) => v.y > 0.4 * headR && Math.abs(v.x) > 0.35 * headR && Math.abs(v.x) < 0.65 * headR && v.z > headZ - 0.35 * headR);
+
+  it("covers the cheeks and the chin with a short beard and with stubble, not only the jaw's underside", () => {
+    for (const skin of ["#292420", "#d7bd96", "#f6ede4"]) {
+      const short = standing({ skin: { hex: skin }, facial_hair: { kind: "beard", length_cm: 2, hex: "#1b1612" } });
+      const stubble = standing({ skin: { hex: skin }, facial_hair: { kind: "stubble", hex: "#1b1612" } });
+      for (const [{ p, headR, headZ }, name] of [[short, "beard"], [stubble, "stubble"]] as const) {
+        for (const side of [-1, 1]) expect(onCheek(p, name, headR, headZ).filter((v) => Math.sign(v.x) === side).length, `${skin} ${name}`).toBeGreaterThan(0);
+        // And round the chin.
+        expect(Math.min(...vertices(p, name).map((v) => v.z)), `${skin} ${name}`).toBeLessThan(headZ - 0.95 * headR);
+      }
+    }
+  });
+
+  it("stipples stubble with points that stand 3:1 off the skin, on dark and light skin", () => {
+    for (const [skin, hair] of [["#292420", "#1b1612"], ["#f6ede4", "#1b1612"], ["#d7bd96", "#653700"], ["#d7bd96", "#7d7d7d"]]) {
+      const { p, headR, headZ } = standing({ skin: { hex: skin }, facial_hair: { kind: "stubble", hex: hair } });
+      const dots = figureParts(p).filter((x) => x.name === "stubble-dot");
+      expect(dots.length, skin).toBeGreaterThan(30);
+      for (const dot of dots) expect(contrast(dot.colour, skin), `${skin} ${hair}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      // On the face: in front of the ears and below the eyes.
+      for (const v of vertices(p, "stubble-dot")) {
+        expect(v.y, skin).toBeGreaterThan(0);
+        expect(v.z, skin).toBeLessThan(headZ + 0.25 * headR);
+      }
+    }
   });
 
   // The darkest and palest palette skins, with black, brown, blonde and white hair and a full beard of the same colour.

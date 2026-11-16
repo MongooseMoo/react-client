@@ -298,14 +298,65 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
  * The beard: along the jaw from ear to ear, its lower edge below the chin by its length
  * (`FigureParams.beardReach`), narrowing to a point as it grows long. Without a length, the jaw-line beard.
  */
-function beardPath(reach: number | undefined): string {
-  const upper = "C43,38 38,41 32,41 C26,41 21,38 19.5,30 Z";
-  if (reach === undefined) return `M19.5,30 C19,47 45,47 44.5,30 ${upper}`;
+function beardPath(reach: number | undefined, lengthCm: number | undefined, shape: string): string {
+  if (reach === undefined || lengthCm === undefined) return `M19.5,30 C19,47 45,47 44.5,30 C43,38 38,41 32,41 C26,41 21,38 19.5,30 Z`;
+  // A beard covers the cheeks and the chin: its upper edge runs from the sideburn in front of each ear down over the
+  // cheek to beside the mouth and under the lower lip. Drawn as the jaw alone, a short beard read as a jaw outline.
+  const upper = `L44.5,${CHEEK_TOP} ${BEARD_UPPER} L19.5,30 Z`;
+  if (lengthCm < 15) {
+    // Short and full beards follow the face's own jaw, standing out from it by their length, so an angular chin
+    // stays angular: 0.8 at 2 to 3 cm, rising to 3 at 6 cm.
+    const g = 0.8 + 2.2 * Math.min(1, Math.max(0, (lengthCm - 3) / 3));
+    return `M19.5,30 ${jawEdge(shape, g)} ${upper}`;
+  }
   // The curve's lowest point is a quarter of the way from its ends (y 30) to its control points.
   const bottom = 41.5 + 21.5 * reach;
   const control = (bottom - 0.25 * 30) / 0.75;
   const inset = 8 * Math.max(0, (reach - 0.3) / 0.7);
   return `M19.5,30 C${n(19 + inset)},${n(control)} ${n(45 - inset)},${n(control)} 44.5,30 ${upper}`;
+}
+
+/** How high a beard's upper edge is at `d` from the face's middle line (the lower lip at 0, the sideburns at 12.5), roughly. */
+function beardTopY(d: number): number {
+  const knots: Array<[number, number]> = [[0, 41.6], [6, 39.6], [8.5, 35.5], [11.5, 33], [12.5, 27]];
+  for (let i = 1; i < knots.length; i++) {
+    const [d0, y0] = knots[i - 1];
+    const [d1, y1] = knots[i];
+    if (d <= d1) return y0 + ((y1 - y0) * (d - d0)) / (d1 - d0);
+  }
+  return 27;
+}
+
+/** Where stubble's points are: a staggered grid kept inside its area (under the beard's upper edge, inside the jaw). */
+const STUBBLE_DOTS: ReadonlyArray<[number, number]> = (() => {
+  const out: Array<[number, number]> = [];
+  for (let row = 0; row < 10; row++) {
+    const y = 29.8 + row * 1.45;
+    for (let x = 20.3 + (row % 2) * 0.8; x <= 43.7; x += 1.6) {
+      const d = Math.abs(x - 32);
+      const jaw = 28 + 16 * Math.sqrt(Math.max(0, 1 - (d / 13) ** 2)) - 1;
+      if (y > beardTopY(d) + 0.6 && y < jaw) out.push([n(x), n(y)]);
+    }
+  }
+  return out;
+})();
+
+/** How high the beard and stubble reach at the sideburns, beside the ears. */
+const CHEEK_TOP = 27;
+/** The upper edge of a beard or stubble, from the right sideburn (44.5, CHEEK_TOP) to the left one: down the cheek, under the lip. */
+const BEARD_UPPER = `C43.5,33 40.5,35.5 38,39.6 Q32,43.6 26,39.6 C23.5,35.5 20.5,33 19.5,${CHEEK_TOP}`;
+
+/**
+ * The lower edge of a beard that follows the jaw of `shape` (as `headShape` draws it), `g` further out, from the
+ * left of the face at y 30 to the right. Every shape but the angular one is a single curve, its lowest point at the
+ * chin plus `g` (a curve's lowest point is a quarter of the way from its ends to its control points).
+ */
+function jawEdge(shape: string, g: number): string {
+  if (shape === "angular") return `L${n(24 - g * 0.6)},${n(39 + g * 0.8)} L32,${n(44 + g)} L${n(40 + g * 0.6)},${n(39 + g * 0.8)} L44.5,30`;
+  if (shape === "square") return `L${n(19 - g * 0.3)},38 Q${n(19 - g * 0.3)},${n(44 + g)} 25,${n(44 + g)} L39,${n(44 + g)} Q${n(45 + g * 0.3)},${n(44 + g)} ${n(45 + g * 0.3)},38 L44.5,30`;
+  const chin = { round: 42.5, long: 45, heart: 44 }[shape] ?? 44;
+  const control = (chin + g - 7.5) / 0.75;
+  return `C19,${n(control)} 45,${n(control)} 44.5,30`;
 }
 
 export function portraitElements(appearance: unknown): React.ReactNode[] | null {
@@ -450,12 +501,22 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
     const fh = c.facialHair;
     // Facial hair's edge in its own tone off the skin: a black beard on dark skin was ringed in white, a chin strap.
     const edge = c.facialHairEdge ?? faceInk;
+    const shapeKey = vocabKey(face.shape) ?? "";
     if (fh) {
       const shapes: Record<string, React.ReactElement> = {
-        stubble: <path fill={fh} fillOpacity={STUBBLE_OPACITY} stroke="none" d="M20,33 C21,45 43,45 44,33 C41,41 23,41 20,33 Z" />,
+        // A shadow over the cheeks and chin, and a stipple of short hairs in the stubble's tone off the skin, which
+        // shows where the shadow alone barely changes dark skin.
+        stubble: (
+          <>
+            <path fill={fh} fillOpacity={STUBBLE_OPACITY} stroke="none" d={`M19.5,30 ${jawEdge(shapeKey, 0.3)} L44.5,${CHEEK_TOP} ${BEARD_UPPER} L19.5,30 Z`} />
+            {STUBBLE_DOTS.map(([x, y]) => (
+              <circle key={`${x},${y}`} className="avatar-stubble-dot" cx={x} cy={y} r={0.42} fill={edge} />
+            ))}
+          </>
+        ),
         moustache: <path fill={fh} stroke={edge} strokeWidth={0.8} d="M27,36 Q32,33.5 37,36 Q32,35.5 27,36 Z" />,
         goatee: <path fill={fh} stroke={edge} strokeWidth={0.8} d="M29,40 Q32,47 35,40 Q32,41.5 29,40 Z" />,
-        beard: <path fill={fh} stroke={edge} strokeWidth={0.8} d={beardPath(params.beardReach)} />,
+        beard: <path fill={fh} stroke={edge} strokeWidth={0.8} d={beardPath(params.beardReach, params.beardLength, shapeKey)} />,
       };
       parts.push(
         <g key="facial-hair" className="avatar-facial-hair">

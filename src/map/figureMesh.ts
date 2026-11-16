@@ -92,6 +92,57 @@ function textured(
   g.computeVertexNormals();
 }
 
+/** Stubble's stipple: points across the face and up it (about 50 shown after those round the back are left out). */
+const STUBBLE_DOTS_ACROSS = 16;
+const STUBBLE_DOTS_UP = 4;
+
+const smooth = (x: number) => {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * How far up a beard or stubble reaches at azimuth `phi` round the head (π/2 the front), as radians from straight
+ * down: under the mouth in front (0.96), rising over the cheeks beside it, to the sideburns in front of each ear
+ * (1.75, a little above eye height there), and back down behind the jaw.
+ */
+export function beardTop(phi: number): number {
+  const off = Math.abs(phi - Math.PI / 2);
+  return 0.96 + 0.79 * smooth((off - 0.25) / 0.9) - 0.79 * smooth((off - 1.5) / 0.5);
+}
+
+/**
+ * A piece of a sphere of radius `r` laid out as THREE.SphereGeometry lays one out (its pole on +y, azimuth `phi`
+ * from `phiStart` across `phiLength`), whose polar extent runs from `from(phi)` to `to(phi)` at each azimuth, so its
+ * edges can follow a face's features rather than a circle.
+ */
+function sphereStrip(r: number, across: number, rows: number, phiStart: number, phiLength: number, from: (phi: number) => number, to: (phi: number) => number): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const index: number[] = [];
+  for (let iy = 0; iy <= rows; iy++) {
+    for (let ix = 0; ix <= across; ix++) {
+      const phi = phiStart + (phiLength * ix) / across;
+      const theta = from(phi) + ((to(phi) - from(phi)) * iy) / rows;
+      positions.push(-r * Math.cos(phi) * Math.sin(theta), r * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta));
+    }
+  }
+  const at = (ix: number, iy: number) => iy * (across + 1) + ix;
+  for (let iy = 0; iy < rows; iy++) {
+    for (let ix = 0; ix < across; ix++) {
+      const a = at(ix + 1, iy);
+      const b = at(ix, iy);
+      const c = at(ix, iy + 1);
+      const d = at(ix + 1, iy + 1);
+      index.push(a, b, d, b, c, d);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  return g;
+}
+
 /** The geometry and its back faces, so an open surface (hair falling behind the neck) is seen from inside too. */
 function twoSided(g: THREE.BufferGeometry): THREE.BufferGeometry {
   const back = g.clone();
@@ -469,8 +520,7 @@ export function figureParts(p: FigureParams): Part[] {
       return { geometry: toHead(g, k, drop), colour: c.facialHairEdge ?? c.ink };
     };
     const front = Math.PI / 2;
-    // Below the mouth (which sits at -0.45 to -0.49 head radii), across the jaw from ear to ear.
-    const jawReach = 0.96;
+    // Across the jaw from behind one ear to behind the other.
     const jawSpan = 4.0;
     if (p.facialHair === "beard" || p.facialHair === "stubble") {
       const full = p.facialHair === "beard";
@@ -480,11 +530,37 @@ export function figureParts(p: FigureParams): Part[] {
       const drop = full ? 1 + thick : 1;
       // Stubble is a shadow on the skin: its colour laid over the skin, as the portrait draws it.
       const colour = full ? fh : overlayHex(c.skin, fh, STUBBLE_OPACITY);
-      out.push(named(shell(jawReach, front, jawSpan, k, colour, drop), full ? "beard" : "stubble"));
-      // A full beard runs up the side of the face in front of each ear; on stubble that strip read as a pale patch.
-      // The strip is narrow (0.35 rad), so four facets across it are enough.
-      for (const side of full ? [-1, 1] : []) out.push(named(shell(1.75, front + side * 1.3, 0.35, k - 0.006, colour, drop, 4), "beard"));
-      if (full && outlined.has("jawline")) out.push(named(shellEdge(jawReach, front, jawSpan, k, drop), "jawline"));
+      // Beard and stubble cover the cheeks and the chin, not only the jaw's underside, which from a camera above
+      // read as a chin strap: the area's upper edge (`beardTop`) is under the mouth in front, rises over the
+      // cheeks and up in front of each ear, and comes back down behind the jaw.
+      out.push(named({ geometry: toHead(sphereStrip(headR, 20, 6, front - jawSpan / 2, jawSpan, () => 0, beardTop), k, drop), colour }, full ? "beard" : "stubble"));
+      if (full && outlined.has("jawline")) {
+        // Along that edge, just inside it, a thin line in the beard's tone off the skin.
+        const band = HAIRLINE_WIDTH / headR;
+        const edge = sphereStrip(headR * 1.006, 20, 1, front - jawSpan / 2, jawSpan, (phi) => beardTop(phi) - band, beardTop);
+        out.push(named({ geometry: toHead(edge, k, drop), colour: c.facialHairEdge ?? c.ink }, "jawline"));
+      }
+      if (!full) {
+        // Stubble is also a stipple of short hairs, in its colour toned off the skin (`facialHairEdge`): a shadow
+        // alone barely changes dark skin. Small four-sided points, set on a jittered grid over the area.
+        const dot = c.facialHairEdge ?? fh;
+        const r = headR * 0.028;
+        for (let i = 0; i < STUBBLE_DOTS_ACROSS; i++) {
+          for (let j = 0; j < STUBBLE_DOTS_UP; j++) {
+            const jitter = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453;
+            const u = (i + 0.5 + 0.35 * Math.sin(jitter)) / STUBBLE_DOTS_ACROSS;
+            const phi = front - jawSpan / 2 + jawSpan * u;
+            // Only where the face shows, not round the back of the jaw.
+            if (Math.abs(phi - front) > 1.45) continue;
+            const theta = beardTop(phi) * (j + 0.5 + 0.3 * Math.cos(jitter)) / (STUBBLE_DOTS_UP + 0.3);
+            const at = new THREE.Vector3(-Math.cos(phi) * Math.sin(theta), Math.cos(theta), Math.sin(phi) * Math.sin(theta)).multiplyScalar(headR * 1.02);
+            const g = new THREE.OctahedronGeometry(r, 0);
+            g.setIndex([...Array(g.getAttribute("position").count).keys()]);
+            g.translate(at.x, at.y, at.z);
+            out.push(named({ geometry: toHead(g, 1, 1), colour: dot }, "stubble-dot"));
+          }
+        }
+      }
       // A beard longer than a full one hangs below the chin over the chest, narrowing to its end:
       // a cone from under the jaw, its length the beard's beyond 10 cm (at most a third of the height).
       if (full && p.beardLength !== undefined && p.beardLength > 10) {

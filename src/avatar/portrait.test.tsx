@@ -109,6 +109,29 @@ describe("AvatarPortrait", () => {
     }
   });
 
+  it("draws a short beard over the cheeks and chin, following the jaw, and stubble as a shadow with visible hairs on any skin", () => {
+    /** The y of every point a path names (ends and controls). */
+    const ys = (d: string) => [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => Number(m[2]));
+    for (const skin of ["#292420", "#d7bd96", "#f6ede4"]) {
+      for (const length_cm of [2, 3]) {
+        for (const shape of ["oval", "angular", "square"]) {
+          const d = draw({ skin: { hex: skin }, face: { shape }, facial_hair: { kind: "beard", length_cm, hex: "#1b1612" } }).querySelector(".avatar-facial-hair path")?.getAttribute("d") ?? "";
+          // It reaches up the cheeks to the sideburns (y 27), where the jaw-line band stopped at y 30.
+          expect(Math.min(...ys(d)), `${skin} ${length_cm} ${shape}`).toBeLessThanOrEqual(27);
+          // And down over the chin, at most 1 below it.
+          expect(Math.max(...ys(d)), `${skin} ${length_cm} ${shape}`).toBeGreaterThan(44);
+        }
+        // An angular face keeps its pointed chin under a short beard: a corner at the chin, not a curve rounding it.
+        const angular = draw({ skin: { hex: skin }, face: { shape: "angular" }, facial_hair: { kind: "beard", length_cm, hex: "#1b1612" } });
+        expect(angular.querySelector(".avatar-facial-hair path")?.getAttribute("d")).toMatch(/L32,44\.8 /);
+      }
+      const stubble = draw({ skin: { hex: skin }, facial_hair: { kind: "stubble", hex: "#1b1612" } });
+      const dots = stubble.querySelectorAll(".avatar-stubble-dot");
+      expect(dots.length, skin).toBeGreaterThan(14);
+      for (const dot of dots) expect(contrast(dot.getAttribute("fill") ?? "", skin), skin).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    }
+  });
+
   it("hangs earrings on the earlobe and keeps a cheek scar clear of glasses", () => {
     const earrings = draw({ skin: { hex: "#d7bd96" }, features: ["earrings"] }).querySelectorAll(".avatar-feature circle");
     // The ear is an ellipse at cy 30 with ry 4: each ring's centre is on it.
