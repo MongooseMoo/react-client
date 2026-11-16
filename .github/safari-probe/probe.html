@@ -17,6 +17,19 @@ const FILES = [
   ["chatmud/spongebob-wav.m4a", 44100],
   ["destruction/glass/window-broken.m4a", 44100],
 ];
+// probe.html?list=NAME probes the files of that tab-separated list in this
+// directory instead: a header line, then one file per line with its path and
+// sample rate in the first two columns. Files are fetched one at a time.
+async function filesToProbe() {
+  const list = new URLSearchParams(location.search).get("list");
+  if (!list) return FILES;
+  const resp = await fetch(list, {cache: "no-store"});
+  if (!resp.ok) throw new Error("HTTP " + resp.status + " fetching " + list);
+  return (await resp.text()).trim().split("\n").slice(1).map((line) => {
+    const columns = line.split("\t");
+    return [columns[0], Number(columns[1])];
+  });
+}
 async function probe([path, rate]) {
   const resp = await fetch("https://mongoose.world/sounds/" + path, {cache: "no-store"});
   if (!resp.ok) throw new Error("HTTP " + resp.status + " fetching the file");
@@ -29,7 +42,7 @@ async function probe([path, rate]) {
 }
 (async () => {
   const out = {userAgent: navigator.userAgent, results: []};
-  for (const f of FILES) {
+  for (const f of await filesToProbe()) {
     try { out.results.push(await probe(f)); }
     catch (e) { out.results.push({path: f[0], error: e.name + ": " + e.message}); }
   }

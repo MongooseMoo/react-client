@@ -1,5 +1,6 @@
 """Opens probe.html in Safari through safaridriver (WebDriver over HTTP, stdlib only)
-and waits up to 120 s for serve.py to write the result to argv[1]. CI runner only."""
+and waits up to 120 s for serve.py to write the result to argv[1]. With a list
+file name in argv[2] the page probes that list's files and gets 600 s. CI runner only."""
 import json
 import pathlib
 import subprocess
@@ -8,6 +9,7 @@ import time
 import urllib.request
 
 out = pathlib.Path(sys.argv[1])
+listed = sys.argv[2] if len(sys.argv) > 2 else ""
 drv = subprocess.Popen(["/usr/bin/safaridriver", "-p", "4444"])
 time.sleep(3)
 
@@ -23,8 +25,9 @@ def call(method, path, body=None):
 
 
 sid = call("POST", "/session", {"capabilities": {"alwaysMatch": {"browserName": "safari"}}})["value"]["sessionId"]
-call("POST", f"/session/{sid}/url", {"url": "http://127.0.0.1:8000/probe.html"})
-deadline = time.time() + 120
+page = "http://127.0.0.1:8000/probe.html" + (f"?list={listed}" if listed else "")
+call("POST", f"/session/{sid}/url", {"url": page})
+deadline = time.time() + (600 if listed else 120)
 while not out.exists() and time.time() < deadline:
     time.sleep(1)
 call("DELETE", f"/session/{sid}")
