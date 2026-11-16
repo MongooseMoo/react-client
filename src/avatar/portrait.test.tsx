@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "./characters.fixture";
 import { contrast, INK_LIGHT, MIN_CONTRAST } from "./colour";
 import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "./figure";
-import AvatarPortrait, { PORTRAIT_BACKDROP } from "./portrait";
+import AvatarPortrait, { HEAD_VIEWBOX, PORTRAIT_BACKDROP } from "./portrait";
 
 const draw = (appearance: unknown) => render(<AvatarPortrait appearance={appearance} />).container;
 
@@ -125,6 +125,17 @@ describe("AvatarPortrait", () => {
     const svg = draw({ hair: { length_cm: 75, hex: "#a33a1f" }, eyes: { hex: "#4f7a3a" } }).querySelector("svg") as SVGSVGElement;
     expect(svg.querySelector(".avatar-skin")?.getAttribute("fill")).toBe(NEUTRAL_SKIN);
     expect(svg.querySelector('path.avatar-garment[d^="M"]')?.getAttribute("fill")).toBe(NEUTRAL_CLOTHING);
+  });
+
+  it("shows the head alone at list size, so the face has room, and the whole picture from 48 px", () => {
+    const at = (size: number) => render(<AvatarPortrait appearance={TEST_CHARACTERS[0].appearance} size={size} />).container.querySelector("svg");
+    expect(at(32)?.getAttribute("viewBox")).toBe(HEAD_VIEWBOX);
+    expect(at(32)?.classList.contains("avatar-portrait-head")).toBe(true);
+    expect(at(48)?.getAttribute("viewBox")).toBe("0 0 64 64");
+    // The crop holds the whole head: eyes at y 28 and the mouth at y 38 to 40, within 5 to 45.
+    const [, y0, , h] = HEAD_VIEWBOX.split(" ").map(Number);
+    expect(y0).toBeLessThan(20);
+    expect(y0 + h).toBeGreaterThan(42);
   });
 
   it("differs between characters", () => {

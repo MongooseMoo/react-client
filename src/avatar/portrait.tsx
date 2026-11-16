@@ -279,13 +279,21 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
   return parts;
 }
 
+/** Below this many CSS pixels the portrait shows the head alone, so the face has room to read. */
+export const HEAD_CROP_BELOW = 48;
+/** The head and the top of the shoulders, in the drawing's 64-unit square. */
+export const HEAD_VIEWBOX = "12 5 40 40";
+
 export const AvatarPortrait: React.FC<PortraitProps> = ({ appearance, size = 40, className }) => {
   const parts = portraitElements(appearance);
   if (!parts) return null;
+  // At the People list's 32 px the whole picture gives a face about 13 px; the head alone gives about 21.
+  const cropped = size < HEAD_CROP_BELOW;
   return (
     <svg
-      className={["avatar-portrait", className].filter(Boolean).join(" ")}
-      viewBox="0 0 64 64"
+      className={["avatar-portrait", cropped ? "avatar-portrait-head" : "", className].filter(Boolean).join(" ")}
+      viewBox={cropped ? HEAD_VIEWBOX : "0 0 64 64"}
+      style={cropped ? { borderRadius: "50%" } : undefined}
       width={size}
       height={size}
       aria-hidden="true"
