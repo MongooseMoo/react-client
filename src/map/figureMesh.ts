@@ -190,7 +190,8 @@ function cone(base: THREE.Vector3, dir: THREE.Vector3, radius: number, length: n
 function styleParts(p: FigureParams, style: FigureParams["hairStyle"], headCentreZ: number, headR: number, headScale: THREE.Vector3): Part[] {
   const s = p.height / 1.75;
   const hairColour = p.colours.head;
-  const hang = { none: 0, short: 0.08, medium: 0.2, long: 0.42 }[p.hair] * s;
+  const hang =
+    { none: 0, shaved: 0, cropped: 0.04, short: 0.08, "chin-length": 0.18, "shoulder-length": 0.28, long: 0.42, "waist-length": 0.58 }[p.hair] * s;
   // A point on the hair's surface (just outside the head ellipsoid) in direction (x, y, z) from the head's centre.
   const onHair = (x: number, y: number, z: number, out = 1.08) => {
     const d = new THREE.Vector3(x, y, z).normalize();
@@ -357,10 +358,16 @@ export function figureParts(p: FigureParams): Part[] {
   // Over the head: a head garment, or hair by its length and style.
   const style = p.headCovered ? "loose" : p.hairStyle;
   // Styles combed close to the head are smooth whatever the texture; a shaved mohawk side is a shadow on the skin.
-  const capTexture: HairTexture = style === "brushed" || style === "swept_back" || style === "mohawk" ? "straight" : p.hairTexture;
+  // A shaved head, like a mohawk's sides, is a shadow of the hair's colour on the scalp.
+  const shaved = !p.headCovered && (style === "mohawk" || p.hair === "shaved");
+  const capTexture: HairTexture = shaved || style === "brushed" || style === "swept_back" ? "straight" : p.hairTexture;
   if (p.headCovered || p.hair !== "none") {
-    // A little larger than the head all round, so the tilted cap's facets stay outside the head's.
-    const v = p.headCovered ? 1.06 : style === "mohawk" ? 1.04 : 1.05 * p.hairVolume * (style === "voluminous" ? 1.25 : 1);
+    // A little larger than the head all round, so the tilted cap's facets stay outside the head's; cropped hair lies closer.
+    const v = p.headCovered
+      ? 1.06
+      : shaved
+        ? 1.04
+        : (p.hair === "cropped" ? 1.035 : 1.05) * p.hairVolume * (style === "voluminous" ? 1.25 : 1);
     const capReach = Math.PI * 0.55;
     // Textured hair needs enough facets for its curls to show.
     const fine = !p.headCovered && capTexture !== "straight";
@@ -372,11 +379,11 @@ export function figureParts(p: FigureParams): Part[] {
     const capAt = new THREE.Vector3(0, 0, headCentreZ);
     const capTurn = new THREE.Euler(Math.PI / 2 + CAP_LEAN + (style === "swept_back" ? 0.3 : 0), 0, 0);
     const capScale = new THREE.Vector3(headScale.x * v, v, headScale.y * v);
-    const capColour = style === "mohawk" ? overlayHex(c.skin, c.head, STUBBLE_OPACITY) : c.head;
+    const capColour = shaved ? overlayHex(c.skin, c.head, STUBBLE_OPACITY) : c.head;
     const capPart = named(placed(cap, capColour, capAt, capTurn, capScale), "cap");
     if (!p.headCovered) textured(capPart.geometry, () => capAt, capTexture, headR);
     out.push(capPart);
-    if (outlined.has("hairline") && style !== "mohawk") {
+    if (outlined.has("hairline") && !shaved) {
       // The outline runs along the cap's edge, so it is built where that edge is and turned with the cap.
       const edgeR = headR * Math.sin(capReach) * 1.02;
       const edge = new THREE.CylinderGeometry(edgeR, edgeR, 0.014, RADIAL * 2, 1, true);
@@ -390,13 +397,21 @@ export function figureParts(p: FigureParams): Part[] {
   }
   // Only hair worn down falls round the head; hair tied up, braided, locked, spiked or shaved does not.
   const fallsDown = style === "loose" || style === "voluminous" || style === "brushed" || style === "swept_back";
-  if (!p.headCovered && fallsDown && (p.hair === "medium" || p.hair === "long")) {
+  // How far hair worn down falls, by the game's band: to the jaw, onto the shoulders, past them, to the waist.
+  const fallBottom: Partial<Record<FigureParams["hair"], number>> = {
+    "chin-length": headCentreZ - headR * 1.15,
+    "shoulder-length": shoulderZ - 0.03 * H,
+    long: shoulderZ - 0.12 * H,
+    "waist-length": waistZ + 0.02 * H,
+  };
+  const bottom = fallBottom[p.hair];
+  if (!p.headCovered && fallsDown && bottom !== undefined) {
     // Hair falling from under the cap around the back and sides of the head, widening a little
-    // as it falls: to the jaw when medium, past the shoulders when long. Open at the front.
+    // as it falls. Open at the front.
     const v = 1.04 * p.hairVolume * (style === "voluminous" ? 1.2 : 1);
     const top = headCentreZ + headR * 0.1;
-    const bottom = p.hair === "long" ? shoulderZ - 0.12 * H : headCentreZ - headR * 1.15;
-    const long = p.hair === "long";
+    // Hair reaching the shoulders or further lies back over them rather than through them.
+    const long = p.hair !== "chin-length";
     // Around the back, and forward on each side to just in front of the ears.
     const around = 3.8;
     const fine = p.hairTexture !== "straight";

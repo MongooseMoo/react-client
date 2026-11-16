@@ -14,7 +14,7 @@ import "../../../src/index.css";
 import "../../../src/components/MapPanel.css";
 import { TEST_CHARACTERS, type TestCharacter } from "../../../src/avatar/characters.fixture";
 import AvatarPortrait from "../../../src/avatar/portrait";
-import { GAME_BEARD_LENGTHS, GAME_VOCABULARY, type VocabularyField, withValue } from "../../../src/avatar/vocabulary.fixture";
+import { GAME_BEARD_LENGTHS, GAME_HAIR_LENGTHS, GAME_VOCABULARY, VOCABULARY_BASE, type VocabularyField, withValue } from "../../../src/avatar/vocabulary.fixture";
 import PlayerCard from "../../../src/components/PlayerCard";
 import RoomLayout3D from "../../../src/components/RoomLayout3D";
 import RoomLayoutPicture from "../../../src/components/RoomLayoutPicture";
@@ -32,6 +32,14 @@ const VOCAB_ROWS: Array<[string, Array<[string, Record<string, unknown>]>]> = [
     (field) => [field, GAME_VOCABULARY[field].map((value) => [value, withValue(field, value)])] as [string, Array<[string, Record<string, unknown>]>],
   ),
   [
+    // Bald, then each of the game's hair length bands at its lowest length.
+    "hair.length_cm",
+    [
+      ["bald", { ...withValue("hair.texture", "straight"), hair: undefined }],
+      ...GAME_HAIR_LENGTHS.map(([band, low]) => [`${band} ${low}`, { ...withValue("hair.texture", "straight"), hair: { ...VOCABULARY_BASE.hair, length_cm: low } }] as [string, Record<string, unknown>]),
+    ],
+  ],
+  [
     // Every style on cropped hair: those the game needs longer hair for are drawn loose.
     "hair.style at 4 cm",
     GAME_VOCABULARY["hair.style"].map((style) => [style, { ...withValue("hair.style", style), hair: { ...(withValue("hair.style", style).hair as object), length_cm: 4 } }] as [string, Record<string, unknown>]),
@@ -44,8 +52,9 @@ const VOCAB_ROWS: Array<[string, Array<[string, Record<string, unknown>]>]> = [
     ],
   ],
 ];
-/** `set=vocab` in the figures view: hair styles, then every build, then beard lengths. */
+/** `set=vocab` in the figures view: hair lengths, hair styles, then every build, then beard lengths. */
 const VOCAB_CHARACTERS: TestCharacter[] = [
+  ...(VOCAB_ROWS.find(([field]) => field === "hair.length_cm")?.[1] ?? []).map(([name, appearance]) => ({ name: `hair ${name}`, height: 1.75, appearance: appearance as LayoutAppearance })),
   ...GAME_VOCABULARY["hair.style"].map((style) => ({ name: `hair ${style}`, height: 1.75, appearance: withValue("hair.style", style) as LayoutAppearance })),
   ...GAME_VOCABULARY.build.map((build) => ({ name: `build ${build}`, height: 1.75, appearance: withValue("build", build) as LayoutAppearance })),
   ...(VOCAB_ROWS.at(-1)?.[1] ?? []).map(([name, appearance]) => ({ name: `beard ${name}`, height: 1.75, appearance: appearance as LayoutAppearance })),

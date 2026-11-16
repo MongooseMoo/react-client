@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { figureGeometry, figureParts } from "../map/figureMesh";
 import { figureParams } from "./figure";
 import AvatarPortrait from "./portrait";
-import { GAME_BEARD_LENGTHS, GAME_HAIR_STYLE_MIN_CM, GAME_PALETTE, GAME_VOCABULARY, type VocabularyField, VOCABULARY_BASE, withValue } from "./vocabulary.fixture";
+import { GAME_BEARD_LENGTHS, GAME_HAIR_LENGTHS, GAME_HAIR_STYLE_MIN_CM, GAME_PALETTE, GAME_VOCABULARY, type VocabularyField, VOCABULARY_BASE, withValue } from "./vocabulary.fixture";
 
 /**
  * Every value the game can send is drawn: refresh vocabulary.fixture.ts from the MOO
@@ -103,6 +103,28 @@ describe("the game's vocabulary", () => {
 
 describe("hair style and length", () => {
   const styled = (style: string, length_cm: number) => ({ ...VOCABULARY_BASE, hair: { ...VOCABULARY_BASE.hair, length_cm, style } });
+
+  it("draws each of the game's hair length bands distinctly, and bald only at 0", () => {
+    const withLength = (length_cm: number) => ({ ...VOCABULARY_BASE, hair: { ...VOCABULARY_BASE.hair, length_cm } });
+    const bald = { ...VOCABULARY_BASE, hair: undefined };
+    expect(portrait(withLength(0))).toBe(portrait(bald));
+    const figureKey = (appearance: unknown) =>
+      figureParts(params(appearance))
+        .map((part) => {
+          const box = new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute);
+          return `${part.name}:${part.colour}:${box.min.z.toFixed(3)}:${box.max.x.toFixed(3)}`;
+        })
+        .join("|");
+    // Each band from its lowest to just under its highest, as $appearance:look names lengths
+    // (`length_cm < highest`; a length equal to a band's highest is named as the next band, as in the game).
+    for (const [band, low, high] of GAME_HAIR_LENGTHS) {
+      for (const cm of high === 0 ? [low, low * 3] : [low, high - 0.01]) expect(params(withLength(cm)).hair, `${cm} cm`).toBe(band);
+    }
+    const lows = GAME_HAIR_LENGTHS.map(([, low]) => low);
+    const portraits = [portrait(bald), ...lows.map((cm) => portrait(withLength(cm)))];
+    const figures = [figureKey(bald), ...lows.map((cm) => figureKey(withLength(cm)))];
+    for (const pictures of [portraits, figures]) expect(new Set(pictures).size).toBe(pictures.length);
+  });
 
   it("draws each style from the shortest hair the game offers it for, and hair too short for it loose", () => {
     for (const style of GAME_VOCABULARY["hair.style"]) {

@@ -112,7 +112,22 @@ describe("figureParams branches", () => {
   });
 
   it("sorts hair by length and bulks it by texture", () => {
-    expect([undefined, 0.5, 3, 20, 50].map(hairShape)).toEqual(["none", "none", "short", "medium", "long"]);
+    // The game's bands, named as the game names them: under each band's highest; bald only at 0.
+    expect([undefined, 0, -1, 0.5, 1.5, 3, 12.9, 13, 24, 40, 64, 65, 300].map(hairShape)).toEqual([
+      "none",
+      "none",
+      "none",
+      "shaved",
+      "cropped",
+      "cropped",
+      "short",
+      "chin-length",
+      "shoulder-length",
+      "long",
+      "long",
+      "waist-length",
+      "waist-length",
+    ]);
     const hair = (texture: string) => params({ hair: { length_cm: 10, texture, hex: "#222222" } }).hairVolume;
     expect(hair("straight")).toBe(1);
     expect(hair("coily")).toBeGreaterThan(hair("curly"));

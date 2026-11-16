@@ -1,4 +1,5 @@
 import { colourHex, contrast, hexOrUndefined, inkFor, MIN_CONTRAST } from "./colour";
+import { HAIR_LENGTHS } from "./hairLengths";
 
 /**
  * A person's figure as numbers, colours and part choices, from the Room.Layout
@@ -9,11 +10,13 @@ import { colourHex, contrast, hexOrUndefined, inkFor, MIN_CONTRAST } from "./col
  */
 
 export type Posture = "standing" | "sitting" | "reclining";
-export type HairShape = "none" | "short" | "medium" | "long";
+/** No hair, or one of the game's hair length bands (hairLengths.ts). */
+export type HairShape = "none" | (typeof HAIR_LENGTHS)[number][0];
 export type HairTexture = "straight" | "wavy" | "curly" | "coily";
 /**
- * `hair.style`, as the game sends it (`$appearance.vocab["hair.style"]`), with the shortest hair in cm
- * the game offers it for. A form can put any style on any length; hair shorter than its style's
+ * `hair.style`, as the game sends it (`$appearance.vocab["hair.style"]`, read live 2026-11-16 with
+ * `ops/moo-agent moo ';$appearance.vocab["hair.style"]'`), with the shortest hair in cm the game
+ * offers it for (that list's third column). A form can put any style on any length; hair shorter than its style's
  * minimum is drawn loose, the plain drawing for its length.
  */
 export const HAIR_STYLE_MIN_CM = {
@@ -196,12 +199,15 @@ export function beardReach(lengthCm: number): number {
   return Math.min(1, Math.max(0, lengthCm) / 40);
 }
 
+/** The game's band for a hair length, as the game picks it; `none` for no length or bald (0 or less). */
 export function hairShape(lengthCm: number | undefined): HairShape {
-  if (lengthCm === undefined || lengthCm < 1) return "none";
-  if (lengthCm < 8) return "short";
-  if (lengthCm < 25) return "medium";
-  return "long";
+  if (lengthCm === undefined || lengthCm <= 0) return "none";
+  for (const [band, , highest] of HAIR_LENGTHS) if (highest === 0 || lengthCm < highest) return band;
+  return "waist-length";
 }
+
+/** Bands long enough to fall round the head rather than lie on it. */
+export const FALLING_HAIR: readonly HairShape[] = ["chin-length", "shoulder-length", "long", "waist-length"];
 
 const HAIR_VOLUME: Readonly<Record<HairTexture, number>> = { straight: 1, wavy: 1.06, curly: 1.16, coily: 1.26 };
 const FACIAL_HAIR: readonly FacialHair[] = ["none", "stubble", "moustache", "goatee", "beard"];

@@ -44,8 +44,8 @@ try {
       await table.screenshot({ path: resolve(out, `vocab-${(await table.getAttribute('data-field')).replace(/[^a-z_]+/g, '-')}.png`) });
     }
     await sharp.close();
-    // Seven rows of 420 px cells: a page tall enough to hold them all.
-    const tall = await browser.newPage({ viewport: { width: 1280, height: 3000 }, colorScheme: 'dark' });
+    // Nine rows of 420 px cells: a page tall enough to hold them all.
+    const tall = await browser.newPage({ viewport: { width: 1280, height: 3900 }, colorScheme: 'dark' });
     for (const [zoom, angle] of [['body', 'front'], ['head', 'front'], ['head', 'three'], ['head', 'back']]) {
       await tall.goto(`${base}?view=figures&angle=${angle}&zoom=${zoom}&set=vocab`);
       await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });

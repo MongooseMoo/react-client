@@ -74,15 +74,20 @@ function headShape(shape: string, fill: string, stroke: string): React.ReactElem
 /** A round number for SVG path text. */
 const n = (x: number) => Math.round(x * 100) / 100;
 
-/** The hair over the top of the head, by texture, `v` times as bulky as straight hair. */
-function hairCap(texture: HairTexture, v: number, fill: string, ink: string): React.ReactNode {
-  const rise = 12 - (v - 1) * 18;
-  const width = 14 * v;
+/**
+ * The hair over the top of the head, by texture, `v` times as bulky as straight hair. Cropped hair
+ * (`crop`) lies closer and starts higher on the forehead, its curls smaller.
+ */
+function hairCap(texture: HairTexture, v: number, fill: string, ink: string, crop = false): React.ReactNode {
+  const rise = 12 - (v - 1) * 18 + (crop ? 1.5 : 0);
+  const width = 14 * v * (crop ? 0.95 : 1);
+  const hairline = crop ? 17.5 : 20;
+  const curl = crop ? 0.7 : 1;
   if (texture === "curly" || texture === "coily") {
     // Curly hair: one row of large round curls. Coily hair: smaller, tighter curls packed in two rows.
-    const rows = texture === "curly" ? [{ count: 9, reach: width, r: 3.2 * v }] : [
-      { count: 13, reach: width + 0.5, r: 2.2 * v },
-      { count: 8, reach: width - 4, r: 2.2 * v },
+    const rows = texture === "curly" ? [{ count: 9, reach: width, r: 3.2 * v * curl }] : [
+      { count: 13, reach: width + 0.5, r: 2.2 * v * curl },
+      { count: 8, reach: width - 4, r: 2.2 * v * curl },
     ];
     const curls: React.ReactElement[] = [];
     for (const [row, { count, reach, r }] of rows.entries()) {
@@ -107,7 +112,7 @@ function hairCap(texture: HairTexture, v: number, fill: string, ink: string): Re
       const a1 = Math.PI * (1 + i / waves);
       d += ` Q${at((a0 + a1) / 2, 1.14)} ${at(a1, 1)}`;
     }
-    d += ` C38,20 26,20 ${n(32 - width)},27 Z`;
+    d += ` C38,${hairline} 26,${hairline} ${n(32 - width)},27 Z`;
     return <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d={d} />;
   }
   return (
@@ -116,7 +121,7 @@ function hairCap(texture: HairTexture, v: number, fill: string, ink: string): Re
       fill={fill}
       stroke={ink}
       strokeWidth={1.2}
-      d={`M${n(32 - width)},27 C${n(32 - width)},${n(rise)} ${n(32 + width)},${n(rise)} ${n(32 + width)},27 C${38},20 ${26},20 ${n(32 - width)},27 Z`}
+      d={`M${n(32 - width)},27 C${n(32 - width)},${n(rise)} ${n(32 + width)},${n(rise)} ${n(32 + width)},27 C38,${hairline} 26,${hairline} ${n(32 - width)},27 Z`}
     />
   );
 }
@@ -137,7 +142,18 @@ function hairBack(w: number, bottom: number, fill: string, ink: string): React.R
 }
 
 /** How far down hanging hair (braids, locks, a ponytail) reaches in the portrait, by the hair's length. */
-const HANG_BOTTOM: Readonly<Record<FigureParams["hair"], number>> = { none: 0, short: 38, medium: 46, long: 56 };
+const HANG_BOTTOM: Readonly<Record<FigureParams["hair"], number>> = {
+  none: 0,
+  shaved: 0,
+  cropped: 34,
+  short: 38,
+  "chin-length": 44,
+  "shoulder-length": 50,
+  long: 56,
+  "waist-length": 62,
+};
+/** How far hair worn down falls behind the head, by band: to the jaw, the shoulders, past them, and off the picture. */
+const FALL_BOTTOM: Readonly<Partial<Record<FigureParams["hair"], number>>> = { "chin-length": 42, "shoulder-length": 48, long: 55, "waist-length": 64 };
 
 /**
  * What a hair style puts behind the head (`back`, drawn before the shoulders), hanging in front of the
@@ -146,8 +162,8 @@ const HANG_BOTTOM: Readonly<Record<FigureParams["hair"], number>> = { none: 0, s
 function hairStyle(params: FigureParams, fill: string, ink: string, skin: string): { back: React.ReactNode[]; hang: React.ReactNode[]; cap: React.ReactNode } {
   const v = params.hairVolume;
   const texture = params.hairTexture;
-  const falls = params.hair === "medium" || params.hair === "long";
-  const fallBottom = params.hair === "long" ? 54 : 42;
+  const fallBottom = FALL_BOTTOM[params.hair] ?? 0;
+  const falls = fallBottom > 0;
   const bottom = HANG_BOTTOM[params.hair];
   const line = (key: string, d: string, width = 0.8) => <path key={key} fill="none" stroke={ink} strokeWidth={width} strokeLinecap="round" d={d} />;
   // A close cap for hair drawn back from the face: smooth, whatever the texture.
@@ -266,7 +282,15 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
         cap: hairCap(texture, v * 1.3, fill, ink),
       };
     default:
-      return { back: falls ? [hairBack(15 * v, fallBottom, fill, ink)] : [], hang: [], cap: hairCap(texture, v, fill, ink) };
+      // Shaved: a shadow of the hair's colour on the scalp. Waist-length hair spreads a little as it falls.
+      if (params.hair === "shaved") {
+        return { back: [], hang: [], cap: <path className="avatar-hair-shadow" fill={overlayHex(skin, fill, STUBBLE_OPACITY)} stroke="none" d="M19,27 C19,12 45,12 45,27 C40,21 24,21 19,27 Z" /> };
+      }
+      return {
+        back: falls ? [hairBack(15 * v * (params.hair === "waist-length" ? 1.1 : 1), fallBottom, fill, ink)] : [],
+        hang: [],
+        cap: hairCap(texture, v, fill, ink, params.hair === "cropped"),
+      };
   }
 }
 
