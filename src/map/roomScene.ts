@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { figureParams } from "../avatar/figure";
 import type { LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
-import { FigureCache, figureMesh } from "./figureMesh";
+import { FigureCache, figureMesh, headOutline } from "./figureMesh";
 
 export { FigureCache };
 import type { LayoutArrival } from "../stores/roomStore";
@@ -84,8 +84,11 @@ export interface RoomScene {
   exits: THREE.Object3D[];
   /** Each thing's and arrival's group by id; `userData.form` says how it was drawn. */
   things: Map<string, THREE.Group>;
-  /** Where each thing's or arrival's label belongs: just above it. */
-  labelAnchors: Map<string, THREE.Vector3>;
+  /**
+   * What each thing's or arrival's label sits just above on screen: a person's head outline,
+   * the middle of a thing's top. The first point is where the label hangs.
+   */
+  labelPoints: Map<string, THREE.Vector3[]>;
 }
 
 /** Builds meshes, sharing one material per colour within a scene. */
@@ -141,7 +144,7 @@ class Builder {
   /**
    * A person from the floor (z0) to z1 at (x, y), drawn from their appearance
    * (or, without one, the same figure in `base`), facing `facing`. Returns the
-   * mesh and how high the figure's crown is, for the label.
+   * mesh and the points its label sits above: the head's outline (`headOutline`).
    */
   person(
     appearance: unknown,
@@ -151,9 +154,12 @@ class Builder {
     z1: number,
     base: number,
     facing: LayoutVector | undefined,
-  ): { mesh: THREE.Mesh; top: number } {
+  ): { mesh: THREE.Mesh; label: THREE.Vector3[] } {
     const params = figureParams(appearance, { height: z1 - z0, base: hexString(base) });
-    return { mesh: figureMesh(params, x, y, z0, facing, this.figureMaterial(), this.figures), top: z0 + params.top };
+    const mesh = figureMesh(params, x, y, z0, facing, this.figureMaterial(), this.figures);
+    mesh.updateMatrixWorld();
+    const outline = headOutline(mesh.geometry, params.top - params.headHeight * 1.05);
+    return { mesh, label: outline.map((p) => p.clone().applyMatrix4(mesh.matrixWorld)) };
   }
 }
 
@@ -349,7 +355,7 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
   }
 
   const things = new Map<string, THREE.Group>();
-  const labelAnchors = new Map<string, THREE.Vector3>();
+  const labelPoints = new Map<string, THREE.Vector3[]>();
   for (const p of placed) {
     const group = new THREE.Group();
     group.name = p.thing.id;
@@ -358,13 +364,13 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
     if (isPerson(p.thing)) {
       group.userData.form = "person";
       const base = p.thing.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, top } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
+      const { mesh, label } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
       group.add(mesh);
-      labelAnchors.set(p.thing.id, new THREE.Vector3(x, y, top + 0.12));
+      labelPoints.set(p.thing.id, label);
     } else {
       group.userData.form = thingForm(p.thing);
       for (const mesh of thingMeshes(builder, p, layout.size)) group.add(mesh);
-      labelAnchors.set(p.thing.id, new THREE.Vector3(x, y, p.bounds.z1 + 0.12));
+      labelPoints.set(p.thing.id, [new THREE.Vector3(x, y, p.bounds.z1)]);
     }
     root.add(group);
     things.set(p.thing.id, group);
@@ -378,14 +384,14 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
       // Client.Spatial puts a person at head height; the body stands on the floor below it.
       const crown = Math.max(at[2] + 0.12, 1.0);
       const base = arrival.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, top } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
+      const { mesh, label } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
       group.add(mesh);
-      labelAnchors.set(arrival.id, new THREE.Vector3(at[0], at[1], top + 0.12));
+      labelPoints.set(arrival.id, label);
     } else {
       group.userData.form = "box";
       const s = 0.1;
       group.add(builder.box({ x0: at[0] - s, x1: at[0] + s, y0: at[1] - s, y1: at[1] + s, z0: at[2] - s, z1: at[2] + s }, builder.material(NEUTRAL), "box"));
-      labelAnchors.set(arrival.id, new THREE.Vector3(at[0], at[1], at[2] + s + 0.12));
+      labelPoints.set(arrival.id, [new THREE.Vector3(at[0], at[1], at[2] + s)]);
     }
     root.add(group);
     things.set(arrival.id, group);
@@ -393,7 +399,25 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
 
   // Figures of people who left, or whose look changed, are freed now.
   figures?.sweep();
-  return { root, walls, ceiling, exits, things, labelAnchors };
+  return { root, walls, ceiling, exits, things, labelPoints };
+}
+
+/**
+ * Where label points (`RoomScene.labelPoints`) show on a `width` x `height` picture, in
+ * pixels from the top left: across, where the first point is; down, the highest of the
+ * rest (the first itself when it is alone). Undefined when the first point is behind the
+ * camera or beyond its far plane.
+ */
+export function screenTop(points: THREE.Vector3[], camera: THREE.Camera, width: number, height: number): { x: number; top: number } | undefined {
+  const at = new THREE.Vector3().copy(points[0]).project(camera);
+  if (at.z < -1 || at.z > 1) return undefined;
+  const x = at.x;
+  let top = points.length === 1 ? at.y : Number.NEGATIVE_INFINITY;
+  for (let i = 1; i < points.length; i++) {
+    at.copy(points[i]).project(camera);
+    if (at.z >= -1 && at.z <= 1) top = Math.max(top, at.y);
+  }
+  return { x: ((x + 1) / 2) * width, top: ((1 - top) / 2) * height };
 }
 
 /**
@@ -458,6 +482,104 @@ export function panTo(camera: THREE.Object3D, target: THREE.Vector3, point: THRE
 export function zoomFocus(you: Bounds | undefined, layout: RoomLayout): THREE.Vector3 {
   if (!you) return new THREE.Vector3(...dollhousePose(layout).target);
   return new THREE.Vector3((you.x0 + you.x1) / 2, (you.y0 + you.y1) / 2, you.z0 + (you.z1 - you.z0) * 0.9);
+}
+
+/** How many wheel notches bring the dollhouse from its whole-room view to WHEEL_CLOSE from a person, in a room of any size. */
+export const WHEEL_NOTCHES = 20;
+/** Metres from a face at which a person fills the dollhouse picture to the shoulders. */
+export const WHEEL_CLOSE = 1.5;
+
+/**
+ * What one dollhouse wheel notch toward the pointer multiplies the camera's distance by:
+ * WHEEL_NOTCHES of them go from the room's whole-room view to WHEEL_CLOSE, so a large room
+ * zooms faster per notch than a small one. Never slower than 0.95, the step of small rooms.
+ */
+export function wheelStep(layout: RoomLayout, fov = DOLLHOUSE_FOV): number {
+  const pose = dollhousePose(layout, fov);
+  const distance = Math.hypot(...pose.position.map((v, i) => v - pose.target[i]));
+  return Math.min(0.95, (WHEEL_CLOSE / distance) ** (1 / WHEEL_NOTCHES));
+}
+
+/** How many wheel notches a wheel event is: a notch is 100 pixels, 3 lines or one page. */
+export function wheelNotches(deltaY: number, deltaMode: number): number {
+  return Math.abs(deltaY) / (deltaMode === 1 ? 3 : deltaMode === 2 ? 1 : 100);
+}
+
+/**
+ * What a dollhouse wheel zoom heads for, along the pointer's ray: a person's face
+ * when the ray meets a person, else the first thing it meets, else the floor;
+ * undefined when it meets none of them (pointing over the walls into the dark).
+ */
+export function wheelZoomPoint(ray: THREE.Ray, scene: RoomScene, placed: PlacedThing[], layout: RoomLayout): THREE.Vector3 | undefined {
+  const caster = new THREE.Raycaster(ray.origin, ray.direction);
+  const hit = caster.intersectObjects([...scene.things.values()], true)[0];
+  if (hit) {
+    let object: THREE.Object3D | null = hit.object;
+    while (object && object.userData.thingId === undefined) object = object.parent;
+    const person = object?.userData.form === "person" ? placed.find((p) => p.thing.id === object?.userData.thingId) : undefined;
+    return person ? zoomFocus(person.bounds, layout) : hit.point.clone();
+  }
+  return ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3()) ?? undefined;
+}
+
+/**
+ * Two fingers on the dollhouse, from their pointer events. Each move while
+ * exactly two are down gives the zoom scale for `wheelZoom` (the fingers'
+ * spacing before over after: spreading them comes closer) and the midpoint
+ * where the pinch began, which is what it zooms onto.
+ */
+export class Pinch {
+  private fingers = new Map<number, { x: number; y: number }>();
+  private start: { x: number; y: number } | null = null;
+
+  down(id: number, x: number, y: number): void {
+    this.fingers.set(id, { x, y });
+    this.start = this.fingers.size === 2 ? this.midpoint() : null;
+  }
+
+  move(id: number, x: number, y: number): { scale: number; at: { x: number; y: number } } | undefined {
+    if (!this.fingers.has(id)) return undefined;
+    const before = this.spacing();
+    this.fingers.set(id, { x, y });
+    const after = this.spacing();
+    if (this.fingers.size !== 2 || !this.start || before === 0 || after === 0 || before === after) return undefined;
+    return { scale: before / after, at: this.start };
+  }
+
+  up(id: number): void {
+    this.fingers.delete(id);
+    this.start = null;
+  }
+
+  /** Whether a pinch began with this pair of fingers and both are still down. */
+  get pinching(): boolean {
+    return this.start !== null;
+  }
+
+  private spacing(): number {
+    const [a, b] = [...this.fingers.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  }
+
+  private midpoint(): { x: number; y: number } {
+    const [a, b] = [...this.fingers.values()];
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+}
+
+/**
+ * One dollhouse zoom, a wheel notch's or a pinch step's, by `scale` (below 1 comes closer). Zooming in moves the
+ * camera toward `point` and the point it orbits onto `point` a little faster, so what
+ * was zoomed onto comes to the middle of the picture and the arrow keys then turn
+ * around it. Zooming out backs away from the point it orbits.
+ */
+export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: THREE.Vector3, scale: number): void {
+  if (scale < 1) {
+    camera.sub(point).multiplyScalar(scale).add(point);
+    target.sub(point).multiplyScalar(scale * scale).add(point);
+  } else {
+    camera.sub(target).multiplyScalar(scale).add(target);
+  }
 }
 
 /** Your eyes' field of view after a zoom key (`+`/`=` in, `-`/`_` out, `0` back), or undefined for any other key. */

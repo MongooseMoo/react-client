@@ -102,12 +102,24 @@ buttons (the choice is kept across rooms):
 
 - **Plan**: the drawing from above, described below.
 - **Dollhouse**: the room in 3D, seen from above one corner, far enough out for the whole room
-  however large. Drag to turn it, the wheel or a pinch to zoom toward what is under the pointer;
-  on the picture the arrow keys turn it, `+` and `-` zoom toward and away from your own figure
-  (the room's middle when you are not in the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
+  however large. Drag, or one finger, to turn it. The wheel zooms toward what is under the
+  pointer, and a pinch toward what is between the two fingers where it began: a person's face
+  when that is a person, else the thing or the floor there. Either brings it to the middle of the
+  picture as it comes closer (about twenty wheel notches from the whole-room view to a person
+  close up, in a room of any size; a pinch comes as much closer as the fingers spread apart).
+  Turning then goes round it, so you can turn until a person faces you. On the picture the arrow keys turn
+  it, `+` and `-` zoom toward and away from your own figure (the room's middle when you are not in
+  the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
 - **Your eyes**: the room in 3D from where you stand (your `Client.Spatial` position), facing
   your `Client.Spatial` forward, turning as you turn. `+` and `-` on the picture, or the wheel,
   narrow and widen the view (up to about seven times closer); `0` returns to the normal view.
+
+In both 3D views a name label sits just above the top of the head as drawn (hair, hat or antlers
+included), or above the middle of a thing's top, at every zoom, so it never covers a face.
+Where labels would overlap, a later one (people first, you first among them) moves up, or a
+little sideways while its text still spans its figure, by the least that frees it and at most two
+label heights; one with no such place is left out until zooming makes room (the lists below
+still name it).
 
 In every view things are drawn by what they are, from the first of their `classes` the client
 knows: a table as a top on legs, a chair or other furniture as a seat with its back to the

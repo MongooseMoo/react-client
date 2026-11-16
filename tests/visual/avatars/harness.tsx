@@ -18,7 +18,7 @@ import RoomLayoutPicture from "../../../src/components/RoomLayoutPicture";
 import type { RoomLayout } from "../../../src/gmcp/Room";
 import { placeThings } from "../../../src/map/roomLayout";
 import { crowdLayout, livingRoomLayout } from "../../../src/map/roomLayout.fixture";
-import { buildRoomScene, cutWalls, DOLLHOUSE_FOV } from "../../../src/map/roomScene";
+import { buildRoomScene, cutWalls, DOLLHOUSE_FOV, dollhousePose } from "../../../src/map/roomScene";
 
 const params = new URLSearchParams(location.search);
 const view = params.get("view") ?? "portraits";
@@ -31,6 +31,7 @@ declare global {
   interface Window {
     ready?: boolean;
     measure?: (seconds: number) => Promise<unknown>;
+    screenOf?: (id: string) => { x: number; y: number };
   }
 }
 
@@ -141,7 +142,33 @@ if (view === "portraits") {
   // `size=50`: the same people in a square room that many metres across, like a large live room.
   const size = Number(params.get("size") ?? "0");
   if (size > 0) layout.size = [size, size, layout.size[2]];
+  // `spread=6`: the people's places multiplied by that much, so they stand apart across a large room.
+  const spread = Number(params.get("spread") ?? "1");
+  for (const thing of layout.things) {
+    const [xs, ys] = thing.shapes[0].box as [[number, number], [number, number], [number, number]];
+    const [cx, cy] = [(xs[0] + xs[1]) / 2, (ys[0] + ys[1]) / 2];
+    thing.shapes[0].box = [[cx * spread - 0.2, cx * spread + 0.2], [cy * spread - 0.2, cy * spread + 0.2], (thing.shapes[0].box as number[][])[2] as [number, number]];
+  }
+  // `face=north`: everyone faces north (away from the dollhouse's opening camera); by default, south.
+  const facing: Record<string, [number, number, number]> = { north: [0, 1, 0], south: [0, -1, 0], east: [1, 0, 0], west: [-1, 0, 0] };
+  const faced = facing[params.get("face") ?? ""];
+  const facings = faced ? Object.fromEntries(layout.things.map((t) => [t.id, faced])) : {};
+  const width = Number(params.get("width") ?? "960");
   const mode = params.get("mode") === "eyes" ? "eyes" : "dollhouse";
+  // Where a person's head is in the opening Dollhouse picture, in page pixels: what the wheel is pointed at.
+  window.screenOf = (id: string) => {
+    const frame = document.querySelector(".room-layout-3d") as HTMLElement;
+    const rect = frame.getBoundingClientRect();
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, rect.width / rect.height, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const pose = dollhousePose(layout);
+    camera.position.set(...pose.position);
+    camera.lookAt(...pose.target);
+    camera.updateMatrixWorld();
+    const box = (layout.things.find((t) => t.id === id)?.shapes[0].box ?? [[0, 0], [0, 0], [0, 0]]) as number[][];
+    const head = new THREE.Vector3((box[0][0] + box[0][1]) / 2, (box[1][0] + box[1][1]) / 2, box[2][1] * 0.93).project(camera);
+    return { x: rect.left + ((head.x + 1) / 2) * rect.width, y: rect.top + ((1 - head.y) / 2) * rect.height };
+  };
   // Time every WebGL render the 3D view makes, and keep its draw counts. WebGLRenderer
   // sets `render` on each instance, so the scene's before/after hooks are used instead.
   let renderMs = 0;
@@ -156,13 +183,13 @@ if (view === "portraits") {
   };
   const draw = (offset: [number, number, number] | undefined) =>
     render(
-      <div style={{ width: 960 }}>
+      <div style={{ width }}>
         <RoomLayout3D
           layout={layout}
           placed={placeThings(layout, offset ? { "#p0": offset } : {})}
           arrivals={[]}
           youId={params.get("you") ?? ""}
-          facings={{}}
+          facings={facings}
           label="test room"
           mode={mode}
           onExit={noop}

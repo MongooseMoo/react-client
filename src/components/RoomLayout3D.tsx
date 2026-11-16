@@ -11,7 +11,7 @@ import {
   type LabelRequest,
   labelOrder,
   type PlacedThing,
-  placeLabels,
+  placeLabelsOver,
   shortLabel,
 } from "../map/roomLayout";
 import {
@@ -28,7 +28,13 @@ import {
   panTo,
   zoomFocus,
   eyesPose,
+  Pinch,
   type RoomScene,
+  screenTop,
+  wheelNotches,
+  wheelStep,
+  wheelZoom,
+  wheelZoomPoint,
   ZOOM_STEP,
   zoomedFov,
 } from "../map/roomScene";
@@ -56,6 +62,8 @@ interface RoomLayout3DProps {
 
 /** Label text height on screen, CSS pixels: the plan's size. */
 const LABEL_PIXELS = 12;
+/** Space between a label and the top of what it names, CSS pixels. */
+const LABEL_GAP = 3;
 
 interface Stage {
   renderer: THREE.WebGLRenderer;
@@ -112,8 +120,9 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.maxPolarAngle = Math.PI / 2 - 0.05;
     controls.minDistance = 0.5;
-    // The wheel zooms toward what is under the pointer, so a person anywhere in a large room can be brought close.
-    controls.zoomToCursor = true;
+    // The controls turn the view (drag, one finger) and nothing else: the wheel never reaches them
+    // (`onWheel` below takes it), and two fingers are left to `onTouchPointer`, which zooms the same way.
+    controls.touches.TWO = null;
     const scene = new THREE.Scene();
 
     const stage: Stage = {
@@ -150,8 +159,12 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
     observer?.observe(frame);
     resize();
+    // Taken on the way down to the canvas, so the orbit controls' own wheel zoom never runs.
+    const wheel = (event: WheelEvent) => onWheelRef.current(event);
+    frame.addEventListener("wheel", wheel, { capture: true, passive: false });
 
     return () => {
+      frame.removeEventListener("wheel", wheel, { capture: true });
       observer?.disconnect();
       controls.removeEventListener("change", stage.render);
       controls.dispose();
@@ -167,28 +180,29 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
-  /** Shows the labels that fit, most important first, each beside its thing; hides the rest. */
+  /** Shows the labels that fit, most important first, each just above its head or thing; hides the rest. */
   function placeVisibleLabels(stage: Stage) {
     const width = stage.labels.domElement.clientWidth || stage.renderer.domElement.clientWidth;
     const height = stage.labels.domElement.clientHeight || stage.renderer.domElement.clientHeight;
-    const requests: LabelRequest[] = [];
+    const requests: Array<Omit<LabelRequest, "radius">> = [];
     const anchors = new Map<string, [number, number]>();
     const projected = new THREE.Vector3();
-    for (const { id, text, person } of labelPlan.current) {
-      const anchor = stage.room?.labelAnchors.get(id);
+    for (const { id, text } of labelPlan.current) {
+      const points = stage.room?.labelPoints.get(id);
       const object = stage.labelObjects.get(id);
-      if (!anchor || !object) continue;
+      if (!points || !object) continue;
       object.visible = false;
       if (!object.parent?.visible) continue;
-      projected.copy(anchor).project(stage.camera);
-      if (projected.z < -1 || projected.z > 1) continue;
-      const x = ((projected.x + 1) / 2) * width;
-      const y = ((1 - projected.y) / 2) * height;
-      anchors.set(id, [x, y]);
-      requests.push({ id, text, x, y, radius: person ? 10 : 6 });
+      const shown = screenTop(points, stage.camera, width, height);
+      if (!shown) continue;
+      // Where CSS2DRenderer puts the label before it is moved: its object's point.
+      projected.copy(object.position).project(stage.camera);
+      anchors.set(id, [((projected.x + 1) / 2) * width, ((1 - projected.y) / 2) * height]);
+      // Centred over the head (or thing), its bottom edge LABEL_GAP pixels above the head's top as drawn: clear of hair and face at any zoom.
+      requests.push({ id, text, x: shown.x, y: shown.top - LABEL_GAP - LABEL_PIXELS * 0.7 });
     }
     const inset = 4;
-    const placedLabels = placeLabels(requests, LABEL_PIXELS, { x0: inset, x1: width - inset, y0: inset, y1: height - inset });
+    const placedLabels = placeLabelsOver(requests, LABEL_PIXELS, { x0: inset, x1: width - inset, y0: inset, y1: height - inset });
     for (const placedLabel of placedLabels) {
       const object = stage.labelObjects.get(placedLabel.id);
       const anchor = anchors.get(placedLabel.id);
@@ -222,14 +236,14 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     ];
     labelPlan.current = plan;
     for (const { id, text, person } of plan) {
-      const anchor = room.labelAnchors.get(id);
+      const points = room.labelPoints.get(id);
       const group = room.things.get(id);
-      if (!anchor || !group) continue;
+      if (!points || !group) continue;
       const element = document.createElement("div");
       element.className = id === youId ? "rl3d-label rl3d-label-you" : person ? "rl3d-label rl3d-label-person" : "rl3d-label";
       element.textContent = shortLabel(text);
       const object = new CSS2DObject(element);
-      object.position.copy(anchor);
+      object.position.copy(points[0]);
       object.visible = false;
       group.add(object);
       stage.labelObjects.set(id, object);
@@ -251,6 +265,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     stage.controls.enabled = mode === "dollhouse";
     stage.camera.fov = mode === "eyes" ? EYES_FOV : DOLLHOUSE_FOV;
     stage.camera.updateProjectionMatrix();
+    wheelFocus.current = null;
     if (mode === "dollhouse") {
       // Far enough out for this room's whole-room view, however large the room.
       stage.controls.maxDistance = dollhouseMaxDistance(layout);
@@ -273,9 +288,11 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
   // A doorway click sends its exit, unless the pointer was turning the view.
   const down = useRef<{ x: number; y: number } | null>(null);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    onTouchPointer(event);
     down.current = { x: event.clientX, y: event.clientY };
   };
   const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    onTouchPointer(event);
     const start = down.current;
     down.current = null;
     const stage = stageRef.current;
@@ -303,14 +320,57 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     return true;
   };
 
-  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    // The dollhouse's orbit controls take the wheel themselves.
-    if (mode !== "eyes" || event.deltaY === 0) return;
-    if (zoomEyes(event.deltaY < 0 ? "+" : "-")) event.preventDefault();
+  // What the dollhouse wheel is zooming onto, kept while the pointer stays where it was.
+  const wheelFocus = useRef<{ x: number; y: number; point: THREE.Vector3 | undefined } | null>(null);
+  const onWheel = (event: WheelEvent) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.deltaY === 0) return;
+    if (mode === "eyes") {
+      zoomEyes(event.deltaY < 0 ? "+" : "-");
+      return;
+    }
+    zoomOnto(stage, event.clientX, event.clientY, wheelStep(layout) ** (wheelNotches(event.deltaY, event.deltaMode) * (event.deltaY < 0 ? 1 : -1)));
+  };
+  const onWheelRef = useRef(onWheel);
+  onWheelRef.current = onWheel;
+
+  /**
+   * One dollhouse zoom by `scale` onto what is at (clientX, clientY): picked there the first
+   * time, and kept while the wheel or pinch stays within 4 px of it.
+   */
+  const zoomOnto = (stage: Stage, clientX: number, clientY: number, scale: number) => {
+    const focus = wheelFocus.current;
+    if (!focus || Math.hypot(clientX - focus.x, clientY - focus.y) > 4) {
+      const rect = stage.renderer.domElement.getBoundingClientRect();
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), stage.camera);
+      const point = stage.room ? wheelZoomPoint(ray.ray, stage.room, placed, layout) : undefined;
+      wheelFocus.current = { x: clientX, y: clientY, point };
+    }
+    wheelZoom(stage.camera.position, stage.controls.target, wheelFocus.current?.point ?? stage.controls.target.clone(), scale);
+    stage.controls.update();
+    stage.render();
+  };
+
+  // Two fingers zoom like the wheel, onto what is under the point where the pinch began.
+  const pinch = useRef(new Pinch());
+  const onTouchPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const stage = stageRef.current;
+    if (!stage || event.pointerType !== "touch" || mode !== "dollhouse") return;
+    if (event.type === "pointerdown") pinch.current.down(event.pointerId, event.clientX, event.clientY);
+    else if (event.type === "pointerup" || event.type === "pointercancel") pinch.current.up(event.pointerId);
+    else {
+      const step = pinch.current.move(event.pointerId, event.clientX, event.clientY);
+      if (step) zoomOnto(stage, step.at.x, step.at.y, step.scale);
+    }
   };
 
   /** Slides the dollhouse view over to your figure, unturned, then moves the camera `scale` times as far from it. */
   const zoomToward = (stage: Stage, scale: number) => {
+    wheelFocus.current = null;
     panTo(stage.camera, stage.controls.target, zoomFocus(youBounds, layout));
     stage.controls.dollyIn(scale);
   };
@@ -335,6 +395,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       "-": () => zoomToward(stage, 1 / ZOOM_STEP),
       _: () => zoomToward(stage, 1 / ZOOM_STEP),
       "0": () => {
+        wheelFocus.current = null;
         applyPose(stage, dollhousePose(layout));
         stage.controls.update();
       },
@@ -360,7 +421,8 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       data-mode={mode}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
-      onWheel={onWheel}
+      onPointerMove={onTouchPointer}
+      onPointerCancel={onTouchPointer}
       onKeyDown={onKeyDown}
     />
   );
