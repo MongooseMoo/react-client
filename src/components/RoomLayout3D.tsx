@@ -25,6 +25,8 @@ import {
   dollhouseMaxDistance,
   dollhousePose,
   EYES_FOV,
+  panTo,
+  zoomFocus,
   eyesPose,
   type RoomScene,
   ZOOM_STEP,
@@ -307,6 +309,12 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     if (zoomEyes(event.deltaY < 0 ? "+" : "-")) event.preventDefault();
   };
 
+  /** Slides the dollhouse view over to your figure, unturned, then moves the camera `scale` times as far from it. */
+  const zoomToward = (stage: Stage, scale: number) => {
+    panTo(stage.camera, stage.controls.target, zoomFocus(youBounds, layout));
+    stage.controls.dollyIn(scale);
+  };
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const stage = stageRef.current;
     if (!stage || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -321,10 +329,11 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       ArrowRight: () => stage.controls.rotateLeft(turn),
       ArrowUp: () => stage.controls.rotateUp(turn / 2),
       ArrowDown: () => stage.controls.rotateUp(-turn / 2),
-      "+": () => stage.controls.dollyIn(ZOOM_STEP),
-      "=": () => stage.controls.dollyIn(ZOOM_STEP),
-      "-": () => stage.controls.dollyOut(ZOOM_STEP),
-      _: () => stage.controls.dollyOut(ZOOM_STEP),
+      // Zoom heads for your own figure (nothing else can be chosen from the keyboard here).
+      "+": () => zoomToward(stage, ZOOM_STEP),
+      "=": () => zoomToward(stage, ZOOM_STEP),
+      "-": () => zoomToward(stage, 1 / ZOOM_STEP),
+      _: () => zoomToward(stage, 1 / ZOOM_STEP),
       "0": () => {
         applyPose(stage, dollhousePose(layout));
         stage.controls.update();

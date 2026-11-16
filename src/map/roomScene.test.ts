@@ -24,6 +24,8 @@ import {
   MATERIAL_COLOURS,
   NEUTRAL,
   PERSON_COLOUR,
+  panTo,
+  zoomFocus,
   YOU_COLOUR,
   ZOOM_STEP,
   zoomedFov,
@@ -375,6 +377,38 @@ describe("cameras", () => {
     const at = camera.position.distanceTo(controls.target);
     controls.dollyIn(1.15);
     expect(camera.position.distanceTo(controls.target)).toBeGreaterThan(at);
+    controls.dispose();
+  });
+
+  it("zooms the dollhouse toward your own face with the keyboard, or the room's middle when you are not in it", () => {
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const you = { x0: 18, x1: 18.4, y0: -12, y1: -11.6, z0: 0, z1: 1.75 };
+    const face = zoomFocus(you, big);
+    expect(face.toArray()).toEqual([18.2, -11.8, 1.575]);
+    expect(zoomFocus(undefined, big).toArray()).toEqual(dollhousePose(big).target);
+
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const controls = new OrbitControls(camera, document.createElement("div"));
+    controls.maxDistance = dollhouseMaxDistance(big);
+    const pose = dollhousePose(big);
+    camera.position.set(...pose.position);
+    controls.target.set(...pose.target);
+    controls.update();
+    const direction = camera.position.clone().sub(controls.target).normalize();
+    const orbit = camera.position.distanceTo(controls.target);
+    // What + does: slide over to the face, unturned, then come a step closer to it.
+    panTo(camera, controls.target, face);
+    controls.dollyIn(ZOOM_STEP);
+    expect(controls.target.distanceTo(face)).toBeLessThan(1e-9);
+    expect(camera.position.clone().sub(controls.target).normalize().distanceTo(direction)).toBeLessThan(1e-6);
+    expect(camera.position.distanceTo(face)).toBeCloseTo(orbit * ZOOM_STEP, 6);
+    // Thirty presses bring the camera within arm's length of the face.
+    for (let i = 0; i < 29; i++) {
+      panTo(camera, controls.target, face);
+      controls.dollyIn(ZOOM_STEP);
+    }
+    expect(camera.position.distanceTo(face)).toBeLessThan(2);
     controls.dispose();
   });
 

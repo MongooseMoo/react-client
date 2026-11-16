@@ -99,6 +99,14 @@ try {
         await page.waitForTimeout(300);
         await pic.screenshot({ path: resolve(out, `zoom-${tag}-wheel-on-people.png`) });
       }
+      if (tag === 'dollhouse-50m') {
+        // With a "you" (#p7, the right end of the front row): + heads for your own face.
+        await open('view=room&n=8&mode=dollhouse&size=50&you=%23p7');
+        await pic.focus();
+        for (let i = 0; i < 30; i++) await page.keyboard.press('+');
+        await page.waitForTimeout(300);
+        await pic.screenshot({ path: resolve(out, `zoom-${tag}-plus30-toward-you.png`) });
+      }
       const same = (a, b) => Buffer.compare(shots[a], shots[b]) === 0;
       console.log(`zoom ${tag}: focused=${focused} start=plus10:${same('start', 'plus10')} plus10=plus30:${same('plus10', 'plus30')} start=minus10:${same('start', 'minus10')}`);
     }

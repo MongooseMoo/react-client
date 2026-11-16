@@ -444,6 +444,22 @@ export function dollhouseMaxDistance(layout: RoomLayout, fov = DOLLHOUSE_FOV): n
   return Math.max(60, distance * 1.5);
 }
 
+/**
+ * Moves the dollhouse's camera and the point it orbits by the same amount, so the camera
+ * looks at `point` from the same angle and distance: the view slides over to it, unturned.
+ */
+export function panTo(camera: THREE.Object3D, target: THREE.Vector3, point: THREE.Vector3): void {
+  const shift = new THREE.Vector3().subVectors(point, target);
+  camera.position.add(shift);
+  target.add(shift);
+}
+
+/** Where keyboard zoom heads in the dollhouse: your own face, or the room's middle when you are not in the layout. */
+export function zoomFocus(you: Bounds | undefined, layout: RoomLayout): THREE.Vector3 {
+  if (!you) return new THREE.Vector3(...dollhousePose(layout).target);
+  return new THREE.Vector3((you.x0 + you.x1) / 2, (you.y0 + you.y1) / 2, you.z0 + (you.z1 - you.z0) * 0.9);
+}
+
 /** Your eyes' field of view after a zoom key (`+`/`=` in, `-`/`_` out, `0` back), or undefined for any other key. */
 export function zoomedFov(fov: number, key: string): number | undefined {
   if (key === "+" || key === "=") return Math.max(EYES_MIN_FOV, fov * ZOOM_STEP);

@@ -161,7 +161,7 @@ if (view === "portraits") {
           layout={layout}
           placed={placeThings(layout, offset ? { "#p0": offset } : {})}
           arrivals={[]}
-          youId=""
+          youId={params.get("you") ?? ""}
           facings={{}}
           label="test room"
           mode={mode}
