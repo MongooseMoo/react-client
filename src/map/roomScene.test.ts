@@ -25,8 +25,9 @@ import {
   NEUTRAL,
   PERSON_COLOUR,
   panTo,
-  WHEEL_STEP,
+  WHEEL_NOTCHES,
   wheelNotches,
+  wheelStep,
   wheelZoom,
   wheelZoomPoint,
   zoomFocus,
@@ -459,12 +460,13 @@ describe("cameras", () => {
       return Math.hypot(at.x, at.y);
     };
     expect(inMiddle()).toBeGreaterThan(0.2);
-    for (let i = 0; i < 60; i++) {
-      wheelZoom(camera.position, controls.target, face, WHEEL_STEP);
+    const step = wheelStep(big);
+    for (let i = 0; i < WHEEL_NOTCHES; i++) {
+      wheelZoom(camera.position, controls.target, face, step);
       controls.update();
     }
     // Close, and his face in the middle of the picture.
-    expect(camera.position.distanceTo(face)).toBeLessThan(5);
+    expect(camera.position.distanceTo(face)).toBeLessThan(2.5);
     expect(inMiddle()).toBeLessThan(0.02);
     // Turning half way round keeps him in the middle, and ends in front of him (north of him).
     for (let i = 0; i < 18; i++) {
@@ -474,11 +476,33 @@ describe("cameras", () => {
     expect(camera.position.y).toBeGreaterThan(face.y);
     // Zooming out backs away from what it turns around.
     const near = camera.position.distanceTo(controls.target);
-    wheelZoom(camera.position, controls.target, face, 1 / WHEEL_STEP);
+    wheelZoom(camera.position, controls.target, face, 1 / step);
     controls.update();
-    expect(camera.position.distanceTo(controls.target)).toBeCloseTo(near / WHEEL_STEP, 6);
+    expect(camera.position.distanceTo(controls.target)).toBeCloseTo(near / step, 6);
     controls.dispose();
     disposeRoomScene(scene);
+  });
+
+  it("brings a person close in about twenty wheel notches in a room of any size", () => {
+    // OrbitControls' fixed 0.95 a notch took 80 and more in a 50 m room.
+    for (const size of [5, 12, 50, 100]) {
+      const layout: RoomLayout = { ...livingRoomLayout(), size: [size, size, Math.min(size, 4)] };
+      const pose = dollhousePose(layout);
+      const camera = new THREE.Vector3(...pose.position);
+      const target = new THREE.Vector3(...pose.target);
+      // A face a third of the way out toward the south-west corner.
+      const face = new THREE.Vector3(-size / 6, -size / 6, 1.6);
+      const step = wheelStep(layout);
+      let notches = 0;
+      while (camera.distanceTo(face) > 2 && notches < 200) {
+        wheelZoom(camera, target, face, step);
+        notches++;
+      }
+      expect(notches, `${size} m room`).toBeGreaterThanOrEqual(15);
+      expect(notches, `${size} m room`).toBeLessThanOrEqual(25);
+    }
+    // A room smaller than its close-up distance keeps the small-room step.
+    expect(wheelStep({ ...livingRoomLayout(), size: [1, 1, 2] })).toBe(0.95);
   });
 
   it("counts wheel notches: 100 pixels, 3 lines or a page", () => {

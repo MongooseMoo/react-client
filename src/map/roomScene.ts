@@ -460,8 +460,21 @@ export function zoomFocus(you: Bounds | undefined, layout: RoomLayout): THREE.Ve
   return new THREE.Vector3((you.x0 + you.x1) / 2, (you.y0 + you.y1) / 2, you.z0 + (you.z1 - you.z0) * 0.9);
 }
 
-/** One dollhouse wheel notch toward the pointer multiplies the camera's distance by this. */
-export const WHEEL_STEP = 0.95;
+/** How many wheel notches bring the dollhouse from its whole-room view to WHEEL_CLOSE from a person, in a room of any size. */
+export const WHEEL_NOTCHES = 20;
+/** Metres from a face at which a person fills the dollhouse picture to the shoulders. */
+export const WHEEL_CLOSE = 1.5;
+
+/**
+ * What one dollhouse wheel notch toward the pointer multiplies the camera's distance by:
+ * WHEEL_NOTCHES of them go from the room's whole-room view to WHEEL_CLOSE, so a large room
+ * zooms faster per notch than a small one. Never slower than 0.95, the step of small rooms.
+ */
+export function wheelStep(layout: RoomLayout, fov = DOLLHOUSE_FOV): number {
+  const pose = dollhousePose(layout, fov);
+  const distance = Math.hypot(...pose.position.map((v, i) => v - pose.target[i]));
+  return Math.min(0.95, (WHEEL_CLOSE / distance) ** (1 / WHEEL_NOTCHES));
+}
 
 /** How many wheel notches a wheel event is: a notch is 100 pixels, 3 lines or one page. */
 export function wheelNotches(deltaY: number, deltaMode: number): number {

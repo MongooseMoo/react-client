@@ -29,8 +29,8 @@ import {
   zoomFocus,
   eyesPose,
   type RoomScene,
-  WHEEL_STEP,
   wheelNotches,
+  wheelStep,
   wheelZoom,
   wheelZoomPoint,
   ZOOM_STEP,
@@ -335,7 +335,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       const point = stage.room ? wheelZoomPoint(ray.ray, stage.room, placed, layout) : undefined;
       wheelFocus.current = { x: event.clientX, y: event.clientY, point };
     }
-    const scale = WHEEL_STEP ** (wheelNotches(event.deltaY, event.deltaMode) * (event.deltaY < 0 ? 1 : -1));
+    const scale = wheelStep(layout) ** (wheelNotches(event.deltaY, event.deltaMode) * (event.deltaY < 0 ? 1 : -1));
     wheelZoom(stage.camera.position, stage.controls.target, wheelFocus.current?.point ?? stage.controls.target.clone(), scale);
     stage.controls.update();
     stage.render();

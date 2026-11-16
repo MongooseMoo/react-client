@@ -104,7 +104,8 @@ buttons (the choice is kept across rooms):
 - **Dollhouse**: the room in 3D, seen from above one corner, far enough out for the whole room
   however large. Drag to turn it, a pinch to zoom toward what is under the fingers. The wheel
   zooms toward what is under the pointer (a person's face when it is over a person, else the
-  thing or the floor there) and brings it to the middle of the picture as it comes closer; turning
+  thing or the floor there) and brings it to the middle of the picture as it comes closer, about
+  twenty notches from the whole-room view to a person close up in a room of any size; turning
   then goes round it, so you can turn until a person faces you. On the picture the arrow keys turn
   it, `+` and `-` zoom toward and away from your own figure (the room's middle when you are not in
   the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
