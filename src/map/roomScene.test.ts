@@ -7,7 +7,7 @@ import type { RoomLayout } from "../gmcp/Room";
 import { crowdLayout, livingRoomLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingRoom from "./roomLayout.sample-25828.json";
-import { placeThings } from "./roomLayout";
+import { placeLabelsOver, placeThings } from "./roomLayout";
 import {
   buildRoomScene,
   CUT_WALL_HEIGHT,
@@ -25,7 +25,9 @@ import {
   NEUTRAL,
   PERSON_COLOUR,
   panTo,
+  PICK_TOLERANCE,
   Pinch,
+  screenBox,
   screenTop,
   WHEEL_NOTCHES,
   wheelNotches,
@@ -34,8 +36,10 @@ import {
   wheelZoomPoint,
   zoomFocus,
   YOU_COLOUR,
+  ZOOM_NEAREST,
   ZOOM_STEP,
   zoomedFov,
+  zoomedFovBy,
 } from "./roomScene";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -450,14 +454,21 @@ describe("cameras", () => {
     scene.root.updateMatrixWorld(true);
 
     // The pointer on his head: the zoom heads for his face, not the floor behind him.
+    const size = { width: 276, height: 207 };
+    const pixel = (p: THREE.Vector3) => {
+      camera.updateMatrixWorld();
+      const v = p.clone().project(camera);
+      return { x: ((v.x + 1) / 2) * size.width, y: ((1 - v.y) / 2) * size.height };
+    };
     const face = zoomFocus(placed[0].bounds, big);
     const head = new THREE.Vector3(-9, -9, bram.height * 0.95);
-    const point = wheelZoomPoint(new THREE.Ray(camera.position.clone(), head.clone().sub(camera.position).normalize()), scene, placed, big);
+    const point = wheelZoomPoint(camera, pixel(head), size, scene, placed, big)?.point;
     expect(point?.distanceTo(face)).toBeLessThan(1e-9);
     // On bare floor, the floor; over the walls into the dark, nothing.
-    const floor = wheelZoomPoint(new THREE.Ray(camera.position.clone(), new THREE.Vector3(5, 5, 0).sub(camera.position).normalize()), scene, placed, big);
+    const floor = wheelZoomPoint(camera, pixel(new THREE.Vector3(5, 5, 0)), size, scene, placed, big)?.point;
     expect(floor?.distanceTo(new THREE.Vector3(5, 5, 0))).toBeLessThan(1e-6);
-    expect(wheelZoomPoint(new THREE.Ray(camera.position.clone(), new THREE.Vector3(0, 1, 0.2).normalize()), scene, placed, big)).toBeUndefined();
+    const sky = camera.position.clone().addScaledVector(new THREE.Vector3(0, 1, 0.2).normalize(), 100);
+    expect(wheelZoomPoint(camera, pixel(sky), size, scene, placed, big)).toBeUndefined();
 
     const inMiddle = () => {
       camera.updateMatrixWorld();
@@ -485,6 +496,70 @@ describe("cameras", () => {
     controls.update();
     expect(camera.position.distanceTo(controls.target)).toBeCloseTo(near / step, 6);
     controls.dispose();
+    disposeRoomScene(scene);
+  });
+
+  it("picks a person a pixel or two tall from beside them, zooms onto their face and never into their body", () => {
+    // The live check's case: a 50 m room in a 276 x 207 picture, where a person at the opening view is about 1 x 3 px.
+    const big: RoomLayout = { ...livingRoomLayout(), size: [50, 50, 50] };
+    const bram = TEST_CHARACTERS[1];
+    const box = (x: number, y: number, top: number) => [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, top]] as [[number, number], [number, number], [number, number]];
+    big.things = [
+      { id: "#p1", name: bram.name, kind: "person", fixed: true, mounted: false, shapes: [{ box: box(-9, -9, bram.height) }], appearance: bram.appearance },
+      // A rack 1.5 m behind him (north), and a person hidden behind a tall cabinet.
+      { id: "#rack", name: "rack", kind: "object", fixed: true, mounted: false, shapes: [{ box: [[-9.4, -8.6], [-7.7, -7.3], [0, 1.3]] }], classes: ["shelf", "thing"] },
+      { id: "#p2", name: "Hidden", kind: "person", fixed: true, mounted: false, shapes: [{ box: box(6, 6, 1.7) }] },
+      { id: "#cab", name: "cabinet", kind: "object", fixed: true, mounted: false, shapes: [{ box: [[5, 7.5], [3.5, 4.5], [0, 4]] }], classes: ["shelf", "thing"] },
+    ];
+    const placed = placeThings(big, {});
+    const scene = buildRoomScene({ layout: big, placed, arrivals: [], youId: "", facings: { "#p1": [0, 1, 0] } });
+    scene.root.updateMatrixWorld(true);
+    const size = { width: 276, height: 207 };
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, size.width / size.height, 0.05, 200);
+    camera.up.set(0, 0, 1);
+    const pose = dollhousePose(big);
+    camera.position.set(...pose.position);
+    const target = new THREE.Vector3(...pose.target);
+    camera.lookAt(target);
+    camera.updateMatrixWorld();
+    const pixel = (p: THREE.Vector3) => {
+      const v = p.clone().project(camera);
+      return { x: ((v.x + 1) / 2) * size.width, y: ((1 - v.y) / 2) * size.height };
+    };
+    const face = zoomFocus(placed[0].bounds, big);
+    // His whole figure is under 4 px tall here.
+    const feet = pixel(new THREE.Vector3(-9, -9, 0));
+    const crown = pixel(new THREE.Vector3(-9, -9, bram.height));
+    expect(feet.y - crown.y).toBeLessThan(4);
+    // Two pixels to his right at mid height (the ray meets the floor behind him): his face. Before, the floor.
+    const beside = { x: Math.max(feet.x, crown.x) + 2.5, y: (feet.y + crown.y) / 2 };
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((beside.x / size.width) * 2 - 1, -(beside.y / size.height) * 2 + 1), camera);
+    expect(ray.intersectObject(scene.things.get("#p1") as THREE.Object3D, true)).toEqual([]);
+    const pick = wheelZoomPoint(camera, beside, size, scene, placed, big);
+    expect(pick?.point.distanceTo(face)).toBeLessThan(1e-9);
+    // Beyond the tolerance, the floor or the rack, not him.
+    const far = wheelZoomPoint(camera, { x: beside.x + PICK_TOLERANCE + 2, y: beside.y }, size, scene, placed, big);
+    expect(far?.point.distanceTo(face)).toBeGreaterThan(0.5);
+    // A person hidden behind the cabinet is not picked from beside them; the cabinet is.
+    const hidden = wheelZoomPoint(camera, pixel(new THREE.Vector3(6, 6, 1.5)), size, scene, placed, big);
+    expect(hidden?.point.distanceTo(zoomFocus(placed[2].bounds, big))).toBeGreaterThan(0.5);
+
+    // Twenty notches from there, then any number more: close, his face in the middle, the camera never inside his box (grown by 10 cm).
+    const step = wheelStep(big);
+    const grown = new THREE.Box3(new THREE.Vector3(-9.3, -9.3, 0), new THREE.Vector3(-8.7, -8.7, bram.height + 0.1));
+    for (let i = 1; i <= 60; i++) {
+      wheelZoom(camera.position, target, pick?.point as THREE.Vector3, step, pick?.nearest);
+      camera.lookAt(target);
+      camera.updateMatrixWorld();
+      expect(grown.containsPoint(camera.position), `notch ${i}`).toBe(false);
+      expect(camera.position.distanceTo(face), `notch ${i}`).toBeGreaterThanOrEqual(ZOOM_NEAREST - 1e-9);
+      if (i === 20) {
+        expect(camera.position.distanceTo(face)).toBeLessThan(2.5);
+        const v = face.clone().project(camera);
+        expect(Math.hypot(v.x, v.y)).toBeLessThan(0.05);
+      }
+    }
     disposeRoomScene(scene);
   });
 
@@ -558,6 +633,91 @@ describe("cameras", () => {
         }
       }
     }
+  });
+
+  it("places no label over any person's head as drawn, close up with people and a thing behind", () => {
+    // Bram faces the camera; Cleo stands 1 m behind him and a tall rack 1.6 m behind; the camera comes close from a little above.
+    const layout = livingRoomLayout();
+    const person = (id: string, ch: (typeof TEST_CHARACTERS)[number], x: number, y: number) => ({
+      id,
+      name: ch.name,
+      kind: "person" as const,
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
+      appearance: ch.appearance,
+    });
+    layout.things = [
+      person("#bram", TEST_CHARACTERS[1], 0, 0),
+      person("#cleo", TEST_CHARACTERS[2], 0.15, 1),
+      { id: "#rack", name: "a newspaper rack of The Daily Caption", kind: "object", fixed: true, mounted: false, shapes: [{ box: [[-0.4, 0.4], [1.4, 1.8], [0, 1.3]] }], classes: ["shelf", "thing"] },
+    ];
+    const placed = placeThings(layout, {});
+    const scene = buildRoomScene({ layout, placed, arrivals: [], youId: "", facings: { "#bram": [0, -1, 0], "#cleo": [0, -1, 0] } });
+    scene.root.updateMatrixWorld(true);
+    const [w, h] = [276, 207];
+    const order = ["#bram", "#cleo", "#rack"];
+    const texts: Record<string, string> = { "#bram": "Bram Okoro", "#cleo": "Cleo Marsh", "#rack": "a newspaper rack of…" };
+    // Each person's head as drawn: every figure vertex above the chin, projected.
+    const drawnHead = (id: string, camera: THREE.Camera) => {
+      const figure = meshes(scene.things.get(id))[0];
+      const ch = id === "#bram" ? TEST_CHARACTERS[1] : TEST_CHARACTERS[2];
+      const params = figureParams(ch.appearance, { height: ch.height, base: "#000000" });
+      const chin = params.top - params.headHeight * 1.05;
+      const position = figure.geometry.getAttribute("position");
+      const box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+      const v = new THREE.Vector3();
+      for (let i = 0; i < position.count; i++) {
+        v.fromBufferAttribute(position, i).applyMatrix4(figure.matrixWorld);
+        if (v.z < chin) continue;
+        v.project(camera);
+        box.x0 = Math.min(box.x0, ((v.x + 1) / 2) * w);
+        box.x1 = Math.max(box.x1, ((v.x + 1) / 2) * w);
+        box.y0 = Math.min(box.y0, ((1 - v.y) / 2) * h);
+        box.y1 = Math.max(box.y1, ((1 - v.y) / 2) * h);
+      }
+      return box;
+    };
+    const overHead = (labels: ReturnType<typeof placeLabelsOver>, camera: THREE.Camera) =>
+      labels.flatMap((label) => {
+        const half = texts[label.id].length * 3;
+        const box = { x0: label.x - half, x1: label.x + half, y0: label.y - 7.2, y1: label.y + 7.2 };
+        return ["#bram", "#cleo"]
+          .filter((id) => {
+            const head = drawnHead(id, camera);
+            return box.x0 < head.x1 && head.x0 < box.x1 && box.y0 < head.y1 && head.y0 < box.y1;
+          })
+          .map((id) => `${label.id} over ${id}`);
+      });
+    let coveredBefore = 0;
+    for (const distance of [0.9, 1.3, 2, 3]) {
+      for (const rise of [0, 0.15, 0.35]) {
+        for (const turn of [-0.3, 0, 0.3]) {
+          const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, w / h, 0.05, 200);
+          camera.up.set(0, 0, 1);
+          const face = new THREE.Vector3(0, 0, TEST_CHARACTERS[1].height * 0.9);
+          camera.position.set(Math.sin(turn) * Math.cos(rise), -Math.cos(turn) * Math.cos(rise), Math.sin(rise)).multiplyScalar(distance).add(face);
+          camera.lookAt(face);
+          camera.updateMatrixWorld();
+          // As the 3D view asks: centred over the top as drawn, with the drawn label size; heads from `heads`.
+          const requests = order.flatMap((id) => {
+            const shown = screenTop(scene.labelPoints.get(id) as THREE.Vector3[], camera, w, h);
+            return shown ? [{ id, text: texts[id], x: shown.x, top: shown.top, width: texts[id].length * 6, height: 14.4 }] : [];
+          });
+          const heads = ["#bram", "#cleo"].flatMap((id) => {
+            const box = screenBox(scene.heads.get(id) as THREE.Vector3[], camera, w, h);
+            return box ? [{ id, ...box }] : [];
+          });
+          const frame = { x0: 4, x1: w - 4, y0: 4, y1: h - 4 };
+          const where = `distance ${distance}, rise ${rise}, turn ${turn}`;
+          expect(overHead(placeLabelsOver(requests, 3, frame, heads), camera), where).toEqual([]);
+          coveredBefore += overHead(placeLabelsOver(requests, 3, frame), camera).length;
+        }
+      }
+    }
+    // Without the heads kept clear (the old placement), labels did lie over faces in these views.
+    expect(coveredBefore).toBeGreaterThan(0);
+    disposeRoomScene(scene);
   });
 
   it("reads two fingers as a pinch: spacing before over after, onto where it began", () => {
@@ -647,11 +807,28 @@ describe("cameras", () => {
     element.remove();
   });
 
-  it("counts wheel notches: 100 pixels, 3 lines or a page", () => {
-    expect(wheelNotches(-100, 0)).toBe(1);
-    expect(wheelNotches(250, 0)).toBe(2.5);
-    expect(wheelNotches(-3, 1)).toBe(1);
-    expect(wheelNotches(1, 2)).toBe(1);
+  it("counts one mouse-wheel notch as one notch, whatever the browser sends for it, and a trackpad in proportion", () => {
+    // One notch as browsers' source builds it (log: reports/player-avatars-client-3d-labels-2026-11-16.md).
+    expect(wheelNotches(-100, 0)).toBe(1); // Chromium, Windows, 3 lines, any display scale
+    expect(wheelNotches(200, 0)).toBe(1); // Chromium, Windows set to 6 lines; or page zoom 50%
+    expect(wheelNotches(-120, 0)).toBe(1); // Chromium, Linux X11
+    expect(wheelNotches(-3, 1)).toBe(1); // Firefox, Windows, deltaMode read first
+    expect(wheelNotches(-6, 1)).toBe(1); // Firefox with its system scroll speed-up
+    expect(wheelNotches(1, 2)).toBe(1); // "one screen at a time"
+    // A high-resolution wheel's quarter-notch events, and a trackpad's stream of small deltas, add up in proportion.
+    expect(wheelNotches(25, 0) * 4).toBeCloseTo(1, 9);
+    expect(wheelNotches(0.75, 1) * 4).toBeCloseTo(1, 9);
+    expect(Array.from({ length: 50 }, () => wheelNotches(4, 0)).reduce((a, b) => a + b, 0)).toBeCloseTo(2, 9);
+    // Chromium at page zoom 300% sends a notch as 33.3 (and Playwright's wheel at device scale 3 arrives so too):
+    // the event alone cannot tell it from a trackpad's 33 px, so it counts as a third.
+    expect(wheelNotches(100 / 3, 0)).toBeCloseTo(1 / 3, 9);
+  });
+
+  it("zooms Your eyes by a wheel's notches, fractions too, within the same limits as the keys", () => {
+    expect(zoomedFovBy(EYES_FOV, 1)).toBeCloseTo(zoomedFov(EYES_FOV, "+") as number, 9);
+    expect(zoomedFovBy(EYES_FOV, 0.25) ** 4 / EYES_FOV ** 3).toBeCloseTo(zoomedFovBy(EYES_FOV, 1), 6);
+    expect(zoomedFovBy(EYES_FOV, -3)).toBe(EYES_FOV);
+    expect(zoomedFovBy(EYES_MIN_FOV, 5)).toBe(EYES_MIN_FOV);
   });
 
   it("lets the dollhouse reach a large room's whole-room view", () => {

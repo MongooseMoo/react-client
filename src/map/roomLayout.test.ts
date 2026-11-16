@@ -152,65 +152,93 @@ describe("room layout geometry", () => {
   });
 
   describe("3D labels (placeLabelsOver)", () => {
-    const fontSize = 12;
+    const gap = 3;
+    // The drawn label: 12 px text at line-height 1.2. Widths are the bold text's as Chromium draws it
+    // (about 0.48 em a character; the old estimate of 0.58 em made "Hale Brennick" 96 px instead of 75).
+    const height = 14.4;
+    const width = (text: string) => text.length * 5.77;
     const frame = { x0: 4, x1: 272, y0: 4, y1: 203 };
-    // A label's box as placeLabels estimates it: 0.58 em a character, plus a quarter em; 0.7 em above and below.
-    const boxOf = (l: { text: string; x: number; y: number }) => {
-      const half = (l.text.length * 0.58 * fontSize) / 2 + fontSize * 0.25;
-      return { x0: l.x - half, x1: l.x + half, y0: l.y - fontSize * 0.7, y1: l.y + fontSize * 0.7 };
-    };
-    const height = fontSize * 1.4;
-    // Each shown label still spans its figure's x, sits no lower than asked, at most two label heights up, and none overlap.
-    const attached = (requests: Array<{ id: string; text: string; x: number; y: number }>, labels: ReturnType<typeof placeLabelsOver>) => {
+    type Asked = { id: string; text: string; x: number; top: number };
+    const ask = (requests: Asked[]) => requests.map((r) => ({ ...r, width: width(r.text), height }));
+    const boxOf = (l: { text: string; x: number; y: number }) => ({ x0: l.x - width(l.text) / 2, x1: l.x + width(l.text) / 2, y0: l.y - height / 2, y1: l.y + height / 2 });
+    // Each shown label spans the middle of what it names, its bottom at least `gap` and at most two label heights above its top, none overlapping.
+    const attached = (requests: Asked[], labels: ReturnType<typeof placeLabelsOver>) => {
       for (const label of labels) {
-        const asked = requests.find((r) => r.id === label.id) as (typeof requests)[number];
+        const asked = requests.find((r) => r.id === label.id) as Asked;
         const box = boxOf(label);
         expect(box.x0, label.id).toBeLessThan(asked.x);
         expect(box.x1, label.id).toBeGreaterThan(asked.x);
-        expect(label.y, label.id).toBeLessThanOrEqual(asked.y + 1e-9);
-        expect(asked.y - label.y, label.id).toBeLessThanOrEqual(2 * height + 1e-9);
+        expect(asked.top - box.y1, label.id).toBeGreaterThanOrEqual(gap - 1e-9);
+        expect(asked.top - box.y1, label.id).toBeLessThanOrEqual(2 * height + 1e-9);
       }
       for (let i = 0; i < labels.length; i++) {
         for (let j = i + 1; j < labels.length; j++) {
           const a = boxOf(labels[i]);
           const b = boxOf(labels[j]);
-          expect(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1, `${labels[i].id} over ${labels[j].id}`).toBe(false);
+          // Side by side they keep 6 px apart, so two names never read as one.
+          expect(a.x0 - 6 < b.x1 && b.x0 - 6 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1, `${labels[i].id} against ${labels[j].id}`).toBe(false);
         }
       }
     };
 
-    it("keeps a lone label exactly where it was asked for", () => {
-      const labels = placeLabelsOver([{ id: "a", text: "Winxie Wink", x: 120, y: 90 }], fontSize, frame);
-      expect(labels).toEqual([{ id: "a", text: "Winxie Wink", x: 120, y: 90 }]);
+    it("keeps a lone label centred over what it names, its bottom the gap above the top", () => {
+      const labels = placeLabelsOver(ask([{ id: "a", text: "Winxie Wink", x: 120, top: 100 }]), gap, frame);
+      expect(labels).toEqual([{ id: "a", text: "Winxie Wink", x: 120, y: 100 - gap - height / 2 }]);
     });
 
     it("moves the second of two clashing labels only as far as it must, staying over its figure", () => {
       const requests = [
-        { id: "a", text: "Generic Janet", x: 120, y: 90 },
-        { id: "b", text: "deepsqueak", x: 135, y: 92 },
+        { id: "a", text: "Generic Janet", x: 120, top: 100 },
+        { id: "b", text: "deepsqueak", x: 135, top: 102 },
       ];
-      const labels = placeLabelsOver(requests, fontSize, frame);
+      const labels = placeLabelsOver(ask(requests), gap, frame);
       expect(labels.map((l) => l.id)).toEqual(["a", "b"]);
-      expect(labels[0]).toMatchObject({ x: 120, y: 90 });
       attached(requests, labels);
-      // The old placement sent it a whole label width aside (about 50 px); now it moves less than a label height and a half.
-      expect(Math.hypot(labels[1].x - 135, labels[1].y - 92)).toBeLessThan(height * 1.5);
+      expect(Math.hypot(labels[1].x - 135, labels[1].y - (102 - gap - height / 2))).toBeLessThan(height * 1.5);
+    });
+
+    it("keeps Your eyes' row of heads to the rule: each label over its own head, never above two label heights", () => {
+      // At eye level every standing head is on nearly the same row (the harness's Your eyes among 24), so labels
+      // climb and slide as far as allowed. The old placement let one rise to 2.6 label heights and slide off its figure.
+      const names = ["Kit Sarne", "Lio Danner", "Mott Ansel", "Esme Tarrow", "Faro Quint", "Gwen Ashby", "Ines Corvald", "Hale Brennick", "Dov Lindqvist", "Cleo Marsh"];
+      const requests = names.map((text, i) => ({ id: `#p${i}`, text, x: 20 + i * 25, top: 104 + (i % 3) }));
+      const labels = placeLabelsOver(ask(requests), gap, frame);
+      expect(labels.length).toBeGreaterThan(4);
+      attached(requests, labels);
     });
 
     it("keeps every label of a crowd over its own figure, leaving out the ones with no room", () => {
       const names = ["Kit Sarne", "Lio Danner", "Mott Ansel", "Esme Tarrow", "Faro Quint", "Gwen Ashby", "Ines Corvald", "Hale Brennick (you)"];
-      const requests = names.map((text, i) => ({ id: `#p${i}`, text, x: 60 + (i % 4) * 45, y: 90 + Math.floor(i / 4) * 12 }));
-      const labels = placeLabelsOver(requests, fontSize, frame);
+      const requests = names.map((text, i) => ({ id: `#p${i}`, text, x: 60 + (i % 4) * 45, top: 100 + Math.floor(i / 4) * 12 }));
+      const labels = placeLabelsOver(ask(requests), gap, frame);
       expect(labels.length).toBeGreaterThan(3);
       attached(requests, labels);
     });
 
-    it("keeps a label at the picture's edge inside it and still over its figure", () => {
-      const requests = [{ id: "a", text: "Hale Brennick (you)", x: 266, y: 120 }];
-      const labels = placeLabelsOver(requests, fontSize, frame);
+    it("keeps labels off every head but their own person's, moving them by the same rule or leaving them out", () => {
+      // A thing's label asked for right where another person's head is drawn: it rises clear of the head.
+      const head = { id: "#p1", x0: 110, x1: 130, y0: 80, y1: 100 };
+      const thing = placeLabelsOver(ask([{ id: "#rack", text: "a newspaper rack", x: 120, top: 104 }]), gap, frame, [head]);
+      expect(thing).toHaveLength(1);
+      const box = boxOf(thing[0]);
+      expect(box.x0 < head.x1 && head.x0 < box.x1 && box.y0 < head.y1 && head.y0 < box.y1).toBe(false);
+      // Its own head never pushes a person's label away: it sits just above it as asked.
+      expect(placeLabelsOver(ask([{ id: "#p1", text: "Bram Okoro", x: 120, top: 80 }]), gap, frame, [head])).toEqual([
+        { id: "#p1", text: "Bram Okoro", x: 120, y: 80 - gap - height / 2 },
+      ]);
+      // A face filling the picture's middle leaves no free spot within two label heights: the label is left out.
+      const face = { id: "#p1", x0: 20, x1: 256, y0: 30, y1: 200 };
+      expect(placeLabelsOver(ask([{ id: "#rack", text: "a newspaper rack", x: 120, top: 120 }]), gap, frame, [face])).toEqual([]);
+    });
+
+    it("keeps a label at the picture's edge inside it and still over its figure, or leaves it out", () => {
+      const requests = [{ id: "a", text: "Hale Brennick (you)", x: 266, top: 130 }];
+      const labels = placeLabelsOver(ask(requests), gap, frame);
       expect(labels).toHaveLength(1);
       expect(boxOf(labels[0]).x1).toBeLessThanOrEqual(frame.x1);
       attached(requests, labels);
+      // A figure at the very edge with a name too short to reach in over it from inside the frame: left out, not moved off it.
+      expect(placeLabelsOver(ask([{ id: "b", text: "Kit Sarne", x: 2, top: 130 }]), gap, frame)).toEqual([]);
     });
   });
 

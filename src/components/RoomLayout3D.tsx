@@ -6,9 +6,10 @@ import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRe
 import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
 import type { LayoutVector, RoomLayout } from "../gmcp/Room";
 import {
+  type Box,
   displayName,
   isPerson,
-  type LabelRequest,
+  type LabelOver,
   labelOrder,
   type PlacedThing,
   placeLabelsOver,
@@ -30,13 +31,17 @@ import {
   eyesPose,
   Pinch,
   type RoomScene,
+  screenBox,
   screenTop,
   wheelNotches,
   wheelStep,
   wheelZoom,
   wheelZoomPoint,
+  ZOOM_NEAREST,
+  type ZoomPick,
   ZOOM_STEP,
   zoomedFov,
+  zoomedFovBy,
 } from "../map/roomScene";
 import type { LayoutArrival } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
@@ -60,10 +65,28 @@ interface RoomLayout3DProps {
   onExit: (name: string) => void;
 }
 
-/** Label text height on screen, CSS pixels: the plan's size. */
-const LABEL_PIXELS = 12;
 /** Space between a label and the top of what it names, CSS pixels. */
 const LABEL_GAP = 3;
+
+/**
+ * A label's size as drawn, CSS pixels: its text's width in its own computed font (the
+ * label has no padding), and its line height. Kept by class and text, which fix it.
+ */
+function labelSize(element: HTMLElement, sizes: Map<string, { width: number; height: number }>): { width: number; height: number } {
+  const key = `${element.className}\n${element.textContent}`;
+  let size = sizes.get(key);
+  if (!size) {
+    const style = getComputedStyle(element);
+    const fontSize = Number.parseFloat(style.fontSize);
+    const context = document.createElement("canvas").getContext("2d");
+    if (!context || !(fontSize > 0)) return { width: 0, height: 0 };
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    size = { width: context.measureText(element.textContent ?? "").width, height: lineHeight > 0 ? lineHeight : fontSize * 1.2 };
+    sizes.set(key, size);
+  }
+  return size;
+}
 
 interface Stage {
   renderer: THREE.WebGLRenderer;
@@ -75,6 +98,8 @@ interface Stage {
   /** People's figure geometries, reused while their look is unchanged. */
   figures: FigureCache;
   labelObjects: Map<string, CSS2DObject>;
+  /** Labels' drawn sizes (`labelSize`). */
+  labelSizes: Map<string, { width: number; height: number }>;
   render: () => void;
 }
 
@@ -119,7 +144,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
     camera.up.set(0, 0, 1);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.maxPolarAngle = Math.PI / 2 - 0.05;
-    controls.minDistance = 0.5;
+    controls.minDistance = ZOOM_NEAREST;
     // The controls turn the view (drag, one finger) and nothing else: the wheel never reaches them
     // (`onWheel` below takes it), and two fingers are left to `onTouchPointer`, which zooms the same way.
     controls.touches.TWO = null;
@@ -134,6 +159,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       room: null,
       figures: new FigureCache(),
       labelObjects: new Map(),
+      labelSizes: new Map(),
       render: () => {
         if (stage.room) cutWalls(stage.room, layoutRef.current, camera.position, modeRef.current);
         renderer.render(scene, camera);
@@ -184,7 +210,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
   function placeVisibleLabels(stage: Stage) {
     const width = stage.labels.domElement.clientWidth || stage.renderer.domElement.clientWidth;
     const height = stage.labels.domElement.clientHeight || stage.renderer.domElement.clientHeight;
-    const requests: Array<Omit<LabelRequest, "radius">> = [];
+    const requests: LabelOver[] = [];
     const anchors = new Map<string, [number, number]>();
     const projected = new THREE.Vector3();
     for (const { id, text } of labelPlan.current) {
@@ -198,11 +224,20 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       // Where CSS2DRenderer puts the label before it is moved: its object's point.
       projected.copy(object.position).project(stage.camera);
       anchors.set(id, [((projected.x + 1) / 2) * width, ((1 - projected.y) / 2) * height]);
+      const size = labelSize(object.element, stage.labelSizes);
+      if (size.width === 0) continue;
       // Centred over the head (or thing), its bottom edge LABEL_GAP pixels above the head's top as drawn: clear of hair and face at any zoom.
-      requests.push({ id, text, x: shown.x, y: shown.top - LABEL_GAP - LABEL_PIXELS * 0.7 });
+      requests.push({ id, text, x: shown.x, top: shown.top, ...size });
+    }
+    // Every head drawn in the picture is kept clear of labels (you are not drawn in your own eyes).
+    const heads: Array<Box & { id: string }> = [];
+    for (const [id, corners] of stage.room?.heads ?? []) {
+      if (!stage.room?.things.get(id)?.visible) continue;
+      const box = screenBox(corners, stage.camera, width, height);
+      if (box) heads.push({ id, ...box });
     }
     const inset = 4;
-    const placedLabels = placeLabelsOver(requests, LABEL_PIXELS, { x0: inset, x1: width - inset, y0: inset, y1: height - inset });
+    const placedLabels = placeLabelsOver(requests, LABEL_GAP, { x0: inset, x1: width - inset, y0: inset, y1: height - inset }, heads);
     for (const placedLabel of placedLabels) {
       const object = stage.labelObjects.get(placedLabel.id);
       const anchor = anchors.get(placedLabel.id);
@@ -242,6 +277,9 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
       const element = document.createElement("div");
       element.className = id === youId ? "rl3d-label rl3d-label-you" : person ? "rl3d-label rl3d-label-person" : "rl3d-label";
       element.textContent = shortLabel(text);
+      // In the label layer from the start, so its drawn size can be read before it is first shown.
+      element.style.display = "none";
+      stage.labels.domElement.appendChild(element);
       const object = new CSS2DObject(element);
       object.position.copy(points[0]);
       object.visible = false;
@@ -321,36 +359,44 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, arrivals, y
   };
 
   // What the dollhouse wheel is zooming onto, kept while the pointer stays where it was.
-  const wheelFocus = useRef<{ x: number; y: number; point: THREE.Vector3 | undefined } | null>(null);
+  const wheelFocus = useRef<{ x: number; y: number; pick: ZoomPick | undefined } | null>(null);
   const onWheel = (event: WheelEvent) => {
     const stage = stageRef.current;
     if (!stage) return;
     event.preventDefault();
     event.stopPropagation();
-    if (event.deltaY === 0) return;
+    // deltaMode first: Firefox then reports a mouse wheel in lines, not in pixels of the page's font.
+    const deltaMode = event.deltaMode;
+    const deltaY = event.deltaY;
+    if (deltaY === 0) return;
+    const notches = wheelNotches(deltaY, deltaMode) * (deltaY < 0 ? 1 : -1);
     if (mode === "eyes") {
-      zoomEyes(event.deltaY < 0 ? "+" : "-");
+      stage.camera.fov = zoomedFovBy(stage.camera.fov, notches);
+      stage.camera.updateProjectionMatrix();
+      stage.render();
       return;
     }
-    zoomOnto(stage, event.clientX, event.clientY, wheelStep(layout) ** (wheelNotches(event.deltaY, event.deltaMode) * (event.deltaY < 0 ? 1 : -1)));
+    zoomOnto(stage, event.clientX, event.clientY, wheelStep(layout) ** notches);
   };
   const onWheelRef = useRef(onWheel);
   onWheelRef.current = onWheel;
 
   /**
-   * One dollhouse zoom by `scale` onto what is at (clientX, clientY): picked there the first
-   * time, and kept while the wheel or pinch stays within 4 px of it.
+   * One dollhouse zoom by `scale` onto what is at (clientX, clientY) (`wheelZoomPoint`: a person
+   * drawn within PICK_TOLERANCE first): picked there the first time, and kept while the wheel
+   * or pinch stays within 4 px of it. The camera stops short of it, outside what it zooms onto.
    */
   const zoomOnto = (stage: Stage, clientX: number, clientY: number, scale: number) => {
     const focus = wheelFocus.current;
     if (!focus || Math.hypot(clientX - focus.x, clientY - focus.y) > 4) {
       const rect = stage.renderer.domElement.getBoundingClientRect();
-      const ray = new THREE.Raycaster();
-      ray.setFromCamera(new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), stage.camera);
-      const point = stage.room ? wheelZoomPoint(ray.ray, stage.room, placed, layout) : undefined;
-      wheelFocus.current = { x: clientX, y: clientY, point };
+      const pick = stage.room
+        ? wheelZoomPoint(stage.camera, { x: clientX - rect.left, y: clientY - rect.top }, rect, stage.room, placed, layout)
+        : undefined;
+      wheelFocus.current = { x: clientX, y: clientY, pick };
     }
-    wheelZoom(stage.camera.position, stage.controls.target, wheelFocus.current?.point ?? stage.controls.target.clone(), scale);
+    const pick = wheelFocus.current?.pick;
+    wheelZoom(stage.camera.position, stage.controls.target, pick?.point ?? stage.controls.target.clone(), scale, pick?.nearest ?? ZOOM_NEAREST);
     stage.controls.update();
     stage.render();
   };

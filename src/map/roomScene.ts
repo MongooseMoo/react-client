@@ -89,7 +89,27 @@ export interface RoomScene {
    * the middle of a thing's top. The first point is where the label hangs.
    */
   labelPoints: Map<string, THREE.Vector3[]>;
+  /** Each person's head as drawn (everything above the chin: hair, hat, antlers), as its box's eight corners. */
+  heads: Map<string, THREE.Vector3[]>;
 }
+
+/** The box round a figure geometry's vertices above `chin`, worked out once per geometry. */
+function headBox(geometry: THREE.BufferGeometry, chin: number): THREE.Box3 {
+  const kept = geometry.userData.headBox as { chin: number; box: THREE.Box3 } | undefined;
+  if (kept && kept.chin === chin) return kept.box;
+  const box = new THREE.Box3();
+  const position = geometry.getAttribute("position");
+  const v = new THREE.Vector3();
+  for (let i = 0; i < position.count; i++) {
+    v.fromBufferAttribute(position, i);
+    if (v.z >= chin) box.expandByPoint(v);
+  }
+  geometry.userData.headBox = { chin, box };
+  return box;
+}
+
+const boxCorners = (b: THREE.Box3): THREE.Vector3[] =>
+  [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z));
 
 /** Builds meshes, sharing one material per colour within a scene. */
 class Builder {
@@ -154,12 +174,14 @@ class Builder {
     z1: number,
     base: number,
     facing: LayoutVector | undefined,
-  ): { mesh: THREE.Mesh; label: THREE.Vector3[] } {
+  ): { mesh: THREE.Mesh; label: THREE.Vector3[]; head: THREE.Vector3[] } {
     const params = figureParams(appearance, { height: z1 - z0, base: hexString(base) });
     const mesh = figureMesh(params, x, y, z0, facing, this.figureMaterial(), this.figures);
     mesh.updateMatrixWorld();
-    const outline = headOutline(mesh.geometry, params.top - params.headHeight * 1.05);
-    return { mesh, label: outline.map((p) => p.clone().applyMatrix4(mesh.matrixWorld)) };
+    const chin = params.top - params.headHeight * 1.05;
+    const outline = headOutline(mesh.geometry, chin);
+    const toWorld = (p: THREE.Vector3) => p.clone().applyMatrix4(mesh.matrixWorld);
+    return { mesh, label: outline.map(toWorld), head: boxCorners(headBox(mesh.geometry, chin)).map(toWorld) };
   }
 }
 
@@ -356,6 +378,7 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
 
   const things = new Map<string, THREE.Group>();
   const labelPoints = new Map<string, THREE.Vector3[]>();
+  const heads = new Map<string, THREE.Vector3[]>();
   for (const p of placed) {
     const group = new THREE.Group();
     group.name = p.thing.id;
@@ -364,9 +387,10 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
     if (isPerson(p.thing)) {
       group.userData.form = "person";
       const base = p.thing.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, label } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
+      const { mesh, label, head } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, facings[p.thing.id]);
       group.add(mesh);
       labelPoints.set(p.thing.id, label);
+      heads.set(p.thing.id, head);
     } else {
       group.userData.form = thingForm(p.thing);
       for (const mesh of thingMeshes(builder, p, layout.size)) group.add(mesh);
@@ -384,9 +408,10 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
       // Client.Spatial puts a person at head height; the body stands on the floor below it.
       const crown = Math.max(at[2] + 0.12, 1.0);
       const base = arrival.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, label } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
+      const { mesh, label, head } = builder.person(undefined, at[0], at[1], 0, crown, base, facings[arrival.id]);
       group.add(mesh);
       labelPoints.set(arrival.id, label);
+      heads.set(arrival.id, head);
     } else {
       group.userData.form = "box";
       const s = 0.1;
@@ -399,7 +424,27 @@ export function buildRoomScene({ layout, placed, arrivals, youId, facings = {}, 
 
   // Figures of people who left, or whose look changed, are freed now.
   figures?.sweep();
-  return { root, walls, ceiling, exits, things, labelPoints };
+  return { root, walls, ceiling, exits, things, labelPoints, heads };
+}
+
+/**
+ * The screen box, in pixels from the top left of a `width` x `height` picture, round
+ * `points` (a head's box corners). Undefined when any of them is behind the camera or beyond its far plane.
+ */
+export function screenBox(points: THREE.Vector3[], camera: THREE.Camera, width: number, height: number): { x0: number; x1: number; y0: number; y1: number } | undefined {
+  const at = new THREE.Vector3();
+  const box = { x0: Number.POSITIVE_INFINITY, x1: Number.NEGATIVE_INFINITY, y0: Number.POSITIVE_INFINITY, y1: Number.NEGATIVE_INFINITY };
+  for (const point of points) {
+    at.copy(point).project(camera);
+    if (at.z < -1 || at.z > 1) return undefined;
+    const x = ((at.x + 1) / 2) * width;
+    const y = ((1 - at.y) / 2) * height;
+    box.x0 = Math.min(box.x0, x);
+    box.x1 = Math.max(box.x1, x);
+    box.y0 = Math.min(box.y0, y);
+    box.y1 = Math.max(box.y1, y);
+  }
+  return box;
 }
 
 /**
@@ -500,26 +545,96 @@ export function wheelStep(layout: RoomLayout, fov = DOLLHOUSE_FOV): number {
   return Math.min(0.95, (WHEEL_CLOSE / distance) ** (1 / WHEEL_NOTCHES));
 }
 
-/** How many wheel notches a wheel event is: a notch is 100 pixels, 3 lines or one page. */
+/**
+ * How many wheel notches a wheel event is: at most one, and a smaller event in proportion to a
+ * notch of 100 pixels, 3 lines or one page. What browsers send for one notch of a mouse wheel
+ * (from their source; see docs/room-layout.md): Chromium 100 px on Windows at the default 3 lines
+ * at any display scale (6 lines: 200), 120 px on Linux, never lines; Firefox 3 lines (6 with its
+ * own speed-up) when `deltaMode` is read before `deltaY`, which callers must do. So every notch
+ * is one; a trackpad's small deltas add up smoothly; a page zoom above 100% in Chromium divides
+ * its notch (200%: 50 px, half a notch), which the event alone cannot tell from a trackpad.
+ */
 export function wheelNotches(deltaY: number, deltaMode: number): number {
-  return Math.abs(deltaY) / (deltaMode === 1 ? 3 : deltaMode === 2 ? 1 : 100);
+  return Math.min(1, Math.abs(deltaY) / (deltaMode === 1 ? 3 : deltaMode === 2 ? 1 : 100));
 }
 
 /**
- * What a dollhouse wheel zoom heads for, along the pointer's ray: a person's face
- * when the ray meets a person, else the first thing it meets, else the floor;
- * undefined when it meets none of them (pointing over the walls into the dark).
+ * How near the pointer must be to a person as drawn, CSS pixels, for the wheel or a pinch to
+ * pick them: half of the 24 CSS px minimum target of WCAG 2.2 success criterion 2.5.8, so
+ * even a person a pixel tall is a target at least 24 px across.
  */
-export function wheelZoomPoint(ray: THREE.Ray, scene: RoomScene, placed: PlacedThing[], layout: RoomLayout): THREE.Vector3 | undefined {
-  const caster = new THREE.Raycaster(ray.origin, ray.direction);
-  const hit = caster.intersectObjects([...scene.things.values()], true)[0];
-  if (hit) {
-    let object: THREE.Object3D | null = hit.object;
-    while (object && object.userData.thingId === undefined) object = object.parent;
-    const person = object?.userData.form === "person" ? placed.find((p) => p.thing.id === object?.userData.thingId) : undefined;
-    return person ? zoomFocus(person.bounds, layout) : hit.point.clone();
+export const PICK_TOLERANCE = 12;
+/** The least distance, metres, the dollhouse camera keeps from what it zooms onto (OrbitControls' minDistance too). */
+export const ZOOM_NEAREST = 0.5;
+/** Room left round a person's box that a zoom onto them never brings the camera into, metres. */
+const PERSON_CLEARANCE = 0.15;
+
+/** What a dollhouse zoom heads for, and how near the camera may come to it. */
+export interface ZoomPick {
+  point: THREE.Vector3;
+  /** The camera stops this far from `point`: outside what owns it. */
+  nearest: number;
+}
+
+const thingIdOf = (object: THREE.Object3D | null): string | undefined => {
+  while (object && object.userData.thingId === undefined) object = object.parent;
+  return object?.userData.thingId as string | undefined;
+};
+
+/**
+ * What a dollhouse wheel zoom or pinch at (x, y), pixels from the top left of a `width` x
+ * `height` picture, heads for. A person's face when a visible person is drawn within
+ * PICK_TOLERANCE of the pointer (the nearest one), else the first thing under the pointer,
+ * else the floor; undefined when there is none of them (pointing over the walls into the dark).
+ * `nearest` keeps the camera outside the person (their box and PERSON_CLEARANCE) and at least ZOOM_NEAREST away.
+ */
+export function wheelZoomPoint(
+  camera: THREE.Camera,
+  at: { x: number; y: number },
+  size: { width: number; height: number },
+  scene: RoomScene,
+  placed: PlacedThing[],
+  layout: RoomLayout,
+): ZoomPick | undefined {
+  const caster = new THREE.Raycaster();
+  caster.setFromCamera(new THREE.Vector2((at.x / size.width) * 2 - 1, -(at.y / size.height) * 2 + 1), camera);
+  const things = [...scene.things.values()].filter((group) => group.visible);
+  const eye = camera.getWorldPosition(new THREE.Vector3());
+
+  // People drawn near the pointer, nearest to it first (then nearest the camera), each only if nothing hides their face.
+  const near: Array<{ person: PlacedThing; off: number; depth: number }> = [];
+  for (const person of placed) {
+    if (scene.things.get(person.thing.id)?.userData.form !== "person" || !scene.things.get(person.thing.id)?.visible) continue;
+    const b = person.bounds;
+    const corners = boxCorners(new THREE.Box3(new THREE.Vector3(b.x0, b.y0, b.z0), new THREE.Vector3(b.x1, b.y1, b.z1)));
+    const box = screenBox(corners, camera, size.width, size.height);
+    if (!box) continue;
+    const off = Math.hypot(Math.max(box.x0 - at.x, 0, at.x - box.x1), Math.max(box.y0 - at.y, 0, at.y - box.y1));
+    if (off <= PICK_TOLERANCE) near.push({ person, off, depth: eye.distanceTo(zoomFocus(b, layout)) });
   }
-  return ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3()) ?? undefined;
+  near.sort((p, q) => p.off - q.off || p.depth - q.depth);
+  for (const { person, depth } of near) {
+    const face = zoomFocus(person.bounds, layout);
+    const sight = new THREE.Raycaster(eye, face.clone().sub(eye).normalize(), 0, depth);
+    const first = sight.intersectObjects(things, true)[0];
+    if (first && thingIdOf(first.object) !== person.thing.id) continue;
+    return { point: face, nearest: Math.max(ZOOM_NEAREST, outOfBox(face, eye, person.bounds, PERSON_CLEARANCE)) };
+  }
+
+  const hit = caster.intersectObjects(things, true)[0];
+  if (hit) return { point: hit.point.clone(), nearest: ZOOM_NEAREST };
+  const floor = caster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+  return floor ? { point: floor, nearest: ZOOM_NEAREST } : undefined;
+}
+
+/** How far from `point`, inside box `b` grown by `clearance`, the line toward `toward` leaves it. */
+function outOfBox(point: THREE.Vector3, toward: THREE.Vector3, b: Bounds, clearance: number): number {
+  const grown = new THREE.Box3(new THREE.Vector3(b.x0 - clearance, b.y0 - clearance, b.z0), new THREE.Vector3(b.x1 + clearance, b.y1 + clearance, b.z1 + clearance));
+  const direction = toward.clone().sub(point).normalize();
+  // From far along the line back toward the point, the first crossing of the grown box is where the line leaves it.
+  const far = point.clone().addScaledVector(direction, 1000);
+  const entry = new THREE.Ray(far, direction.clone().negate()).intersectBox(grown, new THREE.Vector3());
+  return entry ? point.distanceTo(entry) : 0;
 }
 
 /**
@@ -571,11 +686,14 @@ export class Pinch {
  * One dollhouse zoom, a wheel notch's or a pinch step's, by `scale` (below 1 comes closer). Zooming in moves the
  * camera toward `point` and the point it orbits onto `point` a little faster, so what
  * was zoomed onto comes to the middle of the picture and the arrow keys then turn
- * around it. Zooming out backs away from the point it orbits.
+ * around it. Zooming out backs away from the point it orbits. Zooming in never brings the
+ * camera nearer `point` than `nearest` (a `ZoomPick`'s), so it stays outside what it zooms onto.
  */
-export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: THREE.Vector3, scale: number): void {
+export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: THREE.Vector3, scale: number, nearest = 0): void {
   if (scale < 1) {
-    camera.sub(point).multiplyScalar(scale).add(point);
+    const distance = camera.distanceTo(point);
+    const toward = distance > nearest ? Math.max(scale, nearest / distance) : 1;
+    camera.sub(point).multiplyScalar(toward).add(point);
     target.sub(point).multiplyScalar(scale * scale).add(point);
   } else {
     camera.sub(target).multiplyScalar(scale).add(target);
@@ -584,10 +702,15 @@ export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: T
 
 /** Your eyes' field of view after a zoom key (`+`/`=` in, `-`/`_` out, `0` back), or undefined for any other key. */
 export function zoomedFov(fov: number, key: string): number | undefined {
-  if (key === "+" || key === "=") return Math.max(EYES_MIN_FOV, fov * ZOOM_STEP);
-  if (key === "-" || key === "_") return Math.min(EYES_FOV, fov / ZOOM_STEP);
+  if (key === "+" || key === "=") return zoomedFovBy(fov, 1);
+  if (key === "-" || key === "_") return zoomedFovBy(fov, -1);
   if (key === "0") return EYES_FOV;
   return undefined;
+}
+
+/** Your eyes' field of view after `steps` zoom steps (in when positive; a wheel's notches, fractions too), within limits. */
+export function zoomedFovBy(fov: number, steps: number): number {
+  return Math.min(EYES_FOV, Math.max(EYES_MIN_FOV, fov * ZOOM_STEP ** steps));
 }
 
 /**

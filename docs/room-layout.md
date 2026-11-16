@@ -104,9 +104,13 @@ buttons (the choice is kept across rooms):
 - **Dollhouse**: the room in 3D, seen from above one corner, far enough out for the whole room
   however large. Drag, or one finger, to turn it. The wheel zooms toward what is under the
   pointer, and a pinch toward what is between the two fingers where it began: a person's face
-  when that is a person, else the thing or the floor there. Either brings it to the middle of the
-  picture as it comes closer (about twenty wheel notches from the whole-room view to a person
-  close up, in a room of any size; a pinch comes as much closer as the fingers spread apart).
+  when a person is drawn within 12 CSS pixels of that point (the nearest one, if nothing hides
+  their face; half the 24 px minimum target of WCAG 2.2 criterion 2.5.8, so a person a pixel tall
+  in a large room can still be picked), else the thing or the floor there. Either brings it to
+  the middle of the picture as it comes closer (about twenty wheel notches from the whole-room
+  view to a person close up, in a room of any size; a pinch comes as much closer as the fingers
+  spread apart), and stops short of it: never nearer than 0.5 m, and never inside a person it
+  zooms onto (their box and 15 cm round it).
   Turning then goes round it, so you can turn until a person faces you. On the picture the arrow keys turn
   it, `+` and `-` zoom toward and away from your own figure (the room's middle when you are not in
   the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
@@ -114,12 +118,22 @@ buttons (the choice is kept across rooms):
   your `Client.Spatial` forward, turning as you turn. `+` and `-` on the picture, or the wheel,
   narrow and widen the view (up to about seven times closer); `0` returns to the normal view.
 
+In both 3D views a wheel event counts as at most one notch, and a smaller one in proportion to a
+notch of 100 pixels, 3 lines or a page, so a trackpad or a high-resolution wheel zooms smoothly.
+That makes every notch of a mouse wheel one notch as browsers send it (read in their source, not
+measured): Chromium sends 100 px on Windows at the default 3 lines at any display scale (200 px at
+6 lines) and 120 px on Linux; Firefox sends 3 lines (6 with its own speed-up) when the page reads
+`deltaMode` first, as this view does. Chromium divides a notch by the page zoom (50 px at 200%),
+which the event alone cannot tell from a trackpad's delta, so there a notch counts as that fraction.
+
 In both 3D views a name label sits just above the top of the head as drawn (hair, hat or antlers
-included), or above the middle of a thing's top, at every zoom, so it never covers a face.
-Where labels would overlap, a later one (people first, you first among them) moves up, or a
-little sideways while its text still spans its figure, by the least that frees it and at most two
-label heights; one with no such place is left out until zooming makes room (the lists below
-still name it).
+included), or above the middle of a thing's top, at every zoom. No label, a person's or a
+thing's, is placed over anyone's head as drawn, so none covers a face. Where a label would
+overlap another label or someone else's head, the later one (people first, you first among them)
+moves up, or a little sideways while its text still spans the middle of what it names, by the
+least that frees it, its bottom never more than two of its own heights above that top; one with
+no such place is left out until zooming makes room (the lists below still name it). Labels are
+placed by their size as drawn, and two side by side keep a few pixels apart.
 
 In every view things are drawn by what they are, from the first of their `classes` the client
 knows: a table as a top on legs, a chair or other furniture as a seat with its back to the
