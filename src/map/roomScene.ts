@@ -430,6 +430,7 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
   }
   // Figures of people who left, or whose look changed, are freed now.
   figures?.sweep();
+  root.updateMatrixWorld(true);
   return { root, walls, ceiling, exits, things, labelPoints, heads };
 }
 

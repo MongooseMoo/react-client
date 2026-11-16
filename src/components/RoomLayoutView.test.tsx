@@ -107,9 +107,9 @@ describe("RoomLayoutView", () => {
       useRoomStore.getState().setRoomLayout(translateLayoutThing(sampleLayout(), "#99", [-1.0, 2.0, 0]));
     });
     const token = screen.getByRole("img").querySelector(".rl-you circle.rl-thing");
-    // Footprint x 0.0..0.4, y 0.8..1.2: a person is a round token at its centre, (0.2, -1.0) in SVG units.
+    // Footprint x 0.0..0.4, y 0.0..0.4: the centre is (0.2, -0.2) in SVG units.
     expect(Number(token?.getAttribute("cx"))).toBeCloseTo(0.2);
-    expect(Number(token?.getAttribute("cy"))).toBeCloseTo(-1.0);
+    expect(Number(token?.getAttribute("cy"))).toBeCloseTo(-0.2);
     expect(document.activeElement).toBe(before);
     expect(document.querySelector("[aria-live]")).toBeNull();
   });

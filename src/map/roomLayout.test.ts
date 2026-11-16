@@ -65,8 +65,8 @@ describe("room layout geometry", () => {
     expect(table.bounds).toEqual({ x0: -0.5, x1: 0.5, y0: 0.2, y1: 1.0, z0: 0, z1: 1.05 });
     expect(q.bounds.x0).toBeCloseTo(0.0);
     expect(q.bounds.x1).toBeCloseTo(0.4);
-    expect(q.bounds.y0).toBeCloseTo(0.8);
-    expect(q.bounds.y1).toBeCloseTo(1.2);
+    expect(q.bounds.y0).toBeCloseTo(0.0);
+    expect(q.bounds.y1).toBeCloseTo(0.4);
     expect(q.bounds.z0).toBeCloseTo(0);
   });
 
