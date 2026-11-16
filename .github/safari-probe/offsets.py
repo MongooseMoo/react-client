@@ -76,6 +76,8 @@ with open(sys.argv[3], "w", newline="") as f:
                       e["rate"], r["sampleRate"], "yes" if r["bytes"] == int(e["bytes"]) else "no", ""])
         tally[e["layout"]][f"no agreed offset, frames {frames_offset:+d}" if agreed is None else agreed] += 1
 
+print("files that needed a second try after a timeout:",
+      [r["path"] for r in data["results"] if r.get("attempts")])
 print("files per layout by offset in samples (Safari minus ffmpeg):")
 for layout in sorted(tally):
     print(" ", layout, dict(tally[layout].most_common()))

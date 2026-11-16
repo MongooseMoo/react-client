@@ -6,6 +6,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 out = pathlib.Path(sys.argv[1])
@@ -21,7 +22,13 @@ def call(method, path, body=None):
         data=None if body is None else json.dumps(body).encode(),
         headers={"Content-Type": "application/json"},
     )
-    return json.load(urllib.request.urlopen(req, timeout=120))
+    try:
+        return json.load(urllib.request.urlopen(req, timeout=120))
+    except urllib.error.HTTPError as e:
+        # safaridriver puts its reason in the body (run 43808738274: a bare
+        # "HTTP Error 500" from POST /session); show it, then fail as before.
+        print(method, path, e.code, e.read().decode(errors="replace"))
+        raise
 
 
 sid = call("POST", "/session", {"capabilities": {"alwaysMatch": {"browserName": "safari"}}})["value"]["sessionId"]
