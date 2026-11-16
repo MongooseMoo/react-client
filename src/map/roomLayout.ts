@@ -331,35 +331,49 @@ export function shortLabel(text: string): string {
   return `${(space >= LABEL_MAX / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:(-]+$/, "")}…`;
 }
 
+/** A 3D view's label to place: what it names, and the label's size as drawn, in screen pixels. */
+export interface LabelOver {
+  id: string;
+  text: string;
+  /** The middle of what it names, across. */
+  x: number;
+  /** The top of what it names as drawn (a person's head, a thing's top), down from the picture's top. */
+  top: number;
+  width: number;
+  height: number;
+}
+
 /**
  * The 3D views' labels: placed in request order (most important first) so none
- * overlap, each as near its spot (x, y: centred over its figure, just above its
- * head) as a free place allows. A label moves up, or sideways only so far that its
- * text still spans its figure's x, never down onto the head, and at most two
- * label heights; the first free place nearest its spot wins. A label with none,
- * or none inside `within`, is left out; the lists still name it.
+ * overlap, each as near its spot (centred over what it names, its bottom `gap`
+ * above the top) as a free place allows. A label moves up, or sideways only so far
+ * that its text still spans the middle of what it names, never down onto it, and
+ * its bottom never more than two label heights above that top; the first free
+ * place nearest its spot wins. A label with none, or none inside `within`, is
+ * left out; the lists still name it. Sizes are the labels' own, as drawn.
  */
-export function placeLabelsOver(requests: Array<Omit<LabelRequest, "radius">>, fontSize: number, within?: Box): PlacedLabel[] {
+export function placeLabelsOver(requests: LabelOver[], gap: number, within?: Box): PlacedLabel[] {
   const taken: Box[] = [];
   const result: PlacedLabel[] = [];
-  const height = labelBox("", 0, 0, fontSize).y1 * 2;
   for (const request of requests) {
-    const halfWidth = labelBox(request.text, 0, 0, fontSize).x1;
-    // Sideways only while the label's text still reaches over its figure, by a margin of 2 px.
-    const reach = Math.max(0, halfWidth - 2);
-    const across = Math.max(2, reach / 4);
+    const { width, height } = request;
+    // Sideways only while the label's text still reaches over the middle, by a margin of 2 px.
+    const reach = Math.max(0, width / 2 - 2);
+    const across = Math.max(1, reach / 4);
+    // Up in quarter-label steps, the last exactly where the bottom is two label heights above the top.
+    const highest = Math.max(0, 2 * height - gap);
+    const rises: number[] = [];
+    for (let up = 0; up < highest - 1e-9; up += height / 4) rises.push(up);
+    rises.push(highest);
     const offsets: Array<[number, number]> = [];
-    for (let up = 0; up <= 4; up++) {
-      for (let side = -4; side <= 4; side++) {
-        const dx = side * across;
-        if (Math.abs(dx) <= reach + 1e-9) offsets.push([dx, -up * (height / 2)]);
-      }
+    for (const up of rises) {
+      for (let side = -4; side <= 4; side++) if (Math.abs(side * across) <= reach + 1e-9) offsets.push([side * across, -up]);
     }
     offsets.sort((a, b) => a[0] ** 2 + a[1] ** 2 - (b[0] ** 2 + b[1] ** 2));
     for (const [dx, dy] of offsets) {
       const x = request.x + dx;
-      const y = request.y + dy;
-      const box = labelBox(request.text, x, y, fontSize);
+      const y = request.top - gap - height / 2 + dy;
+      const box = { x0: x - width / 2, x1: x + width / 2, y0: y - height / 2, y1: y + height / 2 };
       if ((within && !inside(box, within)) || taken.some((other) => overlaps(box, other))) continue;
       taken.push(box);
       result.push({ id: request.id, text: request.text, x, y });

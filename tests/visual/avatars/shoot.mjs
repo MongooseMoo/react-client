@@ -13,6 +13,9 @@ const gpu = process.argv.includes('--gpu');
 const view3d = process.argv.includes('--view3d');
 // --pinch shoots only a touch pinch and one-finger turn in the Dollhouse (then the frame timing).
 const pinch = process.argv.includes('--pinch');
+// --labels3d shoots labels against heads in both 3D views and the wheel onto a person from near them
+// (options --dsf=N, --raw-wheel, --only=eyes|face|near; then the frame timing).
+const labels3d = process.argv.includes('--labels3d');
 mkdirSync(out, { recursive: true });
 
 const server = await createServer({ server: { port: 5199, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' });
@@ -124,7 +127,117 @@ try {
     }
     await narrow.close();
   }
-  if (!gpu && !view3d && !pinch) {
+  if (labels3d) {
+    // Labels against heads in both 3D views, and the wheel onto a person with the pointer near, not on, them.
+    // --dsf=N device scale (default 3). Playwright's wheel reaches the page divided by the device scale, while a
+    // real wheel notch reaches it as 100 at any display scale (Chromium source, see the log), so each notch here is
+    // sent as 100 x N to arrive as 100, unless --raw-wheel sends 100 as a test of the old counting.
+    const dsf = Number(process.argv.find((a) => a.startsWith('--dsf='))?.slice(6) ?? '3');
+    const notch = process.argv.includes('--raw-wheel') ? 100 : 100 * dsf;
+    const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7);
+    const narrow = await browser.newPage({ viewport: { width: 400, height: 700 }, colorScheme: 'dark', deviceScaleFactor: dsf });
+    narrow.on('pageerror', (e) => errors.push(e.message));
+    const go = async (query) => {
+      await narrow.goto(`${base}?${query}`);
+      await narrow.waitForFunction(() => window.ready === true);
+      await narrow.waitForTimeout(300);
+      return narrow.locator('.room-layout-3d');
+    };
+    const inside = (p, b) => p && p[0] > b[0][0] && p[0] < b[0][1] && p[1] > b[1][0] && p[1] < b[1][1] && p[2] > b[2][0] && p[2] < b[2][1];
+    // Per shown label: its head gap (people), whether its text spans its own head's middle, and which heads it covers.
+    const report = async (tag) => {
+      const r = await narrow.evaluate(() => window.labelReport());
+      const rows = r.labels.map((l) => {
+        const own = r.heads.find((h) => h.id === l.id);
+        const over = r.heads.filter((h) => l.x0 < h.x1 && h.x0 < l.x1 && l.y0 < h.y1 && h.y0 < l.y1).map((h) => h.id);
+        return {
+          id: l.id,
+          text: l.text,
+          box: [l.x0, l.y0, l.x1, l.y1].map((n) => Math.round(n * 10) / 10),
+          gap: own ? Math.round((own.y0 - l.y1) * 10) / 10 : null,
+          heights: own ? Math.round(((own.y0 - l.y1) / (l.y1 - l.y0)) * 100) / 100 : null,
+          spans: own ? l.x0 < own.cx && own.cx < l.x1 : null,
+          overHeads: over,
+        };
+      });
+      const inBody = r.boxes.filter((b) => inside(r.camera, b.box)).map((b) => b.id);
+      console.log(tag, JSON.stringify({ rows, cameraInside: inBody, camera: r.camera?.map((n) => Math.round(n * 100) / 100), fov: r.fov }));
+      return { rows, inBody };
+    };
+    const shot = async (pic, name) => pic.screenshot({ path: resolve(out, `${name}.png`) });
+    if (!only || only === 'eyes') {
+      // Fault 1: Your eyes among 24 and among 8 people in a 276 px panel, then 10 presses of +; the Dollhouse for comparison.
+      for (const [tag, query] of [
+        ['l1-eyes24', 'view=room&n=24&size=50&spread=6&mode=eyes&width=276&you=%23p3'],
+        ['l1-eyes8', 'view=room&n=8&size=50&spread=6&mode=eyes&width=276&you=%23p7'],
+        ['l1-doll8', 'view=room&n=8&size=50&spread=6&mode=dollhouse&width=276&you=%23p7'],
+      ]) {
+        const pic = await go(query);
+        await shot(pic, `${tag}-open`);
+        await report(`${tag}-open`);
+        await pic.focus();
+        for (let i = 0; i < 10; i++) await narrow.keyboard.press('+');
+        await narrow.waitForTimeout(400);
+        await shot(pic, `${tag}-plus10`);
+        await report(`${tag}-plus10`);
+      }
+    }
+    if (!only || only === 'face') {
+      // Fault 2: the pointer on Bram (#p1, facing away) with a rack behind him; close up, turned to face the camera.
+      const pic = await go('view=room&n=8&size=50&spread=6&face=north&mode=dollhouse&width=276&rack=%23p1');
+      const at = await narrow.evaluate(() => window.screenOf('#p1'));
+      await narrow.mouse.move(at.x, at.y);
+      for (let i = 1; i <= 22; i++) {
+        await narrow.mouse.wheel(0, -notch);
+        await narrow.waitForTimeout(20);
+        if ([10, 16, 22].includes(i)) {
+          await shot(pic, `l2-face-wheel${i}`);
+          await report(`l2-face-wheel${i}`);
+        }
+      }
+      await pic.focus();
+      for (let i = 1; i <= 18; i++) await narrow.keyboard.press('ArrowLeft');
+      for (let i = 1; i <= 8; i++) await narrow.keyboard.press('ArrowDown');
+      await shot(pic, 'l2-face-front');
+      await report('l2-face-front');
+      for (let i = 1; i <= 3; i++) await narrow.mouse.wheel(0, -notch);
+      await narrow.waitForTimeout(100);
+      await shot(pic, 'l2-face-front-close');
+      await report('l2-face-front-close');
+    }
+    if (!only || only === 'near') {
+      // Fault 3 and the proof: the pointer 2 CSS px beside Bram's figure at the opening view, 20 notches, then turn.
+      const pic = await go('view=room&n=8&size=50&spread=6&face=north&mode=dollhouse&width=276&rack=%23p1');
+      const at = await narrow.evaluate(() => window.screenOf('#p1'));
+      const box = await narrow.evaluate(() => window.labelReport().heads.find((h) => h.id === '#p1'));
+      console.log('near: head box at opening', JSON.stringify(box), 'pointer', at);
+      await shot(pic, 'l3-near-open');
+      const frame = await pic.boundingBox();
+      // Two CSS px to the right of the head as drawn, at its middle height.
+      const px = frame.x + box.x1 + 2;
+      const py = frame.y + (box.y0 + box.y1) / 2;
+      await narrow.mouse.move(px, py);
+      for (let i = 1; i <= 20; i++) {
+        await narrow.mouse.wheel(0, -notch);
+        await narrow.waitForTimeout(20);
+        if ([5, 10, 15, 20].includes(i)) {
+          await shot(pic, `l3-near-wheel${i}`);
+          await report(`l3-near-wheel${i}`);
+        }
+      }
+      await pic.focus();
+      for (let i = 1; i <= 18; i++) {
+        await narrow.keyboard.press('ArrowLeft');
+        if (i % 6 === 0) await shot(pic, `l3-near-turn${i * 10}deg`);
+      }
+      await report('l3-near-turn180deg');
+      for (let i = 1; i <= 6; i++) await narrow.keyboard.press('ArrowDown');
+      await shot(pic, 'l3-near-front');
+      await report('l3-near-front');
+    }
+    await narrow.close();
+  }
+  if (!gpu && !view3d && !pinch && !labels3d) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -173,7 +286,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu && !view3d && !pinch) {
+  if (!gpu && !view3d && !pinch && !labels3d) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');

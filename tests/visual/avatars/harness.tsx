@@ -7,10 +7,12 @@
  */
 import { options, render } from "preact";
 import * as THREE from "three";
+import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import "../../../src/tokens.css";
 import "../../../src/index.css";
 import "../../../src/components/MapPanel.css";
 import { TEST_CHARACTERS } from "../../../src/avatar/characters.fixture";
+import { figureParams } from "../../../src/avatar/figure";
 import AvatarPortrait from "../../../src/avatar/portrait";
 import PlayerCard from "../../../src/components/PlayerCard";
 import RoomLayout3D from "../../../src/components/RoomLayout3D";
@@ -32,6 +34,15 @@ declare global {
     ready?: boolean;
     measure?: (seconds: number) => Promise<unknown>;
     screenOf?: (id: string) => { x: number; y: number };
+    labelReport?: () => {
+      width: number;
+      height: number;
+      labels: Array<{ id: string; text: string; x0: number; x1: number; y0: number; y1: number }>;
+      heads: Array<{ id: string; x0: number; x1: number; y0: number; y1: number; cx: number }>;
+      camera: number[] | null;
+      fov: number | null;
+      boxes: Array<{ id: string; box: number[][] }>;
+    };
   }
 }
 
@@ -150,6 +161,22 @@ if (view === "portraits") {
     thing.shapes[0].box = [[cx * spread - 0.2, cx * spread + 0.2], [cy * spread - 0.2, cy * spread + 0.2], (thing.shapes[0].box as number[][])[2] as [number, number]];
   }
   // `face=north`: everyone faces north (away from the dollhouse's opening camera); by default, south.
+  // `rack=#p1`: a newspaper rack (1.3 m, a shelf) stands 1.5 m north of that person, behind them from the opening camera.
+  const rackFor = params.get("rack");
+  const rackOwner = layout.things.find((t) => t.id === rackFor);
+  if (rackOwner) {
+    const [xs, ys] = rackOwner.shapes[0].box as number[][];
+    const [cx, cy] = [(xs[0] + xs[1]) / 2, (ys[0] + ys[1]) / 2 + 1.5];
+    layout.things.push({
+      id: "#rack",
+      name: "a newspaper rack of The Daily Caption",
+      kind: "object",
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[cx - 0.4, cx + 0.4], [cy - 0.2, cy + 0.2], [0, 1.3]] }],
+      classes: ["shelf", "thing"],
+    });
+  }
   const facing: Record<string, [number, number, number]> = { north: [0, 1, 0], south: [0, -1, 0], east: [1, 0, 0], west: [-1, 0, 0] };
   const faced = facing[params.get("face") ?? ""];
   const facings = faced ? Object.fromEntries(layout.things.map((t) => [t.id, faced])) : {};
@@ -174,8 +201,61 @@ if (view === "portraits") {
   let renderMs = 0;
   let renderStart = 0;
   let info = { calls: 0, triangles: 0 };
-  THREE.Scene.prototype.onBeforeRender = () => {
+  let seen: { scene: THREE.Scene; camera: THREE.Camera } | null = null;
+  THREE.Scene.prototype.onBeforeRender = function (this: THREE.Scene, _renderer, _scene, camera) {
     renderStart = performance.now();
+    seen = { scene: this, camera };
+  };
+  // The last drawn picture: each shown label's box, and each visible person's head as drawn (every
+  // figure vertex above the chin, projected), in CSS pixels from the picture's top left.
+  window.labelReport = () => {
+    const frame = (document.querySelector(".room-layout-3d") as HTMLElement).getBoundingClientRect();
+    const owner = new Map<Element, string>();
+    seen?.scene.traverse((object) => {
+      if (object instanceof CSS2DObject) owner.set(object.element, object.parent?.userData.thingId as string);
+    });
+    const labels = [...document.querySelectorAll<HTMLElement>(".rl3d-label")]
+      .filter((e) => getComputedStyle(e).display !== "none")
+      .map((e) => {
+        const r = e.getBoundingClientRect();
+        return { id: owner.get(e) ?? "", text: e.textContent ?? "", x0: r.left - frame.left, x1: r.right - frame.left, y0: r.top - frame.top, y1: r.bottom - frame.top };
+      });
+    const heads: Array<{ id: string; x0: number; x1: number; y0: number; y1: number; cx: number }> = [];
+    if (seen) {
+      const { scene, camera } = seen;
+      scene.updateMatrixWorld(true);
+      const v = new THREE.Vector3();
+      scene.traverse((object) => {
+        if (!(object instanceof THREE.Mesh) || object.parent?.userData.form !== "person" || !object.parent.visible) return;
+        const id = object.parent.userData.thingId as string;
+        const thing = layout.things.find((t) => t.id === id);
+        const height = thing ? (thing.shapes[0].box as number[][])[2][1] : 1.7;
+        const p = figureParams(thing?.appearance, { height, base: "#000000" });
+        const chin = p.top - p.headHeight * 1.05 + (thing ? (thing.shapes[0].box as number[][])[2][0] : 0);
+        const position = object.geometry.getAttribute("position");
+        const box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+        for (let i = 0; i < position.count; i++) {
+          v.fromBufferAttribute(position, i).applyMatrix4(object.matrixWorld);
+          if (v.z < chin) continue;
+          v.project(camera);
+          if (Math.abs(v.z) > 1) continue;
+          const x = ((v.x + 1) / 2) * frame.width;
+          const y = ((1 - v.y) / 2) * frame.height;
+          box.x0 = Math.min(box.x0, x);
+          box.x1 = Math.max(box.x1, x);
+          box.y0 = Math.min(box.y0, y);
+          box.y1 = Math.max(box.y1, y);
+        }
+        if (box.x0 <= box.x1 && box.x1 > 0 && box.x0 < frame.width && box.y1 > 0 && box.y0 < frame.height) {
+          heads.push({ id, ...box, cx: (box.x0 + box.x1) / 2 });
+        }
+      });
+    }
+    const at = seen?.camera.position;
+    // Each person's box in the room (metres), to tell whether the camera is inside one.
+    const boxes = layout.things.map((t) => ({ id: t.id, box: t.shapes[0].box as number[][] }));
+    const fov = seen?.camera instanceof THREE.PerspectiveCamera ? seen.camera.fov : null;
+    return { width: frame.width, height: frame.height, labels, heads, camera: at ? [at.x, at.y, at.z] : null, fov, boxes };
   };
   THREE.Scene.prototype.onAfterRender = (renderer: THREE.WebGLRenderer) => {
     renderMs += performance.now() - renderStart;
