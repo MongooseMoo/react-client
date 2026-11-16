@@ -7,6 +7,8 @@ import {
   figureFills,
   figureParams,
   hairShape,
+  NEUTRAL_CLOTHING,
+  NEUTRAL_SKIN,
   outermostByArea,
   tokenColours,
   UNCOLOURED_GARMENT,
@@ -33,8 +35,8 @@ describe("colour", () => {
 });
 
 describe("figureParams with missing or malformed appearance", () => {
-  it("draws a person with no appearance in the base colour, standing, average", () => {
-    for (const nothing of [undefined, null, 42, "tall", [], { garments: "lots" }]) {
+  it("draws a person with no appearance map in the base colour, standing, average", () => {
+    for (const nothing of [undefined, null, 42, "tall", []]) {
       const p = params(nothing);
       expect(p.posture).toBe("standing");
       expect(p.build).toBe("average");
@@ -61,14 +63,32 @@ describe("figureParams with missing or malformed appearance", () => {
       face_hidden: "yes",
     });
     expect(p.build).toBe("average");
-    expect(p.colours.skin).toBe(BASE);
+    expect(p.colours.skin).toBe(NEUTRAL_SKIN);
     expect(p.hair).toBe("none");
     expect(p.facialHair).toBe("none");
     expect(p.colours.eyes).toBeUndefined();
     expect(p.posture).toBe("standing");
     expect(p.extras).toEqual([]);
     expect(p.faceHidden).toBe(false);
-    expect([...figureFills(p)]).toEqual([BASE]);
+    expect([...figureFills(p)].sort()).toEqual([NEUTRAL_SKIN, NEUTRAL_CLOTHING].sort());
+  });
+
+  it("draws a described person without skin or garments in the neutral skin and clothing, whatever the base", () => {
+    // Most live records today: hair, eyes and build only.
+    for (const base of [BASE, "#5ba0ff", undefined]) {
+      const p = figureParams({ hair: { length_cm: 75, hex: "#a33a1f" }, eyes: { hex: "#4f7a3a" }, build: "dumpy" }, { height: 1.78, base });
+      expect(p.colours.skin).toBe(NEUTRAL_SKIN);
+      for (const area of ["torso", "arms", "hips", "legs", "feet"] as const) expect(p.colours[area], area).toBe(NEUTRAL_CLOTHING);
+      expect(p.colours.hands).toBe(NEUTRAL_SKIN);
+      expect(p.colours.hair).toBe("#a33a1f");
+    }
+    // Supplied garments are kept as they are; only a record with none gets the neutral clothing.
+    const shirt = params({ garments: [{ areas: ["torso"], layer: 1, colour: { hex: "#01153e" } }] });
+    expect(shirt.colours.torso).toBe("#01153e");
+    expect(shirt.colours.legs).toBe(NEUTRAL_SKIN);
+    // Black hair stands out from the neutral skin; the neutral clothing from the skin too.
+    expect(contrast(NEUTRAL_SKIN, "#1b1612")).toBeGreaterThan(MIN_CONTRAST);
+    expect(contrast(NEUTRAL_SKIN, NEUTRAL_CLOTHING)).toBeGreaterThan(MIN_CONTRAST);
   });
 
   it("keeps the height within reason", () => {
@@ -170,19 +190,23 @@ describe("figureParams branches", () => {
     expect(params({ age_years: 15 }).headHeight).toBeGreaterThan(params({ age_years: 30 }).headHeight);
   });
 
-  it("colours the plan token only from supplied colours", () => {
+  it("colours the plan token exactly as the figure: torso and head", () => {
     expect(tokenColours(undefined)).toBeUndefined();
-    expect(tokenColours({})).toBeUndefined();
-    expect(tokenColours({ garments: [{ areas: ["torso"], layer: 1, colour: { hex: "#01153e" } }] })).toEqual({ body: "#01153e", head: undefined });
-    expect(tokenColours({ skin: { hex: "#a07e56" }, hair: { length_cm: 5, hex: "#141414" } })).toEqual({ body: "#a07e56", head: "#141414" });
+    expect(tokenColours({})).toEqual({ body: NEUTRAL_CLOTHING, head: NEUTRAL_SKIN });
+    expect(tokenColours({ garments: [{ areas: ["torso"], layer: 1, colour: { hex: "#01153e" } }] })).toEqual({ body: "#01153e", head: NEUTRAL_SKIN });
+    expect(tokenColours({ skin: { hex: "#a07e56" }, hair: { length_cm: 5, hex: "#141414" } })).toEqual({ body: NEUTRAL_CLOTHING, head: "#141414" });
+    for (const ch of TEST_CHARACTERS) {
+      const { colours } = params(ch.appearance, ch.height);
+      expect(tokenColours(ch.appearance), ch.name).toEqual({ body: colours.torso, head: colours.head });
+    }
   });
 });
 
-describe("the twelve test characters", () => {
+describe("the test characters", () => {
   const all = TEST_CHARACTERS.map((ch) => ({ ch, p: params(ch.appearance, ch.height) }));
 
-  it("are twelve, with invented names", () => {
-    expect(all.length).toBeGreaterThanOrEqual(12);
+  it("are thirteen, with invented names", () => {
+    expect(all.length).toBeGreaterThanOrEqual(13);
     expect(new Set(all.map(({ ch }) => ch.name)).size).toBe(all.length);
   });
 
@@ -223,10 +247,12 @@ describe("the twelve test characters", () => {
     }
   });
 
-  it("(c) every fill drawn is a colour the appearance supplied", () => {
+  it("(c) every fill drawn is a colour the appearance supplied, or the neutral skin and clothing it left out", () => {
     for (const { ch, p } of all) {
-      const supplied = suppliedHexes(ch.appearance);
-      for (const fill of figureFills(p)) expect(supplied.has(fill), `${ch.name} ${fill}`).toBe(true);
+      const allowed = suppliedHexes(ch.appearance);
+      if (!ch.appearance.skin) allowed.add(NEUTRAL_SKIN);
+      if (!ch.appearance.garments?.length) allowed.add(NEUTRAL_CLOTHING);
+      for (const fill of figureFills(p)) expect(allowed.has(fill), `${ch.name} ${fill}`).toBe(true);
     }
   });
 });

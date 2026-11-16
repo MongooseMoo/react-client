@@ -70,14 +70,14 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 | `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers`, `horns` and `pointed ears`. |
 | `build` | `average`, `athletic`, `thin`, `curvy`, `chunky`, `pudgy`, `muscular` or `dumpy`; anything else is drawn as average. |
 | `age_years` | A child's head is drawn larger for their height. |
-| `skin`, `eyes` | Colours. |
+| `skin`, `eyes` | Colours. Without `skin`, a person is drawn in a neutral light warm grey (`#b9b0a6`), the same in the portrait, the 3D figure and the plan token; it is not a human skin tone. |
 | `hair` | `length_cm` (under 1 none, under 8 short, under 25 medium, longer long), `texture` (`straight`, `wavy`, `curly`, `coily`), `style`, and its colour. Absent when bald or covered. |
 | `facial_hair` | `kind` (`none`, `stubble`, `moustache`, `goatee`, `beard`) and its colour; without a colour, the hair's. |
 | `face` | `shape` (`oval`, `round`, `square`, `long`, `heart`), `nose`, `lips`, `brows`, `ears`. |
 | `features` | A list of keys for small features. The portrait draws `freckles`, `glasses`, `sunglasses`, `eyepatch`, `earrings`, `mole` and `dimples`, in black or white, whichever stands out more on the skin (as are the pupils, nose, mouth and face marks); other keys are ignored. The 3D figure draws `glasses`, `sunglasses`, `eyepatch` and `earrings` in the same colour; `freckles`, `mole` and `dimples` are too small to read at figure size and appear only in the portrait. |
 | `face_hidden` | `true` when a form hides the face; no eyes, brows, mouth, facial hair or face features are drawn. |
 | `marks` | `[{"kind": "scar", "area": "cheek"}]`, uncovered marks only. The portrait shows those on the head and neck. |
-| `garments` | Worn things: `areas` they cover (`head`, `neck`, `torso`, `arms`, `hands`, `waist`, `legs`, `feet`), `layer` (higher is outside) and `colour` when it has one. Each area is drawn in its outermost garment's colour, plain cloth grey when that garment has no colour, skin when bare. |
+| `garments` | Worn things: `areas` they cover (`head`, `neck`, `torso`, `arms`, `hands`, `waist`, `legs`, `feet`), `layer` (higher is outside) and `colour` when it has one. Each area is drawn in its outermost garment's colour, plain cloth grey when that garment has no colour, skin when bare. With no `garments` at all, the torso, arms, waist, legs and feet are drawn in a neutral dark slate (`#4b5262`), so the person looks dressed. A person with no `appearance` at all keeps the plain figure in the person colour (you in blue). |
 
 The client checks none of these on arrival; anything missing or of the wrong type is treated as
 unremarkable.

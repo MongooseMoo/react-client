@@ -2,7 +2,7 @@ import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { suppliedHexes, TEST_CHARACTERS } from "./characters.fixture";
 import { contrast, INK_LIGHT, MIN_CONTRAST } from "./colour";
-import { figureParams } from "./figure";
+import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "./figure";
 import AvatarPortrait, { PORTRAIT_BACKDROP } from "./portrait";
 
 const draw = (appearance: unknown) => render(<AvatarPortrait appearance={appearance} />).container;
@@ -29,7 +29,7 @@ describe("AvatarPortrait", () => {
   it("draws only supplied colours, outlines in the ink, for every test character", () => {
     for (const ch of TEST_CHARACTERS) {
       const { ink, faceInk } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
-      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, PORTRAIT_BACKDROP]);
+      const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, PORTRAIT_BACKDROP, NEUTRAL_SKIN, NEUTRAL_CLOTHING]);
       const svg = draw(ch.appearance).querySelector("svg") as SVGSVGElement;
       for (const el of svg.querySelectorAll("[fill], [stroke]")) {
         for (const attr of ["fill", "stroke"]) {
@@ -119,6 +119,12 @@ describe("AvatarPortrait", () => {
       expect(d, String(length_cm)).not.toMatch(/L47,(42|54)|L17,(42|54)/);
       expect(d).toMatch(/^M17,26 C/);
     }
+  });
+
+  it("draws a record without skin or garments in the neutral skin and clothing", () => {
+    const svg = draw({ hair: { length_cm: 75, hex: "#a33a1f" }, eyes: { hex: "#4f7a3a" } }).querySelector("svg") as SVGSVGElement;
+    expect(svg.querySelector(".avatar-skin")?.getAttribute("fill")).toBe(NEUTRAL_SKIN);
+    expect(svg.querySelector('path.avatar-garment[d^="M"]')?.getAttribute("fill")).toBe(NEUTRAL_CLOTHING);
   });
 
   it("differs between characters", () => {

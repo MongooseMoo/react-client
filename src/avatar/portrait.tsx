@@ -92,7 +92,7 @@ function hairCap(params: FigureParams, fill: string, ink: string): React.ReactNo
 export function portraitElements(appearance: unknown): React.ReactNode[] | null {
   const record = appearanceRecord(appearance);
   if (!record) return null;
-  const params = figureParams(record, { height: 1.75, base: "#888888" });
+  const params = figureParams(record, { height: 1.75 });
   const c = params.colours;
   const ink = c.ink;
   // What is drawn on the skin uses the ink that stands out on the skin; region outlines use the seam ink.

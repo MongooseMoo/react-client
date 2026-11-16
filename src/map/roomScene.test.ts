@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
-import { figureParams } from "../avatar/figure";
+import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "../avatar/figure";
 import type { RoomLayout } from "../gmcp/Room";
 import { crowdLayout, livingRoomLayout } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
@@ -136,6 +136,18 @@ describe("buildRoomScene", () => {
     expect(bounds.min.z).toBeCloseTo(0, 1);
     expect(bounds.max.z).toBeLessThan(1.8);
     expect(scene.labelAnchors.get("#9")?.z).toBeGreaterThan(bounds.max.z - 0.2);
+  });
+
+  it("draws a record without skin or garments in the same neutral skin and clothing as the portrait and plan token", () => {
+    const layout = livingRoomLayout();
+    const appearance = { hair: { length_cm: 75, hex: "#a33a1f" }, eyes: { hex: "#4f7a3a" }, build: "dumpy" };
+    layout.things = layout.things.map((t) => (t.id === "#9" ? { ...t, appearance } : t));
+    const colours = figureColours("#9", build(layout)).map(hex);
+    expect(colours).toContain(NEUTRAL_SKIN);
+    expect(colours).toContain(NEUTRAL_CLOTHING);
+    expect(colours).not.toContain(hex(PERSON_COLOUR));
+    // A person with no appearance at all keeps the plain look.
+    expect(figureColours("#9", build(livingRoomLayout())).map(hex)).toEqual([hex(PERSON_COLOUR)]);
   });
 
   it("draws glasses, sunglasses, an eyepatch and earrings on the figure's head in the ink, not on a hidden face", () => {

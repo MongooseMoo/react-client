@@ -172,11 +172,25 @@ const TRAIT_PARTS: Readonly<Record<string, ExtraPart>> = {
   pointed_ears: "pointed_ears",
 };
 
+/**
+ * The skin drawn when an appearance map has none (the old character system
+ * never stored one). A light warm grey, not a human skin tone, so it claims no
+ * one's complexion; black hair stands out from it at 8:1, and white hair gets
+ * the hairline outline. The portrait, the 3D figure and the plan token all use it.
+ */
+export const NEUTRAL_SKIN = "#b9b0a6";
+/**
+ * Clothing drawn on torso, arms, waist, legs and feet when an appearance map
+ * lists no garments, so a described person looks dressed rather than bare: a
+ * dark slate, 3.7:1 against the neutral skin.
+ */
+export const NEUTRAL_CLOTHING = "#4b5262";
+
 export interface FigureOptions {
   /** Floor to crown, metres: the person's Room.Layout box height. */
   height: number;
-  /** The colour of a person drawn without appearance (today's person or you colour). */
-  base: string;
+  /** The colour of a person with no appearance map at all (today's person or you colour): the plain figure. */
+  base?: string;
 }
 
 /** Seat height for a sitting figure, as a share of standing height. */
@@ -194,10 +208,17 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
   const headShare = age !== undefined && age < 13 ? 1 / 5.8 : age !== undefined && age < 17 ? 1 / 6.8 : 1 / 7.5;
   const headHeight = height * headShare;
 
-  const skin = colourHex(record.skin) ?? hexOrUndefined(base) ?? "#888888";
+  // No appearance map at all: the plain figure in `base`. A map without skin or
+  // garments (most records today): a person in the neutral skin and clothing.
+  const described = appearanceRecord(appearance) !== undefined;
+  const skin = colourHex(record.skin) ?? (described ? NEUTRAL_SKIN : (hexOrUndefined(base) ?? NEUTRAL_SKIN));
   const hairRecord = isRecord(record.hair) ? record.hair : undefined;
   const hairHex = hexOrUndefined(hairRecord?.hex);
-  const covered = outermostByArea(record);
+  const worn = outermostByArea(record);
+  const covered: Partial<Record<Area, string>> =
+    described && Object.keys(worn).length === 0
+      ? { torso: NEUTRAL_CLOTHING, arms: NEUTRAL_CLOTHING, waist: NEUTRAL_CLOTHING, legs: NEUTRAL_CLOTHING, feet: NEUTRAL_CLOTHING }
+      : worn;
   const hair = hairHex && !covered.head ? hairShape(finite(hairRecord?.length_cm)) : "none";
   const hairVolume = HAIR_VOLUME[word(hairRecord?.texture) ?? "straight"] ?? 1;
 
@@ -291,14 +312,14 @@ export function figureFills(params: FigureParams): Set<string> {
   );
 }
 
-/** The plan token's colours: the body by the main garment (or skin), the head by hair or head covering (or skin). */
-export function tokenColours(appearance: unknown): { body?: string; head?: string } | undefined {
+/**
+ * The plan token's colours, the same as the figure's: the body by what covers the
+ * torso (or the skin), the head by hair or head covering (or the skin). Undefined
+ * without an appearance map, so the token keeps its plain person colour.
+ */
+export function tokenColours(appearance: unknown): { body: string; head: string } | undefined {
   const record = appearanceRecord(appearance);
   if (!record) return undefined;
-  // Without a skin colour, a bare part keeps the token's usual colour.
-  const skin = colourHex(record.skin);
-  const { colours, headCovered, hair } = figureParams(record, { height: 1.75, base: "#000000" });
-  const body = outermostByArea(record).torso ?? skin;
-  const head = headCovered || hair !== "none" ? colours.head : skin;
-  return body === undefined && head === undefined ? undefined : { body, head };
+  const { colours } = figureParams(record, { height: 1.75 });
+  return { body: colours.torso, head: colours.head };
 }

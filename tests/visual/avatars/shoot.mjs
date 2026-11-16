@@ -19,7 +19,8 @@ const browser = await chromium.launch({
   args: gpu ? ['--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist'] : [],
 });
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, colorScheme: 'dark' });
+  // Tall enough for every row of figure cells (420 px each), since a clip must lie inside the viewport.
+  const page = await browser.newPage({ viewport: { width: 1280, height: 1800 }, colorScheme: 'dark' });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   const open = async (query) => {
