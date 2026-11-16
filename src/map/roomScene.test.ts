@@ -526,6 +526,8 @@ describe("cameras", () => {
     camera.position.set(...pose.position);
     controls.target.set(...pose.target);
     controls.update();
+    // The walls as the dollhouse draws them from here: cut low on the sides the camera is outside of.
+    cutWalls(scene, big, camera.position, "dollhouse");
     scene.root.updateMatrixWorld(true);
 
     // The pointer on his head: the zoom heads for his face, not the floor behind him.
@@ -637,6 +639,136 @@ describe("cameras", () => {
       }
     }
     disposeRoomScene(scene);
+  });
+
+  describe("wheel with the pointer on or near a name label (live guest check, 2026-11-16)", () => {
+    // The live check's room #3510: 10 x 10 m, the viewer at the north door, three people; a 276 x 207 picture.
+    type Range = [number, number];
+    const standing = (id: string, name: string, x: number, y: number, ch: (typeof TEST_CHARACTERS)[number]) => ({
+      id,
+      name,
+      kind: "person" as const,
+      fixed: true,
+      mounted: false,
+      shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, 1.75]] as [Range, Range, Range] }],
+      appearance: ch.appearance,
+    });
+    const size = { width: 276, height: 207 };
+    const LABEL_HEIGHT = 14.4;
+    const LABEL_WIDTH = 72;
+
+    /** The room in the dollhouse's whole-room view, walls cut as drawn, and helpers to find people on screen. */
+    const dollhouse = (layout: RoomLayout, youId: string) => {
+      const placed = placeThings(layout, {});
+      const scene = buildRoomScene({ layout, placed, arrivals: [], youId });
+      const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, size.width / size.height, 0.05, 400);
+      camera.up.set(0, 0, 1);
+      const pose = dollhousePose(layout);
+      camera.position.set(...pose.position);
+      const target = new THREE.Vector3(...pose.target);
+      camera.lookAt(target);
+      camera.updateMatrixWorld();
+      cutWalls(scene, layout, camera.position, "dollhouse");
+      scene.root.updateMatrixWorld(true);
+      // Where a person's label hangs (the top of their head as drawn), as the 3D view finds it.
+      const headTop = (id: string) => screenTop(scene.labelPoints.get(id) as THREE.Vector3[], camera, size.width, size.height) as { x: number; top: number };
+      // A person's label as drawn: centred at `x`, its bottom at `bottom`.
+      const label = (id: string, x: number, bottom: number) => ({ id, x0: x - LABEL_WIDTH / 2, x1: x + LABEL_WIDTH / 2, y0: bottom - LABEL_HEIGHT, y1: bottom });
+      const face = (id: string) => zoomFocus((placed.find((p) => p.thing.id === id) as (typeof placed)[number]).bounds, layout);
+      return { placed, scene, camera, target, headTop, label, face };
+    };
+    // In the room or on its walls (drawn 8 cm thick, outside the room's box).
+    const inRoom = (p: THREE.Vector3, layout: RoomLayout) =>
+      Math.abs(p.x) <= layout.size[0] / 2 + 0.08 + 1e-6 && Math.abs(p.y) <= layout.size[1] / 2 + 0.08 + 1e-6 && p.z >= -1e-6 && p.z <= layout.size[2] + 1e-6;
+
+    const room3510 = (): RoomLayout => ({
+      num: 3510,
+      size: [10, 10, 3],
+      exits: [{ name: "north", to: 3509, at: [0, 5, 0], width: 1 }],
+      things: [
+        standing("#v", "Viewer Vosk", 0, 4.8, TEST_CHARACTERS[0]),
+        standing("#s2", "Tamsin Reed", 0, 2.05, TEST_CHARACTERS[2]),
+        standing("#s1", "Orrin Vale", -2.04, 2.76, TEST_CHARACTERS[1]),
+        standing("#s3", "Tangra Moss", -3.45, 0.8, TEST_CHARACTERS[3]),
+      ],
+    });
+
+    it("picks the person whose label the pointer is on or just under, though their head is further than the pick distance", () => {
+      const layout = room3510();
+      const { placed, scene, camera, headTop, label, face } = dollhouse(layout, "#v");
+      // S1's label raised 27 px above the head (stacked); the pointer 8 px under it, 19 px above the head.
+      const s1 = headTop("#s1");
+      const s1Label = label("#s1", s1.x, s1.top - 27);
+      const underS1 = { x: s1.x, y: s1Label.y1 + 8 };
+      expect(wheelZoomPoint(camera, underS1, size, scene, placed, layout, [s1Label])?.point.distanceTo(face("#s1"))).toBeLessThan(1e-9);
+      // S3's label pushed 17 px to the side; the pointer 8 px under its middle.
+      const s3 = headTop("#s3");
+      const s3Label = label("#s3", s3.x - 17, s3.top - 3);
+      const underS3 = { x: s3.x - 17, y: s3Label.y1 + 8 };
+      expect(wheelZoomPoint(camera, underS3, size, scene, placed, layout, [s1Label, s3Label])?.point.distanceTo(face("#s3"))).toBeLessThan(1e-9);
+      // On the label itself, too.
+      expect(wheelZoomPoint(camera, { x: s1.x + 20, y: s1Label.y0 + 5 }, size, scene, placed, layout, [s1Label, s3Label])?.point.distanceTo(face("#s1"))).toBeLessThan(1e-9);
+      disposeRoomScene(scene);
+    });
+
+    it("never zooms through a wall or out of the room, wherever the pointer is", () => {
+      const layout = room3510();
+      const { placed, scene, camera, target, headTop } = dollhouse(layout, "#v");
+      const s1 = headTop("#s1");
+      const s3 = headTop("#s3");
+      // The live check's two pointers with no label known there (above S1's head on the wall behind, beside S3), and a sweep of the whole picture.
+      const pointers = [
+        { x: s1.x, y: s1.top - 19 },
+        { x: s3.x - 17, y: s3.top + 5 },
+      ];
+      for (let x = 2; x < size.width; x += 18) for (let y = 2; y < size.height; y += 15) pointers.push({ x, y });
+      const start = camera.position.clone();
+      const startTarget = target.clone();
+      const step = wheelStep(layout);
+      for (const at of pointers) {
+        const where = `pointer (${at.x.toFixed(1)}, ${at.y.toFixed(1)})`;
+        const pick = wheelZoomPoint(camera, at, size, scene, placed, layout);
+        if (pick) expect(inRoom(pick.point, layout), where).toBe(true);
+        // Sixty notches from the whole-room view: the camera never passes a wall the dollhouse draws full height (north, west here).
+        const position = start.clone();
+        const orbit = startTarget.clone();
+        for (let i = 0; i < 60; i++) {
+          wheelZoom(position, orbit, pick?.point ?? orbit.clone(), step, pick?.nearest ?? ZOOM_NEAREST);
+          expect(position.y, `${where}, notch ${i + 1}`).toBeLessThan(layout.size[1] / 2);
+          expect(position.x, `${where}, notch ${i + 1}`).toBeGreaterThan(-layout.size[0] / 2);
+        }
+      }
+      disposeRoomScene(scene);
+    });
+
+    it("lets the label under the pointer win over a nearer head of someone else further back", () => {
+      // The live check's room #442 (50 x 50 m): S1 at (3.9, 0), the viewer at (21.9, 0), and another person further back.
+      const layout: RoomLayout = {
+        num: 442,
+        size: [50, 50, 4],
+        exits: [],
+        things: [standing("#v", "Viewer Vosk", 21.9, 0, TEST_CHARACTERS[0]), standing("#s1", "Orrin Vale", 3.9, 0, TEST_CHARACTERS[1])],
+      };
+      const first = dollhouse(layout, "#v");
+      const s1 = first.headTop("#s1");
+      // S1's label 14 px above the head; the pointer 3 px under it, about 10 px above the head.
+      const s1Label = first.label("#s1", s1.x, s1.top - 14);
+      const pointer = { x: s1.x, y: s1Label.y1 + 3 };
+      expect(s1.top - pointer.y).toBeGreaterThan(PICK_TOLERANCE - 2);
+      // The other person stands where the pointer's ray meets waist height, further back: the pointer is on their figure.
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2((pointer.x / size.width) * 2 - 1, -(pointer.y / size.height) * 2 + 1), first.camera);
+      const waist = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -1.2), new THREE.Vector3()) as THREE.Vector3;
+      expect(first.camera.position.distanceTo(waist)).toBeGreaterThan(first.camera.position.distanceTo(first.face("#s1")));
+      disposeRoomScene(first.scene);
+      layout.things.push(standing("#other", "Kestrel Ash", waist.x, waist.y, TEST_CHARACTERS[2]));
+      const { placed, scene, camera, face, label } = dollhouse(layout, "#v");
+      // Without the label the nearer figure wins (what the live check saw); with it, S1.
+      expect(wheelZoomPoint(camera, pointer, size, scene, placed, layout)?.point.distanceTo(face("#other"))).toBeLessThan(1e-9);
+      const pick = wheelZoomPoint(camera, pointer, size, scene, placed, layout, [label("#s1", s1Label.x0 + LABEL_WIDTH / 2, s1Label.y1)]);
+      expect(pick?.point.distanceTo(face("#s1"))).toBeLessThan(1e-9);
+      disposeRoomScene(scene);
+    });
   });
 
   it("brings a person close in about twenty wheel notches in a room of any size", () => {

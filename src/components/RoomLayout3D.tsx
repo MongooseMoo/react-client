@@ -99,6 +99,8 @@ interface Stage {
   labelObjects: Map<string, CSS2DObject>;
   /** Labels' drawn sizes (`labelSize`). */
   labelSizes: Map<string, { width: number; height: number }>;
+  /** People's labels as last shown, screen boxes in CSS pixels from the picture's top left: the wheel picks a person by their label. */
+  personLabels: Array<Box & { id: string }>;
   render: () => void;
 }
 
@@ -161,6 +163,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       figures: new FigureCache(),
       labelObjects: new Map(),
       labelSizes: new Map(),
+      personLabels: [],
       render: () => {
         if (stage.room) cutWalls(stage.room, layoutRef.current, camera.position, modeRef.current);
         renderer.render(scene, camera);
@@ -239,12 +242,24 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     }
     const inset = 4;
     const placedLabels = placeLabelsOver(requests, LABEL_GAP, { x0: inset, x1: width - inset, y0: inset, y1: height - inset }, heads);
+    const people = new Set(labelPlan.current.filter((p) => p.person).map((p) => p.id));
+    stage.personLabels = [];
     for (const placedLabel of placedLabels) {
       const object = stage.labelObjects.get(placedLabel.id);
       const anchor = anchors.get(placedLabel.id);
       if (!object || !anchor) continue;
       object.visible = true;
       object.element.style.translate = `${placedLabel.x - anchor[0]}px ${placedLabel.y - anchor[1]}px`;
+      const size = requests.find((r) => r.id === placedLabel.id);
+      if (size && people.has(placedLabel.id)) {
+        stage.personLabels.push({
+          id: placedLabel.id,
+          x0: placedLabel.x - size.width / 2,
+          x1: placedLabel.x + size.width / 2,
+          y0: placedLabel.y - size.height / 2,
+          y1: placedLabel.y + size.height / 2,
+        });
+      }
     }
   }
 
@@ -400,7 +415,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
 
   /**
    * One dollhouse zoom by `scale` onto what is at (clientX, clientY) (`wheelZoomPoint`: a person
-   * drawn within PICK_TOLERANCE first): picked there the first time, and kept while the wheel
+   * whose shown label is within PICK_TOLERANCE first, then a person drawn within it): picked there the first time, and kept while the wheel
    * or pinch stays within 4 px of it. The camera stops short of it, outside what it zooms onto.
    */
   const zoomOnto = (stage: Stage, clientX: number, clientY: number, scale: number) => {
@@ -408,7 +423,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     if (!focus || Math.hypot(clientX - focus.x, clientY - focus.y) > 4) {
       const rect = stage.renderer.domElement.getBoundingClientRect();
       const pick = stage.room
-        ? wheelZoomPoint(stage.camera, { x: clientX - rect.left, y: clientY - rect.top }, rect, stage.room, placed, layout)
+        ? wheelZoomPoint(stage.camera, { x: clientX - rect.left, y: clientY - rect.top }, rect, stage.room, placed, layout, stage.personLabels)
         : undefined;
       wheelFocus.current = { x: clientX, y: clientY, pick };
     }

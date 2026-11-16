@@ -270,6 +270,12 @@ if (view === "portraits") {
     const [cx, cy] = [(xs[0] + xs[1]) / 2, (ys[0] + ys[1]) / 2];
     thing.shapes[0].box = [[cx * spread - 0.2, cx * spread + 0.2], [cy * spread - 0.2, cy * spread + 0.2], (thing.shapes[0].box as number[][])[2] as [number, number]];
   }
+  // `places=0,4.8;0,2.05`: where each person stands (#p0, #p1, …), metres from the room's middle, as in a live room.
+  const places = params.get("places")?.split(";").map((p) => p.split(",").map(Number));
+  places?.forEach(([x, y], i) => {
+    const thing = layout.things[i];
+    if (thing) thing.shapes[0].box = [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], (thing.shapes[0].box as number[][])[2] as [number, number]];
+  });
   // `face=north`: everyone faces north (away from the dollhouse's opening camera); by default, south.
   // `rack=#p1`: a newspaper rack (1.3 m, a shelf) stands 1.5 m north of that person, behind them from the opening camera.
   const rackFor = params.get("rack");

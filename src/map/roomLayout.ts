@@ -391,9 +391,11 @@ export interface LabelOver {
  * overlap, each as near its spot (centred over what it names, its bottom `gap`
  * above the top) as a free place allows. A label moves up, or sideways only so far
  * that its text still spans the middle of what it names, never down onto it, and
- * its bottom never more than two label heights above that top; the first free
- * place nearest its spot wins. A label with none, or none inside `within`, is
- * left out; the lists still name it. Sizes are the labels' own, as drawn.
+ * its bottom never more than two label heights above that top; a person's label
+ * moves sideways only so far that its middle stays over their own head as drawn,
+ * so it never sits over the space beside them. The first free place nearest its
+ * spot wins. A label with none, or none inside `within`, is left out; the lists
+ * still name it. Sizes are the labels' own, as drawn.
  * `heads` are the people's heads as drawn on screen, each with its person's id:
  * no label is placed over one, except its own person's (which it sits above).
  */
@@ -402,6 +404,7 @@ export function placeLabelsOver(requests: LabelOver[], gap: number, within?: Box
   const result: PlacedLabel[] = [];
   for (const request of requests) {
     const { width, height } = request;
+    const own = heads.find((head) => head.id === request.id);
     // Sideways only while the label's text still reaches over the middle, by a margin of 2 px.
     const reach = Math.max(0, width / 2 - 2);
     const across = Math.max(1, reach / 4);
@@ -417,6 +420,8 @@ export function placeLabelsOver(requests: LabelOver[], gap: number, within?: Box
     offsets.sort((a, b) => a[0] ** 2 + a[1] ** 2 - (b[0] ** 2 + b[1] ** 2));
     for (const [dx, dy] of offsets) {
       const x = request.x + dx;
+      // A person's label keeps its middle over their own head (it may always stay where it was asked).
+      if (own && dx !== 0 && (x < own.x0 || x > own.x1)) continue;
       const y = request.top - gap - height / 2 + dy;
       const box = { x0: x - width / 2, x1: x + width / 2, y0: y - height / 2, y1: y + height / 2 };
       // Two labels side by side keep LABEL_SPACE between them, so their names do not run together.

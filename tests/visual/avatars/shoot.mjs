@@ -1,6 +1,6 @@
 // Tests only: screenshots of the invented test characters and frame times of the
 // 3D view, in headless Chromium (no window). Usage:
-//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d] [--pinch] [--vocab] [--labels3d] [--face]
+//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d] [--pinch] [--vocab] [--labels3d] [--face] [--zoomlabel]
 // --gpu asks headless Chromium for the machine's GPU instead of its software renderer.
 // --vocab shoots the game's vocabulary (a portrait per value, builds and beard lengths in 3D)
 // instead of the test characters and zoom checks; frame times are measured either way.
@@ -21,11 +21,15 @@ const pinch = process.argv.includes('--pinch');
 const labels3d = process.argv.includes('--labels3d');
 // --face shoots the face, beard and hair readability set (portraits and 3D heads), then the frame timing.
 const face = process.argv.includes('--face');
+// --zoomlabel shoots the wheel with the pointer under people's labels in the live check's room, then the frame timing.
+const zoomLabel = process.argv.includes('--zoomlabel');
 mkdirSync(out, { recursive: true });
 
-const server = await createServer({ server: { port: 5199, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' });
+// --port=N: the local server's port (default 5199), for when another harness run holds it.
+const port = Number(process.argv.find((a) => a.startsWith('--port='))?.slice(7) ?? '5199');
+const server = await createServer({ server: { port, strictPort: true, host: '127.0.0.1' }, logLevel: 'error' });
 await server.listen();
-const base = 'http://127.0.0.1:5199/tests/visual/avatars/index.html';
+const base = `http://127.0.0.1:${port}/tests/visual/avatars/index.html`;
 const browser = await chromium.launch({
   headless: true,
   args: gpu ? ['--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist'] : [],
@@ -284,7 +288,73 @@ try {
     }
     await narrow.close();
   }
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face) {
+  if (zoomLabel) {
+    // The live guest check of 2026-11-16: room #3510 (10 x 10 m), the viewer at the north door and three people,
+    // a 276 px panel at device scale 3. The pointer 8 CSS px under each person's label, 20 notches; then 8 notches
+    // at the middle and where each label sits against its own head. Each notch is sent as 100 x 3 to arrive as 100.
+    const notch = 300;
+    const narrow = await browser.newPage({ viewport: { width: 400, height: 700 }, colorScheme: 'dark', deviceScaleFactor: 3 });
+    narrow.on('pageerror', (e) => errors.push(e.message));
+    const room3510 = 'view=room&n=4&size=10&places=0,4.8;0,2.05;-2.04,2.76;-3.45,0.8&mode=dollhouse&width=276&you=%23p0';
+    const go = async (query) => {
+      await narrow.goto(`${base}?${query}`);
+      await narrow.waitForFunction(() => window.ready === true);
+      await narrow.waitForTimeout(300);
+      return narrow.locator('.room-layout-3d');
+    };
+    // The camera's place, whether it is inside the room's walls, and each shown label against its own head.
+    const state = async (half) => {
+      const r = await narrow.evaluate(() => window.labelReport());
+      const [x, y, z] = r.camera.map((n) => Math.round(n * 100) / 100);
+      const labels = r.labels.map((l) => {
+        const own = r.heads.find((h) => h.id === l.id);
+        const middle = (l.x0 + l.x1) / 2;
+        return { id: l.id, box: [l.x0, l.y0, l.x1, l.y1].map((n) => Math.round(n)), aside: own ? Math.round(middle - own.cx) : null, overOwnHead: own ? middle >= own.x0 && middle <= own.x1 : null };
+      });
+      return { camera: [x, y, z], withinWalls: Math.abs(x) <= half && Math.abs(y) <= half, labels, heads: r.heads.map((h) => ({ id: h.id, cx: Math.round(h.cx), y0: Math.round(h.y0) })) };
+    };
+    // Under each person's label; where one has no label shown, 19 px above the head (where the live check's raised
+    // label put the pointer); and 35 px beside #p3's head at its top (where its label sat when slid aside).
+    // `label-left`: 8 px under the label's left end, clear of a label stacked under it.
+    for (const [id, where] of [['#p1', 'label'], ['#p2', 'label'], ['#p2', 'label-left'], ['#p3', 'label'], ['#p3', 'aside']]) {
+      const pic = await go(room3510);
+      const frame = await pic.boundingBox();
+      const start = await state(5);
+      const label = start.labels.find((l) => l.id === id);
+      const head = start.heads.find((h) => h.id === id);
+      const tag = `zl-${id.slice(1)}-${where}`;
+      await pic.screenshot({ path: resolve(out, `${tag}-open.png`) });
+      const pointer =
+        where === 'aside'
+          ? { x: head.cx - 35, y: head.y0 + 5 }
+          : label
+            ? { x: where === 'label-left' ? label.box[0] + 4 : (label.box[0] + label.box[2]) / 2, y: label.box[3] + 8 }
+            : { x: head.cx, y: head.y0 - 19 };
+      console.log(tag, 'open', JSON.stringify({ pointer, ...start }));
+      await narrow.mouse.move(frame.x + pointer.x, frame.y + pointer.y);
+      for (let i = 1; i <= 20; i++) {
+        await narrow.mouse.wheel(0, -notch);
+        await narrow.waitForTimeout(20);
+        if (i % 4 === 0) {
+          await pic.screenshot({ path: resolve(out, `${tag}-n${String(i).padStart(2, '0')}.png`) });
+          const now = await state(5);
+          console.log(tag, `n${i}`, JSON.stringify({ camera: now.camera, withinWalls: now.withinWalls, labels: now.labels.map((l) => l.id) }));
+        }
+      }
+    }
+    // Eight notches at the picture's middle, as the live check did before finding a label 35 px aside.
+    const pic = await go(room3510);
+    const frame = await pic.boundingBox();
+    await narrow.mouse.move(frame.x + frame.width / 2, frame.y + frame.height / 2);
+    for (let i = 1; i <= 8; i++) {
+      await narrow.mouse.wheel(0, -notch);
+      await narrow.waitForTimeout(20);
+    }
+    await pic.screenshot({ path: resolve(out, 'zl-middle-n08.png') });
+    console.log('zl-middle-n08', JSON.stringify(await state(5)));
+    await narrow.close();
+  }
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -333,7 +403,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face) {
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');
