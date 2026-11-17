@@ -23,6 +23,16 @@ describe("recordRoom", () => {
     expect(visit(first, 1, { n: 2, e: 3 })).not.toBe(first);
   });
 
+  it("keeps the direction the server says each exit faces, by short key, for exits it has", () => {
+    const map = recordRoom(emptyMap(), {
+      num: 1, name: "Yard", area: "Town",
+      exits: { gate: 2, north: 3, in: 4 },
+      directions: { gate: "west", north: "north", in: "sideways", ghost: "east" },
+    });
+    expect(map.rooms["1"].directions).toEqual({ gate: "w", n: "n" });
+    expect(recordRoom(map, { num: 1, name: "Yard", area: "Town", exits: { gate: 2, north: 3, in: 4 } })).not.toBe(map);
+  });
+
   it("ignores rooms and exits that are not room numbers", () => {
     const map = recordRoom(emptyMap(), { num: 7, name: "A", area: "", exits: { n: -1, s: 1.5, e: 8 } });
     expect(map.rooms["7"].exits).toEqual({ e: 8 });
@@ -45,6 +55,15 @@ describe("layoutArea", () => {
     expect(at(2)).toEqual([0, -1, 0]);
     expect(at(3)).toEqual([1, 0, 0]);
     expect(at(4)).toEqual([0, 0, 1]);
+  });
+
+  it("places a named exit by the direction the server says it faces", () => {
+    let map = recordRoom(emptyMap(), { num: 1, name: "Yard", area: "Town", exits: { gate: 2, hatch: 3 }, directions: { gate: "west", hatch: "down" } });
+    map = recordRoom(map, { num: 2, name: "Lane", area: "Town", exits: { arch: 1 }, directions: { arch: "east" } });
+    map = visit(map, 3, {});
+    const placed = layoutArea(map, "Town");
+    expect([placed.get(2)!.x, placed.get(2)!.y, placed.get(2)!.z]).toEqual([-1, 0, 0]);
+    expect([placed.get(3)!.x, placed.get(3)!.y, placed.get(3)!.z]).toEqual([0, 0, -1]);
   });
 
   it("follows one-way exits backwards so the far room still joins", () => {

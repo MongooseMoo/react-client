@@ -15,7 +15,7 @@ It holds only what the recipient can see.
 {
   "num": 1234,
   "size": [3.81, 5.13, 2.44],
-  "exits": [{"name": "west", "to": 1235, "at": [-1.905, -1.282, 0.0], "width": 0.9}],
+  "exits": [{"name": "west", "to": 1235, "at": [-1.905, -1.282, 0.0], "width": 0.9, "facing": [-1.0, 0.0, 0.0]}],
   "things": [
     {"id": "#5678", "name": "oak table", "kind": "object", "fixed": false, "mounted": false,
      "shapes": [{"box": [[-0.5, 0.5], [0.2, 1.0], [0.0, 0.75]]}, {"sphere": [[0.1, 0.4, 0.9], 0.15]}],
@@ -35,6 +35,11 @@ the middle of the room, so it spans `-width/2..width/2` and `-depth/2..depth/2`;
 | `exits[].to` | Where it leads (object number). |
 | `exits[].at` | The middle of the doorway. The server puts a wall's doorway up to 5% of the room in from that wall (`$spatial_utils:coords_for_edge`); the client draws a point that close to exactly one wall as a doorway in it, and any other point (a corner, a hatch, a ladder, stairs) as a marked square where it is. |
 | `exits[].width` | How wide the doorway is along its wall. |
+| `exits[].facing` | The way the exit faces out of the room, a unit vector `[x, y, z]` stored on the exit when it was made (north `[0, 1, 0]`, up `[0, 0, 1]`); `[]` when it faces no way (`in`, a named door). A doorway not placed by hand sits at the point its facing gives, so `at` already agrees with it; a hand-placed doorway's `at` is where the builder put it. `Room.Info` carries the same as a word under `directions` (below). |
+
+`Room.Info` also has `directions`: under the same keys as its `exits`, the compass word or `up`/`down`
+nearest each exit's facing (`"gate": "west"`). Exits that face no way have no entry. The area map steps
+by it, and by the exit's own name when it is absent.
 | `things[].id` | `tostr(obj)`, the same id `Client.Spatial` uses for the thing. |
 | `things[].name` | What to call it (`title()`; colour markup such as `[red]` is removed for display). |
 | `things[].kind` | `player`, `person` (a living body that is not a player) or `object`. |

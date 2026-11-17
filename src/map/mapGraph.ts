@@ -1,4 +1,4 @@
-import { compareDirections, directionStep, normalizeDirection } from "./directions";
+import { compareDirections, directionStep, normalizeDirection, type DirectionStep } from "./directions";
 
 /**
  * The rooms one character has visited, learned from GMCP Room.Info. Nothing
@@ -12,6 +12,8 @@ export interface MapRoom {
   environment?: string;
   /** Short exit key ("n", "in", "hatch") to destination room number. */
   exits: Record<string, number>;
+  /** Short exit key to the short direction the server says it faces ("gate" to "n"); only exits that face a way. */
+  directions?: Record<string, string>;
 }
 
 export interface MapData {
@@ -25,17 +27,30 @@ export interface RoomInfoInput {
   area: string;
   environment?: string;
   exits?: Record<string, number>;
+  directions?: Record<string, string>;
 }
 
 export function emptyMap(): MapData {
   return { rooms: {} };
 }
 
+function sameEntries<T>(a: Record<string, T>, b: Record<string, T>): boolean {
+  const aKeys = Object.keys(a);
+  return aKeys.length === Object.keys(b).length && aKeys.every((key) => b[key] === a[key]);
+}
+
 function sameRoom(a: MapRoom, b: MapRoom): boolean {
   if (a.name !== b.name || a.area !== b.area || a.environment !== b.environment) return false;
-  const aKeys = Object.keys(a.exits);
-  const bKeys = Object.keys(b.exits);
-  return aKeys.length === bKeys.length && aKeys.every((key) => b.exits[key] === a.exits[key]);
+  return sameEntries(a.exits, b.exits) && sameEntries(a.directions ?? {}, b.directions ?? {});
+}
+
+/**
+ * The grid step an exit of this room takes: the direction the server says the
+ * exit faces, else what its own name says (older servers send no directions).
+ * Null for in, out and named exits that face no way.
+ */
+export function exitStep(room: MapRoom, key: string): DirectionStep | null {
+  return directionStep(room.directions?.[key] ?? key);
 }
 
 /** Adds or updates one visited room. Returns the same map object when nothing changed. */
@@ -47,8 +62,16 @@ export function recordRoom(map: MapData, info: RoomInfoInput): MapData {
       exits[normalizeDirection(key)] = destination;
     }
   }
+  const directions: Record<string, string> = {};
+  for (const [key, direction] of Object.entries(info.directions ?? {})) {
+    const short = normalizeDirection(key);
+    if (typeof direction === "string" && short in exits && directionStep(direction)) {
+      directions[short] = normalizeDirection(direction);
+    }
+  }
   const room: MapRoom = { id: info.num, name: info.name, area: info.area, exits };
   if (info.environment) room.environment = info.environment;
+  if (Object.keys(directions).length > 0) room.directions = directions;
   const previous = map.rooms[String(info.num)];
   if (previous && sameRoom(previous, room)) return map;
   return { rooms: { ...map.rooms, [String(info.num)]: room } };
@@ -78,7 +101,8 @@ function nearestFree(occupied: Set<string>, x: number, y: number, z: number): { 
 
 /**
  * Grid positions for every known room of one area, worked out from exit
- * directions alone (Mongoose rooms carry no map coordinates). The lowest
+ * directions alone (Mongoose rooms carry no map coordinates): the way the
+ * server says each exit faces, else its compass name. The lowest
  * numbered room anchors each connected group, so the picture stays put as
  * more rooms are learned. A room that a direction would put on top of
  * another goes to the nearest free cell instead; rooms reached by in, out or
@@ -91,17 +115,18 @@ export function layoutArea(map: MapData, area: string): Map<number, PlacedRoom> 
   const inArea = new Map(rooms.map((room) => [room.id, room]));
 
   // Exits both ways, so a room only reached by a one-way exit into it still joins its group.
-  const links = new Map<number, Array<{ to: number; key: string; reverse: boolean }>>();
-  const addLink = (from: number, to: number, key: string, reverse: boolean) => {
+  const links = new Map<number, Array<{ to: number; key: string; step: DirectionStep | null; reverse: boolean }>>();
+  const addLink = (from: number, to: number, key: string, step: DirectionStep | null, reverse: boolean) => {
     const list = links.get(from) ?? [];
-    list.push({ to, key, reverse });
+    list.push({ to, key, step, reverse });
     links.set(from, list);
   };
   for (const room of rooms) {
     for (const [key, to] of Object.entries(room.exits)) {
       if (!inArea.has(to) || to === room.id) continue;
-      addLink(room.id, to, key, false);
-      addLink(to, room.id, key, true);
+      const step = exitStep(room, key);
+      addLink(room.id, to, key, step, false);
+      addLink(to, room.id, key, step, true);
     }
   }
   for (const list of links.values()) {
@@ -127,7 +152,7 @@ export function layoutArea(map: MapData, area: string): Map<number, PlacedRoom> 
       for (const link of links.get(id) ?? []) {
         const target = inArea.get(link.to);
         if (!target || placed.has(link.to)) continue;
-        const step = directionStep(link.key);
+        const step = link.step;
         const sign = link.reverse ? -1 : 1;
         if (step) {
           place(target, current.x + sign * step.dx, current.y + sign * step.dy, current.z + sign * step.dz);
