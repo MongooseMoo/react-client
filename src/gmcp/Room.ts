@@ -17,6 +17,11 @@ export class GMCPMessageRoomInfo extends GMCPMessage {
   exits?: { [key: string]: number }; // {"n": 12344, "se": 12336}
   /** Mongoose addition: under the same keys as `exits`, each exit's earcon, placed at its doorway. */
   earcons?: { [key: string]: unknown };
+  /**
+   * Mongoose addition: under the same keys as `exits`, the way each exit faces ("north", "up"),
+   * from the direction stored on the exit. Exits that face no way ("in", a named door) are absent.
+   */
+  directions?: { [key: string]: string };
 }
 
 /** A Room.Layout point or extent: metres, room-local MOO frame (x east, y north, z up). */
@@ -74,6 +79,8 @@ export interface LayoutExit {
   at: LayoutVector;
   /** Doorway width along its wall. */
   width: number;
+  /** Unit vector out of the room the exit faces (x east, y north, z up); `[]` when it faces no way. */
+  facing?: LayoutVector | [];
 }
 
 export interface LayoutThing {

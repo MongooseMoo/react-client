@@ -1,7 +1,7 @@
 import type React from "react";
 import { useMemo } from "react";
-import { directionLabel, directionStep } from "../map/directions";
-import { layoutArea, type MapData, type PlacedRoom } from "../map/mapGraph";
+import { directionLabel } from "../map/directions";
+import { exitStep, layoutArea, type MapData, type PlacedRoom } from "../map/mapGraph";
 
 /**
  * The drawn map: the current room's area and level, laid out from exit
@@ -39,7 +39,7 @@ const MapPicture: React.FC<MapPictureProps> = ({ map, currentRoomId, onRoomClick
   const drawn = new Set<string>();
   for (const p of visible) {
     for (const [key, to] of Object.entries(p.room.exits)) {
-      const step = directionStep(key);
+      const step = exitStep(p.room, key);
       const target = placed.get(to);
       if (step && step.dz !== 0) {
         const dy = step.dz > 0 ? -ROOM / 2 - 5 : ROOM / 2 + 5;
