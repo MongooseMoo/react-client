@@ -92,9 +92,29 @@ export function bindingLabel(binding: KeystrokeBinding): string {
   return binding.label ?? binding.command;
 }
 
+/**
+ * What a player's key choice is stored under: the key the server sent, so two keys a layer gives one
+ * command keep separate choices.
+ */
+export function bindingId(binding: Pick<KeystrokeBinding, "key" | "modifiers">): string {
+  const parsed = parseChord(binding.key, binding.modifiers);
+  const keys = parsed.chord ? [...parsed.chord.modifiers, parsed.chord.key] : [...binding.modifiers, binding.key];
+  return `key:${keys.join("+")}`;
+}
+
+/** The player's key for a binding: by binding id, or a choice stored by command before ids, if only one binding has that command. */
+function overrideFor(layer: KeystrokeLayer, binding: KeystrokeBinding, overrides: KeystrokeOverrides): Chord | undefined {
+  const chosen = overrides[layer.id];
+  if (!chosen) return undefined;
+  const byId = chosen[bindingId(binding)];
+  if (byId) return byId;
+  const sameCommand = layer.bindings.filter((other) => other.command === binding.command).length;
+  return sameCommand === 1 && Object.hasOwn(chosen, binding.command) ? chosen[binding.command] : undefined;
+}
+
 export function resolveLayer(layer: KeystrokeLayer, overrides: KeystrokeOverrides): ResolvedBinding[] {
   return layer.bindings.map((binding) => {
-    const override = overrides[layer.id]?.[binding.command];
+    const override = overrideFor(layer, binding, overrides);
     const parsed = override
       ? parseChord(override.key, override.modifiers)
       : parseChord(binding.key, binding.modifiers);
@@ -127,19 +147,31 @@ export function findBinding(
   return undefined;
 }
 
-/** Why `chord` cannot be given to a layer's binding, or nothing when it is free. */
+/** Bindings that fire only in keys mode: installed, on a key without Ctrl, Alt or Meta. */
+export function keysModeBindings(layer: KeystrokeLayer, overrides: KeystrokeOverrides): ResolvedBinding[] {
+  return resolveLayer(layer, overrides).filter(
+    ({ chord, unavailable }) => chord !== undefined && unavailable === undefined && isTypingChord(chord),
+  );
+}
+
+/** The layers that have a key only keys mode can fire; keys mode is for nothing else. */
+export function keysModeLayers(layers: readonly KeystrokeLayer[], overrides: KeystrokeOverrides): KeystrokeLayer[] {
+  return layers.filter((layer) => keysModeBindings(layer, overrides).length > 0);
+}
+
+/** Why `chord` cannot be given to a layer's binding (`id` from bindingId), or nothing when it is free. */
 export function keyTakenBy(
   layers: readonly KeystrokeLayer[],
   overrides: KeystrokeOverrides,
   chord: Chord,
   layerId: string,
-  command: string,
+  id: string,
 ): string | undefined {
   const reserved = reservedReason(chord);
   if (reserved) return reserved;
   for (const layer of layers) {
     for (const resolved of resolveLayer(layer, overrides)) {
-      if (layer.id === layerId && resolved.binding.command === command) continue;
+      if (layer.id === layerId && bindingId(resolved.binding) === id) continue;
       if (resolved.chord && chordsEqual(resolved.chord, chord)) {
         return `${layer.label}: ${bindingLabel(resolved.binding)}`;
       }

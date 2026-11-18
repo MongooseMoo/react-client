@@ -226,8 +226,8 @@ describe("GMCPClientKeystrokes", () => {
       expect(client.sendCommand).not.toHaveBeenCalled();
     });
 
-    it("uses the key the player chose for that layer and command", () => {
-      usePreferences.getState().setKeystrokeOverride("#12", "scan", { key: "j", modifiers: ["ctrl"] });
+    it("uses the key the player chose for that layer and binding", () => {
+      usePreferences.getState().setKeystrokeOverride("#12", "key:ctrl+s", { key: "j", modifiers: ["ctrl"] });
       handler.receiveRegisteredMessage("Layer", helmLayer);
 
       press(document.body, ctrlS);
@@ -405,6 +405,56 @@ describe("GMCPClientKeystrokes", () => {
       expect(client.sendCommand).not.toHaveBeenCalled();
     });
 
+    it("says an unbound key is not bound in keys mode", () => {
+      press(document.body, altShiftH);
+
+      press(element("command-input"), { key: "x", code: "KeyX" });
+      expect(mockAnnounce).toHaveBeenLastCalledWith("X: not bound", "assertive", 2000);
+      press(element("command-input"), { key: "Q", code: "KeyQ", shiftKey: true });
+      expect(mockAnnounce).toHaveBeenLastCalledWith("Shift+Q: not bound", "assertive", 2000);
+      press(element("command-input"), { key: " ", code: "Space" });
+      expect(mockAnnounce).toHaveBeenLastCalledWith("Space: not bound", "assertive", 2000);
+    });
+
+    it("says nothing about an unbound key outside keys mode", () => {
+      press(element("command-input"), { key: "x", code: "KeyX" });
+
+      expect(mockAnnounce).not.toHaveBeenCalled();
+    });
+
+    it("stays off when no key needs keys mode, and says so", () => {
+      handler.receiveRegisteredMessage("RemoveLayer", { id: scrabbleLayer.id });
+      handler.receiveRegisteredMessage("Layer", helmLayer);
+      mockAnnounce.mockClear();
+
+      const toggle = press(element("command-input"), altShiftH);
+
+      expect(toggle.defaultPrevented).toBe(true);
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
+      expect(mockAnnounce).toHaveBeenLastCalledWith("No keys here need keys mode", "assertive", 2000);
+      const typed = press(element("command-input"), { key: "x", code: "KeyX" });
+      expect(typed.defaultPrevented).toBe(false);
+    });
+
+    it("stays off when the only typing keys are ones the player moved onto Ctrl", () => {
+      handler.receiveRegisteredMessage("Layer", { id: "#4936", label: "Scrabble", modal: true, bindings: [
+        { key: "p", modifiers: [], command: "press p on #4936", label: "Place" },
+      ] });
+      usePreferences.getState().setKeystrokeOverride("#4936", "key:p", { key: "p", modifiers: ["ctrl"] });
+
+      press(document.body, altShiftH);
+
+      expect(useKeystrokesStore.getState().keysMode).toBe(false);
+    });
+
+    it("names only the layers whose keys need keys mode", () => {
+      handler.receiveRegisteredMessage("Layer", { ...helmLayer, modal: true });
+
+      press(document.body, altShiftH);
+
+      expect(mockAnnounce).toHaveBeenLastCalledWith("Keys mode on: Scrabble", "assertive", 2000);
+    });
+
     it("cannot be bound by a layer", () => {
       handler.receiveRegisteredMessage("Layer", {
         id: "#9",
@@ -449,6 +499,16 @@ describe("GMCPClientKeystrokes", () => {
       const shift = press(element("command-input"), { key: "Shift", code: "ShiftLeft", shiftKey: true });
 
       expect(shift.defaultPrevented).toBe(false);
+    });
+
+    it("keeps the Escape that ends it from the client's other key handlers", () => {
+      const later = vi.fn();
+      document.addEventListener("keydown", later, true);
+
+      press(element("command-input"), { key: "Escape", code: "Escape" });
+
+      document.removeEventListener("keydown", later, true);
+      expect(later).not.toHaveBeenCalled();
     });
 
     it("ends with Escape or Alt+Shift+F1", () => {
@@ -553,11 +613,32 @@ describe("GMCPClientKeystrokes", () => {
       const plainTab = press(document.body, tab);
       expect(plainTab.defaultPrevented).toBe(false);
 
+      handler.receiveRegisteredMessage("Layer", scrabbleLayer);
       press(document.body, altShiftH);
       press(document.body, altBacktick);
       press(document.body, altBacktick);
       expect(said()).toBe("Interact mode off");
       expect(useKeystrokesStore.getState().keysMode).toBe(true);
+    });
+
+    it("keeps the Escape that ends it from the client's other key handlers, so sounds keep playing", () => {
+      press(document.body, altBacktick);
+      const later = vi.fn();
+      document.addEventListener("keydown", later, true);
+
+      press(document.body, { key: "Escape", code: "Escape" });
+
+      document.removeEventListener("keydown", later, true);
+      expect(said()).toBe("Interact mode off");
+      expect(later).not.toHaveBeenCalled();
+    });
+
+    it("says an unbound typing key is not bound", () => {
+      press(document.body, altBacktick);
+
+      press(element("command-input"), { key: "x", code: "KeyX" });
+
+      expect(said()).toBe("X: not bound");
     });
 
     it("ends when keys mode does", () => {

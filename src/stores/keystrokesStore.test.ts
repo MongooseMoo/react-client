@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  bindingId,
   findBinding,
   keyTakenBy,
+  keysModeLayers,
   resolveLayer,
   type KeystrokeLayer,
   useKeystrokesStore,
@@ -89,7 +91,7 @@ describe("resolveLayer", () => {
     expect(resolved[0].chord).toEqual({ key: "s", modifiers: ["ctrl"] });
   });
 
-  it("applies the player's key for that layer and command", () => {
+  it("applies a key chosen before binding ids, by command, when one binding has that command", () => {
     const resolved = resolveLayer(helm, {
       "#12": { warp: { key: "j", modifiers: ["ctrl"] } },
       "#4936": { scan: { key: "q", modifiers: [] } },
@@ -98,6 +100,60 @@ describe("resolveLayer", () => {
     expect(resolved[1].chord).toEqual({ key: "j", modifiers: ["ctrl"] });
     expect(resolved[1].unavailable).toBeUndefined();
     expect(resolved[1].changed).toBe(true);
+  });
+});
+
+describe("bindingId", () => {
+  it("names a binding by the key the server sent, whatever its spelling", () => {
+    expect(bindingId({ key: "S", modifiers: ["control"] })).toBe("key:ctrl+s");
+    expect(bindingId({ key: "left", modifiers: ["shift", "alt"] })).toBe("key:alt+shift+arrowleft");
+    expect(bindingId({ key: "x", modifiers: ["hyper"] })).toBe("key:hyper+x");
+  });
+});
+
+describe("two keys for one command", () => {
+  const cursor: KeystrokeLayer = {
+    id: "#4936",
+    label: "Scrabble",
+    modal: true,
+    bindings: [
+      { key: "a", modifiers: [], command: "press left on #4936", label: "Cursor left", autosend: true },
+      { key: "ArrowLeft", modifiers: [], command: "press left on #4936", label: "Cursor left", autosend: true },
+    ],
+  };
+
+  it("changes only the key the player changed", () => {
+    const resolved = resolveLayer(cursor, { "#4936": { "key:a": { key: "j", modifiers: [] } } });
+    expect(resolved.map(({ chord }) => chord?.key)).toEqual(["j", "arrowleft"]);
+    expect(resolved.map(({ changed }) => changed)).toEqual([true, false]);
+  });
+
+  it("ignores a choice stored by command, which cannot say which key it meant", () => {
+    const resolved = resolveLayer(cursor, { "#4936": { "press left on #4936": { key: "j", modifiers: [] } } });
+    expect(resolved.map(({ chord }) => chord?.key)).toEqual(["a", "arrowleft"]);
+  });
+
+  it("counts the other key of the same command as taken", () => {
+    expect(keyTakenBy([cursor], {}, { key: "arrowleft", modifiers: [] }, cursor.id, "key:a")).toBe(
+      "Scrabble: Cursor left",
+    );
+  });
+});
+
+describe("keysModeLayers", () => {
+  it("lists the layers with an installed key that needs keys mode", () => {
+    expect(keysModeLayers([scrabble, helm], {}).map((layer) => layer.id)).toEqual(["#4936"]);
+    expect(keysModeLayers([helm], {})).toEqual([]);
+  });
+
+  it("goes by the player's keys", () => {
+    const moved = {
+      "#4936": {
+        "key:arrowleft": { key: "l", modifiers: ["ctrl" as const] },
+        "key:p": { key: "p", modifiers: ["ctrl" as const] },
+      },
+    };
+    expect(keysModeLayers([scrabble], moved)).toEqual([]);
   });
 });
 
@@ -141,16 +197,16 @@ describe("findBinding", () => {
 describe("keyTakenBy", () => {
   it("names the reserved shortcut or the binding that has the key", () => {
     const layers = [scrabble, helm];
-    expect(keyTakenBy(layers, {}, { key: "w", modifiers: ["ctrl"] }, scrabble.id, "status")).toBe(
+    expect(keyTakenBy(layers, {}, { key: "w", modifiers: ["ctrl"] }, scrabble.id, "key:ctrl+s")).toBe(
       "The browser keeps this key",
     );
-    expect(keyTakenBy(layers, {}, { key: "p", modifiers: [] }, helm.id, "scan")).toBe(
+    expect(keyTakenBy(layers, {}, { key: "p", modifiers: [] }, helm.id, "key:ctrl+s")).toBe(
       "Scrabble: Place the selected tile",
     );
-    expect(keyTakenBy(layers, {}, { key: "q", modifiers: [] }, helm.id, "scan")).toBeUndefined();
+    expect(keyTakenBy(layers, {}, { key: "q", modifiers: [] }, helm.id, "key:ctrl+s")).toBeUndefined();
   });
 
   it("does not count the binding being changed", () => {
-    expect(keyTakenBy([scrabble], {}, { key: "p", modifiers: [] }, scrabble.id, "press p on #4936")).toBeUndefined();
+    expect(keyTakenBy([scrabble], {}, { key: "p", modifiers: [] }, scrabble.id, "key:p")).toBeUndefined();
   });
 });

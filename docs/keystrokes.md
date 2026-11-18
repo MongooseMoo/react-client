@@ -9,6 +9,8 @@ while the player is using it. The server sends the layer when the player starts 
 they stop. The client keeps the player in charge: it says when keys arrive and leave, lists them,
 lets the player change them, and never lets a layer stop them typing.
 
+Interact mode (below) uses keys mode for its own keys and can start with no layer at all.
+
 ## Messages from the server
 
 ### `Client.Keystrokes.Layer`
@@ -72,13 +74,18 @@ bindings fire only in **keys mode**. Every other binding fires whenever focus al
 - **Alt+Shift+H** turns keys mode on and off. It belongs to the client and no layer can bind it.
   (Not K: Firefox fires page access keys on Alt+Shift, and the player card's "Look" is K. Chrome keeps
   Alt+Shift with A, I, N and T.)
-- Turning it on says "Keys mode on: Scrabble" (the labels of the modal layers). Turning it off says
-  "Keys mode off".
+- It turns on only when some installed binding needs it: a key without Ctrl, Alt or Meta, after the
+  player's own key changes. Otherwise Alt+Shift+H says "No keys here need keys mode" and keys mode
+  stays off, so the player can never be left in a mode where typing does nothing.
+- Turning it on says "Keys mode on: Scrabble" (the labels of the layers with such keys). Turning it off
+  says "Keys mode off".
 - When a modal layer arrives, the client says "Scrabble keys available. Alt+Shift+H for keys mode."
   It does not switch keys mode on by itself.
-- When the last modal layer goes away, keys mode switches off and the client says so.
+- When the last layer with keys that need keys mode goes away, keys mode switches off and the client
+  says so.
 - In keys mode a key never types into the command input, whether a layer binds it or not, and
-  whatever the input holds. Enter still sends, and Backspace, the arrows and Tab still do what they
+  whatever the input holds. A character key that no layer binds says "X: not bound" (as key help
+  does) instead of typing. Enter still sends, and Backspace, the arrows and Tab still do what they
   do when no layer binds them.
 - A binding with `autosend` false (a staged `score `) puts its command in the input for the player to
   finish. If keys mode is on, it switches off and says "Keys mode off", so the player can type the
@@ -106,7 +113,8 @@ player carries (`Char.Items` `inv`), who and what is in the room (`room`), then 
 - **Ctrl+I** sends `interact #7` for an item, or `interact north` for an exit. The server answers with
   its menu (`world.mongoose.menu`), the same one typing that command brings up. If the thing has gone,
   the client says "That is no longer here. Tab to choose again."
-- **Escape** or Alt+backtick ends it and says "Interact mode off". Keys mode goes off too, unless it
+- **Escape** or Alt+backtick ends it and says "Interact mode off". That Escape goes no further, so it
+  does not also pause the client's sounds. Keys mode goes off too, unless it
   was on before interact mode started. Anything else that ends keys mode ends interact mode, except
   the pause below.
 - While interact mode is on, Tab, Shift+Tab, Ctrl+I and Escape do only this, even when a layer binds
@@ -141,5 +149,7 @@ as unavailable with the reason.
 
 The player can open a list of every layer and its keys (label, key, command), including unavailable
 ones. From that list they can give any binding a different key. The client remembers that choice per
-layer id and binding command, applies it whenever the layer arrives again, and refuses a new key that
-is already taken.
+layer id and the key the server sent for the binding, so two keys for one command keep separate
+choices. It applies the choice whenever the layer arrives again, and refuses a new key that is already
+taken. (Choices saved before this were stored by command; one still applies when only one binding in
+the layer has that command.)

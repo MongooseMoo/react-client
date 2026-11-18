@@ -5,6 +5,8 @@ import { useInputStore } from "../../stores/inputStore";
 import {
     bindingLabel,
     findBinding,
+    keysModeBindings,
+    keysModeLayers,
     resolveLayer,
     type KeystrokeBinding,
     type KeystrokeLayer,
@@ -127,6 +129,17 @@ function say(message: string): void {
     announce(message, "assertive", 2000);
 }
 
+/**
+ * The key is this package's: no other keydown listener gets it, the client's own on the document
+ * included (App.tsx's Escape pauses every sound).
+ */
+function consume(event: KeyboardEvent): void {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+}
+
+const NOTHING_NEEDS_KEYS_MODE = "No keys here need keys mode";
+
 /** Something interact mode can land on, and the command that brings up its menu. */
 interface InteractTarget {
     key: string;
@@ -192,8 +205,7 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         if (event.repeat || event.isComposing || !keysWorkAt(event.target)) return;
 
         if (isKeysHelpToggle(event)) {
-            event.preventDefault();
-            event.stopPropagation();
+            consume(event);
             this.keysHelp = !this.keysHelp;
             say(this.keysHelp ? "Key help on. Press a key to hear what it does. Escape ends key help." : "Key help off");
             return;
@@ -205,15 +217,13 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         }
 
         if (isInteractModeToggle(event)) {
-            event.preventDefault();
-            event.stopPropagation();
+            consume(event);
             this.toggleInteractMode();
             return;
         }
 
         if (isKeysModeToggle(event)) {
-            event.preventDefault();
-            event.stopPropagation();
+            consume(event);
             this.toggleKeysMode();
             return;
         }
@@ -223,17 +233,19 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         // for typing (resumeOnSend) keeps the current thing for when keys mode comes back.
         if (!keysMode && !resumeOnSend) this.interactKey = null;
         if (keysMode && this.interactKey !== null && this.handleInteractKey(event)) {
-            event.preventDefault();
-            event.stopPropagation();
+            consume(event);
             return;
         }
         const found = findBinding(layers, usePreferences.getState().keystrokes, keysMode, event);
-        // In keys mode a key never types, bound or not.
+        // In keys mode a key never types, bound or not, and an unbound one says so.
         if (!found && !(keysMode && typesCharacter(event))) return;
 
-        event.preventDefault();
-        event.stopPropagation();
-        if (!found) return;
+        consume(event);
+        if (!found) {
+            const chord = chordFromEvent(event);
+            if (chord) say(`${formatChord(chord)}: not bound`);
+            return;
+        }
         const command = this.parseCommand(found.binding.command, useInputStore.getState().text);
         if (found.binding.autosend) {
             this.client.sendCommand(command);
@@ -251,8 +263,7 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
     private describeKey(event: KeyboardEvent): void {
         const chord = chordFromEvent(event);
         if (!chord) return;
-        event.preventDefault();
-        event.stopPropagation();
+        consume(event);
         if (chord.key === "escape" && chord.modifiers.length === 0) {
             this.keysHelp = false;
             say("Key help off");
@@ -333,6 +344,7 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         say("Interact mode off");
     }
 
+    /** Keys mode is only for keys that need it: with none bound it stays off and says so. */
     private toggleKeysMode(): void {
         const store = useKeystrokesStore.getState();
         if (store.keysMode) {
@@ -340,9 +352,13 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
             say("Keys mode off");
             return;
         }
+        const layers = keysModeLayers(store.layers, usePreferences.getState().keystrokes);
+        if (layers.length === 0) {
+            say(NOTHING_NEEDS_KEYS_MODE);
+            return;
+        }
         store.setKeysMode(true);
-        const labels = store.layers.filter((layer) => layer.modal).map((layer) => layer.label);
-        say(labels.length > 0 ? `Keys mode on: ${labels.join(", ")}` : "Keys mode on");
+        say(`Keys mode on: ${layers.map((layer) => layer.label).join(", ")}`);
     }
 
     private parseCommand(commandTemplate: string, commandInput: string): string {
@@ -381,11 +397,14 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
     /** Removes a layer; returns what to say about it, if anything. */
     private removeLayer(id: string): string | undefined {
         const store = useKeystrokesStore.getState();
+        const overrides = usePreferences.getState().keystrokes;
         const removed = store.removeLayer(id);
         if (!removed) return undefined;
-        const modalLeft = useKeystrokesStore.getState().layers.some((layer) => layer.modal);
-        const keysModeEnds = removed.modal && !modalLeft && store.keysMode;
-        if (removed.modal && !modalLeft) store.setKeysMode(false);
+        // When the last keys that need keys mode go, so does keys mode (and a pause for a staged command).
+        const lastGone = keysModeBindings(removed, overrides).length > 0 &&
+            keysModeLayers(useKeystrokesStore.getState().layers, overrides).length === 0;
+        const keysModeEnds = lastGone && store.keysMode;
+        if (lastGone) store.setKeysMode(false);
         if (removed.id === SERVER_KEYS_ID) return keysModeEnds ? "Keys mode off" : undefined;
         return keysModeEnds ? `${removed.label} keys removed. Keys mode off` : `${removed.label} keys removed`;
     }
