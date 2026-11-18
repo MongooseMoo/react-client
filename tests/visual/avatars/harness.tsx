@@ -191,7 +191,30 @@ const ROUND4_CHARACTERS: TestCharacter[] = [
   faceOf("mohawk 5 cm, deep", SKIN.deep, { length_cm: 5, texture: "straight", style: "mohawk", hex: HAIR.black }, undefined),
   faceOf("brushed 5 cm, deep", SKIN.deep, { length_cm: 5, texture: "straight", style: "brushed", hex: HAIR.black }, undefined),
 ];
-const SETS: Record<string, TestCharacter[]> = { vocab: VOCAB_CHARACTERS, face: FACE_CHARACTERS, round3: ROUND3_CHARACTERS, round4: ROUND4_CHARACTERS };
+/**
+ * `set=round5`: the length bands past the jaw (the People list shows them at 32 px), cropped and short straight hair
+ * on deep and tan skin, brushed, shaved and cropped on deep skin, coily and curly hair at chin length and longer on
+ * deep and very pale skin beside wavy, coily cropped on deep skin, and eyes on deep, tan and very pale skin.
+ */
+const ROUND5_CHARACTERS: TestCharacter[] = [
+  ...([18, 30, 50, 75] as const).map((cm) => faceOf(`straight ${cm} cm, tan`, SKIN.tan, { length_cm: cm, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } })),
+  ...([3, 10] as const).map((cm) => faceOf(`straight ${cm} cm, deep`, SKIN.deep, { length_cm: cm, texture: "straight", hex: HAIR.black }, undefined, { face: { shape: "oval", ears: "small" } })),
+  ...([3, 10] as const).map((cm) => faceOf(`straight ${cm} cm, tan`, SKIN.tan, { length_cm: cm, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } })),
+  faceOf("brushed 5 cm, deep", SKIN.deep, { length_cm: 5, texture: "straight", style: "brushed", hex: HAIR.black }, undefined),
+  faceOf("shaved 1 cm, deep", SKIN.deep, { length_cm: 1, texture: "straight", hex: HAIR.black }, undefined, { face: { shape: "oval" } }),
+  faceOf("cropped 3 cm, deep", SKIN.deep, { length_cm: 3, texture: "straight", hex: HAIR.black }, undefined, { face: { shape: "oval" } }),
+  faceOf("coily 3 cm, deep", SKIN.deep, { length_cm: 3, texture: "coily", hex: HAIR.black }, undefined, { face: { shape: "oval" } }),
+  faceOf("curly 3 cm, deep", SKIN.deep, { length_cm: 3, texture: "curly", hex: HAIR.black }, undefined, { face: { shape: "oval" } }),
+  ...(["coily", "curly"] as const).flatMap((texture) => [
+    faceOf(`${texture} 18 cm, deep`, SKIN.deep, { length_cm: 18, texture, hex: HAIR.black }, undefined, { face: { shape: "oval" } }),
+    ...([30, 50, 75] as const).map((cm) => faceOf(`${texture} ${cm} cm, deep`, SKIN.deep, { length_cm: cm, texture, hex: HAIR.black }, undefined, { face: { shape: "oval" } })),
+    faceOf(`${texture} 18 cm, very pale`, SKIN.veryPale, { length_cm: 18, texture, hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+  ]),
+  faceOf("wavy 18 cm, tan", SKIN.tan, { length_cm: 18, texture: "wavy", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+  faceOf("wavy 30 cm, tan", SKIN.tan, { length_cm: 30, texture: "wavy", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+  faceOf("eyes, very pale, 3 cm", SKIN.veryPale, { length_cm: 3, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+];
+const SETS: Record<string, TestCharacter[]> = { vocab: VOCAB_CHARACTERS, face: FACE_CHARACTERS, round3: ROUND3_CHARACTERS, round4: ROUND4_CHARACTERS, round5: ROUND5_CHARACTERS };
 // `only=text`: just the characters whose name contains that text, for a close look at a few.
 const CHARACTERS = (SETS[params.get("set") ?? ""] ?? TEST_CHARACTERS).filter((ch) => ch.name.includes(params.get("only") ?? ""));
 const root = document.getElementById("root") as HTMLElement;

@@ -194,8 +194,21 @@ function hairCap(texture: HairTexture, v: number, fill: string, ink: string, she
   const width = shape.width * v;
   const hairline = shape.hairline;
   const start = `M${n(32 - width)},27`;
-  const close = band === "short" ? `${fringe(texture, width)} Z` : ` C38,${hairline} 26,${hairline} ${n(32 - width)},27 Z`;
   const curls = CURLS[texture];
+  let close = ` C38,${hairline} 26,${hairline} ${n(32 - width)},27 Z`;
+  if (band === "short") close = `${fringe(texture, width)} Z`;
+  else if (band === "cropped" && curls) {
+    // Close curls or coils end along the forehead in curls too, each bulging down onto it; one smooth curve there read
+    // as the brim of a cap at 48 px.
+    const count = texture === "coily" ? 10 : 7;
+    const [a, b, c, d]: Pt[] = [[32 + width, 27], [38, hairline], [26, hairline], [32 - width, 27]];
+    const points = Array.from({ length: count + 1 }, (_, i) => {
+      const t = i / count;
+      const u = 1 - t;
+      return [u ** 3 * a[0] + 3 * u * u * t * b[0] + 3 * u * t * t * c[0] + t ** 3 * d[0], u ** 3 * a[1] + 3 * u * u * t * b[1] + 3 * u * t * t * c[1] + t ** 3 * d[1]] as Pt;
+    });
+    close = `${scallops(points, curls.depth, [32, 5])} Z`;
+  }
   let edge: string;
   if (curls) edge = scallops(domePoints(width, top, curls.count), curls.depth, [32, 27]);
   else if (texture === "wavy") {
@@ -272,6 +285,51 @@ const HANG_BOTTOM: Readonly<Record<FigureParams["hair"], number>> = {
 const FALL_BOTTOM: Readonly<Partial<Record<FigureParams["hair"], number>>> = { "chin-length": 42, "shoulder-length": 48, long: 55, "waist-length": 64 };
 
 /**
+ * How hair worn down hangs beside the face, by band, on the left (the right mirrors it): rows of [y, outer, inner], the
+ * outer and inner edges as distances from the face's middle line (x 32), from the cheekbone to where the hair ends.
+ * Chin-length ends at the jaw, beside it (clear of a long beard); shoulder-length falls past the jaw onto the shoulders;
+ * long hair falls in front of the face's sides and in over the front of the shoulders (`front`, drawn over the head),
+ * waist-length fuller and further in. The People list shows only the head inside a circle (centre 32, 25, radius 20),
+ * which cuts every end below the jaw off: each band has to differ from the next above y 45 and inside x 12 to 52.
+ * So each band also hangs fuller than the one before (`back`, the half width of the hair behind the head, and the
+ * locks' outer edge), as longer hair carries more weight beside the face.
+ */
+const LOCKS: Readonly<Partial<Record<FigureParams["hair"], { front: boolean; back: number; rows: ReadonlyArray<[number, number, number]> }>>> = {
+  "chin-length": { front: false, back: 14.2, rows: [[27, 15, 12.9], [36, 15.2, 12.7], [41, 14.8, 12.6]] },
+  "shoulder-length": { front: false, back: 15.8, rows: [[27, 16.6, 12.7], [40, 17, 12.7], [50.5, 17.2, 12.7]] },
+  long: { front: true, back: 17.8, rows: [[26, 18.6, 10.6], [36, 19, 10.2], [45, 19.2, 6], [55, 18.2, 5.6]] },
+  "waist-length": { front: true, back: 19.8, rows: [[26, 20.6, 9.5], [35, 21, 8.8], [43, 21.2, 2.8], [63, 20.2, 2.6]] },
+};
+
+/**
+ * Where a shaved scalp's stubble points are: a staggered grid inside its shadow (the dome `scalp` draws, 14.6 to
+ * each side and up to y 10.2, above its lower edge, which is at y 19.5 in the middle), kept above the brows.
+ */
+const SCALP_DOTS: ReadonlyArray<[number, number]> = (() => {
+  const out: Array<[number, number]> = [];
+  for (let row = 0; row < 8; row++) {
+    const y = 11.4 + row * 1.35;
+    for (let x = 18.6 + (row % 2) * 0.8; x <= 45.4; x += 1.6) {
+      const d = (x - 32) / 14.6;
+      const dome = Math.abs(d * 1.07) ** 3 + ((27 - y) / 16.8 / 0.96) ** 3;
+      if (dome < 1 && y < 19.5 + 7.5 * d * d - 0.9 && y < 21) out.push([n(x), n(y)]);
+    }
+  }
+  return out;
+})();
+
+/** Points every `step` or so along the polyline through `points`, its corners kept. */
+function resample(points: Pt[], step: number): Pt[] {
+  const out: Pt[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const [a, b] = [points[i - 1], points[i]];
+    const k = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let j = 1; j <= k; j++) out.push([a[0] + ((b[0] - a[0]) * j) / k, a[1] + ((b[1] - a[1]) * j) / k]);
+  }
+  return out;
+}
+
+/**
  * What a hair style puts behind the head (`back`, drawn before the shoulders), hanging in front of the
  * shoulders (`hang`, before the head) and over the head (`cap`). `loose` is the hair as it falls. `ink` here (and in
  * the helpers it calls) is the hair's edge, `hairEdge`, never the figure's outline ink; lines and ties drawn on the
@@ -280,7 +338,9 @@ const FALL_BOTTOM: Readonly<Partial<Record<FigureParams["hair"], number>>> = { "
 function hairStyle(params: FigureParams, fill: string, ink: string, skin: string): { back: React.ReactNode[]; hang: React.ReactNode[]; cap: React.ReactNode } {
   const v = params.hairVolume;
   const texture = params.hairTexture;
-  const fallBottom = FALL_BOTTOM[params.hair] ?? 0;
+  /** How far curls and coils at chin length spring up from where straight hair of that length ends. */
+  const rise = params.hair === "chin-length" ? { coily: 4, curly: 3.5, wavy: 3 }[texture as "coily" | "curly" | "wavy"] ?? 0 : 0;
+  const fallBottom = (FALL_BOTTOM[params.hair] ?? 0) - rise;
   const falls = fallBottom > 0;
   const bottom = HANG_BOTTOM[params.hair];
   const sheen = params.colours.hairSheen ?? ink;
@@ -301,36 +361,76 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
       <g key="scalp" className="avatar-hair">
         <path className="avatar-hair-shadow" fill={overlayHex(skin, fill, STUBBLE_OPACITY)} stroke="none" d={`M${pt(dome[0])}${edge} C40,17 24,17 ${pt(dome[0])} Z`} />
         <path className="avatar-hair-edge" fill="none" stroke={ink} strokeWidth={1.2} strokeLinecap="round" d={`M${pt(dome[0])}${edge}`} />
+        {/*
+          Stubble: short hairs in the hair's tone off the skin, as on a stubbled chin. The shadow alone, black at 45%
+          over deep skin, looked the same as cropped black hair.
+        */}
+        {SCALP_DOTS.map(([x, y]) => (
+          <circle key={`${x},${y}`} className="avatar-stubble-dot" cx={x} cy={y} r={0.42} fill={ink} />
+        ))}
       </g>
     );
   };
   // A close cap for hair drawn back from the face: smooth, whatever the texture.
   const sleek = () => hairCap("straight", 1, fill, ink, sheen);
   /**
-   * Hair worn down also hangs in front of the shoulders beside the face, ending in a rounded tip where the hair
-   * ends: above the shoulders for chin-length, on them for shoulder-length. Behind the head alone, its end was hidden
-   * by the shoulders and, beside a long dark beard, chin and shoulder length looked the same.
+   * Hair worn down also hangs beside the face (`LOCKS`), ending in a rounded tip where the hair ends. Behind the head
+   * alone, its end was hidden by the shoulders and, beside a long dark beard, chin and shoulder length looked the same.
+   * Each lock is drawn in its texture: smooth with strands, in waves, or with curls or coils down both edges and their
+   * turns inside it, filled in the hair's colour with its light drawn as those marks; only its outer edge and end are
+   * in the edge tone. A straight panel, ringed in the edge tone and with a shrunken grey copy inside, read as straight
+   * grey hair beside a curly cap.
    */
-  const sideLocks = () => {
-    // Shoulder-length hair lies a little way down the front of the shoulders, so its end is seen on them.
-    const end = fallBottom + (params.hair === "shoulder-length" ? 2.5 : 0);
-    return falls
+  const locks = LOCKS[params.hair];
+  const sideLocks = () =>
+    locks && falls
       ? [-1, 1].map((side) => {
-          const outer = 32 + side * 16.6;
-          const inner = 32 + side * 12.9;
+          const at = (y: number, from: number): Pt => [32 + side * from, y];
+          // Curly and coily hair stands out further, as the cap and the hair behind do (`v`), and at chin length springs
+          // up into a mass ending above the jaw (`rise`).
+          const rows = locks.rows.map(([y, o, i]) => [y > 30 ? y - rise : y, o + (v - 1) * 2, i] as const);
+          const outer = rows.map(([y, o]) => at(y, o));
+          const inner = rows.map(([y, , i]) => at(y, i)).reverse();
+          const [yEnd, oEnd, iEnd] = rows[rows.length - 1];
+          const tip = ` Q${pt(at(yEnd + 2.4, (oEnd + iEnd) / 2))} ${pt(inner[0])}`;
+          const curls = CURLS[texture];
+          // Curls and coils bulge away from the lock's middle line; waves swing from side to side.
+          const away: Pt = at(40, 14.5);
+          const edge = (points: Pt[]) => {
+            if (curls) return scallops(resample(points, texture === "coily" ? 2.4 : 3), curls.depth, away);
+            if (texture === "wavy") return through(resample(points, 2).map(([x, y], k) => [x + (k % 2 ? 0.5 : -0.5), y] as Pt));
+            return through(points);
+          };
+          const outerEdge = `M${pt(outer[0])}${edge(outer)}${tip}`;
+          // The marks down the lock: strands (straight), waves, or the curls' turns, in the sheen.
+          let marks = "";
+          const middle = (share: number) => rows.map(([y, o, i]) => at(y, o + (i - o) * share));
+          if (curls) {
+            const r = texture === "coily" ? 0.9 : 1.3;
+            for (const share of texture === "coily" ? [0.3, 0.7] : [0.5]) {
+              for (const [x, y] of resample(middle(share), texture === "coily" ? 2.8 : 3.8).slice(1, -1)) {
+                marks += `M${n(x - r)},${n(y)} Q${n(x - r)},${n(y - r)} ${n(x)},${n(y - r)} Q${n(x + r)},${n(y - r)} ${n(x + r)},${n(y)} `;
+              }
+            }
+          } else {
+            for (const share of [0.35, 0.7]) {
+              const line = middle(share).slice(0, -1);
+              marks += `M${pt(line[0])}${texture === "wavy" ? through(resample(line, 2).map(([x, y], k) => [x + (k % 2 ? 0.4 : -0.4), y] as Pt)) : through(line)} `;
+            }
+          }
+          const classes = [texture === "straight" ? "avatar-hair-strand" : "avatar-hair-texture", massed ? "avatar-hair-sheen" : ""].filter(Boolean).join(" ");
           return (
-            <path
-              key={`side-lock${side}`}
-              className="avatar-hair"
-              fill={fill}
-              stroke={ink}
-              strokeWidth={1}
-              d={`M${n(outer)},27 L${n(outer)},${n(end - 2)} Q${n((outer + inner) / 2)},${n(end + 1.4)} ${n(inner)},${n(end - 2)} L${n(inner)},30 Z`}
-            />
+            <g key={`side-lock${side}`} className="avatar-hair">
+              <path className="avatar-hair avatar-hair-lock" fill={fill} stroke="none" data-lit="marks" d={`${outerEdge}${edge(inner)} Z`} />
+              <path className="avatar-hair-edge" fill="none" stroke={ink} strokeWidth={1} strokeLinejoin="round" strokeLinecap="round" d={outerEdge} />
+              <path className={classes} fill="none" stroke={sheen} strokeWidth={massed ? 0.9 : 0.6} strokeLinecap="round" d={marks.trim()} />
+            </g>
           );
         })
       : [];
-  };
+  /** Where the locks go: behind the head, or (long and waist-length) in front of the face's sides, under the cap. */
+  const worn = (cap: React.ReactNode): { hang: React.ReactNode[]; cap: React.ReactNode } =>
+    locks?.front && falls ? { hang: [], cap: <g className="avatar-hair">{sideLocks()}{cap}</g> } : { hang: sideLocks(), cap };
   /**
    * Hair drawn back and tied (ponytail, braids, bun, topknot) keeps its texture on the cap: a curly or coily edge with
    * curl marks, or waves. Without it the tied styles all looked straight.
@@ -439,28 +539,33 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
       // cap, 8 px at 32 px), the hairline well up the forehead, comb lines running back. With only a higher hairline
       // and thin comb strokes it looked like loose hair at portrait size.
       return {
-        back: falls ? [hairBack(15, fallBottom, fill, ink)] : [],
-        hang: sideLocks(),
-        cap: (
+        back: falls ? [hairBack(locks?.back ?? 15, fallBottom, fill, ink)] : [],
+        ...worn(
           <g className="avatar-hair">
             <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d="M18,27 C17,11 21.5,2.4 31.5,2.4 C41.5,2.4 47,11 46,27 C40,13 24,13 18,27 Z" />
             {line("comb", "M25,16.5 Q23.5,10.5 27.5,6.8 M32,15.3 Q31.4,10 32,6 M39,16.5 Q40.5,10.5 36.5,6.8", 0.8)}
-          </g>
+          </g>,
         ),
       };
     case "brushed":
       // A side parting, open at the crown as a notch in the outline, the larger side brushed across the forehead in a
       // swept fringe. A thin parting stroke on a plain cap looked like loose hair at portrait size.
       return {
-        back: falls ? [hairBack(15, fallBottom, fill, ink)] : [],
-        hang: sideLocks(),
-        cap: (
+        back: falls ? [hairBack(locks?.back ?? 15, fallBottom, fill, ink)] : [],
+        ...worn(
           <g className="avatar-hair">
+            {/*
+              The parting: the scalp showing between the two sides, in the hair's shadow on the skin, under the head's
+              outline there, with the outer edge running on across it. Left open, the head's outline (white on deep
+              skin) showed across the notch.
+            */}
+            <path className="avatar-hair-shadow" fill={overlayHex(skin, fill, STUBBLE_OPACITY)} stroke="none" d="M22.9,11.45 L26.5,11.05 L24.9,21 L23.5,20.4 Z" />
+            <path className="avatar-hair-edge" fill="none" stroke={ink} strokeWidth={1.2} strokeLinecap="round" d="M23.2,11.4 L26.2,11.1" />
             {/* Their light drawn as the brushed lines (heavier on hair of the skin's darkness), never a shrunken grey copy. */}
-            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} strokeLinejoin="round" data-lit="marks" d="M18,27 C17.5,17 19.5,13 23.2,11.8 L23.8,19 C21.5,20.5 19.2,23.5 18,27 Z" />
-            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} strokeLinejoin="round" data-lit="marks" d="M26.2,11.4 C36,9 46.5,13 46.5,27 C44.5,22.5 40,19.6 34.5,19.6 C30.5,19.6 27,20.6 24.6,22 L24.6,19 Z" />
+            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} strokeLinejoin="round" data-lit="marks" d="M17.6,27 C17,16.5 18.6,12.6 23.2,11.4 L23.8,19 C21.5,20.5 19.2,23.5 17.6,27 Z" />
+            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} strokeLinejoin="round" data-lit="marks" d="M26.2,11.1 C36.5,7.6 47.9,9.4 46.6,27 C44.5,22.5 40,19.6 34.5,19.6 C30.5,19.6 27,20.6 24.6,22 L24.6,19 Z" />
             {line("brushed", "M28,14 Q36.5,12.2 43.5,17.5 M27.5,17.5 Q34,15.8 40.5,18.2 M20,24 Q20.5,18 22.6,14.5", massed ? 0.9 : 0.8, massed)}
-          </g>
+          </g>,
         ),
       };
     case "voluminous":
@@ -471,13 +576,11 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
         cap: hairCap(texture, v * 1.3, fill, ink, sheen),
       };
     default:
-      // Shaved: a shadow of the hair's colour on the scalp. Long and waist-length hair spread as they fall, so each
-      // band past the shoulders is wider as well as longer than the one before.
+      // Shaved: a shadow of the hair's colour on the scalp. Hair worn down hangs fuller with each band (`LOCKS`).
       if (params.hair === "shaved") return { back: [], hang: [], cap: scalp() };
       return {
-        back: falls ? [hairBack(15 * v * (params.hair === "waist-length" ? 1.3 : params.hair === "long" ? 1.15 : 1), fallBottom, fill, ink)] : [],
-        hang: sideLocks(),
-        cap: hairCap(texture, v, fill, ink, sheen, params.hair === "cropped" ? "cropped" : params.hair === "short" ? "short" : "full"),
+        back: falls ? [hairBack((locks?.back ?? 15) + (v - 1) * 2, fallBottom, fill, ink)] : [],
+        ...worn(hairCap(texture, v, fill, ink, sheen, params.hair === "cropped" ? "cropped" : params.hair === "short" ? "short" : "full")),
       };
   }
 }
