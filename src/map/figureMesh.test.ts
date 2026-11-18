@@ -415,9 +415,11 @@ describe("figure face", () => {
         // In front of the brows (x within their span), the cap's lowest point and the hairline line's lowest point stand
         // clear above the brows' top by at least the brow's own thickness, so the brows read as their own strokes.
         const front = (name: string) => vertices(p, name).filter((v) => v.y > headR * 0.5 && Math.abs(v.x) > headR * 0.14 && Math.abs(v.x) < headR * 0.5);
-        for (const name of ["cap", "hairline"]) {
+        for (const name of ["cap", "hairline", "fringe"]) {
           const edge = front(name);
           if (name === "hairline" && !p.outlined.includes("hairline")) continue;
+          // Only brushed hair has a fringe across the forehead.
+          if (name === "fringe" && style !== "brushed") continue;
           expect(edge.length, `${label} ${name}`).toBeGreaterThan(0);
           expect(Math.min(...edge.map((v) => v.z)) - browTop, `${label} ${name}`).toBeGreaterThan(headR * 0.09);
         }
@@ -450,6 +452,136 @@ describe("figure face", () => {
   it("draws no face on a hidden face, nor on the plain figure of someone without appearance", () => {
     for (const p of [standing({ ...lightHair, face_hidden: true }).p, figureParams(undefined, { height: 1.75, base: "#4ade80" })]) {
       expect(figureParts(p).filter((x) => x.name === "mouth" || x.name === "brow" || x.name === "eye")).toEqual([]);
+    }
+  });
+});
+
+describe("ears", () => {
+  const withEars = (ears: string | undefined, hair: Record<string, unknown> = { length_cm: 3, texture: "straight", hex: "#653700" }, extra: Record<string, unknown> = {}) =>
+    standing({ skin: { hex: "#eadaba" }, eyes: { hex: "#5b3a1e" }, face: ears ? { ears } : {}, hair, ...extra });
+
+  it("draws an ear on each side of the head, standing out past the hair, from brow to below the nose, for every face.ears", () => {
+    for (const ears of ["average", "small", "large", "pointed"]) {
+      for (const length_cm of [3, 10]) {
+        const { p, headR, headZ } = withEars(ears, { length_cm, texture: "straight", hex: "#653700" });
+        const label = `${ears} ${length_cm} cm`;
+        const ear = vertices(p, "ear");
+        expect(ear.length, label).toBeGreaterThan(0);
+        for (const side of [-1, 1]) {
+          const one = ear.filter((v) => Math.sign(v.x) === side);
+          expect(one.length, `${label} ${side}`).toBeGreaterThan(0);
+          // Beside the head, between the eyes' height and the mouth's.
+          const zs = one.map((v) => v.z - headZ);
+          expect(Math.max(...zs), label).toBeGreaterThan(headR * 0.12);
+          expect(Math.min(...zs), label).toBeLessThan(-headR * 0.1);
+          expect(Math.max(...zs), label).toBeLessThan(headR * (ears === "pointed" ? 0.9 : 0.5));
+          // Seen from the front: further out than the hair and the head at the ear's height.
+          const out = Math.max(...one.map((v) => Math.abs(v.x)));
+          const around = vertices(p, "cap").filter((v) => Math.abs(v.z - headZ) < headR * 0.15);
+          const head = headR * 0.84;
+          expect(out - Math.max(head, ...around.map((v) => Math.abs(v.x))), label).toBeGreaterThan(headR * 0.06);
+          // Seen from the side: its middle beside the head's, a little behind it, not hanging off the back of the head.
+          const ys = one.map((v) => v.y);
+          expect((Math.max(...ys) + Math.min(...ys)) / 2, label).toBeLessThan(headR * 0.1);
+          expect((Math.max(...ys) + Math.min(...ys)) / 2, label).toBeGreaterThan(-headR * 0.4);
+        }
+      }
+    }
+  });
+
+  it("sizes the ears by face.ears and points pointed ones, so each value differs", () => {
+    const height = (ears: string) => {
+      const zs = vertices(withEars(ears).p, "ear").map((v) => v.z);
+      return Math.max(...zs) - Math.min(...zs);
+    };
+    const top = (ears: string) => Math.max(...vertices(withEars(ears).p, "ear").map((v) => v.z));
+    const { headR } = withEars("average");
+    expect(height("small")).toBeLessThan(height("average") - headR * 0.08);
+    expect(height("large")).toBeGreaterThan(height("average") + headR * 0.08);
+    expect(top("pointed")).toBeGreaterThan(top("average") + headR * 0.2);
+    // Average is what a record without face.ears gets.
+    expect(vertices(withEars(undefined).p, "ear")).toEqual(vertices(withEars("average").p, "ear"));
+  });
+
+  it("leaves the ears out under a hood or hat, under hair worn down past the jaw, and under a coily cap standing out past them", () => {
+    for (const style of ["loose", "bun"]) expect(vertices(withEars("large", { length_cm: style === "bun" ? 50 : 10, texture: "coily", style, hex: "#653700" }).p, "ear"), `coily ${style}`).toEqual([]);
+    const hood = { garments: [{ areas: ["head"], layer: 2, colour: { hex: "#ff81c0" } }] };
+    expect(vertices(withEars("large", undefined, hood).p, "ear")).toEqual([]);
+    for (const style of ["loose", "brushed", "voluminous"]) expect(vertices(withEars("large", { length_cm: 30, texture: "straight", style, hex: "#653700" }).p, "ear"), style).toEqual([]);
+    for (const style of ["ponytail", "bun", "mohawk", "spiky"]) expect(vertices(withEars("large", { length_cm: 30, texture: "straight", style, hex: "#653700" }).p, "ear").length, style).toBeGreaterThan(0);
+  });
+});
+
+describe("hair styles in 3D", () => {
+  const styled = (style: string, length_cm = 5) => standing({ skin: { hex: "#eadaba" }, eyes: { hex: "#5b3a1e" }, hair: { length_cm, texture: "straight", style, hex: "#653700" } });
+
+  it("gives brushed hair a side-swept fringe: the hair's front edge lower on one side of the forehead than the other", () => {
+    /** The lowest hair over the forehead on each side: the cap and any fringe, in front, between the brows' ends. */
+    const frontEdge = (style: string, length: number, side: number) => {
+      const { p, headR } = styled(style, length);
+      const front = [...vertices(p, "cap"), ...vertices(p, "fringe")].filter((v) => v.y > headR * 0.55 && side * v.x > headR * 0.12 && side * v.x < headR * 0.45);
+      return Math.min(...front.map((v) => v.z));
+    };
+    const { headR } = styled("loose");
+    expect(Math.abs(frontEdge("loose", 5, 1) - frontEdge("loose", 5, -1))).toBeLessThan(headR * 0.01);
+    for (const length of [5, 13]) expect(Math.abs(frontEdge("brushed", length, 1) - frontEdge("brushed", length, -1)), String(length)).toBeGreaterThan(headR * 0.08);
+  });
+
+  it("stands a mohawk's crest up in a ridge from the forehead to the nape, along the middle of the head", () => {
+    for (const length of [2.5, 5, 13]) {
+      const { p, headR, headZ } = styled("mohawk", length);
+      const crest = vertices(p, "crest");
+      expect(crest.length, String(length)).toBeGreaterThan(0);
+      // Narrow, down the middle.
+      for (const v of crest) expect(Math.abs(v.x), String(length)).toBeLessThan(headR * 0.18);
+      // Along the whole top of the head, front to back, the crest stands at least 0.35 head radii off the head: its
+      // outline seen from the side (the points furthest out, front to back), read where it passes over each y.
+      const outline = crest
+        .filter((v) => v.x > 0)
+        .map((v) => ({ y: v.y / headR, rise: onHead(v, headR, headZ) - 1, angle: Math.atan2(v.y, v.z - headZ) }))
+        .sort((a, b) => b.angle - a.angle);
+      const top = outline.filter((v, i) => outline.every((w, j) => j === i || Math.abs(w.angle - v.angle) > 1e-6 || w.rise <= v.rise));
+      for (let y = 0.5; y >= -0.7; y -= 0.1) {
+        const rises: number[] = [];
+        for (let i = 0; i < top.length - 1; i++) {
+          const [a, b] = [top[i], top[i + 1]];
+          if ((a.y - y) * (b.y - y) <= 0 && a.y !== b.y) rises.push(a.rise + ((b.rise - a.rise) * (y - a.y)) / (b.y - a.y));
+        }
+        expect(rises.length, `${length} at y ${y.toFixed(1)}`).toBeGreaterThan(0);
+        expect(Math.max(...rises), `${length} at y ${y.toFixed(1)}`).toBeGreaterThan(0.35);
+      }
+    }
+  });
+
+  it("hangs a ponytail from the middle of the back of the head", () => {
+    for (const texture of ["straight", "coily"]) {
+      const { p } = standing({ skin: { hex: "#eadaba" }, hair: { length_cm: 30, texture, style: "ponytail", hex: "#653700" } });
+      const xs = vertices(p, "ponytail").map((v) => v.x);
+      expect(Math.abs(Math.max(...xs) + Math.min(...xs)), texture).toBeLessThan(1e-6);
+    }
+  });
+
+  it("keeps the heaviest figure under the 5,000-triangle budget: muscular, deep skin, 75 cm coily hair in every style, a 100 cm beard, every feature and every trait, with each kind of ear", () => {
+    const styles = ["loose", "voluminous", "ponytail", "braided", "bun", "topknot", "dreadlocks", "spiky", "mohawk", "swept_back", "brushed"];
+    for (const style of styles) {
+      for (const ears of ["average", "large", "pointed"]) {
+        for (const traits of [[], ["tail", "wings", "antlers", "horns"]]) {
+          const p = figureParams(
+            {
+              build: "muscular",
+              skin: { hex: "#292420" },
+              face: { ears },
+              hair: { length_cm: 75, texture: "coily", style, hex: "#1b1612" },
+              facial_hair: { kind: "beard", length_cm: 100, hex: "#1b1612" },
+              features: ["freckles", "dimples", "beauty_mark", "glasses", "earrings", "eyepatch", "sunglasses"],
+              traits,
+            },
+            { height: 1.75 },
+          );
+          const g = figureGeometry(p);
+          expect((g.getIndex()?.count ?? 0) / 3, `${style} ${ears} ${traits.length ? "every trait" : "no traits"}`).toBeLessThan(5000);
+        }
+      }
     }
   });
 });

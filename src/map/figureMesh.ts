@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { overlayHex } from "../avatar/colour";
-import { type FigureParams, type HairTexture, HORN_TONE, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
+import { type Ears, type FigureParams, type HairTexture, HORN_TONE, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
 
 /**
  * A person's 3D figure from `figureParams`: three.js primitives, each painted
@@ -232,7 +232,8 @@ const stroke = (a: THREE.Vector3, b: THREE.Vector3, radius: number, colour: stri
 /** A capsule between two points. */
 function limb(a: THREE.Vector3, b: THREE.Vector3, radius: number, colour: string, fine = true): Part {
   const length = a.distanceTo(b);
-  const geometry = new THREE.CapsuleGeometry(radius, Math.max(0.001, length), fine ? 3 : 1, fine ? RADIAL : 6);
+  // Two segments round each end: the ends sit in the torso, the hands and the feet, and three cost 40 more triangles a limb.
+  const geometry = new THREE.CapsuleGeometry(radius, Math.max(0.001, length), fine ? 2 : 1, fine ? RADIAL : 6);
   // Capsules stand along y; turn y onto the segment.
   const direction = new THREE.Vector3().subVectors(b, a).normalize();
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
@@ -270,11 +271,94 @@ function cone(base: THREE.Vector3, dir: THREE.Vector3, radius: number, length: n
 }
 
 /**
+ * A mohawk's crest: a fin standing out from the head along its middle line, from the forehead over the crown to the
+ * nape, `height` head radii tall (narrowing toward its edge and easing in at its two ends), set in the head
+ * ellipsoid of half widths `headScale` x `headR` centred `headZ` up. Its base lies inside the shaved cap.
+ */
+function crest(headR: number, headScale: THREE.Vector3, headZ: number, height: number): THREE.BufferGeometry {
+  // Angles from straight up, toward the face positive: the forehead's hairline to the nape.
+  const [front, back] = [1.25, -2.3];
+  const rows = 14;
+  const positions: number[] = [];
+  const index: number[] = [];
+  for (let i = 0; i <= rows; i++) {
+    const u = i / rows;
+    const beta = front + (back - front) * u;
+    const ease = Math.min(1, u / 0.12, (1 - u) / 0.12);
+    const out = 1 + height * Math.sqrt(Math.max(0, ease));
+    const [dy, dz] = [Math.sin(beta), Math.cos(beta)];
+    for (const [r, half] of [[1, 0.1], [out, 0.055]]) {
+      for (const side of [-1, 1]) positions.push(side * half * headR, dy * r * headR * headScale.y, headZ + dz * r * headR * headScale.z);
+    }
+  }
+  // Per row: base left, base right, top left, top right.
+  const at = (i: number, k: number) => i * 4 + k;
+  for (let i = 0; i < rows; i++) {
+    // Each face listed so it faces out: the right side (+x), the left side (-x) and the top edge.
+    for (const [a, b] of [[1, 3], [2, 0], [3, 2]]) index.push(at(i, a), at(i + 1, b), at(i + 1, a), at(i, a), at(i, b), at(i + 1, b));
+  }
+  // The two ends, the front one facing forward and the back one back.
+  index.push(at(0, 0), at(0, 3), at(0, 1), at(0, 0), at(0, 2), at(0, 3));
+  index.push(at(rows, 0), at(rows, 1), at(rows, 3), at(rows, 0), at(rows, 3), at(rows, 2));
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** How many columns of facets brushed hair's fringe has across the forehead. */
+const FRINGE_ACROSS = 8;
+
+/**
+ * Brushed hair's fringe: a layer of hair lying on the forehead just outside the cap, from the parting on the left
+ * (high) across to the right temple, its lower edge sweeping down from the parting toward that temple and staying
+ * above the brows. `onCap(d)` is the way from the head's centre (`headZ` up) to the cap's surface in direction `d`.
+ */
+function fringe(headScale: THREE.Vector3, headZ: number, onCap: (d: THREE.Vector3) => THREE.Vector3): THREE.BufferGeometry {
+  const across = FRINGE_ACROSS;
+  const up = 2;
+  const positions: number[] = [];
+  for (let j = 0; j <= up; j++) {
+    for (let i = 0; i <= across; i++) {
+      const u = i / across;
+      // Round the head from just left of the front (the parting's side) to the right temple, and the elevation above
+      // the head's middle: the lower edge falls from 0.95 radians at the parting to 0.45 over the right brow and stays
+      // there to the temple; the upper edge 0.45 radians above it, up on the cap.
+      const theta = -0.45 + 1.55 * u;
+      const e = 0.95 - 0.5 * Math.min(1, u / 0.6) + (0.45 * j) / up;
+      const d = new THREE.Vector3(Math.cos(e) * Math.sin(theta) * headScale.x, Math.cos(e) * Math.cos(theta) * headScale.y, Math.sin(e) * headScale.z).normalize();
+      // Just outside the cap, so it lies on the hair as a layer of its own.
+      const q = onCap(d).multiplyScalar(1.03);
+      positions.push(q.x, q.y, headZ + q.z);
+    }
+  }
+  const index: number[] = [];
+  const at = (i: number, j: number) => j * (across + 1) + i;
+  // Wound so each face looks out of the head.
+  for (let j = 0; j < up; j++) for (let i = 0; i < across; i++) index.push(at(i, j), at(i + 1, j + 1), at(i + 1, j), at(i, j), at(i, j + 1), at(i + 1, j + 1));
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
  * What a hair style adds to the cap and falling hair: a ponytail, braids, a bun, a topknot,
  * locks, spikes, a mohawk's crest or a brushed parting. Loose, swept-back and voluminous hair
  * are drawn by the cap and fall alone. Hanging parts reach down by the hair's length.
  */
-function styleParts(p: FigureParams, style: FigureParams["hairStyle"], headCentreZ: number, headR: number, headScale: THREE.Vector3, capV: number): Part[] {
+function styleParts(
+  p: FigureParams,
+  style: FigureParams["hairStyle"],
+  headCentreZ: number,
+  headR: number,
+  headScale: THREE.Vector3,
+  capV: number,
+  /** The way from the head's centre to the cap's surface in a direction. */
+  onCap: (d: THREE.Vector3) => THREE.Vector3,
+): Part[] {
   const s = p.height / 1.75;
   const hairColour = p.colours.head;
   const sheen = p.colours.hairSheen;
@@ -354,18 +438,33 @@ function styleParts(p: FigureParams, style: FigureParams["hairStyle"], headCentr
       }
       break;
     case "mohawk":
-      // One tall, narrow crest from the forehead over the crown to the nape.
-      out.push(named(ball(new THREE.Vector3(0, -headR * 0.1, headCentreZ + headR * 0.72), headR, hairColour, new THREE.Vector3(0.16, 1.02, 0.62), 10), "crest"));
+      // One tall, narrow crest standing up along the middle of the head from the forehead over the crown to the nape.
+      // A single squashed ball rose only 0.3 head radii over the crown and sank into the head toward its ends: a tuft.
+      out.push(named({ geometry: crest(headR, headScale, headCentreZ, p.hair === "cropped" ? 0.5 : 0.65), colour: hairColour }, "crest"));
       break;
-    case "brushed":
-      // A side parting from the forehead back over the crown.
-      out.push(named(stroke(onHair(-0.35, 0.25, 0.9, 1.07), onHair(-0.35, -0.5, 0.8, 1.07), headR * 0.03, p.colours.ink), "parting"));
+    case "brushed": {
+      // A side parting on the left, the scalp showing along it, and the hair from it brushed across the forehead in a
+      // fringe that sweeps down toward the right temple. With only a thin parting line it looked the same as loose hair.
+      out.push(named(stroke(onHair(-0.32, 0.45, 0.85, 1.07), onHair(-0.32, -0.45, 0.85, 1.07), headR * 0.035, p.colours.skin), "parting"));
+      // Combed: every other column of the fringe a little toward the hair's sheen.
+      const swept = fringe(headScale, headCentreZ, onCap);
+      const combed = sheen ? { shade: strands(swept.getAttribute("position").count, FRINGE_ACROSS + 1).map((x) => x * 0.5), tone: sheen } : {};
+      out.push(named({ geometry: swept, colour: hairColour, ...combed }, "fringe"));
       break;
+    }
     default:
       break;
   }
   return out;
 }
+
+/** Each `face.ears` value's ear: half its height and half its depth front to back, in head radii. */
+const EAR_SIZE: Readonly<Record<Ears, { half: number; depth: number }>> = {
+  average: { half: 0.26, depth: 0.16 },
+  small: { half: 0.19, depth: 0.12 },
+  large: { half: 0.34, depth: 0.2 },
+  pointed: { half: 0.26, depth: 0.15 },
+};
 
 /** The figure's parts, standing or sitting, in its own frame. */
 export function figureParts(p: FigureParams): Part[] {
@@ -483,6 +582,8 @@ export function figureParts(p: FigureParams): Part[] {
     : shaved
       ? 1.04
       : (p.hair === "cropped" ? 1.035 : 1.05) * p.hairVolume * (style === "voluminous" ? 1.25 : 1);
+  // The way from the head's centre to the cap's surface in direction `d` (a unit vector), set once the cap is built.
+  let onCap = (d: THREE.Vector3) => d.clone().multiplyScalar(headR);
   if (p.headCovered || p.hair !== "none") {
     const capReach = Math.PI * 0.55;
     // Textured hair needs enough facets for its curls to show; coils are tighter, so they need more.
@@ -494,12 +595,18 @@ export function figureParts(p: FigureParams): Part[] {
     // (the forehead shows) and its back edge low on the nape. Swept-back hair leaves a higher forehead.
     // Centred on the head: shifting it back let the forehead show through the cap's front.
     const capAt = new THREE.Vector3(0, 0, headCentreZ);
-    const capTurn = new THREE.Euler(Math.PI / 2 + CAP_LEAN + (style === "swept_back" ? 0.3 : 0), 0, 0);
+    // Brushed hair's cap sits as high, its fringe sweeping lower across the forehead from the parting.
+    const capTurn = new THREE.Euler(Math.PI / 2 + CAP_LEAN + (style === "swept_back" || style === "brushed" ? 0.3 : 0), 0, 0);
     // The cap's own depth axis, once turned, points down and back; it takes the head's extent along that direction,
     // so a cap leaning far enough back to clear the brows still covers the head behind.
     const depth = new THREE.Vector3(0, 0, 1).applyEuler(capTurn);
     const depthExtent = 1 / Math.hypot(depth.x / headScale.x, depth.y / headScale.y, depth.z / headScale.z);
     const capScale = new THREE.Vector3(headScale.x * v, v, depthExtent * v);
+    const unturn = new THREE.Quaternion().setFromEuler(capTurn).invert();
+    onCap = (d) => {
+      const local = d.clone().applyQuaternion(unturn);
+      return d.clone().multiplyScalar(headR / Math.hypot(local.x / capScale.x, local.y / capScale.y, local.z / capScale.z));
+    };
     const capColour = shaved ? overlayHex(c.skin, c.head, STUBBLE_OPACITY) : c.head;
     const capPart = named(placed(cap, capColour, capAt, capTurn, capScale), "cap");
     if (!p.headCovered) out.push(sheened(capPart, textured(capPart.geometry, () => capAt, capTexture, headR), c.hairSheen));
@@ -549,7 +656,32 @@ export function figureParts(p: FigureParams): Part[] {
     const bumps = textured(hang.geometry, (q) => new THREE.Vector3(0, long ? -headR * 0.25 : 0, q.z), p.hairTexture, headR, 0.4);
     out.push(sheened(named(hang, "hair"), bumps, c.hairSheen));
   }
-  if (!p.headCovered && p.hair !== "none") out.push(...styleParts(p, style, headCentreZ, headR, headScale, v));
+  if (!p.headCovered && p.hair !== "none") out.push(...styleParts(p, style, headCentreZ, headR, headScale, v, onCap));
+
+  // Ears, sized and shaped by face.ears, on a described person, unless a head garment, hair worn down past the jaw or
+  // hair standing out past them at their height (a full coily or curly cap) covers them: an ear on each side of the
+  // head between the eyes' height and the mouth's, flaring a little back. Set outside such hair, they floated beside it.
+  const earZ = headCentreZ + headR * 0.02;
+  const thick = headR * 0.07;
+  let hairReach = 0;
+  for (const part of out) {
+    if (part.name !== "cap" || p.headCovered) continue;
+    const positions = part.geometry.getAttribute("position");
+    for (let i = 0; i < positions.count; i++) if (Math.abs(positions.getZ(i) - earZ) < headR * 0.15) hairReach = Math.max(hairReach, Math.abs(positions.getX(i)));
+  }
+  const earOut = headR * headScale.x + thick * 1.2;
+  if (p.described && !p.headCovered && !(fallsDown && bottom !== undefined) && hairReach < earOut) {
+    const size = EAR_SIZE[p.ears];
+    for (const side of [-1, 1]) {
+      const at = new THREE.Vector3(side * (headR * headScale.x + thick * 0.6), -headR * 0.08, earZ);
+      out.push(named(placed(new THREE.SphereGeometry(1, 8, 6), c.skin, at, new THREE.Euler(0.15, 0, side * 0.3), new THREE.Vector3(thick, headR * size.depth, headR * size.half)), "ear"));
+      if (p.ears === "pointed") {
+        // A point rising up and back from the ear's top.
+        const base = at.clone().add(new THREE.Vector3(0, -headR * 0.05, headR * size.half * 0.8));
+        out.push(named(cone(base, new THREE.Vector3(side * 0.25, -0.35, 1).normalize(), headR * 0.06, headR * 0.38, c.skin, 4), "ear"));
+      }
+    }
+  }
 
   // Facial hair, shaped from the head's own ellipsoid so it follows the jaw.
   if (c.facialHair && p.facialHair !== "none") {
@@ -696,7 +828,8 @@ export function figureParts(p: FigureParams): Part[] {
       const unit = new THREE.Vector3(patch.x / headScale.x, patch.y / headScale.y, (patch.z - headCentreZ) / headScale.z).normalize();
       const rightAndUp = new THREE.Vector3(1, 0, 0.5).normalize();
       const normal = new THREE.Vector3().crossVectors(unit, rightAndUp).normalize();
-      const ring = new THREE.TorusGeometry(1, (rim * 0.8) / headR, 4, 40);
+      // 24 segments round the head: 40 cost 128 more triangles than the strap, a line, needs.
+      const ring = new THREE.TorusGeometry(1, (rim * 0.8) / headR, 4, 24);
       ring.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal));
       ring.scale(headR * headScale.x * 1.03, headR * headScale.y * 1.03, headR * headScale.z * 1.03);
       ring.translate(0, 0, headCentreZ);
@@ -714,26 +847,24 @@ export function figureParts(p: FigureParams): Part[] {
   // Parts from the body plan's traits.
   const crown = headCentreZ + headR * 0.8;
   const accent = c.hair ?? c.skin;
+  // The tail and antlers are thin: capsules with few facets (fine ones cost 140 triangles each, and with every
+  // feature and trait the heaviest figure went over the 5,000-triangle budget).
   for (const extra of p.extras) {
     if (extra === "tail") {
-      out.push(limb(new THREE.Vector3(0, -p.hipHalf * 0.55, hipZ - 0.02 * H), new THREE.Vector3(0, -p.hipHalf * 0.55 - 0.35 * s, sitting ? 0.03 : hipZ - 0.3 * H), p.limbRadius * 0.6, accent));
+      out.push(limb(new THREE.Vector3(0, -p.hipHalf * 0.55, hipZ - 0.02 * H), new THREE.Vector3(0, -p.hipHalf * 0.55 - 0.35 * s, sitting ? 0.03 : hipZ - 0.3 * H), p.limbRadius * 0.6, accent, false));
     } else if (extra === "wings") {
       for (const side of [-1, 1]) out.push(named(wing(side, s, new THREE.Vector3(side * p.shoulderHalf * 0.45, -0.1 * s, shoulderZ - 0.04 * H), accent), "wing"));
     } else if (extra === "antlers") {
       for (const side of [-1, 1]) {
         const base = new THREE.Vector3(side * headR * 0.45, 0, crown);
         const tip = new THREE.Vector3(side * headR * 1.5, -headR * 0.2, crown + headR * 1.4);
-        out.push(named(limb(base, tip, headR * 0.07, HORN_TONE), "antler"));
-        out.push(named(limb(base.clone().lerp(tip, 0.5), new THREE.Vector3(side * headR * 0.7, headR * 0.3, crown + headR * 1.2), headR * 0.06, HORN_TONE), "antler"));
+        out.push(named(limb(base, tip, headR * 0.07, HORN_TONE, false), "antler"));
+        out.push(named(limb(base.clone().lerp(tip, 0.5), new THREE.Vector3(side * headR * 0.7, headR * 0.3, crown + headR * 1.2), headR * 0.06, HORN_TONE, false), "antler"));
       }
     } else if (extra === "horns") {
       for (const side of [-1, 1]) {
         const horn = placed(new THREE.ConeGeometry(headR * 0.16, headR * 0.7, 6), HORN_TONE, new THREE.Vector3(side * headR * 0.45, headR * 0.15, crown + headR * 0.2), new THREE.Euler(Math.PI / 2, 0, -side * 0.35));
         out.push(named(horn, "horn"));
-      }
-    } else if (extra === "pointed_ears") {
-      for (const side of [-1, 1]) {
-        out.push(placed(new THREE.ConeGeometry(headR * 0.14, headR * 0.6, 4), c.skin, new THREE.Vector3(side * headR * 0.95, -headR * 0.05, headCentreZ + headR * 0.25), new THREE.Euler(Math.PI / 2, 0, -side * 1.0)));
       }
     }
   }
