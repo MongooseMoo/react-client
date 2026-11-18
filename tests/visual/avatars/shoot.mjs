@@ -21,6 +21,13 @@ const pinch = process.argv.includes('--pinch');
 const labels3d = process.argv.includes('--labels3d');
 // --face shoots the face, beard and hair readability set (portraits and 3D heads), then the frame timing.
 const face = process.argv.includes('--face');
+// --set=NAME: the harness character set --face shoots (default face; round3 for the hair, ears and budget checks).
+const faceSet = process.argv.find((a) => a.startsWith('--set='))?.slice(6) ?? 'face';
+// --only=TEXT: only the characters of the set whose name contains TEXT.
+const onlyQuery = (() => {
+  const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7);
+  return only ? `&only=${encodeURIComponent(only)}` : '';
+})();
 // --zoomlabel shoots the wheel with the pointer under people's labels in the live check's room, then the frame timing.
 const zoomLabel = process.argv.includes('--zoomlabel');
 mkdirSync(out, { recursive: true });
@@ -66,11 +73,12 @@ try {
     // Faces, beards and hair (set=face in the harness): portraits at 128 px and 32 px, then 3D heads at about 150 px
     // from the front, three-quarters, the side and behind.
     const sharp = await browser.newPage({ viewport: { width: 1280, height: 1000 }, colorScheme: 'dark', deviceScaleFactor: 2 });
-    await sharp.goto(`${base}?view=portraits&set=face`);
+    await sharp.goto(`${base}?view=portraits&set=${faceSet}${onlyQuery}`);
     await sharp.waitForFunction(() => window.ready === true);
     await sharp.locator('table').screenshot({ path: resolve(out, 'face-portraits.png') });
     // Four rows to a picture, to read the details.
     const rows = await sharp.locator('tr').all();
+    console.log(`${faceSet}: ${rows.length} portrait rows`);
     for (let i = 0; i < rows.length; i += 4) {
       const boxes = await Promise.all(rows.slice(i, i + 4).map((r) => r.boundingBox()));
       const top = boxes[0].y;
@@ -78,9 +86,10 @@ try {
       await sharp.screenshot({ path: resolve(out, `face-portraits-${String(i / 4 + 1).padStart(2, '0')}.png`), clip: { x: boxes[0].x, y: top, width: boxes[0].width, height: bottom - top }, fullPage: true });
     }
     await sharp.close();
-    const tall = await browser.newPage({ viewport: { width: 1280, height: 2600 }, colorScheme: 'dark' });
+    // Tall enough for every row of 420 px cells, four to a row.
+    const tall = await browser.newPage({ viewport: { width: 1280, height: Math.ceil(rows.length / 4) * 420 + 100 }, colorScheme: 'dark' });
     for (const angle of ['front', 'three', 'side', 'back']) {
-      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=head&dist=1.05&set=face`);
+      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=head&dist=1.05&set=${faceSet}${onlyQuery}`);
       await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
       await tall.locator('#root > div').screenshot({ path: resolve(out, `face-heads-${angle}.png`) });
     }

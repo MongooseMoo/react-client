@@ -180,9 +180,14 @@ points toned off the skin. Curly, coily and wavy hair is
 raised in curls or waves whose peaks catch a sheen of the hair's colour (lighter on dark hair,
 darker on light hair), on loose and tied styles alike; a bun stands clear of the head with a lit
 crown and a tie. The portrait outlines skin and clothing in the dark or light line, and hair in
-the hair's own edge tone; hair close to the skin's colour also has its body shaded toward the
-sheen (curls a highlight each on a mass of hair), and such a beard carries strands in its edge
-tone. It draws texture on tied styles' caps, the same toned brows and beard edge, short beards
+the hair's own edge tone. Hair over the head is one mass reaching over the crown, so no bare
+crown or head outline shows above it on any face shape: straight hair carries combed strands,
+wavy hair waves, and curly and coily hair a scalloped edge (round curls, smaller coils) with
+curl marks inside, never a ring of separate curls. Marks are in the hair's sheen; hair close to
+the skin's colour shows its light that way (other hair shapes of it, such as hair falling behind
+the head, are shaded toward the sheen), and such a beard carries strands in its edge tone. A bun
+sits on the crown with nothing drawn inside it (a curly or coily bun has a scalloped edge). It
+draws texture on tied styles' caps, the same toned brows and beard edge, short beards
 along the face shape's own jaw, swept-back hair standing high off a high forehead, brushed hair
 with a parting notch and a swept fringe, and hair worn down as locks beside the face that end
 where the hair ends. A

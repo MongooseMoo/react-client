@@ -76,93 +76,126 @@ function headShape(shape: string, fill: string, stroke: string): React.ReactElem
 /** A round number for SVG path text. */
 const n = (x: number) => Math.round(x * 100) / 100;
 
+type Pt = [number, number];
+const pt = ([x, y]: Pt) => `${n(x)},${n(y)}`;
+
 /**
- * The hair over the top of the head, by texture, `v` times as bulky as straight hair. Cropped hair
- * (`crop`) lies closer and starts higher on the forehead, its curls smaller.
+ * Points along the top of the head from the left of the face at y 27, over the crown, to the right: a squared-off
+ * dome (a superellipse) `w` to each side and reaching up to `top`, so it covers the crown and the shoulders of the
+ * head of every face shape, the square face's corners too. A plain arch reached only y 15.75 on heads whose tops are
+ * at 11 to 13.5, and short hair read as a band across a bald crown.
  */
-function hairCap(texture: HairTexture, v: number, fill: string, ink: string, crop = false): React.ReactNode {
-  const rise = 12 - (v - 1) * 18 + (crop ? 1.5 : 0);
-  const width = 14 * v * (crop ? 0.95 : 1);
-  const hairline = crop ? 17.5 : 20;
-  const curl = crop ? 0.7 : 1;
-  if (texture === "curly" || texture === "coily") {
-    // Curly hair: one row of large round curls. Coily hair: smaller, tighter curls packed in two rows.
-    const rows = texture === "curly" ? [{ count: 9, reach: width, r: 3.2 * v * curl }] : [
-      { count: 13, reach: width + 0.5, r: 2.2 * v * curl },
-      { count: 8, reach: width - 4, r: 2.2 * v * curl },
-    ];
-    const curls: React.ReactElement[] = [];
-    for (const [row, { count, reach, r }] of rows.entries()) {
-      for (let i = 0; i < count; i++) {
-        // Along the top of the head, left to right (SVG y grows downward, so these angles are above the centre).
-        const angle = Math.PI * (1 + i / (count - 1));
-        const cx = 32 + Math.cos(angle) * reach;
-        const cy = 24 + Math.sin(angle) * (reach - 1);
-        curls.push(<circle key={`${row}-${i}`} cx={n(cx)} cy={n(cy)} r={n(r)} fill={fill} stroke={ink} strokeWidth={0.7} />);
-      }
-    }
-    // Under the curls, the hair's body over the head, so they read as one mass of hair rather than a ring of beads.
-    const body = `M${n(32 - width)},27 C${n(32 - width)},${n(rise)} ${n(32 + width)},${n(rise)} ${n(32 + width)},27 C38,${hairline} 26,${hairline} ${n(32 - width)},27 Z`;
-    return (
-      <g className="avatar-hair">
-        <path key="body" fill={fill} stroke="none" d={body} />
-        {curls}
-      </g>
-    );
+function domePoints(w: number, top: number, count: number, k = 1): Pt[] {
+  // Sampled finely, then `count` + 1 points picked at even steps along it, so curls and waves are even in size.
+  const fine: Pt[] = [];
+  for (let i = 0; i <= 240; i++) {
+    const a = Math.PI * (1 + i / 240);
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    fine.push([32 + w * k * Math.sign(c) * Math.abs(c) ** (2 / 3), 27 - (27 - top) * k * Math.abs(s) ** (2 / 3)]);
   }
-  if (texture === "wavy") {
-    // Wavy hair: the cap's outer edge in a run of soft waves, each bulging out between two points on the head's curve.
-    const waves = 7;
-    const ry = 27 - (0.25 * 27 + 0.75 * rise);
-    const at = (angle: number, k: number) => `${n(32 + Math.cos(angle) * width * k)},${n(27 + Math.sin(angle) * ry * k)}`;
-    let d = `M${n(32 - width)},27`;
-    for (let i = 1; i <= waves; i++) {
-      const a0 = Math.PI * (1 + (i - 1) / waves);
-      const a1 = Math.PI * (1 + i / waves);
-      d += ` Q${at((a0 + a1) / 2, 1.14)} ${at(a1, 1)}`;
-    }
-    d += ` C38,${hairline} 26,${hairline} ${n(32 - width)},27 Z`;
-    return <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d={d} />;
+  const along = [0];
+  for (let i = 1; i < fine.length; i++) along.push(along[i - 1] + Math.hypot(fine[i][0] - fine[i - 1][0], fine[i][1] - fine[i - 1][1]));
+  const total = along[along.length - 1];
+  const out: Pt[] = [];
+  let j = 0;
+  for (let i = 0; i <= count; i++) {
+    const want = (total * i) / count;
+    while (j < fine.length - 2 && along[j + 1] < want) j++;
+    const t = Math.min(1, (want - along[j]) / (along[j + 1] - along[j] || 1));
+    out.push([fine[j][0] + (fine[j + 1][0] - fine[j][0]) * t, fine[j][1] + (fine[j + 1][1] - fine[j][1]) * t]);
   }
-  return (
-    <path
-      className="avatar-hair"
-      fill={fill}
-      stroke={ink}
-      strokeWidth={1.2}
-      d={`M${n(32 - width)},27 C${n(32 - width)},${n(rise)} ${n(32 + width)},${n(rise)} ${n(32 + width)},27 C38,${hairline} 26,${hairline} ${n(32 - width)},27 Z`}
-    />
-  );
+  return out;
+}
+
+/** A smooth curve through the points (as cubic segments, Catmull-Rom), from the first to the last; the first is not moved to. */
+function through(points: Pt[]): string {
+  let d = "";
+  for (let i = 0; i < points.length - 1; i++) {
+    const [p0, p1, p2, p3] = [points[Math.max(0, i - 1)], points[i], points[i + 1], points[Math.min(points.length - 1, i + 2)]];
+    const c1: Pt = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2: Pt = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C${pt(c1)} ${pt(c2)} ${pt(p2)}`;
+  }
+  return d;
 }
 
 /**
- * Texture on the close cap of tied hair (its outline from (18,27) over y 15.75 to (46,27)): curls (one row of
- * rounds) or coils (a row of small rounds and tight rings in the sheen inside) on the outline, or wave lines across
- * it in the sheen. Nothing for straight hair.
+ * Scallops between each pair of points, bulging away from `centre` by `depth` times the gap between them: the edge of
+ * a mass of curls (round scallops) or coils (smaller, shallower ones). One outline round the whole mass, never a ring
+ * of separately outlined curls, which read as beads.
  */
-function capTexture(texture: HairTexture, fill: string, ink: string, sheen: string): React.ReactNode {
-  if (texture === "straight") return null;
-  if (texture === "wavy") {
-    return (
-      <path className="avatar-hair-texture" fill="none" stroke={sheen} strokeWidth={0.8} strokeLinecap="round" d="M22,20.5 q2.5,-2 5,0 t5,0 t5,0 t5,0 M24,16.8 q2,-1.6 4,0 t4,0 t4,0 t4,0" />
-    );
+function scallops(points: Pt[], depth: number, centre: Pt): string {
+  let d = "";
+  for (let i = 0; i < points.length - 1; i++) {
+    const [a, b] = [points[i], points[i + 1]];
+    const mid: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const gap = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    // The normal to the gap, turned to point away from the centre.
+    let [nx, ny] = [(a[1] - b[1]) / gap, (b[0] - a[0]) / gap];
+    if (nx * (mid[0] - centre[0]) + ny * (mid[1] - centre[1]) < 0) [nx, ny] = [-nx, -ny];
+    const h = depth * gap * (4 / 3);
+    d += ` C${pt([a[0] + nx * h, a[1] + ny * h])} ${pt([b[0] + nx * h, b[1] + ny * h])} ${pt(b)}`;
   }
-  const curly = texture === "curly";
-  const count = curly ? 9 : 13;
-  const r = curly ? 2.2 : 1.5;
-  const out: React.ReactElement[] = [];
-  for (let i = 0; i < count; i++) {
-    const angle = Math.PI * (1 + i / (count - 1));
-    out.push(<circle key={`c${i}`} className="avatar-hair-texture" cx={n(32 + Math.cos(angle) * 14)} cy={n(27 + Math.sin(angle) * 11.25)} r={r} fill={fill} stroke={ink} strokeWidth={0.6} />);
-  }
-  if (!curly) {
-    // Tight coils inside the outline: small rings in the sheen.
-    for (let i = 0; i < 7; i++) {
-      const angle = Math.PI * (1.12 + (0.76 * i) / 6);
-      out.push(<circle key={`k${i}`} className="avatar-hair-texture" cx={n(32 + Math.cos(angle) * 9)} cy={n(25.5 + Math.sin(angle) * 7)} r={0.9} fill="none" stroke={sheen} strokeWidth={0.6} />);
+  return d;
+}
+
+/** Curls (`curly`) and coils (`coily`): how many scallops round the top of the head, and how deep. */
+const CURLS: Readonly<Partial<Record<HairTexture, { count: number; depth: number }>>> = { curly: { count: 11, depth: 0.42 }, coily: { count: 17, depth: 0.32 } };
+
+/**
+ * The hair over the top of the head, by texture, `v` times as bulky as straight hair: one mass over the crown, its
+ * edge smooth, in waves, or scalloped with curls or coils, with strands, waves or curl marks inside. Cropped hair
+ * (`crop`) lies closer and starts higher on the forehead. Tied styles use it at `v` 1 as their close cap.
+ */
+function hairCap(texture: HairTexture, v: number, fill: string, ink: string, sheen: string, crop = false): React.ReactNode {
+  const top = 9.5 - (v - 1) * 10 + (crop ? 0.5 : 0);
+  const width = 14.6 * v;
+  const hairline = crop ? 17.5 : 20;
+  const start = `M${n(32 - width)},27`;
+  const close = ` C38,${hairline} 26,${hairline} ${n(32 - width)},27 Z`;
+  const curls = CURLS[texture];
+  let edge: string;
+  if (curls) edge = scallops(domePoints(width, top, curls.count), curls.depth, [32, 27]);
+  else if (texture === "wavy") {
+    // Soft waves, each bulging out between two points on the dome.
+    const waves = 7;
+    const peaks = domePoints(width, top, 2 * waves, 1.12);
+    const ends = domePoints(width, top, waves);
+    edge = "";
+    for (let i = 1; i <= waves; i++) edge += ` Q${pt(peaks[2 * i - 1])} ${pt(ends[i])}`;
+  } else edge = through(domePoints(width, top, 16));
+  const body = <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} strokeLinejoin="round" d={`${start}${edge}${close}`} />;
+  // Marks inside the mass, in the sheen: combed strands from the crown to the hairline (straight), wave lines (wavy),
+  // or the curls' turns, short open hooks (curly) or small tight ones in rows (coily); never filled shapes.
+  let marks = "";
+  if (texture === "wavy") marks = "M22,20.5 q2.5,-2 5,0 t5,0 t5,0 t5,0 M24,16.8 q2,-1.6 4,0 t4,0 t4,0 t4,0";
+  else if (!curls) {
+    for (const [x, y] of domePoints(width, top, 8, 0.78).slice(1, -1)) {
+      const t = (x - 32) / width;
+      const endY = 27 - (27 - hairline) * 0.75 * (1 - t * t) - 2;
+      marks += `M${n(x)},${n(y)} Q${n(32 + (x - 32) * 1.25)},${n((y + endY) / 2)} ${n(32 + (x - 32) * 1.12)},${n(endY)} `;
+    }
+  } else {
+    const rows = texture === "curly" ? [{ k: 0.66, count: 5, r: 1.6 }, { k: 0.38, count: 3, r: 1.6 }] : [{ k: 0.76, count: 8, r: 1 }, { k: 0.54, count: 6, r: 1 }, { k: 0.32, count: 3, r: 1 }];
+    for (const { k, count, r } of rows) {
+      for (const [x, y] of domePoints(width, top, count + 1, k).slice(1, -1)) {
+        if (y > hairline - 1) continue;
+        marks += `M${n(x - r)},${n(y)} Q${n(x - r)},${n(y - r)} ${n(x)},${n(y - r)} Q${n(x + r)},${n(y - r)} ${n(x + r)},${n(y)} `;
+      }
     }
   }
-  return out;
+  // Hair of the skin's own darkness or paleness (its edge toned off the skin) shows its light as these marks, a little
+  // heavier, over its own colour: a shrunken copy of the cap in the sheen ended in a line across the forehead, the
+  // peak of a cap.
+  const massed = ink !== fill;
+  const classes = [texture === "straight" ? "avatar-hair-strand" : "avatar-hair-texture", massed ? "avatar-hair-sheen" : ""].filter(Boolean).join(" ");
+  return (
+    <g className="avatar-hair">
+      {massed ? cloneElement(body, { "data-lit": "marks" }) : body}
+      <path className={classes} fill="none" stroke={sheen} strokeWidth={massed ? 0.9 : 0.6} strokeLinecap="round" d={marks.trim()} />
+    </g>
+  );
 }
 
 /** Hair falling behind the head to `bottom`, `w` to each side, narrowing to rounded ends rather than a box. */
@@ -209,7 +242,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
   const sheen = params.colours.hairSheen ?? ink;
   const line = (key: string, d: string, width = 0.8) => <path key={key} fill="none" stroke={sheen} strokeWidth={width} strokeLinecap="round" d={d} />;
   // A close cap for hair drawn back from the face: smooth, whatever the texture.
-  const sleek = () => <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d="M18,27 C18,12 46,12 46,27 C38,20 26,20 18,27 Z" />;
+  const sleek = () => hairCap("straight", 1, fill, ink, sheen);
   /**
    * Hair worn down also hangs in front of the shoulders beside the face, ending in a rounded tip where the hair
    * ends: above the shoulders for chin-length, on them for shoulder-length. Behind the head alone, its end was hidden
@@ -236,13 +269,12 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
       : [];
   };
   /**
-   * Hair drawn back and tied (ponytail, braids, bun, topknot) keeps its texture on the cap: curls or tight coils
-   * standing on its outline, or waves across it in the hair's sheen. Without it the tied styles all looked straight.
+   * Hair drawn back and tied (ponytail, braids, bun, topknot) keeps its texture on the cap: a curly or coily edge with
+   * curl marks, or waves. Without it the tied styles all looked straight.
    */
   const tiedCap = (extra: React.ReactNode = null) => (
     <g className="avatar-hair">
-      {sleek()}
-      {capTexture(texture, fill, ink, sheen)}
+      {hairCap(texture, 1, fill, ink, sheen)}
       {extra}
     </g>
   );
@@ -268,26 +300,24 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
       }
       return { back: [], hang, cap: tiedCap(line("parting", "M32,13 L32,20.5")) };
     }
-    case "bun":
-      // Gathered into a round bun on the crown.
-      return {
-        back: [],
-        hang: [],
-        cap: (
-          <g className="avatar-hair">
-            <circle cx={32} cy={10} r={6} fill={fill} stroke={ink} strokeWidth={1.2} />
-            {/* Curls or coils round a textured bun's top. */}
-            {texture === "curly" || texture === "coily"
-              ? [0, 1, 2, 3, 4, 5, 6].map((step) => {
-                  const angle = Math.PI * (1 + step / 6);
-                  const [cx, cy] = [n(32 + Math.cos(angle) * 6), n(10 + Math.sin(angle) * 6)];
-                  return <circle key={`bun${cx},${cy}`} className="avatar-hair-texture" cx={cx} cy={cy} r={texture === "curly" ? 1.8 : 1.3} fill={fill} stroke={ink} strokeWidth={0.6} />;
-                })
-              : null}
-            {tiedCap(line("bun-ring", "M28.5,10.5 Q32,6 35.5,10.5"))}
-          </g>
-        ),
-      };
+    case "bun": {
+      // Gathered into a round bun sitting on the crown, drawn over the cap; a curly or coily bun has a scalloped edge.
+      // Nothing is drawn inside it: an arch of sheen there read as a frowning mouth.
+      const curls = CURLS[texture];
+      // Round the bun: half as many scallops as round the head, the last point back on the first.
+      const ring: Pt[] = [];
+      const around = curls ? (curls.count >> 1) + 1 : 0;
+      // Its top at y 5, the top of the head-only crop at list size, so the bun is whole at 32 px.
+      for (let i = 0; i <= around; i++) ring.push([32 + 4.6 * Math.cos((2 * Math.PI * i) / around), 10.5 + 4.6 * Math.sin((2 * Math.PI * i) / around)]);
+      // On hair of the skin's own darkness or paleness, a scalloped bun keeps the hair's colour like the cap under it
+      // (its edge shows its curls); a grey copy inside it made it a pompom on a dark cap.
+      const bun = curls ? (
+        <path key="bun" fill={fill} stroke={ink} strokeWidth={1.2} strokeLinejoin="round" data-lit={ink !== fill ? "edge" : undefined} d={`M${pt(ring[0])}${scallops(ring, curls.depth, [32, 10.5])} Z`} />
+      ) : (
+        <circle key="bun" cx={32} cy={10.5} r={5.5} fill={fill} stroke={ink} strokeWidth={1.2} />
+      );
+      return { back: [], hang: [], cap: tiedCap(bun) };
+    }
     case "topknot":
       // A small knot high on the crown, tied at its base.
       return {
@@ -348,7 +378,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
         hang: sideLocks(),
         cap: (
           <g className="avatar-hair">
-            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d="M18,27 C17,12 22,4.5 31.5,4.5 C41,4.5 47,12 46,27 C40,13 24,13 18,27 Z" />
+            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d="M18,27 C17,11 21.5,3 31.5,3 C41.5,3 47,11 46,27 C40,13 24,13 18,27 Z" />
             {line("comb", "M25,16.5 Q23.5,10.5 27.5,6.8 M32,15.3 Q31.4,10 32,6 M39,16.5 Q40.5,10.5 36.5,6.8", 0.8)}
           </g>
         ),
@@ -372,7 +402,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
       return {
         back: [hairBack(15 * v * 1.3, falls ? fallBottom + 4 : 40, fill, ink)],
         hang: [],
-        cap: hairCap(texture, v * 1.3, fill, ink),
+        cap: hairCap(texture, v * 1.3, fill, ink, sheen),
       };
     default:
       // Shaved: a shadow of the hair's colour on the scalp. Waist-length hair spreads a little as it falls.
@@ -382,7 +412,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
       return {
         back: falls ? [hairBack(15 * v * (params.hair === "waist-length" ? 1.1 : 1), fallBottom, fill, ink)] : [],
         hang: sideLocks(),
-        cap: hairCap(texture, v, fill, ink, params.hair === "cropped"),
+        cap: hairCap(texture, v, fill, ink, sheen, params.hair === "cropped"),
       };
   }
 }
@@ -463,7 +493,8 @@ function withSheen(node: React.ReactNode, hair: string, sheen: string): React.Re
   if (props.children !== undefined) {
     return cloneElement(node, {}, ...Children.toArray(props.children as React.ReactNode).map((x) => withSheen(x, hair, sheen)));
   }
-  if (props.fill !== hair) return node;
+  // A shape that shows its light another way (straight hair's strands) gets no shrunken copy.
+  if (props.fill !== hair || props["data-lit"]) return node;
   const num = (name: string) => Number(props[name] ?? 0);
   let box: [number, number, number, number];
   if (node.type === "path") {
@@ -487,9 +518,11 @@ function withSheen(node: React.ReactNode, hair: string, sheen: string): React.Re
   } else {
     return node;
   }
-  // Shrunk toward a point a little above the middle, so the light sits on the top of the mass.
+  // Shrunk toward a point in the upper quarter, so the light sits on the top of the mass and the hair's own colour
+  // runs along its lower edge (the hairline over the forehead). Set nearer the middle, the light's lower edge ran
+  // straight across the forehead like the peak of a cap.
   const [x0, y0, x1, y1] = box;
-  const [px, py] = [n((x0 + x1) / 2), n(y0 + (y1 - y0) * 0.42)];
+  const [px, py] = [n((x0 + x1) / 2), n(y0 + (y1 - y0) * 0.22)];
   const light = cloneElement(node, {
     key: `${node.key ?? ""}sheen`,
     className: "avatar-hair-sheen",
@@ -606,7 +639,12 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
       <path key="head-garment" className="avatar-garment" fill={c.head} stroke={ink} strokeWidth={1.2} d="M17,30 C15,6 49,6 47,30 C44,20 20,20 17,30 Z" />,
     );
   } else if (style) {
-    parts.push(<g key="hair">{style.cap}</g>);
+    // Widened with a fuller face, so the hair still covers the head's sides.
+    parts.push(
+      <g key="hair" transform={fullness === 1 ? undefined : `translate(32 0) scale(${n(fullness)} 1) translate(-32 0)`}>
+        {style.cap}
+      </g>,
+    );
   }
   if (params.extras.includes("horns") || params.extras.includes("antlers")) {
     const tine = params.extras.includes("antlers");

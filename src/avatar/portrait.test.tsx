@@ -7,6 +7,118 @@ import AvatarPortrait, { HEAD_VIEWBOX, PORTRAIT_BACKDROP } from "./portrait";
 
 const draw = (appearance: unknown) => render(<AvatarPortrait appearance={appearance} />).container;
 
+type Point = [number, number];
+
+/** A path's outline as points (absolute M, L, H, V, Q, C and Z only, as the portrait writes them), curves sampled. */
+function pathPoints(d: string): Point[] {
+  const tokens = d.match(/[MLHVQCZ]|-?[\d.]+(?:e-?\d+)?/gi) ?? [];
+  const out: Point[] = [];
+  let at: Point = [0, 0];
+  let command = "";
+  let i = 0;
+  const num = () => Number(tokens[i++]);
+  while (i < tokens.length) {
+    if (/[A-Z]/i.test(tokens[i])) command = tokens[i++].toUpperCase();
+    if (command === "Z") continue;
+    if (command === "M" || command === "L") at = [num(), num()];
+    else if (command === "H") at = [num(), at[1]];
+    else if (command === "V") at = [at[0], num()];
+    else if (command === "Q" || command === "C") {
+      const controls: Point[] = [];
+      for (let k = 0; k < (command === "Q" ? 2 : 3); k++) controls.push([num(), num()]);
+      const ps = [at, ...controls];
+      for (let s = 1; s <= 12; s++) {
+        const t = s / 12;
+        let level = ps;
+        while (level.length > 1) level = level.slice(1).map((p, k) => [level[k][0] + (p[0] - level[k][0]) * t, level[k][1] + (p[1] - level[k][1]) * t] as Point);
+        out.push(level[0]);
+      }
+      at = controls[controls.length - 1];
+      continue;
+    }
+    out.push(at);
+  }
+  return out;
+}
+
+/** The horizontal scale an element is drawn at from `scale(f 1)` transforms on it and its ancestors (the full face). */
+function xScale(el: Element): number {
+  let f = 1;
+  for (let e: Element | null = el; e; e = e.parentElement) {
+    const m = /scale\(([\d.]+) 1\)/.exec(e.getAttribute("transform") ?? "");
+    if (m) f *= Number(m[1]);
+  }
+  return f;
+}
+
+/** A shape's outline as points, as drawn (ellipse, circle, rect or path; the full-face scale about x 32 applied). */
+function polygonOf(el: Element): Point[] {
+  const a = (name: string) => Number(el.getAttribute(name) ?? 0);
+  let points: Point[];
+  if (el.tagName === "ellipse" || el.tagName === "circle") {
+    const [rx, ry] = el.tagName === "circle" ? [a("r"), a("r")] : [a("rx"), a("ry")];
+    points = Array.from({ length: 72 }, (_, k) => [a("cx") + rx * Math.cos((k * Math.PI) / 36), a("cy") + ry * Math.sin((k * Math.PI) / 36)] as Point);
+  } else if (el.tagName === "rect") {
+    const [x, y, w, h, r] = [a("x"), a("y"), a("width"), a("height"), a("rx")];
+    const corner = (cx: number, cy: number, from: number): Point[] => Array.from({ length: 10 }, (_, k) => [cx + r * Math.cos(from + (k * Math.PI) / 18), cy + r * Math.sin(from + (k * Math.PI) / 18)] as Point);
+    points = [...corner(x + w - r, y + h - r, 0), ...corner(x + r, y + h - r, Math.PI / 2), ...corner(x + r, y + r, Math.PI), ...corner(x + w - r, y + r, (3 * Math.PI) / 2)];
+  } else {
+    points = pathPoints(el.getAttribute("d") ?? "");
+  }
+  const f = xScale(el);
+  return points.map(([x, y]) => [32 + (x - 32) * f, y]);
+}
+
+/** The head's outline, sampled densely along its edges. */
+function headOutline(svg: SVGSVGElement): Point[] {
+  const poly = polygonOf(svg.querySelector(".avatar-skin") as Element);
+  const out: Point[] = [];
+  poly.forEach((p, k) => {
+    const q = poly[(k + 1) % poly.length];
+    for (let s = 0; s < 4; s++) out.push([p[0] + ((q[0] - p[0]) * s) / 4, p[1] + ((q[1] - p[1]) * s) / 4]);
+  });
+  return out;
+}
+
+/** Hair-coloured filled shapes drawn over the head (after it): the hair on top of the head. */
+function hairOverHead(svg: SVGSVGElement, hex: string): Element[] {
+  const head = svg.querySelector(".avatar-skin") as Element;
+  return [...svg.querySelectorAll("path, circle, ellipse, rect")].filter(
+    (el) => el.getAttribute("fill") === hex && head.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING && (el.closest(".avatar-hair") || el.classList.contains("avatar-hair")),
+  );
+}
+
+/** How far inside the polygon a point is (its distance to the nearest edge), negative outside. */
+function depthInside([x, y]: Point, poly: Point[]): number {
+  let inside = false;
+  let nearest = Number.POSITIVE_INFINITY;
+  for (let k = 0, j = poly.length - 1; k < poly.length; j = k++) {
+    const [xi, yi] = poly[k];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    const [dx, dy] = [xj - xi, yj - yi];
+    const t = Math.max(0, Math.min(1, ((x - xi) * dx + (y - yi) * dy) / (dx * dx + dy * dy || 1)));
+    nearest = Math.min(nearest, Math.hypot(x - (xi + t * dx), y - (yi + t * dy)));
+  }
+  return inside ? nearest : -nearest;
+}
+
+const spanOf = (poly: Point[]) => Math.max(...poly.map(([x]) => x)) - Math.min(...poly.map(([x]) => x));
+
+/** How many times the outline's distance from the head's middle (32, 27) rises and then falls by over 0.3, in order along it. */
+function bumps(poly: Point[]): number {
+  let [peaks, low, high, rising] = [0, Number.POSITIVE_INFINITY, 0, false];
+  for (const [x, y] of poly) {
+    const r = Math.hypot(x - 32, y - 27);
+    if (rising) {
+      if (r > high) high = r;
+      else if (high - r > 0.3) [peaks, rising, low] = [peaks + 1, false, r];
+    } else if (r < low) low = r;
+    else if (r - low > 0.3) [rising, high] = [true, r];
+  }
+  return peaks;
+}
+
 describe("AvatarPortrait", () => {
   it("draws nothing without an appearance map", () => {
     for (const nothing of [undefined, null, "a face", 3]) expect(draw(nothing).querySelector("svg")).toBeNull();
@@ -141,7 +253,8 @@ describe("AvatarPortrait", () => {
         // Its body: shapes of the sheen inside it, which stands off the skin, so the hair is a mass and not an outline.
         const sheen = [...svg.querySelectorAll(".avatar-hair-sheen")];
         expect(sheen.length, label).toBeGreaterThan(0);
-        for (const el of sheen) expect(el.getAttribute("fill"), label).toBe(hairSheen);
+        // Filled shapes of the sheen, or (on straight hair) strands drawn in it.
+        for (const el of sheen) expect(el.getAttribute("fill") === "none" ? el.getAttribute("stroke") : el.getAttribute("fill"), label).toBe(hairSheen);
         expect(contrast(hairSheen as string, skin), label).toBeGreaterThanOrEqual(2);
       }
     }
@@ -304,6 +417,66 @@ describe("AvatarPortrait", () => {
     const [, y0, , h] = HEAD_VIEWBOX.split(" ").map(Number);
     expect(y0).toBeLessThan(20);
     expect(y0 + h).toBeGreaterThan(42);
+  });
+
+  it("covers the crown with short loose hair on every face shape: no skin and no head outline above the hair", () => {
+    for (const shape of ["oval", "round", "square", "heart", "long", "angular"]) {
+      for (const build of ["average", "pudgy"]) {
+        for (const texture of ["straight", "wavy", "curly", "coily"]) {
+          for (const length_cm of [3, 5, 10, 13]) {
+            for (const [skin, hex] of [["#292420", "#1b1612"], ["#d7bd96", "#653700"]]) {
+              const label = `${shape} ${build} ${texture} ${length_cm} cm on ${skin}`;
+              const svg = draw({ build, skin: { hex: skin }, face: { shape }, hair: { length_cm, texture, hex } }).querySelector("svg") as SVGSVGElement;
+              const caps = hairOverHead(svg, hex).map(polygonOf);
+              expect(caps.length, label).toBeGreaterThan(0);
+              // Every point of the head's outline above the brows' level (y 20) lies inside the hair, clear of its edge.
+              const crown = headOutline(svg).filter(([, y]) => y < 20);
+              expect(crown.length, label).toBeGreaterThan(10);
+              for (const p of crown) expect(Math.max(...caps.map((poly) => depthInside(p, poly))), `${label} at ${p.map((v) => v.toFixed(1))}`).toBeGreaterThan(0.2);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("draws curly and coily hair as one mass with a curly edge, never a ring of separate curls", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
+      for (const texture of ["curly", "coily"]) {
+        for (const hair of [{ length_cm: 3 }, { length_cm: 10 }, { length_cm: 30 }, { length_cm: 50 }, { length_cm: 30, style: "voluminous" }, { length_cm: 50, style: "bun" }, { length_cm: 30, style: "ponytail" }]) {
+          const label = `${texture} ${hair.length_cm} ${hair.style ?? "loose"} on ${skin}`;
+          const svg = draw({ skin: { hex: skin }, hair: { ...hair, texture, hex } }).querySelector("svg") as SVGSVGElement;
+          // No small filled round of the hair's colour over the head: those were the beads.
+          for (const el of hairOverHead(svg, hex)) {
+            const xs = polygonOf(el).map(([x]) => x);
+            expect(Math.max(...xs) - Math.min(...xs), `${label} ${el.tagName}`).toBeGreaterThan(8);
+          }
+          // The mass's outline is curly: its distance from the head's middle rises and falls round the top many times.
+          const body = hairOverHead(svg, hex).map(polygonOf).sort((a, b) => spanOf(b) - spanOf(a))[0];
+          // Its outer edge: from the left end over the top to the rightmost point, before the hairline comes back.
+          const right = body.reduce((best, p, k) => (p[0] > body[best][0] ? k : best), 0);
+          expect(bumps(body.slice(0, right + 1)), label).toBeGreaterThanOrEqual(texture === "curly" ? 9 : 14);
+        }
+      }
+    }
+  });
+
+  it("draws nothing in a bun that could read as a mouth: no line inside it", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#eadaba", "#653700"], ["#f6ede4", "#1b1612"]]) {
+      for (const texture of ["straight", "wavy", "curly", "coily"]) {
+        const label = `${texture} bun on ${skin}`;
+        const svg = draw({ skin: { hex: skin }, hair: { length_cm: 50, texture, style: "bun", hex } }).querySelector("svg") as SVGSVGElement;
+        // The bun: the hair-coloured shape standing highest above the head.
+        const bun = hairOverHead(svg, hex).map(polygonOf).sort((a, b) => Math.min(...a.map(([, y]) => y)) - Math.min(...b.map(([, y]) => y)))[0];
+        const [x0, x1] = [Math.min(...bun.map(([x]) => x)), Math.max(...bun.map(([x]) => x))];
+        const [y0, y1] = [Math.min(...bun.map(([, y]) => y)), Math.max(...bun.map(([, y]) => y))];
+        const lines = [...svg.querySelectorAll("path")].filter((el) => el.getAttribute("fill") === "none" && el.getAttribute("stroke"));
+        for (const line of lines) {
+          const inside = polygonOf(line).every(([x, y]) => x > x0 && x < x1 && y > y0 && y < y1);
+          expect(inside, `${label}: ${line.getAttribute("d")}`).toBe(false);
+        }
+      }
+    }
   });
 
   it("differs between characters", () => {
