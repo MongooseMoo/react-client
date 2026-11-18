@@ -398,8 +398,7 @@ describe("AvatarPortrait", () => {
       const svg = draw({ skin: { hex: "#d7bd96" }, hair: { length_cm, texture: "straight", hex: "#1b1612" }, facial_hair: { kind: "beard", length_cm: 40, hex: "#1b1612" } }).querySelector("svg") as SVGSVGElement;
       // The hanging locks: hair drawn after the shoulders, before the head.
       const shoulders = svg.querySelector('.avatar-garment');
-      const after = [...svg.querySelectorAll("path.avatar-hair")].filter((el) => shoulders && shoulders.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
-      const locks = after.filter((el) => /^M(15\.4|48\.6),27 /.test(el.getAttribute("d") ?? ""));
+      const locks = [...svg.querySelectorAll("path.avatar-hair-lock")].filter((el) => shoulders && shoulders.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
       expect(locks, String(length_cm)).toHaveLength(2);
       const numbers = (d: string) => [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
       for (const lock of locks) {
@@ -600,5 +599,102 @@ describe("AvatarPortrait", () => {
   it("differs between characters", () => {
     const pictures = TEST_CHARACTERS.map((ch) => draw(ch.appearance).innerHTML);
     expect(new Set(pictures).size).toBe(pictures.length);
+  });
+});
+
+describe("AvatarPortrait hair, round five", () => {
+  const svgOf = (appearance: unknown) => draw(appearance).querySelector("svg") as SVGSVGElement;
+  /** Filled shapes drawn after the head inside the hair: what covers the head's outline over the crown. */
+  const hairAfterHead = (svg: SVGSVGElement) => {
+    const head = svg.querySelector(".avatar-skin") as Element;
+    return [...svg.querySelectorAll("path, circle, ellipse, rect")].filter(
+      (el) => (el.getAttribute("fill") ?? "none") !== "none" && head.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING && el.closest(".avatar-hair"),
+    );
+  };
+
+  it("draws each band of hair worn down distinctly from its neighbours inside the People list's circle", () => {
+    // The list shows HEAD_VIEWBOX (12 5 40 40) cut by a circle: centre (32, 25), radius 20.
+    const [vx, vy, vw] = HEAD_VIEWBOX.split(" ").map(Number);
+    const [cx, cy, r] = [vx + vw / 2, vy + vw / 2, vw / 2];
+    const inCircle = (key: string) => {
+      const [x, y] = key.split(",").map(Number);
+      return Math.hypot(x - cx, y - cy) <= r;
+    };
+    const lengths = [10, 18, 30, 50, 75];
+    for (const [skin, hex] of [["#d7bd96", "#653700"], ["#292420", "#1b1612"]]) {
+      for (const texture of ["straight", "wavy", "curly", "coily"]) {
+        const masks = lengths.map((length_cm) => {
+          const mask = hairMask(svgOf({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm, texture, hex } }));
+          return new Map([...mask].filter(([key]) => inCircle(key)));
+        });
+        for (let i = 1; i < lengths.length; i++) {
+          // At least 80 square units differ inside the circle: about 50 px at the list's 32 px.
+          expect.soft(maskDifference(masks[i - 1], masks[i]), `${texture} ${lengths[i - 1]} vs ${lengths[i]} cm on ${skin}`).toBeGreaterThanOrEqual(80);
+        }
+      }
+    }
+  });
+
+  it("covers the head's outline in brushed hair's parting, so no line of it shows over the crown", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#eeeeea"], ["#d7bd96", "#653700"]]) {
+      for (const shape of ["oval", "square", "round", "long", "heart"]) {
+        const svg = svgOf({ skin: { hex: skin }, face: { shape }, hair: { length_cm: 5, texture: "straight", style: "brushed", hex } });
+        const covers = hairAfterHead(svg).map((el) => polygonOf(el));
+        for (const p of headOutline(svg).filter(([, y]) => y < 19)) {
+          expect(Math.max(...covers.map((poly) => depthInside(p, poly))), `${shape} on ${skin} at ${p.map((v) => v.toFixed(1))}`).toBeGreaterThan(0.2);
+        }
+      }
+    }
+  });
+
+  it("draws curly and coily locks beside the face as curls in the hair's own colour, never flat panels with a grey copy inside", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
+      for (const texture of ["curly", "coily"]) {
+        for (const length_cm of [18, 30, 50]) {
+          const label = `${texture} ${length_cm} cm on ${skin}`;
+          const svg = svgOf({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm, texture, hex } });
+          // The locks: shapes in the hair's colour beside the face, reaching below the cheekbones.
+          const locks = [...svg.querySelectorAll(`path[fill="${hex}"]`)].filter((el) => {
+            const poly = polygonOf(el);
+            const xs = poly.map(([x]) => x);
+            const ys = poly.map(([, y]) => y);
+            const middle = (Math.min(...xs) + Math.max(...xs)) / 2;
+            // Hanging from beside the face (the hair behind the head and the cap rise over the crown).
+            return Math.min(...ys) >= 22 && Math.max(...ys) > 34 && (middle < 26 || middle > 38);
+          });
+          expect(locks.length, label).toBeGreaterThanOrEqual(2);
+          for (const lock of locks) {
+            // No shrunken copy of it in the sheen (a grey panel inside it): its light is drawn as the curls' marks.
+            for (const el of svg.querySelectorAll(".avatar-hair-sheen")) expect(el.getAttribute("d") === lock.getAttribute("d") && el.getAttribute("transform"), label).toBeFalsy();
+            // Its outline rises and falls in curls down its length.
+            expect(bumps(polygonOf(lock)), `${label} ${lock.getAttribute("d")?.slice(0, 30)}`).toBeGreaterThanOrEqual(6);
+          }
+        }
+      }
+    }
+  });
+
+  it("draws a shaved scalp as stubble, points standing 3:1 off the skin, and cropped hair as strands without points, on deep skin", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#3a312a", "#1b1612"], ["#d7bd96", "#653700"]]) {
+      const shaved = svgOf({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm: 1, texture: "straight", hex } });
+      const dots = [...shaved.querySelectorAll(".avatar-hair circle")];
+      expect(dots.length, `shaved on ${skin}`).toBeGreaterThanOrEqual(20);
+      for (const dot of dots) expect(contrast(dot.getAttribute("fill") as string, skin), `shaved on ${skin}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      const cropped = svgOf({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm: 3, texture: "straight", hex } });
+      expect(cropped.querySelectorAll(".avatar-hair circle").length, `cropped on ${skin}`).toBe(0);
+      expect(cropped.querySelector(".avatar-hair-strand"), `cropped on ${skin}`).not.toBeNull();
+    }
+  });
+
+  it("ends cropped curly and coily hair in curls along the forehead, not a smooth edge like a cap's brim", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#d7bd96", "#653700"]]) {
+      for (const texture of ["curly", "coily"]) {
+        const svg = svgOf({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm: 3, texture, hex } });
+        const body = svg.querySelector(`g.avatar-hair path.avatar-hair[fill="${hex}"]`) as Element;
+        // The lower edge over the forehead: the outline's points between the brows' outer ends, below the crown.
+        const lower = polygonOf(body).filter(([x, y]) => x > 23 && x < 41 && y > 14);
+        expect(bumps(lower), `${texture} on ${skin}`).toBeGreaterThanOrEqual(3);
+      }
+    }
   });
 });

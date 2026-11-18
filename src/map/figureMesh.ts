@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { overlayHex } from "../avatar/colour";
+import { INK_DARK, overlayHex } from "../avatar/colour";
 import { type Ears, type FigureParams, HANGS_LOOSE, type HairTexture, HORN_TONE, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
 
 /**
@@ -30,6 +30,8 @@ const named = (part: Part, name: string): Part => ({ ...part, name });
 const RADIAL = 10;
 /** The white of the 3D eye, behind the iris. */
 export const EYE_WHITE = "#ece8e0";
+/** The middle of a 3D eye when the appearance gives no eye colour: a dark pupil, not a claimed iris colour. */
+export const EYE_PUPIL = INK_DARK;
 /** How tall a seam outline band is, metres: a line, not a ring. */
 export const BAND_HEIGHT = 0.006;
 /** How far out from the surface a seam band lies, as a factor of the part's radius. */
@@ -39,8 +41,6 @@ const BAND_OUT = 1.03;
  * 12 mm in pure white or black, and read as a headband and a chin strap.
  */
 export const HAIRLINE_WIDTH = 0.005;
-/** How many tips the hairline is drawn as round the cap's rim. */
-const HAIRLINE_TIPS = 24;
 /** How far the hair or head-covering cap leans back from upright, radians. */
 export const CAP_LEAN = 0.66;
 
@@ -107,6 +107,12 @@ function textured(
 
 /** How far a texture's peaks go toward the hair's sheen: wave crests, curls and coils catch the light. */
 const SHEEN_ON_PEAKS = 0.75;
+
+/**
+ * A texture's average shade toward the sheen (`SHEEN_ON_PEAKS` times the mean of its bumps squared): a single ripple
+ * for waves, a product of two for curls and coils. Where the cap meets falling hair, both fade to it.
+ */
+const MEAN_SHADE: Readonly<Record<HairTexture, number>> = { straight: 0, wavy: SHEEN_ON_PEAKS * 0.375, curly: SHEEN_ON_PEAKS * 0.3125, coily: SHEEN_ON_PEAKS * 0.3125 };
 
 /** The part with its texture's peaks shaded toward the hair's sheen (troughs keep the hair's colour); unchanged for straight hair. */
 function sheened(part: Part, bumps: Float32Array | undefined, sheen: string | undefined): Part {
@@ -549,12 +555,14 @@ export function figureParts(p: FigureParams): Part[] {
       const ez = headR * 0.12;
       // Seated in the head: the eye stands out of the face by less than half its radius. Its white, with the
       // iris in the eye's colour at its front: an eye in its colour alone vanished on skin of its own darkness.
-      if (c.eyes) {
-        const centre = new THREE.Vector3(ex, faceY(ex, ez) - eyeR * 0.7, headCentreZ + ez);
-        out.push(named(ball(centre, eyeR, EYE_WHITE, undefined, 8), "eye"));
-        // The iris stands a little proud of the white, so its facets are not lost inside the white's.
-        out.push(named(ball(centre.clone().add(new THREE.Vector3(0, eyeR * 0.45, 0)), eyeR * 0.65, c.eyes, undefined, 8), "eye"));
-      }
+      // Without an eye colour, a dark pupil there, as the portrait draws a pupil: drawn only with a colour, a person
+      // without one had no eyes in 3D, only brows.
+      const centre = new THREE.Vector3(ex, faceY(ex, ez) - eyeR * 0.63, headCentreZ + ez);
+      // Six facets round: eyes on every described face (not only those with an eye colour) took the heaviest figure
+      // over the 5,000-triangle budget at eight.
+      out.push(named(ball(centre, eyeR, EYE_WHITE, undefined, 6), "eye"));
+      // The iris stands a little proud of the white, so its facets are not lost inside the white's.
+      out.push(named(ball(centre.clone().add(new THREE.Vector3(0, eyeR * 0.45, 0)), eyeR * 0.6, c.eyes ?? EYE_PUPIL, undefined, 6), "eye"));
       // A brow over each eye, in the hair colour toned off the skin (`brow`), as in the portrait, following the face.
       const inner = side * headR * 0.16;
       const outer = side * headR * 0.48;
@@ -594,19 +602,55 @@ export function figureParts(p: FigureParams): Part[] {
           ? 1.035
           : 1.05
         : 1.05 * p.hairVolume * (style === "voluminous" ? 1.25 : 1);
-  const crownV = cut ? v * p.hairVolume * (p.hair === "short" ? 1.065 : 1) : v;
+  // Short hair stands at least a fifth of the head's size proud at the crown: with only straight hair's own bulk it
+  // rose 0.08 head radii over cropped hair and the two looked the same from the front.
+  // Curls and coils stand that high by their own bulk.
+  const straightish = p.hairTexture === "straight" || p.hairTexture === "wavy";
+  const crownV = !cut ? v : p.hair === "short" ? v * (straightish ? 1.2 : p.hairVolume * 1.065) : v * p.hairVolume;
   /** How far toward the crown's bulk the hair is in direction `d` from the head's centre: none below the temples. */
   const taper = (d: THREE.Vector3) => smooth((d.z / d.length() - 0.1) / 0.8);
   /** The factor the cap's surface stands out by in direction `d`, over its plain size. */
   const bulge = (d: THREE.Vector3) => 1 + (crownV / v - 1) * taper(d);
   // The way from the head's centre to the cap's surface in direction `d` (a unit vector), set once the cap is built.
   let onCap = (d: THREE.Vector3) => d.clone().multiplyScalar(headR);
+  // How far out the cap's surface is from the head's middle line at height z, in the horizontal direction (x, y), before
+  // its texture; 0 below it. Set once the cap is built: the falling hair lies just outside it.
+  let capAcross = (_x: number, _y: number, _z: number) => 0;
+  // The cap's outward normal at a point (before its texture), for the falling hair's top to be lit as the cap is.
+  let capNormal = (q: THREE.Vector3) => q.clone().normalize();
+  // Only hair worn down falls round the head; hair tied up, braided, locked, spiked or shaved does not.
+  const fallsDown = HANGS_LOOSE.includes(style);
+  // How far hair worn down falls, by the game's band: to the jaw, onto the shoulders, past them, to the waist. Curls and
+  // coils at chin length spring up into a mass ending above the jaw.
+  const fallBottom: Partial<Record<FigureParams["hair"], number>> = {
+    "chin-length": headCentreZ - headR * (p.hairTexture === "coily" ? 0.85 : p.hairTexture === "curly" ? 0.95 : 1.15),
+    "shoulder-length": shoulderZ - 0.03 * H,
+    long: shoulderZ - 0.12 * H,
+    "waist-length": waistZ + 0.02 * H,
+  };
+  const bottom = fallBottom[p.hair];
+  const falling = !p.headCovered && fallsDown && bottom !== undefined;
+  // Where the falling hair starts, a little above the head's middle, under the cap.
+  const fallTop = headCentreZ + headR * 0.1;
+  /**
+   * How much of the cap's texture is kept at a point (relative to the cap's centre): none round the back where the
+   * falling hair covers the cap and meets it, coming in above the fall's top. The two textures crossing there drew a
+   * jagged seam where the cap's lower edge ran over the fall.
+   */
+  const kept = (d: THREE.Vector3) =>
+    falling ? 1 - smooth((fallTop + headR * 0.3 - (d.z + headCentreZ)) / (headR * 0.3)) * smooth((0.45 - d.y / headR) / 0.3) : 1;
   if (p.headCovered || p.hair !== "none") {
-    const capReach = Math.PI * 0.55;
-    // Textured hair needs enough facets for its curls to show; coils are tighter, so they need more.
+    // Textured hair needs enough facets for its curls to show; coils are tighter, so they need more. A hairline drawn as
+    // strands on the cap needs columns enough for them: twice straight hair's 16.
     const fine = !p.headCovered && capTexture !== "straight";
     const coils = fine && capTexture === "coily";
-    const cap = new THREE.SphereGeometry(headR, coils ? 28 : fine ? 24 : 16, fine ? 12 : 9, 0, Math.PI * 2, 0, capReach);
+    const edged = outlined.has("hairline") && !shaved && !p.headCovered;
+    // With 32 columns a vertex lands where the rim comes lowest over the brows, which 16 columns' chords cut across a
+    // little higher: that cap reaches a little less far, so its edge stays as clear of the brows.
+    const capReach = Math.PI * (edged && !fine ? 0.53 : 0.55);
+    const across = coils ? 28 : fine ? 24 : edged ? 32 : 16;
+    const rows = fine ? 12 : 9;
+    const cap = new THREE.SphereGeometry(headR, across, rows, 0, Math.PI * 2, 0, capReach);
     // A sphere's pole is +y. Turning by more than a right angle about x takes it
     // past +z toward -y: the cap leans back, its front edge above the eyes
     // (the forehead shows) and its back edge low on the nape. Swept-back hair leaves a higher forehead.
@@ -646,72 +690,86 @@ export function figureParts(p: FigureParams): Part[] {
     const capColour = shaved ? overlayHex(c.skin, c.head, STUBBLE_OPACITY) : c.head;
     const capPart = named(placed(cap, capColour, capAt, capTurn, capScale), "cap");
     bulged(capPart.geometry);
-    if (!p.headCovered) out.push(sheened(capPart, textured(capPart.geometry, () => capAt, capTexture, headR, 1, undefined, curlsAt), c.hairSheen));
-    else out.push(capPart);
-    if (outlined.has("hairline") && !shaved) {
-      // The hair's own edge, a tone of the hair that stands 3:1 off the skin (`hairEdge`): a row of small tips lying on
-      // the cap along its rim, pointing down to where the hair ends, built there and turned with the cap. A white ring
-      // read as a headband on black hair over dark skin, and so did a continuous grey line round the head.
-      const out1 = headR * 1.006;
-      // The tips end just inside the cap's rim, where the old line's lower edge was, clear of the brows.
-      const [base, tip] = [capReach - (2 * HAIRLINE_WIDTH) / headR, capReach - (0.7 * HAIRLINE_WIDTH) / headR];
-      const at = (theta: number, phi: number) => [out1 * Math.sin(theta) * Math.cos(phi), out1 * Math.cos(theta), out1 * Math.sin(theta) * Math.sin(phi)];
-      const positions: number[] = [];
-      const index: number[] = [];
-      const turn = new THREE.Quaternion().setFromEuler(capTurn);
-      for (let i = 0; i < HAIRLINE_TIPS; i++) {
-        const phi = (2 * Math.PI * i) / HAIRLINE_TIPS;
-        // Only across the forehead and temples, where hair meets the face: round the nape a row of tips ran round the
-        // head like a band of stitches.
-        if (new THREE.Vector3(...at(tip, phi)).applyQuaternion(turn).y < -0.3 * headR) continue;
-        // Each tip a third as wide as the space between tips: the rest of the rim is left without a line.
-        const half = Math.PI / HAIRLINE_TIPS / 3;
-        const k = positions.length / 3;
-        positions.push(...at(base, phi - half), ...at(base, phi + half), ...at(tip, phi));
-        index.push(k, k + 1, k + 2);
+    // Where the cap's surface is (before its texture), for the falling hair to lie just outside it: along the
+    // horizontal ray from the head's middle line at height z, the far crossing of the turned, scaled sphere.
+    const turnQ = new THREE.Quaternion().setFromEuler(capTurn).invert();
+    capAcross = (x, y, z) => {
+      const r = Math.hypot(x, y) || 1;
+      const a = new THREE.Vector3(x / r, y / r, 0).applyQuaternion(turnQ).divide(capScale);
+      const b = new THREE.Vector3(0, 0, z - capAt.z).applyQuaternion(turnQ).divide(capScale);
+      const [qa, qb, qc] = [a.dot(a), 2 * a.dot(b), b.dot(b) - headR * headR];
+      const disc = qb * qb - 4 * qa * qc;
+      return disc < 0 ? 0 : (-qb + Math.sqrt(disc)) / (2 * qa);
+    };
+    const turnFwd = new THREE.Quaternion().setFromEuler(capTurn);
+    capNormal = (q) => {
+      const local = q.clone().sub(capAt).applyQuaternion(turnQ).divide(capScale).divide(capScale);
+      return local.applyQuaternion(turnFwd).normalize();
+    };
+    if (p.headCovered) out.push(capPart);
+    else {
+      const positions = capPart.geometry.getAttribute("position");
+      const q = new THREE.Vector3();
+      const keep = Array.from({ length: positions.count }, (_, i) => kept(q.fromBufferAttribute(positions, i).sub(capAt)));
+      const bumps = textured(capPart.geometry, () => capAt, capTexture, headR, 1, undefined, (at) => curlsAt(at) * kept(at.clone().sub(capAt)));
+      // The texture's peaks toward the sheen, faded out where the falling hair meets the cap (`kept`).
+      const shade = new Float32Array(positions.count);
+      // Faded to the texture's average shade, not to none: faded to the hair's plain colour it left a dark band there.
+      if (bumps) for (let i = 0; i < positions.count; i++) shade[i] = SHEEN_ON_PEAKS * bumps[i] * bumps[i] * keep[i] + MEAN_SHADE[capTexture] * (1 - keep[i]);
+      if (edged) {
+        // The hair's edge, where it meets skin of nearly its own lightness, drawn on the cap itself: across the forehead
+        // and temples its last rows are shaded in strands, every other column well toward the hair's tone off the skin
+        // (`hairEdge`), fading out a row or two up. A white ring read as a headband, a grey line round the head as one
+        // too, and a row of separate grey tips as a dotted line.
+        for (let iy = 0; iy <= rows; iy++) {
+          const near = smooth((iy / rows - 0.75) / 0.25);
+          for (let ix = 0; ix <= across; ix++) {
+            const i = iy * (across + 1) + ix;
+            const front = smooth((positions.getY(i) - capAt.y) / headR / 0.5 + 0.6);
+            shade[i] = Math.max(shade[i], 0.9 * near * front * (ix % 2 ? 1 : 0.3));
+          }
+        }
       }
-      const edge = new THREE.BufferGeometry();
-      edge.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-      edge.setIndex(index);
-      edge.computeVertexNormals();
-      const hairline = named(placed(twoSided(edge), c.hairEdge, capAt, capTurn, capScale), "hairline");
-      bulged(hairline.geometry);
-      // Raised with the cap's texture, so the curls do not cover it.
-      const capAxis = new THREE.Vector3(0, 1, 0).applyEuler(capTurn);
-      if (!p.headCovered) textured(hairline.geometry, () => capAt, capTexture, headR, 1, capAxis, curlsAt);
-      out.push(hairline);
+      const tone = edged ? c.hairEdge : c.hairSheen;
+      out.push(bumps || edged ? { ...capPart, shade, tone } : capPart);
     }
   }
-  // Only hair worn down falls round the head; hair tied up, braided, locked, spiked or shaved does not.
-  const fallsDown = HANGS_LOOSE.includes(style);
-  // How far hair worn down falls, by the game's band: to the jaw, onto the shoulders, past them, to the waist.
-  const fallBottom: Partial<Record<FigureParams["hair"], number>> = {
-    "chin-length": headCentreZ - headR * 1.15,
-    "shoulder-length": shoulderZ - 0.03 * H,
-    long: shoulderZ - 0.12 * H,
-    "waist-length": waistZ + 0.02 * H,
-  };
-  const bottom = fallBottom[p.hair];
-  if (!p.headCovered && fallsDown && bottom !== undefined) {
+  if (falling && bottom !== undefined) {
     // Hair falling from under the cap around the back and sides of the head, widening a little
     // as it falls. Open at the front.
     const v = 1.04 * p.hairVolume * (style === "voluminous" ? 1.2 : 1);
-    const top = headCentreZ + headR * 0.1;
+    const top = fallTop;
     // Hair reaching the shoulders or further lies back over them rather than through them.
     const long = p.hair !== "chin-length";
     // Around the back, and forward on each side to just in front of the ears.
     const around = 3.8;
     const fine = p.hairTexture !== "straight";
-    const rows = fine ? 10 : 8;
+    // A chin-length fall of curls or coils gets more rows, for its turns; longer falls keep 10 (the heaviest figure,
+    // 75 cm coily hair, is near the 5,000-triangle budget).
+    const rows = fine ? (long ? 10 : 14) : 8;
     const fall = new THREE.CylinderGeometry(headR, headR, top - bottom, 20, rows, true, -around / 2, around);
     // A cylinder stands along y with its seam at +z; turned upright (+z) its middle faces -y, the back.
     fall.rotateX(Math.PI / 2);
     fall.translate(0, 0, (top + bottom) / 2);
+    // A long fall's rows closer together near the top, where it lies round the curve of the head: evenly spaced, its
+    // first facet cut straight across the back of the head and the cap showed through it.
+    if (long) {
+      const at = fall.getAttribute("position");
+      for (let i = 0; i < at.count; i++) at.setZ(i, top - (top - bottom) * ((top - at.getZ(i)) / (top - bottom)) ** 1.6);
+    }
     // Its outline down the fall: round the back of the head, in toward the nape, then out over the shoulders to its
-    // ends (a bob flicks out a little). A straight cone from the crown to the ends hung as a flat slab.
+    // ends (a bob flicks out a little). A straight cone from the crown to the ends hung as a flat slab. Curls and coils
+    // to the jaw stand out round the head and come back in at their ends, a rounded mass, not a bob.
     const nape = Math.max(headCentreZ - headR * 1.05, bottom + 0.35 * (top - bottom));
     const spread = long ? 1.3 : 1.12;
-    const across = (z: number) => (z >= nape ? 1 - 0.1 * smooth((top - z) / (top - nape)) : 0.9 + (spread - 0.9) * smooth((nape - z) / (nape - bottom)));
+    const rounded = long ? 0 : { coily: 0.2, curly: 0.12 }[p.hairTexture as "coily" | "curly"] ?? 0;
+    const across = (z: number) => {
+      if (rounded) {
+        const u = (top - z) / (top - bottom);
+        return 1 + rounded * Math.sin(Math.PI * u) ** 0.7 - 0.05 * u * u;
+      }
+      return z >= nape ? 1 - 0.1 * smooth((top - z) / (top - nape)) : 0.9 + (spread - 0.9) * smooth((nape - z) / (nape - bottom));
+    };
     // Long hair lies back over the shoulders rather than through them: moved back below the nape, against the head above it.
     const back = (z: number) => (long ? -headR * 0.25 * smooth((nape - z) / (0.5 * (nape - bottom))) : 0);
     const positions = fall.getAttribute("position");
@@ -720,17 +778,49 @@ export function figureParts(p: FigureParams): Part[] {
       const k = across(z);
       // Straight hair's ends uneven: every other strand a little longer.
       const ragged = !fine && Math.abs(z - bottom) < 1e-5 && (i % 21) % 2 ? -0.012 * s : 0;
-      positions.setXYZ(i, positions.getX(i) * headScale.x * v * k, positions.getY(i) * headScale.y * v * k + back(z), z + ragged);
+      let [x, y] = [positions.getX(i) * headScale.x * v * k, positions.getY(i) * headScale.y * v * k + back(z)];
+      // Never inside the cap: it lies just outside the cap's surface where that is further out, so the cap's lower edge
+      // at the back is covered and the fall's top lies on the cap instead of crossing it. 2.5% out: more than the sag of
+      // the fall's flat facets between its vertices round and down the curved cap, so the cap never shows through.
+      // At its very top it lies on the cap, so no ledge shows there.
+      const r = Math.hypot(x, y);
+      const cap = capAcross(x, y, z) * (1 + 0.025 * smooth((top - z) / (headR * 0.06)));
+      if (cap > r && r > 0) [x, y] = [(x * cap) / r, (y * cap) / r];
+      positions.setXYZ(i, x, y, z + ragged);
     }
     fall.computeVertexNormals();
     const hang = { geometry: twoSided(fall), colour: c.head };
-    const bumps = textured(hang.geometry, (q) => new THREE.Vector3(0, back(q.z), q.z), p.hairTexture, headR, 0.4);
+    /** How much of its texture the fall has at height z: none at its top, where it meets the cap, all of it 0.2 head radii down. */
+    const inFall = (z: number) => smooth((top - z) / (headR * 0.2));
+    // Curls and coils turn down the fall as tightly as its rows allow (three and a half rows to a turn), up to 1.6 times
+    // the cap's: at 0.4 everywhere, a chin-length fall of coils turned under once and read as wavy locks.
+    const turns = { coily: 14, curly: 9, wavy: 7, straight: 0 }[p.hairTexture];
+    const along = fine && p.hairTexture !== "wavy" ? Math.max(0.4, Math.min(1.6, (rows * 2 * Math.PI) / (3.5 * turns * ((top - bottom) / headR)))) : 0.4;
+    const bumps = textured(hang.geometry, (q) => new THREE.Vector3(0, back(q.z), q.z), p.hairTexture, headR, along, undefined, (q) => inFall(q.z));
+    // Near its top, lit as the cap it lies on: with the fall's own upright normals the light changed in a line there.
+    // (Its inner side, the second half of the two-sided geometry, faces the other way.)
+    {
+      const at = hang.geometry.getAttribute("position");
+      const normals = hang.geometry.getAttribute("normal");
+      const q = new THREE.Vector3();
+      const nq = new THREE.Vector3();
+      for (let i = 0; i < at.count; i++) {
+        q.fromBufferAttribute(at, i);
+        const t = 1 - smooth((top - q.z) / (headR * 0.35));
+        if (t <= 0) continue;
+        const cap = capNormal(q).multiplyScalar(i < at.count / 2 ? 1 : -1);
+        nq.fromBufferAttribute(normals, i).lerp(cap, t).normalize();
+        normals.setXYZ(i, nq.x, nq.y, nq.z);
+      }
+    }
     // Straight hair shows its strands: every other column toward the sheen, fading in below the cap so the fall meets
-    // the cap without a line across the back of the head.
+    // the cap without a line across the back of the head; a texture's peaks fade in the same way.
     const fallAt = hang.geometry.getAttribute("position");
     const straightStrands =
       !fine && c.hairSheen ? { shade: strands(fallAt.count, 21).map((x, i) => x * 0.45 * smooth((top - fallAt.getZ(i)) / headR)), tone: c.hairSheen } : {};
-    out.push(sheened(named({ ...hang, ...straightStrands }, "hair"), bumps, c.hairSheen));
+    const fallPart = sheened(named({ ...hang, ...straightStrands }, "hair"), bumps, c.hairSheen);
+    if (bumps && fallPart.shade) fallPart.shade = fallPart.shade.map((x, i) => x * inFall(fallAt.getZ(i)) + MEAN_SHADE[p.hairTexture] * (1 - inFall(fallAt.getZ(i))));
+    out.push(fallPart);
   }
   if (!p.headCovered && p.hair !== "none") out.push(...styleParts(p, style, headCentreZ, headR, headScale, v, onCap));
 
