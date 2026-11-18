@@ -85,6 +85,19 @@ describe("the game's vocabulary", () => {
     const styles = GAME_VOCABULARY["hair.style"].map(figure);
     expect(new Set(styles).size).toBe(styles.length);
     expect(styles[0]).toBe(figure("no such style"));
+    // Every ear builds a different figure, average the same as sending none.
+    const earsOf = (appearance: Record<string, unknown>) =>
+      figureParts(params(appearance))
+        .filter((part) => part.name === "ear")
+        .map((part) => {
+          const box = new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute);
+          return `${part.geometry.getAttribute("position").count}:${box.min.toArray().map((x) => x.toFixed(3))}:${box.max.toArray().map((x) => x.toFixed(3))}`;
+        })
+        .join("|");
+    const ears = GAME_VOCABULARY["face.ears"].map((value) => earsOf(withValue("face.ears", value)));
+    for (const drawn of ears) expect(drawn).not.toBe("");
+    expect(new Set(ears).size).toBe(ears.length);
+    expect(ears[0]).toBe(earsOf(without("face.ears")));
     const partCount = (features: string[]) => figureParts(params({ ...VOCABULARY_BASE, features })).length;
     for (const feature of ["glasses", "sunglasses", "eyepatch", "earrings"]) expect(partCount([feature]), feature).toBeGreaterThan(partCount([]));
   });

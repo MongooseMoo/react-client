@@ -34,7 +34,10 @@ export const HAIR_STYLE_MIN_CM = {
 } as const;
 export type HairStyle = keyof typeof HAIR_STYLE_MIN_CM;
 export type FacialHair ="none" | "stubble" | "moustache" | "goatee" | "beard";
-export type ExtraPart = "tail" | "wings" | "antlers" | "horns" | "pointed_ears";
+export type ExtraPart = "tail" | "wings" | "antlers" | "horns";
+/** `face.ears` as the game sends it; `average` when none is sent or the value is unknown. */
+export const EAR_KINDS = ["average", "small", "large", "pointed"] as const;
+export type Ears = (typeof EAR_KINDS)[number];
 /** `features` keys the portrait draws; others are ignored. */
 export const FEATURES = ["freckles", "glasses", "sunglasses", "eyepatch", "earrings", "beauty_mark", "dimples"] as const;
 export type Feature = (typeof FEATURES)[number];
@@ -142,6 +145,8 @@ export interface FigureParams {
   beardReach?: number;
   faceHidden: boolean;
   extras: ExtraPart[];
+  /** `face.ears`; pointed also for the body plan's `pointed ears` trait. */
+  ears: Ears;
   /** Known `features`, in the order given, each once; none on a hidden face. */
   features: Feature[];
   /** Seams whose two sides fall below 3:1 contrast, drawn with an outline in `colours.ink`. */
@@ -238,7 +243,6 @@ const TRAIT_PARTS: Readonly<Record<string, ExtraPart>> = {
   antler: "antlers",
   horns: "horns",
   horn: "horns",
-  pointed_ears: "pointed_ears",
 };
 
 /**
@@ -362,6 +366,9 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     const part = TRAIT_PARTS[word(trait) ?? ""];
     if (part && !extras.includes(part)) extras.push(part);
   }
+  const face = isRecord(record.face) ? record.face : {};
+  const earKey = vocabKey(face.ears) ?? "";
+  const ears: Ears = traits.some((t) => word(t) === "pointed_ears") ? "pointed" : (EAR_KINDS as readonly string[]).includes(earKey) ? (earKey as Ears) : "average";
 
   const features: Feature[] = [];
   for (const key of faceHidden || !Array.isArray(record.features) ? [] : record.features) {
@@ -396,6 +403,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     ...(beardLength !== undefined ? { beardLength, beardReach: beardReach(beardLength) } : {}),
     faceHidden,
     extras,
+    ears,
     features,
     outlined,
   };

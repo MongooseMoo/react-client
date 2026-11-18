@@ -47,7 +47,7 @@ const MARK_PLACES: Readonly<Record<string, [number, number]>> = {
   nose: [33.5, 32],
 };
 
-/** `face.ears` sizes: the left ear's centre x (the right mirrors it about x 32) and its half width and height. */
+/** `face.ears` sizes: the left ear's centre x (the right mirrors it about x 32) and its half width and height; pointed ears are drawn as points. */
 const EARS: Readonly<Record<string, { x: number; rx: number; ry: number }>> = {
   average: { x: 17.5, rx: 2.6, ry: 4 },
   small: { x: 18.6, rx: 1.8, ry: 2.7 },
@@ -610,9 +610,8 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
     <rect key="neck" className="avatar-neck" x={n(32 - neck / 2)} y={36} width={n(neck)} height={10} fill={c.neck} stroke={ink} strokeWidth={1.2} />,
   );
   parts.push(...(style?.hang ?? []));
-  const ears = vocabKey(face.ears);
-  const pointed = params.extras.includes("pointed_ears") || ears === "pointed";
-  const ear = EARS[ears ?? ""] ?? EARS.average;
+  const pointed = params.ears === "pointed";
+  const ear = EARS[params.ears] ?? EARS.average;
   // A hood or hat over the head covers the ears.
   for (const side of params.headCovered ? [] : [-1, 1]) {
     const x = 32 + side * (32 - ear.x) * fullness;

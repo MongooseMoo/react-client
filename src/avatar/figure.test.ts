@@ -184,13 +184,14 @@ describe("figureParams branches", () => {
   });
 
   it("adds parts for known traits only, once each", () => {
-    expect(params({ traits: ["Tail", "wings", "wing", "antlers", "horns", "pointed ears", "scales", 4] }).extras).toEqual([
-      "tail",
-      "wings",
-      "antlers",
-      "horns",
-      "pointed_ears",
-    ]);
+    expect(params({ traits: ["Tail", "wings", "wing", "antlers", "horns", "pointed ears", "scales", 4] }).extras).toEqual(["tail", "wings", "antlers", "horns"]);
+  });
+
+  it("takes the ears from face.ears, pointed also for the pointed ears trait, average otherwise", () => {
+    for (const ears of ["average", "small", "large", "pointed"]) expect(params({ face: { ears } }).ears).toBe(ears);
+    expect(params({}).ears).toBe("average");
+    expect(params({ face: { ears: "huge" } }).ears).toBe("average");
+    expect(params({ face: { ears: "small" }, traits: ["pointed ears"] }).ears).toBe("pointed");
   });
 
   it("keeps known features once each, in order, ignoring unknown keys, wrong types and a hidden face", () => {
