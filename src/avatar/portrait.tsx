@@ -1,12 +1,14 @@
 import type React from "react";
+import { Children, cloneElement, isValidElement } from "react";
 import { overlayHex } from "./colour";
 import { BUILDS, type FigureParams, type HairTexture, figureParams, appearanceRecord, HORN_TONE, STUBBLE_OPACITY, vocabKey } from "./figure";
 
 /**
  * A head-and-shoulders portrait of a person drawn in SVG from their Room.Layout
- * `appearance`, with the same colours and part choices as the 3D figure. Every
- * region is outlined in the figure's ink, so neighbouring regions stay apart
- * whatever their colours; what is drawn on the face (pupils, nose, mouth,
+ * `appearance`, with the same colours and part choices as the 3D figure. Skin and
+ * clothing regions are outlined in the figure's ink, so neighbouring regions stay apart
+ * whatever their colours; hair regions in the hair's own tone off the skin, their body
+ * shaded toward the sheen where hair and skin are alike; what is drawn on the face (pupils, nose, mouth,
  * marks, features) is in the face ink, which stands out on the skin. Decorative: hidden from the accessibility tree,
  * because the words beside it say who it is.
  */
@@ -99,7 +101,14 @@ function hairCap(texture: HairTexture, v: number, fill: string, ink: string, cro
         curls.push(<circle key={`${row}-${i}`} cx={n(cx)} cy={n(cy)} r={n(r)} fill={fill} stroke={ink} strokeWidth={0.7} />);
       }
     }
-    return <g className="avatar-hair">{curls}</g>;
+    // Under the curls, the hair's body over the head, so they read as one mass of hair rather than a ring of beads.
+    const body = `M${n(32 - width)},27 C${n(32 - width)},${n(rise)} ${n(32 + width)},${n(rise)} ${n(32 + width)},27 C38,${hairline} 26,${hairline} ${n(32 - width)},27 Z`;
+    return (
+      <g className="avatar-hair">
+        <path key="body" fill={fill} stroke="none" d={body} />
+        {curls}
+      </g>
+    );
   }
   if (texture === "wavy") {
     // Wavy hair: the cap's outer edge in a run of soft waves, each bulging out between two points on the head's curve.
@@ -187,7 +196,9 @@ const FALL_BOTTOM: Readonly<Partial<Record<FigureParams["hair"], number>>> = { "
 
 /**
  * What a hair style puts behind the head (`back`, drawn before the shoulders), hanging in front of the
- * shoulders (`hang`, before the head) and over the head (`cap`). `loose` is the hair as it falls.
+ * shoulders (`hang`, before the head) and over the head (`cap`). `loose` is the hair as it falls. `ink` here (and in
+ * the helpers it calls) is the hair's edge, `hairEdge`, never the figure's outline ink; lines and ties drawn on the
+ * hair are in its sheen.
  */
 function hairStyle(params: FigureParams, fill: string, ink: string, skin: string): { back: React.ReactNode[]; hang: React.ReactNode[]; cap: React.ReactNode } {
   const v = params.hairVolume;
@@ -195,12 +206,10 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
   const fallBottom = FALL_BOTTOM[params.hair] ?? 0;
   const falls = fallBottom > 0;
   const bottom = HANG_BOTTOM[params.hair];
-  const line = (key: string, d: string, width = 0.8) => <path key={key} fill="none" stroke={ink} strokeWidth={width} strokeLinecap="round" d={d} />;
-  // A close cap for hair drawn back from the face: smooth, whatever the texture.
-  const sleek = (hairline = "C38,20 26,20") => (
-    <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d={`M18,27 C18,12 46,12 46,27 ${hairline} 18,27 Z`} />
-  );
   const sheen = params.colours.hairSheen ?? ink;
+  const line = (key: string, d: string, width = 0.8) => <path key={key} fill="none" stroke={sheen} strokeWidth={width} strokeLinecap="round" d={d} />;
+  // A close cap for hair drawn back from the face: smooth, whatever the texture.
+  const sleek = () => <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d="M18,27 C18,12 46,12 46,27 C38,20 26,20 18,27 Z" />;
   /**
    * Hair worn down also hangs in front of the shoulders beside the face, ending in a rounded tip where the hair
    * ends: above the shoulders for chin-length, on them for shoulder-length. Behind the head alone, its end was hidden
@@ -245,7 +254,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
           <path key="tail" className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d={`M40,15 C52,16 53,28 50,${bottom - 4} C49,${bottom} 45,${bottom} 45.5,${bottom - 4} C47,30 46,22 40,20 Z`} />,
         ],
         hang: [],
-        cap: tiedCap(<rect x={43} y={15.5} width={3.5} height={3} rx={1} fill={ink} />),
+        cap: tiedCap(<rect x={43} y={15.5} width={3.5} height={3} rx={1} fill={sheen} />),
       };
     case "braided": {
       // Two braids hanging in front of the shoulders, each a chain of plaited links ending in a tie.
@@ -255,7 +264,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
         for (let y = 30; y <= bottom - 2; y += 3.4) {
           hang.push(<ellipse key={`braid${side}-${y}`} className="avatar-hair" cx={x} cy={n(y)} rx={2.6} ry={2.1} fill={fill} stroke={ink} strokeWidth={0.8} />);
         }
-        hang.push(<rect key={`tie${side}`} x={x - 1.5} y={bottom - 1} width={3} height={1.8} fill={ink} />);
+        hang.push(<rect key={`tie${side}`} x={x - 1.5} y={bottom - 1} width={3} height={1.8} fill={sheen} />);
       }
       return { back: [], hang, cap: tiedCap(line("parting", "M32,13 L32,20.5")) };
     }
@@ -288,7 +297,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
           tiedCap(
             <>
               <circle cx={32} cy={5.5} r={3.4} fill={fill} stroke={ink} strokeWidth={1} />
-              <rect x={30.4} y={8.6} width={3.2} height={3.6} fill={ink} />
+              <rect x={30.4} y={8.6} width={3.2} height={3.6} fill={sheen} />
             </>,
           )
         ),
@@ -331,18 +340,32 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
         ),
       };
     case "swept_back":
-      // Combed straight back off a high forehead; the comb lines run back over the crown.
+      // Lifted off a high forehead and combed back: the hair stands high over the crown (about 10 units above a loose
+      // cap, 8 px at 32 px), the hairline well up the forehead, comb lines running back. With only a higher hairline
+      // and thin comb strokes it looked like loose hair at portrait size.
       return {
         back: falls ? [hairBack(15, fallBottom, fill, ink)] : [],
         hang: sideLocks(),
-        cap: <g className="avatar-hair">{sleek("C39,15.5 25,15.5")}{line("comb", "M26,16.5 Q25,13 27,10.5 M32,15.5 Q31.5,12 32,9.5 M38,16.5 Q39,13 37,10.5", 0.7)}</g>,
+        cap: (
+          <g className="avatar-hair">
+            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d="M18,27 C17,12 22,4.5 31.5,4.5 C41,4.5 47,12 46,27 C40,13 24,13 18,27 Z" />
+            {line("comb", "M25,16.5 Q23.5,10.5 27.5,6.8 M32,15.3 Q31.4,10 32,6 M39,16.5 Q40.5,10.5 36.5,6.8", 0.8)}
+          </g>
+        ),
       };
     case "brushed":
-      // Neatly brushed with a side parting, the fringe swept across.
+      // A side parting, open at the crown as a notch in the outline, the larger side brushed across the forehead in a
+      // swept fringe. A thin parting stroke on a plain cap looked like loose hair at portrait size.
       return {
         back: falls ? [hairBack(15, fallBottom, fill, ink)] : [],
         hang: sideLocks(),
-        cap: <g className="avatar-hair">{sleek("C41,23 27,17")}{line("parting", "M25.5,12 Q24.5,15 23.5,18.5", 0.9)}</g>,
+        cap: (
+          <g className="avatar-hair">
+            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} strokeLinejoin="round" d="M18,27 C17.5,17 19.5,13 23.2,11.8 L23.8,19 C21.5,20.5 19.2,23.5 18,27 Z" />
+            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} strokeLinejoin="round" d="M26.2,11.4 C36,9 46.5,13 46.5,27 C44.5,22.5 40,19.6 34.5,19.6 C30.5,19.6 27,20.6 24.6,22 L24.6,19 Z" />
+            {line("brushed", "M28,14 Q36.5,12.2 43.5,17.5 M27.5,17.5 Q34,15.8 40.5,18.2", 0.8)}
+          </g>
+        ),
       };
     case "voluminous":
       // Thick and full: the hair stands well out from the head and falls wide.
@@ -429,6 +452,90 @@ function jawEdge(shape: string, g: number): string {
   return `C19,${n(control)} 45,${n(control)} 44.5,30`;
 }
 
+/**
+ * Every shape filled in `hair` within `node`, followed by a smaller copy of itself in `sheen`: the light on the
+ * hair's body, set toward its top, with a rim of the hair's own colour left round it.
+ */
+function withSheen(node: React.ReactNode, hair: string, sheen: string): React.ReactNode {
+  if (Array.isArray(node)) return node.map((x) => withSheen(x, hair, sheen));
+  if (!isValidElement(node)) return node;
+  const props = node.props as Record<string, unknown>;
+  if (props.children !== undefined) {
+    return cloneElement(node, {}, ...Children.toArray(props.children as React.ReactNode).map((x) => withSheen(x, hair, sheen)));
+  }
+  if (props.fill !== hair) return node;
+  const num = (name: string) => Number(props[name] ?? 0);
+  let box: [number, number, number, number];
+  if (node.type === "path") {
+    const points = [...String(props.d).matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+    box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  } else if (node.type === "circle") {
+    // A curl: a highlight on its upper side, toward the light, not a lighter middle that made it a bead.
+    const r = num("r");
+    return [
+      node,
+      <circle key={`${node.key ?? ""}sheen`} className="avatar-hair-sheen" cx={n(num("cx") - r * 0.2)} cy={n(num("cy") - r * 0.35)} r={n(r * 0.45)} fill={sheen} stroke="none" />,
+    ];
+  } else if (node.type === "ellipse") {
+    const rx = num("rx");
+    const ry = num("ry");
+    box = [num("cx") - rx, num("cy") - ry, num("cx") + rx, num("cy") + ry];
+  } else if (node.type === "rect") {
+    box = [num("x"), num("y"), num("x") + num("width"), num("y") + num("height")];
+  } else {
+    return node;
+  }
+  // Shrunk toward a point a little above the middle, so the light sits on the top of the mass.
+  const [x0, y0, x1, y1] = box;
+  const [px, py] = [n((x0 + x1) / 2), n(y0 + (y1 - y0) * 0.42)];
+  const light = cloneElement(node, {
+    key: `${node.key ?? ""}sheen`,
+    className: "avatar-hair-sheen",
+    fill: sheen,
+    stroke: "none",
+    transform: `translate(${px} ${py}) scale(${SHEEN_SCALE}) translate(${-px} ${-py})`,
+  });
+  return [node, light];
+}
+
+/** How large the sheen on a hair shape is, as a share of the shape. */
+const SHEEN_SCALE = 0.62;
+
+/**
+ * Strands over a beard of the skin's own darkness or paleness, in its tone off the skin: short staggered strokes down
+ * each column of the beard, from under its upper edge to above its lower edge (the jaw for a beard under 15 cm, the
+ * beard's own end for a longer one). Without them it showed only its thin edge, an outline of a beard.
+ */
+function beardStrands(reach: number, lengthCm: number, shape: string, edge: string): React.ReactElement[] {
+  const g = 0.8 + 2.2 * Math.min(1, Math.max(0, (lengthCm - 3) / 3));
+  const chin = { round: 42.5, long: 45, heart: 44 }[shape] ?? 44;
+  // How low the beard reaches at `d` from the face's middle line, kept inside the shape `beardPath` draws.
+  const low = (d: number): number => {
+    if (lengthCm >= 15) {
+      const bottom = 41.5 + 21.5 * reach;
+      const half = 12.5 - 5 * Math.max(0, (reach - 0.3) / 0.7);
+      return 30 + (bottom - 30) * Math.sqrt(Math.max(0, 1 - (d / half) ** 2));
+    }
+    if (shape === "angular") return d <= 8 ? 44 + g - (d * (5 + 0.2 * g)) / 8 : 39 + 0.8 * g - ((d - 8) * (9 + 0.8 * g)) / 4.5;
+    return 28 + (chin + g - 28) * Math.sqrt(Math.max(0, 1 - (d / 13) ** 2));
+  };
+  const out: React.ReactElement[] = [];
+  const step = 1.6;
+  for (let column = 0, x = 20.4; x <= 43.6; column++, x += step) {
+    const d = Math.abs(x - 32);
+    const top = beardTopY(d) + 0.8;
+    const bottom = low(d) - 0.9;
+    // Strokes 1.6 long with gaps of 0.8, every other column half a stroke lower where there is room.
+    for (let y = top + (bottom - top > 3 ? (column % 2) * 1.2 : 0); y + 0.5 <= bottom; y += 2.4) {
+      const end = Math.min(y + 1.6, bottom);
+      out.push(<path key={`strand${n(x)},${n(y)}`} className="avatar-beard-strand" fill="none" stroke={edge} strokeWidth={0.6} strokeLinecap="round" d={`M${n(x)},${n(y)} L${n(x + 0.3)},${n(end)}`} />);
+    }
+  }
+  return out;
+}
+
 export function portraitElements(appearance: unknown): React.ReactNode[] | null {
   const record = appearanceRecord(appearance);
   if (!record) return null;
@@ -449,7 +556,14 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
 
   // A plain disc behind the picture, so dark hair still shows on a dark page and light hair on a light one.
   parts.push(<circle key="backdrop" className="avatar-backdrop" cx={32} cy={32} r={31} fill={PORTRAIT_BACKDROP} />);
-  const style = !params.headCovered && params.hair !== "none" && c.hair ? hairStyle(params, c.hair, ink, c.skin) : undefined;
+  const drawn = !params.headCovered && params.hair !== "none" && c.hair ? hairStyle(params, c.hair, c.hairEdge, c.skin) : undefined;
+  // Hair that had to have its edge toned off the skin (black on deep brown, white on palest) is nearly the skin's
+  // colour: its body is shaded toward the sheen too, so it reads as a mass of hair and not as rings of outline.
+  const massed = c.hair && c.hairSheen && c.hairEdge !== c.hair ? { hair: c.hair, sheen: c.hairSheen } : undefined;
+  const style =
+    drawn && massed
+      ? { back: drawn.back.map((x) => withSheen(x, massed.hair, massed.sheen)), hang: drawn.hang.map((x) => withSheen(x, massed.hair, massed.sheen)), cap: withSheen(drawn.cap, massed.hair, massed.sheen) }
+      : drawn;
   parts.push(...(style?.back ?? []));
   parts.push(
     <path
@@ -586,7 +700,12 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
         ),
         moustache: <path fill={fh} stroke={edge} strokeWidth={0.8} d="M27,36 Q32,33.5 37,36 Q32,35.5 27,36 Z" />,
         goatee: <path fill={fh} stroke={edge} strokeWidth={0.8} d="M29,40 Q32,47 35,40 Q32,41.5 29,40 Z" />,
-        beard: <path fill={fh} stroke={edge} strokeWidth={0.8} d={beardPath(params.beardReach, params.beardLength, shapeKey)} />,
+        beard: (
+          <>
+            <path fill={fh} stroke={edge} strokeWidth={0.8} d={beardPath(params.beardReach, params.beardLength, shapeKey)} />
+            {edge !== fh && params.beardReach !== undefined && params.beardLength !== undefined ? beardStrands(params.beardReach, params.beardLength, shapeKey, edge) : null}
+          </>
+        ),
       };
       parts.push(
         <g key="facial-hair" className="avatar-facial-hair">

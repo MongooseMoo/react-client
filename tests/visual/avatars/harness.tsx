@@ -108,6 +108,19 @@ const FACE_CHARACTERS: TestCharacter[] = [
   faceOf("coily loose", SKIN.deep, { length_cm: 50, texture: "coily", hex: HAIR.black }, undefined),
   faceOf("chin-length, very long beard", SKIN.tan, { length_cm: 18, texture: "straight", hex: HAIR.black }, { kind: "beard", length_cm: 40, hex: HAIR.black }),
   faceOf("shoulder-length, very long beard", SKIN.tan, { length_cm: 30, texture: "straight", hex: HAIR.black }, { kind: "beard", length_cm: 40, hex: HAIR.black }),
+  // The live guest looks with no garments (the neutral clothing, so a dark neck has a collar seam), and the brushed,
+  // swept-back and loose hair compared at the same lengths.
+  faceOf("deep skin, black hair, black full beard, unclothed", SKIN.deep, { length_cm: 10, texture: "straight", hex: HAIR.black }, { kind: "beard", length_cm: 10, hex: HAIR.black }, { garments: [] }),
+  faceOf("very pale skin, white hair, white full beard, unclothed", SKIN.veryPale, { length_cm: 30, texture: "straight", hex: HAIR.white }, { kind: "beard", length_cm: 10, hex: HAIR.white }, { garments: [] }),
+  faceOf("very dark skin, black hair, stubble, unclothed", SKIN.veryDark, { length_cm: 10, texture: "straight", hex: HAIR.black }, { kind: "stubble", hex: HAIR.black }, { garments: [] }),
+  faceOf("deep skin, black coily bun, unclothed", SKIN.deep, { length_cm: 50, texture: "coily", style: "bun", hex: HAIR.black }, undefined, { garments: [] }),
+  faceOf("deep skin, black hair, black full beard, oval face", SKIN.deep, { length_cm: 10, texture: "straight", hex: HAIR.black }, { kind: "beard", length_cm: 10, hex: HAIR.black }, { garments: [], face: { brows: "average" } }),
+  faceOf("loose 5 cm", SKIN.tan, { length_cm: 5, texture: "straight", hex: HAIR.brown }, undefined),
+  faceOf("brushed 5 cm", SKIN.tan, { length_cm: 5, texture: "straight", style: "brushed", hex: HAIR.brown }, undefined),
+  faceOf("loose 13 cm", SKIN.tan, { length_cm: 13, texture: "straight", hex: HAIR.brown }, undefined),
+  faceOf("swept back 13 cm", SKIN.tan, { length_cm: 13, texture: "straight", style: "swept_back", hex: HAIR.brown }, undefined),
+  faceOf("brushed 13 cm", SKIN.tan, { length_cm: 13, texture: "straight", style: "brushed", hex: HAIR.brown }, undefined),
+  faceOf("deep skin, black brushed 5 cm", SKIN.deep, { length_cm: 5, texture: "straight", style: "brushed", hex: HAIR.black }, undefined),
 ];
 const CHARACTERS = params.get("set") === "vocab" ? VOCAB_CHARACTERS : params.get("set") === "face" ? FACE_CHARACTERS : TEST_CHARACTERS;
 const root = document.getElementById("root") as HTMLElement;
@@ -141,6 +154,9 @@ if (view === "portraits") {
             <td style={{ width: "12em" }}>{ch.name}</td>
             <td>
               <AvatarPortrait appearance={ch.appearance} size={32} />
+            </td>
+            <td>
+              <AvatarPortrait appearance={ch.appearance} size={48} />
             </td>
             <td>
               <AvatarPortrait appearance={ch.appearance} size={128} />

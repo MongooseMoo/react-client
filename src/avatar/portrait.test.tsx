@@ -28,9 +28,9 @@ describe("AvatarPortrait", () => {
 
   it("draws only supplied colours, outlines in the ink, for every test character", () => {
     for (const ch of TEST_CHARACTERS) {
-      const { ink, faceInk, brow, facialHairEdge, hairSheen } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
-      // Tones made from supplied colours count too: brows and facial hair edges toned off the skin, the hair's sheen.
-      const tones = [brow, facialHairEdge, hairSheen].filter((x): x is string => x !== undefined);
+      const { ink, faceInk, brow, facialHairEdge, hairSheen, hairEdge } = figureParams(ch.appearance, { height: ch.height, base: "#888888" }).colours;
+      // Tones made from supplied colours count too: brows, hair and facial hair edges toned off the skin, the hair's sheen.
+      const tones = [brow, facialHairEdge, hairSheen, hairEdge].filter((x): x is string => x !== undefined);
       const allowed = new Set([...suppliedHexes(ch.appearance), ink, faceInk, ...tones, PORTRAIT_BACKDROP, NEUTRAL_SKIN, NEUTRAL_CLOTHING, HORN_TONE]);
       const svg = draw(ch.appearance).querySelector("svg") as SVGSVGElement;
       for (const el of svg.querySelectorAll("[fill], [stroke]")) {
@@ -39,9 +39,13 @@ describe("AvatarPortrait", () => {
           if (value && value !== "none") expect(allowed.has(value.toLowerCase()), `${ch.name} ${attr} ${value}`).toBe(true);
         }
       }
-      // Skin, hair and garment regions carry an ink outline, so neighbours stay apart at any contrast.
-      for (const el of svg.querySelectorAll(".avatar-skin, path.avatar-hair, .avatar-garment, .avatar-neck")) {
+      // Skin and garment regions carry an ink outline, so neighbours stay apart at any contrast. Hair regions are
+      // outlined in the hair's own tone off the skin: in the ink, black hair on deep skin showed only as white rings.
+      for (const el of svg.querySelectorAll(".avatar-skin, .avatar-garment, .avatar-neck")) {
         expect(el.getAttribute("stroke"), ch.name).toBe(ink);
+      }
+      for (const el of svg.querySelectorAll("path.avatar-hair")) {
+        expect(el.getAttribute("stroke"), ch.name).toBe(hairEdge);
       }
     }
   });
@@ -106,6 +110,85 @@ describe("AvatarPortrait", () => {
         // The beard's edge stands 3:1 off the skin, so a beard of the skin's darkness still has a visible edge.
         expect(contrast(edge, skin), `${skin} ${hair} beard edge`).toBeGreaterThanOrEqual(MIN_CONTRAST);
       }
+    }
+  });
+
+  it("draws hair of the skin's own darkness or paleness as a mass of hair: edged in a tone of the hair, its body shaded toward the sheen, never ringed in ink", () => {
+    for (const [skin, hairHex] of [["#292420", "#1b1612"], ["#3a312a", "#1b1612"], ["#f6ede4", "#eeeeea"]]) {
+      for (const hair of [
+        { length_cm: 10, texture: "straight" },
+        { length_cm: 3, texture: "coily" },
+        { length_cm: 30, texture: "curly" },
+        { length_cm: 50, texture: "coily", style: "bun" },
+        { length_cm: 50, texture: "straight", style: "ponytail" },
+        { length_cm: 50, texture: "wavy", style: "braided" },
+        { length_cm: 30, texture: "straight", style: "topknot" },
+        { length_cm: 30, texture: "straight", style: "dreadlocks" },
+        { length_cm: 5, texture: "straight", style: "brushed" },
+        { length_cm: 13, texture: "straight", style: "swept_back" },
+      ]) {
+        const label = `${skin} ${hairHex} ${hair.texture} ${hair.style ?? "loose"}`;
+        const appearance = { skin: { hex: skin }, hair: { ...hair, hex: hairHex } };
+        const { hairEdge, hairSheen } = figureParams(appearance, { height: 1.75 }).colours;
+        const svg = draw(appearance).querySelector("svg") as SVGSVGElement;
+        const hairParts = [...svg.querySelectorAll(".avatar-hair, .avatar-hair *, .avatar-hair-texture")];
+        expect(hairParts.length, label).toBeGreaterThan(0);
+        for (const el of hairParts) {
+          for (const attr of ["fill", "stroke"]) expect([INK_DARK, INK_LIGHT], `${label} ${attr}`).not.toContain(el.getAttribute(attr));
+        }
+        // Its edge stands 3:1 off the skin.
+        expect(contrast(hairEdge, skin), label).toBeGreaterThanOrEqual(MIN_CONTRAST);
+        // Its body: shapes of the sheen inside it, which stands off the skin, so the hair is a mass and not an outline.
+        const sheen = [...svg.querySelectorAll(".avatar-hair-sheen")];
+        expect(sheen.length, label).toBeGreaterThan(0);
+        for (const el of sheen) expect(el.getAttribute("fill"), label).toBe(hairSheen);
+        expect(contrast(hairSheen as string, skin), label).toBeGreaterThanOrEqual(2);
+      }
+    }
+    // Hair that already stands off the skin is drawn as before: no sheen mass.
+    expect(draw({ skin: { hex: "#f6ede4" }, hair: { length_cm: 10, hex: "#1b1612" } }).querySelector(".avatar-hair-sheen")).toBeNull();
+  });
+
+  it("draws a beard of the skin's own darkness or paleness as a mass of strands in its tone off the skin, not an outline", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#eeeeea"]]) {
+      for (const length_cm of [3, 10, 40]) {
+        const label = `${skin} ${hex} ${length_cm}`;
+        const appearance = { skin: { hex: skin }, facial_hair: { kind: "beard", length_cm, hex } };
+        const { facialHairEdge } = figureParams(appearance, { height: 1.75 }).colours;
+        const svg = draw(appearance).querySelector("svg") as SVGSVGElement;
+        const strands = [...svg.querySelectorAll(".avatar-facial-hair .avatar-beard-strand")];
+        expect(strands.length, label).toBeGreaterThan(15);
+        for (const s of strands) expect(s.getAttribute("stroke"), label).toBe(facialHairEdge);
+        // Strands over the cheeks and the chin, all under the mouth's corners or beside them, never over the mouth.
+        const ys = strands.flatMap((s) => [...(s.getAttribute("d") ?? "").matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]));
+        for (const [x, y] of ys) if (Math.abs(x - 32) < 5) expect(y, label).toBeGreaterThan(40.5);
+        expect(Math.max(...ys.map(([, y]) => y)), label).toBeGreaterThan(42);
+      }
+    }
+    // A beard that stands off the skin needs none.
+    expect(draw({ skin: { hex: "#f6ede4" }, facial_hair: { kind: "beard", length_cm: 10, hex: "#1b1612" } }).querySelector(".avatar-beard-strand")).toBeNull();
+  });
+
+  it("gives brushed and swept-back hair silhouettes of their own: a parting notch, and hair lifted high off a high forehead", () => {
+    /** Every point a path names. */
+    const points = (d: string) => [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+    const caps = (style: string, length_cm: number) => {
+      const svg = draw({ skin: { hex: "#d7bd96" }, hair: { length_cm, texture: "straight", style, hex: "#653700" } }).querySelector("svg") as SVGSVGElement;
+      // The cap: hair paths over the head (drawn after the head).
+      const head = svg.querySelector(".avatar-skin") as Element;
+      return [...svg.querySelectorAll("path.avatar-hair")].filter((el) => head.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).map((el) => points(el.getAttribute("d") ?? ""));
+    };
+    const top = (paths: number[][][]) => Math.min(...paths.flat().map(([, y]) => y));
+    // Swept back: the hair stands at least 6 units higher than loose hair of the same length (5 px at 32 px).
+    for (const length of [8, 13]) expect(top(caps("loose", length)) - top(caps("swept_back", length)), String(length)).toBeGreaterThanOrEqual(6);
+    // Brushed: the cap is two masses parted by a notch at least 2 units wide at the crown.
+    for (const length of [2.5, 5, 13]) {
+      const parts = caps("brushed", length);
+      expect(parts.length, String(length)).toBe(2);
+      const [left, right] = [...parts].sort((a, b) => Math.min(...a.map(([x]) => x)) - Math.min(...b.map(([x]) => x)));
+      const crown = (path: number[][]) => path.filter(([, y]) => y < 14);
+      const gap = Math.min(...crown(right).map(([x]) => x)) - Math.max(...crown(left).map(([x]) => x));
+      expect(gap, String(length)).toBeGreaterThanOrEqual(2);
     }
   });
 

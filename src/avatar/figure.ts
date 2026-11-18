@@ -102,6 +102,11 @@ export interface FigureColours {
   facialHairEdge?: string;
   /** `sheenFor(hair)`: texture, a bun's form and strands on the hair; undefined without hair. */
   hairSheen?: string;
+  /**
+   * The 3D collar line where the neck meets the clothing: the clothing's colour toned off the neck by the same rule,
+   * so a dark neck above dark clothing is not ringed in white ink.
+   */
+  collarEdge: string;
 }
 
 export interface FigureParams {
@@ -325,8 +330,10 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     faceInk: inkFor(skin),
     hairEdge: "",
     brow: "",
+    collarEdge: "",
   };
   colours.hairEdge = toneOff(colours.head, skin);
+  colours.collarEdge = toneOff(colours.torso, colours.neck);
   // A brow in the hair's colour (or the beard's, or the face ink without either), toned off the skin.
   colours.brow = toneOff(colours.hair ?? colours.facialHair ?? colours.faceInk, skin);
   if (colours.facialHair) colours.facialHairEdge = toneOff(colours.facialHair, skin);
@@ -394,7 +401,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
   };
 }
 
-/** Every fill colour a figure draws (outline ink and the tones made from these, `brow`, `hairEdge`, `facialHairEdge` and `hairSheen`, aside), for checks. */
+/** Every fill colour a figure draws (outline ink and the tones made from these, `brow`, `hairEdge`, `facialHairEdge`, `hairSheen` and `collarEdge`, aside), for checks. */
 export function figureFills(params: FigureParams): Set<string> {
   const c = params.colours;
   return new Set(
