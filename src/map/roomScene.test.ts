@@ -218,21 +218,23 @@ describe("buildRoomScene", () => {
     const colours = figureColours("#9", scene);
     expect(colours.length).toBeGreaterThan(3);
     // Every colour is one the game supplied, or one the figure derives from them: its outline and face inks, the
-    // hair edge, brow and facial hair edge toned off the skin, the eye white, and shades from a hair colour toward
-    // its sheen on textured hair (Bram's coily cap). Nothing else.
+    // hair edge, brow and facial hair edge toned off the skin, the eye white, shades from a hair colour toward
+    // its sheen on textured hair (Bram's coily cap), and shades from the skin toward its own tone on the ears' front.
+    // Nothing else.
     const fc = figureParams(ch.appearance, { height: 1.7, base: "#000000" }).colours;
     const allowed = new Set([...suppliedHexes(ch.appearance), fc.ink, fc.faceInk, fc.hairEdge, fc.brow, fc.facialHairEdge, EYE_WHITE].filter((x): x is string => x !== undefined));
-    const onSheen = (c: number) => {
-      if (!fc.hair || !fc.hairSheen) return false;
+    const between = (c: number, a: string | undefined, b: string | undefined) => {
+      if (!a || !b) return false;
       // Shading mixes in linear colour, as figureGeometry does; allow the last bit of 8-bit rounding.
-      const [from, to, got] = [new THREE.Color(fc.hair), new THREE.Color(fc.hairSheen), new THREE.Color(c)];
+      const [from, to, got] = [new THREE.Color(a), new THREE.Color(b), new THREE.Color(c)];
       for (let step = 0; step <= 1000; step++) {
         const at = from.clone().lerp(to, step / 1000);
         if (Math.abs(at.r - got.r) + Math.abs(at.g - got.g) + Math.abs(at.b - got.b) < 0.006) return true;
       }
       return false;
     };
-    for (const c of colours) expect(allowed.has(hex(c)) || onSheen(c), hex(c)).toBe(true);
+    const onSheen = (c: number) => between(c, fc.hair, fc.hairSheen);
+    for (const c of colours) expect(allowed.has(hex(c)) || onSheen(c) || between(c, fc.skin, fc.earEdge), hex(c)).toBe(true);
     // Bram's coily black hair shows its texture: shades toward the sheen are present.
     expect(colours.some((c) => !allowed.has(hex(c)) && onSheen(c))).toBe(true);
     const body = meshes(scene.things.get("#9"))[0];

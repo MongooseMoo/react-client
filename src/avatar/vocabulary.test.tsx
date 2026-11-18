@@ -154,6 +154,30 @@ describe("hair style and length", () => {
   });
 });
 
+describe("ears under hair", () => {
+  it("shows or hides the ears in the portrait and the 3D figure alike, by one rule", () => {
+    const earsIn = (appearance: unknown) => ({
+      portrait: new DOMParser().parseFromString(portrait(appearance), "text/html").querySelectorAll(".avatar-ear").length > 0,
+      figure: figureParts(params(appearance)).some((part) => part.name === "ear"),
+    });
+    for (const texture of GAME_VOCABULARY["hair.texture"]) {
+      for (const style of GAME_VOCABULARY["hair.style"]) {
+        for (const length_cm of [1, 3, 10, 13, 18, 30, 50, 75]) {
+          const appearance = { ...VOCABULARY_BASE, face: { ...VOCABULARY_BASE.face, ears: "large" }, hair: { ...VOCABULARY_BASE.hair, length_cm, texture, style } };
+          const { portrait: drawn, figure } = earsIn(appearance);
+          expect(drawn, `${texture} ${style} ${length_cm} cm`).toBe(figure);
+          expect(drawn, `${texture} ${style} ${length_cm} cm`).toBe(!params(appearance).earsHidden);
+        }
+      }
+    }
+    // Hair worn down past the jaw covers them; cropped and short hair of every texture shows them.
+    for (const texture of GAME_VOCABULARY["hair.texture"]) {
+      for (const length_cm of [3, 10]) expect(params({ ...VOCABULARY_BASE, hair: { ...VOCABULARY_BASE.hair, length_cm, texture } }).earsHidden, `${texture} ${length_cm}`).toBe(false);
+      expect(params({ ...VOCABULARY_BASE, hair: { ...VOCABULARY_BASE.hair, length_cm: 13, texture } }).earsHidden, `${texture} 13`).toBe(true);
+    }
+  });
+});
+
 describe("beard length", () => {
   const bands = GAME_BEARD_LENGTHS.map(([band, low]) => ({ band, length: low }));
   const beard = (length?: number) => (length === undefined ? withValue("facial_hair.kind", "beard") : withValue("facial_hair.length_cm", length));

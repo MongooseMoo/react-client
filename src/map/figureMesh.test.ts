@@ -193,9 +193,11 @@ describe("figure hair", () => {
   });
 
   it("shows texture: straight hair is smooth, wavy, curly and coily hair stand out unevenly", () => {
-    // How rough the cap is: the mean change in distance from the head's centre between neighbouring vertices.
+    // How rough the cap is: the mean change in distance from the head's centre between neighbouring vertices. At
+    // chin length, where the cap has its texture all round (a cropped or short cut's curls fade out at the sides, and
+    // its smooth rise to the crown counted as roughness).
     const roughness = (texture: string) => {
-      const { p, headR, headZ } = hairOf(5, texture);
+      const { p, headR, headZ } = hairOf(18, texture);
       const r = vertices(p, "cap").map((v) => onHead(v, headR, headZ));
       let sum = 0;
       for (let i = 1; i < r.length; i++) sum += Math.abs(r[i] - r[i - 1]);
@@ -504,11 +506,128 @@ describe("ears", () => {
   });
 
   it("leaves the ears out under a hood or hat, under hair worn down past the jaw, and under a coily cap standing out past them", () => {
-    for (const style of ["loose", "bun"]) expect(vertices(withEars("large", { length_cm: style === "bun" ? 50 : 10, texture: "coily", style, hex: "#653700" }).p, "ear"), `coily ${style}`).toEqual([]);
+    for (const style of ["loose", "bun"]) expect(vertices(withEars("large", { length_cm: style === "bun" ? 50 : 18, texture: "coily", style, hex: "#653700" }).p, "ear"), `coily ${style}`).toEqual([]);
     const hood = { garments: [{ areas: ["head"], layer: 2, colour: { hex: "#ff81c0" } }] };
     expect(vertices(withEars("large", undefined, hood).p, "ear")).toEqual([]);
     for (const style of ["loose", "brushed", "voluminous"]) expect(vertices(withEars("large", { length_cm: 30, texture: "straight", style, hex: "#653700" }).p, "ear"), style).toEqual([]);
     for (const style of ["ponytail", "bun", "mohawk", "spiky"]) expect(vertices(withEars("large", { length_cm: 30, texture: "straight", style, hex: "#653700" }).p, "ear").length, style).toBeGreaterThan(0);
+  });
+});
+
+describe("hair length, hairline and ears in 3D", () => {
+  const HAIR_PARTS = ["cap", "hairline", "hair", "fringe", "crest"];
+  /** The box round every hair part. */
+  const hairBox = (p: ReturnType<typeof figureParams>) => {
+    const box = new THREE.Box3();
+    for (const part of figureParts(p).filter((x) => HAIR_PARTS.includes(x.name ?? ""))) box.union(new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute));
+    return box;
+  };
+
+  it("draws each hair length band distinctly from its neighbours, for every texture", () => {
+    const lengths = [1, 3, 10, 18, 30, 50, 75];
+    for (const texture of ["straight", "wavy", "curly", "coily"]) {
+      const figures = lengths.map((length_cm) => standing({ skin: { hex: "#d7bd96" }, hair: { length_cm, texture, hex: "#653700" } }));
+      for (let i = 1; i < lengths.length; i++) {
+        const [a, b] = [figures[i - 1], figures[i]];
+        const label = `${texture} ${lengths[i - 1]} vs ${lengths[i]} cm`;
+        const capColour = (f: typeof a) => figureParts(f.p).find((x) => x.name === "cap")?.colour;
+        if (capColour(a) !== capColour(b)) continue;
+        // Some side of the hair's outline moves by at least 0.06 head radii (about 5 px on a 150 px head).
+        const [ba, bb] = [hairBox(a.p), hairBox(b.p)];
+        const moved = Math.max(...[...ba.min.clone().sub(bb.min).toArray(), ...ba.max.clone().sub(bb.max).toArray()].map(Math.abs));
+        expect(moved, label).toBeGreaterThan(a.headR * 0.06);
+      }
+    }
+  });
+
+  it("gives short curly and coily hair the bulk of its length, standing low at the sides so the ears show", () => {
+    for (const texture of ["curly", "coily"]) {
+      const crown = (length_cm: number) => {
+        const { p, headR, headZ } = standing({ skin: { hex: "#292420" }, face: { ears: "large" }, hair: { length_cm, texture, hex: "#1b1612" } });
+        return (Math.max(...vertices(p, "cap").map((v) => v.z)) - headZ) / headR;
+      };
+      // The crown rises with the length: cropped, short, then hair to the jaw.
+      expect(crown(10) - crown(3), texture).toBeGreaterThan(0.08);
+      expect(crown(18), texture).toBeGreaterThan(crown(10));
+      for (const length_cm of [3, 10]) {
+        const { p, headR, headZ } = standing({ skin: { hex: "#292420" }, face: { ears: "large" }, hair: { length_cm, texture, hex: "#1b1612" } });
+        const label = `${texture} ${length_cm} cm`;
+        const ear = vertices(p, "ear");
+        expect(ear.length, label).toBeGreaterThan(0);
+        // Each ear stands out past the hair at its own height, seen from the front.
+        const around = vertices(p, "cap").filter((v) => Math.abs(v.z - headZ) < headR * 0.15);
+        for (const side of [-1, 1]) {
+          const out = Math.max(...ear.filter((v) => Math.sign(v.x) === side).map((v) => Math.abs(v.x)));
+          expect(out - Math.max(headR * 0.84, ...around.filter((v) => Math.sign(v.x) === side).map((v) => Math.abs(v.x))), `${label} ${side}`).toBeGreaterThan(headR * 0.06);
+        }
+      }
+    }
+  });
+
+  it("breaks the hairline into tips along the hair's edge, never a ring round the head", () => {
+    for (const texture of ["straight", "coily"]) {
+      const { p, headZ } = standing({ skin: { hex: "#292420" }, hair: { length_cm: 3, texture, hex: "#1b1612" } });
+      expect(p.outlined, texture).toContain("hairline");
+      // Round the cap's axis, in 48 sectors: at least a third of them hold no part of the line.
+      const axis = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(Math.PI / 2 + CAP_LEAN, 0, 0));
+      const u = new THREE.Vector3(1, 0, 0);
+      const w = new THREE.Vector3().crossVectors(axis, u);
+      const filled = new Set<number>();
+      for (const part of figureParts(p).filter((x) => x.name === "hairline")) {
+        const pos = part.geometry.getAttribute("position");
+        const index = part.geometry.getIndex();
+        const count = index ? index.count : pos.count;
+        for (let t = 0; t < count; t += 3) {
+          const c = new THREE.Vector3();
+          for (let k = 0; k < 3; k++) c.add(new THREE.Vector3().fromBufferAttribute(pos, index ? index.getX(t + k) : t + k));
+          c.divideScalar(3).sub(new THREE.Vector3(0, 0, headZ));
+          const a = Math.atan2(c.dot(w), c.dot(u));
+          filled.add(Math.floor(((a + Math.PI) / (2 * Math.PI)) * 48) % 48);
+        }
+      }
+      expect(filled.size, texture).toBeGreaterThan(0);
+      expect(48 - filled.size, texture).toBeGreaterThanOrEqual(16);
+    }
+  });
+
+  it("shapes long straight hair to the head and shoulders, with strands, not a flat slab", () => {
+    for (const length_cm of [30, 50]) {
+      const { p, headR, headZ } = standing({ skin: { hex: "#f6ede4" }, hair: { length_cm, texture: "straight", hex: "#eeeeea" } });
+      const label = `${length_cm} cm`;
+      const fall = figureParts(p).find((x) => x.name === "hair");
+      expect(fall, label).toBeDefined();
+      const hair = vertices(p, "hair");
+      // How far out from the middle line the hair is at a height, at the back and sides.
+      const reach = (z: number) => Math.max(...hair.filter((v) => Math.abs(v.z - z) < headR * 0.2).map((v) => Math.hypot(v.x, v.y)));
+      const low = Math.min(...hair.map((v) => v.z));
+      // Round the back of the head, in at the nape, then out over the shoulders.
+      const nape = headZ - headR * 1.05;
+      expect(reach(nape), label).toBeLessThan(reach(headZ - headR * 0.1) * 0.97);
+      expect(reach(low + headR * 0.1), label).toBeGreaterThan(reach(nape) * 1.15);
+      // Strands: columns shaded toward the hair's sheen.
+      expect(fall?.tone, label).toBe(p.colours.hairSheen);
+      const shade = [...(fall?.shade ?? [])];
+      expect(Math.max(...shade) - Math.min(...shade), label).toBeGreaterThan(0.3);
+    }
+  });
+
+  it("shades each ear's front edge toward a tone of the skin that stands 3:1 off it, on every palette skin", () => {
+    for (const skin of ["#f6ede4", "#f3e7db", "#f7ead0", "#eadaba", "#d7bd96", "#a07e56", "#825c43", "#604134", "#3a312a", "#292420"]) {
+      for (const ears of ["small", "average", "large", "pointed"]) {
+        const { p } = standing({ skin: { hex: skin }, face: { ears }, hair: { length_cm: 3, texture: "straight", hex: "#1b1612" } });
+        const label = `${ears} on ${skin}`;
+        const parts = figureParts(p).filter((x) => x.name === "ear");
+        expect(parts.length, label).toBeGreaterThan(0);
+        expect(contrast(p.colours.earEdge, skin), label).toBeGreaterThanOrEqual(MIN_CONTRAST);
+        for (const part of parts.filter((x) => x.shade)) expect(part.tone, label).toBe(p.colours.earEdge);
+        // The ears' forward-facing surface reaches well toward that tone.
+        const front = parts.flatMap((part) => {
+          const normals = part.geometry.getAttribute("normal");
+          return [...(part.shade ?? [])].filter((_, i) => normals.getY(i) > 0.5);
+        });
+        expect(Math.max(0, ...front), label).toBeGreaterThan(0.6);
+      }
+    }
   });
 });
 

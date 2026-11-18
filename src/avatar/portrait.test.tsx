@@ -41,17 +41,20 @@ function pathPoints(d: string): Point[] {
   return out;
 }
 
-/** The horizontal scale an element is drawn at from `scale(f 1)` transforms on it and its ancestors (the full face). */
-function xScale(el: Element): number {
-  let f = 1;
+/** A point as drawn: the `translate` and `scale` transforms on the element and its ancestors applied, innermost first. */
+function transformed(el: Element, [x0, y0]: Point): Point {
+  let [x, y] = [x0, y0];
   for (let e: Element | null = el; e; e = e.parentElement) {
-    const m = /scale\(([\d.]+) 1\)/.exec(e.getAttribute("transform") ?? "");
-    if (m) f *= Number(m[1]);
+    const ops = [...(e.getAttribute("transform") ?? "").matchAll(/(translate|scale)\(([-\d.]+)(?:[ ,]+([-\d.]+))?\)/g)];
+    for (const [, op, a, b] of ops.reverse()) {
+      if (op === "translate") [x, y] = [x + Number(a), y + Number(b ?? 0)];
+      else [x, y] = [x * Number(a), y * Number(b ?? a)];
+    }
   }
-  return f;
+  return [x, y];
 }
 
-/** A shape's outline as points, as drawn (ellipse, circle, rect or path; the full-face scale about x 32 applied). */
+/** A shape's outline as points, as drawn (ellipse, circle, rect or path; its transforms, such as the full face's scale about x 32, applied). */
 function polygonOf(el: Element): Point[] {
   const a = (name: string) => Number(el.getAttribute(name) ?? 0);
   let points: Point[];
@@ -65,8 +68,57 @@ function polygonOf(el: Element): Point[] {
   } else {
     points = pathPoints(el.getAttribute("d") ?? "");
   }
-  const f = xScale(el);
-  return points.map(([x, y]) => [32 + (x - 32) * f, y]);
+  return points.map((p) => transformed(el, p));
+}
+
+/** Whether the point is inside the polygon (even-odd). */
+function inside([x, y]: Point, poly: Point[]): boolean {
+  let hit = false;
+  for (let k = 0, j = poly.length - 1; k < poly.length; j = k++) {
+    const [xi, yi] = poly[k];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+
+/**
+ * Where hair shows in the picture, as drawn: on a grid one unit apart over the 64-unit square, the points whose
+ * topmost filled shape (the last drawn that holds the point) is hair, a hair sheen or a shaved shadow.
+ */
+function hairMask(svg: SVGSVGElement): Map<string, string> {
+  const shapes = [...svg.querySelectorAll("path, circle, ellipse, rect")]
+    .filter((el) => (el.getAttribute("fill") ?? "none") !== "none")
+    .map((el) => {
+      const poly = polygonOf(el);
+      const xs = poly.map(([x]) => x);
+      const ys = poly.map(([, y]) => y);
+      // A shaved shadow is its own kind: it shows as a shade on the skin, not as hair.
+      const kind = el.classList.contains("avatar-hair-shadow") ? "shadow" : el.closest(".avatar-hair") || el.classList.contains("avatar-hair-sheen") ? "hair" : "";
+      return { poly, kind, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] };
+    });
+  const out = new Map<string, string>();
+  for (let y = 0.5; y < 64; y++) {
+    for (let x = 0.5; x < 64; x++) {
+      for (let k = shapes.length - 1; k >= 0; k--) {
+        const { poly, kind, box } = shapes[k];
+        if (x < box[0] || x > box[2] || y < box[1] || y > box[3] || !inside([x, y], poly)) continue;
+        if (kind) out.set(`${x},${y}`, kind);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** How many grid points (square units) show a different kind of hair (or none) in the two masks, within the box [x0, y0, x1, y1]. */
+function maskDifference(a: Map<string, string>, b: Map<string, string>, [x0, y0, x1, y1] = [0, 0, 64, 64]): number {
+  let n = 0;
+  for (const key of new Set([...a.keys(), ...b.keys()])) {
+    const [x, y] = key.split(",").map(Number);
+    if (x >= x0 && x <= x1 && y >= y0 && y <= y1 && a.get(key) !== b.get(key)) n++;
+  }
+  return n;
 }
 
 /** The head's outline, sampled densely along its edges. */
@@ -156,9 +208,11 @@ describe("AvatarPortrait", () => {
       for (const el of svg.querySelectorAll(".avatar-skin, .avatar-garment, .avatar-neck")) {
         expect(el.getAttribute("stroke"), ch.name).toBe(ink);
       }
+      // A cap's body is filled only; its outer edge is a separate line (`.avatar-hair-edge`) in the same tone.
       for (const el of svg.querySelectorAll("path.avatar-hair")) {
-        expect(el.getAttribute("stroke"), ch.name).toBe(hairEdge);
+        expect([hairEdge, "none"], ch.name).toContain(el.getAttribute("stroke"));
       }
+      for (const el of svg.querySelectorAll(".avatar-hair-edge")) expect(el.getAttribute("stroke"), ch.name).toBe(hairEdge);
     }
   });
 
@@ -380,9 +434,11 @@ describe("AvatarPortrait", () => {
     for (const length_cm of [18, 40]) {
       const back = draw({ skin: { hex: "#a07e56" }, hair: { length_cm, hex: "#341c02" } }).querySelector("path.avatar-hair");
       const d = back?.getAttribute("d") ?? "";
-      // The outer corners (x 17 and 47 at the bottom) are never reached by a straight line.
-      expect(d, String(length_cm)).not.toMatch(/L47,(42|54)|L17,(42|54)/);
-      expect(d).toMatch(/^M17,26 C/);
+      // It starts at the side of the head with a curve; its outer corners at the bottom are never reached by a straight line.
+      const [, left] = /^M([\d.]+),26 C/.exec(d) ?? [];
+      expect(left, String(length_cm)).toBeDefined();
+      const w = 32 - Number(left);
+      expect(d, String(length_cm)).not.toMatch(new RegExp(`L(${32 - w}|${32 + w}),`));
     }
   });
 
@@ -475,6 +531,68 @@ describe("AvatarPortrait", () => {
           const inside = polygonOf(line).every(([x, y]) => x > x0 && x < x1 && y > y0 && y < y1);
           expect(inside, `${label}: ${line.getAttribute("d")}`).toBe(false);
         }
+      }
+    }
+  });
+
+  it("draws each hair length band distinctly from its neighbours, for every texture, on light and dark skin", () => {
+    // Each band at a length inside it: shaved, cropped, short, chin-length, shoulder-length, long, waist-length.
+    const lengths = [1, 3, 10, 18, 30, 50, 75];
+    // The head as the list shows it at 32 px: bands that end above the shoulders must differ there too.
+    const head = [12, 5, 52, 45];
+    for (const [skin, hex] of [["#d7bd96", "#653700"], ["#292420", "#1b1612"]]) {
+      for (const texture of ["straight", "wavy", "curly", "coily"]) {
+        const masks = lengths.map((length_cm) => hairMask(draw({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm, texture, hex } }).querySelector("svg") as SVGSVGElement));
+        for (let i = 1; i < lengths.length; i++) {
+          const label = `${texture} ${lengths[i - 1]} vs ${lengths[i]} cm on ${skin}`;
+          // At least 80 square units of hair differ: about 50 px at 32 px, 320 at 128 px. Before this, cropped and
+          // short hair differed by 46 to 74 and looked the same.
+          expect(maskDifference(masks[i - 1], masks[i], lengths[i] <= 18 ? head : undefined), label).toBeGreaterThanOrEqual(80);
+        }
+      }
+    }
+  });
+
+  it("draws no line in the hair's edge tone across the forehead, so hair of the skin's darkness reads as hair, not a cap", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#3a312a", "#1b1612"], ["#f6ede4", "#eeeeea"]]) {
+      for (const texture of ["straight", "wavy", "curly", "coily"]) {
+        for (const hair of [{ length_cm: 3 }, { length_cm: 10 }, { length_cm: 18 }, { length_cm: 50, style: "bun" }, { length_cm: 30, style: "ponytail" }]) {
+          const label = `${texture} ${hair.length_cm} ${hair.style ?? "loose"} on ${skin}`;
+          const appearance = { skin: { hex: skin }, face: { shape: "oval" }, hair: { ...hair, texture, hex } };
+          const { hairEdge } = figureParams(appearance, { height: 1.75 }).colours;
+          const svg = draw(appearance).querySelector("svg") as SVGSVGElement;
+          // Every stroke in the edge tone, where it passes over the forehead (between the brows' outer ends), stays up
+          // on the crown or round a bun, above y 17: no arc along the hairline (which is at y 19 to 21).
+          // The hair's outlines: edge lines and stroked hair shapes (strands drawn in the sheen are marks, not outlines).
+          for (const el of svg.querySelectorAll(`.avatar-hair-edge, .avatar-hair path.avatar-hair[stroke="${hairEdge}"], .avatar-hair > path[stroke="${hairEdge}"]:not(.avatar-hair-sheen):not(.avatar-hair-strand):not(.avatar-hair-texture)`)) {
+            for (const [x, y] of polygonOf(el)) if (x > 25 && x < 39) expect(y, `${label} ${el.getAttribute("d")?.slice(0, 40)}`).toBeLessThan(17);
+          }
+        }
+      }
+    }
+  });
+
+  it("covers a shaved scalp and a mohawk's sides with the hair's shadow over the crown, edged in the hair's tone, with no grey copy in the crest or brushed hair", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#eeeeea"], ["#d7bd96", "#653700"]]) {
+      for (const shape of ["oval", "square", "round"]) {
+        for (const hair of [{ length_cm: 1 }, { length_cm: 5, style: "mohawk" }]) {
+          const label = `${hair.style ?? "shaved"} ${shape} on ${skin}`;
+          const appearance = { skin: { hex: skin }, face: { shape }, hair: { ...hair, texture: "straight", hex } };
+          const { hairEdge } = figureParams(appearance, { height: 1.75 }).colours;
+          const svg = draw(appearance).querySelector("svg") as SVGSVGElement;
+          const shadow = svg.querySelector(".avatar-hair-shadow") as Element;
+          expect(shadow, label).not.toBeNull();
+          // Drawn over the head, it holds the head's outline above the brows: the head's ink outline is hidden there.
+          const poly = polygonOf(shadow);
+          for (const p of headOutline(svg).filter(([, y]) => y < 20)) expect(depthInside(p, poly), `${label} at ${p.map((v) => v.toFixed(1))}`).toBeGreaterThan(0.2);
+          // Its outer edge, where it meets the backdrop, in the hair's tone off the skin, as other hair's is.
+          expect(shadow.parentElement?.querySelector(".avatar-hair-edge")?.getAttribute("stroke"), label).toBe(hairEdge);
+        }
+      }
+      for (const style of ["mohawk", "brushed"]) {
+        const svg = draw({ skin: { hex: skin }, hair: { length_cm: 5, texture: "straight", style, hex } }).querySelector("svg") as SVGSVGElement;
+        // No shrunken copy of a hair shape in the sheen (a transformed sheen shape): the light is drawn as strands.
+        for (const el of svg.querySelectorAll(".avatar-hair-sheen")) expect(el.getAttribute("transform"), `${style} on ${skin}`).toBeNull();
       }
     }
   });

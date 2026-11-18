@@ -106,6 +106,11 @@ export interface FigureColours {
   /** `sheenFor(hair)`: texture, a bun's form and strands on the hair; undefined without hair. */
   hairSheen?: string;
   /**
+   * The skin's own tone off itself (`toneOff(skin, skin)`): the 3D ears' forward edge is shaded toward it, so an ear
+   * shows against the head on every skin, as the brows and the collar line do.
+   */
+  earEdge: string;
+  /**
    * The 3D collar line where the neck meets the clothing: the clothing's colour toned off the neck by the same rule,
    * so a dark neck above dark clothing is not ringed in white ink.
    */
@@ -131,7 +136,7 @@ export interface FigureParams {
   build: string;
   colours: FigureColours;
   hair: HairShape;
-  /** Hair bulk relative to straight hair: curly and coily stand out further. */
+  /** Hair bulk relative to straight hair: curly and coily stand out further, more the longer the hair (`HAIR_BULK`). */
   hairVolume: number;
   /** The hair's texture as sent; anything else, or none, is straight. */
   hairTexture: HairTexture;
@@ -147,6 +152,8 @@ export interface FigureParams {
   extras: ExtraPart[];
   /** `face.ears`; pointed also for the body plan's `pointed ears` trait. */
   ears: Ears;
+  /** Whether hair or a head garment covers the ears (`earsCovered`): the portrait and the 3D figure both leave them out then. */
+  earsHidden: boolean;
   /** Known `features`, in the order given, each once; none on a hidden face. */
   features: Feature[];
   /** Seams whose two sides fall below 3:1 contrast, drawn with an outline in `colours.ink`. */
@@ -230,7 +237,29 @@ export function hairShape(lengthCm: number | undefined): HairShape {
 /** Bands long enough to fall round the head rather than lie on it. */
 export const FALLING_HAIR: readonly HairShape[] = ["chin-length", "shoulder-length", "long", "waist-length"];
 
+/** Styles worn down, so hair past the jaw falls round the head (the portrait's side locks, the 3D fall). */
+export const HANGS_LOOSE: readonly HairStyle[] = ["loose", "voluminous", "brushed", "swept_back"];
+/** Styles whose cap is combed or shaved smooth, whatever the texture. */
+const SMOOTH_CAP: readonly HairStyle[] = ["mohawk", "brushed", "swept_back"];
+
+/**
+ * Whether the ears are covered: by a head garment; by voluminous hair; by hair worn down past the jaw; or by a
+ * curly, coily or wavy cap at full bulk (chin-length and longer), which stands out past them. Cropped and short
+ * hair of every texture lies close at the sides, so the ears show. One rule for the portrait and the 3D figure.
+ */
+export function earsCovered(p: Pick<FigureParams, "headCovered" | "hair" | "hairStyle" | "hairTexture">): boolean {
+  if (p.headCovered) return true;
+  if (p.hair === "none") return false;
+  if (p.hairStyle === "voluminous") return true;
+  return FALLING_HAIR.includes(p.hair) && (HANGS_LOOSE.includes(p.hairStyle) || (p.hairTexture !== "straight" && !SMOOTH_CAP.includes(p.hairStyle)));
+}
+
 const HAIR_VOLUME: Readonly<Record<HairTexture, number>> = { straight: 1, wavy: 1.06, curly: 1.16, coily: 1.26 };
+/**
+ * How much of its texture's bulk (`HAIR_VOLUME`) hair of each band has: cropped curls lie close, short ones stand up
+ * a little, from chin length on the full mass. At full bulk at every length, 3 cm coily hair was a full afro.
+ */
+const HAIR_BULK: Readonly<Record<HairShape, number>> = { none: 0, shaved: 0, cropped: 0.2, short: 0.5, "chin-length": 1, "shoulder-length": 1, long: 1, "waist-length": 1 };
 const FACIAL_HAIR: readonly FacialHair[] = ["none", "stubble", "moustache", "goatee", "beard"];
 const POSTURES: readonly Posture[] = ["standing", "sitting", "reclining"];
 
@@ -300,7 +329,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
   const hair = hairHex && !covered.head ? hairShape(finite(hairRecord?.length_cm)) : "none";
   const textureWord = vocabKey(hairRecord?.texture) ?? "straight";
   const hairTexture: HairTexture = Object.hasOwn(HAIR_VOLUME, textureWord) ? (textureWord as HairTexture) : "straight";
-  const hairVolume = HAIR_VOLUME[hairTexture];
+  const hairVolume = 1 + (HAIR_VOLUME[hairTexture] - 1) * HAIR_BULK[hair];
   const styleKey = vocabKey(hairRecord?.style) ?? "";
   const hairCm = finite(hairRecord?.length_cm) ?? 0;
   const hairStyle: HairStyle =
@@ -335,6 +364,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     hairEdge: "",
     brow: "",
     collarEdge: "",
+    earEdge: toneOff(skin, skin),
   };
   colours.hairEdge = toneOff(colours.head, skin);
   colours.collarEdge = toneOff(colours.torso, colours.neck);
@@ -399,6 +429,7 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     hairTexture,
     hairStyle,
     headCovered: covered.head !== undefined,
+    earsHidden: earsCovered({ headCovered: covered.head !== undefined, hair, hairStyle, hairTexture }),
     facialHair,
     ...(beardLength !== undefined ? { beardLength, beardReach: beardReach(beardLength) } : {}),
     faceHidden,

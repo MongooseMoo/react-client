@@ -77,8 +77,8 @@ try {
     await sharp.waitForFunction(() => window.ready === true);
     await sharp.locator('table').screenshot({ path: resolve(out, 'face-portraits.png') });
     // Four rows to a picture, to read the details.
-    const rows = await sharp.locator('tr').all();
-    console.log(`${faceSet}: ${rows.length} portrait rows`);
+    const rows = await sharp.locator('tbody > tr').all();
+    console.log(`${faceSet}: ${rows.length} portrait rows (${await sharp.locator('tr').count()} tr)`);
     for (let i = 0; i < rows.length; i += 4) {
       const boxes = await Promise.all(rows.slice(i, i + 4).map((r) => r.boundingBox()));
       const top = boxes[0].y;
