@@ -76,6 +76,11 @@ function textured(
   amount: (q: THREE.Vector3) => number = () => 1,
   /** The height where the waves are in step with the cap's (`along` speeds them up only below and above it). */
   pivot = 0,
+  /**
+   * Wavy hair only: how far, in radians of a wave, a wave's crest swings up and down round the head, how many times
+   * round, and how far it is broken strand by strand (a fast swing that varies from column to column).
+   */
+  wave: { swing: number; lobes: number; strands: number } = { swing: 1.6, lobes: 5, strands: 0 },
 ): Float32Array | undefined {
   if (texture === "straight") return undefined;
   const bumps = new Float32Array(g.getAttribute("position").count);
@@ -99,7 +104,7 @@ function textured(
     const [rise, f] =
       texture === "wavy"
         ? // Each wave's crest swings up and down round the head: set level all round, the waves were stripes.
-          [0.05, Math.sin(down * 7 + 1.6 * Math.sin(around * 5))]
+          [0.05, Math.sin(down * 7 + wave.swing * Math.sin(around * wave.lobes) + wave.strands * Math.sin(around * 17))]
         : texture === "curly"
           ? [0.09, Math.sin(around * 7) * Math.sin(down * 9)]
           : [0.1, Math.sin(around * 11) * Math.sin(down * 14)];
@@ -947,6 +952,7 @@ export function figureParts(p: FigureParams): Part[] {
     // 5,000-triangle budget). A chin-length one (`matched`) gets 10 rows, four or more to each of the cap's waves; a long
     // wavy fall 12, for its waves.
     const ringed = long && (p.hairTexture === "curly" || p.hairTexture === "coily");
+    const wavyFall = long && p.hairTexture === "wavy";
     const rows = ringed ? (p.hairTexture === "coily" ? 12 : 14) : matched ? 10 : fine ? 12 : 8;
     const columns = ringed && p.hairTexture === "curly" ? 16 : 20;
     const fall = new THREE.CylinderGeometry(headR, headR, top - bottom, columns, rows, true, -around / 2, around);
@@ -1071,7 +1077,20 @@ export function figureParts(p: FigureParams): Part[] {
       : // Chin-length curls rise from under the cap over their first 0.12 head radii: at full height from the top, the
         // fall's top edge stood off the cap at the sides (where the cap's own curls lie lower toward its rim), and from
         // behind and above the eye passed under it, down between hair and head and out at the face: two dark specks.
-        textured(hang.geometry, centreOf, p.hairTexture, headR, along, undefined, (q) => (matched ? smooth((top - q.z) / (headR * 0.12)) : inFall(q.z)), matched ? top : 0);
+        // A long wavy fall's waves are in step with the cap's where they meet (`top`), and swing round the head in two
+        // broad arcs broken strand by strand: swinging five times round as the cap's do, over the fall's 20 columns and
+        // 12 rows, they broke into blotches like cobbles; level, they were a stack of rings.
+        textured(
+          hang.geometry,
+          centreOf,
+          p.hairTexture,
+          headR,
+          along,
+          undefined,
+          (q) => (matched ? smooth((top - q.z) / (headR * 0.12)) : inFall(q.z)),
+          matched || wavyFall ? top : 0,
+          wavyFall ? { swing: 1.3, lobes: 2, strands: 0.3 } : undefined,
+        );
     // Near its top, lit as the cap it lies on: with the fall's own upright normals the light changed in a line there.
     // (Its inner side, the second half of the two-sided geometry, faces the other way.)
     {
@@ -1100,7 +1119,8 @@ export function figureParts(p: FigureParams): Part[] {
     const fallPart = sheened(named({ ...hang, ...straightStrands }, "hair"), bumps, c.hairSheen);
     // Ringlets' sheen softer than the texture's on the cap (at its full strength each lock's turns were bright dashes),
     // brought up to the cap's average where they meet it.
-    const soft = ringed ? 0.55 : 1;
+    // A long wavy fall's sheen a little softer too, so its waves read as light on flowing hair rather than patches.
+    const soft = ringed ? 0.55 : wavyFall ? 0.7 : 1;
     if (bumps && fallPart.shade && !matched) {
       // Ringlets fade in from their own column's top.
       const half = fallAt.count / 2;

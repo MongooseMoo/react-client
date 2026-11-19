@@ -1262,6 +1262,30 @@ describe("round seven: hair from the room's own angles, locks, lids and the fall
     }
   });
 
+  it("runs a long wavy fall's waves on from strand to strand, not in patches that change from one column to the next", () => {
+    for (const length_cm of [30, 50, 75]) {
+      const { p } = standing({ skin: { hex: "#eadaba" }, hair: { length_cm, texture: "wavy", hex: "#653700" } });
+      const fall = figureParts(p).find((x) => x.name === "hair");
+      const shade = fall?.shade as Float32Array;
+      // The fall's outer side: 21 columns by 13 rows; each column's shade down the fall, below its first rows.
+      const columns = 20;
+      const rows = shade.length / 2 / (columns + 1);
+      const column = (ix: number) => Array.from({ length: rows - 3 }, (_, k) => shade[(k + 3) * (columns + 1) + ix]);
+      const correlation = (a: number[], b: number[]) => {
+        const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+        const [ma, mb] = [mean(a), mean(b)];
+        let [ab, aa, bb] = [0, 0, 0];
+        for (let k = 0; k < a.length; k++) [ab, aa, bb] = [ab + (a[k] - ma) * (b[k] - mb), aa + (a[k] - ma) ** 2, bb + (b[k] - mb) ** 2];
+        return ab / Math.sqrt(aa * bb || 1);
+      };
+      // Round the back, between neighbouring columns: the same waves, a little shifted (master's swung so far between
+      // columns that neighbours' waves hardly matched, patches like cobbles).
+      const pairs = Array.from({ length: 12 }, (_, k) => correlation(column(k + 4), column(k + 5)));
+      const average = pairs.reduce((s, x) => s + x, 0) / pairs.length;
+      expect(average, `wavy ${length_cm} cm`).toBeGreaterThan(0.6);
+    }
+  });
+
   it("draws each eye's white and its lid round, with at least twelve sides, not six like a nut", () => {
     for (const skin of ["#f6ede4", "#eadaba"]) {
       const { p, headR } = standing({ skin: { hex: skin }, hair: { length_cm: 3, texture: "straight", hex: "#653700" } });
