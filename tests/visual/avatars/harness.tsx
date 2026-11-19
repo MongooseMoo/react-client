@@ -3,7 +3,8 @@
  * `?view=portraits` portraits at the People list size and at 4x;
  * `?view=vocab` one portrait per game vocabulary value and beard length;
  * `?view=plan` plan tokens; `?view=figures&angle=front|three` 3D close-ups
- * (`angle=back` from behind; `&set=vocab`: every hair style, build and beard length instead of the test characters);
+ * (`angle=back` from behind; `az=20&el=25` from that many degrees round and above, as the room's views see a person;
+ * `scale=2` sharper cells; `&set=vocab`: every hair style, build and beard length instead of the test characters);
  * `?view=room&n=8` the real 3D view (Dollhouse), with `window.measure(seconds)`
  * moving one person every frame and reporting frame times.
  */
