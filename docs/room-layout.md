@@ -206,12 +206,16 @@ on the hair, so it reads as the hair's edge (a grey edge on black hair over dark
 band. At the hairline the same tone is drawn on the hair itself: across the forehead and temples
 the hair's last rows are shaded in strands of different lengths toward it, fading out a little way up, with no separate
 line, band or row of points, and not on to the sides of the head. The hair's edge comes in to lie on the head all
-round, so even full curly and coily hair meets the forehead and temples with nothing showing between hair and head.
+round, so even full curly and coily hair meets the forehead and temples with nothing showing between hair and head,
+and its rim is closed in to the head by a narrow band, so from a little above and up to 40 degrees to either side
+the eye never looks in under it to the room behind. From behind, nothing shows through hair worn down: its front
+edges come out from just inside the hair over the crown, and lie on the head below it; curls and coils to
+the jaw lie clear of the curls over the crown, which never show through them.
 The collar line on the neck is the clothing's colour toned off the neck the same way. Brows
 are the hair's colour toned the same way, set below the hair's front edge and clear of it; eyes
 have a white and an iris in the eye colour, or a dark pupil when there is no eye colour, and on skin
-nearly as pale as the white (very pale to light) a six-sided lid round the white in the skin's tone
-off it. Cropped hair lies close; short hair stands plainly fuller over the crown. A beard or stubble covers the cheeks and chin up to the
+nearly as pale as the white (very pale to light) a lid round the white in the skin's tone off it;
+the white and the iris are shallow round domes on the face and the lid a round ring, never six-sided. Cropped hair lies close; short hair stands plainly fuller over the crown. A beard or stubble covers the cheeks and chin up to the
 sideburns, leaving the mouth; a beard is shaded in strands toward its own tone off the skin, so a
 beard of the skin's darkness or paleness shows as a beard; stubble is a shadow plus a stipple of
 points toned off the skin. Curly, coily and wavy hair is
@@ -222,21 +226,28 @@ crown and a tie. Brushed hair has a parting on the left with the scalp showing a
 combed fringe sweeping from it down toward the right temple; a mohawk's crest stands up as a ridge
 along the middle of the head from the forehead to the nape. Hair worn down past the jaw follows
 the back of the head, comes in at the nape and spreads out over the shoulders; straight hair shows
-strands and uneven ends, wavy hair waves down it. It starts lying on the hair over the crown, as
+strands and uneven ends, wavy hair waves down it in broad slanting waves broken a little strand by
+strand. It starts lying on the hair over the crown, as
 close to the head at the sides as that hair is, and comes out to its own outline below, without a
-seam or step; toward the face its top comes down and its front edges lie on the head past the ears.
+seam or step; toward the face its top comes down and its front edges lie on the head past the ears,
+then come forward beside the cheek and jaw and go back in toward the neck below the jaw, each edge
+strand by its own amount.
 Curly and coily hair to the jaw carries on the round and the curls of the hair over the crown and
 closes in from the hair's own width to end above the jaw: one rounded mass that never stands out
 past the head at the ears. Curly and coily hair past the jaw hangs in ringlets: locks side by side
-with open grooves between them, each twisting down its length out of step with its neighbours and
-ending a little longer or shorter than them; coils in narrower, tighter locks than curls. A figure is kept under 5,000 triangles
+with open grooves between them, each with its own twist rate, phase, width and length, so no
+pattern repeats from lock to lock and no row of highlights lines up across them, their sheen softer
+than the curls over the crown, and each coming in below the crown at its own height; coils in
+narrower, tighter locks than curls. A figure is kept under 5,000 triangles
 with every feature and trait. The portrait outlines skin and clothing in the dark or light line, and hair in
 the hair's own edge tone along its outer edge only, never along the hairline across the forehead
 (that line made dark hair on dark skin look like a cap). A shaved scalp and a mohawk's sides are a
 shadow of the hair over the whole crown, edged the same way, with a stipple of stubble points in
 that edge tone; cropped curls and coils end in curls along the forehead, and from chin length on
 they come down each temple and end in curls across the forehead, never a straight edge like a
-hat's brim. Short hair stands higher and wider than cropped. Behind curly and coily hair worn down,
+hat's brim; long and waist-length curly and coily locks in front of the face start inside the hair
+over the crown at the temples and spread out below it, never jutting out beside it. Short hair
+stands higher and wider than cropped. Behind curly and coily hair worn down,
 the hair behind the head stays inside the curls over the crown and the locks in front, so its
 outline never shows beside them. A mohawk's crest and brushed hair show
 their light as lines, not as a lighter copy of themselves. Hair over the head is one mass reaching over the crown, so no bare

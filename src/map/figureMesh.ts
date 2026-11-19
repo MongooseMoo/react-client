@@ -76,6 +76,11 @@ function textured(
   amount: (q: THREE.Vector3) => number = () => 1,
   /** The height where the waves are in step with the cap's (`along` speeds them up only below and above it). */
   pivot = 0,
+  /**
+   * Wavy hair only: how far, in radians of a wave, a wave's crest swings up and down round the head, how many times
+   * round, and how far it is broken strand by strand (a fast swing that varies from column to column).
+   */
+  wave: { swing: number; lobes: number; strands: number } = { swing: 1.6, lobes: 5, strands: 0 },
 ): Float32Array | undefined {
   if (texture === "straight") return undefined;
   const bumps = new Float32Array(g.getAttribute("position").count);
@@ -99,7 +104,7 @@ function textured(
     const [rise, f] =
       texture === "wavy"
         ? // Each wave's crest swings up and down round the head: set level all round, the waves were stripes.
-          [0.05, Math.sin(down * 7 + 1.6 * Math.sin(around * 5))]
+          [0.05, Math.sin(down * 7 + wave.swing * Math.sin(around * wave.lobes) + wave.strands * Math.sin(around * 17))]
         : texture === "curly"
           ? [0.09, Math.sin(around * 7) * Math.sin(down * 9)]
           : [0.1, Math.sin(around * 11) * Math.sin(down * 14)];
@@ -131,7 +136,8 @@ function ringlets(
   around: number,
   headR: number,
   ends: number,
-  amount: (q: THREE.Vector3) => number,
+  /** How much of the rise a vertex gets, from its position and its column. */
+  amount: (q: THREE.Vector3, column: number) => number,
 ): Float32Array {
   const positions = g.getAttribute("position");
   const half = positions.count / 2;
@@ -145,20 +151,27 @@ function ringlets(
     const [ix, iy] = [j % (columns + 1), Math.floor(j / (columns + 1))];
     const lock = Math.floor(ix / 2);
     const middle = ix % 2 === 1;
-    const turn = (2 * Math.PI * iy) / perTurn + lock * 2.4;
+    // Each lock its own: how many rows a turn takes (two thirds to one and a half times `perTurn`), where its turns
+    // start, how far it stands out. All alike, the turns' bright sides lined up from lock to lock in a slanting lattice
+    // of dashes, cable knit or scales rather than loose curls.
+    const own = (k: number) => {
+      const x = Math.sin(lock * 12.9898 + k * 78.233) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    const turn = (2 * Math.PI * iy) / (perTurn * (0.67 + 0.83 * own(1))) + 2 * Math.PI * own(2);
     const flat = Math.min(1, Math.min(ix, columns - ix) / 2);
-    const lift = (middle ? 0.6 + 0.4 * Math.sin(turn) : 0.12) * flat;
+    const lift = (middle ? (0.45 + 0.3 * own(3)) + 0.3 * Math.sin(turn) : 0.12) * flat;
     // Sideways by up to 0.35 of a column's width, a quarter turn behind the swing out.
-    const side = middle ? 0.35 * Math.cos(turn) * flat : 0;
+    const side = middle ? (0.2 + 0.15 * own(4)) * Math.cos(turn) * flat : 0;
     q.fromBufferAttribute(positions, i);
     d.subVectors(q, centre(q));
     const r = Math.max(1e-6, Math.hypot(d.x, d.y));
-    const k = amount(q);
+    const k = amount(q, ix);
     const across = (side * r * around) / columns;
     q.x += ((d.x / r) * headR * 0.12 * lift + (-d.y / r) * across) * k;
     q.y += ((d.y / r) * headR * 0.12 * lift + (d.x / r) * across) * k;
     // Uneven ends: each lock's tip lower by its own amount.
-    if (iy === rows && middle) q.z -= ends * (0.5 + 0.5 * Math.sin(lock * 1.7));
+    if (iy === rows && middle) q.z -= ends * own(5);
     positions.setXYZ(i, q.x, q.y, q.z);
     raised[i] = lift;
   }
@@ -264,6 +277,43 @@ function twoSided(g: THREE.BufferGeometry): THREE.BufferGeometry {
   g.dispose();
   back.dispose();
   if (!both) throw new Error("hair could not be made two-sided");
+  return both;
+}
+
+/**
+ * A band closing a sphere cap's rim (the last of its `rows`, laid out in rows of `across + 1` vertices) in to the head:
+ * from each rim vertex straight in toward the cap's centre `at` to `inner(direction)` from it, drawn from both sides.
+ * Its vertices are the rim's, then the inner ones, so a shade along the rim applies to both rows.
+ */
+function rimLip(g: THREE.BufferGeometry, across: number, rows: number, at: THREE.Vector3, inner: (d: THREE.Vector3) => number): THREE.BufferGeometry {
+  const pos = g.getAttribute("position");
+  const positions: number[] = [];
+  const d = new THREE.Vector3();
+  for (let ix = 0; ix <= across; ix++) positions.push(pos.getX(rows * (across + 1) + ix), pos.getY(rows * (across + 1) + ix), pos.getZ(rows * (across + 1) + ix));
+  for (let ix = 0; ix <= across; ix++) {
+    d.set(positions[ix * 3], positions[ix * 3 + 1], positions[ix * 3 + 2]).sub(at);
+    const r = Math.min(d.length(), inner(d.clone().normalize()));
+    d.setLength(r).add(at);
+    positions.push(d.x, d.y, d.z);
+  }
+  const index: number[] = [];
+  for (let ix = 0; ix < across; ix++) {
+    const [a, b, c, e] = [ix, ix + 1, across + 1 + ix, across + 2 + ix];
+    index.push(a, c, b, b, c, e);
+  }
+  const lip = new THREE.BufferGeometry();
+  lip.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  lip.setIndex(index);
+  lip.computeVertexNormals();
+  const both = twoSided(lip);
+  // Lit as the cap's rim above it, on both sides: with its own normals (turned down and in) it was lit dark and drew a
+  // dark line along the hairline on pale skin.
+  const normals = both.getAttribute("normal");
+  const rim = g.getAttribute("normal");
+  for (let i = 0; i < normals.count; i++) {
+    const k = rows * (across + 1) + (i % (across + 1));
+    normals.setXYZ(i, rim.getX(k), rim.getY(k), rim.getZ(k));
+  }
   return both;
 }
 
@@ -621,24 +671,34 @@ export function figureParts(p: FigureParams): Part[] {
       // iris in the eye's colour at its front: an eye in its colour alone vanished on skin of its own darkness.
       // Without an eye colour, a dark pupil there, as the portrait draws a pupil: drawn only with a colour, a person
       // without one had no eyes in 3D, only brows.
-      const seat = 0.63;
-      const centre = new THREE.Vector3(ex, faceY(ex, ez) - eyeR * seat, headCentreZ + ez);
-      // Six facets round: eyes on every described face (not only those with an eye colour) took the heaviest figure
-      // over the 5,000-triangle budget at eight.
-      out.push(named(ball(centre, eyeR, EYE_WHITE, undefined, 6), "eye"));
-      // The iris stands a little proud of the white, so its facets are not lost inside the white's.
-      out.push(named(ball(centre.clone().add(new THREE.Vector3(0, eyeR * 0.45, 0)), eyeR * 0.6, c.eyes ?? EYE_PUPIL, undefined, 6), "eye"));
+      // Where the eye sits on the face, and which way the face looks there (the head ellipsoid's normal at the eye).
+      const onFace = new THREE.Vector3(ex, faceY(ex, ez), headCentreZ + ez);
+      const outward = new THREE.Vector3(side * 0.47, 1, 0.12).normalize();
+      const turned = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), outward);
+      // The white is a shallow dome on the face, round (twelve facets round it) and standing a third of its radius
+      // proud; the iris or pupil a smaller dome on it, on a sphere just outside the white's. Balls of six facets read as
+      // hex nuts close up (a ball of twelve took the heaviest figure over the 5,000-triangle budget); a dome of twelve
+      // facets round costs a third of a twelve-facet ball.
+      const reach = 0.6;
+      const domeR = eyeR / Math.sin(reach);
+      const domeCentre = onFace.clone().addScaledVector(outward, -domeR * Math.cos(reach) + eyeR * 0.05);
+      const dome = (r: number, theta: number, colour: string, facets: number) => {
+        const g = new THREE.SphereGeometry(r, facets, theta > 0.4 ? 2 : 1, 0, Math.PI * 2, 0, theta);
+        g.applyQuaternion(turned);
+        g.translate(domeCentre.x, domeCentre.y, domeCentre.z);
+        return named({ geometry: g, colour }, "eye");
+      };
+      out.push(dome(domeR, reach, EYE_WHITE, 12));
+      out.push(dome(domeR * 1.015, Math.asin(Math.min(1, (eyeR * 0.6) / (domeR * 1.015))), c.eyes ?? EYE_PUPIL, 10));
       if (lidTone) {
         // On skin nearly as pale as the white, a lid round it in the skin's tone off the white: without it the white
-        // vanished into very pale skin and the eye read as a dark dot. A ring lying on the face round the white.
-        // Six-sided like the white and turned with it, three sides to its section with one pointing out, its inner edge
-        // (one eye radius at its corners) where the white meets the face's flat facets, so the white stays whole inside
-        // it and no skin shows between them.
-        const lid = new THREE.TorusGeometry(eyeR * 1.1, eyeR * 0.2, 3, 6);
-        // Lying in the face's slope there (the head ellipsoid's normal at the eye), so its side toward the nose is not
-        // buried in the face.
-        lid.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(side * 0.47, 1, 0.12).normalize()));
-        lid.translate(centre.x, centre.y + eyeR * (seat + 0.06), centre.z);
+        // vanished into very pale skin and the eye read as a dark dot. A round ring lying on the face round the white,
+        // twelve facets round like the white (six read as a hex nut), three sides to its section with one pointing out,
+        // its inner edge where the white meets the face, so no skin shows between them.
+        const lid = new THREE.TorusGeometry(eyeR * 1.1, eyeR * 0.2, 3, 12);
+        // Lying in the face's slope there, so its side toward the nose is not buried in the face.
+        lid.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward));
+        lid.translate(onFace.x, onFace.y + eyeR * 0.06, onFace.z);
         out.push(named({ geometry: lid, colour: lidTone }, "eyelid"));
       }
       // A brow over each eye, in the hair colour toned off the skin (`brow`), as in the portrait, following the face.
@@ -721,8 +781,13 @@ export function figureParts(p: FigureParams): Part[] {
    * falling hair covers the cap and meets it, coming in above the fall's top. The two textures crossing there drew a
    * jagged seam where the cap's lower edge ran over the fall.
    */
-  const kept = (d: THREE.Vector3) =>
-    falling && !matched ? 1 - smooth((fallTop + headR * 0.3 - (d.z + headCentreZ)) / (headR * 0.3)) * smooth((0.45 - d.y / headR) / 0.3) : 1;
+  const keptOver = (d: THREE.Vector3, over: number) =>
+    falling && !matched ? 1 - smooth((fallTop + headR * over - (d.z + headCentreZ)) / (headR * over)) * smooth((0.45 - d.y / headR) / 0.3) : 1;
+  // Over 0.15 head radii above the fall's top, its bumps' height over twice that, so the crown's outline comes down into
+  // the fall's. Over 0.3 head radii, with the fall's own texture fading in over 0.2 below its top, a smooth band half a
+  // head radius tall ran round the back between the crown's coils and the fall's locks, read as a ledge under the crown.
+  const kept = (d: THREE.Vector3) => keptOver(d, 0.15);
+  const keptRise = (d: THREE.Vector3) => keptOver(d, 0.3);
   if (p.headCovered || p.hair !== "none") {
     // Textured hair needs enough facets for its curls to show; coils are tighter, so they need more. A hairline drawn as
     // strands on the cap needs columns enough for them: twice straight hair's 16.
@@ -779,11 +844,12 @@ export function figureParts(p: FigureParams): Part[] {
     // inside showed past the face at the temples, and the room's wall through it, its faces turned away not drawn.
     // Read from a point's direction from the cap's centre (its polar angle in the unturned cap), which the cap's bulge,
     // tuck and texture all leave as it is.
-    const tuckAt = (at: THREE.Vector3) => {
-      if (p.headCovered) return 0;
+    /** How far from the cap's crown (0) to its rim (1) a point is: its polar angle in the unturned cap over the cap's reach. */
+    const rimward = (at: THREE.Vector3) => {
       const local = at.clone().sub(capAt).applyQuaternion(unturn).divide(capScale);
-      return smooth((Math.acos(Math.max(-1, Math.min(1, local.y / (local.length() || 1)))) / capReach - 0.6) / 0.4);
+      return Math.acos(Math.max(-1, Math.min(1, local.y / (local.length() || 1)))) / capReach;
     };
+    const tuckAt = (at: THREE.Vector3) => (p.headCovered ? 0 : smooth((rimward(at) - 0.6) / 0.4));
     /**
      * The tuck at a point on the cap: the factor its distance across from the head's middle line is scaled by, in across
      * and not down (its height kept, so the hairline stays as clear of the brows).
@@ -833,7 +899,7 @@ export function figureParts(p: FigureParams): Part[] {
       const q = new THREE.Vector3();
       const keep = Array.from({ length: positions.count }, (_, i) => kept(q.fromBufferAttribute(positions, i).sub(capAt)));
       // Curls lift less toward the tucked rim, so it stays on the head.
-      const bumps = textured(capPart.geometry, () => capAt, capTexture, headR, 1, undefined, (at) => curlsAt(at) * kept(at.clone().sub(capAt)) * (1 - 0.7 * tuckAt(at)));
+      const bumps = textured(capPart.geometry, () => capAt, capTexture, headR, 1, undefined, (at) => curlsAt(at) * keptRise(at.clone().sub(capAt)) * (1 - 0.7 * tuckAt(at)));
       // The texture's peaks toward the sheen, faded out where the falling hair meets the cap (`kept`).
       const shade = new Float32Array(positions.count);
       // Faded to the texture's average shade, not to none: faded to the hair's plain colour it left a dark band there.
@@ -860,6 +926,15 @@ export function figureParts(p: FigureParams): Part[] {
       }
       const tone = edged ? c.hairEdge : c.hairSheen;
       out.push(bumps || edged ? { ...capPart, shade, tone } : capPart);
+      // Its rim turned in to the head all round, a narrow band from the rim to just inside the head's surface: from a
+      // little to one side the eye looked past the far side of the face in under the rim, onto the cap's inner side,
+      // which (its faces turned away, not drawn) let the room's wall show in a thin pale sliver between hair and face.
+      // Closing the rim costs one row; the whole cap two-sided took the heaviest figure over the 5,000-triangle budget.
+      const lip = rimLip(capPart.geometry, across, rows, capAt, (d) => (headR * 0.97) / Math.hypot(d.x / headScale.x, d.y / headScale.y, d.z / headScale.z));
+      // Rim and inner row, on each of its two sides.
+      const rimShade = new Float32Array(4 * (across + 1));
+      for (let k = 0; k < 4; k++) for (let ix = 0; ix <= across; ix++) rimShade[k * (across + 1) + ix] = shade[rows * (across + 1) + ix];
+      out.push(named(bumps || edged ? { geometry: lip, colour: capColour, shade: rimShade, tone } : { geometry: lip, colour: capColour }, "rim"));
     }
   }
   if (falling && bottom !== undefined) {
@@ -877,6 +952,7 @@ export function figureParts(p: FigureParams): Part[] {
     // 5,000-triangle budget). A chin-length one (`matched`) gets 10 rows, four or more to each of the cap's waves; a long
     // wavy fall 12, for its waves.
     const ringed = long && (p.hairTexture === "curly" || p.hairTexture === "coily");
+    const wavyFall = long && p.hairTexture === "wavy";
     const rows = ringed ? (p.hairTexture === "coily" ? 12 : 14) : matched ? 10 : fine ? 12 : 8;
     const columns = ringed && p.hairTexture === "curly" ? 16 : 20;
     const fall = new THREE.CylinderGeometry(headR, headR, top - bottom, columns, rows, true, -around / 2, around);
@@ -904,17 +980,43 @@ export function figureParts(p: FigureParams): Part[] {
     // Long hair lies back over the shoulders rather than through them: moved back below the nape, against the head above it.
     const back = (z: number) => (long ? -headR * 0.25 * smooth((nape - z) / (0.5 * (nape - bottom))) : 0);
     const positions = fall.getAttribute("position");
+    /**
+     * How far down from its top each column's ringlets take to come in, 0.05 to 0.3 head radii, each lock its own: all
+     * coming in over one height, the locks began in a level line round the back of the head under the crown's coils, a
+     * ledge. (Raising the locks' tops up the crown instead notched the head's outline between them.)
+     */
+    const comeIn = (ix: number) => {
+      const lock = Math.floor(Math.min(ix, columns - 1) / 2);
+      const x = Math.sin(lock * 12.9898 + 7 * 78.233) * 43758.5453;
+      return headR * (0.05 + 0.25 * (x - Math.floor(x)));
+    };
+    /** Each column's top, once placed, for its texture to rise from. */
+    const columnTops = new Float64Array(columns + 1);
     for (let i = 0; i < positions.count; i++) {
       // At its two front edges its top comes down a quarter of a head radius, toward where the cap's edge runs down the
       // side of the head, each column's rows spread over what is left: square at the corner, the fall's top and front
       // edge met in a hard corner at temple height, seen from the side.
       const fromBack = Math.abs(Math.atan2(positions.getX(i), -positions.getY(i)));
       const columnTop = long ? top - headR * 0.25 * smooth((fromBack - 1.6) / 0.3) : top;
+      columnTops[i % (columns + 1)] = columnTop;
       const z = columnTop - ((columnTop - bottom) * (top - positions.getZ(i))) / (top - bottom);
       const k = across(z);
       // Straight hair's ends uneven: every other strand a little longer.
       const ragged = !fine && Math.abs(z - bottom) < 1e-5 && (i % (columns + 1)) % 2 ? -0.012 * s : 0;
-      let [x, y] = [positions.getX(i) * headScale.x * v * k, positions.getY(i) * headScale.y * v * k + back(z)];
+      // Long hair's front edges follow the face: brought forward round the head beside the cheek and jaw (up to 0.3
+      // radians, the front column most), then back in toward the neck below the jaw, each edge column by its own share so
+      // the edge is uneven. Hanging straight down from the temple, the fall's front edge ran behind the cheek and jaw as a
+      // plain straight line, seen from the side.
+      let [gx, gy] = [positions.getX(i), positions.getY(i)];
+      if (long) {
+        const ixEdge = Math.min(i % (columns + 1), columns - (i % (columns + 1)));
+        const toFront = Math.max(0, 1 - ixEdge / 3) * (0.8 + 0.2 * Math.sin(ixEdge * 2.3 + (i % (columns + 1) > columns / 2 ? 1 : 0)));
+        const cheek = smooth((headCentreZ - headR * 0.05 - z) / (headR * 0.35)) * (1 - smooth((headCentreZ - headR * 0.85 - z) / (headR * 0.45)));
+        const turn = 0.3 * toFront * cheek * Math.sign(gx);
+        // Turned toward +y (the face) on each side: counter-clockwise on the +x side, clockwise on the -x side.
+        [gx, gy] = [gx * Math.cos(turn) - gy * Math.sin(turn), gx * Math.sin(turn) + gy * Math.cos(turn)];
+      }
+      let [x, y] = [gx * headScale.x * v * k, gy * headScale.y * v * k + back(z)];
       // Never inside the cap: it lies just outside the cap's surface where that is further out, so the cap's lower edge
       // at the back is covered and the fall's top lies on the cap instead of crossing it. 2.5% out: more than the sag of
       // the fall's flat facets between its vertices round and down the curved cap, so the cap never shows through.
@@ -932,10 +1034,27 @@ export function figureParts(p: FigureParams): Part[] {
       // never stand out past it, at the ears or below the crown.
       const own = smooth((top - z) / (headR * 0.6)) * edge;
       const u = (top - z) / (top - bottom);
+      // What the fall lies on there: the cap, or below the cap's rim (down the side of the face) the head itself, so the
+      // front edges lie on the head there too. Chin-length curls kept their front edges at the cap's width at their
+      // top all the way down, standing off the side of the head where the cap's rim runs down it: from behind and to
+      // one side the wall showed between them and the cap, two dark specks at ear level.
+      const dz = (z - headCentreZ) / (headR * headScale.z);
+      const onHead = r > 0 && Math.abs(dz) < 1 ? (headR * 1.02 * Math.sqrt(1 - dz * dz)) / Math.hypot(x / r / headScale.x, y / r / headScale.y) : 0;
+      // Its two front edges a little inside the cap where the cap is, so the cap's outline covers them: lying just
+      // outside it they met it along a crack a fraction of a millimetre wide, which from behind and to one side showed
+      // the room in a column of light dots near the top of the fall.
+      const front = 1 - Math.min(1, Math.min(ix, columns - ix) / 2);
+      // Only near their top, where they come out from under the cap: further down, inside it, the cap came through
+      // them in dots from behind and to one side.
+      const base = cap > 0 ? cap * (1 - 0.06 * front * smooth((z - (columnTop - headR * 0.2)) / (headR * 0.15))) : onHead;
+      // Curls and coils to the jaw turn faster than the cap's below the top, so out of step with them: they lie out by
+      // the height of the cap's curls where they cover it (from 0.12 head radii below their top), or the cap's curls came
+      // through between theirs at the side.
+      const overCurls = cap > 0 ? headR * 0.06 * smooth((top - z) / (headR * 0.12)) : 0;
       const want = rounded
-        ? Math.max(cap, capAcross(x, y, top) * 1.012 * (1 - rounded * u * u))
-        : cap > 0
-          ? cap + (Math.max(r, cap) - cap) * own
+        ? base + overCurls + (Math.max(base + overCurls, capAcross(x, y, top) * 1.012 * (1 - rounded * u * u)) - base - overCurls) * edge
+        : base > 0
+          ? base + (Math.max(r, base) - base) * own
           : r;
       if (r > 0) [x, y] = [(x * want) / r, (y * want) / r];
       positions.setXYZ(i, x, y, z + ragged);
@@ -943,7 +1062,7 @@ export function figureParts(p: FigureParams): Part[] {
     fall.computeVertexNormals();
     const hang = { geometry: twoSided(fall), colour: c.head };
     /** How much of its texture the fall has at height z: none at its top, where it meets the cap, all of it 0.2 head radii down. */
-    const inFall = (z: number) => smooth((top - z) / (headR * 0.2));
+    const inFall = (z: number) => smooth((top - z) / (headR * (ringed ? 0.1 : 0.2)));
     // A wavy fall past the jaw waves as tightly as its rows allow (three rows to a wave, its 7 waves per head radius at
     // up to 1.6 times the cap's): at 0.4 it was smooth. A chin-length wavy fall keeps that slow swing, the bob that
     // coils and curls of that length are told from.
@@ -952,8 +1071,32 @@ export function figureParts(p: FigureParams): Part[] {
     const along = matched ? (p.hairTexture === "coily" ? 1.3 : 1.6) : p.hairTexture === "wavy" && long ? Math.max(0.4, Math.min(1.6, (rows * 2 * Math.PI) / (3 * 7 * ((top - bottom) / headR)))) : 0.4;
     const centreOf = (q: THREE.Vector3) => new THREE.Vector3(0, back(q.z), q.z);
     const bumps = ringed
-      ? ringlets(hang.geometry, columns, p.hairTexture === "coily" ? 3 : 4, centreOf, around, headR, 0.03 * s, (q) => inFall(q.z))
-      : textured(hang.geometry, centreOf, p.hairTexture, headR, along, undefined, (q) => (matched ? 1 : inFall(q.z)), matched ? top : 0);
+      ? // Each lock rises from its own column's top (lower at the two front edges, where the fall's top comes down the
+        // side of the head, higher where a lock starts up the crown): read from the fall's top, the front locks were
+        // already raised where they start and stood off the cap at the side, and from behind and above the wall showed
+        // under them.
+        ringlets(hang.geometry, columns, p.hairTexture === "coily" ? 3 : 4, centreOf, around, headR, 0.03 * s, (q, column) =>
+          // Standing out slowly, over 0.45 head radii: standing out within 0.1 to 0.2, the locks bulged out under the
+          // crown's outline from behind in a shelf.
+          smooth((columnTops[column] - q.z) / (headR * 0.45)),
+        )
+      : // Chin-length curls rise from under the cap over their first 0.12 head radii: at full height from the top, the
+        // fall's top edge stood off the cap at the sides (where the cap's own curls lie lower toward its rim), and from
+        // behind and above the eye passed under it, down between hair and head and out at the face: two dark specks.
+        // A long wavy fall's waves are in step with the cap's where they meet (`top`), and swing round the head in two
+        // broad arcs broken strand by strand: swinging five times round as the cap's do, over the fall's 20 columns and
+        // 12 rows, they broke into blotches like cobbles; level, they were a stack of rings.
+        textured(
+          hang.geometry,
+          centreOf,
+          p.hairTexture,
+          headR,
+          along,
+          undefined,
+          (q) => (matched ? smooth((top - q.z) / (headR * 0.12)) : inFall(q.z)),
+          matched || wavyFall ? top : 0,
+          wavyFall ? { swing: 1.3, lobes: 2, strands: 0.3 } : undefined,
+        );
     // Near its top, lit as the cap it lies on: with the fall's own upright normals the light changed in a line there.
     // (Its inner side, the second half of the two-sided geometry, faces the other way.)
     {
@@ -980,7 +1123,19 @@ export function figureParts(p: FigureParams): Part[] {
     const straightStrands =
       !fine && c.hairSheen ? { shade: strands(fallAt.count, columns + 1).map((x, i) => x * 0.45 * smooth((top - fallAt.getZ(i)) / headR)), tone: c.hairSheen } : {};
     const fallPart = sheened(named({ ...hang, ...straightStrands }, "hair"), bumps, c.hairSheen);
-    if (bumps && fallPart.shade && !matched) fallPart.shade = fallPart.shade.map((x, i) => x * inFall(fallAt.getZ(i)) + MEAN_SHADE[p.hairTexture] * (1 - inFall(fallAt.getZ(i))));
+    // Ringlets' sheen softer than the texture's on the cap (at its full strength each lock's turns were bright dashes),
+    // brought up to the cap's average where they meet it.
+    // A long wavy fall's sheen a little softer too, so its waves read as light on flowing hair rather than patches.
+    const soft = ringed ? 0.55 : wavyFall ? 0.7 : 1;
+    if (bumps && fallPart.shade && !matched) {
+      // Ringlets fade in from their own column's top.
+      const half = fallAt.count / 2;
+      const faded = (i: number) => {
+        const column = (i % half) % (columns + 1);
+        return ringed ? smooth((columnTops[column] - fallAt.getZ(i)) / comeIn(column)) : inFall(fallAt.getZ(i));
+      };
+      fallPart.shade = fallPart.shade.map((x, i) => x * soft * faded(i) + MEAN_SHADE[p.hairTexture] * (1 - faded(i)));
+    }
     out.push(fallPart);
   }
   if (!p.headCovered && p.hair !== "none") out.push(...styleParts(p, style, headCentreZ, headR, headScale, v, onCap));
@@ -1156,8 +1311,9 @@ export function figureParts(p: FigureParams): Part[] {
       const unit = new THREE.Vector3(patch.x / headScale.x, patch.y / headScale.y, (patch.z - headCentreZ) / headScale.z).normalize();
       const rightAndUp = new THREE.Vector3(1, 0, 0.5).normalize();
       const normal = new THREE.Vector3().crossVectors(unit, rightAndUp).normalize();
-      // 24 segments round the head: 40 cost 128 more triangles than the strap, a line, needs.
-      const ring = new THREE.TorusGeometry(1, (rim * 0.8) / headR, 4, 24);
+      // 24 segments round the head: 40 cost 128 more triangles than the strap, a line, needs; three sides to its section
+      // (four cost 48 more, which the round eyes need).
+      const ring = new THREE.TorusGeometry(1, (rim * 0.8) / headR, 3, 24);
       ring.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal));
       ring.scale(headR * headScale.x * 1.03, headR * headScale.y * 1.03, headR * headScale.z * 1.03);
       ring.translate(0, 0, headCentreZ);

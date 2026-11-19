@@ -3,7 +3,8 @@
  * `?view=portraits` portraits at the People list size and at 4x;
  * `?view=vocab` one portrait per game vocabulary value and beard length;
  * `?view=plan` plan tokens; `?view=figures&angle=front|three` 3D close-ups
- * (`angle=back` from behind; `&set=vocab`: every hair style, build and beard length instead of the test characters);
+ * (`angle=back` from behind; `az=20&el=25` from that many degrees round and above, as the room's views see a person;
+ * `scale=2` sharper cells; `&set=vocab`: every hair style, build and beard length instead of the test characters);
  * `?view=room&n=8` the real 3D view (Dollhouse), with `window.measure(seconds)`
  * moving one person every frame and reporting frame times.
  */
@@ -237,7 +238,27 @@ const ROUND6_CHARACTERS: TestCharacter[] = [
   faceOf("straight 3 cm, light", LIGHT, { length_cm: 3, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
   faceOf("straight 8 cm, light", LIGHT, { length_cm: 8, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
 ];
+/**
+ * `set=round7`: every hair case the live round-six check named, seen from the room's own angles (shoot.mjs --angles):
+ * curly and coily at 18 to 75 cm on deep and very pale skin, straight and wavy past the jaw on light skin, curly at
+ * chin length from behind, cropped black hair on deep skin face-on, and eyes on very pale and light skin.
+ */
+const ROUND7_CHARACTERS: TestCharacter[] = [
+  ...(["coily", "curly"] as const).flatMap((texture) =>
+    ([18, 30, 50, 75] as const).flatMap((cm) => [
+      faceOf(`${texture} ${cm} cm, deep`, SKIN.deep, { length_cm: cm, texture, hex: HAIR.black }, undefined, { face: { shape: "oval" } }),
+      faceOf(`${texture} ${cm} cm, very pale`, SKIN.veryPale, { length_cm: cm, texture, hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+    ]),
+  ),
+  ...([18, 30, 50, 75] as const).map((cm) => faceOf(`straight ${cm} cm, light`, LIGHT, { length_cm: cm, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } })),
+  ...([18, 30, 50, 75] as const).map((cm) => faceOf(`wavy ${cm} cm, light`, LIGHT, { length_cm: cm, texture: "wavy", hex: HAIR.brown }, undefined, { face: { shape: "oval" } })),
+  faceOf("cropped black 3 cm, deep", SKIN.deep, { length_cm: 3, texture: "straight", hex: HAIR.black }, undefined, { face: { shape: "oval" } }),
+  faceOf("eyes none, very pale, 3 cm", SKIN.veryPale, { length_cm: 3, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" }, eyes: undefined }),
+  faceOf("eyes brown, light, 3 cm", LIGHT, { length_cm: 3, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+  faceOf("straight 8 cm, light", LIGHT, { length_cm: 8, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+];
 const SETS: Record<string, TestCharacter[]> = {
+  round7: ROUND7_CHARACTERS,
   vocab: VOCAB_CHARACTERS,
   face: FACE_CHARACTERS,
   round3: ROUND3_CHARACTERS,
@@ -342,9 +363,15 @@ if (view === "portraits") {
   window.ready = true;
 } else if (view === "figures") {
   // One close-up per character, alone in the living room, facing south toward the camera.
-  const angle = { three: Math.PI / 4, side: Math.PI / 2, back: Math.PI }[params.get("angle") ?? ""] ?? 0;
-  const cell = { w: 300, h: 420 };
-  const cols = 4;
+  // `az=20&el=25`: the camera that many degrees round from face-on (positive toward the figure's left, negative its right) and above the look point,
+  // as the room's Dollhouse and Your eyes see a person (a little above and to one side), instead of a named angle.
+  const azimuth = params.get("az");
+  const angle = azimuth !== null ? (Number(azimuth) * Math.PI) / 180 : ({ three: Math.PI / 4, side: Math.PI / 2, back: Math.PI }[params.get("angle") ?? ""] ?? 0);
+  const elevation = (Number(params.get("el") ?? "0") * Math.PI) / 180;
+  // `scale=2`: each cell that many times the pixels, the same picture sharper (a closer look without moving the camera).
+  const scale = Number(params.get("scale") ?? "1");
+  const cell = { w: 300 * scale, h: 420 * scale };
+  const cols = Math.min(4, CHARACTERS.length);
   const rows = Math.ceil(CHARACTERS.length / cols);
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(1);
@@ -388,7 +415,8 @@ if (view === "portraits") {
       const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
       // `dist=1.05`: the head camera that far away, metres (about 150 px of head in a 420 px cell).
       const distance = head ? Number(params.get("dist") ?? "0.75") : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
-      camera.position.set(Math.sin(angle) * distance, -Math.cos(angle) * distance, lookZ + (head ? 0.05 : 0.3));
+      const level = Math.cos(elevation) * distance;
+      camera.position.set(Math.sin(angle) * level, -Math.cos(angle) * level, lookZ + (head ? 0.05 : 0.3) + Math.sin(elevation) * distance);
       camera.lookAt(0, 0, lookZ);
     }
     cutWalls(room, layout, camera.position, "dollhouse");
