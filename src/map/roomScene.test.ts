@@ -64,6 +64,21 @@ const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): nu
 };
 
 describe("buildRoomScene", () => {
+  it("keeps each authored edge and role through a sheared part and a translated host", () => {
+    const layout = livingRoomLayout();
+    layout.things = [{ ...layout.things[0], id: "#236", lifetime: "camera-life", kind: "object",
+      pose: { centre_m: [3, 2, 1], dimensions_m: [2, 2, 2], body_quaternion: [1, 0, 0, 0], box: true },
+      form_boxes: [{ role: "screen", label: "screen", center: [0.25, 0, 0], size: [0.5, 1, 0.002],
+        basis: [[1, 0, 0], [0.6, 0.8, 0], [0, 0, 1]] }] }];
+    const scene = build(layout);
+    const [mesh] = meshes(scene.things.get("#236"));
+    expect(mesh.userData.inspect).toEqual(["#236", "camera-life", "screen"]);
+    const tip = mesh.localToWorld(new THREE.Vector3(0.5, 0.5, 0.5));
+    expect(tip.x).toBeCloseTo(3.8);
+    expect(tip.y).toBeCloseTo(2.4);
+    expect(tip.z).toBeCloseTo(1.001, 5);
+    disposeRoomScene(scene);
+  });
   it("draws native sitting posture without requiring a person's appearance record", () => {
     const layout = livingRoomLayout();
     layout.things = [{ ...layout.things[0], id: "#plain", kind: "person", appearance: undefined,

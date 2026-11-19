@@ -66,6 +66,9 @@ export interface LayoutFitting extends LayoutDrawerItem {
 export interface LayoutFormBox {
   center: LayoutVector;
   size: LayoutVector;
+  basis?: [LayoutVector, LayoutVector, LayoutVector];
+  role?: string;
+  label?: string;
   fitting?: LayoutFitting;
 }
 
@@ -220,6 +223,12 @@ const namedTarget = (value: unknown): value is LayoutDrawerItem =>
 
 function validFormBox(value: unknown): value is LayoutFormBox {
   if (!record(value) || !vector(value.center) || !vector(value.size) || !value.size.every((n) => n > 0)) return false;
+  if (value.basis !== undefined && !(Array.isArray(value.basis) && value.basis.length === 3 &&
+    value.basis.every((axis) => vector(axis) && Math.abs(Math.hypot(...axis) - 1) < 0.001))) return false;
+  if (value.role !== undefined || value.label !== undefined) {
+    if (typeof value.role !== "string" || !value.role.trim() || /[\r\n\0]/.test(value.role) ||
+      typeof value.label !== "string" || !value.label.trim()) return false;
+  }
   const fitting = value.fitting;
   if (fitting === undefined) return true;
   if (!record(fitting) || !namedTarget(fitting) || typeof fitting.opened !== "boolean" || !Array.isArray(fitting.contents)) return false;

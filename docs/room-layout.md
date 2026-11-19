@@ -111,6 +111,22 @@ assignments do not promise automatic publication.
 
 ## In the client
 
+### Inspecting a construction
+
+Find an object under **Things** in the Map tab. Each visible construction part
+has an **Inspect** button unless it has a drawer control. Press Enter to read
+the MOO's description. Dollhouse and Your eyes also let you click the part.
+On the trestle writing desk in the Balmoral Towers office, inspecting the slab
+sends the same command as typing `look writing-slab on trestle writing desk`.
+When two parts on one host share a label, their buttons include their role paths.
+
+The MOO sends each host's visible `form_boxes` in room snapshots and body
+updates. Each box has a stable `role` path, a display `label`, and a `center`
+in metres relative to the host's pose centre. The three values in `size` give
+the edge lengths in metres. Each corresponding `basis` vector points along that
+edge in host-local coordinates. A builder can change the parts by choosing a
+different construction in `@autoform`. Anyone watching receives the new parts.
+
 ### Using a fitted drawer
 
 In the Map tab, open **Room layout** and find the desk under **Things**. Focus
@@ -119,9 +135,7 @@ after the drawer button. **Get** takes the named object. In Dollhouse and Your
 eyes, clicking the visible drawer face activates the same button. A person
 using ordinary text commands can open, close or empty the drawer while you watch.
 
-For a host with fitted drawers, the MOO sends `form_boxes` on the body's
-snapshot and movement update. Each `center` and `size` is in metres along the
-host's local axes, relative to its pose centre. A bound box also carries
+A box bound to a drawer also carries
 `fitting` with the real drawer's `id`, `lifetime`, `name`, `opened`, current
 `command` and visible `contents`. Each visible item has its own identity and
 get command. A closed drawer has an empty contents list. An empty command

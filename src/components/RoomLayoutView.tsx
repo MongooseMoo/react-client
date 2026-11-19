@@ -64,6 +64,7 @@ interface RoomLayoutViewProps {
 
 const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCommand }) => {
   const fittingButtons = useRef(new Map<string, HTMLButtonElement>());
+  const inspectButtons = useRef(new Map<string, HTMLButtonElement>());
   const youId = useSpatialStore((state) => state.listenerEntityId);
   const name = stripMudAnsiTags(roomName);
   const [view, setView] = useState<RoomLayoutViewName>(() => loadStoredValue(roomLayoutViewSchema, "plan"));
@@ -80,6 +81,10 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
       const where = placed.find((p) => p.thing.id === thing.id);
       return {
         id: thing.id,
+        lifetime: thing.lifetime,
+        parts: thing.lifetime && /^#\d+$/.test(thing.id)
+          ? (thing.form_boxes ?? []).flatMap(({ role, label, fitting }) => role && label && !fitting ? [{ role, label }] : [])
+          : [],
         kind: thing.kind,
         appearance: thing.appearance,
         fittings: new Map(thing.form_boxes?.flatMap(({ fitting }) => fitting ? [[fitting.lifetime, fitting] as const] : [])),
@@ -135,6 +140,11 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
             label={summary}
             mode={view}
             onExit={onCommand}
+            onInspect={(id, lifetime, role) => {
+              const button = inspectButtons.current.get(JSON.stringify([id, lifetime, role]));
+              button?.focus({ preventScroll: true });
+              button?.click();
+            }}
             onFitting={(lifetime) => {
               const button = fittingButtons.current.get(lifetime);
               button?.focus({ preventScroll: true });
@@ -186,6 +196,20 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
           {things.map((e) => (
             <li key={e.id}>
               {e.text}
+              {e.parts.length > 0 && (
+                <ul aria-label={`Parts of ${e.sortName}`}>
+                  {e.parts.map(({ role, label }) => {
+                    const key = JSON.stringify([e.id, e.lifetime, role]);
+                    const ambiguous = e.parts.some((part) => part.label === label && part.role !== role);
+                    return <li key={key}><button type="button" ref={(node) => {
+                      if (node) inspectButtons.current.set(key, node);
+                      else inspectButtons.current.delete(key);
+                    }} onClick={() => onCommand(`look ${role} on ${e.id}`)}>
+                      Inspect {label}{ambiguous && ` (${role})`}
+                    </button></li>;
+                  })}
+                </ul>
+              )}
               {e.fittings.size > 0 && (
                 <ul aria-label={`Fittings of ${e.sortName}`}>
                   {Array.from(e.fittings.values(), (fitting) => (

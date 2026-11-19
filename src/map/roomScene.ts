@@ -423,11 +423,17 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
           const surface = thingColour(p.thing);
           const wood = builder.material(surface);
           const face = builder.material(new THREE.Color(surface).multiplyScalar(0.78).getHex());
-          for (const { center: [x, y, z], size: [w, d, h], fitting } of p.thing.form_boxes) {
+          for (const { center: [x, y, z], size: [w, d, h], basis, role, fitting } of p.thing.form_boxes) {
             const mesh = builder.box({
-              x0: x - w / 2, x1: x + w / 2, y0: y - d / 2, y1: y + d / 2, z0: z - h / 2, z1: z + h / 2,
-            }, fitting ? face : wood, fitting?.name ?? "form");
+              x0: -0.5, x1: 0.5, y0: -0.5, y1: 0.5, z0: -0.5, z1: 0.5,
+            }, fitting ? face : wood, fitting?.name ?? role ?? "form");
+            mesh.position.set(x, y, z);
+            // Nested rotations and unequal scales can produce non-orthogonal edges.
+            if (basis) mesh.matrix.makeBasis(new THREE.Vector3(...basis[0]), new THREE.Vector3(...basis[1]), new THREE.Vector3(...basis[2]));
+            mesh.matrix.scale(new THREE.Vector3(w, d, h)).setPosition(mesh.position);
+            mesh.matrixAutoUpdate = false;
             if (fitting) mesh.userData.fitting = fitting.lifetime;
+            if (role && p.thing.lifetime) mesh.userData.inspect = [p.thing.id, p.thing.lifetime, role];
             group.add(mesh);
           }
         } else if (thingForm(p.thing) === "box") group.add(builder.box(local.bounds, builder.material(thingColour(p.thing)), "box"));

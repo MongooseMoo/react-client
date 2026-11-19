@@ -61,6 +61,7 @@ interface RoomLayout3DProps {
   mode: CameraMode;
   onExit: (name: string) => void;
   onFitting: (lifetime: string) => void;
+  onInspect?: (id: string, lifetime: string, role: string) => void;
 }
 
 /** Space between a label and the top of what it names, CSS pixels. */
@@ -116,7 +117,7 @@ function applyPose(stage: Stage, pose: CameraPose) {
   stage.camera.lookAt(stage.controls.target);
 }
 
-const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, label, mode, onExit, onFitting }) => {
+const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, label, mode, onExit, onFitting, onInspect }) => {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Stage | null>(null);
   const modeRef = useRef(mode);
@@ -388,6 +389,10 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     ] : room.exits;
     const hit = ray.intersectObjects(targets, true)[0];
     if (hit?.object.userData.fitting) onFitting(hit.object.userData.fitting);
+    else if (hit?.object.userData.inspect) {
+      const [id, lifetime, role] = hit.object.userData.inspect;
+      onInspect?.(id, lifetime, role);
+    }
     else if (hit?.object.userData.exit) onExitRef.current(hit.object.userData.exit);
   };
 

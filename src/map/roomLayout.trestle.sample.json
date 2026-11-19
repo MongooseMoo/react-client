@@ -1,0 +1,107 @@
+{
+  "capabilities": [
+    "alignment_subject",
+    "condition_subject",
+    "configurable",
+    "consciousness_suppressor",
+    "construction_host",
+    "cut_receiver",
+    "damage_receiver",
+    "effect_holder",
+    "event_source",
+    "falling_body",
+    "fastenable",
+    "fronted",
+    "furniture_seating",
+    "injury_recovery",
+    "item_surface",
+    "material",
+    "physical_form",
+    "portable_item",
+    "portkey_carrier",
+    "repairable",
+    "support_surface",
+    "traveller"
+  ],
+  "classes": [
+    "desk",
+    "furniture",
+    "surfaceitem",
+    "thing",
+    "gpo",
+    "root_class"
+  ],
+  "fixed": false,
+  "form_boxes": [
+    {
+      "basis": [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]
+      ],
+      "center": [0, 0, 0.375],
+      "label": "writing-slab",
+      "role": "writing-slab",
+      "size": [1.4, 0.7, 0.06]
+    },
+    {
+      "basis": [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]
+      ],
+      "center": [-0.5, 0, -0.015],
+      "label": "left-trestle",
+      "role": "left-trestle",
+      "size": [0.1, 0.6, 0.72]
+    },
+    {
+      "basis": [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]
+      ],
+      "center": [0.5, 0, -0.015],
+      "label": "right-trestle",
+      "role": "right-trestle",
+      "size": [0.1, 0.6, 0.72]
+    }
+  ],
+  "front": {
+    "axis": [0, -1, 0],
+    "direction": "south",
+    "yaw": 0
+  },
+  "id": "#44502",
+  "kind": "object",
+  "lifetime": "547f870d-cfb2-45be-9683-3c393703ba56",
+  "material": [
+    {
+      "fraction": 1,
+      "species": "wood"
+    }
+  ],
+  "mounted": false,
+  "name": "trestle writing desk",
+  "origin": [-0.9, -1, 0.375],
+  "pose": {
+    "body_quaternion": [
+      1,
+      0,
+      0,
+      0
+    ],
+    "box": true,
+    "centre_m": [-0.9, -1, 0.375],
+    "dimensions_m": [1.2, 0.6, 0.75]
+  },
+  "shapes": [
+    {
+      "box": [
+        [-1.5, -0.3],
+        [-1.3, -0.7],
+        [0, 0.75]
+      ]
+    }
+  ]
+}
