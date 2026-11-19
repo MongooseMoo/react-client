@@ -647,6 +647,30 @@ describe("AvatarPortrait hair, round five", () => {
     }
   });
 
+  it("starts long and waist-length curly and coily locks inside the cap at the temples, never jutting out beside it", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
+      for (const texture of ["curly", "coily"]) {
+        for (const length_cm of [50, 75]) {
+          const label = `${texture} ${length_cm} cm on ${skin}`;
+          const svg = svgOf({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm, texture, hex } });
+          // The cap's mass: the hair path starting at its lower corner (y 27); how far out it reaches beside the temples.
+          const cap = [...svg.querySelectorAll(`path[fill="${hex}"]`)].find((el) => /^M[\d.]+,27/.test(el.getAttribute("d") ?? ""));
+          expect(cap, label).toBeDefined();
+          const capOut = Math.max(...polygonOf(cap as Element).filter(([, y]) => y > 20 && y < 27).map(([x]) => Math.abs(x - 32)));
+          const locks = [...svg.querySelectorAll(".avatar-hair-lock")];
+          expect(locks.length, label).toBe(2);
+          for (const lock of locks) {
+            // Beside the cap at the temple (above where the cap rounds its lower corner, from y 25 to 27), the lock reaches
+            // no further out than the cap does.
+            const beside = polygonOf(lock).filter(([, y]) => y < 25);
+            expect(beside.length, label).toBeGreaterThan(0);
+            expect(Math.max(...beside.map(([x]) => Math.abs(x - 32))), label).toBeLessThanOrEqual(capOut + 0.1);
+          }
+        }
+      }
+    }
+  });
+
   it("draws curly and coily locks beside the face as curls in the hair's own colour, never flat panels with a grey copy inside", () => {
     for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
       for (const texture of ["curly", "coily"]) {

@@ -309,8 +309,8 @@ const FALL_BOTTOM: Readonly<Partial<Record<FigureParams["hair"], number>>> = { "
 const LOCKS: Readonly<Partial<Record<FigureParams["hair"], { front: boolean; back: number; rows: ReadonlyArray<[number, number, number]> }>>> = {
   "chin-length": { front: false, back: 14.2, rows: [[27, 15, 12.9], [36, 15.2, 12.7], [41, 14.8, 12.6]] },
   "shoulder-length": { front: false, back: 15.8, rows: [[27, 16.6, 12.7], [40, 17, 12.7], [50.5, 17.2, 12.7]] },
-  long: { front: true, back: 17.8, rows: [[26, 18.6, 10.6], [36, 19, 10.2], [45, 19.2, 6], [55, 18.2, 5.6]] },
-  "waist-length": { front: true, back: 19.8, rows: [[26, 20.6, 9.5], [35, 21, 8.8], [43, 21.2, 2.8], [63, 20.2, 2.6]] },
+  long: { front: true, back: 17.8, rows: [[26, 18.6, 10.6], [36, 19, 9.8], [45, 19.2, 6], [55, 18.2, 5.6]] },
+  "waist-length": { front: true, back: 19.8, rows: [[26, 20.6, 9.5], [35, 21, 8.2], [43, 21.2, 2.8], [63, 20.2, 2.6]] },
 };
 
 /**
@@ -404,7 +404,13 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
           const rows = locks.rows.map(([y, o, i]) => [y > 30 ? y - rise : y, o + (v - 1) * 2, i] as const);
           // Curls and coils hanging in front start up at the temples, under the cap's curls there: starting at the
           // cheekbone, the hair behind the head showed between the cap and the lock.
-          if (curlsHere && locks.front) rows.unshift([22, rows[0][1], rows[0][2]]);
+          // Their tops lie inside the cap's own width, by more than their curls bulge (its curls' outline beside them),
+          // and spread out to their full width at the cap's lower corner: at their full width from the top they jutted
+          // out beside the cap at the temple.
+          if (curlsHere && locks.front) {
+            rows[0] = [28, rows[0][1], rows[0][2]];
+            rows.unshift([23, Math.min(rows[0][1], CAP_BANDS.full.width * v - 1.5), rows[0][2]]);
+          }
           const outer = rows.map(([y, o]) => at(y, o));
           const inner = rows.map(([y, , i]) => at(y, i)).reverse();
           const [yEnd, oEnd, iEnd] = rows[rows.length - 1];
