@@ -114,31 +114,57 @@ function textured(
 }
 
 /**
- * Raises one vertex in three of a grid laid out in rows of `columns + 1` (a cylinder's, and its two-sided copy's),
- * staggered from row to row so no two raised vertices share an edge, outward from `centre(vertex)` by `rise` head radii
- * times `amount(vertex)`: separate curls or coils, each three columns and three rows from the next. A wave of curls down
- * a long fall, read at the vertices, turned under less than once every two rows and showed only its ridges round the
- * fall, long locks; every other vertex raised joined along the facets' diagonals into twisted ropes; and a chin-length
- * fall's waves of coils lay in level rolls under the crown, a rolled brim.
+ * Ringlets on a fall laid out in rows of `columns + 1` vertices (a cylinder's, and its two-sided copy's): a lock to
+ * every two columns, its middle column raised and its edge columns left low, so locks hang side by side with open
+ * grooves between them. Each lock twists down its length, its middle swinging out and in and from side to side once
+ * every `perTurn` rows, each lock out of step with the next, and ends a little longer or shorter than its neighbours
+ * (`ends`, metres at most). The two front edges stay flat. Raised by up to 0.12 head radii outward from
+ * `centre(vertex)`, times `amount(vertex)`; returns how far each vertex is raised (0 to 1). One curl at every third
+ * vertex made separate six-sided lumps with dark outlines, a honeycomb or reptile scales; a wave of curls read at the
+ * vertices showed only its ridges round the fall, long loose locks.
  */
-function lumped(g: THREE.BufferGeometry, columns: number, centre: (q: THREE.Vector3) => THREE.Vector3, rise: number, headR: number, amount: (q: THREE.Vector3) => number): Float32Array {
+function ringlets(
+  g: THREE.BufferGeometry,
+  columns: number,
+  perTurn: number,
+  centre: (q: THREE.Vector3) => THREE.Vector3,
+  around: number,
+  headR: number,
+  ends: number,
+  amount: (q: THREE.Vector3) => number,
+): Float32Array {
   const positions = g.getAttribute("position");
-  const bumps = new Float32Array(positions.count);
+  const half = positions.count / 2;
+  const rows = half / (columns + 1) - 1;
+  const raised = new Float32Array(positions.count);
   const q = new THREE.Vector3();
   const d = new THREE.Vector3();
   for (let i = 0; i < positions.count; i++) {
-    // The two-sided copy's second half repeats the first's vertices: each side's lumps in the same places.
-    const j = i % (positions.count / 2);
+    // The two-sided copy's second half repeats the first's vertices: both sides of a lock move alike.
+    const j = i % half;
     const [ix, iy] = [j % (columns + 1), Math.floor(j / (columns + 1))];
-    bumps[i] = (ix + 2 * iy) % 3 === 0 ? 1 : 0;
+    const lock = Math.floor(ix / 2);
+    const middle = ix % 2 === 1;
+    const turn = (2 * Math.PI * iy) / perTurn + lock * 2.4;
+    const flat = Math.min(1, Math.min(ix, columns - ix) / 2);
+    const lift = (middle ? 0.6 + 0.4 * Math.sin(turn) : 0.12) * flat;
+    // Sideways by up to 0.35 of a column's width, a quarter turn behind the swing out.
+    const side = middle ? 0.35 * Math.cos(turn) * flat : 0;
     q.fromBufferAttribute(positions, i);
     d.subVectors(q, centre(q));
-    q.addScaledVector(d, (headR * rise * bumps[i] * amount(q)) / Math.max(1e-6, d.length()));
+    const r = Math.max(1e-6, Math.hypot(d.x, d.y));
+    const k = amount(q);
+    const across = (side * r * around) / columns;
+    q.x += ((d.x / r) * headR * 0.12 * lift + (-d.y / r) * across) * k;
+    q.y += ((d.y / r) * headR * 0.12 * lift + (d.x / r) * across) * k;
+    // Uneven ends: each lock's tip lower by its own amount.
+    if (iy === rows && middle) q.z -= ends * (0.5 + 0.5 * Math.sin(lock * 1.7));
     positions.setXYZ(i, q.x, q.y, q.z);
+    raised[i] = lift;
   }
   positions.needsUpdate = true;
   g.computeVertexNormals();
-  return bumps;
+  return raised;
 }
 
 /** How far a texture's peaks go toward the hair's sheen: wave crests, curls and coils catch the light. */
@@ -758,26 +784,33 @@ export function figureParts(p: FigureParams): Part[] {
       const local = at.clone().sub(capAt).applyQuaternion(unturn).divide(capScale);
       return smooth((Math.acos(Math.max(-1, Math.min(1, local.y / (local.length() || 1)))) / capReach - 0.6) / 0.4);
     };
+    /**
+     * The tuck at a point on the cap: the factor its distance across from the head's middle line is scaled by, in across
+     * and not down (its height kept, so the hairline stays as clear of the brows).
+     */
+    const tuckScale = (at: THREE.Vector3) => {
+      const t = tuckAt(at);
+      if (t <= 0) return 1;
+      const q = at.clone().sub(capAt);
+      const r = q.length();
+      const head = (headR * 1.03) / Math.hypot(q.x / (r * headScale.x), q.y / (r * headScale.y), q.z / (r * headScale.z));
+      return head >= r ? 1 : (r + (head - r) * t) / r;
+    };
     {
       const positions = capPart.geometry.getAttribute("position");
       const q = new THREE.Vector3();
       for (let i = 0; i < positions.count; i++) {
-        const t = tuckAt(q.fromBufferAttribute(positions, i));
-        if (t <= 0) continue;
-        q.fromBufferAttribute(positions, i).sub(capAt);
-        const r = q.length();
-        const head = (headR * 1.03) / Math.hypot(q.x / (r * headScale.x), q.y / (r * headScale.y), q.z / (r * headScale.z));
-        if (head >= r) continue;
-        // In across, not down: its height kept, so the hairline stays as clear of the brows.
-        const k = (r + (head - r) * t) / r;
-        q.set(q.x * k, q.y * k, q.z).add(capAt);
-        positions.setXYZ(i, q.x, q.y, q.z);
+        const k = tuckScale(q.fromBufferAttribute(positions, i));
+        if (k === 1) continue;
+        positions.setXYZ(i, capAt.x + (q.x - capAt.x) * k, capAt.y + (q.y - capAt.y) * k, q.z);
       }
       positions.needsUpdate = true;
       capPart.geometry.computeVertexNormals();
     }
     // Where the cap's surface is (before its texture), for the falling hair to lie just outside it: along the
-    // horizontal ray from the head's middle line at height z, the far crossing of the turned, scaled sphere.
+    // horizontal ray from the head's middle line at height z, the far crossing of the turned, scaled sphere, drawn in by
+    // its tuck. Laid outside the untucked sphere, the falling hair stood off the tucked sides of the head: from the side
+    // a step where it started, and coils to the jaw flaring at the ears.
     const turnQ = new THREE.Quaternion().setFromEuler(capTurn).invert();
     capAcross = (x, y, z) => {
       const r = Math.hypot(x, y) || 1;
@@ -785,7 +818,9 @@ export function figureParts(p: FigureParams): Part[] {
       const b = new THREE.Vector3(0, 0, z - capAt.z).applyQuaternion(turnQ).divide(capScale);
       const [qa, qb, qc] = [a.dot(a), 2 * a.dot(b), b.dot(b) - headR * headR];
       const disc = qb * qb - 4 * qa * qc;
-      return disc < 0 ? 0 : (-qb + Math.sqrt(disc)) / (2 * qa);
+      if (disc < 0) return 0;
+      const far = (-qb + Math.sqrt(disc)) / (2 * qa);
+      return far * tuckScale(new THREE.Vector3((x / r) * far, (y / r) * far, z));
     };
     const turnFwd = new THREE.Quaternion().setFromEuler(capTurn);
     capNormal = (q) => {
@@ -837,12 +872,13 @@ export function figureParts(p: FigureParams): Part[] {
     // Around the back, and forward on each side to just in front of the ears.
     const around = 3.8;
     const fine = p.hairTexture !== "straight";
-    // A long fall of curls or coils is lumped (`lumped`) over 16 columns and 14 rows, so its curls are about as tall as
-    // wide (the heaviest figure, 75 cm coily hair, stays under the 5,000-triangle budget). A chin-length one (`matched`)
-    // gets 10 rows, four or more to each of the cap's waves; a long wavy fall 12, for its waves.
-    const lumps = long && (p.hairTexture === "curly" || p.hairTexture === "coily");
-    const rows = lumps ? 14 : matched ? 10 : fine ? 12 : 8;
-    const columns = lumps && long ? 16 : 20;
+    // A long fall of curls or coils hangs in ringlets (`ringlets`), two columns to a lock: coils in 10 narrower locks
+    // over 20 columns and 12 rows, curls in 8 over 16 and 14 (the heaviest figure, 75 cm coily hair, stays under the
+    // 5,000-triangle budget). A chin-length one (`matched`) gets 10 rows, four or more to each of the cap's waves; a long
+    // wavy fall 12, for its waves.
+    const ringed = long && (p.hairTexture === "curly" || p.hairTexture === "coily");
+    const rows = ringed ? (p.hairTexture === "coily" ? 12 : 14) : matched ? 10 : fine ? 12 : 8;
+    const columns = ringed && p.hairTexture === "curly" ? 16 : 20;
     const fall = new THREE.CylinderGeometry(headR, headR, top - bottom, columns, rows, true, -around / 2, around);
     // A cylinder stands along y with its seam at +z; turned upright (+z) its middle faces -y, the back.
     fall.rotateX(Math.PI / 2);
@@ -863,17 +899,18 @@ export function figureParts(p: FigureParams): Part[] {
     const spread = long ? 1.3 : 1.12;
     const rounded = long ? 0 : { coily: 0.3, curly: 0.2 }[p.hairTexture as "coily" | "curly"] ?? 0;
     const across = (z: number) => {
-      if (rounded) {
-        const u = (top - z) / (top - bottom);
-        return 1 - rounded * u * u;
-      }
       return z >= nape ? 1 - 0.1 * smooth((top - z) / (top - nape)) : 0.9 + (spread - 0.9) * smooth((nape - z) / (nape - bottom));
     };
     // Long hair lies back over the shoulders rather than through them: moved back below the nape, against the head above it.
     const back = (z: number) => (long ? -headR * 0.25 * smooth((nape - z) / (0.5 * (nape - bottom))) : 0);
     const positions = fall.getAttribute("position");
     for (let i = 0; i < positions.count; i++) {
-      const z = positions.getZ(i);
+      // At its two front edges its top comes down a quarter of a head radius, toward where the cap's edge runs down the
+      // side of the head, each column's rows spread over what is left: square at the corner, the fall's top and front
+      // edge met in a hard corner at temple height, seen from the side.
+      const fromBack = Math.abs(Math.atan2(positions.getX(i), -positions.getY(i)));
+      const columnTop = long ? top - headR * 0.25 * smooth((fromBack - 1.6) / 0.3) : top;
+      const z = columnTop - ((columnTop - bottom) * (top - positions.getZ(i))) / (top - bottom);
       const k = across(z);
       // Straight hair's ends uneven: every other strand a little longer.
       const ragged = !fine && Math.abs(z - bottom) < 1e-5 && (i % (columns + 1)) % 2 ? -0.012 * s : 0;
@@ -885,7 +922,22 @@ export function figureParts(p: FigureParams): Part[] {
       // through the fall's facets in a dotted line down each side from behind.
       const r = Math.hypot(x, y);
       const cap = capAcross(x, y, z) * (1.012 + 0.013 * smooth((top - z) / (headR * 0.06)));
-      if (cap > r && r > 0) [x, y] = [(x * cap) / r, (y * cap) / r];
+      // At its top it lies on the cap (as the cap is drawn in at the sides), and comes out to its own outline below:
+      // standing at its own outline from the start, it began in a flat step at temple height, seen from the side. Its
+      // two front edges lie on the head down past the ears, so they come out from under the cap rather than standing off
+      // the side of the head in a hard upright edge.
+      const ix = i % (columns + 1);
+      const edge = Math.min(1, Math.min(ix, columns - ix) / 2) + (1 - Math.min(1, Math.min(ix, columns - ix) / 2)) * smooth((headCentreZ - headR * 0.2 - z) / (headR * 0.5));
+      // Curls or coils to the jaw close in from the cap's own width at their top in that direction (`rounded`), so they
+      // never stand out past it, at the ears or below the crown.
+      const own = smooth((top - z) / (headR * 0.6)) * edge;
+      const u = (top - z) / (top - bottom);
+      const want = rounded
+        ? Math.max(cap, capAcross(x, y, top) * 1.012 * (1 - rounded * u * u))
+        : cap > 0
+          ? cap + (Math.max(r, cap) - cap) * own
+          : r;
+      if (r > 0) [x, y] = [(x * want) / r, (y * want) / r];
       positions.setXYZ(i, x, y, z + ragged);
     }
     fall.computeVertexNormals();
@@ -899,8 +951,8 @@ export function figureParts(p: FigureParams): Part[] {
     // so it turns at least twice before its end.
     const along = matched ? (p.hairTexture === "coily" ? 1.3 : 1.6) : p.hairTexture === "wavy" && long ? Math.max(0.4, Math.min(1.6, (rows * 2 * Math.PI) / (3 * 7 * ((top - bottom) / headR)))) : 0.4;
     const centreOf = (q: THREE.Vector3) => new THREE.Vector3(0, back(q.z), q.z);
-    const bumps = lumps
-      ? lumped(hang.geometry, columns, centreOf, p.hairTexture === "coily" ? 0.06 : 0.07, headR, (q) => inFall(q.z))
+    const bumps = ringed
+      ? ringlets(hang.geometry, columns, p.hairTexture === "coily" ? 3 : 4, centreOf, around, headR, 0.03 * s, (q) => inFall(q.z))
       : textured(hang.geometry, centreOf, p.hairTexture, headR, along, undefined, (q) => (matched ? 1 : inFall(q.z)), matched ? top : 0);
     // Near its top, lit as the cap it lies on: with the fall's own upright normals the light changed in a line there.
     // (Its inner side, the second half of the two-sided geometry, faces the other way.)
@@ -911,7 +963,11 @@ export function figureParts(p: FigureParams): Part[] {
       const nq = new THREE.Vector3();
       for (let i = 0; i < at.count; i++) {
         q.fromBufferAttribute(at, i);
-        const t = 1 - smooth((top - q.z) / (headR * 0.35));
+        // Its two front edges too, down past the ears, where they lie on the head: lit as the fall, they drew a hard
+        // upright line down the side of the head.
+        const ix = (i % (at.count / 2)) % (columns + 1);
+        const edge = (1 - Math.min(1, Math.min(ix, columns - ix) / 2)) * (1 - smooth((headCentreZ - headR * 0.2 - q.z) / (headR * 0.5)));
+        const t = Math.max(1 - smooth((top - q.z) / (headR * 0.35)), edge);
         if (t <= 0) continue;
         const cap = capNormal(q).multiplyScalar(i < at.count / 2 ? 1 : -1);
         nq.fromBufferAttribute(normals, i).lerp(cap, t).normalize();
@@ -1111,7 +1167,9 @@ export function figureParts(p: FigureParams): Part[] {
         // A ring hanging from each earlobe, turned to face sideways.
         const lobe = headCentreZ - headR * 0.35;
         const at = new THREE.Vector3(side * (headSide(lobe) + rim), 0, lobe);
-        out.push(named(placed(new THREE.TorusGeometry(headR * 0.12, rim * 0.9, 4, 10), fi, at, new THREE.Euler(0, Math.PI / 2, 0)), "earring"));
+        // Three sides to its wire and eight round the ring: a ring a few pixels across, and four by ten took the heaviest
+        // figure on very pale skin over the 5,000-triangle budget once coils hung in ringlets.
+        out.push(named(placed(new THREE.TorusGeometry(headR * 0.12, rim * 0.9, 3, 8), fi, at, new THREE.Euler(0, Math.PI / 2, 0)), "earring"));
       }
     }
   }

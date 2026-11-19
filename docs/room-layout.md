@@ -190,10 +190,14 @@ crown and a tie. Brushed hair has a parting on the left with the scalp showing a
 combed fringe sweeping from it down toward the right temple; a mohawk's crest stands up as a ridge
 along the middle of the head from the forehead to the nape. Hair worn down past the jaw follows
 the back of the head, comes in at the nape and spreads out over the shoulders; straight hair shows
-strands and uneven ends, wavy hair waves down it. It lies just outside the hair over the crown
-where they meet at the back, without a seam. Curly and coily hair to the jaw carries on the round
-and the curls of the hair over the crown and closes in to end above the jaw: one rounded mass.
-Curly and coily hair past the jaw is raised in separate curls about as tall as wide. A figure is kept under 5,000 triangles
+strands and uneven ends, wavy hair waves down it. It starts lying on the hair over the crown, as
+close to the head at the sides as that hair is, and comes out to its own outline below, without a
+seam or step; toward the face its top comes down and its front edges lie on the head past the ears.
+Curly and coily hair to the jaw carries on the round and the curls of the hair over the crown and
+closes in from the hair's own width to end above the jaw: one rounded mass that never stands out
+past the head at the ears. Curly and coily hair past the jaw hangs in ringlets: locks side by side
+with open grooves between them, each twisting down its length out of step with its neighbours and
+ending a little longer or shorter than them; coils in narrower, tighter locks than curls. A figure is kept under 5,000 triangles
 with every feature and trait. The portrait outlines skin and clothing in the dark or light line, and hair in
 the hair's own edge tone along its outer edge only, never along the hairline across the forehead
 (that line made dark hair on dark skin look like a cap). A shaved scalp and a mohawk's sides are a

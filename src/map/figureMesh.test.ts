@@ -1084,7 +1084,7 @@ describe("round six: coily and curly masses, temples, eyes on pale skin, waves, 
     }
   });
 
-  it("gives long curly and coily falls coils or curls about as wide as tall, not long locks", () => {
+  it("hangs long curly and coily hair in ringlets: locks side by side with open grooves the fall's whole length, each twisting down it, with uneven ends; never closed cells", () => {
     for (const texture of ["coily", "curly"]) {
       for (const length_cm of [30, 50, 75]) {
         const { p, headR } = standing({ skin: { hex: "#292420" }, hair: { length_cm, texture, hex: "#1b1612" } });
@@ -1092,29 +1092,47 @@ describe("round six: coily and curly masses, temples, eyes on pale skin, waves, 
         const pos = fall?.geometry.getAttribute("position") as THREE.BufferAttribute;
         const shade = fall?.shade as Float32Array;
         const label = `${texture} ${length_cm} cm`;
-        // Down the middle of the back (the outer side): the shade's peaks, and how far apart they are, against the
-        // spacing of peaks round the fall at the head's middle height.
-        const down: Array<[number, number]> = [];
-        for (let i = 0; i < pos.count / 2; i++) if (Math.abs(pos.getX(i)) < headR * 0.06 && pos.getY(i) < 0) down.push([pos.getZ(i), shade[i]]);
-        down.sort((a, b) => b[0] - a[0]);
-        const peaksAt = (xs: Array<[number, number]>) => xs.filter((q, k) => k > 0 && k < xs.length - 1 && q[1] > xs[k - 1][1] + 0.05 && q[1] >= xs[k + 1][1]).map(([at]) => at);
-        const downPeaks = peaksAt(down);
-        expect(downPeaks.length, label).toBeGreaterThanOrEqual(3);
-        const gapDown = (downPeaks[0] - downPeaks[downPeaks.length - 1]) / (downPeaks.length - 1);
-        // Round the fall, along its middle row (the vertices nearest halfway down), by distance along the surface.
-        const zs = down.map(([z]) => z);
-        const midZ = zs[Math.floor(zs.length / 2)];
-        const row: Array<[number, number]> = [];
-        for (let i = 0; i < pos.count / 2; i++) {
-          if (Math.abs(pos.getZ(i) - midZ) > 1e-6) continue;
-          row.push([Math.atan2(pos.getY(i), pos.getX(i)) * Math.hypot(pos.getX(i), pos.getY(i)), shade[i]]);
+        // The outer side (the first half of the two-sided fall), row by row: a row runs round from one front edge (x
+        // below 0) to the other (x above 0), so the next row starts where x turns back below 0.
+        const half = pos.count / 2;
+        let top = Number.NEGATIVE_INFINITY;
+        for (let i = 0; i < half; i++) top = Math.max(top, pos.getZ(i));
+        let width = 1;
+        while (!(pos.getX(width - 1) > 0 && pos.getX(width) < 0)) width++;
+        expect(half % width, label).toBe(0);
+        const rows = half / width;
+        const at = (row: number, k: number) => row * width + k;
+        // Rows past the top's fade (0.25 head radii down) and above the ends.
+        const body = Array.from({ length: rows }, (_, r) => r).filter((r) => pos.getZ(at(r, 0)) < top - headR * 0.25 && r < rows - 1);
+        expect(body.length, label).toBeGreaterThanOrEqual(5);
+        // Grooves: the places in a row where the shade dips. In ringlets they are the same columns all the way down
+        // (open grooves between locks); lumps one vertex in three made them move from row to row (closed cells).
+        const dips = new Array<number>(width).fill(0);
+        for (const r of body) {
+          for (let k = 1; k < width - 1; k++) if (shade[at(r, k)] < shade[at(r, k - 1)] && shade[at(r, k)] <= shade[at(r, k + 1)]) dips[k]++;
         }
-        row.sort((a, b) => a[0] - b[0]);
-        const aroundPeaks = peaksAt(row);
-        expect(aroundPeaks.length, label).toBeGreaterThanOrEqual(3);
-        const gapAround = (aroundPeaks[aroundPeaks.length - 1] - aroundPeaks[0]) / (aroundPeaks.length - 1);
-        // Peaks down the fall no more than 1.8 times as far apart as round it: master's long falls were long locks.
-        expect(gapDown / gapAround, label).toBeLessThan(1.8);
+        const grooves = dips.map((n, k) => [n, k]).filter(([n]) => n >= body.length * 0.9).map(([, k]) => k);
+        expect(grooves.length, `${label}: dips ${dips.join(" ")}`).toBeGreaterThanOrEqual(4);
+        // Each lock between two neighbouring grooves twists: its middle's shade rises and falls down it, and it swings
+        // from side to side between the grooves.
+        let twisting = 0;
+        for (let g = 0; g + 1 < grooves.length; g++) {
+          const [g0, g1] = [grooves[g], grooves[g + 1]];
+          if (g1 - g0 !== 2) continue;
+          const m = g0 + 1;
+          const lit = body.map((r) => shade[at(r, m)]);
+          const swing = body.map((r) => {
+            const [a, b, c] = [at(r, g0), at(r, g1), at(r, m)];
+            const [bx, by] = [pos.getX(b) - pos.getX(a), pos.getY(b) - pos.getY(a)];
+            return ((pos.getX(c) - pos.getX(a)) * bx + (pos.getY(c) - pos.getY(a)) * by) / (bx * bx + by * by);
+          });
+          const peaks = lit.filter((x, k) => k > 0 && k < lit.length - 1 && x > lit[k - 1] && x >= lit[k + 1]).length;
+          if (peaks >= 2 && Math.max(...swing) - Math.min(...swing) > 0.2) twisting++;
+        }
+        expect(twisting, label).toBeGreaterThanOrEqual(3);
+        // Uneven ends: the lowest points of the locks differ by at least a centimetre.
+        const ends = Array.from({ length: width }, (_, k) => pos.getZ(at(rows - 1, k)));
+        expect(Math.max(...ends) - Math.min(...ends), label).toBeGreaterThan(0.01);
       }
     }
   });
