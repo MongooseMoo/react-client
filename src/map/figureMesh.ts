@@ -942,7 +942,21 @@ export function figureParts(p: FigureParams): Part[] {
       if (full && fullBumps && bumps) {
         /** Along the level ray from the head's middle line at height z toward (x, y): where a cap geometry's outer surface is, and its shade there. */
         const surface = (g: THREE.BufferGeometry, lit: (k: number) => number) => {
-          const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+          // Only its facets round the back near the fall's top, where the rays go: casting at the whole cap made a
+          // figure five times as slow to build.
+          const index = g.getIndex() as THREE.BufferAttribute;
+          const at0 = g.getAttribute("position");
+          const near = (k: number) => at0.getZ(k) > fallTop - headR * 0.5 && at0.getZ(k) < fallTop + headR * 0.35 && at0.getY(k) < headR * 0.2;
+          const kept: number[] = [];
+          for (let t = 0; t < index.count; t += 3) {
+            const [a, b, c] = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
+            if (near(a) || near(b) || near(c)) kept.push(a, b, c);
+          }
+          const part = new THREE.BufferGeometry();
+          part.setAttribute("position", at0);
+          part.setAttribute("normal", g.getAttribute("normal"));
+          part.setIndex(kept);
+          const mesh = new THREE.Mesh(part, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
           const ray = new THREE.Raycaster();
           const triangle = new THREE.Triangle();
           const weights = new THREE.Vector3();
@@ -1117,7 +1131,8 @@ export function figureParts(p: FigureParams): Part[] {
         const h = Math.sin(lock * 12.9898 + 11 * 78.233) * 43758.5453;
         takenOver[i] = smooth((columnTop - z) / (headR * (0.08 + 0.14 * (h - Math.floor(h)))));
         // Down to where the cap under it has gone smooth (`keptOver`), it never lies inside the cap's curls.
-        const hit = z > columnTop - headR * 0.3 ? capSurface(x, y, z) : undefined;
+        // (Only round the back, where it carries the cap's relief on: at the sides it keeps its old place and shade.)
+        const hit = z > columnTop - headR * 0.3 && towardBack(x, y) > 0 ? capSurface(x, y, z) : undefined;
         if (hit && z > Math.min(columnTop, top) - headR * 0.01) {
           // Its top edge and where it lies up the crown, straight chords between vertices, passed under the cap's curls
           // that crest between them, and the cap showed through: there it lies on the highest of the cap across its two
