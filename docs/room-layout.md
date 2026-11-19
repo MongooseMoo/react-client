@@ -231,7 +231,11 @@ strand. It starts lying on the hair over the crown, as
 close to the head at the sides as that hair is, and comes out to its own outline below, without a
 seam or step; toward the face its top comes down and its front edges lie on the head past the ears,
 then come forward beside the cheek and jaw and go back in toward the neck below the jaw, each edge
-strand by its own amount.
+strand by its own amount. Wavy, curly and coily hair worn down (past the jaw, or wavy to it) carries
+the waves, curls or coils of the hair over the crown on into its top round the back of the head, at
+full strength and in the same shading, and its own waves or locks take over a little lower, lock by
+lock; there each lock starts a little up the crown, by its own height, so where the hair worn down
+begins is a ragged line, never one level edge right round the back of the head.
 Curly and coily hair to the jaw carries on the round and the curls of the hair over the crown and
 closes in from the hair's own width to end above the jaw: one rounded mass that never stands out
 past the head at the ears. Curly and coily hair past the jaw hangs in ringlets: locks side by side

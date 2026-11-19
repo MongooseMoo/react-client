@@ -72,8 +72,8 @@ function textured(
    * meets the band's middle line, so the band's two edges rise together and do not twist.
    */
   band?: THREE.Vector3,
-  /** How much of the texture's rise a vertex gets (0 to 1): a short cut's curls fade out at the sides. */
-  amount: (q: THREE.Vector3) => number = () => 1,
+  /** How much of the texture's rise a vertex gets (0 to 1), from its position and index: a short cut's curls fade out at the sides. */
+  amount: (q: THREE.Vector3, i: number) => number = () => 1,
   /** The height where the waves are in step with the cap's (`along` speeds them up only below and above it). */
   pivot = 0,
   /**
@@ -109,7 +109,7 @@ function textured(
           ? [0.09, Math.sin(around * 7) * Math.sin(down * 9)]
           : [0.1, Math.sin(around * 11) * Math.sin(down * 14)];
     bumps[i] = 0.5 + 0.5 * f;
-    const lift = (headR * rise * bumps[i] * amount(q)) / Math.max(1e-6, d.length());
+    const lift = (headR * rise * bumps[i] * amount(q, i)) / Math.max(1e-6, d.length());
     q.addScaledVector(d, lift);
     positions.setXYZ(i, q.x, q.y, q.z);
   }
@@ -756,6 +756,13 @@ export function figureParts(p: FigureParams): Part[] {
   let capAcross = (_x: number, _y: number, _z: number) => 0;
   // The cap's outward normal at a point (before its texture), for the falling hair's top to be lit as the cap is.
   let capNormal = (q: THREE.Vector3) => q.clone().normalize();
+  // How much of its texture's rise the cap's surface has at a point (its sides' tuck and a short cut's fade), for a fall
+  // that carries that texture on. Set once the cap is built.
+  let capRise = (_q: THREE.Vector3) => 0;
+  // Where the cap as drawn (with its texture at full strength) is along the level ray from the head's middle line at
+  // height z toward (x, y): its distance out and its shade there, for a fall that carries it on. Set once the cap is built.
+  // `normal` is its normal there as drawn; `fullR` and `fullShade` are those of the cap with its texture nowhere faded.
+  let capSurface = (_x: number, _y: number, _z: number): { r: number; shade: number; normal: THREE.Vector3; fullR: number; fullShade: number } | undefined => undefined;
   // Only hair worn down falls round the head; hair tied up, braided, locked, spiked or shaved does not.
   const fallsDown = HANGS_LOOSE.includes(style);
   // How far hair worn down falls, by the game's band: to the jaw, onto the shoulders, past them, to the waist. Curls and
@@ -781,8 +788,31 @@ export function figureParts(p: FigureParams): Part[] {
    * falling hair covers the cap and meets it, coming in above the fall's top. The two textures crossing there drew a
    * jagged seam where the cap's lower edge ran over the fall.
    */
-  const keptOver = (d: THREE.Vector3, over: number) =>
-    falling && !matched ? 1 - smooth((fallTop + headR * over - (d.z + headCentreZ)) / (headR * over)) * smooth((0.45 - d.y / headR) / 0.3) : 1;
+  /**
+   * Waves, curls or coils worn down past the jaw, or waves to it, whose cap has the same texture: the fall carries the
+   * cap's own texture on over its top at full strength (the same bumps at the same places, read from the same height
+   * and direction round the head), and its own locks or waves take over lower down, lock by lock. With both faded to
+   * smooth where they met, a level edge ran round the back of the head under the crown with a smooth band below it,
+   * read as a cap sitting over a curtain.
+   */
+  const carried = falling && !matched && capTexture === p.hairTexture && p.hairTexture !== "straight";
+  /** Where the fall's top is round the head in direction (x, y): lower toward its two front edges on hair past the jaw. */
+  const fallTopAt = (x: number, y: number) => {
+    const fromBack = Math.abs(Math.atan2(x, -y));
+    return p.hair !== "chin-length" ? fallTop - headR * 0.25 * smooth((fromBack - 1.6) / 0.3) : fallTop;
+  };
+  /** How far round toward the back (1) from the sides (0) direction (x, y) is: where a fall carries the cap's relief on. */
+  const towardBack = (x: number, y: number) => 1 - smooth((Math.abs(Math.atan2(x, -y)) - 0.8) / 0.4);
+  const keptOver = (d: THREE.Vector3, over: number) => {
+    if (!falling || matched) return 1;
+    // Under a fall that carries the cap's texture, the cap keeps its own above the fall's top (where it shows) and goes
+    // smooth below it, under the fall, within 0.05 head radii, so its curls never come through the fall's.
+    const plain = 1 - smooth((fallTop + headR * over - (d.z + headCentreZ)) / (headR * over)) * smooth((0.45 - d.y / headR) / 0.3);
+    if (!carried) return plain;
+    // Round the back only (as the fall carries the cap's relief only there): toward the sides, where the fall's front
+    // edges meet the cap's outline, the cap goes smooth above the fall's top as before, or cracks opened between them.
+    return plain + (1 - smooth((fallTopAt(d.x, d.y) + headR * 0.03 - (d.z + headCentreZ)) / (headR * 0.08)) - plain) * towardBack(d.x, d.y);
+  };
   // Over 0.15 head radii above the fall's top, its bumps' height over twice that, so the crown's outline comes down into
   // the fall's. Over 0.3 head radii, with the fall's own texture fading in over 0.2 below its top, a smooth band half a
   // head radius tall ran round the back between the crown's coils and the fall's locks, read as a ledge under the crown.
@@ -850,6 +880,7 @@ export function figureParts(p: FigureParams): Part[] {
       return Math.acos(Math.max(-1, Math.min(1, local.y / (local.length() || 1)))) / capReach;
     };
     const tuckAt = (at: THREE.Vector3) => (p.headCovered ? 0 : smooth((rimward(at) - 0.6) / 0.4));
+    capRise = (at) => curlsAt(at) * (1 - 0.7 * tuckAt(at));
     /**
      * The tuck at a point on the cap: the factor its distance across from the head's middle line is scaled by, in across
      * and not down (its height kept, so the hairline stays as clear of the brows).
@@ -898,12 +929,62 @@ export function figureParts(p: FigureParams): Part[] {
       const positions = capPart.geometry.getAttribute("position");
       const q = new THREE.Vector3();
       const keep = Array.from({ length: positions.count }, (_, i) => kept(q.fromBufferAttribute(positions, i).sub(capAt)));
+      // The cap with its texture nowhere faded, whose relief a fall carrying it on takes on below its top, outside the
+      // cap as drawn (which goes smooth there).
+      const full = carried ? capPart.geometry.clone() : undefined;
       // Curls lift less toward the tucked rim, so it stays on the head.
       const bumps = textured(capPart.geometry, () => capAt, capTexture, headR, 1, undefined, (at) => curlsAt(at) * keptRise(at.clone().sub(capAt)) * (1 - 0.7 * tuckAt(at)));
       // The texture's peaks toward the sheen, faded out where the falling hair meets the cap (`kept`).
       const shade = new Float32Array(positions.count);
       // Faded to the texture's average shade, not to none: faded to the hair's plain colour it left a dark band there.
       if (bumps) for (let i = 0; i < positions.count; i++) shade[i] = SHEEN_ON_PEAKS * bumps[i] * bumps[i] * keep[i] + MEAN_SHADE[capTexture] * (1 - keep[i]);
+      const fullBumps = full ? textured(full, () => capAt, capTexture, headR, 1, undefined, (at) => capRise(at)) : undefined;
+      if (full && fullBumps && bumps) {
+        /** Along the level ray from the head's middle line at height z toward (x, y): where a cap geometry's outer surface is, and its shade there. */
+        const surface = (g: THREE.BufferGeometry, lit: (k: number) => number) => {
+          // Only its facets round the back near the fall's top, where the rays go: casting at the whole cap made a
+          // figure five times as slow to build.
+          const index = g.getIndex() as THREE.BufferAttribute;
+          const at0 = g.getAttribute("position");
+          const near = (k: number) => at0.getZ(k) > fallTop - headR * 0.5 && at0.getZ(k) < fallTop + headR * 0.35 && at0.getY(k) < headR * 0.2;
+          const kept: number[] = [];
+          for (let t = 0; t < index.count; t += 3) {
+            const [a, b, c] = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
+            if (near(a) || near(b) || near(c)) kept.push(a, b, c);
+          }
+          const part = new THREE.BufferGeometry();
+          part.setAttribute("position", at0);
+          part.setAttribute("normal", g.getAttribute("normal"));
+          part.setIndex(kept);
+          const mesh = new THREE.Mesh(part, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+          const ray = new THREE.Raycaster();
+          const triangle = new THREE.Triangle();
+          const weights = new THREE.Vector3();
+          const at = g.getAttribute("position");
+          const nor = g.getAttribute("normal");
+          return (x: number, y: number, z: number) => {
+            const r = Math.hypot(x, y) || 1;
+            ray.set(new THREE.Vector3(0, 0, z), new THREE.Vector3(x / r, y / r, 0));
+            // The farthest crossing: the outer surface.
+            const hit = ray.intersectObject(mesh, false).at(-1);
+            if (!hit?.face) return undefined;
+            const { a, b, c } = hit.face;
+            triangle.setFromAttributeAndIndices(at, a, b, c).getBarycoord(hit.point, weights);
+            const normal = new THREE.Vector3()
+              .addScaledVector(new THREE.Vector3().fromBufferAttribute(nor, a), weights.x)
+              .addScaledVector(new THREE.Vector3().fromBufferAttribute(nor, b), weights.y)
+              .addScaledVector(new THREE.Vector3().fromBufferAttribute(nor, c), weights.z)
+              .normalize();
+            return { r: hit.distance, shade: weights.x * lit(a) + weights.y * lit(b) + weights.z * lit(c), normal };
+          };
+        };
+        const drawn = surface(capPart.geometry, (k) => shade[k]);
+        const whole = surface(full, (k) => SHEEN_ON_PEAKS * fullBumps[k] * fullBumps[k]);
+        capSurface = (x, y, z) => {
+          const [a, b] = [drawn(x, y, z), whole(x, y, z)];
+          return a && b ? { r: a.r, shade: a.shade, normal: a.normal, fullR: b.r, fullShade: b.shade } : undefined;
+        };
+      }
       if (edged) {
         // The hair's edge, where it meets skin of nearly its own lightness, drawn on the cap itself: across the forehead
         // and temples its last rows are shaded in strands, every other column well toward the hair's tone off the skin
@@ -992,12 +1073,28 @@ export function figureParts(p: FigureParams): Part[] {
     };
     /** Each column's top, once placed, for its texture to rise from. */
     const columnTops = new Float64Array(columns + 1);
+    /**
+     * Per vertex of a fall that carries the cap's surface on (`carried`), how far its own locks or waves have taken over
+     * from it: none at its column's top, all of it 0.1 to 0.25 head radii down, each lock its own depth, so the change
+     * runs in a ragged line rather than a level one; and the cap's shade where it lies on the cap.
+     */
+    const takenOver = new Float32Array(positions.count).fill(1);
+    const carriedShade = new Float32Array(positions.count).fill(MEAN_SHADE[p.hairTexture]);
+    const carriedNormal = new Array<THREE.Vector3 | undefined>(positions.count);
     for (let i = 0; i < positions.count; i++) {
       // At its two front edges its top comes down a quarter of a head radius, toward where the cap's edge runs down the
       // side of the head, each column's rows spread over what is left: square at the corner, the fall's top and front
       // edge met in a hard corner at temple height, seen from the side.
       const fromBack = Math.abs(Math.atan2(positions.getX(i), -positions.getY(i)));
-      const columnTop = long ? top - headR * 0.25 * smooth((fromBack - 1.6) / 0.3) : top;
+      // Carrying the cap's surface on, round the back each lock starts a little up the crown, its middle higher than its
+      // edges, each by its own height, lying on the cap there: all starting at one height, the fall's top was a level
+      // edge right round the back of the head.
+      const ixTop = i % (columns + 1);
+      const lockHeight = Math.sin(Math.floor(Math.min(ixTop, columns - 1) / 2) * 12.9898 + 13 * 78.233) * 43758.5453;
+      // (Within 0.8 radians of straight behind: further round, a raised lock top stood past the head's outline seen from
+      // a little to one side, with the wall showing between it and the cap.)
+      const upCrown = carried ? headR * (ixTop % 2 === 1 ? 0.05 + 0.1 * (lockHeight - Math.floor(lockHeight)) : 0.015) * (1 - smooth((fromBack - 0.4) / 0.4)) : 0;
+      const columnTop = (long ? top - headR * 0.25 * smooth((fromBack - 1.6) / 0.3) : top) + upCrown;
       columnTops[i % (columns + 1)] = columnTop;
       const z = columnTop - ((columnTop - bottom) * (top - positions.getZ(i))) / (top - bottom);
       const k = across(z);
@@ -1023,7 +1120,43 @@ export function figureParts(p: FigureParams): Part[] {
       // At its very top 1.2% out, a ledge of a millimetre or two: lying on the cap there, the cap's vertices showed
       // through the fall's facets in a dotted line down each side from behind.
       const r = Math.hypot(x, y);
-      const cap = capAcross(x, y, z) * (1.012 + 0.013 * smooth((top - z) / (headR * 0.06)));
+      const out = 1.012 + 0.013 * smooth((top - z) / (headR * 0.06));
+      let cap = capAcross(x, y, z) * out;
+      if (carried && cap > 0) {
+        // Carrying the cap's surface on: near its top the fall lies just outside the cap as drawn, curls and all, and
+        // takes its shade there, until its own locks or waves take over (`takenOver`). (The fall's top row is at the
+        // fall's top; the cap is kept textured there, so the two have the same relief and shade where they meet.)
+        const column = i % (columns + 1);
+        const lock = Math.floor(Math.min(column, columns - 1) / 2);
+        const h = Math.sin(lock * 12.9898 + 11 * 78.233) * 43758.5453;
+        takenOver[i] = smooth((columnTop - z) / (headR * (0.08 + 0.14 * (h - Math.floor(h)))));
+        // Down to where the cap under it has gone smooth (`keptOver`), it never lies inside the cap's curls.
+        // (Only round the back, where it carries the cap's relief on: at the sides it keeps its old place and shade.)
+        const hit = z > columnTop - headR * 0.3 && towardBack(x, y) > 0 ? capSurface(x, y, z) : undefined;
+        if (hit && z > Math.min(columnTop, top) - headR * 0.01) {
+          // Its top edge and where it lies up the crown, straight chords between vertices, passed under the cap's curls
+          // that crest between them, and the cap showed through: there it lies on the highest of the cap across its two
+          // facets.
+          const step = around / columns;
+          for (const k of [-0.5, -0.25, 0.25, 0.5]) {
+            const [cs, sn] = [Math.cos(k * step), Math.sin(k * step)];
+            const near = capSurface(x * cs - y * sn, x * sn + y * cs, z);
+            if (near) hit.r = Math.max(hit.r, near.r);
+          }
+        }
+        if (hit) {
+          // At its top on the cap as drawn, so the two meet flush; within 0.06 head radii on the relief the cap's
+          // texture would have there (the cap as drawn going smooth under it), fading as its own takes over.
+          // Round the back only, coming down to the plain cap by the sides: there, standing out by the curls over the
+          // cap going smooth under it, its top edge let the eye in under it past the head's outline from behind and to
+          // one side, onto the wall.
+          const backward = towardBack(x, y);
+          const below = smooth((columnTop - z) / (headR * 0.06)) * (1 - takenOver[i]);
+          cap = Math.max(cap, cap + (Math.max(hit.r, hit.r + (hit.fullR - hit.r) * below) * out - cap) * backward);
+          carriedShade[i] = hit.shade + (hit.fullShade - hit.shade) * smooth((columnTop - z) / (headR * 0.06));
+          carriedNormal[i] = hit.normal;
+        }
+      }
       // At its top it lies on the cap (as the cap is drawn in at the sides), and comes out to its own outline below:
       // standing at its own outline from the start, it began in a flat step at temple height, seen from the side. Its
       // two front edges lie on the head down past the ears, so they come out from under the cap rather than standing off
@@ -1070,6 +1203,8 @@ export function figureParts(p: FigureParams): Part[] {
     // so it turns at least twice before its end.
     const along = matched ? (p.hairTexture === "coily" ? 1.3 : 1.6) : p.hairTexture === "wavy" && long ? Math.max(0.4, Math.min(1.6, (rows * 2 * Math.PI) / (3 * 7 * ((top - bottom) / headR)))) : 0.4;
     const centreOf = (q: THREE.Vector3) => new THREE.Vector3(0, back(q.z), q.z);
+    const half = hang.geometry.getAttribute("position").count / 2;
+    const takeOver = Float32Array.from({ length: half * 2 }, (_, i) => takenOver[i % half]);
     const bumps = ringed
       ? // Each lock rises from its own column's top (lower at the two front edges, where the fall's top comes down the
         // side of the head, higher where a lock starts up the crown): read from the fall's top, the front locks were
@@ -1093,7 +1228,7 @@ export function figureParts(p: FigureParams): Part[] {
           headR,
           along,
           undefined,
-          (q) => (matched ? smooth((top - q.z) / (headR * 0.12)) : inFall(q.z)),
+          (q, i) => (matched ? smooth((top - q.z) / (headR * 0.12)) : carried ? takeOver[i] : inFall(q.z)),
           matched || wavyFall ? top : 0,
           wavyFall ? { swing: 1.3, lobes: 2, strands: 0.3 } : undefined,
         );
@@ -1110,9 +1245,13 @@ export function figureParts(p: FigureParams): Part[] {
         // upright line down the side of the head.
         const ix = (i % (at.count / 2)) % (columns + 1);
         const edge = (1 - Math.min(1, Math.min(ix, columns - ix) / 2)) * (1 - smooth((headCentreZ - headR * 0.2 - q.z) / (headR * 0.5)));
-        const t = Math.max(1 - smooth((top - q.z) / (headR * 0.35)), edge);
+        // A fall carrying the cap's surface on is lit at its top as the cap as drawn is there, curls and all, coming to
+        // its own normals within 0.12 head radii: lit as the cap's smooth surface, it drew a smooth band under the crown,
+        // and with its own upright normals from the start, a dark line along its top.
+        const lying = carried ? carriedNormal[i % (at.count / 2)] : undefined;
+        const t = lying ? Math.max(1 - smooth((columnTops[ix] - q.z) / (headR * 0.12)), edge) : carried ? edge : Math.max(1 - smooth((top - q.z) / (headR * 0.35)), edge);
         if (t <= 0) continue;
-        const cap = capNormal(q).multiplyScalar(i < at.count / 2 ? 1 : -1);
+        const cap = (lying && t > edge ? lying.clone() : capNormal(q)).multiplyScalar(i < at.count / 2 ? 1 : -1);
         nq.fromBufferAttribute(normals, i).lerp(cap, t).normalize();
         normals.setXYZ(i, nq.x, nq.y, nq.z);
       }
@@ -1129,12 +1268,14 @@ export function figureParts(p: FigureParams): Part[] {
     const soft = ringed ? 0.55 : wavyFall ? 0.7 : 1;
     if (bumps && fallPart.shade && !matched) {
       // Ringlets fade in from their own column's top.
-      const half = fallAt.count / 2;
       const faded = (i: number) => {
+        if (carried) return takeOver[i];
         const column = (i % half) % (columns + 1);
         return ringed ? smooth((columnTops[column] - fallAt.getZ(i)) / comeIn(column)) : inFall(fallAt.getZ(i));
       };
-      fallPart.shade = fallPart.shade.map((x, i) => x * soft * faded(i) + MEAN_SHADE[p.hairTexture] * (1 - faded(i)));
+      // Where the cap's texture is carried on, its shade too, as the cap shades it.
+      const under = (i: number) => (carried ? carriedShade[i % half] : MEAN_SHADE[p.hairTexture]);
+      fallPart.shade = fallPart.shade.map((x, i) => x * soft * faded(i) + under(i) * (1 - faded(i)));
     }
     out.push(fallPart);
   }

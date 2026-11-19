@@ -1120,8 +1120,9 @@ describe("round six: coily and curly masses, temples, eyes on pale skin, waves, 
         expect(half % width, label).toBe(0);
         const rows = half / width;
         const at = (row: number, k: number) => row * width + k;
-        // Rows past the top's fade (0.25 head radii down) and above the ends.
-        const body = Array.from({ length: rows }, (_, r) => r).filter((r) => pos.getZ(at(r, 0)) < top - headR * 0.25 && r < rows - 1);
+        // Rows past the top's fade (0.25 head radii down) and above the ends, read at the back (the middle column): the
+        // two front edges' tops lie 0.25 head radii lower, so read there, the fall's top row counted as past the fade.
+        const body = Array.from({ length: rows }, (_, r) => r).filter((r) => pos.getZ(at(r, Math.floor(width / 2))) < top - headR * 0.25 && r < rows - 1);
         expect(body.length, label).toBeGreaterThanOrEqual(5);
         // Grooves: the places in a row where the shade dips. In ringlets they are the same columns all the way down
         // (open grooves between locks); lumps one vertex in three made them move from row to row (closed cells).
@@ -1286,6 +1287,33 @@ describe("round seven: hair from the room's own angles, locks, lids and the fall
       const pairs = Array.from({ length: 12 }, (_, k) => correlation(column(k + 4), column(k + 5)));
       const average = pairs.reduce((s, x) => s + x, 0) / pairs.length;
       expect(average, `wavy ${length_cm} cm`).toBeGreaterThan(0.6);
+    }
+  });
+
+  it("runs the crown's waves, curls or coils on into hair worn down round the back: the fall starts lock by lock at different heights, shaded as the cap is there, never along one level edge", () => {
+    for (const [texture, length_cm] of [["wavy", 18], ["wavy", 30], ["wavy", 50], ["curly", 30], ["curly", 50], ["coily", 30], ["coily", 50], ["coily", 75]] as const) {
+      for (const [skin, hex] of [["#292420", "#1b1612"], ["#eadaba", "#653700"]]) {
+        const { p, headR } = standing({ skin: { hex: skin }, hair: { length_cm, texture, hex } });
+        const fall = figureParts(p).find((x) => x.name === "hair");
+        const pos = fall?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const shade = fall?.shade as Float32Array;
+        // Each column's top (its highest vertex on the outer side) within 0.6 radians of straight behind.
+        const tops = new Map<number, number>();
+        for (let i = 0; i < pos.count / 2; i++) {
+          const round = Math.atan2(pos.getX(i), -pos.getY(i));
+          if (Math.abs(round) > 0.6) continue;
+          const key = Math.round(round * 100);
+          const best = tops.get(key);
+          if (best === undefined || pos.getZ(i) > pos.getZ(best)) tops.set(key, i);
+        }
+        const label = `${texture} ${length_cm} cm on ${skin}`;
+        expect(tops.size, label).toBeGreaterThanOrEqual(4);
+        const heights = [...tops.values()].map((i) => pos.getZ(i));
+        const shades = [...tops.values()].map((i) => shade[i]);
+        // Master's fall started at one height all round, its top shaded one even tone (the texture's average).
+        expect((Math.max(...heights) - Math.min(...heights)) / headR, `${label}: heights`).toBeGreaterThan(0.05);
+        expect(Math.max(...shades) - Math.min(...shades), `${label}: shades ${shades.map((s) => s.toFixed(2)).join(" ")}`).toBeGreaterThan(0.1);
+      }
     }
   });
 
