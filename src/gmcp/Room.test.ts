@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sampleLayout } from "../map/roomLayout.fixture";
 import nativeFront from "../map/roomLayout.native-front.sample.json";
 import fittedDesk from "../map/roomLayout.fitted-desk.sample.json";
+import trestle from "../map/roomLayout.trestle.sample.json";
 import { useRoomStore } from "../stores/roomStore";
 import { GMCPClientSpatial } from "./Client/Spatial";
 import { GMCPRoom, type GMCPMessageRoomInfo } from "./Room";
@@ -30,6 +31,22 @@ describe("Room.Layout", () => {
     room.receive("Info", info(1234));
     expect(room.receive("Layout", sampleLayout())).toBe(true);
     expect(useRoomStore.getState().roomLayout).toEqual(sampleLayout());
+  });
+
+  it("accepts the office trestle from the wire and rejects malformed role and basis updates", () => {
+    const layout = { ...sampleLayout(), room_lifetime: "office", things: [trestle] };
+    room.receive("Layout", layout);
+    const boxes = () => useRoomStore.getState().roomLayout?.things[0].form_boxes;
+    expect(boxes()).toEqual(trestle.form_boxes);
+    const update = (part: unknown) => room.receive("LayoutUpdate", {
+      num: layout.num, room_lifetime: layout.room_lifetime, bodies: [{ ...trestle, form_boxes: [part] }],
+    });
+    update({ ...trestle.form_boxes[0], role: "slab\nlook" });
+    expect(boxes()).toEqual(trestle.form_boxes);
+    update({ ...trestle.form_boxes[0], basis: [[1, 0, 0], [0, 0, 0], [0, 0, 1]] });
+    expect(boxes()).toEqual(trestle.form_boxes);
+    update(trestle.form_boxes[1]);
+    expect(boxes()).toEqual([trestle.form_boxes[1]]);
   });
 
   it("refreshes and clears fitted parts on native body updates for the same host incarnation", () => {

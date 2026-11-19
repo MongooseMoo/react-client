@@ -38,6 +38,25 @@ describe("RoomLayoutView", () => {
   }
   const renderView = () => render(<StoredView />);
 
+  it("inspects the selected nested occurrence even when labels repeat and drops replaced parts", () => {
+    const layout = sampleLayout();
+    const host = layout.things.find((thing) => thing.kind === "object")!;
+    host.id = "#236";
+    host.lifetime = "camera-life";
+    host.form_boxes = ["front/screen", "back/screen"].map((role) => ({
+      role, label: "screen", center: [0, 0, 0], size: [1, 1, 1],
+    }));
+    useRoomStore.getState().setRoomLayout(layout);
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "Inspect screen (back/screen)" }));
+    expect(onExit).toHaveBeenCalledWith("look back/screen on #236");
+    act(() => useRoomStore.getState().setRoomLayout({ ...layout, things: layout.things.map((item) =>
+      item === host ? { ...host, form_boxes: [{ ...host.form_boxes![0], role: "viewfinder", label: "viewfinder" }] } : item) }));
+    expect(screen.queryByRole("button", { name: /inspect screen/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Inspect viewfinder" }));
+    expect(onExit).toHaveBeenLastCalledWith("look viewfinder on #236");
+  });
+
   it("keeps the focused drawer and its native commands across a change observed from text", () => {
     const layout = sampleLayout();
     const desk = layout.things.find((thing) => thing.kind === "object")!;
