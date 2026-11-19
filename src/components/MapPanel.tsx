@@ -141,7 +141,7 @@ const MapPanel: React.FC<MapPanelProps> = ({ client }) => {
       </section>
 
       {layout && layout.num === current.id && (
-        <RoomLayoutView layout={layout} roomName={current.name} onExit={(name) => client.sendCommand(name)} />
+        <RoomLayoutView layout={layout} roomName={current.name} onCommand={(command) => client.sendCommand(command)} />
       )}
 
       <section aria-labelledby="map-picture-heading">

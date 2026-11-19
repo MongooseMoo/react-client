@@ -50,6 +50,25 @@ export interface LayoutFront {
 
 export interface LayoutRelation { kind: string; target: string; text: string }
 
+export interface LayoutDrawerItem {
+  id: string;
+  lifetime: string;
+  name: string;
+  command: string;
+}
+
+export interface LayoutFitting extends LayoutDrawerItem {
+  opened: boolean;
+  contents: LayoutDrawerItem[];
+}
+
+/** Authored boxes in metres, relative to the centre and axes of the host's pose. */
+export interface LayoutFormBox {
+  center: LayoutVector;
+  size: LayoutVector;
+  fitting?: LayoutFitting;
+}
+
 export interface LayoutBody {
   id: string;
   lifetime: string;
@@ -57,6 +76,7 @@ export interface LayoutBody {
   shapes: LayoutShape[];
   front?: LayoutFront;
   relation?: LayoutRelation;
+  form_boxes?: LayoutFormBox[];
 }
 
 export interface RoomLayoutUpdate {
@@ -96,6 +116,7 @@ export interface LayoutThing {
   front?: LayoutFront;
   relation?: LayoutRelation;
   state?: { opened?: boolean; lit?: boolean; mode?: string };
+  form_boxes?: LayoutFormBox[];
   /** Acoustic snapshot origin; never a physical drawing position. */
   origin?: LayoutVector;
   /** Registered `$` names of the thing's ancestors, nearest first (`table`, `furniture`, `thing`). */
@@ -192,6 +213,22 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const vector = (value: unknown): value is LayoutVector =>
   Array.isArray(value) && value.length === 3 && value.every(finite);
+const namedTarget = (value: unknown): value is LayoutDrawerItem =>
+  record(value) && typeof value.id === "string" && /^#\d+$/.test(value.id) &&
+  typeof value.name === "string" && typeof value.lifetime === "string" && !!value.lifetime &&
+  typeof value.command === "string";
+
+function validFormBox(value: unknown): value is LayoutFormBox {
+  if (!record(value) || !vector(value.center) || !vector(value.size) || !value.size.every((n) => n > 0)) return false;
+  const fitting = value.fitting;
+  if (fitting === undefined) return true;
+  if (!record(fitting) || !namedTarget(fitting) || typeof fitting.opened !== "boolean" || !Array.isArray(fitting.contents)) return false;
+  return (!fitting.command || fitting.command === `${fitting.opened ? "close" : "open"} ${fitting.id}`) &&
+    (fitting.opened || fitting.contents.length === 0) && fitting.contents.every((item: unknown) =>
+      namedTarget(item) && (!item.command || item.command === `get ${item.id} from ${fitting.id}`));
+}
+
+const validFormBoxes = (value: unknown): value is LayoutFormBox[] => Array.isArray(value) && value.every(validFormBox);
 const pair = (value: unknown): value is [number, number] =>
   Array.isArray(value) && value.length === 2 && value.every(finite) && value[1] >= value[0];
 const shape = (value: unknown): value is LayoutShape => record(value) && (
@@ -212,6 +249,7 @@ export function isLayoutPose(pose: unknown): pose is LayoutPose {
 function body(value: unknown): value is LayoutBody {
   return record(value) && typeof value.id === "string" && typeof value.lifetime === "string" && isLayoutPose(value.pose) &&
     Array.isArray(value.shapes) && value.shapes.every(shape) &&
+    (value.form_boxes === undefined || validFormBoxes(value.form_boxes)) &&
     (value.front === undefined || (record(value.front) && vector(value.front.axis) &&
       finite(value.front.yaw) && typeof value.front.direction === "string")) &&
     (value.relation === undefined || (record(value.relation) && typeof value.relation.kind === "string" &&
@@ -249,7 +287,11 @@ export class GMCPRoom extends GMCPRoomBase {
     this.on("players", (data) => this.handlePlayers(data));
     this.on("addPlayer", (data) => this.handleAddPlayer(data));
     this.on("removePlayer", (data) => this.handleRemovePlayer(data));
-    this.on("layout", (data) => useRoomStore.getState().setRoomLayout(data));
+    this.on("layout", (data) => useRoomStore.getState().setRoomLayout({
+      ...data,
+      things: data.things.map((thing) => thing.form_boxes === undefined || validFormBoxes(thing.form_boxes)
+        ? thing : { ...thing, form_boxes: undefined }),
+    }));
     this.on("layoutUpdate", (data) => {
       if (layoutUpdate(data)) useRoomStore.getState().updateRoomLayout(data);
     });

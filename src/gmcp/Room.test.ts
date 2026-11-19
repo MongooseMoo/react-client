@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sampleLayout } from "../map/roomLayout.fixture";
 import nativeFront from "../map/roomLayout.native-front.sample.json";
+import fittedDesk from "../map/roomLayout.fitted-desk.sample.json";
 import { useRoomStore } from "../stores/roomStore";
 import { GMCPClientSpatial } from "./Client/Spatial";
 import { GMCPRoom, type GMCPMessageRoomInfo } from "./Room";
@@ -29,6 +30,23 @@ describe("Room.Layout", () => {
     room.receive("Info", info(1234));
     expect(room.receive("Layout", sampleLayout())).toBe(true);
     expect(useRoomStore.getState().roomLayout).toEqual(sampleLayout());
+  });
+
+  it("refreshes and clears fitted parts on native body updates for the same host incarnation", () => {
+    const layout = { ...sampleLayout(), room_lifetime: "current-room",
+      things: [{ ...fittedDesk, name: "a wooden desk", kind: "object", mounted: false, fixed: false }] };
+    room.receive("Layout", layout);
+    const fittingBoxes = () => useRoomStore.getState().roomLayout?.things[0].form_boxes;
+    expect(fittingBoxes()).toEqual(fittedDesk.form_boxes);
+    const update = (body: unknown) => room.receive("LayoutUpdate",
+      { num: layout.num, room_lifetime: layout.room_lifetime, bodies: [body] });
+    const { form_boxes, ...bare } = fittedDesk;
+    update({ ...bare, lifetime: "recycled" });
+    expect(fittingBoxes()).toEqual(form_boxes);
+    update(bare);
+    expect(fittingBoxes()).toBeUndefined();
+    update(fittedDesk);
+    expect(fittingBoxes()).toEqual(form_boxes);
   });
 
   it("accepts the real MOO front/pose/finish projection and matching physical updates", () => {

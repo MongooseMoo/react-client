@@ -34,9 +34,41 @@ describe("RoomLayoutView", () => {
 
   function StoredView() {
     const layout = useRoomStore((state) => state.roomLayout);
-    return layout && <RoomLayoutView layout={layout} roomName="Le Salon" onExit={onExit} />;
+    return layout && <RoomLayoutView layout={layout} roomName="Le Salon" onCommand={onExit} />;
   }
   const renderView = () => render(<StoredView />);
+
+  it("keeps the focused drawer and its native commands across a change observed from text", () => {
+    const layout = sampleLayout();
+    const desk = layout.things.find((thing) => thing.kind === "object")!;
+    const fitting = { id: "#44469", lifetime: "drawer-life", name: "upper-left drawer",
+      opened: false, command: "open #44469", contents: [] };
+    desk.form_boxes = [{ center: [-0.5, 0, 0.175], size: [0.3, 0.6, 0.15], fitting }];
+    useRoomStore.getState().setRoomLayout(layout);
+    renderView();
+    const toggle = screen.getByRole("button", { name: "Open upper-left drawer", expanded: false });
+    toggle.focus();
+    fireEvent.click(toggle);
+    expect(onExit).toHaveBeenLastCalledWith("open #44469");
+    expect(screen.queryByRole("button", { name: /get letter/i })).toBeNull();
+
+    const item = { id: "#50", lifetime: "letter-life", name: "letter", command: "get #50 from #44469" };
+    const show = (opened: boolean) => act(() => useRoomStore.getState().setRoomLayout({ ...layout,
+      things: layout.things.map((thing) => thing !== desk ? thing : { ...thing,
+        form_boxes: [{ ...desk.form_boxes![0], fitting: { ...fitting, opened,
+          command: opened ? "close #44469" : "open #44469", contents: opened ? [item] : [] } }] }),
+    }));
+    show(true);
+    expect(screen.getByRole("button", { name: "Close upper-left drawer", expanded: true })).toBe(toggle);
+    expect(document.activeElement).toBe(toggle);
+    const getLetter = screen.getByRole("button", { name: "Get letter" });
+    getLetter.focus();
+    fireEvent.click(getLetter);
+    expect(onExit).toHaveBeenLastCalledWith(item.command);
+    expect(document.activeElement).toBe(toggle);
+    show(false);
+    expect(screen.queryByRole("button", { name: "Get letter" })).toBeNull();
+  });
 
   it("shows supplied finishes, support, front and device state quietly", () => {
     const layout = sampleLayout();
@@ -46,7 +78,7 @@ describe("RoomLayoutView", () => {
       relation: { kind: "on", target: "#5678", text: "on oak table" },
       front: { axis: [0, -1, 0], yaw: Math.PI, direction: "north" }, state: { opened: false, mode: "offline" },
     });
-    render(<RoomLayoutView layout={layout} roomName="Le Salon" onExit={onExit} />);
+    render(<RoomLayoutView layout={layout} roomName="Le Salon" onCommand={onExit} />);
     expect(screen.getAllByRole("definition")).toHaveLength(2);
     expect(screen.getByText("oak")).toBeDefined();
     expect(screen.getByText("drywall")).toBeDefined();
@@ -58,7 +90,7 @@ describe("RoomLayoutView", () => {
     const ch = TEST_CHARACTERS[0];
     const layout = sampleLayout();
     layout.things = layout.things.map((t) => (t.id === "#99" ? { ...t, appearance: ch.appearance } : t));
-    const { container } = render(<RoomLayoutView layout={layout} roomName="Le Salon" onExit={onExit} />);
+    const { container } = render(<RoomLayoutView layout={layout} roomName="Le Salon" onCommand={onExit} />);
     const token = screen.getByRole("img").querySelector('[data-id="#99"]') as SVGGElement;
     expect(token.getAttribute("class")).toContain("rl-dressed");
     expect(token.style.getPropertyValue("--rl-body")).toBe("#01153e");
@@ -115,7 +147,7 @@ describe("RoomLayoutView", () => {
   });
 
   it("draws the real laundry room and lists a thing sent without shapes", () => {
-    render(<RoomLayoutView layout={laundry as unknown as RoomLayout} roomName="Laundry" onExit={onExit} />);
+    render(<RoomLayoutView layout={laundry as unknown as RoomLayout} roomName="Laundry" onCommand={onExit} />);
     const picture = screen.getByRole("img");
     expect(picture.querySelectorAll(".rl-item")).toHaveLength(12);
     expect(picture.querySelectorAll(".rl-door")).toHaveLength(2);
@@ -179,7 +211,7 @@ describe("RoomLayoutView views", () => {
   });
 
   const renderLiving = () =>
-    render(<RoomLayoutView layout={livingRoomLayout()} roomName="The Living Room" onExit={vi.fn()} />);
+    render(<RoomLayoutView layout={livingRoomLayout()} roomName="The Living Room" onCommand={vi.fn()} />);
   const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
 
   it("offers Plan, Dollhouse and Your eyes as one labelled radio group, Plan first", () => {
@@ -208,7 +240,7 @@ describe("RoomLayoutView views", () => {
     expect((await screen.findByTestId("room-3d")).getAttribute("data-mode")).toBe("eyes");
     view.unmount();
 
-    render(<RoomLayoutView layout={sampleLayout()} roomName="Le Salon" onExit={vi.fn()} />);
+    render(<RoomLayoutView layout={sampleLayout()} roomName="Le Salon" onCommand={vi.fn()} />);
     expect(radio("Your eyes").checked).toBe(true);
     expect((await screen.findByTestId("room-3d")).getAttribute("data-mode")).toBe("eyes");
   });

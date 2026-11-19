@@ -49,7 +49,7 @@ export const useRoomStore = create<RoomState>((set) => ({
       const body = bodies.get(thing.id);
       if (!body || thing.lifetime !== body.lifetime) return thing;
       changed = true;
-      return { ...thing, pose: body.pose, shapes: body.shapes, front: body.front, relation: body.relation };
+        return { ...thing, pose: body.pose, shapes: body.shapes, front: body.front, relation: body.relation, form_boxes: body.form_boxes };
     });
     return changed ? { roomLayout: { ...layout, things } } : state;
   }),
