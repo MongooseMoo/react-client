@@ -1044,9 +1044,15 @@ export function figureParts(p: FigureParams): Part[] {
       // outside it they met it along a crack a fraction of a millimetre wide, which from behind and to one side showed
       // the room in a column of light dots near the top of the fall.
       const front = 1 - Math.min(1, Math.min(ix, columns - ix) / 2);
-      const base = cap > 0 ? cap * (1 - 0.06 * front) : onHead;
+      // Only near their top, where they come out from under the cap: further down, inside it, the cap came through
+      // them in dots from behind and to one side.
+      const base = cap > 0 ? cap * (1 - 0.06 * front * smooth((z - (columnTop - headR * 0.2)) / (headR * 0.15))) : onHead;
+      // Curls and coils to the jaw turn faster than the cap's below the top, so out of step with them: they lie out by
+      // the height of the cap's curls where they cover it (from 0.12 head radii below their top), or the cap's curls came
+      // through between theirs at the side.
+      const overCurls = cap > 0 ? headR * 0.06 * smooth((top - z) / (headR * 0.12)) : 0;
       const want = rounded
-        ? base + (Math.max(base, capAcross(x, y, top) * 1.012 * (1 - rounded * u * u)) - base) * edge
+        ? base + overCurls + (Math.max(base + overCurls, capAcross(x, y, top) * 1.012 * (1 - rounded * u * u)) - base - overCurls) * edge
         : base > 0
           ? base + (Math.max(r, base) - base) * own
           : r;

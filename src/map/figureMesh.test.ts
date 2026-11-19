@@ -1226,10 +1226,13 @@ describe("round seven: hair from the room's own angles, locks, lids and the fall
             const first = row.findIndex(isHair);
             if (first < 0) continue;
             const last = row.length - 1 - [...row].reverse().findIndex(isHair);
-            // A dot: a cell that is not hair with hair on both sides of it in its row and column.
+            // A dot: a cell that is not hair with hair on both sides of it in its row and column, or a cell of the cap or
+            // its rim with the falling hair on all four sides (the cap poking through it).
+            const fall = (part: (typeof row)[number]) => part?.name === "hair";
             for (let i = first + 1; i < last; i++) {
-              if (isHair(row[i])) continue;
-              if (isHair(row[i - 1]) && isHair(row[i + 1]) && isHair(grid[j - 1]?.[i]) && isHair(grid[j + 1]?.[i])) at.push(`${i},${j}:${row[i]?.name ?? "wall"}`);
+              const around = [row[i - 1], row[i + 1], grid[j - 1]?.[i], grid[j + 1]?.[i]];
+              if (!isHair(row[i]) && around.every(isHair)) at.push(`${i},${j}:${row[i]?.name ?? "wall"}`);
+              else if (row[i]?.name !== "hair" && around.every(fall)) at.push(`${i},${j}:${row[i]?.name} through the fall`);
             }
           }
           expect(at.length, `${texture} ${length_cm} cm, az ${az} el ${el}: ${at.slice(0, 6).join(" ")}`).toBe(0);
