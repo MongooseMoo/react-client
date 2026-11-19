@@ -195,7 +195,8 @@ line, band or row of points, and not on to the sides of the head. The hair's edg
 round, so even full curly and coily hair meets the forehead and temples with nothing showing between hair and head,
 and its rim is closed in to the head by a narrow band, so from a little above and up to 40 degrees to either side
 the eye never looks in under it to the room behind. From behind, nothing shows through hair worn down: its front
-edges lie just inside the hair over the crown where that hair is, and on the head below it.
+edges come out from just inside the hair over the crown, and lie on the head below it; curls and coils to
+the jaw lie clear of the curls over the crown, which never show through them.
 The collar line on the neck is the clothing's colour toned off the neck the same way. Brows
 are the hair's colour toned the same way, set below the hair's front edge and clear of it; eyes
 have a white and an iris in the eye colour, or a dark pupil when there is no eye colour, and on skin
