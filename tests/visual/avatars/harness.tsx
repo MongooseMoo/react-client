@@ -214,7 +214,37 @@ const ROUND5_CHARACTERS: TestCharacter[] = [
   faceOf("wavy 30 cm, tan", SKIN.tan, { length_cm: 30, texture: "wavy", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
   faceOf("eyes, very pale, 3 cm", SKIN.veryPale, { length_cm: 3, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
 ];
-const SETS: Record<string, TestCharacter[]> = { vocab: VOCAB_CHARACTERS, face: FACE_CHARACTERS, round3: ROUND3_CHARACTERS, round4: ROUND4_CHARACTERS, round5: ROUND5_CHARACTERS };
+/**
+ * `set=round6`: coily hair at chin length (3D and portrait), curly and coily hair past the jaw on deep and very pale
+ * skin (the temples from the front, the falls from behind, waist length in the portrait), wavy and straight hair
+ * past the jaw, eyes on very pale skin, cropped black hair on deep skin face-on, and 8 against 3 cm on light skin.
+ */
+const LIGHT = "#eadaba";
+const ROUND6_CHARACTERS: TestCharacter[] = [
+  ...(["coily", "curly"] as const).flatMap((texture) =>
+    ([18, 30, 50, 75] as const).flatMap((cm) => [
+      faceOf(`${texture} ${cm} cm, deep`, SKIN.deep, { length_cm: cm, texture, hex: HAIR.black }, undefined, { face: { shape: "oval" } }),
+      faceOf(`${texture} ${cm} cm, very pale`, SKIN.veryPale, { length_cm: cm, texture, hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+    ]),
+  ),
+  faceOf("wavy 30 cm, light", LIGHT, { length_cm: 30, texture: "wavy", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+  faceOf("wavy 50 cm, light", LIGHT, { length_cm: 50, texture: "wavy", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+  faceOf("straight 30 cm, light", LIGHT, { length_cm: 30, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+  faceOf("straight 75 cm, light", LIGHT, { length_cm: 75, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+  faceOf("eyes none, very pale, 3 cm", SKIN.veryPale, { length_cm: 3, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" }, eyes: undefined }),
+  faceOf("eyes green, very pale, 3 cm", SKIN.veryPale, { length_cm: 3, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" }, eyes: { hex: "#4f7a3a" } }),
+  faceOf("cropped black 3 cm, deep", SKIN.deep, { length_cm: 3, texture: "straight", hex: HAIR.black }, undefined, { face: { shape: "oval" } }),
+  faceOf("straight 3 cm, light", LIGHT, { length_cm: 3, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+  faceOf("straight 8 cm, light", LIGHT, { length_cm: 8, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
+];
+const SETS: Record<string, TestCharacter[]> = {
+  vocab: VOCAB_CHARACTERS,
+  face: FACE_CHARACTERS,
+  round3: ROUND3_CHARACTERS,
+  round4: ROUND4_CHARACTERS,
+  round5: ROUND5_CHARACTERS,
+  round6: ROUND6_CHARACTERS,
+};
 // `only=text`: just the characters whose name contains that text, for a close look at a few.
 const CHARACTERS = (SETS[params.get("set") ?? ""] ?? TEST_CHARACTERS).filter((ch) => ch.name.includes(params.get("only") ?? ""));
 const root = document.getElementById("root") as HTMLElement;
@@ -255,6 +285,12 @@ if (view === "portraits") {
             <td>
               <AvatarPortrait appearance={ch.appearance} size={128} />
             </td>
+            {/* `big=1`: also at 512 px, the player card's drawn size, for a close look. */}
+            {params.get("big") ? (
+              <td>
+                <AvatarPortrait appearance={ch.appearance} size={512} />
+              </td>
+            ) : null}
           </tr>
         ))}
       </tbody>
