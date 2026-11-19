@@ -702,19 +702,37 @@ describe("hair styles in 3D", () => {
  */
 function picture(
   parts: ReturnType<typeof figureParts>,
-  view: "front" | "back" | "side",
+  /**
+   * Or a camera `az` radians round from face-on (toward +x) and `el` above level, looking at `centre`: across and up
+   * are then measured in the picture from `centre`, as the room's Dollhouse and Your eyes see a head.
+   */
+  view: "front" | "back" | "side" | { az: number; el: number; centre: THREE.Vector3 },
   [u0, v0, u1, v1]: [number, number, number, number],
   step: number,
   /** Leave out faces turned away from the camera, as the 3D view's one-sided material does. */
   cull = false,
 ): Array<Array<(typeof parts)[number] | undefined>> {
-  const toCamera = new THREE.Vector3(...({ front: [0, 1, 0], back: [0, -1, 0], side: [1, 0, 0] } as const)[view]);
+  const toCamera =
+    typeof view === "string"
+      ? new THREE.Vector3(...({ front: [0, 1, 0], back: [0, -1, 0], side: [1, 0, 0] } as const)[view])
+      : new THREE.Vector3(Math.sin(view.az) * Math.cos(view.el), Math.cos(view.az) * Math.cos(view.el), Math.sin(view.el));
+  // For a camera at an angle: the picture's across (level, to the camera's right) and up.
+  const across = new THREE.Vector3(toCamera.y, -toCamera.x, 0).normalize();
+  const upward = new THREE.Vector3().crossVectors(across, toCamera);
+  const centre = typeof view === "string" ? new THREE.Vector3() : view.centre;
+  const q = new THREE.Vector3();
   const [pa, pb, pc] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
   const cols = Math.ceil((u1 - u0) / step);
   const rows = Math.ceil((v1 - v0) / step);
   const depth = Array.from({ length: rows }, () => new Array<number>(cols).fill(Number.NEGATIVE_INFINITY));
   const out = Array.from({ length: rows }, () => new Array<(typeof parts)[number] | undefined>(cols).fill(undefined));
-  const project = (x: number, y: number, z: number): [number, number, number] => (view === "front" ? [x, z, y] : view === "back" ? [-x, z, -y] : [y, z, x]);
+  const project = (x: number, y: number, z: number): [number, number, number] => {
+    if (view === "front") return [x, z, y];
+    if (view === "back") return [-x, z, -y];
+    if (view === "side") return [y, z, x];
+    q.set(x, y, z).sub(centre);
+    return [q.dot(across), q.dot(upward), q.dot(toCamera)];
+  };
   for (const part of parts) {
     const pos = part.geometry.getAttribute("position");
     const index = part.geometry.getIndex();
@@ -1151,6 +1169,52 @@ describe("round six: coily and curly masses, temples, eyes on pale skin, waves, 
         const [a, b] = [hairCells(3, view), hairCells(8, view)];
         const differ = [...new Set([...a.set, ...b.set])].filter((k) => a.set.has(k) !== b.set.has(k)).length * a.cell;
         expect(differ, `${view} on ${skin}`).toBeGreaterThan(0.6);
+      }
+    }
+  });
+});
+
+describe("round seven: hair from the room's own angles, locks, lids and the fall beside the face in 3D", () => {
+  const HAIR_PARTS = ["cap", "hair", "fringe", "crest"];
+  const isHair = (part: ReturnType<typeof figureParts>[number] | undefined) => HAIR_PARTS.includes(part?.name ?? "");
+  type Grid = Array<Array<ReturnType<typeof figureParts>[number] | undefined>>;
+  /** In each row, the empty cells (the room behind) between the first and the last hair cell: where the wall shows. */
+  const wallBetween = (grid: Grid) => {
+    const at: string[] = [];
+    for (const [j, row] of grid.entries()) {
+      const first = row.findIndex(isHair);
+      if (first < 0) continue;
+      const last = row.length - 1 - [...row].reverse().findIndex(isHair);
+      for (let i = first; i <= last; i++) if (row[i] === undefined) at.push(`${i},${j}`);
+    }
+    return { length: at.length, at: at.slice(0, 6).join(" ") };
+  };
+
+  it("meets the head with hair at the temples from every angle within 40 degrees of face-on and up to 30 above: no wall between hair and head", () => {
+    const cases: Array<[string, number]> = [
+      ...["coily", "curly"].flatMap((texture) => [18, 30, 50, 75].map((cm) => [texture, cm] as [string, number])),
+      ["wavy", 30],
+      ["straight", 30],
+    ];
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
+      for (const [texture, length_cm] of cases) {
+        const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm, texture, hex } });
+        const parts = figureParts(p);
+        for (const az of [-40, -25, -10, 0, 10, 25, 40]) {
+          for (const el of [0, 15, 30]) {
+            const view = { az: (az * Math.PI) / 180, el: (el * Math.PI) / 180, centre: new THREE.Vector3(0, 0, headZ) };
+            // From just under the eyes up past the temples, seen as the 3D view draws it (faces turned away left out).
+            const grid = picture(parts, view, [-headR * 1.8, -headR * 0.1, headR * 1.8, headR * 0.9], headR / 80, true);
+            const wall = wallBetween(grid);
+            if (wall.length && process.env.DUMP) {
+              const [ci, cj] = wall.at.split(" ")[0].split(",").map(Number);
+              const lines = [];
+              for (let j = Math.min(grid.length - 1, cj + 25); j >= Math.max(0, cj - 25); j--) lines.push(grid[j].slice(Math.max(0, ci - 50), ci + 40).map((x) => (x === undefined ? "." : x.name === "cap" ? "c" : x.name === "hair" ? "h" : x.name ? x.name[0] : "s")).join(""));
+              console.log(`${texture} ${length_cm} ${skin} az ${az} el ${el}\n${lines.join("\n")}`);
+            }
+            expect(wall.length, `${texture} ${length_cm} cm on ${skin}, az ${az} el ${el}, at ${wall.at}`).toBe(0);
+          }
+        }
       }
     }
   });

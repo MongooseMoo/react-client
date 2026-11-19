@@ -268,6 +268,34 @@ function twoSided(g: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 
 /**
+ * A band closing a sphere cap's rim (the last of its `rows`, laid out in rows of `across + 1` vertices) in to the head:
+ * from each rim vertex straight in toward the cap's centre `at` to `inner(direction)` from it, drawn from both sides.
+ * Its vertices are the rim's, then the inner ones, so a shade along the rim applies to both rows.
+ */
+function rimLip(g: THREE.BufferGeometry, across: number, rows: number, at: THREE.Vector3, inner: (d: THREE.Vector3) => number): THREE.BufferGeometry {
+  const pos = g.getAttribute("position");
+  const positions: number[] = [];
+  const d = new THREE.Vector3();
+  for (let ix = 0; ix <= across; ix++) positions.push(pos.getX(rows * (across + 1) + ix), pos.getY(rows * (across + 1) + ix), pos.getZ(rows * (across + 1) + ix));
+  for (let ix = 0; ix <= across; ix++) {
+    d.set(positions[ix * 3], positions[ix * 3 + 1], positions[ix * 3 + 2]).sub(at);
+    const r = Math.min(d.length(), inner(d.clone().normalize()));
+    d.setLength(r).add(at);
+    positions.push(d.x, d.y, d.z);
+  }
+  const index: number[] = [];
+  for (let ix = 0; ix < across; ix++) {
+    const [a, b, c, e] = [ix, ix + 1, across + 1 + ix, across + 2 + ix];
+    index.push(a, c, b, b, c, e);
+  }
+  const lip = new THREE.BufferGeometry();
+  lip.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  lip.setIndex(index);
+  lip.computeVertexNormals();
+  return twoSided(lip);
+}
+
+/**
  * One wing, rooted at `root` on the shoulder blade: a wing outline (a curved leading edge out
  * to the tip, a scalloped trailing edge back to the root) given a little thickness, spread
  * up and out to `side` and swept back. Sizes are for a 1.75 m figure times `s`.
@@ -779,11 +807,12 @@ export function figureParts(p: FigureParams): Part[] {
     // inside showed past the face at the temples, and the room's wall through it, its faces turned away not drawn.
     // Read from a point's direction from the cap's centre (its polar angle in the unturned cap), which the cap's bulge,
     // tuck and texture all leave as it is.
-    const tuckAt = (at: THREE.Vector3) => {
-      if (p.headCovered) return 0;
+    /** How far from the cap's crown (0) to its rim (1) a point is: its polar angle in the unturned cap over the cap's reach. */
+    const rimward = (at: THREE.Vector3) => {
       const local = at.clone().sub(capAt).applyQuaternion(unturn).divide(capScale);
-      return smooth((Math.acos(Math.max(-1, Math.min(1, local.y / (local.length() || 1)))) / capReach - 0.6) / 0.4);
+      return Math.acos(Math.max(-1, Math.min(1, local.y / (local.length() || 1)))) / capReach;
     };
+    const tuckAt = (at: THREE.Vector3) => (p.headCovered ? 0 : smooth((rimward(at) - 0.6) / 0.4));
     /**
      * The tuck at a point on the cap: the factor its distance across from the head's middle line is scaled by, in across
      * and not down (its height kept, so the hairline stays as clear of the brows).
@@ -860,6 +889,15 @@ export function figureParts(p: FigureParams): Part[] {
       }
       const tone = edged ? c.hairEdge : c.hairSheen;
       out.push(bumps || edged ? { ...capPart, shade, tone } : capPart);
+      // Its rim turned in to the head all round, a narrow band from the rim to just inside the head's surface: from a
+      // little to one side the eye looked past the far side of the face in under the rim, onto the cap's inner side,
+      // which (its faces turned away, not drawn) let the room's wall show in a thin pale sliver between hair and face.
+      // Closing the rim costs one row; the whole cap two-sided took the heaviest figure over the 5,000-triangle budget.
+      const lip = rimLip(capPart.geometry, across, rows, capAt, (d) => (headR * 0.97) / Math.hypot(d.x / headScale.x, d.y / headScale.y, d.z / headScale.z));
+      // Rim and inner row, on each of its two sides.
+      const rimShade = new Float32Array(4 * (across + 1));
+      for (let k = 0; k < 4; k++) for (let ix = 0; ix <= across; ix++) rimShade[k * (across + 1) + ix] = shade[rows * (across + 1) + ix];
+      out.push(named(bumps || edged ? { geometry: lip, colour: capColour, shade: rimShade, tone } : { geometry: lip, colour: capColour }, "rim"));
     }
   }
   if (falling && bottom !== undefined) {
