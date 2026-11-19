@@ -698,3 +698,63 @@ describe("AvatarPortrait hair, round five", () => {
     }
   });
 });
+
+describe("AvatarPortrait hair, round six", () => {
+  const svgOf = (appearance: unknown) => draw(appearance).querySelector("svg") as SVGSVGElement;
+  /** The cap's body: the hair-coloured shape over the head reaching the crown, not a lock beside the face. */
+  const capBody = (svg: SVGSVGElement, hex: string) =>
+    hairOverHead(svg, hex).find((el) => !el.classList.contains("avatar-hair-lock") && Math.min(...polygonOf(el).map(([, y]) => y)) < 12) as Element;
+
+  it("brings curly and coily hair of chin length and longer down the temples in curls, never a straight brim across the forehead sticking out past the face", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
+      for (const texture of ["curly", "coily"]) {
+        for (const length_cm of [18, 30, 50, 75]) {
+          const label = `${texture} ${length_cm} cm on ${skin}`;
+          const body = polygonOf(capBody(svgOf({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm, texture, hex } }), hex));
+          // Curls along the lower edge over the forehead, between the brows' outer ends.
+          expect(bumps(body.filter(([x, y]) => x > 23 && x < 41 && y > 14 && y < 24)), label).toBeGreaterThanOrEqual(3);
+          // Beside each temple, just outside the face (x 45 to 47 from the middle line 32), the hair comes down below
+          // y 28.5, the level a brim's corners stuck out at (y 27).
+          for (const side of [-1, 1]) {
+            const temple = body.filter(([x]) => side * (x - 32) > 12.5 && side * (x - 32) < 15);
+            expect(Math.max(...temple.map(([, y]) => y)), `${label} side ${side}`).toBeGreaterThan(28.5);
+          }
+        }
+      }
+    }
+  });
+
+  it("keeps the outline of waist-length and long curly or coily hair behind the head inside the locks in front of it, so no line of it shows at the sides", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"], ["#d7bd96", "#653700"]]) {
+      for (const texture of ["curly", "coily"]) {
+        for (const length_cm of [50, 75]) {
+          const label = `${texture} ${length_cm} cm on ${skin}`;
+          const svg = svgOf({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm, texture, hex } });
+          const locks = [...svg.querySelectorAll(".avatar-hair-lock")].map((el) => polygonOf(el));
+          expect(locks.length, label).toBe(2);
+          const back = svg.querySelector('path.avatar-hair[stroke-width="1.2"]') as Element;
+          const outline = polygonOf(back);
+          const covers = [...locks, polygonOf(capBody(svg, hex))];
+          // The back's outline down the sides (beside the head above the locks, beside the face, down to its rounded
+          // end inside the picture): inside the cap or a lock by more than half its stroke.
+          for (const p of outline.filter(([x, y]) => Math.abs(x - 32) > 10 && y > 14 && y < 64)) {
+            expect(Math.max(...covers.map((poly) => depthInside(p, poly))), `${label} at ${p.map((v) => v.toFixed(1))}`).toBeGreaterThan(0.7);
+          }
+        }
+      }
+    }
+  });
+
+  it("makes short hair on light skin plainly fuller than cropped: higher over the crown and wider", () => {
+    for (const [skin, hex] of [["#eadaba", "#653700"], ["#f6ede4", "#653700"], ["#292420", "#1b1612"]]) {
+      const box = (length_cm: number) => {
+        const poly = polygonOf(capBody(svgOf({ skin: { hex: skin }, face: { shape: "oval" }, hair: { length_cm, texture: "straight", hex } }), hex));
+        return { top: Math.min(...poly.map(([, y]) => y)), width: spanOf(poly) };
+      };
+      const [cropped, short] = [box(3), box(8)];
+      // At least 3 units higher (2.4 px at 48 px) and 2 wider: 1.6 and 1.6 were a modest difference live.
+      expect(cropped.top - short.top, `top on ${skin}`).toBeGreaterThanOrEqual(3);
+      expect(short.width - cropped.width, `width on ${skin}`).toBeGreaterThanOrEqual(2);
+    }
+  });
+});

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { contrast, INK_DARK, INK_LIGHT, MIN_CONTRAST, overlayHex } from "../avatar/colour";
 import { figureParams, HORN_TONE, STUBBLE_OPACITY } from "../avatar/figure";
-import { BAND_HEIGHT, CAP_LEAN, EYE_WHITE, figureGeometry, figureParts, HAIRLINE_WIDTH } from "./figureMesh";
+import { BAND_HEIGHT, CAP_LEAN, EYE_WHITE, figureGeometry, figureParts, HAIRLINE_WIDTH, LIDDED_BELOW } from "./figureMesh";
 
 /** A standing figure's parameters (in its own frame: facing +y, z up) and its head's measurements. */
 const standing = (appearance: Record<string, unknown>) => {
@@ -672,15 +672,15 @@ describe("hair styles in 3D", () => {
     }
   });
 
-  it("keeps the heaviest figure under the 5,000-triangle budget: muscular, deep skin, 75 cm coily hair in every style, a 100 cm beard, every feature and every trait, with each kind of ear", () => {
+  it("keeps the heaviest figure under the 5,000-triangle budget: muscular, deep or very pale skin (with eyelids), 75 cm coily hair in every style, a 100 cm beard, every feature and every trait, with each kind of ear", () => {
     const styles = ["loose", "voluminous", "ponytail", "braided", "bun", "topknot", "dreadlocks", "spiky", "mohawk", "swept_back", "brushed"];
-    for (const style of styles) {
+    for (const [style, skin] of styles.flatMap((s) => ["#292420", "#f6ede4"].map((k) => [s, k]))) {
       for (const ears of ["average", "large", "pointed"]) {
         for (const traits of [[], ["tail", "wings", "antlers", "horns"]]) {
           const p = figureParams(
             {
               build: "muscular",
-              skin: { hex: "#292420" },
+              skin: { hex: skin },
               face: { ears },
               hair: { length_cm: 75, texture: "coily", style, hex: "#1b1612" },
               facial_hair: { kind: "beard", length_cm: 100, hex: "#1b1612" },
@@ -700,7 +700,16 @@ describe("hair styles in 3D", () => {
  * A flat (orthographic) picture of the figure's parts from the front (+y), the back (-y) or the right side (+x): for
  * each cell `step` metres square inside [u0, v0, u1, v1] (across, up), the part nearest the camera there, or none.
  */
-function picture(parts: ReturnType<typeof figureParts>, view: "front" | "back" | "side", [u0, v0, u1, v1]: [number, number, number, number], step: number): Array<Array<(typeof parts)[number] | undefined>> {
+function picture(
+  parts: ReturnType<typeof figureParts>,
+  view: "front" | "back" | "side",
+  [u0, v0, u1, v1]: [number, number, number, number],
+  step: number,
+  /** Leave out faces turned away from the camera, as the 3D view's one-sided material does. */
+  cull = false,
+): Array<Array<(typeof parts)[number] | undefined>> {
+  const toCamera = new THREE.Vector3(...({ front: [0, 1, 0], back: [0, -1, 0], side: [1, 0, 0] } as const)[view]);
+  const [pa, pb, pc] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
   const cols = Math.ceil((u1 - u0) / step);
   const rows = Math.ceil((v1 - v0) / step);
   const depth = Array.from({ length: rows }, () => new Array<number>(cols).fill(Number.NEGATIVE_INFINITY));
@@ -715,6 +724,13 @@ function picture(parts: ReturnType<typeof figureParts>, view: "front" | "back" |
       return project(pos.getX(i), pos.getY(i), pos.getZ(i));
     };
     for (let t = 0; t < count; t += 3) {
+      if (cull) {
+        const vi = (k: number) => (index ? index.getX(k) : k);
+        pa.fromBufferAttribute(pos, vi(t));
+        pb.fromBufferAttribute(pos, vi(t + 1)).sub(pa);
+        pc.fromBufferAttribute(pos, vi(t + 2)).sub(pa);
+        if (pb.cross(pc).dot(toCamera) <= 0) continue;
+      }
       const [a, b, c] = [at(t), at(t + 1), at(t + 2)];
       const area = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
       if (Math.abs(area) < 1e-14) continue;
@@ -761,7 +777,9 @@ describe("round five: eyes, hair length, texture, hairline and the back of long 
           const middle = (shown.filter((part) => part?.colour !== EYE_WHITE).length * step * step) / disc;
           // At least a third of the eye's own size shows its white, and over a seventh its iris or pupil, which stands
           // 3:1 off the white.
-          expect(white, `white ${side} ${label}`).toBeGreaterThan(0.33);
+          const tally = new Map<string, number>();
+          for (const part of cells) tally.set(`${part?.name}:${part?.colour}`, (tally.get(`${part?.name}:${part?.colour}`) ?? 0) + 1);
+          expect(white, `white ${side} ${label} ${JSON.stringify([...tally])}`).toBeGreaterThan(0.33);
           expect(middle, `iris ${side} ${label}`).toBeGreaterThan(0.15);
           for (const part of shown.filter((x) => x?.colour !== EYE_WHITE)) expect(contrast(part?.colour as string, EYE_WHITE), label).toBeGreaterThanOrEqual(MIN_CONTRAST);
         }
@@ -875,6 +893,247 @@ describe("round five: eyes, hair length, texture, hairline and the back of long 
       // From behind, below the fall's top (0.1 head radii over the head's middle), only the falling hair shows.
       const cap = grid.flat().filter((part) => part?.name === "cap").length;
       expect(cap, label).toBe(0);
+    }
+  });
+});
+
+describe("round six: coily and curly masses, temples, eyes on pale skin, waves, hairline and long falls in 3D", () => {
+  const HAIR_PARTS = ["cap", "hair", "fringe", "crest"];
+  const isHair = (part: ReturnType<typeof figureParts>[number] | undefined) => HAIR_PARTS.includes(part?.name ?? "");
+  /** In each row, the cells between the first and the last hair cell that `hole` picks out. */
+  const holesInHair = (grid: Array<Array<ReturnType<typeof figureParts>[number] | undefined>>, hole: (part: ReturnType<typeof figureParts>[number] | undefined) => boolean) => {
+    const at: string[] = [];
+    for (const [j, row] of grid.entries()) {
+      const first = row.findIndex(isHair);
+      if (first < 0) continue;
+      const last = row.length - 1 - [...row].reverse().findIndex(isHair);
+      for (let i = first; i <= last; i++) if (hole(row[i])) at.push(`${i},${j}`);
+    }
+    // The count, and where the first few are (column, row), for the message.
+    return { length: at.length, at: at.slice(0, 6).join(" ") };
+  };
+
+  it("shows nothing through the hair at the temples from the front: no wall between the hair and the head, for curly and coily hair at every length", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
+      for (const texture of ["coily", "curly", "wavy", "straight"]) {
+        for (const length_cm of [18, 30, 50, 75]) {
+          const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm, texture, hex } });
+          const step = headR / 80;
+          // From eye level up past the temples (above them the coils' bumps make the outline itself uneven), seen as the
+          // 3D view draws it (faces turned away are not drawn).
+          const grid = picture(figureParts(p), "front", [-headR * 1.8, headZ, headR * 1.8, headZ + headR * 0.9], step, true);
+          const holes = holesInHair(grid, (part) => part === undefined);
+          expect(holes.length, `${texture} ${length_cm} cm on ${skin} at ${holes.at}`).toBe(0);
+        }
+      }
+    }
+  });
+
+  it("shows no skin through the hair from behind, at the cap's sides or where hair worn down meets it", () => {
+    for (const [skin, hex] of [["#eadaba", "#653700"], ["#292420", "#1b1612"]]) {
+      for (const texture of ["straight", "wavy"]) {
+        for (const length_cm of [3, 8, 18, 30, 50, 75]) {
+          const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm, texture, hex } });
+          const step = headR / 80;
+          const grid = picture(figureParts(p), "back", [-headR * 1.8, headZ - headR * 0.3, headR * 1.8, headZ + headR * 1.6], step, true);
+          const holes = holesInHair(grid, (part) => part !== undefined && !isHair(part));
+          expect(holes.length, `${texture} ${length_cm} cm on ${skin} at ${holes.at}`).toBe(0);
+        }
+      }
+    }
+  });
+
+  it("lets no point of the cap through hair worn down near its top, out to the sides of the head, from behind", () => {
+    for (const [skin, hex] of [["#eadaba", "#653700"], ["#292420", "#1b1612"]]) {
+      for (const texture of ["straight", "wavy", "curly", "coily"]) {
+        for (const length_cm of [30, 50, 75]) {
+          const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm, texture, hex } });
+          const step = headR / 120;
+          // Up to the fall's top (0.1 head radii over the head's middle), the full width of the head.
+          const grid = picture(figureParts(p), "back", [-headR * 1.6, headZ - headR * 0.6, headR * 1.6, headZ + headR * 0.1], step, true);
+          let through = 0;
+          for (const row of grid) {
+            const fall = row.map((part, i) => (part?.name === "hair" ? i : -1)).filter((i) => i >= 0);
+            if (fall.length === 0) continue;
+            for (let i = fall[0]; i <= fall[fall.length - 1]; i++) if (row[i]?.name === "cap") through++;
+          }
+          expect(through, `${texture} ${length_cm} cm on ${skin}`).toBe(0);
+        }
+      }
+    }
+  });
+
+  it("draws coily and curly hair at chin length as one rounded mass, widest at the head and closing in below, with no band standing out under the crown", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
+      for (const texture of ["coily", "curly"]) {
+        const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm: 18, texture, hex } });
+        const step = headR / 60;
+        const v0 = headZ - headR * 1.4;
+        const grid = picture(figureParts(p), "back", [-headR * 2, v0, headR * 2, headZ + headR * 1.6], step, true);
+        const widths = grid.map((row) => row.filter(isHair).length * step);
+        const label = `${texture} on ${skin}`;
+        const widest = widths.indexOf(Math.max(...widths));
+        // The widest row is up at the head (above 0.3 head radii under its middle; master's band was widest 0.44 under
+        // it), not in a band below it ...
+        expect(v0 + (widest + 0.5) * step, label).toBeGreaterThan(headZ - headR * 0.3);
+        // ... and below it the mass only closes in, but for a single coil standing out on its outline (0.12 head radii;
+        // master's band stood 0.5 head radii wider than the head).
+        for (let j = widest - 1; j >= 0; j--) {
+          if (widths[j] === 0) break;
+          expect(widths[j], `${label} row ${j}`).toBeLessThanOrEqual(Math.max(...widths.slice(j + 1, widest + 1).filter((w) => w > 0).slice(0, 4)) + headR * 0.12);
+        }
+      }
+    }
+  });
+
+  it("rings each eye's white on skin as pale as it with a tone that stands 3:1 off the white", () => {
+    // The palette's very pale, pale, fair and light skins: the white is within 1.3:1 of each.
+    for (const skin of ["#f6ede4", "#f3e7db", "#f7ead0", "#eadaba"]) {
+      expect(contrast(skin, EYE_WHITE)).toBeLessThan(LIDDED_BELOW);
+      for (const eyes of [{ hex: "#4f7a3a" }, undefined]) {
+        const { p, headR, headZ } = standing({ skin: { hex: skin }, ...(eyes ? { eyes } : {}), hair: { length_cm: 3, texture: "straight", hex: "#653700" } });
+        const label = `${eyes ? "green" : "no colour"} on ${skin}`;
+        for (const side of [-1, 1]) {
+          const [x, z] = [side * headR * 0.32, headZ + headR * 0.12];
+          const step = headR / 100;
+          const half = 20;
+          const grid = picture(figureParts(p), "front", [x - half * step, z - half * step, x + half * step, z + half * step], step, true);
+          // Out from the eye's middle in 16 directions, from the white's edge to 1.4 eye radii (the eye radius is 10
+          // cells): a cell standing 3:1 off the white comes before the face's skin runs on for more than a quarter of the
+          // eye's radius.
+          let ringed = 0;
+          for (let k = 0; k < 16; k++) {
+            const a = (k / 16) * 2 * Math.PI;
+            let [skinRun, closed] = [0, false];
+            for (let r = 5; r <= 14 && !closed; r += 0.5) {
+              const part = grid[Math.round(half - 0.5 + r * Math.sin(a))]?.[Math.round(half - 0.5 + r * Math.cos(a))];
+              if (part?.name === "eye") continue;
+              if (part && contrast(part.colour, EYE_WHITE) >= MIN_CONTRAST) closed = true;
+              else {
+                skinRun += 0.5;
+                if (skinRun > 2.5) break;
+              }
+            }
+            if (closed) ringed++;
+          }
+          // On master the white was bordered by the skin all round (0 of 16). The lid is six-sided, so in a direction or
+          // two its inner edge steps out a little from the white's.
+          expect(ringed, `${label} side ${side}`).toBeGreaterThanOrEqual(14);
+        }
+      }
+    }
+  });
+
+  it("waves wavy hair down its fall, and breaks the waves on the crown by strands rather than drawing them as level stripes", () => {
+    for (const length_cm of [30, 50]) {
+      const { p, headR, headZ } = standing({ skin: { hex: "#eadaba" }, hair: { length_cm, texture: "wavy", hex: "#653700" } });
+      const parts = figureParts(p);
+      const label = `wavy ${length_cm} cm`;
+      // Down the fall's back (the outer side, the middle column), its shade rises and falls in waves, at least 3 times.
+      const fall = parts.find((x) => x.name === "hair");
+      const pos = fall?.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const column: Array<[number, number]> = [];
+      for (let i = 0; i < pos.count / 2; i++) if (Math.abs(pos.getX(i)) < headR * 0.12 && pos.getY(i) < 0) column.push([pos.getZ(i), fall?.shade?.[i] ?? 0]);
+      const shades = column.sort((a, b) => b[0] - a[0]).map(([, s]) => s);
+      let peaks = 0;
+      for (let k = 1; k < shades.length - 1; k++) if (shades[k] > shades[k - 1] + 0.05 && shades[k] >= shades[k + 1]) peaks++;
+      expect(peaks, label).toBeGreaterThanOrEqual(3);
+      // On the crown, at one height, the shade differs round the head: waves set level all round read as stripes.
+      const cap = parts.find((x) => x.name === "cap");
+      const cpos = cap?.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const bands = new Map<number, number[]>();
+      for (let i = 0; i < cpos.count; i++) {
+        if (cpos.getZ(i) < headZ + headR * 0.3) continue;
+        const key = Math.round((cpos.getZ(i) - headZ) / (headR * 0.05));
+        bands.set(key, [...(bands.get(key) ?? []), cap?.shade?.[i] ?? 0]);
+      }
+      const spreads = [...bands.values()].filter((s) => s.length >= 6).map((s) => Math.max(...s) - Math.min(...s));
+      expect(spreads.reduce((a, b) => a + b, 0) / spreads.length, label).toBeGreaterThan(0.3);
+    }
+  });
+
+  it("draws the hairline on dark hair over dark skin as strands of different lengths, not a band of even depth", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#3a312a", "#1b1612"]]) {
+      for (const length_cm of [3, 8]) {
+        const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm, texture: "straight", hex } });
+        const cap = figureParts(p).find((x) => x.name === "cap");
+        const pos = cap?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const shade = cap?.shade as Float32Array;
+        // The cap's columns (its lines from crown to rim: one azimuth round its own axis, which leans back by CAP_LEAN)
+        // over the forehead, each from the rim up (its polar angle round that axis, largest first).
+        const unturn = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2 + CAP_LEAN, 0, 0)).invert();
+        const columns = new Map<number, Array<[number, number]>>();
+        for (let i = 0; i < pos.count; i++) {
+          if (pos.getY(i) < headR * 0.3 || Math.abs(pos.getX(i)) > headR * 0.7) continue;
+          const local = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i) - headZ).applyQuaternion(unturn);
+          const key = Math.round(Math.atan2(local.x, local.z) * 100);
+          columns.set(key, [...(columns.get(key) ?? []), [Math.acos(local.y / local.length()), shade[i]]]);
+        }
+        // Each strand (a column whose rim is shaded well toward the edge tone): its shade one vertex up from the rim,
+        // which is how far up it reaches. Strands of one length gave one shade there.
+        const reach = [...columns.values()]
+          .map((c) => c.sort((a, b) => b[0] - a[0]).map(([, s]) => s))
+          .filter((s) => s.length > 1 && s[0] > 0.6)
+          .map((s) => s[1]);
+        const levels: number[] = [];
+        for (const r of reach) if (levels.every((l) => Math.abs(l - r) > 0.15)) levels.push(r);
+        const label = `${length_cm} cm on ${skin}: ${reach.map((r) => r.toFixed(2)).join(" ")}`;
+        expect(reach.length, label).toBeGreaterThanOrEqual(4);
+        expect(levels.length, label).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("gives long curly and coily falls coils or curls about as wide as tall, not long locks", () => {
+    for (const texture of ["coily", "curly"]) {
+      for (const length_cm of [30, 50, 75]) {
+        const { p, headR } = standing({ skin: { hex: "#292420" }, hair: { length_cm, texture, hex: "#1b1612" } });
+        const fall = figureParts(p).find((x) => x.name === "hair");
+        const pos = fall?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const shade = fall?.shade as Float32Array;
+        const label = `${texture} ${length_cm} cm`;
+        // Down the middle of the back (the outer side): the shade's peaks, and how far apart they are, against the
+        // spacing of peaks round the fall at the head's middle height.
+        const down: Array<[number, number]> = [];
+        for (let i = 0; i < pos.count / 2; i++) if (Math.abs(pos.getX(i)) < headR * 0.06 && pos.getY(i) < 0) down.push([pos.getZ(i), shade[i]]);
+        down.sort((a, b) => b[0] - a[0]);
+        const peaksAt = (xs: Array<[number, number]>) => xs.filter((q, k) => k > 0 && k < xs.length - 1 && q[1] > xs[k - 1][1] + 0.05 && q[1] >= xs[k + 1][1]).map(([at]) => at);
+        const downPeaks = peaksAt(down);
+        expect(downPeaks.length, label).toBeGreaterThanOrEqual(3);
+        const gapDown = (downPeaks[0] - downPeaks[downPeaks.length - 1]) / (downPeaks.length - 1);
+        // Round the fall, along its middle row (the vertices nearest halfway down), by distance along the surface.
+        const zs = down.map(([z]) => z);
+        const midZ = zs[Math.floor(zs.length / 2)];
+        const row: Array<[number, number]> = [];
+        for (let i = 0; i < pos.count / 2; i++) {
+          if (Math.abs(pos.getZ(i) - midZ) > 1e-6) continue;
+          row.push([Math.atan2(pos.getY(i), pos.getX(i)) * Math.hypot(pos.getX(i), pos.getY(i)), shade[i]]);
+        }
+        row.sort((a, b) => a[0] - b[0]);
+        const aroundPeaks = peaksAt(row);
+        expect(aroundPeaks.length, label).toBeGreaterThanOrEqual(3);
+        const gapAround = (aroundPeaks[aroundPeaks.length - 1] - aroundPeaks[0]) / (aroundPeaks.length - 1);
+        // Peaks down the fall no more than 1.8 times as far apart as round it: master's long falls were long locks.
+        expect(gapDown / gapAround, label).toBeLessThan(1.8);
+      }
+    }
+  });
+
+  it("makes short hair on light skin plainly fuller than cropped from the front and the side", () => {
+    for (const [skin, hex] of [["#eadaba", "#653700"], ["#f6ede4", "#653700"]]) {
+      const hairCells = (length_cm: number, view: "front" | "side") => {
+        const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm, texture: "straight", hex } });
+        const step = headR / 60;
+        const grid = picture(figureParts(p), view, [-headR * 1.5, headZ - headR * 1.2, headR * 1.5, headZ + headR * 1.6], step);
+        const set = new Set<string>();
+        for (const [j, row] of grid.entries()) for (const [i, part] of row.entries()) if (isHair(part)) set.add(`${i},${j}`);
+        return { set, cell: (step / headR) ** 2 };
+      };
+      for (const view of ["front", "side"] as const) {
+        const [a, b] = [hairCells(3, view), hairCells(8, view)];
+        const differ = [...new Set([...a.set, ...b.set])].filter((k) => a.set.has(k) !== b.set.has(k)).length * a.cell;
+        expect(differ, `${view} on ${skin}`).toBeGreaterThan(0.6);
+      }
     }
   });
 });

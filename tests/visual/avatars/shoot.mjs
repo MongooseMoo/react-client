@@ -73,7 +73,8 @@ try {
     // Faces, beards and hair (set=face in the harness): portraits at 128 px and 32 px, then 3D heads at about 150 px
     // from the front, three-quarters, the side and behind.
     const sharp = await browser.newPage({ viewport: { width: 1280, height: 1000 }, colorScheme: 'dark', deviceScaleFactor: 2 });
-    await sharp.goto(`${base}?view=portraits&set=${faceSet}${onlyQuery}`);
+    // --big: the portraits also at 512 px.
+    await sharp.goto(`${base}?view=portraits&set=${faceSet}${onlyQuery}${process.argv.includes('--big') ? '&big=1' : ''}`);
     await sharp.waitForFunction(() => window.ready === true);
     await sharp.locator('table').screenshot({ path: resolve(out, 'face-portraits.png') });
     // Four rows to a picture, to read the details.
@@ -89,7 +90,9 @@ try {
     // Tall enough for every row of 420 px cells, four to a row.
     const tall = await browser.newPage({ viewport: { width: 1280, height: Math.ceil(rows.length / 4) * 420 + 100 }, colorScheme: 'dark' });
     for (const angle of ['front', 'three', 'side', 'back']) {
-      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=head&dist=1.05&set=${faceSet}${onlyQuery}`);
+      // --dist=N: the head camera N metres away (default 1.05, about 150 px of head).
+      const dist = process.argv.find((a) => a.startsWith('--dist='))?.slice(7) ?? '1.05';
+      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=head&dist=${dist}&set=${faceSet}${onlyQuery}`);
       await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
       await tall.locator('#root > div').screenshot({ path: resolve(out, `face-heads-${angle}.png`) });
     }
@@ -447,7 +450,8 @@ try {
     }
   }
   const results = [];
-  for (const n of [8, 40]) {
+  // --no-frames: skip the frame timing (for repeated looks at the --face pictures).
+  for (const n of process.argv.includes('--no-frames') ? [] : [8, 40]) {
     await open(`view=room&n=${n}`);
     await page.waitForTimeout(500);
     await page.locator('.room-layout-3d').screenshot({ path: resolve(out, `dollhouse-${n}${suffix}.png`) });

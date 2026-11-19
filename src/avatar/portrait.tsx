@@ -151,7 +151,8 @@ const CURLS: Readonly<Partial<Record<HairTexture, { count: number; depth: number
 type CapBand = "cropped" | "short" | "full";
 const CAP_BANDS: Readonly<Record<CapBand, { top: number; width: number; hairline: number }>> = {
   cropped: { top: 10.2, width: 14.6, hairline: 17 },
-  short: { top: 8.6, width: 15.4, hairline: 20 },
+  // Short hair stands 3.2 higher and 2.2 wider than cropped: at 1.6 and 0.8 the two differed only modestly on light skin.
+  short: { top: 7, width: 16.8, hairline: 20 },
   full: { top: 9.5, width: 14.6, hairline: 20 },
 };
 
@@ -208,6 +209,17 @@ function hairCap(texture: HairTexture, v: number, fill: string, ink: string, she
       return [u ** 3 * a[0] + 3 * u * u * t * b[0] + 3 * u * t * t * c[0] + t ** 3 * d[0], u ** 3 * a[1] + 3 * u * u * t * b[1] + 3 * u * t * t * c[1] + t ** 3 * d[1]] as Pt;
     });
     close = `${scallops(points, curls.depth, [32, 5])} Z`;
+  } else if (band === "full" && curls) {
+    // Curls and coils of chin length and longer come down each temple beside the face to y 29.5, then run across the
+    // forehead in curls: closed by one smooth curve from the mass's outer corners, their lower edge was a straight brim
+    // sticking out past the face, a woolly hat's.
+    const side = (s: number): Pt[] => [[32 + s * width, 27], [32 + s * 13.6, 29.5], [32 + s * 12.6, 24.5], [32 + s * 11, hairline + 0.6]];
+    const right = side(1);
+    const left = side(-1).reverse();
+    const count = texture === "coily" ? 9 : 6;
+    const across: Pt[] = Array.from({ length: count + 1 }, (_, i) => [right[3][0] + ((left[0][0] - right[3][0]) * i) / count, right[3][1] - Math.sin((Math.PI * i) / count)]);
+    // Down the right temple bulging onto the face, across the forehead bulging down, up the left temple.
+    close = `${scallops(right, curls.depth, [32 + 20, 26])}${scallops(across, curls.depth, [32, 5])}${scallops(left, curls.depth, [32 - 20, 26])} Z`;
   }
   let edge: string;
   if (curls) edge = scallops(domePoints(width, top, curls.count), curls.depth, [32, 27]);
@@ -382,6 +394,7 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
    * grey hair beside a curly cap.
    */
   const locks = LOCKS[params.hair];
+  const curlsHere = CURLS[texture] !== undefined;
   const sideLocks = () =>
     locks && falls
       ? [-1, 1].map((side) => {
@@ -389,6 +402,9 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
           // Curly and coily hair stands out further, as the cap and the hair behind do (`v`), and at chin length springs
           // up into a mass ending above the jaw (`rise`).
           const rows = locks.rows.map(([y, o, i]) => [y > 30 ? y - rise : y, o + (v - 1) * 2, i] as const);
+          // Curls and coils hanging in front start up at the temples, under the cap's curls there: starting at the
+          // cheekbone, the hair behind the head showed between the cap and the lock.
+          if (curlsHere && locks.front) rows.unshift([22, rows[0][1], rows[0][2]]);
           const outer = rows.map(([y, o]) => at(y, o));
           const inner = rows.map(([y, , i]) => at(y, i)).reverse();
           const [yEnd, oEnd, iEnd] = rows[rows.length - 1];
@@ -535,14 +551,14 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
         ),
       };
     case "swept_back":
-      // Lifted off a high forehead and combed back: the hair stands high over the crown (about 10 units above a loose
-      // cap, 8 px at 32 px), the hairline well up the forehead, comb lines running back. With only a higher hairline
+      // Lifted off a high forehead and combed back: the hair stands high over the crown (at least 6 units above a loose
+      // cap of its length, 5 px at 32 px), the hairline well up the forehead, comb lines running back. With only a higher hairline
       // and thin comb strokes it looked like loose hair at portrait size.
       return {
         back: falls ? [hairBack(locks?.back ?? 15, fallBottom, fill, ink)] : [],
         ...worn(
           <g className="avatar-hair">
-            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d="M18,27 C17,11 21.5,2.4 31.5,2.4 C41.5,2.4 47,11 46,27 C40,13 24,13 18,27 Z" />
+            <path className="avatar-hair" fill={fill} stroke={ink} strokeWidth={1.2} d="M18,27 C17,10 21.5,0.8 31.5,0.8 C41.5,0.8 47,10 46,27 C40,13 24,13 18,27 Z" />
             {line("comb", "M25,16.5 Q23.5,10.5 27.5,6.8 M32,15.3 Q31.4,10 32,6 M39,16.5 Q40.5,10.5 36.5,6.8", 0.8)}
           </g>,
         ),
@@ -579,7 +595,9 @@ function hairStyle(params: FigureParams, fill: string, ink: string, skin: string
       // Shaved: a shadow of the hair's colour on the scalp. Hair worn down hangs fuller with each band (`LOCKS`).
       if (params.hair === "shaved") return { back: [], hang: [], cap: scalp() };
       return {
-        back: falls ? [hairBack((locks?.back ?? 15) + (v - 1) * 2, fallBottom, fill, ink)] : [],
+        // Behind a curly or coily cap the hair behind the head stays inside the cap's curls (its full half width is
+        // 14.6 v): wider, its smooth outline showed beside them as a grey line near the picture's edge.
+        back: falls ? [hairBack(Math.min((locks?.back ?? 15) + (v - 1) * 2, CURLS[texture] ? 14.6 * v - 1.3 : Number.POSITIVE_INFINITY), fallBottom, fill, ink)] : [],
         ...worn(hairCap(texture, v, fill, ink, sheen, params.hair === "cropped" ? "cropped" : params.hair === "short" ? "short" : "full")),
       };
   }
