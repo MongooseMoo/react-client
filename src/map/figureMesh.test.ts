@@ -1206,14 +1206,44 @@ describe("round seven: hair from the room's own angles, locks, lids and the fall
             // From just under the eyes up past the temples, seen as the 3D view draws it (faces turned away left out).
             const grid = picture(parts, view, [-headR * 1.8, -headR * 0.1, headR * 1.8, headR * 0.9], headR / 80, true);
             const wall = wallBetween(grid);
-            if (wall.length && process.env.DUMP) {
-              const [ci, cj] = wall.at.split(" ")[0].split(",").map(Number);
-              const lines = [];
-              for (let j = Math.min(grid.length - 1, cj + 25); j >= Math.max(0, cj - 25); j--) lines.push(grid[j].slice(Math.max(0, ci - 50), ci + 40).map((x) => (x === undefined ? "." : x.name === "cap" ? "c" : x.name === "hair" ? "h" : x.name ? x.name[0] : "s")).join(""));
-              console.log(`${texture} ${length_cm} ${skin} az ${az} el ${el}\n${lines.join("\n")}`);
-            }
             expect(wall.length, `${texture} ${length_cm} cm on ${skin}, az ${az} el ${el}, at ${wall.at}`).toBe(0);
           }
+        }
+      }
+    }
+  });
+
+  it("draws each eye's white and its lid round, with at least twelve sides, not six like a nut", () => {
+    for (const skin of ["#f6ede4", "#eadaba"]) {
+      const { p, headR } = standing({ skin: { hex: skin }, hair: { length_cm: 3, texture: "straight", hex: "#653700" } });
+      const parts = figureParts(p);
+      for (const [name, colour] of [["eye", EYE_WHITE], ["eyelid", undefined]] as const) {
+        for (const side of [-1, 1]) {
+          // The part's vertices on this side of the face, seen along the way the face looks at the eye.
+          const outward = new THREE.Vector3(side * 0.47, 1, 0.12).normalize();
+          const points = parts
+            .filter((x) => x.name === name && (colour === undefined || x.colour === colour))
+            .flatMap((x) => {
+              const pos = x.geometry.getAttribute("position");
+              return Array.from({ length: pos.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(pos, i));
+            })
+            .filter((v) => side * v.x > 0);
+          expect(points.length, `${name} ${side} on ${skin}`).toBeGreaterThan(0);
+          const middle = points.reduce((a, v) => a.add(v), new THREE.Vector3()).divideScalar(points.length);
+          const u = new THREE.Vector3(0, 0, 1).cross(outward).normalize();
+          const w = outward.clone().cross(u);
+          // Its outline: the outermost point in each of 72 directions round its middle, and how many different
+          // directions those outermost points lie in (a six-sided part's outline is its six corners).
+          const corners = new Set<number>();
+          for (let k = 0; k < 72; k++) {
+            const a = (k / 72) * 2 * Math.PI;
+            const dir = u.clone().multiplyScalar(Math.cos(a)).addScaledVector(w, Math.sin(a));
+            let best = points[0];
+            for (const v of points) if (v.clone().sub(middle).dot(dir) > best.clone().sub(middle).dot(dir)) best = v;
+            const d = best.clone().sub(middle);
+            corners.add(Math.round((Math.atan2(d.dot(w), d.dot(u)) * 180) / Math.PI / 5));
+          }
+          expect(corners.size, `${name} ${side} on ${skin} (head radius ${headR.toFixed(3)})`).toBeGreaterThanOrEqual(12);
         }
       }
     }

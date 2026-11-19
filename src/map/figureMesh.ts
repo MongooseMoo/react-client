@@ -292,7 +292,16 @@ function rimLip(g: THREE.BufferGeometry, across: number, rows: number, at: THREE
   lip.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   lip.setIndex(index);
   lip.computeVertexNormals();
-  return twoSided(lip);
+  const both = twoSided(lip);
+  // Lit as the cap's rim above it, on both sides: with its own normals (turned down and in) it was lit dark and drew a
+  // dark line along the hairline on pale skin.
+  const normals = both.getAttribute("normal");
+  const rim = g.getAttribute("normal");
+  for (let i = 0; i < normals.count; i++) {
+    const k = rows * (across + 1) + (i % (across + 1));
+    normals.setXYZ(i, rim.getX(k), rim.getY(k), rim.getZ(k));
+  }
+  return both;
 }
 
 /**
@@ -649,24 +658,34 @@ export function figureParts(p: FigureParams): Part[] {
       // iris in the eye's colour at its front: an eye in its colour alone vanished on skin of its own darkness.
       // Without an eye colour, a dark pupil there, as the portrait draws a pupil: drawn only with a colour, a person
       // without one had no eyes in 3D, only brows.
-      const seat = 0.63;
-      const centre = new THREE.Vector3(ex, faceY(ex, ez) - eyeR * seat, headCentreZ + ez);
-      // Six facets round: eyes on every described face (not only those with an eye colour) took the heaviest figure
-      // over the 5,000-triangle budget at eight.
-      out.push(named(ball(centre, eyeR, EYE_WHITE, undefined, 6), "eye"));
-      // The iris stands a little proud of the white, so its facets are not lost inside the white's.
-      out.push(named(ball(centre.clone().add(new THREE.Vector3(0, eyeR * 0.45, 0)), eyeR * 0.6, c.eyes ?? EYE_PUPIL, undefined, 6), "eye"));
+      // Where the eye sits on the face, and which way the face looks there (the head ellipsoid's normal at the eye).
+      const onFace = new THREE.Vector3(ex, faceY(ex, ez), headCentreZ + ez);
+      const outward = new THREE.Vector3(side * 0.47, 1, 0.12).normalize();
+      const turned = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), outward);
+      // The white is a shallow dome on the face, round (twelve facets round it) and standing a third of its radius
+      // proud; the iris or pupil a smaller dome on it, on a sphere just outside the white's. Balls of six facets read as
+      // hex nuts close up (a ball of twelve took the heaviest figure over the 5,000-triangle budget); a dome of twelve
+      // facets round costs a third of a twelve-facet ball.
+      const reach = 0.6;
+      const domeR = eyeR / Math.sin(reach);
+      const domeCentre = onFace.clone().addScaledVector(outward, -domeR * Math.cos(reach) + eyeR * 0.05);
+      const dome = (r: number, theta: number, colour: string, facets: number) => {
+        const g = new THREE.SphereGeometry(r, facets, theta > 0.4 ? 2 : 1, 0, Math.PI * 2, 0, theta);
+        g.applyQuaternion(turned);
+        g.translate(domeCentre.x, domeCentre.y, domeCentre.z);
+        return named({ geometry: g, colour }, "eye");
+      };
+      out.push(dome(domeR, reach, EYE_WHITE, 12));
+      out.push(dome(domeR * 1.015, Math.asin(Math.min(1, (eyeR * 0.6) / (domeR * 1.015))), c.eyes ?? EYE_PUPIL, 10));
       if (lidTone) {
         // On skin nearly as pale as the white, a lid round it in the skin's tone off the white: without it the white
-        // vanished into very pale skin and the eye read as a dark dot. A ring lying on the face round the white.
-        // Six-sided like the white and turned with it, three sides to its section with one pointing out, its inner edge
-        // (one eye radius at its corners) where the white meets the face's flat facets, so the white stays whole inside
-        // it and no skin shows between them.
-        const lid = new THREE.TorusGeometry(eyeR * 1.1, eyeR * 0.2, 3, 6);
-        // Lying in the face's slope there (the head ellipsoid's normal at the eye), so its side toward the nose is not
-        // buried in the face.
-        lid.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(side * 0.47, 1, 0.12).normalize()));
-        lid.translate(centre.x, centre.y + eyeR * (seat + 0.06), centre.z);
+        // vanished into very pale skin and the eye read as a dark dot. A round ring lying on the face round the white,
+        // twelve facets round like the white (six read as a hex nut), three sides to its section with one pointing out,
+        // its inner edge where the white meets the face, so no skin shows between them.
+        const lid = new THREE.TorusGeometry(eyeR * 1.1, eyeR * 0.2, 3, 12);
+        // Lying in the face's slope there, so its side toward the nose is not buried in the face.
+        lid.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward));
+        lid.translate(onFace.x, onFace.y + eyeR * 0.06, onFace.z);
         out.push(named({ geometry: lid, colour: lidTone }, "eyelid"));
       }
       // A brow over each eye, in the hair colour toned off the skin (`brow`), as in the portrait, following the face.
@@ -1194,8 +1213,9 @@ export function figureParts(p: FigureParams): Part[] {
       const unit = new THREE.Vector3(patch.x / headScale.x, patch.y / headScale.y, (patch.z - headCentreZ) / headScale.z).normalize();
       const rightAndUp = new THREE.Vector3(1, 0, 0.5).normalize();
       const normal = new THREE.Vector3().crossVectors(unit, rightAndUp).normalize();
-      // 24 segments round the head: 40 cost 128 more triangles than the strap, a line, needs.
-      const ring = new THREE.TorusGeometry(1, (rim * 0.8) / headR, 4, 24);
+      // 24 segments round the head: 40 cost 128 more triangles than the strap, a line, needs; three sides to its section
+      // (four cost 48 more, which the round eyes need).
+      const ring = new THREE.TorusGeometry(1, (rim * 0.8) / headR, 3, 24);
       ring.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal));
       ring.scale(headR * headScale.x * 1.03, headR * headScale.y * 1.03, headR * headScale.z * 1.03);
       ring.translate(0, 0, headCentreZ);
