@@ -131,7 +131,8 @@ function ringlets(
   around: number,
   headR: number,
   ends: number,
-  amount: (q: THREE.Vector3) => number,
+  /** How much of the rise a vertex gets, from its position and its column. */
+  amount: (q: THREE.Vector3, column: number) => number,
 ): Float32Array {
   const positions = g.getAttribute("position");
   const half = positions.count / 2;
@@ -145,20 +146,27 @@ function ringlets(
     const [ix, iy] = [j % (columns + 1), Math.floor(j / (columns + 1))];
     const lock = Math.floor(ix / 2);
     const middle = ix % 2 === 1;
-    const turn = (2 * Math.PI * iy) / perTurn + lock * 2.4;
+    // Each lock its own: how many rows a turn takes (two thirds to one and a half times `perTurn`), where its turns
+    // start, how far it stands out. All alike, the turns' bright sides lined up from lock to lock in a slanting lattice
+    // of dashes, cable knit or scales rather than loose curls.
+    const own = (k: number) => {
+      const x = Math.sin(lock * 12.9898 + k * 78.233) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    const turn = (2 * Math.PI * iy) / (perTurn * (0.67 + 0.83 * own(1))) + 2 * Math.PI * own(2);
     const flat = Math.min(1, Math.min(ix, columns - ix) / 2);
-    const lift = (middle ? 0.6 + 0.4 * Math.sin(turn) : 0.12) * flat;
+    const lift = (middle ? (0.45 + 0.3 * own(3)) + 0.3 * Math.sin(turn) : 0.12) * flat;
     // Sideways by up to 0.35 of a column's width, a quarter turn behind the swing out.
-    const side = middle ? 0.35 * Math.cos(turn) * flat : 0;
+    const side = middle ? (0.2 + 0.15 * own(4)) * Math.cos(turn) * flat : 0;
     q.fromBufferAttribute(positions, i);
     d.subVectors(q, centre(q));
     const r = Math.max(1e-6, Math.hypot(d.x, d.y));
-    const k = amount(q);
+    const k = amount(q, ix);
     const across = (side * r * around) / columns;
     q.x += ((d.x / r) * headR * 0.12 * lift + (-d.y / r) * across) * k;
     q.y += ((d.y / r) * headR * 0.12 * lift + (d.x / r) * across) * k;
     // Uneven ends: each lock's tip lower by its own amount.
-    if (iy === rows && middle) q.z -= ends * (0.5 + 0.5 * Math.sin(lock * 1.7));
+    if (iy === rows && middle) q.z -= ends * own(5);
     positions.setXYZ(i, q.x, q.y, q.z);
     raised[i] = lift;
   }
@@ -768,8 +776,13 @@ export function figureParts(p: FigureParams): Part[] {
    * falling hair covers the cap and meets it, coming in above the fall's top. The two textures crossing there drew a
    * jagged seam where the cap's lower edge ran over the fall.
    */
-  const kept = (d: THREE.Vector3) =>
-    falling && !matched ? 1 - smooth((fallTop + headR * 0.3 - (d.z + headCentreZ)) / (headR * 0.3)) * smooth((0.45 - d.y / headR) / 0.3) : 1;
+  const keptOver = (d: THREE.Vector3, over: number) =>
+    falling && !matched ? 1 - smooth((fallTop + headR * over - (d.z + headCentreZ)) / (headR * over)) * smooth((0.45 - d.y / headR) / 0.3) : 1;
+  // Over 0.15 head radii above the fall's top, its bumps' height over twice that, so the crown's outline comes down into
+  // the fall's. Over 0.3 head radii, with the fall's own texture fading in over 0.2 below its top, a smooth band half a
+  // head radius tall ran round the back between the crown's coils and the fall's locks, read as a ledge under the crown.
+  const kept = (d: THREE.Vector3) => keptOver(d, 0.15);
+  const keptRise = (d: THREE.Vector3) => keptOver(d, 0.3);
   if (p.headCovered || p.hair !== "none") {
     // Textured hair needs enough facets for its curls to show; coils are tighter, so they need more. A hairline drawn as
     // strands on the cap needs columns enough for them: twice straight hair's 16.
@@ -881,7 +894,7 @@ export function figureParts(p: FigureParams): Part[] {
       const q = new THREE.Vector3();
       const keep = Array.from({ length: positions.count }, (_, i) => kept(q.fromBufferAttribute(positions, i).sub(capAt)));
       // Curls lift less toward the tucked rim, so it stays on the head.
-      const bumps = textured(capPart.geometry, () => capAt, capTexture, headR, 1, undefined, (at) => curlsAt(at) * kept(at.clone().sub(capAt)) * (1 - 0.7 * tuckAt(at)));
+      const bumps = textured(capPart.geometry, () => capAt, capTexture, headR, 1, undefined, (at) => curlsAt(at) * keptRise(at.clone().sub(capAt)) * (1 - 0.7 * tuckAt(at)));
       // The texture's peaks toward the sheen, faded out where the falling hair meets the cap (`kept`).
       const shade = new Float32Array(positions.count);
       // Faded to the texture's average shade, not to none: faded to the hair's plain colour it left a dark band there.
@@ -961,12 +974,25 @@ export function figureParts(p: FigureParams): Part[] {
     // Long hair lies back over the shoulders rather than through them: moved back below the nape, against the head above it.
     const back = (z: number) => (long ? -headR * 0.25 * smooth((nape - z) / (0.5 * (nape - bottom))) : 0);
     const positions = fall.getAttribute("position");
+    /**
+     * How far down from its top each column's ringlets take to come in, 0.05 to 0.3 head radii, each lock its own: all
+     * coming in over one height, the locks began in a level line round the back of the head under the crown's coils, a
+     * ledge. (Raising the locks' tops up the crown instead notched the head's outline between them.)
+     */
+    const comeIn = (ix: number) => {
+      const lock = Math.floor(Math.min(ix, columns - 1) / 2);
+      const x = Math.sin(lock * 12.9898 + 7 * 78.233) * 43758.5453;
+      return headR * (0.05 + 0.25 * (x - Math.floor(x)));
+    };
+    /** Each column's top, once placed, for its texture to rise from. */
+    const columnTops = new Float64Array(columns + 1);
     for (let i = 0; i < positions.count; i++) {
       // At its two front edges its top comes down a quarter of a head radius, toward where the cap's edge runs down the
       // side of the head, each column's rows spread over what is left: square at the corner, the fall's top and front
       // edge met in a hard corner at temple height, seen from the side.
       const fromBack = Math.abs(Math.atan2(positions.getX(i), -positions.getY(i)));
       const columnTop = long ? top - headR * 0.25 * smooth((fromBack - 1.6) / 0.3) : top;
+      columnTops[i % (columns + 1)] = columnTop;
       const z = columnTop - ((columnTop - bottom) * (top - positions.getZ(i))) / (top - bottom);
       const k = across(z);
       // Straight hair's ends uneven: every other strand a little longer.
@@ -989,10 +1015,21 @@ export function figureParts(p: FigureParams): Part[] {
       // never stand out past it, at the ears or below the crown.
       const own = smooth((top - z) / (headR * 0.6)) * edge;
       const u = (top - z) / (top - bottom);
+      // What the fall lies on there: the cap, or below the cap's rim (down the side of the face) the head itself, so the
+      // front edges lie on the head there too. Chin-length curls kept their front edges at the cap's width at their
+      // top all the way down, standing off the side of the head where the cap's rim runs down it: from behind and to
+      // one side the wall showed between them and the cap, two dark specks at ear level.
+      const dz = (z - headCentreZ) / (headR * headScale.z);
+      const onHead = r > 0 && Math.abs(dz) < 1 ? (headR * 1.02 * Math.sqrt(1 - dz * dz)) / Math.hypot(x / r / headScale.x, y / r / headScale.y) : 0;
+      // Its two front edges a little inside the cap where the cap is, so the cap's outline covers them: lying just
+      // outside it they met it along a crack a fraction of a millimetre wide, which from behind and to one side showed
+      // the room in a column of light dots near the top of the fall.
+      const front = 1 - Math.min(1, Math.min(ix, columns - ix) / 2);
+      const base = cap > 0 ? cap * (1 - 0.06 * front) : onHead;
       const want = rounded
-        ? Math.max(cap, capAcross(x, y, top) * 1.012 * (1 - rounded * u * u))
-        : cap > 0
-          ? cap + (Math.max(r, cap) - cap) * own
+        ? base + (Math.max(base, capAcross(x, y, top) * 1.012 * (1 - rounded * u * u)) - base) * edge
+        : base > 0
+          ? base + (Math.max(r, base) - base) * own
           : r;
       if (r > 0) [x, y] = [(x * want) / r, (y * want) / r];
       positions.setXYZ(i, x, y, z + ragged);
@@ -1000,7 +1037,7 @@ export function figureParts(p: FigureParams): Part[] {
     fall.computeVertexNormals();
     const hang = { geometry: twoSided(fall), colour: c.head };
     /** How much of its texture the fall has at height z: none at its top, where it meets the cap, all of it 0.2 head radii down. */
-    const inFall = (z: number) => smooth((top - z) / (headR * 0.2));
+    const inFall = (z: number) => smooth((top - z) / (headR * (ringed ? 0.1 : 0.2)));
     // A wavy fall past the jaw waves as tightly as its rows allow (three rows to a wave, its 7 waves per head radius at
     // up to 1.6 times the cap's): at 0.4 it was smooth. A chin-length wavy fall keeps that slow swing, the bob that
     // coils and curls of that length are told from.
@@ -1009,8 +1046,19 @@ export function figureParts(p: FigureParams): Part[] {
     const along = matched ? (p.hairTexture === "coily" ? 1.3 : 1.6) : p.hairTexture === "wavy" && long ? Math.max(0.4, Math.min(1.6, (rows * 2 * Math.PI) / (3 * 7 * ((top - bottom) / headR)))) : 0.4;
     const centreOf = (q: THREE.Vector3) => new THREE.Vector3(0, back(q.z), q.z);
     const bumps = ringed
-      ? ringlets(hang.geometry, columns, p.hairTexture === "coily" ? 3 : 4, centreOf, around, headR, 0.03 * s, (q) => inFall(q.z))
-      : textured(hang.geometry, centreOf, p.hairTexture, headR, along, undefined, (q) => (matched ? 1 : inFall(q.z)), matched ? top : 0);
+      ? // Each lock rises from its own column's top (lower at the two front edges, where the fall's top comes down the
+        // side of the head, higher where a lock starts up the crown): read from the fall's top, the front locks were
+        // already raised where they start and stood off the cap at the side, and from behind and above the wall showed
+        // under them.
+        ringlets(hang.geometry, columns, p.hairTexture === "coily" ? 3 : 4, centreOf, around, headR, 0.03 * s, (q, column) =>
+          // Standing out slowly, over 0.45 head radii: standing out within 0.1 to 0.2, the locks bulged out under the
+          // crown's outline from behind in a shelf.
+          smooth((columnTops[column] - q.z) / (headR * 0.45)),
+        )
+      : // Chin-length curls rise from under the cap over their first 0.12 head radii: at full height from the top, the
+        // fall's top edge stood off the cap at the sides (where the cap's own curls lie lower toward its rim), and from
+        // behind and above the eye passed under it, down between hair and head and out at the face: two dark specks.
+        textured(hang.geometry, centreOf, p.hairTexture, headR, along, undefined, (q) => (matched ? smooth((top - q.z) / (headR * 0.12)) : inFall(q.z)), matched ? top : 0);
     // Near its top, lit as the cap it lies on: with the fall's own upright normals the light changed in a line there.
     // (Its inner side, the second half of the two-sided geometry, faces the other way.)
     {
@@ -1037,7 +1085,18 @@ export function figureParts(p: FigureParams): Part[] {
     const straightStrands =
       !fine && c.hairSheen ? { shade: strands(fallAt.count, columns + 1).map((x, i) => x * 0.45 * smooth((top - fallAt.getZ(i)) / headR)), tone: c.hairSheen } : {};
     const fallPart = sheened(named({ ...hang, ...straightStrands }, "hair"), bumps, c.hairSheen);
-    if (bumps && fallPart.shade && !matched) fallPart.shade = fallPart.shade.map((x, i) => x * inFall(fallAt.getZ(i)) + MEAN_SHADE[p.hairTexture] * (1 - inFall(fallAt.getZ(i))));
+    // Ringlets' sheen softer than the texture's on the cap (at its full strength each lock's turns were bright dashes),
+    // brought up to the cap's average where they meet it.
+    const soft = ringed ? 0.55 : 1;
+    if (bumps && fallPart.shade && !matched) {
+      // Ringlets fade in from their own column's top.
+      const half = fallAt.count / 2;
+      const faded = (i: number) => {
+        const column = (i % half) % (columns + 1);
+        return ringed ? smooth((columnTops[column] - fallAt.getZ(i)) / comeIn(column)) : inFall(fallAt.getZ(i));
+      };
+      fallPart.shade = fallPart.shade.map((x, i) => x * soft * faded(i) + MEAN_SHADE[p.hairTexture] * (1 - faded(i)));
+    }
     out.push(fallPart);
   }
   if (!p.headCovered && p.hair !== "none") out.push(...styleParts(p, style, headCentreZ, headR, headScale, v, onCap));

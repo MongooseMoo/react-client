@@ -1213,6 +1213,31 @@ describe("round seven: hair from the room's own angles, locks, lids and the fall
     }
   });
 
+  it("lets nothing show through hair worn down from behind, from level to 30 degrees above and 40 to either side: no dots of head, cap rim or wall", () => {
+    for (const [texture, length_cm] of [["straight", 30], ["straight", 50], ["wavy", 30], ["curly", 18], ["curly", 30], ["coily", 50]] as const) {
+      const { p, headR, headZ } = standing({ skin: { hex: "#eadaba" }, hair: { length_cm, texture, hex: "#653700" } });
+      const parts = figureParts(p);
+      for (const az of [140, 160, 180, 200, 220]) {
+        for (const el of [0, 15, 30]) {
+          const view = { az: (az * Math.PI) / 180, el: (el * Math.PI) / 180, centre: new THREE.Vector3(0, 0, headZ) };
+          const grid = picture(parts, view, [-headR * 1.6, -headR * 1.4, headR * 1.6, headR * 1.4], headR / 150, true);
+          const at: string[] = [];
+          for (const [j, row] of grid.entries()) {
+            const first = row.findIndex(isHair);
+            if (first < 0) continue;
+            const last = row.length - 1 - [...row].reverse().findIndex(isHair);
+            // A dot: a cell that is not hair with hair on both sides of it in its row and column.
+            for (let i = first + 1; i < last; i++) {
+              if (isHair(row[i])) continue;
+              if (isHair(row[i - 1]) && isHair(row[i + 1]) && isHair(grid[j - 1]?.[i]) && isHair(grid[j + 1]?.[i])) at.push(`${i},${j}:${row[i]?.name ?? "wall"}`);
+            }
+          }
+          expect(at.length, `${texture} ${length_cm} cm, az ${az} el ${el}: ${at.slice(0, 6).join(" ")}`).toBe(0);
+        }
+      }
+    }
+  });
+
   it("draws each eye's white and its lid round, with at least twelve sides, not six like a nut", () => {
     for (const skin of ["#f6ede4", "#eadaba"]) {
       const { p, headR } = standing({ skin: { hex: skin }, hair: { length_cm: 3, texture: "straight", hex: "#653700" } });
