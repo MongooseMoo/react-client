@@ -1238,6 +1238,30 @@ describe("round seven: hair from the room's own angles, locks, lids and the fall
     }
   });
 
+  it("brings long hair's front edge forward beside the cheek and jaw, then back in toward the neck, not straight down from the temple", () => {
+    for (const texture of ["straight", "wavy", "curly", "coily"]) {
+      for (const length_cm of [30, 50, 75]) {
+        const { p, headR, headZ } = standing({ skin: { hex: "#eadaba" }, hair: { length_cm, texture, hex: "#653700" } });
+        const fall = figureParts(p).find((x) => x.name === "hair");
+        const pos = fall?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        // How far forward the fall reaches in a band of heights (head radii from the head's middle).
+        const reach = (from: number, to: number) => {
+          let y = Number.NEGATIVE_INFINITY;
+          for (let i = 0; i < pos.count; i++) {
+            const dz = (pos.getZ(i) - headZ) / headR;
+            if (dz >= from && dz <= to) y = Math.max(y, pos.getY(i) / headR);
+          }
+          return y;
+        };
+        const label = `${texture} ${length_cm} cm`;
+        const [temple, cheek, below] = [reach(-0.15, 0), reach(-0.75, -0.35), reach(-1.6, -1.3)];
+        // Forward of where it starts by a fifth of a head radius at the cheek, and back from there below the jaw.
+        expect(cheek - temple, `${label}: temple ${temple.toFixed(2)} cheek ${cheek.toFixed(2)}`).toBeGreaterThan(0.2);
+        expect(cheek - below, `${label}: cheek ${cheek.toFixed(2)} below ${below.toFixed(2)}`).toBeGreaterThan(0.2);
+      }
+    }
+  });
+
   it("draws each eye's white and its lid round, with at least twelve sides, not six like a nut", () => {
     for (const skin of ["#f6ede4", "#eadaba"]) {
       const { p, headR } = standing({ skin: { hex: skin }, hair: { length_cm: 3, texture: "straight", hex: "#653700" } });

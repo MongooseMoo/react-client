@@ -997,7 +997,20 @@ export function figureParts(p: FigureParams): Part[] {
       const k = across(z);
       // Straight hair's ends uneven: every other strand a little longer.
       const ragged = !fine && Math.abs(z - bottom) < 1e-5 && (i % (columns + 1)) % 2 ? -0.012 * s : 0;
-      let [x, y] = [positions.getX(i) * headScale.x * v * k, positions.getY(i) * headScale.y * v * k + back(z)];
+      // Long hair's front edges follow the face: brought forward round the head beside the cheek and jaw (up to 0.3
+      // radians, the front column most), then back in toward the neck below the jaw, each edge column by its own share so
+      // the edge is uneven. Hanging straight down from the temple, the fall's front edge ran behind the cheek and jaw as a
+      // plain straight line, seen from the side.
+      let [gx, gy] = [positions.getX(i), positions.getY(i)];
+      if (long) {
+        const ixEdge = Math.min(i % (columns + 1), columns - (i % (columns + 1)));
+        const toFront = Math.max(0, 1 - ixEdge / 3) * (0.8 + 0.2 * Math.sin(ixEdge * 2.3 + (i % (columns + 1) > columns / 2 ? 1 : 0)));
+        const cheek = smooth((headCentreZ - headR * 0.05 - z) / (headR * 0.35)) * (1 - smooth((headCentreZ - headR * 0.85 - z) / (headR * 0.45)));
+        const turn = 0.3 * toFront * cheek * Math.sign(gx);
+        // Turned toward +y (the face) on each side: counter-clockwise on the +x side, clockwise on the -x side.
+        [gx, gy] = [gx * Math.cos(turn) - gy * Math.sin(turn), gx * Math.sin(turn) + gy * Math.cos(turn)];
+      }
+      let [x, y] = [gx * headScale.x * v * k, gy * headScale.y * v * k + back(z)];
       // Never inside the cap: it lies just outside the cap's surface where that is further out, so the cap's lower edge
       // at the back is covered and the fall's top lies on the cap instead of crossing it. 2.5% out: more than the sag of
       // the fall's flat facets between its vertices round and down the curved cap, so the cap never shows through.
