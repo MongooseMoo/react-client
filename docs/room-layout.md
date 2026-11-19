@@ -111,6 +111,24 @@ assignments do not promise automatic publication.
 
 ## In the client
 
+### Using a fitted drawer
+
+In the Map tab, open **Room layout** and find the desk under **Things**. Focus
+**Open upper-left drawer** and press Enter. Visible contents appear immediately
+after the drawer button. **Get** takes the named object. In Dollhouse and Your
+eyes, clicking the visible drawer face activates the same button. A person
+using ordinary text commands can open, close or empty the drawer while you watch.
+
+For a host with fitted drawers, the MOO sends `form_boxes` on the body's
+snapshot and movement update. Each `center` and `size` is in metres along the
+host's local axes, relative to its pose centre. A bound box also carries
+`fitting` with the real drawer's `id`, `lifetime`, `name`, `opened`, current
+`command` and visible `contents`. Each visible item has its own identity and
+get command. A closed drawer has an empty contents list. An empty command
+disables the corresponding control.
+
+### Room views
+
 The Map tab shows the room under "Room layout", in one of three views chosen with the View radio
 buttons (the choice is kept across rooms):
 

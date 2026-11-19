@@ -60,6 +60,7 @@ interface RoomLayout3DProps {
   label: string;
   mode: CameraMode;
   onExit: (name: string) => void;
+  onFitting: (lifetime: string) => void;
 }
 
 /** Space between a label and the top of what it names, CSS pixels. */
@@ -115,7 +116,7 @@ function applyPose(stage: Stage, pose: CameraPose) {
   stage.camera.lookAt(stage.controls.target);
 }
 
-const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, label, mode, onExit }) => {
+const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, label, mode, onExit, onFitting }) => {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Stage | null>(null);
   const modeRef = useRef(mode);
@@ -297,8 +298,13 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
 
     const ordered = labelOrder(placed, youId);
     const plan = [
-      ...ordered.filter((p) => isPerson(p.thing)).map((p) => ({ id: p.thing.id, text: displayName(p.thing, youId), person: true })),
-      ...ordered.filter((p) => !isPerson(p.thing)).map((p) => ({ id: p.thing.id, text: displayName(p.thing, youId), person: false })),
+      ...ordered.filter((p) => isPerson(p.thing)).map((p) => ({ id: p.thing.id, text: shortLabel(displayName(p.thing, youId)), person: true })),
+      ...ordered.filter((p) => !isPerson(p.thing)).map(({ thing }) => {
+        const visible = thing.form_boxes?.flatMap(({ fitting }) => fitting?.opened ? fitting.contents : []) ?? [];
+        const name = shortLabel(displayName(thing, youId));
+        const text = visible.length ? `${name} · ${shortLabel(visible[0].name)}${visible.length > 1 ? ` (+${visible.length - 1})` : ""}` : name;
+        return { id: thing.id, text, person: false };
+      }),
     ];
     labelPlan.current = plan;
     for (const { id, text, person } of plan) {
@@ -307,7 +313,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       if (!points || !group) continue;
       const element = document.createElement("div");
       element.className = id === youId ? "rl3d-label rl3d-label-you" : person ? "rl3d-label rl3d-label-person" : "rl3d-label";
-      element.textContent = shortLabel(text);
+      element.textContent = text;
       // In the label layer from the start, so its drawn size can be read before it is first shown.
       element.style.display = "none";
       stage.labels.domElement.appendChild(element);
@@ -356,17 +362,17 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
   }, [mode, layout, listenerPosition, listenerForward, youBounds?.x0, youBounds?.y0, youBounds?.z1]);
 
   // A doorway click sends its exit, unless the pointer was turning the view.
-  const down = useRef<{ x: number; y: number } | null>(null);
+  const down = useRef<{ id: number; x: number; y: number } | null>(null);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     onTouchPointer(event);
-    down.current = { x: event.clientX, y: event.clientY };
+    down.current = event.isPrimary && event.button === 0 ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null;
   };
   const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     onTouchPointer(event);
     const start = down.current;
     down.current = null;
     const stage = stageRef.current;
-    if (!stage?.room || !start || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
+    if (!stage?.room || !start || start.id !== event.pointerId || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
     const rect = stage.renderer.domElement.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
     const pointer = new THREE.Vector2(
@@ -375,8 +381,14 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     );
     const ray = new THREE.Raycaster();
     ray.setFromCamera(pointer, stage.camera);
-    const hit = ray.intersectObjects(stage.room.exits, false)[0];
-    if (hit) onExitRef.current(hit.object.userData.exit as string);
+    const room = stage.room;
+    const targets = layout.things.some((thing) => thing.form_boxes?.length) ? [
+      ...Array.from(room.things.values()).filter((thing) => thing.visible),
+      ...Object.values(room.walls), ...room.exits.filter((exit) => exit.parent === room.root),
+    ] : room.exits;
+    const hit = ray.intersectObjects(targets, true)[0];
+    if (hit?.object.userData.fitting) onFitting(hit.object.userData.fitting);
+    else if (hit?.object.userData.exit) onExitRef.current(hit.object.userData.exit);
   };
 
   /** Your eyes zoom by narrowing the field of view, as binoculars would; they stay where you stand. */
@@ -500,7 +512,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onPointerMove={onTouchPointer}
-      onPointerCancel={onTouchPointer}
+      onPointerCancel={(event) => { down.current = null; onTouchPointer(event); }}
       onKeyDown={onKeyDown}
     />
   );

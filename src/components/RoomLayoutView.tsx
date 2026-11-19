@@ -1,5 +1,5 @@
 import type React from "react";
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useRef, useState } from "react";
 import { downloadFile } from "../downloadFile";
 import type { RoomLayout } from "../gmcp/Room";
 import {
@@ -59,10 +59,11 @@ export const roomLayoutViewSchema: LocalStorageSchema<RoomLayoutViewName> = {
 interface RoomLayoutViewProps {
   layout: RoomLayout;
   roomName: string;
-  onExit: (name: string) => void;
+  onCommand: (command: string) => void;
 }
 
-const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExit }) => {
+const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCommand }) => {
+  const fittingButtons = useRef(new Map<string, HTMLButtonElement>());
   const youId = useSpatialStore((state) => state.listenerEntityId);
   const name = stripMudAnsiTags(roomName);
   const [view, setView] = useState<RoomLayoutViewName>(() => loadStoredValue(roomLayoutViewSchema, "plan"));
@@ -81,6 +82,7 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
         id: thing.id,
         kind: thing.kind,
         appearance: thing.appearance,
+        fittings: new Map(thing.form_boxes?.flatMap(({ fitting }) => fitting ? [[fitting.lifetime, fitting] as const] : [])),
         sortName: displayName(thing, youId),
         text: where ? describeThing(where, layout.size, youId) : describeUnshaped(thing, youId),
       };
@@ -121,7 +123,7 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
           placed={placed}
           youId={youId}
           label={summary}
-          onExit={onExit}
+          onExit={onCommand}
           onSave={save}
         />
       ) : (
@@ -132,7 +134,12 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
             youId={youId}
             label={summary}
             mode={view}
-            onExit={onExit}
+            onExit={onCommand}
+            onFitting={(lifetime) => {
+              const button = fittingButtons.current.get(lifetime);
+              button?.focus({ preventScroll: true });
+              button?.click();
+            }}
           />
         </Suspense>
       )}
@@ -177,7 +184,37 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onExi
       ) : (
         <ul aria-label="Things in the layout">
           {things.map((e) => (
-            <li key={e.id}>{e.text}</li>
+            <li key={e.id}>
+              {e.text}
+              {e.fittings.size > 0 && (
+                <ul aria-label={`Fittings of ${e.sortName}`}>
+                  {Array.from(e.fittings.values(), (fitting) => (
+                    <li key={fitting.lifetime}>
+                      <button type="button" aria-expanded={fitting.opened} disabled={!fitting.command}
+                        ref={(node) => {
+                          if (node) fittingButtons.current.set(fitting.lifetime, node);
+                          else fittingButtons.current.delete(fitting.lifetime);
+                        }}
+                        onClick={() => onCommand(fitting.command)}>
+                        {fitting.opened ? "Close" : "Open"} {fitting.name}
+                      </button>
+                      {fitting.opened && (fitting.contents.length ? (
+                        <ul aria-label={`Contents of ${fitting.name}`}>
+                          {fitting.contents.map((item) => (
+                            <li key={item.lifetime}>
+                              <button type="button" disabled={!item.command} onClick={() => {
+                                fittingButtons.current.get(fitting.lifetime)?.focus({ preventScroll: true });
+                                onCommand(item.command);
+                              }}>Get {item.name}</button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : " No visible contents.")}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
           ))}
         </ul>
       )}

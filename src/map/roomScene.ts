@@ -416,10 +416,21 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
     } else {
       group.userData.form = thingForm(p.thing);
       const pose = p.thing.pose;
-      if (isLayoutPose(pose) && pose.box) {
+      if (isLayoutPose(pose) && (pose.box || p.thing.form_boxes?.length)) {
         const [w, d, h] = pose.dimensions_m;
         const local: PlacedThing = { ...p, bounds: { x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -h / 2, z1: h / 2 } };
-        if (thingForm(p.thing) === "box") group.add(builder.box(local.bounds, builder.material(thingColour(p.thing)), "box"));
+        if (p.thing.form_boxes?.length) {
+          const surface = thingColour(p.thing);
+          const wood = builder.material(surface);
+          const face = builder.material(new THREE.Color(surface).multiplyScalar(0.78).getHex());
+          for (const { center: [x, y, z], size: [w, d, h], fitting } of p.thing.form_boxes) {
+            const mesh = builder.box({
+              x0: x - w / 2, x1: x + w / 2, y0: y - d / 2, y1: y + d / 2, z0: z - h / 2, z1: z + h / 2,
+            }, fitting ? face : wood, fitting?.name ?? "form");
+            if (fitting) mesh.userData.fitting = fitting.lifetime;
+            group.add(mesh);
+          }
+        } else if (thingForm(p.thing) === "box") group.add(builder.box(local.bounds, builder.material(thingColour(p.thing)), "box"));
         else for (const mesh of thingMeshes(builder, local)) group.add(mesh);
         group.quaternion.copy(bodyQuaternion(pose));
         group.position.fromArray(pose.centre_m);
@@ -453,7 +464,7 @@ export function updateRoomBodies(room: RoomScene, before: PlacedThing[], after: 
       !isLayoutPose(a) || !isLayoutPose(b) || (!b.box && !isPerson(next.thing)) ||
       a.box !== b.box || a.figure_height_m !== b.figure_height_m || a.posture !== b.posture ||
       a.dimensions_m.some((n, axis) => n !== b.dimensions_m[axis]) ||
-      old.thing.appearance !== next.thing.appearance || old.thing.state !== next.thing.state ||
+      old.thing.appearance !== next.thing.appearance || old.thing.state !== next.thing.state || old.thing.form_boxes !== next.thing.form_boxes ||
       old.thing.material !== next.thing.material || old.thing.classes !== next.thing.classes ||
       JSON.stringify(old.thing.front?.axis) !== JSON.stringify(next.thing.front?.axis)) return false;
     const matrix = (pose: LayoutPose) => new THREE.Matrix4().compose(
