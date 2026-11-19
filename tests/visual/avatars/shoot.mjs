@@ -87,14 +87,21 @@ try {
       await sharp.screenshot({ path: resolve(out, `face-portraits-${String(i / 4 + 1).padStart(2, '0')}.png`), clip: { x: boxes[0].x, y: top, width: boxes[0].width, height: bottom - top }, fullPage: true });
     }
     await sharp.close();
+    // --scale=N: each 3D cell N times the pixels (the same picture, sharper).
+    const scale = Number(process.argv.find((a) => a.startsWith('--scale='))?.slice(8) ?? '1');
     // Tall enough for every row of 420 px cells, four to a row.
-    const tall = await browser.newPage({ viewport: { width: 1280, height: Math.ceil(rows.length / 4) * 420 + 100 }, colorScheme: 'dark' });
-    for (const angle of ['front', 'three', 'side', 'back']) {
+    const tall = await browser.newPage({ viewport: { width: 1280 * scale, height: Math.ceil(rows.length / 4) * 420 * scale + 100 }, colorScheme: 'dark' });
+    // --angles=front,az20el25,az-35el20,az160el25: the heads from named angles, or from `azAelE` (degrees round from
+    // face-on and above, as the room's Dollhouse and Your eyes look at a person); default front, three, side, back.
+    const angles = process.argv.find((a) => a.startsWith('--angles='))?.slice(9).split(',') ?? ['front', 'three', 'side', 'back'];
+    for (const angle of angles) {
       // --dist=N: the head camera N metres away (default 1.05, about 150 px of head).
       const dist = process.argv.find((a) => a.startsWith('--dist='))?.slice(7) ?? '1.05';
-      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=head&dist=${dist}&set=${faceSet}${onlyQuery}`);
+      const spec = /^az(-?\d+)el(-?\d+)$/.exec(angle);
+      const where = spec ? `az=${spec[1]}&el=${spec[2]}` : `angle=${angle}`;
+      await tall.goto(`${base}?view=figures&${where}&zoom=head&dist=${dist}&scale=${scale}&set=${faceSet}${onlyQuery}`);
       await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
-      await tall.locator('#root > div').screenshot({ path: resolve(out, `face-heads-${angle}.png`) });
+      await tall.locator('#root > div > canvas').screenshot({ path: resolve(out, `face-heads-${angle}.png`) });
     }
     await tall.close();
   }
