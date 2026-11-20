@@ -23,10 +23,12 @@ import {
   type CameraPose,
   cutWalls,
   DOLLHOUSE_FOV,
+  DOLLHOUSE_NEAR,
   disposeRoomScene,
   dollhouseMaxDistance,
   dollhousePose,
   EYES_FOV,
+  orbitNearest,
   panTo,
   personFocus,
   zoomFocus,
@@ -35,6 +37,7 @@ import {
   type RoomScene,
   screenBox,
   screenTop,
+  updateTinyMarkers,
   wheelNotches,
   wheelStep,
   wheelZoom,
@@ -144,7 +147,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     labels.domElement.setAttribute("aria-hidden", "true");
     frame.appendChild(labels.domElement);
 
-    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, 0.05, 200);
+    const camera = new THREE.PerspectiveCamera(DOLLHOUSE_FOV, 4 / 3, DOLLHOUSE_NEAR, 200);
     camera.up.set(0, 0, 1);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.maxPolarAngle = Math.PI / 2 - 0.05;
@@ -168,7 +171,10 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       labelSizes: new Map(),
       personLabels: [],
       render: () => {
-        if (stage.room) cutWalls(stage.room, layoutRef.current, camera.position, modeRef.current);
+        if (stage.room) {
+          cutWalls(stage.room, layoutRef.current, camera.position, modeRef.current);
+          updateTinyMarkers(stage.room, camera, frame.clientWidth, frame.clientHeight, modeRef.current);
+        }
         renderer.render(scene, camera);
         placeVisibleLabels(stage);
         labels.render(scene, camera);
@@ -319,6 +325,10 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       // In the label layer from the start, so its drawn size can be read before it is first shown.
       element.style.display = "none";
       stage.labels.domElement.appendChild(element);
+      // A person's floor ring (shown while their figure is too small to find) takes their label's colour.
+      const ring = room.markers.get(id)?.material as THREE.MeshBasicMaterial | undefined;
+      const colour = ring ? getComputedStyle(element).color : "";
+      if (ring && colour) ring.color.setStyle(colour);
       const object = new CSS2DObject(element);
       group.updateWorldMatrix(true, false);
       object.position.copy(group.worldToLocal(points[0].clone()));
@@ -446,7 +456,9 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       wheelFocus.current = { x: clientX, y: clientY, pick };
     }
     const pick = wheelFocus.current?.pick;
-    wheelZoom(stage.camera.position, stage.controls.target, pick?.point ?? stage.controls.target.clone(), scale, pick?.nearest ?? ZOOM_NEAREST);
+    wheelZoom(stage.camera.position, stage.controls.target, pick?.point ?? stage.controls.target.clone(), scale, pick?.nearest ?? ZOOM_NEAREST, pick?.pace);
+    // A small animal form frames nearer than ZOOM_NEAREST; the orbit keeps the camera that near when the keys turn it.
+    stage.controls.minDistance = orbitNearest(pick);
     stage.controls.update();
     stage.render();
   };
@@ -469,7 +481,10 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     wheelFocus.current = null;
     // Your face, or the middle of your figure as drawn when you are an animal form (`personFocus`).
     const you = placed.find((p) => p.thing.id === youId);
-    panTo(stage.camera, stage.controls.target, you && stage.room ? personFocus(stage.room, you, layout).point : zoomFocus(youBounds, layout));
+    const focus = you && stage.room ? personFocus(stage.room, you, layout) : undefined;
+    panTo(stage.camera, stage.controls.target, focus ? focus.point : zoomFocus(youBounds, layout));
+    // As small as your figure frames when you are a small animal form (a song bird), else ZOOM_NEAREST.
+    stage.controls.minDistance = focus && focus.frame > 0 ? Math.min(ZOOM_NEAREST, focus.frame) : ZOOM_NEAREST;
     stage.controls.dollyIn(scale);
   };
 
@@ -494,6 +509,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       _: () => zoomToward(stage, 1 / ZOOM_STEP),
       "0": () => {
         wheelFocus.current = null;
+        stage.controls.minDistance = ZOOM_NEAREST;
         applyPose(stage, dollhousePose(layout));
         stage.controls.update();
       },

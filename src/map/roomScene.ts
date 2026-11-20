@@ -88,6 +88,11 @@ export interface RoomScene {
   labelPoints: Map<string, THREE.Vector3[]>;
   /** Each person's head as drawn (everything above the chin: hair, hat, antlers), as its box's eight corners. */
   heads: Map<string, THREE.Vector3[]>;
+  /**
+   * Each person's floor ring, shown by `updateTinyMarkers` while their figure is too small to find in the picture. The
+   * rings sit outside the things' groups, so no ray cast at the things meets one and no figure's drawn box includes one.
+   */
+  markers: Map<string, THREE.Mesh>;
 }
 
 /** The box round a figure geometry's vertices above `chin`, worked out once per geometry. */
@@ -479,8 +484,67 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
   }
   // Figures of people who left, or whose look changed, are freed now.
   figures?.sweep();
+  // A floor ring for each person, hidden until `updateTinyMarkers` finds their figure too small to see.
+  const markers = new Map<string, THREE.Mesh>();
+  const rings = new THREE.Group();
+  rings.name = "tiny figure markers";
+  const ring = new THREE.RingGeometry(MARKER_INNER, 1, 40);
+  for (const [id, group] of things) {
+    if (group.userData.form !== "person") continue;
+    const marker = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: MARKER_COLOUR, transparent: true, opacity: 0, depthWrite: false }));
+    marker.name = `marker ${id}`;
+    marker.visible = false;
+    rings.add(marker);
+    markers.set(id, marker);
+  }
+  root.add(rings);
   root.updateMatrixWorld(true);
-  return { root, walls, ceiling, exits, things, labelPoints, heads };
+  return { root, walls, ceiling, exits, things, labelPoints, heads, markers };
+}
+
+/** A figure shorter than this on screen, CSS pixels, gets its floor ring; from MARKER_FULL_PX down the ring is at full strength. */
+export const TINY_FIGURE_PX = 16;
+const MARKER_FULL_PX = 10;
+/** The ring's radius on screen, CSS pixels: round a figure a few pixels tall, about the size of a pick target (PICK_TOLERANCE). */
+const MARKER_RADIUS_PX = 11;
+/** The ring's inner radius as a share of its outer one: a line about 1.5 px wide. */
+const MARKER_INNER = 0.86;
+/** The person label's colour (`.rl3d-label-person` in MapPanel.css); the view sets each ring to its own label's. */
+const MARKER_COLOUR = 0xe8e8ed;
+
+/** How strongly a figure `px` CSS pixels tall on screen is ringed: 1 up to MARKER_FULL_PX, fading to 0 at TINY_FIGURE_PX. */
+export function markerOpacity(px: number): number {
+  return Math.min(1, Math.max(0, (TINY_FIGURE_PX - px) / (TINY_FIGURE_PX - MARKER_FULL_PX)));
+}
+
+/**
+ * Shows a thin ring on the floor round each person whose figure is drawn under TINY_FIGURE_PX tall in a `width` x
+ * `height` Dollhouse picture (a song bird across the room), fading it out as the figure grows, so a sighted player can
+ * find a figure at its true size; hides every ring in Your eyes. The figure itself is never enlarged.
+ */
+export function updateTinyMarkers(scene: RoomScene, camera: THREE.PerspectiveCamera, width: number, height: number, mode: CameraMode): void {
+  const drawn = new THREE.Box3();
+  const middle = new THREE.Vector3();
+  for (const [id, marker] of scene.markers) {
+    const group = scene.things.get(id);
+    marker.visible = false;
+    if (mode !== "dollhouse" || !group?.visible) continue;
+    drawn.setFromObject(group);
+    if (drawn.isEmpty()) continue;
+    const seen = screenBox(boxCorners(drawn), camera, width, height);
+    if (!seen) continue;
+    const opacity = markerOpacity(seen.y1 - seen.y0);
+    if (opacity === 0) continue;
+    drawn.getCenter(middle);
+    // Metres per CSS pixel at the figure's distance, so the ring is the same size on screen at any zoom.
+    const perPixel = (2 * camera.position.distanceTo(middle) * Math.tan(((camera.fov / 2) * Math.PI) / 180)) / height;
+    const footprint = Math.hypot(drawn.max.x - drawn.min.x, drawn.max.y - drawn.min.y) / 2;
+    marker.scale.setScalar(Math.max(MARKER_RADIUS_PX * perPixel, footprint * 1.3));
+    // Just above the floor under the figure, so the floor never hides it.
+    marker.position.set(middle.x, middle.y, drawn.min.z + 0.003);
+    (marker.material as THREE.MeshBasicMaterial).opacity = opacity;
+    marker.visible = true;
+  }
 }
 
 /** Move existing rigid bodies without replacing meshes, materials or figure geometry. */
@@ -645,7 +709,9 @@ export function personFocus(scene: RoomScene, person: PlacedThing, layout: RoomL
   }
   const drawn = new THREE.Box3().setFromObject(group);
   const radius = drawn.getBoundingSphere(new THREE.Sphere()).radius;
-  return { point: drawn.getCenter(new THREE.Vector3()), frame: (radius / Math.sin(((fov / 2) * Math.PI) / 180)) * 1.1, box: boxCorners(drawn) };
+  // Never so near that the camera's near plane cuts into it.
+  const frame = Math.max((radius / Math.sin(((fov / 2) * Math.PI) / 180)) * 1.1, radius + DOLLHOUSE_NEAR * 2);
+  return { point: drawn.getCenter(new THREE.Vector3()), frame, box: boxCorners(drawn) };
 }
 
 /** How many wheel notches bring the dollhouse from its whole-room view to WHEEL_CLOSE from a person, in a room of any size. */
@@ -683,8 +749,13 @@ export function wheelNotches(deltaY: number, deltaMode: number): number {
  * even a person a pixel tall is a target at least 24 px across.
  */
 export const PICK_TOLERANCE = 12;
-/** The least distance, metres, the dollhouse camera keeps from what it zooms onto (OrbitControls' minDistance too). */
+/**
+ * The least distance, metres, the dollhouse camera keeps from what it zooms onto (OrbitControls' minDistance too), but
+ * for an animal form smaller than that frames: the camera comes as near as its whole figure fits (`personFocus`).
+ */
 export const ZOOM_NEAREST = 0.5;
+/** The 3D view's camera near plane, metres: nothing nearer the camera than this is drawn. */
+export const DOLLHOUSE_NEAR = 0.05;
 /** Room left round a person's box that a zoom onto them never brings the camera into, metres. */
 const PERSON_CLEARANCE = 0.15;
 
@@ -693,6 +764,29 @@ export interface ZoomPick {
   point: THREE.Vector3;
   /** The camera stops this far from `point`: outside what owns it. */
   nearest: number;
+  /**
+   * What a notch's scale is raised to on the way to `point`: 1, except for a figure that frames nearer than
+   * ZOOM_NEAREST (a song bird), where it is the power that brings the camera to `nearest` in the WHEEL_NOTCHES a
+   * person's face takes to reach WHEEL_CLOSE (`wheelPace`).
+   */
+  pace: number;
+}
+
+/**
+ * How much faster per notch a zoom heads for something it may come `nearest` to: 1 from ZOOM_NEAREST up, so a person,
+ * a duck or a snake zooms as before; for a smaller figure, the power of a notch's scale that covers the distance from
+ * the room's whole-room view to `nearest` in the notches a person's face takes from there to WHEEL_CLOSE.
+ */
+export function wheelPace(nearest: number, layout: RoomLayout, fov = DOLLHOUSE_FOV): number {
+  if (nearest >= ZOOM_NEAREST) return 1;
+  const pose = dollhousePose(layout, fov);
+  const whole = Math.hypot(...pose.position.map((v, i) => v - pose.target[i]));
+  return whole > WHEEL_CLOSE ? Math.max(1, Math.log(nearest / whole) / Math.log(WHEEL_CLOSE / whole)) : 1;
+}
+
+/** The least distance OrbitControls keeps the camera from what it turns round while zooming onto `pick`: ZOOM_NEAREST, or nearer for a figure that frames nearer. */
+export function orbitNearest(pick: ZoomPick | undefined): number {
+  return Math.min(ZOOM_NEAREST, pick?.nearest ?? ZOOM_NEAREST);
 }
 
 const thingIdOf = (object: THREE.Object3D | null): string | undefined => {
@@ -753,16 +847,18 @@ export function wheelZoomPoint(
     const sight = new THREE.Raycaster(eye, face.clone().sub(eye).normalize(), 0, depth);
     const first = sight.intersectObjects(things, true)[0];
     if (first && thingIdOf(first.object) !== person.thing.id) continue;
-    // An animal's frame already keeps the camera outside all of it; its Room.Layout box is not what is drawn.
-    return { point: face, nearest: Math.max(ZOOM_NEAREST, focus.frame > 0 ? focus.frame : outOfBox(face, eye, person.bounds, PERSON_CLEARANCE)) };
+    // An animal's frame already keeps the camera outside all of it (its Room.Layout box is not what is drawn), and a
+    // small one may come nearer than ZOOM_NEAREST, faster per notch, so a song bird ends as large as a duck does.
+    const nearest = focus.frame > 0 ? focus.frame : Math.max(ZOOM_NEAREST, outOfBox(face, eye, person.bounds, PERSON_CLEARANCE));
+    return { point: face, nearest, pace: wheelPace(nearest, layout, fov) };
   }
 
   // The walls as drawn (cut low or full height) stop the ray, so it never reaches a point beyond them.
   const hit = caster.intersectObjects([...things, ...Object.values(scene.walls)], true)[0];
-  if (hit) return { point: hit.point.clone(), nearest: ZOOM_NEAREST };
+  if (hit) return { point: hit.point.clone(), nearest: ZOOM_NEAREST, pace: 1 };
   const floor = caster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
   const [w, d] = layout.size;
-  return floor && Math.abs(floor.x) <= w / 2 && Math.abs(floor.y) <= d / 2 ? { point: floor, nearest: ZOOM_NEAREST } : undefined;
+  return floor && Math.abs(floor.x) <= w / 2 && Math.abs(floor.y) <= d / 2 ? { point: floor, nearest: ZOOM_NEAREST, pace: 1 } : undefined;
 }
 
 /** How far from `point`, inside box `b` grown by `clearance`, the line toward `toward` leaves it. */
@@ -825,9 +921,11 @@ export class Pinch {
  * camera toward `point` and the point it orbits onto `point` a little faster, so what
  * was zoomed onto comes to the middle of the picture and the arrow keys then turn
  * around it. Zooming out backs away from the point it orbits. Zooming in never brings the
- * camera nearer `point` than `nearest` (a `ZoomPick`'s), so it stays outside what it zooms onto.
+ * camera nearer `point` than `nearest` (a `ZoomPick`'s), so it stays outside what it zooms onto. `pace` (a
+ * `ZoomPick`'s) raises the scale to that power both ways, so zooming back out by as many notches returns as far.
  */
-export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: THREE.Vector3, scale: number, nearest = 0): void {
+export function wheelZoom(camera: THREE.Vector3, target: THREE.Vector3, point: THREE.Vector3, step: number, nearest = 0, pace = 1): void {
+  const scale = step ** pace;
   if (scale < 1) {
     const distance = camera.distanceTo(point);
     const toward = distance > nearest ? Math.max(scale, nearest / distance) : 1;
