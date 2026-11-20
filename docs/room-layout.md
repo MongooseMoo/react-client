@@ -78,7 +78,7 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 |---|---|
 | `label` | The shortest phrase that tells this person from the others present, worked out by the server for this recipient: "the tall man", "the red-haired woman", "the woman in navy", or "a woman" when nobody else is present. Shown as text; the client never computes one. |
 | `posture` | `standing`, `sitting` or `reclining`. |
-| `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers` and `horns`; `pointed ears` draws the ears pointed, as `face.ears` `pointed` does. The wire gives these no colour: horns and antlers are drawn in one bone tone (`#d6c9a8`), wings and tail in the hair colour (the skin's when there is no hair). How `body_plan` is drawn is in "Body plans" below. |
+| `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers` and `horns`; `pointed ears` draws the ears pointed, as `face.ears` `pointed` does. Antlers branch in 3D and in the portrait (a beam and two tines each side). The wire gives these no colour: horns and antlers are drawn in one bone tone (`#d6c9a8`), wings and tail in the hair colour (the skin's when there is no hair). How `body_plan` is drawn is in "Body plans" below. |
 | `covering` | Sent only while a whole-body form is active: the form's own look, `{"kind": "fur", "colours": [{"name": "grey", "hex": "#9a9893"}, {"name": "dark brown", "hex": "#3b2417"}]}`. `kind` is `skin`, `fur`, `hide`, `feathers`, `scales` or `crystal`; `colours` holds one to three palette colours, main first. How a body plan uses them is in "Body plans" below. The form's `eyes` come in `eyes`. |
 | `build` | `average`, `slender`, `thin`, `athletic`, `muscular`, `curvy`, `stocky`, `chunky`, `pudgy` or `dumpy`; anything else is drawn as average. The figure's shoulders, waist, hips and limbs follow it; the portrait shows it in the shoulders, neck and fullness of the face. |
 | `age_years` | A child's head is drawn larger for their height. |
@@ -111,35 +111,50 @@ record (no `skin`, `hair`, `facial_hair`, `face`, `features`, `build` or `age_ye
   trunk, flat faces shaded lighter and darker, crystal points on the shoulders and back, drawn glossy with a faint
   cool glow) and `human with a transfigured shark head` (a human body with a grey shark's head: black eyes standing
   out of the snout's sides, a dark mouth curving round the white underside, nostrils, a dorsal fin, and the head
-  narrowing into the neck with gill slits). Animal plans get their own small figures, fitted evenly inside the
-  person's box (its height and its width and depth in `shapes`, or the pose's `dimensions_m`) and facing the way the
-  person faces: `mallard duck`, `snake`, `song bird`. Their portraits show the whole animal from the side, inside the
-  round backdrop, at every size; people's portraits show the head alone below 48 px.
+  narrowing into the neck with gill slits). Animal plans get their own figures facing the way the person faces: the
+  `mallard duck` and `song bird` fitted evenly inside the person's box (its height and its width and depth in
+  `shapes`, or the pose's `dimensions_m`). The `snake` is built to its box, never scaled down: its length is the box's
+  longest side whichever way it lies (the game's box for a snake has stood on end, 0.16 x 0.16 m and 3.08 m tall),
+  at least 0.6 m; its body is 2.2% of its length in radius and never under 3 cm, so it shows from the Dollhouse's
+  whole-room view; in a box at least 0.8 of its length front to back it lies in an S along it, otherwise coiled flat
+  round the box's middle; its head rises on its neck by 10 to 15% of its length, above a box too low for that.
+  Their portraits show the whole animal from the side, inside the round backdrop, at every size; people's portraits
+  show the head alone below 48 px.
 - Any other plan: a plain rounded pillar sized by the box, in the plain person colour (you in blue); the plan token is
   the plain person token and the portrait a plain grey silhouette. No human skin, hair or eye colour is filled in.
 
-For a body plan the figure reads no hair, facial hair, face or features and fills in no neutral skin or clothing.
-Colours come from the form's look; each plan has its own colours for whatever is not sent:
+For a body plan the figure reads no hair, facial hair, face or features and fills in no neutral skin or clothing
+(the shark head's body, the person's own, is the exception: below). Colours come from the form's look, by one rule
+for the 3D figure, the portrait and the plan token alike:
 
 - `covering.colours[0]` is the body's colour (fur, skin, hide, feathers, scales or crystal).
 - The second and third colours go where the plan has a natural place for them, in order: the werewolf's muzzle and
   jaw (and the ruff in the portrait), the zombie's sunken lids and mouth, the rakghoul's jaw, the primate's bare face, quartz's light-catching
   facets and spur, the shark's underside; the mallard's head, then its wings; the song bird's breast, then its wings
-  and tail; the snake's bands. When only the main colour is sent, the werewolf, zombie, rakghoul, primate, quartz
-  and snake draw that place in a lighter or darker tone of it; the mallard and song bird keep their own breast colour.
+  and tail; the snake's bands.
+- A place with no colour sent, when the main colour is sent, is a tone of the main colour: the werewolf's, zombie's,
+  rakghoul's, primate's, quartz's, song bird's and snake's accent 35% toward the light or dark ink; an animal's head
+  12% and its wings 25% toward the dark ink. So a snake sent in brown is brown with darker brown bands and head, and a
+  song bird sent in brown has a lighter brown breast, in 3D and in the portrait.
+- Marks of the species keep the plan's own colours whatever is sent: bills, beaks, the snake's tongue, legs and
+  feet, eyes when `eyes` is not sent, the mallard's white neck ring and the shark's white underside when no second
+  colour is sent.
+- With no `covering` colour sent at all, every place keeps the plan's own colour.
 - `covering.kind`: `fur` gives a bushy tail, `crystal` cuts any humanoid body into flat facets; the others are smooth.
 - `eyes` colours the eyes.
 - A colour that is missing or not a `#rrggbb` leaves that place to the plan's own colour; positions do not shift.
   A `covering` sent as a plain word (`"fur"`) is taken as its kind alone; any other shape counts as not sent.
 - The shark head (`human with a transfigured shark head`) covers only the head: its body is the person's own, drawn
   from the record's `skin`, `build` and `garments`, and `covering` colours only the shark's head (main colour) and
-  underside (second). `age_years` changes nothing, since it only sizes a human head. Its portrait's shoulders and
-  neck follow the build, as a human portrait's do.
+  underside (second). With no `garments` sent it wears the same neutral clothing (`#4b5262`) as a person with none,
+  never bare skin; garments sent are drawn as sent. `age_years` changes nothing, since it only sizes a human head.
+  Its portrait's shoulders and neck follow the build, as a human portrait's do.
 
 `garments`
 are drawn on humanoid plans when sent; `traits` add their parts to humanoid plans; `posture` applies to humanoid
 plans (animals always stand). The portrait shows `marks` on humanoid plans' heads. Accessible names and titles still
-come from `label` ("a werewolf"); the client adds no words of its own for a body plan.
+come from `label` ("a werewolf"), shown as sent in the People list ("Name (label)") and on the player card; the
+client adds no words of its own for a body plan, so a new label from the game shows as it arrives.
 
 ## Keeping it current
 
@@ -209,10 +224,13 @@ buttons (the choice is kept across rooms):
   the middle of the picture as it comes closer (about twenty wheel notches from the whole-room
   view to a person close up, in a room of any size; a pinch comes as much closer as the fingers
   spread apart), and stops short of it: never nearer than 0.5 m, and never inside a person it
-  zooms onto (their box and 15 cm round it).
+  zooms onto (their box and 15 cm round it). A person in an animal form (a duck, snake or song bird) is
+  drawn smaller than their box, or coiled beside a thin one: they are picked by the figure as drawn, the
+  zoom heads for the middle of that figure, not a person's head height, and stops where the whole animal
+  fits the picture (its bounding sphere in the field of view, with a tenth to spare).
   Turning then goes round it, so you can turn until a person faces you. On the picture the arrow keys turn
-  it, `+` and `-` zoom toward and away from your own figure (the room's middle when you are not in
-  the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
+  it, `+` and `-` zoom toward and away from your own figure (its middle when you are an animal form; the
+  room's middle when you are not in the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
 - **Your eyes**: the room in 3D from where you stand (your `Client.Spatial` position), facing
   your `Client.Spatial` forward, turning as you turn. `+` and `-` on the picture, or the wheel,
   narrow and widen the view (up to about seven times closer); `0` returns to the normal view.
