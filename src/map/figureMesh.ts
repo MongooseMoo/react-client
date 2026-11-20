@@ -808,6 +808,9 @@ export function figureParts(p: FigureParams): Part[] {
   // Where the cap as drawn (with its texture at full strength) is along the level ray from the head's middle line at
   // height z toward (x, y): its distance out and its shade there, for a fall that carries it on. Set once the cap is built.
   // `normal` is its normal there as drawn; `fullR` and `fullShade` are those of the cap with its texture nowhere faded.
+  // How high the cap's rim is round the head in direction (x, y) (its last row, by angle round the head's axis); set
+  // once the cap is built, for hair worn down to start no lower than it beside the face.
+  let capRimZ = (_x: number, _y: number) => Number.NEGATIVE_INFINITY;
   let capSurface = (_x: number, _y: number, _z: number): { r: number; shade: number; normal: THREE.Vector3; fullR: number; fullShade: number } | undefined => undefined;
   // Only hair worn down falls round the head; hair tied up, braided, locked, spiked or shaved does not.
   const fallsDown = HANGS_LOOSE.includes(style);
@@ -1072,6 +1075,20 @@ export function figureParts(p: FigureParams): Part[] {
       // little to one side the eye looked past the far side of the face in under the rim, onto the cap's inner side,
       // which (its faces turned away, not drawn) let the room's wall show in a thin pale sliver between hair and face.
       // Closing the rim costs one row; the whole cap two-sided took the heaviest figure over the 5,000-triangle budget.
+      {
+        const rimRow = Array.from({ length: across }, (_, ix) => {
+          const i = rows * (across + 1) + ix;
+          return [Math.atan2(positions.getX(i), -positions.getY(i)), positions.getZ(i)];
+        }).sort((a, b) => a[0] - b[0]);
+        capRimZ = (x, y) => {
+          const a = Math.atan2(x, -y);
+          const k = rimRow.findIndex((r) => r[0] >= a);
+          const [lo, hi] = k <= 0 ? [rimRow[rimRow.length - 1], rimRow[0]] : [rimRow[k - 1], rimRow[k]];
+          const span = (hi[0] - lo[0] + 2 * Math.PI) % (2 * Math.PI) || 1;
+          const t = ((a - lo[0] + 2 * Math.PI) % (2 * Math.PI)) / span;
+          return lo[1] + (hi[1] - lo[1]) * Math.min(1, Math.max(0, t));
+        };
+      }
       const lip = rimLip(capPart.geometry, across, rows, capAt, (d) => (headR * 0.97) / Math.hypot(d.x / headScale.x, d.y / headScale.y, d.z / headScale.z));
       // Rim and inner row, on each of its two sides.
       const rimShade = new Float32Array(4 * (across + 1));
@@ -1157,7 +1174,10 @@ export function figureParts(p: FigureParams): Part[] {
       // (Within 0.8 radians of straight behind: further round, a raised lock top stood past the head's outline seen from
       // a little to one side, with the wall showing between it and the cap.)
       const upCrown = carried ? headR * (ixTop % 2 === 1 ? 0.05 + 0.1 * (lockHeight - Math.floor(lockHeight)) : 0.015) * (1 - smooth((fromBack - 0.4) / 0.4)) : 0;
-      const columnTop = (long ? top - headR * 0.25 * smooth((fromBack - 1.6) / 0.3) : top) + upCrown;
+      // (Straight hair no lower than just under the cap's rim there: lower, toward the face the rim rose away from the
+      // fall's top and a wedge of the head showed between them at ear height, seen from behind and to one side. Round
+      // curls and coils, starting higher there let the wall show past a lock from above and behind.)
+      const columnTop = (long ? Math.max(top - headR * 0.25 * smooth((fromBack - 1.6) / 0.3), fine ? Number.NEGATIVE_INFINITY : Math.min(top, capRimZ(positions.getX(i), positions.getY(i)) - headR * 0.03)) : top) + upCrown;
       columnTops[i % (columns + 1)] = columnTop;
       const z = columnTop - ((columnTop - bottom) * (top - positions.getZ(i))) / (top - bottom);
       const k = across(z);

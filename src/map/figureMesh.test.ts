@@ -1451,4 +1451,30 @@ describe("round nine: hair worn down where it meets the crown, curls down long h
       }
     }
   });
+
+  it("starts long straight hair beside the face no lower than just under the cap's rim, so no wedge of the head shows between them at ear height from behind and to one side", () => {
+    for (const length_cm of [30, 50, 75]) {
+      const { p, headR } = standing({ skin: { hex: "#eadaba" }, hair: { length_cm, texture: "straight", hex: "#653700" } });
+      const parts = figureParts(p);
+      const rim = parts.find((x) => x.name === "rim")?.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const fall = parts.find((x) => x.name === "hair")?.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const round = (pos: THREE.BufferAttribute, i: number) => Math.atan2(pos.getX(i), -pos.getY(i));
+      // The rim's first row (its vertices on the cap's rim), by angle round from straight behind.
+      const rims = Array.from({ length: rim.count / 4 }, (_, i) => [round(rim, i), rim.getZ(i)]);
+      const rimAt = (a: number) => rims.reduce((best, r) => (Math.abs(r[0] - a) < Math.abs(best[0] - a) ? r : best))[1];
+      // Each fall column's top on its outer side, from 1.6 radians round (beside the ear) to its front edge.
+      const columns = 21;
+      const gaps: string[] = [];
+      for (let c = 0; c < columns; c++) {
+        let top = c;
+        for (let r = 0; r * columns + c < fall.count / 2; r++) if (fall.getZ(r * columns + c) > fall.getZ(top)) top = r * columns + c;
+        const a = round(fall, top);
+        if (Math.abs(a) < 1.6) continue;
+        const gap = (rimAt(a) - fall.getZ(top)) / headR;
+        // Master's front columns started a quarter of a head radius down, 0.26 under the rim beside them.
+        if (gap > 0.16) gaps.push(`${a.toFixed(2)}: ${gap.toFixed(2)}`);
+      }
+      expect(gaps, `straight ${length_cm} cm`).toEqual([]);
+    }
+  });
 });
