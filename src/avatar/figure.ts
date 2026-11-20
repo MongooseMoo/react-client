@@ -1,3 +1,4 @@
+import { type ResolvedPlan, resolvePlan } from "./bodyPlan";
 import { colourHex, contrast, hexOrUndefined, inkFor, MIN_CONTRAST, sheenFor, toneOff } from "./colour";
 import { HAIR_LENGTHS } from "./hairLengths";
 
@@ -158,6 +159,19 @@ export interface FigureParams {
   features: Feature[];
   /** Seams whose two sides fall below 3:1 contrast, drawn with an outline in `colours.ink`. */
   outlined: Seam[];
+  /**
+   * The body plan drawn (bodyPlan.ts): `human` for "human body" or none, which is everything above; a known plan
+   * with the form's colours over its own; or `unknown`, a placeholder.
+   */
+  plan: ResolvedPlan;
+  /** Width (x) and depth (y) of the person's box, metres, when known: an animal plan is sized to fit it. */
+  footprint?: Footprint;
+}
+
+/** A box's width across (x) and depth front to back (y), metres. */
+export interface Footprint {
+  width: number;
+  depth: number;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -298,13 +312,17 @@ export interface FigureOptions {
   height: number;
   /** The colour of a person with no appearance map at all (today's person or you colour): the plain figure. */
   base?: string;
+  /** The person's box across and front to back, metres: sizes an animal plan and an unknown plan's placeholder. */
+  footprint?: Footprint;
 }
 
 /** Seat height for a sitting figure, as a share of standing height. */
 const SEAT_SHARE = 0.26;
 
-export function figureParams(appearance: unknown, { height: rawHeight, base }: FigureOptions): FigureParams {
+export function figureParams(appearance: unknown, { height: rawHeight, base, footprint }: FigureOptions): FigureParams {
   const record = appearanceRecord(appearance) ?? {};
+  const plan = resolvePlan(record);
+  if (plan.kind !== "human") return planParams(record, plan, rawHeight, base, footprint);
   const height = Math.min(4, Math.max(0.5, Number.isFinite(rawHeight) ? rawHeight : 1.75));
   const scale = height / 1.75;
   const buildName = vocabKey(record.build);
@@ -373,29 +391,10 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
   if (colours.facialHair) colours.facialHairEdge = toneOff(colours.facialHair, skin);
   if (colours.hair) colours.hairSheen = sheenFor(colours.hair);
 
-  const seams: Array<[Seam, string, string]> = [
-    ["hairline", colours.head, skin],
-    // A beard or goatee against the skin; stubble is shading, never outlined.
-    ...(facialHair === "beard" || facialHair === "goatee" ? [["jawline", facialHex as string, skin] as [Seam, string, string]] : []),
-    ["neck", colours.neck, colours.torso],
-    ["waist", colours.torso, colours.hips],
-    ["hips", colours.hips, colours.legs],
-    ["wrists", colours.arms, colours.hands],
-    ["ankles", colours.legs, colours.feet],
-  ];
-  // A seam between two different colours under 3:1 gets an outline, whatever their hues:
-  // colours told apart by hue alone (green on brown, crimson on near-black) look alike to
-  // someone with red-green colour blindness.
-  const weak = seams.filter(([, a, b]) => a !== b && contrast(a, b) < MIN_CONTRAST);
-  const outlined = weak.map(([seam]) => seam);
-  colours.ink = inkFor(...(weak.length > 0 ? weak.flatMap(([, a, b]) => [a, b]) : [skin, torso]));
+  const outlined = outlineSeams(colours, facialHair === "beard" || facialHair === "goatee" ? facialHex : undefined);
 
   const traits = Array.isArray(record.traits) ? record.traits : [];
-  const extras: ExtraPart[] = [];
-  for (const trait of traits) {
-    const part = TRAIT_PARTS[word(trait) ?? ""];
-    if (part && !extras.includes(part)) extras.push(part);
-  }
+  const extras = traitExtras(record);
   const face = isRecord(record.face) ? record.face : {};
   const earKey = vocabKey(face.ears) ?? "";
   const ears: Ears = traits.some((t) => word(t) === "pointed_ears") ? "pointed" : (EAR_KINDS as readonly string[]).includes(earKey) ? (earKey as Ears) : "average";
@@ -437,6 +436,108 @@ export function figureParams(appearance: unknown, { height: rawHeight, base }: F
     ears,
     features,
     outlined,
+    plan,
+  };
+}
+
+/** The parts the body plan's traits add (`tail`, `wings`, `antlers`, `horns`), each once, in the order given. */
+function traitExtras(record: Record<string, unknown>, extras: ExtraPart[] = []): ExtraPart[] {
+  for (const trait of Array.isArray(record.traits) ? record.traits : []) {
+    const part = TRAIT_PARTS[word(trait) ?? ""];
+    if (part && !extras.includes(part)) extras.push(part);
+  }
+  return extras;
+}
+
+/**
+ * The seams whose two sides differ and fall under 3:1, which get an outline, and sets `colours.ink`. A seam between
+ * two different colours under 3:1 gets an outline whatever their hues: colours told apart by hue alone (green on
+ * brown, crimson on near-black) look alike to someone with red-green colour blindness. `jaw` is a beard or goatee's
+ * colour against the skin; stubble is shading, never outlined.
+ */
+function outlineSeams(colours: FigureColours, jaw: string | undefined): Seam[] {
+  const skin = colours.skin;
+  const seams: Array<[Seam, string, string]> = [
+    ["hairline", colours.head, skin],
+    ...(jaw ? [["jawline", jaw, skin] as [Seam, string, string]] : []),
+    ["neck", colours.neck, colours.torso],
+    ["waist", colours.torso, colours.hips],
+    ["hips", colours.hips, colours.legs],
+    ["wrists", colours.arms, colours.hands],
+    ["ankles", colours.legs, colours.feet],
+  ];
+  const weak = seams.filter(([, a, b]) => a !== b && contrast(a, b) < MIN_CONTRAST);
+  colours.ink = inkFor(...(weak.length > 0 ? weak.flatMap(([, a, b]) => [a, b]) : [skin, colours.torso]));
+  return weak.map(([seam]) => seam);
+}
+
+/**
+ * A person in a body plan other than the human one. None of a human record is read: no hair, facial hair, face,
+ * features, build or age (the game sends none for a whole-body form), and no neutral skin or clothing is filled in.
+ * A humanoid plan keeps `garments` when sent, `traits` parts and `posture`; an animal plan and an unknown plan's
+ * placeholder are sized by the box (`footprint` and `height`) and always stand.
+ */
+function planParams(record: Record<string, unknown>, plan: Exclude<ResolvedPlan, { kind: "human" }>, rawHeight: number, base: string | undefined, footprint: Footprint | undefined): FigureParams {
+  const height = Math.min(4, Math.max(0.05, Number.isFinite(rawHeight) ? rawHeight : 1.75));
+  const scale = height / 1.75;
+  const humanoid = plan.kind === "humanoid" ? plan : undefined;
+  // An unknown plan has no colour of its own: the placeholder takes the plain person colour (you in blue).
+  const main = plan.kind === "unknown" ? (hexOrUndefined(base) ?? UNCOLOURED_GARMENT) : plan.skin;
+  const head = plan.kind === "unknown" ? main : plan.kind === "animal" ? plan.head : (plan.headColour ?? main);
+  const worn = humanoid ? outermostByArea(record) : {};
+  const colours: FigureColours = {
+    skin: main,
+    head: worn.head ?? head,
+    neck: worn.neck ?? (humanoid?.headColour ?? main),
+    torso: worn.torso ?? main,
+    arms: worn.arms ?? main,
+    hands: worn.hands ?? main,
+    hips: worn.waist ?? worn.legs ?? worn.torso ?? main,
+    legs: worn.legs ?? main,
+    feet: worn.feet ?? main,
+    eyes: plan.kind === "unknown" ? undefined : plan.eyes,
+    ink: "",
+    faceInk: inkFor(head),
+    hairEdge: head,
+    brow: toneOff(head, head),
+    earEdge: toneOff(main, main),
+    collarEdge: main,
+  };
+  colours.collarEdge = toneOff(colours.torso, colours.neck);
+  const outlined = humanoid ? outlineSeams(colours, undefined).filter((seam) => seam !== "hairline") : [];
+  if (!humanoid) colours.ink = inkFor(main);
+  const posture = humanoid && POSTURES.includes(word(record.posture) as Posture) ? (word(record.posture) as Posture) : "standing";
+  const legShare = humanoid?.legShare ?? 0.47;
+  const top = posture === "standing" ? height : posture === "sitting" ? height * (1 - legShare) + height * SEAT_SHARE : height * 0.16;
+  const shape = humanoid?.shape ?? BUILDS.average;
+  return {
+    described: true,
+    height,
+    posture,
+    top,
+    // Animals and placeholders: the top 45% counts as the head, so the label sits over the whole of a small body.
+    headHeight: humanoid ? height * humanoid.headShare : height * 0.45,
+    shoulderHalf: 0.2 * scale * shape.shoulders,
+    waistHalf: 0.14 * scale * shape.waist,
+    hipHalf: 0.16 * scale * shape.hips,
+    limbRadius: 0.05 * scale * shape.limbs,
+    legShare,
+    build: "average",
+    colours,
+    hair: "none",
+    hairVolume: 1,
+    hairTexture: "straight",
+    hairStyle: "loose",
+    headCovered: worn.head !== undefined,
+    earsHidden: humanoid ? humanoid.ears === "none" || worn.head !== undefined : true,
+    facialHair: "none",
+    faceHidden: false,
+    extras: humanoid ? traitExtras(record, [...humanoid.extras]) : [],
+    ears: humanoid && humanoid.ears !== "none" ? humanoid.ears : "average",
+    features: [],
+    outlined,
+    plan,
+    ...(footprint && Number.isFinite(footprint.width) && Number.isFinite(footprint.depth) && footprint.width > 0 && footprint.depth > 0 ? { footprint: { width: footprint.width, depth: footprint.depth } } : {}),
   };
 }
 
@@ -452,12 +553,14 @@ export function figureFills(params: FigureParams): Set<string> {
 
 /**
  * The plan token's colours, the same as the figure's: the body by what covers the
- * torso (or the skin), the head by hair or head covering (or the skin). Undefined
- * without an appearance map, so the token keeps its plain person colour.
+ * torso (or the skin), the head by hair or head covering (or the skin); for a body
+ * plan, its body and head colours. Undefined without an appearance map or for a
+ * body plan the client does not know, so the token keeps its plain person colour.
  */
 export function tokenColours(appearance: unknown): { body: string; head: string } | undefined {
   const record = appearanceRecord(appearance);
   if (!record) return undefined;
-  const { colours } = figureParams(record, { height: 1.75 });
+  const { colours, plan } = figureParams(record, { height: 1.75 });
+  if (plan.kind === "unknown") return undefined;
   return { body: colours.torso, head: colours.head };
 }
