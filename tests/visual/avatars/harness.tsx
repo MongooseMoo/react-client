@@ -459,7 +459,8 @@ if (view === "portraits") {
   // Each person's box moved to stand at (x, y), keeping its own width and depth (0.4 by 0.4 for every person but an animal).
   const standAt = (thing: (typeof layout.things)[number], x: number, y: number) => {
     const [xs, ys, zs] = thing.shapes[0].box as [[number, number], [number, number], [number, number]];
-    const [hw, hd] = [(xs[1] - xs[0]) / 2, (ys[1] - ys[0]) / 2];
+    // Rounded to the micrometre: x - 0.2 to x + 0.2 halves to 0.19999999999999998, which moved every person a hair.
+    const [hw, hd] = [Number(((xs[1] - xs[0]) / 2).toFixed(6)), Number(((ys[1] - ys[0]) / 2).toFixed(6))];
     thing.shapes[0].box = [[x - hw, x + hw], [y - hd, y + hd], zs];
   };
   for (const thing of layout.things) {
