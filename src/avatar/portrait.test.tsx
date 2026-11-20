@@ -451,7 +451,25 @@ describe("AvatarPortrait", () => {
     for (const trait of ["horns", "antlers"]) {
       const horns = draw({ skin: { hex: "#292420" }, hair: { length_cm: 60, hex: "#c5c9c7" }, traits: [trait] }).querySelectorAll(".avatar-horn");
       expect(horns.length, trait).toBe(2);
-      for (const h of horns) expect(h.getAttribute("fill"), trait).toBe(HORN_TONE);
+      // Horns are filled shapes; antlers are bone-toned strokes, branch by branch.
+      for (const h of horns) expect(h.getAttribute(trait === "horns" ? "fill" : "stroke"), trait).toBe(HORN_TONE);
+    }
+  });
+
+  it("draws antlers branching, as the 3D figure has them: a beam and two tines each side, inside the head crop", () => {
+    const antlers = [...draw({ skin: { hex: "#d7bd96" }, hair: { length_cm: 8, hex: "#6a4e2e" }, traits: ["antlers"] }).querySelectorAll(".avatar-horn")];
+    expect(antlers).toHaveLength(2);
+    for (const a of antlers) {
+      const d = a.getAttribute("d") ?? "";
+      // Three strokes: the beam and two tines.
+      expect(d.match(/M/g)?.length).toBe(3);
+      // Every point inside the head crop (x 12 to 52, y 5 to 45), with room for the ink edge's half width.
+      const numbers = (d.match(/-?\d+(\.\d+)?/g) ?? []).map(Number);
+      for (let i = 0; i < numbers.length; i += 2) {
+        expect(numbers[i]).toBeGreaterThanOrEqual(12 + 1.7);
+        expect(numbers[i]).toBeLessThanOrEqual(52 - 1.7);
+        expect(numbers[i + 1]).toBeGreaterThanOrEqual(5 + 0.5);
+      }
     }
   });
 

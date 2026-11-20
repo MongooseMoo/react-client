@@ -763,6 +763,19 @@ function beardStrands(reach: number, lengthCm: number, shape: string, edge: stri
   return out;
 }
 
+/**
+ * One antler on the `side` of the head (-1 left, +1 right), as a path of three strokes: the beam from the crown up and
+ * out to a tip, and two tines rising from it. Every point lies inside the head crop (`HEAD_VIEWBOX`).
+ */
+export function antlerPath(side: number): string {
+  const x = (dx: number) => n(32 + side * dx);
+  return [
+    `M${x(6)},14 Q${x(10.5)},11 ${x(14)},8.5 Q${x(16.5)},7 ${x(18)},6`,
+    `M${x(9)},11.9 L${x(8)},6.6`,
+    `M${x(13.2)},9 L${x(13)},5.8`,
+  ].join(" ");
+}
+
 export function portraitElements(appearance: unknown): React.ReactNode[] | null {
   const record = appearanceRecord(appearance);
   if (!record) return null;
@@ -840,8 +853,17 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
       </g>,
     );
   }
-  if (params.extras.includes("horns") || params.extras.includes("antlers")) {
-    const tine = params.extras.includes("antlers");
+  if (params.extras.includes("antlers")) {
+    // Branching antlers, as the 3D figure has: a beam curving up and out from the crown with two tines rising from
+    // it, drawn as a bone-toned stroke over a wider ink one so each branch reads at the People list's 32 px.
+    for (const side of [-1, 1]) {
+      const d = antlerPath(side);
+      parts.push(
+        <path key={`antler-edge${side}`} className="avatar-horn-edge" fill="none" stroke={ink} strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round" d={d} />,
+        <path key={`horn${side}`} className="avatar-horn" fill="none" stroke={HORN_TONE} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" d={d} />,
+      );
+    }
+  } else if (params.extras.includes("horns")) {
     for (const side of [-1, 1]) {
       parts.push(
         <path
@@ -850,11 +872,7 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
           fill={HORN_TONE}
           stroke={ink}
           strokeWidth={1}
-          d={
-            tine
-              ? `M${32 + side * 7},14 L${32 + side * 12},3 L${32 + side * 13},5 L${32 + side * 10},9 L${32 + side * 16},6 L${32 + side * 16},8 L${32 + side * 9},14 Z`
-              : `M${32 + side * 6},15 L${32 + side * 11},4 L${32 + side * 10},15 Z`
-          }
+          d={`M${32 + side * 6},15 L${32 + side * 11},4 L${32 + side * 10},15 Z`}
         />,
       );
     }
