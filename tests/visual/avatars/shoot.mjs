@@ -119,6 +119,12 @@ try {
       await row.screenshot({ path: resolve(out, `plans-portrait-${slug(await row.locator('td').first().innerText())}.png`) });
     }
     await sharp.close();
+    // The People list's sizes, 32 and 48 px, at four times the pixels so each can be read.
+    const small = await browser.newPage({ viewport: { width: 500, height: 1400 }, colorScheme: 'dark', deviceScaleFactor: 4 });
+    await small.goto(`${base}?view=portraits&set=plans&small=1`);
+    await small.waitForFunction(() => window.ready === true);
+    await small.locator('table').screenshot({ path: resolve(out, 'plans-portraits-small.png') });
+    await small.close();
     await open('view=plan&set=plans');
     await page.locator('svg.room-layout-svg, svg').first().screenshot({ path: resolve(out, 'plans-tokens.png') });
     // Seven rows of 420 px cells, four to a row: a page tall enough to hold them all.

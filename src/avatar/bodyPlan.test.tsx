@@ -5,7 +5,7 @@ import { BODY_PLANS, HUMAN_PLAN, resolvePlan } from "./bodyPlan";
 import { GAME_LOOKS, PLAN_CHARACTERS } from "./bodyPlans.fixture";
 import { TEST_CHARACTERS } from "./characters.fixture";
 import { figureFills, figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN, tokenColours } from "./figure";
-import AvatarPortrait, { portraitElements } from "./portrait";
+import AvatarPortrait, { HEAD_VIEWBOX, portraitElements } from "./portrait";
 
 /** The plans the game sends today (reports/player-avatars-forms-wire-2026-11-19.md). */
 const GAME_PLANS = ["werewolf", "zombie", "rakghoul", "devolved primate", "quartz-crystallized body", "human with a transfigured shark head", "mallard duck", "snake", "song bird"];
@@ -186,6 +186,31 @@ describe("body plans: portraits", () => {
     expect(classes(form("human with a transfigured shark head"))).toEqual(expect.arrayContaining(["avatar-fin", "avatar-underside"]));
     expect(classes(form("werewolf"))).toEqual(expect.arrayContaining(["avatar-muzzle", "avatar-ear"]));
     expect(classes(form("clockwork automaton"))).toEqual(["avatar-backdrop", "avatar-placeholder"]);
+  });
+
+  it("draws the shark-headed person's shoulders and neck by their own build", () => {
+    const shoulders = (build: string) => {
+      const { container, unmount } = render(<svg>{portraitElements(form("human with a transfigured shark head", { build }))}</svg>);
+      const d = container.querySelector(".avatar-garment")?.getAttribute("d");
+      const neck = container.querySelector(".avatar-neck")?.getAttribute("width");
+      unmount();
+      return { d, neck };
+    };
+    expect(shoulders("muscular").d).not.toBe(shoulders("thin").d);
+    expect(Number(shoulders("muscular").neck)).toBeGreaterThan(Number(shoulders("thin").neck));
+    expect(shoulders("average").d).toContain("M6,64");
+  });
+
+  it("shows an animal whole at the People list's sizes and keeps a person's head crop", () => {
+    const viewBox = (appearance: unknown, size: number) => {
+      const { container, unmount } = render(<AvatarPortrait appearance={appearance} size={size} />);
+      const box = container.querySelector("svg")?.getAttribute("viewBox");
+      unmount();
+      return box;
+    };
+    for (const plan of ["mallard duck", "snake", "song bird"]) expect(viewBox(form(plan), 32), plan).toBe("0 0 64 64");
+    expect(viewBox(form("werewolf"), 32)).toBe(HEAD_VIEWBOX);
+    expect(viewBox(TEST_CHARACTERS[0].appearance, 32)).toBe(HEAD_VIEWBOX);
   });
 
   it("draws a human's portrait the same with no body plan and with 'human body'", () => {

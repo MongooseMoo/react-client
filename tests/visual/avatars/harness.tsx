@@ -306,9 +306,12 @@ if (view === "portraits") {
             <td>
               <AvatarPortrait appearance={ch.appearance} size={48} />
             </td>
-            <td>
-              <AvatarPortrait appearance={ch.appearance} size={128} />
-            </td>
+            {/* `small=1`: only the People list's 32 and 48 px, for a close look at those sizes. */}
+            {params.get("small") ? null : (
+              <td>
+                <AvatarPortrait appearance={ch.appearance} size={128} />
+              </td>
+            )}
             {/* `big=1`: also at 512 px, the player card's drawn size, for a close look. */}
             {params.get("big") ? (
               <td>

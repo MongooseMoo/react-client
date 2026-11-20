@@ -1,10 +1,15 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
+import { BODY_PLANS } from "../avatar/bodyPlan";
 import { PLAN_CHARACTERS } from "../avatar/bodyPlans.fixture";
+import { contrast, INK_DARK } from "../avatar/colour";
 import { figureParams } from "../avatar/figure";
-import { planParts } from "./bodyPlanMesh";
+import { FACET_SHADES, HOCK, KNEE, planParts } from "./bodyPlanMesh";
 import { figureGeometry, headOutline } from "./figureMesh";
+import { placeThings } from "./roomLayout";
+import { livingRoomLayout } from "./roomLayout.fixture";
+import { buildRoomScene, CRYSTAL_ROUGHNESS } from "./roomScene";
 
 const params = (name: string) => {
   const ch = PLAN_CHARACTERS.find((c) => c.name === name);
@@ -103,6 +108,74 @@ describe("body plan figures", () => {
     const { box } = bounds(p);
     expect(box.max.z).toBeCloseTo(1.2, 2);
     expect(box.max.x - box.min.x).toBeLessThanOrEqual(0.6);
+  });
+
+  it("stands the werewolf on its toes with shallow bends, not in a squat: the knee bent no tighter than 120 degrees, set high", () => {
+    const H = 2.1;
+    const hip = new THREE.Vector3(0, 0, BODY_PLANS.werewolf.kind === "humanoid" ? BODY_PLANS.werewolf.legShare * H : 0);
+    const knee = new THREE.Vector3(0, KNEE.y * H, KNEE.z * hip.z);
+    const hock = HOCK.clone().multiplyScalar(H);
+    const bend = (hip.clone().sub(knee).angleTo(hock.clone().sub(knee)) * 180) / Math.PI;
+    expect(bend).toBeGreaterThanOrEqual(120);
+    expect(knee.z).toBeGreaterThan(H * 0.28);
+    expect(hock.z).toBeGreaterThan(H * 0.1);
+    // The figure built from them: the thigh's lowest point (the knee) is that high.
+    const thigh = planParts(params("werewolf")).find((x) => x.name === "thigh");
+    const box = new THREE.Box3().setFromBufferAttribute(thigh?.geometry.getAttribute("position") as THREE.BufferAttribute);
+    expect(box.min.z).toBeGreaterThan(H * 0.25);
+  });
+
+  it("sets the shark's eyes standing out of its snout, far enough forward to be seen face-on, and tapers the head into the neck", () => {
+    const parts = planParts(params("shark head"));
+    const boxOf = (part: { geometry: THREE.BufferGeometry }) => new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute);
+    const snout = boxOf(parts.find((x) => x.name === "snout") as { geometry: THREE.BufferGeometry });
+    const middle = snout.getCenter(new THREE.Vector3());
+    const half = snout.getSize(new THREE.Vector3()).multiplyScalar(0.5);
+    for (const eye of parts.filter((x) => x.name === "eye")) {
+      const at = boxOf(eye).getCenter(new THREE.Vector3()).sub(middle).divide(half);
+      // On or outside the snout's surface (an ellipsoid filling its box), and in its front half.
+      expect(at.length()).toBeGreaterThan(0.95);
+      expect(at.y).toBeGreaterThan(0.5);
+    }
+    const taper = boxOf(parts.find((x) => x.name === "taper") as { geometry: THREE.BufferGeometry });
+    expect(taper.max.x - taper.min.x).toBeGreaterThan(half.x);
+    expect(taper.min.z).toBeLessThan(snout.min.z);
+    expect(parts.some((x) => x.name === "mouth")).toBe(true);
+  });
+
+  it("gives the primate fur that stands out from black and a lighter face, chest, hands and feet, with or without a sent look", () => {
+    for (const name of ["devolved primate", "devolved primate, game look"]) {
+      const p = params(name);
+      const plan = p.plan.kind === "humanoid" ? p.plan : undefined;
+      expect(contrast(plan?.accent ?? "", p.colours.skin), name).toBeGreaterThanOrEqual(2);
+      expect(p.colours.hands, name).toBe(plan?.accent);
+      expect(p.colours.feet, name).toBe(plan?.accent);
+      expect(planParts(p).filter((x) => x.name === "chest").length, name).toBeGreaterThan(0);
+    }
+    expect(contrast(params("devolved primate").colours.skin, INK_DARK)).toBeGreaterThanOrEqual(3);
+    // A sent body colour is drawn as sent, however dark.
+    expect(params("devolved primate, game look").colours.skin).toBe("#3b2417");
+  });
+
+  it("cuts a crystal body into lighter and darker faces with points on the shoulders, drawn glossy", () => {
+    expect(Math.min(...FACET_SHADES)).toBeLessThan(0);
+    expect(Math.max(...FACET_SHADES)).toBeGreaterThan(0.5);
+    const parts = planParts(params("quartz"));
+    expect(parts.filter((x) => x.name === "shard").length).toBeGreaterThanOrEqual(3);
+    const shades = new Set(parts.flatMap((x) => [...(x.shade ?? [])]));
+    expect([...shades].some((t) => t < 0) && [...shades].some((t) => t > 0.5)).toBe(true);
+    const layout = livingRoomLayout();
+    const ch = PLAN_CHARACTERS.find((c) => c.name === "quartz");
+    layout.things = [{ id: "#q", name: "q", kind: "person", fixed: true, mounted: false, shapes: [{ box: [[-0.2, 0.2], [-0.2, 0.2], [0, 1.8]] }], appearance: ch?.appearance }];
+    const room = buildRoomScene({ layout, placed: placeThings(layout), youId: "" });
+    const material = (room.things.get("#q")?.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
+    expect(material.roughness).toBe(CRYSTAL_ROUGHNESS);
+    expect(material.roughness).toBeLessThan(0.5);
+    expect(material.flatShading).toBe(true);
+    // Everyone else keeps the plain figure material.
+    layout.things[0].appearance = PLAN_CHARACTERS.find((c) => c.name === "zombie")?.appearance;
+    const plain = (buildRoomScene({ layout, placed: placeThings(layout), youId: "" }).things.get("#q")?.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial;
+    expect(plain.roughness).toBe(0.8);
   });
 
   it("gives a label point above an animal fitted lower than its box", () => {
