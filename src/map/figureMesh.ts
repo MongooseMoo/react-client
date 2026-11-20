@@ -55,6 +55,17 @@ function placed(geometry: THREE.BufferGeometry, colour: string, at: THREE.Vector
   return { geometry, colour };
 }
 
+/** How far wavy hair's crests stand out, as a share of the head radius. */
+const WAVE_RISE = 0.05;
+/**
+ * Wavy hair worn down: its fall's rows, and how much closer together they are near its top (the fall's rows spaced as
+ * the n-th power of the way down). With 12 rows spaced as the 1.25th power, the first row below a waist-length fall's top
+ * lay a fifth of a head radius down, and where the cap under it is drawn in toward the head (`underFall`) that facet
+ * passed under the cap above. (Its waves keep the count 12 rows gave them.)
+ */
+const WAVY_FALL_ROWS = 14;
+const WAVY_FALL_CLOSE = 1.45;
+
 /**
  * Raises the surface of a hair part outward from `centre(vertex)`, never inward, so the
  * texture shows: wavy hair in ripples across its fall, curly in bumps, coily in small
@@ -104,7 +115,7 @@ function textured(
     const [rise, f] =
       texture === "wavy"
         ? // Each wave's crest swings up and down round the head: set level all round, the waves were stripes.
-          [0.05, Math.sin(down * 7 + wave.swing * Math.sin(around * wave.lobes) + wave.strands * Math.sin(around * 17))]
+          [WAVE_RISE, Math.sin(down * 7 + wave.swing * Math.sin(around * wave.lobes) + wave.strands * Math.sin(around * 17))]
         : texture === "curly"
           ? [0.09, Math.sin(around * 7) * Math.sin(down * 9)]
           : [0.1, Math.sin(around * 11) * Math.sin(down * 14)];
@@ -880,13 +891,25 @@ export function figureParts(p: FigureParams): Part[] {
       return Math.acos(Math.max(-1, Math.min(1, local.y / (local.length() || 1)))) / capReach;
     };
     const tuckAt = (at: THREE.Vector3) => (p.headCovered ? 0 : smooth((rimward(at) - 0.6) / 0.4));
+    /**
+     * Under a wavy fall that carries the cap's surface on, the cap from just below the fall's top is drawn half way in
+     * toward the head round the back and sides (the fall covers it there), so the fall can hang from the crown's outline instead of standing
+     * out past it by the cap's bulk plus its own waves: lying outside the full cap, it swelled out in a band round the
+     * back of the head at ear height, its outline stepping out at the sides where it began.
+     */
+    const underFall = (at: THREE.Vector3) => {
+      // Wavy hair only: round curls and coils the cap showed through the fall's locks.
+      if (!carried || p.hairTexture !== "wavy") return 0;
+      const fromBack = Math.abs(Math.atan2(at.x, -at.y));
+      return 0.5 * smooth((fallTopAt(at.x, at.y) - headR * 0.06 - at.z) / (headR * 0.2)) * (1 - smooth((fromBack - 1.6) / 0.35));
+    };
     capRise = (at) => curlsAt(at) * (1 - 0.7 * tuckAt(at));
     /**
      * The tuck at a point on the cap: the factor its distance across from the head's middle line is scaled by, in across
      * and not down (its height kept, so the hairline stays as clear of the brows).
      */
     const tuckScale = (at: THREE.Vector3) => {
-      const t = tuckAt(at);
+      const t = Math.max(tuckAt(at), underFall(at));
       if (t <= 0) return 1;
       const q = at.clone().sub(capAt);
       const r = q.length();
@@ -1034,7 +1057,7 @@ export function figureParts(p: FigureParams): Part[] {
     // wavy fall 12, for its waves.
     const ringed = long && (p.hairTexture === "curly" || p.hairTexture === "coily");
     const wavyFall = long && p.hairTexture === "wavy";
-    const rows = ringed ? (p.hairTexture === "coily" ? 12 : 14) : matched ? 10 : fine ? 12 : 8;
+    const rows = ringed ? (p.hairTexture === "coily" ? 12 : 14) : matched ? 10 : carried && p.hairTexture === "wavy" ? WAVY_FALL_ROWS : fine ? 12 : 8;
     const columns = ringed && p.hairTexture === "curly" ? 16 : 20;
     const fall = new THREE.CylinderGeometry(headR, headR, top - bottom, columns, rows, true, -around / 2, around);
     // A cylinder stands along y with its seam at +z; turned upright (+z) its middle faces -y, the back.
@@ -1045,7 +1068,7 @@ export function figureParts(p: FigureParams): Part[] {
     // less so, so its lowest waves and curls are not stretched past what its rows can show.
     if (long) {
       const at = fall.getAttribute("position");
-      const close = fine ? 1.25 : 1.6;
+      const close = carried && p.hairTexture === "wavy" ? WAVY_FALL_CLOSE : fine ? 1.25 : 1.6;
       for (let i = 0; i < at.count; i++) at.setZ(i, top - (top - bottom) * ((top - at.getZ(i)) / (top - bottom)) ** close);
     }
     // Its outline down the fall: round the back of the head, in toward the nape, then out over the shoulders to its
@@ -1086,6 +1109,8 @@ export function figureParts(p: FigureParams): Part[] {
       // side of the head, each column's rows spread over what is left: square at the corner, the fall's top and front
       // edge met in a hard corner at temple height, seen from the side.
       const fromBack = Math.abs(Math.atan2(positions.getX(i), -positions.getY(i)));
+      // How far round toward the sides from the back a carried wavy fall is (0 behind to 1 from 1.4 radians round).
+      const sideways = carried && p.hairTexture === "wavy" ? smooth((fromBack - 0.9) / 0.5) : 0;
       // Carrying the cap's surface on, round the back each lock starts a little up the crown, its middle higher than its
       // edges, each by its own height, lying on the cap there: all starting at one height, the fall's top was a level
       // edge right round the back of the head.
@@ -1122,6 +1147,8 @@ export function figureParts(p: FigureParams): Part[] {
       const r = Math.hypot(x, y);
       const out = 1.012 + 0.013 * smooth((top - z) / (headR * 0.06));
       let cap = capAcross(x, y, z) * out;
+      // Where the cap as drawn is here, under a fall that carries its surface on (0 where not known).
+      let drawnCap = 0;
       if (carried && cap > 0) {
         // Carrying the cap's surface on: near its top the fall lies just outside the cap as drawn, curls and all, and
         // takes its shade there, until its own locks or waves take over (`takenOver`). (The fall's top row is at the
@@ -1129,7 +1156,8 @@ export function figureParts(p: FigureParams): Part[] {
         const column = i % (columns + 1);
         const lock = Math.floor(Math.min(column, columns - 1) / 2);
         const h = Math.sin(lock * 12.9898 + 11 * 78.233) * 43758.5453;
-        takenOver[i] = smooth((columnTop - z) / (headR * (0.08 + 0.14 * (h - Math.floor(h)))));
+        // Wavy hair round the sides takes over three times as slowly, so the outline widens from the crown's gradually.
+        takenOver[i] = smooth((columnTop - z) / (headR * (0.08 + 0.14 * (h - Math.floor(h))) * (1 + 2 * sideways)));
         // Down to where the cap under it has gone smooth (`keptOver`), it never lies inside the cap's curls.
         // (Only round the back, where it carries the cap's relief on: at the sides it keeps its old place and shade.)
         const hit = z > columnTop - headR * 0.3 && towardBack(x, y) > 0 ? capSurface(x, y, z) : undefined;
@@ -1155,6 +1183,7 @@ export function figureParts(p: FigureParams): Part[] {
           cap = Math.max(cap, cap + (Math.max(hit.r, hit.r + (hit.fullR - hit.r) * below) * out - cap) * backward);
           carriedShade[i] = hit.shade + (hit.fullShade - hit.shade) * smooth((columnTop - z) / (headR * 0.06));
           carriedNormal[i] = hit.normal;
+          drawnCap = hit.r * out;
         }
       }
       // At its top it lies on the cap (as the cap is drawn in at the sides), and comes out to its own outline below:
@@ -1189,7 +1218,23 @@ export function figureParts(p: FigureParams): Part[] {
         : base > 0
           ? base + (Math.max(r, base) - base) * own
           : r;
-      if (r > 0) [x, y] = [(x * want) / r, (y * want) / r];
+      // A long wavy fall carrying the cap's surface on lies in by half its waves' height as they take over, so its waves
+      // rise and dip about where the crown's outline comes down to rather than all outward from it (never inside the
+      // cap): raised outward from it as they came in, the fall's top swelled out past the crown in a band round the
+      // back of the head at ear height, and its outline stepped out at the sides.
+      let settled = want;
+      if (carried && p.hairTexture === "wavy") {
+        // The crown's outline in this direction: the cap's widest from here up to a quarter of a head radius over the top.
+        let crown = 0;
+        for (let k = 0; k <= 6; k++) crown = Math.max(crown, capAcross(x, y, z + ((columnTop + headR * 0.25 - z) * k) / 6));
+        // As its own waves take over (none at its top, which lies on the cap as drawn), and down to half a head radius
+        // below its top: lower, a bob flicks out at its ends and longer hair spreads over the shoulders.
+        // Only below where the cap under it is drawn in (`underFall`): higher, between its vertices it passed under the
+        // cap's last curls.
+        const held = takenOver[i] * smooth((fallTopAt(x, y) - headR * 0.06 - z) / (headR * 0.1)) * (1 - smooth((columnTop - headR * 0.45 - z) / (headR * 0.3)));
+        settled = Math.max(want - (want - Math.min(want, crown * 1.012) + headR * WAVE_RISE * 0.5) * held, cap > 0 ? Math.max(capAcross(x, y, z) * out, drawnCap) : onHead);
+      }
+      if (r > 0) [x, y] = [(x * Math.min(want, settled)) / r, (y * Math.min(want, settled)) / r];
       positions.setXYZ(i, x, y, z + ragged);
     }
     fall.computeVertexNormals();
@@ -1201,7 +1246,7 @@ export function figureParts(p: FigureParams): Part[] {
     // coils and curls of that length are told from.
     // A chin-length fall of coils or curls turns a little faster than the cap below their meeting, where they are in step,
     // so it turns at least twice before its end.
-    const along = matched ? (p.hairTexture === "coily" ? 1.3 : 1.6) : p.hairTexture === "wavy" && long ? Math.max(0.4, Math.min(1.6, (rows * 2 * Math.PI) / (3 * 7 * ((top - bottom) / headR)))) : 0.4;
+    const along = matched ? (p.hairTexture === "coily" ? 1.3 : 1.6) : p.hairTexture === "wavy" && long ? Math.max(0.4, Math.min(1.6, (12 * 2 * Math.PI) / (3 * 7 * ((top - bottom) / headR)))) : 0.4;
     const centreOf = (q: THREE.Vector3) => new THREE.Vector3(0, back(q.z), q.z);
     const half = hang.geometry.getAttribute("position").count / 2;
     const takeOver = Float32Array.from({ length: half * 2 }, (_, i) => takenOver[i % half]);

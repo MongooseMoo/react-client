@@ -1353,3 +1353,52 @@ describe("round seven: hair from the room's own angles, locks, lids and the fall
     }
   });
 });
+
+describe("round nine: hair worn down where it meets the crown, curls down long hair and the hairline in 3D", () => {
+  const isHair = (part: ReturnType<typeof figureParts>[number] | undefined) => ["cap", "hair", "rim"].includes(part?.name ?? "");
+  /** From straight behind (flat picture), the hair's outline: how far out its left and right edges are at height v (head radii from the head's middle). */
+  const outlineAt = (grid: ReturnType<typeof picture>, j: number) => {
+    const row = grid[j];
+    const first = row.findIndex(isHair);
+    const last = row.length - 1 - [...row].reverse().findIndex(isHair);
+    return first < 0 ? 0 : (last - first) / 2;
+  };
+  /** Along level rays from the head's vertical axis, a degrees round from straight behind: the farthest crossing of these parts, head radii. */
+  const reach = (parts: ReturnType<typeof figureParts>, names: string[], headR: number, headZ: number) => {
+    const meshes = parts.filter((x) => names.includes(x.name ?? "")).map((x) => new THREE.Mesh(x.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })));
+    const ray = new THREE.Raycaster();
+    return (a: number, v: number) => {
+      const t = (a * Math.PI) / 180;
+      ray.set(new THREE.Vector3(0, 0, headZ + v * headR), new THREE.Vector3(Math.sin(t), -Math.cos(t), 0));
+      return (ray.intersectObjects(meshes, false).at(-1)?.distance ?? 0) / headR;
+    };
+  };
+
+  it("hangs wavy hair worn down from the crown's outline: no band swelling out round the back where it starts, and an outline that widens gradually at the sides, not in a step", () => {
+    for (const length_cm of [30, 50]) {
+      for (const [skin, hex] of [["#eadaba", "#653700"], ["#292420", "#1b1612"]]) {
+        const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm, texture: "wavy", hex } });
+        const parts = figureParts(p);
+        const label = `wavy ${length_cm} cm on ${skin}`;
+        // Round the back (60 degrees either side): how far the fall stands out past the crown above it, on average.
+        // Master's fall lay outside the full cap with its waves raised outward from there, 0.036 to 0.042 head radii.
+        const [cap, fall] = [reach(parts, ["cap"], headR, headZ), reach(parts, ["hair"], headR, headZ)];
+        const past = [-60, -40, -20, -10, 0, 10, 20, 40, 60].map((a) => {
+          let [c, f] = [0, 0];
+          for (let v = 0.1; v <= 0.5; v += 0.02) c = Math.max(c, cap(a, v));
+          for (let v = -0.3; v <= 0.1; v += 0.01) f = Math.max(f, fall(a, v));
+          return f - c;
+        });
+        const mean = past.reduce((s, x) => s + x, 0) / past.length;
+        expect(mean, `${label}: ${past.map((x) => x.toFixed(3)).join(" ")}`).toBeLessThan(0.034);
+        // From behind, the outline 0.15 head radii below the fall's top (0.1 over the head's middle) against just above it.
+        // Master's widened by 0.04 to 0.05 head radii there, a step out at each side.
+        const step = headR / 300;
+        const grid = picture(parts, "back", [-headR * 1.6, headZ - headR * 0.1, headR * 1.6, headZ + headR * 0.2], step, true);
+        const row = (v: number) => Math.round((v + 0.1) / (step / headR));
+        const widening = (outlineAt(grid, row(-0.05)) - outlineAt(grid, row(0.13))) * (step / headR);
+        expect(widening, label).toBeLessThan(0.032);
+      }
+    }
+  });
+});
