@@ -163,6 +163,11 @@ export interface LayoutAppearance {
   /** Species or body plan, and traits such as `tail`, `wings`, `antlers`. */
   body_plan?: string;
   traits?: string[];
+  /**
+   * A whole-body form's own look: `kind` (`skin`, `fur`, `hide`, `feathers`, `scales`, `crystal`) and one to three
+   * colours, main first. Never sent for a character in no form.
+   */
+  covering?: { kind?: string; colours?: LayoutColour[] };
   /** One of the game's builds: average, slender, thin, athletic, muscular, curvy, stocky, chunky, pudgy, dumpy. */
   build?: string;
   age_years?: number;

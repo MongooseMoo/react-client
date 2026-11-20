@@ -10,6 +10,8 @@ export interface TestCharacter {
   name: string;
   /** Floor to crown, metres: the height of their Room.Layout box. */
   height: number;
+  /** The box's width across and depth front to back, metres, when not the usual 0.4 by 0.4 (animals). */
+  box?: [number, number];
   appearance: LayoutAppearance;
 }
 
@@ -172,7 +174,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
     appearance: {
       build: "dumpy",
       age_years: 45,
-      body_plan: "human",
+      body_plan: "human body",
       skin: c("deep brown", "#604134"),
       eyes: c("dark brown", "#3b2412"),
       face_hidden: true,
@@ -189,7 +191,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
     appearance: {
       build: "thin",
       age_years: 30,
-      body_plan: "faun",
+      body_plan: "human body",
       traits: ["antlers", "tail", "pointed ears"],
       skin: c("light brown", "#a07e56"),
       hair: { length_cm: 12, texture: "wavy", ...c("auburn", "#9a3001") },
@@ -206,7 +208,7 @@ export const TEST_CHARACTERS: TestCharacter[] = [
       posture: "sitting",
       build: "athletic",
       age_years: 36,
-      body_plan: "winged",
+      body_plan: "human body",
       traits: ["wings", "horns"],
       skin: c("very dark", "#292420"),
       hair: { length_cm: 60, texture: "straight", ...c("silver", "#c5c9c7") },

@@ -17,10 +17,16 @@ interface MenuPromptProps {
 
 const DIGIT_WAIT_MS = 700;
 
-// "your selection:" -> "Your selection"
-const titleFor = (prompt: string): string => {
-  const text = prompt.trim().replace(/:$/, "");
-  return text ? text[0].toUpperCase() + text.slice(1) : "Choose one";
+/**
+ * The listbox's heading and accessible name. A prompt ending in a colon is an instruction
+ * ("your selection:" -> "Your selection"); any other prompt is the question itself
+ * ("Skin color?") and is shown exactly as sent, question mark and all.
+ */
+export const titleFor = (prompt: string): string => {
+  const text = prompt.trim();
+  if (!text.endsWith(":")) return text || "Choose one";
+  const bare = text.slice(0, -1).trim();
+  return bare ? bare[0].toUpperCase() + bare.slice(1) : "Choose one";
 };
 
 /**

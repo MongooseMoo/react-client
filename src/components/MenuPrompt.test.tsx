@@ -32,6 +32,19 @@ describe("MenuPrompt", () => {
     ]);
   });
 
+  it("shows a question as it is sent and names the listbox with it", () => {
+    render(<MenuPrompt menu={{ ...menu, prompt: "how long is your character's hair?" }} onAnswer={() => {}} />);
+
+    expect(screen.getByRole("heading", { name: "how long is your character's hair?" })).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "how long is your character's hair?" })).toHaveFocus();
+  });
+
+  it("keeps a question's own words when it has a colon inside it", () => {
+    render(<MenuPrompt menu={{ ...menu, prompt: "  colour: which one?  " }} onAnswer={() => {}} />);
+
+    expect(screen.getByRole("listbox", { name: "colour: which one?" })).toBeInTheDocument();
+  });
+
   it("answers with the chosen option's response on Enter", () => {
     const onAnswer = vi.fn();
     render(<MenuPrompt menu={menu} onAnswer={onAnswer} />);
