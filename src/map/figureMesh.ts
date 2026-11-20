@@ -268,6 +268,39 @@ function sphereStrip(r: number, across: number, rows: number, phiStart: number, 
   return g;
 }
 
+/**
+ * A whole-round sphere piece laid out as THREE.SphereGeometry lays one out (rows of `across + 1` vertices, the last
+ * column where the first is, and, when it starts at the pole, its first row all at the pole) drawn with one vertex for
+ * each place: its triangles' references to the last column go to the first column's vertex, and to the pole to its
+ * first. With two copies there, each lit by the facets on its own side only, the hair cap showed a hard line in its
+ * shading along the seam, from the crown down one side of the head. The unused copies keep their places, so the layout
+ * read by row and column still holds; `seamNormals` gives them their twins' normals.
+ */
+function closeSeam(g: THREE.BufferGeometry, across: number): void {
+  const index = g.getIndex();
+  if (!index) return;
+  for (let k = 0; k < index.count; k++) {
+    const i = index.getX(k);
+    const [ix, iy] = [i % (across + 1), Math.floor(i / (across + 1))];
+    if (iy === 0) index.setX(k, 0);
+    else if (ix === across) index.setX(k, iy * (across + 1));
+  }
+  index.needsUpdate = true;
+  g.computeVertexNormals();
+  seamNormals(g, across);
+}
+
+/** After `closeSeam`, each unused copy of a seam or pole vertex takes the normal of the vertex drawn in its place. */
+function seamNormals(g: THREE.BufferGeometry, across: number): void {
+  const normals = g.getAttribute("normal");
+  for (let i = 0; i < normals.count; i++) {
+    const [ix, iy] = [i % (across + 1), Math.floor(i / (across + 1))];
+    const twin = iy === 0 ? 0 : ix === across ? iy * (across + 1) : i;
+    if (twin !== i) normals.setXYZ(i, normals.getX(twin), normals.getY(twin), normals.getZ(twin));
+  }
+  normals.needsUpdate = true;
+}
+
 /** The geometry and its back faces, so an open surface (hair falling behind the neck) is seen from inside too. */
 function twoSided(g: THREE.BufferGeometry): THREE.BufferGeometry {
   const back = g.clone();
@@ -309,7 +342,9 @@ function rimLip(g: THREE.BufferGeometry, across: number, rows: number, at: THREE
   }
   const index: number[] = [];
   for (let ix = 0; ix < across; ix++) {
-    const [a, b, c, e] = [ix, ix + 1, across + 1 + ix, across + 2 + ix];
+    // Round the seam the last quad closes on the first column's vertices, as the cap's do (`closeSeam`).
+    const next = ix + 1 === across ? 0 : ix + 1;
+    const [a, b, c, e] = [ix, next, across + 1 + ix, across + 1 + next];
     index.push(a, c, b, b, c, e);
   }
   const lip = new THREE.BufferGeometry();
@@ -841,6 +876,7 @@ export function figureParts(p: FigureParams): Part[] {
     const across = coils ? 28 : fine ? 24 : edged ? 32 : 16;
     const rows = fine ? 12 : 9;
     const cap = new THREE.SphereGeometry(headR, across, rows, 0, Math.PI * 2, 0, capReach);
+    closeSeam(cap, across);
     // A sphere's pole is +y. Turning by more than a right angle about x takes it
     // past +z toward -y: the cap leans back, its front edge above the eyes
     // (the forehead shows) and its back edge low on the nape. Swept-back hair leaves a higher forehead.
@@ -947,6 +983,7 @@ export function figureParts(p: FigureParams): Part[] {
       const local = q.clone().sub(capAt).applyQuaternion(turnQ).divide(capScale).divide(capScale);
       return local.applyQuaternion(turnFwd).normalize();
     };
+    seamNormals(capPart.geometry, across);
     if (p.headCovered) out.push(capPart);
     else {
       const positions = capPart.geometry.getAttribute("position");
@@ -957,6 +994,7 @@ export function figureParts(p: FigureParams): Part[] {
       const full = carried ? capPart.geometry.clone() : undefined;
       // Curls lift less toward the tucked rim, so it stays on the head.
       const bumps = textured(capPart.geometry, () => capAt, capTexture, headR, 1, undefined, (at) => curlsAt(at) * keptRise(at.clone().sub(capAt)) * (1 - 0.7 * tuckAt(at)));
+      seamNormals(capPart.geometry, across);
       // The texture's peaks toward the sheen, faded out where the falling hair meets the cap (`kept`).
       const shade = new Float32Array(positions.count);
       // Faded to the texture's average shade, not to none: faded to the hair's plain colour it left a dark band there.

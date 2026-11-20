@@ -1401,4 +1401,28 @@ describe("round nine: hair worn down where it meets the crown, curls down long h
       }
     }
   });
+
+  it("lights the hair cap smoothly all round: one vertex at each place its triangles use, so no hard line in its shading down the seam of the sphere it is made from", () => {
+    for (const [texture, length_cm] of [["straight", 3], ["straight", 30], ["wavy", 50], ["curly", 30], ["coily", 75]] as const) {
+      const { p } = standing({ skin: { hex: "#eadaba" }, hair: { length_cm, texture, hex: "#653700" } });
+      for (const name of ["cap", "rim"]) {
+        const part = figureParts(p).find((x) => x.name === name);
+        const pos = part?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const index = part?.geometry.getIndex() as THREE.BufferAttribute;
+        // The rim is drawn from both sides: its second half repeats the first's vertices for the inner side.
+        const half = name === "rim" ? pos.count / 2 : pos.count;
+        const used = new Set<number>();
+        for (let k = 0; k < index.count; k++) if (index.getX(k) < half) used.add(index.getX(k));
+        const places = new Map<string, number>();
+        let twins = 0;
+        for (const i of used) {
+          const key = [pos.getX(i), pos.getY(i), pos.getZ(i)].map((v) => v.toFixed(6)).join(",");
+          if (places.has(key)) twins++;
+          else places.set(key, i);
+        }
+        // Master's cap used both copies of the sphere's seam column and one pole vertex per column.
+        expect(twins, `${name} of ${texture} ${length_cm} cm`).toBe(0);
+      }
+    }
+  });
 });
