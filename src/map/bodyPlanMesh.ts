@@ -39,8 +39,14 @@ export function placeholderParts(p: FigureParams): Part[] {
 }
 
 /**
- * Flat facets for a crystal covering: each triangle its own, with a flat normal, and every few a step toward `tone`, so the body
- * reads as cut crystal rather than smooth skin.
+ * How far each facet of a crystal goes toward the lighter colour (`tone`), in turn: some well toward it, some a little,
+ * some not at all, and some as far away from it (darker faces), so the cut reads as crystal and not as plain stone.
+ */
+export const FACET_SHADES = [0.8, 0.4, 0.1, -0.25, 0.6, -0.1, 0.25] as const;
+
+/**
+ * Flat facets for a crystal covering: each triangle its own, with a flat normal, shaded in turn by FACET_SHADES toward
+ * or away from `tone`, so the body reads as cut crystal rather than smooth skin.
  */
 function faceted(part: Part, tone: string): Part {
   const g = part.geometry.index ? part.geometry.toNonIndexed() : part.geometry;
@@ -49,12 +55,15 @@ function faceted(part: Part, tone: string): Part {
   g.setIndex([...Array(count).keys()]);
   g.computeVertexNormals();
   const shade = new Float32Array(count);
-  for (let k = 0; k < count / 3; k++) shade.fill(((k * 37) % 7) / 7 * 0.6, k * 3, k * 3 + 3);
+  for (let k = 0; k < count / 3; k++) shade.fill(FACET_SHADES[(k * 3) % FACET_SHADES.length], k * 3, k * 3 + 3);
   return { ...part, geometry: g, shade, tone };
 }
 
-/** A head in its own frame: centred on the origin, facing +y, `r` the head's half height. */
-function headParts(p: FigureParams, plan: HumanoidPlan, r: number): Part[] {
+/** The shark's snout: the head ellipsoid's half widths across, front to back and up, in head radii. */
+export const SNOUT = new THREE.Vector3(0.85, 1.35, 0.85);
+
+/** A head in its own frame: centred on the origin, facing +y, `r` the head's half height, `neckR` the neck's radius. */
+function headParts(p: FigureParams, plan: HumanoidPlan, r: number, neckR: number): Part[] {
   const c = p.colours;
   const skin = plan.headColour ?? c.skin;
   const eyes = c.eyes ?? INK_DARK;
@@ -109,15 +118,32 @@ function headParts(p: FigureParams, plan: HumanoidPlan, r: number): Part[] {
       break;
     }
     case "shark": {
-      // A grey shark's head: a long snout with a white underside, a dark mouth line, black eyes on the sides, gill
-      // slits behind them and a dorsal fin standing up from the crown.
-      out.push(named(ball(v(0, r * 0.25, 0), r, skin, v(0.85, 1.35, 0.85), 12), "snout"));
+      // A grey shark's head: a long snout over a white underside, a dark mouth curving round the front of the
+      // underside, black eyes standing out of the snout's sides (seen face-on, as a shark's are), nostrils at the tip,
+      // a dorsal fin on the crown, and the head narrowing down to the person's neck with gill slits on each side.
+      out.push(named(ball(v(0, r * 0.25, 0), r, skin, SNOUT, 12), "snout"));
       out.push(named(ball(v(0, r * 0.32, -r * 0.3), r, plan.accent, v(0.78, 1.25, 0.58), 10), "underside"));
-      out.push(named(block(v(0, r * 1.08, -r * 0.36), v(r * 0.75, r * 0.08, r * 0.06), INK_DARK), "mouth"));
-      out.push(...pair((side) => named(ball(v(side * r * 0.66, r * 0.72, r * 0.06), r * 0.09, eyes, undefined, 8), "eye")));
+      // The mouth: an arc lying on the underside's surface 0.36 head radii below the middle, round the front.
+      const arc = 1.9;
+      const mouth = new THREE.TorusGeometry(1, 0.06, 3, 16, arc);
+      mouth.rotateZ(Math.PI / 2 - arc / 2);
+      mouth.scale(r * 0.8, r * 1.27, r);
+      mouth.translate(0, r * 0.32, -r * 0.36);
+      out.push(named({ geometry: mouth, colour: INK_DARK }, "mouth"));
       for (const side of [-1, 1]) {
-        for (let i = 0; i < 3; i++) out.push(named(block(v(side * r * 0.78, -r * (0.02 + i * 0.16), -r * 0.12), v(r * 0.06, r * 0.04, r * 0.36), overlayHex(skin, INK_DARK, 0.55)), "gill"));
+        // On the snout's surface 48 degrees round from straight ahead, a little above the middle, and standing out.
+        const theta = (48 * Math.PI) / 180;
+        out.push(named(ball(v(side * r * SNOUT.x * Math.sin(theta), r * 0.25 + r * SNOUT.y * Math.cos(theta), r * 0.08), r * 0.12, eyes, undefined, 8), "eye"));
+        out.push(named(ball(v(side * r * 0.17, r * 1.54, -r * 0.1), r * 0.045, INK_DARK, undefined, 6), "nostril"));
+        for (let i = 0; i < 3; i++) out.push(named(block(v(side * r * 0.5, -r * (0.05 + i * 0.14), -r * 0.82), v(r * 0.05, r * 0.035, r * 0.3), overlayHex(skin, INK_DARK, 0.55)), "gill"));
       }
+      // The taper: from the person's neck out to the head's underside, a shark's body narrowing into its head.
+      const taperTop = -r * 0.45;
+      const taperBottom = -r * 1.2;
+      const taper = new THREE.CylinderGeometry(r * 0.6, neckR * 1.05, taperTop - taperBottom, 12, 1);
+      taper.rotateX(Math.PI / 2);
+      taper.translate(0, r * 0.05, (taperTop + taperBottom) / 2);
+      out.push(named({ geometry: taper, colour: skin }, "taper"));
       const fin = new THREE.ConeGeometry(r * 0.42, r * 0.95, 4);
       fin.scale(0.22, 1, 1);
       fin.rotateX(Math.PI / 2 - 0.45);
@@ -133,6 +159,11 @@ function headParts(p: FigureParams, plan: HumanoidPlan, r: number): Part[] {
   }
   return out;
 }
+
+/** A digitigrade knee: forward by this share of the height, up by this share of the hip's height. */
+export const KNEE = new THREE.Vector3(0, 0.04, 0.62);
+/** A digitigrade heel (hock): back by this share of the height and up by this share. */
+export const HOCK = new THREE.Vector3(0, -0.05, 0.14);
 
 /** A humanoid plan: the human skeleton with this plan's stance, proportions, head and colours. */
 function humanoidParts(p: FigureParams, plan: HumanoidPlan): Part[] {
@@ -160,13 +191,15 @@ function humanoidParts(p: FigureParams, plan: HumanoidPlan): Part[] {
       out.push(limb(knee, v(x, 0.24 * H, ankleZ + legR), legR * 0.9, c.legs, !crystal));
       out.push(block(v(x, 0.24 * H + 0.04 * s, ankleZ / 2), v(legR * 2.2, 0.16 * s, ankleZ), c.feet));
     } else if (plan.digitigrade) {
-      // On the toes: the thigh forward to the knee, the shin back to a raised heel, a paw on the floor.
-      const knee = v(x, 0.09 * H, hipZ * 0.56);
-      const hock = v(x, -0.07 * H, 0.15 * H);
-      out.push(named(limb(v(x, 0, hipZ), knee, legR * 1.1, c.legs, !crystal), "thigh"));
+      // Standing on the toes, as a dog's hind leg stands: a short thigh a little forward to a high knee, a long shin
+      // back to a raised heel well off the floor, and the foot near upright down to a paw. Every bend is shallow, so
+      // the leg reads as standing; deep bends with the knee low read as a squat.
+      const knee = KNEE.clone().multiply(v(1, H, hipZ)).setX(x);
+      const hock = HOCK.clone().multiplyScalar(H).setX(x);
+      out.push(named(limb(v(x, 0, hipZ), knee, legR * 1.15, c.legs, !crystal), "thigh"));
       out.push(named(limb(knee, hock, legR * 0.85, c.legs, !crystal), "shin"));
-      out.push(named(limb(hock, v(x, 0.02 * H, ankleZ), legR * 0.7, c.feet, !crystal), "heel"));
-      out.push(named(ball(v(x, 0.05 * H, ankleZ * 0.6), legR * 1.1, c.feet, v(1, 1.6, 0.6), 8), "paw"));
+      out.push(named(limb(hock, v(x, 0.03 * H, ankleZ), legR * 0.65, c.feet, !crystal), "heel"));
+      out.push(named(ball(v(x, 0.06 * H, ankleZ * 0.6), legR * 1.05, c.feet, v(1, 1.7, 0.6), 8), "paw"));
     } else {
       out.push(limb(v(x, 0, ankleZ + legR), v(x, 0, hipZ - legR * 0.5), legR, c.legs, !crystal));
       out.push(block(v(x, 0.04 * s, ankleZ / 2), v(legR * 2.2, 0.16 * s, ankleZ), c.feet));
@@ -182,20 +215,36 @@ function humanoidParts(p: FigureParams, plan: HumanoidPlan): Part[] {
   const neckBase = upright - p.headHeight - neckLen;
   const waistZ = 0.05 * H;
   const shoulderZ = neckBase - p.limbRadius * 1.2;
-  const neckR = 0.045 * s * plan.shape.limbs;
+  const neckR = 0.045 * s * plan.shape.limbs * (plan.neckScale ?? 1);
+  // Crystal is cut: six-sided hips, torso and neck, so the facets are broad and sharp.
+  const sides = crystal ? 6 : undefined;
   const body: Part[] = [
-    trunk(-0.07 * H, waistZ, p.hipHalf, p.waistHalf, 0.62, c.hips),
-    trunk(waistZ, neckBase, p.waistHalf, p.shoulderHalf * 0.92, 0.55, c.torso),
+    trunk(-0.07 * H, waistZ, p.hipHalf, p.waistHalf, 0.62, c.hips, 0, sides),
+    trunk(waistZ, neckBase, p.waistHalf, p.shoulderHalf * 0.92, 0.55, c.torso, 0, sides),
     limb(v(-p.shoulderHalf * 0.9, 0, shoulderZ), v(p.shoulderHalf * 0.9, 0, shoulderZ), p.limbRadius * 1.35, c.torso, !crystal),
     // Up into the head, as the human figure's neck goes to 0.6 head radii below the head's middle.
-    trunk(neckBase - 0.01, upright - headR * 1.6, neckR, neckR, 1, c.neck),
+    trunk(neckBase - 0.01, upright - headR * 1.6, neckR, neckR, 1, c.neck, 0, sides),
   ];
+  if (plan.chest && c.torso === c.skin) {
+    // A bare chest: the front of a large flat ellipsoid set inside the torso, so only a shield of it shows, from the
+    // breastbone down toward the belly. (A small ball standing out of the fur read as a stain.)
+    // Wide across the chest and tapering down: two shields, the upper broad under the shoulders, the lower narrower.
+    const span = neckBase - waistZ;
+    body.push(named(ball(v(0, p.shoulderHalf * 0.1, waistZ + span * 0.7), 1, plan.accent, v(p.shoulderHalf * 0.72, p.shoulderHalf * 0.42, span * 0.24), 12), "chest"));
+    body.push(named(ball(v(0, p.waistHalf * 0.12, waistZ + span * 0.35), 1, plan.accent, v(p.waistHalf * 0.6, p.waistHalf * 0.45, span * 0.3), 12), "chest"));
+  }
+  if (crystal) {
+    // Crystal points growing from the shoulders and the upper back, in the lighter colour.
+    for (const [x, y, dx, dy, k] of [[-0.75, -0.1, -0.5, -0.3, 1], [0.7, -0.15, 0.45, -0.4, 0.8], [0.25, -0.45, 0.2, -0.8, 0.9], [-0.3, -0.4, -0.3, -0.7, 0.7]]) {
+      body.push(named(cone(v(x * p.shoulderHalf, y * p.shoulderHalf, shoulderZ + p.limbRadius * 0.4), v(dx, dy, 1).normalize(), 0.035 * s * k, 0.16 * s * k, plan.accent, 4), "shard"));
+    }
+  }
   out.push(...transform(body, toBody));
 
   // The head, set back upright (so the face looks ahead, not at the floor), then drooped as the plan says.
   const headCentre = v(0, 0, upright - headR).applyMatrix4(toBody);
   const headTurn = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(-plan.droop, plan.droop * 0.6, 0));
-  out.push(...transform(headParts(p, plan, headR), new THREE.Matrix4().makeTranslation(headCentre.x, headCentre.y, headCentre.z).multiply(headTurn)));
+  out.push(...transform(headParts(p, plan, headR, neckR), new THREE.Matrix4().makeTranslation(headCentre.x, headCentre.y, headCentre.z).multiply(headTurn)));
 
   // Arms: from the leaned shoulders down to the plan's wrist height, reaching forward by its angle.
   const wristZ = sitting ? hipZ + 0.02 * H : Math.max(0.05 * H, plan.wristShare * H);
