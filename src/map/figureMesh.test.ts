@@ -1353,3 +1353,128 @@ describe("round seven: hair from the room's own angles, locks, lids and the fall
     }
   });
 });
+
+describe("round nine: hair worn down where it meets the crown, curls down long hair and the hairline in 3D", () => {
+  const isHair = (part: ReturnType<typeof figureParts>[number] | undefined) => ["cap", "hair", "rim"].includes(part?.name ?? "");
+  /** From straight behind (flat picture), the hair's outline: how far out its left and right edges are at height v (head radii from the head's middle). */
+  const outlineAt = (grid: ReturnType<typeof picture>, j: number) => {
+    const row = grid[j];
+    const first = row.findIndex(isHair);
+    const last = row.length - 1 - [...row].reverse().findIndex(isHair);
+    return first < 0 ? 0 : (last - first) / 2;
+  };
+  /** Along level rays from the head's vertical axis, a degrees round from straight behind: the farthest crossing of these parts, head radii. */
+  const reach = (parts: ReturnType<typeof figureParts>, names: string[], headR: number, headZ: number) => {
+    const meshes = parts.filter((x) => names.includes(x.name ?? "")).map((x) => new THREE.Mesh(x.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })));
+    const ray = new THREE.Raycaster();
+    return (a: number, v: number) => {
+      const t = (a * Math.PI) / 180;
+      ray.set(new THREE.Vector3(0, 0, headZ + v * headR), new THREE.Vector3(Math.sin(t), -Math.cos(t), 0));
+      return (ray.intersectObjects(meshes, false).at(-1)?.distance ?? 0) / headR;
+    };
+  };
+
+  it("hangs wavy hair worn down from the crown's outline: no band swelling out round the back where it starts, and an outline that widens gradually at the sides, not in a step", () => {
+    for (const length_cm of [30, 50]) {
+      for (const [skin, hex] of [["#eadaba", "#653700"], ["#292420", "#1b1612"]]) {
+        const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm, texture: "wavy", hex } });
+        const parts = figureParts(p);
+        const label = `wavy ${length_cm} cm on ${skin}`;
+        // Round the back (60 degrees either side): how far the fall stands out past the crown above it, on average.
+        // Master's fall lay outside the full cap with its waves raised outward from there, 0.036 to 0.042 head radii.
+        const [cap, fall] = [reach(parts, ["cap"], headR, headZ), reach(parts, ["hair"], headR, headZ)];
+        const past = [-60, -40, -20, -10, 0, 10, 20, 40, 60].map((a) => {
+          let [c, f] = [0, 0];
+          for (let v = 0.1; v <= 0.5; v += 0.02) c = Math.max(c, cap(a, v));
+          for (let v = -0.3; v <= 0.1; v += 0.01) f = Math.max(f, fall(a, v));
+          return f - c;
+        });
+        const mean = past.reduce((s, x) => s + x, 0) / past.length;
+        expect(mean, `${label}: ${past.map((x) => x.toFixed(3)).join(" ")}`).toBeLessThan(0.034);
+        // From behind, the outline 0.15 head radii below the fall's top (0.1 over the head's middle) against just above it.
+        // Master's widened by 0.04 to 0.05 head radii there, a step out at each side.
+        const step = headR / 300;
+        const grid = picture(parts, "back", [-headR * 1.6, headZ - headR * 0.1, headR * 1.6, headZ + headR * 0.2], step, true);
+        const row = (v: number) => Math.round((v + 0.1) / (step / headR));
+        const widening = (outlineAt(grid, row(-0.05)) - outlineAt(grid, row(0.13))) * (step / headR);
+        expect(widening, label).toBeLessThan(0.032);
+      }
+    }
+  });
+
+  it("lights the hair cap smoothly all round: one vertex at each place its triangles use, so no hard line in its shading down the seam of the sphere it is made from", () => {
+    for (const [texture, length_cm] of [["straight", 3], ["straight", 30], ["wavy", 50], ["curly", 30], ["coily", 75]] as const) {
+      const { p } = standing({ skin: { hex: "#eadaba" }, hair: { length_cm, texture, hex: "#653700" } });
+      for (const name of ["cap", "rim"]) {
+        const part = figureParts(p).find((x) => x.name === name);
+        const pos = part?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const index = part?.geometry.getIndex() as THREE.BufferAttribute;
+        // The rim is drawn from both sides: its second half repeats the first's vertices for the inner side.
+        const half = name === "rim" ? pos.count / 2 : pos.count;
+        const used = new Set<number>();
+        for (let k = 0; k < index.count; k++) if (index.getX(k) < half) used.add(index.getX(k));
+        const places = new Map<string, number>();
+        let twins = 0;
+        for (const i of used) {
+          const key = [pos.getX(i), pos.getY(i), pos.getZ(i)].map((v) => v.toFixed(6)).join(",");
+          if (places.has(key)) twins++;
+          else places.set(key, i);
+        }
+        // Master's cap used both copies of the sphere's seam column and one pole vertex per column.
+        expect(twins, `${name} of ${texture} ${length_cm} cm`).toBe(0);
+      }
+    }
+  });
+
+  it("turns long curls and coils every two or three rows of the fall, so each lock reads as curls rather than a rope or a smooth fall", () => {
+    for (const texture of ["curly", "coily"]) {
+      for (const length_cm of [50, 75]) {
+        const { p, headR } = standing({ skin: { hex: "#f6ede4" }, hair: { length_cm, texture, hex: "#653700" } });
+        const fall = figureParts(p).find((x) => x.name === "hair");
+        const pos = fall?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const columns = texture === "curly" ? 16 : 20;
+        const width = columns + 1;
+        const rows = pos.count / 2 / width;
+        const out = (r: number, c: number) => Math.hypot(pos.getX(r * width + c), pos.getY(r * width + c)) / headR;
+        // Each lock's middle column, how far it stands out past its two edges, down the fall: its turns are where that
+        // rises to a peak. Master's turned once every three or four rows, long twists reading as ropes or streaks.
+        const turns: number[] = [];
+        for (let lock = 1; lock < columns / 2 - 1; lock++) {
+          const m = 2 * lock + 1;
+          const lift = Array.from({ length: rows }, (_, r) => out(r, m) - (out(r, m - 1) + out(r, m + 1)) / 2);
+          let peaks = 0;
+          for (let r = 2; r < rows - 1; r++) if (lift[r] > lift[r - 1] && lift[r] >= lift[r + 1]) peaks++;
+          turns.push(peaks / (rows - 3));
+        }
+        const mean = turns.reduce((a, b) => a + b, 0) / turns.length;
+        expect(mean, `${texture} ${length_cm} cm: ${turns.map((t) => t.toFixed(2)).join(" ")}`).toBeGreaterThan(0.3);
+      }
+    }
+  });
+
+  it("starts long straight hair beside the face no lower than just under the cap's rim, so no wedge of the head shows between them at ear height from behind and to one side", () => {
+    for (const length_cm of [30, 50, 75]) {
+      const { p, headR } = standing({ skin: { hex: "#eadaba" }, hair: { length_cm, texture: "straight", hex: "#653700" } });
+      const parts = figureParts(p);
+      const rim = parts.find((x) => x.name === "rim")?.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const fall = parts.find((x) => x.name === "hair")?.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const round = (pos: THREE.BufferAttribute, i: number) => Math.atan2(pos.getX(i), -pos.getY(i));
+      // The rim's first row (its vertices on the cap's rim), by angle round from straight behind.
+      const rims = Array.from({ length: rim.count / 4 }, (_, i) => [round(rim, i), rim.getZ(i)]);
+      const rimAt = (a: number) => rims.reduce((best, r) => (Math.abs(r[0] - a) < Math.abs(best[0] - a) ? r : best))[1];
+      // Each fall column's top on its outer side, from 1.6 radians round (beside the ear) to its front edge.
+      const columns = 21;
+      const gaps: string[] = [];
+      for (let c = 0; c < columns; c++) {
+        let top = c;
+        for (let r = 0; r * columns + c < fall.count / 2; r++) if (fall.getZ(r * columns + c) > fall.getZ(top)) top = r * columns + c;
+        const a = round(fall, top);
+        if (Math.abs(a) < 1.6) continue;
+        const gap = (rimAt(a) - fall.getZ(top)) / headR;
+        // Master's front columns started a quarter of a head radius down, 0.26 under the rim beside them.
+        if (gap > 0.16) gaps.push(`${a.toFixed(2)}: ${gap.toFixed(2)}`);
+      }
+      expect(gaps, `straight ${length_cm} cm`).toEqual([]);
+    }
+  });
+});

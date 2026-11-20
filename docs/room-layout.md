@@ -206,7 +206,8 @@ on the hair, so it reads as the hair's edge (a grey edge on black hair over dark
 band. At the hairline the same tone is drawn on the hair itself: across the forehead and temples
 the hair's last rows are shaded in strands of different lengths toward it, fading out a little way up, with no separate
 line, band or row of points, and not on to the sides of the head. The hair's edge comes in to lie on the head all
-round, so even full curly and coily hair meets the forehead and temples with nothing showing between hair and head,
+round, so even full curly and coily hair meets the forehead and temples with nothing showing between hair and head; the
+hair over the head is lit smoothly all the way round, with no line in its shading down one side,
 and its rim is closed in to the head by a narrow band, so from a little above and up to 40 degrees to either side
 the eye never looks in under it to the room behind. From behind, nothing shows through hair worn down: its front
 edges come out from just inside the hair over the crown, and lie on the head below it; curls and coils to
@@ -229,18 +230,22 @@ the back of the head, comes in at the nape and spreads out over the shoulders; s
 strands and uneven ends, wavy hair waves down it in broad slanting waves broken a little strand by
 strand. It starts lying on the hair over the crown, as
 close to the head at the sides as that hair is, and comes out to its own outline below, without a
-seam or step; toward the face its top comes down and its front edges lie on the head past the ears,
+seam or step; toward the face its top comes down (straight hair no lower than just under the edge of the hair over
+the head beside it, so no wedge of the head shows between them at ear height) and its front edges lie on the head past the ears,
 then come forward beside the cheek and jaw and go back in toward the neck below the jaw, each edge
 strand by its own amount. Wavy, curly and coily hair worn down (past the jaw, or wavy to it) carries
 the waves, curls or coils of the hair over the crown on into its top round the back of the head, at
 full strength and in the same shading, and its own waves or locks take over a little lower, lock by
 lock; there each lock starts a little up the crown, by its own height, so where the hair worn down
-begins is a ragged line, never one level edge right round the back of the head.
+begins is a ragged line, never one level edge right round the back of the head. Wavy hair worn down hangs from the
+outline of the hair over the crown: where it starts it does not swell out past the crown in a band round the back of
+the head, and at the sides its outline widens from the crown's gradually, without a step.
 Curly and coily hair to the jaw carries on the round and the curls of the hair over the crown and
 closes in from the hair's own width to end above the jaw: one rounded mass that never stands out
 past the head at the ears. Curly and coily hair past the jaw hangs in ringlets: locks side by side
 with open grooves between them, each with its own twist rate, phase, width and length, so no
-pattern repeats from lock to lock and no row of highlights lines up across them, their sheen softer
+pattern repeats from lock to lock and no row of highlights lines up across them, each turning every two
+(coils) or two and a half (curls) rows of the fall so it reads as curls rather than a rope or a smooth fall, their sheen softer
 than the curls over the crown, and each coming in below the crown at its own height; coils in
 narrower, tighter locks than curls. A figure is kept under 5,000 triangles
 with every feature and trait. The portrait outlines skin and clothing in the dark or light line, and hair in
