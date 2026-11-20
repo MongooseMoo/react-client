@@ -78,7 +78,8 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 |---|---|
 | `label` | The shortest phrase that tells this person from the others present, worked out by the server for this recipient: "the tall man", "the red-haired woman", "the woman in navy", or "a woman" when nobody else is present. Shown as text; the client never computes one. |
 | `posture` | `standing`, `sitting` or `reclining`. |
-| `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers` and `horns`; `pointed ears` draws the ears pointed, as `face.ears` `pointed` does. The wire gives these no colour: horns and antlers are drawn in one bone tone (`#d6c9a8`), wings and tail in the hair colour (the skin's when there is no hair). |
+| `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers` and `horns`; `pointed ears` draws the ears pointed, as `face.ears` `pointed` does. The wire gives these no colour: horns and antlers are drawn in one bone tone (`#d6c9a8`), wings and tail in the hair colour (the skin's when there is no hair). How `body_plan` is drawn is in "Body plans" below. |
+| `covering` | Optional, for a form: `skin`, `fur`, `scales`, `feathers` or `stone`. Used only for a body plan below, and only when no `skin` colour is sent and it differs from the plan's own covering: the body is then drawn in that covering's tone. |
 | `build` | `average`, `slender`, `thin`, `athletic`, `muscular`, `curvy`, `stocky`, `chunky`, `pudgy` or `dumpy`; anything else is drawn as average. The figure's shoulders, waist, hips and limbs follow it; the portrait shows it in the shoulders, neck and fullness of the face. |
 | `age_years` | A child's head is drawn larger for their height. |
 | `skin`, `eyes` | Colours. Without `skin`, a person is drawn in a neutral light warm grey (`#b9b0a6`), the same in the portrait, the 3D figure and the plan token; it is not a human skin tone. |
@@ -92,6 +93,30 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 
 The client checks none of these on arrival; anything missing or of the wrong type is treated as
 unremarkable.
+
+### Body plans
+
+A character in a whole-body form arrives with the form's species as `body_plan` and none of their own
+record (no `skin`, `eyes`, `hair`, `facial_hair`, `face`, `features`, `build` or `age_years`). The 3D figure
+(Dollhouse and Your eyes), the plan token and the portrait (People list, player card) all follow the same rules:
+
+- No `body_plan`, or `"human body"`: the human figure, exactly as described above.
+- A plan the client knows (`src/avatar/bodyPlan.ts`, one entry each): its own look. Humanoid plans use the human
+  figure's skeleton with their own stance, proportions, head and colours: `werewolf` (grey-brown fur, a wolf's head
+  with muzzle and tall pointed ears, a tail, hunched, standing on its toes), `zombie` (grey-green skin, slack, head
+  drooping, arms hanging forward), `rakghoul` (pale, hairless, a heavy jaw), `devolved primate` (dark fur with a
+  lighter face, a brow ridge, long arms, short legs), `quartz-crystallized body` (pale faceted stone, no hair) and
+  `human with a transfigured shark head` (a human body with a grey shark's head, white underside and dorsal fin).
+  Animal plans get their own small figures, fitted evenly inside the person's box (its height and its width and depth
+  in `shapes`, or the pose's `dimensions_m`) and facing the way the person faces: `mallard duck`, `snake`, `song bird`.
+- Any other plan: a plain rounded pillar sized by the box, in the plain person colour (you in blue); the plan token is
+  the plain person token and the portrait a plain grey silhouette. No human skin, hair or eye colour is filled in.
+
+For a body plan the figure reads none of a human record and fills in no neutral skin or clothing. The plan's own
+colours are used unless the wire sends the form's: `skin` and `eyes` colours, and `covering` as above. `garments`
+are drawn on humanoid plans when sent; `traits` add their parts to humanoid plans; `posture` applies to humanoid
+plans (animals always stand). The portrait shows `marks` on humanoid plans' heads. Accessible names and titles still
+come from `label` ("a werewolf"); the client adds no words of its own for a body plan.
 
 ## Keeping it current
 
