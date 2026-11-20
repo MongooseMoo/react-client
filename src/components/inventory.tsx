@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import type MudClient from '../client';
 import type { Item } from '../gmcp/Char/Items';
 import { type ItemAction, performItemAction } from '../itemActions';
@@ -16,16 +16,14 @@ const EMPTY_ITEMS: Item[] = [];
 
 const Inventory: React.FC<InventoryProps> = ({ client }) => {
   const items = useItemsStore((state) => state.itemsByLocation.inv ?? EMPTY_ITEMS);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const selectedItem = items.find((item) => item.id === selectedItemId) ?? null;
+  // The one selection, shared with the Room tab, the room picture and interact mode.
+  const selectedId = useItemsStore((state) => state.selected?.id ?? null);
+  const select = useItemsStore((state) => state.select);
+  const selectedItem = items.find((item) => item.id === selectedId) ?? null;
 
   useEffect(() => {
     client.gmcp.handlers['Char.Items']?.sendInv("");
   }, [client]);
-
-  const handleItemSelected = (item: Item | null) => {
-    setSelectedItemId(item?.id ?? null);
-  };
 
   const handleItemAction = useCallback((action: ItemAction) => {
     performItemAction(client, action);
@@ -42,7 +40,8 @@ const Inventory: React.FC<InventoryProps> = ({ client }) => {
       ) : (
         <InventoryList
           items={items}
-          onItemSelected={handleItemSelected}
+          selectedId={selectedItem?.id ?? null}
+          onSelect={select}
           listId={listId}
           labelledBy={headingId}
           focusReturnId={headingId}

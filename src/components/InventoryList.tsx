@@ -1,66 +1,43 @@
-import React from 'react';
-import { Item } from '../gmcp/Char/Items';
+import type React from 'react';
+import type { Item } from '../gmcp/Char/Items';
 import AccessibleList from './AccessibleList';
 // Note: InventoryList.css is now imported by the parent Inventory.tsx
 
 interface InventoryListProps {
   items: Item[];
-  onItemSelected: (item: Item | null) => void;
+  /** The selected item's id, or null: the selection is the items store's, shared with the Room tab and interact mode. */
+  selectedId: string | null;
+  onSelect: (id: string) => void;
   listId: string;
   labelledBy: string;
   focusReturnId?: string;
 }
 
+const renderInventoryItem = (item: Item) => <span>{item.name}</span>;
+// Applied to the <li> by AccessibleList; styled in InventoryList.css.
+const getInventoryItemClassName = () => "inventory-list-li";
+const getInventoryItemTextValue = (item: Item) => (item.name ? item.name.toLowerCase() : '');
+
 const InventoryList: React.FC<InventoryListProps> = ({
   items,
-  onItemSelected,
+  selectedId,
+  onSelect,
   listId,
   labelledBy,
   focusReturnId,
-}) => {
-
-  const handleSelectionChange = (index: number) => {
-    if (index > -1 && items[index]) {
-      onItemSelected(items[index]);
-    } else {
-      onItemSelected(null);
-    }
-  };
-
-  const renderInventoryItem = (item: Item, index: number, isSelected: boolean) => {
-    return (
-      <span > {/* Apply title to span for hover effect */}
-        {item.name}
-      </span>
-    );
-  };
-
-
-  const getInventoryItemClassName = (item: Item, index: number, isSelected: boolean): string => {
-    // This class is applied to the <li> element by AccessibleList.
-    // It will be styled by rules in InventoryList.css (imported by parent)
-    // or AccessibleList.css
-    let classes = "inventory-list-li";
-    return classes;
-  };
-
-  const getInventoryItemTextValue = (item: Item): string => {
-    return item.name ? item.name.toLowerCase() : '';
-  };
-
-  return (
-    <AccessibleList
-      items={items}
-      renderItem={renderInventoryItem}
-      listId={listId}
-      labelledBy={labelledBy}
-      className="inventory-accessible-list" // Class for the AccessibleList's root div
-      itemClassName={getInventoryItemClassName}
-      getItemTextValue={getInventoryItemTextValue}
-      onSelectedIndexChange={handleSelectionChange}
-      focusReturnId={focusReturnId}
-    />
-  );
-};
+}) => (
+  <AccessibleList
+    items={items}
+    renderItem={renderInventoryItem}
+    listId={listId}
+    labelledBy={labelledBy}
+    className="inventory-accessible-list" // Class for the AccessibleList's root div
+    itemClassName={getInventoryItemClassName}
+    getItemTextValue={getInventoryItemTextValue}
+    selectedId={selectedId}
+    onSelect={onSelect}
+    focusReturnId={focusReturnId}
+  />
+);
 
 export default InventoryList;

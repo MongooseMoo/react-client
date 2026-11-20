@@ -37,7 +37,19 @@ Reading finished for: `docs/room-layout.md`, the interact section of
 `gmcp/Char/Items.ts`, `inventory.tsx`, `itemActions.ts`, `ItemCard.tsx`,
 `PlayerCard.tsx`, `AccessibleList.tsx`. No code changed yet.
 
-What the source says today:
+Done and committed, each with tests passing by explicit path:
+
+- Shared selection in `itemsStore.ts` (`itemsStore.test.ts`, new).
+- Interact mode on the shared selection (`Keystrokes.ts`, three new tests in
+  `Keystrokes.test.ts`; the existing interact tests pass unchanged).
+- `AccessibleList` shows a caller-held selection; the inventory uses it
+  (`AccessibleList.test.tsx`: three list tests, one inventory test; the two
+  existing inventory focus tests pass unchanged).
+
+Still to do: the Room tab's joined lists and cards, the room view's move out of
+the Map tab, selection in the picture (Plan and 3D), docs, `scripts/`/`tests/`.
+
+What the source said before this work:
 
 - `itemsStore.ts` holds only `itemsByLocation` and `hasReceivedList`; no selection.
 - `AccessibleList` keeps its own `selectedId` in component state and only reports
@@ -66,6 +78,13 @@ What the source says today:
   (with `onSelect`). Without those props it behaves as before, for its other
   callers (user list, menus, dialogs). Without this a row could not become
   selected from the picture or from interact mode.
+- **The inventory is on the shared selection too.** The existing inventory test
+  wants the next item's card after the selected item is dropped from its own
+  card. The store clears the selection when the item leaves; the card unmounts;
+  focus recovery returns focus to the list; a list whose caller-held selection
+  is empty selects, on focus or on Down, the place it last held. So the person
+  acting gets the same result as before, and someone not in the list sees the
+  selection clear instead of jump to a neighbour nobody chose.
 - **Parts and drawer controls sit with the selected thing's card, under the list,
   not inside the list rows.** My reading, not the assignment's literal words
   ("a thing row carries ... its parts/drawer controls"): a button inside a
