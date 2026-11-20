@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
 import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "../avatar/figure";
-import type { RoomLayout } from "../gmcp/Room";
+import type { LayoutFormBox, RoomLayout } from "../gmcp/Room";
 import { EYE_PUPIL, EYE_WHITE } from "./figureMesh";
 import { crowdLayout, livingRoomLayout, translateLayoutThing, withBodyFacings } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
@@ -64,6 +64,21 @@ const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): nu
 };
 
 describe("buildRoomScene", () => {
+  it("paints individual form boxes with the MOO palette and falls back to the host material", () => {
+    const layout = livingRoomLayout();
+    layout.things = [{ ...layout.things[0], id: "#socket", kind: "object",
+      pose: { centre_m: [0, 0, 1], dimensions_m: [1, 1, 2], body_quaternion: [1, 0, 0, 0], box: true },
+      form_boxes: [undefined, { name: "green", hex: "#00ff00" }, { name: "black", hex: "#000000" },
+        { name: "invalid", hex: "invalid" }].map((colour): LayoutFormBox => ({
+          center: [0, 0, 0], size: [1, 1, 1], colour,
+        })),
+    }];
+    const scene = build(layout);
+    const [host, green, black, invalid] = meshes(scene.things.get("#socket")).map(colour);
+    expect([green, black, invalid]).toEqual([0x00ff00, 0x000000, host]);
+    disposeRoomScene(scene);
+  });
+
   it("keeps each authored edge and role through a sheared part and a translated host", () => {
     const layout = livingRoomLayout();
     layout.things = [{ ...layout.things[0], id: "#236", lifetime: "camera-life", kind: "object",
