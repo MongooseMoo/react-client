@@ -37,7 +37,7 @@ const plans = process.argv.includes('--plans');
 const forms = process.argv.includes('--forms');
 // --tiny shoots the animal forms in their real-size boxes (set=sizes): each figure framed front, three-quarters and
 // side; a Dollhouse overview of a 10 m room; the wheel under each one's label (and on the bird) at 12, 20 and 30
-// notches, a quarter and a half turn, and 30 notches back out.
+// notches, a quarter and a half turn, and 20 and 30 notches back out.
 const tiny = process.argv.includes('--tiny');
 mkdirSync(out, { recursive: true });
 
@@ -523,7 +523,7 @@ try {
       await view.screenshot({ path: resolve(out, 'tiny-doll-bird-crop.png'), clip: { x: cx - 60, y: cy - 60, width: 120, height: 120 } });
     }
     // The wheel 8 px under each one's label (and for the bird, on its figure too): 12, 20 and 30 notches, a quarter
-    // and a half turn with the arrow keys, then 30 notches back out.
+    // and a half turn with the arrow keys, then 20 and 30 notches back out.
     for (const [id, where] of [['#p3', 'label'], ['#p3', 'figure'], ['#p1', 'label'], ['#p2', 'label'], ['#p0', 'label']]) {
       pic = await go();
       const frame = await pic.boundingBox();
@@ -558,10 +558,12 @@ try {
       for (let i = 1; i <= 30; i++) {
         await view.mouse.wheel(0, 100);
         await view.waitForTimeout(20);
+        if (i === 20 || i === 30) {
+          await view.waitForTimeout(150);
+          await pic.screenshot({ path: resolve(out, `${tag}-out${i}.png`) });
+          await report(`${tag}-out${i}`);
+        }
       }
-      await view.waitForTimeout(150);
-      await pic.screenshot({ path: resolve(out, `${tag}-out30.png`) });
-      await report(`${tag}-out30`);
     }
     await view.close();
   }
