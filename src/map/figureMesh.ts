@@ -1293,7 +1293,9 @@ export function figureParts(p: FigureParams): Part[] {
         // side of the head, higher where a lock starts up the crown): read from the fall's top, the front locks were
         // already raised where they start and stood off the cap at the side, and from behind and above the wall showed
         // under them.
-        ringlets(hang.geometry, columns, p.hairTexture === "coily" ? 3 : 4, centreOf, around, headR, 0.03 * s, (q, column) =>
+        // Coils turning every two rows, curls every two and a half: every three and four rows, long twists down the
+        // fall read from behind as ropes (coils) or a smooth fall with faint streaks (curls).
+        ringlets(hang.geometry, columns, p.hairTexture === "coily" ? 2 : 2.5, centreOf, around, headR, 0.03 * s, (q, column) =>
           // Standing out slowly, over 0.45 head radii: standing out within 0.1 to 0.2, the locks bulged out under the
           // crown's outline from behind in a shelf.
           smooth((columnTops[column] - q.z) / (headR * 0.45)),

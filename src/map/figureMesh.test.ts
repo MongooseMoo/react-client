@@ -1425,4 +1425,30 @@ describe("round nine: hair worn down where it meets the crown, curls down long h
       }
     }
   });
+
+  it("turns long curls and coils every two or three rows of the fall, so each lock reads as curls rather than a rope or a smooth fall", () => {
+    for (const texture of ["curly", "coily"]) {
+      for (const length_cm of [50, 75]) {
+        const { p, headR } = standing({ skin: { hex: "#f6ede4" }, hair: { length_cm, texture, hex: "#653700" } });
+        const fall = figureParts(p).find((x) => x.name === "hair");
+        const pos = fall?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const columns = texture === "curly" ? 16 : 20;
+        const width = columns + 1;
+        const rows = pos.count / 2 / width;
+        const out = (r: number, c: number) => Math.hypot(pos.getX(r * width + c), pos.getY(r * width + c)) / headR;
+        // Each lock's middle column, how far it stands out past its two edges, down the fall: its turns are where that
+        // rises to a peak. Master's turned once every three or four rows, long twists reading as ropes or streaks.
+        const turns: number[] = [];
+        for (let lock = 1; lock < columns / 2 - 1; lock++) {
+          const m = 2 * lock + 1;
+          const lift = Array.from({ length: rows }, (_, r) => out(r, m) - (out(r, m - 1) + out(r, m + 1)) / 2);
+          let peaks = 0;
+          for (let r = 2; r < rows - 1; r++) if (lift[r] > lift[r - 1] && lift[r] >= lift[r + 1]) peaks++;
+          turns.push(peaks / (rows - 3));
+        }
+        const mean = turns.reduce((a, b) => a + b, 0) / turns.length;
+        expect(mean, `${texture} ${length_cm} cm: ${turns.map((t) => t.toFixed(2)).join(" ")}`).toBeGreaterThan(0.3);
+      }
+    }
+  });
 });
