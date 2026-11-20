@@ -1,6 +1,6 @@
 // Tests only: screenshots of the invented test characters and frame times of the
 // 3D view, in headless Chromium (no window). Usage:
-//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d] [--pinch] [--vocab] [--labels3d] [--face] [--zoomlabel]
+//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d] [--pinch] [--vocab] [--labels3d] [--face] [--zoomlabel] [--plans] [--forms]
 // --gpu asks headless Chromium for the machine's GPU instead of its software renderer.
 // --vocab shoots the game's vocabulary (a portrait per value, builds and beard lengths in 3D)
 // instead of the test characters and zoom checks; frame times are measured either way.
@@ -32,6 +32,9 @@ const onlyQuery = (() => {
 const zoomLabel = process.argv.includes('--zoomlabel');
 // --plans shoots the body plans (set=plans): portraits, plan tokens, whole figures front, three-quarters and side.
 const plans = process.argv.includes('--plans');
+// --forms shoots the forms in the boxes the game sent on 2026-11-20 (set=forms): a Dollhouse overview of a 10 m room,
+// the wheel under each animal's label and a quarter turn, each figure framed by what is drawn, and the portraits.
+const forms = process.argv.includes('--forms');
 mkdirSync(out, { recursive: true });
 
 // --port=N: the local server's port (default 5199), for when another harness run holds it.
@@ -411,7 +414,74 @@ try {
     console.log('zl-middle-n08', JSON.stringify(await state(5)));
     await narrow.close();
   }
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans) {
+  if (forms) {
+    const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-').replace(/-+$/, '');
+    const sharp = await browser.newPage({ viewport: { width: 1280, height: 1400 }, colorScheme: 'dark', deviceScaleFactor: 2 });
+    await sharp.goto(`${base}?view=portraits&set=forms&big=1`);
+    await sharp.waitForFunction(() => window.ready === true);
+    await sharp.locator('table').screenshot({ path: resolve(out, 'forms-portraits.png') });
+    for (const row of await sharp.locator('tr').all()) {
+      await row.screenshot({ path: resolve(out, `forms-portrait-${slug(await row.locator('td').first().innerText())}.png`) });
+    }
+    await sharp.close();
+    const small = await browser.newPage({ viewport: { width: 500, height: 900 }, colorScheme: 'dark', deviceScaleFactor: 4 });
+    await small.goto(`${base}?view=portraits&set=forms&small=1`);
+    await small.waitForFunction(() => window.ready === true);
+    await small.locator('table').screenshot({ path: resolve(out, 'forms-portraits-small.png') });
+    await small.close();
+    const tall = await browser.newPage({ viewport: { width: 1280, height: 2 * 420 + 100 }, colorScheme: 'dark' });
+    for (const angle of ['front', 'three', 'side']) {
+      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=body&set=forms&fit=drawn`);
+      await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
+      await tall.locator('#root > div').screenshot({ path: resolve(out, `forms-figures-${angle}.png`) });
+    }
+    await tall.close();
+    // The live room's size (10 x 10 m), everyone standing apart; the Dollhouse at 960 px.
+    const room = 'view=room&set=forms&size=10&places=-3,2;-1.5,0;0.5,0;2.5,0;-3,-2.5;-1.5,-2.5;3.5,2.5;1.5,3&mode=dollhouse&width=960';
+    const view = await browser.newPage({ viewport: { width: 1000, height: 800 }, colorScheme: 'dark' });
+    view.on('pageerror', (e) => errors.push(e.message));
+    const go = async () => {
+      await view.goto(`${base}?${room}`);
+      await view.waitForFunction(() => window.ready === true);
+      await view.waitForTimeout(300);
+      return view.locator('.room-layout-3d');
+    };
+    const report = async (tag) => {
+      const r = await view.evaluate(() => window.labelReport());
+      console.log(tag, JSON.stringify({ camera: r.camera?.map((n) => Math.round(n * 100) / 100), labels: r.labels.map((l) => ({ id: l.id, text: l.text, box: [l.x0, l.y0, l.x1, l.y1].map(Math.round) })) }));
+      return r;
+    };
+    let pic = await go();
+    await pic.screenshot({ path: resolve(out, 'forms-doll.png') });
+    await report('forms-doll');
+    // The wheel 8 px under each animal's label, 20 notches, then a quarter turn with the arrow keys.
+    for (const id of ['#p1', '#p2', '#p3', '#p4', '#p0']) {
+      pic = await go();
+      const frame = await pic.boundingBox();
+      const start = await view.evaluate(() => window.labelReport());
+      const label = start.labels.find((l) => l.id === id);
+      if (!label) {
+        console.log(`forms-zoom ${id}: no label shown`);
+        continue;
+      }
+      await view.mouse.move(frame.x + (label.x0 + label.x1) / 2, frame.y + label.y1 + 8);
+      for (let i = 0; i < 20; i++) {
+        await view.mouse.wheel(0, -100);
+        await view.waitForTimeout(20);
+      }
+      await view.waitForTimeout(200);
+      const tag = `forms-zoom-${id.slice(1)}`;
+      await pic.screenshot({ path: resolve(out, `${tag}.png`) });
+      await report(tag);
+      await pic.focus();
+      for (let i = 0; i < 9; i++) await view.keyboard.press('ArrowLeft');
+      await view.waitForTimeout(200);
+      await pic.screenshot({ path: resolve(out, `${tag}-turn90.png`) });
+      await report(`${tag}-turn90`);
+    }
+    await view.close();
+  }
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans && !forms) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -460,7 +530,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans) {
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans && !forms) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');
