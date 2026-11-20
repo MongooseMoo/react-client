@@ -79,7 +79,7 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 | `label` | The shortest phrase that tells this person from the others present, worked out by the server for this recipient: "the tall man", "the red-haired woman", "the woman in navy", or "a woman" when nobody else is present. Shown as text; the client never computes one. |
 | `posture` | `standing`, `sitting` or `reclining`. |
 | `body_plan`, `traits` | Species or body plan, and traits. The figure adds parts for `tail`, `wings`, `antlers` and `horns`; `pointed ears` draws the ears pointed, as `face.ears` `pointed` does. The wire gives these no colour: horns and antlers are drawn in one bone tone (`#d6c9a8`), wings and tail in the hair colour (the skin's when there is no hair). How `body_plan` is drawn is in "Body plans" below. |
-| `covering` | Optional, for a form: `skin`, `fur`, `scales`, `feathers` or `stone`. Used only for a body plan below, and only when no `skin` colour is sent and it differs from the plan's own covering: the body is then drawn in that covering's tone. |
+| `covering` | Sent only while a whole-body form is active: the form's own look, `{"kind": "fur", "colours": [{"name": "grey", "hex": "#9a9893"}, {"name": "dark brown", "hex": "#3b2417"}]}`. `kind` is `skin`, `fur`, `hide`, `feathers`, `scales` or `crystal`; `colours` holds one to three palette colours, main first. How a body plan uses them is in "Body plans" below. The form's `eyes` come in `eyes`. |
 | `build` | `average`, `slender`, `thin`, `athletic`, `muscular`, `curvy`, `stocky`, `chunky`, `pudgy` or `dumpy`; anything else is drawn as average. The figure's shoulders, waist, hips and limbs follow it; the portrait shows it in the shoulders, neck and fullness of the face. |
 | `age_years` | A child's head is drawn larger for their height. |
 | `skin`, `eyes` | Colours. Without `skin`, a person is drawn in a neutral light warm grey (`#b9b0a6`), the same in the portrait, the 3D figure and the plan token; it is not a human skin tone. |
@@ -96,8 +96,9 @@ unremarkable.
 
 ### Body plans
 
-A character in a whole-body form arrives with the form's species as `body_plan` and none of their own
-record (no `skin`, `eyes`, `hair`, `facial_hair`, `face`, `features`, `build` or `age_years`). The 3D figure
+A character in a whole-body form arrives with the form's species as `body_plan`, none of their own
+record (no `skin`, `hair`, `facial_hair`, `face`, `features`, `build` or `age_years`), and the form's look in
+`covering` and `eyes`. The one exception is the shark head (below), built on the person's own body. The 3D figure
 (Dollhouse and Your eyes), the plan token and the portrait (People list, player card) all follow the same rules:
 
 - No `body_plan`, or `"human body"`: the human figure, exactly as described above.
@@ -112,8 +113,23 @@ record (no `skin`, `eyes`, `hair`, `facial_hair`, `face`, `features`, `build` or
 - Any other plan: a plain rounded pillar sized by the box, in the plain person colour (you in blue); the plan token is
   the plain person token and the portrait a plain grey silhouette. No human skin, hair or eye colour is filled in.
 
-For a body plan the figure reads none of a human record and fills in no neutral skin or clothing. The plan's own
-colours are used unless the wire sends the form's: `skin` and `eyes` colours, and `covering` as above. `garments`
+For a body plan the figure reads no hair, facial hair, face or features and fills in no neutral skin or clothing.
+Colours come from the form's look; each plan has its own colours for whatever is not sent:
+
+- `covering.colours[0]` is the body's colour (fur, skin, hide, feathers, scales or crystal).
+- The second and third colours go where the plan has a natural place for them, in order: the werewolf's muzzle and
+  jaw (and the ruff in the portrait), the zombie's sunken lids and mouth, the rakghoul's jaw, the primate's bare face, quartz's light-catching
+  facets and spur, the shark's underside; the mallard's head, then its wings; the song bird's breast, then its wings
+  and tail; the snake's bands. When only the main colour is sent, the werewolf, zombie, rakghoul, primate, quartz
+  and snake draw that place in a lighter or darker tone of it; the mallard and song bird keep their own breast colour.
+- `covering.kind`: `fur` gives a bushy tail, `crystal` cuts any humanoid body into flat facets; the others are smooth.
+- `eyes` colours the eyes.
+- A colour that is missing or not a `#rrggbb` leaves that place to the plan's own colour; positions do not shift.
+- The shark head (`human with a transfigured shark head`) covers only the head: its body is the person's own, drawn
+  from the record's `skin`, `build` and `garments`, and `covering` colours only the shark's head (main colour) and
+  underside (second). `age_years` changes nothing, since it only sizes a human head.
+
+`garments`
 are drawn on humanoid plans when sent; `traits` add their parts to humanoid plans; `posture` applies to humanoid
 plans (animals always stand). The portrait shows `marks` on humanoid plans' heads. Accessible names and titles still
 come from `label` ("a werewolf"); the client adds no words of its own for a body plan.

@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { BODY_PLANS, COVERING_TONE, HUMAN_PLAN, resolvePlan } from "./bodyPlan";
+import { BODY_PLANS, HUMAN_PLAN, resolvePlan } from "./bodyPlan";
 import { PLAN_CHARACTERS } from "./bodyPlans.fixture";
 import { TEST_CHARACTERS } from "./characters.fixture";
 import { figureFills, figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN, tokenColours } from "./figure";
@@ -33,7 +33,8 @@ describe("body plans: figure parameters", () => {
       expect(p.hair, plan).toBe("none");
       expect(p.facialHair, plan).toBe("none");
       expect(p.features, plan).toEqual([]);
-      expect(p.build, plan).toBe("average");
+      // Only the shark head, whose body is the person's own, keeps the record's build.
+      expect(p.build, plan).toBe(plan === "human with a transfigured shark head" ? "muscular" : "average");
       const fills = figureFills(p);
       expect(fills.has(NEUTRAL_SKIN) && plan !== "human with a transfigured shark head", plan).toBe(false);
       expect(fills.has(NEUTRAL_CLOTHING), plan).toBe(false);
@@ -49,14 +50,56 @@ describe("body plans: figure parameters", () => {
     expect(figureParams(form("mallard duck"), { height: 0.4 }).colours.head).toBe("#1f5e3a");
   });
 
-  it("puts a form's sent skin and eyes over the plan's, and a sent covering's tone when no skin is sent", () => {
-    const own = figureParams(form("werewolf", { skin: { hex: "#E8E4DC" }, eyes: { hex: "#3d6fb6" } }), { height: 2 });
-    expect(own.colours.skin).toBe("#e8e4dc");
-    expect(own.colours.eyes).toBe("#3d6fb6");
-    expect(resolvePlan(form("zombie", { covering: "scales" }))).toMatchObject({ covering: "scales", skin: COVERING_TONE.scales });
-    // The plan's own covering, a bad colour or an unknown covering change nothing.
-    expect(resolvePlan(form("werewolf", { covering: "fur", skin: { hex: "red" } }))).toMatchObject({ skin: BODY_PLANS.werewolf.skin });
-    expect(resolvePlan(form("werewolf", { covering: 7 }))).toMatchObject({ covering: "fur", skin: BODY_PLANS.werewolf.skin });
+  it("draws the body in the covering's main colour and the eyes in the sent eyes", () => {
+    const own = figureParams(form("werewolf", { covering: { kind: "fur", colours: [{ hex: "#9A9893" }, { hex: "#3b2417" }] }, eyes: { hex: "#c08a1e" } }), { height: 2 });
+    expect(own.colours.skin).toBe("#9a9893");
+    expect(own.colours.torso).toBe("#9a9893");
+    expect(own.colours.eyes).toBe("#c08a1e");
+    // The second colour goes to the werewolf's muzzle and jaw.
+    expect(own.plan).toMatchObject({ accent: "#3b2417" });
+  });
+
+  it("puts a mallard's second and third colours on its head and wings", () => {
+    const duck = resolvePlan(form("mallard duck", { covering: { kind: "feathers", colours: [{ hex: "#6f4a2e" }, { hex: "#2e6b3a" }, { hex: "#8c8c8c" }] } }));
+    expect(duck).toMatchObject({ skin: "#6f4a2e", head: "#2e6b3a", wing: "#8c8c8c", accent: BODY_PLANS["mallard duck"].accent });
+    expect(tokenColours(form("mallard duck", { covering: { colours: [{ hex: "#6f4a2e" }, { hex: "#2e6b3a" }] } }))).toEqual({ body: "#6f4a2e", head: "#2e6b3a" });
+  });
+
+  it("tones the accent from the main colour when only one colour is sent, where the plan says so", () => {
+    const snake = resolvePlan(form("snake", { covering: { kind: "scales", colours: [{ hex: "#8a5a32" }] } }));
+    expect(snake).toMatchObject({ skin: "#8a5a32" });
+    expect(snake.kind === "animal" && snake.accent).not.toBe(BODY_PLANS.snake.accent);
+    // A song bird keeps its orange breast.
+    expect(resolvePlan(form("song bird", { covering: { colours: [{ hex: "#8a5a32" }] } }))).toMatchObject({ accent: BODY_PLANS["song bird"].accent });
+  });
+
+  it("keeps the plan's defaults for anything missing or wrong in the sent look, by position", () => {
+    expect(resolvePlan(form("werewolf", { covering: "fur" }))).toMatchObject({ covering: "fur", skin: BODY_PLANS.werewolf.skin, accent: BODY_PLANS.werewolf.accent });
+    expect(resolvePlan(form("werewolf", { covering: { kind: "velvet", colours: [{ hex: "red" }, { hex: "#3b2417" }] } }))).toMatchObject({
+      covering: "fur",
+      skin: BODY_PLANS.werewolf.skin,
+      accent: "#3b2417",
+    });
+    expect(resolvePlan(form("mallard duck", { covering: { colours: [null, null, { hex: "#8c8c8c" }] } }))).toMatchObject({ skin: BODY_PLANS["mallard duck"].skin, wing: "#8c8c8c" });
+    // A form's record `skin` is not its covering.
+    expect(resolvePlan(form("zombie", { skin: { hex: "#e8e4dc" } }))).toMatchObject({ skin: BODY_PLANS.zombie.skin });
+  });
+
+  it("takes the covering's kind: crystal facets any humanoid plan", () => {
+    expect(resolvePlan(form("zombie", { covering: { kind: "crystal" } }))).toMatchObject({ covering: "crystal" });
+  });
+
+  it("draws the shark head's human body from the person's own skin, build and garments, and only its head from the form", () => {
+    const p = figureParams(PLAN_CHARACTERS.find((ch) => ch.name === "shark head, own body")?.appearance, { height: 1.85 });
+    expect(p.colours.skin).toBe("#3a312a");
+    expect(p.colours.neck).toBe("#3a312a");
+    expect(p.colours.torso).toBe("#ceb301");
+    expect(p.colours.head).toBe("#7f8a8f");
+    expect(p.build).toBe("muscular");
+    expect(p.shoulderHalf).toBeCloseTo(0.2 * (1.85 / 1.75) * 1.25, 5);
+    expect(p.hair).toBe("none");
+    // Other plans ignore a record build.
+    expect(figureParams(form("zombie", { build: "muscular" }), { height: 1.75 }).build).toBe("average");
   });
 
   it("keeps garments sent on a humanoid plan, and invents none", () => {

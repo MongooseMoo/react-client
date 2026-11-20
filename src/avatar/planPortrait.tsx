@@ -131,6 +131,7 @@ function animalPortrait(p: FigureParams, plan: AnimalPlan): React.ReactNode[] {
       return [
         <path key="tail" className="avatar-tail" fill={overlayHex(plan.skin, INK_DARK, 0.65)} {...line} d="M10,52 L2,45 L12,48 Z" />,
         <ellipse key="body" className="avatar-body" cx={30} cy={54} rx={22} ry={12} fill={plan.skin} {...line} />,
+        <ellipse key="wing" className="avatar-wing" cx={24} cy={51} rx={14} ry={6} transform="rotate(-6 24 51)" fill={plan.wing} {...line} />,
         <ellipse key="breast" className="avatar-breast" cx={41} cy={50} rx={10} ry={10} fill={plan.accent} {...line} />,
         <path key="neck" className="avatar-neck" fill={plan.head} {...line} d="M31,24 L39,24 L41,44 L31,44 Z" />,
         <path key="ring" className="avatar-ring" fill={RING} d="M31,39.5 L40.5,39.5 L40.8,42.5 L31,42.5 Z" />,
@@ -140,11 +141,11 @@ function animalPortrait(p: FigureParams, plan: AnimalPlan): React.ReactNode[] {
       ];
     case "songbird":
       return [
-        <path key="tail" className="avatar-tail" fill={plan.head} {...line} d="M15,44 L2,55 L8,59 L21,50 Z" />,
+        <path key="tail" className="avatar-tail" fill={plan.wing} {...line} d="M15,44 L2,55 L8,59 L21,50 Z" />,
         <path key="legs" className="avatar-leg" fill="none" stroke={plan.feet} strokeWidth={1.4} strokeLinecap="round" d="M28,50 L27,60 M33,50 L34,60" />,
         <ellipse key="body" className="avatar-body" cx={28} cy={40} rx={15} ry={12} fill={plan.skin} {...line} />,
         <ellipse key="breast" className="avatar-breast" cx={35} cy={43} rx={9} ry={9} fill={plan.accent} {...line} />,
-        <ellipse key="wing" className="avatar-wing" cx={24} cy={38} rx={9} ry={5.5} transform="rotate(-15 24 38)" fill={plan.head} {...line} />,
+        <ellipse key="wing" className="avatar-wing" cx={24} cy={38} rx={9} ry={5.5} transform="rotate(-15 24 38)" fill={plan.wing} {...line} />,
         <circle key="head" className="avatar-head" cx={38} cy={24} r={9.5} fill={plan.head} {...line} />,
         <path key="beak" className="avatar-beak" fill={plan.beak} {...line} d="M46.5,22 L53,24.5 L46.5,27 Z" />,
         <circle key="eye" className="avatar-eye" cx={41} cy={22.5} r={1.5} fill={plan.eyes} />,

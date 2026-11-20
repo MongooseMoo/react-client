@@ -39,7 +39,7 @@ export function placeholderParts(p: FigureParams): Part[] {
 }
 
 /**
- * Flat facets for stone: each triangle its own, with a flat normal, and every few a step toward `tone`, so the body
+ * Flat facets for a crystal covering: each triangle its own, with a flat normal, and every few a step toward `tone`, so the body
  * reads as cut crystal rather than smooth skin.
  */
 function faceted(part: Part, tone: string): Part {
@@ -139,7 +139,7 @@ function humanoidParts(p: FigureParams, plan: HumanoidPlan): Part[] {
   const c = p.colours;
   const H = p.height;
   const s = H / 1.75;
-  const crystal = plan.covering === "stone";
+  const crystal = plan.covering === "crystal";
   const sitting = p.posture === "sitting";
   const legTop = H * p.legShare;
   const seat = 0.26 * H;
@@ -260,6 +260,8 @@ function duckParts(plan: AnimalPlan): Part[] {
   const parts: Part[] = [
     named(ball(v(0, -0.02, 0.32), 0.2, plan.skin, v(1.1, 2.05, 0.95), 12), "body"),
     named(ball(v(0, 0.24, 0.3), 0.17, plan.accent, v(1.05, 1, 1.05), 10), "breast"),
+    // Folded wings along the upper sides of the body.
+    ...[-1, 1].map((side) => named(ball(v(side * 0.16, -0.08, 0.38), 0.13, plan.wing, v(0.55, 2.1, 0.75), 10), "wing")),
     named(cone(v(0, -0.38, 0.37), v(0, -1, 0.4).normalize(), 0.09, 0.17, tail, 5), "tail"),
     named(limb(v(0, 0.3, 0.42), v(0, 0.36, 0.6), 0.065, plan.head, false), "neck"),
     named(placed(new THREE.TorusGeometry(0.068, 0.014, 3, 10), "#f2f0ea", v(0, 0.31, 0.45)), "ring"),
@@ -281,9 +283,9 @@ function songbirdParts(plan: AnimalPlan): Part[] {
     named(ball(v(0, 0.1, 0.38), 0.16, plan.accent, v(0.9, 0.9, 1.05), 10), "breast"),
     named(ball(v(0, 0.2, 0.66), 0.14, plan.head, undefined, 10), "head"),
     named(cone(v(0, 0.32, 0.66), v(0, 1, -0.1).normalize(), 0.035, 0.1, plan.beak, 5), "beak"),
-    named(block(v(0, -0.36, 0.5), v(0.14, 0.28, 0.03), plan.head, new THREE.Euler(-0.45, 0, 0)), "tail"),
+    named(block(v(0, -0.36, 0.5), v(0.14, 0.28, 0.03), plan.wing, new THREE.Euler(-0.45, 0, 0)), "tail"),
     ...[-1, 1].map((side) => named(ball(v(side * 0.1, 0.27, 0.7), 0.02, plan.eyes, undefined, 6), "eye")),
-    ...[-1, 1].map((side) => named(ball(v(side * 0.15, -0.04, 0.46), 0.12, plan.head, v(0.35, 1.5, 0.8), 8), "wing")),
+    ...[-1, 1].map((side) => named(ball(v(side * 0.15, -0.04, 0.46), 0.12, plan.wing, v(0.35, 1.5, 0.8), 8), "wing")),
   ];
   for (const side of [-1, 1]) {
     parts.push(named(limb(v(side * 0.05, 0.02, 0.22), v(side * 0.05, 0.04, 0.02), 0.012, plan.feet, false), "leg"));

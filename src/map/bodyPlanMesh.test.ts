@@ -38,11 +38,35 @@ describe("body plan figures", () => {
     expect(names("shark head")).toEqual(expect.arrayContaining(["snout", "underside", "fin", "gill"]));
   });
 
-  it("draws stone as flat facets shaded toward the plan's light tone", () => {
+  it("draws a crystal covering as flat facets shaded toward the accent: the plan's, or the sent second colour", () => {
     for (const part of planParts(params("quartz"))) {
       expect(part.tone).toBe("#f4f8fc");
       expect(part.shade?.length).toBe(part.geometry.getAttribute("position").count);
     }
+    for (const part of planParts(params("quartz, sent look"))) expect(part.tone).toBe("#8c8c8c");
+    expect(planParts(params("zombie")).every((part) => part.tone === undefined)).toBe(true);
+  });
+
+  it("colours a duck's wings and head from the sent look", () => {
+    const parts = planParts(params("duck, sent look"));
+    expect(parts.filter((x) => x.name === "wing").map((x) => x.colour)).toEqual(["#8c8c8c", "#8c8c8c"]);
+    expect(parts.find((x) => x.name === "head")?.colour).toBe("#2e6b3a");
+    expect(parts.find((x) => x.name === "body")?.colour).toBe("#6f4a2e");
+  });
+
+  it("gives a fur covering a bushy tail and others a thin one", () => {
+    const tail = (appearance: Record<string, unknown>) => {
+      const part = planParts(figureParams(appearance, { height: 2 })).find((x) => x.name === "tail");
+      const box = new THREE.Box3().setFromBufferAttribute(part?.geometry.getAttribute("position") as THREE.BufferAttribute);
+      return box.max.x - box.min.x;
+    };
+    expect(tail({ body_plan: "werewolf" })).toBeGreaterThan(tail({ body_plan: "werewolf", covering: { kind: "scales" } }) * 1.3);
+  });
+
+  it("draws the shark head's body like the person's and its head in the form's grey", () => {
+    const parts = planParts(params("shark head, own body"));
+    expect(parts.find((x) => x.name === "snout")?.colour).toBe("#7f8a8f");
+    expect(parts.filter((x) => x.name === "arm").map((x) => x.colour)).toEqual(["#ceb301", "#ceb301"]);
   });
 
   it("stands a humanoid's crown at the box's top and leans a hunched plan forward", () => {

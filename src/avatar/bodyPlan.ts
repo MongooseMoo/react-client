@@ -1,42 +1,57 @@
-import { colourHex } from "./colour";
+import { colourHex, INK_DARK, INK_LIGHT, overlayHex } from "./colour";
 import type { BuildShape, Ears, ExtraPart } from "./figure";
 
 /**
  * Body plans: how a person whose `body_plan` is not "human body" is drawn. The game sends a whole-body form's
- * species as `body_plan` ("werewolf", "mallard duck") and none of the character's own record (no skin, hair, eyes,
- * face or build), so these entries hold each plan's own look. Adding or changing a plan is one entry here; the 3D
- * figure (src/map/bodyPlanMesh.ts), the portrait (planPortrait.tsx) and the plan token read the entry.
- * Imports no three.js.
+ * species as `body_plan` ("werewolf", "mallard duck"), none of the character's own record (no skin, hair, eyes,
+ * face or build), and the form's own look as `covering` and `eyes`. These entries hold each plan's shape and the
+ * colours used when the form sends none. Adding or changing a plan is one entry here; the 3D figure
+ * (src/map/bodyPlanMesh.ts), the portrait (planPortrait.tsx) and the plan token read the entry. Imports no three.js.
  */
 
 /** The body plan the game sends for a character in no form; it, or no `body_plan` at all, draws the human figure. */
 export const HUMAN_PLAN = "human body";
 
-/** What covers a body. The wire may send one for a form (`covering`); it picks a colour only when no `skin` is sent. */
-export const COVERINGS = ["skin", "fur", "scales", "feathers", "stone"] as const;
+/**
+ * What covers a body: `covering.kind` on the wire (`$appearance.vocab["covering"]`). `fur` gives a bushy tail and
+ * `crystal` flat cut facets; the others are drawn smooth.
+ */
+export const COVERINGS = ["skin", "fur", "hide", "feathers", "scales", "crystal"] as const;
 export type Covering = (typeof COVERINGS)[number];
-/** A covering's colour, for a form whose `covering` differs from its plan's and that sends no `skin`. */
-export const COVERING_TONE: Readonly<Record<Covering, string>> = {
-  skin: "#b9b0a6",
-  fur: "#6f6151",
-  scales: "#5f6b3c",
-  feathers: "#8a7258",
-  stone: "#c8cdd2",
-};
+
+/** Where a plan puts the covering's second and third colours, in order. */
+export type ColourSlot = "accent" | "head" | "wing";
 
 /** The head a humanoid plan wears on the human skeleton. */
 export type PlanHead = "wolf" | "slack" | "ghoul" | "primate" | "crystal" | "shark";
 
-export interface HumanoidPlan {
-  kind: "humanoid";
-  /** The body's colour: fur, skin or stone. */
-  skin: string;
+/** How a plan's sent colours land, shared by humanoid and animal plans. */
+interface PlanColours {
   covering: Covering;
   eyes: string;
-  /** A second colour: the muzzle and chest, the face patch, the jaw, a shark's underside. */
+  /** A second colour: a muzzle, face patch, jaw, underside, breast or band. */
   accent: string;
+  /** The covering's second and third colours go to these, in order. */
+  secondary: ColourSlot[];
+  /**
+   * With a covering colour sent and no colour sent for the accent, the accent is this tone of the covering's main
+   * colour (a werewolf's lighter muzzle, a snake's darker bands). Without it the plan's own accent stays (a song
+   * bird's orange breast).
+   */
+  accentTone?: "darker" | "lighter";
+}
+
+export interface HumanoidPlan extends PlanColours {
+  kind: "humanoid";
+  /** The body's colour: fur, skin or crystal. */
+  skin: string;
   /** The head's own colour, when it is not the body's (a shark head on a human body). */
   headColour?: string;
+  /**
+   * `head`: the form covers only the head; the body is the person's own, drawn from the record's `skin`, `build` and
+   * `garments` (the shark head). The covering's main colour is then the head's.
+   */
+  covers: "body" | "head";
   head: PlanHead;
   /** How far the upper body leans forward from the hips, radians. */
   hunch: number;
@@ -60,19 +75,17 @@ export interface HumanoidPlan {
 
 export type AnimalKind = "duck" | "snake" | "songbird";
 
-export interface AnimalPlan {
+export interface AnimalPlan extends PlanColours {
   kind: "animal";
   animal: AnimalKind;
-  covering: Covering;
   /** The body's colour. */
   skin: string;
   head: string;
-  /** Breast, belly or pattern. */
-  accent: string;
+  /** The folded wings (duck and bird). */
+  wing: string;
   /** Bill or beak. */
   beak: string;
   feet: string;
-  eyes: string;
 }
 
 export type PlanSpec = HumanoidPlan | AnimalPlan;
@@ -88,6 +101,10 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     kind: "humanoid",
     skin: "#7a6b5a",
     covering: "fur",
+    covers: "body",
+    // The covering's second colour: the muzzle and jaw (and the ruff in the portrait).
+    secondary: ["accent"],
+    accentTone: "lighter",
     eyes: "#d9a326",
     accent: "#b8a68e",
     head: "wolf",
@@ -106,6 +123,10 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     kind: "humanoid",
     skin: "#8b9a7a",
     covering: "skin",
+    covers: "body",
+    // The covering's second colour: the sunken lids and the open mouth.
+    secondary: ["accent"],
+    accentTone: "darker",
     eyes: "#d8d6b8",
     accent: "#5e6b52",
     head: "slack",
@@ -123,7 +144,11 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
   rakghoul: {
     kind: "humanoid",
     skin: "#dcd5c6",
-    covering: "skin",
+    covering: "hide",
+    covers: "body",
+    // The covering's second colour: the heavy jaw.
+    secondary: ["accent"],
+    accentTone: "darker",
     eyes: "#8c2a1e",
     accent: "#c4bba8",
     head: "ghoul",
@@ -142,6 +167,10 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     kind: "humanoid",
     skin: "#3d3029",
     covering: "fur",
+    covers: "body",
+    // The covering's second colour: the bare face, muzzle and ears.
+    secondary: ["accent"],
+    accentTone: "lighter",
     eyes: "#6b4a2a",
     accent: "#8f7461",
     head: "primate",
@@ -159,7 +188,11 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
   "quartz-crystallized body": {
     kind: "humanoid",
     skin: "#d5dde6",
-    covering: "stone",
+    covering: "crystal",
+    covers: "body",
+    // The covering's second colour: the facets that catch the light and the crystal spur.
+    secondary: ["accent"],
+    accentTone: "lighter",
     eyes: "#6f8fae",
     accent: "#f4f8fc",
     head: "crystal",
@@ -176,8 +209,12 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
   },
   "human with a transfigured shark head": {
     kind: "humanoid",
+    // The human body's colour when the record sends no `skin`: the figure code's neutral skin.
     skin: "#b9b0a6",
     covering: "skin",
+    covers: "head",
+    // The covering's main colour is the shark's grey; its second, the white underside.
+    secondary: ["accent"],
     eyes: "#111111",
     accent: "#eceae4",
     headColour: "#7d8b96",
@@ -197,8 +234,11 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     kind: "animal",
     animal: "duck",
     covering: "feathers",
+    // The covering's second colour is the green head, its third the grey wings (the game sends brown, green, grey).
+    secondary: ["head", "wing"],
     skin: "#8f8272",
     head: "#1f5e3a",
+    wing: "#9a9690",
     accent: "#6b3b26",
     beak: "#e0b22e",
     feet: "#e07a1f",
@@ -208,8 +248,12 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     kind: "animal",
     animal: "snake",
     covering: "scales",
+    // The covering's second colour: the bands.
+    secondary: ["accent"],
+    accentTone: "darker",
     skin: "#5f6b32",
     head: "#55602c",
+    wing: "#5f6b32",
     accent: "#3e4721",
     beak: "#b8323a",
     feet: "#5f6b32",
@@ -219,8 +263,11 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     kind: "animal",
     animal: "songbird",
     covering: "feathers",
+    // The covering's second colour: the breast; its third, the wings and tail.
+    secondary: ["accent", "wing"],
     skin: "#7a5a3c",
     head: "#6e5034",
+    wing: "#6e5034",
     accent: "#d5793a",
     beak: "#3a3226",
     feet: "#5a4a3c",
@@ -228,7 +275,7 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
   },
 };
 
-/** A plan with the wire's colours for the form put over its own (`skin`, `eyes`, `covering`). */
+/** A plan with the wire's colours for the form put over its own (`covering`, `eyes`, and for `covers: "head"`, `skin`). */
 export type ResolvedPlan =
   | { kind: "human" }
   | { kind: "unknown"; name: string }
@@ -242,17 +289,33 @@ export function bodyPlanName(record: Record<string, unknown>): string {
 
 /**
  * How to draw this appearance record. A missing `body_plan` or "human body" is the human figure. A plan in
- * BODY_PLANS gets its own look, with a sent `skin` colour (or, without one, a sent `covering` other than the plan's
- * own) and a sent `eyes` colour over its defaults. Any other plan is unknown: a placeholder, with no colour invented.
+ * BODY_PLANS gets its own look with the form's sent look over its defaults: `covering.kind`; `covering.colours`, the
+ * first for the body (the head for a plan covering only the head) and the rest into the plan's `secondary` slots in
+ * order; `eyes`. A plan covering only the head draws its body in the record's `skin`. Each colour is taken by its
+ * position; one that is missing or not a colour leaves that place to the plan's default. Any other plan is unknown:
+ * a placeholder, with no colour invented.
  */
 export function resolvePlan(record: Record<string, unknown>): ResolvedPlan {
   const name = bodyPlanName(record);
   if (name === HUMAN_PLAN) return { kind: "human" };
   const spec = Object.hasOwn(BODY_PLANS, name) ? BODY_PLANS[name] : undefined;
   if (!spec) return { kind: "unknown", name };
-  const coveringWord = typeof record.covering === "string" ? record.covering.trim().toLowerCase() : "";
-  const covering = (COVERINGS as readonly string[]).includes(coveringWord) ? (coveringWord as Covering) : spec.covering;
-  const skin = colourHex(record.skin) ?? (covering !== spec.covering ? COVERING_TONE[covering] : spec.skin);
+  const sent = record.covering !== null && typeof record.covering === "object" && !Array.isArray(record.covering) ? (record.covering as Record<string, unknown>) : {};
+  const covering = (COVERINGS as readonly string[]).includes(sent.kind as string) ? (sent.kind as Covering) : spec.covering;
+  const hexes = (Array.isArray(sent.colours) ? sent.colours : []).slice(0, 3).map(colourHex);
+  const main = hexes[0];
   const eyes = colourHex(record.eyes) ?? spec.eyes;
-  return { ...spec, name, covering, skin, eyes };
+  const slots: Partial<Record<ColourSlot, string>> = {};
+  spec.secondary.forEach((slot, i) => {
+    const hex = hexes[i + 1];
+    if (hex) slots[slot] = hex;
+  });
+  const accent = slots.accent ?? (main && spec.accentTone ? overlayHex(main, spec.accentTone === "darker" ? INK_DARK : INK_LIGHT, 0.35) : spec.accent);
+  if (spec.kind === "animal") {
+    return { ...spec, name, covering, eyes, accent, skin: main ?? spec.skin, head: slots.head ?? spec.head, wing: slots.wing ?? spec.wing };
+  }
+  if (spec.covers === "head") {
+    return { ...spec, name, covering, eyes, accent, skin: colourHex(record.skin) ?? spec.skin, headColour: main ?? spec.headColour };
+  }
+  return { ...spec, name, covering, eyes, accent, skin: main ?? spec.skin };
 }

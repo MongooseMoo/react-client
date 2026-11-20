@@ -472,10 +472,11 @@ function outlineSeams(colours: FigureColours, jaw: string | undefined): Seam[] {
 }
 
 /**
- * A person in a body plan other than the human one. None of a human record is read: no hair, facial hair, face,
- * features, build or age (the game sends none for a whole-body form), and no neutral skin or clothing is filled in.
- * A humanoid plan keeps `garments` when sent, `traits` parts and `posture`; an animal plan and an unknown plan's
- * placeholder are sized by the box (`footprint` and `height`) and always stand.
+ * A person in a body plan other than the human one. No hair, facial hair, face or features are read, and no neutral
+ * skin or clothing is filled in; colours come from the form's `covering` and `eyes` (resolvePlan). A plan covering only
+ * the head (the shark head) draws the body from the record's `skin` and `build`. A humanoid plan keeps `garments` when
+ * sent, `traits` parts and `posture`; an animal plan and an unknown plan's placeholder are sized by the box
+ * (`footprint` and `height`) and always stand.
  */
 function planParams(record: Record<string, unknown>, plan: Exclude<ResolvedPlan, { kind: "human" }>, rawHeight: number, base: string | undefined, footprint: Footprint | undefined): FigureParams {
   const height = Math.min(4, Math.max(0.05, Number.isFinite(rawHeight) ? rawHeight : 1.75));
@@ -488,7 +489,7 @@ function planParams(record: Record<string, unknown>, plan: Exclude<ResolvedPlan,
   const colours: FigureColours = {
     skin: main,
     head: worn.head ?? head,
-    neck: worn.neck ?? (humanoid?.headColour ?? main),
+    neck: worn.neck ?? main,
     torso: worn.torso ?? main,
     arms: worn.arms ?? main,
     hands: worn.hands ?? main,
@@ -509,7 +510,11 @@ function planParams(record: Record<string, unknown>, plan: Exclude<ResolvedPlan,
   const posture = humanoid && POSTURES.includes(word(record.posture) as Posture) ? (word(record.posture) as Posture) : "standing";
   const legShare = humanoid?.legShare ?? 0.47;
   const top = posture === "standing" ? height : posture === "sitting" ? height * (1 - legShare) + height * SEAT_SHARE : height * 0.16;
-  const shape = humanoid?.shape ?? BUILDS.average;
+  // A plan covering only the head (the shark head) keeps the person's own build; the head stays the form's, so
+  // `age_years`, which only sizes a human head, changes nothing here.
+  const buildName = vocabKey(record.build);
+  const ownBuild = humanoid?.covers === "head" && buildName !== undefined && Object.hasOwn(BUILDS, buildName) ? buildName : undefined;
+  const shape = ownBuild ? BUILDS[ownBuild] : (humanoid?.shape ?? BUILDS.average);
   return {
     described: true,
     height,
@@ -522,7 +527,7 @@ function planParams(record: Record<string, unknown>, plan: Exclude<ResolvedPlan,
     hipHalf: 0.16 * scale * shape.hips,
     limbRadius: 0.05 * scale * shape.limbs,
     legShare,
-    build: "average",
+    build: ownBuild ?? "average",
     colours,
     hair: "none",
     hairVolume: 1,
