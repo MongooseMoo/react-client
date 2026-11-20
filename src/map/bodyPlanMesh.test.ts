@@ -43,15 +43,15 @@ describe("body plan figures", () => {
       expect(part.tone).toBe("#f4f8fc");
       expect(part.shade?.length).toBe(part.geometry.getAttribute("position").count);
     }
-    for (const part of planParts(params("quartz, sent look"))) expect(part.tone).toBe("#8c8c8c");
+    for (const part of planParts(params("quartz, game look"))) expect(part.tone).toBe("#808080");
     expect(planParts(params("zombie")).every((part) => part.tone === undefined)).toBe(true);
   });
 
   it("colours a duck's wings and head from the sent look", () => {
-    const parts = planParts(params("duck, sent look"));
-    expect(parts.filter((x) => x.name === "wing").map((x) => x.colour)).toEqual(["#8c8c8c", "#8c8c8c"]);
-    expect(parts.find((x) => x.name === "head")?.colour).toBe("#2e6b3a");
-    expect(parts.find((x) => x.name === "body")?.colour).toBe("#6f4a2e");
+    const parts = planParts(params("mallard duck, game look"));
+    expect(parts.filter((x) => x.name === "wing").map((x) => x.colour)).toEqual(["#808080", "#808080"]);
+    expect(parts.find((x) => x.name === "head")?.colour).toBe("#2e7d32");
+    expect(parts.find((x) => x.name === "body")?.colour).toBe("#6b4423");
   });
 
   it("gives a fur covering a bushy tail and others a thin one", () => {
@@ -64,9 +64,9 @@ describe("body plan figures", () => {
   });
 
   it("draws the shark head's body like the person's and its head in the form's grey", () => {
-    const parts = planParts(params("shark head, own body"));
-    expect(parts.find((x) => x.name === "snout")?.colour).toBe("#7f8a8f");
-    expect(parts.filter((x) => x.name === "arm").map((x) => x.colour)).toEqual(["#ceb301", "#ceb301"]);
+    const parts = planParts(params("shark head, game look"));
+    expect(parts.find((x) => x.name === "snout")?.colour).toBe("#9a9893");
+    expect(parts.filter((x) => x.name === "arm").map((x) => x.colour)).toEqual(["#e8c547", "#e8c547"]);
   });
 
   it("stands a humanoid's crown at the box's top and leans a hunched plan forward", () => {

@@ -125,6 +125,7 @@ Colours come from the form's look; each plan has its own colours for whatever is
 - `covering.kind`: `fur` gives a bushy tail, `crystal` cuts any humanoid body into flat facets; the others are smooth.
 - `eyes` colours the eyes.
 - A colour that is missing or not a `#rrggbb` leaves that place to the plan's own colour; positions do not shift.
+  A `covering` sent as a plain word (`"fur"`) is taken as its kind alone; any other shape counts as not sent.
 - The shark head (`human with a transfigured shark head`) covers only the head: its body is the person's own, drawn
   from the record's `skin`, `build` and `garments`, and `covering` colours only the shark's head (main colour) and
   underside (second). `age_years` changes nothing, since it only sizes a human head.

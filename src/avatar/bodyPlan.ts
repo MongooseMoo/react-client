@@ -289,7 +289,8 @@ export function bodyPlanName(record: Record<string, unknown>): string {
 
 /**
  * How to draw this appearance record. A missing `body_plan` or "human body" is the human figure. A plan in
- * BODY_PLANS gets its own look with the form's sent look over its defaults: `covering.kind`; `covering.colours`, the
+ * BODY_PLANS gets its own look with the form's sent look over its defaults: `covering.kind` (or `covering` as a plain
+ * word); `covering.colours`, the
  * first for the body (the head for a plan covering only the head) and the rest into the plan's `secondary` slots in
  * order; `eyes`. A plan covering only the head draws its body in the record's `skin`. Each colour is taken by its
  * position; one that is missing or not a colour leaves that place to the plan's default. Any other plan is unknown:
@@ -300,7 +301,13 @@ export function resolvePlan(record: Record<string, unknown>): ResolvedPlan {
   if (name === HUMAN_PLAN) return { kind: "human" };
   const spec = Object.hasOwn(BODY_PLANS, name) ? BODY_PLANS[name] : undefined;
   if (!spec) return { kind: "unknown", name };
-  const sent = record.covering !== null && typeof record.covering === "object" && !Array.isArray(record.covering) ? (record.covering as Record<string, unknown>) : {};
+  // The wire's `{kind, colours}`; a plain word is taken as the kind alone; anything else counts as not sent.
+  const sent: Record<string, unknown> =
+    typeof record.covering === "string"
+      ? { kind: record.covering.trim().toLowerCase() }
+      : record.covering !== null && typeof record.covering === "object" && !Array.isArray(record.covering)
+        ? (record.covering as Record<string, unknown>)
+        : {};
   const covering = (COVERINGS as readonly string[]).includes(sent.kind as string) ? (sent.kind as Covering) : spec.covering;
   const hexes = (Array.isArray(sent.colours) ? sent.colours : []).slice(0, 3).map(colourHex);
   const main = hexes[0];

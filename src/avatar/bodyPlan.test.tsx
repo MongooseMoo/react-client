@@ -2,7 +2,7 @@ import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { BODY_PLANS, HUMAN_PLAN, resolvePlan } from "./bodyPlan";
-import { PLAN_CHARACTERS } from "./bodyPlans.fixture";
+import { GAME_LOOKS, PLAN_CHARACTERS } from "./bodyPlans.fixture";
 import { TEST_CHARACTERS } from "./characters.fixture";
 import { figureFills, figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN, tokenColours } from "./figure";
 import AvatarPortrait, { portraitElements } from "./portrait";
@@ -87,14 +87,39 @@ describe("body plans: figure parameters", () => {
 
   it("takes the covering's kind: crystal facets any humanoid plan", () => {
     expect(resolvePlan(form("zombie", { covering: { kind: "crystal" } }))).toMatchObject({ covering: "crystal" });
+    expect(resolvePlan(form("zombie", { covering: { kind: "hide" } }))).toMatchObject({ covering: "hide" });
+  });
+
+  it("takes a covering sent as a plain word as its kind, and anything else malformed as not sent", () => {
+    expect(resolvePlan(form("zombie", { covering: " Crystal " }))).toMatchObject({ covering: "crystal", skin: BODY_PLANS.zombie.skin });
+    for (const covering of [7, null, ["fur"], { kind: 3, colours: "grey" }, { colours: [{ hex: 5 }] }]) {
+      expect(resolvePlan(form("zombie", { covering })), JSON.stringify(covering)).toMatchObject({ covering: "skin", skin: BODY_PLANS.zombie.skin, accent: BODY_PLANS.zombie.accent });
+    }
+  });
+
+  it("draws every look the game stores today (section 1d) in its own colours, in each plan's places", () => {
+    const hex = (plan: string, i: number) => GAME_LOOKS[plan].covering.colours[i].hex;
+    for (const [plan, look] of Object.entries(GAME_LOOKS)) {
+      const p = figureParams(form(plan, look), { height: 1.75 });
+      if (plan === "human with a transfigured shark head") expect(p.colours.head, plan).toBe(hex(plan, 0));
+      else expect(p.colours.skin, plan).toBe(hex(plan, 0));
+      expect(p.colours.eyes, plan).toBe(look.eyes?.hex ?? (BODY_PLANS[plan] as { eyes: string }).eyes);
+      expect(p.plan, plan).toMatchObject({ covering: look.covering.kind });
+    }
+    // The second and third colours where each plan has a place for them.
+    expect(resolvePlan(form("werewolf", GAME_LOOKS.werewolf))).toMatchObject({ skin: "#9a9893", accent: "#3b2417" });
+    expect(resolvePlan(form("rakghoul", GAME_LOOKS.rakghoul))).toMatchObject({ skin: "#9a9893", accent: "#36454f", covering: "hide" });
+    expect(resolvePlan(form("quartz-crystallized body", GAME_LOOKS["quartz-crystallized body"]))).toMatchObject({ skin: "#f2f2f0", accent: "#808080", covering: "crystal" });
+    expect(resolvePlan(form("mallard duck", GAME_LOOKS["mallard duck"]))).toMatchObject({ skin: "#6b4423", head: "#2e7d32", wing: "#808080" });
   });
 
   it("draws the shark head's human body from the person's own skin, build and garments, and only its head from the form", () => {
-    const p = figureParams(PLAN_CHARACTERS.find((ch) => ch.name === "shark head, own body")?.appearance, { height: 1.85 });
+    const p = figureParams(PLAN_CHARACTERS.find((ch) => ch.name === "shark head, game look")?.appearance, { height: 1.85 });
     expect(p.colours.skin).toBe("#3a312a");
     expect(p.colours.neck).toBe("#3a312a");
-    expect(p.colours.torso).toBe("#ceb301");
-    expect(p.colours.head).toBe("#7f8a8f");
+    expect(p.colours.torso).toBe("#e8c547");
+    expect(p.colours.head).toBe("#9a9893");
+    expect(p.colours.eyes).toBe("#3a2412");
     expect(p.build).toBe("muscular");
     expect(p.shoulderHalf).toBeCloseTo(0.2 * (1.85 / 1.75) * 1.25, 5);
     expect(p.hair).toBe("none");
@@ -104,8 +129,8 @@ describe("body plans: figure parameters", () => {
 
   it("keeps garments sent on a humanoid plan, and invents none", () => {
     const dressed = figureParams(PLAN_CHARACTERS.find((ch) => ch.name === "zombie, dressed")?.appearance, { height: 1.75 });
-    expect(dressed.colours.torso).toBe("#653700");
-    expect(dressed.colours.legs).toBe("#6b6b6b");
+    expect(dressed.colours.torso).toBe("#6b4423");
+    expect(dressed.colours.legs).toBe("#808080");
     const bare = figureParams(form("zombie"), { height: 1.75 });
     expect(bare.colours.torso).toBe(BODY_PLANS.zombie.skin);
   });
