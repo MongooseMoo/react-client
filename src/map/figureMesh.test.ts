@@ -1539,4 +1539,31 @@ describe("round ten: where long curls and coils worn down meet the crown, chin-l
       expect(band, `curly 18 cm on ${skin}`).toBeLessThan(0.02);
     }
   });
+
+  it("keeps long curls' and coils' front edge forward beside the face down to the shoulders, so the lock beside the face meets the shoulder broad, not in a point", () => {
+    // (Shoulder-length and long: a waist-length fall's rows are too far apart there to follow the edge, see `Not done`.)
+    for (const texture of ["curly", "coily"]) {
+      for (const length_cm of [30, 50]) {
+        const { p, headR, headZ } = standing({ skin: { hex: "#292420" }, hair: { length_cm, texture, hex: "#1b1612" } });
+        const pos = figureParts(p).find((x) => x.name === "hair")?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        // The fall's front edge on one side (its last column, outer side), by height: how far forward it is (head radii).
+        const columns = texture === "curly" ? 16 : 20;
+        const edge = Array.from({ length: pos.count / 2 / (columns + 1) }, (_, iy) => {
+          const i = iy * (columns + 1) + columns;
+          return [(pos.getZ(i) - headZ) / headR, pos.getY(i) / headR];
+        });
+        const forwardAt = (dz: number) => {
+          const k = edge.findIndex((e) => e[0] <= dz);
+          const [a, b] = [edge[k - 1], edge[k]];
+          return a[1] + ((b[1] - a[1]) * (a[0] - dz)) / (a[0] - b[0]);
+        };
+        const cheek = Math.max(...edge.filter((e) => e[0] <= -0.35 && e[0] >= -0.75).map((e) => e[1]));
+        // Where the shoulder's top cuts the hair seen from the front and to one side, 1.1 head radii under the head's
+        // middle. Round nine's edge went back in toward the neck from 0.85, 0.15 to 0.2 behind the cheek by there, and
+        // the lock beside the face narrowed to a point where the shoulder cut it.
+        const shoulder = forwardAt(-1.1);
+        expect(cheek - shoulder, `${texture} ${length_cm} cm: cheek ${cheek.toFixed(2)} at the shoulder ${shoulder.toFixed(2)}`).toBeLessThan(0.1);
+      }
+    }
+  });
 });

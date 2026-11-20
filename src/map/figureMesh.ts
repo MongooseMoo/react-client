@@ -1210,7 +1210,11 @@ export function figureParts(p: FigureParams): Part[] {
       if (long) {
         const ixEdge = Math.min(i % (columns + 1), columns - (i % (columns + 1)));
         const toFront = Math.max(0, 1 - ixEdge / 3) * (0.8 + 0.2 * Math.sin(ixEdge * 2.3 + (i % (columns + 1) > columns / 2 ? 1 : 0)));
-        const cheek = smooth((headCentreZ - headR * 0.05 - z) / (headR * 0.35)) * (1 - smooth((headCentreZ - headR * 0.85 - z) / (headR * 0.45)));
+        // Long curls and coils go back in only from 1.1 head radii under the head's middle, over 0.25: going back from
+        // 0.85 over 0.45, the lock beside the face was well back already where the shoulder's top cuts it, and seen from
+        // the front and to one side it narrowed to a point there.
+        const [backFrom, backOver] = ringed ? [1.1, 0.25] : [0.85, 0.45];
+        const cheek = smooth((headCentreZ - headR * 0.05 - z) / (headR * 0.35)) * (1 - smooth((headCentreZ - headR * backFrom - z) / (headR * backOver)));
         const turn = 0.3 * toFront * cheek * Math.sign(gx);
         // Turned toward +y (the face) on each side: counter-clockwise on the +x side, clockwise on the -x side.
         [gx, gy] = [gx * Math.cos(turn) - gy * Math.sin(turn), gx * Math.sin(turn) + gy * Math.cos(turn)];
