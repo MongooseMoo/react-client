@@ -112,8 +112,12 @@ record (no `skin`, `hair`, `facial_hair`, `face`, `features`, `build` or `age_ye
   cool glow) and `human with a transfigured shark head` (a human body with a grey shark's head: black eyes standing
   out of the snout's sides, a dark mouth curving round the white underside, nostrils, a dorsal fin, and the head
   narrowing into the neck with gill slits). Animal plans get their own figures facing the way the person faces: the
-  `mallard duck` and `song bird` fitted evenly inside the person's box (its height and its width and depth in
-  `shapes`, or the pose's `dimensions_m`). The `snake` is built to its box, never scaled down: its length is the box's
+  `mallard duck` fitted evenly inside the person's box (its height and its width and depth in `shapes`, or the
+  pose's `dimensions_m`); the `song bird` scaled evenly to the box's height, or less if that would make it wider
+  than the box, its beak-to-tail length its own (the game's box for it is 0.08 x 0.06 x 0.12 m, shallower than a
+  bird 12 cm tall is long: fitted to that depth it was drawn 5 cm tall). The song bird is a plump body with its
+  breast standing out in front, a small round head with a pointed beak and an eye each side, folded wings
+  reaching back toward a raised tail, and short legs. The `snake` is built to its box, never scaled down: its length is the box's
   longest side whichever way it lies (the game's box for a snake has stood on end, 0.16 x 0.16 m and 3.08 m tall),
   at least 0.6 m; its body is 2.2% of its length in radius and never under 3 cm, so it shows from the Dollhouse's
   whole-room view; in a box at least 0.8 of its length front to back it lies in an S along it, otherwise coiled flat
@@ -227,10 +231,17 @@ buttons (the choice is kept across rooms):
   zooms onto (their box and 15 cm round it). A person in an animal form (a duck, snake or song bird) is
   drawn smaller than their box, or coiled beside a thin one: they are picked by the figure as drawn, the
   zoom heads for the middle of that figure, not a person's head height, and stops where the whole animal
-  fits the picture (its bounding sphere in the field of view, with a tenth to spare).
-  Turning then goes round it, so you can turn until a person faces you. On the picture the arrow keys turn
-  it, `+` and `-` zoom toward and away from your own figure (its middle when you are an animal form; the
-  room's middle when you are not in the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
+  fits the picture (its bounding sphere in the field of view, with a tenth to spare), never so near that the
+  camera's near plane (5 cm) cuts it. An animal that fits nearer than 0.5 m (a song bird 12 cm tall fits at about
+  a quarter of a metre) lets the camera come that near, and each notch toward it goes as much faster as brings the camera
+  there in the same twenty notches that bring it from the whole-room view to a person close up; as many notches
+  back out return as far. A person, a duck and a snake zoom exactly as before.
+  Turning then goes round it, so you can turn until a person faces you. A person whose figure is drawn under
+  16 CSS pixels tall (a song bird across a 10 m room, anyone in a very large room) gets a thin ring on the floor
+  round it, about 11 px across on screen, in the colour of their name label, at full strength under 10 px and
+  fading out as they grow to 16 px; the figure itself is drawn at its true size. Your eyes show no rings. On the picture the arrow keys turn
+  it, `+` and `-` zoom toward and away from your own figure (its middle when you are an animal form, as near as it
+  fits when that is under 0.5 m; the room's middle when you are not in the layout), and `0` returns to the start. Walls on the camera's side are cut low so they never hide the room.
 - **Your eyes**: the room in 3D from where you stand (your `Client.Spatial` position), facing
   your `Client.Spatial` forward, turning as you turn. `+` and `-` on the picture, or the wheel,
   narrow and widen the view (up to about seven times closer); `0` returns to the normal view.
