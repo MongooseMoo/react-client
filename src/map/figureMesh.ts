@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { contrast, INK_DARK, overlayHex, toneOff } from "../avatar/colour";
 import { type Ears, type FigureParams, HANGS_LOOSE, type HairTexture, HORN_TONE, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
+import { planParts } from "./bodyPlanMesh";
 
 /**
  * A person's 3D figure from `figureParams`: three.js primitives, each painted
@@ -49,7 +50,7 @@ export const HAIRLINE_WIDTH = 0.005;
 /** How far the hair or head-covering cap leans back from upright, radians. */
 export const CAP_LEAN = 0.66;
 
-function placed(geometry: THREE.BufferGeometry, colour: string, at: THREE.Vector3, rotation?: THREE.Euler, scale?: THREE.Vector3): Part {
+export function placed(geometry: THREE.BufferGeometry, colour: string, at: THREE.Vector3, rotation?: THREE.Euler, scale?: THREE.Vector3): Part {
   const m = new THREE.Matrix4().compose(at, new THREE.Quaternion().setFromEuler(rotation ?? new THREE.Euler()), scale ?? new THREE.Vector3(1, 1, 1));
   geometry.applyMatrix4(m);
   return { geometry, colour };
@@ -368,7 +369,7 @@ function rimLip(g: THREE.BufferGeometry, across: number, rows: number, at: THREE
  * to the tip, a scalloped trailing edge back to the root) given a little thickness, spread
  * up and out to `side` and swept back. Sizes are for a 1.75 m figure times `s`.
  */
-function wing(side: number, s: number, root: THREE.Vector3, colour: string): Part {
+export function wing(side: number, s: number, root: THREE.Vector3, colour: string): Part {
   const outline = new THREE.Shape();
   // x outward from the root, y up; metres for a 1.75 m figure.
   outline.moveTo(0, 0);
@@ -398,7 +399,7 @@ function wing(side: number, s: number, root: THREE.Vector3, colour: string): Par
 const stroke = (a: THREE.Vector3, b: THREE.Vector3, radius: number, colour: string): Part => limb(a, b, radius, colour, false);
 
 /** A capsule between two points. */
-function limb(a: THREE.Vector3, b: THREE.Vector3, radius: number, colour: string, fine = true): Part {
+export function limb(a: THREE.Vector3, b: THREE.Vector3, radius: number, colour: string, fine = true): Part {
   const length = a.distanceTo(b);
   // Two segments round each end: the ends sit in the torso, the hands and the feet, and three cost 40 more triangles a limb.
   const geometry = new THREE.CapsuleGeometry(radius, Math.max(0.001, length), fine ? 2 : 1, fine ? RADIAL : 6);
@@ -410,16 +411,16 @@ function limb(a: THREE.Vector3, b: THREE.Vector3, radius: number, colour: string
 }
 
 /** An upright cylinder (along z) from z0 to z1, its depth (y) squashed by `depth`. */
-function trunk(z0: number, z1: number, rBottom: number, rTop: number, depth: number, colour: string, y = 0): Part {
+export function trunk(z0: number, z1: number, rBottom: number, rTop: number, depth: number, colour: string, y = 0): Part {
   const geometry = new THREE.CylinderGeometry(rTop, rBottom, Math.max(0.001, z1 - z0), RADIAL * 2);
   return placed(geometry, colour, new THREE.Vector3(0, y, (z0 + z1) / 2), new THREE.Euler(Math.PI / 2, 0, 0), new THREE.Vector3(1, 1, depth));
 }
 
-function ball(at: THREE.Vector3, radius: number, colour: string, scale?: THREE.Vector3, segments = RADIAL): Part {
+export function ball(at: THREE.Vector3, radius: number, colour: string, scale?: THREE.Vector3, segments = RADIAL): Part {
   return placed(new THREE.SphereGeometry(radius, segments, Math.max(4, segments - 2)), colour, at, undefined, scale);
 }
 
-function block(at: THREE.Vector3, size: THREE.Vector3, colour: string, rotation?: THREE.Euler): Part {
+export function block(at: THREE.Vector3, size: THREE.Vector3, colour: string, rotation?: THREE.Euler): Part {
   return placed(new THREE.BoxGeometry(size.x, size.y, size.z), colour, at, rotation);
 }
 
@@ -432,7 +433,7 @@ function band(x: number, y: number, z: number, radius: number, depth: number, co
 }
 
 /** A cone standing on `base` and pointing along `dir` (a unit vector), `length` long. */
-function cone(base: THREE.Vector3, dir: THREE.Vector3, radius: number, length: number, colour: string, segments = 5): Part {
+export function cone(base: THREE.Vector3, dir: THREE.Vector3, radius: number, length: number, colour: string, segments = 5): Part {
   const g = new THREE.ConeGeometry(radius, length, segments, 1, true);
   g.applyMatrix4(new THREE.Matrix4().compose(base.clone().addScaledVector(dir, length / 2), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir), new THREE.Vector3(1, 1, 1)));
   return { geometry: g, colour };
@@ -1607,7 +1608,7 @@ export function figureParts(p: FigureParams): Part[] {
 export function figureGeometry(p: FigureParams): THREE.BufferGeometry {
   const colour = new THREE.Color();
   const toward = new THREE.Color();
-  const geometries = figureParts(p).map(({ geometry: g, colour: hex, shade, tone }) => {
+  const geometries = (p.plan.kind === "human" ? figureParts(p) : planParts(p)).map(({ geometry: g, colour: hex, shade, tone }) => {
     g.deleteAttribute("uv");
     colour.set(hex);
     if (tone) toward.set(tone);
@@ -1695,6 +1696,8 @@ export function headOutline(geometry: THREE.BufferGeometry, chin: number): THREE
     head.push(position.getX(i), position.getY(i), z);
     top = Math.max(top, z);
   }
+  // Nothing above the chin (an animal fitted lower than its box): the whole figure is its outline.
+  if (head.length === 0 && position.count > 0) return headOutline(geometry, Number.NEGATIVE_INFINITY);
   const chosen = new Set<number>();
   // A camera at elevation e and azimuth a sees "up" in its picture as (-sin e cos a, -sin e sin a, cos e).
   for (const degrees of [-60, -40, -20, 0, 10, 20, 30, 40, 50, 60, 70, 80, 90]) {

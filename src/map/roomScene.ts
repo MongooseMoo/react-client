@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { figureParams } from "../avatar/figure";
+import { type Footprint, figureParams } from "../avatar/figure";
 import { isLayoutPose, type LayoutPose, type LayoutThing, type LayoutVector, type RoomLayout } from "../gmcp/Room";
 import { FigureCache, figureMesh, headOutline } from "./figureMesh";
 
@@ -100,6 +100,8 @@ function headBox(geometry: THREE.BufferGeometry, chin: number): THREE.Box3 {
     v.fromBufferAttribute(position, i);
     if (v.z >= chin) box.expandByPoint(v);
   }
+  // Nothing above the chin (an animal fitted lower than its box): the whole figure counts as its head.
+  if (box.isEmpty() && position.count > 0) box.setFromBufferAttribute(position as THREE.BufferAttribute);
   geometry.userData.headBox = { chin, box };
   return box;
 }
@@ -170,12 +172,16 @@ class Builder {
     z1: number,
     base: number,
     pose?: LayoutPose,
+    footprint?: Footprint,
   ): { mesh: THREE.Mesh; label: THREE.Vector3[]; head: THREE.Vector3[] } {
     const visible = pose?.posture ? {
       ...(typeof appearance === "object" && appearance !== null && !Array.isArray(appearance) ? appearance : {}),
       posture: pose.posture,
     } : appearance;
-    const params = figureParams(visible, { height: pose?.figure_height_m ?? pose?.dimensions_m[2] ?? (z1 - z0), base: hexString(base) });
+    // The box across and front to back: the pose's own when it has one, else the room-frame box (a figure without a
+    // pose faces south, so its width and depth are the box's x and y).
+    const across = pose ? { width: pose.dimensions_m[0], depth: pose.dimensions_m[1] } : footprint;
+    const params = figureParams(visible, { height: pose?.figure_height_m ?? pose?.dimensions_m[2] ?? (z1 - z0), base: hexString(base), footprint: across });
     const mesh = figureMesh(params, x, y, z0, undefined, this.figureMaterial(), this.figures);
     if (pose) {
       const q = bodyQuaternion(pose);
@@ -409,7 +415,10 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
     if (isPerson(p.thing)) {
       group.userData.form = "person";
       const base = p.thing.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, label, head } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, isLayoutPose(p.thing.pose) ? p.thing.pose : undefined);
+      const { mesh, label, head } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, isLayoutPose(p.thing.pose) ? p.thing.pose : undefined, {
+        width: p.bounds.x1 - p.bounds.x0,
+        depth: p.bounds.y1 - p.bounds.y0,
+      });
       group.add(mesh);
       labelPoints.set(p.thing.id, label);
       heads.set(p.thing.id, head);
