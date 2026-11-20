@@ -280,7 +280,8 @@ function humanoidParts(p: FigureParams, plan: HumanoidPlan): Part[] {
 }
 
 /**
- * An animal fitted into its box: built at its natural proportions, then scaled evenly to fit width, depth and height.
+ * An animal fitted into its box: built at its natural proportions, then scaled evenly to fit width, depth and height;
+ * the song bird to width and height only, its beak-to-tail length running past a shallow box.
  * A snake is built to its box and its length, never scaled: shrunk to a thin box it was a speck in the room.
  */
 function animalParts(p: FigureParams, plan: AnimalPlan): Part[] {
@@ -301,7 +302,10 @@ function animalParts(p: FigureParams, plan: AnimalPlan): Part[] {
   const middle = box.getCenter(new THREE.Vector3());
   const width = p.footprint?.width ?? H * (extent.x / extent.z);
   const depth = p.footprint?.depth ?? H * (extent.y / extent.z);
-  const k = snake ? 1 : Math.min(width / extent.x, depth / extent.y, H / extent.z);
+  // The song bird stands its box's height, narrowed only to the box's width: its beak-to-tail length is its own and
+  // runs past a box shallower than that. Fitted to the depth of the box the game sends (0.08 x 0.06 x 0.12 m), it was
+  // drawn 5 cm tall (the second live check of 2026-11-20 saw a speck).
+  const k = snake ? 1 : plan.animal === "songbird" ? Math.min(width / extent.x, H / extent.z) : Math.min(width / extent.x, depth / extent.y, H / extent.z);
   return transform(parts, new THREE.Matrix4().makeScale(k, k, k).multiply(new THREE.Matrix4().makeTranslation(-middle.x, -middle.y, -box.min.z)));
 }
 
@@ -327,20 +331,23 @@ function duckParts(plan: AnimalPlan): Part[] {
   return parts;
 }
 
-/** A small perching bird: brown back and wings, a breast in its accent, a round head with a short dark beak, a raised tail. */
+/**
+ * A small perching bird: a plump body, a breast in its accent standing out in front, a small round head with a pointed
+ * beak and an eye each side, folded wings reaching back toward a raised tail, and short legs.
+ */
 function songbirdParts(plan: AnimalPlan): Part[] {
   const parts: Part[] = [
-    named(ball(v(0, 0, 0.42), 0.2, plan.skin, v(0.9, 1.35, 1.05), 12), "body"),
-    named(ball(v(0, 0.1, 0.38), 0.16, plan.accent, v(0.9, 0.9, 1.05), 10), "breast"),
-    named(ball(v(0, 0.2, 0.66), 0.14, plan.head, undefined, 10), "head"),
-    named(cone(v(0, 0.32, 0.66), v(0, 1, -0.1).normalize(), 0.035, 0.1, plan.beak, 5), "beak"),
-    named(block(v(0, -0.36, 0.5), v(0.14, 0.28, 0.03), plan.wing, new THREE.Euler(-0.45, 0, 0)), "tail"),
-    ...[-1, 1].map((side) => named(ball(v(side * 0.1, 0.27, 0.7), 0.02, plan.eyes, undefined, 6), "eye")),
-    ...[-1, 1].map((side) => named(ball(v(side * 0.15, -0.04, 0.46), 0.12, plan.wing, v(0.35, 1.5, 0.8), 8), "wing")),
+    named(ball(v(0, 0, 0.33), 0.2, plan.skin, v(0.9, 1.35, 1), 12), "body"),
+    named(ball(v(0, 0.17, 0.31), 0.15, plan.accent, v(0.9, 0.95, 1), 10), "breast"),
+    named(ball(v(0, 0.2, 0.57), 0.12, plan.head, undefined, 10), "head"),
+    named(cone(v(0, 0.29, 0.57), v(0, 1, -0.15).normalize(), 0.045, 0.13, plan.beak, 5), "beak"),
+    named(block(v(0, -0.4, 0.41), v(0.16, 0.26, 0.025), plan.wing, new THREE.Euler(-0.5, 0, 0)), "tail"),
+    ...[-1, 1].map((side) => named(ball(v(side * 0.085, 0.28, 0.61), 0.02, plan.eyes, undefined, 6), "eye")),
+    ...[-1, 1].map((side) => named(ball(v(side * 0.15, -0.1, 0.39), 0.12, plan.wing, v(0.35, 2, 0.75), 8), "wing")),
   ];
   for (const side of [-1, 1]) {
-    parts.push(named(limb(v(side * 0.05, 0.02, 0.22), v(side * 0.05, 0.04, 0.02), 0.012, plan.feet, false), "leg"));
-    parts.push(named(block(v(side * 0.05, 0.07, 0.006), v(0.03, 0.08, 0.012), plan.feet), "foot"));
+    parts.push(named(limb(v(side * 0.05, 0.03, 0.16), v(side * 0.05, 0.05, 0.02), 0.012, plan.feet, false), "leg"));
+    parts.push(named(block(v(side * 0.05, 0.08, 0.006), v(0.03, 0.08, 0.012), plan.feet), "foot"));
   }
   return parts;
 }
