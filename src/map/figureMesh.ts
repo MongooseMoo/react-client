@@ -421,8 +421,8 @@ export function limb(a: THREE.Vector3, b: THREE.Vector3, radius: number, colour:
 }
 
 /** An upright cylinder (along z) from z0 to z1, its depth (y) squashed by `depth`. */
-export function trunk(z0: number, z1: number, rBottom: number, rTop: number, depth: number, colour: string, y = 0): Part {
-  const geometry = new THREE.CylinderGeometry(rTop, rBottom, Math.max(0.001, z1 - z0), RADIAL * 2);
+export function trunk(z0: number, z1: number, rBottom: number, rTop: number, depth: number, colour: string, y = 0, sides = RADIAL * 2): Part {
+  const geometry = new THREE.CylinderGeometry(rTop, rBottom, Math.max(0.001, z1 - z0), sides);
   return placed(geometry, colour, new THREE.Vector3(0, y, (z0 + z1) / 2), new THREE.Euler(Math.PI / 2, 0, 0), new THREE.Vector3(1, 1, depth));
 }
 
@@ -1647,7 +1647,9 @@ export function figureGeometry(p: FigureParams): THREE.BufferGeometry {
     const colours = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
       const t = shade && tone ? shade[i] : 0;
-      colours.set([colour.r + (toward.r - colour.r) * t, colour.g + (toward.g - colour.g) * t, colour.b + (toward.b - colour.b) * t], i * 3);
+      // A negative shade (a crystal's darker facets) goes away from the tone; kept within 0 to 1 either way.
+      const at = (from: number, to: number) => Math.min(1, Math.max(0, from + (to - from) * t));
+      colours.set([at(colour.r, toward.r), at(colour.g, toward.g), at(colour.b, toward.b)], i * 3);
     }
     g.setAttribute("color", new THREE.BufferAttribute(colours, 3));
     return g;

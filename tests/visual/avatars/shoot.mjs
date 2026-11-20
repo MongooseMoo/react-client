@@ -119,19 +119,29 @@ try {
       await row.screenshot({ path: resolve(out, `plans-portrait-${slug(await row.locator('td').first().innerText())}.png`) });
     }
     await sharp.close();
+    // The People list's sizes, 32 and 48 px, at four times the pixels so each can be read.
+    const small = await browser.newPage({ viewport: { width: 500, height: 1400 }, colorScheme: 'dark', deviceScaleFactor: 4 });
+    await small.goto(`${base}?view=portraits&set=plans&small=1`);
+    await small.waitForFunction(() => window.ready === true);
+    await small.locator('table').screenshot({ path: resolve(out, 'plans-portraits-small.png') });
+    await small.close();
     await open('view=plan&set=plans');
     await page.locator('svg.room-layout-svg, svg').first().screenshot({ path: resolve(out, 'plans-tokens.png') });
+    // Seven rows of 420 px cells, four to a row: a page tall enough to hold them all.
+    const tall = await browser.newPage({ viewport: { width: 1280, height: 7 * 420 + 100 }, colorScheme: 'dark' });
     for (const angle of ['front', 'three', 'side']) {
-      await open(`view=figures&angle=${angle}&zoom=body&set=plans`);
-      const grid = page.locator('#root > div');
+      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=body&set=plans`);
+      await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
+      const grid = tall.locator('#root > div');
       await grid.screenshot({ path: resolve(out, `plans-figures-${angle}.png`) });
       const box = await grid.boundingBox();
-      const names = await page.locator('#root > div > div').allInnerTexts();
+      const names = await tall.locator('#root > div > div').allInnerTexts();
       for (const [i, who] of names.entries()) {
         const clip = { x: box.x + (i % 4) * 300, y: box.y + Math.floor(i / 4) * 420, width: 300, height: 420 };
-        await page.screenshot({ path: resolve(out, `plans-figure-${angle}-${slug(who)}.png`), clip });
+        await tall.screenshot({ path: resolve(out, `plans-figure-${angle}-${slug(who)}.png`), clip });
       }
     }
+    await tall.close();
   }
   if (pinch) {
     // A phone player in the 50 m room: two fingers pinch outward over Cleo (#p2, facing away), then one

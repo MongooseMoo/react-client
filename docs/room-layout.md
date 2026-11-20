@@ -104,12 +104,17 @@ record (no `skin`, `hair`, `facial_hair`, `face`, `features`, `build` or `age_ye
 - No `body_plan`, or `"human body"`: the human figure, exactly as described above.
 - A plan the client knows (`src/avatar/bodyPlan.ts`, one entry each): its own look. Humanoid plans use the human
   figure's skeleton with their own stance, proportions, head and colours: `werewolf` (grey-brown fur, a wolf's head
-  with muzzle and tall pointed ears, a tail, hunched, standing on its toes), `zombie` (grey-green skin, slack, head
-  drooping, arms hanging forward), `rakghoul` (pale, hairless, a heavy jaw), `devolved primate` (dark fur with a
-  lighter face, a brow ridge, long arms, short legs), `quartz-crystallized body` (pale faceted stone, no hair) and
-  `human with a transfigured shark head` (a human body with a grey shark's head, white underside and dorsal fin).
-  Animal plans get their own small figures, fitted evenly inside the person's box (its height and its width and depth
-  in `shapes`, or the pose's `dimensions_m`) and facing the way the person faces: `mallard duck`, `snake`, `song bird`.
+  with muzzle and tall pointed ears on a thick neck, a tail, leaning forward from the hips, standing on its toes on
+  long legs with a high knee and a raised heel), `zombie` (grey-green skin, slack, head drooping, arms hanging
+  forward), `rakghoul` (pale, hairless, a heavy jaw), `devolved primate` (mid-brown fur with a lighter face, chest,
+  hands and feet, a brow ridge, long arms, short legs), `quartz-crystallized body` (pale blue cut crystal: six-sided
+  trunk, flat faces shaded lighter and darker, crystal points on the shoulders and back, drawn glossy with a faint
+  cool glow) and `human with a transfigured shark head` (a human body with a grey shark's head: black eyes standing
+  out of the snout's sides, a dark mouth curving round the white underside, nostrils, a dorsal fin, and the head
+  narrowing into the neck with gill slits). Animal plans get their own small figures, fitted evenly inside the
+  person's box (its height and its width and depth in `shapes`, or the pose's `dimensions_m`) and facing the way the
+  person faces: `mallard duck`, `snake`, `song bird`. Their portraits show the whole animal from the side, inside the
+  round backdrop, at every size; people's portraits show the head alone below 48 px.
 - Any other plan: a plain rounded pillar sized by the box, in the plain person colour (you in blue); the plan token is
   the plain person token and the portrait a plain grey silhouette. No human skin, hair or eye colour is filled in.
 
@@ -125,9 +130,11 @@ Colours come from the form's look; each plan has its own colours for whatever is
 - `covering.kind`: `fur` gives a bushy tail, `crystal` cuts any humanoid body into flat facets; the others are smooth.
 - `eyes` colours the eyes.
 - A colour that is missing or not a `#rrggbb` leaves that place to the plan's own colour; positions do not shift.
+  A `covering` sent as a plain word (`"fur"`) is taken as its kind alone; any other shape counts as not sent.
 - The shark head (`human with a transfigured shark head`) covers only the head: its body is the person's own, drawn
   from the record's `skin`, `build` and `garments`, and `covering` colours only the shark's head (main colour) and
-  underside (second). `age_years` changes nothing, since it only sizes a human head.
+  underside (second). `age_years` changes nothing, since it only sizes a human head. Its portrait's shoulders and
+  neck follow the build, as a human portrait's do.
 
 `garments`
 are drawn on humanoid plans when sent; `traits` add their parts to humanoid plans; `posture` applies to humanoid

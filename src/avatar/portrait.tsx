@@ -2,6 +2,7 @@ import type React from "react";
 import { Children, cloneElement, isValidElement } from "react";
 import { overlayHex } from "./colour";
 import { BUILDS, type FigureParams, type HairTexture, figureParams, appearanceRecord, HORN_TONE, STUBBLE_OPACITY, vocabKey } from "./figure";
+import { resolvePlan } from "./bodyPlan";
 import { planPortraitElements } from "./planPortrait";
 
 /**
@@ -1013,8 +1014,10 @@ export const HEAD_VIEWBOX = "12 5 40 40";
 export const AvatarPortrait: React.FC<PortraitProps> = ({ appearance, size = 40, className }) => {
   const parts = portraitElements(appearance);
   if (!parts) return null;
-  // At the People list's 32 px the whole picture gives a face about 13 px; the head alone gives about 21.
-  const cropped = size < HEAD_CROP_BELOW;
+  // At the People list's 32 px the whole picture gives a face about 13 px; the head alone gives about 21. An animal is
+  // drawn whole from the side, and its whole shape is what tells a duck from a snake, so it is never cropped.
+  const record = appearanceRecord(appearance);
+  const cropped = size < HEAD_CROP_BELOW && !(record && resolvePlan(record).kind === "animal");
   return (
     <svg
       className={["avatar-portrait", cropped ? "avatar-portrait-head" : "", className].filter(Boolean).join(" ")}

@@ -52,6 +52,12 @@ export interface HumanoidPlan extends PlanColours {
    * `garments` (the shark head). The covering's main colour is then the head's.
    */
   covers: "body" | "head";
+  /** The neck's thickness against the human figure's (a wolf's thick neck); 1 when absent. */
+  neckScale?: number;
+  /** A bare chest in the accent, on the front of an unclothed torso (the primate's). */
+  chest?: true;
+  /** Bare hands and feet in the accent where no garment covers them (the primate's palms and soles). */
+  bareHands?: true;
   head: PlanHead;
   /** How far the upper body leans forward from the hips, radians. */
   hunch: number;
@@ -102,6 +108,7 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     skin: "#7a6b5a",
     covering: "fur",
     covers: "body",
+    neckScale: 1.8,
     // The covering's second colour: the muzzle and jaw (and the ruff in the portrait).
     secondary: ["accent"],
     accentTone: "lighter",
@@ -109,7 +116,7 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     accent: "#b8a68e",
     head: "wolf",
     hunch: 0.3,
-    legShare: 0.44,
+    legShare: 0.5,
     wristShare: 0.4,
     reach: 0.25,
     droop: 0,
@@ -165,14 +172,17 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
   },
   "devolved primate": {
     kind: "humanoid",
-    skin: "#3d3029",
+    // A mid brown: the darker #3d3029 read as a black shape in the room's light, face and all.
+    skin: "#76604c",
     covering: "fur",
+    chest: true,
+    bareHands: true,
     covers: "body",
     // The covering's second colour: the bare face, muzzle and ears.
     secondary: ["accent"],
     accentTone: "lighter",
-    eyes: "#6b4a2a",
-    accent: "#8f7461",
+    eyes: "#2a1a10",
+    accent: "#c4a98f",
     head: "primate",
     hunch: 0.32,
     legShare: 0.36,
@@ -187,7 +197,8 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
   },
   "quartz-crystallized body": {
     kind: "humanoid",
-    skin: "#d5dde6",
+    // A pale cool blue, a step under the white facets, so the facets show against it.
+    skin: "#bccbdc",
     covering: "crystal",
     covers: "body",
     // The covering's second colour: the facets that catch the light and the crystal spur.
@@ -289,7 +300,8 @@ export function bodyPlanName(record: Record<string, unknown>): string {
 
 /**
  * How to draw this appearance record. A missing `body_plan` or "human body" is the human figure. A plan in
- * BODY_PLANS gets its own look with the form's sent look over its defaults: `covering.kind`; `covering.colours`, the
+ * BODY_PLANS gets its own look with the form's sent look over its defaults: `covering.kind` (or `covering` as a plain
+ * word); `covering.colours`, the
  * first for the body (the head for a plan covering only the head) and the rest into the plan's `secondary` slots in
  * order; `eyes`. A plan covering only the head draws its body in the record's `skin`. Each colour is taken by its
  * position; one that is missing or not a colour leaves that place to the plan's default. Any other plan is unknown:
@@ -300,7 +312,13 @@ export function resolvePlan(record: Record<string, unknown>): ResolvedPlan {
   if (name === HUMAN_PLAN) return { kind: "human" };
   const spec = Object.hasOwn(BODY_PLANS, name) ? BODY_PLANS[name] : undefined;
   if (!spec) return { kind: "unknown", name };
-  const sent = record.covering !== null && typeof record.covering === "object" && !Array.isArray(record.covering) ? (record.covering as Record<string, unknown>) : {};
+  // The wire's `{kind, colours}`; a plain word is taken as the kind alone; anything else counts as not sent.
+  const sent: Record<string, unknown> =
+    typeof record.covering === "string"
+      ? { kind: record.covering.trim().toLowerCase() }
+      : record.covering !== null && typeof record.covering === "object" && !Array.isArray(record.covering)
+        ? (record.covering as Record<string, unknown>)
+        : {};
   const covering = (COVERINGS as readonly string[]).includes(sent.kind as string) ? (sent.kind as Covering) : spec.covering;
   const hexes = (Array.isArray(sent.colours) ? sent.colours : []).slice(0, 3).map(colourHex);
   const main = hexes[0];

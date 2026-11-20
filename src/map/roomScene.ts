@@ -110,6 +110,12 @@ function headBox(geometry: THREE.BufferGeometry, chin: number): THREE.Box3 {
 const boxCorners = (b: THREE.Box3): THREE.Vector3[] =>
   [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z));
 
+/** How rough a crystal body's surface is (a figure's is 0.8): low enough for a sheen on its faces. */
+export const CRYSTAL_ROUGHNESS = 0.35;
+/** A faint cool light from within a crystal body, so its faces turned from the light are not dead grey: it reads as
+ * light passing through, without a transparent material (which a single merged mesh cannot sort). */
+export const CRYSTAL_GLOW = 0x1c2633;
+
 /** Builds meshes, sharing one material per colour within a scene. */
 class Builder {
   private materials = new Map<string, THREE.Material>();
@@ -150,12 +156,18 @@ class Builder {
     return mesh;
   }
 
-  /** One material for every figure: each part's colour is in the geometry's vertex colours. */
-  figureMaterial(): THREE.Material {
-    let material = this.materials.get("figure");
+  /**
+   * One material for every figure: each part's colour is in the geometry's vertex colours. A body with a crystal
+   * covering gets a second, glossy one with flat shading, so its cut faces catch the light as crystal does.
+   */
+  figureMaterial(crystal = false): THREE.Material {
+    const key = crystal ? "figure-crystal" : "figure";
+    let material = this.materials.get(key);
     if (!material) {
-      material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0.05 });
-      this.materials.set("figure", material);
+      material = crystal
+        ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: CRYSTAL_ROUGHNESS, metalness: 0, flatShading: true, emissive: CRYSTAL_GLOW })
+        : new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0.05 });
+      this.materials.set(key, material);
     }
     return material;
   }
@@ -183,7 +195,8 @@ class Builder {
     // pose faces south, so its width and depth are the box's x and y).
     const across = pose ? { width: pose.dimensions_m[0], depth: pose.dimensions_m[1] } : footprint;
     const params = figureParams(visible, { height: pose?.figure_height_m ?? pose?.dimensions_m[2] ?? (z1 - z0), base: hexString(base), footprint: across });
-    const mesh = figureMesh(params, x, y, z0, undefined, this.figureMaterial(), this.figures);
+    const crystal = params.plan.kind === "humanoid" && params.plan.covering === "crystal";
+    const mesh = figureMesh(params, x, y, z0, undefined, this.figureMaterial(crystal), this.figures);
     if (pose) {
       const q = bodyQuaternion(pose);
       mesh.quaternion.premultiply(q);
