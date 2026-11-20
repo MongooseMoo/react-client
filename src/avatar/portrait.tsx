@@ -2,6 +2,7 @@ import type React from "react";
 import { Children, cloneElement, isValidElement } from "react";
 import { overlayHex } from "./colour";
 import { BUILDS, type FigureParams, type HairTexture, figureParams, appearanceRecord, HORN_TONE, STUBBLE_OPACITY, vocabKey } from "./figure";
+import { planPortraitElements } from "./planPortrait";
 
 /**
  * A head-and-shoulders portrait of a person drawn in SVG from their Room.Layout
@@ -765,6 +766,7 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
   const record = appearanceRecord(appearance);
   if (!record) return null;
   const params = figureParams(record, { height: 1.75 });
+  if (params.plan.kind !== "human") return planPortraitElements(params, record);
   const c = params.colours;
   const ink = c.ink;
   // What is drawn on the skin uses the ink that stands out on the skin; region outlines use the seam ink.
@@ -975,11 +977,18 @@ export function portraitElements(appearance: unknown): React.ReactNode[] | null 
     }
   }
 
+  parts.push(...markElements(record, params.faceHidden, faceInk));
+  return parts;
+}
+
+/** The record's uncovered marks on the head and neck (only the neck's on a hidden face), in `faceInk`. */
+export function markElements(record: Record<string, unknown>, faceHidden: boolean, faceInk: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
   const marks = Array.isArray(record.marks) ? record.marks : [];
   marks.forEach((mark, index) => {
     if (!isRecord(mark)) return;
     const place = MARK_PLACES[word(mark.area)];
-    if (!place || (params.faceHidden && word(mark.area) !== "neck")) return;
+    if (!place || (faceHidden && word(mark.area) !== "neck")) return;
     const [x, y] = place;
     const kind = word(mark.kind);
     const key = `mark${index}`;
