@@ -67,6 +67,16 @@ const WAVY_FALL_ROWS = 14;
 const WAVY_FALL_CLOSE = 1.45;
 
 /**
+ * Long curls and coils worn down, round the sides of the head: how far up the crown the fall starts (head radii over
+ * the fall's top behind, in full from 1 radian round from straight behind, going back to none past 1.8 radians toward
+ * the face), and how far round from straight behind it lies on the cap as drawn and carries the cap's curls, shade and
+ * normals on. Starting level with the back of the head and lying on the cap's smooth surface there, it began below
+ * where the cap curves in to its tucked rim: from behind and to one side the cap's downturned underside showed as a dark
+ * crease under the crown, and the fall's top corner stood out past it in a ledge at ear height.
+ */
+const SIDE_RAISE = 0.15;
+const SIDE_REACH = 1.8;
+/**
  * Raises the surface of a hair part outward from `centre(vertex)`, never inward, so the
  * texture shows: wavy hair in ripples across its fall, curly in bumps, coily in small
  * tight bumps. Straight hair is left smooth. Positions are in metres, `headR` sets the scale.
@@ -845,13 +855,17 @@ export function figureParts(p: FigureParams): Part[] {
    * read as a cap sitting over a curtain.
    */
   const carried = falling && !matched && capTexture === p.hairTexture && p.hairTexture !== "straight";
+  /** Long curls or coils worn down, which hang in ringlets. */
+  const ringedFall = falling && p.hair !== "chin-length" && (p.hairTexture === "curly" || p.hairTexture === "coily");
+  /** How far up the crown such a fall starts at `fromBack` radians round from straight behind (`SIDE_RAISE`). */
+  const sideRaise = (fromBack: number) => (ringedFall ? headR * SIDE_RAISE * smooth((fromBack - 0.5) / 0.5) * (1 - smooth((fromBack - 1.8) / 0.3)) : 0);
   /** Where the fall's top is round the head in direction (x, y): lower toward its two front edges on hair past the jaw. */
   const fallTopAt = (x: number, y: number) => {
     const fromBack = Math.abs(Math.atan2(x, -y));
-    return p.hair !== "chin-length" ? fallTop - headR * 0.25 * smooth((fromBack - 1.6) / 0.3) : fallTop;
+    return p.hair !== "chin-length" ? fallTop - headR * 0.25 * smooth((fromBack - 1.6) / 0.3) + sideRaise(fromBack) : fallTop;
   };
   /** How far round toward the back (1) from the sides (0) direction (x, y) is: where a fall carries the cap's relief on. */
-  const towardBack = (x: number, y: number) => 1 - smooth((Math.abs(Math.atan2(x, -y)) - 0.8) / 0.4);
+  const towardBack = (x: number, y: number) => 1 - smooth((Math.abs(Math.atan2(x, -y)) - (ringedFall ? SIDE_REACH : 0.8)) / 0.4);
   const keptOver = (d: THREE.Vector3, over: number) => {
     if (!falling || matched) return 1;
     // Under a fall that carries the cap's texture, the cap keeps its own above the fall's top (where it shows) and goes
@@ -1010,7 +1024,8 @@ export function figureParts(p: FigureParams): Part[] {
           // figure five times as slow to build.
           const index = g.getIndex() as THREE.BufferAttribute;
           const at0 = g.getAttribute("position");
-          const near = (k: number) => at0.getZ(k) > fallTop - headR * 0.5 && at0.getZ(k) < fallTop + headR * 0.35 && at0.getY(k) < headR * 0.2;
+          // (Round the sides too, toward the face, for long curls and coils, which lie on the cap there: `SIDE_REACH`.)
+          const near = (k: number) => at0.getZ(k) > fallTop - headR * 0.5 && at0.getZ(k) < fallTop + headR * 0.35 && at0.getY(k) < headR * (ringedFall ? 0.7 : 0.2);
           const kept: number[] = [];
           for (let t = 0; t < index.count; t += 3) {
             const [a, b, c] = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
@@ -1177,7 +1192,8 @@ export function figureParts(p: FigureParams): Part[] {
       // (Straight hair no lower than just under the cap's rim there: lower, toward the face the rim rose away from the
       // fall's top and a wedge of the head showed between them at ear height, seen from behind and to one side. Round
       // curls and coils, starting higher there let the wall show past a lock from above and behind.)
-      const columnTop = (long ? Math.max(top - headR * 0.25 * smooth((fromBack - 1.6) / 0.3), fine ? Number.NEGATIVE_INFINITY : Math.min(top, capRimZ(positions.getX(i), positions.getY(i)) - headR * 0.03)) : top) + upCrown;
+      // (Long curls and coils also start up the crown round the sides: `sideRaise`.)
+      const columnTop = (long ? Math.max(top - headR * 0.25 * smooth((fromBack - 1.6) / 0.3), fine ? Number.NEGATIVE_INFINITY : Math.min(top, capRimZ(positions.getX(i), positions.getY(i)) - headR * 0.03)) : top) + upCrown + sideRaise(fromBack);
       columnTops[i % (columns + 1)] = columnTop;
       const z = columnTop - ((columnTop - bottom) * (top - positions.getZ(i))) / (top - bottom);
       const k = across(z);
@@ -1203,7 +1219,9 @@ export function figureParts(p: FigureParams): Part[] {
       // At its very top 1.2% out, a ledge of a millimetre or two: lying on the cap there, the cap's vertices showed
       // through the fall's facets in a dotted line down each side from behind.
       const r = Math.hypot(x, y);
-      const out = 1.012 + 0.013 * smooth((top - z) / (headR * 0.06));
+      // (Measured from the column's own top where long curls and coils start up the crown: from the fall's top behind,
+      // their raised tops kept the thin margin all the way down to it, and the cap's curls came through.)
+      const out = 1.012 + 0.013 * smooth(((ringedFall ? columnTop : top) - z) / (headR * 0.06));
       let cap = capAcross(x, y, z) * out;
       // Where the cap as drawn is here, under a fall that carries its surface on (0 where not known).
       let drawnCap = 0;
@@ -1236,7 +1254,9 @@ export function figureParts(p: FigureParams): Part[] {
           // Round the back only, coming down to the plain cap by the sides: there, standing out by the curls over the
           // cap going smooth under it, its top edge let the eye in under it past the head's outline from behind and to
           // one side, onto the wall.
-          const backward = towardBack(x, y);
+          // Long curls and coils lie on the cap as drawn wherever it is found (out to `SIDE_REACH`), as the cap keeps its
+          // curls there: coming down to the plain cap by the sides, the cap's curls came through their top.
+          const backward = ringedFall ? 1 : towardBack(x, y);
           const below = smooth((columnTop - z) / (headR * 0.06)) * (1 - takenOver[i]);
           cap = Math.max(cap, cap + (Math.max(hit.r, hit.r + (hit.fullR - hit.r) * below) * out - cap) * backward);
           carriedShade[i] = hit.shade + (hit.fullShade - hit.shade) * smooth((columnTop - z) / (headR * 0.06));

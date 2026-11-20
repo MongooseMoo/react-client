@@ -1478,3 +1478,50 @@ describe("round nine: hair worn down where it meets the crown, curls down long h
     }
   });
 });
+
+describe("round ten: where long curls and coils worn down meet the crown, chin-length curls from behind, and the lock beside the face in 3D", () => {
+  const isHair = (part: ReturnType<typeof figureParts>[number] | undefined) => ["cap", "hair", "rim"].includes(part?.name ?? "");
+  /**
+   * In a picture, each row's outline on one side (how far out its outermost hair cell is), and the deepest dent in it
+   * between rows `lo` and `hi`: how far the outline there lies inside the lesser of its widest above and its widest below.
+   */
+  const dent = (grid: ReturnType<typeof picture>, side: 1 | -1, lo: number, hi: number, step: number) => {
+    const ext = grid.map((row) => {
+      const i = side < 0 ? row.findIndex(isHair) : row.length - 1 - [...row].reverse().findIndex(isHair);
+      return row.some(isHair) ? side * i * step : Number.NaN;
+    });
+    let worst = 0;
+    for (let j = lo + 1; j < hi; j++) {
+      const above = Math.max(...ext.slice(j + 1, hi + 1).filter((x) => !Number.isNaN(x)));
+      const below = Math.max(...ext.slice(lo, j).filter((x) => !Number.isNaN(x)));
+      if (!Number.isNaN(ext[j])) worst = Math.max(worst, Math.min(above, below) - ext[j]);
+    }
+    return worst;
+  };
+
+  it("starts long curls and coils worn down up the crown round the sides of the head, so from behind the outline runs down from the crown into them without a waist where they begin", () => {
+    const dents: string[] = [];
+    let sum = 0;
+    for (const texture of ["curly", "coily"]) {
+      for (const length_cm of [30, 50, 75]) {
+        const { p, headR, headZ } = standing({ skin: { hex: "#f6ede4" }, hair: { length_cm, texture, hex: "#653700" } });
+        const parts = figureParts(p);
+        for (const el of [0, 15]) {
+          const step = headR / 150;
+          const view = { az: Math.PI, el: (el * Math.PI) / 180, centre: new THREE.Vector3(0, 0, headZ) };
+          const grid = picture(parts, view, [-headR * 1.8, -headR * 0.6, headR * 1.8, headR * 0.6], step, true);
+          // From 0.3 head radii under the head's middle to 0.45 over it: the crown's lower part and where the fall begins.
+          const [lo, hi] = [Math.round(0.3 * 150), Math.round(1.05 * 150)];
+          for (const side of [-1, 1] as const) {
+            const d = dent(grid, side, lo, hi, step) / headR;
+            sum += d;
+            dents.push(`${texture} ${length_cm} el ${el} ${side < 0 ? "left" : "right"} ${d.toFixed(3)}`);
+          }
+        }
+      }
+    }
+    // Round nine's: 0.057 head radii on average (the crown curving in to its rim above a fall starting level with the
+    // back of the head, and the fall's top standing out below it).
+    expect(sum / dents.length, dents.join(", ")).toBeLessThan(0.045);
+  });
+});
