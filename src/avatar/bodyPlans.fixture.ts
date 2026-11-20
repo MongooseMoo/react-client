@@ -1,4 +1,4 @@
-import type { LayoutColour } from "../gmcp/Room";
+import type { LayoutAppearance, LayoutColour } from "../gmcp/Room";
 import { type TestCharacter, TEST_CHARACTERS } from "./characters.fixture";
 import { GAME_PALETTE } from "./vocabulary.fixture";
 
@@ -76,4 +76,29 @@ export const PLAN_CHARACTERS: TestCharacter[] = [
       marks: [{ kind: "scar", area: "cheek" }],
     },
   },
+];
+
+/** The look the game sends for a plan, with the form's label and traits as the live check of 2026-11-20 saw them. */
+const sent = (plan: string, label: string, traits: string[] = []): LayoutAppearance => ({ label, body_plan: plan, traits, posture: "standing", ...GAME_LOOKS[plan] });
+
+/**
+ * The forms in the boxes the game sent for them in the live check of 2026-11-20 (raw Room.Layout,
+ * reports/player-avatars-client-forms-live-fixes-2026-11-20.md): a snake in a 0.16 x 0.16 m box 3.08 m tall, a duck
+ * in 0.88 x 2.31 x 1.19 m, a song bird in 1.21 x 0.91 x 1.82 m; then a snake in a thin low box and in a small cube; the
+ * shark head on a person with no garments sent; a person with antlers; and a plain person for scale. Names are made
+ * up. Tests and the picture harness only.
+ */
+export const LIVE_FORM_CHARACTERS: TestCharacter[] = [
+  { name: "person, for scale", height: 1.75, appearance: { label: "a person", body_plan: "human body", skin: colour("skin", "monk04"), posture: "standing" } },
+  { name: "snake, as sent", height: 3.08, box: [0.16, 0.16], appearance: sent("snake", "a snake", ["tail"]) },
+  { name: "mallard duck, as sent", height: 1.19, box: [0.88, 2.31], appearance: sent("mallard duck", "a duck", ["bird", "wings", "tail"]) },
+  { name: "song bird, as sent", height: 1.82, box: [1.21, 0.91], appearance: sent("song bird", "a bird", ["bird", "wings", "tail"]) },
+  { name: "snake, thin low box", height: 0.08, box: [0.1, 1], appearance: sent("snake", "a snake", ["tail"]) },
+  { name: "snake, small cube", height: 0.1, box: [0.1, 0.1], appearance: sent("snake", "a snake", ["tail"]) },
+  {
+    name: "shark head, no garments",
+    height: 1.75,
+    appearance: { ...sent("human with a transfigured shark head", "a person"), skin: colour("skin", "monk04"), build: "average", age_years: 30 },
+  },
+  { name: "antlers", height: 1.75, appearance: { label: "a person", body_plan: "human body", skin: colour("skin", "monk04"), hair: { name: "brown", hex: "#6a4e2e", length_cm: 8, texture: "straight", style: "loose" }, traits: ["antlers"], posture: "standing" } },
 ];

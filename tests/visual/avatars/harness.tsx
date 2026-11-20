@@ -14,7 +14,7 @@ import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import "../../../src/tokens.css";
 import "../../../src/index.css";
 import "../../../src/components/MapPanel.css";
-import { PLAN_CHARACTERS } from "../../../src/avatar/bodyPlans.fixture";
+import { LIVE_FORM_CHARACTERS, PLAN_CHARACTERS } from "../../../src/avatar/bodyPlans.fixture";
 import { TEST_CHARACTERS, type TestCharacter } from "../../../src/avatar/characters.fixture";
 import { figureParams } from "../../../src/avatar/figure";
 import AvatarPortrait from "../../../src/avatar/portrait";
@@ -261,6 +261,8 @@ const ROUND7_CHARACTERS: TestCharacter[] = [
 const SETS: Record<string, TestCharacter[]> = {
   // `set=plans`: one person in each body plan the game sends, a human, and a plan the client does not know.
   plans: PLAN_CHARACTERS,
+  // `set=forms`: the forms in the boxes the game sent for them in the live check of 2026-11-20.
+  forms: LIVE_FORM_CHARACTERS,
   round7: ROUND7_CHARACTERS,
   vocab: VOCAB_CHARACTERS,
   face: FACE_CHARACTERS,
@@ -418,14 +420,19 @@ if (view === "portraits") {
       camera.position.set(Math.sin(angle) * 0.35, at.y - Math.cos(angle) * 0.35, at.z + 0.65);
       camera.lookAt(at);
     } else {
-      const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
+      // `fit=drawn`: each whole figure framed by what is drawn, not by its box (a snake in a tall box is small in it).
+      const drawn = params.get("fit") === "drawn" && !head;
+      const lookZ = head ? bounds.max.z - 0.14 : drawn ? (bounds.min.z + bounds.max.z) / 2 : ch.height * 0.5;
       // `dist=1.05`: the head camera that far away, metres (about 150 px of head in a 420 px cell).
       // A long, low animal is framed by its length, not its height.
-      const size = Math.max(ch.height, ...(ch.box ?? []).map((n) => n * 0.75));
+      const size = drawn
+        ? Math.max(bounds.max.z - bounds.min.z, (bounds.max.x - bounds.min.x) * 0.75, (bounds.max.y - bounds.min.y) * 0.75)
+        : Math.max(ch.height, ...(ch.box ?? []).map((n) => n * 0.75));
       const distance = head ? Number(params.get("dist") ?? "0.75") : (size * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
       const level = Math.cos(elevation) * distance;
       // A whole figure is seen from 30 cm above its middle; a small animal from less, so it is not seen from overhead.
-      camera.position.set(Math.sin(angle) * level, -Math.cos(angle) * level, lookZ + (head ? 0.05 : Math.min(0.3, Math.max(ch.height * 0.4, (ch.box?.[1] ?? 0) * 0.3))) + Math.sin(elevation) * distance);
+      const above = head ? 0.05 : drawn ? Math.min(0.3, size * 0.4) : Math.min(0.3, Math.max(ch.height * 0.4, (ch.box?.[1] ?? 0) * 0.3));
+      camera.position.set(Math.sin(angle) * level, -Math.cos(angle) * level, lookZ + above + Math.sin(elevation) * distance);
       camera.lookAt(0, 0, lookZ);
     }
     cutWalls(room, layout, camera.position, "dollhouse");
@@ -441,23 +448,30 @@ if (view === "portraits") {
   });
   window.ready = true;
 } else if (view === "room") {
-  const count = Number(params.get("n") ?? "8");
-  const layout = crowdLayout(count);
+  // `set=forms`: the people are that set's characters, one each, in their own boxes.
+  const count = params.get("set") ? CHARACTERS.length : Number(params.get("n") ?? "8");
+  const layout = params.get("set") ? crowdLayout(count, CHARACTERS) : crowdLayout(count);
   // `size=50`: the same people in a square room that many metres across, like a large live room.
   const size = Number(params.get("size") ?? "0");
   if (size > 0) layout.size = [size, size, layout.size[2]];
   // `spread=6`: the people's places multiplied by that much, so they stand apart across a large room.
   const spread = Number(params.get("spread") ?? "1");
+  // Each person's box moved to stand at (x, y), keeping its own width and depth (0.4 by 0.4 for every person but an animal).
+  const standAt = (thing: (typeof layout.things)[number], x: number, y: number) => {
+    const [xs, ys, zs] = thing.shapes[0].box as [[number, number], [number, number], [number, number]];
+    // Rounded to the micrometre: x - 0.2 to x + 0.2 halves to 0.19999999999999998, which moved every person a hair.
+    const [hw, hd] = [Number(((xs[1] - xs[0]) / 2).toFixed(6)), Number(((ys[1] - ys[0]) / 2).toFixed(6))];
+    thing.shapes[0].box = [[x - hw, x + hw], [y - hd, y + hd], zs];
+  };
   for (const thing of layout.things) {
     const [xs, ys] = thing.shapes[0].box as [[number, number], [number, number], [number, number]];
-    const [cx, cy] = [(xs[0] + xs[1]) / 2, (ys[0] + ys[1]) / 2];
-    thing.shapes[0].box = [[cx * spread - 0.2, cx * spread + 0.2], [cy * spread - 0.2, cy * spread + 0.2], (thing.shapes[0].box as number[][])[2] as [number, number]];
+    standAt(thing, ((xs[0] + xs[1]) / 2) * spread, ((ys[0] + ys[1]) / 2) * spread);
   }
   // `places=0,4.8;0,2.05`: where each person stands (#p0, #p1, …), metres from the room's middle, as in a live room.
   const places = params.get("places")?.split(";").map((p) => p.split(",").map(Number));
   places?.forEach(([x, y], i) => {
     const thing = layout.things[i];
-    if (thing) thing.shapes[0].box = [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], (thing.shapes[0].box as number[][])[2] as [number, number]];
+    if (thing) standAt(thing, x, y);
   });
   // `face=north`: everyone faces north (away from the dollhouse's opening camera); by default, south.
   // `rack=#p1`: a newspaper rack (1.3 m, a shelf) stands 1.5 m north of that person, behind them from the opening camera.

@@ -186,7 +186,7 @@ class Builder {
     base: number,
     pose?: LayoutPose,
     footprint?: Footprint,
-  ): { mesh: THREE.Mesh; label: THREE.Vector3[]; head: THREE.Vector3[] } {
+  ): { mesh: THREE.Mesh; label: THREE.Vector3[]; head: THREE.Vector3[]; animal: boolean } {
     const visible = pose?.posture ? {
       ...(typeof appearance === "object" && appearance !== null && !Array.isArray(appearance) ? appearance : {}),
       posture: pose.posture,
@@ -207,7 +207,7 @@ class Builder {
     const chin = params.top - params.headHeight * 1.05;
     const outline = headOutline(mesh.geometry, chin);
     const toWorld = (p: THREE.Vector3) => p.clone().applyMatrix4(mesh.matrixWorld);
-    return { mesh, label: outline.map(toWorld), head: boxCorners(headBox(mesh.geometry, chin)).map(toWorld) };
+    return { mesh, label: outline.map(toWorld), head: boxCorners(headBox(mesh.geometry, chin)).map(toWorld), animal: params.plan.kind === "animal" };
   }
 }
 
@@ -429,11 +429,13 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
     if (isPerson(p.thing)) {
       group.userData.form = "person";
       const base = p.thing.id === youId ? YOU_COLOUR : PERSON_COLOUR;
-      const { mesh, label, head } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, isLayoutPose(p.thing.pose) ? p.thing.pose : undefined, {
+      const { mesh, label, head, animal } = builder.person(p.thing.appearance, x, y, p.bounds.z0, p.bounds.z1, base, isLayoutPose(p.thing.pose) ? p.thing.pose : undefined, {
         width: p.bounds.x1 - p.bounds.x0,
         depth: p.bounds.y1 - p.bounds.y0,
       });
       group.add(mesh);
+      // An animal form is drawn smaller than its box or beside it: a zoom onto it frames the figure (`personFocus`).
+      group.userData.animal = animal;
       labelPoints.set(p.thing.id, label);
       heads.set(p.thing.id, head);
     } else {
@@ -620,6 +622,32 @@ export function zoomFocus(you: Bounds | undefined, layout: RoomLayout): THREE.Ve
   return new THREE.Vector3((you.x0 + you.x1) / 2, (you.y0 + you.y1) / 2, you.z0 + (you.z1 - you.z0) * 0.9);
 }
 
+/** What a zoom onto a person heads for and how near it may come; `box` is what is drawn of them, for picking. */
+export interface PersonFocus {
+  point: THREE.Vector3;
+  /** The least distance from `point` at which the whole of what is drawn fits the picture: 0 for a person. */
+  frame: number;
+  /** The corners of the box the person takes on screen: their Room.Layout box, or an animal's figure as drawn. */
+  box: THREE.Vector3[];
+}
+
+/**
+ * Where a zoom onto a person heads. A person: their face (`zoomFocus` of their box), with nothing more to frame. An
+ * animal form (a duck, a snake, a song bird) is drawn smaller than its box, or coiled beside a thin one: the middle of
+ * the figure as drawn, from no nearer than the distance at which all of it fits a `fov` picture, so the close-up
+ * shows the whole animal and the arrow keys turn round it, not round empty air at a person's head height.
+ */
+export function personFocus(scene: RoomScene, person: PlacedThing, layout: RoomLayout, fov = DOLLHOUSE_FOV): PersonFocus {
+  const b = person.bounds;
+  const group = scene.things.get(person.thing.id);
+  if (!group?.userData.animal) {
+    return { point: zoomFocus(b, layout), frame: 0, box: boxCorners(new THREE.Box3(new THREE.Vector3(b.x0, b.y0, b.z0), new THREE.Vector3(b.x1, b.y1, b.z1))) };
+  }
+  const drawn = new THREE.Box3().setFromObject(group);
+  const radius = drawn.getBoundingSphere(new THREE.Sphere()).radius;
+  return { point: drawn.getCenter(new THREE.Vector3()), frame: (radius / Math.sin(((fov / 2) * Math.PI) / 180)) * 1.1, box: boxCorners(drawn) };
+}
+
 /** How many wheel notches bring the dollhouse from its whole-room view to WHEEL_CLOSE from a person, in a room of any size. */
 export const WHEEL_NOTCHES = 20;
 /** Metres from a face at which a person fills the dollhouse picture to the shoulders. */
@@ -683,7 +711,8 @@ const offBox = (at: { x: number; y: number }, box: Box) => Math.hypot(Math.max(b
  * nearest one), else the first thing or wall under the pointer, else the room's floor;
  * undefined when there is none of them (pointing over the walls or through a doorway into
  * the dark), so a zoom never heads for a point outside the room.
- * `nearest` keeps the camera outside the person (their box and PERSON_CLEARANCE) and at least ZOOM_NEAREST away.
+ * `nearest` keeps the camera outside the person (their box and PERSON_CLEARANCE) and at least ZOOM_NEAREST away. An
+ * animal form is picked by its figure as drawn and heads for its middle, from far enough to frame all of it (`personFocus`).
  */
 export function wheelZoomPoint(
   camera: THREE.Camera,
@@ -701,30 +730,31 @@ export function wheelZoomPoint(
 
   // People near the pointer: first those whose label it is on or near (nearest label first), then those drawn
   // near it (nearest first, then nearest the camera); each only if nothing hides their face.
-  const near: Array<{ person: PlacedThing; byLabel: boolean; off: number; depth: number }> = [];
+  const fov = camera instanceof THREE.PerspectiveCamera ? camera.fov : DOLLHOUSE_FOV;
+  const near: Array<{ person: PlacedThing; focus: PersonFocus; byLabel: boolean; off: number; depth: number }> = [];
   for (const person of placed) {
     if (scene.things.get(person.thing.id)?.userData.form !== "person" || !scene.things.get(person.thing.id)?.visible) continue;
-    const b = person.bounds;
-    const depth = eye.distanceTo(zoomFocus(b, layout));
+    const focus = personFocus(scene, person, layout, fov);
+    const depth = eye.distanceTo(focus.point);
     const label = labels.find((l) => l.id === person.thing.id);
     const labelOff = label ? offBox(at, label) : Number.POSITIVE_INFINITY;
     if (labelOff <= PICK_TOLERANCE) {
-      near.push({ person, byLabel: true, off: labelOff, depth });
+      near.push({ person, focus, byLabel: true, off: labelOff, depth });
       continue;
     }
-    const corners = boxCorners(new THREE.Box3(new THREE.Vector3(b.x0, b.y0, b.z0), new THREE.Vector3(b.x1, b.y1, b.z1)));
-    const box = screenBox(corners, camera, size.width, size.height);
+    const box = screenBox(focus.box, camera, size.width, size.height);
     if (!box) continue;
     const off = offBox(at, box);
-    if (off <= PICK_TOLERANCE) near.push({ person, byLabel: false, off, depth });
+    if (off <= PICK_TOLERANCE) near.push({ person, focus, byLabel: false, off, depth });
   }
   near.sort((p, q) => Number(q.byLabel) - Number(p.byLabel) || p.off - q.off || p.depth - q.depth);
-  for (const { person, depth } of near) {
-    const face = zoomFocus(person.bounds, layout);
+  for (const { person, focus, depth } of near) {
+    const face = focus.point;
     const sight = new THREE.Raycaster(eye, face.clone().sub(eye).normalize(), 0, depth);
     const first = sight.intersectObjects(things, true)[0];
     if (first && thingIdOf(first.object) !== person.thing.id) continue;
-    return { point: face, nearest: Math.max(ZOOM_NEAREST, outOfBox(face, eye, person.bounds, PERSON_CLEARANCE)) };
+    // An animal's frame already keeps the camera outside all of it; its Room.Layout box is not what is drawn.
+    return { point: face, nearest: Math.max(ZOOM_NEAREST, focus.frame > 0 ? focus.frame : outOfBox(face, eye, person.bounds, PERSON_CLEARANCE)) };
   }
 
   // The walls as drawn (cut low or full height) stop the ray, so it never reaches a point beyond them.

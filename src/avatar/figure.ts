@@ -473,8 +473,9 @@ function outlineSeams(colours: FigureColours, jaw: string | undefined): Seam[] {
 
 /**
  * A person in a body plan other than the human one. No hair, facial hair, face or features are read, and no neutral
- * skin or clothing is filled in; colours come from the form's `covering` and `eyes` (resolvePlan). A plan covering only
- * the head (the shark head) draws the body from the record's `skin` and `build`. A humanoid plan keeps `garments` when
+ * skin is filled in; colours come from the form's `covering` and `eyes` (resolvePlan). A plan covering only the head
+ * (the shark head) draws the body from the record's `skin` and `build`, dressed in the neutral clothing when no
+ * garments are sent, as the human figure is; other plans get no clothing they were not sent. A humanoid plan keeps `garments` when
  * sent, `traits` parts and `posture`; an animal plan and an unknown plan's placeholder are sized by the box
  * (`footprint` and `height`) and always stand.
  */
@@ -485,7 +486,13 @@ function planParams(record: Record<string, unknown>, plan: Exclude<ResolvedPlan,
   // An unknown plan has no colour of its own: the placeholder takes the plain person colour (you in blue).
   const main = plan.kind === "unknown" ? (hexOrUndefined(base) ?? UNCOLOURED_GARMENT) : plan.skin;
   const head = plan.kind === "unknown" ? main : plan.kind === "animal" ? plan.head : (plan.headColour ?? main);
-  const worn = humanoid ? outermostByArea(record) : {};
+  // A plan covering only the head keeps the person's own body, so with no garments sent it is dressed as a person
+  // with none is (NEUTRAL_CLOTHING), not drawn bare. Other plans' bodies are the form's own: garments only as sent.
+  const sentGarments = humanoid ? outermostByArea(record) : {};
+  const worn: Partial<Record<Area, string>> =
+    humanoid?.covers === "head" && Object.keys(sentGarments).length === 0
+      ? { torso: NEUTRAL_CLOTHING, arms: NEUTRAL_CLOTHING, waist: NEUTRAL_CLOTHING, legs: NEUTRAL_CLOTHING, feet: NEUTRAL_CLOTHING }
+      : sentGarments;
   const colours: FigureColours = {
     skin: main,
     head: worn.head ?? head,
