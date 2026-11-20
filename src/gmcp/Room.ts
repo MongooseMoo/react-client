@@ -69,6 +69,8 @@ export interface LayoutFormBox {
   basis?: [LayoutVector, LayoutVector, LayoutVector];
   role?: string;
   label?: string;
+  /** MOO palette entry for this part. The renderer reads its validated hex value. */
+  colour?: unknown;
   fitting?: LayoutFitting;
 }
 
