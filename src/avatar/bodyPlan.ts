@@ -35,11 +35,17 @@ interface PlanColours {
   secondary: ColourSlot[];
   /**
    * With a covering colour sent and no colour sent for the accent, the accent is this tone of the covering's main
-   * colour (a werewolf's lighter muzzle, a snake's darker bands). Without it the plan's own accent stays (a song
-   * bird's orange breast).
+   * colour (a werewolf's lighter muzzle, a snake's darker bands, a song bird's lighter breast). Without it the plan's
+   * own accent stays: a mark of the species, drawn the same in 3D and in the portrait (the shark's white underside).
    */
   accentTone?: "darker" | "lighter";
 }
+
+/**
+ * How far a colour toward the dark or light ink makes each tone of the covering's main colour that the form does not
+ * send: an animal's head a shade darker than its body, its wings darker again, an accent toned by `accentTone`.
+ */
+export const TONE_STEP = { head: 0.12, wing: 0.25, accent: 0.35 } as const;
 
 export interface HumanoidPlan extends PlanColours {
   kind: "humanoid";
@@ -86,11 +92,13 @@ export interface AnimalPlan extends PlanColours {
   animal: AnimalKind;
   /** The body's colour. */
   skin: string;
+  /** The head; with a covering colour sent and none for the head, a shade darker than the body (TONE_STEP). */
   head: string;
-  /** The folded wings (duck and bird). */
+  /** The folded wings (duck and bird); with a covering colour sent and none for them, darker than the body. */
   wing: string;
-  /** Bill or beak. */
+  /** Bill, beak or tongue: a mark of the species, never taken from the covering (the mallard's yellow bill). */
   beak: string;
+  /** Legs and feet: a mark of the species too. */
   feet: string;
 }
 
@@ -274,8 +282,10 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     kind: "animal",
     animal: "songbird",
     covering: "feathers",
-    // The covering's second colour: the breast; its third, the wings and tail.
+    // The covering's second colour: the breast; its third, the wings and tail. With only one colour sent, the breast
+    // is a lighter tone of it: the orange of the plan's own look is not a colour the game sent.
     secondary: ["accent", "wing"],
+    accentTone: "lighter",
     skin: "#7a5a3c",
     head: "#6e5034",
     wing: "#6e5034",
@@ -304,8 +314,10 @@ export function bodyPlanName(record: Record<string, unknown>): string {
  * word); `covering.colours`, the
  * first for the body (the head for a plan covering only the head) and the rest into the plan's `secondary` slots in
  * order; `eyes`. A plan covering only the head draws its body in the record's `skin`. Each colour is taken by its
- * position; one that is missing or not a colour leaves that place to the plan's default. Any other plan is unknown:
- * a placeholder, with no colour invented.
+ * position. A place with no colour sent: with the main colour sent, a tone of it (TONE_STEP; the accent only where the
+ * plan has `accentTone`), so a form drawn in one sent colour shows only that colour and its tones; with no colour
+ * sent at all, the plan's default. Bills, beaks, feet, eyes and an accent without `accentTone` are marks of the
+ * species, kept the same in 3D and in the portrait. Any other plan is unknown: a placeholder, with no colour invented.
  */
 export function resolvePlan(record: Record<string, unknown>): ResolvedPlan {
   const name = bodyPlanName(record);
@@ -328,9 +340,11 @@ export function resolvePlan(record: Record<string, unknown>): ResolvedPlan {
     const hex = hexes[i + 1];
     if (hex) slots[slot] = hex;
   });
-  const accent = slots.accent ?? (main && spec.accentTone ? overlayHex(main, spec.accentTone === "darker" ? INK_DARK : INK_LIGHT, 0.35) : spec.accent);
+  const accent = slots.accent ?? (main && spec.accentTone ? overlayHex(main, spec.accentTone === "darker" ? INK_DARK : INK_LIGHT, TONE_STEP.accent) : spec.accent);
   if (spec.kind === "animal") {
-    return { ...spec, name, covering, eyes, accent, skin: main ?? spec.skin, head: slots.head ?? spec.head, wing: slots.wing ?? spec.wing };
+    const head = slots.head ?? (main ? overlayHex(main, INK_DARK, TONE_STEP.head) : spec.head);
+    const wing = slots.wing ?? (main ? overlayHex(main, INK_DARK, TONE_STEP.wing) : spec.wing);
+    return { ...spec, name, covering, eyes, accent, skin: main ?? spec.skin, head, wing };
   }
   if (spec.covers === "head") {
     return { ...spec, name, covering, eyes, accent, skin: colourHex(record.skin) ?? spec.skin, headColour: main ?? spec.headColour };
