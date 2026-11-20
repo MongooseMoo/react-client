@@ -14,7 +14,7 @@ import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import "../../../src/tokens.css";
 import "../../../src/index.css";
 import "../../../src/components/MapPanel.css";
-import { LIVE_FORM_CHARACTERS, PLAN_CHARACTERS } from "../../../src/avatar/bodyPlans.fixture";
+import { LIVE_FORM_CHARACTERS, PLAN_CHARACTERS, REAL_SIZE_FORM_CHARACTERS } from "../../../src/avatar/bodyPlans.fixture";
 import { TEST_CHARACTERS, type TestCharacter } from "../../../src/avatar/characters.fixture";
 import { figureParams } from "../../../src/avatar/figure";
 import AvatarPortrait from "../../../src/avatar/portrait";
@@ -263,6 +263,8 @@ const SETS: Record<string, TestCharacter[]> = {
   plans: PLAN_CHARACTERS,
   // `set=forms`: the forms in the boxes the game sent for them in the live check of 2026-11-20.
   forms: LIVE_FORM_CHARACTERS,
+  // `set=sizes`: the animal forms in the real-size boxes the game sends since the second live check of 2026-11-20.
+  sizes: REAL_SIZE_FORM_CHARACTERS,
   round7: ROUND7_CHARACTERS,
   vocab: VOCAB_CHARACTERS,
   face: FACE_CHARACTERS,
@@ -288,6 +290,7 @@ declare global {
       height: number;
       labels: Array<{ id: string; text: string; x0: number; x1: number; y0: number; y1: number }>;
       heads: Array<{ id: string; x0: number; x1: number; y0: number; y1: number; cx: number }>;
+      figures: Array<{ id: string; x0: number; x1: number; y0: number; y1: number }>;
       camera: number[] | null;
       fov: number | null;
       boxes: Array<{ id: string; box: number[][] }>;
@@ -534,6 +537,8 @@ if (view === "portraits") {
         return { id: owner.get(e) ?? "", text: e.textContent ?? "", x0: r.left - frame.left, x1: r.right - frame.left, y0: r.top - frame.top, y1: r.bottom - frame.top };
       });
     const heads: Array<{ id: string; x0: number; x1: number; y0: number; y1: number; cx: number }> = [];
+    // Each visible person's whole figure as drawn (every vertex in front of the camera, projected).
+    const figures: Array<{ id: string; x0: number; x1: number; y0: number; y1: number }> = [];
     if (seen) {
       const { scene, camera } = seen;
       scene.updateMatrixWorld(true);
@@ -547,13 +552,19 @@ if (view === "portraits") {
         const chin = p.top - p.headHeight * 1.05 + (thing ? (thing.shapes[0].box as number[][])[2][0] : 0);
         const position = object.geometry.getAttribute("position");
         const box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+        const whole = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
         for (let i = 0; i < position.count; i++) {
           v.fromBufferAttribute(position, i).applyMatrix4(object.matrixWorld);
-          if (v.z < chin) continue;
+          const above = v.z >= chin;
           v.project(camera);
           if (Math.abs(v.z) > 1) continue;
           const x = ((v.x + 1) / 2) * frame.width;
           const y = ((1 - v.y) / 2) * frame.height;
+          whole.x0 = Math.min(whole.x0, x);
+          whole.x1 = Math.max(whole.x1, x);
+          whole.y0 = Math.min(whole.y0, y);
+          whole.y1 = Math.max(whole.y1, y);
+          if (!above) continue;
           box.x0 = Math.min(box.x0, x);
           box.x1 = Math.max(box.x1, x);
           box.y0 = Math.min(box.y0, y);
@@ -562,13 +573,14 @@ if (view === "portraits") {
         if (box.x0 <= box.x1 && box.x1 > 0 && box.x0 < frame.width && box.y1 > 0 && box.y0 < frame.height) {
           heads.push({ id, ...box, cx: (box.x0 + box.x1) / 2 });
         }
+        if (whole.x0 <= whole.x1) figures.push({ id, ...whole });
       });
     }
     const at = seen?.camera.position;
     // Each person's box in the room (metres), to tell whether the camera is inside one.
     const boxes = layout.things.map((t) => ({ id: t.id, box: t.shapes[0].box as number[][] }));
     const fov = seen?.camera instanceof THREE.PerspectiveCamera ? seen.camera.fov : null;
-    return { width: frame.width, height: frame.height, labels, heads, camera: at ? [at.x, at.y, at.z] : null, fov, boxes };
+    return { width: frame.width, height: frame.height, labels, heads, figures, camera: at ? [at.x, at.y, at.z] : null, fov, boxes };
   };
   THREE.Scene.prototype.onAfterRender = (renderer: THREE.WebGLRenderer) => {
     renderMs += performance.now() - renderStart;

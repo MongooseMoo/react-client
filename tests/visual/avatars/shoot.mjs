@@ -1,6 +1,6 @@
 // Tests only: screenshots of the invented test characters and frame times of the
 // 3D view, in headless Chromium (no window). Usage:
-//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d] [--pinch] [--vocab] [--labels3d] [--face] [--zoomlabel] [--plans] [--forms]
+//   node tests/visual/avatars/shoot.mjs <output directory> [--gpu] [--view3d] [--pinch] [--vocab] [--labels3d] [--face] [--zoomlabel] [--plans] [--forms] [--tiny]
 // --gpu asks headless Chromium for the machine's GPU instead of its software renderer.
 // --vocab shoots the game's vocabulary (a portrait per value, builds and beard lengths in 3D)
 // instead of the test characters and zoom checks; frame times are measured either way.
@@ -35,6 +35,10 @@ const plans = process.argv.includes('--plans');
 // --forms shoots the forms in the boxes the game sent on 2026-11-20 (set=forms): a Dollhouse overview of a 10 m room,
 // the wheel under each animal's label and a quarter turn, each figure framed by what is drawn, and the portraits.
 const forms = process.argv.includes('--forms');
+// --tiny shoots the animal forms in their real-size boxes (set=sizes): each figure framed front, three-quarters and
+// side; a Dollhouse overview of a 10 m room; the wheel under each one's label (and on the bird) at 12, 20 and 30
+// notches, a quarter and a half turn, and 30 notches back out.
+const tiny = process.argv.includes('--tiny');
 mkdirSync(out, { recursive: true });
 
 // --port=N: the local server's port (default 5199), for when another harness run holds it.
@@ -481,7 +485,87 @@ try {
     }
     await view.close();
   }
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans && !forms) {
+  if (tiny) {
+    // Each real-size figure framed by what is drawn, from the front, three-quarters and the side.
+    const tall = await browser.newPage({ viewport: { width: 1280, height: 420 + 100 }, colorScheme: 'dark' });
+    for (const angle of ['front', 'three', 'side']) {
+      await tall.goto(`${base}?view=figures&angle=${angle}&zoom=body&set=sizes&fit=drawn`);
+      await tall.waitForFunction(() => window.ready === true, null, { timeout: 60000 });
+      await tall.locator('#root > div').screenshot({ path: resolve(out, `tiny-figures-${angle}.png`) });
+    }
+    await tall.close();
+    // The live room's size (10 x 10 m); the bird where the live check's subject stood, the others apart from it.
+    const room = 'view=room&set=sizes&size=10&places=2,2.15;-2.5,0;2.5,-1;-0.16,1.98&mode=dollhouse&width=960';
+    const view = await browser.newPage({ viewport: { width: 1000, height: 800 }, colorScheme: 'dark' });
+    view.on('pageerror', (e) => errors.push(e.message));
+    const go = async () => {
+      await view.goto(`${base}?${room}`);
+      await view.waitForFunction(() => window.ready === true);
+      await view.waitForTimeout(300);
+      return view.locator('.room-layout-3d');
+    };
+    // The camera's place and each person's whole figure on screen, CSS pixels.
+    const report = async (tag) => {
+      const r = await view.evaluate(() => window.labelReport());
+      const figures = Object.fromEntries(r.figures.map((f) => [f.id, `${Math.round(f.x1 - f.x0)}x${Math.round(f.y1 - f.y0)}`]));
+      console.log(tag, JSON.stringify({ camera: r.camera?.map((n) => Math.round(n * 100) / 100), figures, labels: r.labels.map((l) => l.id) }));
+      return r;
+    };
+    let pic = await go();
+    await pic.screenshot({ path: resolve(out, 'tiny-doll.png') });
+    const start = await report('tiny-doll');
+    // The bird enlarged four times from the overview, so its marker (or its lack) can be seen.
+    const bird = start.figures.find((f) => f.id === '#p3');
+    if (bird) {
+      const frame = await pic.boundingBox();
+      const cx = frame.x + (bird.x0 + bird.x1) / 2;
+      const cy = frame.y + (bird.y0 + bird.y1) / 2;
+      await view.screenshot({ path: resolve(out, 'tiny-doll-bird-crop.png'), clip: { x: cx - 60, y: cy - 60, width: 120, height: 120 } });
+    }
+    // The wheel 8 px under each one's label (and for the bird, on its figure too): 12, 20 and 30 notches, a quarter
+    // and a half turn with the arrow keys, then 30 notches back out.
+    for (const [id, where] of [['#p3', 'label'], ['#p3', 'figure'], ['#p1', 'label'], ['#p2', 'label'], ['#p0', 'label']]) {
+      pic = await go();
+      const frame = await pic.boundingBox();
+      const r = await view.evaluate(() => window.labelReport());
+      const label = r.labels.find((l) => l.id === id);
+      const figure = r.figures.find((f) => f.id === id);
+      const tag = `tiny-zoom-${id.slice(1)}-${where}`;
+      if (where === 'label' && !label) {
+        console.log(`${tag}: no label shown`);
+        continue;
+      }
+      const pointer = where === 'label' ? { x: (label.x0 + label.x1) / 2, y: label.y1 + 8 } : { x: (figure.x0 + figure.x1) / 2, y: (figure.y0 + figure.y1) / 2 };
+      await view.mouse.move(frame.x + pointer.x, frame.y + pointer.y);
+      for (let i = 1; i <= 30; i++) {
+        await view.mouse.wheel(0, -100);
+        await view.waitForTimeout(20);
+        if (i === 12 || i === 20 || i === 30) {
+          await view.waitForTimeout(150);
+          await pic.screenshot({ path: resolve(out, `${tag}-n${i}.png`) });
+          await report(`${tag}-n${i}`);
+        }
+      }
+      await pic.focus();
+      for (let i = 1; i <= 18; i++) {
+        await view.keyboard.press('ArrowLeft');
+        if (i === 9 || i === 18) {
+          await view.waitForTimeout(150);
+          await pic.screenshot({ path: resolve(out, `${tag}-turn${i * 10}.png`) });
+          await report(`${tag}-turn${i * 10}`);
+        }
+      }
+      for (let i = 1; i <= 30; i++) {
+        await view.mouse.wheel(0, 100);
+        await view.waitForTimeout(20);
+      }
+      await view.waitForTimeout(150);
+      await pic.screenshot({ path: resolve(out, `${tag}-out30.png`) });
+      await report(`${tag}-out30`);
+    }
+    await view.close();
+  }
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans && !forms && !tiny) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -530,7 +614,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans && !forms) {
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans && !forms && !tiny) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');

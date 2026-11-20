@@ -82,6 +82,19 @@ export const PLAN_CHARACTERS: TestCharacter[] = [
 const sent = (plan: string, label: string, traits: string[] = []): LayoutAppearance => ({ label, body_plan: plan, traits, posture: "standing", ...GAME_LOOKS[plan] });
 
 /**
+ * The animal forms in the boxes the game sends since it sends their real sizes (second live check of 2026-11-20,
+ * reports/player-avatars-live-forms-second-2026-11-20.md): a mallard duck 0.22 x 0.58 x 0.30 m, a snake 0.04 x 0.75 x
+ * 0.04 m lying along the floor, a song bird 0.08 x 0.06 x 0.12 m; and a plain person for scale. Names are made up.
+ * Tests and the picture harness only.
+ */
+export const REAL_SIZE_FORM_CHARACTERS: TestCharacter[] = [
+  { name: "person, for scale", height: 1.75, appearance: { label: "a person", body_plan: "human body", skin: colour("skin", "monk04"), posture: "standing" } },
+  { name: "mallard duck, real size", height: 0.3, box: [0.22, 0.58], appearance: sent("mallard duck", "a duck", ["bird", "wings", "tail"]) },
+  { name: "snake, real size", height: 0.04, box: [0.04, 0.75], appearance: sent("snake", "a snake", ["tail"]) },
+  { name: "song bird, real size", height: 0.12, box: [0.08, 0.06], appearance: sent("song bird", "a bird", ["bird", "wings", "tail"]) },
+];
+
+/**
  * The forms in the boxes the game sent for them in the live check of 2026-11-20 (raw Room.Layout,
  * reports/player-avatars-client-forms-live-fixes-2026-11-20.md): a snake in a 0.16 x 0.16 m box 3.08 m tall, a duck
  * in 0.88 x 2.31 x 1.19 m, a song bird in 1.21 x 0.91 x 1.82 m; then a snake in a thin low box and in a small cube; the
