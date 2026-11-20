@@ -1,11 +1,13 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { planParts } from "../map/bodyPlanMesh";
 import { BODY_PLANS, HUMAN_PLAN, resolvePlan } from "./bodyPlan";
 import { GAME_LOOKS, PLAN_CHARACTERS } from "./bodyPlans.fixture";
 import { TEST_CHARACTERS } from "./characters.fixture";
+import { hexToRgb, INK_DARK, INK_LIGHT, overlayHex } from "./colour";
 import { figureFills, figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN, tokenColours } from "./figure";
-import AvatarPortrait, { HEAD_VIEWBOX, portraitElements } from "./portrait";
+import AvatarPortrait, { HEAD_VIEWBOX, PORTRAIT_BACKDROP, portraitElements } from "./portrait";
 
 /** The plans the game sends today (reports/player-avatars-forms-wire-2026-11-19.md). */
 const GAME_PLANS = ["werewolf", "zombie", "rakghoul", "devolved primate", "quartz-crystallized body", "human with a transfigured shark head", "mallard duck", "snake", "song bird"];
@@ -37,7 +39,8 @@ describe("body plans: figure parameters", () => {
       expect(p.build, plan).toBe(plan === "human with a transfigured shark head" ? "muscular" : "average");
       const fills = figureFills(p);
       expect(fills.has(NEUTRAL_SKIN) && plan !== "human with a transfigured shark head", plan).toBe(false);
-      expect(fills.has(NEUTRAL_CLOTHING), plan).toBe(false);
+      // The shark head's body is the person's own, dressed as a person with no garments is; no other plan is dressed.
+      expect(fills.has(NEUTRAL_CLOTHING), plan).toBe(plan === "human with a transfigured shark head");
       // The human record's hair and beard colour is nowhere in the figure.
       expect(fills.has("#141414"), plan).toBe(false);
     }
@@ -69,8 +72,43 @@ describe("body plans: figure parameters", () => {
     const snake = resolvePlan(form("snake", { covering: { kind: "scales", colours: [{ hex: "#8a5a32" }] } }));
     expect(snake).toMatchObject({ skin: "#8a5a32" });
     expect(snake.kind === "animal" && snake.accent).not.toBe(BODY_PLANS.snake.accent);
-    // A song bird keeps its orange breast.
-    expect(resolvePlan(form("song bird", { covering: { colours: [{ hex: "#8a5a32" }] } }))).toMatchObject({ accent: BODY_PLANS["song bird"].accent });
+    // A song bird's breast is a lighter tone of the one colour sent, not the plan's own orange.
+    expect(resolvePlan(form("song bird", { covering: { colours: [{ hex: "#8a5a32" }] } }))).toMatchObject({ accent: overlayHex("#8a5a32", INK_LIGHT, 0.35) });
+    // With nothing sent, the plan's own look.
+    expect(resolvePlan(form("song bird"))).toMatchObject({ accent: BODY_PLANS["song bird"].accent });
+  });
+
+  it("draws a form sent in one colour in that colour and its tones only, but for the species' marks, in 3D and in the portrait alike", () => {
+    // Every colour of the drawing is the sent colour, or that colour moved part way toward the dark or the light ink.
+    const isToneOf = (hex: string, main: string) =>
+      [INK_DARK, INK_LIGHT].some((ink) => {
+        const [c, m, k] = [hexToRgb(hex), hexToRgb(main), hexToRgb(ink)];
+        const ts = [0, 1, 2].filter((i) => Math.abs(k[i] - m[i]) > 8).map((i) => (c[i] - m[i]) / (k[i] - m[i]));
+        return ts.every((t) => t >= -0.01 && t <= 0.6 && Math.abs(t - ts[0]) < 0.03);
+      });
+    for (const plan of ["snake", "song bird"]) {
+      const look = GAME_LOOKS[plan];
+      const main = look.covering.colours[0].hex;
+      const p = figureParams(form(plan, look), { height: 1.75, footprint: { width: 1, depth: 1 } });
+      const spec = p.plan.kind === "animal" ? p.plan : undefined;
+      const marks = new Set([spec?.eyes, spec?.beak, spec?.feet, INK_DARK, PORTRAIT_BACKDROP, p.colours.ink, "none"]);
+      const threeD = planParts(p).map((x) => x.colour).filter((c) => !marks.has(c));
+      const { container, unmount } = render(<svg>{portraitElements(form(plan, look))}</svg>);
+      const portrait = [...container.querySelectorAll("[fill]")].map((e) => e.getAttribute("fill") ?? "").filter((c) => !marks.has(c));
+      unmount();
+      for (const c of [...threeD, ...portrait]) expect(isToneOf(c, main), `${plan}: ${c}`).toBe(true);
+    }
+  });
+
+  it("draws the song bird's breast the same in 3D and in the portrait, with and without a sent look", () => {
+    for (const appearance of [form("song bird"), form("song bird", GAME_LOOKS["song bird"])]) {
+      const p = figureParams(appearance, { height: 0.3, footprint: { width: 0.1, depth: 0.2 } });
+      const breast3d = planParts(p).find((x) => x.name === "breast")?.colour;
+      const { container, unmount } = render(<svg>{portraitElements(appearance)}</svg>);
+      const breast = container.querySelector(".avatar-breast")?.getAttribute("fill");
+      unmount();
+      expect(breast).toBe(breast3d);
+    }
   });
 
   it("keeps the plan's defaults for anything missing or wrong in the sent look, by position", () => {
