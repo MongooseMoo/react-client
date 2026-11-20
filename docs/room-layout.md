@@ -281,10 +281,14 @@ full strength and in the same shading, and its own waves or locks take over a li
 lock; there each lock starts a little up the crown, by its own height, so where the hair worn down
 begins is a ragged line, never one level edge right round the back of the head. Wavy hair worn down hangs from the
 outline of the hair over the crown: where it starts it does not swell out past the crown in a band round the back of
-the head, and at the sides its outline widens from the crown's gradually, without a step.
+the head, and at the sides its outline widens from the crown's gradually, without a step. Curly and coily hair past the
+jaw starts higher up the crown round the sides of the head, where the hair over the crown is still near its widest, and
+lies on it there with the same curls and shading, so from behind and to one side there is no ledge where it begins; its
+front edges stay forward beside the face down to the shoulders and go back in toward the neck only below them.
 Curly and coily hair to the jaw carries on the round and the curls of the hair over the crown and
 closes in from the hair's own width to end above the jaw: one rounded mass that never stands out
-past the head at the ears. Curly and coily hair past the jaw hangs in ringlets: locks side by side
+past the head at the ears; curls to the jaw close in from where they start, so from behind they are no wider than the
+hair over the crown. Curly and coily hair past the jaw hangs in ringlets: locks side by side
 with open grooves between them, each with its own twist rate, phase, width and length, so no
 pattern repeats from lock to lock and no row of highlights lines up across them, each turning every two
 (coils) or two and a half (curls) rows of the fall so it reads as curls rather than a rope or a smooth fall, their sheen softer

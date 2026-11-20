@@ -1478,3 +1478,92 @@ describe("round nine: hair worn down where it meets the crown, curls down long h
     }
   });
 });
+
+describe("round ten: where long curls and coils worn down meet the crown, chin-length curls from behind, and the lock beside the face in 3D", () => {
+  const isHair = (part: ReturnType<typeof figureParts>[number] | undefined) => ["cap", "hair", "rim"].includes(part?.name ?? "");
+  /**
+   * In a picture, each row's outline on one side (how far out its outermost hair cell is), and the deepest dent in it
+   * between rows `lo` and `hi`: how far the outline there lies inside the lesser of its widest above and its widest below.
+   */
+  const dent = (grid: ReturnType<typeof picture>, side: 1 | -1, lo: number, hi: number, step: number) => {
+    const ext = grid.map((row) => {
+      const i = side < 0 ? row.findIndex(isHair) : row.length - 1 - [...row].reverse().findIndex(isHair);
+      return row.some(isHair) ? side * i * step : Number.NaN;
+    });
+    let worst = 0;
+    for (let j = lo + 1; j < hi; j++) {
+      const above = Math.max(...ext.slice(j + 1, hi + 1).filter((x) => !Number.isNaN(x)));
+      const below = Math.max(...ext.slice(lo, j).filter((x) => !Number.isNaN(x)));
+      if (!Number.isNaN(ext[j])) worst = Math.max(worst, Math.min(above, below) - ext[j]);
+    }
+    return worst;
+  };
+
+  it("starts long curls and coils worn down up the crown round the sides of the head, so from behind the outline runs down from the crown into them without a waist where they begin", () => {
+    const dents: string[] = [];
+    let sum = 0;
+    for (const texture of ["curly", "coily"]) {
+      for (const length_cm of [30, 50, 75]) {
+        const { p, headR, headZ } = standing({ skin: { hex: "#f6ede4" }, hair: { length_cm, texture, hex: "#653700" } });
+        const parts = figureParts(p);
+        for (const el of [0, 15]) {
+          const step = headR / 150;
+          const view = { az: Math.PI, el: (el * Math.PI) / 180, centre: new THREE.Vector3(0, 0, headZ) };
+          const grid = picture(parts, view, [-headR * 1.8, -headR * 0.6, headR * 1.8, headR * 0.6], step, true);
+          // From 0.3 head radii under the head's middle to 0.45 over it: the crown's lower part and where the fall begins.
+          const [lo, hi] = [Math.round(0.3 * 150), Math.round(1.05 * 150)];
+          for (const side of [-1, 1] as const) {
+            const d = dent(grid, side, lo, hi, step) / headR;
+            sum += d;
+            dents.push(`${texture} ${length_cm} el ${el} ${side < 0 ? "left" : "right"} ${d.toFixed(3)}`);
+          }
+        }
+      }
+    }
+    // Round nine's: 0.057 head radii on average (the crown curving in to its rim above a fall starting level with the
+    // back of the head, and the fall's top standing out below it).
+    expect(sum / dents.length, dents.join(", ")).toBeLessThan(0.045);
+  });
+
+  it("draws curls to the jaw from behind no wider below the crown than the crown itself, never a band at ear height like a rolled cuff", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
+      const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm: 18, texture: "curly", hex } });
+      const parts = figureParts(p);
+      const step = headR / 100;
+      const grid = picture(parts, "back", [-headR * 1.6, headZ - headR * 1.2, headR * 1.6, headZ + headR * 1.2], step, true);
+      const half = grid.map((row) => (row.some(isHair) ? ((row.length - 1 - [...row].reverse().findIndex(isHair) - row.findIndex(isHair)) * step) / 2 / headR : 0));
+      const at = (j: number) => -1.2 + ((j + 0.5) * step) / headR;
+      const widest = (lo: number, hi: number) => Math.max(...half.filter((_, j) => at(j) >= lo && at(j) <= hi));
+      // Round nine's: the curls below the crown 0.06 head radii wider than the crown, a band at ear height.
+      const band = widest(-0.4, 0.1) - widest(0.15, 0.6);
+      expect(band, `curly 18 cm on ${skin}`).toBeLessThan(0.02);
+    }
+  });
+
+  it("keeps long curls' and coils' front edge forward beside the face down to the shoulders, so the lock beside the face meets the shoulder broad, not in a point", () => {
+    // (Shoulder-length and long: a waist-length fall's rows are too far apart there to follow the edge, see `Not done`.)
+    for (const texture of ["curly", "coily"]) {
+      for (const length_cm of [30, 50]) {
+        const { p, headR, headZ } = standing({ skin: { hex: "#292420" }, hair: { length_cm, texture, hex: "#1b1612" } });
+        const pos = figureParts(p).find((x) => x.name === "hair")?.geometry.getAttribute("position") as THREE.BufferAttribute;
+        // The fall's front edge on one side (its last column, outer side), by height: how far forward it is (head radii).
+        const columns = texture === "curly" ? 16 : 20;
+        const edge = Array.from({ length: pos.count / 2 / (columns + 1) }, (_, iy) => {
+          const i = iy * (columns + 1) + columns;
+          return [(pos.getZ(i) - headZ) / headR, pos.getY(i) / headR];
+        });
+        const forwardAt = (dz: number) => {
+          const k = edge.findIndex((e) => e[0] <= dz);
+          const [a, b] = [edge[k - 1], edge[k]];
+          return a[1] + ((b[1] - a[1]) * (a[0] - dz)) / (a[0] - b[0]);
+        };
+        const cheek = Math.max(...edge.filter((e) => e[0] <= -0.35 && e[0] >= -0.75).map((e) => e[1]));
+        // Where the shoulder's top cuts the hair seen from the front and to one side, 1.1 head radii under the head's
+        // middle. Round nine's edge went back in toward the neck from 0.85, 0.15 to 0.2 behind the cheek by there, and
+        // the lock beside the face narrowed to a point where the shoulder cut it.
+        const shoulder = forwardAt(-1.1);
+        expect(cheek - shoulder, `${texture} ${length_cm} cm: cheek ${cheek.toFixed(2)} at the shoulder ${shoulder.toFixed(2)}`).toBeLessThan(0.1);
+      }
+    }
+  });
+});
