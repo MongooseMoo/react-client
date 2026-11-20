@@ -28,6 +28,7 @@ import {
   dollhousePose,
   EYES_FOV,
   panTo,
+  personFocus,
   zoomFocus,
   eyesPose,
   Pinch,
@@ -466,7 +467,9 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
   /** Slides the dollhouse view over to your figure, unturned, then moves the camera `scale` times as far from it. */
   const zoomToward = (stage: Stage, scale: number) => {
     wheelFocus.current = null;
-    panTo(stage.camera, stage.controls.target, zoomFocus(youBounds, layout));
+    // Your face, or the middle of your figure as drawn when you are an animal form (`personFocus`).
+    const you = placed.find((p) => p.thing.id === youId);
+    panTo(stage.camera, stage.controls.target, you && stage.room ? personFocus(stage.room, you, layout).point : zoomFocus(youBounds, layout));
     stage.controls.dollyIn(scale);
   };
 
