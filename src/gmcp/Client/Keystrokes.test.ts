@@ -590,6 +590,49 @@ describe("GMCPClientKeystrokes", () => {
       expect(client.sendCommand).toHaveBeenCalledWith("interact #8");
     });
 
+    it("is on the one shared selection: landing on a thing selects it, landing on an exit selects nothing", () => {
+      const selected = () => useItemsStore.getState().selected?.id ?? null;
+      press(document.body, altBacktick);
+      expect(selected()).toBe("#7");
+      press(document.body, tab);
+      expect(selected()).toBe("#8");
+      press(document.body, tab);
+      press(document.body, tab);
+      expect(said()).toBe("north exit, 4 of 4");
+      expect(selected()).toBeNull();
+      press(document.body, { ...tab, shiftKey: true });
+      expect(selected()).toBe("#10");
+
+      press(document.body, { key: "Escape", code: "Escape" });
+      expect(selected()).toBe("#10");
+      expect(client.sendCommand).not.toHaveBeenCalled();
+    });
+
+    it("follows a thing selected elsewhere while it is on, from a thing or from an exit", () => {
+      press(document.body, altBacktick);
+      useItemsStore.getState().select("#8");
+      press(document.body, ctrlI);
+      expect(client.sendCommand).toHaveBeenLastCalledWith("interact #8");
+      press(document.body, tab);
+      expect(said()).toBe("Rindalin, 3 of 4");
+
+      press(document.body, tab);
+      expect(said()).toBe("north exit, 4 of 4");
+      useItemsStore.getState().select("#7");
+      press(document.body, ctrlI);
+      expect(client.sendCommand).toHaveBeenLastCalledWith("interact #7");
+      press(document.body, tab);
+      expect(said()).toBe("chest, 2 of 4");
+    });
+
+    it("starts on the thing already selected", () => {
+      useItemsStore.getState().select("#8");
+      press(document.body, altBacktick);
+      expect(said()).toBe("Interact mode on. chest, 2 of 4. Tab moves, Ctrl+I interacts, Escape ends.");
+      press(document.body, ctrlI);
+      expect(client.sendCommand).toHaveBeenCalledWith("interact #8");
+    });
+
     it("does not start with nothing around", () => {
       useItemsStore.getState().reset();
       useRoomStore.getState().reset();
