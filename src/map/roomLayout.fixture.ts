@@ -26,20 +26,24 @@ export function translateLayoutThing(layout: RoomLayout, id: string, delta: Layo
   }) };
 }
 
-/** The living room holding `count` people (#p0, #p1, …), each one of the test characters in turn, in rows of eight. */
-export const crowdLayout = (count: number): RoomLayout => {
+/**
+ * The living room holding `count` people (#p0, #p1, …), each one of `characters` (the test characters) in turn, in
+ * rows of eight, each in a box 0.4 m square or the character's own `box`.
+ */
+export const crowdLayout = (count: number, characters = TEST_CHARACTERS): RoomLayout => {
   const layout = livingRoomLayout();
   layout.things = Array.from({ length: count }, (_, i) => {
-    const ch = TEST_CHARACTERS[i % TEST_CHARACTERS.length];
+    const ch = characters[i % characters.length];
     const x = -2 + (i % 8) * 0.5;
     const y = -1.5 + Math.floor(i / 8) * 0.7;
+    const [w, d] = ch.box ?? [0.4, 0.4];
     return {
       id: `#p${i}`,
       name: ch.name,
       kind: "person" as const,
       fixed: true,
       mounted: false,
-      shapes: [{ box: [[x - 0.2, x + 0.2], [y - 0.2, y + 0.2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
+      shapes: [{ box: [[x - w / 2, x + w / 2], [y - d / 2, y + d / 2], [0, ch.height]] as [[number, number], [number, number], [number, number]] }],
       appearance: ch.appearance,
     };
   });

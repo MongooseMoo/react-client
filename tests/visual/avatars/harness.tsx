@@ -14,6 +14,7 @@ import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import "../../../src/tokens.css";
 import "../../../src/index.css";
 import "../../../src/components/MapPanel.css";
+import { PLAN_CHARACTERS } from "../../../src/avatar/bodyPlans.fixture";
 import { TEST_CHARACTERS, type TestCharacter } from "../../../src/avatar/characters.fixture";
 import { figureParams } from "../../../src/avatar/figure";
 import AvatarPortrait from "../../../src/avatar/portrait";
@@ -258,6 +259,8 @@ const ROUND7_CHARACTERS: TestCharacter[] = [
   faceOf("straight 8 cm, light", LIGHT, { length_cm: 8, texture: "straight", hex: HAIR.brown }, undefined, { face: { shape: "oval" } }),
 ];
 const SETS: Record<string, TestCharacter[]> = {
+  // `set=plans`: one person in each body plan the game sends, a human, and a plan the client does not know.
+  plans: PLAN_CHARACTERS,
   round7: ROUND7_CHARACTERS,
   vocab: VOCAB_CHARACTERS,
   face: FACE_CHARACTERS,
@@ -343,7 +346,7 @@ if (view === "portraits") {
   );
   window.ready = true;
 } else if (view === "plan") {
-  const layout = crowdLayout(TEST_CHARACTERS.length);
+  const layout = params.get("set") ? crowdLayout(CHARACTERS.length, CHARACTERS) : crowdLayout(TEST_CHARACTERS.length);
   render(
     <div style={{ width: 960 }}>
       <RoomLayoutPicture layout={layout} placed={placeThings(layout)} youId="" label="test room" onExit={noop} onSave={noop} />
@@ -391,7 +394,7 @@ if (view === "portraits") {
         kind: "person",
         fixed: true,
         mounted: false,
-        shapes: [{ box: [[-0.2, 0.2], [-0.2, 0.2], [0, ch.height]] }],
+        shapes: [{ box: [[-(ch.box?.[0] ?? 0.4) / 2, (ch.box?.[0] ?? 0.4) / 2], [-(ch.box?.[1] ?? 0.4) / 2, (ch.box?.[1] ?? 0.4) / 2], [0, ch.height]] }],
         appearance: ch.appearance,
       },
     ];
@@ -414,9 +417,12 @@ if (view === "portraits") {
     } else {
       const lookZ = head ? bounds.max.z - 0.14 : ch.height * 0.5;
       // `dist=1.05`: the head camera that far away, metres (about 150 px of head in a 420 px cell).
-      const distance = head ? Number(params.get("dist") ?? "0.75") : (ch.height * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
+      // A long, low animal is framed by its length, not its height.
+      const size = Math.max(ch.height, ...(ch.box ?? []).map((n) => n * 0.75));
+      const distance = head ? Number(params.get("dist") ?? "0.75") : (size * 0.62) / Math.tan(((fov / 2) * Math.PI) / 180);
       const level = Math.cos(elevation) * distance;
-      camera.position.set(Math.sin(angle) * level, -Math.cos(angle) * level, lookZ + (head ? 0.05 : 0.3) + Math.sin(elevation) * distance);
+      // A whole figure is seen from 30 cm above its middle; a small animal from less, so it is not seen from overhead.
+      camera.position.set(Math.sin(angle) * level, -Math.cos(angle) * level, lookZ + (head ? 0.05 : Math.min(0.3, Math.max(ch.height * 0.4, (ch.box?.[1] ?? 0) * 0.3))) + Math.sin(elevation) * distance);
       camera.lookAt(0, 0, lookZ);
     }
     cutWalls(room, layout, camera.position, "dollhouse");

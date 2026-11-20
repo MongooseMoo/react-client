@@ -30,6 +30,8 @@ const onlyQuery = (() => {
 })();
 // --zoomlabel shoots the wheel with the pointer under people's labels in the live check's room, then the frame timing.
 const zoomLabel = process.argv.includes('--zoomlabel');
+// --plans shoots the body plans (set=plans): portraits, plan tokens, whole figures front, three-quarters and side.
+const plans = process.argv.includes('--plans');
 mkdirSync(out, { recursive: true });
 
 // --port=N: the local server's port (default 5199), for when another harness run holds it.
@@ -104,6 +106,32 @@ try {
       await tall.locator('#root > div > canvas').screenshot({ path: resolve(out, `face-heads-${angle}.png`) });
     }
     await tall.close();
+  }
+  if (plans) {
+    // Body plans (set=plans): the portraits, the plan tokens, and each whole figure from the front, three-quarters
+    // and the side.
+    const sharp = await browser.newPage({ viewport: { width: 1280, height: 1400 }, colorScheme: 'dark', deviceScaleFactor: 2 });
+    await sharp.goto(`${base}?view=portraits&set=plans&big=1`);
+    await sharp.waitForFunction(() => window.ready === true);
+    await sharp.locator('table').screenshot({ path: resolve(out, 'plans-portraits.png') });
+    const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-').replace(/-+$/, '');
+    for (const row of await sharp.locator('tr').all()) {
+      await row.screenshot({ path: resolve(out, `plans-portrait-${slug(await row.locator('td').first().innerText())}.png`) });
+    }
+    await sharp.close();
+    await open('view=plan&set=plans');
+    await page.locator('svg.room-layout-svg, svg').first().screenshot({ path: resolve(out, 'plans-tokens.png') });
+    for (const angle of ['front', 'three', 'side']) {
+      await open(`view=figures&angle=${angle}&zoom=body&set=plans`);
+      const grid = page.locator('#root > div');
+      await grid.screenshot({ path: resolve(out, `plans-figures-${angle}.png`) });
+      const box = await grid.boundingBox();
+      const names = await page.locator('#root > div > div').allInnerTexts();
+      for (const [i, who] of names.entries()) {
+        const clip = { x: box.x + (i % 4) * 300, y: box.y + Math.floor(i / 4) * 420, width: 300, height: 420 };
+        await page.screenshot({ path: resolve(out, `plans-figure-${angle}-${slug(who)}.png`), clip });
+      }
+    }
   }
   if (pinch) {
     // A phone player in the 50 m room: two fingers pinch outward over Cleo (#p2, facing away), then one
@@ -373,7 +401,7 @@ try {
     console.log('zl-middle-n08', JSON.stringify(await state(5)));
     await narrow.close();
   }
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel) {
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans) {
     const slug = (name) => name.toLowerCase().replace(/[^a-z]+/g, '-');
     await open('view=portraits');
     await page.locator('table').screenshot({ path: resolve(out, 'portraits.png') });
@@ -422,7 +450,7 @@ try {
     }
   }
   // Keyboard zoom: focus the 3D picture, press + and -, and see whether the picture changes.
-  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel) {
+  if (!gpu && !view3d && !pinch && !labels3d && !vocab && !face && !zoomLabel && !plans) {
     for (const [mode, size] of [['dollhouse', 50], ['dollhouse', 0], ['eyes', 50]]) {
       await open(`view=room&n=8&mode=${mode}${size ? `&size=${size}` : ''}`);
       const pic = page.locator('.room-layout-3d');
