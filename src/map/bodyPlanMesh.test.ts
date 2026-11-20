@@ -2,14 +2,31 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { BODY_PLANS } from "../avatar/bodyPlan";
-import { GAME_LOOKS, LIVE_FORM_CHARACTERS, PLAN_CHARACTERS } from "../avatar/bodyPlans.fixture";
+import { GAME_LOOKS, LIVE_FORM_CHARACTERS, PLAN_CHARACTERS, REAL_SIZE_FORM_CHARACTERS } from "../avatar/bodyPlans.fixture";
 import { contrast, INK_DARK } from "../avatar/colour";
 import { figureParams, NEUTRAL_CLOTHING } from "../avatar/figure";
 import { FACET_SHADES, HOCK, KNEE, planParts } from "./bodyPlanMesh";
 import { figureGeometry, headOutline } from "./figureMesh";
 import { placeThings } from "./roomLayout";
 import { livingRoomLayout } from "./roomLayout.fixture";
-import { buildRoomScene, CRYSTAL_ROUGHNESS, DOLLHOUSE_FOV, dollhousePose, screenBox, wheelZoomPoint, zoomFocus } from "./roomScene";
+import {
+  buildRoomScene,
+  CRYSTAL_ROUGHNESS,
+  DOLLHOUSE_FOV,
+  DOLLHOUSE_NEAR,
+  dollhousePose,
+  markerOpacity,
+  orbitNearest,
+  screenBox,
+  updateTinyMarkers,
+  WHEEL_NOTCHES,
+  wheelStep,
+  wheelZoom,
+  wheelZoomPoint,
+  ZOOM_NEAREST,
+  type ZoomPick,
+  zoomFocus,
+} from "./roomScene";
 
 const boxCorners = (b: THREE.Box3): THREE.Vector3[] =>
   [0, 1, 2, 3, 4, 5, 6, 7].map((i) => new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z));
@@ -90,13 +107,14 @@ describe("body plan figures", () => {
     expect(nose.min.y).toBeGreaterThan(0.15);
   });
 
-  it("fits each animal inside its box, facing +y with its head at the front", () => {
+  it("fits each animal to its box, facing +y with its head at the front", () => {
     for (const name of ["mallard duck", "snake", "song bird"]) {
       const ch = PLAN_CHARACTERS.find((c) => c.name === name);
       const [w, d] = ch?.box ?? [0, 0];
       const { box } = bounds(params(name));
       expect(box.max.x - box.min.x, name).toBeLessThanOrEqual(w * 1.01);
-      expect(box.max.y - box.min.y, name).toBeLessThanOrEqual(d * 1.01);
+      // The song bird stands its box's height and its beak-to-tail length is its own, past a box shallower than that.
+      if (name !== "song bird") expect(box.max.y - box.min.y, name).toBeLessThanOrEqual(d * 1.01);
       // A snake raises its head by a tenth of its length or more, above a box lower than that.
       if (name !== "snake") expect(box.max.z, name).toBeLessThanOrEqual((ch?.height ?? 0) * 1.01);
       const head = planParts(params(name)).find((x) => x.name === "head");
@@ -309,5 +327,140 @@ describe("forms in the boxes the game sends (live check of 2026-11-20)", () => {
     // Garments sent are drawn as sent; other plans get no clothing they were not sent.
     expect(figureParams(PLAN_CHARACTERS.find((c) => c.name === "shark head, game look")?.appearance, { height: 1.85 }).colours.torso).toBe("#e8c547");
     expect(figureParams({ body_plan: "zombie" }, { height: 1.75 }).colours.torso).toBe(BODY_PLANS.zombie.skin);
+  });
+});
+
+const real = (name: string) => {
+  const ch = REAL_SIZE_FORM_CHARACTERS.find((c) => c.name === name);
+  if (!ch) throw new Error(name);
+  return { appearance: ch.appearance, box: [...(ch.box ?? [0.4, 0.4]), ch.height] as [number, number, number] };
+};
+/** The camera after `notches` wheel notches toward `pick` from the Dollhouse's opening view, as RoomLayout3D's wheel does it. */
+const wheelIn = (layout: ReturnType<typeof livingRoomLayout>, camera: THREE.PerspectiveCamera, pick: ZoomPick, notches: number) => {
+  const target = new THREE.Vector3(...dollhousePose(layout).target);
+  for (let i = 0; i < notches; i++) {
+    wheelZoom(camera.position, target, pick.point, wheelStep(layout), pick.nearest, pick.pace);
+    // OrbitControls then holds the camera at least its minDistance from what it turns round.
+    const least = orbitNearest(pick);
+    if (camera.position.distanceTo(target) < least) camera.position.sub(target).setLength(least).add(target);
+  }
+  camera.lookAt(target);
+  camera.updateMatrixWorld();
+  return target;
+};
+const pickAt = (layout: ReturnType<typeof livingRoomLayout>, room: ReturnType<typeof buildRoomScene>, placed: ReturnType<typeof placeThings>, drawn: THREE.Box3) => {
+  const camera = overview(layout);
+  const middle = drawn.getCenter(new THREE.Vector3()).project(camera);
+  const pick = wheelZoomPoint(camera, { x: ((middle.x + 1) / 2) * 960, y: ((1 - middle.y) / 2) * 600 }, { width: 960, height: 600 }, room, placed, layout);
+  if (!pick) throw new Error("no pick");
+  return { camera, pick };
+};
+
+describe("animal forms at their real size (second live check of 2026-11-20)", () => {
+  it("draws the song bird at its box's height, 12 cm, not shrunk to the box's 6 cm depth", () => {
+    const { box } = real("song bird, real size");
+    const { drawn } = formRoom(real("song bird, real size").appearance, box);
+    expect(drawn.max.z - drawn.min.z).toBeGreaterThan(box[2] * 0.97);
+    expect(drawn.max.z).toBeLessThanOrEqual(box[2] * 1.01);
+    // Never wider than its box; its beak-to-tail length is a bird's, so it runs past a box shallower than that.
+    expect(drawn.max.x - drawn.min.x).toBeLessThanOrEqual(box[0] * 1.01);
+  });
+
+  it("gives the song bird a breast, beak, eyes, wings, tail and legs that show outside its body", () => {
+    const p = figureParams(real("song bird, real size").appearance, { height: 0.12, footprint: { width: 0.08, depth: 0.06 } });
+    const parts = planParts(p);
+    const boxOf = (name: string) => {
+      const b = new THREE.Box3();
+      for (const part of parts.filter((x) => x.name === name)) b.union(new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute));
+      return b;
+    };
+    const body = boxOf("body");
+    const head = boxOf("head");
+    // The breast stands out in front of the body, where it is seen face-on and from the side.
+    expect(boxOf("breast").max.y).toBeGreaterThan(body.max.y + 0.03 * (body.max.y - body.min.y));
+    // A small head on a plump body: narrower than the body.
+    expect(head.max.x - head.min.x).toBeLessThan((body.max.x - body.min.x) * 0.8);
+    // A beak reaching out from the head by at least a third of the head's length.
+    expect(boxOf("beak").max.y - head.max.y).toBeGreaterThan((head.max.y - head.min.y) / 3);
+    // Folded wings reaching back past the body's middle toward the tail.
+    expect(boxOf("wing").min.y).toBeLessThan(body.getCenter(new THREE.Vector3()).y - 0.3 * (body.max.y - body.min.y));
+    // Legs as long as a perching bird's: under a fifth of its height below the body.
+    expect(body.min.z - boxOf("foot").max.z).toBeLessThan(0.2 * p.height);
+    expect(boxOf("eye").max.z).toBeGreaterThan(head.getCenter(new THREE.Vector3()).z);
+  });
+
+  it("zooms the wheel onto the song bird, from its figure or its label, until the whole bird fills half the picture, and no nearer than the camera's near plane", () => {
+    const { appearance, box } = real("song bird, real size");
+    const { layout, placed, room, drawn } = formRoom(appearance, box, [-0.16, 1.98]);
+    const { camera, pick } = pickAt(layout, room, placed, drawn);
+    expect(drawn.clone().expandByScalar(0.02).containsPoint(pick.point)).toBe(true);
+    const target = wheelIn(layout, camera, pick, WHEEL_NOTCHES);
+    const seen = screenBox(boxCorners(drawn), camera, 960, 600);
+    expect(seen).toBeDefined();
+    if (!seen) return;
+    expect(seen.y1 - seen.y0).toBeGreaterThanOrEqual(600 * 0.4);
+    // All of it in the picture.
+    expect(seen.x0).toBeGreaterThanOrEqual(0);
+    expect(seen.x1).toBeLessThanOrEqual(960);
+    expect(seen.y0).toBeGreaterThanOrEqual(0);
+    expect(seen.y1).toBeLessThanOrEqual(600);
+    // The camera's near plane never cuts into it.
+    expect(drawn.distanceToPoint(camera.position)).toBeGreaterThan(DOLLHOUSE_NEAR * 2);
+    // The arrow keys turn round the bird: the camera orbits the point the zoom left it on.
+    expect(target.distanceTo(pick.point)).toBeLessThan(0.02);
+  });
+
+  it("keeps the person's, the duck's and the snake's zoom where it was: the same stop and the same pace per notch (guard)", () => {
+    for (const name of ["person, for scale", "mallard duck, real size", "snake, real size"]) {
+      const { appearance, box } = real(name);
+      const { layout, placed, room, drawn } = formRoom(appearance, box);
+      const { pick } = pickAt(layout, room, placed, name.startsWith("person") ? new THREE.Box3(new THREE.Vector3(-0.2, -0.2, 1.4), new THREE.Vector3(0.2, 0.2, 1.75)) : drawn);
+      expect(pick.pace, name).toBe(1);
+      expect(pick.nearest, name).toBeGreaterThanOrEqual(ZOOM_NEAREST);
+      expect(orbitNearest(pick), name).toBe(ZOOM_NEAREST);
+    }
+  });
+
+  it("rings a figure under 16 px tall in the Dollhouse's whole-room view, in its label's colour, and fades the ring out as it grows", () => {
+    const { appearance, box } = real("song bird, real size");
+    const { layout, room, drawn } = formRoom(appearance, box, [-0.16, 1.98]);
+    const camera = overview(layout);
+    updateTinyMarkers(room, camera, 960, 600, "dollhouse");
+    const ring = room.markers.get("#a");
+    const plain = room.markers.get("#h");
+    expect(ring?.visible).toBe(true);
+    expect((ring?.material as THREE.MeshBasicMaterial).opacity).toBe(1);
+    // The plain person beside it is tall enough to see: no ring.
+    expect(plain?.visible).toBe(false);
+    // It lies on the floor round the bird, and the bird is drawn at its own size, not enlarged.
+    expect(ring?.position.z).toBeLessThan(0.01);
+    expect(Math.hypot((ring?.position.x ?? 9) - drawn.getCenter(new THREE.Vector3()).x, (ring?.position.y ?? 9) - drawn.getCenter(new THREE.Vector3()).y)).toBeLessThan(0.01);
+    expect(new THREE.Box3().setFromObject(room.things.get("#a") as THREE.Object3D).max.z).toBeLessThanOrEqual(box[2] * 1.01);
+    // Fading: full under 10 px, gone from 16 px.
+    expect(markerOpacity(4)).toBe(1);
+    expect(markerOpacity(13)).toBeGreaterThan(0);
+    expect(markerOpacity(13)).toBeLessThan(1);
+    expect(markerOpacity(16)).toBe(0);
+    // Close up the ring is gone, and in Your eyes there is none.
+    camera.position.set(-0.16, 1.98 - 0.3, 0.2);
+    camera.lookAt(-0.16, 1.98, 0.06);
+    camera.updateMatrixWorld();
+    updateTinyMarkers(room, camera, 960, 600, "dollhouse");
+    expect(ring?.visible).toBe(false);
+    updateTinyMarkers(room, overview(layout), 960, 600, "eyes");
+    expect(ring?.visible).toBe(false);
+  });
+
+  it("never hits a ring when the wheel or a click casts a ray into the room", () => {
+    const { appearance, box } = real("song bird, real size");
+    const { layout, room } = formRoom(appearance, box, [-0.16, 1.98]);
+    updateTinyMarkers(room, overview(layout), 960, 600, "dollhouse");
+    const ring = room.markers.get("#a") as THREE.Mesh;
+    // The rings sit outside every thing's group, so a ray cast at the things never meets one.
+    for (const group of room.things.values()) {
+      let inside = false;
+      group.traverse((o) => { if (o === ring) inside = true; });
+      expect(inside).toBe(false);
+    }
   });
 });
