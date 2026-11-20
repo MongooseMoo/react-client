@@ -1,7 +1,7 @@
 import type React from "react";
 import type { AnimalPlan, HumanoidPlan } from "./bodyPlan";
 import { INK_DARK, inkFor, overlayHex } from "./colour";
-import type { FigureParams } from "./figure";
+import { BUILDS, type FigureParams } from "./figure";
 import { markElements, PORTRAIT_BACKDROP } from "./portrait";
 
 /**
@@ -12,6 +12,9 @@ import { markElements, PORTRAIT_BACKDROP } from "./portrait";
  */
 
 const RING = "#f2f0ea";
+const n = (x: number) => Math.round(x * 100) / 100;
+/** An animal's drawing scaled about the backdrop's middle so all of it lies within the disc (radius 31). */
+export const ANIMAL_FIT = "translate(32 33) scale(0.84) translate(-32 -33)";
 
 export function planPortraitElements(p: FigureParams, record: Record<string, unknown>): React.ReactNode[] {
   const plan = p.plan;
@@ -20,7 +23,12 @@ export function planPortraitElements(p: FigureParams, record: Record<string, unk
     parts.push(...humanoidPortrait(p, plan));
     parts.push(...markElements(record, false, p.colours.faceInk));
   } else if (plan.kind === "animal") {
-    parts.push(...animalPortrait(p, plan));
+    // Drawn a little smaller than the square, so the tail, coils and body stay inside the round backdrop.
+    parts.push(
+      <g key="animal" transform={ANIMAL_FIT}>
+        {animalPortrait(p, plan)}
+      </g>,
+    );
   } else {
     parts.push(<rect key="placeholder" className="avatar-placeholder" x={20} y={8} width={24} height={60} rx={12} fill={p.colours.skin} stroke={p.colours.ink} strokeWidth={1.2} />);
   }
@@ -79,8 +87,9 @@ function humanoidPortrait(p: FigureParams, plan: HumanoidPlan): React.ReactNode[
       out.push(<path key="head" className="avatar-head" fill={skin} stroke={ink} strokeWidth={1.2} d="M21,22 C21,10 43,10 43,22 L46,36 C46,44 40,47 32,47 C24,47 18,44 18,36 Z" />);
       out.push(<path key="jaw" className="avatar-jaw" fill={plan.accent} stroke={ink} strokeWidth={0.8} d="M18.6,36 C18.6,43 24,46.5 32,46.5 C40,46.5 45.4,43 45.4,36 C41,39.5 23,39.5 18.6,36 Z" />);
       for (const x of [26.5, 37.5]) {
-        out.push(<ellipse key={`socket${x}`} className="avatar-socket" cx={x} cy={26} rx={3} ry={2.2} fill={overlayHex(skin, INK_DARK, 0.35)} />);
-        out.push(<circle key={`eye${x}`} className="avatar-eye" cx={x} cy={26} r={1.3} fill={eyes} />);
+        out.push(<ellipse key={`socket${x}`} className="avatar-socket" cx={x} cy={26} rx={3.2} ry={2.5} fill={overlayHex(skin, INK_DARK, 0.5)} />);
+        // Large enough to show at the People list's 32 px: at 1.3 they were a speck there.
+        out.push(<circle key={`eye${x}`} className="avatar-eye" cx={x} cy={26} r={1.8} fill={eyes} stroke={INK_DARK} strokeWidth={0.5} />);
       }
       out.push(<path key="nose" className="avatar-nose" fill="none" stroke={c.faceInk} strokeWidth={0.9} strokeLinecap="round" d="M30.5,32.5 l-0.5,1.6 M33.5,32.5 l0.5,1.6" />);
       out.push(<path key="mouth" className="avatar-mouth" fill="none" stroke={INK_DARK} strokeWidth={1.2} strokeLinecap="round" d="M24,40.5 L40,40.5 M26.5,40.5 l0,1.6 M29.5,40.5 l0,1.6 M32.5,40.5 l0,1.6 M35.5,40.5 l0,1.6 M38,40.5 l0,1.6" />);
@@ -109,8 +118,16 @@ function humanoidPortrait(p: FigureParams, plan: HumanoidPlan): React.ReactNode[
       out.push(<path key="eyes" className="avatar-eye" fill={eyes} stroke={ink} strokeWidth={0.6} d="M26.5,24 L28.5,26 L26.5,28 L24.5,26 Z M37.5,24 L39.5,26 L37.5,28 L35.5,26 Z" />);
       out.push(<path key="mouth" className="avatar-mouth" fill="none" stroke={eyes} strokeWidth={0.9} d="M28.5,36 L35.5,36" />);
       break;
-    case "shark":
-      out.push(shoulders("M6,64 C6,50 20,45 32,45 C44,45 58,50 58,64 Z"), neck(27, 10, 37));
+    case "shark": {
+      // The person's own body: shoulders and neck by their build, as the human portrait draws them.
+      const shape = BUILDS[p.build] ?? BUILDS.average;
+      const half = 26 * shape.shoulders;
+      const rise = 50 - (shape.limbs - 1) * 12;
+      const neckW = 10 * shape.limbs;
+      out.push(
+        shoulders(`M${n(32 - half)},64 C${n(32 - half)},${n(rise)} ${n(32 - half * 0.55)},45 32,45 C${n(32 + half * 0.55)},45 ${n(32 + half)},${n(rise)} ${n(32 + half)},64 Z`),
+        neck(n(32 - neckW / 2), n(neckW), 37),
+      );
       out.push(<path key="fin" className="avatar-fin" fill={skin} stroke={ink} strokeWidth={1} d="M29,15 L36,1.5 L41,15 Z" />);
       out.push(<ellipse key="head" className="avatar-head" cx={32} cy={26} rx={14} ry={12} fill={skin} stroke={ink} strokeWidth={1.2} />);
       out.push(<path key="underside" className="avatar-underside" fill={plan.accent} stroke={ink} strokeWidth={0.8} d="M18.4,28 C20,37.5 26,40 32,40 C38,40 44,37.5 45.6,28 C40,32.5 24,32.5 18.4,28 Z" />);
@@ -119,6 +136,7 @@ function humanoidPortrait(p: FigureParams, plan: HumanoidPlan): React.ReactNode[
       out.push(<circle key="eye-l" className="avatar-eye" cx={22.5} cy={22} r={1.7} fill={eyes} />, <circle key="eye-r" className="avatar-eye" cx={41.5} cy={22} r={1.7} fill={eyes} />);
       out.push(<path key="nose" className="avatar-nose" fill="none" stroke={c.faceInk} strokeWidth={0.8} strokeLinecap="round" d="M28,20 l1.6,0.7 M36,20 l-1.6,0.7" />);
       break;
+    }
   }
   return out;
 }
