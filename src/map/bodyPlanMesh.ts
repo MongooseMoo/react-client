@@ -279,17 +279,19 @@ function humanoidParts(p: FigureParams, plan: HumanoidPlan): Part[] {
   return crystal ? out.map((part) => faceted(part, plan.accent)) : out;
 }
 
-/** An animal fitted into its box: built at its natural proportions, then scaled evenly to fit width, depth and height. */
+/**
+ * An animal fitted into its box: built at its natural proportions, then scaled evenly to fit width, depth and height.
+ * A snake is built to its box and its length, never scaled: shrunk to a thin box it was a speck in the room.
+ */
 function animalParts(p: FigureParams, plan: AnimalPlan): Part[] {
   const H = p.height;
   const snake = plan.animal === "snake";
   const parts = snake
-    ? snakeParts(plan, Math.max(p.footprint?.width ?? H * 2, (p.footprint?.depth ?? H * 8) * 0.05), p.footprint?.depth ?? H * 8, H)
+    ? snakeParts(plan, p.footprint?.width ?? H * 2, p.footprint?.depth ?? H * 8, H)
     : plan.animal === "duck"
       ? duckParts(plan)
       : songbirdParts(plan);
-  // Its real extent, measured, and centred over the box's middle on the floor. A snake is built to its box already,
-  // so it is only ever shrunk (its head and tongue can reach past the box's front or sides).
+  // Its real extent, measured, and centred over the box's middle on the floor.
   const box = new THREE.Box3();
   for (const part of parts) {
     part.geometry.computeBoundingBox();
@@ -299,7 +301,7 @@ function animalParts(p: FigureParams, plan: AnimalPlan): Part[] {
   const middle = box.getCenter(new THREE.Vector3());
   const width = p.footprint?.width ?? H * (extent.x / extent.z);
   const depth = p.footprint?.depth ?? H * (extent.y / extent.z);
-  const k = Math.min(width / extent.x, depth / extent.y, H / extent.z, snake ? 1 : Number.POSITIVE_INFINITY);
+  const k = snake ? 1 : Math.min(width / extent.x, depth / extent.y, H / extent.z);
   return transform(parts, new THREE.Matrix4().makeScale(k, k, k).multiply(new THREE.Matrix4().makeTranslation(-middle.x, -middle.y, -box.min.z)));
 }
 
@@ -325,7 +327,7 @@ function duckParts(plan: AnimalPlan): Part[] {
   return parts;
 }
 
-/** A small perching bird: brown back and wings, an orange breast, a round head with a short dark beak, a raised tail. */
+/** A small perching bird: brown back and wings, a breast in its accent, a round head with a short dark beak, a raised tail. */
 function songbirdParts(plan: AnimalPlan): Part[] {
   const parts: Part[] = [
     named(ball(v(0, 0, 0.42), 0.2, plan.skin, v(0.9, 1.35, 1.05), 12), "body"),
@@ -344,28 +346,64 @@ function songbirdParts(plan: AnimalPlan): Part[] {
 }
 
 /**
- * A snake lying in an S along its box, front to back, banded in its two colours, its head raised a little at the
- * front with yellow eyes and a forked red tongue.
+ * The thinnest a snake's body is drawn, metres of radius. At 6 cm across a snake shows as a body, not a line, in the
+ * Dollhouse's whole-room view of a 10 m room (about 3 px of body; the live check of 2026-11-20 saw a speck).
+ */
+export const SNAKE_MIN_RADIUS = 0.03;
+/** The shortest a snake is drawn, metres, however small its box. */
+export const SNAKE_MIN_LENGTH = 0.6;
+/** A snake's body radius as a share of its length (a slender snake's), before SNAKE_MIN_RADIUS. */
+const SNAKE_GIRTH = 0.022;
+
+/**
+ * A snake on the floor, banded in its two colours, its head raised on its neck with eyes and a forked tongue, facing
+ * +y. Its length is the box's longest side, whichever way the game puts it (the game's box for a snake can stand on
+ * end: 0.16 x 0.16 m and 3.08 m tall on 2026-11-20); its body is as thick as a slender snake of that length and never
+ * thinner than SNAKE_MIN_RADIUS. In a box at least 0.8 of its length front to back it lies in an S along the box;
+ * otherwise it lies coiled in a flat spiral round the box's middle, its neck rising from the centre. Its head rises
+ * between 10% and 15% of its length, above the top of a box too low for that (a raised head is what reads as a snake).
  */
 function snakeParts(plan: AnimalPlan, width: number, depth: number, height: number): Part[] {
-  const L = depth * 0.92;
-  const r0 = Math.max(0.004, Math.min(height * 0.4, width * 0.2, L * 0.045));
-  const amp = Math.max(0, Math.min(width / 2 - r0, L * 0.12));
-  const headR = r0 * 1.25;
-  const lift = Math.max(0, Math.min(height - headR * 1.6, L * 0.08) - r0);
-  const N = 14;
-  const at = (t: number) => v(amp * Math.sin(t * Math.PI * 2.5), -L / 2 + t * L * 0.9, r0 + (t > 0.78 ? ((t - 0.78) / 0.22) * lift : 0));
-  const radius = (t: number) => r0 * (0.3 + 0.7 * Math.min(1, t / 0.35)) * (t > 0.88 ? 0.85 : 1);
-  const parts: Part[] = [];
-  for (let i = 0; i < N; i++) {
-    const a = at(i / N);
-    const b = at((i + 1) / N);
-    parts.push(named(limb(a, b, radius((i + 0.5) / N), Math.floor(i / 2) % 2 ? plan.accent : plan.skin, false), "segment"));
+  const L = Math.max(SNAKE_MIN_LENGTH, width, depth, height);
+  const r0 = Math.max(SNAKE_MIN_RADIUS, L * SNAKE_GIRTH);
+  const headR = r0 * 1.3;
+  const lift = Math.max(L * 0.1, Math.min(L * 0.15, height - 2 * r0 - headR));
+  // The body's centre line, tail tip first, ending where the neck begins.
+  const body: THREE.Vector3[] = [];
+  if (depth >= L * 0.8) {
+    const along = depth * 0.85;
+    // Within the box's width where it allows an S at all (the capsules' bends stand a little proud of the radius).
+    const amp = Math.max(r0 * 1.5, Math.min(width / 2 - r0 * 1.2, L * 0.12));
+    for (let i = 0; i <= 14; i++) body.push(v(amp * Math.sin((i / 14) * Math.PI * 2.5), -along / 2 + (i / 14) * along * 0.9, r0));
+  } else {
+    // An Archimedean spiral, coils 2.3 radii apart, from the outside (the tail) in to a gap at the middle for the neck.
+    const spacing = r0 * 2.3;
+    const inner = r0 * 2.2;
+    const outer = Math.sqrt((L * 0.85 * spacing) / Math.PI + inner * inner);
+    const turns = (outer - inner) / spacing;
+    const N = Math.max(16, Math.min(40, Math.round(turns * 14)));
+    for (let i = 0; i <= N; i++) {
+      const theta = turns * Math.PI * 2 * (1 - i / N);
+      const rho = inner + (spacing * theta) / (Math.PI * 2);
+      body.push(v(rho * Math.sin(theta), rho * Math.cos(theta), r0));
+    }
   }
-  const neck = at(1);
-  const ahead = neck.clone().sub(at(0.95)).setZ(0).normalize();
-  const head = neck.clone().addScaledVector(ahead, headR * 0.9);
-  const turn = new THREE.Euler(0, 0, Math.atan2(-ahead.x, ahead.y));
+  // The neck: from the body's end, forward (+y) and up to the raised head, a quarter curve.
+  const base = body[body.length - 1];
+  const ahead = v(0, 1, 0);
+  const rise = (t: number) => base.clone().addScaledVector(ahead, L * 0.06 * Math.sin((t * Math.PI) / 2)).setZ(r0 + lift * (1 - Math.cos((t * Math.PI) / 2)));
+  const neck = [1, 2, 3, 4].map((i) => rise(i / 4));
+  const line = [...body, ...neck];
+  const parts: Part[] = [];
+  for (let i = 0; i < line.length - 1; i++) {
+    const t = (i + 0.5) / (line.length - 1);
+    const inNeck = i >= body.length - 1;
+    // Thin at the tail, full from a third of the way along, a little thinner up the neck.
+    const radius = r0 * (0.3 + 0.7 * Math.min(1, t / 0.3)) * (inNeck ? 0.85 : 1);
+    parts.push(named(limb(line[i], line[i + 1], radius, !inNeck && Math.floor(i / 2) % 2 ? plan.accent : plan.skin, false), "segment"));
+  }
+  const head = line[line.length - 1].clone().addScaledVector(ahead, headR * 0.9);
+  const turn = new THREE.Euler(0, 0, 0);
   parts.push(named(placed(new THREE.SphereGeometry(headR, 10, 8), plan.head, head, turn, v(1, 1.5, 0.7)), "head"));
   for (const side of [-1, 1]) {
     const eye = v(side * headR * 0.75, headR * 0.45, headR * 0.3).applyEuler(turn).add(head);
