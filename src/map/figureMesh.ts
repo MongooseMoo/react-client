@@ -867,6 +867,9 @@ export function figureParts(p: FigureParams): Part[] {
   /** How far round toward the back (1) from the sides (0) direction (x, y) is: where a fall carries the cap's relief on. */
   const towardBack = (x: number, y: number) => 1 - smooth((Math.abs(Math.atan2(x, -y)) - (ringedFall ? SIDE_REACH : 0.8)) / 0.4);
   const keptOver = (d: THREE.Vector3, over: number) => {
+    // Under curls to the jaw, the cap's own curls go within 0.1 head radii below the fall's top, so they never come
+    // through the fall's, which lie on the cap's smooth surface there (`overCurls`).
+    if (matched && p.hairTexture === "curly") return 1 - smooth((fallTop - (d.z + headCentreZ)) / (headR * 0.1));
     if (!falling || matched) return 1;
     // Under a fall that carries the cap's texture, the cap keeps its own above the fall's top (where it shows) and goes
     // smooth below it, under the fall, within 0.05 head radii, so its curls never come through the fall's.
@@ -1289,10 +1292,14 @@ export function figureParts(p: FigureParams): Part[] {
       const base = cap > 0 ? cap * (1 - 0.06 * front * smooth((z - (columnTop - headR * 0.2)) / (headR * 0.15))) : onHead;
       // Curls and coils to the jaw turn faster than the cap's below the top, so out of step with them: they lie out by
       // the height of the cap's curls where they cover it (from 0.12 head radii below their top), or the cap's curls came
-      // through between theirs at the side.
-      const overCurls = cap > 0 ? headR * 0.06 * smooth((top - z) / (headR * 0.12)) : 0;
+      // through between theirs at the side. (Not curls, under which the cap goes smooth instead, `keptOver`: lying out by
+      // them, with their own curls on top, the fall stood out past the crown from behind in a band at ear height.)
+      const overCurls = cap > 0 && p.hairTexture !== "curly" ? headR * 0.06 * smooth((top - z) / (headR * 0.12)) : 0;
+      // Curls close in from the start (as the way down), coils only toward their ends (as its square): curls closing in
+      // only toward their ends kept the crown's width down to below the ears, a band wider than the crown's waist.
+      const closing = p.hairTexture === "curly" ? u : u * u;
       const want = rounded
-        ? base + overCurls + (Math.max(base + overCurls, capAcross(x, y, top) * 1.012 * (1 - rounded * u * u)) - base - overCurls) * edge
+        ? base + overCurls + (Math.max(base + overCurls, capAcross(x, y, top) * 1.012 * (1 - rounded * closing)) - base - overCurls) * edge
         : base > 0
           ? base + (Math.max(r, base) - base) * own
           : r;

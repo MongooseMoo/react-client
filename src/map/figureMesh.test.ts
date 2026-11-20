@@ -1524,4 +1524,19 @@ describe("round ten: where long curls and coils worn down meet the crown, chin-l
     // back of the head, and the fall's top standing out below it).
     expect(sum / dents.length, dents.join(", ")).toBeLessThan(0.045);
   });
+
+  it("draws curls to the jaw from behind no wider below the crown than the crown itself, never a band at ear height like a rolled cuff", () => {
+    for (const [skin, hex] of [["#292420", "#1b1612"], ["#f6ede4", "#653700"]]) {
+      const { p, headR, headZ } = standing({ skin: { hex: skin }, hair: { length_cm: 18, texture: "curly", hex } });
+      const parts = figureParts(p);
+      const step = headR / 100;
+      const grid = picture(parts, "back", [-headR * 1.6, headZ - headR * 1.2, headR * 1.6, headZ + headR * 1.2], step, true);
+      const half = grid.map((row) => (row.some(isHair) ? ((row.length - 1 - [...row].reverse().findIndex(isHair) - row.findIndex(isHair)) * step) / 2 / headR : 0));
+      const at = (j: number) => -1.2 + ((j + 0.5) * step) / headR;
+      const widest = (lo: number, hi: number) => Math.max(...half.filter((_, j) => at(j) >= lo && at(j) <= hi));
+      // Round nine's: the curls below the crown 0.06 head radii wider than the crown, a band at ear height.
+      const band = widest(-0.4, 0.1) - widest(0.15, 0.6);
+      expect(band, `curly 18 cm on ${skin}`).toBeLessThan(0.02);
+    }
+  });
 });
