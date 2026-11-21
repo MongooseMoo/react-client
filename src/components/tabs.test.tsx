@@ -43,6 +43,29 @@ it('moves focus to the first control Tab can reach when asked to focus the panel
   expect(screen.getByRole('textbox', { name: 'Filter' })).toHaveFocus();
 });
 
+it('moves focus to a named element of the panel when asked, and to the first control when it is not there', () => {
+  const ref = React.createRef<TabsRef>();
+  render(<Tabs ref={ref} tabs={[
+    { id: 'main', label: 'Main', content: <button type="button" id="elsewhere-list">Main action</button> },
+    { id: 'room', label: 'Room', content: <>
+      <button type="button">North</button>
+      <div id="things-list" role="listbox" aria-label="Things" tabIndex={0} />
+      <div id="people-list" role="listbox" aria-label="People" tabIndex={0} />
+    </> },
+  ]} />);
+  act(() => { ref.current?.selectTab('room', { elementId: 'people-list' }); });
+  expect(screen.getByRole('tab', { name: 'Room' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('listbox', { name: 'People' })).toHaveFocus();
+  // Asked again for another element while the tab is already selected.
+  act(() => { ref.current?.selectTab('room', { elementId: 'things-list' }); });
+  expect(screen.getByRole('listbox', { name: 'Things' })).toHaveFocus();
+  // An element that is missing, or in another panel, is not followed out of the panel.
+  act(() => { ref.current?.selectTab('room', { elementId: 'gone-list' }); });
+  expect(screen.getByRole('button', { name: 'North' })).toHaveFocus();
+  act(() => { ref.current?.selectTab('room', { elementId: 'elsewhere-list' }); });
+  expect(screen.getByRole('button', { name: 'North' })).toHaveFocus();
+});
+
 it('moves focus from the panel to its first control when lazy content arrives', async () => {
   const ref = React.createRef<TabsRef>();
   let resolve!: () => void;

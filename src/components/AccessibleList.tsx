@@ -43,6 +43,8 @@ const AccessibleList = <T extends AccessibleListItem>({
   const selectionCallback = useRef(onSelectedIndexChange);
   selectionCallback.current = onSelectedIndexChange;
   const typeahead = useRef({ text: '', time: 0 });
+  /** A mouse button (or a touch, which sends the same event) went down in the list since it last gained or lost focus. */
+  const pressed = useRef(false);
   useFocusRecovery(containerRef, focusReturnId);
 
   const retainedIndex = items.findIndex((item) => item.id === selectedId);
@@ -125,8 +127,15 @@ const AccessibleList = <T extends AccessibleListItem>({
     <div id={listId} className={`accessible-list-container ${className}`} ref={containerRef}
       tabIndex={0} role="listbox" aria-labelledby={labelledBy}
       aria-activedescendant={resolvedId ? `${listId}-item-${resolvedId}` : undefined}
-      onFocus={() => { if (selectedIndex < 0 && items.length) select(entryPlace()); }}
-      onBlur={() => { typeahead.current = { text: '', time: 0 }; }} onKeyDown={handleKeyDown}>
+      onMouseDown={() => { pressed.current = true; }}
+      onFocus={() => {
+        if (selectedIndex < 0 && items.length) select(entryPlace());
+        // Focus sent here from elsewhere (a name activated in the transcript) shows the row selected
+        // before it came. A press is already on the row it wants; the list does not move under it.
+        else if (resolvedId && !pressed.current) document.getElementById(`${listId}-item-${resolvedId}`)?.scrollIntoView({ block: 'nearest' });
+        pressed.current = false;
+      }}
+      onBlur={() => { typeahead.current = { text: '', time: 0 }; pressed.current = false; }} onKeyDown={handleKeyDown}>
       <ul role="none" className="accessible-list-ul">
         {items.map((item, index) => {
           const selected = index === selectedIndex;

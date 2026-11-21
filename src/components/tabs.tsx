@@ -18,8 +18,11 @@ export interface TabsProps {
   ariaLabel?: string;
 }
 
-/** Where focus lands after selecting a tab: its tab button, the panel's first control, or nowhere. */
-export type TabFocusTarget = 'tab' | 'panel' | false;
+/**
+ * Where focus lands after selecting a tab: its tab button, the panel's first control, the element
+ * of the panel with this id (the first control when the panel has no such element), or nowhere.
+ */
+export type TabFocusTarget = 'tab' | 'panel' | { elementId: string } | false;
 
 export interface TabsRef {
   /** Select a known destination and optionally move focus to it, including reselection. */
@@ -51,7 +54,7 @@ function tabbableControls(panel: HTMLElement): HTMLElement[] {
 const Tabs = React.forwardRef<TabsRef, TabsProps>(({ tabs, trailingElement, ariaLabel }, ref) => {
   const [selectedId, setSelectedId] = useState<string | null>(() => tabs[0]?.id ?? null);
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set());
-  const [focusRequest, setFocusRequest] = useState<{ id: string; target: 'tab' | 'panel' } | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{ id: string; target: Exclude<TabFocusTarget, false> } | null>(null);
   const previousIndex = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttons = useRef(new Map<string, HTMLButtonElement>());
@@ -77,11 +80,18 @@ const Tabs = React.forwardRef<TabsRef, TabsProps>(({ tabs, trailingElement, aria
   useLayoutEffect(() => {
     if (!focusRequest || focusRequest.id !== resolvedId) return;
     const button = buttons.current.get(resolvedId);
-    if (focusRequest.target !== 'panel') {
+    if (focusRequest.target === 'tab') {
       button?.focus();
       return;
     }
     const panel = panels.current.get(resolvedId);
+    if (focusRequest.target !== 'panel') {
+      const named = document.getElementById(focusRequest.target.elementId);
+      if (named && panel?.contains(named)) {
+        named.focus();
+        return;
+      }
+    }
     const control = panel && tabbableControls(panel)[0];
     if (control) {
       control.focus();

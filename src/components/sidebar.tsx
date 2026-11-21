@@ -45,7 +45,8 @@ import { hapticsService } from '../HapticsService';
 
 /** Tabs are addressed by their visible position, the number Ctrl+Shift+number names. */
 export type SidebarRef = {
-  switchToTab: (index: number) => boolean;
+  /** Shows the tab and focuses its panel's first control, or the element of the panel with `elementId` when given. */
+  switchToTab: (index: number, elementId?: string) => boolean;
   hasTab: (index: number) => boolean;
   /** The visible position of the tab with this id, for switchToTab; -1 when it is not shown. */
   indexOfTab: (id: string) => number;
@@ -319,9 +320,9 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
       () => ({
         hasTab: (index) => index >= 0 && index < visibleTabs.length,
         indexOfTab: (id) => visibleTabs.findIndex((tab) => tab.id === id),
-        switchToTab: (index) => {
+        switchToTab: (index, elementId) => {
           const tab = visibleTabs[index];
-          return Boolean(tab && tabsRef.current?.selectTab(tab.id, 'panel'));
+          return Boolean(tab && tabsRef.current?.selectTab(tab.id, elementId ? { elementId } : 'panel'));
         },
       }),
       [visibleTabs],
