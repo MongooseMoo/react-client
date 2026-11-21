@@ -232,7 +232,9 @@ Under each list is the selected row's card:
 
 Rows and cards follow `Room.Layout` and `Room.LayoutUpdate` quietly: nothing is announced and
 focus never moves. When the selected thing leaves while focus is in its card, focus returns to
-its list, which then selects the row now in that place.
+its list, which then selects the row now in that place; when focus is on the list itself, the
+list selects that row at once. With focus anywhere else the selection just clears. The Inventory
+tab's list does the same.
 
 ### Inspecting a construction
 

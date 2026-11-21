@@ -36,6 +36,8 @@ const AccessibleList = <T extends AccessibleListItem>({
   const [ownId, setSelectedId] = useState<string | null>(null);
   const selectedId = given ? givenId : ownId;
   const previousIndex = useRef(0);
+  /** The id last selected in this list while the caller holds the selection; null once it is elsewhere. */
+  const heldId = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const notifiedSelection = useRef({ id: null as string | null, index: -1 });
   const selectionCallback = useRef(onSelectedIndexChange);
@@ -55,6 +57,13 @@ const AccessibleList = <T extends AccessibleListItem>({
   useLayoutEffect(() => {
     if (!given && selectedId !== resolvedId) setSelectedId(resolvedId);
     if (selectedIndex >= 0) previousIndex.current = selectedIndex;
+    if (given) {
+      // The caller dropped the selection because this list's selected item left. A person in the
+      // list is not left on nothing: the item now in that place is selected. Elsewhere it stays cleared.
+      const left = heldId.current !== null && selectedIndex < 0 && !items.some((item) => item.id === heldId.current);
+      heldId.current = resolvedId;
+      if (left && items.length > 0 && document.activeElement === containerRef.current) select(lastPlace());
+    }
     if (notifiedSelection.current.id !== resolvedId || notifiedSelection.current.index !== selectedIndex) {
       notifiedSelection.current = { id: resolvedId, index: selectedIndex };
       selectionCallback.current?.(selectedIndex);

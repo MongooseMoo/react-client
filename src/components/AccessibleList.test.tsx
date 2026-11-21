@@ -49,6 +49,24 @@ describe('AccessibleList with the selection held by its caller', () => {
     fireEvent.keyDown(screen.getByRole('listbox'), { key: 'ArrowDown' });
     expect(onSelect).toHaveBeenLastCalledWith('c');
   });
+
+  it('while it has focus and its selected item leaves, selects the item now in that place; not when focus is elsewhere', () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(list('b', onSelect));
+    // Focus elsewhere: the selection just clears.
+    rerender(list(null, onSelect, [initial[0], initial[2]]));
+    expect(onSelect).not.toHaveBeenCalled();
+
+    rerender(list('c', onSelect, [initial[0], initial[2]]));
+    screen.getByRole('listbox').focus();
+    rerender(list(null, onSelect, [initial[0]]));
+    expect(onSelect).toHaveBeenLastCalledWith('a');
+    onSelect.mockClear();
+    // The selection going to something outside this list is not this list's item leaving.
+    rerender(list('a', onSelect, [initial[0]]));
+    rerender(list('elsewhere', onSelect, [initial[0]]));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });
 
 describe('AccessibleList task selection', () => {
@@ -103,6 +121,23 @@ describe('AccessibleList task selection', () => {
     screen.getByRole('button', { name: 'Drop Banana' }).focus();
     useItemsStore.getState().setLocationItems('inv', []);
     await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Inventory' })).toHaveFocus());
+  });
+
+  it('selects the surviving inventory item at once when the selected one is removed while the list has focus', () => {
+    useItemsStore.getState().reset();
+    const a = { id: 'a', name: 'Apple', location: 'inv', verbs: [['drop', 'a']] };
+    const b = { id: 'b', name: 'Book', location: 'inv', verbs: [['drop', 'b']] };
+    useItemsStore.getState().setLocationItems('inv', [a, b]);
+    render(<Inventory client={{ gmcp: { handlers: {} }, sendCommand: vi.fn() } as unknown as MudClient} />);
+    const list = screen.getByRole('listbox');
+    act(() => list.focus());
+    expect(screen.getByRole('option', { name: 'Apple' })).toHaveAttribute('aria-selected', 'true');
+    act(() => useItemsStore.getState().setLocationItems('inv', [b, a]));
+    expect(screen.getByRole('option', { name: 'Apple' })).toHaveAttribute('aria-selected', 'true');
+    act(() => useItemsStore.getState().removeItem('inv', { id: 'a', name: 'Apple' }));
+    expect(screen.getByRole('option', { name: 'Book' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.querySelector('.item-card')?.getAttribute('data-item-id')).toBe('b');
+    expect(list).toHaveFocus();
   });
 
   it('keeps the inventory on the one shared selection, both ways', () => {

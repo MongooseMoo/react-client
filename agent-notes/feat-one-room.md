@@ -129,6 +129,26 @@ without unselecting the tab, so a 3D view stays mounted behind a collapsed
 sidebar. Not tested in a browser: that the renderer is freed and remade cleanly
 across many tab switches.
 
+### CI failure on the first six commits (accessibility check)
+
+`scripts/check-accessibility.mjs` lines 176 to 183: focus is on the inventory
+list itself with Apple selected; `Char.Items.Remove` takes Apple; the script
+expects Book to be selected with its card at once. With the shared selection
+the store cleared it and the focused list was left with no selected row and no
+card until the next key press. A real user hits this (focus on the list, the
+selected thing taken away: a screen reader has nothing to read), so the fix is
+in the product, not the script.
+
+Fixed in `AccessibleList.tsx`: a list whose caller holds the selection
+remembers the id last selected in it; when that item leaves the list while the
+list itself has focus, it selects the item now in that place. With focus
+elsewhere the selection stays cleared, and a selection that merely moved to
+another list triggers nothing. Two tests in `AccessibleList.test.tsx`, seen
+failing first: the list alone, and the inventory through the script's own
+steps (reorder, then remove the selected item with focus on the list). The
+Room tab's lists get the same behaviour. The script was read, not run; whether
+its step now passes is for CI to show.
+
 ## Decisions and why
 
 - **The store's selection is `selected: { id, lifetime? } | null` with
