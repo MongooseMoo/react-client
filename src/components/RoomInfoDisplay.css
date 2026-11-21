@@ -45,6 +45,11 @@
     margin: 0;
 }
 
+/* With a layout each exit is its button and its doorway in words: one to a line. */
+.room-info-display .room-exits ul.room-exits-described {
+    flex-direction: column;
+}
+
 .room-info-display .room-exits button {
     background-color: var(--color-bg-surface);
     color: var(--color-text);

@@ -180,10 +180,17 @@ assignments do not promise automatic publication.
 
 ### The Room tab: one picture, one list of things, one list of people, one selection
 
-The Room tab holds, from the top: the room's name, area and exit buttons; in a spatial room the
-picture ("Room layout", below) with its size, finishes and doorways in words; then **Things** and
-**People**. A room that is not spatial has no picture and the same two lists. The Map tab holds
-only the area map: Here, Go to and its picture.
+The Room tab holds, from the top: the room's name and area; in a spatial room the picture
+("Room layout", below) with its size and finishes; then **Exits**, **Things** and **People**. A
+room that is not spatial has no picture and the same three lists. The Map tab holds only the area
+map: Here, Go to and its picture.
+
+**Exits** is one list. Each `Room.Info` exit is a button that sends it, followed in a spatial
+room by where its doorway is ("west", then "0.9 m doorway in the west wall, 1.3 m from the south
+wall"); the doorway is the `Room.Layout` exit whose `name` is the same key. An exit the layout
+gives no doorway for is its button alone, as every exit is in a room with no layout. A doorway
+the layout draws that `Room.Info` lists no exit for comes last, in words with its name and no
+button ("hatch: not in a wall, …").
 
 Each thing and each person is listed once. The lists are joined by id from three messages:
 `Char.Items` (the room's items, with their `verbs` and `earcon`), `Room.Layout` (`things`, the
@@ -428,11 +435,11 @@ standing in front of a doorway is selected, and the doorway behind it is not tak
   north arrow. Labels move aside so they do not cover each other.
 - Zoom with the wheel, a pinch, the Zoom in / Zoom out buttons, or `+` and `-` on the picture;
   drag or use the arrow keys to pan; `0` or Whole room shows the whole room.
-- Clicking a doorway sends its exit name, as the exit buttons above it do.
+- Clicking a doorway sends its exit name, as the exit buttons under the picture do.
 - Save as SVG downloads the whole room as a standalone SVG file in the current colours.
 - To a screen reader the drawing is one image whose name gives the room's size and how many
-  exits, people and things it holds. Below it come the size, the finishes and each exit
-  ("west: 0.9 m doorway in the west wall, 1.3 m from the south wall"). The things and people are
-  the Room tab's two lists (above), where each can be selected from the keyboard; the picture
+  exits, people and things it holds. Below it come the size and the finishes. The exits, things
+  and people are the Room tab's lists (above), where each thing and person can be selected from
+  the keyboard; the picture
   itself is selected in only with a pointer. Moves update the picture and the lists quietly;
   nothing is announced and focus never moves.

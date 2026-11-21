@@ -274,19 +274,24 @@ export function semanticDetails(thing: LayoutThing): string[] {
   return details;
 }
 
+/** A doorway named and placed: "west: 0.9 m doorway in the west wall, 1.3 m from the south wall". */
 export function describeExit(exit: LayoutExit, size: LayoutVector): string {
+  return `${stripMudAnsiTags(exit.name) || exit.name}: ${describeDoorway(exit, size)}`;
+}
+
+/** Where a doorway is, without its name, for beside the exit's own button. */
+export function describeDoorway(exit: LayoutExit, size: LayoutVector): string {
   const wall = exitWall(exit, size);
   const halfW = size[0] / 2;
   const halfD = size[1] / 2;
   const [x, y] = exit.at;
-  const name = stripMudAnsiTags(exit.name) || exit.name;
   if (wall === "north" || wall === "south") {
-    return `${name}: ${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
+    return `${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
   }
   if (wall === "east" || wall === "west") {
-    return `${name}: ${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfD - y, y + halfD, "north", "south")}`;
+    return `${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfD - y, y + halfD, "north", "south")}`;
   }
-  return `${name}: not in a wall, ${axisWords(halfD - y, y + halfD, "north", "south")}, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
+  return `not in a wall, ${axisWords(halfD - y, y + halfD, "north", "south")}, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
 }
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;

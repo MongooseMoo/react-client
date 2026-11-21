@@ -2,7 +2,7 @@ import type React from "react";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { downloadFile } from "../downloadFile";
 import type { RoomLayout } from "../gmcp/Room";
-import { describeExit, layoutSummary, metres, placeThings } from "../map/roomLayout";
+import { layoutSummary, metres, placeThings } from "../map/roomLayout";
 import { useItemsStore } from "../stores/itemsStore";
 import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
@@ -43,8 +43,8 @@ export const roomLayoutViewSchema: LocalStorageSchema<RoomLayoutViewName> = {
 };
 
 /**
- * The current spatial room from Room.Layout: the drawing and its controls, the room's size and
- * finishes, and its doorways in words. The Room tab lists the things and people beside it; the
+ * The current spatial room from Room.Layout: the drawing and its controls, and the room's size
+ * and finishes. The Room tab lists the exits, things and people beside it; the
  * drawing shows the one selection (the items store's) and sets it when a thing or person is
  * clicked. Things follow Room.LayoutUpdate body changes; nothing here is announced or takes focus
  * when they do.
@@ -137,16 +137,6 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
           </div> : null;
         })}
       </dl>}
-      <h6>Exits</h6>
-      {layout.exits.length === 0 ? (
-        <p>No exits.</p>
-      ) : (
-        <ul aria-label="Exits in the layout">
-          {layout.exits.map((exit, index) => (
-            <li key={`${exit.name}-${index}`}>{describeExit(exit, layout.size)}</li>
-          ))}
-        </ul>
-      )}
     </section>
   );
 };

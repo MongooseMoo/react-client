@@ -10,7 +10,7 @@ import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { compareDirections, directionLabel } from "../map/directions";
 import { type RoomEntry, roomContents } from "../map/roomContents";
-import { personLabel, thingKind } from "../map/roomLayout";
+import { describeDoorway, describeExit, personLabel, thingKind } from "../map/roomLayout";
 import AvatarPortrait from "../avatar/portrait";
 import AccessibleList from "./AccessibleList";
 import ItemCard from "./ItemCard";
@@ -135,6 +135,8 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   }
 
   const exits = roomInfo?.exits ? Object.entries(roomInfo.exits).sort(([dirA], [dirB]) => compareDirections(dirA, dirB)) : [];
+  // Doorways the layout draws that Room.Info lists no exit for: said in words, with no button.
+  const otherDoorways = (layout?.exits ?? []).filter((exit) => !exits.some(([direction]) => direction === exit.name));
   // Strip before the fallback checks so a name that is only markup still
   // renders the placeholder rather than an empty heading.
   const roomName = roomInfo?.name ? stripMudAnsiTags(roomInfo.name) : "";
@@ -159,21 +161,29 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
         />
       )}
 
-      {exits.length > 0 && (
+      {(exits.length > 0 || otherDoorways.length > 0) && (
         <div className="room-exits">
           <h5>Exits</h5>
-          <ul aria-label="Room Exits">
-            {exits.map(([direction, roomId]) => (
-              <li key={direction}>
-                <button
-                  type="button"
-                  onClick={() => sendCommand(direction)}
-                  title={`Go ${directionLabel(direction)} (to room ${roomId})`}
-                  aria-label={`Go ${directionLabel(direction)}`}
-                >
-                  {directionLabel(direction)}
-                </button>
-              </li>
+          <ul aria-label="Room Exits" className={layout ? "room-exits-described" : undefined}>
+            {exits.map(([direction, roomId]) => {
+              // Room.Info's exit key is the layout doorway's name.
+              const doorway = layout?.exits.find((exit) => exit.name === direction);
+              return (
+                <li key={direction}>
+                  <button
+                    type="button"
+                    onClick={() => sendCommand(direction)}
+                    title={`Go ${directionLabel(direction)} (to room ${roomId})`}
+                    aria-label={`Go ${directionLabel(direction)}`}
+                  >
+                    {directionLabel(direction)}
+                  </button>
+                  {doorway && layout && ` ${describeDoorway(doorway, layout.size)}`}
+                </li>
+              );
+            })}
+            {layout && otherDoorways.map((exit, index) => (
+              <li key={`doorway-${exit.name}-${index}`}>{describeExit(exit, layout.size)}</li>
             ))}
           </ul>
         </div>

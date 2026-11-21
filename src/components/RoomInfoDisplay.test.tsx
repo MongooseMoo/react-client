@@ -130,6 +130,32 @@ describe("RoomInfoDisplay", () => {
     expect(seen3D.loaded).toBe(false);
   });
 
+  it("has one Exits list: each exit's button followed by its doorway in words, then doorways Room.Info does not name", () => {
+    const layout = salon();
+    layout.exits.push({ name: "hatch", to: 1300, at: [0, 0, 0], width: 0.8 });
+    useRoomStore.getState().setRoomInfo({ ...info(layout.num), exits: { west: 1235, up: 1400 } });
+    useRoomStore.getState().setRoomLayout(layout);
+    renderTab();
+    expect(screen.getAllByRole("heading").map((heading) => heading.textContent).filter((text) => text === "Exits")).toHaveLength(1);
+    expect(screen.queryByRole("list", { name: "Exits in the layout" })).toBeNull();
+    const exits = within(screen.getByRole("list", { name: "Room Exits" })).getAllByRole("listitem");
+    expect(exits.map((item) => item.textContent)).toEqual([
+      "west 0.9 m doorway in the west wall, 1.3 m from the south wall",
+      "up",
+      "hatch: not in a wall, midway between the north and south walls, midway between the east and west walls",
+    ]);
+    expect(exits.map((item) => within(item).queryAllByRole("button").length)).toEqual([1, 1, 0]);
+    fireEvent.click(screen.getByRole("button", { name: "Go west" }));
+    expect(client.sendCommand).toHaveBeenCalledWith("west");
+  });
+
+  it("in a room with no layout lists the exit buttons alone", () => {
+    useRoomStore.getState().setRoomInfo({ num: 101, name: "Codex's Lab", area: "", exits: { west: 100, up: 102 } });
+    renderTab();
+    const exits = within(screen.getByRole("list", { name: "Room Exits" })).getAllByRole("listitem");
+    expect(exits.map((item) => item.textContent)).toEqual(["west", "up"]);
+  });
+
   it("lists every thing once, joined by id, each with where it is", () => {
     enterSalon();
     renderTab();

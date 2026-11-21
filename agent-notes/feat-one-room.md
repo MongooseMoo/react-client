@@ -89,9 +89,17 @@ A trial merge in memory (`git merge-tree`) of this branch with the local
 The lead accepted readings a (controls under the card), b (thing row is
 "name, where") and d (interact mode starts on the selected thing), and asked for:
 
-1. A person's row says where they are too (name, label, where). Not started.
+1. A person's row says where they are too (name, label, where). Done and
+   committed: `renderPerson` in `RoomInfoDisplay.tsx`; three tests in
+   `RoomInfoDisplay.test.tsx` changed first and seen failing.
 2. One Exits list in the Room tab: each exit button followed by its doorway
-   description; the view's own Exits list and heading removed. Not started.
+   description; the view's own Exits list and heading removed. Done: the list is
+   in `RoomInfoDisplay.tsx`; `describeDoorway` (the words without the name) is
+   split out of `describeExit` in `roomLayout.ts`; `RoomLayoutView.tsx` has no
+   list or heading for exits and its two now-unused style rules are deleted. A
+   doorway `Room.Info` names no exit for is listed last in words with no button.
+   Tests seen failing first: two in `RoomInfoDisplay.test.tsx`, one in
+   `RoomLayoutView.test.tsx`, one in `roomLayout.test.ts`.
 3. The room view must not draw or load three.js while the Room tab is hidden.
    Not started.
 

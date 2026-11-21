@@ -91,12 +91,10 @@ describe("RoomLayoutView", () => {
     expect(picture.querySelector(".rl-exit title")?.textContent).toBe("Exit west");
   });
 
-  it("says the room's doorways in words, and leaves its things and people to the Room tab's lists", () => {
+  it("leaves the room's exits, things and people to the Room tab's lists: it holds no list or heading for them", () => {
     renderView();
-    const words = (name: string) =>
-      within(screen.getByRole("list", { name })).getAllByRole("listitem").map((item) => item.textContent);
-    expect(words("Exits in the layout")).toEqual(["west: 0.9 m doorway in the west wall, 1.3 m from the south wall"]);
-    expect(screen.getAllByRole("list")).toHaveLength(1);
+    expect(screen.queryAllByRole("list")).toHaveLength(0);
+    expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual(["Room layout"]);
     expect(screen.queryByRole("button", { name: /inspect|open|get/i })).toBeNull();
   });
 
@@ -258,7 +256,6 @@ describe("RoomLayoutView views", () => {
     expect(picture.getAttribute("data-mode")).toBe("dollhouse");
     expect(picture.getAttribute("aria-label")).toBe(label);
     expect(picture.getAttribute("data-selected")).toBe("#1");
-    expect(screen.getByRole("list", { name: "Exits in the layout" })).toBeTruthy();
     expect(screen.getByText(/^Drag to turn the room/)).toBeTruthy();
 
     fireEvent.click(radio("Your eyes"));

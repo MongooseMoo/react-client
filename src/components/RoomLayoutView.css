@@ -5,17 +5,6 @@
   color: var(--color-text-secondary);
 }
 
-.room-layout h6 {
-  margin: var(--space-3, 12px) 0 4px;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-}
-
-.room-layout ul {
-  margin: 0;
-  padding-left: 1.2em;
-}
-
 .room-layout-help {
   margin: 0 0 6px;
   color: var(--color-text-secondary);

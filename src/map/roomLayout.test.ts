@@ -13,6 +13,7 @@ import {
   personLabel,
   thingForm,
   thingKind,
+  describeDoorway,
   describeExit,
   describePlace,
   describeWhere,
@@ -56,6 +57,13 @@ describe("room layout geometry", () => {
     expect(displayName({ id: "#99", name: "[bold]Q" }, "#99")).toBe("Q (you)");
     expect(describeExit({ name: "[cyan]west[normal]", to: 1, at: [-2.7, 0, 0], width: 0.9 }, [6, 8, 3])).toBe(
       "west: 0.9 m doorway in the west wall, midway between the north and south walls",
+    );
+    // The same without the name, for beside the exit's own button.
+    expect(describeDoorway({ name: "[cyan]west[normal]", to: 1, at: [-2.7, 0, 0], width: 0.9 }, [6, 8, 3])).toBe(
+      "0.9 m doorway in the west wall, midway between the north and south walls",
+    );
+    expect(describeDoorway({ name: "hatch", to: 1, at: [0, 0, 0], width: 0.9 }, [6, 8, 3])).toBe(
+      "not in a wall, midway between the north and south walls, midway between the east and west walls",
     );
   });
 
