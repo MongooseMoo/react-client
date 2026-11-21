@@ -18,6 +18,7 @@ import {
   type PlacedThing,
   placeLabels,
   scaleBarLength,
+  selectedFirst,
   shortLabel,
   thingForm,
   toSvg,
@@ -385,31 +386,37 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
   // Every person is the same round token at their centre, so a body's collision box does not make one look bigger.
   const markerRadius = 0.22;
   /** A person's name goes beside their token (under it first), never on it: the token is in `avoid` below. */
-  const underToken = (x: number, y: number) => ({ x, y, radius: markerRadius });
+  const underToken = (x: number, y: number) => ({ x, y, rx: markerRadius, ry: markerRadius });
   const centreOf = (p: PlacedThing) => toSvg((p.bounds.x0 + p.bounds.x1) / 2, (p.bounds.y0 + p.bounds.y1) / 2);
+  /** A thing's footprint from above in SVG units (y down). */
+  const footprintOf = (p: PlacedThing) => ({ x0: p.bounds.x0, x1: p.bounds.x1, y0: -p.bounds.y1, y1: -p.bounds.y0 });
   const labelled = labelOrder(placed, youId);
   const personIds = new Set([
     ...placed.filter((p) => isPerson(p.thing)).map((p) => p.thing.id),
   ]);
   const inset = fontSize * 0.2;
   const labels = placeLabels(
-    [
+    // The selected thing's or person's label first, so it always shows.
+    selectedFirst([
       ...labelled.filter((p) => p.thing.id === youId || isPerson(p.thing)).map((p) => {
         const [x, y] = centreOf(p);
         return { id: p.thing.id, text: shortLabel(displayName(p.thing, youId)), ...underToken(x, y) };
       }),
       ...labelled.filter((p) => !isPerson(p.thing)).map((p) => {
         const [x, y] = centreOf(p);
-        const radius = Math.max(p.bounds.x1 - p.bounds.x0, p.bounds.y1 - p.bounds.y0) / 2;
-        return { id: p.thing.id, text: shortLabel(displayName(p.thing, youId)), x, y, radius };
+        const rx = (p.bounds.x1 - p.bounds.x0) / 2;
+        const ry = (p.bounds.y1 - p.bounds.y0) / 2;
+        return { id: p.thing.id, text: shortLabel(displayName(p.thing, youId)), x, y, rx, ry, footprint: footprintOf(p) };
       }),
-    ],
+    ], selectedId),
     fontSize,
     { x0: -w / 2 + inset, x1: w / 2 - inset, y0: -d / 2 + inset, y1: d / 2 - inset },
     // No label covers a person's token.
     [
       ...placed.filter((p) => isPerson(p.thing)).map(centreOf),
       ].map(([x, y]) => ({ x0: x - markerRadius, x1: x + markerRadius, y0: y - markerRadius, y1: y + markerRadius })),
+    // Nor, where it can help it, a shelf or table its own thing is not on.
+    placed.filter((p) => !isPerson(p.thing)).map((p) => ({ id: p.thing.id, ...footprintOf(p) })),
   );
 
   const exits = layout.exits.map((exit, index) => {

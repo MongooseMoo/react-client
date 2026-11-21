@@ -442,8 +442,17 @@ export interface LabelRequest {
   /** Where the label belongs, in SVG units. */
   x: number;
   y: number;
-  /** Half-size of what it labels, so the first tries sit just beside it. */
-  radius: number;
+  /** Half the size of what it labels, across and up and down, so the first tries sit just beside it. */
+  rx: number;
+  ry: number;
+  /** The footprint of what it labels, SVG units: its label goes over no other thing's footprint that this one does not overlap, when it can (`placeLabels`). */
+  footprint?: Box;
+}
+
+/** `requests` with `selectedId`'s moved to the front, so the selected thing's label is placed first and always shows. */
+export function selectedFirst<T extends { id: string }>(requests: T[], selectedId: string | null | undefined): T[] {
+  const index = selectedId ? requests.findIndex((r) => r.id === selectedId) : -1;
+  return index <= 0 ? requests : [requests[index], ...requests.slice(0, index), ...requests.slice(index + 1)];
 }
 
 export interface PlacedLabel {
@@ -482,6 +491,12 @@ export function shortLabel(text: string): string {
 
 /** Least space between two 3D labels side by side, pixels (the plan's estimate left about this much). */
 const LABEL_SPACE = 6;
+/**
+ * Least space between two 3D labels one above the other, as a share of a label's height: a gap a third
+ * of a line tall, so a stack of names reads as separate names, each near its own thing, and a crowded
+ * shelf shows fewer of them instead of a solid block of text.
+ */
+const LABEL_LEAD = 1 / 3;
 
 /** A 3D view's label to place: what it names, and the label's size as drawn, in screen pixels. */
 export interface LabelOver {
@@ -533,8 +548,9 @@ export function placeLabelsOver(requests: LabelOver[], gap: number, within?: Box
       if (own && dx !== 0 && (x < own.x0 || x > own.x1)) continue;
       const y = request.top - gap - height / 2 + dy;
       const box = { x0: x - width / 2, x1: x + width / 2, y0: y - height / 2, y1: y + height / 2 };
-      // Two labels side by side keep LABEL_SPACE between them, so their names do not run together.
-      const spaced = { ...box, x0: box.x0 - LABEL_SPACE / 2, x1: box.x1 + LABEL_SPACE / 2 };
+      // Two labels side by side keep LABEL_SPACE between them, one above the other LABEL_LEAD of a line, so their names do not run together.
+      const lead = (height * LABEL_LEAD) / 2;
+      const spaced = { x0: box.x0 - LABEL_SPACE / 2, x1: box.x1 + LABEL_SPACE / 2, y0: box.y0 - lead, y1: box.y1 + lead };
       if ((within && !inside(box, within)) || taken.some((other) => overlaps(spaced, other))) continue;
       if (heads.some((head) => head.id !== request.id && overlaps(box, head))) continue;
       taken.push(spaced);
@@ -549,10 +565,25 @@ export function placeLabelsOver(requests: LabelOver[], gap: number, within?: Box
  * Places labels in request order (most important first) so none overlap:
  * each tries its thing's centre, then just beside it, then a little further,
  * and takes the first spot that is free (of other labels and of `avoid`)
- * and, given `within`, inside it. A label with no such spot is left out; the
- * thing keeps its title and its line in the lists, and zooming in makes room.
+ * and, given `within`, inside it. Given `footprints` (the things drawn, each
+ * with its id), it first takes the nearest free spot that covers no stranger's
+ * footprint: a stranger overlaps neither its own (`LabelRequest.footprint`) nor
+ * lies centred on anything that does. So a sword's name stays on or beside its
+ * own rack and the other things on it, never over the next shelf unit, while a
+ * chair's may still lie over the rug it stands on. Its middle is also nearer
+ * its own footprint than any stranger's. On a crowded shelf the names
+ * with no such spot are left out rather than put over the next one. A label
+ * with no free spot is left out; the thing keeps its title and its line in the
+ * lists, and zooming in makes room. Place the selected thing's first
+ * (`selectedFirst`) and it always has the most room.
  */
-export function placeLabels(requests: LabelRequest[], fontSize: number, within?: Box, avoid: Box[] = []): PlacedLabel[] {
+export function placeLabels(
+  requests: LabelRequest[],
+  fontSize: number,
+  within?: Box,
+  avoid: Box[] = [],
+  footprints: Array<Box & { id: string }> = [],
+): PlacedLabel[] {
   const taken: Box[] = [...avoid];
   const result: PlacedLabel[] = [];
   const directions = [
@@ -568,23 +599,53 @@ export function placeLabels(requests: LabelRequest[], fontSize: number, within?:
   for (const request of requests) {
     const candidates: Array<[number, number]> = [[request.x, request.y]];
     const own = labelBox(request.text, 0, 0, fontSize);
-    for (let ring = 1; ring <= 2; ring++) {
+    // Rings 1 and 2 are every label's places; ring 3 only a thing's, as long as it keeps off strangers' footprints (below).
+    const rings: Array<Array<[number, number]>> = [];
+    for (let ring = 1; ring <= 3; ring++) {
       const gap = fontSize * (ring - 1) * 1.2;
       // Beside the thing: clear of it by the label's own half-width across, half-height up and down.
-      const across = request.radius + own.x1 + gap;
-      const upDown = request.radius + own.y1 + gap;
+      const across = request.rx + own.x1 + gap;
+      const upDown = request.ry + own.y1 + gap;
+      const spots: Array<[number, number]> = [];
       for (const [dx, dy] of directions) {
         const diagonal = dx !== 0 && dy !== 0 ? Math.SQRT1_2 : 1;
-        candidates.push([request.x + dx * across * diagonal, request.y + dy * upDown * diagonal]);
+        spots.push([request.x + dx * across * diagonal, request.y + dy * upDown * diagonal]);
       }
+      // Above and below, a label wider than its thing also tries lining up with the thing's west or east end.
+      const slide = own.x1 - request.rx;
+      if (slide > 0) for (const dy of [1, -1]) for (const dx of [1, -1]) spots.push([request.x + dx * slide, request.y + dy * upDown]);
+      // A spot that crosses the room's edge (a shelf against a wall) also tries sliding back just inside it.
+      if (within) {
+        for (const [x, y] of [...spots]) {
+          const inX = Math.min(Math.max(x, within.x0 + own.x1), within.x1 - own.x1);
+          if (inX !== x) spots.push([inX, y]);
+        }
+      }
+      rings.push(spots);
     }
-    for (const [x, y] of candidates) {
+    candidates.push(...rings[0], ...rings[1]);
+    const free = (box: Box) => !(within && !inside(box, within)) && !taken.some((other) => overlaps(box, other));
+    const ownFootprint = request.footprint;
+    // What its own thing overlaps (the shelf it lies on, the rug under it), and whatever lies on those: anything else is a stranger.
+    const under = ownFootprint ? footprints.filter((f) => f.id === request.id || overlaps(f, ownFootprint)) : [];
+    const centredIn = (f: Box) => under.some((u) => {
+      const x = (f.x0 + f.x1) / 2;
+      const y = (f.y0 + f.y1) / 2;
+      return x > u.x0 && x < u.x1 && y > u.y0 && y < u.y1;
+    });
+    const strangers = ownFootprint ? footprints.filter((f) => !under.includes(f) && !centredIn(f)) : [];
+    // How far a label's middle is from a footprint: 0 on it.
+    const away = (x: number, y: number, f: Box) => Math.hypot(Math.max(f.x0 - x, 0, x - f.x1), Math.max(f.y0 - y, 0, y - f.y1));
+    const clear = ([x, y]: [number, number]) => {
       const box = labelBox(request.text, x, y, fontSize);
-      if ((within && !inside(box, within)) || taken.some((other) => overlaps(box, other))) continue;
-      taken.push(box);
-      result.push({ id: request.id, text: request.text, x, y });
-      break;
-    }
+      // Nearer its own thing than any stranger, so it never reads as the next shelf's.
+      const mine = ownFootprint ? away(x, y, ownFootprint) : 0;
+      return free(box) && !strangers.some((f) => overlaps(box, f) || away(x, y, f) < mine);
+    };
+    const spot = (ownFootprint ? [...candidates, ...rings[2]] : candidates).find(clear);
+    if (!spot) continue;
+    taken.push(labelBox(request.text, spot[0], spot[1], fontSize));
+    result.push({ id: request.id, text: request.text, x: spot[0], y: spot[1] });
   }
   return result;
 }

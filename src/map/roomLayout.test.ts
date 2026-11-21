@@ -26,6 +26,7 @@ import {
   placeLabels,
   placeLabelsOver,
   placeThings,
+  selectedFirst,
   shortLabel,
   scaleBarLength,
   shapeFootprint,
@@ -204,9 +205,9 @@ describe("room layout geometry", () => {
     const fontSize = 0.2;
     const labels = placeLabels(
       [
-        { id: "a", text: "chair", x: 0, y: 0, radius: 0.2 },
-        { id: "b", text: "chair", x: 0.05, y: 0, radius: 0.2 },
-        { id: "c", text: "chair", x: 0, y: 0.05, radius: 0.2 },
+        { id: "a", text: "chair", x: 0, y: 0, rx: 0.2, ry: 0.2 },
+        { id: "b", text: "chair", x: 0.05, y: 0, rx: 0.2, ry: 0.2 },
+        { id: "c", text: "chair", x: 0, y: 0.05, rx: 0.2, ry: 0.2 },
       ],
       fontSize,
     );
@@ -264,7 +265,8 @@ describe("room layout geometry", () => {
       const labels = placeLabelsOver(ask(requests), gap, frame);
       expect(labels.map((l) => l.id)).toEqual(["a", "b"]);
       attached(requests, labels);
-      expect(Math.hypot(labels[1].x - 135, labels[1].y - (102 - gap - height / 2))).toBeLessThan(height * 1.5);
+      // Up by a label and the third of a line kept between stacked labels, to the next quarter-label step.
+      expect(Math.hypot(labels[1].x - 135, labels[1].y - (102 - gap - height / 2))).toBeLessThanOrEqual(height * 1.5 + 1e-9);
     });
 
     it("keeps Your eyes' row of heads to the rule: each label over its own head, never above two label heights", () => {
@@ -322,6 +324,32 @@ describe("room layout geometry", () => {
       expect(own?.y).toBeLessThan(60 - gap - height / 2);
     });
 
+    it("keeps a third of a line between labels stacked one above the other, so a crowded shelf shows fewer, readable names", () => {
+      // The armoury's close view: fifteen weapons on one shelf, each asking for a label a few pixels from the last.
+      const requests = Array.from({ length: 15 }, (_, i) => ({ id: `#w${i}`, text: `weapon ${i}`, x: 100 + i * 4, top: 120 + i * 3 }));
+      const labels = placeLabelsOver(ask(requests), gap, frame);
+      attached(requests, labels);
+      expect(labels.length).toBeLessThan(requests.length);
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = i + 1; j < labels.length; j++) {
+          const a = boxOf(labels[i]);
+          const b = boxOf(labels[j]);
+          const across = a.x0 - 6 < b.x1 && b.x0 - 6 < a.x1;
+          const lead = height / 3 - 1e-9;
+          expect(across && a.y0 - lead < b.y1 && b.y0 - lead < a.y1, `${labels[i].id} against ${labels[j].id}`).toBe(false);
+        }
+      }
+    });
+
+    it("always shows the selected thing's label when it is placed first, however crowded", () => {
+      const requests = Array.from({ length: 15 }, (_, i) => ({ id: `#w${i}`, text: `weapon ${i}`, x: 100 + i * 4, top: 120 + i * 3 }));
+      const crowded = placeLabelsOver(ask(requests), gap, frame);
+      const left = requests.find((r) => !crowded.some((l) => l.id === r.id));
+      expect(left).toBeDefined();
+      const chosen = placeLabelsOver(ask(selectedFirst(requests, left?.id)), gap, frame);
+      expect(chosen[0]).toEqual({ id: left?.id, text: left?.text, x: left?.x, y: (left?.top ?? 0) - gap - height / 2 });
+    });
+
     it("keeps a label at the picture's edge inside it and still over its figure, or leaves it out", () => {
       const requests = [{ id: "a", text: "Hale Brennick (you)", x: 266, top: 130 }];
       const labels = placeLabelsOver(ask(requests), gap, frame);
@@ -333,13 +361,90 @@ describe("room layout geometry", () => {
     });
   });
 
+  it("moves the selected request to the front and leaves the order alone otherwise", () => {
+    const requests = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    expect(selectedFirst(requests, "c").map((r) => r.id)).toEqual(["c", "a", "b"]);
+    expect(selectedFirst(requests, "a")).toBe(requests);
+    expect(selectedFirst(requests, null)).toBe(requests);
+    expect(selectedFirst(requests, "#gone")).toBe(requests);
+  });
+
+  it("keeps a Plan label off a shelf its thing is not on: the long sword's name stays by its own rack", () => {
+    // The Many Worlds Armoury's north wall (SVG units, y down): the Ammunition shelves x -10..-6, the Melee
+    // forms rack x -6..-2, each 0.5 m deep; the long sword lies in the Melee rack's west end, 1.05 m long.
+    const fontSize = 0.35;
+    const ammo = { id: "#159969", x0: -10, x1: -6, y0: -7.25, y1: -6.75 };
+    const melee = { id: "#159003", x0: -6, x1: -2, y0: -7.25, y1: -6.75 };
+    const sword = { id: "#159078", x0: -5.89, x1: -4.84, y0: -7.21, y1: -7.03 };
+    const below = { id: "#w", x0: -5.9, x1: -4.8, y0: -6.95, y1: -6.85 };
+    const footprints = [ammo, melee, sword, below];
+    const request = (f: typeof sword, text: string) => ({
+      id: f.id, text, x: (f.x0 + f.x1) / 2, y: (f.y0 + f.y1) / 2, rx: (f.x1 - f.x0) / 2, ry: (f.y1 - f.y0) / 2, footprint: f,
+    });
+    const asked = [
+      request(melee, "Melee forms rack…"),
+      request(ammo, "Ammunition shelves…"),
+      request(below, "steel two-handed sword"),
+      request(sword, "steel long sword"),
+    ];
+    const room = { x0: -10.5, x1: 10.5, y0: -9.5, y1: 9.5 };
+    const labels = placeLabels(asked, fontSize, room, [], footprints);
+    const label = labels.find((l) => l.id === sword.id);
+    expect(label).toBeDefined();
+    const halfW = ("steel long sword".length * 0.58 * fontSize) / 2 + fontSize * 0.25;
+    const halfH = fontSize * 0.7;
+    const box = { x0: (label?.x ?? 0) - halfW, x1: (label?.x ?? 0) + halfW, y0: (label?.y ?? 0) - halfH, y1: (label?.y ?? 0) + halfH };
+    // Not over the Ammunition shelves, and centred within the sword's own rack.
+    expect(box.x1 <= ammo.x0 || box.x0 >= ammo.x1 || box.y1 <= ammo.y0 || box.y0 >= ammo.y1).toBe(true);
+    expect(label?.x).toBeGreaterThan(melee.x0);
+    expect(label?.x).toBeLessThan(melee.x1);
+    // With the sword selected (placed first), each rack's own name stays nearer its own rack than the other.
+    const chosen = placeLabels(selectedFirst(asked, sword.id), fontSize, room, [], footprints);
+    expect(chosen[0].id).toBe(sword.id);
+    const away = (l: { x: number; y: number }, f: typeof ammo) => Math.hypot(Math.max(f.x0 - l.x, 0, l.x - f.x1), Math.max(f.y0 - l.y, 0, l.y - f.y1));
+    for (const [rack, other] of [[ammo, melee], [melee, ammo]]) {
+      const own = chosen.find((l) => l.id === rack.id);
+      if (own) expect(away(own, rack), rack.id).toBeLessThanOrEqual(away(own, other));
+    }
+  });
+
+  it("labels a shelf against the wall whose name is wider than it, sliding the name back inside the room", () => {
+    // The Ammunition shelves, 4 m wide against the west wall at a font where their name is about 4.3 m long.
+    const fontSize = 0.35;
+    const ammo = { id: "#159969", x0: -10, x1: -6, y0: -7.5, y1: -7 };
+    const melee = { id: "#159003", x0: -6, x1: -2, y0: -7.5, y1: -7 };
+    const room = { x0: -10 + fontSize * 0.2, x1: 10 - fontSize * 0.2, y0: -9 + fontSize * 0.2, y1: 9 - fontSize * 0.2 };
+    const labels = placeLabels(
+      [{ id: ammo.id, text: "Ammunition shelves…", x: -8, y: -7.25, rx: 2, ry: 0.25, footprint: ammo }],
+      fontSize, room, [], [ammo, melee],
+    );
+    expect(labels).toHaveLength(1);
+    expect(labels[0].x).toBeLessThan(-6);
+  });
+
+  it("leaves a Plan label out rather than put it over another thing's footprint", () => {
+    // A cup between two counters it is not on, its spots beside it taken: its name goes over neither counter.
+    const fontSize = 0.2;
+    const cup = { id: "c", x0: -0.1, x1: 0.1, y0: -0.1, y1: 0.1 };
+    const counter = { id: "r", x0: -3, x1: 3, y0: -3, y1: -0.15 };
+    const counter2 = { id: "s", x0: -3, x1: 3, y0: 0.15, y1: 3 };
+    const labels = placeLabels(
+      [{ id: "c", text: "cup", x: 0, y: 0, rx: 0.1, ry: 0.1, footprint: cup }],
+      fontSize,
+      undefined,
+      [{ x0: -2, x1: 2, y0: -0.2, y1: 0.2 }],
+      [cup, counter, counter2],
+    );
+    expect(labels).toHaveLength(0);
+  });
+
   it("leaves out a label that has no free spot inside the room, and shortens long names", () => {
     const fontSize = 0.2;
     const room = { x0: -1, x1: 1, y0: -1, y1: 1 };
     const labels = placeLabels(
       [
-        { id: "a", text: "table", x: 0, y: 0, radius: 0.1 },
-        { id: "b", text: "a very long wide label", x: 0.9, y: 0.9, radius: 0.1 },
+        { id: "a", text: "table", x: 0, y: 0, rx: 0.1, ry: 0.1 },
+        { id: "b", text: "a very long wide label", x: 0.9, y: 0.9, rx: 0.1, ry: 0.1 },
       ],
       fontSize,
       room,

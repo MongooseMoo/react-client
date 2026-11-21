@@ -13,6 +13,7 @@ import {
   labelOrder,
   type PlacedThing,
   placeLabelsOver,
+  selectedFirst,
   shortLabel,
 } from "../map/roomLayout";
 import {
@@ -82,6 +83,8 @@ interface RoomLayout3DProps {
 
 /** Space between a label and the top of what it names, CSS pixels. */
 const LABEL_GAP = 3;
+/** How far the selected label's dashed box reaches past its text: outline width plus offset (`.rl3d-label-selected`), CSS pixels. */
+const SELECTED_LABEL_RING = 4;
 
 /**
  * A label's size as drawn, CSS pixels: its text's width in its own computed font (the
@@ -133,8 +136,9 @@ function showSelection(stage: Stage, selectedId: string | null) {
   for (const [id, object] of stage.labelObjects) object.element.classList.toggle("rl3d-label-selected", id === selectedId);
   const chosen = selectedId === null ? undefined : stage.placed.find((p) => p.thing.id === selectedId);
   // What is not drawn (you, in your own eyes) gets no outline.
-  if (!chosen || !stage.room?.things.get(chosen.thing.id)?.visible) return;
-  stage.selection = selectionOutline(chosen.bounds);
+  const drawn = chosen && stage.room?.things.get(chosen.thing.id);
+  if (!chosen || !drawn?.visible) return;
+  stage.selection = selectionOutline(chosen.bounds, drawn);
   stage.scene.add(stage.selection);
 }
 
@@ -260,7 +264,8 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     const requests: LabelOver[] = [];
     const anchors = new Map<string, [number, number]>();
     const projected = new THREE.Vector3();
-    for (const { id, text } of labelPlan.current) {
+    // The selected thing's or person's label first, so it always shows where there is any room for it.
+    for (const { id, text } of selectedFirst(labelPlan.current, selectedIdRef.current)) {
       const points = stage.room?.labelPoints.get(id);
       const object = stage.labelObjects.get(id);
       if (!points || !object) continue;
@@ -271,8 +276,11 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       // Where CSS2DRenderer puts the label before it is moved: its object's point.
       object.getWorldPosition(projected).project(stage.camera);
       anchors.set(id, [((projected.x + 1) / 2) * width, ((1 - projected.y) / 2) * height]);
-      const size = labelSize(object.element, stage.labelSizes);
-      if (size.width === 0) continue;
+      const drawnSize = labelSize(object.element, stage.labelSizes);
+      if (drawnSize.width === 0) continue;
+      // The selected label's dashed box (`.rl3d-label-selected`) stands SELECTED_LABEL_RING px outside its text on every side.
+      const ring = id === selectedIdRef.current ? SELECTED_LABEL_RING * 2 : 0;
+      const size = { width: drawnSize.width + ring, height: drawnSize.height + ring };
       // Centred over the head (or thing), its bottom edge LABEL_GAP pixels above the head's top as drawn: clear of hair and face at any zoom.
       requests.push({ id, text, x: shown.x, top: shown.top, ...size });
     }

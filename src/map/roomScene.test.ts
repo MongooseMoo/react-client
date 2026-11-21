@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
 import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "../avatar/figure";
@@ -115,27 +115,48 @@ describe("picking and the selection in 3D", () => {
     disposeRoomScene(scene);
   });
 
-  it("outlines the selected thing's box with dashed edges and a block at each corner, drawn over everything, never picked", () => {
-    const placed = placeThings(livingRoomLayout());
+  it("marks the selected thing by lighting its own shapes and a thin bracket at each corner of its box, never picked", () => {
+    const layout = livingRoomLayout();
+    const placed = placeThings(layout);
     const table = placed.find((p) => p.thing.id === "#1") as (typeof placed)[number];
-    const outline = selectionOutline(table.bounds);
-    const size = new THREE.Box3().setFromObject(outline).getSize(new THREE.Vector3());
-    // The table is 1.2 x 0.6 x 0.45 m; the outline stands a little outside it on every side.
+    const scene = build(layout);
+    const drawn = scene.things.get("#1") as THREE.Group;
+    const outline = selectionOutline(table.bounds, drawn);
+    const brackets = outline.getObjectByProperty("type", "LineSegments") as THREE.LineSegments;
+    const size = new THREE.Box3().setFromObject(brackets).getSize(new THREE.Vector3());
+    // The table is 1.2 x 0.6 x 0.45 m; the brackets stand a little outside it on every side, and no more.
     expect(size.x).toBeGreaterThan(1.2);
-    expect(size.x).toBeLessThan(1.5);
+    expect(size.x).toBeLessThan(1.3);
     expect(size.z).toBeGreaterThan(0.45);
-    const lines = outline.children.find((child): child is THREE.LineSegments => child instanceof THREE.LineSegments);
-    expect(lines?.material).toBeInstanceOf(THREE.LineDashedMaterial);
-    expect(lines?.geometry.getAttribute("lineDistance")).toBeDefined();
-    expect(outline.children.filter((child) => child instanceof THREE.Mesh)).toHaveLength(8);
-    outline.traverse((object) => {
-      const material = (object as THREE.Mesh).material as THREE.Material | undefined;
-      if (material) expect(material.depthTest).toBe(false);
-    });
-    const scene = build(livingRoomLayout());
+    // Eight corners, three arms each, every arm a fifth of its edge or less: corners, not the box's whole edges.
+    const at = brackets.geometry.getAttribute("position");
+    expect(at.count).toBe(8 * 3 * 2);
+    for (let i = 0; i < at.count; i += 2) {
+      const length = new THREE.Vector3().fromBufferAttribute(at, i).distanceTo(new THREE.Vector3().fromBufferAttribute(at, i + 1));
+      expect(length).toBeLessThanOrEqual(Math.max(size.x, size.y, size.z) * 0.2 + 1e-6);
+    }
+    // The brackets show through what stands in front; there are no solid corner blocks.
+    expect((brackets.material as THREE.Material).depthTest).toBe(false);
+    // Each of the table's own meshes is lit, on its own geometry where it is drawn, hidden by what is in front.
+    const own: THREE.Mesh[] = [];
+    drawn.traverse((object) => { if (object instanceof THREE.Mesh) own.push(object); });
+    const lit = outline.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
+    expect(lit.map((mesh) => mesh.geometry)).toEqual(own.map((mesh) => mesh.geometry));
+    for (const [i, mesh] of lit.entries()) {
+      expect(mesh.matrixWorld.equals(own[i].matrixWorld)).toBe(true);
+      expect((mesh.material as THREE.Material).depthTest).toBe(true);
+    }
     scene.root.add(outline);
     expect(pickables(scene).some((object) => object === outline)).toBe(false);
+    // Freeing the mark leaves the table's own geometry to the table.
+    const freed = own.map((mesh) => vi.spyOn(mesh.geometry, "dispose"));
     disposeSelectionOutline(outline);
+    for (const spy of freed) expect(spy).not.toHaveBeenCalled();
+    // A person gets the brackets only: their figure is not washed white.
+    const person = placed.find((p) => p.thing.kind === "player") as (typeof placed)[number];
+    const personMark = selectionOutline(person.bounds, scene.things.get(person.thing.id));
+    expect(personMark.children.filter((child) => child instanceof THREE.Mesh)).toHaveLength(0);
+    disposeSelectionOutline(personMark);
     disposeRoomScene(scene);
   });
 });

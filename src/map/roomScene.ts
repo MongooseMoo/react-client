@@ -962,46 +962,74 @@ export function scenePick(object: THREE.Object3D | null | undefined): ScenePick 
 
 export const SELECTION_COLOUR = 0xffffff;
 
+/** How strongly the selected thing's own shapes are lit over their colours (`selectionOutline`). */
+export const SELECTION_GLOW = 0.55;
+/** Each corner bracket's arms run this share of their edge of the box, `selectionOutline`. */
+const BRACKET_SHARE = 0.2;
+
 /**
- * The mark round the selected thing or person: the edges of its box, a little outside it, as dashed
- * lines, with a small block at each corner. The dashes and corner blocks mark it by shape, not by
- * colour alone. It is drawn over everything, so nothing in front hides it, and it belongs to no
- * thing's group, so no click lands on it. Free it with `disposeSelectionOutline`.
+ * The mark on the selected thing or person. A thing's own shapes as drawn are lit white over their
+ * colours (`SELECTION_GLOW`): a thin sword among other blades reads as the bright one, and a neighbour
+ * in front still hides what it hides, so the mark never covers the things beside it. Round the box, a
+ * little outside it, a thin bracket at each of its corners (no full edges, no blocks), drawn over
+ * everything, so a thing or person behind others can still be found. The lit shape and the brackets
+ * mark it by shape, not by colour alone. People (`drawn`'s form "person") get the brackets only. It
+ * belongs to no thing's group, so no click lands on it; the lit shapes follow parts that swing or
+ * slide. Free it with `disposeSelectionOutline`.
  */
-export function selectionOutline(bounds: Bounds): THREE.Group {
+export function selectionOutline(bounds: Bounds, drawn?: THREE.Object3D): THREE.Group {
   const size = new THREE.Vector3(bounds.x1 - bounds.x0, bounds.y1 - bounds.y0, bounds.z1 - bounds.z0);
-  const gap = Math.min(0.08, Math.max(0.03, Math.max(size.x, size.y, size.z) * 0.04));
+  const gap = Math.min(0.04, Math.max(0.01, Math.max(size.x, size.y, size.z) * 0.02));
   size.addScalar(gap * 2);
   const group = new THREE.Group();
   group.name = "selection";
-  group.position.set((bounds.x0 + bounds.x1) / 2, (bounds.y0 + bounds.y1) / 2, (bounds.z0 + bounds.z1) / 2);
-  const box = new THREE.BoxGeometry(size.x, size.y, size.z);
-  const edges = new THREE.EdgesGeometry(box);
-  box.dispose();
-  const lines = new THREE.LineSegments(edges, new THREE.LineDashedMaterial({
-    color: SELECTION_COLOUR, dashSize: gap * 1.6, gapSize: gap, depthTest: false, transparent: true,
-  }));
-  lines.computeLineDistances();
-  lines.renderOrder = 1000;
-  group.add(lines);
-  const corner = new THREE.BoxGeometry(gap, gap, gap);
-  const solid = new THREE.MeshBasicMaterial({ color: SELECTION_COLOUR, depthTest: false, transparent: true });
-  for (const x of [-0.5, 0.5]) for (const y of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
-    const block = new THREE.Mesh(corner, solid);
-    block.position.set(x * size.x, y * size.y, z * size.z);
-    block.renderOrder = 1000;
-    group.add(block);
+  const brackets = new THREE.Group();
+  brackets.position.set((bounds.x0 + bounds.x1) / 2, (bounds.y0 + bounds.y1) / 2, (bounds.z0 + bounds.z1) / 2);
+  const arm = size.clone().multiplyScalar(BRACKET_SHARE);
+  const points: THREE.Vector3[] = [];
+  for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) {
+    const corner = new THREE.Vector3((x * size.x) / 2, (y * size.y) / 2, (z * size.z) / 2);
+    points.push(corner, corner.clone().setX(corner.x - x * arm.x));
+    points.push(corner, corner.clone().setY(corner.y - y * arm.y));
+    points.push(corner, corner.clone().setZ(corner.z - z * arm.z));
   }
-  group.updateMatrixWorld(true);
+  const lines = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({
+    color: SELECTION_COLOUR, depthTest: false, transparent: true,
+  }));
+  lines.renderOrder = 1000;
+  brackets.add(lines);
+  group.add(brackets);
+  if (drawn && drawn.userData.form !== "person") {
+    const glow = new THREE.MeshBasicMaterial({
+      color: SELECTION_COLOUR, transparent: true, opacity: SELECTION_GLOW, depthWrite: false,
+      // Drawn on the thing's own faces: pulled toward the camera just enough to win over them, never over what is in front.
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
+    });
+    drawn.updateWorldMatrix(true, true);
+    drawn.traverse((object) => {
+      if (!(object instanceof THREE.Mesh) || !object.visible) return;
+      const lit = new THREE.Mesh(object.geometry, glow);
+      lit.name = "selection glow";
+      lit.matrixAutoUpdate = false;
+      lit.matrixWorldAutoUpdate = false;
+      lit.matrixWorld.copy(object.matrixWorld);
+      // Kept on the part as drawn this frame, so a door or drawer that swings carries its glow with it.
+      lit.onBeforeRender = () => lit.matrixWorld.copy(object.matrixWorld);
+      lit.renderOrder = 999;
+      group.add(lit);
+    });
+  }
+  brackets.updateMatrixWorld(true);
   return group;
 }
 
+/** Frees the selection mark (`selectionOutline`); the lit shapes' geometry is the thing's own and stays. */
 export function disposeSelectionOutline(outline: THREE.Group): void {
   outline.removeFromParent();
   const freed = new Set<{ dispose: () => void }>();
   outline.traverse((object) => {
     if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
-      freed.add(object.geometry);
+      if (object.name !== "selection glow") freed.add(object.geometry);
       freed.add(object.material as THREE.Material);
     }
   });
