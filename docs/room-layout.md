@@ -362,9 +362,12 @@ In every view, clicking or tapping a thing or a person selects it (the one selec
 click that dragged the view more than 4 CSS pixels selects nothing, and moving the pointer over
 the picture selects nothing. The selected thing or person is marked by shape as well as colour:
 in the Plan a dashed frame round its footprint (a dashed ring round a person's token) with its
-label bold and underlined; in Dollhouse and Your eyes the edges of its box as dashed lines with a
-small block at each corner, drawn over whatever stands in front, and its label bold, underlined
-and boxed. The mark follows the thing when it moves and stays through a change of view. You, in
+label bold and underlined; in Dollhouse and Your eyes a thing's own shapes lit white (a thin sword
+among other blades is the bright one; what stands in front of it still hides it, so the mark never
+covers its neighbours) and, round its box, a thin bracket at each corner, drawn over whatever stands
+in front so it can be found; a person gets the brackets only. Its label is bold, underlined and boxed.
+In every view the selected thing's or person's label is placed first, so it always shows where
+there is any room. The mark follows the thing when it moves and stays through a change of view. You, in
 Your eyes, are not drawn and so not outlined. A saved SVG carries no selection mark.
 
 The three views:
@@ -419,7 +422,12 @@ own heights above that top. Sideways, a thing's label goes only while its text s
 middle of the thing; a person's label only while its own middle stays over that person's head as
 drawn, so it never sits over the space beside them and reads as a neighbour's. One with no such
 place is left out until zooming makes room (the Room tab's lists still name it). Labels are
-placed by their size as drawn, and two side by side keep a few pixels apart.
+placed by their size as drawn; two side by side keep a few pixels apart and two one above the
+other a third of a line, so a crowded shelf shows fewer names, each readable.
+
+In the Plan a thing's label goes on its thing or just beside it, never over a shelf, table or
+other thing it is not on and nearer that than its own; a name wider than a shelf against a wall
+slides back inside the room. A label with no such place is left out (the lists still name it).
 
 In every view things are drawn by what they are, from the first of their `classes` the client
 knows: a table as a top on legs, a chair or other furniture as a seat with a back only when its
