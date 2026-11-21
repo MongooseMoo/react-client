@@ -1,7 +1,19 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import React, { useEffect } from 'react';
 import { expect, it, vi } from 'vitest';
-import Tabs, { type TabsRef } from './tabs';
+import Tabs, { TabShownContext, type TabsRef } from './tabs';
+
+it('tells each panel\'s content whether its tab is the one showing, and that it is when outside any tabs', () => {
+  const Shown = ({ name }: { name: string }) => <span data-testid={name}>{String(React.useContext(TabShownContext))}</span>;
+  const text = (name: string) => screen.getByTestId(name).textContent;
+  render(<><Shown name="outside" /><Tabs tabs={[
+    { id: 'main', label: 'Main', content: <Shown name="main" /> },
+    { id: 'files', label: 'Files', content: <Shown name="files" /> },
+  ]} /></>);
+  expect([text('outside'), text('main'), text('files')]).toEqual(['true', 'true', 'false']);
+  fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+  expect([text('main'), text('files')]).toEqual(['false', 'true']);
+});
 
 it('moves focus to the first control Tab can reach when asked to focus the panel', () => {
   const ref = React.createRef<TabsRef>();

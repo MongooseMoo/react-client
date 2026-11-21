@@ -101,7 +101,13 @@ The lead accepted readings a (controls under the card), b (thing row is
    Tests seen failing first: two in `RoomInfoDisplay.test.tsx`, one in
    `RoomLayoutView.test.tsx`, one in `roomLayout.test.ts`.
 3. The room view must not draw or load three.js while the Room tab is hidden.
-   Not started.
+   Done: `tabs.tsx` exports `TabShownContext` (true for the selected panel's
+   content, and outside any tabs); `RoomLayoutView.tsx` does not mount
+   `RoomLayout3D` while it is false. Tests seen failing first: one in
+   `tabs.test.tsx`, one in `RoomInfoDisplay.test.tsx` (hidden behind another
+   tab with Dollhouse as the stored view: module not imported, nothing mounted
+   through a layout update; shown: mounted with the selection made while
+   hidden; hidden again: unmounted; shown again: same view, newer selection).
 
 Read for fix 3: `tabs.tsx` hides an unselected panel with the `hidden`
 attribute and keeps its content mounted (unless `mountOnSelect` and never
@@ -109,6 +115,19 @@ visited). `RoomLayout3D.tsx` has no animation loop: it draws when the orbit
 controls change, on resize, on a layout or selection change, and on a key or
 wheel. So while hidden it would still load three.js, build the scene and redraw
 on every layout update.
+
+Which way for fix 3, and why: the Room tab stays always mounted (not
+`mountOnSelect`), so its lists, the selection's cards and the Ctrl+Shift+1 focus
+behaviour are untouched; only the 3D component is left unmounted while hidden.
+Unmounting, rather than pausing inside `RoomLayout3D`, is one condition in one
+place and also covers the case where the tab is hidden before three.js was ever
+loaded. Its cost: the WebGL renderer is made again on each return to the Room
+tab, and the Dollhouse's turn and zoom start again from the whole-room view.
+The Plan stays mounted while hidden (an SVG re-render on a layout update), so
+its zoom is kept. Not covered: the sidebar's own collapse hides the panel
+without unselecting the tab, so a 3D view stays mounted behind a collapsed
+sidebar. Not tested in a browser: that the renderer is freed and remade cleanly
+across many tab switches.
 
 ## Decisions and why
 

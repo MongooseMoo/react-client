@@ -26,6 +26,13 @@ export interface TabsRef {
   selectTab: (id: string, focus?: TabFocusTarget) => boolean;
 }
 
+/**
+ * Whether the tab holding this content is the one showing. An unselected panel stays mounted but
+ * hidden, so content that costs something to keep drawn (the room's 3D view) reads this and waits.
+ * True outside any tabs.
+ */
+export const TabShownContext = React.createContext(true);
+
 const CONTROL_SELECTOR = 'button:not([disabled]), input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]';
 
 /** Controls in a panel that Tab can reach, in document order. */
@@ -162,7 +169,7 @@ function TabPanel({ tab, selected, onElement, children }: {
   }, []);
   return <div ref={(element) => { panelRef.current = element; onElement(element); }} role="tabpanel" id={`${tab.id}-panel`} aria-labelledby={tab.id}
     hidden={!selected} tabIndex={hasControls ? undefined : 0}>
-    <div className="sidebar-tab-content">{children}</div>
+    <div className="sidebar-tab-content"><TabShownContext.Provider value={selected}>{children}</TabShownContext.Provider></div>
   </div>;
 }
 

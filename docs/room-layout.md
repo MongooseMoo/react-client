@@ -269,7 +269,10 @@ disables the corresponding control.
 
 The Room tab shows the room under "Room layout", in one of three views chosen with the View radio
 buttons (the choice is kept across rooms). The room is drawn once; three.js is loaded only when
-Dollhouse or Your eyes is the chosen view.
+Dollhouse or Your eyes is the chosen view and the Room tab is the tab showing. While another
+sidebar tab shows, a 3D view is not kept: nothing is loaded, built or drawn. Coming back to the
+Room tab draws it again in the same view with the same selection; the Dollhouse starts again from
+its whole-room view. The Plan stays as it was, zoom included.
 
 In every view, clicking or tapping a thing or a person selects it (the one selection, above); a
 click that dragged the view more than 4 CSS pixels selects nothing, and moving the pointer over

@@ -8,6 +8,9 @@ import type { LayoutThing, RoomLayout } from "../gmcp/Room";
 import { sampleLayout, translateLayoutThing } from "../map/roomLayout.fixture";
 import laundry from "../map/roomLayout.sample-1770.json";
 import RoomInfoDisplay from "./RoomInfoDisplay";
+import { roomLayoutViewSchema } from "./RoomLayoutView";
+import Tabs from "./tabs";
+import { saveStoredValue } from "../persistence";
 import { useItemsStore } from "../stores/itemsStore";
 import { useRoomStore } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
@@ -128,6 +131,36 @@ describe("RoomInfoDisplay", () => {
     // The Plan is showing: the 3D module (and three.js with it) has not been asked for.
     expect(picture.tagName.toLowerCase()).toBe("svg");
     expect(seen3D.loaded).toBe(false);
+  });
+
+  it("neither loads nor draws the 3D view while the Room tab is hidden, and shows it with the same view and selection when the tab shows", async () => {
+    saveStoredValue(roomLayoutViewSchema, "dollhouse");
+    enterSalon();
+    render(<Tabs tabs={[
+      { id: "other-tab", label: "Other", content: <p>Other</p> },
+      { id: "room-tab", label: "Room", content: <RoomInfoDisplay client={client as unknown as MudClient} /> },
+    ]} />);
+    const dollhouse = () => screen.getByRole("radio", { name: "Dollhouse", hidden: true }) as HTMLInputElement;
+    // Hidden behind the Other tab: the view choice stands, the lists are there, the 3D module has not been asked for.
+    expect(dollhouse().checked).toBe(true);
+    expect(screen.getByRole("listbox", { name: "Things", hidden: true })).toBeTruthy();
+    act(() => useItemsStore.getState().select("#11"));
+    act(() => useRoomStore.getState().setRoomLayout(translateLayoutThing(salon(), "#5678", [0, -1, 0])));
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByTestId("room-3d")).toBeNull();
+    expect(seen3D.loaded).toBe(false);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Room" }));
+    expect((await screen.findByTestId("room-3d")).getAttribute("data-selected")).toBe("#11");
+    expect(seen3D.loaded).toBe(true);
+    expect(dollhouse().checked).toBe(true);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Other" }));
+    expect(screen.queryByTestId("room-3d")).toBeNull();
+    act(() => useItemsStore.getState().select("#12"));
+    fireEvent.click(screen.getByRole("tab", { name: "Room" }));
+    expect((await screen.findByTestId("room-3d")).getAttribute("data-selected")).toBe("#12");
+    expect(dollhouse().checked).toBe(true);
   });
 
   it("has one Exits list: each exit's button followed by its doorway in words, then doorways Room.Info does not name", () => {

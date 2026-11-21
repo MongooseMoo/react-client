@@ -1,5 +1,5 @@
 import type React from "react";
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useContext, useMemo, useState } from "react";
 import { downloadFile } from "../downloadFile";
 import type { RoomLayout } from "../gmcp/Room";
 import { layoutSummary, metres, placeThings } from "../map/roomLayout";
@@ -8,6 +8,7 @@ import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { type LocalStorageSchema, loadStoredValue, saveStoredValue } from "../persistence";
 import RoomLayoutPicture, { standaloneSvg } from "./RoomLayoutPicture";
+import { TabShownContext } from "./tabs";
 import "./RoomLayoutView.css";
 
 /** three.js and the 3D views load only when one of them is chosen. */
@@ -63,6 +64,9 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
   const youId = useSpatialStore((state) => state.listenerEntityId);
   const selectedId = useItemsStore((state) => state.selected?.id ?? null);
   const select = useItemsStore((state) => state.select);
+  // Behind another tab a 3D view is not mounted: three.js is not loaded, no scene is built and
+  // nothing is drawn. The view choice (here) and the selection (the store's) wait for the tab.
+  const tabShown = useContext(TabShownContext);
   const name = stripMudAnsiTags(roomName);
   const [view, setView] = useState<RoomLayoutViewName>(() => loadStoredValue(roomLayoutViewSchema, "plan"));
   const chooseView = (next: RoomLayoutViewName) => {
@@ -109,7 +113,7 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
           onExit={onCommand}
           onSave={save}
         />
-      ) : (
+      ) : !tabShown ? null : (
         <Suspense fallback={<p>Loading the 3D view…</p>}>
           <RoomLayout3D
             layout={layout}
