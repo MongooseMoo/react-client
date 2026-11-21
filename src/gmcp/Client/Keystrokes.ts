@@ -301,6 +301,8 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
             return true;
         }
         if (event.key === "Escape" && !event.ctrlKey && !event.shiftKey) {
+            // This Escape only ends interact mode: App.tsx listens on the document too, and its Escape pauses every sound.
+            event.stopImmediatePropagation();
             this.endInteractMode();
             return true;
         }
