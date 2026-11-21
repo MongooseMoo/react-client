@@ -10,8 +10,39 @@ const SANITIZE_CONFIG = {
   ADD_ATTR: ["data-text", "data-content-type"],
 };
 
+// A name in room text the server has bound to what it names:
+// <a class="thing" data-thing="#29612">portable radio</a>, or several ids for a
+// grouped phrase ("#29612 #29613"). data-thing is kept only on a.thing and only
+// when its whole value is that list of object ids, so it can never carry
+// anything but ids. Activating one selects the thing; it sends no command.
+const THING_IDS = /^#\d+(?: #\d+)*$/;
+
+function keepBoundName(node: Node, data: { attrName: string; forceKeepAttr?: boolean }) {
+  if (data.attrName !== "data-thing" || !(node instanceof Element)) return;
+  // The attribute as written: the value the hook is handed has been trimmed.
+  const value = node.getAttribute("data-thing") ?? "";
+  if (node.nodeName === "A" && node.classList.contains("thing") && THING_IDS.test(value)) data.forceKeepAttr = true;
+}
+
+// The server sends a bound name with no href, which is not a link to a screen
+// reader or a Tab stop. href="#" makes it one, as the exit link has; whatever
+// destination the markup carried is replaced, since activating selects.
+function linkBoundName(node: Node) {
+  if (!(node instanceof Element) || !node.hasAttribute("data-thing")) return;
+  node.setAttribute("href", "#");
+  node.removeAttribute("target");
+}
+
 export function sanitizeServerHtml(html: string): string {
-  return DOMPurify.sanitize(html, SANITIZE_CONFIG) as string;
+  // Hooks belong to the one shared DOMPurify; they are on only for server HTML.
+  DOMPurify.addHook("uponSanitizeAttribute", keepBoundName);
+  DOMPurify.addHook("afterSanitizeAttributes", linkBoundName);
+  try {
+    return DOMPurify.sanitize(html, SANITIZE_CONFIG) as string;
+  } finally {
+    DOMPurify.removeHook("uponSanitizeAttribute");
+    DOMPurify.removeHook("afterSanitizeAttributes");
+  }
 }
 
 // Serialize nodes through the DOM so text stays escaped. Never concatenate
