@@ -13,18 +13,22 @@ import { useRoomStore } from "../stores/roomStore";
 import { useSpatialStore } from "../stores/spatialStore";
 
 // jsdom has no WebGL: the 3D views stand in as an element carrying their props.
-const seen3D = vi.hoisted(() => ({ props: null as null | {
+const seen3D = vi.hoisted(() => ({ loaded: false, props: null as null | {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onInspect: (id: string, lifetime: string, role: string) => void;
   onFitting: (lifetime: string) => void;
 } }));
-vi.mock("./RoomLayout3D", () => ({
-  default: (props: NonNullable<typeof seen3D.props> & { mode: string; label: string }) => {
-    seen3D.props = props;
-    return <div data-testid="room-3d" data-mode={props.mode} data-selected={props.selectedId ?? ""} role="img" aria-label={props.label} />;
-  },
-}));
+vi.mock("./RoomLayout3D", () => {
+  // This factory runs when the module is first imported: the moment the real one would load three.js.
+  seen3D.loaded = true;
+  return {
+    default: (props: NonNullable<typeof seen3D.props> & { mode: string; label: string }) => {
+      seen3D.props = props;
+      return <div data-testid="room-3d" data-mode={props.mode} data-selected={props.selectedId ?? ""} role="img" aria-label={props.label} />;
+    },
+  };
+});
 
 function createMockClient() {
   return {
@@ -121,6 +125,9 @@ describe("RoomInfoDisplay", () => {
     const picture = screen.getByRole("img");
     expect(picture.compareDocumentPosition(things()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(picture.getAttribute("aria-label")).toContain("Layout of Le Salon");
+    // The Plan is showing: the 3D module (and three.js with it) has not been asked for.
+    expect(picture.tagName.toLowerCase()).toBe("svg");
+    expect(seen3D.loaded).toBe(false);
   });
 
   it("lists every thing once, joined by id, each with where it is", () => {
@@ -216,6 +223,7 @@ describe("RoomInfoDisplay", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "Dollhouse" }));
     expect((await screen.findByTestId("room-3d")).getAttribute("data-selected")).toBe("#11");
+    expect(seen3D.loaded).toBe(true);
     act(() => seen3D.props?.onSelect("#12"));
     expect(selectedRows()).toEqual(["plate, on the oak table"]);
     fireEvent.click(screen.getByRole("radio", { name: "Plan" }));
