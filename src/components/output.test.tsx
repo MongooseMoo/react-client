@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type React from "react";
+import { readFileSync } from "node:fs";
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type MudClient from "../client";
@@ -984,6 +985,51 @@ describe("Output bound names (a.thing[data-thing] from the server)", () => {
     expect(selected()).toBe("#11");
     expect(onShowHoldingList).toHaveBeenCalledWith("things");
     expectNoCommand();
+  });
+
+  it("takes the colour of the text round it, so a colour the game sent wins, and stays underlined with a focus ring", async () => {
+    // Vitest empties CSS imports, so the transcript's real stylesheet is read from disk and put in the page.
+    const css = readFileSync(`${__dirname}/output.css`, "utf8");
+    // jsdom drops a declaration that uses var(), so each token is replaced by its value from tokens.css.
+    const tokens = new Map(Array.from(
+      readFileSync(`${__dirname}/../tokens.css`, "utf8").matchAll(/(--[\w-]+):\s*([^;]+);/g),
+      (token) => [token[1], token[2].trim()] as [string, string],
+    ));
+    const resolved = (text: string): string => {
+      const next = text.replace(/var\((--[\w-]+)(?:,[^()]*)?\)/g, (whole, name) => tokens.get(name) ?? whole);
+      return next === text ? text : resolved(next);
+    };
+    const style = document.createElement("style");
+    style.textContent = resolved(css);
+    document.head.appendChild(style);
+    mount();
+    // The line as the game sent it for the television in The Living Room.
+    useOutputStore.getState().addHtml(
+      '<span style="font-weight: bold"><span style="color: purple"><a class="thing" data-thing="#11">portable radio</a></span></span> is here. ' +
+      '<a class="thing" data-thing="#30">Ann</a> is here.',
+    );
+    await flush();
+    const coloured = link("portable radio");
+    const plain = link("Ann");
+    const colourSent = getComputedStyle(coloured.parentElement as HTMLElement).color;
+    const textColour = getComputedStyle(plain.parentElement as HTMLElement).color;
+    // jsdom reports the keyword "inherit" where a browser reports the parent's colour, so follow it up.
+    const shown = (element: HTMLElement): string => {
+      const colour = getComputedStyle(element).color;
+      return colour === "inherit" && element.parentElement ? shown(element.parentElement) : colour;
+    };
+    const colouredName = shown(coloured);
+    const plainName = shown(plain);
+    style.remove();
+    expect(colourSent).toBe("rgb(128, 0, 128)");
+    expect(textColour).toBe("rgb(255, 255, 255)");
+    expect(colouredName).toBe(colourSent);
+    expect(plainName).toBe(textColour);
+    // Colour no longer tells a bound name from the words round it: the underline does, and the focus ring.
+    const rule = css.match(/\.output a\.thing,\s*\.output a\.thing:visited \{([^}]*)\}/)?.[1] ?? "";
+    expect(rule).toMatch(/color: inherit;/);
+    expect(rule).toMatch(/text-decoration: underline;/);
+    expect(css).toMatch(/\.output a:focus-visible \{\s*outline: 2px solid var\(--color-focus-ring\);/);
   });
 
   it("offers a grouped phrase by selecting its first member that is still here", async () => {
