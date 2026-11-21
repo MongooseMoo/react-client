@@ -633,6 +633,23 @@ describe("GMCPClientKeystrokes", () => {
       expect(client.sendCommand).toHaveBeenCalledWith("interact #8");
     });
 
+    it("ends on Escape without the app's own Escape handler (which pauses every sound) seeing the key", () => {
+      // App.tsx listens the same way: on the document, capture phase, added after this package's listener.
+      const appEscape = vi.fn();
+      document.addEventListener("keydown", appEscape, true);
+      press(document.body, altBacktick);
+      appEscape.mockClear();
+
+      press(element("command-input"), { key: "Escape", code: "Escape" });
+      expect(said()).toBe("Interact mode off");
+      expect(appEscape).not.toHaveBeenCalled();
+
+      // With interact mode off, Escape is the app's again.
+      press(element("command-input"), { key: "Escape", code: "Escape" });
+      document.removeEventListener("keydown", appEscape, true);
+      expect(appEscape).toHaveBeenCalledTimes(1);
+    });
+
     it("does not start with nothing around", () => {
       useItemsStore.getState().reset();
       useRoomStore.getState().reset();
