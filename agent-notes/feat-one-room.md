@@ -124,9 +124,8 @@ place and also covers the case where the tab is hidden before three.js was ever
 loaded. Its cost: the WebGL renderer is made again on each return to the Room
 tab, and the Dollhouse's turn and zoom start again from the whole-room view.
 The Plan stays mounted while hidden (an SVG re-render on a layout update), so
-its zoom is kept. Not covered: the sidebar's own collapse hides the panel
-without unselecting the tab, so a 3D view stays mounted behind a collapsed
-sidebar. Not tested in a browser: that the renderer is freed and remade cleanly
+its zoom is kept. A collapsed or hidden sidebar was not covered at first; it is
+now (section below). Not tested in a browser: that the renderer is freed and remade cleanly
 across many tab switches.
 
 ### CI failure on the first six commits (accessibility check)
@@ -148,6 +147,26 @@ failing first: the list alone, and the inventory through the script's own
 steps (reorder, then remove the selected item with focus on the list). The
 Room tab's lists get the same behaviour. The script was read, not run; whether
 its step now passes is for CI to show.
+
+### Collapsed or hidden sidebar (lead's second job, last round)
+
+The CI job in the same message was already fixed and committed (section above).
+Gap to close: a 3D view stayed mounted behind a collapsed sidebar
+(`sidebar.tsx`: `hidden={collapsed}` on `.sidebar-content`) or a hidden one
+(`App.tsx`: `hidden={!showSidebar}` on the `aside`). Plan: the same
+`TabShownContext`, set false by `App.tsx` when the sidebar is hidden and by
+`sidebar.tsx` when collapsed; a tab panel is showing only when it is selected
+and what holds it is showing.
+
+Done: `App.tsx` wraps the sidebar in `TabShownContext.Provider value={showSidebar}`;
+`sidebar.tsx` passes on `shown && !collapsed` round its `Tabs`; a tab panel in
+`tabs.tsx` gives its content `shown && selected`. One context, no second
+mechanism. Tests seen failing first: one each in `tabs.test.tsx`,
+`sidebar.test.tsx` (the mocked inventory panel reports what it is told:
+collapsed false, expanded true, hidden by the app false) and `App.test.tsx`
+(the toolbar's sidebar button hides the `aside` and the sidebar is told false).
+The room view itself is unchanged: it already left its 3D view unmounted
+whenever that value is false. Not tested in a browser.
 
 ## Decisions and why
 

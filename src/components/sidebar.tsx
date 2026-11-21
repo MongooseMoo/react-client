@@ -25,7 +25,7 @@ const PhotoPanel = React.lazy(() => import('./PhotoPanel'));
 const PropertiesPanel = React.lazy(() => import('./PropertiesPanel'));
 const AppsPanel = React.lazy(() => import('./AppsPanel'));
 const TasksPanel = React.lazy(() => import('./TasksPanel'));
-import Tabs, { type TabProps, type TabsRef } from './tabs';
+import Tabs, { type TabProps, type TabsRef, TabShownContext } from './tabs';
 import './sidebar.css';
 import Userlist from './userlist';
 // import AfflictionsList from "./AfflictionsList"; // Removed
@@ -81,6 +81,7 @@ interface SidebarProps {
 const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
   ({ client, collapsed, onToggleCollapse, width = null, onWidthChange }, ref) => {
     const users = useUserlistStore((state) => state.players);
+    const shown = React.useContext(TabShownContext);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const tabsRef = useRef<TabsRef>(null);
     const [isResizing, setIsResizing] = useState(false);
@@ -367,7 +368,10 @@ const Sidebar = React.forwardRef<SidebarRef, SidebarProps>(
         )}
         {collapsed && collapseButton}
         <div className="sidebar-content" hidden={collapsed}>
-          <Tabs ref={tabsRef} tabs={visibleTabs} ariaLabel="Sidebar" trailingElement={!collapsed ? collapseButton : undefined} />
+          {/* Collapsed, the panels are hidden: tell them so (the app says the same for a hidden sidebar). */}
+          <TabShownContext.Provider value={shown && !collapsed}>
+            <Tabs ref={tabsRef} tabs={visibleTabs} ariaLabel="Sidebar" trailingElement={!collapsed ? collapseButton : undefined} />
+          </TabShownContext.Provider>
         </div>
       </div>
     );

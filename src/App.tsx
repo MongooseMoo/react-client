@@ -16,6 +16,7 @@ import PreferencesDialog, {
 import LinkPickerDialog from "./components/LinkPickerDialog";
 import MenuPrompt from "./components/MenuPrompt";
 import Sidebar, { clampSidebarWidth, type SidebarRef } from "./components/sidebar";
+import { TabShownContext } from "./components/tabs";
 import Statusbar from "./components/statusbar";
 import Toolbar from "./components/toolbar";
 import UpdateNotice from "./components/UpdateNotice";
@@ -595,14 +596,17 @@ function App() {
             hidden={!showSidebar}
             style={{ gridArea: "sidebar" }}
           >
-            <Sidebar
-              ref={sidebarRef}
-              client={client}
-              collapsed={sidebarCollapsed}
-              onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-              width={sidebarWidth}
-              onWidthChange={setSidebarWidth}
-            />
+            {/* Hidden, the sidebar stays mounted: its panels are told they are not showing. */}
+            <TabShownContext.Provider value={showSidebar}>
+              <Sidebar
+                ref={sidebarRef}
+                client={client}
+                collapsed={sidebarCollapsed}
+                onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+                width={sidebarWidth}
+                onWidthChange={setSidebarWidth}
+              />
+            </TabShownContext.Provider>
           </aside>
           <footer style={{ gridArea: "status" }}>
             <Statusbar />

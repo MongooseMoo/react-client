@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Sidebar, { type SidebarRef } from './sidebar';
+import { TabShownContext } from './tabs';
 import type MudClient from '../client';
 import { useRoomStore } from '../stores/roomStore';
 import { useItemsStore } from '../stores/itemsStore';
@@ -11,7 +12,11 @@ vi.mock('./AudioChatBoundary', () => ({ default: () => <span>Audio controls</spa
 vi.mock('./HelpPanel', () => ({ default: () => <span>Help contents</span> }));
 vi.mock('./MapPanel', () => ({ default: () => <span>Map contents</span> }));
 vi.mock('./MidiStatus', () => ({ default: () => <span>MIDI contents</span> }));
-vi.mock('./inventory', () => ({ default: () => <span>Inventory contents</span> }));
+vi.mock('./inventory', async () => {
+  const { TabShownContext } = await vi.importActual<typeof import('./tabs')>('./tabs');
+  // Says whether its panel is showing, as the room's 3D view asks before it mounts.
+  return { default: () => <span data-shown={String(React.useContext(TabShownContext))}>Inventory contents</span> };
+});
 
 const client = { connected: false, gmcp: { handlers: {} }, onFileTransferOffer: () => () => {} } as unknown as MudClient;
 
@@ -48,6 +53,23 @@ it('numbers tabs by their place on screen, so a tab that arrives renumbers those
   expect(ref.current?.hasTab(8)).toBe(true);
   expect(ref.current?.hasTab(9)).toBe(false);
   expect(ref.current?.indexOfTab('midi-tab')).toBe(-1);
+});
+
+it('tells a panel it is showing only while its tab is selected, the sidebar is not collapsed, and the sidebar itself is showing', () => {
+  useItemsStore.getState().setLocationItems('inv', []);
+  const shown = () => screen.getByText('Inventory contents').getAttribute('data-shown');
+  const sidebar = (collapsed: boolean) => <Sidebar client={client} collapsed={collapsed} onToggleCollapse={vi.fn()} />;
+  const view = render(sidebar(false));
+  // Inventory is the first tab here, so it is the one selected.
+  expect(screen.getByRole('tab', { name: 'Inventory' })).toHaveAttribute('aria-selected', 'true');
+  expect(shown()).toBe('true');
+  view.rerender(sidebar(true));
+  expect(shown()).toBe('false');
+  view.rerender(sidebar(false));
+  expect(shown()).toBe('true');
+  // Hidden by the app (the toolbar's sidebar button, or a phone's layout).
+  view.rerender(<TabShownContext.Provider value={false}>{sidebar(false)}</TabShownContext.Provider>);
+  expect(shown()).toBe('false');
 });
 
 it('orders every tab by purpose and numbers them without gaps', () => {

@@ -15,6 +15,15 @@ it('tells each panel\'s content whether its tab is the one showing, and that it 
   expect([text('main'), text('files')]).toEqual(['false', 'true']);
 });
 
+it('tells even the selected panel\'s content it is not showing when what holds the tabs is not showing', () => {
+  const Shown = () => <span data-testid="main">{String(React.useContext(TabShownContext))}</span>;
+  const tabs = <Tabs tabs={[{ id: 'main', label: 'Main', content: <Shown /> }]} />;
+  const view = render(<TabShownContext.Provider value={false}>{tabs}</TabShownContext.Provider>);
+  expect(screen.getByTestId('main').textContent).toBe('false');
+  view.rerender(<TabShownContext.Provider value={true}>{tabs}</TabShownContext.Provider>);
+  expect(screen.getByTestId('main').textContent).toBe('true');
+});
+
 it('moves focus to the first control Tab can reach when asked to focus the panel', () => {
   const ref = React.createRef<TabsRef>();
   render(<Tabs ref={ref} tabs={[
